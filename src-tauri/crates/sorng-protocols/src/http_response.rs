@@ -10,6 +10,10 @@ const NAVIGATION_MARKER: &str = "__sorng_navigation_v1";
 #[path = "http_response_script_insertion.rs"]
 mod script_insertion;
 
+#[cfg(test)]
+#[path = "http_ptisp_tour_tests.rs"]
+mod ptisp_tour_tests;
+
 pub(super) fn inject_page_scripts(html: &str, scripts: &str) -> String {
     let Some(index) = script_insertion::insertion_position(html) else {
         return html.to_string();
@@ -510,6 +514,7 @@ pub(super) struct ReadinessNetworkContext<'a> {
     pub(super) tactical_mesh: Option<serde_json::Value>,
     pub(super) cloudflare_challenge: Option<serde_json::Value>,
     pub(super) exchange_cookies: bool,
+    pub(super) exchange_owa: bool,
     pub(super) browser_compatibility: super::BrowserCompatibility,
 }
 
@@ -562,15 +567,43 @@ pub(super) fn readiness_script(
             )
         })
         .unwrap_or_default();
+    let external_link_client =
+        if network.exchange_owa && network.policy.page_scripts != super::PageScripts::Block {
+            let source = serde_json::to_string(network.source_origin)
+                .ok()?
+                .replace('<', "\\u003c")
+                .replace('>', "\\u003e")
+                .replace('&', "\\u0026");
+            format!(
+                "{}\ninstallOwaExternalLinks(p,{source});",
+                include_str!("web_external_link_client.js")
+            )
+        } else {
+            String::new()
+        };
+    // The route proves the reviewed profile; also check the current document
+    // origin so this helper cannot follow a PTisp session onto another site.
+    let ptisp_tour_client = if network.source_origin == super::tactical_rmm::PTISP_SOURCE
+        && network
+            .tactical_rmm_api
+            .is_some_and(|route| route.is_ptisp())
+        && network.policy.page_scripts != super::PageScripts::Block
+    {
+        include_str!("ptisp_tour_client.js")
+    } else {
+        ""
+    };
     let script = format!(
         r#"<script>(function(){{'use strict';var p={json};
 var u=new URL(location.href),q=u.search.slice(1).split('&').filter(function(v){{return v.split('=')[0]!=='{NAVIGATION_MARKER}'&&v.split('=')[0]!=='__sorng_generation_v1'&&v.split('=')[0]!=='__sorng_google_hop_v1';}}).join('&');
 u.search=q?'?'+q:'';try{{history.replaceState(history.state,'',u.href);}}catch(_){{}}
 function emit(type){{p.type=type;p.url=u.href;try{{window.parent.postMessage(p,'*');}}catch(_){{}}}}
+{external_link_client}
 {network_client}
 window.addEventListener('beforeunload',function(){{emit('proxy_navigation_start');}});
 {dark_mode_client}
 {automation_client}
+{ptisp_tour_client}
 emit('proxy_document_start');
 {popup_title_client}
 {synology_progress_client}
@@ -977,6 +1010,73 @@ mod tests {
     }
 
     #[test]
+    fn early_reporter_scopes_owa_external_links_and_preserves_document_identity() {
+        for (profile, exchange_cookies, exchange_owa) in [
+            ("owa", true, true),
+            ("ecp", true, false),
+            ("non-exchange", false, false),
+        ] {
+            for page_scripts in [
+                super::super::PageScripts::Allow,
+                super::super::PageScripts::Block,
+            ] {
+                let policy = super::super::HttpProxyPolicy {
+                    page_scripts,
+                    same_origin_only: true,
+                    ..Default::default()
+                };
+                let script = readiness_script(
+                    "owa-link-fixture",
+                    Some("0123456789abcdef0123456789abcdef"),
+                    7,
+                    ReadinessNetworkContext {
+                        source_origin: "https://mail.example.test",
+                        proxy_origin: "http://p0123456789abcdef0123456789abcdef.localhost:43123",
+                        policy: &policy,
+                        tactical_rmm_api: None,
+                        google: None,
+                        popup_parent_sequence: None,
+                        tactical_mesh: None,
+                        cloudflare_challenge: None,
+                        exchange_cookies,
+                        exchange_owa,
+                        browser_compatibility: super::super::BrowserCompatibility::default(),
+                    },
+                )
+                .unwrap();
+                let enabled = exchange_owa && page_scripts == super::super::PageScripts::Allow;
+                assert_eq!(
+                    script.contains("sorng_owa_external_link"),
+                    enabled,
+                    "{profile}"
+                );
+                assert!(script.contains("proxy_dom_ready"));
+                if enabled {
+                    let identity_start = script.find("var p=").unwrap() + "var p=".len();
+                    let identity_end = script[identity_start..].find(';').unwrap() + identity_start;
+                    let identity: serde_json::Value =
+                        serde_json::from_str(&script[identity_start..identity_end]).unwrap();
+                    assert_eq!(identity["sessionId"], "owa-link-fixture");
+                    assert_eq!(identity["documentSequence"], 7);
+                    assert_eq!(
+                        identity["navigationToken"],
+                        "0123456789abcdef0123456789abcdef"
+                    );
+                    assert_eq!(identity["documentToken"].as_str().unwrap().len(), 32);
+                    let install = script
+                        .find("installOwaExternalLinks(p,\"https://mail.example.test\");")
+                        .unwrap();
+                    assert!(identity_end < install);
+                    assert!(install < script.find("var sorngNetworkClient=").unwrap());
+                    assert!(install < script.find("emit('proxy_document_start');").unwrap());
+                    assert!(!script.contains("open_url_external"));
+                    assert!(policy.same_origin_only);
+                }
+            }
+        }
+    }
+
+    #[test]
     fn early_reporter_preserves_doctype_and_ignores_comments_and_similar_tag_names() {
         for html in [
             "<!DOCTYPE html><!-- <head>fake</head> --><html><body>page</body></html>",
@@ -998,6 +1098,7 @@ mod tests {
                     tactical_mesh: None,
                     cloudflare_challenge: None,
                     exchange_cookies: false,
+                    exchange_owa: false,
                     browser_compatibility: super::super::BrowserCompatibility::default(),
                 },
             );

@@ -1,4 +1,5 @@
 import { normalizeRecordTimestamp as timestamp } from "./recordTimestamps";
+import { assertPublicDatabaseData } from "./nativePrivateData";
 
 /** Private database metadata. No payload bodies or historical copies belong here. */
 export type RecordStampSource = "record" | "inferred" | "observed";
@@ -230,6 +231,7 @@ function jsonSnapshot(
 
 /** Freeze a runtime draft as persisted JSON without invoking getters/toJSON. */
 export function snapshotRecordPayload<T extends object>(value: T): T {
+  assertPublicDatabaseData(value);
   const descriptor = Object.getOwnPropertyDescriptor(value, "recordMetadata");
   const metadata = normalizeRecordLedger(
     descriptor && "value" in descriptor ? descriptor.value : undefined,
@@ -832,10 +834,11 @@ function enumerate(payload: JsonObject, prior?: RecordLedger): Candidate[] {
           hasControlCharacters(item.id)
         )
           invalid("missing or invalid stable ID");
-        if (identities.has(item.id)) invalid("duplicate stable ID");
-        identities.add(item.id);
+        const identity = item.id;
+        if (identities.has(identity)) invalid("duplicate stable ID");
+        identities.add(identity);
         const child =
-          path === undefined ? undefined : `${path}/@${encode(item.id)}`;
+          path === undefined ? undefined : `${path}/@${encode(identity)}`;
         if (child !== undefined)
           add(child, item, legacyDates(item, dates.updatedAt));
         walk(item, child, dates.updatedAt, "");
@@ -859,6 +862,13 @@ function enumerate(payload: JsonObject, prior?: RecordLedger): Candidate[] {
   const content = { ...payload };
   delete content.timestamp;
   delete content.recordMetadata;
+  // Native owns session revisions and capture commits. Tracking these public
+  // descriptors here would turn a cookie-only native change into an unrelated
+  // renderer metadata write, invalidating editors' public-body CAS baselines.
+  // Sync compares/reviews each complete descriptor against its three-way
+  // baseline; native import authenticates the capsule and enforces session CAS.
+  // This does NOT exclude transport ciphertext from sync hashes.
+  delete content.browserSessions;
   add("$", content, rootDates);
   walk(content, "$", rootDates.updatedAt, "");
   return [...candidates.values()].sort((a, b) =>
@@ -893,6 +903,7 @@ export async function reconcileRecordLedger(
   previous?: RecordLedger,
   options?: { mode?: "migrate" | "write"; now?: string },
 ): Promise<RecordLedger> {
+  assertPublicDatabaseData(value);
   const metadata =
     value && typeof value === "object"
       ? Object.getOwnPropertyDescriptor(value, "recordMetadata")
@@ -1046,6 +1057,7 @@ export async function reconcileMergedRecordLedgers(
   remote?: RecordLedger,
   options?: { reconcileOrigins?: boolean },
 ): Promise<RecordLedger> {
+  assertPublicDatabaseData(value);
   if (
     options?.reconcileOrigins !== undefined &&
     typeof options.reconcileOrigins !== "boolean"

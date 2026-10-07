@@ -390,6 +390,8 @@ describe("HTTPS certificate and native trust stages", () => {
     )?.[1].config;
     expect(config.proxy_policy).toEqual({
       ...(mocks.credentialOverrides.httpProxyPolicy as object),
+      allowAllRequests: false,
+      allowAllScripts: false,
       allowCrossOriginRedirects: false,
       allowExternalFonts: true,
       externalFontOrigins: [
@@ -1800,6 +1802,65 @@ describe("HTTPS certificate and native trust stages", () => {
       expect(proxyStarts()).toHaveLength(previousStarts);
     },
   );
+
+  it.each([
+    ["amazon-shopping", undefined, "www.amazon.de"],
+    ["amazon-shopping", "auto", "www.amazon.co.jp"],
+    ["amazon-shopping", "FR", "www.amazon.fr"],
+    ["amazon-shopping-gb", undefined, "www.amazon.co.uk"],
+  ])(
+    "opens %s marketplace %s at %s through the configured proxy",
+    async (id, amazonMarketplace, hostname) => {
+      mocks.credentialOverrides = {
+        hostname,
+        httpApplication: {
+          version: 1,
+          id,
+          loginMode: "manual",
+          amazonMarketplace,
+        },
+      };
+      const { result, iframe } = await loadingFixture({
+        ...session,
+        hostname: hostname!,
+      });
+      expect(result.current.buildTargetUrl()).toBe(`https://${hostname}/`);
+      expect(result.current.currentUrl).toBe(`https://${hostname}/`);
+      expect(new URL(iframe.src).origin).toBe(new URL(proxy.proxy_url).origin);
+      expect(mocks.invoke).toHaveBeenCalledWith("get_tls_certificate_info", {
+        host: hostname,
+        port: 443,
+        proxyUrl: mocks.proxy,
+      });
+      expect(proxyStarts()).toHaveLength(1);
+      expect(proxyStarts()[0][1].config).toMatchObject({
+        upstream_proxy_url: mocks.proxy,
+        http_auto_login: false,
+      });
+    },
+  );
+
+  it("rejects an Amazon marketplace mismatch before opening a connection", async () => {
+    mocks.credentialOverrides = {
+      hostname: "www.amazon.de",
+      httpApplication: {
+        version: 1,
+        id: "amazon-shopping",
+        loginMode: "manual",
+        amazonMarketplace: "FR",
+      },
+    };
+    const { result } = renderHook(() =>
+      useWebBrowser({ ...session, hostname: "www.amazon.de" }),
+    );
+    await act(async () => {});
+    expect(result.current.navigationFailure?.kind).toBe("invalid_navigation");
+    expect(proxyStarts()).toHaveLength(0);
+    expect(mocks.invoke).not.toHaveBeenCalledWith(
+      "get_tls_certificate_info",
+      expect.anything(),
+    );
+  });
 
   it.each([
     "http://10.10.10.2/pt/Account/Login",

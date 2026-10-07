@@ -132,6 +132,7 @@ fn browser_compatibility_reaches_readiness_before_upstream_scripts() {
             tactical_mesh: None,
             cloudflare_challenge: None,
             exchange_cookies: false,
+            exchange_owa: false,
             browser_compatibility: BrowserCompatibility {
                 hide_webdriver: true,
             },

@@ -1,0 +1,4 @@
+<!doctype html><html><body>Isolated frame<script>
+let isolated=false;try{void parent.document.body;}catch(e){isolated=e.name==='SecurityError';}
+parent.postMessage({origin:location.origin,isolated,nativeCookieAbsent:!document.cookie.includes('native_fixture'),tauriAbsent:typeof window.__TAURI_INTERNALS__==='undefined'},'https://fixture.test');
+</script></body></html>

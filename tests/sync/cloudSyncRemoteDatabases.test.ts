@@ -125,6 +125,41 @@ afterEach(() => {
 });
 
 describe("remote-only synced database discovery and pull", () => {
+  it("preserves the exact retained-session capsule through discovery/pull and forwards only the cloud password", async () => {
+    const archive = snapshot.payload.sections[
+      `database:${collection.id}`
+    ] as Record<string, unknown>;
+    archive.browserSessions = {
+      version: 1,
+      records: [{ connectionId: "host", revision: "a".repeat(64) }],
+    };
+    archive.browserSessionsTransfer = {
+      version: 1,
+      ciphertext: "SYNTHETIC_REMOTE_CAPSULE",
+    };
+    archive.browserSessionsDeletedConnectionIds = ["deleted-connection"];
+    await publish();
+    const catalog = await discoverRemoteDatabases(target(), config());
+    await pullRemoteDatabase(
+      target(),
+      config(),
+      catalog,
+      collection.id,
+      options(),
+    );
+    expect(native.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        browserSessions: archive.browserSessions,
+        browserSessionsTransfer: archive.browserSessionsTransfer,
+        browserSessionsDeletedConnectionIds: ["deleted-connection"],
+      }),
+      expect.objectContaining({
+        browserSessionsPassword: config().syncEncryptionPassword,
+      }),
+    );
+    expect(JSON.stringify(catalog)).not.toContain("SYNTHETIC_REMOTE_CAPSULE");
+  });
+
   it("refuses disabled targets and missing native transport without a remote read", async () => {
     await expect(
       discoverRemoteDatabases({ ...target(), enabled: false }, config()),
@@ -190,7 +225,11 @@ describe("remote-only synced database discovery and pull", () => {
       expect(db.id).toBe(collection.id);
       expect(native.create).toHaveBeenCalledWith(
         snapshot.payload.sections[`database:${collection.id}`],
-        { ...options(), assertCurrent: expect.any(Function) },
+        {
+          ...options(),
+          assertCurrent: expect.any(Function),
+          browserSessionsPassword: config().syncEncryptionPassword,
+        },
       );
       expect(native.invoke).toHaveBeenCalledTimes(2);
       expect(native.invoke.mock.calls[0][1]).toMatchObject({

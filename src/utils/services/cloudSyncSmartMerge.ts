@@ -56,6 +56,7 @@ const containers = new Set([
   "terminalScripts",
   "website",
   "credentialVault",
+  "browserSessions",
   "documents",
   "recycleBin",
 ]);
@@ -63,6 +64,7 @@ const recordLists = new Set([
   "connections",
   "tabGroups",
   "credentialVault/entries",
+  "browserSessions/records",
   "recycleBin/entries",
   "documents",
   "people",
@@ -168,18 +170,23 @@ function snapshot(
   return visit(value, 0);
 }
 
-function records(value: Json): Map<string, JsonObject> | undefined {
+function records(
+  value: Json,
+  path: string,
+): Map<string, JsonObject> | undefined {
   if (!Array.isArray(value)) return;
+  const identityField =
+    path === "browserSessions/records" ? "connectionId" : "id";
   const result = new Map<string, JsonObject>();
   for (const item of value) {
     if (
       !object(item) ||
-      typeof item.id !== "string" ||
-      !item.id.trim() ||
-      result.has(item.id)
+      typeof item[identityField] !== "string" ||
+      !(item[identityField] as string).trim() ||
+      result.has(item[identityField] as string)
     )
       return;
-    result.set(item.id, item);
+    result.set(item[identityField] as string, item);
   }
   return result;
 }
@@ -188,7 +195,7 @@ function kind(value: Json, path: string, atomic = false): Node["kind"] {
   if (atomic || (object(value) && typeof value.id === "string"))
     return "atomic";
   if (Array.isArray(value))
-    return recordLists.has(path) && records(value) ? "records" : "atomic";
+    return recordLists.has(path) && records(value, path) ? "records" : "atomic";
   return object(value) && containers.has(path) ? "object" : "atomic";
 }
 
@@ -250,7 +257,7 @@ export async function buildSmartSyncBaseline(
       if (node.kind === "records") node.order = [];
       const entries =
         node.kind === "records"
-          ? [...records(value)!]
+          ? [...records(value, path)!]
           : Object.entries(value as JsonObject);
       for (const [key, child] of entries) {
         const token = await hash("path", [address, node.kind, key]);
@@ -474,11 +481,11 @@ export async function smartMergeSyncSection(
       }
       const aEntries =
         node.kind === "records"
-          ? records(a)!
+          ? records(a, path)!
           : new Map(Object.entries(a as JsonObject));
       const bEntries =
         node.kind === "records"
-          ? records(b)!
+          ? records(b, path)!
           : new Map(Object.entries(b as JsonObject));
       const merged = new Map<string, Json>();
       const tokens = new Map<string, string>();

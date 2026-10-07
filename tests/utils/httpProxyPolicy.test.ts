@@ -6,6 +6,23 @@ import {
 import { DEFAULT_EXTERNAL_FONT_ORIGINS } from "../../src/types/connection/httpProxyPolicy";
 
 describe("HTTP proxy policy validation", () => {
+  it("defaults all-request trust off and accepts only explicit boolean opt-ins", () => {
+    const base = normalizeHttpProxyPolicy(undefined);
+    expect(base.allowAllRequests).toBe(false);
+    delete base.allowAllRequests;
+    expect(normalizeHttpProxyPolicy(base).allowAllRequests).toBe(false);
+    for (const allowAllRequests of [false, true]) {
+      const policy = { ...base, allowAllRequests };
+      expect(
+        normalizeHttpProxyPolicy(JSON.parse(JSON.stringify(policy))),
+      ).toEqual(policy);
+    }
+    for (const allowAllRequests of [null, 0, 1, "true", "false", {}, []]) {
+      expect(() =>
+        normalizeHttpProxyPolicy({ ...base, allowAllRequests }),
+      ).toThrow("Invalid HTTP proxy policy");
+    }
+  });
   it("defaults all-script trust off, validates explicit booleans and roundtrips the opt-in", () => {
     const base = normalizeHttpProxyPolicy(undefined);
     expect(base.allowAllScripts).toBe(false);

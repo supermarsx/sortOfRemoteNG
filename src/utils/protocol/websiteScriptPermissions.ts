@@ -9,7 +9,7 @@ export function allWebsiteScriptsAllowed(
   policy: HttpProxyPolicy | null,
 ): boolean {
   return (
-    policy?.allowAllScripts === true &&
+    (policy?.allowAllScripts === true || policy?.allowAllRequests === true) &&
     policy.pageScripts === "allow" &&
     !policy.sameOriginOnly
   );
@@ -24,6 +24,7 @@ export function allowAllWebsiteScripts(
     return {
       ...normalizeHttpProxyPolicy(policy),
       allowAllScripts: true,
+      allowAllRequests: false,
       pageScripts: "allow",
       sameOriginOnly: false,
     };
@@ -95,6 +96,7 @@ export function websiteScriptPermission(
         // An individual source grant must not reactivate a dormant all-script
         // exception from imported or previously restricted settings.
         allowAllScripts: false,
+        allowAllRequests: false,
         pageScripts: "allow",
         sameOriginOnly: false,
         externalResourceOrigins: existing

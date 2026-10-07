@@ -86,6 +86,8 @@ mod exchange_ecp;
 mod external_fonts;
 #[path = "http_external_resources.rs"]
 mod external_resources;
+#[path = "http_public_requests.rs"]
+mod public_requests;
 #[path = "http_font_assets.rs"]
 mod font_assets;
 #[path = "http_freepbx_cookies.rs"]
@@ -2360,6 +2362,12 @@ async fn axum_proxy_handler_inner(
     // exact alias-scoped upstream state; validating an alias and then retaining
     // the primary service origin would silently send Account/resource requests
     // to the wrong Google host.
+    // Keep the listener-owned state alive for native navigation receipts.
+    // The public handler independently validates any hosted document alias;
+    // it never enters the site's credential-bearing sender or cookie bridges.
+    if public_requests::is_path(req.uri().path()) {
+        return public_requests::handle(state, req).await;
+    }
     let state = if let Some(google) = state.network.google.clone() {
         match google.request_state(&state, &req) {
             Ok(scoped) => scoped,
@@ -3318,12 +3326,30 @@ async fn axum_proxy_handler_inner(
                 };
                 // Existing source/Google/challenge aliases take precedence
                 // over anonymous grants, matching the renderer mapper order.
-                let text = external_resources::rewrite(
+                let text = if state.proxy_policy.allows_all_requests() {
+                    // Broad anonymous resources use their generation-bound
+                    // route, including on hosted-session document aliases.
+                    text
+                } else {
+                    external_resources::rewrite(
+                        &text,
+                        content_type.as_deref(),
+                        &response_url,
+                        &state.proxy_origin,
+                        &state.proxy_policy,
+                    )
+                };
+                let text = public_requests::rewrite(
                     &text,
                     content_type.as_deref(),
                     &response_url,
                     &state.proxy_origin,
                     &state.proxy_policy,
+                    if document_sequence != 0 {
+                        document_sequence
+                    } else {
+                        state.network.selected_document_sequence().unwrap_or(0)
+                    },
                 );
                 // Apply the versioned adapter last: its deliberately bound
                 // upstream discovery origin must not be rewritten to loopback.
@@ -3413,6 +3439,8 @@ async fn axum_proxy_handler_inner(
                         tactical_rmm_api: state.tactical_rmm_api.as_ref(),
                         google: state.network.google.as_deref(),
                         exchange_cookies: state.network.exchange_cookies.is_some(),
+                        exchange_owa: state.network.exchange_login_destination()
+                            == Some(exchange_ecp::ExchangeDestination::Owa),
                         browser_compatibility: state.network.browser_compatibility(),
                         popup_parent_sequence: popup_parent,
                         tactical_mesh: state.network.tactical_mesh.as_ref().and_then(|mesh| {
@@ -3501,7 +3529,9 @@ async fn axum_proxy_handler_inner(
                     )
                     .into_bytes();
                 }
-                if state.proxy_policy.allows_all_scripts() {
+                if state.proxy_policy.allows_all_scripts()
+                    || state.proxy_policy.allows_all_requests()
+                {
                     final_body = script_policy::rewrite_meta(
                         &String::from_utf8_lossy(&final_body),
                         &state.proxy_policy,

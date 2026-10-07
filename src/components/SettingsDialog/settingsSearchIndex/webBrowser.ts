@@ -9,6 +9,21 @@ import type { SettingSearchEntry } from "./types";
  */
 export const WEB_BROWSER_SEARCH_ENTRIES: SettingSearchEntry[] = [
   {
+    key: "webBrowser.engine",
+    label: "Default browser engine",
+    description:
+      "Real-origin native browsing is the default for new tabs. Explicit legacy choices are preserved. Native unavailability never triggers fallback.",
+    tags: ["engine", "legacy", "native", "real-origin", "CEF"],
+    values: [
+      "legacy",
+      "Legacy rewrite browser",
+      "real-origin",
+      "Real-origin native browser (experimental)",
+    ],
+    section: "webBrowser",
+    sectionLabel: "Web Browser",
+  },
+  {
     key: "webBrowser.hideAutomationIndicator",
     label: "Hide WebDriver indicator (experimental)",
     description:

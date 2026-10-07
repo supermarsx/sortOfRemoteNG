@@ -2,6 +2,7 @@ import type { Connection } from "../../types/connection/connection";
 import { DEFAULT_HTTP_PROXY_POLICY } from "../../types/connection/httpProxyPolicy";
 import { generateId } from "../core/id";
 import { redirectHttpsTrustPolicy } from "../security/httpsCaTrust";
+import { allWebsiteRequestsAllowed } from "./websiteRequestPermissions";
 import {
   isSynologyDefaultRedirect,
   type EffectiveHttpProxyPolicy,
@@ -56,8 +57,9 @@ export function parseHttpRedirectReview(
               candidate.destinationUrl,
             ) &&
             !(
-              policy?.allowCrossOriginRedirects === true &&
-              policy.allowHttpDowngradeRedirects === true
+              (policy?.allowCrossOriginRedirects === true ||
+                allWebsiteRequestsAllowed(policy ?? null)) &&
+              policy?.allowHttpDowngradeRedirects === true
             )))) ||
       destination.origin === sourceOrigin ||
       destination.port === "0" ||
@@ -93,6 +95,7 @@ export function anonymousRedirectConnection(
     throw new Error(
       "Redirect destination requires a valid review and explicit permission for any security downgrade.",
     );
+  const policy = effectivePolicy ?? source.httpProxyPolicy;
   const now = new Date().toISOString();
   return {
     id: generateId(),
@@ -112,14 +115,15 @@ export function anonymousRedirectConnection(
     httpProxyPolicy: {
       ...DEFAULT_HTTP_PROXY_POLICY,
       queryParameters: [],
-      httpsOnly: source.httpProxyPolicy?.httpsOnly === true,
+      httpsOnly:
+        source.httpProxyPolicy?.httpsOnly === true ||
+        policy?.httpsOnly === true,
+      allowAllRequests: allWebsiteRequestsAllowed(policy ?? null),
       // Default-only handoffs do not expand to arbitrary destinations later.
-      allowCrossOriginRedirects:
-        source.httpProxyPolicy?.allowCrossOriginRedirects === true,
-      allowHttpDowngradeRedirects:
-        source.httpProxyPolicy?.allowHttpDowngradeRedirects === true,
-      pageScripts: source.httpProxyPolicy?.pageScripts ?? "allow",
-      sameOriginOnly: source.httpProxyPolicy?.sameOriginOnly ?? false,
+      allowCrossOriginRedirects: policy?.allowCrossOriginRedirects === true,
+      allowHttpDowngradeRedirects: policy?.allowHttpDowngradeRedirects === true,
+      pageScripts: policy?.pageScripts ?? "allow",
+      sameOriginOnly: policy?.sameOriginOnly ?? false,
     },
     // Route credentials, if present, remain confined to the existing transport.
     proxyChainId: source.proxyChainId,

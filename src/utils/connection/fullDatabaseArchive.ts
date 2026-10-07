@@ -3,6 +3,13 @@ import type {
   ConnectionDatabase,
 } from "../../types/connection/connection";
 import type { StorageData } from "../storage/storage";
+import type { BrowserSessionsTransfer } from "../../types/security/browserSessions";
+import {
+  normalizeBrowserSessions,
+  normalizeBrowserSessionsTransfer,
+  normalizeBrowserSessionDeletions,
+} from "../security/browserSessions";
+import { assertPublicDatabaseData } from "../storage/nativePrivateData";
 import type {
   TrustExportDocument,
   TrustExportRecord,
@@ -49,9 +56,14 @@ import {
 export const FULL_DATABASE_ARCHIVE_FORMAT = "sorng-full-database" as const;
 export const MAX_FULL_DATABASE_ARCHIVE_BYTES = 48 * 1024 * 1024;
 export interface FullDatabaseArchive extends Required<
-  Omit<StorageData, "recordMetadata">
+  Omit<StorageData, "recordMetadata" | "browserSessions">
 > {
   recordMetadata?: StorageData["recordMetadata"];
+  browserSessions?: StorageData["browserSessions"];
+  /** Transport-only native ciphertext; never part of ordinary database saves. */
+  browserSessionsTransfer?: BrowserSessionsTransfer;
+  /** Transport-only: native verifies this exact deletion set inside the capsule. */
+  browserSessionsDeletedConnectionIds?: string[];
   format: typeof FULL_DATABASE_ARCHIVE_FORMAT;
   version: 1;
   collection: Pick<
@@ -76,7 +88,8 @@ export class FullDatabaseArchiveError extends Error {
       | "file-credential"
       | "password"
       | "protection"
-      | "trust",
+      | "trust"
+      | "browser-sessions",
     public readonly diagnostics?: ArchiveDependencyDiagnostics,
   ) {
     super(
@@ -95,6 +108,8 @@ export class FullDatabaseArchiveError extends Error {
               "Full database archives require a password-encrypted source and a new managed protected database. Connection-only append cannot restore a full database.",
             trust:
               "Full database trust records could not be read or restored. The operation is not a complete database backup or restore.",
+            "browser-sessions":
+              "Retained browser sessions require native authenticated transfer with the archive or cloud password and an atomic protected restore. No session data was omitted or applied.",
           }[code],
     );
     this.name = "FullDatabaseArchiveError";
@@ -591,6 +606,9 @@ export async function normalizeFullDatabaseArchive(
             "automationLibrary",
             "documents",
             "credentialVault",
+            "browserSessions",
+            "browserSessionsTransfer",
+            "browserSessionsDeletedConnectionIds",
             "trustRecords",
             "recordMetadata",
           ].includes(key),
@@ -705,11 +723,44 @@ export async function normalizeFullDatabaseArchive(
       ),
       documents: normalizeDatabaseDocuments(raw.documents),
       credentialVault,
+      ...(raw.browserSessions === undefined
+        ? {}
+        : {
+            browserSessions: normalizeBrowserSessions(raw.browserSessions),
+          }),
+      ...(raw.browserSessionsTransfer === undefined
+        ? {}
+        : {
+            browserSessionsTransfer: normalizeBrowserSessionsTransfer(
+              raw.browserSessionsTransfer,
+            ),
+          }),
       trustRecords: normalizeTrust(raw.trustRecords),
       ...(raw.recordMetadata === undefined
         ? {}
         : { recordMetadata: normalizeRecordLedger(raw.recordMetadata) }),
     };
+    if (result.browserSessionsTransfer && !result.browserSessions)
+      return fail();
+    if (raw.browserSessionsDeletedConnectionIds !== undefined) {
+      if (!result.browserSessions || !result.browserSessionsTransfer)
+        return fail();
+      result.browserSessionsDeletedConnectionIds =
+        normalizeBrowserSessionDeletions(
+          raw.browserSessionsDeletedConnectionIds,
+          result.browserSessions,
+        );
+    }
+    if (
+      result.browserSessions?.records.some(
+        (record) =>
+          !connections.some(
+            (connection) =>
+              connection.id === record.connectionId && !connection.isGroup,
+          ),
+      )
+    )
+      return fail("dependencies");
     validateClosure(result);
     // Archive normalizers materialize default sections and strip device-only
     // credentials. Reconcile against that portable body, not the source blob.
@@ -811,6 +862,11 @@ export async function encryptFullDatabaseArchive(
     return fail("password");
   await validateNewPassword(password, "export");
   const normalized = await normalizeFullDatabaseArchive(archive);
+  if (
+    normalized.browserSessions?.records.length &&
+    !normalized.browserSessionsTransfer
+  )
+    return fail("browser-sessions");
   return encryptWithPassword(JSON.stringify(normalized), password, options);
 }
 
@@ -818,11 +874,14 @@ export async function encryptFullDatabaseArchive(
 export function fullDatabaseArchiveData(
   archive: FullDatabaseArchive,
 ): StorageData {
+  assertPublicDatabaseData(archive);
   const {
     format: _format,
     version: _version,
     collection: _collection,
     trustRecords: _trust,
+    browserSessionsTransfer: _browserSessionsTransfer,
+    browserSessionsDeletedConnectionIds: _browserSessionDeletions,
     ...data
   } = archive;
   return data;

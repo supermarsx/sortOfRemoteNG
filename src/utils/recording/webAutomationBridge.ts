@@ -34,6 +34,23 @@ export interface WebAutomationContext {
  * dropped, so nothing a page controls can reach app chrome as text.
  */
 export type WebDarkOutcome = "engine" | "cssOnly";
+/** Native script dispatch is not JavaScript completion. */
+export type WebAutomationOutcome = WebDarkOutcome | "dispatched" | undefined;
+export interface WebAutomationRecordingSink {
+  onStep: (step: WebInteractionStep) => void;
+  onStop: () => void;
+}
+/** Execution boundary only. Library storage, permissions and confirmation stay
+ * in useWebAutomation. Native transports never synthesize an iframe/message. */
+export interface WebAutomationTransport {
+  request(
+    action: WebAutomationAction,
+    payload?: unknown,
+    recording?: WebAutomationRecordingSink,
+  ): Promise<WebAutomationOutcome>;
+  cancel(disableDark?: boolean): void;
+  handleMessage?(event: MessageEvent): void;
+}
 const DARK_OUTCOMES: readonly unknown[] = ["engine", "cssOnly"];
 type Pending = {
   context: WebAutomationContext;
@@ -57,7 +74,7 @@ const token = () =>
 
 /** Parent-owned request correlation. Page replies can only acknowledge an armed
  * action or supply a strictly typed, value-free step; never native capabilities. */
-export class WebAutomationBridge {
+export class WebAutomationBridge implements WebAutomationTransport {
   private pending = new Map<string, Pending>();
   private lastContext: WebAutomationContext | null = null;
   private recording: {

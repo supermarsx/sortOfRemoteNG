@@ -10,6 +10,7 @@ import {
 } from "lucide-react";
 import type { GlobalSettings } from "../../../types/settings/settings";
 import type { WebBrowserSettingsConfig } from "../../../types/settings/webBrowser";
+import type { BrowserSessionRetentionCapabilities } from "../../../types/settings/browserSession";
 import {
   DEFAULT_EXTERNAL_FONT_ORIGINS,
   type HttpProxyPolicy,
@@ -27,10 +28,18 @@ import {
 import { BrowserNumberRow, BrowserSelectRow } from "../BrowserSettingsFields";
 import WebsiteAppearanceSection from "./WebsiteAppearanceSection";
 import ExternalResourceOriginsEditor from "../../security/ExternalResourceOriginsEditor";
+import { OriginBrowserPreferences } from "./webBrowser/OriginBrowserPreferences";
+import BrowserSessionRetentionFields from "./webBrowser/BrowserSessionRetentionFields";
+import { normalizeBrowserSessionRetention } from "../../../utils/settings/browserSessionSettings";
+import { useBrowserRetentionCapabilities } from "../../../hooks/protocol/useBrowserRetentionCapabilities";
+import BrowserNativeCapabilitiesCard from "./webBrowser/BrowserNativeCapabilitiesCard";
+import BrowserDataDirectorySettings from "./webBrowser/BrowserDataDirectorySettings";
 
 interface WebBrowserSettingsProps {
   settings: GlobalSettings;
   updateSettings: (updates: Partial<GlobalSettings>) => void;
+  /** Supplied only from verified native capabilities; omitted uses a read-only native probe. */
+  retentionCapabilities?: BrowserSessionRetentionCapabilities;
 }
 
 export default function WebBrowserSettings(props: WebBrowserSettingsProps) {
@@ -64,7 +73,11 @@ function WebBrowserSettingsContent({
   settings,
   updateSettings,
   config,
+  retentionCapabilities,
 }: WebBrowserSettingsProps & { config: WebBrowserSettingsConfig }) {
+  const nativeRetentionCapabilities = useBrowserRetentionCapabilities(
+    retentionCapabilities === undefined && config.engine !== "legacy",
+  );
   const id = useId();
   const [fontOrigin, setFontOrigin] = useState("");
   const [fontError, setFontError] = useState<string | null>(null);
@@ -83,6 +96,7 @@ function WebBrowserSettingsContent({
     });
   }, []);
   const policy = config.defaultPolicy;
+  const nativeCapabilitiesBlocked = config.engine !== "legacy";
   const fontOrigins = policy.externalFontOrigins ?? [];
   const fontsDisabled = policy.sameOriginOnly || !policy.allowExternalFonts;
   const update = (change: Partial<WebBrowserSettingsConfig>) => {
@@ -138,6 +152,35 @@ function WebBrowserSettingsContent({
           updateSettings={updateSettings}
         />
       </div>
+      <Card>
+        <OriginBrowserPreferences
+          config={config}
+          onChange={(next) => {
+            update(next);
+          }}
+        />
+      </Card>
+      <BrowserNativeCapabilitiesCard
+        defaults={config}
+        engine={config.engine}
+        onChange={(key, value) => {
+          if (value !== undefined) update({ [key]: value });
+        }}
+      />
+      <BrowserDataDirectorySettings />
+      <div className="space-y-4">
+        <SectionHeader
+          icon={<Shield size={16} />}
+          title="Browser session isolation and retention"
+        />
+        <Card>
+          <BrowserSessionRetentionFields
+            value={normalizeBrowserSessionRetention(config.sessionRetention)}
+            capabilities={retentionCapabilities ?? nativeRetentionCapabilities}
+            onChange={(sessionRetention) => update({ sessionRetention })}
+          />
+        </Card>
+      </div>
       <div className="space-y-4">
         <SectionHeader
           icon={<Bookmark size={16} />}
@@ -173,8 +216,13 @@ function WebBrowserSettingsContent({
           <BrowserSelectRow
             settingKey="webBrowser.popupPolicy"
             label="Tactical RMM popups"
-            description="Popup handling currently supports Tactical RMM only. Other websites' popup requests are not covered by this setting."
-            value={config.popupPolicy}
+            description={
+              nativeCapabilitiesBlocked
+                ? "The native browser blocks popups. The saved legacy popup preference is inactive."
+                : "Popup handling currently supports Tactical RMM only. Other websites' popup requests are not covered by this setting."
+            }
+            value={nativeCapabilitiesBlocked ? "block" : config.popupPolicy}
+            disabled={nativeCapabilitiesBlocked}
             onChange={(value) =>
               update({
                 popupPolicy: value as WebBrowserSettingsConfig["popupPolicy"],
@@ -210,22 +258,24 @@ function WebBrowserSettingsContent({
         />
         <Card>
           <p className="text-xs text-[var(--color-textSecondary)]">
-            Apply on the next reload or navigation in web tabs, including
-            supported popup tabs. Browser and operating-system restrictions
-            still apply. Unapproved destinations remain blocked.
+            {nativeCapabilitiesBlocked
+              ? "The native browser currently blocks downloads and page dialogs. Saved legacy preferences are preserved but inactive."
+              : "Apply on the next reload or navigation in legacy web tabs, including supported popup tabs. Browser and operating-system restrictions still apply. Unapproved destinations remain blocked."}
           </p>
           <Toggle
             settingKey="webBrowser.allowDownloads"
             label="Allow website downloads"
             description="Permit downloads from approved proxy pages. Downloaded files may be unencrypted and are not scanned by this app."
-            checked={config.allowDownloads}
+            checked={!nativeCapabilitiesBlocked && config.allowDownloads}
+            disabled={nativeCapabilitiesBlocked}
             onChange={(allowDownloads) => update({ allowDownloads })}
           />
           <Toggle
             settingKey="webBrowser.allowPageDialogs"
             label="Allow website dialogs"
             description="Permit alert, confirm and prompt dialogs where supported by the embedded runtime. Does not allow websites to open external windows."
-            checked={config.allowPageDialogs}
+            checked={!nativeCapabilitiesBlocked && config.allowPageDialogs}
+            disabled={nativeCapabilitiesBlocked}
             onChange={(allowPageDialogs) => update({ allowPageDialogs })}
           />
         </Card>
@@ -239,7 +289,11 @@ function WebBrowserSettingsContent({
           <BrowserNumberRow
             settingKey="webBrowser.initialLoadTimeoutSeconds"
             label="Initial load timeout"
-            description="Wait for the first page response (10–120 seconds; default 30)"
+            description={
+              nativeCapabilitiesBlocked
+                ? "Maximum time to prepare the native browser context (10–120 seconds; default 30)."
+                : "Wait for the first page response (10–120 seconds; default 30)"
+            }
             value={config.initialLoadTimeoutSeconds}
             min={10}
             max={120}
@@ -250,7 +304,11 @@ function WebBrowserSettingsContent({
           <BrowserNumberRow
             settingKey="webBrowser.documentReadyTimeoutSeconds"
             label="Document ready timeout"
-            description="Wait for the page document to become ready (30–240 seconds; default 120)"
+            description={
+              nativeCapabilitiesBlocked
+                ? "Maximum page loading time before the native browser stops loading and shows a timeout notice (30–240 seconds; default 120)."
+                : "Wait for the page document to become ready (30–240 seconds; default 120)"
+            }
             value={config.documentReadyTimeoutSeconds}
             min={30}
             max={240}
@@ -491,14 +549,15 @@ function WebBrowserSettingsContent({
           />
           <Toggle
             settingKey="webBrowser.hideAutomationIndicator"
-            label="Hide WebDriver indicator (experimental)"
-            description="Where supported, report navigator.webdriver as false in proxied website pages before site scripts run. Off by default; does not change the app's own diagnostics, workers, iframe identity or TLS fingerprint. Close and reopen tabs to apply."
+            label="Hide WebDriver indicator (legacy only)"
+            description="On by default for the legacy rewrite browser; not undetectable browsing. Native sessions already keep app automation in a private closure and do not enable the WebDriver flag. This preference does not change native security. Close and reopen legacy tabs to apply."
             checked={config.hideAutomationIndicator}
+            disabled={config.engine !== "legacy"}
             onChange={(hideAutomationIndicator) =>
               update({ hideAutomationIndicator })
             }
           />
-          {config.hideAutomationIndicator && (
+          {config.engine === "legacy" && config.hideAutomationIndicator && (
             <p role="status" className="text-xs text-warning">
               This is a detectable JavaScript override, not an undetectable
               browser mode. Some runtimes cannot apply it, and some sites may

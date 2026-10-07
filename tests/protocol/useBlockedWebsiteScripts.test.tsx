@@ -11,6 +11,7 @@ import {
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { useBlockedWebsiteScripts } from "../../src/hooks/protocol/useBlockedWebsiteScripts";
 import BlockedScriptsDialog from "../../src/components/protocol/webBrowser/BlockedScriptsDialog";
+import BlockedRequestsDialog from "../../src/components/protocol/webBrowser/BlockedRequestsDialog";
 import type {
   Connection,
   ConnectionSession,
@@ -144,6 +145,297 @@ beforeEach(() => {
   } as unknown as ConnectionContextType;
 });
 afterEach(cleanup);
+
+describe("reviewed all-request permissions", () => {
+  const requestOptions = (): Options => ({
+    ...options(),
+    reports: [
+      {
+        kind: "fetch",
+        reason: "origin-not-approved",
+        origin: "https://api.example.test",
+      },
+      {
+        kind: "navigation",
+        reason: "origin-not-approved",
+        origin: "https://login.example.test",
+      },
+    ],
+  });
+
+  it("reviews fetch and navigation reports without auto-grant and verifies an explicit owning-connection save", async () => {
+    mocks.rows = [{ ...mocks.rows[0], password: "SYNTHETIC_UNCHANGED" }];
+    const props = requestOptions();
+    const getConnections = vi.fn(mocks.context.getCurrentConnections!);
+    mocks.context.getCurrentConnections = getConnections;
+    const { result, rerender } = renderHook(useBlockedWebsiteScripts, {
+      initialProps: props,
+    });
+    expect(result.current.hasBlockedRequests).toBe(true);
+    expect(result.current.hasBlockedScripts).toBe(false);
+    expect(result.current.review).toBeNull();
+    expect(mocks.save).not.toHaveBeenCalled();
+    expect(mocks.toast.warning).not.toHaveBeenCalled();
+    act(() => result.current.openRequestReview());
+    expect(result.current.review).toMatchObject({
+      mode: "requests",
+      reports: props.reports,
+    });
+    await act(() => result.current.allowAllRequests());
+    expect(mocks.save).not.toHaveBeenCalled();
+    mocks.rows = [
+      {
+        ...mocks.rows[0],
+        description: "Concurrent note",
+      },
+    ];
+    const before = structuredClone(mocks.rows[0]);
+    act(() => result.current.setAcceptAllRequests(true));
+    await act(() => result.current.allowAllRequests());
+    expect(getConnections).toHaveBeenCalledWith({
+      databaseId: "db-a",
+      generation: 1,
+    });
+    expect(mocks.save).toHaveBeenCalledExactlyOnceWith({
+      type: "UPDATE_CONNECTION",
+      payload: {
+        ...before,
+        httpProxyPolicy: { ...props.policy, allowAllRequests: true },
+      },
+    });
+    expect(mocks.read).toHaveBeenCalledTimes(1);
+    expect(mocks.toast.info).toHaveBeenCalledTimes(1);
+    expect(result.current.review).toBeNull();
+    expect(props.onReload).not.toHaveBeenCalled();
+    rerender({
+      ...props,
+      connection: mocks.rows[0],
+      policy: mocks.rows[0].httpProxyPolicy!,
+    });
+    act(action("reload"));
+    expect(props.onReload).toHaveBeenCalledOnce();
+  });
+
+  it("never reuses script consent or a script-mode review as all-request consent", async () => {
+    const { result } = renderHook(useBlockedWebsiteScripts, {
+      initialProps: options(),
+    });
+    act(() => result.current.openReview());
+    act(() => {
+      result.current.setAcceptAllScripts(true);
+      result.current.setAcceptAllRequests(true);
+    });
+    expect(result.current.review?.mode).toBe("scripts");
+    await act(() => result.current.allowAllRequests());
+    expect(mocks.save).not.toHaveBeenCalled();
+    act(() => result.current.openRequestReview());
+    expect(result.current.acceptAllRequests).toBe(false);
+    expect(result.current.acceptAllScripts).toBe(false);
+    await act(() => result.current.allowAllRequests());
+    expect(mocks.save).not.toHaveBeenCalled();
+  });
+
+  it.each(["owner", "generation", "lock", "shared", "document", "settings"])(
+    "refuses a %s change or restricted session before writing request permission",
+    async (change) => {
+      let scope = "page-1";
+      const props = {
+        ...requestOptions(),
+        sharedSession: change === "shared",
+        getDocumentScope: () => scope,
+      };
+      const { result } = renderHook(useBlockedWebsiteScripts, {
+        initialProps: props,
+      });
+      act(() => result.current.openRequestReview());
+      act(() => result.current.setAcceptAllRequests(true));
+      if (change === "owner") mocks.owner = "db-b";
+      if (change === "generation") mocks.generation++;
+      if (change === "lock") mocks.locked = true;
+      if (change === "document") scope = "page-2";
+      if (change === "settings")
+        mocks.rows = [
+          {
+            ...mocks.rows[0],
+            httpProxyPolicy: { ...props.policy!, httpsOnly: true },
+          },
+        ];
+      await act(() => result.current.allowAllRequests());
+      expect(mocks.save).not.toHaveBeenCalled();
+      expect(mocks.read).not.toHaveBeenCalled();
+      expect(mocks.toast.info).not.toHaveBeenCalled();
+      expect(result.current.error).toBeTruthy();
+      expect(result.current.error).not.toContain("private");
+      expect(props.onReload).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each(["reject", "ignored", "verification"])(
+    "does not announce permission or reload after a %s persistence failure",
+    async (failure) => {
+      const props = requestOptions();
+      if (failure === "reject")
+        mocks.save.mockRejectedValue(new Error("private save details"));
+      if (failure === "ignored") mocks.save.mockResolvedValue(undefined);
+      if (failure === "verification")
+        mocks.read.mockRejectedValue(new Error("private read details"));
+      const { result } = renderHook(useBlockedWebsiteScripts, {
+        initialProps: props,
+      });
+      act(() => result.current.openRequestReview());
+      act(() => result.current.setAcceptAllRequests(true));
+      await act(() => result.current.allowAllRequests());
+      expect(mocks.save).toHaveBeenCalledTimes(1);
+      expect(mocks.toast.info).not.toHaveBeenCalled();
+      expect(result.current.error).toContain("could not be confirmed");
+      expect(result.current.error).not.toContain("private");
+      expect(props.onReload).not.toHaveBeenCalled();
+    },
+  );
+
+  it("does not write twice while pending or announce success after ownership changes during save", async () => {
+    let finish!: () => void;
+    mocks.save.mockImplementation(
+      () =>
+        new Promise<void>((resolve) => {
+          finish = resolve;
+        }),
+    );
+    const props = requestOptions();
+    const { result } = renderHook(useBlockedWebsiteScripts, {
+      initialProps: props,
+    });
+    act(() => result.current.openRequestReview());
+    act(() => result.current.setAcceptAllRequests(true));
+    let pending!: Promise<void>;
+    act(() => {
+      pending = result.current.allowAllRequests();
+    });
+    await act(() => result.current.allowAllRequests());
+    expect(mocks.save).toHaveBeenCalledTimes(1);
+    mocks.owner = "db-b";
+    await act(async () => {
+      finish();
+      await pending;
+    });
+    expect(mocks.read).not.toHaveBeenCalled();
+    expect(mocks.toast.info).not.toHaveBeenCalled();
+    expect(result.current.error).toContain("could not be confirmed");
+    expect(props.onReload).not.toHaveBeenCalled();
+  });
+
+  it.each(["cancel", "unmount"])(
+    "rejects retained request-grant callbacks after %s",
+    async (change) => {
+      const { result, unmount } = renderHook(useBlockedWebsiteScripts, {
+        initialProps: requestOptions(),
+      });
+      act(() => result.current.openRequestReview());
+      act(() => result.current.setAcceptAllRequests(true));
+      const allow = result.current.allowAllRequests;
+      if (change === "cancel") act(() => result.current.closeReview());
+      else unmount();
+      await act(() => allow());
+      expect(mocks.save).not.toHaveBeenCalled();
+    },
+  );
+
+  it("requires both request trust and policy-change consent in the themed request dialog", async () => {
+    const props = {
+      ...requestOptions(),
+      policy: {
+        ...normalizeHttpProxyPolicy(undefined),
+        pageScripts: "inline-only" as const,
+        sameOriginOnly: true,
+        httpsOnly: true,
+      },
+    };
+    function Fixture() {
+      const permissions = useBlockedWebsiteScripts(props);
+      return (
+        <>
+          <button onClick={permissions.openRequestReview}>
+            Review requests
+          </button>
+          <BlockedRequestsDialog permissions={permissions} />
+          <BlockedScriptsDialog scripts={permissions} />
+        </>
+      );
+    }
+    render(<Fixture />);
+    fireEvent.click(screen.getByRole("button", { name: "Review requests" }));
+    expect(
+      screen.getByRole("dialog", { name: "Website request permissions" }),
+    ).toBeVisible();
+    expect(
+      screen.queryByRole("dialog", { name: "Blocked website scripts" }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.getByRole("list", { name: "Blocked website requests" }).children,
+    ).toHaveLength(2);
+    expect(
+      screen.getByText(/Requests stay on the internal proxy/),
+    ).toBeVisible();
+    expect(screen.getByText(/blocked requests are not replayed/)).toBeVisible();
+    const allow = screen.getByRole("button", {
+      name: "Allow all website requests",
+    });
+    expect(allow).toHaveClass("sor-btn", "sor-btn-primary");
+    expect(allow).toBeDisabled();
+    fireEvent.click(
+      screen.getByRole("checkbox", {
+        name: "I trust all current and future request destinations for this connection",
+      }),
+    );
+    expect(allow).toBeDisabled();
+    expect(mocks.save).not.toHaveBeenCalled();
+    fireEvent.click(
+      screen.getByRole("checkbox", {
+        name: "I approve enabling website scripts and disabling same-origin-only restrictions",
+      }),
+    );
+    expect(allow).toBeEnabled();
+    fireEvent.click(allow);
+    await waitFor(() => expect(mocks.toast.info).toHaveBeenCalled());
+    expect(mocks.rows[0].httpProxyPolicy).toEqual({
+      ...props.policy,
+      allowAllRequests: true,
+      pageScripts: "allow",
+      sameOriginOnly: false,
+    });
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(props.onReload).not.toHaveBeenCalled();
+  });
+
+  it("does not offer another grant when all-request trust is already active", () => {
+    const props = {
+      ...requestOptions(),
+      policy: {
+        ...normalizeHttpProxyPolicy(undefined),
+        allowAllRequests: true,
+      },
+    };
+    function Fixture() {
+      const permissions = useBlockedWebsiteScripts(props);
+      return (
+        <>
+          <button onClick={permissions.openRequestReview}>
+            Review requests
+          </button>
+          <BlockedRequestsDialog permissions={permissions} />
+        </>
+      );
+    }
+    render(<Fixture />);
+    fireEvent.click(screen.getByRole("button", { name: "Review requests" }));
+    expect(screen.getByRole("status")).toHaveTextContent("already enabled");
+    expect(
+      screen.queryByRole("button", { name: "Allow all website requests" }),
+    ).not.toBeInTheDocument();
+    expect(mocks.save).not.toHaveBeenCalled();
+    expect(props.onReload).not.toHaveBeenCalled();
+  });
+});
 
 describe("blocked script notifications and reviewed grants", () => {
   it("does not repeat the toast when switching away from and back to the owning database", () => {

@@ -13,6 +13,7 @@ import {
   allListedWebsiteScriptPermissions,
   allowAllWebsiteScripts,
 } from "../../utils/protocol/websiteScriptPermissions";
+import { allowAllWebsiteRequests } from "../../utils/protocol/websiteRequestPermissions";
 import { httpRedirectTrustIdentity } from "../../utils/protocol/httpRedirectTrustIdentity";
 import { stableJsonStringify } from "../../utils/core/stableJsonStringify";
 import { DatabaseManager } from "../../utils/connection/databaseManager";
@@ -28,6 +29,7 @@ interface Options {
   onReload: () => void;
 }
 type Review = {
+  mode: "scripts" | "requests";
   documentScope: string;
   ownerScope: string;
   policy: HttpProxyPolicy | null;
@@ -35,11 +37,11 @@ type Review = {
   expected: Connection | undefined;
 };
 const UNAVAILABLE =
-  "Open and unlock this tab's owning database, then review the blocked scripts again. No other database will be changed.";
+  "Open and unlock this tab's owning database, then review the website permissions again. No other database will be changed.";
 const STALE =
-  "The website or its saved settings changed. Review the current blocked scripts again.";
+  "The website or its saved settings changed. Review the current website permissions again.";
 const SAVE_FAILED =
-  "The script permission could not be confirmed as saved. Check the database's save status and review its Internal proxy controls before retrying.";
+  "The website permission could not be confirmed as saved. Check the database's save status and review its Internal proxy controls before retrying.";
 
 export function useBlockedWebsiteScripts(options: Options) {
   const context = useConnections();
@@ -76,6 +78,7 @@ export function useBlockedWebsiteScripts(options: Options) {
   const [error, setError] = useState<string | null>(null);
   const [acceptPolicyChange, setAcceptPolicyChange] = useState(false);
   const [acceptAllScripts, setAcceptAllScripts] = useState(false);
+  const [acceptAllRequests, setAcceptAllRequests] = useState(false);
 
   useEffect(() => {
     mounted.current = true;
@@ -89,7 +92,7 @@ export function useBlockedWebsiteScripts(options: Options) {
     };
   }, []);
 
-  const openReview = useCallback(() => {
+  const openReview = useCallback((mode: Review["mode"] = "scripts") => {
     const { options: current, ownerScope: owner } = latest.current;
     if (
       !mounted.current ||
@@ -98,13 +101,15 @@ export function useBlockedWebsiteScripts(options: Options) {
     )
       return;
     const reports = current.reports.filter(
-      (report) => report.kind === "script",
+      (report) => mode === "requests" || report.kind === "script",
     );
     if (!reports.length) return;
     setError(null);
     setAcceptPolicyChange(false);
     setAcceptAllScripts(false);
+    setAcceptAllRequests(false);
     const next = {
+      mode,
       documentScope: current.documentScope,
       ownerScope: owner,
       policy: current.policy,
@@ -167,7 +172,7 @@ export function useBlockedWebsiteScripts(options: Options) {
 
   const allowReports = async (
     reports: readonly WebNetworkReport[],
-    allScripts = false,
+    grant: "sources" | "scripts" | "requests" = "sources",
   ) => {
     const captured = currentReview;
     if (!captured || captured !== reviewRef.current || busyRef.current) return;
@@ -176,12 +181,21 @@ export function useBlockedWebsiteScripts(options: Options) {
       reports.some((report) => !captured.reports.includes(report))
     )
       return;
-    if (allScripts && !acceptAllScripts) return;
-    const proposed = allScripts
-      ? allowAllWebsiteScripts(captured.policy)
-      : reports.length === 1
-        ? websiteScriptPermission(reports[0], captured.policy).policy
-        : allListedWebsiteScriptPermissions(reports, captured.policy).policy;
+    if (grant === "scripts" && !acceptAllScripts) return;
+    if (
+      grant === "requests" &&
+      (captured.mode !== "requests" || !acceptAllRequests)
+    )
+      return;
+    const proposed =
+      grant === "requests"
+        ? allowAllWebsiteRequests(captured.policy)
+        : grant === "scripts"
+          ? allowAllWebsiteScripts(captured.policy)
+          : reports.length === 1
+            ? websiteScriptPermission(reports[0], captured.policy).policy
+            : allListedWebsiteScriptPermissions(reports, captured.policy)
+                .policy;
     if (!proposed) return;
     if (policyChangeRequired && !acceptPolicyChange) return;
     busyRef.current = true;
@@ -258,7 +272,7 @@ export function useBlockedWebsiteScripts(options: Options) {
       reviewRef.current = null;
       if (reloadToast.current) current.toast.remove(reloadToast.current);
       const id = current.toast.info(
-        "Script permission saved for this connection. Reload the website to apply it; you may need to sign in again.",
+        `${grant === "requests" ? "Website request" : "Script"} permission saved for this connection. Reload the website to apply it; you may need to sign in again.`,
         15000,
       );
       reloadToast.current = id;
@@ -306,9 +320,12 @@ export function useBlockedWebsiteScripts(options: Options) {
 
   return {
     hasBlockedScripts,
+    hasBlockedRequests: options.reports.length > 0,
     openReview,
+    openRequestReview: () => openReview("requests"),
     review: currentReview
       ? {
+          mode: currentReview.mode,
           documentScope: currentReview.documentScope,
           connectionName: currentReview.expected?.name,
           reports: currentReview.reports,
@@ -322,9 +339,14 @@ export function useBlockedWebsiteScripts(options: Options) {
     setAcceptPolicyChange,
     acceptAllScripts,
     setAcceptAllScripts,
+    acceptAllRequests,
+    setAcceptAllRequests,
     allowSource: (report: WebNetworkReport) => allowReports([report]),
     allowAllListed: () => allowReports(currentReview?.reports ?? []),
-    allowAllScripts: () => allowReports(currentReview?.reports ?? [], true),
+    allowAllScripts: () =>
+      allowReports(currentReview?.reports ?? [], "scripts"),
+    allowAllRequests: () =>
+      allowReports(currentReview?.reports ?? [], "requests"),
     closeReview: () => {
       if (!busyRef.current) {
         reviewRef.current = null;

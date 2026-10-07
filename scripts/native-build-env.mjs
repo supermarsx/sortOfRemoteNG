@@ -101,13 +101,19 @@ if (executableName === "tauri") {
     process.exit(1);
   }
   executable = process.execPath;
-  executableArguments = [tauriCli, ...executableArguments];
+  // The managed wrapper adds CEF's platform bootstrap and full runtime closure.
+  // Bypassing it with the raw CLI would produce an ordinary Windows EXE that
+  // cannot supply the browser sandbox entry parameters.
+  const managedTauri = fileURLToPath(new URL("./tauri.mjs", import.meta.url));
+  if (useDynamicNativeRuntime) env.SORNG_CEF_NATIVE_PREPARED = "1";
+  executableArguments = [managedTauri, ...executableArguments];
 }
 
 const child = spawn(executable, executableArguments, {
   stdio: "inherit",
   shell: false,
   env,
+  windowsHide: true,
 });
 
 child.on("exit", (code, signal) => {

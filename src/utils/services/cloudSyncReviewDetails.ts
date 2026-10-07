@@ -10,6 +10,7 @@ import {
 export const reviewRecordLabels = {
   connections: "Connections and folders",
   credentials: "Saved credentials",
+  browserSessions: "Retained browser sessions",
   documents: "Documents",
   attachments: "Document attachments",
   people: "Document people",
@@ -182,6 +183,7 @@ const databaseSpecs: Spec[] = [
   { path: "databaseSettings", kind: "databasePreferences", properties: true },
   { path: "connections", kind: "connections" },
   { path: "credentialVault/entries", kind: "credentials" },
+  { path: "browserSessions/records", kind: "browserSessions" },
   { path: "tabGroups", kind: "tabGroups" },
   { path: "recycleBin/entries", kind: "recycleBin" },
   ...documentSpecs.map((spec) => ({ ...spec, path: `documents/${spec.path}` })),
@@ -236,6 +238,7 @@ export function reviewRecordKind(
           ...terminalSpecs,
           ...documentSpecs,
           { path: "connections", kind: "connections" } as const,
+          { path: "browserSessions/records", kind: "browserSessions" } as const,
           { path: "scripts", kind: "websiteScripts" } as const,
           {
             path: "macros",
@@ -315,7 +318,10 @@ export function summarizeCloudSyncReview(
     remaining -= entries.length;
     const result = new Map<string, unknown>();
     for (const entry of entries) {
-      const key = field(entry, "id");
+      const key = field(
+        entry,
+        spec.path === "browserSessions/records" ? "connectionId" : "id",
+      );
       if (typeof key !== "string" || !key || result.has(key)) return;
       result.set(key, entry);
     }

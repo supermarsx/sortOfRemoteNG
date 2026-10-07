@@ -1,8 +1,6 @@
 //! Native managed inner-database control plane. The renderer receives plaintext
 //! only for an unlocked database, never DEKs, KEKs, or vault secret material.
-use crate::database_files::{
-    lock_database_operation, managed_commit, managed_snapshot, ManagedSnapshot,
-};
+use crate::database_files::{lock_database_operation, managed_snapshot, ManagedSnapshot};
 // Shared artifact adapters also compile in app_lib, which intentionally has no
 // database_files module. Expose the same guard through the existing public
 // protection facade; do not duplicate or weaken its plaintext-vault checks.
@@ -30,6 +28,10 @@ use std::{
 };
 use tauri::{Emitter, Manager, Runtime, State, WebviewWindow};
 
+#[path = "database_browser_sessions.rs"]
+pub mod browser_sessions;
+pub use browser_sessions::{database_browser_sessions_export, database_browser_sessions_import};
+
 const VAULT_SERVICE: &str = "sortofremoteng.internal.database-protection.v1";
 
 /// Generic runtime form of the same production commands, enabling real IPC
@@ -44,6 +46,9 @@ pub fn build<R: Runtime>() -> impl Fn(tauri::ipc::Invoke<R>) -> bool + Send + Sy
         database_protection_save,
         database_protection_load,
         database_protection_change,
+        browser_sessions::database_browser_sessions_export,
+        browser_sessions::database_browser_sessions_import,
+        browser_sessions::database_browser_sessions_describe,
         trust_migrate_legacy_database,
         trust_reassign_reviewed_scope,
         trust_reads::trust_get_effective_identity,
@@ -134,6 +139,8 @@ pub struct SaveResult {
     cleanup_pending: bool,
     warnings: Vec<String>,
     security_revision: String,
+    #[serde(skip)]
+    browser_sessions_changed: bool,
 }
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -240,6 +247,1009 @@ fn session_key(id: &str, scope: &SessionScope<'_>) -> Result<DatabaseKey, String
         .key(id, scope)
 }
 
+/// Native-only read/lease boundary. Neither plaintext databases nor unlock
+/// tokens implement Debug or Serialize here. No command exposes this helper.
+pub mod native_browser_owner {
+    use super::*;
+    use std::sync::{
+        atomic::{AtomicBool, Ordering},
+        Arc,
+    };
+
+    const UNAVAILABLE: &str = "Browser database owner is unavailable or changed";
+
+    #[derive(Clone)]
+    pub struct NativeOwnerLease(Arc<LeaseInner>);
+
+    /// Native-only delivery result. Dormant records release no cookie bytes and
+    /// must not be replaced by an empty checkpoint from a fresh browser jar.
+    pub struct NativeCookieLoad {
+        pub record: Option<browser_sessions::NativeCookieRecord>,
+        pub dormant: bool,
+        pub changed: bool,
+    }
+
+    struct LeaseInner {
+        state: EncryptionState,
+        root: PathBuf,
+        configured_root: Option<PathBuf>,
+        profile: String,
+        database: String,
+        revision: String,
+        window: String,
+        token: Zeroizing<String>,
+        generation: u64,
+        connection_id: String,
+        connection_digest: [u8; 32],
+        dependencies: std::sync::Mutex<std::collections::BTreeMap<(bool, String), [u8; 32]>>,
+        revoked: AtomicBool,
+        cookie_gate: std::sync::Mutex<()>,
+    }
+
+    /// Native-only cookie artifact binding. Never an IPC argument or result.
+    /// No unlock token or key is present; unlock_epoch is a one-way token digest.
+    pub struct NativeCookieOwnerBinding {
+        pub profile: String,
+        pub database: String,
+        pub revision: String,
+        pub window: String,
+        pub connection: String,
+        pub connection_digest: [u8; 32],
+        pub unlock_epoch: [u8; 32],
+    }
+
+    impl NativeOwnerLease {
+        /// Worker-only native DB access. Renderer input cannot choose the
+        /// database, connection, dependencies, key, or profile for this lease.
+        async fn cookie_database<T>(
+            &self,
+            current: impl Fn() -> bool,
+            operation: impl FnOnce(&mut Value, &Value) -> Result<(T, bool), String>,
+        ) -> Result<T, String> {
+            let inner = &self.0;
+            let _guard = lock_database_operation(&inner.root.join("databases")).await?;
+            if !self.is_current() || !current() {
+                return Err(UNAVAILABLE.into());
+            }
+            let snapshot = managed_snapshot(&inner.root, &inner.state, &inner.database).await?;
+            if !is_managed(&snapshot) || revision(&snapshot) != inner.revision {
+                return Err(UNAVAILABLE.into());
+            }
+            let key = self.with_cookie_retention_key(|key| Ok(key.duplicate()))?;
+            let mut envelope = DatabaseEnvelope::parse(&snapshot.data, &inner.database)?;
+            let mut data = browser_sessions::SecretData(envelope.open(&key)?);
+            if connection_digest(select_connection(&data.0, &inner.connection_id)?)?
+                != inner.connection_digest
+            {
+                return Err(UNAVAILABLE.into());
+            }
+            self.validate_dependencies(&data.0)?;
+            let settings =
+                crate::app_settings_commands::read_app_settings_inner(&inner.root, &inner.state)
+                    .await?
+                    .unwrap_or(Value::Null);
+            let (result, changed) = operation(&mut data.0, &settings)?;
+            if changed {
+                envelope.replace_data(&data.0, &key)?;
+                crate::database_files::managed_commit_guarded(
+                    &inner.root,
+                    &inner.state,
+                    &inner.database,
+                    &inner.revision,
+                    &snapshot.data,
+                    &envelope.value()?,
+                    &inner.revision,
+                    |commit| {
+                        self.with_cookie_retention_key(|_| {
+                            if !current() {
+                                return Err(UNAVAILABLE.into());
+                            }
+                            commit()
+                        })
+                    },
+                )
+                .await?;
+            }
+            self.with_cookie_retention_key(|_| {
+                if current() {
+                    Ok(result)
+                } else {
+                    Err(UNAVAILABLE.into())
+                }
+            })
+        }
+
+        pub async fn load_cookie_record(
+            &self,
+            current: impl Fn() -> bool,
+        ) -> Result<NativeCookieLoad, String> {
+            let id = self.0.connection_id.clone();
+            self.cookie_database(current, |data, settings| {
+                let cookie_disabled =
+                    !crate::origin_browser_authority::NativeBrowserPreferences::from_saved(
+                        select_connection(data, &id)?,
+                        settings,
+                    )
+                    .map_err(|_| UNAVAILABLE)?
+                    .capabilities
+                    .cookies_enabled;
+                let mut records = browser_sessions::private(data)?;
+                let mut record = records
+                    .records
+                    .iter()
+                    .position(|r| r.connection_id == id)
+                    .map(|i| records.records.remove(i));
+                if record.as_ref().is_some_and(|r| {
+                    !browser_sessions::record_matches(data, r).unwrap_or(false)
+                        || r.expired(browser_sessions::stamp())
+                }) {
+                    browser_sessions::put_private(data, records)?;
+                    return Ok((
+                        NativeCookieLoad {
+                            record: None,
+                            dormant: cookie_disabled,
+                            changed: true,
+                        },
+                        true,
+                    ));
+                }
+                // Archive/sync preservation is independent of this device's
+                // settings. Only native admission may release these cookies;
+                // a local opt-out/grant mismatch leaves ciphertext dormant.
+                if cookie_disabled {
+                    return Ok((
+                        NativeCookieLoad {
+                            record: None,
+                            dormant: true,
+                            changed: false,
+                        },
+                        false,
+                    ));
+                }
+                if let Some(record) = record.as_mut() {
+                    let now = sorng_browser_host::cef_session_retention::cef_time(
+                        browser_sessions::stamp(),
+                    )
+                    .map_err(|_| UNAVAILABLE)?;
+                    record
+                        .cookies
+                        .retain(|cookie| cookie.expires.is_none_or(|expires| expires > now));
+                    if browser_sessions::validate_destination_scope(data, settings, record).is_err()
+                    {
+                        return Ok((
+                            NativeCookieLoad {
+                                record: None,
+                                dormant: true,
+                                changed: false,
+                            },
+                            false,
+                        ));
+                    }
+                }
+                Ok((
+                    NativeCookieLoad {
+                        record,
+                        dormant: false,
+                        changed: false,
+                    },
+                    false,
+                ))
+            })
+            .await
+        }
+
+        pub async fn save_cookie_record(
+            &self,
+            expected: Option<String>,
+            mut cookies: Vec<sorng_browser_host::cef_session_retention::SignInCookie>,
+            source_origin: String,
+            mut origins: Vec<String>,
+            policy: sorng_browser_host::cef_session_retention::RetentionPolicy,
+            current: impl Fn() -> bool,
+        ) -> Result<Option<browser_sessions::NativeCookieRecord>, String> {
+            use sorng_browser_host::cef_session_retention::validate_cookies;
+            let inner = &self.0;
+            origins.sort();
+            origins.dedup();
+            cookies.sort_by(|a, b| {
+                (&a.origin, &a.domain, &a.path, &a.name)
+                    .cmp(&(&b.origin, &b.domain, &b.path, &b.name))
+            });
+            let now = browser_sessions::stamp();
+            validate_cookies(&cookies, &origins, now).map_err(|_| UNAVAILABLE)?;
+            self.cookie_database(current, |data, settings| {
+                let preferences =
+                    crate::origin_browser_authority::NativeBrowserPreferences::from_saved(
+                        select_connection(data, &inner.connection_id)?,
+                        settings,
+                    )
+                    .map_err(|_| UNAVAILABLE)?;
+                let effective: sorng_browser_host::cef_session_retention::RetentionPolicy =
+                    serde_json::from_value(preferences.retention).map_err(|_| UNAVAILABLE)?;
+                if policy != effective || !preferences.capabilities.cookies_enabled {
+                    return Err(UNAVAILABLE.into());
+                }
+                let (saved_source, saved_origins) =
+                    crate::origin_browser_authority::saved_retention_scope(
+                        select_connection(data, &inner.connection_id)?,
+                        settings,
+                    )
+                    .map_err(|_| UNAVAILABLE)?;
+                if source_origin != saved_source || origins != saved_origins {
+                    return Err(UNAVAILABLE.into());
+                }
+                let mut records = browser_sessions::private(data)?;
+                let index = records
+                    .records
+                    .iter()
+                    .position(|r| r.connection_id == inner.connection_id);
+                if index.map(|i| records.records[i].revision.as_str()) != expected.as_deref() {
+                    return Err(UNAVAILABLE.into());
+                }
+                if let Some(i) = index {
+                    let old = &records.records[i];
+                    // CEF may reset creation time when importing into a fresh
+                    // jar. It is not a semantic sign-in change.
+                    for cookie in &mut cookies {
+                        if let Some(previous) = old.cookies.iter().find(|p| {
+                            p.origin == cookie.origin
+                                && p.domain == cookie.domain
+                                && p.path == cookie.path
+                                && p.name == cookie.name
+                        }) {
+                            cookie.creation = previous.creation;
+                        }
+                    }
+                    if old.source_origin == source_origin
+                        && old.policy == policy
+                        && old.same_cookies(&cookies)?
+                    {
+                        let activity_interval =
+                            (u64::from(policy.idle_timeout_minutes) * 30).clamp(30, 300);
+                        if now.saturating_sub(old.last_used) < activity_interval
+                            && old.origins == origins
+                        {
+                            return Ok((Some(records.records.remove(i)), false));
+                        }
+                        records.records[i].origins = origins;
+                        records.records[i].last_used = now;
+                        let bytes = Zeroizing::new(
+                            serde_json::to_vec(&records.records[i]).map_err(|_| UNAVAILABLE)?,
+                        );
+                        browser_sessions::put_private(data, records)?;
+                        return Ok((
+                            Some(serde_json::from_slice(&bytes).map_err(|_| UNAVAILABLE)?),
+                            true,
+                        ));
+                    }
+                }
+                let previous = index.map(|i| records.records.remove(i));
+                if cookies.is_empty() {
+                    if previous.is_some() {
+                        browser_sessions::put_private(data, records)?;
+                    }
+                    return Ok((None, previous.is_some()));
+                }
+                // Drop the mutex guard before computing portable dependencies;
+                // temporaries inside a struct literal otherwise live to its end.
+                let dependencies: Vec<_> = inner
+                    .dependencies
+                    .lock()
+                    .map_err(|_| UNAVAILABLE)?
+                    .iter()
+                    .map(|((v, id), digest)| (*v, id.clone(), *digest))
+                    .collect();
+                let portable_dependencies = dependencies
+                    .iter()
+                    .map(|(v, id, _)| {
+                        Ok((
+                            *v,
+                            id.clone(),
+                            browser_sessions::portable_digest(
+                                select_dependency(data, *v, id)?,
+                                *v,
+                                &inner.database,
+                            )?,
+                        ))
+                    })
+                    .collect::<Result<Vec<_>, String>>()?;
+                let mut record = browser_sessions::NativeCookieRecord {
+                    connection_id: inner.connection_id.clone(),
+                    revision: String::new(),
+                    salt: previous
+                        .as_ref()
+                        .map(|r| r.salt.clone())
+                        .unwrap_or_else(codec::random_id),
+                    connection_digest: browser_sessions::retention_connection_digest(
+                        select_connection(data, &inner.connection_id)?,
+                    )?,
+                    dependencies,
+                    portable_connection_digest: browser_sessions::portable_digest(
+                        select_connection(data, &inner.connection_id)?,
+                        false,
+                        &inner.database,
+                    )?,
+                    portable_dependencies,
+                    source_origin,
+                    origins,
+                    policy,
+                    created: previous
+                        .as_ref()
+                        .filter(|r| !r.expired(now))
+                        .map_or(now, |r| r.created),
+                    saved: now,
+                    last_used: now,
+                    cookies,
+                };
+                record.refresh_revision()?;
+                if !browser_sessions::record_matches(data, &record)? {
+                    return Err(UNAVAILABLE.into());
+                }
+                let bytes = Zeroizing::new(serde_json::to_vec(&record).map_err(|_| UNAVAILABLE)?);
+                records.records.push(record);
+                browser_sessions::put_private(data, records)?;
+                Ok((
+                    Some(serde_json::from_slice(&bytes).map_err(|_| UNAVAILABLE)?),
+                    true,
+                ))
+            })
+            .await
+        }
+
+        pub async fn clear_cookie_record(
+            &self,
+            expected: Option<String>,
+            current: impl Fn() -> bool,
+        ) -> Result<(), String> {
+            self.remove_cookie_record(expected, false, current)
+                .await
+                .map(|_| ())
+        }
+
+        pub async fn expire_cookie_record(
+            &self,
+            expected: Option<String>,
+            current: impl Fn() -> bool,
+        ) -> Result<bool, String> {
+            self.remove_cookie_record(expected, true, current).await
+        }
+
+        async fn remove_cookie_record(
+            &self,
+            expected: Option<String>,
+            expired_only: bool,
+            current: impl Fn() -> bool,
+        ) -> Result<bool, String> {
+            let id = self.0.connection_id.clone();
+            self.cookie_database(current, |data, _settings| {
+                let mut records = browser_sessions::private(data)?;
+                let index = records.records.iter().position(|r| r.connection_id == id);
+                if index.map(|i| records.records[i].revision.as_str()) != expected.as_deref() {
+                    return Err(UNAVAILABLE.into());
+                }
+                if let Some(index) = index {
+                    if expired_only && !records.records[index].expired(browser_sessions::stamp()) {
+                        return Ok((false, false));
+                    }
+                    records.records.remove(index);
+                    browser_sessions::put_private(data, records)?;
+                    Ok((true, true))
+                } else {
+                    Ok((false, false))
+                }
+            })
+            .await
+        }
+
+        pub async fn touch_cookie_record(
+            &self,
+            expected: Option<String>,
+            current: impl Fn() -> bool,
+        ) -> Result<(), String> {
+            let id = self.0.connection_id.clone();
+            self.cookie_database(current, |data, _settings| {
+                let mut records = browser_sessions::private(data)?;
+                let Some(record) = records.records.iter_mut().find(|r| r.connection_id == id)
+                else {
+                    return if expected.is_none() {
+                        Ok(((), false))
+                    } else {
+                        Err(UNAVAILABLE.into())
+                    };
+                };
+                if expected.as_deref() != Some(record.revision.as_str()) {
+                    return Err(UNAVAILABLE.into());
+                }
+                let now = browser_sessions::stamp();
+                if now <= record.last_used {
+                    return Ok(((), false));
+                }
+                record.last_used = now;
+                browser_sessions::put_private(data, records)?;
+                Ok(((), true))
+            })
+            .await
+        }
+
+        /// Memory-only exact-token check. Never opens files or decrypts a DB.
+        /// Revocation latches: a stale attempt cannot become current again.
+        pub fn is_current(&self) -> bool {
+            let inner = &self.0;
+            let valid = !inner.revoked.load(Ordering::Acquire)
+                && inner.state.key_generation() == inner.generation
+                && inner.state.artifact_policy_root() == inner.configured_root
+                && !inner.state.artifact_recovery_required()
+                && session_key(
+                    &inner.token,
+                    &scope(
+                        &inner.profile,
+                        &inner.database,
+                        &inner.revision,
+                        &inner.window,
+                        &inner.state,
+                    ),
+                )
+                .is_ok();
+            if !valid {
+                self.revoke();
+            }
+            valid && !inner.revoked.load(Ordering::Acquire)
+        }
+
+        /// Revoke this browser lease and its clones, not the user's DB unlock.
+        pub fn revoke(&self) {
+            let _gate = self.0.cookie_gate.lock().unwrap_or_else(|e| e.into_inner());
+            self.0.revoked.store(true, Ordering::Release);
+        }
+
+        /// Native-only bounded cookie operation. The database session mutex is
+        /// held throughout delivery, serializing explicit lock/window closure
+        /// with the operation. No key is retained by this lease or sent to IPC.
+        /// `operation` must not call lease/session APIs recursively or await.
+        pub fn with_cookie_retention_key<T>(
+            &self,
+            operation: impl FnOnce(&DatabaseKey) -> Result<T, String>,
+        ) -> Result<T, String> {
+            let inner = &self.0;
+            let _gate = inner.cookie_gate.lock().map_err(|_| UNAVAILABLE)?;
+            let valid = || {
+                !inner.revoked.load(Ordering::Acquire)
+                    && inner.state.key_generation() == inner.generation
+                    && inner.state.artifact_policy_root() == inner.configured_root
+                    && !inner.state.artifact_recovery_required()
+            };
+            if !valid() {
+                return Err(UNAVAILABLE.into());
+            }
+            let mut sessions = database_sessions::global()
+                .lock()
+                .map_err(|_| UNAVAILABLE)?;
+            let key = sessions.key(
+                &inner.token,
+                &scope(
+                    &inner.profile,
+                    &inner.database,
+                    &inner.revision,
+                    &inner.window,
+                    &inner.state,
+                ),
+            )?;
+            let result = operation(&key)?;
+            if !valid() {
+                return Err(UNAVAILABLE.into());
+            }
+            Ok(result)
+        }
+
+        /// Fork only the native owner lifetime. Disconnect may revoke the
+        /// browser lease without invalidating a completed retention save, but
+        /// database lock/window destruction/key rotation still fence this fork.
+        pub fn fork_for_cookie_retention(
+            &self,
+        ) -> Result<(Self, NativeCookieOwnerBinding), String> {
+            self.with_cookie_retention_key(|_| {
+                let inner = &self.0;
+                let dependencies = inner.dependencies.lock().map_err(|_| UNAVAILABLE)?.clone();
+                // Referenced vault/proxy records can change independently of
+                // this row. Bind their native security digests as well, so a
+                // changed saved identity cannot inherit old sign-in cookies.
+                let security = Zeroizing::new(
+                    serde_json::to_vec(&(
+                        inner.connection_digest,
+                        dependencies.iter().collect::<Vec<_>>(),
+                    ))
+                    .map_err(|_| UNAVAILABLE)?,
+                );
+                let binding = NativeCookieOwnerBinding {
+                    profile: inner.profile.clone(),
+                    database: inner.database.clone(),
+                    revision: inner.revision.clone(),
+                    window: inner.window.clone(),
+                    connection: inner.connection_id.clone(),
+                    connection_digest: Sha256::digest(&*security).into(),
+                    unlock_epoch: Sha256::digest(inner.token.as_bytes()).into(),
+                };
+                Ok((
+                    Self(Arc::new(LeaseInner {
+                        state: inner.state.clone(),
+                        root: inner.root.clone(),
+                        configured_root: inner.configured_root.clone(),
+                        profile: inner.profile.clone(),
+                        database: inner.database.clone(),
+                        revision: inner.revision.clone(),
+                        window: inner.window.clone(),
+                        token: Zeroizing::new(inner.token.to_string()),
+                        generation: inner.generation,
+                        connection_id: inner.connection_id.clone(),
+                        connection_digest: inner.connection_digest,
+                        dependencies: std::sync::Mutex::new(dependencies),
+                        revoked: AtomicBool::new(false),
+                        cookie_gate: std::sync::Mutex::new(()),
+                    })),
+                    binding,
+                ))
+            })
+        }
+
+        pub(crate) fn profile_root(&self) -> &Path {
+            &self.0.root
+        }
+
+        /// Command/setup path only. Verifies the current native caller and
+        /// on-disk security revision AND selected saved connection. Never
+        /// renews a revoked lease; changed owners require a fresh create.
+        pub async fn recheck<R: Runtime>(
+            &self,
+            window: &WebviewWindow<R>,
+            state: &EncryptionState,
+        ) -> Result<(), String> {
+            let result = self.recheck_inner(window, state).await;
+            if result.is_err() {
+                self.revoke();
+            }
+            result.map_err(|_| UNAVAILABLE.to_owned())
+        }
+
+        async fn recheck_inner<R: Runtime>(
+            &self,
+            window: &WebviewWindow<R>,
+            state: &EncryptionState,
+        ) -> Result<(), String> {
+            let inner = &self.0;
+            if window.label() != inner.window
+                || state.database_session_owner() != inner.state.database_session_owner()
+                || !self.is_current()
+            {
+                return Err(UNAVAILABLE.into());
+            }
+            require_live_unlock_window(window, state)?;
+            if native_root(window, state)? != inner.root {
+                return Err(UNAVAILABLE.into());
+            }
+            let _guard = lock_database_operation(&inner.root.join("databases")).await?;
+            if native_root(window, state)? != inner.root || !self.is_current() {
+                return Err(UNAVAILABLE.into());
+            }
+            let snapshot = managed_snapshot(&inner.root, state, &inner.database).await?;
+            if !is_managed(&snapshot) || revision(&snapshot) != inner.revision {
+                return Err(UNAVAILABLE.into());
+            }
+            let key = session_key(
+                &inner.token,
+                &scope(
+                    &inner.profile,
+                    &inner.database,
+                    &inner.revision,
+                    &inner.window,
+                    state,
+                ),
+            )?;
+            let data = DatabaseEnvelope::parse(&snapshot.data, &inner.database)?.open(&key)?;
+            let selected = select_connection(&data, &inner.connection_id)?;
+            if connection_digest(selected)? != inner.connection_digest || !self.is_current() {
+                return Err(UNAVAILABLE.into());
+            }
+            self.validate_dependencies(&data)?;
+            require_live_unlock_window(window, state)
+        }
+
+        fn validate_dependencies(&self, data: &Value) -> Result<(), String> {
+            let dependencies = self.0.dependencies.lock().map_err(|_| UNAVAILABLE)?;
+            for ((vault, id), expected) in dependencies.iter() {
+                if digest(select_dependency(data, *vault, id)?)? != *expected {
+                    return Err(UNAVAILABLE.into());
+                }
+            }
+            Ok(())
+        }
+
+        /// Setup-only exact owning-database lookup. Registers the selected
+        /// record in this attempt's immutable dependency set for recheck.
+        pub(crate) async fn read_dependency<R: Runtime>(
+            &self,
+            window: &WebviewWindow<R>,
+            state: &EncryptionState,
+            vault: bool,
+            id: &str,
+        ) -> Result<Value, String> {
+            let result = async {
+                self.recheck(window, state).await?;
+                let inner = &self.0;
+                let _guard = lock_database_operation(&inner.root.join("databases")).await?;
+                if !self.is_current() {
+                    return Err(UNAVAILABLE.to_owned());
+                }
+                let snapshot = managed_snapshot(&inner.root, state, &inner.database).await?;
+                if !is_managed(&snapshot) || revision(&snapshot) != inner.revision {
+                    return Err(UNAVAILABLE.into());
+                }
+                let key = session_key(
+                    &inner.token,
+                    &scope(
+                        &inner.profile,
+                        &inner.database,
+                        &inner.revision,
+                        &inner.window,
+                        state,
+                    ),
+                )?;
+                let data = DatabaseEnvelope::parse(&snapshot.data, &inner.database)?.open(&key)?;
+                if connection_digest(select_connection(&data, &inner.connection_id)?)?
+                    != inner.connection_digest
+                {
+                    return Err(UNAVAILABLE.into());
+                }
+                self.validate_dependencies(&data)?;
+                let selected = select_dependency(&data, vault, id)?;
+                let fingerprint = digest(selected)?;
+                let mut dependencies = inner.dependencies.lock().map_err(|_| UNAVAILABLE)?;
+                if dependencies.len() >= 64 {
+                    return Err(UNAVAILABLE.into());
+                }
+                if let Some(previous) = dependencies.insert((vault, id.into()), fingerprint) {
+                    if previous != fingerprint {
+                        return Err(UNAVAILABLE.into());
+                    }
+                }
+                if !self.is_current() {
+                    return Err(UNAVAILABLE.into());
+                }
+                require_live_unlock_window(window, state)?;
+                Ok(selected.clone())
+            }
+            .await;
+            if result.is_err() {
+                self.revoke();
+            }
+            result.map_err(|_: String| UNAVAILABLE.into())
+        }
+    }
+
+    #[cfg(test)]
+    mod cookie_owner_tests {
+        use super::*;
+
+        fn fixture() -> NativeOwnerLease {
+            let state = EncryptionState::new();
+            let key = DatabaseKey::generate();
+            let token = database_sessions::global()
+                .lock()
+                .unwrap()
+                .insert(&scope("profile", "db", "revision", "main", &state), key)
+                .unwrap();
+            NativeOwnerLease(Arc::new(LeaseInner {
+                configured_root: state.artifact_policy_root(),
+                generation: state.key_generation(),
+                state,
+                root: PathBuf::from("fixture"),
+                profile: "profile".into(),
+                database: "db".into(),
+                revision: "revision".into(),
+                window: "main".into(),
+                token: Zeroizing::new(token),
+                connection_id: "connection".into(),
+                connection_digest: [1; 32],
+                dependencies: std::sync::Mutex::new(Default::default()),
+                revoked: AtomicBool::new(false),
+                cookie_gate: std::sync::Mutex::new(()),
+            }))
+        }
+
+        #[test]
+        fn cookie_fork_survives_browser_disconnect_but_not_database_lock() {
+            let browser = fixture();
+            let (retention, binding) = browser.fork_for_cookie_retention().unwrap();
+            assert_eq!(binding.connection, "connection");
+            browser.revoke();
+            assert!(!browser.is_current());
+            assert!(retention.with_cookie_retention_key(|_| Ok(())).is_ok());
+            database_sessions::global().lock().unwrap().lock(
+                retention.0.state.database_session_owner(),
+                "profile",
+                "db",
+                "main",
+            );
+            let mut delivered = false;
+            assert!(retention
+                .with_cookie_retention_key(|_| {
+                    delivered = true;
+                    Ok(())
+                })
+                .is_err());
+            assert!(!delivered);
+        }
+
+        #[test]
+        fn referenced_credential_changes_invalidate_cookie_binding() {
+            let browser = fixture();
+            let (_, before) = browser.fork_for_cookie_retention().unwrap();
+            browser
+                .0
+                .dependencies
+                .lock()
+                .unwrap()
+                .insert((true, "saved-vault-entry".into()), [8; 32]);
+            let (_, after) = browser.fork_for_cookie_retention().unwrap();
+            assert_ne!(before.connection_digest, after.connection_digest);
+            assert_eq!(before.connection, after.connection);
+        }
+
+        #[test]
+        fn explicit_database_lock_serializes_with_cookie_delivery() {
+            use std::sync::mpsc;
+            use std::time::Duration;
+            let browser = fixture();
+            let (retention, _) = browser.fork_for_cookie_retention().unwrap();
+            let owner = retention.0.state.database_session_owner();
+            let worker = retention.clone();
+            let (entered_tx, entered_rx) = mpsc::channel();
+            let (release_tx, release_rx) = mpsc::channel();
+            let delivery = std::thread::spawn(move || {
+                worker.with_cookie_retention_key(|_| {
+                    entered_tx.send(()).unwrap();
+                    release_rx.recv_timeout(Duration::from_secs(5)).unwrap();
+                    Ok(())
+                })
+            });
+            entered_rx.recv_timeout(Duration::from_secs(5)).unwrap();
+            let (locked_tx, locked_rx) = mpsc::channel();
+            let (locking_tx, locking_rx) = mpsc::channel();
+            let locking = std::thread::spawn(move || {
+                locking_tx.send(()).unwrap();
+                database_sessions::global()
+                    .lock()
+                    .unwrap()
+                    .lock(owner, "profile", "db", "main");
+                locked_tx.send(()).unwrap();
+            });
+            locking_rx.recv_timeout(Duration::from_secs(5)).unwrap();
+            assert!(locked_rx.recv_timeout(Duration::from_millis(30)).is_err());
+            release_tx.send(()).unwrap();
+            delivery.join().unwrap().unwrap();
+            locking.join().unwrap();
+            locked_rx.recv_timeout(Duration::from_secs(5)).unwrap();
+            assert!(retention.with_cookie_retention_key(|_| Ok(())).is_err());
+        }
+    }
+
+    pub(super) fn select_dependency<'a>(
+        data: &'a Value,
+        vault: bool,
+        id: &str,
+    ) -> Result<&'a Value, String> {
+        if !vault {
+            return select_connection(data, id);
+        }
+        let vault = data.get("credentialVault").ok_or(UNAVAILABLE)?;
+        if vault.get("version") != Some(&Value::from(1))
+            || vault.get("revision").and_then(Value::as_u64).is_none()
+        {
+            return Err(UNAVAILABLE.into());
+        }
+        let rows = vault
+            .get("entries")
+            .and_then(Value::as_array)
+            .ok_or(UNAVAILABLE)?;
+        if rows.len() > 1000 {
+            return Err(UNAVAILABLE.into());
+        }
+        let mut found = rows.iter().filter(|row| {
+            row.get("id")
+                .and_then(Value::as_str)
+                .is_some_and(|saved| saved.eq_ignore_ascii_case(id))
+        });
+        let row = found.next().ok_or(UNAVAILABLE)?;
+        if found.next().is_some() || !row.get("facets").is_some_and(Value::is_object) {
+            return Err(UNAVAILABLE.into());
+        }
+        Ok(row)
+    }
+
+    pub(super) fn select_connection<'a>(data: &'a Value, id: &str) -> Result<&'a Value, String> {
+        let rows = data
+            .get("connections")
+            .and_then(Value::as_array)
+            .ok_or(UNAVAILABLE)?;
+        if rows.len() > 100_000 {
+            return Err(UNAVAILABLE.into());
+        }
+        let mut found = rows
+            .iter()
+            .filter(|row| row.get("id").and_then(Value::as_str) == Some(id));
+        let row = found.next().ok_or(UNAVAILABLE)?;
+        if found.next().is_some() {
+            return Err(UNAVAILABLE.into());
+        }
+        Ok(row)
+    }
+
+    pub(super) fn digest(value: &Value) -> Result<[u8; 32], String> {
+        let bytes = Zeroizing::new(serde_json::to_vec(value).map_err(|_| UNAVAILABLE)?);
+        Ok(Sha256::digest(&*bytes).into())
+    }
+
+    /// Bookmark/library presentation changes do not alter this attempt's
+    /// security authority. Keep every other field (including unknown future
+    /// fields) in the digest: URLs, credentials, routing and automation consent
+    /// edits still require a fresh attempt.
+    pub(super) fn connection_digest(value: &Value) -> Result<[u8; 32], String> {
+        let mut connection = value.clone();
+        let object = connection.as_object_mut().ok_or(UNAVAILABLE)?;
+        object.remove("httpBookmarks");
+        object.remove("updatedAt");
+        if let Some(automation) = object
+            .get_mut("httpAutomation")
+            .and_then(Value::as_object_mut)
+        {
+            automation.remove("items");
+        }
+        digest(&connection)
+    }
+
+    #[cfg(test)]
+    pub(super) fn test_cookie_lease(
+        root: &Path,
+        state: &EncryptionState,
+        token: &str,
+        connection: &Value,
+    ) -> NativeOwnerLease {
+        NativeOwnerLease(Arc::new(LeaseInner {
+            state: state.clone(),
+            root: root.into(),
+            configured_root: state.artifact_policy_root(),
+            profile: profile_binding(root).unwrap(),
+            database: "db".into(),
+            revision: "r1".into(),
+            window: "main".into(),
+            token: Zeroizing::new(token.into()),
+            generation: state.key_generation(),
+            connection_id: connection["id"].as_str().unwrap().into(),
+            connection_digest: connection_digest(connection).unwrap(),
+            dependencies: std::sync::Mutex::new(Default::default()),
+            revoked: AtomicBool::new(false),
+            cookie_gate: std::sync::Mutex::new(()),
+        }))
+    }
+
+    #[cfg(test)]
+    mod connection_digest_tests {
+        use super::*;
+        use serde_json::json;
+
+        #[test]
+        fn bookmark_and_favorite_edits_preserve_browser_authority() {
+            let before = json!({"id":"website", "hostname":"https://example.test",
+                "updatedAt":"before", "httpBookmarks":[],
+                "httpAutomation":{"version":1,"items":[],"scriptInjectionEnabled":false}});
+            let mut after = before.clone();
+            after["updatedAt"] = json!("after");
+            after["httpBookmarks"] = json!([{"name":"Docs","path":"/docs"}]);
+            after["httpAutomation"]["items"] = json!([{"kind":"script","id":"saved"}]);
+            assert_eq!(
+                connection_digest(&before).unwrap(),
+                connection_digest(&after).unwrap()
+            );
+        }
+
+        #[test]
+        fn consent_route_identity_and_unknown_changes_invalidate_authority() {
+            let before = json!({"id":"website", "hostname":"https://example.test",
+                "httpAutomation":{"version":1,"items":[],"scriptInjectionEnabled":false}});
+            for (field, value) in [
+                ("hostname", json!("https://other.test")),
+                ("password", json!("changed-fixture")),
+                ("httpsTrustPolicy", json!("strict")),
+                ("proxyChain", json!(["different-route"])),
+                ("futureSecurityField", json!(true)),
+            ] {
+                let mut changed = before.clone();
+                changed[field] = value;
+                assert_ne!(
+                    connection_digest(&before).unwrap(),
+                    connection_digest(&changed).unwrap()
+                );
+            }
+            let mut changed = before.clone();
+            changed["httpAutomation"]["scriptInjectionEnabled"] = json!(true);
+            assert_ne!(
+                connection_digest(&before).unwrap(),
+                connection_digest(&changed).unwrap()
+            );
+        }
+    }
+
+    /// Only the requested connection escapes this native module; the owning
+    /// database is never searched through a global connection-ID index.
+    pub(crate) async fn read<R: Runtime>(
+        window: &WebviewWindow<R>,
+        state: &EncryptionState,
+        database: &str,
+        connection_id: &str,
+        expected_revision: &str,
+        token: &str,
+    ) -> Result<(Value, NativeOwnerLease), String> {
+        async fn inner<R: Runtime>(
+            window: &WebviewWindow<R>,
+            state: &EncryptionState,
+            database: &str,
+            connection_id: &str,
+            expected_revision: &str,
+            token: &str,
+        ) -> Result<(Value, NativeOwnerLease), String> {
+            require_live_unlock_window(window, state)?;
+            let root = native_root(window, state)?;
+            let configured_root = state.artifact_policy_root();
+            let _guard = lock_database_operation(&root.join("databases")).await?;
+            if native_root(window, state)? != root {
+                return Err(UNAVAILABLE.into());
+            }
+            let snapshot = managed_snapshot(&root, state, database).await?;
+            if !is_managed(&snapshot) || revision(&snapshot) != expected_revision {
+                return Err(UNAVAILABLE.into());
+            }
+            let profile = profile_binding(&root)?;
+            let generation = state.key_generation();
+            let key = session_key(
+                token,
+                &scope(&profile, database, expected_revision, window.label(), state),
+            )?;
+            let data = DatabaseEnvelope::parse(&snapshot.data, database)?.open(&key)?;
+            let connection = select_connection(&data, connection_id)?.clone();
+            let lease = NativeOwnerLease(Arc::new(LeaseInner {
+                state: state.clone(),
+                root,
+                configured_root,
+                profile,
+                database: database.into(),
+                revision: expected_revision.into(),
+                window: window.label().into(),
+                token: Zeroizing::new(token.into()),
+                generation,
+                connection_id: connection_id.into(),
+                connection_digest: connection_digest(&connection)?,
+                dependencies: std::sync::Mutex::new(std::collections::BTreeMap::new()),
+                revoked: AtomicBool::new(false),
+                cookie_gate: std::sync::Mutex::new(()),
+            }));
+            if !lease.is_current() {
+                return Err(UNAVAILABLE.into());
+            }
+            require_live_unlock_window(window, state)?;
+            Ok((connection, lease))
+        }
+        inner(
+            window,
+            state,
+            database,
+            connection_id,
+            expected_revision,
+            token,
+        )
+        .await
+        .map_err(|_| UNAVAILABLE.into())
+    }
+}
+
 fn require_live_unlock_window<R: Runtime>(
     window: &WebviewWindow<R>,
     state: &EncryptionState,
@@ -336,8 +1346,10 @@ fn verified_trust_scope_ids(
             state,
         );
         let key = session_key(session, &scope)?;
-        let data = DatabaseEnvelope::parse(&snapshot.data, database_id)?.open(&key)?;
-        let ids = migration_connection_ids(&data)?;
+        let data = browser_sessions::SecretData(
+            DatabaseEnvelope::parse(&snapshot.data, database_id)?.open(&key)?,
+        );
+        let ids = migration_connection_ids(&data.0)?;
         session_key(session, &scope)?;
         Ok(ids)
     } else if snapshot.data.is_string() {
@@ -569,7 +1581,7 @@ async fn unlock_inner(
             envelope.unlock_vault(slot_id, &profile, &kek)?
         }
     };
-    let data = envelope.open(&key)?;
+    let mut data = envelope.open(&key)?;
     // Check persisted identity again even though production holds the shared
     // barrier: this also fences direct callers and delayed authentication.
     let current = managed_snapshot(root, state, id).await?;
@@ -585,11 +1597,22 @@ async fn unlock_inner(
         &session_id,
         &scope(&profile, id, &security_revision, window, state),
     )?;
+    browser_sessions::after_unlock(
+        root,
+        state,
+        window,
+        id,
+        &session_id,
+        &security_revision,
+        &snapshot,
+        &mut data,
+    )
+    .await?;
     Ok(UnlockResult {
         session_id,
         session_expires_at: None,
         security_revision,
-        data,
+        data: browser_sessions::project(data)?,
     })
 }
 
@@ -601,8 +1624,10 @@ pub async fn database_protection_lock<R: Runtime>(
 ) -> Result<LockResult, String> {
     let _guard = sorng_encryption::settings_coordinator::lock_settings_write().await;
     sorng_storage::database_transaction::validate_database_id(&database_id)?;
-    let profile = profile_binding(&native_root(&window, &state)?)?;
-    revoke_database_sessions(
+    let root = native_root(&window, &state)?;
+    let profile = profile_binding(&root)?;
+    let cleanup = browser_sessions::before_lock(&root, &state, &database_id).await;
+    let mut result = revoke_database_sessions(
         state.database_session_owner(),
         &profile,
         &database_id,
@@ -615,7 +1640,11 @@ pub async fn database_protection_lock<R: Runtime>(
                 )
                 .map_err(|_| "database locked, but other-window notification failed".into())
         },
-    )
+    )?;
+    if cleanup.is_err() {
+        result.warnings.push("Database locked; retained sign-in cookie cleanup is pending until its next native unlock".into());
+    }
+    Ok(result)
 }
 
 /// Cleanup for an abandoned unlock attempt, not a database-wide lock.
@@ -664,7 +1693,7 @@ pub async fn database_protection_save<R: Runtime>(
     if native_root(&window, &state)? != root {
         return Err("Database profile changed; reload before retrying".into());
     }
-    save_inner(
+    let result = save_inner(
         &root,
         &state,
         window.label(),
@@ -674,7 +1703,14 @@ pub async fn database_protection_save<R: Runtime>(
         data,
         expected_data,
     )
-    .await
+    .await?;
+    if result.committed && result.browser_sessions_changed {
+        let _ = window.app_handle().emit(
+            "database-protection:browser-sessions-changed",
+            json!({"databaseId":database_id}),
+        );
+    }
+    Ok(result)
 }
 
 #[tauri::command]
@@ -709,7 +1745,7 @@ pub async fn database_protection_load<R: Runtime>(
     Ok(UnlockResult {
         session_id,
         security_revision: expected_security_revision,
-        data,
+        data: browser_sessions::project(data)?,
         session_expires_at: None,
     })
 }
@@ -733,30 +1769,28 @@ async fn save_inner(
         session,
         &scope(&profile, id, expected_revision, window, state),
     )?;
-    let mut envelope = DatabaseEnvelope::parse(&snapshot.data, id)?;
-    let current = envelope.open(&key)?;
-    crate::database_files::assert_database_content_matches(Some(&current), expected_data.as_ref())?;
-    envelope.replace_data(&data, &key)?;
-    session_key(
-        session,
-        &scope(&profile, id, expected_revision, window, state),
-    )?;
-    let outcome = managed_commit(
+    let envelope = DatabaseEnvelope::parse(&snapshot.data, id)?;
+    let current = browser_sessions::SecretData(envelope.open(&key)?);
+    let data = browser_sessions::SecretData(browser_sessions::merge_renderer(
+        &current.0,
+        data,
+        expected_data,
+    )?);
+    let changed =
+        browser_sessions::descriptor(&current.0)? != browser_sessions::descriptor(&data.0)?;
+    let mut result = browser_sessions::commit_session_data(
         root,
         state,
+        window,
         id,
+        session,
         expected_revision,
-        &snapshot.data,
-        &envelope.value()?,
-        expected_revision,
+        &snapshot,
+        &data.0,
     )
     .await?;
-    Ok(SaveResult {
-        committed: outcome.committed,
-        cleanup_pending: outcome.cleanup_pending,
-        warnings: outcome.warnings,
-        security_revision: expected_revision.into(),
-    })
+    result.browser_sessions_changed = changed;
+    Ok(result)
 }
 
 #[tauri::command]
@@ -873,6 +1907,14 @@ async fn change_inner_with_initialization(
         }
         let data = legacy_verified_data.ok_or("verified legacy database snapshot required")?;
         codec::validate_data(&data)?;
+        if data.get(browser_sessions::PRIVATE).is_some()
+            || data.get(browser_sessions::PUBLIC).is_some()
+        {
+            return Err(
+                "Native browser sessions require native transfer into an unlocked managed database"
+                    .into(),
+            );
+        }
         if snapshot.data.is_object() && snapshot.data != data && !initialize_empty_destination {
             return Err("plaintext legacy snapshot differs from stored data".into());
         }
@@ -880,6 +1922,11 @@ async fn change_inner_with_initialization(
     };
     let managed = target.is_some();
     if !managed {
+        if !browser_sessions::private(&data)?.records.is_empty() {
+            return Err(
+                "Clear retained sign-in cookies before removing managed database protection".into(),
+            );
+        }
         crate::database_files::require_document_protection(state, None, &data).await?;
         crate::database_files::require_credential_vault_protection(state, None, &data).await?;
     }
@@ -990,7 +2037,8 @@ async fn change_inner_with_initialization(
             &scope(&profile, id, expected_revision, window, state),
         )?;
     }
-    let outcome = managed_commit(
+    let generation = state.key_generation();
+    let outcome = crate::database_files::managed_commit_guarded(
         root,
         state,
         id,
@@ -998,6 +2046,23 @@ async fn change_inner_with_initialization(
         &expected_data,
         &output,
         &new_revision,
+        |commit| {
+            if old.is_some() {
+                let mut sessions = database_sessions::global()
+                    .lock()
+                    .map_err(|_| "database session registry unavailable")?;
+                sessions.key(
+                    source_session.as_deref().unwrap(),
+                    &scope(&profile, id, expected_revision, window, state),
+                )?;
+                if generation != state.key_generation() {
+                    return Err("Database owner changed during protection update".into());
+                }
+                commit()
+            } else {
+                commit()
+            }
+        },
     )
     .await?;
     let mut warnings = outcome.warnings;
@@ -1030,6 +2095,15 @@ async fn change_inner_with_initialization(
             None
         }
     };
+    if let Some(token) = session_id.as_deref() {
+        if browser_sessions::remember_unlock(root, state, window, id, &new_revision, token).is_err()
+        {
+            warnings.push(
+                "Database protection committed; browser session cleanup tracking is unavailable"
+                    .into(),
+            );
+        }
+    }
     Ok(ChangeResult {
         committed: outcome.committed,
         cleanup_pending: outcome.cleanup_pending,

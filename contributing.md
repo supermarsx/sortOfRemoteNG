@@ -40,6 +40,11 @@ CI enforces this explicitly in `.github/workflows/ci.yml`
 
 ## Dev loop
 
+Native browser builds reuse a locally registered patched CEF engine or download
+the target-specific release pinned by this checkout. They do not compile
+Chromium. See [Reusable patched CEF builds](docs/cef-runtime-ci.md) for engine
+publication, verified downloads, offline caching, and first-release prerequisites.
+
 ```bash
 # Install frontend deps
 npm install

@@ -77,6 +77,9 @@ pub struct HttpProxyPolicy {
     /// Connection-scoped permissive script grant; restrictive controls win.
     #[serde(default)]
     pub allow_all_scripts: bool,
+    /// Anonymous public request routing, scoped to this saved connection.
+    #[serde(default)]
+    pub allow_all_requests: bool,
     #[serde(default)]
     pub allow_cross_origin_redirects: bool,
     /// Separate opt-in to review (never automatically follow) an HTTP handoff.
@@ -106,6 +109,7 @@ impl std::fmt::Debug for HttpProxyPolicy {
             .field("https_only", &self.https_only)
             .field("same_origin_only", &self.same_origin_only)
             .field("allow_all_scripts", &self.allow_all_scripts)
+            .field("allow_all_requests", &self.allow_all_requests)
             .field(
                 "allow_cross_origin_redirects",
                 &self.allow_cross_origin_redirects,
@@ -137,6 +141,7 @@ impl Default for HttpProxyPolicy {
             https_only: false,
             same_origin_only: false,
             allow_all_scripts: false,
+            allow_all_requests: false,
             allow_cross_origin_redirects: false,
             allow_http_downgrade_redirects: false,
             allow_external_fonts: default_external_fonts_enabled(),
@@ -150,9 +155,13 @@ impl Default for HttpProxyPolicy {
 }
 
 impl HttpProxyPolicy {
+    pub(super) fn allows_all_requests(&self) -> bool {
+        self.version == 1 && self.allow_all_requests && !self.same_origin_only
+    }
+
     pub(super) fn allows_all_scripts(&self) -> bool {
         self.version == 1
-            && self.allow_all_scripts
+            && (self.allow_all_scripts || self.allow_all_requests)
             && self.page_scripts == PageScripts::Allow
             && !self.same_origin_only
     }

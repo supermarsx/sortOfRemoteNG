@@ -1,0 +1,40 @@
+[package]
+name = "sorng-browser-host"
+version.workspace = true
+edition = "2021"
+publish = false
+description = "Native real-origin browser host integration (acceptance-gated)"
+
+[[bin]]
+name = "sorng-cef-helper"
+path = "native/helper.rs"
+required-features = ["cef-host"]
+
+[features]
+default = []
+# Explicit engineering build only until all platform containment gates pass.
+cef-host = ["dep:cef", "dep:cef-dll-sys", "dep:raw-window-handle", "dep:windows-sys"]
+
+[dependencies]
+sorng-protocols = { path = "../sorng-protocols" }
+thiserror = { workspace = true }
+url = { workspace = true }
+cef = { version = "=154.3.0", default-features = false, features = ["sandbox", "resources"], optional = true }
+# Match the runtime/header revision to the reviewed high-level bindings, rather
+# than accepting an independently advanced sys crate through its caret range.
+cef-dll-sys = { version = "=154.3.0", default-features = false, optional = true }
+raw-window-handle = { version = "0.6", optional = true }
+serde = { workspace = true }
+regex = { workspace = true }
+zeroize = { workspace = true }
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { workspace = true, optional = true, features = ["Win32_Foundation", "Win32_Security", "Win32_Security_Authorization", "Win32_Storage_FileSystem", "Win32_System_LibraryLoader"] }
+
+[build-dependencies]
+cc = "1"
+
+[dev-dependencies]
+tokio = { workspace = true }
+base64 = { workspace = true }
+serde_json = { workspace = true }

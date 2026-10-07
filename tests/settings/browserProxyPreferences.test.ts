@@ -12,7 +12,7 @@ import { _resetInvokeCache } from "../../src/utils/tauri/invoke";
 import { DEFAULT_EXTERNAL_FONT_ORIGINS } from "../../src/types/connection/httpProxyPolicy";
 
 describe("browser and internal proxy preferences", () => {
-  it("retains legacy defaults with independent mutable copies", () => {
+  it("fills missing preferences with manual-submit defaults and independent mutable copies", () => {
     const first = normalizeWebBrowserSettings(undefined);
     const second = normalizeWebBrowserSettings(undefined);
     expect(first).toMatchObject({
@@ -25,10 +25,10 @@ describe("browser and internal proxy preferences", () => {
       allowPageDialogs: false,
       preferNativeUserAgent: true,
       preferNativeLanguage: true,
-      hideAutomationIndicator: false,
+      hideAutomationIndicator: true,
       minimumFormFillDelayMs: 0,
       minimumFormSubmitDelayMs: 0,
-      manualFormSubmit: false,
+      manualFormSubmit: true,
       popupPolicy: "tabs",
       initialLoadTimeoutSeconds: 30,
       documentReadyTimeoutSeconds: 120,

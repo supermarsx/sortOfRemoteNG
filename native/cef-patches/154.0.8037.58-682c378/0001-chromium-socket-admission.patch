@@ -1,0 +1,784 @@
+diff --git a/net/BUILD.gn b/net/BUILD.gn
+index 9db60a2d55f666d9a6b83856925e21fe4403c217..8752025eb69e6b75e78a0b3ba38ae319cccb9893 100644
+--- a/net/BUILD.gn
++++ b/net/BUILD.gn
+@@ -1024,6 +1024,7 @@ component("net") {
+     "socket/socks_connect_job.h",
+     "socket/ssl_client_socket.cc",
+     "socket/ssl_client_socket.h",
++    "socket/sorng_tls_policy.h",
+     "socket/ssl_client_socket_impl.cc",
+     "socket/ssl_client_socket_impl.h",
+     "socket/ssl_connect_job.cc",
+diff --git a/net/cert/cert_verify_proc.h b/net/cert/cert_verify_proc.h
+index 23000c3c9a8a7d3ec75724967e7b57668109d7eb..0bcfb1048992c613645a229a0854213476e043de 100644
+--- a/net/cert/cert_verify_proc.h
++++ b/net/cert/cert_verify_proc.h
+@@ -127,6 +127,9 @@ class NET_EXPORT CertVerifyProc
+   // The set of parameters that are variable over time and can differ between
+   // different verifiers created by a CertVerifierProcFactory.
+   struct NET_EXPORT InstanceParams {
++    // sorng private context roots. 2 excludes platform AND Chrome roots.
++    // Kept immutable across browser-profile certificate updates.
++    uint32_t sorng_ca_mode = 0;
+     InstanceParams();
+     ~InstanceParams();
+     InstanceParams(const InstanceParams&);
+diff --git a/net/cert/cert_verify_proc_builtin.cc b/net/cert/cert_verify_proc_builtin.cc
+index 18df1e559945a9dec9980c6ae3307e32030ddc3f..6b5a74e3162f383f1344928fed06bb59e8473661 100644
+--- a/net/cert/cert_verify_proc_builtin.cc
++++ b/net/cert/cert_verify_proc_builtin.cc
+@@ -344,17 +344,19 @@ class CertVerifyProcTrustStore {
+   // |system_trust_store| must outlive this object.
+   explicit CertVerifyProcTrustStore(
+       SystemTrustStore* system_trust_store,
+-      bssl::TrustStoreInMemory* additional_trust_store)
++      bssl::TrustStoreInMemory* additional_trust_store,
++      bool custom_only)
+       : system_trust_store_(system_trust_store),
+         additional_trust_store_(additional_trust_store) {
+     trust_store_.AddTrustStore(additional_trust_store_);
+-    trust_store_.AddTrustStore(system_trust_store_->GetTrustStore());
++    if (!custom_only)
++      trust_store_.AddTrustStore(system_trust_store_->GetTrustStore());
+     // When running in test mode, also layer in the test-only root certificates.
+     //
+     // Note that this integration requires TestRootCerts::HasInstance() to be
+     // true by the time CertVerifyProcTrustStore is created - a limitation which
+     // is acceptable for the test-only code that consumes this.
+-    if (TestRootCerts::HasInstance()) {
++    if (!custom_only && TestRootCerts::HasInstance()) {
+       trust_store_.AddTrustStore(
+           TestRootCerts::GetInstance()->test_trust_store());
+     }
+@@ -1231,6 +1233,7 @@ class CertVerifyProcBuiltin : public CertVerifyProc {
+   const scoped_refptr<CTPolicyEnforcer> ct_policy_enforcer_;
+   const scoped_refptr<const RequireCTDelegate> require_ct_delegate_;
+   const std::unique_ptr<SystemTrustStore> system_trust_store_;
++  const bool sorng_custom_only_;
+   std::vector<net::CertVerifyProc::CertificateWithConstraints>
+       additional_constraints_;
+   bssl::TrustStoreInMemory additional_trust_store_;
+@@ -1251,6 +1254,7 @@ CertVerifyProcBuiltin::CertVerifyProcBuiltin(
+       ct_policy_enforcer_(std::move(ct_policy_enforcer)),
+       require_ct_delegate_(instance_params.require_ct_delegate),
+       system_trust_store_(std::move(system_trust_store)),
++      sorng_custom_only_(instance_params.sorng_ca_mode == 2),
+       time_tracker_(std::move(time_tracker)) {
+   DCHECK(system_trust_store_);
+ 
+@@ -1778,7 +1782,7 @@ int CertVerifyProcBuiltin::VerifyInternal(X509Certificate* input_cert,
+   AddIntermediatesToIssuerSource(input_cert, &intermediates, net_log);
+ 
+   CertVerifyProcTrustStore trust_store(system_trust_store_.get(),
+-                                       &additional_trust_store_);
++                                       &additional_trust_store_, sorng_custom_only_);
+ 
+   // Get the global dependencies.
+   const EVRootCAMetadata* ev_metadata = EVRootCAMetadata::GetInstance();
+diff --git a/net/socket/sorng_tls_policy.h b/net/socket/sorng_tls_policy.h
+new file mode 100644
+index 0000000000000000000000000000000000000000..d30c31776a8ef257d12d403eac8bba0e3383b3a3
+--- /dev/null
++++ b/net/socket/sorng_tls_policy.h
+@@ -0,0 +1,25 @@
++// SPDX-License-Identifier: BSD-3-Clause
++// Shared by the real network-service patch and standalone executable tests.
++#ifndef NET_SOCKET_SORNG_TLS_POLICY_H_
++#define NET_SOCKET_SORNG_TLS_POLICY_H_
++#include <stdint.h>
++namespace sorng_tls {
++// Pinned Chromium values checked by static_assert at the engine call site.
++constexpr uint32_t kAllCertErrors = 0xff00ffffu;
++constexpr uint32_t kOverridable = 7u;  // name/date/authority only
++constexpr uint32_t ExceptionMask(int error, uint32_t status, bool fatal) {
++  const uint32_t errors = status & kAllCertErrors;
++  return !fatal && (error == -200 || error == -201 || error == -202) &&
++                 errors != 0 && (errors & ~kOverridable) == 0
++             ? errors : 0;
++}
++constexpr bool Admit(bool active, int native_error, uint32_t status, bool fatal,
++                     uint32_t decision, uint32_t exception_mask) {
++  if (!active) return false;
++  if (decision == 1)
++    return native_error == 0 && !(status & kAllCertErrors) && exception_mask == 0;
++  const uint32_t allowed = ExceptionMask(native_error, status, fatal);
++  return decision == 2 && allowed != 0 && exception_mask == allowed;
++}
++}  // namespace sorng_tls
++#endif
+diff --git a/net/socket/ssl_client_socket.cc b/net/socket/ssl_client_socket.cc
+index 2b6cb80c2edf33409bcce257c847b7af94b1356f..66124a646f5235916027ef035b131aa6f850512b 100644
+--- a/net/socket/ssl_client_socket.cc
++++ b/net/socket/ssl_client_socket.cc
+@@ -244,6 +244,12 @@ SSLClientContext::~SSLClientContext() {
+   cert_verifier_->RemoveObserver(this);
+   CertDatabase::GetInstance()->RemoveObserver(this);
+ }
++void SSLClientContext::SetTlsAdmissionDelegate(
++    scoped_refptr<TlsAdmissionDelegate> delegate) {
++  CHECK(delegate);
++  CHECK(!tls_admission_delegate_);
++  tls_admission_delegate_ = std::move(delegate);
++}
+ 
+ EchMode SSLClientContext::GetEchMode(std::string_view hostname) const {
+   if (ssl_config_service_) {
+diff --git a/net/socket/ssl_client_socket.h b/net/socket/ssl_client_socket.h
+index 4046a961c9ccfe9dc21bbdd275ee9d0e7f4f8979..c3100154c31edf05a954f4b397e45e1fa7ae1f92 100644
+--- a/net/socket/ssl_client_socket.h
++++ b/net/socket/ssl_client_socket.h
+@@ -12,8 +12,12 @@
+ 
+ #include "base/containers/flat_set.h"
+ #include "base/memory/raw_ptr.h"
++#include "base/memory/ref_counted.h"
++#include "base/functional/callback.h"
+ #include "base/observer_list.h"
+ #include "net/base/load_timing_info.h"
++#include "net/base/completion_once_callback.h"
++#include "net/cert/cert_verify_result.h"
+ #include "net/base/net_export.h"
+ #include "net/cert/cert_database.h"
+ #include "net/cert/cert_verifier.h"
+@@ -129,6 +133,27 @@ class NET_EXPORT SSLClientContext : public SSLConfigService::Observer,
+                                     public CertVerifier::Observer,
+                                     public CertDatabase::Observer {
+  public:
++  // Optional asynchronous admission AFTER native verification, before payload.
++  // Network-sequence only; immutable once configured and fail-closed on loss.
++  class NET_EXPORT TlsAdmissionDelegate
++      : public base::RefCounted<TlsAdmissionDelegate> {
++   public:
++    virtual bool IsActive() const = 0;
++    virtual void Verify(const HostPortPair& destination,
++                        scoped_refptr<X509Certificate> peer_chain,
++                        const CertVerifyResult& native_result,
++                        int native_error, bool fatal,
++                        CompletionOnceCallback callback) = 0;
++    virtual void AddSocket(const void* key, base::RepeatingClosure close) = 0;
++    virtual void RemoveSocket(const void* key) = 0;
++   protected:
++    friend class base::RefCounted<TlsAdmissionDelegate>;
++    virtual ~TlsAdmissionDelegate() = default;
++  };
++  void SetTlsAdmissionDelegate(scoped_refptr<TlsAdmissionDelegate> delegate);
++  TlsAdmissionDelegate* tls_admission_delegate() const {
++    return tls_admission_delegate_.get();
++  }
+   enum class SSLConfigChangeType {
+     kSSLConfigChanged,
+     kCertDatabaseChanged,
+@@ -271,6 +296,7 @@ class NET_EXPORT SSLClientContext : public SSLConfigService::Observer,
+       const base::flat_set<HostPortPair>& servers);
+ 
+   SSLContextConfig config_;
++  scoped_refptr<TlsAdmissionDelegate> tls_admission_delegate_;
+ 
+   raw_ptr<SSLConfigService> ssl_config_service_;
+   raw_ptr<CertVerifier> cert_verifier_;
+diff --git a/net/socket/ssl_client_socket_impl.cc b/net/socket/ssl_client_socket_impl.cc
+index f586acfe0f086bda8db1244fb5c054d8d90b732e..f9128ddc10134ed36416d045bb22519fcd0e000e 100644
+--- a/net/socket/ssl_client_socket_impl.cc
++++ b/net/socket/ssl_client_socket_impl.cc
+@@ -304,9 +304,16 @@ SSLClientSocketImpl::SSLClientSocketImpl(
+       signature_result_(kSSLClientSocketNoPendingResult),
+       net_log_(stream_socket_->NetLog()) {
+   CHECK(context_);
++  if (auto* admission = context_->tls_admission_delegate()) {
++    admission->AddSocket(this, base::BindRepeating(
++        &SSLClientSocketImpl::Disconnect, weak_factory_.GetWeakPtr()));
++  }
+ }
+ 
+ SSLClientSocketImpl::~SSLClientSocketImpl() {
++  if (auto* admission = context_->tls_admission_delegate()) {
++    admission->RemoveSocket(this);
++  }
+   Disconnect();
+ }
+ 
+@@ -680,6 +687,13 @@ void SSLClientSocketImpl::OnWriteReady() {
+ 
+ int SSLClientSocketImpl::Init() {
+   DCHECK(!ssl_);
++  if (auto* admission = context_->tls_admission_delegate()) {
++    if (!admission->IsActive() || ssl_config_.ignore_certificate_errors) {
++      return ERR_BLOCKED_BY_CLIENT;
++    }
++    ssl_config_.early_data_enabled = false;
++    ssl_config_.alpn_protos = {NextProto::kProtoHTTP11};
++  }
+ 
+   SSLContext* context = SSLContext::GetInstance();
+   crypto::OpenSSLErrStackTracer err_tracer(FROM_HERE);
+@@ -1068,6 +1082,16 @@ ssl_verify_result_t SSLClientSocketImpl::VerifyCertCallback(
+ // returned, use OpenSSLPutNetError to add them directly to the
+ // OpenSSL error queue.
+ ssl_verify_result_t SSLClientSocketImpl::VerifyCert() {
++  if (context_->tls_admission_delegate()) {
++    if (tls_admission_state_ == TlsAdmissionState::kPending)
++      return ssl_verify_retry;
++    if (tls_admission_state_ == TlsAdmissionState::kAllowed)
++      return ssl_verify_ok;
++    if (tls_admission_state_ == TlsAdmissionState::kDenied) {
++      OpenSSLPutNetError(FROM_HERE, ERR_BLOCKED_BY_CLIENT);
++      return ssl_verify_invalid;
++    }
++  }
+   if (cert_verification_result_ != kCertVerifyPending) {
+     // The certificate verifier updates cert_verification_result_ when
+     // it returns asynchronously. If there is a result in
+@@ -1108,7 +1132,8 @@ ssl_verify_result_t SSLClientSocketImpl::VerifyCert() {
+   // If the certificate is bad and has been previously accepted, use
+   // the previous status and bypass the error.
+   CertStatus cert_status;
+-  if (IsAllowedBadCert(server_cert_.get(), &cert_status)) {
++  if (!context_->tls_admission_delegate() &&
++      IsAllowedBadCert(server_cert_.get(), &cert_status)) {
+     server_cert_verify_result_.Reset();
+     server_cert_verify_result_.cert_status = cert_status;
+     server_cert_verify_result_.verified_cert = server_cert_;
+@@ -1244,11 +1269,28 @@ ssl_verify_result_t SSLClientSocketImpl::HandleVerifyResult() {
+       // and map all bypassable errors to fatal ones.
+       result = ERR_ECH_FALLBACK_CERTIFICATE_INVALID;
+     }
+-    if (ssl_config_.ignore_certificate_errors) {
++    if (ssl_config_.ignore_certificate_errors &&
++        !context_->tls_admission_delegate()) {
+       result = OK;
+     }
+   }
+ 
++  if (auto* admission = context_->tls_admission_delegate()) {
++    // Includes synchronous native results/cache hits. Never replace the native
++    // CertVerifyResult, CT/PKP evidence or certificate-error status.
++    // An ECH retry public-name certificate is NOT origin certificate evidence.
++    // V1 rejects this path instead of recording it against the website identity.
++    if (used_ech_name_override_) {
++      OpenSSLPutNetError(FROM_HERE, ERR_ECH_FALLBACK_CERTIFICATE_INVALID);
++      return ssl_verify_invalid;
++    }
++    tls_admission_state_ = TlsAdmissionState::kPending;
++    admission->Verify(host_and_port_, server_cert_, server_cert_verify_result_,
++                      result, is_fatal_cert_error_,
++                      base::BindOnce(&SSLClientSocketImpl::OnTlsAdmissionComplete,
++                                     weak_factory_.GetWeakPtr()));
++    return ssl_verify_retry;
++  }
+   if (result == OK) {
+     return ssl_verify_ok;
+   }
+@@ -1262,6 +1304,14 @@ void SSLClientSocketImpl::DoConnectCallback(int rv) {
+     std::move(user_connect_callback_).Run(rv > OK ? OK : rv);
+   }
+ }
++void SSLClientSocketImpl::OnTlsAdmissionComplete(int result) {
++  CHECK(tls_admission_state_ == TlsAdmissionState::kPending);
++  tls_admission_state_ = result == OK &&
++                                context_->tls_admission_delegate()->IsActive()
++                            ? TlsAdmissionState::kAllowed
++                            : TlsAdmissionState::kDenied;
++  OnHandshakeIOComplete(OK);
++}
+ 
+ void SSLClientSocketImpl::OnHandshakeIOComplete(int result) {
+   std::optional<base::ElapsedTimer> timer;
+@@ -1312,6 +1362,12 @@ int SSLClientSocketImpl::DoHandshakeLoop(int last_io_result) {
+ }
+ 
+ int SSLClientSocketImpl::DoPayloadRead(base::span<uint8_t> buf) {
++  if (auto* admission = context_->tls_admission_delegate()) {
++    if (!admission->IsActive() ||
++        tls_admission_state_ != TlsAdmissionState::kAllowed) {
++      return ERR_BLOCKED_BY_CLIENT;
++    }
++  }
+   crypto::OpenSSLErrStackTracer err_tracer(FROM_HERE);
+ 
+   int rv;
+@@ -1408,6 +1464,12 @@ int SSLClientSocketImpl::DoPayloadRead(base::span<uint8_t> buf) {
+ }
+ 
+ int SSLClientSocketImpl::DoPayloadWrite() {
++  if (auto* admission = context_->tls_admission_delegate()) {
++    if (!admission->IsActive() ||
++        tls_admission_state_ != TlsAdmissionState::kAllowed) {
++      return ERR_BLOCKED_BY_CLIENT;
++    }
++  }
+   crypto::OpenSSLErrStackTracer err_tracer(FROM_HERE);
+   int rv = SSL_write(ssl_.get(), user_write_buf_->data(), user_write_buf_len_);
+ 
+@@ -1541,6 +1603,12 @@ void SSLClientSocketImpl::RetryAllOperations() {
+ 
+ int SSLClientSocketImpl::ClientCertRequestCallback(SSL* ssl) {
+   DCHECK(ssl == ssl_.get());
++  // V1 does not authorize TLS client credentials. Do not expose an existing
++  // client certificate before the separate server-identity admission completes.
++  if (context_->tls_admission_delegate()) {
++    OpenSSLPutNetError(FROM_HERE, ERR_BLOCKED_BY_CLIENT);
++    return 0;
++  }
+ 
+   net_log_.AddEvent(NetLogEventType::SSL_CLIENT_CERT_REQUESTED);
+   certificate_requested_ = true;
+@@ -1644,6 +1712,9 @@ SSLClientSessionCache::Key SSLClientSocketImpl::GetSessionCacheKey(
+ }
+ 
+ bool SSLClientSocketImpl::IsRenegotiationAllowed() const {
++  // A new peer certificate must never reuse the completed admission state.
++  // V1 rejects renegotiation instead of implementing a second admission epoch.
++  if (context_->tls_admission_delegate()) return false;
+   if (negotiated_protocol_ == NextProto::kProtoUnknown) {
+     return ssl_config_.renego_allowed_default;
+   }
+@@ -1656,7 +1727,8 @@ bool SSLClientSocketImpl::IsRenegotiationAllowed() const {
+ }
+ 
+ bool SSLClientSocketImpl::IsCachingEnabled() const {
+-  return context_->ssl_client_session_cache() != nullptr;
++  return !context_->tls_admission_delegate() &&
++         context_->ssl_client_session_cache() != nullptr;
+ }
+ 
+ void SSLClientSocketImpl::MaybeClearEarlyDataCache(int error) {
+diff --git a/net/socket/ssl_client_socket_impl.h b/net/socket/ssl_client_socket_impl.h
+index 3b10cead52007aaaa54bd9d2fec30bc265151ddb..610b4068230e1d801a1e91395439c01410e75294 100644
+--- a/net/socket/ssl_client_socket_impl.h
++++ b/net/socket/ssl_client_socket_impl.h
+@@ -269,6 +269,9 @@ class NET_EXPORT_PRIVATE SSLClientSocketImpl
+ 
+   // Result from Cert Verifier.
+   int cert_verification_result_;
++  enum class TlsAdmissionState { kNew, kPending, kAllowed, kDenied };
++  TlsAdmissionState tls_admission_state_ = TlsAdmissionState::kNew;
++  void OnTlsAdmissionComplete(int result);
+ 
+   // OpenSSL stuff
+   bssl::UniquePtr<SSL> ssl_;
+diff --git a/net/socket/ssl_client_socket_unittest.cc b/net/socket/ssl_client_socket_unittest.cc
+index f8944ab505b71641d6d9466a24aa49bfd1d02370..372b94ae292e3d6431639828a3f60b9e6b8e15c2 100644
+--- a/net/socket/ssl_client_socket_unittest.cc
++++ b/net/socket/ssl_client_socket_unittest.cc
+@@ -3,6 +3,7 @@
+ // found in the LICENSE file.
+ 
+ #include "net/socket/ssl_client_socket.h"
++#include "net/socket/sorng_tls_policy.h"
+ 
+ #include <errno.h>
+ #include <string.h>
+@@ -11,6 +12,7 @@
+ #include <array>
+ #include <functional>
+ #include <memory>
++#include <map>
+ #include <optional>
+ #include <ranges>
+ #include <string_view>
+@@ -25,6 +27,7 @@
+ #include "base/memory/raw_ptr.h"
+ #include "base/memory/ref_counted.h"
+ #include "base/run_loop.h"
++#include "base/task/sequenced_task_runner.h"
+ #include "base/strings/string_number_conversions.h"
+ #include "base/strings/string_view_util.h"
+ #include "base/strings/stringprintf.h"
+@@ -1430,6 +1433,178 @@ TEST_P(SSLClientSocketVersionTest, Connect) {
+   EXPECT_FALSE(sock->IsConnected());
+ }
+ 
++// The real socket/embedded TLS server exercise the bridge seam; these tests
++// must be built and run as net_unittests, not treated as patch-check evidence.
++class SorngTestAdmission final : public SSLClientContext::TlsAdmissionDelegate {
++ public:
++  bool IsActive() const override { return active; }
++  void AddSocket(const void* key, base::RepeatingClosure close) override {
++    sockets.emplace(key, std::move(close));
++  }
++  void RemoveSocket(const void* key) override { sockets.erase(key); }
++  void Verify(const HostPortPair& destination,
++              scoped_refptr<X509Certificate> peer_chain,
++              const CertVerifyResult& native_result, int native_error,
++              bool fatal, CompletionOnceCallback callback) override {
++    ++calls;
++    last_destination = destination;
++    last_error = native_error;
++    EXPECT_TRUE(peer_chain);
++    if (hold) {
++      held_callback = std::move(callback);
++      if (on_called) std::move(on_called).Run();
++      return;
++    }
++    base::SequencedTaskRunner::GetCurrentDefault()->PostTask(
++        FROM_HERE, base::BindOnce(std::move(callback),
++            sorng_tls::Admit(active, native_error, native_result.cert_status, fatal,
++                            exception_mask ? 2u : (admit ? 1u : 0u), exception_mask)
++                ? OK : ERR_BLOCKED_BY_CLIENT));
++  }
++  void Revoke() {
++    active = false;
++    const auto copy = sockets;
++    for (const auto& [key, close] : copy) close.Run();
++  }
++  bool active = true;
++  bool admit = false;
++  bool hold = false;
++  uint32_t exception_mask = 0;
++  int calls = 0;
++  int last_error = ERR_FAILED;
++  HostPortPair last_destination;
++  CompletionOnceCallback held_callback;
++  base::OnceClosure on_called;
++  std::map<const void*, base::RepeatingClosure> sockets;
++ private:
++  ~SorngTestAdmission() override = default;
++};
++class SorngTlsSocketTest : public SSLClientSocketTest,
++                           public testing::WithParamInterface<bool> {};
++INSTANTIATE_TEST_SUITE_P(NativeVerifierSyncAndAsync, SorngTlsSocketTest, Bool());
++
++TEST_P(SorngTlsSocketTest, CaValidDenialStillBlocksConnectWithExactPort) {
++  ASSERT_TRUE(StartEmbeddedTestServer(EmbeddedTestServer::CERT_OK, SSLServerConfig()));
++  cert_verifier_->set_async(GetParam());
++  auto gate = base::MakeRefCounted<SorngTestAdmission>();
++  context_->SetTlsAdmissionDelegate(gate);
++  int result;
++  ASSERT_TRUE(CreateAndConnectSSLClientSocket(SSLConfig(), &result));
++  EXPECT_EQ(ERR_BLOCKED_BY_CLIENT, result);
++  EXPECT_EQ(1, gate->calls);
++  EXPECT_EQ(OK, gate->last_error);
++  EXPECT_EQ(host_port_pair(), gate->last_destination);
++  EXPECT_FALSE(sock_->IsConnected());
++}
++
++TEST_P(SorngTlsSocketTest, NativeErrorIsDeliveredNotReplacedByAppAllow) {
++  ASSERT_TRUE(StartEmbeddedTestServer(EmbeddedTestServer::CERT_OK, SSLServerConfig()));
++  cert_verifier_->set_async(GetParam());
++  cert_verifier_->set_default_result(ERR_CERT_DATE_INVALID);
++  auto gate = base::MakeRefCounted<SorngTestAdmission>();
++  gate->admit = true;
++  context_->SetTlsAdmissionDelegate(gate);
++  int result;
++  ASSERT_TRUE(CreateAndConnectSSLClientSocket(SSLConfig(), &result));
++  EXPECT_EQ(ERR_BLOCKED_BY_CLIENT, result);
++  EXPECT_EQ(1, gate->calls);
++  EXPECT_EQ(ERR_CERT_DATE_INVALID, gate->last_error);
++}
++
++TEST_P(SorngTlsSocketTest, EveryConnectionIsAdmittedWithoutEarlyDataOrH2) {
++  SSLServerConfig server;
++  server.alpn_protos = {NextProto::kProtoHTTP2, NextProto::kProtoHTTP11};
++  ASSERT_TRUE(StartEmbeddedTestServer(EmbeddedTestServer::CERT_OK, server));
++  cert_verifier_->set_async(GetParam());
++  auto gate = base::MakeRefCounted<SorngTestAdmission>();
++  gate->admit = true;
++  context_->SetTlsAdmissionDelegate(gate);
++  SSLConfig config;
++  config.early_data_enabled = true;
++  config.alpn_protos = server.alpn_protos;
++  for (int i = 0; i < 2; ++i) {
++    int result;
++    ASSERT_TRUE(CreateAndConnectSSLClientSocket(config, &result));
++    ASSERT_EQ(OK, result);
++    EXPECT_EQ(NextProto::kProtoHTTP11, sock_->GetNegotiatedProtocol());
++    SSLInfo info;
++    ASSERT_TRUE(sock_->GetSSLInfo(&info));
++    EXPECT_EQ(SSLInfo::HANDSHAKE_FULL, info.handshake_type);
++    EXPECT_FALSE(info.early_data_accepted);
++    sock_.reset();
++  }
++  EXPECT_EQ(2, gate->calls);
++}
++
++TEST_P(SorngTlsSocketTest, RevokeDisconnectsAdmittedSocket) {
++  ASSERT_TRUE(StartEmbeddedTestServer(EmbeddedTestServer::CERT_OK, SSLServerConfig()));
++  cert_verifier_->set_async(GetParam());
++  auto gate = base::MakeRefCounted<SorngTestAdmission>();
++  gate->admit = true;
++  context_->SetTlsAdmissionDelegate(gate);
++  int result;
++  ASSERT_TRUE(CreateAndConnectSSLClientSocket(SSLConfig(), &result));
++  ASSERT_EQ(OK, result);
++  gate->Revoke();
++  EXPECT_FALSE(sock_->IsConnected());
++  auto bytes = base::MakeRefCounted<StringIOBuffer>("POST / HTTP/1.1\r\n\r\n");
++  TestCompletionCallback callback;
++  EXPECT_EQ(ERR_BLOCKED_BY_CLIENT, sock_->Write(
++      bytes.get(), bytes->size(), callback.callback(), TRAFFIC_ANNOTATION_FOR_TESTS));
++  sock_.reset();
++  EXPECT_TRUE(gate->sockets.empty());
++}
++
++TEST_P(SorngTlsSocketTest, ScopedSelfSignedExceptionPreservesNativeStatus) {
++  ASSERT_TRUE(StartEmbeddedTestServer(EmbeddedTestServer::CERT_OK, SSLServerConfig()));
++  cert_verifier_->set_async(GetParam());
++  CertVerifyResult verification;
++  verification.verified_cert = embedded_test_server()->GetCertificate();
++  verification.cert_status = CERT_STATUS_AUTHORITY_INVALID;
++  cert_verifier_->AddResultForCert(verification.verified_cert.get(), verification,
++                                  ERR_CERT_AUTHORITY_INVALID);
++  auto gate = base::MakeRefCounted<SorngTestAdmission>();
++  gate->exception_mask = 4;
++  context_->SetTlsAdmissionDelegate(gate);
++  int result;
++  ASSERT_TRUE(CreateAndConnectSSLClientSocket(SSLConfig(), &result));
++  ASSERT_EQ(OK, result);
++  EXPECT_EQ(ERR_CERT_AUTHORITY_INVALID, gate->last_error);
++  SSLInfo info;
++  ASSERT_TRUE(sock_->GetSSLInfo(&info));
++  EXPECT_EQ(CERT_STATUS_AUTHORITY_INVALID, info.cert_status);
++  sock_.reset();
++  gate->exception_mask = 1;  // Wrong exception cannot reuse the previous permit.
++  ASSERT_TRUE(CreateAndConnectSSLClientSocket(SSLConfig(), &result));
++  EXPECT_EQ(ERR_BLOCKED_BY_CLIENT, result);
++}
++
++TEST_P(SorngTlsSocketTest, DestroyPendingSocketDiscardsLateAdmission) {
++  ASSERT_TRUE(StartEmbeddedTestServer(EmbeddedTestServer::CERT_OK, SSLServerConfig()));
++  cert_verifier_->set_async(GetParam());
++  auto gate = base::MakeRefCounted<SorngTestAdmission>();
++  gate->hold = true;
++  base::RunLoop requested;
++  gate->on_called = requested.QuitClosure();
++  context_->SetTlsAdmissionDelegate(gate);
++  TestCompletionCallback transport_done;
++  auto transport = std::make_unique<TCPClientSocket>(
++      addr(), nullptr, nullptr, NetLog::Get(), NetLogSource(),
++      handles::kInvalidNetworkHandle);
++  ASSERT_EQ(OK, transport_done.GetResult(transport->Connect(transport_done.callback())));
++  auto socket = CreateSSLClientSocket(std::move(transport), host_port_pair(), SSLConfig());
++  TestCompletionCallback connected;
++  ASSERT_EQ(ERR_IO_PENDING, socket->Connect(connected.callback()));
++  requested.Run();
++  ASSERT_TRUE(gate->held_callback);
++  EXPECT_FALSE(connected.have_result());
++  socket.reset();
++  EXPECT_TRUE(gate->sockets.empty());
++  std::move(gate->held_callback).Run(OK);
++  base::RunLoop().RunUntilIdle();
++  EXPECT_FALSE(connected.have_result());
++}
++
+ TEST_P(SSLClientSocketVersionTest, ConnectSyncVerify) {
+   ASSERT_TRUE(
+       StartEmbeddedTestServer(EmbeddedTestServer::CERT_OK, GetServerConfig()));
+diff --git a/services/cert_verifier/cert_verifier_creation.cc b/services/cert_verifier/cert_verifier_creation.cc
+index c28eba8e0e68bbf51c79ad35ad3b50fe2654ffd3..f28a11ebb92530a2b6fffd367e430da7a486ae29 100644
+--- a/services/cert_verifier/cert_verifier_creation.cc
++++ b/services/cert_verifier/cert_verifier_creation.cc
+@@ -69,7 +69,7 @@ class CertVerifyProcFactoryImpl : public net::CertVerifyProcFactory {
+         instance_params, impl_params.time_tracker);
+ #else
+ #if BUILDFLAG(CHROME_ROOT_STORE_OPTIONAL)
+-    if (impl_params.use_chrome_root_store) {
++    if (impl_params.use_chrome_root_store || instance_params.sorng_ca_mode != 0) {
+       return CreateNewCertVerifyProc(
+           cert_net_fetcher, impl_params.crl_set, std::move(ct_verifier),
+           std::move(ct_policy_enforcer),
+diff --git a/services/cert_verifier/cert_verifier_service.cc b/services/cert_verifier/cert_verifier_service.cc
+index aeff2b4fbd2e795a176a6919a966b5013b2b049d..661e60c7f75591cf9ccffb2bc9a63b7d4a6d2b84 100644
+--- a/services/cert_verifier/cert_verifier_service.cc
++++ b/services/cert_verifier/cert_verifier_service.cc
+@@ -148,7 +148,10 @@ void CertVerifierServiceImpl::EnableNetworkAccess(
+ 
+ void CertVerifierServiceImpl::UpdateAdditionalCertificates(
+     mojom::AdditionalCertificatesPtr additional_certificates) {
+-  UpdateCertVerifierInstanceParams(additional_certificates, &instance_params_);
++  // Custom roots belong to the immutable native app context, not Chrome prefs.
++  // CRL/CT/root-store security metadata updates still rebuild the verifier below.
++  if (instance_params_.sorng_ca_mode == 0)
++    UpdateCertVerifierInstanceParams(additional_certificates, &instance_params_);
+   // TODO(hchao, mattm): figure out what to do if the CertVerifierServiceFactory
+   // is destroyed before the CertVerifierService (or if this is not possible in
+   // normal circumstances, add a DCHECK or CHECK here).
+diff --git a/services/cert_verifier/cert_verifier_service_factory.cc b/services/cert_verifier/cert_verifier_service_factory.cc
+index 26e6bf32bbb0de2be72a10d473e36026b992acfa..3f9b426ae588dd4211bddfde7d8b2a8ac2c5f8cc 100644
+--- a/services/cert_verifier/cert_verifier_service_factory.cc
++++ b/services/cert_verifier/cert_verifier_service_factory.cc
+@@ -93,6 +93,7 @@ internal::CertVerifierServiceImpl* GetNewCertVerifierImpl(
+ 
+   // Populate initial instance params from creation params.
+   net::CertVerifyProc::InstanceParams instance_params;
++  instance_params.sorng_ca_mode = creation_params->sorng_ca_mode;
+   if (creation_params->initial_additional_certificates) {
+     UpdateCertVerifierInstanceParams(
+         creation_params->initial_additional_certificates, &instance_params);
+diff --git a/services/cert_verifier/public/mojom/cert_verifier_service_factory.mojom b/services/cert_verifier/public/mojom/cert_verifier_service_factory.mojom
+index aa828dfd79e7f3b741e07cdd6818e5c69140217f..6cf25721f5599ffda349b92d61b81bee149597a1 100644
+--- a/services/cert_verifier/public/mojom/cert_verifier_service_factory.mojom
++++ b/services/cert_verifier/public/mojom/cert_verifier_service_factory.mojom
+@@ -20,6 +20,7 @@ import "services/network/public/mojom/ct_log_info.mojom";
+ // Parameters to specify how the net::CertVerifier and net::CertVerifyProc
+ // objects should be instantiated.
+ struct CertVerifierCreationParams {
++  uint32 sorng_ca_mode = 0;
+   // Initial additional certificates that will be used for certificate
+   // validation.
+   AdditionalCertificates? initial_additional_certificates;
+diff --git a/services/network/network_context.cc b/services/network/network_context.cc
+index 053a25db4b88e1a4e94a55c96d03babdbc011660..a141ea99a4c880038efb823bf20d43e02d7ec324 100644
+--- a/services/network/network_context.cc
++++ b/services/network/network_context.cc
+@@ -99,6 +99,10 @@
+ #include "net/http/http_cache.h"
+ #include "net/http/http_network_layer.h"
+ #include "net/http/http_network_session.h"
++#include "net/base/host_port_pair.h"
++#include "net/socket/ssl_client_socket.h"
++#include "net/socket/sorng_tls_policy.h"
++#include "net/cert/cert_status_flags.h"
+ #include "net/http/http_request_headers.h"
+ #include "net/http/http_server_properties.h"
+ #include "net/http/http_transaction_factory.h"
+@@ -672,6 +676,94 @@ void RemoveInvalidationFilterCallback(
+ }  // namespace
+ 
+ constexpr uint32_t NetworkContext::kMaxOutstandingRequestsPerProcess;
++static_assert(net::ERR_CERT_COMMON_NAME_INVALID == -200 &&
++              net::ERR_CERT_DATE_INVALID == -201 && net::ERR_CERT_AUTHORITY_INVALID == -202);
++static_assert(net::CERT_STATUS_COMMON_NAME_INVALID == 1 &&
++              net::CERT_STATUS_DATE_INVALID == 2 && net::CERT_STATUS_AUTHORITY_INVALID == 4 &&
++              net::CERT_STATUS_ALL_ERRORS == sorng_tls::kAllCertErrors);
++
++// No app policy cache: every socket/native verifier result reaches the browser
++// authority. Ref-counted by SSLClientContext; callbacks are sequence-confined.
++class SorngTlsAdmission final
++    : public net::SSLClientContext::TlsAdmissionDelegate,
++      public mojom::SorngTlsControl {
++ public:
++  SorngTlsAdmission(mojo::PendingRemote<mojom::SorngTlsClient> client,
++                    uint64_t generation)
++      : client_(std::move(client)), generation_(generation) {
++    client_.set_disconnect_handler(base::BindOnce(
++        &SorngTlsAdmission::FailClosed, weak_factory_.GetWeakPtr()));
++    client_->Ready(control_.BindNewPipeAndPassRemote());
++    control_.set_disconnect_handler(base::BindOnce(
++        &SorngTlsAdmission::FailClosed, weak_factory_.GetWeakPtr()));
++  }
++  bool IsActive() const override { return active_ && generation_ != 0; }
++  void AddSocket(const void* key, base::RepeatingClosure close) override {
++    sockets_.emplace(key, std::move(close));
++  }
++  void RemoveSocket(const void* key) override { sockets_.erase(key); }
++  void Verify(const net::HostPortPair& destination,
++              scoped_refptr<net::X509Certificate> peer_chain,
++              const net::CertVerifyResult& native_result, int native_error,
++              bool fatal, net::CompletionOnceCallback callback) override {
++    if (!IsActive() || pending_.size() >= 64 || !peer_chain ||
++        next_request_ == UINT64_MAX) {
++      base::SequencedTaskRunner::GetCurrentDefault()->PostTask(
++          FROM_HERE, base::BindOnce(std::move(callback),
++                                   net::ERR_BLOCKED_BY_CLIENT));
++      return;
++    }
++    const uint64_t id = ++next_request_;
++    pending_.emplace(id, std::move(callback));
++    client_->Evaluate(generation_, destination.host(), destination.port(),
++                      peer_chain, native_result, native_error, fatal,
++                      base::BindOnce(&SorngTlsAdmission::OnDecision,
++                                     weak_factory_.GetWeakPtr(), id,
++                                     native_error, native_result.cert_status, fatal));
++    base::SequencedTaskRunner::GetCurrentDefault()->PostDelayedTask(
++        FROM_HERE, base::BindOnce(&SorngTlsAdmission::OnDecision,
++                                 weak_factory_.GetWeakPtr(), id,
++                                 net::ERR_BLOCKED_BY_CLIENT, 0u, true, 0u, 0u),
++        base::Seconds(305));
++  }
++  void Revoke(uint64_t /*generation*/, RevokeCallback callback) override {
++    // Even a mismatched revoke can only remove authority, never create it.
++    FailClosed();
++    std::move(callback).Run();
++  }
++ private:
++  ~SorngTlsAdmission() override = default;
++  void OnDecision(uint64_t id, int native_error, uint32_t status, bool fatal,
++                  uint32_t decision, uint32_t exception_mask) {
++    auto it = pending_.find(id);
++    if (it == pending_.end()) return;
++    auto callback = std::move(it->second);
++    pending_.erase(it);
++    const bool admitted = sorng_tls::Admit(IsActive(), native_error, status, fatal,
++                                          decision, exception_mask);
++    // Browser answers, failures and timeouts all resume on the network sequence.
++    std::move(callback).Run(admitted ? net::OK : net::ERR_BLOCKED_BY_CLIENT);
++  }
++  void FailClosed() {
++    scoped_refptr<SorngTlsAdmission> keep_alive(this);
++    active_ = false;
++    auto pending = std::move(pending_);
++    pending_.clear();
++    for (auto& [id, callback] : pending)
++      std::move(callback).Run(net::ERR_BLOCKED_BY_CLIENT);
++    // Snapshot: closing a socket may remove itself or another socket.
++    const auto sockets = sockets_;
++    for (const auto& [key, close] : sockets) close.Run();
++  }
++  mojo::Remote<mojom::SorngTlsClient> client_;
++  mojo::Receiver<mojom::SorngTlsControl> control_{this};
++  const uint64_t generation_;
++  bool active_ = true;
++  uint64_t next_request_ = 0;
++  std::map<uint64_t, net::CompletionOnceCallback> pending_;
++  std::map<const void*, base::RepeatingClosure> sockets_;
++  base::WeakPtrFactory<SorngTlsAdmission> weak_factory_{this};
++};
+ 
+ NetworkContext::NetworkContextHttpAuthPreferences::
+     NetworkContextHttpAuthPreferences(NetworkService* network_service)
+@@ -822,6 +914,13 @@ NetworkContext::NetworkContext(
+       std::move(on_url_request_context_builder_configured),
+       params_->bound_network);
+   url_request_context_ = url_request_context_owner_.url_request_context.get();
++  if (params_->sorng_tls_client) {
++    auto* session = url_request_context_->http_transaction_factory()->GetSession();
++    CHECK(session);
++    session->ssl_client_context()->SetTlsAdmissionDelegate(
++        base::MakeRefCounted<SorngTlsAdmission>(
++            std::move(params_->sorng_tls_client), params_->sorng_tls_generation));
++  }
+ 
+   cookie_manager_ = std::make_unique<CookieManager>(
+       url_request_context_, &first_party_sets_access_delegate_,
+@@ -3228,6 +3327,14 @@ URLRequestContextOwner NetworkContext::MakeURLRequestContext(
+   session_params.key_auth_cache_server_entries_by_network_anonymization_key =
+       params_->split_auth_cache_by_network_anonymization_key;
+ 
++  if (params_->sorng_tls_client) {
++    // This bridge makes no cross-authority pooling/QUIC admission claim. Do not let
++    // command-line flags or field trials re-enable these bypass paths.
++    session_params.enable_http2 = false;
++    session_params.enable_http2_alternative_service = false;
++    session_params.enable_quic = false;
++    session_params.enable_early_data = false;
++  }
+   builder.set_http_network_session_params(session_params);
+   builder.set_quic_context(std::move(quic_context));
+ 
+diff --git a/services/network/public/mojom/network_context.mojom b/services/network/public/mojom/network_context.mojom
+index b085fd3a05f74bfbf062d78b845b3fbe9322cc8f..17cf4ab73a5d446bf5a5f18552f4d182329cdafc 100644
+--- a/services/network/public/mojom/network_context.mojom
++++ b/services/network/public/mojom/network_context.mojom
+@@ -348,7 +348,21 @@ struct SocketBrokerRemotes {
+ };
+ 
+ // Parameters for constructing a network context.
++// sorng: private browser-process authority, never exposed to renderers.
++interface SorngTlsControl {
++  Revoke(uint64 generation) => ();
++};
++interface SorngTlsClient {
++  Ready(pending_remote<SorngTlsControl> control);
++  Evaluate(uint64 generation, string hostname, uint16 port,
++           X509Certificate peer_chain, CertVerifyResult native_result,
++           int32 native_error, bool fatal) => (uint32 decision, uint32 exception_mask);
++};
++
+ struct NetworkContextParams {
++  // Presence enables immutable fail-closed admission before any URL loaders.
++  pending_remote<SorngTlsClient>? sorng_tls_client;
++  uint64 sorng_tls_generation = 0;
+   // The user agent string.
+   string user_agent;
+ 

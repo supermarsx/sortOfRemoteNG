@@ -47,6 +47,11 @@ mod domains;
 pub(crate) mod event_bridge;
 mod invoke_handler;
 mod native_dialogs;
+mod origin_browser_commands;
+#[cfg(feature = "native-browser")]
+mod origin_browser_entry;
+#[cfg(feature = "native-browser")]
+mod origin_browser_runtime;
 mod splash;
 mod state_registry;
 mod tray;
@@ -163,6 +168,15 @@ fn init_tracing() {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 /// Initializes and runs the SortOfRemote NG Tauri application.
 pub fn run() {
+    // CEF children must exit here, before profiles, logs, plugins and workers.
+    // Windows enters through the genuine sandbox bootstrap export; Unix uses
+    // its packaged initial-thread dispatcher. There is no unsandboxed fallback.
+    #[cfg(feature = "native-browser")]
+    match origin_browser_entry::dispatch_app_entry() {
+        Ok(sorng_browser_host::bootstrap_platform::ProcessDispatch::Browser) => (),
+        Ok(sorng_browser_host::bootstrap_platform::ProcessDispatch::Exit(code)) => std::process::exit(code),
+        Err(_) => { eprintln!("Packaged native browser startup failed; no browser was started."); return; }
+    }
     let profile = app_profile::install_process_profile();
 
     // t3-e23: structured tracing — must initialise before any span/event
@@ -186,6 +200,23 @@ pub fn run() {
         .plugin(tauri_plugin_updater::Builder::new().build())
         .setup(|app| {
             app_profile::verify_runtime(app)?;
+            #[cfg(feature = "native-browser")]
+            {
+                use tauri::Manager;
+                let root = app.path().app_local_data_dir().map_err(|error| error.to_string())
+                    .and_then(|path| sorng_commands_core::browser_data_commands::prepare_for_startup(&path, &app.config().identifier));
+                match root {
+                    Ok(root) => {
+                        let (wake, receiver) = origin_browser_runtime::pump_channel();
+                        origin_browser_entry::install(wake, &root).map_err(std::io::Error::other)?;
+                        origin_browser_runtime::start_pump(app.handle().clone(), receiver);
+                    }
+                    // A disconnected custom drive must not prevent opening the
+                    // app's settings to repair it. No alternate directory or
+                    // browser is silently substituted; CEF remains unavailable.
+                    Err(error) => log::warn!("Native browser data location unavailable: {error}"),
+                }
+            }
             web_network_guard::install(app);
             state_registry::register(app)?;
             splash::show(app)?;
@@ -196,6 +227,8 @@ pub fn run() {
         .expect("error while building tauri application");
 
     app.run(|app_handle, event| {
+        #[cfg(feature = "native-browser")]
+        origin_browser_runtime::on_event(app_handle, &event);
         // Open database keys follow their native window, not an unrelated
         // fixed timer. Cleanup does not rely on a renderer unload callback.
         if let tauri::RunEvent::WindowEvent {

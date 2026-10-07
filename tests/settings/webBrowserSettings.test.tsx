@@ -1,11 +1,20 @@
 import React, { useState } from "react";
-import { fireEvent, render, screen, within } from "@testing-library/react";
+import {
+  fireEvent,
+  render,
+  screen,
+  within,
+  waitFor,
+} from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import WebBrowserSettings from "../../src/components/SettingsDialog/sections/WebBrowserSettings";
 import InternalProxySettings from "../../src/components/SettingsDialog/sections/InternalProxySettings";
 import ProxySettings from "../../src/components/SettingsDialog/sections/ProxySettings";
 import { defaultSettings } from "../../src/contexts/SettingsContext";
 import type { GlobalSettings } from "../../src/types/settings/settings";
+import type { BrowserSessionRetentionCapabilities } from "../../src/types/settings/browserSession";
+import * as tauriInvoke from "../../src/utils/tauri/invoke";
+import { DEFAULT_BROWSER_SESSION_RETENTION } from "../../src/utils/settings/browserSessionSettings";
 import {
   normalizeInternalProxySettings,
   normalizeWebBrowserSettings,
@@ -23,10 +32,18 @@ import {
   DEFAULT_EXTERNAL_RESOURCE_ORIGINS,
 } from "../../src/types/connection/httpProxyPolicy";
 
+// The directory picker has its own native-command tests; here only its placement
+// in the global settings page is part of the settings contract.
+vi.mock(
+  "../../src/components/SettingsDialog/sections/webBrowser/BrowserDataDirectorySettings",
+  () => ({ default: () => <section aria-label="Browser working data" /> }),
+);
+
 function setup(
   section: "browser" | "internal" = "browser",
   initial: Partial<GlobalSettings> = {},
   ready = true,
+  retentionCapabilities?: BrowserSessionRetentionCapabilities,
 ) {
   const update = vi.fn();
   function Harness() {
@@ -39,7 +56,11 @@ function setup(
       setSettings((current) => ({ ...current, ...patch }));
     };
     return section === "browser" ? (
-      <WebBrowserSettings settings={settings} updateSettings={updateSettings} />
+      <WebBrowserSettings
+        settings={settings}
+        updateSettings={updateSettings}
+        retentionCapabilities={retentionCapabilities}
+      />
     ) : (
       <InternalProxySettings
         settings={settings}
@@ -51,7 +72,7 @@ function setup(
   return { ...render(<Harness />), update };
 }
 
-function choose(label: string, option: string) {
+function choose(label: string, option: string | RegExp) {
   fireEvent.click(screen.getByRole("combobox", { name: label }));
   fireEvent.mouseDown(screen.getByRole("option", { name: option }));
 }
@@ -64,6 +85,254 @@ function number(label: string, value: string) {
 }
 
 describe("Web Browser settings", () => {
+  it("configures supported default-on native preferences and gates unsupported controls", () => {
+    const { update } = setup();
+    const card = screen.getByRole("region", {
+      name: "Native browser capabilities",
+    });
+    expect(card.querySelector(".sor-settings-card")).not.toBeNull();
+    expect(
+      within(card).getByText(/not an indication of active capabilities/),
+    ).toBeVisible();
+    for (const [label, key] of [
+      ["Allow localStorage", "localStorageEnabled"],
+      ["Allow page-canvas WebGL", "webglEnabled"],
+      ["Allow cookies", "cookiesEnabled"],
+      ["Allow media-stream APIs", "mediaStreamEnabled"],
+      ["Allow normal cross-origin requests", "crossOriginRequestsEnabled"],
+      ["Allow app login and website scripts", "websiteExtensionsEnabled"],
+    ] as const) {
+      const toggle = within(card).getByRole("checkbox", {
+        name: new RegExp(`^${label}`),
+      });
+      expect(toggle).toBeChecked();
+      expect(toggle).toBeEnabled();
+      expect(toggle).toHaveClass("sor-settings-checkbox");
+      fireEvent.click(toggle);
+      expect(update.mock.lastCall?.[0].webBrowser[key]).toBe(false);
+    }
+    expect(
+      screen.getByRole("checkbox", { name: /^Hide WebDriver indicator/ }),
+    ).toBeDisabled();
+    expect(
+      within(card).getByRole("checkbox", { name: /^Allow IndexedDB/ }),
+    ).toBeDisabled();
+    expect(within(card).getByText(/deprecated databases switch/)).toBeVisible();
+    expect(
+      within(card).getByText(/does not control OffscreenCanvas/),
+    ).toBeVisible();
+    expect(
+      within(card).getByText(/requests ask you through a native prompt/),
+    ).toHaveTextContent("never automatically grants access");
+    expect(
+      within(card).getByText(/Screen capture is unsupported/),
+    ).toHaveTextContent("WebRTC non-proxied UDP remains disabled");
+    expect(
+      within(card).getByText(
+        /Turning this off does not disable globally forced dark styling/,
+      ),
+    ).toBeVisible();
+    expect(within(card).getAllByRole("checkbox")).toHaveLength(7);
+    expect(
+      within(card).getByText(
+        /Installable Chromium extensions are not supported/,
+      ),
+    ).toBeVisible();
+    const directory = screen.getByRole("region", {
+      name: "Browser working data",
+    });
+    expect(
+      card.compareDocumentPosition(directory) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+  });
+
+  it("preserves saved inactive native preferences when editing a supported field", () => {
+    const { update } = setup("browser", {
+      webBrowser: normalizeWebBrowserSettings({
+        databasesEnabled: false,
+        hideAutomationIndicator: false,
+      }),
+    });
+    for (const name of [/^Allow IndexedDB/, /^Hide WebDriver indicator/]) {
+      const toggle = screen.getByRole("checkbox", { name });
+      expect(toggle).toBeDisabled();
+      expect(toggle).not.toBeChecked();
+    }
+    expect(update).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("checkbox", { name: /^Allow cookies/ }));
+    expect(update.mock.lastCall?.[0].webBrowser).toMatchObject({
+      cookiesEnabled: false,
+      databasesEnabled: false,
+      hideAutomationIndicator: false,
+    });
+  });
+
+  it("does not present native-only settings as active in the legacy engine", () => {
+    const { update } = setup("browser", {
+      webBrowser: normalizeWebBrowserSettings({
+        engine: "legacy",
+        cookiesEnabled: false,
+      }),
+    });
+    const card = screen.getByRole("region", {
+      name: "Native browser capabilities",
+    });
+    expect(within(card).getByRole("status")).toHaveTextContent(
+      "do not apply to the legacy rewrite browser",
+    );
+    for (const toggle of within(card).getAllByRole("checkbox"))
+      expect(toggle).toBeDisabled();
+    expect(
+      within(card).getByRole("checkbox", { name: /^Allow cookies/ }),
+    ).not.toBeChecked();
+    expect(update).not.toHaveBeenCalled();
+  });
+  it("displays a legacy request as database retention and saves the canonical mode without claiming payload migration", () => {
+    const saved = {
+      ...normalizeWebBrowserSettings(undefined),
+      sessionRetention: {
+        ...DEFAULT_BROWSER_SESSION_RETENTION,
+        mode: "encrypted-local",
+      },
+    };
+    const { update } = setup("browser", {
+      webBrowser: saved as unknown as GlobalSettings["webBrowser"],
+    });
+    expect(
+      screen.getByRole("combobox", { name: "Requested cookie retention" }),
+    ).toHaveTextContent("Sign-in cookies in this encrypted database");
+    expect(
+      screen.getByText(
+        /retention is configured but runtime support has not been confirmed/,
+      ),
+    ).toHaveTextContent("Encrypted database");
+    expect(screen.getByText(/Only cookies can be retained/)).toHaveTextContent(
+      "inside the owning encrypted database",
+    );
+    expect(screen.getByText(/Only cookies can be retained/)).toHaveTextContent(
+      "included in that database's sync and exports",
+    );
+    expect(
+      screen.getByText(
+        /does not confirm that previously retained cookie data has been migrated/,
+      ),
+    ).toBeVisible();
+    expect(
+      screen.queryByText(/on this machine|excluded from cloud sync/),
+    ).toBeNull();
+    expect(update).not.toHaveBeenCalled();
+    fireEvent.click(
+      screen.getByRole("checkbox", { name: /^Show bookmarks bar/ }),
+    );
+    expect(update.mock.lastCall?.[0].webBrowser.sessionRetention.mode).toBe(
+      "encrypted-database",
+    );
+    expect(saved.sessionRetention.mode).toBe("encrypted-local");
+  });
+
+  it("reveals retention policy controls only after the native support probe completes", async () => {
+    const invoke = vi.fn().mockResolvedValue({
+      memory: true,
+      encryptedDatabase: true,
+      policyExpiration: true,
+      clearOnDatabaseLock: true,
+    });
+    const probe = vi.spyOn(tauriInvoke, "getInvoke").mockResolvedValue(invoke);
+    const { update, unmount } = setup();
+    try {
+      expect(
+        screen.queryByRole("spinbutton", {
+          name: "Retained session idle expiry (minutes)",
+        }),
+      ).toBeNull();
+      await waitFor(() =>
+        expect(
+          screen.getByRole("spinbutton", {
+            name: "Retained session idle expiry (minutes)",
+          }),
+        ).toBeVisible(),
+      );
+      expect(invoke.mock.calls).toEqual([
+        ["origin_browser_retention_capabilities"],
+      ]);
+      expect(
+        screen.getByText(/Restore requires unlocking the owning database/),
+      ).toBeVisible();
+      expect(update).not.toHaveBeenCalled();
+    } finally {
+      unmount();
+      probe.mockRestore();
+    }
+  });
+
+  it("honors supplied support without probing and keeps unavailable controls hidden", () => {
+    const probe = vi.spyOn(tauriInvoke, "getInvoke");
+    const { unmount } = setup("browser", {}, true, {
+      memory: false,
+      encryptedDatabase: false,
+      policyExpiration: false,
+      clearOnDatabaseLock: false,
+    });
+    try {
+      expect(probe).not.toHaveBeenCalled();
+      expect(
+        screen.queryByRole("spinbutton", {
+          name: "Retained session idle expiry (minutes)",
+        }),
+      ).toBeNull();
+    } finally {
+      unmount();
+      probe.mockRestore();
+    }
+  });
+
+  it("mounts themed engine selection and shared website defaults", () => {
+    const { update, container } = setup();
+    expect(container.querySelector("select")).toBeNull();
+    expect(
+      screen
+        .getByRole("combobox", { name: "Default browser engine" })
+        .closest(".sor-settings-select-row"),
+    ).toHaveClass("flex-wrap");
+    expect(
+      screen.getByRole("combobox", { name: "Default browser engine" }),
+    ).toHaveTextContent("Real-origin native browser (experimental)");
+    expect(update).not.toHaveBeenCalled();
+    choose("Default browser engine", "Legacy rewrite browser");
+    expect(update.mock.lastCall?.[0].webBrowser.engine).toBe("legacy");
+    choose(
+      "Default browser engine",
+      /^Real-origin native browser \(experimental\)/,
+    );
+    expect(update.mock.lastCall?.[0].webBrowser.engine).toBe("real-origin");
+    expect(
+      screen.getByRole("heading", {
+        name: "Shared website request permissions",
+      }),
+    ).toBeVisible();
+    fireEvent.change(screen.getByLabelText("New website origin"), {
+      target: { value: "https://fixture.invalid" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Add website" }));
+    expect(
+      update.mock.lastCall?.[0].webBrowser.domainPermissions.websites[0].origin,
+    ).toBe("https://fixture.invalid");
+    expect(update.mock.lastCall?.[0].webBrowser.engine).toBe("real-origin");
+  });
+  it("preserves persisted legacy engine preferences without rewriting them on render", () => {
+    const { update } = setup("browser", {
+      webBrowser: normalizeWebBrowserSettings({ engine: "legacy" }),
+    });
+    expect(
+      screen.getByRole("combobox", { name: "Default browser engine" }),
+    ).toHaveTextContent("Legacy rewrite browser");
+    expect(update).not.toHaveBeenCalled();
+    fireEvent.click(
+      screen.getByRole("checkbox", { name: /Show bookmarks bar/ }),
+    );
+    expect(update.mock.lastCall?.[0].webBrowser.engine).toBe("legacy");
+  });
   it("shows common font and resource defaults without writing on render", () => {
     const { update } = setup("browser", { webBrowser: undefined });
     expect(
@@ -190,7 +459,12 @@ describe("Web Browser settings", () => {
     expect(update).not.toHaveBeenCalled();
   });
   it("saves page controls and compatibility restrictions through themed settings", () => {
-    const { update } = setup();
+    const { update } = setup("browser", {
+      webBrowser: normalizeWebBrowserSettings({
+        engine: "legacy",
+        hideAutomationIndicator: false,
+      }),
+    });
     number("Website zoom (%)", "125");
     expect(update.mock.lastCall?.[0].webBrowser.defaultZoomPercent).toBe(125);
     for (const [label, field, expected] of [
@@ -200,7 +474,7 @@ describe("Web Browser settings", () => {
       ["Keep browser identity consistent", "preferNativeUserAgent", false],
       ["Keep browser language consistent", "preferNativeLanguage", false],
       ["Hide WebDriver indicator", "hideAutomationIndicator", true],
-      ["Require manual sign-in submission", "manualFormSubmit", true],
+      ["Require manual sign-in submission", "manualFormSubmit", false],
     ] as const) {
       fireEvent.click(
         screen.getByRole("checkbox", { name: new RegExp(`^${label}`) }),
@@ -225,6 +499,11 @@ describe("Web Browser settings", () => {
   });
   it("fills legacy defaults, retains appearance, and shows honest native identity and policy scope", () => {
     const { container, update } = setup("browser", { webBrowser: undefined });
+    expect(
+      screen.getByRole("checkbox", {
+        name: /Require manual sign-in submission/,
+      }),
+    ).toBeChecked();
     expect(
       screen.getByRole("checkbox", { name: /Show bookmarks bar/ }),
     ).toBeChecked();
@@ -251,7 +530,7 @@ describe("Web Browser settings", () => {
     ).toBeInTheDocument();
     expect(
       screen.getByRole("combobox", { name: "Tactical RMM popups" }),
-    ).toHaveTextContent("Open in tabs");
+    ).toHaveTextContent("Block popups");
     expect(
       container.querySelector('[data-setting-key="websiteDarkMode"]'),
     ).toBeInTheDocument();
@@ -262,12 +541,15 @@ describe("Web Browser settings", () => {
     expect(update).not.toHaveBeenCalled();
     expect(
       screen.getByRole("checkbox", { name: /^Hide WebDriver/ }),
-    ).not.toBeChecked();
+    ).toBeChecked();
     expect(screen.queryByText(/detectable JavaScript override/)).toBeNull();
+    expect(
+      screen.getByText(/private closure and do not enable the WebDriver flag/),
+    ).toBeVisible();
   });
 
   it("updates browser preferences and bookmark confirmation without losing policy settings", () => {
-    const config = normalizeWebBrowserSettings(undefined);
+    const config = normalizeWebBrowserSettings({ engine: "legacy" });
     config.defaultPolicy.httpsOnly = true;
     const { update } = setup("browser", { webBrowser: config });
     fireEvent.click(
@@ -293,6 +575,60 @@ describe("Web Browser settings", () => {
     expect(update).toHaveBeenLastCalledWith({
       confirmDeleteAllBookmarks: false,
     });
+  });
+
+  it("shows native-denied capabilities as inactive while preserving legacy values", () => {
+    const { update } = setup("browser", {
+      webBrowser: normalizeWebBrowserSettings({
+        allowDownloads: true,
+        allowPageDialogs: true,
+        popupPolicy: "tabs",
+      }),
+    });
+    for (const name of [/^Allow website downloads/, /^Allow website dialogs/]) {
+      expect(screen.getByRole("checkbox", { name })).toBeDisabled();
+      expect(screen.getByRole("checkbox", { name })).not.toBeChecked();
+    }
+    expect(
+      screen.getByRole("combobox", { name: "Tactical RMM popups" }),
+    ).toBeDisabled();
+    expect(
+      screen.getByRole("combobox", { name: "Tactical RMM popups" }),
+    ).toHaveTextContent("Block popups");
+    expect(update).not.toHaveBeenCalled();
+    number("Website zoom (%)", "125");
+    expect(update.mock.lastCall?.[0].webBrowser).toMatchObject({
+      allowDownloads: true,
+      allowPageDialogs: true,
+      popupPolicy: "tabs",
+    });
+    choose("Default browser engine", "Legacy rewrite browser");
+    expect(
+      screen.getByRole("checkbox", { name: /^Allow website downloads/ }),
+    ).toBeChecked();
+    expect(
+      screen.getByRole("combobox", { name: "Tactical RMM popups" }),
+    ).toHaveTextContent("Open in tabs");
+  });
+
+  it("saves requested cookie retention without claiming support or exposing unapproved policy controls", () => {
+    const { update } = setup();
+    expect(
+      screen.getByRole("combobox", { name: "Requested cookie retention" }),
+    ).toHaveTextContent("Ephemeral");
+    choose("Requested cookie retention", /Memory/);
+    expect(update.mock.lastCall?.[0].webBrowser.sessionRetention).toMatchObject(
+      { version: 1, mode: "memory" },
+    );
+    expect(
+      screen.getByText(/saving this preference does not activate retention/),
+    ).toHaveAttribute("role", "status");
+    expect(
+      screen.queryByRole("spinbutton", { name: /Retained session/ }),
+    ).toBeNull();
+    expect(
+      screen.queryByRole("checkbox", { name: /Clear retained cookies/ }),
+    ).toBeNull();
   });
 
   it("applies every script/cache choice through themed selects without creating credential grants", () => {
@@ -497,6 +833,22 @@ describe("Web Browser settings", () => {
     expect(() => normalizeWebBrowserSettings(config)).toThrow();
   });
 
+  it("keeps all-request trust connection-only and rejects a saved global opt-in", () => {
+    const config = normalizeWebBrowserSettings(undefined);
+    expect(config.defaultPolicy.allowAllRequests).toBe(false);
+    expect(
+      normalizeWebBrowserSettings(config).defaultPolicy.allowAllRequests,
+    ).toBe(false);
+    config.defaultPolicy.allowAllRequests = true;
+    expect(() => normalizeWebBrowserSettings(config)).toThrow();
+    const { update } = setup("browser", { webBrowser: config });
+    expect(screen.getByRole("alert")).toHaveTextContent("settings are invalid");
+    expect(update).not.toHaveBeenCalled();
+    expect(
+      screen.queryByRole("checkbox", { name: /Allow all website requests/ }),
+    ).not.toBeInTheDocument();
+  });
+
   it("requires explicit recovery of invalid saved policies", () => {
     const config = normalizeWebBrowserSettings(undefined);
     config.defaultPolicy.allowCrossOriginRedirects = true;
@@ -675,6 +1027,10 @@ describe("Browser and Internal Proxy navigation, search and resets", () => {
     expect(TAB_DEFAULTS.proxy).not.toContain("proxyRequestLogLimit");
     expect(DEFAULT_VALUES.webBrowser).toEqual(
       normalizeWebBrowserSettings(undefined),
+    );
+    expect(defaultSettings.webBrowser?.engine).toBe("real-origin");
+    expect((DEFAULT_VALUES.webBrowser as { engine: string }).engine).toBe(
+      "real-origin",
     );
     expect(DEFAULT_VALUES.internalProxy).toEqual(
       normalizeInternalProxySettings(undefined),

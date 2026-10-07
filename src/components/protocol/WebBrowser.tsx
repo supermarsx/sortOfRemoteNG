@@ -1,26 +1,74 @@
-import React from "react";
+import React, { useRef } from "react";
 import { useWebBrowser } from "../../hooks/protocol/useWebBrowser";
 import type { ConnectionSession } from "../../types/connection/connection";
+import { useSettings } from "../../contexts/SettingsContext";
+import { normalizeWebBrowserSettings } from "../../utils/settings/webBrowserSettings";
+import type { WebBrowserEngine } from "../../types/settings/webBrowser";
+import type { SettingsTabId } from "../SettingsDialog/settingsConstants";
+import OriginConnectionBrowser from "./webBrowser/OriginConnectionBrowser";
 
 interface WebBrowserProps {
   session: ConnectionSession;
   onActivateSession?: (sessionId: string) => void;
+  onOpenSettings?: (tab?: SettingsTabId) => void;
   sharedPopupId?: string;
 }
-import SecurityIcon from "./webBrowser/SecurityIcon";
-import RecordingControls from "./webBrowser/RecordingControls";
 import NavigationBar from "./webBrowser/NavigationBar";
 import SecurityInfoBar from "./webBrowser/SecurityInfoBar";
-import BookmarkChip from "./webBrowser/BookmarkChip";
-import FolderChip from "./webBrowser/FolderChip";
-import BookmarkContextMenu from "./webBrowser/BookmarkContextMenu";
-import BarContextMenu from "./webBrowser/BarContextMenu";
 import BookmarkBar from "./webBrowser/BookmarkBar";
-import ERROR_BASE from "./webBrowser/ERROR_BASE";
 import ContentArea from "./webBrowser/ContentArea";
 import BrowserDialogs from "./webBrowser/BrowserDialogs";
 
-export const WebBrowser: React.FC<WebBrowserProps> = ({
+export const WebBrowser: React.FC<WebBrowserProps> = (props) => {
+  const { settings, settingsReady } = useSettings();
+  const initialEngine = useRef<{
+    sessionId: string;
+    engine: WebBrowserEngine | undefined;
+  } | null>(null);
+  let config;
+  try {
+    config = normalizeWebBrowserSettings(settings.webBrowser);
+  } catch {
+    return (
+      <p role="alert">
+        Browser settings are invalid. Review Web Browser settings before
+        connecting.
+      </p>
+    );
+  }
+  if (
+    settingsReady !== false &&
+    initialEngine.current?.sessionId !== props.session.id
+  )
+    initialEngine.current = {
+      sessionId: props.session.id,
+      engine: config.engine,
+    };
+  const engine =
+    initialEngine.current?.sessionId === props.session.id
+      ? initialEngine.current.engine
+      : config.engine;
+  return (
+    <div className="flex flex-col h-full min-h-0 bg-[var(--color-background)]">
+      {engine === "real-origin" ? (
+        <OriginConnectionBrowser
+          key={`origin:${props.session.id}`}
+          session={props.session}
+          sharedPopupId={props.sharedPopupId}
+          onOpenSettings={props.onOpenSettings}
+        />
+      ) : engine === "legacy" ? (
+        <LegacyWebBrowser key={`legacy:${props.session.id}`} {...props} />
+      ) : (
+        <p role="status" className="p-3">
+          Review the browser engine in Settings → Web Browser before connecting.
+        </p>
+      )}
+    </div>
+  );
+};
+
+const LegacyWebBrowser: React.FC<WebBrowserProps> = ({
   session,
   onActivateSession,
   sharedPopupId,
@@ -28,7 +76,7 @@ export const WebBrowser: React.FC<WebBrowserProps> = ({
   const mgr = useWebBrowser(session, onActivateSession, sharedPopupId);
 
   return (
-    <div className="flex flex-col h-full bg-[var(--color-background)]">
+    <div className="flex flex-col flex-1 min-h-0 bg-[var(--color-background)]">
       {/* Browser Header */}
       <div className="bg-[var(--color-surface)] border-b border-[var(--color-border)] p-3">
         <NavigationBar mgr={mgr} />

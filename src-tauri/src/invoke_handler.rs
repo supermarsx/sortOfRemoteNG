@@ -17,6 +17,15 @@ pub(crate) fn build() -> InvokeHandler {
     let web_guard_handler = erase_handler(tauri::generate_handler![
         crate::web_network_guard::web_network_guard_status
     ]);
+    let origin_browser_handler = erase_handler(tauri::generate_handler![
+        crate::origin_browser_commands::origin_browser_create,
+        crate::origin_browser_commands::origin_browser_status,
+        crate::origin_browser_commands::origin_browser_retention_capabilities,
+        crate::origin_browser_commands::origin_browser_navigate,
+        crate::origin_browser_commands::origin_browser_control,
+        crate::origin_browser_commands::origin_browser_close,
+        crate::origin_browser_commands::origin_browser_automation,
+    ]);
     let core_handler = sorng_commands_core::build();
     let sessions_handler = sorng_commands_sessions::build();
     let access_handler = sorng_commands_access::build();
@@ -45,6 +54,9 @@ pub(crate) fn build() -> InvokeHandler {
 
     Box::new(move |invoke| {
         let command = invoke.message.command();
+        if crate::origin_browser_commands::is_command(command) {
+            return origin_browser_handler(invoke);
+        }
         if command == "web_network_guard_status" {
             return web_guard_handler(invoke);
         }

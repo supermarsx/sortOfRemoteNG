@@ -56,6 +56,7 @@ import { useWebAutomation } from "./useWebAutomation";
 import { useWebAutoMfa } from "./useWebAutoMfa";
 import { useBlockedWebsiteScripts } from "./useBlockedWebsiteScripts";
 import { useWebPopupTabs } from "./useWebPopupTabs";
+import { useWebExternalLinks } from "./useWebExternalLinks";
 import {
   browserSessionPolicy,
   useBrowserRuntimeSettings,
@@ -77,6 +78,7 @@ import {
 } from "../../utils/security/runtimeCredentialVault";
 import { useHttpRedirectReview } from "./useHttpRedirectReview";
 import { useHttpRedirectTrust } from "./useHttpRedirectTrust";
+import { allWebsiteRequestsAllowed } from "../../utils/protocol/websiteRequestPermissions";
 import { useDeferredSynologyLoginStatus } from "./useDeferredSynologyLoginStatus";
 import { useEcpLoginNotice } from "./useEcpLoginNotice";
 import { useClaudeLoginNotice } from "./useClaudeLoginNotice";
@@ -2226,6 +2228,7 @@ export function useWebBrowser(
     enabled:
       !sharedPopupId &&
       (proxyOptions.policy?.allowCrossOriginRedirects === true ||
+        allWebsiteRequestsAllowed(proxyOptions.policy) ||
         !!proxyOptions.policy?.synologyQuickConnectDefaults),
     effectivePolicy: proxyOptions.policy ?? undefined,
     redirectBudget: redirectTrust.redirectBudget,
@@ -4695,6 +4698,31 @@ export function useWebBrowser(
         : null;
     });
   const pageActionBridge = pageActionBridgeRef.current;
+  const externalLinks = useWebExternalLinks(() => {
+    const document = currentDocumentRef.current;
+    const frame = iframeRef.current?.contentWindow;
+    return connection?.httpApplication?.id === "exchange-owa" &&
+      proxyOptions.policy?.pageScripts !== "block" &&
+      settingsReady &&
+      !sharedPopupId &&
+      frame &&
+      document &&
+      document.generation === navGenRef.current &&
+      document.sessionId === proxySessionIdRef.current &&
+      document.ownerScope === trustOwnerScopeRef.current &&
+      !pendingNavigationRef.current &&
+      !navigationFailureRef.current &&
+      !pageActionBlockedRef.current &&
+      !redirectReview.review &&
+      !redirectReview.error
+      ? {
+          frame,
+          document,
+          sourceOrigin: new URL(baseTargetRef.current).origin,
+          captureAccess: () => captureSessionDatabaseAccess(session),
+        }
+      : null;
+  });
   const credentialRuntimeRef = useRef({ session, scriptsBlocked: false });
   credentialRuntimeRef.current = {
     session,
@@ -5333,6 +5361,7 @@ export function useWebBrowser(
     handleForward,
     handleOpenInNewTab,
     handleOpenExternal,
+    externalLinks,
     isCloudflareDashboard,
     applicationExternalTarget,
     openingApplicationExternal,

@@ -5,6 +5,8 @@ import type {
 import type { HttpProxyPolicy } from "../../types/connection/httpProxyPolicy";
 import { normalizeHttpProxyPolicy } from "../connection/httpProxyPolicy";
 import { MAX_BROWSER_FORM_COMBINED_DELAY_MS } from "../connection/httpFormAutomation";
+import { normalizeWebsiteDomainPermissions } from "./websiteDomainPermissions";
+import { normalizeBrowserSessionRetention } from "./browserSessionSettings";
 
 export const DEFAULT_INTERNAL_PROXY_SETTINGS: Readonly<InternalProxySettings> =
   Object.freeze({
@@ -65,6 +67,7 @@ export function normalizeWebBrowserSettings(
       (key) =>
         ![
           "version",
+          "engine",
           "showBookmarksBar",
           "showSecurityInfo",
           "showLoadingProgress",
@@ -74,6 +77,13 @@ export function normalizeWebBrowserSettings(
           "preferNativeUserAgent",
           "preferNativeLanguage",
           "hideAutomationIndicator",
+          "localStorageEnabled",
+          "databasesEnabled",
+          "webglEnabled",
+          "cookiesEnabled",
+          "mediaStreamEnabled",
+          "crossOriginRequestsEnabled",
+          "websiteExtensionsEnabled",
           "minimumFormFillDelayMs",
           "minimumFormSubmitDelayMs",
           "manualFormSubmit",
@@ -81,6 +91,8 @@ export function normalizeWebBrowserSettings(
           "initialLoadTimeoutSeconds",
           "documentReadyTimeoutSeconds",
           "defaultPolicy",
+          "domainPermissions",
+          "sessionRetention",
         ].includes(key),
     )
   )
@@ -92,17 +104,27 @@ export function normalizeWebBrowserSettings(
   )
     return invalid("web browser");
   const defaultPolicy = normalizeHttpProxyPolicy(row.defaultPolicy);
+  if (
+    row.engine !== undefined &&
+    row.engine !== "real-origin" &&
+    row.engine !== "legacy"
+  )
+    return invalid("web browser");
   // Global defaults contain neither secrets nor redirect/credential grants.
   // Those decisions continue to require per-connection review.
   if (
     defaultPolicy.queryParameters.length ||
     defaultPolicy.allowAllScripts ||
+    defaultPolicy.allowAllRequests ||
     defaultPolicy.allowCrossOriginRedirects ||
     defaultPolicy.allowHttpDowngradeRedirects
   )
     return invalid("web browser");
   const settings: WebBrowserSettingsConfig = {
     version: 1,
+    // Persisted legacy values may be explicit choices or earlier normalized
+    // defaults. Without provenance, preserve both; only missing keys migrate.
+    engine: row.engine === "legacy" ? "legacy" : "real-origin",
     showBookmarksBar: boolean(row.showBookmarksBar, true),
     showSecurityInfo: boolean(row.showSecurityInfo, true),
     showLoadingProgress: boolean(row.showLoadingProgress, true),
@@ -117,7 +139,14 @@ export function normalizeWebBrowserSettings(
     allowPageDialogs: boolean(row.allowPageDialogs, false),
     preferNativeUserAgent: boolean(row.preferNativeUserAgent, true),
     preferNativeLanguage: boolean(row.preferNativeLanguage, true),
-    hideAutomationIndicator: boolean(row.hideAutomationIndicator, false),
+    hideAutomationIndicator: boolean(row.hideAutomationIndicator, true),
+    localStorageEnabled: boolean(row.localStorageEnabled, true),
+    databasesEnabled: boolean(row.databasesEnabled, true),
+    webglEnabled: boolean(row.webglEnabled, true),
+    cookiesEnabled: boolean(row.cookiesEnabled, true),
+    mediaStreamEnabled: boolean(row.mediaStreamEnabled, true),
+    crossOriginRequestsEnabled: boolean(row.crossOriginRequestsEnabled, true),
+    websiteExtensionsEnabled: boolean(row.websiteExtensionsEnabled, true),
     minimumFormFillDelayMs: integer(
       row.minimumFormFillDelayMs,
       0,
@@ -132,7 +161,9 @@ export function normalizeWebBrowserSettings(
       30000,
       "web browser",
     ),
-    manualFormSubmit: boolean(row.manualFormSubmit, false),
+    // Match native authorization for missing saved policy on every engine.
+    // Preserve explicit booleans, including previously normalized false values.
+    manualFormSubmit: boolean(row.manualFormSubmit, true),
     popupPolicy: row.popupPolicy === "block" ? "block" : "tabs",
     initialLoadTimeoutSeconds: integer(
       row.initialLoadTimeoutSeconds,
@@ -149,6 +180,14 @@ export function normalizeWebBrowserSettings(
       "web browser",
     ),
     defaultPolicy,
+    sessionRetention: normalizeBrowserSessionRetention(row.sessionRetention),
+    ...(row.domainPermissions === undefined
+      ? {}
+      : {
+          domainPermissions: normalizeWebsiteDomainPermissions(
+            row.domainPermissions,
+          ),
+        }),
   };
   if (
     settings.minimumFormFillDelayMs + settings.minimumFormSubmitDelayMs >

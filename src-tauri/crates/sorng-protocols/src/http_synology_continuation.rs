@@ -443,7 +443,11 @@ async fn dispatch(
         };
         *request.uri_mut() = uri;
     }
-    let state = if let Some(google) = &state.network.google {
+    let state = if public_requests::is_path(request.uri().path()) {
+        // Public navigation receipts retain the listener-owned state, not a
+        // temporary hosted alias clone whose Weak pointer dies after response.
+        state
+    } else if let Some(google) = &state.network.google {
         match google.request_state(&state, &request) {
             Ok(scoped) => scoped,
             Err(_) => return gone(),

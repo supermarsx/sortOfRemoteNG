@@ -144,7 +144,12 @@ async function read(request: Source, check: () => void) {
   let snapshot;
   try {
     snapshot = await decodeCloudSnapshot(remote.data, request.config);
-    snapshot.payload = await upgradeCloudSyncPayload(snapshot.payload);
+    // Explicit pull keeps and hashes exact capsule bytes. Native import performs
+    // authentication in its atomic commit; this does not authorize sync merging.
+    snapshot.payload = await upgradeCloudSyncPayload(
+      snapshot.payload,
+      "atomic-restore",
+    );
   } catch {
     throw new Error(
       "Could not decrypt or validate the remote snapshot. Use the same cloud encryption password as the source device and check Maximum Sync Snapshot Size. No local or remote data was changed.",
@@ -272,7 +277,11 @@ export async function pullRemoteDatabase(
       try {
         return await manager.importCloudSyncDatabase(
           snapshot.payload.sections[`database:${databaseId}`],
-          { ...localOptions, assertCurrent: check },
+          {
+            ...localOptions,
+            assertCurrent: check,
+            browserSessionsPassword: receipt.config.syncEncryptionPassword,
+          },
         );
       } catch (error) {
         if (error instanceof FullDatabaseRestoreIncompleteError) throw error;

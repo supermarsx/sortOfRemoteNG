@@ -1,8 +1,14 @@
 /* Reviewed Google Account identifier -> password flow. Unknown challenges,
  * alternate account pickers, CAPTCHA, recovery, SSO and passkeys fail closed. */
-(function () {
+(function (factory) {
+  // Native CEF evaluates this module inside a private lexical module scope.
+  // Legacy script delivery retains its existing page-global API and transport.
+  if (typeof module === "object" && module && module.__sorngNativeGoogle === true && module.exports) module.exports = factory;
+  else factory(null);
+})(function (nativeTransport) {
   "use strict";
-  if (window.__sorng_google_login) return;
+  if (!nativeTransport && window.__sorng_google_login) return;
+  if (nativeTransport && (typeof nativeTransport.read !== "function" || typeof nativeTransport.click !== "function")) throw new Error("invalid-native-transport");
   var ran = false;
   var stopped = false;
   var active = null;
@@ -94,6 +100,7 @@
   }
 
   function read(nonce, phase, controller) {
+    if (nativeTransport) return nativeTransport.read(phase ? "password" : "identifier", controller.signal);
     var query = phase ? "?phase=password&nonce=" : "?nonce=";
     return fetch(
       "/__sortofremoteng_autologin" + query + encodeURIComponent(nonce),
@@ -118,6 +125,7 @@
     var continuation = passwordOnly ? nonce : null;
     var username = null;
     var password = null;
+    var passwordAutoSubmit = true;
     var phase = passwordOnly ? "password" : "identifier";
     var deadline = Date.now() + 30000;
 
@@ -148,6 +156,7 @@
             )
               throw new Error("changed");
             password = reply.password;
+            passwordAutoSubmit = !nativeTransport || reply.autoSubmit === true;
             // Rendering can replace the panel while the single-use grant is
             // in flight. Observe the new controls without requesting it again.
             phase = "password-fill";
@@ -161,7 +170,7 @@
         });
     }
 
-    function submitIdentifier(target) {
+    function submitIdentifier(target, autoSubmit) {
       function checkedTarget(expectedValue) {
         var checked = identifierTarget(helpers, expectedValue);
         if (
@@ -186,8 +195,10 @@
         },
       );
       checkedTarget(username);
+      if (!autoSubmit) return finish(true, "filled");
       phase = "password";
-      target.button.click();
+      if (nativeTransport) nativeTransport.click(target.button);
+      else target.button.click();
     }
 
     function submitPassword(target) {
@@ -216,7 +227,9 @@
       );
       checkedTarget(password);
       phase = "submitted";
-      target.button.click();
+      if (!passwordAutoSubmit) return finish(true, "filled");
+      if (nativeTransport) nativeTransport.click(target.button);
+      else target.button.click();
       finish(true, "submitted");
     }
 
@@ -250,7 +263,7 @@
                   throw new Error("changed");
                 username = reply.username;
                 continuation = reply.continuation;
-                submitIdentifier(identifier);
+                submitIdentifier(identifier, !nativeTransport || reply.autoSubmit === true);
               } finally {
                 if (reply && typeof reply === "object") {
                   reply.username = null;
@@ -289,7 +302,7 @@
     progress();
   }
 
-  window.__sorng_google_login = {
+  var client = {
     runWhenReady: function (nonce, helpers) {
       return runWhenReady(nonce, helpers, false);
     },
@@ -298,4 +311,6 @@
     },
     cancel: cancel,
   };
-})();
+  if (!nativeTransport) window.__sorng_google_login = client;
+  return client;
+});

@@ -1,0 +1,31 @@
+<!doctype html><html><head><meta charset="utf-8"><title>Local TLS acceptance</title><link rel="icon" href="data:,"></head>
+<body><h1>LOCAL synthetic TLS fixture</h1><p id="instructions"></p>
+<form><input id="identifierId" name="identifier" autocomplete="username"><div id="identifierNext"><button type="submit">Next</button></div></form>
+<script>
+const manual = location.pathname === '/manual';
+const proof = {origin:location.origin,secure:isSecureContext,top:top===window,
+ tauriAbsent:typeof window.__TAURI_INTERNALS__==='undefined',cookieEmpty:document.cookie==='',
+ storageEmpty:localStorage.length===0,httpOnlyHidden:!document.cookie.includes('tls_fixture')};
+localStorage.setItem('tls_fixture','private');
+let identifier=false;
+if(manual){
+ document.querySelector('#instructions').textContent='Type synthetic@example.test and synthetic-local-only, then click Sign in. This is a disposable local fixture, not a provider.';
+ document.querySelector('form').innerHTML='<input name="username" autocomplete="off"><input name="password" type="password" autocomplete="off"><button type="submit">Sign in</button>';
+} else {
+ document.querySelector('#instructions').textContent='Native Identifier and Password grants must complete this local staged form.';
+}
+document.querySelector('form').addEventListener('submit',async e=>{
+ e.preventDefault();const f=e.target;
+ if(!manual && !f.querySelector('[type=password]')){
+  identifier=f.querySelector('input').value==='synthetic@example.test';
+  history.replaceState({},'', '/v3/signin/challenge/pwd');
+  f.innerHTML='<input name="Passwd" type="password"><div id="passwordNext"><button type="submit">Next</button></div>';return;
+ }
+ proof.login=manual ? f.elements.username.value==='synthetic@example.test'&&f.elements.password.value==='synthetic-local-only' : identifier&&f.querySelector('input').value==='synthetic-local-only';
+ proof.trustedSubmit=e.isTrusted;
+ await fetch('/proof',{method:'POST',body:JSON.stringify(proof)});
+ // Keep issuing serial requests across host revocation; zero subsequent bytes
+ // must be measured by the fixture, not inferred from navigation dispatch.
+ for(;;){await new Promise(r=>setTimeout(r,150));await fetch('/pulse').catch(()=>{});}
+});
+</script></body></html>

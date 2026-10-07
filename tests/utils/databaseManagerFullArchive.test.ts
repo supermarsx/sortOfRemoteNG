@@ -126,6 +126,13 @@ beforeEach(async () => {
             },
           ],
         };
+      if (command === "database_browser_sessions_describe")
+        return structuredClone(
+          privateData.get(args.databaseId)?.browserSessions ?? {
+            version: 1,
+            records: [],
+          },
+        );
       if (command === "database_protection_save") {
         expect(args.expectedData).toEqual(privateData.get(args.databaseId));
         privateData.set(args.databaseId, structuredClone(args.data));
@@ -195,6 +202,415 @@ async function openPlainDatabase() {
 }
 
 describe("full database manager archive boundary", () => {
+  it.each(["update", "delete", "reject"])(
+    "applies explicit cloud %s with public/session CAS in one native transaction (mocked IPC)",
+    async (operation) => {
+      const source = privateData.get(collection.id)!;
+      source.browserSessions = {
+        version: 1,
+        records: [
+          { connectionId: "host", revision: "a".repeat(64) },
+          { connectionId: "local", revision: "a".repeat(64) },
+        ],
+      };
+      const password = "distinct-cloud-password";
+      const previous = bridge.invoke.getMockImplementation()!;
+      let exportedCapsules = 0;
+      bridge.invoke.mockImplementation(async (command, args) => {
+        if (command === "database_browser_sessions_export")
+          return {
+            version: 1,
+            ciphertext: `SYNTHETIC_RANDOM_EXPORT_${++exportedCapsules}`,
+          };
+        if (command === "database_browser_sessions_import") {
+          expect(args.password).toBe(password);
+          expect(args.expectedData).toEqual(privateData.get(collection.id));
+          expect(args.expected).toEqual(source.browserSessions);
+          expect(args.transfer.ciphertext).toBe("SYNTHETIC_INCOMING_CAPSULE");
+          expect(args.deletedConnectionIds).toEqual(
+            operation === "delete" ? ["host", "local"] : ["local"],
+          );
+          expect(args.data.settings.theme).toBe("remote-edited");
+          expect(args.data).not.toHaveProperty("browserSessionsTransfer");
+          expect(args.data).not.toHaveProperty(
+            "browserSessionsDeletedConnectionIds",
+          );
+          if (operation === "reject")
+            throw new Error("SYNTHETIC_REJECTED_CAPSULE_OR_CAS");
+          privateData.set(collection.id, structuredClone(args.data));
+          return {
+            committed: true,
+            cleanupPending: false,
+            warnings: [],
+            securityRevision: "source-revision",
+          };
+        }
+        return previous(command, args);
+      });
+      const manager = DatabaseManager.getInstance();
+      await manager.unlockManagedDatabase(
+        collection.id,
+        "password-slot",
+        "source-unlock",
+      );
+      const config = {
+        ...defaultCloudSyncConfig,
+        selectedItems: [`database:${collection.id}`],
+        encryptBeforeSync: true,
+        syncEncryptionPassword: password,
+      };
+      const baseline = await captureCloudSyncPayload(config, {
+        sessionTransferPurpose: "atomic-restore",
+      });
+      const incoming = structuredClone(
+        baseline.sections[`database:${collection.id}`],
+      ) as Awaited<ReturnType<typeof buildFullDatabaseArchive>>;
+      incoming.browserSessions =
+        operation === "delete"
+          ? { version: 1, records: [] }
+          : {
+              version: 1,
+              records: [{ connectionId: "host", revision: "b".repeat(64) }],
+            };
+      incoming.browserSessionsDeletedConnectionIds =
+        operation === "delete" ? ["host", "local"] : ["local"];
+      incoming.browserSessionsTransfer = {
+        version: 1,
+        ciphertext: "SYNTHETIC_INCOMING_CAPSULE",
+      };
+      incoming.settings.theme = "remote-edited";
+      incoming.recordMetadata = await reconcileRecordLedger(
+        fullDatabaseArchiveData(incoming),
+        incoming.recordMetadata,
+        { mode: "write" },
+      );
+      const before = structuredClone(privateData.get(collection.id));
+      bridge.invoke.mockClear();
+      const pending = applyCloudSyncPayload(
+        { version: 1, sections: { [`database:${collection.id}`]: incoming } },
+        config,
+        baseline,
+      );
+      if (operation === "reject") {
+        await expect(pending).rejects.toMatchObject({ kind: "partial" });
+        expect(privateData.get(collection.id)).toEqual(before);
+        expect(
+          bridge.invoke.mock.calls.some(
+            ([cmd]) => cmd === "trust_import_database",
+          ),
+        ).toBe(false);
+      } else {
+        await pending;
+        expect(privateData.get(collection.id)!.settings.theme).toBe(
+          "remote-edited",
+        );
+        expect(privateData.get(collection.id)!.browserSessions).toEqual(
+          incoming.browserSessions,
+        );
+      }
+      expect(
+        bridge.invoke.mock.calls.filter(
+          ([cmd]) => cmd === "database_browser_sessions_import",
+        ),
+      ).toHaveLength(1);
+      expect(
+        bridge.invoke.mock.calls.some(
+          ([cmd]) => cmd === "database_protection_save",
+        ),
+      ).toBe(false);
+      expect(exportedCapsules).toBeGreaterThan(1); // Fresh local wrappers do not weaken public-body CAS.
+    },
+  );
+
+  it("does not rewrite renderer metadata during cookie-only capture or invalidate an editor baseline (mocked native CAS)", async () => {
+    const manager = DatabaseManager.getInstance();
+    await manager.unlockManagedDatabase(
+      collection.id,
+      "password-slot",
+      "source-unlock",
+    );
+    // Do the existing one-time default/legacy-history migration before opening
+    // the editor. This test concerns subsequent native-only session changes.
+    await manager.readFullDatabaseArchive(collection.id, {
+      materializeDefaults: true,
+    });
+    const editor = (await manager.loadDatabaseData(collection.id))!;
+    const baseline = structuredClone(privateData.get(collection.id)!);
+    const previous = bridge.invoke.getMockImplementation()!;
+    bridge.invoke.mockImplementation(async (command, args) => {
+      if (command === "database_browser_sessions_export")
+        return { version: 1, ciphertext: "SYNTHETIC_TRANSFER" };
+      if (command === "database_protection_save") {
+        const ordinary = (value: StorageData) => {
+          const { browserSessions: _nativeOwned, ...body } = value;
+          return body;
+        };
+        // Models native merge_renderer: native sessions are kept out of ordinary
+        // body CAS, and renderer edits cannot replace their private contents.
+        expect(ordinary(args.expectedData)).toEqual(
+          ordinary(privateData.get(args.databaseId)!),
+        );
+        expect(args.data.browserSessions).toEqual(
+          args.expectedData.browserSessions,
+        );
+        privateData.set(args.databaseId, {
+          ...structuredClone(args.data),
+          browserSessions: privateData.get(args.databaseId)!.browserSessions,
+        });
+        return {
+          committed: true,
+          cleanupPending: false,
+          warnings: [],
+          securityRevision: "source-revision",
+        };
+      }
+      return previous(command, args);
+    });
+    bridge.invoke.mockClear();
+    const saved = vi.fn();
+    window.addEventListener("sorng-database-data-saved", saved);
+    try {
+      for (const revision of ["a", "a", "b"]) {
+        privateData.get(collection.id)!.browserSessions = {
+          version: 1,
+          records: [
+            {
+              connectionId: "host",
+              revision: revision.repeat(64),
+            },
+          ],
+        };
+        await expect(
+          captureCloudSyncPayload({
+            ...defaultCloudSyncConfig,
+            selectedItems: [`database:${collection.id}`],
+            encryptBeforeSync: true,
+            syncEncryptionPassword: "cloud-session-password",
+          }),
+        ).rejects.toThrow(/native authenticated transfer/);
+        expect(privateData.get(collection.id)!.recordMetadata).toEqual(
+          baseline.recordMetadata,
+        );
+        expect(privateData.get(collection.id)!.timestamp).toEqual(
+          baseline.timestamp,
+        );
+      }
+      expect(saved).not.toHaveBeenCalled();
+      expect(
+        bridge.invoke.mock.calls.some(
+          ([command]) => command === "database_protection_save",
+        ),
+      ).toBe(false);
+      editor.settings.theme = "light";
+      await manager.saveDatabaseData(collection.id, editor);
+      expect(privateData.get(collection.id)!.settings.theme).toBe("light");
+      expect(
+        privateData.get(collection.id)!.browserSessions?.records[0].revision,
+      ).toBe("b".repeat(64));
+      expect(saved).toHaveBeenCalledTimes(1);
+    } finally {
+      window.removeEventListener("sorng-database-data-saved", saved);
+    }
+  });
+
+  it.each([true, false])(
+    "uses one combined native body/session import after protecting an empty destination (commit=%s; mocked IPC)",
+    async (commit) => {
+      const data = privateData.get(collection.id)!;
+      data.browserSessions = {
+        version: 1,
+        records: [
+          {
+            connectionId: data.connections.find((row) => !row.isGroup)!.id,
+            revision: "a".repeat(64),
+          },
+        ],
+      };
+      const capsule = { version: 1, ciphertext: "SYNTHETIC_NATIVE_TRANSFER" };
+      const previous = bridge.invoke.getMockImplementation()!;
+      bridge.invoke.mockImplementation(async (command, args) => {
+        if (command === "database_browser_sessions_export") return capsule;
+        if (command === "database_browser_sessions_import") {
+          expect(args.expectedData).toEqual(privateData.get(args.databaseId));
+          expect(args.expectedData.connections).toEqual([]);
+          expect(args.expected).toEqual({ version: 1, records: [] });
+          expect(args.selected).toEqual(data.browserSessions);
+          expect(args.data.browserSessions).toEqual(data.browserSessions);
+          expect(args.password).toBe(PASSWORD);
+          expect(args.transfer).toEqual(capsule);
+          expect(args.deletedConnectionIds).toEqual([]);
+          if (!commit) throw new Error("SYNTHETIC_PRIVATE_ERROR");
+          privateData.set(args.databaseId, structuredClone(args.data));
+          return {
+            committed: true,
+            cleanupPending: false,
+            warnings: [],
+            securityRevision: "destination-revision",
+          };
+        }
+        return previous(command, args);
+      });
+      const encrypted = await exported();
+      bridge.invoke.mockClear();
+      const pending = DatabaseManager.getInstance().importDatabase(encrypted, {
+        importPassword: PASSWORD,
+        protectionTarget: target,
+        collectionName: "Session copy",
+      });
+      if (commit) {
+        const created = await pending;
+        expect(privateData.get(created.id)?.browserSessions).toEqual(
+          data.browserSessions,
+        );
+        expect(bridge.invoke).toHaveBeenCalledWith(
+          "trust_import_database",
+          expect.objectContaining({ databaseId: created.id }),
+        );
+      } else {
+        await expect(pending).rejects.toMatchObject({ kind: "partial" });
+        expect(
+          bridge.invoke.mock.calls.some(
+            ([command]) => command === "trust_import_database",
+          ),
+        ).toBe(false);
+        const destination = rows.find((row) => row.id !== collection.id)!;
+        expect(destination.protectionFormat).toBe("sorng-db");
+        expect(privateData.get(destination.id)?.connections).toEqual([]);
+        expect(
+          privateData.get(destination.id)?.browserSessions,
+        ).toBeUndefined();
+      }
+      const commands = bridge.invoke.mock.calls.map(([command]) => command);
+      expect(
+        commands.filter(
+          (command) => command === "database_browser_sessions_import",
+        ),
+      ).toHaveLength(1);
+      expect(commands).not.toContain("database_protection_save");
+      expect(commands.indexOf("database_protection_change")).toBeLessThan(
+        commands.indexOf("database_browser_sessions_import"),
+      );
+      const enrollment = bridge.invoke.mock.calls.find(
+        ([command]) => command === "database_protection_change",
+      )![1];
+      expect(enrollment.legacyVerifiedData.connections).toEqual([]);
+      expect(enrollment.legacyVerifiedData.browserSessions).toBeUndefined();
+      for (const [, args] of bridge.invoke.mock.calls.filter(
+        ([command]) => command === "save_database_data",
+      )) {
+        expect(args.data.connections).toEqual([]);
+        expect(args.data.browserSessions).toBeUndefined();
+      }
+    },
+  );
+
+  it("exports retained sessions through native using the archive password, not the source unlock secret", async () => {
+    const data = privateData.get(collection.id)!;
+    data.browserSessions = {
+      version: 1,
+      records: [
+        {
+          connectionId: data.connections.find((r) => !r.isGroup)!.id,
+          revision: "a".repeat(64),
+        },
+      ],
+    };
+    const previous = bridge.invoke.getMockImplementation()!;
+    bridge.invoke.mockImplementation(async (command, args) =>
+      command === "database_browser_sessions_export"
+        ? { version: 1, ciphertext: "native-sealed-transfer" }
+        : previous(command, args),
+    );
+    const encrypted = await exported();
+    const archive = JSON.parse(await decryptWithPassword(encrypted, PASSWORD));
+    expect(archive.browserSessions).toEqual(data.browserSessions);
+    expect(archive.browserSessionsTransfer).toEqual({
+      version: 1,
+      ciphertext: "native-sealed-transfer",
+    });
+    expect(bridge.invoke).toHaveBeenCalledWith(
+      "database_browser_sessions_export",
+      {
+        databaseId: collection.id,
+        sessionId: "native-handle",
+        expectedSecurityRevision: "source-revision",
+        selected: data.browserSessions,
+        password: PASSWORD,
+      },
+    );
+  });
+
+  it("passes the cloud password to native export and fails before unsafe wrapper comparison/upload", async () => {
+    const data = privateData.get(collection.id)!;
+    data.browserSessions = {
+      version: 1,
+      records: [
+        {
+          connectionId: data.connections.find((r) => !r.isGroup)!.id,
+          revision: "a".repeat(64),
+        },
+      ],
+    };
+    const previous = bridge.invoke.getMockImplementation()!;
+    bridge.invoke.mockImplementation(async (command, args) =>
+      command === "database_browser_sessions_export"
+        ? { version: 1, ciphertext: "randomized-native-transfer" }
+        : previous(command, args),
+    );
+    const manager = DatabaseManager.getInstance();
+    await manager.unlockManagedDatabase(
+      collection.id,
+      "password-slot",
+      "source-unlock",
+    );
+    await expect(
+      captureCloudSyncPayload({
+        ...defaultCloudSyncConfig,
+        selectedItems: [`database:${collection.id}`],
+        encryptBeforeSync: true,
+        syncEncryptionPassword: "separate-cloud-password",
+      }),
+    ).rejects.toThrow(/native authenticated transfer/);
+    expect(bridge.invoke).toHaveBeenCalledWith(
+      "database_browser_sessions_export",
+      expect.objectContaining({
+        password: "separate-cloud-password",
+        selected: data.browserSessions,
+      }),
+    );
+    expect(
+      bridge.invoke.mock.calls.some(
+        ([command]) => command === "cloud_sync_write",
+      ),
+    ).toBe(false);
+  });
+
+  it("does not create a database with descriptors but missing native session secrets", async () => {
+    const data = privateData.get(collection.id)!;
+    data.browserSessions = {
+      version: 1,
+      records: [
+        {
+          connectionId: data.connections.find((r) => !r.isGroup)!.id,
+          revision: "a".repeat(64),
+        },
+      ],
+    };
+    const manager = DatabaseManager.getInstance();
+    await expect(
+      manager.createManagedDatabase("unsafe copy", target, { data }),
+    ).rejects.toThrow(/native authenticated transfer/);
+    expect(
+      bridge.invoke.mock.calls.some(([command]) =>
+        [
+          "databases_save_index",
+          "save_database_data",
+          "database_protection_change",
+        ].includes(command),
+      ),
+    ).toBe(false);
+  });
+
   it("CAS-materializes absent sections once, preserving existing history and device fields across capture and saves", async () => {
     const source: StorageData = {
       connections: [connection("a"), connection("b")],

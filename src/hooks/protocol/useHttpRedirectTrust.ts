@@ -27,6 +27,7 @@ import {
 } from "../../utils/protocol/httpTrustedRedirectDestinations";
 import { stableJsonStringify } from "../../utils/core/stableJsonStringify";
 import { normalizeHttpProxyPolicy } from "../../utils/connection/httpProxyPolicy";
+import { allWebsiteRequestsAllowed } from "../../utils/protocol/websiteRequestPermissions";
 import { normalizeSynologySettings } from "../../types/protocols/synology";
 import {
   captureSynologyFormLoginLease,
@@ -630,6 +631,9 @@ export function useHttpRedirectTrust(
       settings,
       target: target!,
       persisted,
+      allRequestsAllowed: allWebsiteRequestsAllowed(
+        normalizeHttpProxyPolicy(persisted.httpProxyPolicy),
+      ),
       defaultProvenance,
     };
   };
@@ -703,13 +707,24 @@ export function useHttpRedirectTrust(
       );
       const grantIsSettled =
         grantIdentity === stableJsonStringify(verified.settings);
+      const runtimeAllowsAllRequests = () =>
+        allWebsiteRequestsAllowed(
+          latest.current.effectivePolicy ??
+            latest.current.connection?.httpProxyPolicy ??
+            null,
+        );
+      // The original saved policy was identity-checked against durable storage.
+      // A runtime-only or optimistic opt-in is never navigation authority.
+      const allRequestsTrusted =
+        verified.allRequestsAllowed && runtimeAllowsAllRequests();
       const checkGrant = (current: Connection) => {
         if (
           stableJsonStringify(
             normalizeHttpTrustedRedirectDestinations(
               current.httpTrustedRedirectDestinations,
             ),
-          ) !== grantIdentity
+          ) !== grantIdentity ||
+          (allRequestsTrusted && !runtimeAllowsAllRequests())
         )
           throw new Error(UNAVAILABLE);
       };
@@ -732,6 +747,7 @@ export function useHttpRedirectTrust(
         trusted:
           grantIsSettled &&
           (defaultTrusted ||
+            allRequestsTrusted ||
             verified.settings.origins.includes(
               new URL(review.destinationUrl).origin,
             )),

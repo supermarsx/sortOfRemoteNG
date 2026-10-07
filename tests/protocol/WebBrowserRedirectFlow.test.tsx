@@ -66,6 +66,10 @@ const h = vi.hoisted(() => ({
     allNetworkRequestsMediated: false,
   },
   settings: {
+    webBrowser: {
+      engine: "legacy",
+      manualFormSubmit: undefined as boolean | undefined,
+    },
     httpsTrustPolicy: "always-ask",
     proxyKeepaliveEnabled: false,
     webRecording: { autoRecordWebSessions: false },
@@ -228,6 +232,7 @@ beforeEach(() => {
   proxies.length = 0;
   proxyStartCount = 0;
   h.settingsReady = true;
+  h.settings.webBrowser.manualFormSubmit = undefined;
   h.locked = false;
   h.failSave = false;
   h.failSaveAfterDispatch = false;
@@ -399,6 +404,60 @@ async function inspectWebsiteNotifications() {
 }
 
 describe("mounted website network boundary", () => {
+  it("reviews clicked OWA email destinations without replacing the mailbox or granting network trust", async () => {
+    h.connections[0] = {
+      ...h.connections[0],
+      name: "Exchange mailbox",
+      hostname: "mail.example.test",
+      httpApplication: { version: 1, id: "exchange-owa", loginMode: "manual" },
+      httpProxyPolicy: { ...DEFAULT_HTTP_PROXY_POLICY, sameOriginOnly: true },
+    };
+    const view = await mounted();
+    const iframe = view.container.querySelector("iframe")!;
+    const originalSrc = iframe.src;
+    const local = new URL(originalSrc);
+    const navigationToken = local.searchParams.get("__sorng_navigation_v1");
+    local.searchParams.delete("__sorng_navigation_v1");
+    const identity = {
+      version: 1,
+      sessionId: "proxy-1",
+      documentToken: "d".repeat(32),
+      documentSequence: 1,
+      navigationToken,
+      url: local.href,
+    };
+    const send = async (type: string, fields = {}) =>
+      act(async () => {
+        window.dispatchEvent(
+          new MessageEvent("message", {
+            source: iframe.contentWindow,
+            origin: local.origin,
+            data: { ...identity, type, ...fields },
+          }),
+        );
+      });
+    await send("proxy_document_start");
+    await send("proxy_dom_ready");
+    const destinationUrl =
+      "https://news.example.test/story?signature=x%2By#part";
+    await send("sorng_owa_external_link", { destinationUrl });
+    const dialog = screen.getByRole("dialog", { name: "Open email link" });
+    expect(dialog).toHaveTextContent(destinationUrl);
+    expect(iframe).toHaveAttribute("inert");
+    expect(iframe).toHaveAttribute("sandbox", PROXY_WEB_FRAME_SANDBOX);
+    expect(iframe.src).toBe(originalSrc);
+    fireEvent.click(within(dialog).getByRole("button", { name: "Cancel" }));
+    expect(iframe).not.toHaveAttribute("inert");
+    expect(proxies).toHaveLength(1);
+    expect(h.connections[0].httpProxyPolicy?.sameOriginOnly).toBe(true);
+    expect(
+      h.invoke.mock.calls.some(([command]) => command === "open_url_external"),
+    ).toBe(false);
+    expect(h.invoke).not.toHaveBeenCalledWith("stop_basic_auth_proxy", {
+      sessionId: "proxy-1",
+    });
+  });
+
   it("enters a reviewed Google service through Accounts in the same proxy tab", async () => {
     h.connections = [googleAnalyticsConnection()];
     h.persistedConnections = structuredClone(h.connections);
@@ -780,6 +839,98 @@ function redirect(
 }
 
 describe("actual website redirect review integration", () => {
+  it("automatically hands unknown all-request destinations to fresh anonymous proxies with original durable provenance", async () => {
+    h.connections[0] = {
+      ...h.connections[0],
+      httpApplication: { version: 1, id: "custom", loginMode: "manual" },
+      basicAuthUsername: "PRIVATE_SOURCE_USER",
+      basicAuthPassword: "PRIVATE_SOURCE_PASSWORD",
+      httpProxyPolicy: {
+        ...DEFAULT_HTTP_PROXY_POLICY,
+        allowAllRequests: true,
+        httpsOnly: true,
+      },
+    };
+    const view = await mounted();
+    for (let hop = 1; hop <= 2; hop++) {
+      const native = redirect(
+        view.container.querySelector("iframe")!,
+        `https://unknown-${hop}.example.test/page/`,
+      );
+      await waitFor(() => expect(proxies).toHaveLength(hop + 1));
+      await waitFor(() =>
+        expect(view.container.querySelector("iframe")?.src).toContain(
+          proxies[hop].proxy_url,
+        ),
+      );
+      expect(h.invoke).toHaveBeenCalledWith("review_proxy_redirect", {
+        sessionId: native.sessionId,
+        receiptId: native.receiptId,
+      });
+      const runtime = resolveRuntimeConnection([], h.sessions[0].connectionId)!;
+      expect(runtime.httpProxyPolicy).toMatchObject({
+        allowAllRequests: true,
+        httpsOnly: true,
+        allowCrossOriginRedirects: false,
+        allowHttpDowngradeRedirects: false,
+      });
+      expect(getRuntimeWebNavigation(runtime.id)).toMatchObject({
+        redirectHops: hop,
+        trustedRedirectSource: {
+          savedConnectionId: "saved-nas",
+          databaseId: "owned",
+        },
+      });
+      expect(runtime.httpAutoLogin).toBe(false);
+      expect(runtime).not.toHaveProperty("httpApplication");
+      expect(JSON.stringify(runtime)).not.toContain("PRIVATE_SOURCE_");
+    }
+    const starts = h.invoke.mock.calls
+      .filter(([command]) => command === "start_basic_auth_proxy")
+      .slice(1);
+    expect(starts).toHaveLength(2);
+    for (const [, args] of starts) {
+      expect(args.config).toMatchObject({
+        username: "",
+        password: "",
+        verify_ssl: true,
+      });
+      expect(JSON.stringify(args)).not.toContain("PRIVATE_SOURCE_");
+    }
+    expect(h.dispatchAndFlush).not.toHaveBeenCalled();
+    expect(h.persistedConnections).toHaveLength(1);
+    expect(
+      h.persistedConnections[0].httpTrustedRedirectDestinations,
+    ).toBeUndefined();
+  });
+
+  it("does not automatically navigate using an all-request opt-in whose save failed", async () => {
+    h.connections[0].httpProxyPolicy = {
+      ...DEFAULT_HTTP_PROXY_POLICY,
+      allowAllRequests: true,
+    };
+    const view = await mounted();
+    h.persistedConnections[0].httpProxyPolicy!.allowAllRequests = false;
+    h.failSave = true;
+    redirect(
+      view.container.querySelector("iframe")!,
+      "https://unknown.example.test/",
+    );
+    await screen.findByRole("button", { name: "Continue in this tab" });
+    await act(async () => {});
+    expect(h.readCurrent).toHaveBeenCalled();
+    expect(proxies).toHaveLength(1);
+    expect(
+      h.invoke.mock.calls.filter(
+        ([command, args]) =>
+          command === "review_proxy_redirect" && args.receiptId,
+      ),
+    ).toHaveLength(0);
+    expect(h.persistedConnections[0].httpProxyPolicy!.allowAllRequests).toBe(
+      false,
+    );
+  });
+
   const continuationId = "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb";
   const continuationDestination =
     "https://example-nas.de2.quickconnect.to/webman/";
@@ -916,6 +1067,8 @@ describe("actual website redirect review integration", () => {
   ])(
     "automatically submits original TOTP after $hops redeemed same-tab redirects (vault=$vault)",
     async ({ vault, hops }) => {
+      // Automatic MFA requires an explicit opt-in over the manual-submit default.
+      h.settings.webBrowser.manualFormSubmit = false;
       const capabilities = vi.spyOn(
         synologyMfaLease,
         "createSynologyMfaCapability",

@@ -37,6 +37,14 @@ const config = () => ({
   mappings: [] as Array<{ upstreamOrigin: string; proxyOrigin: string }>,
 });
 interface ClientConfiguration extends ReturnType<typeof config> {
+  publicRequests?: {
+    version: number;
+    proxyEndpoint: string;
+    navigationEndpoint: string;
+    httpsOnly: boolean;
+    allowHttpDowngrade: boolean;
+    scripts: boolean;
+  };
   blobWorkers?: boolean;
   browserCompatibility?: { hideWebdriver: boolean };
   exchangeCookies?: boolean;
@@ -236,6 +244,188 @@ function cancelBrowserDefaultAfterRouting() {
   });
 }
 
+describe("opt-in anonymous public requests", () => {
+  const capability = () => ({
+    version: 1,
+    proxyEndpoint: proxy + "/__sortofremoteng_public_request_v1",
+    navigationEndpoint: proxy + "/__sortofremoteng_public_navigation_v1",
+    httpsOnly: false,
+    allowHttpDowngrade: false,
+    scripts: true,
+  });
+  const opted = () => ({ ...config(), publicRequests: capability() });
+
+  it("routes Adobe navigation to a native receipt, never a primary-origin foreign document", () => {
+    const typekitProxy = otherProxy.replace(":43124", ":43123");
+    const c = start({
+      ...opted(),
+      googleSession: {
+        version: 1,
+        nativeCookies: true,
+        routes: [
+          { upstreamOrigin: upstream, proxyOrigin: proxy, documents: true },
+          {
+            upstreamOrigin: "https://use.typekit.net",
+            proxyOrigin: typekitProxy,
+            documents: false,
+          },
+        ],
+      },
+    });
+    for (const destination of [
+      "https://use.typekit.net",
+      "https://stock.adobe.com",
+    ]) {
+      const url = new URL(
+        c.mapUrl(destination + "/browse?secret=private#part", "navigation"),
+      );
+      expect(url.origin).toBe(proxy);
+      expect(url.pathname).toBe("/__sortofremoteng_public_navigation_v1");
+      expect(url.searchParams.get("destination")).toBe(
+        destination + "/browse?secret=private#part",
+      );
+      expect(url.searchParams.get("document")).toBe("3");
+      expect(url.searchParams.has("kind")).toBe(false);
+    }
+    expect(
+      new URL(c.mapUrl(typekitProxy + "/kit", "navigation")).searchParams.get(
+        "destination",
+      ),
+    ).toBe("https://use.typekit.net/kit");
+  });
+
+  it("routes Adobe fetch POST, XHR and beacon through the anonymous gateway", async () => {
+    start(opted());
+    await window.fetch("https://sstats.adobe.com/event?site=adobe", {
+      method: "POST",
+      body: "event=fixture",
+    });
+    const request = new URL(String(fetch.mock.calls[0][0]));
+    expect(request.pathname).toBe("/__sortofremoteng_public_request_v1");
+    expect(request.searchParams.get("kind")).toBe("fetch");
+    expect(request.searchParams.get("destination")).toBe(
+      "https://sstats.adobe.com/event?site=adobe",
+    );
+    expect(fetch.mock.calls[0][1]).toMatchObject({
+      method: "POST",
+      body: "event=fixture",
+    });
+    const xhr = new XMLHttpRequest();
+    xhr.open("POST", "https://api.example/unknown");
+    xhr.send("body");
+    expect(
+      new URL(String(xhrOpen.mock.calls[0][1])).searchParams.get("kind"),
+    ).toBe("xhr");
+    navigator.sendBeacon("https://sstats.adobe.com/beacon", "event");
+    expect(
+      new URL(String(beacon.mock.calls[0][0])).searchParams.get("kind"),
+    ).toBe("beacon");
+  });
+
+  it("routes dynamic scripts/images/styles/fonts and preserves generation on repeated mappings", () => {
+    const configuration = { ...opted(), requestGeneration: "a".repeat(32) };
+    const c = start(configuration);
+    const image = document.createElement("img");
+    image.src = "https://new.example/image.png";
+    expect(new URL(image.src).searchParams.get("kind")).toBe("resource");
+    const script = document.createElement("script");
+    script.src = "https://new.example/script.js";
+    expect(new URL(script.src).searchParams.get("kind")).toBe("script");
+    const link = document.createElement("link");
+    link.href = "https://new.example/site.css";
+    expect(link.hasAttribute("href")).toBe(false);
+    link.rel = "stylesheet";
+    expect(new URL(link.href).searchParams.get("kind")).toBe("stylesheet");
+    for (const kind of ["font", "css", "fetch", "script", "navigation"]) {
+      const mapped = c.mapUrl("https://new.example/file", kind);
+      expect(c.mapUrl(mapped, kind)).toBe(mapped);
+      expect(new URL(mapped).searchParams.get("__sorng_generation_v1")).toBe(
+        "a".repeat(32),
+      );
+    }
+    const staticFont = c.mapUrl("https://new.example/font.woff2", "resource");
+    expect(new URL(c.mapUrl(staticFont, "font")).searchParams.get("kind")).toBe(
+      "font",
+    );
+    configuration.publicRequests.scripts = false;
+    expect(c.mapUrl("data:text/javascript,void(0)", "script")).toContain(
+      "data:",
+    );
+  });
+
+  it.each(["form", "document", "eventsource", "websocket"])(
+    "fails closed for unsupported %s transport with origin-only reports",
+    (kind) => {
+      const c = start(opted());
+      expect(() =>
+        c.mapUrl("https://new.example/private?secret=value#secret", kind),
+      ).toThrow();
+      expect(JSON.stringify(report.mock.calls)).not.toMatch(
+        /private|secret|value/,
+      );
+      expect(JSON.stringify(report.mock.calls)).toContain(
+        "https://new.example",
+      );
+      expect(fetch).not.toHaveBeenCalled();
+    },
+  );
+
+  it("does not widen disabled policy and respects HTTPS/downgrade/script restrictions", () => {
+    let c = start();
+    expect(() => c.mapUrl("https://sstats.adobe.com/", "fetch")).toThrow();
+    c.dispose();
+    c = start({
+      ...opted(),
+      publicRequests: { ...capability(), scripts: false },
+    });
+    expect(() => c.mapUrl("https://other.example/file.js", "script")).toThrow();
+    expect(() => c.mapUrl("http://other.example/", "fetch")).toThrow();
+    expect(() =>
+      c.mapUrl("https://user:secret@other.example/", "fetch"),
+    ).toThrow();
+    expect(() => c.mapUrl("ftp://other.example/", "fetch")).toThrow();
+    c.dispose();
+    c = start({
+      ...opted(),
+      publicRequests: { ...capability(), allowHttpDowngrade: true },
+    });
+    expect(new URL(c.mapUrl("http://other.example/", "fetch")).origin).toBe(
+      proxy,
+    );
+    c.dispose();
+    c = start({
+      ...opted(),
+      publicRequests: {
+        ...capability(),
+        httpsOnly: true,
+        allowHttpDowngrade: true,
+      },
+    });
+    expect(() => c.mapUrl("http://other.example/", "fetch")).toThrow();
+  });
+
+  it("rejects forged manifests and relabeled or stale local gateway URLs", () => {
+    expect(() =>
+      start({
+        ...opted(),
+        publicRequests: {
+          ...capability(),
+          proxyEndpoint: "https://external.example",
+        },
+      }),
+    ).toThrow();
+    const c = start(opted());
+    const mapped = c.mapUrl("https://new.example/", "fetch");
+    expect(() => c.mapUrl(mapped, "navigation")).toThrow();
+    expect(() =>
+      c.mapUrl(mapped.replace("document=3", "document=2"), "fetch"),
+    ).toThrow();
+    expect(() => c.mapUrl(mapped + "&document=3", "fetch")).toThrow();
+    c.dispose();
+    expect(() => c.mapUrl(mapped, "fetch")).toThrow();
+  });
+});
+
 describe("opt-in browser indicator compatibility", () => {
   function driver(value: unknown, configurable = true) {
     Object.defineProperty(navigator, "webdriver", {
@@ -393,6 +583,14 @@ describe("proxy routing compatibility client (not native egress proof)", () => {
   });
   const discoveredProxy =
     proxy + "/__sortofremoteng_quickconnect_discovered_v1";
+  const broadPublic = () => ({
+    version: 1,
+    proxyEndpoint: proxy + "/__sortofremoteng_public_request_v1",
+    navigationEndpoint: proxy + "/__sortofremoteng_public_navigation_v1",
+    httpsOnly: false,
+    allowHttpDowngrade: false,
+    scripts: true,
+  });
   const discoveryConfig = () => {
     const base = quickConfig();
     return {
@@ -410,6 +608,28 @@ describe("proxy routing compatibility client (not native egress proof)", () => {
     };
   };
   const tacticalApiProxy = proxy + "/__sortofremoteng_tactical_rmm_api_v1";
+  it("keeps reviewed QuickConnect controls, probes and navigation ahead of broad public fallback", async () => {
+    const c = start({ ...discoveryConfig(), publicRequests: broadPublic() });
+    await window.fetch(controlUrl, { method: "POST", body: "{}" });
+    expect(String(fetch.mock.calls[0][0])).toBe(controlProxy);
+    await window.fetch("https://dec.quickconnect.to/Serv.php", {
+      method: "POST",
+      body: "{}",
+    });
+    expect(new URL(String(fetch.mock.calls[1][0])).pathname).toBe(
+      "/__sortofremoteng_quickconnect_discovered_v1",
+    );
+    await window.fetch(
+      "https://example-nas.direct.quickconnect.to:5001/webman/pingpong.cgi?action=cors&quickconnect=true",
+    );
+    expect(new URL(String(fetch.mock.calls[2][0])).pathname).toBe(
+      "/__sortofremoteng_quickconnect_discovered_v1",
+    );
+    expect(
+      new URL(c.mapUrl("https://example-nas.quickconnect.to/", "navigation"))
+        .pathname,
+    ).toBe("/__sortofremoteng_quickconnect_redirect_v1");
+  });
   const ptispConfig = (): ClientConfiguration => ({
     ...config(),
     sourceOrigin: "https://my.ptisp.pt",
@@ -553,6 +773,23 @@ describe("proxy routing compatibility client (not native egress proof)", () => {
     },
   });
   const meshOrigin = "https://mesh.example:8443";
+  it("keeps reviewed PTisp and Tactical API/socket routes ahead of broad public fallback", async () => {
+    let c = start({ ...ptispConfig(), publicRequests: broadPublic() });
+    await window.fetch("https://api3.ptisp.pt/user/info");
+    expect(new URL(String(fetch.mock.calls[0][0])).pathname).toBe(
+      "/__sortofremoteng_ptisp_api_v1",
+    );
+    c.dispose();
+    c = start({ ...tacticalConfig(), publicRequests: broadPublic() });
+    await window.fetch("https://api.device.example/info");
+    expect(new URL(String(fetch.mock.calls[1][0])).pathname).toBe(
+      "/__sortofremoteng_tactical_rmm_api_v1",
+    );
+    expect(
+      new URL(c.mapUrl("wss://api.device.example/events", "websocket"))
+        .pathname,
+    ).toBe("/__sortofremoteng_tactical_rmm_api_v1");
+  });
   const challengeProxy =
     "http://p33333333333333333333333333333333.localhost:43123";
   const cloudflareConfig = (): ClientConfiguration => ({

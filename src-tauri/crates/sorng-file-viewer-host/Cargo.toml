@@ -23,6 +23,10 @@ url = { workspace = true }
 [target.'cfg(target_os = "windows")'.dev-dependencies]
 sorng-protocols = { path = "../sorng-protocols" }
 tokio = { workspace = true }
+rustls = { workspace = true }
+tokio-rustls = { workspace = true }
+base64 = { workspace = true }
+rcgen = "0.12"
 
 [[test]]
 name = "native_frame_navigation"
@@ -36,4 +40,10 @@ harness = false
 # Explicit opt-in live, anonymous production-proxy/WebView2 acceptance probe.
 [[test]]
 name = "native_live_browser"
+harness = false
+
+# Explicit local-only real HTTPS/private CONNECT engineering probe. Not a
+# production host-readiness report or a public provider acceptance test.
+[[test]]
+name = "native_real_origin"
 harness = false

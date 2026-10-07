@@ -1,0 +1,102 @@
+[
+  {
+    "project": "chromium",
+    "path": "net/BUILD.gn",
+    "sha256": "b40fae2813aaeb62bba4cd7763202126a9585b8afaceda91dfc3231b4b9c8fbd"
+  },
+  {
+    "project": "chromium",
+    "path": "net/cert/cert_verify_proc.h",
+    "sha256": "b2ecaabfddd8719a19e2706771dae25d314963ceeceb55933cd56f29f971bbca"
+  },
+  {
+    "project": "chromium",
+    "path": "net/cert/cert_verify_proc_builtin.cc",
+    "sha256": "c42cadef5ad9a8102c38406661c0a94ed7223c606d3957278192924b8a1c2274"
+  },
+  {
+    "project": "chromium",
+    "path": "net/socket/ssl_client_socket.cc",
+    "sha256": "3fa5b0e9a1214ca7a502a28a5120a35eac8b3bb562a6033bcd3e29cfc7f624fd"
+  },
+  {
+    "project": "chromium",
+    "path": "net/socket/ssl_client_socket.h",
+    "sha256": "95b016246c68447fe587ed9c2464bc42eb6a5570678a2943514c8ff862b26dcf"
+  },
+  {
+    "project": "chromium",
+    "path": "net/socket/ssl_client_socket_impl.cc",
+    "sha256": "f7f8ffdec89759c1acd21a14262ac4264c43fe4ee192fae12a35c6751eb90c62"
+  },
+  {
+    "project": "chromium",
+    "path": "net/socket/ssl_client_socket_impl.h",
+    "sha256": "1bd56941a06e136289ce5264762f3ee001edad21ab5ba7a250f06217685f2be9"
+  },
+  {
+    "project": "chromium",
+    "path": "net/socket/ssl_client_socket_unittest.cc",
+    "sha256": "db53f72be767fd6fd35fcb34753ebf34ed069c4dc4dba6a9b183be02d95ae233"
+  },
+  {
+    "project": "chromium",
+    "path": "services/cert_verifier/cert_verifier_creation.cc",
+    "sha256": "96da50c702dc05db70d8bf256e112e51a044357fbb9078207db74d8b3e76165f"
+  },
+  {
+    "project": "chromium",
+    "path": "services/cert_verifier/cert_verifier_service.cc",
+    "sha256": "f1647c4301b92b127876b49807775f7b544a10c8cae8ba5196cd04685feb4622"
+  },
+  {
+    "project": "chromium",
+    "path": "services/cert_verifier/cert_verifier_service_factory.cc",
+    "sha256": "876893c412de6ea00bad098201fb1b94b19fc426cabb250eaeb7a858ccb9510c"
+  },
+  {
+    "project": "chromium",
+    "path": "services/cert_verifier/public/mojom/cert_verifier_service_factory.mojom",
+    "sha256": "88f1855282f324510efb259af40d09d70ebf7f68368a094d9f3a80ddd1c704d4"
+  },
+  {
+    "project": "chromium",
+    "path": "services/network/network_context.cc",
+    "sha256": "a3270f4c1a0e66f7f51b89e130c9b7179a7ea0f3dbff823ab13c4c82093a33ad"
+  },
+  {
+    "project": "chromium",
+    "path": "services/network/public/mojom/network_context.mojom",
+    "sha256": "5a9cc882d4afb15439a4997ac132bb4721f230dfc060942da1d69a05cf3682d8"
+  },
+  {
+    "project": "cef",
+    "path": "BUILD.gn",
+    "sha256": "6157524c9ce3af1c9455a498945d66b67c41a3aa1146da108fc589d8407d8f79"
+  },
+  {
+    "project": "cef",
+    "path": "cef_paths2.gypi",
+    "sha256": "17d404f821bce6d50dae8c45245fe30889f69596a445e856c7881b9c41964004"
+  },
+  {
+    "project": "cef",
+    "path": "libcef/browser/browser_context.cc",
+    "sha256": "8995beb6f281234004d282f80d4eb2106f7f879c0b74bfb18567f900575e1e5e"
+  },
+  {
+    "project": "cef",
+    "path": "libcef/browser/chrome/chrome_content_browser_client_cef.cc",
+    "sha256": "b28edbd83120eb6bfea454db3ed8c8a2d503d3f70a93cf886889185a6b51e3f1"
+  },
+  {
+    "project": "cef",
+    "path": "libcef/browser/request_context_impl.cc",
+    "sha256": "b2483b97408e978a914d75623162ebb57525e57f0f55676b92e59ee668b282e8"
+  },
+  {
+    "project": "cef",
+    "path": "libcef/browser/request_context_impl.h",
+    "sha256": "44a21bcc41737fb969493dd37598516190b0779ab60a575e23095bf7359937e5"
+  }
+]

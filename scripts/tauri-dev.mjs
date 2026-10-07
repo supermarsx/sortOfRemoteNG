@@ -21,6 +21,7 @@ import {
 import { stageVendorArtifact } from "./stage-opkssh-vendor.mjs";
 import { stageFileViewerHost } from "./stage-file-viewer-host.mjs";
 import { buildNativeChildEnvironment } from "./lib/native-child-env.mjs";
+import { requiresBrowserBuildDriver } from "./lib/browser-build-route.mjs";
 import {
   describeDevBuildResources,
   planDevBuildResources,
@@ -360,7 +361,14 @@ export async function main(argv = process.argv.slice(2), dependencies = {}) {
     log,
   });
 
-  const tauriBin = require.resolve("@tauri-apps/cli/tauri.js");
+  const nativeBrowser = requiresBrowserBuildDriver(plan.tauriArgs);
+  const tauriBin = nativeBrowser
+    ? fileURLToPath(new URL("./browser-app-build.mjs", import.meta.url))
+    : require.resolve("@tauri-apps/cli/tauri.js");
+  if (nativeBrowser)
+    log(
+      "Preparing the pinned CEF runtime and sandbox bootstrap for native browser support.",
+    );
   const child = (dependencies.spawn ?? spawn)(
     host.execPath,
     [tauriBin, ...plan.tauriArgs],
@@ -368,6 +376,7 @@ export async function main(argv = process.argv.slice(2), dependencies = {}) {
       stdio: "inherit",
       env: plan.env,
       shell: false,
+      windowsHide: true,
     },
   );
 

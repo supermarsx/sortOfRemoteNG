@@ -26,7 +26,10 @@ import {
 } from "../recording/webAutomationLibrary";
 import {
   fullDatabaseArchiveErrorDetail,
+  FullDatabaseArchiveError,
   normalizeFullDatabaseArchive,
+  fullDatabaseArchiveData,
+  type FullDatabaseArchive,
 } from "../connection/fullDatabaseArchive";
 import { getInvoke } from "../tauri/invoke";
 import { SettingsManager } from "../settings/settingsManager";
@@ -312,6 +315,7 @@ export function validateCloudSyncPayload(value: unknown): CloudSyncPayload {
 /** Deterministic upgrade of old snapshots before comparison, never clock-LWW. */
 export async function upgradeCloudSyncPayload(
   payload: CloudSyncPayload,
+  purpose: "compare" | "atomic-restore" = "compare",
 ): Promise<CloudSyncPayload> {
   const clean = validateCloudSyncPayload(payload);
   for (const [id, section] of Object.entries(clean.sections)) {
@@ -320,9 +324,23 @@ export async function upgradeCloudSyncPayload(
     const incoming = normalizeRecordLedger(
       (section as Record<string, unknown>).recordMetadata,
     );
-    if (databaseId(id))
+    if (databaseId(id)) {
       clean.sections[id] = await normalizeFullDatabaseArchive(section);
-    else if (id !== "app:settings") {
+      const archive = clean.sections[id] as Awaited<
+        ReturnType<typeof normalizeFullDatabaseArchive>
+      >;
+      // Restore preserves exact capsule bytes for native authentication at commit.
+      // Comparison cannot yet ignore wrappers or merge capsules: the frozen
+      // native API has no non-mutating verification/reselection operation.
+      if (
+        (purpose === "compare" &&
+          (archive.browserSessions?.records.length ||
+            archive.browserSessionsTransfer)) ||
+        (archive.browserSessions?.records.length &&
+          !archive.browserSessionsTransfer)
+      )
+        throw new FullDatabaseArchiveError("browser-sessions");
+    } else if (id !== "app:settings") {
       const library = section as Record<string, unknown>;
       library.recordMetadata = await reconcileRecordLedger(
         library,
@@ -491,7 +509,10 @@ function excluded(id: string, label: string, config: CloudSyncConfig): boolean {
   });
 }
 
-async function readItem(id: string): Promise<unknown> {
+async function readItem(
+  id: string,
+  browserSessionsPassword?: string,
+): Promise<unknown> {
   if (id === "app:settings") {
     const invoke = await getInvoke();
     if (!invoke) throw new Error("Settings sync requires the desktop app.");
@@ -513,6 +534,9 @@ async function readItem(id: string): Promise<unknown> {
       db,
       {
         materializeDefaults: true,
+        ...(browserSessionsPassword === undefined
+          ? {}
+          : { browserSessionsPassword }),
       },
     );
     // Use the same canonical representation at capture AND apply preflight.
@@ -538,6 +562,8 @@ export interface CloudSyncCaptureOptions {
   allowAutoUnlock?: boolean;
   /** The engine's target/settings invalidation guard, including during native unlock. */
   assertCurrent?: () => void;
+  /** Explicit restore keeps exact transport bytes; never grants hash equivalence. */
+  sessionTransferPurpose?: "atomic-restore";
 }
 
 /** Unlike an export guard, this permits initially locked/nonresident sources. */
@@ -760,10 +786,13 @@ export async function captureCloudSyncPayload(
           `${subject} is unavailable for cloud sync. ${item?.unavailableReason ?? "Review What to sync and select an existing, unlocked artifact."}`,
         );
       }
-      sections[id] = await readItem(id);
+      sections[id] = await readItem(id, config.syncEncryptionPassword);
       assertCurrent();
     }
-    const payload = await upgradeCloudSyncPayload({ version: 1, sections });
+    const payload = await upgradeCloudSyncPayload(
+      { version: 1, sections },
+      options.sessionTransferPurpose,
+    );
     assertCurrent();
     captured = true;
     return payload;
@@ -786,7 +815,7 @@ export async function applyCloudSyncPayload(
   let clean = validateCloudSyncPayload(payload);
   if (Object.keys(clean.sections).some((id) => !ids.has(id)))
     throw new Error("Cloud payload contains an unselected artifact.");
-  clean = await upgradeCloudSyncPayload(clean);
+  clean = await upgradeCloudSyncPayload(clean, "atomic-restore");
   const inventory = await discoverCloudSyncItems({ includeSizes: false });
   if (
     Object.keys(clean.sections).some((id) =>
@@ -799,19 +828,35 @@ export async function applyCloudSyncPayload(
   )
     throw new Error("Cloud payload contains an excluded artifact.");
   const baseline = expected
-    ? await upgradeCloudSyncPayload(expected)
-    : await captureCloudSyncPayload(config, { allowAutoUnlock: false });
+    ? await upgradeCloudSyncPayload(expected, "atomic-restore")
+    : await captureCloudSyncPayload(config, {
+        allowAutoUnlock: false,
+        sessionTransferPurpose: "atomic-restore",
+      });
   const owner = DatabaseManager.getInstance().getCurrentDatabase()?.id;
   const assertOwner = () => {
     if (DatabaseManager.getInstance().getCurrentDatabase()?.id !== owner)
       throw new Error("Database selection changed during cloud apply.");
   };
   // Preflight all selected changes before the first mutation.
+  const publicBaseline = (id: string, section: unknown) => {
+    if (!databaseId(id)) return canonical(section);
+    const archive = section as FullDatabaseArchive;
+    // Compare public-body CAS only. Never use this projection as a sync hash:
+    // native import still authenticates the exact incoming capsule and deletion set.
+    return canonical({
+      ...fullDatabaseArchiveData(archive),
+      timestamp: 0,
+      collection: { id: archive.collection.id },
+      trustRecords: archive.trustRecords,
+    });
+  };
   for (const id of Object.keys(clean.sections)) {
     if (databaseId(id)) await normalizeFullDatabaseArchive(clean.sections[id]);
     if (
       !Object.prototype.hasOwnProperty.call(baseline.sections, id) ||
-      canonical(await readItem(id)) !== canonical(baseline.sections[id])
+      publicBaseline(id, await readItem(id, config.syncEncryptionPassword)) !==
+        publicBaseline(id, baseline.sections[id])
     )
       throw new Error("Local artifact changed since cloud capture.");
     assertOwner();
@@ -831,6 +876,7 @@ export async function applyCloudSyncPayload(
           db,
           value,
           baseline.sections[id],
+          { browserSessionsPassword: config.syncEncryptionPassword },
         );
       else {
         const item = libraries.find((item) => item.id === id)!;

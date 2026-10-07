@@ -17,6 +17,10 @@ import {
 } from "../../scripts/browser-readiness.mjs";
 
 const root = fileURLToPath(new URL("../../", import.meta.url));
+const integrationTargets = [
+  ["origin_browser_real_origin", 5],
+  ["origin_browser_native_auth", 3],
+];
 function receipt() {
   return {
     success: true,
@@ -131,6 +135,8 @@ test("fixed fixture selection covers staged assets, lifecycle, all three sites, 
     "dark-mode",
     "injection",
     "readiness",
+    "native-host-ui",
+    "domain-permissions",
   ])
     assert.ok(SUITES.some((suite) => suite.area === area));
   for (const name of [
@@ -173,7 +179,7 @@ test("executes selected fixtures and optional exact native command, never promot
     if (args[0] === "scripts/native-build-env.mjs")
       return {
         exitCode: 0,
-        stdout: `${secret}\ntest result: ok. 25 passed; 0 failed; 0 ignored;`,
+        stdout: `${secret}\ntest result: ok. ${integrationTargets.find(([target]) => args.includes(target))?.[1] ?? 25} passed; 0 failed; 0 ignored;`,
       };
     const data = receipt();
     data.testResults[0].message = secret;
@@ -191,6 +197,15 @@ test("executes selected fixtures and optional exact native command, never promot
     const report = await runReadiness({ native }, { execute });
     assert.equal(report.automatedGate.status, "passed");
     assert.equal(report.native.status, native ? "passed" : "not-run");
+    for (const [target, count] of integrationTargets) {
+      const integration = report.native.suites.find(
+        (suite) => suite.id === target,
+      );
+      assert.ok(integration);
+      assert.equal(integration.status, native ? "passed" : "not-run");
+      assert.equal(integration.passed, native ? count : undefined);
+      assert.ok(integration.command.endsWith(`--test ${target} --locked`));
+    }
     assert.equal(calls.length, native ? 1 + NATIVE_SUITES.length : 1);
     assert.equal(calls[0].command, process.execPath);
     assert.ok(calls[0].args.includes("--reporter=json"));
@@ -240,6 +255,8 @@ test("native suite selection explicitly excludes live Google and has no feature 
     "private_forward_route",
     "browser_transport",
     "browser_dns",
+    "origin_browser_real_origin",
+    "origin_browser_native_auth",
   ]);
   for (const id of NATIVE_SUITES) {
     const args = nativeArgs(id);
@@ -247,6 +264,23 @@ test("native suite selection explicitly excludes live Google and has no feature 
     assert.ok(!args.includes("--ignored"));
     assert.ok(!args.includes("--features"));
     assert.ok(!args.includes("--target"));
+    const integration = integrationTargets.some(([target]) => id === target);
+    assert.equal(args.includes("--lib"), !integration);
+    assert.equal(args.includes("--test"), integration);
+  }
+  for (const [target] of integrationTargets) {
+    assert.deepEqual(nativeArgs(target), [
+      "scripts/native-build-env.mjs",
+      "cargo",
+      "test",
+      "--manifest-path",
+      "src-tauri/Cargo.toml",
+      "-p",
+      "sorng-protocols",
+      "--test",
+      target,
+      "--locked",
+    ]);
   }
   assert.deepEqual(nativeArgs("google_tests").slice(-3), [
     "--",
@@ -294,11 +328,148 @@ test("a command exiting zero without a valid receipt is a failure", async () => 
   assert.equal(report.automatedGate.status, "failed");
 });
 
+for (const [target, count] of integrationTargets) {
+  test(`${target} failures fail the native gate without replacing other results or claiming login`, async (t) => {
+    const passed = `test result: ok. ${count} passed; 0 failed; 0 ignored;`;
+    for (const [name, result, expectedStatus] of [
+      [
+        "failed tests",
+        {
+          exitCode: 101,
+          stdout: `test result: FAILED. ${count - 1} passed; 1 failed; 0 ignored;`,
+        },
+        "failed",
+      ],
+      [
+        "zero tests",
+        { exitCode: 0, stdout: passed.replace(`${count} passed`, "0 passed") },
+        "failed",
+      ],
+      [
+        "ignored test",
+        { exitCode: 0, stdout: passed.replace("0 ignored", "1 ignored") },
+        "failed",
+      ],
+      ["compile failure", { exitCode: 101, stdout: "" }, "failed"],
+      [
+        "failed process despite passing receipt",
+        { exitCode: 1, stdout: passed },
+        "failed",
+      ],
+      [
+        "missing executable",
+        { exitCode: null, stdout: "", reason: "executable-unavailable" },
+        "not-run",
+      ],
+    ]) {
+      await t.test(name, async () => {
+        const report = await runReadiness(
+          { native: true },
+          {
+            execute: async (_command, args) => {
+              if (args[0] !== "scripts/native-build-env.mjs") {
+                await writeFile(
+                  args
+                    .find((arg) => arg.startsWith("--outputFile="))
+                    .slice("--outputFile=".length),
+                  JSON.stringify(receipt()),
+                );
+                return { exitCode: 0, stdout: "" };
+              }
+              return args.includes(target)
+                ? result
+                : { exitCode: 0, stdout: passed };
+            },
+          },
+        );
+        assert.equal(report.deterministic.status, "passed");
+        assert.equal(report.native.status, "failed");
+        assert.equal(report.automatedGate.status, "failed");
+        assert.deepEqual(
+          report.native.suites.map((suite) => suite.status),
+          NATIVE_SUITES.map((id) =>
+            id === target ? expectedStatus : "passed",
+          ),
+        );
+        const integration = report.native.suites.find(
+          (suite) => suite.id === target,
+        );
+        assert.ok(integration.durationMs >= 0);
+        if (name === "failed tests") {
+          assert.equal(integration.passed, count - 1);
+          assert.equal(integration.failed, 1);
+          assert.equal(integration.ignored, 0);
+        }
+        assert.equal(report.loginReadiness, "not-run");
+        assert.equal(report.native.liveGoogleProbe.status, "not-run");
+        assert.equal(report.embeddedLive.status, "not-run");
+        assert.ok(
+          report.embeddedLive.sites.every((site) =>
+            site.stages.every((stage) => stage.status === "not-run"),
+          ),
+        );
+      });
+    }
+  });
+
+  test(`missing ${target} is not-run, not silently replaced by library tests`, async () => {
+    const missing = path.join(
+      root,
+      "src-tauri/crates/sorng-protocols/tests",
+      `${target}.rs`,
+    );
+    const calls = [];
+    const report = await runReadiness(
+      { native: true },
+      {
+        isFile: (file) => file !== missing,
+        execute: async (_command, args) => {
+          calls.push(args);
+          if (args[0] !== "scripts/native-build-env.mjs") {
+            await writeFile(
+              args
+                .find((arg) => arg.startsWith("--outputFile="))
+                .slice("--outputFile=".length),
+              JSON.stringify(receipt()),
+            );
+          }
+          return {
+            exitCode: 0,
+            stdout: "test result: ok. 5 passed; 0 failed; 0 ignored;",
+          };
+        },
+      },
+    );
+    assert.equal(calls.length, NATIVE_SUITES.length);
+    assert.ok(calls.every((args) => !args.includes(target)));
+    const integration = report.native.suites.find(
+      (suite) => suite.id === target,
+    );
+    assert.equal(integration.status, "not-run");
+    assert.equal(integration.reason, "missing-prerequisites");
+    assert.ok(
+      report.native.suites
+        .filter((suite) => suite.id !== target)
+        .every((suite) => suite.status === "passed"),
+    );
+    assert.equal(report.native.status, "failed");
+    assert.equal(report.automatedGate.status, "failed");
+  });
+}
+
 test("CLI help is inert and invalid input fails without leaking its value", async () => {
   const exec = promisify(execFile);
   const runner = path.join(root, "scripts/browser-readiness.mjs");
   const help = await exec(process.execPath, [runner, "--help"]);
   assert.match(help.stdout, /NOT a live-login readiness result/);
+  assert.match(
+    help.stdout,
+    /origin_browser_real_origin TLS\/WSS integration target/,
+  );
+  assert.match(
+    help.stdout,
+    /origin_browser_native_auth native proxy-authentication boundary fixtures/,
+  );
   await assert.rejects(
     exec(process.execPath, [runner, "account@example.test"]),
     (error) => {

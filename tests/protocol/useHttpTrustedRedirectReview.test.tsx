@@ -158,6 +158,114 @@ beforeEach(() => {
 });
 
 describe("persisted trusted redirect continuation", () => {
+  it("automatically consumes a fresh all-request receipt with no listed destination or credential transfer", async () => {
+    const connection = {
+      ...source,
+      httpProxyPolicy: {
+        ...DEFAULT_HTTP_PROXY_POLICY,
+        allowAllRequests: true,
+        httpsOnly: true,
+      },
+    };
+    const view = fixture({ connection });
+    await act(() => view.result.current.offer());
+    await waitFor(() => expect(view.continueInTab).toHaveBeenCalledOnce());
+    expect(view.inspect).toHaveBeenCalledTimes(2);
+    expect(h.invoke).toHaveBeenLastCalledWith("review_proxy_redirect", {
+      sessionId: "proxy",
+      receiptId: receipt.receiptId,
+    });
+    const target = view.continueInTab.mock.calls[0][0] as Connection;
+    expect(target.httpProxyPolicy).toMatchObject({
+      allowAllRequests: true,
+      allowCrossOriginRedirects: false,
+      httpsOnly: true,
+      allowHttpDowngradeRedirects: false,
+      queryParameters: [],
+    });
+    expect(target.httpAutoLogin).toBe(false);
+    expect(target).not.toHaveProperty("basicAuthPassword");
+    expect(target).not.toHaveProperty("httpTrustedRedirectDestinations");
+    expect(getRuntimeWebNavigation(target.id)).toMatchObject({
+      trustedRedirectSource: view.provenance,
+      redirectHops: 1,
+    });
+  });
+
+  it.each(["disabled", "same-origin", "effective-disabled", "auth"])(
+    "does not auto-consume all-request navigation with %s restrictions",
+    async (restriction) => {
+      const connection: Connection = {
+        ...source,
+        httpProxyPolicy: {
+          ...DEFAULT_HTTP_PROXY_POLICY,
+          allowAllRequests: restriction !== "disabled",
+          sameOriginOnly: restriction === "same-origin",
+        },
+      };
+      if (restriction === "auth")
+        connection.httpRedirectAuthentication = {
+          version: 1,
+          mode: "saved-login",
+          allowInsecureHttp: false,
+        };
+      const view = fixture({ connection });
+      if (restriction === "effective-disabled")
+        view.rerender({
+          ...view.options,
+          effectivePolicy: DEFAULT_HTTP_PROXY_POLICY,
+        });
+      await act(() => view.result.current.offer());
+      expect(view.stopSource).not.toHaveBeenCalled();
+      expect(view.continueInTab).not.toHaveBeenCalled();
+      expect(
+        h.invoke.mock.calls.filter(([, args]) => args?.receiptId),
+      ).toHaveLength(0);
+    },
+  );
+
+  it("rechecks all-request authority before consuming a receipt and honors revocation", async () => {
+    const view = fixture({
+      connection: {
+        ...source,
+        httpProxyPolicy: {
+          ...DEFAULT_HTTP_PROXY_POLICY,
+          allowAllRequests: true,
+        },
+      },
+    });
+    const inspect = view.inspect.getMockImplementation()!;
+    view.inspect
+      .mockImplementationOnce(inspect)
+      .mockImplementationOnce(async (...args) => ({
+        ...(await inspect(...args)),
+        trusted: false,
+      }));
+    await act(() => view.result.current.offer());
+    expect(view.inspect).toHaveBeenCalledTimes(2);
+    expect(view.continueInTab).not.toHaveBeenCalled();
+    expect(view.stopSource).not.toHaveBeenCalled();
+    expect(
+      h.invoke.mock.calls.filter(([, args]) => args?.receiptId),
+    ).toHaveLength(0);
+  });
+
+  it("does not reset the redirect budget for all-request trust", async () => {
+    const connection = {
+      ...source,
+      httpProxyPolicy: { ...DEFAULT_HTTP_PROXY_POLICY, allowAllRequests: true },
+    };
+    registerRuntimeConnection(connection, {
+      initialUrl: receipt.sourceOrigin,
+      redirectHops: 5,
+      assertCurrent: vi.fn(),
+    });
+    const view = fixture({ connection });
+    await act(() => view.result.current.offer());
+    expect(view.result.current.error).toContain("Five redirect handoffs");
+    expect(view.continueInTab).not.toHaveBeenCalled();
+    expect(view.stopSource).not.toHaveBeenCalled();
+  });
   it("rejects an overdue stop completion even before the suspended timer can fire", async () => {
     let clock = 0;
     const now = vi.spyOn(performance, "now").mockImplementation(() => clock);

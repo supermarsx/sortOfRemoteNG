@@ -14,6 +14,31 @@ pub(crate) fn register(app: &mut tauri::App<tauri::Wry>) -> tauri::Result<()> {
 
     let api_handles =
         sorng_app_startup_connectivity::register(app, ssh_service.clone(), emitter.clone());
+    #[cfg(feature = "native-browser")]
+    {
+        // The process profile was verified before this registrar. Bind the
+        // exact infrastructure encryption owner and connectivity chain service;
+        // never create a second service or resolve a default profile here.
+        let encryption = app
+            .try_state::<sorng_encryption::EncryptionState>()
+            .ok_or_else(|| std::io::Error::other("Native browser encryption state is missing"))?;
+        let chains = app
+            .try_state::<sorng_commands_core::chaining::ChainingServiceState>()
+            .ok_or_else(|| std::io::Error::other("Native browser chaining state is missing"))?;
+        let routes =
+            sorng_commands_core::origin_browser_authority::NativeBrowserRouteServices::new(
+                &app_dir,
+                encryption.inner(),
+                chains.inner().clone(),
+            )
+            .map_err(std::io::Error::other)?;
+        if !app.manage(routes) {
+            return Err(std::io::Error::other(
+                "Native browser route services were registered more than once",
+            )
+            .into());
+        }
+    }
     sorng_app_startup_state::register_security_data(
         app,
         &app_dir,

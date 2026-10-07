@@ -1,0 +1,17 @@
+cmake_minimum_required(VERSION 3.21)
+project(sorng_cef_bootstrap_check LANGUAGES CXX)
+# This target tests the genuine Windows bootstrap entry without starting CEF,
+# opening a browser, writing a profile or loading the production application.
+if(NOT WIN32 OR NOT MSVC)
+  message(FATAL_ERROR "The bootstrap entry check requires Windows and MSVC")
+endif()
+if(NOT EXISTS "${CEF_ROOT}/include/cef_sandbox_win.h")
+  message(FATAL_ERROR "CEF_ROOT must point to the verified pinned SDK")
+endif()
+add_library(sorng_cef_bootstrap_check SHARED windows_entry_check.cc)
+target_include_directories(sorng_cef_bootstrap_check PRIVATE "${CEF_ROOT}")
+target_compile_features(sorng_cef_bootstrap_check PRIVATE cxx_std_17)
+target_compile_definitions(sorng_cef_bootstrap_check PRIVATE CEF_API_VERSION=15400)
+set_property(TARGET sorng_cef_bootstrap_check PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded")
+target_link_options(sorng_cef_bootstrap_check PRIVATE /guard:cf /DYNAMICBASE /NXCOMPAT)
+target_compile_options(sorng_cef_bootstrap_check PRIVATE /guard:cf)

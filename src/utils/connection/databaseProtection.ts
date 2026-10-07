@@ -1,5 +1,18 @@
 import { getInvoke } from "../tauri/invoke";
 import type { StorageData } from "../storage/storage";
+import { assertPublicDatabaseData } from "../storage/nativePrivateData";
+import type {
+  BrowserSessionsDescriptor,
+  BrowserSessionsTransfer,
+} from "../../types/security/browserSessions";
+import {
+  normalizeBrowserSessions,
+  normalizeBrowserSessionsTransfer,
+  invalidBrowserSessions,
+  normalizeBrowserSessionDeletions,
+  assertBrowserSessionTransferPassword,
+} from "../security/browserSessions";
+import { snapshotRecordPayload } from "../storage/recordLedger";
 import { isDatabaseCipher } from "../../types/encryption/databaseProtection";
 import type {
   DatabaseProtectionCapabilities,
@@ -73,6 +86,133 @@ function validateCapabilities(
 
 /** Native owns managed keys and envelopes. These adapters never implement a fallback cipher. */
 export const databaseProtection = {
+  /** Native public projection only; never a cookie/key load or an unlock fallback. */
+  async describeBrowserSessions(
+    databaseId: string,
+    sessionId: string,
+    expectedSecurityRevision: string,
+  ): Promise<BrowserSessionsDescriptor> {
+    try {
+      return normalizeBrowserSessions(
+        await (
+          await nativeInvoke()
+        )<unknown>("database_browser_sessions_describe", {
+          databaseId,
+          sessionId,
+          expectedSecurityRevision,
+        }),
+      );
+    } catch {
+      return invalidBrowserSessions();
+    }
+  },
+  /** Explicit native export only; database unlock credentials are not transfer passwords. */
+  async exportBrowserSessions(
+    databaseId: string,
+    sessionId: string,
+    expectedSecurityRevision: string,
+    selected: BrowserSessionsDescriptor,
+    password: string,
+    deletedConnectionIds?: string[],
+  ) {
+    const selection = normalizeBrowserSessions(selected);
+    const deleted = normalizeBrowserSessionDeletions(
+      deletedConnectionIds ?? [],
+      selection,
+    );
+    assertBrowserSessionTransferPassword(password);
+    try {
+      const result = await (
+        await nativeInvoke()
+      )<unknown>("database_browser_sessions_export", {
+        databaseId,
+        sessionId,
+        expectedSecurityRevision,
+        selected: selection,
+        password,
+        ...(deletedConnectionIds === undefined
+          ? {}
+          : { deletedConnectionIds: deleted }),
+      });
+      return normalizeBrowserSessionsTransfer(result);
+    } catch {
+      // Native errors must not echo source paths, credentials, cookies or keys.
+      return invalidBrowserSessions();
+    }
+  },
+  /** One native CAS transaction authenticates the capsule and commits body + sessions. */
+  async importBrowserSessions(request: {
+    databaseId: string;
+    sessionId: string;
+    expectedSecurityRevision: string;
+    expected: BrowserSessionsDescriptor;
+    selected: BrowserSessionsDescriptor;
+    deletedConnectionIds?: string[];
+    data: StorageData;
+    expectedData: unknown;
+    transfer: BrowserSessionsTransfer;
+    password: string;
+  }): Promise<DatabaseProtectionSaveResult> {
+    const selected = normalizeBrowserSessions(request.selected);
+    const expected = normalizeBrowserSessions(request.expected);
+    const deleted = normalizeBrowserSessionDeletions(
+      request.deletedConnectionIds ?? [],
+      selected,
+    );
+    const affected = new Set([
+      ...selected.records.map((row) => row.connectionId),
+      ...deleted,
+    ]);
+    if (expected.records.some((row) => !affected.has(row.connectionId)))
+      return invalidBrowserSessions();
+    assertBrowserSessionTransferPassword(request.password);
+    if (!record(request.expectedData)) return invalidBrowserSessions();
+    const args = {
+      databaseId: request.databaseId,
+      sessionId: request.sessionId,
+      expectedSecurityRevision: request.expectedSecurityRevision,
+      expected,
+      selected,
+      deletedConnectionIds: deleted,
+      data: snapshotRecordPayload(request.data),
+      expectedData: snapshotRecordPayload(request.expectedData),
+      transfer: normalizeBrowserSessionsTransfer(request.transfer),
+      password: request.password,
+    };
+    try {
+      const result = await (
+        await nativeInvoke()
+      )<DatabaseProtectionSaveResult>("database_browser_sessions_import", args);
+      if (
+        !record(result) ||
+        result.committed !== true ||
+        typeof result.cleanupPending !== "boolean" ||
+        result.securityRevision !== args.expectedSecurityRevision ||
+        !Array.isArray(result.warnings) ||
+        result.warnings.some((warning) => typeof warning !== "string")
+      )
+        throw new Error("Unconfirmed transfer");
+      return {
+        committed: true,
+        cleanupPending: result.cleanupPending,
+        securityRevision: result.securityRevision,
+        // Do not expose arbitrary backend diagnostics on this secret-bearing path.
+        warnings: result.warnings.length
+          ? [
+              "Browser session import committed; native cleanup needs attention.",
+            ]
+          : [],
+      };
+    } catch {
+      // A lost response can follow a successful commit. Never claim nothing changed.
+      throw Object.assign(
+        new Error(
+          "Browser session import could not be confirmed. Reload the destination before retrying; this is not a confirmed restore.",
+        ),
+        { kind: "partial" as const },
+      );
+    }
+  },
   async capabilities() {
     const result = await (
       await nativeInvoke()
@@ -99,10 +239,15 @@ export const databaseProtection = {
     return result;
   },
   async unlock(databaseId: string, slotId: string, password?: string) {
-    return (await nativeInvoke())<DatabaseProtectionUnlockResult>(
-      "database_protection_unlock",
-      { databaseId, slotId, ...(password === undefined ? {} : { password }) },
-    );
+    const result = await (
+      await nativeInvoke()
+    )<DatabaseProtectionUnlockResult>("database_protection_unlock", {
+      databaseId,
+      slotId,
+      ...(password === undefined ? {} : { password }),
+    });
+    assertPublicDatabaseData(result?.data);
+    return result;
   },
   async lock(databaseId: string) {
     return (await nativeInvoke())<DatabaseProtectionLockResult>(
@@ -130,10 +275,15 @@ export const databaseProtection = {
     sessionId: string,
     expectedSecurityRevision: string,
   ) {
-    return (await nativeInvoke())<DatabaseProtectionUnlockResult>(
-      "database_protection_load",
-      { databaseId, sessionId, expectedSecurityRevision },
-    );
+    const result = await (
+      await nativeInvoke()
+    )<DatabaseProtectionUnlockResult>("database_protection_load", {
+      databaseId,
+      sessionId,
+      expectedSecurityRevision,
+    });
+    assertPublicDatabaseData(result?.data);
+    return result;
   },
   async save(
     databaseId: string,
@@ -142,12 +292,16 @@ export const databaseProtection = {
     data: StorageData,
     expectedData: unknown,
   ) {
+    assertPublicDatabaseData(data);
+    assertPublicDatabaseData(expectedData);
     return (await nativeInvoke())<DatabaseProtectionSaveResult>(
       "database_protection_save",
       { databaseId, sessionId, expectedSecurityRevision, data, expectedData },
     );
   },
   async change(request: DatabaseProtectionChangeRequest) {
+    assertPublicDatabaseData(request.legacyVerifiedData);
+    assertPublicDatabaseData(request.expectedData);
     if (request.target && !isDatabaseCipher(request.target.dataCipher)) {
       throw new Error(
         "Unsupported database cipher; no protection change was submitted.",

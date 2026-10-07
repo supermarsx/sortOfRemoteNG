@@ -287,6 +287,18 @@ pub struct OriginBrowserSession {
     status: BrowserSessionStatus,
 }
 
+/// Challenge metadata from a trusted native engine callback, never page JS or
+/// renderer IPC. Hosts without an explicit proxy flag must establish it from
+/// the native challenge URI and the retained relay endpoint before constructing
+/// this value. Website/server authentication is a separate consent path.
+pub struct NativeProxyChallenge<'a> {
+    pub is_proxy: bool,
+    pub host: &'a str,
+    pub port: u16,
+    pub scheme: &'a str,
+    pub realm: &'a str,
+}
+
 impl OriginBrowserSession {
     pub async fn start(
         policy: OriginBrowserPolicy,
@@ -330,6 +342,38 @@ impl OriginBrowserSession {
         } else {
             None
         }
+    }
+
+    /// Answer only this attempt's exact numeric relay challenge. A matching
+    /// realm alone is not authority: websites can send the same realm in a 401.
+    /// No DNS lookup, localhost alias, alternate loopback IP, upstream proxy or
+    /// stale attempt may receive these credentials. Authentication is available
+    /// during host setup, but does not mark the host ready or permit navigation.
+    pub fn answer_proxy_challenge<R>(
+        &self,
+        identity: &BrowserIdentity,
+        challenge: NativeProxyChallenge<'_>,
+        callback: impl FnOnce(&str, &str) -> R,
+    ) -> Option<R> {
+        if self.check_identity(identity).is_err()
+            || !challenge.is_proxy
+            || !challenge.scheme.eq_ignore_ascii_case("basic")
+            || challenge.realm != "private-forward-proxy"
+            || challenge.port != self.proxy_endpoint().port()
+        {
+            return None;
+        }
+        // Native engines may return an IPv6 host with or without URL brackets.
+        // Parsing remains numeric-only, with no scoped addresses or host aliases.
+        let host = challenge
+            .host
+            .strip_prefix('[')
+            .and_then(|value| value.strip_suffix(']'))
+            .unwrap_or(challenge.host);
+        if host.parse::<IpAddr>().ok() != Some(self.proxy_endpoint().ip()) {
+            return None;
+        }
+        self.with_proxy_credentials(callback)
     }
 
     fn check_identity(&self, identity: &BrowserIdentity) -> Result<(), BrowserPolicyError> {
@@ -1159,6 +1203,104 @@ mod tests {
             .unwrap();
         assert_eq!(session.status(), BrowserSessionStatus::Revoked);
         assert!(session.with_proxy_credentials(|_, _| ()).is_none());
+        stop(&mut session).await;
+    }
+
+    #[tokio::test]
+    async fn native_proxy_auth_is_endpoint_scheme_realm_and_attempt_bound() {
+        let mut session = session().await;
+        let id = session.policy().identity().clone();
+        let other_id = policy("https://source.invalid").identity().clone();
+        let host = session.proxy_endpoint().ip().to_string();
+        let port = session.proxy_endpoint().port();
+        let answer = |identity: &BrowserIdentity, is_proxy, host, port, scheme, realm| {
+            session.answer_proxy_challenge(
+                identity,
+                NativeProxyChallenge {
+                    is_proxy,
+                    host,
+                    port,
+                    scheme,
+                    realm,
+                },
+                |user, password| !user.is_empty() && !password.is_empty(),
+            )
+        };
+        assert_eq!(
+            answer(&id, true, &host, port, "Basic", "private-forward-proxy"),
+            Some(true)
+        );
+        assert_eq!(
+            answer(&id, true, &host, port, "BASIC", "private-forward-proxy"),
+            Some(true)
+        );
+        assert_eq!(session.status(), BrowserSessionStatus::NotReady);
+        // A 401 imitating the private relay, another proxy, and a stale native
+        // callback all leave the credential callback completely uncalled.
+        assert_eq!(
+            answer(&id, false, &host, port, "Basic", "private-forward-proxy"),
+            None
+        );
+        assert_eq!(
+            answer(
+                &other_id,
+                true,
+                &host,
+                port,
+                "Basic",
+                "private-forward-proxy"
+            ),
+            None
+        );
+        for wrong_host in [
+            "localhost",
+            "127.0.0.2",
+            "::1",
+            "source.invalid",
+            "127.1",
+            "2130706433",
+            "127.0.0.1.evil.invalid",
+            "127.0.0.1 ",
+        ] {
+            assert_eq!(
+                answer(
+                    &id,
+                    true,
+                    wrong_host,
+                    port,
+                    "Basic",
+                    "private-forward-proxy"
+                ),
+                None
+            );
+        }
+        assert_eq!(
+            answer(&id, true, &host, 0, "Basic", "private-forward-proxy"),
+            None
+        );
+        for scheme in ["Digest", "Negotiate", "Basic ", "", "Basic\r\n"] {
+            assert_eq!(
+                answer(&id, true, &host, port, scheme, "private-forward-proxy"),
+                None
+            );
+        }
+        for realm in ["", "website", "private-forward-proxy "] {
+            assert_eq!(answer(&id, true, &host, port, "Basic", realm), None);
+        }
+        session.revoke(&id).unwrap();
+        assert!(session
+            .answer_proxy_challenge(
+                &id,
+                NativeProxyChallenge {
+                    is_proxy: true,
+                    host: &host,
+                    port,
+                    scheme: "basic",
+                    realm: "private-forward-proxy"
+                },
+                |_, _| panic!("revoked relay credentials must not escape"),
+            )
+            .is_none());
         stop(&mut session).await;
     }
 

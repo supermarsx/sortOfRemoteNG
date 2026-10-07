@@ -26,7 +26,13 @@ export default function WebsiteNotifications({
     blockedScripts?: Pick<
       SectionProps["mgr"]["blockedScripts"],
       "hasBlockedScripts" | "openReview"
-    >;
+    > &
+      Partial<
+        Pick<
+          SectionProps["mgr"]["blockedScripts"],
+          "hasBlockedRequests" | "openRequestReview"
+        >
+      >;
     connection?: SectionProps["mgr"]["connection"];
     session: Pick<SectionProps["mgr"]["session"], "id" | "ownerDatabaseId">;
     automation: Pick<
@@ -240,6 +246,19 @@ export default function WebsiteNotifications({
                 quickConnectRelevant={quickConnectRelevant}
                 onReload={mgr.handleRefresh}
               />
+              {mgr.blockedScripts?.hasBlockedRequests &&
+                mgr.blockedScripts.openRequestReview && (
+                  <button
+                    type="button"
+                    className="sor-btn sor-btn-sm sor-btn-secondary"
+                    onClick={() => {
+                      close();
+                      mgr.blockedScripts?.openRequestReview?.();
+                    }}
+                  >
+                    Review request permissions
+                  </button>
+                )}
               <ApplicationSignInNotice mgr={mgr} />
             </div>
             <div className="border-t border-[var(--color-border)] px-4 py-3 text-xs text-[var(--color-textMuted)]">

@@ -1,0 +1,23 @@
+[package]
+name = "sorng-cef-tls-acceptance"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+# Separate opt-in executable; never linked into the application or normal tests.
+[workspace]
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+sorng-browser-host = { path = "../..", features = ["cef-host"] }
+sorng-protocols = { path = "../../../sorng-protocols" }
+cef = { version = "=154.3.0", default-features = false, features = ["sandbox", "resources"] }
+tao = "=0.35.3"
+tokio = { version = "1", features = ["full"] }
+tokio-rustls = "0.26"
+rustls = "0.23"
+rcgen = "0.12"
+serde_json = "1"
+raw-window-handle = "0.6"

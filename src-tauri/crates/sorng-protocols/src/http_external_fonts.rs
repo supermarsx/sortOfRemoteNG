@@ -864,6 +864,23 @@ fn rewrite_html(text: &str, base: &Url, proxy: &str, origins: &[String]) -> Stri
 }
 
 pub(super) fn rewrite_html_with(text: &str, map: &impl Fn(&str, Kind) -> Option<String>) -> String {
+    rewrite_html_resources(text, map, false)
+}
+
+/// The all-request capability may additionally map passive media attributes.
+/// Keep the ordinary reviewed-font/script callers' scope exactly unchanged.
+pub(super) fn rewrite_public_html_with(
+    text: &str,
+    map: &impl Fn(&str, Kind) -> Option<String>,
+) -> String {
+    rewrite_html_resources(text, map, true)
+}
+
+fn rewrite_html_resources(
+    text: &str,
+    map: &impl Fn(&str, Kind) -> Option<String>,
+    public: bool,
+) -> String {
     let lower = text.to_ascii_lowercase();
     let mut i = 0;
     let mut edits = Vec::new();
@@ -922,6 +939,12 @@ pub(super) fn rewrite_html_with(text: &str, map: &impl Fn(&str, Kind) -> Option<
                     kind.and_then(|kind| map(&value, kind))
                 } else if a.name.eq_ignore_ascii_case("style") {
                     rewrite_css_with(&value, false, map).filter(|s| s != &value)
+                } else if public
+                    && ((matches!(name, "img" | "source" | "audio" | "video" | "input")
+                        && a.name.eq_ignore_ascii_case("src"))
+                        || name == "video" && a.name.eq_ignore_ascii_case("poster"))
+                {
+                    map(&value, Kind::Font)
                 } else {
                     None
                 };

@@ -37,7 +37,7 @@ describe("browser compatibility restrictions", () => {
       ),
     ).toEqual({
       headers: {},
-      form: undefined,
+      form: { ...DEFAULT_HTTP_FORM_AUTOMATION, submit: false },
     });
     expect(settings.defaultPolicy.allowCrossOriginRedirects).toBe(false);
   });
@@ -64,6 +64,8 @@ describe("browser compatibility restrictions", () => {
 
   it("does not apply generic timing overrides to reviewed staged application flows", () => {
     const settings = normalizeWebBrowserSettings({
+      // Isolate timing from the default manual-submit restriction.
+      manualFormSubmit: false,
       minimumFormFillDelayMs: 1000,
       minimumFormSubmitDelayMs: 2000,
     });

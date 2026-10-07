@@ -18,6 +18,7 @@ pub use sorng_opkssh as opkssh;
 
 // t5-e7: connection clone command (in-crate module, not an `include!` shim)
 pub mod connection_clone_cmds;
+pub mod browser_data_commands;
 mod discovery_commands;
 
 #[path = "../../../src/agent_commands.rs"]
@@ -44,6 +45,9 @@ mod cpu_commands;
 mod database_files;
 #[path = "../../../src/database_protection.rs"]
 pub mod database_protection;
+// Native authority only: never registered as a renderer command.
+#[path = "../../../src/origin_browser_authority.rs"]
+pub mod origin_browser_authority;
 #[path = "../../../src/encryption_rotation_commands.rs"]
 mod encryption_rotation_commands;
 // The enum + resolver are only consumed by the middleware in the main

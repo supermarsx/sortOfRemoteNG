@@ -112,7 +112,7 @@ for (const [name, launch, prefix] of [
         },
         spawn: (executable, received, options) => {
           assert.equal(executable, process.execPath);
-          assert.match(received[0], /tauri\.js$/u);
+          assert.match(received[0], /browser-app-build\.mjs$/u);
           assert.equal(received[1], "dev");
           assert.deepEqual(received.slice(-args.length), args);
           assert.equal(received.includes("--no-default-features"), false);

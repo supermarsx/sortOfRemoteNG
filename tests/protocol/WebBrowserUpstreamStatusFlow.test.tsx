@@ -20,6 +20,7 @@ const mocks = vi.hoisted(() => ({
   dispatch: vi.fn(),
   connections: [] as Connection[],
   settings: {
+    webBrowser: { engine: "legacy" },
     httpsTrustPolicy: "always-ask",
     webRecording: { autoRecordWebSessions: false },
     proxyKeepaliveEnabled: false,

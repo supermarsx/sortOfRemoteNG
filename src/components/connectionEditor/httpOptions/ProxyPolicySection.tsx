@@ -11,6 +11,7 @@ import RedirectAuthenticationOptions from "./RedirectAuthenticationOptions";
 import TrustedRedirectDestinationsSection from "./TrustedRedirectDestinationsSection";
 import SynologyRedirectDefaultsSection from "./SynologyRedirectDefaultsSection";
 import ExternalResourceOriginsEditor from "../../security/ExternalResourceOriginsEditor";
+import ConnectionDomainPermissionsSection from "./ConnectionDomainPermissionsSection";
 
 /** Draft-only editor. Native validation is repeated before opening a proxy. */
 export default function ProxyPolicySection({ mgr }: { mgr: Mgr }) {
@@ -95,6 +96,7 @@ export default function ProxyPolicySection({ mgr }: { mgr: Mgr }) {
               update({
                 pageScripts: pageScripts as HttpProxyPolicy["pageScripts"],
                 allowAllScripts: false,
+                allowAllRequests: false,
               })
             }
             variant="form"
@@ -149,6 +151,7 @@ export default function ProxyPolicySection({ mgr }: { mgr: Mgr }) {
           update({
             sameOriginOnly,
             allowAllScripts: false,
+            allowAllRequests: false,
           })
         }
         label="Same-origin resources and forms"
@@ -157,14 +160,54 @@ export default function ProxyPolicySection({ mgr }: { mgr: Mgr }) {
       />
       <div className="rounded-lg border border-[var(--color-border)] p-4 space-y-3">
         <CheckboxField
+          checked={policy.allowAllRequests === true && !policy.sameOriginOnly}
+          onChange={(allowAllRequests) =>
+            update({
+              allowAllRequests,
+              ...(allowAllRequests
+                ? { pageScripts: "allow", sameOriginOnly: false }
+                : {}),
+            })
+          }
+          label="Allow all website requests"
+          description="Trust current and future destinations for this saved connection, including website resources, API requests and navigation. Enables website scripts and turns off same-origin-only restrictions."
+          variant="form"
+        />
+        <p className="text-xs leading-relaxed text-warning">
+          Only enable this for websites you trust. Scripts and forms can send
+          information you enter to other destinations. Requests stay on the
+          internal proxy; saved credentials and login consent are not granted to
+          new destinations. Certificate checks, HTTPS requirements and
+          unsupported-request protections remain in force.
+        </p>
+        <p className="text-xs leading-relaxed text-[var(--color-textMuted)]">
+          Covers HTTP(S) resources and anonymous API requests. Cross-origin
+          pages use isolated anonymous navigation; cross-origin form posts,
+          embedded documents, WebSockets and event streams still need a
+          supported dedicated route. This is destination trust, not a bypass for
+          unsupported transports.
+        </p>
+        {policy.allowAllRequests && !policy.sameOriginOnly && (
+          <p role="status" className="text-xs text-[var(--color-textMuted)]">
+            All-request trust is active for this connection only. Individual
+            script, stylesheet and font source lists below are overridden but
+            retained for when it is turned off. Save and reload the website to
+            apply changes.
+          </p>
+        )}
+      </div>
+      <div className="rounded-lg border border-[var(--color-border)] p-4 space-y-3">
+        <CheckboxField
           checked={
-            policy.allowAllScripts === true &&
+            (policy.allowAllScripts === true ||
+              policy.allowAllRequests === true) &&
             policy.pageScripts === "allow" &&
             !policy.sameOriginOnly
           }
           onChange={(allowAllScripts) =>
             update({
               allowAllScripts,
+              allowAllRequests: false,
               ...(allowAllScripts
                 ? { pageScripts: "allow", sameOriginOnly: false }
                 : {}),
@@ -178,8 +221,8 @@ export default function ProxyPolicySection({ mgr }: { mgr: Mgr }) {
           Scripts can read and change this page, including information you
           enter. External scripts still download anonymously through the proxy;
           this does not grant saved credentials, login consent, other network
-          resources or browser sandbox access. Invalid URLs and insecure
-          external HTTP scripts remain blocked.
+          resources or browser sandbox access. Invalid URLs remain blocked.
+          {!policy.allowAllRequests && " External HTTP scripts remain blocked."}
         </p>
         {policy.allowAllScripts &&
           policy.pageScripts === "allow" &&
@@ -416,6 +459,7 @@ export default function ProxyPolicySection({ mgr }: { mgr: Mgr }) {
           </p>
         )}
       </div>
+      <ConnectionDomainPermissionsSection mgr={mgr} />
       <p className="text-xs text-[var(--color-textMuted)]">
         Use Clear session data in the browser toolbar to discard this session's
         proxy cookies and reopen it on a fresh protected origin. It does not

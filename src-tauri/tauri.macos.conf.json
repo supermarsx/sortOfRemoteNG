@@ -1,0 +1,10 @@
+{
+  "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
+  "bundle": {
+    "macOS": {
+      "infoPlist": "packaging/macos/Info.plist",
+      "entitlements": "packaging/macos/Entitlements.plist",
+      "hardenedRuntime": true
+    }
+  }
+}

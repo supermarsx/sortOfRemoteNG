@@ -1,0 +1,10 @@
+<!doctype html><html><body><h1>LOCAL Google-shaped fixture — no provider connection</h1>
+<input id="identifierId" name="identifier" type="email"><div id="identifierNext"><button type="button">Next</button></div>
+<script>
+document.querySelector('button').onclick=()=>{
+ const identifier=document.querySelector('input').value==='synthetic@example.test';
+ history.replaceState({},'', '/v3/signin/challenge/pwd');
+ document.body.innerHTML='<h1>Local password stage</h1><input name="Passwd" type="password"><div id="passwordNext"><button type="button">Next</button></div>';
+ document.querySelector('button').onclick=()=>fetch('/proof',{method:'POST',body:JSON.stringify({completed:'google',origin:location.origin,identifier,password:document.querySelector('input').value==='synthetic-local-only',nativeBridgeAbsent:typeof window.__sorng_google_login==='undefined'})});
+};
+</script></body></html>

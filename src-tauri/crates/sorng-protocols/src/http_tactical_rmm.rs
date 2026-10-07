@@ -87,6 +87,10 @@ impl TacticalRmmApiRoute {
         self.profile == ReviewedApplicationProfile::TacticalRmm
     }
 
+    pub(super) fn is_ptisp(&self) -> bool {
+        self.profile == ReviewedApplicationProfile::Ptisp
+    }
+
     pub(super) fn manifest_key(&self) -> &'static str {
         if self.is_tactical() {
             "tacticalRmmApi"

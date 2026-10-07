@@ -1,0 +1,404 @@
+{
+  "version": 1,
+  "profiles": {
+    "amazon-shopping": {
+      "hostedLoginUrl": "https://www.amazon.com/",
+      "loginPath": "/"
+    },
+    "aws-console": {
+      "hostedLoginUrl": "https://console.aws.amazon.com/",
+      "loginPath": "/"
+    },
+    "aws-console-china": {
+      "hostedLoginUrl": "https://console.amazonaws.cn/",
+      "loginPath": "/"
+    },
+    "aws-console-govcloud": {
+      "hostedLoginUrl": "https://console.amazonaws-us-gov.com/",
+      "loginPath": "/"
+    },
+    "youtube-studio": {
+      "hostedLoginUrl": "https://studio.youtube.com/",
+      "loginFlow": "google"
+    },
+    "google-ad-manager": {
+      "hostedLoginUrl": "https://admanager.google.com/",
+      "loginFlow": "google"
+    },
+    "google-adsense": {
+      "hostedLoginUrl": "https://adsense.google.com/adsense/login",
+      "loginFlow": "google"
+    },
+    "google-forms": {
+      "hostedLoginUrl": "https://docs.google.com/forms/",
+      "loginFlow": "google"
+    },
+    "google-gemini": {
+      "hostedLoginUrl": "https://gemini.google.com/",
+      "loginFlow": "google"
+    },
+    "google-workspace-admin": {
+      "hostedLoginUrl": "https://admin.google.com/",
+      "loginFlow": "google"
+    },
+    "google-play-store": {
+      "hostedLoginUrl": "https://play.google.com/store/",
+      "loginFlow": "google"
+    },
+    "google-developers": {
+      "hostedLoginUrl": "https://developers.google.com/",
+      "loginFlow": "google"
+    },
+    "google-play-console": {
+      "hostedLoginUrl": "https://play.google.com/console/",
+      "loginFlow": "google"
+    },
+    "cegid-primavera": {
+      "hostedLoginUrl": "https://mycegid.ila.cegid.com/pt/"
+    },
+    "autoridade-tributaria": {
+      "hostedLoginUrl": "https://www.portaldasfinancas.gov.pt/at/html/index.html"
+    },
+    "seguranca-social-direta": {
+      "hostedLoginUrl": "https://www.seg-social.pt/ptss/"
+    },
+    "irn-online": {
+      "hostedLoginUrl": "https://registo.justica.gov.pt/Login"
+    },
+    "e-redes": {
+      "hostedLoginUrl": "https://balcaodigital.e-redes.pt/home"
+    },
+    "meo-particulares": {
+      "hostedLoginUrl": "https://my.meo.pt/"
+    },
+    "meo-empresas": {
+      "hostedLoginUrl": "https://cliente-empresas.meo.pt/Pages/Dashboard/Dashboard.aspx"
+    },
+    "vodafone-portugal": {
+      "hostedLoginUrl": "https://my.vodafone.pt/"
+    },
+    "digi-portugal": {
+      "hostedLoginUrl": "https://mydigi.digi.pt/"
+    },
+    "imt-online": {
+      "hostedLoginUrl": "https://servicos.imt-ip.pt/login.aspx"
+    },
+    "via-verde": {
+      "hostedLoginUrl": "https://www.viaverde.pt/particulares/login"
+    },
+    "uzo-particulares": {
+      "hostedLoginUrl": "https://my.uzo.pt/"
+    },
+    "apple-account": {
+      "hostedLoginUrl": "https://account.apple.com/"
+    },
+    "apple-developer": {
+      "hostedLoginUrl": "https://developer.apple.com/account/"
+    },
+    "register-com": {
+      "hostedLoginUrl": "https://www.networksolutions.com/my-account/login"
+    },
+    "no-ip": {
+      "hostedLoginUrl": "https://www.noip.com/login"
+    },
+    "microsoft-account": {
+      "hostedLoginUrl": "https://account.microsoft.com/"
+    },
+    "microsoft-developer": {
+      "hostedLoginUrl": "https://developer.microsoft.com/en-us/"
+    },
+    "hpe-support": {
+      "hostedLoginUrl": "https://support.hpe.com/connect/login"
+    },
+    "notion": {
+      "hostedLoginUrl": "https://app.notion.com/login"
+    },
+    "zulip": {
+      "loginPath": "/login/"
+    },
+    "arlo": {
+      "hostedLoginUrl": "https://my.arlo.com/"
+    },
+    "uptime-kuma": {
+      "loginPath": "/dashboard"
+    },
+    "steam": {
+      "hostedLoginUrl": "https://store.steampowered.com/login/"
+    },
+    "autodesk": {
+      "hostedLoginUrl": "https://manage.autodesk.com/"
+    },
+    "kimi": {
+      "hostedLoginUrl": "https://www.kimi.com/"
+    },
+    "lovable": {
+      "hostedLoginUrl": "https://lovable.dev/login"
+    },
+    "npm": {
+      "hostedLoginUrl": "https://www.npmjs.com/login"
+    },
+    "pypi": {
+      "hostedLoginUrl": "https://pypi.org/account/login/"
+    },
+    "reddit": {
+      "hostedLoginUrl": "https://www.reddit.com/login/"
+    },
+    "tesla": {
+      "hostedLoginUrl": "https://www.tesla.com/teslaaccount"
+    },
+    "ebay": {
+      "hostedLoginUrl": "https://signin.ebay.com/signin/"
+    },
+    "x": {
+      "hostedLoginUrl": "https://x.com/login"
+    },
+    "wazuh": {
+      "loginPath": "/"
+    },
+    "zabbix": {},
+    "opnsense": {
+      "loginPath": "/"
+    },
+    "vodafone-smart-router-3": {},
+    "bitwarden-self-hosted": {
+      "loginPath": "/",
+      "loginFlow": "bitwarden"
+    },
+    "vaultwarden": {
+      "loginPath": "/",
+      "loginFlow": "bitwarden"
+    },
+    "nextcloud": {
+      "loginPath": "/login"
+    },
+    "namecheap": {
+      "hostedLoginUrl": "https://www.namecheap.com/myaccount/login/"
+    },
+    "network-solutions": {
+      "hostedLoginUrl": "https://www.networksolutions.com/my-account/login"
+    },
+    "time4vps": {
+      "hostedLoginUrl": "https://billing.time4vps.com/"
+    },
+    "contabo": {
+      "hostedLoginUrl": "https://my.contabo.com/account/login"
+    },
+    "chatgpt": {
+      "hostedLoginUrl": "https://chatgpt.com/auth/login",
+      "loginFlow": "chatgpt"
+    },
+    "claude": {
+      "hostedLoginUrl": "https://claude.ai/login",
+      "loginFlow": "claude"
+    },
+    "openrouter": {
+      "hostedLoginUrl": "https://openrouter.ai/sign-in"
+    },
+    "gitlab-com": {
+      "hostedLoginUrl": "https://gitlab.com/users/sign_in"
+    },
+    "gitlab-self-hosted": {
+      "loginPath": "/users/sign_in"
+    },
+    "google-account": {
+      "hostedLoginUrl": "https://myaccount.google.com/",
+      "loginFlow": "google"
+    },
+    "google-cloud-console": {
+      "hostedLoginUrl": "https://console.cloud.google.com/",
+      "loginFlow": "google"
+    },
+    "google-analytics": {
+      "hostedLoginUrl": "https://analytics.google.com/analytics/web/",
+      "loginFlow": "google"
+    },
+    "google-tag-manager": {
+      "hostedLoginUrl": "https://tagmanager.google.com/",
+      "loginFlow": "google"
+    },
+    "google-business-profile": {
+      "hostedLoginUrl": "https://business.google.com/locations",
+      "loginFlow": "google"
+    },
+    "google-search-console": {
+      "hostedLoginUrl": "https://search.google.com/search-console/",
+      "loginFlow": "google"
+    },
+    "google-ads": {
+      "hostedLoginUrl": "https://ads.google.com/aw/overview",
+      "loginFlow": "google"
+    },
+    "facebook": {
+      "hostedLoginUrl": "https://www.facebook.com/login/"
+    },
+    "instagram": {
+      "hostedLoginUrl": "https://www.instagram.com/accounts/login/"
+    },
+    "linkedin": {
+      "hostedLoginUrl": "https://www.linkedin.com/login"
+    },
+    "hpe-greenlake": {
+      "hostedLoginUrl": "https://common.cloud.hpe.com/"
+    },
+    "adobe": {
+      "hostedLoginUrl": "https://account.adobe.com/"
+    },
+    "youtube": {
+      "hostedLoginUrl": "https://www.youtube.com/",
+      "loginFlow": "google"
+    },
+    "zoom": {
+      "hostedLoginUrl": "https://zoom.us/signin"
+    },
+    "icloud": {
+      "hostedLoginUrl": "https://www.icloud.com/"
+    },
+    "ovhcloud": {
+      "hostedLoginUrl": "https://manager.eu.ovhcloud.com/"
+    },
+    "ptisp": {
+      "hostedLoginUrl": "https://my.ptisp.pt/login",
+      "loginPath": "/login"
+    },
+    "marcaria": {
+      "hostedLoginUrl": "https://www.marcaria.com/register/user/login.asp"
+    },
+    "freedns": {
+      "hostedLoginUrl": "https://freedns.afraid.org/"
+    },
+    "registro-br": {
+      "hostedLoginUrl": "https://registro.br/login/"
+    },
+    "sqlpad": {
+      "loginPath": "/signin"
+    },
+    "eaton-ups": {
+      "loginPath": "/"
+    },
+    "gmail": {
+      "hostedLoginUrl": "https://mail.google.com/",
+      "loginFlow": "google"
+    },
+    "outlook-online": {
+      "hostedLoginUrl": "https://outlook.office.com/mail/"
+    },
+    "exchange-owa": {
+      "loginPath": "/owa/"
+    },
+    "ddwrt": {
+      "loginPath": "/"
+    },
+    "freshtomato": {
+      "loginPath": "/"
+    },
+    "adobe-admin-console": {
+      "hostedLoginUrl": "https://adminconsole.adobe.com/",
+      "loginFlow": "adobe"
+    },
+    "canva": {
+      "hostedLoginUrl": "https://www.canva.com/login/"
+    },
+    "matomo": {
+      "loginPath": "/index.php"
+    },
+    "plausible": {
+      "loginPath": "/login"
+    },
+    "odoo": {
+      "loginPath": "/web/login"
+    },
+    "ghost": {
+      "loginPath": "/ghost/"
+    },
+    "strapi": {
+      "loginPath": "/admin/auth/login"
+    },
+    "phpmyadmin": {
+      "loginPath": "/index.php"
+    },
+    "freepbx": {
+      "loginPath": "/admin/"
+    },
+    "porkbun": {
+      "hostedLoginUrl": "https://porkbun.com/account/login",
+      "loginPath": "/account/login"
+    },
+    "generic-form": {},
+    "http-basic": {},
+    "http-digest": {},
+    "synology-dsm": {
+      "loginFlow": "synology"
+    },
+    "custom": {},
+    "portainer": {},
+    "nginxProxyMgr": {},
+    "proxmox": {},
+    "pfsense": {},
+    "cloudflare": {
+      "hostedLoginUrl": "https://dash.cloudflare.com/",
+      "loginPath": "/login",
+      "loginFlow": "cloudflare"
+    },
+    "tacticalrmm": {
+      "loginPath": "/login"
+    },
+    "meshcentral": {},
+    "guacamole": {},
+    "github": {
+      "hostedLoginUrl": "https://github.com/login"
+    },
+    "gitea": {
+      "loginPath": "/user/login"
+    },
+    "drone-ci": {},
+    "exchange-ecp": {
+      "loginPath": "/ecp/"
+    },
+    "brevo": {
+      "hostedLoginUrl": "https://login.brevo.com/"
+    },
+    "rdweb": {
+      "loginPath": "/RDWeb/"
+    },
+    "wordpress": {},
+    "joomla": {
+      "loginPath": "/administrator/"
+    },
+    "drupal": {},
+    "payload-cms": {},
+    "ilo": {},
+    "webmin": {},
+    "idrac": {},
+    "lenovo": {},
+    "supermicro": {},
+    "voip-phone": {
+      "loginFlow": "yealink"
+    },
+    "netbox": {},
+    "vmware": {},
+    "cpanel": {},
+    "draytek": {},
+    "grafana": {},
+    "budibase": {},
+    "jira": {},
+    "osticket": {},
+    "mailcow": {},
+    "haproxy": {},
+    "traefik": {},
+    "prometheus": {},
+    "lxd": {},
+    "exchange": {},
+    "gdrive": {
+      "hostedLoginUrl": "https://drive.google.com/drive/",
+      "loginFlow": "google"
+    },
+    "vmwareDesktop": {},
+    "ansible": {},
+    "nginx": {},
+    "caddy": {},
+    "php": {},
+    "mssql": {},
+    "mail": {},
+    "keepass": {}
+  }
+}
