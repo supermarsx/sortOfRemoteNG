@@ -18,6 +18,18 @@ import { EXCHANGE_ECP_PROFILE } from "./exchangeEcpProfile";
 import { normalizeExchangeOwaMailbox } from "./exchangeOwaProfile";
 import { ADOBE_ADMIN_CONSOLE_PROFILE } from "./adobeAdminConsoleProfile";
 import { CANVA_PROFILE } from "./canvaProfile";
+import {
+  AMAZON_SHOPPING_PROFILES,
+  getAmazonShoppingMarket,
+  getLegacyAmazonShoppingMarket,
+} from "./amazonProfiles";
+import { AWS_CONSOLE_PROFILES } from "./awsConsoleProfiles";
+import { GOOGLE_SERVICE_PROFILES } from "./googleServiceProfiles";
+import { PORTUGAL_PORTAL_PROFILES } from "./portugalPortalProfiles";
+import { INTERNATIONAL_PORTAL_PROFILES } from "./internationalPortalProfiles";
+import { RD_WEB_PROFILE } from "./rdWebProfile";
+import { OPNSENSE_PROFILE } from "./opnsenseProfile";
+import { VODAFONE_SMART_ROUTER_PROFILE } from "./vodafoneSmartRouterProfile";
 
 export interface HttpApplicationProfile {
   id: string;
@@ -82,10 +94,20 @@ export const FIRST_PARTY_GOOGLE_HTTP_APPLICATION_IDS = [
   "google-account",
   "google-cloud-console",
   "google-analytics",
+  "google-tag-manager",
   "google-business-profile",
   "google-search-console",
   "google-ads",
+  "google-ad-manager",
+  "google-adsense",
+  "google-forms",
+  "google-gemini",
+  "google-workspace-admin",
+  "google-play-store",
+  "google-developers",
+  "google-play-console",
   "youtube",
+  "youtube-studio",
   "gmail",
   "gdrive",
 ] as const;
@@ -147,6 +169,13 @@ const unavailable = (
 
 /** Browser capabilities, not a claim that every native API credential logs into a website. */
 export const HTTP_APPLICATION_PROFILES: readonly HttpApplicationProfile[] = [
+  ...AMAZON_SHOPPING_PROFILES,
+  ...AWS_CONSOLE_PROFILES,
+  ...GOOGLE_SERVICE_PROFILES,
+  ...PORTUGAL_PORTAL_PROFILES,
+  ...INTERNATIONAL_PORTAL_PROFILES,
+  OPNSENSE_PROFILE,
+  VODAFONE_SMART_ROUTER_PROFILE,
   ...SELF_HOSTED_VAULT_PROFILES,
   ...HOSTED_DASHBOARD_PROFILES,
   ADOBE_ADMIN_CONSOLE_PROFILE,
@@ -422,15 +451,7 @@ export const HTTP_APPLICATION_PROFILES: readonly HttpApplicationProfile[] = [
     description:
       "Reviewed hosted email/password controls at https://login.brevo.com. Authenticator/SMS codes and Google, Apple or SAML sign-in remain interactive; API/SMTP keys are not website passwords. App redirects and separate service origins may require the system browser. This preset does not claim automatic Brevo MFA.",
   },
-  {
-    id: "rdweb",
-    label: "Windows RemoteApp / RD Web Access",
-    category: "virtualization",
-    capability: "manual",
-    loginPath: "/RDWeb/",
-    description:
-      "Interactive RD Web Access portal. Legacy RDWeb, HTML5 web client, RD Gateway and Microsoft Entra preauthentication have different login/MFA flows; no universal form is guessed. Portal sign-in does not configure or launch a native RemoteApp session. Use the system browser for passkeys, security keys, external identity providers or unsupported portal launches.",
-  },
+  RD_WEB_PROFILE,
   {
     id: "wordpress",
     label: "WordPress",
@@ -655,7 +676,12 @@ export const HTTP_APPLICATION_PROFILES: readonly HttpApplicationProfile[] = [
 export function getHttpApplicationProfile(
   id: string,
 ): HttpApplicationProfile | undefined {
-  return HTTP_APPLICATION_PROFILES.find((profile) => profile.id === id);
+  const canonicalId = getLegacyAmazonShoppingMarket(id)
+    ? "amazon-shopping"
+    : id;
+  return HTTP_APPLICATION_PROFILES.find(
+    (profile) => profile.id === canonicalId,
+  );
 }
 
 const FIRST_PARTY_GOOGLE_HTTP_APPLICATION_ID_SET = new Set<string>(
@@ -774,7 +800,19 @@ export function normalizeHttpApplicationSettings(
       (character) =>
         character.charCodeAt(0) < 32 || character.charCodeAt(0) === 127,
     );
-  const id = safeString(raw.id, 80) ? raw.id : "invalid-profile";
+  const sourceId = safeString(raw.id, 80) ? raw.id : "invalid-profile";
+  const legacyAmazonMarket = getLegacyAmazonShoppingMarket(sourceId);
+  const id = legacyAmazonMarket ? "amazon-shopping" : sourceId;
+  const amazonMarketplace =
+    raw.amazonMarketplace === undefined
+      ? legacyAmazonMarket?.code
+      : raw.amazonMarketplace;
+  const amazonMarketplaceValid =
+    amazonMarketplace === undefined ||
+    (id === "amazon-shopping" &&
+      (amazonMarketplace === "auto" ||
+        !!getAmazonShoppingMarket(amazonMarketplace)) &&
+      (!legacyAmazonMarket || amazonMarketplace === legacyAmazonMarket.code));
   const profile = getHttpApplicationProfile(id);
   const loginMode = raw.loginMode === undefined ? "manual" : raw.loginMode;
   const validMode =
@@ -820,6 +858,7 @@ export function normalizeHttpApplicationSettings(
     apiOriginValid &&
     meshOriginValid &&
     exchangeOwaMailboxValid &&
+    amazonMarketplaceValid &&
     raw.invalid !== true;
   return {
     version: 1,
@@ -828,6 +867,9 @@ export function normalizeHttpApplicationSettings(
     ...(apiOrigin ? { apiOrigin } : {}),
     ...(meshOrigin ? { meshOrigin } : {}),
     ...(exchangeOwaMailbox ? { exchangeOwaMailbox } : {}),
+    ...(amazonMarketplaceValid && typeof amazonMarketplace === "string"
+      ? { amazonMarketplace }
+      : {}),
     ...(id === "proxmox" && realmValid && typeof raw.realm === "string"
       ? { realm: raw.realm }
       : {}),

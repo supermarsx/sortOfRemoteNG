@@ -26,6 +26,72 @@ function nativeRoutes(): GoogleProxyRoute[] {
 }
 
 describe("Google proxy session routes", () => {
+  it("projects Studio's observed YouTube sign-in continuation through a distinct document alias", () => {
+    const studio = "https://studio.youtube.com";
+    const youtube = "https://www.youtube.com";
+    const scope = expectedGoogleOrigins(studio);
+    expect(scope.get(youtube)).toBe(true);
+    expect(scope.has("https://accounts.youtube.com")).toBe(false);
+    expect(
+      expectedGoogleOrigins(youtube).get("https://accounts.youtube.com"),
+    ).toBe(true);
+    const routes = [...scope].map(([upstreamOrigin, documents], index) => ({
+      upstreamOrigin,
+      documents,
+      proxyOrigin:
+        index === 0
+          ? proxy
+          : `http://p${index.toString(16).padStart(32, "0")}.localhost:43123`,
+    }));
+    expect(validateGoogleProxyRoutes(routes, studio, proxy, true)).toEqual(
+      routes,
+    );
+    const continuation = new URL(
+      "https://www.youtube.com/signin?action_handle_signin=true&app=desktop&hl=en&next=https%3A%2F%2Fstudio.youtube.com%2F&feature=redirect_login",
+    );
+    const projected = new URL(googleProxyForUpstream(routes, continuation)!);
+    expect(projected.origin).toBe(
+      routes.find((route) => route.upstreamOrigin === youtube)!.proxyOrigin,
+    );
+    expect(projected.origin).not.toBe(proxy);
+    expect(projected.pathname).toBe("/signin");
+    expect(projected.search).toBe(continuation.search);
+    expect(projected.searchParams.get("next")).toBe(studio + "/");
+    expect(googleUpstreamForProxy(routes, projected)).toBe(continuation.href);
+    for (const invalid of [
+      "https://www.youtube.com.attacker.test/signin",
+      "http://www.youtube.com/signin",
+      "https://www.youtube.com:8443/signin",
+    ]) {
+      expect(googleProxyForUpstream(routes, new URL(invalid))).toBeUndefined();
+    }
+    expect(() =>
+      validateGoogleProxyRoutes(
+        routes.filter((route) => route.upstreamOrigin !== youtube),
+        studio,
+        proxy,
+        true,
+      ),
+    ).toThrow();
+    expect(() =>
+      validateGoogleProxyRoutes(
+        routes.map((route) =>
+          route.upstreamOrigin === youtube
+            ? { ...route, documents: false }
+            : route,
+        ),
+        studio,
+        proxy,
+        true,
+      ),
+    ).toThrow();
+    expect(expectedGoogleOrigins(source).has(youtube)).toBe(false);
+    expect(
+      expectedGoogleOrigins(source).get(
+        "https://analyticsadmin.googleapis.com",
+      ),
+    ).toBe(false);
+  });
   it("isolates Adobe's catalog and never starts it at Google Accounts", () => {
     const adobe = "https://adminconsole.adobe.com";
     const routes = [...expectedGoogleOrigins(adobe)].map(

@@ -151,7 +151,7 @@ describe("Tactical RMM publisher icon", () => {
     ).toBeInTheDocument();
   });
 
-  it("uses the brand in the application selector and suggestion without changing the saved override implicitly", () => {
+  it("keeps the selector text-only like other applications and offers the brand as an explicit icon suggestion", () => {
     const initial = { ...saved, icon: "star" };
     function Fixture() {
       const [formData, setFormData] = useState<Partial<Connection>>(initial);
@@ -170,13 +170,13 @@ describe("Tactical RMM publisher icon", () => {
     const selector = screen.getByRole("combobox", {
       name: /^Website application/,
     });
-    expect(selector.querySelector("svg.lucide-tactical-rmm")).not.toBeNull();
+    expect(selector.querySelector("svg.lucide-tactical-rmm")).toBeNull();
     fireEvent.click(selector);
     expect(
       screen
         .getByRole("option", { name: "Tactical RMM" })
         .querySelector("svg.lucide-tactical-rmm"),
-    ).not.toBeNull();
+    ).toBeNull();
     fireEvent.mouseDown(screen.getByRole("option", { name: "Tactical RMM" }));
     expect(
       JSON.parse(screen.getByTestId("saved-value").textContent!).icon,

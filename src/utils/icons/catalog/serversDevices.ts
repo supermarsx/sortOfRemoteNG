@@ -28,6 +28,7 @@ import {
 } from "lucide-react";
 
 import { defineIcon } from "./types";
+import { CREATIVE_DEVICE_ICONS } from "./creativeDeviceIcons";
 import { createRoleIcon } from "../createRoleIcon";
 import { INDUSTRIAL_ASSET_ICONS } from "./industrialAssets";
 import { DEVICE_VARIANT_ICONS } from "./deviceVariants";
@@ -697,4 +698,5 @@ export const SERVERS_DEVICES_ICONS = [
   ...INDUSTRIAL_ASSET_ICONS,
   ...DEVICE_VARIANT_ICONS,
   ...PHYSICAL_SERVER_ICONS,
+  ...CREATIVE_DEVICE_ICONS,
 ] as const;

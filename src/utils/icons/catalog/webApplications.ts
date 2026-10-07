@@ -4,6 +4,7 @@ import { haproxy } from "../brand";
 import {
   apache,
   apachetomcat,
+  autodesk,
   budibase,
   caddy,
   cpanel,
@@ -39,6 +40,8 @@ import { BUSINESS_SYSTEM_ICONS } from "./businessSystems";
 import { BANKING_ICONS } from "./banking";
 import { ADMIN_PANEL_ICONS } from "./adminPanels";
 import { HOSTED_DASHBOARD_ICONS } from "./hostedDashboards";
+import { AMAZON_APPLICATION_ICONS } from "./amazonApplications";
+import { RD_WEB_APPLICATION_ICONS } from "./rdWebApplications";
 
 /**
  * Web and application icons. Seeded with generic Lucide entries so the category
@@ -46,8 +49,20 @@ import { HOSTED_DASHBOARD_ICONS } from "./hostedDashboards";
  * by later work without touching the entries below.
  */
 export const WEB_APPLICATION_ICONS = [
+  ...AMAZON_APPLICATION_ICONS,
+  ...RD_WEB_APPLICATION_ICONS,
   ...ADMIN_PANEL_ICONS,
   ...HOSTED_DASHBOARD_ICONS,
+  defineIcon("autodesk", "Autodesk", "web-applications", autodesk, [
+    "autodesk",
+    "autodesk account",
+    "autocad",
+    "revit",
+    "fusion",
+    "cad",
+    "licensing",
+    "subscriptions",
+  ]),
   defineIcon(
     "haproxy",
     "HAProxy",

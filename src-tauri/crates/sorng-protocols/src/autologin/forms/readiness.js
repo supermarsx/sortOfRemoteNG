@@ -68,6 +68,13 @@ function waitForSelectedLoginForm(ov, readiness) {
               finish({ ok: false, reason: "form-already-filled" });
               return;
             }
+            if (target.linkedin) {
+              if (!linkedinEmpty(target)) {
+                finish({ ok: false, reason: "form-already-filled" });
+                return;
+              }
+              linkedinRememberTarget(target);
+            }
             targetFingerprint(target);
             finish({ ok: true, deadline: deadline });
             return;

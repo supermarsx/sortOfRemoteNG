@@ -91,6 +91,7 @@ export const BRAND_ICON_SLUGS = [
 
   // Web and applications
   "apache",
+  "autodesk",
   "bitwarden",
   "buildkite",
   "circleci",
@@ -259,6 +260,7 @@ export const BRAND_ICON_SLUGS = [
   "instagram",
   "gmail",
   "googleanalytics",
+  "googletagmanager",
   "googleads",
   "googlesearchconsole",
   "youtube",

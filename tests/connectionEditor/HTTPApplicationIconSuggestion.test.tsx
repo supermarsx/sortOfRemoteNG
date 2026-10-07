@@ -81,7 +81,7 @@ describe("HTTP application icon suggestions", () => {
   });
 
   it.each(HTTP_APPLICATION_PROFILES)(
-    "uses a passive unframed existing choice for selectable $id only",
+    "uses a passive existing choice for selectable $id only",
     (profile) => {
       const suggestion = getHttpApplicationIconSuggestion({
         ...initial,
@@ -99,7 +99,13 @@ describe("HTTP application icon suggestions", () => {
       const svg = renderToStaticMarkup(<Icon size={24} />);
       expect(svg).toContain('viewBox="0 0 24 24"');
       expect(svg).toContain("currentColor");
-      expect(svg).not.toMatch(/data-role-frame|<image|<script|<foreignObject/);
+      expect(svg).not.toMatch(/<image|<script|<foreignObject/);
+      if (profile.id === "vodafone-smart-router-3") {
+        // This is a local appliance, distinct from the My Vodafone portal.
+        expect(svg).toContain('data-role-frame="router"');
+      } else {
+        expect(svg).not.toContain("data-role-frame");
+      }
     },
   );
 

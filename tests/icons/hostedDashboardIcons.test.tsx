@@ -10,6 +10,7 @@ import {
   siInstagram,
   siGmail,
   siGoogleanalytics,
+  siGoogletagmanager,
   siGoogleads,
   siGooglesearchconsole,
 } from "simple-icons";
@@ -36,13 +37,14 @@ const references = {
   instagram: siInstagram,
   gmail: siGmail,
   "google-analytics": siGoogleanalytics,
+  "google-tag-manager": siGoogletagmanager,
   "google-ads": siGoogleads,
   "google-search-console": siGooglesearchconsole,
 };
 
 describe("dashboard pure vector identifiers", () => {
   it("adds only missing keys, reuses Zoom and keeps the full catalogue unique", () => {
-    expect(added).toHaveLength(15);
+    expect(added).toHaveLength(17);
     expect(new Set(CONNECTION_ICON_CATALOG.map((e) => e.key)).size).toBe(
       CONNECTION_ICON_CATALOG.length,
     );

@@ -4,10 +4,20 @@
     "google-account": "https://myaccount.google.com",
     "google-cloud-console": "https://console.cloud.google.com",
     "google-analytics": "https://analytics.google.com",
+    "google-tag-manager": "https://tagmanager.google.com",
     "google-business-profile": "https://business.google.com",
     "google-search-console": "https://search.google.com",
     "google-ads": "https://ads.google.com",
+    "google-ad-manager": "https://admanager.google.com",
+    "google-adsense": "https://adsense.google.com",
+    "google-forms": "https://docs.google.com",
+    "google-gemini": "https://gemini.google.com",
+    "google-workspace-admin": "https://admin.google.com",
+    "google-play-store": "https://play.google.com",
+    "google-developers": "https://developers.google.com",
+    "google-play-console": "https://play.google.com",
     "youtube": "https://www.youtube.com",
+    "youtube-studio": "https://studio.youtube.com",
     "gmail": "https://mail.google.com",
     "gdrive": "https://drive.google.com"
   },
@@ -21,6 +31,7 @@
   ],
   "profileOrigins": {
     "youtube": ["https://accounts.youtube.com"],
+    "youtube-studio": ["https://www.youtube.com"],
     "google-cloud-console": ["https://cloudconsole-pa.clients6.google.com"],
     "google-analytics": [
       "https://analyticsadmin.googleapis.com",

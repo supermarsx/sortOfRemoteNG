@@ -69,12 +69,24 @@ export function getHttpApplicationExternalTarget(
       };
     }
     const external = new URL(
-      profile?.hostedLoginUrl ??
+      (profile?.id === "amazon-shopping" ? "/" : profile?.hostedLoginUrl) ??
         settings?.loginPath ??
         profile?.loginPath ??
         "/",
       savedOrigin,
     );
+    // Match the embedded initial URL for tenant/self-hosted installations.
+    // Assign pathname (not a relative URL) so a leading // cannot change host.
+    // Never copy query strings, fragments or a live page's navigation state.
+    if (
+      !profile?.hostedLoginUrl &&
+      authority.initialPathname &&
+      (authority.initialPathname !== "/" ||
+        authority.initialSearch ||
+        authority.initialHash)
+    ) {
+      external.pathname = authority.initialPathname;
+    }
     if (
       external.origin !== savedOrigin ||
       external.username ||

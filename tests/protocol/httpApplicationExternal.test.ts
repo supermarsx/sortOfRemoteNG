@@ -10,6 +10,7 @@ import {
 } from "../../src/utils/auth/httpApplicationLogin";
 import type { Connection } from "../../src/types/connection/connection";
 import { EXCHANGE_ECP_LOGIN_SELECTORS } from "../../src/utils/connection/exchangeEcpProfile";
+import { RD_WEB_LOGIN_SELECTORS } from "../../src/utils/connection/rdWebProfile";
 const connection = (
   id: string,
   hostname = "service.example.test",
@@ -22,6 +23,27 @@ const connection = (
   password: "fixture-password",
 });
 describe("safe true-origin browser handoff", () => {
+  it.each(["zabbix", "wazuh", "zulip", "uptime-kuma", "opnsense", "rdweb"])(
+    "preserves %s's configured deployment path, never transaction parameters",
+    (id) => {
+      const saved = {
+        ...connection(
+          id,
+          "https://service.example.test:8443/tools/login?token=private#state",
+        ),
+        port: 8443,
+      };
+      expect(
+        getHttpApplicationExternalTarget(
+          saved,
+          "https://service.example.test:8443/tools/login?token=private",
+        ),
+      ).toEqual({
+        label: getHttpApplicationProfile(id)!.label,
+        url: "https://service.example.test:8443/tools/login",
+      });
+    },
+  );
   it.each(["manual", "form"] as const)(
     "keeps Cloudflare %s handoff pinned to the fixed root without session secrets",
     (loginMode) => {
@@ -164,7 +186,7 @@ describe("safe true-origin browser handoff", () => {
           loginMode: "form" as const,
         },
       };
-      if (id === "exchange-ecp") {
+      if (id === "exchange-ecp" || id === "rdweb") {
         expect(resolveHttpApplicationLogin(explicitForm)).toEqual({
           credentials: {
             username: "fixture-user",
@@ -172,7 +194,10 @@ describe("safe true-origin browser handoff", () => {
           },
           autoLogin: true,
           upstreamAuthMode: "none",
-          selectors: EXCHANGE_ECP_LOGIN_SELECTORS,
+          selectors:
+            id === "rdweb"
+              ? RD_WEB_LOGIN_SELECTORS
+              : EXCHANGE_ECP_LOGIN_SELECTORS,
         });
       } else {
         expect(() => resolveHttpApplicationLogin(explicitForm)).toThrow(

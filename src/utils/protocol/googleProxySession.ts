@@ -63,7 +63,10 @@ export function expectedGoogleOrigins(source: string): Map<string, boolean> {
     ...(
       (providerCatalog.profileOrigins as Record<string, string[]>)[profile] ??
       []
-    ).map((origin): [string, boolean] => [origin, profile === "youtube"]),
+    ).map((origin): [string, boolean] => [
+      origin,
+      profile === "youtube" || profile === "youtube-studio",
+    ]),
   ]);
 }
 

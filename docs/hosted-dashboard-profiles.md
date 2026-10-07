@@ -12,10 +12,11 @@ reviewed HTTPS destination: a blank connection receives it automatically, and
 switching between Google presets replaces the previous managed Google address.
 An explicit custom address is preserved. The Porkbun and PTisp presets set
 their exact HTTPS hostname and port 443 on selection, without changing the
-certificate policy or enabling automatic login. Adobe Admin Console, Instagram
-and Canva fill a blank address with their HTTPS hostname and port 443, but
-preserve an existing custom address. Use their explicit address button to replace
-it; automatic assistance still requires the exact hosted origin. For other hosted services use the
+certificate policy or enabling automatic login. Adobe Admin Console, Instagram,
+Canva, Amazon Shopping and AWS console presets fill a blank address with their
+HTTPS hostname and port 443, but preserve an existing custom address. Use their
+explicit address button to replace it; hosted-origin validation still applies.
+Amazon Shopping and AWS are manual-only. For other hosted services use the
 explicit **Use hosted login address** action, review the change, and save.
 Hosted presets require their exact HTTPS origin; choosing one cannot relabel an
 unrelated server as that provider. Self-hosted presets keep your server address
@@ -75,6 +76,126 @@ Official public entry points reviewed on 2026-09-10:
 Public entry-point/source review and fixture tests do **not** prove that a
 provider currently permits embedded sign-in, that a particular account is
 authenticated, or that every deployment works. No live accounts were used.
+
+### LinkedIn
+
+The **LinkedIn** preset (`linkedin`) opens the [official login page](https://www.linkedin.com/login)
+and suggests its own local, theme-aware brand icon. Blank connections receive the
+built-in HTTPS address; existing custom addresses and saved icon choices are not
+overwritten. Manual mode is the default. Selecting **Automatic form login** is
+an explicit opt-in to one submission with connection-local or selected vault
+credentials.
+
+The adapter recognizes the reviewed English/Portuguese form-less controls and
+the traditional named POST form. It preserves user-entered values and stops when
+the form, destination or document changes. Selector overrides, extra form fields
+and automatic MFA are not supported. CAPTCHA, MFA, passkeys, SSO, recovery and
+unrecognized layouts remain interactive; there is no retry loop or HTTP Basic
+fallback. Public markup was inspected on 2026-10-06 and reduced fixtures exercise
+the injected client. A successful authenticated LinkedIn login has not been
+live-verified.
+
+### Google Tag Manager
+
+The **Google Tag Manager** website preset (`google-tag-manager`) opens
+[the official dashboard](https://tagmanager.google.com/), linked from Google's
+[Tag Manager documentation](https://developers.google.com/tag-platform/tag-manager).
+Public entry-point review on 2026-10-06 confirmed the Google Accounts redirect;
+no credentials were submitted or authenticated dashboard session verified.
+
+It reuses the existing Google staged sign-in and enrolled-TOTP flow, with manual
+browsing as the default and explicit opt-in for automatic login. The preset has
+its own theme-aware Tag Manager brand icon from the vendored Simple Icons set.
+Adding this preset does not publish containers, install tracking tags, grant
+API access or allow `www.googletagmanager.com` scripts on unrelated websites.
+Only this dashboard's exact origin is added to its Google session route catalog;
+the existing sign-in, credential-consent and proxy-routing boundaries remain.
+
+### Additional portal catalog
+
+Provider-family modules keep the shared application selector and authentication
+resolver small. All new presets start in manual mode; selecting one is not
+credential or request-permission consent. All hosted presets fill a blank
+connection with the reviewed HTTPS address, while preserving existing custom
+addresses until **Use login address** is chosen. Self-hosted portals require the
+actual deployment hostname and port; saved full-URL paths are retained.
+
+- [Eight additional Google services](google-service-profiles.md): Ad Manager,
+  AdSense, Forms, Gemini, Workspace Admin, Play Store, Google for Developers and
+  Play Console reuse the existing opt-in Google Account flow. Play Store and
+  Console have distinct entry paths, not separate origins.
+- [International portals](international-portal-profiles.md): 23 entries including
+  the requested account/developer, community, retail and monitoring services.
+  These are manual-only presets, not verified automatic-login adapters. Zulip,
+  Uptime Kuma, Wazuh and Zabbix retain administrator-configured deployment URLs.
+- [Portuguese portals](portugal-portal-profiles.md): 12 manual-only customer and
+  government-service entries. A distinct UZO Empresas portal was not verified;
+  only my UZO is provided. Cegid Primavera uses the current myCegid customer entry.
+- [RD Web Access](rd-web-access-login.md): opt-in classic HTML form login and a
+  dedicated theme-aware icon. HTML5, federated and raw XML/XSL deployments are
+  outside this adapter's verified contract.
+- [OPNsense](opnsense-login.md): opt-in WebGUI form login preserving the real
+  submitter and CSRF fields. TOTP and SSO stay interactive.
+
+The new presets do not establish successful live authenticated login or remove
+embedded-browser, routing, cookie or provider challenge restrictions. Their
+tests exercise configuration, routing contracts and reviewed form fixtures.
+
+### Amazon Shopping and AWS consoles
+
+These are **manual-only website presets**: automatic login is not implemented,
+and successful live authenticated sign-in has not been verified. Selecting any
+of them fills a blank connection with its canonical HTTPS hostname and port 443;
+an existing custom address, certificate policy and saved icon are preserved.
+The explicit **Use [preset] login address** button replaces an existing address.
+Selecting another application does not silently replace a populated address.
+
+Amazon Shopping is **one application choice**. Its searchable **Amazon
+marketplace** dropdown defaults to **Auto-detect from URL** and recognizes the
+reviewed storefront hosts below (both `www` and apex spelling). Existing URLs
+are retained; a blank connection starts at the United States / International
+store. Choosing a country explicitly updates the saved HTTPS hostname and port
+443. Switching back to Auto-detect leaves that URL in place. A mismatched manual
+selection is rejected before connecting, rather than silently opening another
+marketplace. Unknown domains, lookalikes, credential-bearing URLs and custom
+ports are not accepted as a retail store.
+
+Old saved `amazon-shopping-<country>` profile IDs normalize to `amazon-shopping`
+with their original explicit marketplace. They remain usable without adding
+duplicate application choices or changing passwords, TLS policy or icons.
+
+The 23 retail storefronts were checked against Amazon's
+[marketplace list](https://developer-docs.amazon.com/sp-api/docs/marketplace-ids)
+and [regional domain listing](https://developer-docs.amazon.com/sp-api/docs/seller-central-urls)
+on 2026-10-06. Presets open the store homepage over HTTPS, letting the store's own
+**Sign in / Account** link generate its current sign-in and return parameters.
+Shipping destinations are not additional storefronts.
+
+| Region | Shopping storefront hostnames |
+| --- | --- |
+| Europe | `www.amazon.co.uk`, `www.amazon.ie`, `www.amazon.de`, `www.amazon.fr`, `www.amazon.it`, `www.amazon.es`, `www.amazon.nl`, `www.amazon.com.be`, `www.amazon.se`, `www.amazon.pl`, `www.amazon.com.tr` |
+| Americas | `www.amazon.com` (US / international), `www.amazon.ca`, `www.amazon.com.mx`, `www.amazon.com.br` |
+| Asia-Pacific | `www.amazon.co.jp`, `www.amazon.in`, `www.amazon.com.au`, `www.amazon.sg` |
+| Middle East and Africa | `www.amazon.ae`, `www.amazon.sa`, `www.amazon.eg`, `www.amazon.co.za` |
+
+AWS website presets are separate from both shopping accounts and the app's AWS
+access-key API integration:
+
+| Console | Canonical entry point and identity boundary |
+| --- | --- |
+| Commercial | `https://console.aws.amazon.com/` — use the appropriate [root, IAM or federated identity](https://docs.aws.amazon.com/signin/latest/userguide/sign-in-urls-defined.html). IAM Identity Center uses the administrator-provided portal as a separate saved website. |
+| China | `https://console.amazonaws.cn/` — use the [China account's console identity](https://docs.amazonaws.cn/en_us/aws/latest/userguide/console.html), not an automatically reused commercial account. |
+| GovCloud (US) | `https://console.amazonaws-us-gov.com/` — use the [GovCloud identity](https://docs.aws.amazon.com/govcloud-us/latest/UserGuide/configure-account.html), not a linked commercial account's credentials. |
+
+Saved passwords, API keys, session tokens and automatic TOTP are not supplied by
+these presets. There is no automatic credential forwarding between stores or
+between shopping and AWS. MFA, CAPTCHA, passkeys, SSO, verification and account
+recovery remain interactive. Amazon uses the detected/selected storefront's
+HTTPS origin; each AWS preset pins its own exact HTTPS origin;
+redirects and subresources remain subject to the connection's existing routing
+and trust policy. No wildcard Amazon/AWS permission or direct-network fallback
+is added. Rendered editor and contract tests prove preset behavior, not provider
+acceptance of the embedded browser or completion of a real login.
 
 ### Adobe Admin Console, Instagram and Canva
 

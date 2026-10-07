@@ -6,6 +6,8 @@ function bootstrapFill(
   readinessProfile,
   readinessDeadline,
 ) {
+  if (linkedinSelectors(ov))
+    return runLinkedinForm(creds, ov, rawOptions, readinessDeadline);
   if (instagramSelectors(ov))
     return runInstagramForm(creds, ov, rawOptions, readinessDeadline);
   // This promise OWNS the secret until detection finishes. Clearing it in

@@ -40,6 +40,10 @@ import {
 } from "lucide-react";
 
 import { defineIcon } from "./types";
+import {
+  CREATIVE_FOLDER_ICONS,
+  CREATIVE_FOLDER_OPEN_ICONS,
+} from "./creativeDeviceIcons";
 import { createRoleIcon } from "../createRoleIcon";
 import {
   ADDITIONAL_FOLDER_ICONS,
@@ -434,6 +438,7 @@ export const FOLDER_ICONS = [
   ...SERVICE_COLLECTION_FOLDER_ICONS,
   ...BUSINESS_INFRASTRUCTURE_FOLDER_ICONS,
   ...PLATFORM_COLLECTION_FOLDER_ICONS,
+  ...CREATIVE_FOLDER_ICONS,
 ] as const;
 
 /** Presentation-only counterparts. Keep saved keys and picker entries unchanged. */
@@ -446,6 +451,7 @@ export const FOLDER_OPEN_ICONS: Readonly<
   ...SERVICE_COLLECTION_FOLDER_OPEN_ICONS,
   ...BUSINESS_INFRASTRUCTURE_FOLDER_OPEN_ICONS,
   ...PLATFORM_COLLECTION_FOLDER_OPEN_ICONS,
+  ...CREATIVE_FOLDER_OPEN_ICONS,
   "folder-building": createRoleIcon(
     "OpenBuildingFolder",
     "folder-open",

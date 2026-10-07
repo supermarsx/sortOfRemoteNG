@@ -19,6 +19,9 @@ dependencies. Execute the assembled client, never the coordinator template.
   choose this lifecycle, enforce the common origin/one-submit guard, schedule
   retries, and dispose application state with the run.
 - `apps/porkbun.js`: reviewed custom-widget discovery and validation.
+- `apps/vodafone_smart_router.js`: user-supplied Smart Router 3 formless login;
+  waits for the router's own `SubmitForm` handler, checks unique controls and
+  handler identity, and clicks the existing button once. No invented login API.
 - `apps/joomla.js`: administrator form recognition and manual combined MFA.
 - `apps/exchange_ecp.js`: shared on-premises Exchange forms authentication;
   distinct ECP/OWA selectors constrain the return destination to the selected

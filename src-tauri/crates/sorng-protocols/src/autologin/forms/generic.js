@@ -1,5 +1,7 @@
 /* Private auto-login forms/generic.js. Assembled inside the coordinator IIFE. */
 function findInRoot(root, ov, options) {
+  if (linkedinSelectors(ov)) return linkedinTarget(root, ov);
+  if (vodafoneRouterSelectors(ov)) return vodafoneRouterTarget(root, ov);
   var selectedForm = null;
   if (options && options.formSelector) {
     var forms = root.querySelectorAll(options.formSelector);
@@ -125,6 +127,19 @@ function submitForm(target, ov, readinessProfile) {
   var pw = target.pw;
   var user = target.user;
 
+  if (target.vodafoneRouter) {
+    var router = vodafoneRouterTarget(document, ov);
+    if (
+      !router ||
+      router.submit !== target.submit ||
+      !sameVodafoneRouterHandler(target, router)
+    )
+      throw new Error("form-changed-or-unsafe");
+    // Only the site's button invokes SubmitForm; no fabricated login request.
+    target.submit.click();
+    return "vodafone-router-button-click";
+  }
+
   if (target.exchangeEcp) {
     var current = exchangeEcpTarget(document, ov, user, pw);
     if (
@@ -223,7 +238,11 @@ function findSubmitButton(target) {
 function attempt(creds, ov) {
   // Instagram requires the bounded async ready-button lifecycle, never the
   // legacy synchronous entrypoint's keystroke or unguarded submit fallback.
-  if (instagramSelectors(ov))
+  if (
+    instagramSelectors(ov) ||
+    linkedinSelectors(ov) ||
+    vodafoneRouterSelectors(ov)
+  )
     return { ok: false, reason: "form-readiness-required" };
   var target = findLoginForm(ov);
   if (!target || !target.pw) {

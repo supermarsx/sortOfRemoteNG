@@ -1,6 +1,7 @@
 import type { HttpApplicationProfile } from "./httpApplicationProfiles";
 import { PTISP_PROFILE } from "./ptispProfile";
 import { INSTAGRAM_PROFILE } from "./instagramProfile";
+import { LINKEDIN_PROFILE } from "./linkedinProfile";
 import { CHATGPT_PROFILE } from "./chatgptProfile";
 import { CLAUDE_PROFILE } from "./claudeProfile";
 import { EXCHANGE_OWA_PROFILE } from "./exchangeOwaProfile";
@@ -152,6 +153,13 @@ export const HOSTED_DASHBOARD_PROFILES: readonly HttpApplicationProfile[] = [
     "Analytics website dashboard through Google Account sign-in; no Analytics API setup is performed.",
   ),
   googleHosted(
+    "google-tag-manager",
+    "Google Tag Manager",
+    "https://tagmanager.google.com/",
+    "monitoring",
+    "Tag Manager website dashboard through Google Account sign-in; this does not install tracking tags, publish containers or allow Tag Manager scripts on other websites.",
+  ),
+  googleHosted(
     "google-business-profile",
     "Google Business Profile",
     "https://business.google.com/locations",
@@ -180,6 +188,7 @@ export const HOSTED_DASHBOARD_PROFILES: readonly HttpApplicationProfile[] = [
     "Facebook account sign-in; account verification and Meta security checkpoints remain interactive.",
   ),
   INSTAGRAM_PROFILE,
+  LINKEDIN_PROFILE,
   hosted(
     "hpe-greenlake",
     "HPE GreenLake dashboard",

@@ -92,6 +92,8 @@ export interface HttpApplicationSettings {
   joomlaVersion?: "auto" | "3" | "4" | "5" | "6";
   /** Optional OWA mailbox SMTP address; never the authenticating account. */
   exchangeOwaMailbox?: string;
+  /** Amazon Shopping: auto (default) or a reviewed uppercase marketplace code. */
+  amazonMarketplace?: string;
   /** Preserves fail-closed status when imported profile metadata is malformed. */
   invalid?: true;
 }

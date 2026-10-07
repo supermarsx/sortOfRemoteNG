@@ -21,6 +21,8 @@ describe("native auto-login private module assembly", () => {
       "joomlaSubmissionTarget",
       "exchangeEcpTarget",
       "instagramTarget",
+      "linkedinTarget",
+      "vodafoneRouterTarget",
       "bootstrapFill",
     ])
       expect(source).toContain(`function ${name}(`);

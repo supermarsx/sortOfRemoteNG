@@ -175,6 +175,7 @@ function sameCapturedTarget(captured, ov, options) {
     return false;
   if (targetFingerprint(target) !== captured.fingerprint) return false;
   if (!sameExchangeEcpHandler(target, found)) return false;
+  if (!sameVodafoneRouterHandler(target, found)) return false;
   return captured.extras.every(function (field) {
     var matches = target.form.querySelectorAll(field.selector);
     return (

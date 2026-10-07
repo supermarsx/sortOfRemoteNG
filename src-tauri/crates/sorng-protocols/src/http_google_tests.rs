@@ -1634,6 +1634,10 @@ fn google_catalog_is_an_exact_profile_specific_allowlist_without_lookalikes() {
             "https://www.youtube.com",
             vec![("https://accounts.youtube.com", true)],
         ),
+        (
+            "https://studio.youtube.com",
+            vec![("https://www.youtube.com", true)],
+        ),
         ("https://mail.google.com", vec![]),
         (
             "https://drive.google.com",
@@ -1683,6 +1687,33 @@ fn google_catalog_is_an_exact_profile_specific_allowlist_without_lookalikes() {
             "{source}"
         );
     }
+}
+
+#[test]
+fn youtube_studio_signin_continuation_keeps_its_protected_alias_and_nested_target() {
+    let studio = session("https://studio.youtube.com/");
+    let continuation = Url::parse(
+        "https://www.youtube.com/signin?action_handle_signin=true&app=desktop&next=https%3A%2F%2Fstudio.youtube.com%2F&feature=redirect_login",
+    )
+    .unwrap();
+    let route = studio
+        .routes
+        .iter()
+        .find(|route| route.upstream_origin == "https://www.youtube.com")
+        .unwrap();
+    assert!(route.documents);
+    assert_ne!(route.proxy_origin, PRIMARY_PROXY);
+    let projected = Url::parse(&studio.map_url(&continuation).unwrap()).unwrap();
+    assert_eq!(projected.origin().ascii_serialization(), route.proxy_origin);
+    assert_eq!(projected.path(), continuation.path());
+    assert_eq!(projected.query(), continuation.query());
+    assert!(!studio
+        .routes
+        .iter()
+        .any(|route| route.upstream_origin == "https://accounts.youtube.com"));
+    assert!(session("https://analytics.google.com/")
+        .map_url(&continuation)
+        .is_none());
 }
 
 #[test]

@@ -144,7 +144,10 @@ impl GoogleSession {
         }
         if let Some(extras) = catalog.profile_origins.get(profile_id) {
             for extra in extras {
-                origins.insert(extra.clone(), profile_id == "youtube");
+                origins.insert(
+                    extra.clone(),
+                    matches!(profile_id.as_str(), "youtube" | "youtube-studio"),
+                );
             }
         }
         let mut routes = Vec::new();

@@ -1,5 +1,7 @@
 import type { Connection } from "../../types/connection/connection";
 import { HOSTED_DASHBOARD_ICON_SUGGESTIONS } from "./hostedDashboardIconSuggestions";
+import { AMAZON_APPLICATION_ICON_SUGGESTIONS } from "./amazonApplicationIconSuggestions";
+import { PORTAL_APPLICATION_ICON_SUGGESTIONS } from "./portalApplicationIconSuggestions";
 import {
   getHttpApplicationProfile,
   normalizeHttpApplicationSettings,
@@ -11,10 +13,12 @@ import {
 } from "./connectionIconCatalog";
 
 /** Suggestions only: neither application selection nor automatic icon resolution
- * reads this table to overwrite a saved choice. Keys refer to existing, unframed
- * catalog marks (including honestly described app-authored identifiers).
+ * reads this table to overwrite a saved choice. Keys refer to existing
+ * catalog marks (including branded appliances and app-authored identifiers).
  * LXD / Incus is a combined profile, so it uses a neutral cluster symbol. */
 export const HTTP_APPLICATION_ICON_SUGGESTIONS = Object.freeze({
+  ...AMAZON_APPLICATION_ICON_SUGGESTIONS,
+  ...PORTAL_APPLICATION_ICON_SUGGESTIONS,
   ...HOSTED_DASHBOARD_ICON_SUGGESTIONS,
   "adobe-admin-console": "adobe",
   canva: "canva",
@@ -45,12 +49,13 @@ export const HTTP_APPLICATION_ICON_SUGGESTIONS = Object.freeze({
   "drone-ci": "drone-ci",
   "exchange-ecp": "exchange",
   brevo: "web-application",
-  rdweb: "microsoft",
+  rdweb: "rd-web-access",
   wordpress: "wordpress",
   joomla: "joomla",
   drupal: "drupal",
   "payload-cms": "payload-cms",
   "synology-dsm": "synology",
+  "vodafone-smart-router-3": "vodafone-router",
   ilo: "hpe",
   idrac: "dell",
   lenovo: "lenovo",

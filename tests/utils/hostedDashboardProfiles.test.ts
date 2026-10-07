@@ -29,11 +29,13 @@ const ids = [
   "google-account",
   "google-cloud-console",
   "google-analytics",
+  "google-tag-manager",
   "google-business-profile",
   "google-search-console",
   "google-ads",
   "facebook",
   "instagram",
+  "linkedin",
   "hpe-greenlake",
   "adobe",
   "youtube",
@@ -73,10 +75,20 @@ describe("source-reviewed dashboard presets", () => {
       "google-account",
       "google-cloud-console",
       "google-analytics",
+      "google-tag-manager",
       "google-business-profile",
       "google-search-console",
       "google-ads",
+      "google-ad-manager",
+      "google-adsense",
+      "google-forms",
+      "google-gemini",
+      "google-workspace-admin",
+      "google-play-store",
+      "google-developers",
+      "google-play-console",
       "youtube",
+      "youtube-studio",
       "gmail",
       "gdrive",
     ]);
@@ -122,6 +134,7 @@ describe("source-reviewed dashboard presets", () => {
         p.hostedLoginUrl &&
         p.id !== "ptisp" &&
         p.id !== "instagram" &&
+        p.id !== "linkedin" &&
         p.id !== "chatgpt" &&
         p.id !== "claude" &&
         !FIRST_PARTY_GOOGLE_HTTP_APPLICATION_IDS.includes(

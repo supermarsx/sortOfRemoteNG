@@ -1,3 +1,4 @@
+import { MAKER_PRINTER_ICONS } from "./makerPrinterIcons";
 import {
   Antenna,
   Cable,
@@ -24,6 +25,7 @@ import {
   cyberpower,
   dahua,
   dell,
+  digi,
   draytekBadge,
   eaton,
   epson,
@@ -39,6 +41,7 @@ import {
   lenovo,
   leveloneIdentifier,
   lg,
+  meo,
   mikrotik,
   msi,
   qnap,
@@ -56,7 +59,9 @@ import {
   ubiquiti,
   ugreen,
   uniview,
+  uzo,
   vertiv,
+  vodafone,
   windows,
   xerox,
 } from "../brand";
@@ -88,6 +93,7 @@ const WallAccessPoint = createLucideIcon("WallAccessPoint", [
 ]);
 
 export const VENDORS_HARDWARE_ICONS = [
+  ...MAKER_PRINTER_ICONS,
   defineIcon("switch", "Network switch", "vendors-hardware", Merge, [
     "switch",
     "ethernet switch",
@@ -371,6 +377,38 @@ export const VENDORS_HARDWARE_ICONS = [
     "vendors-hardware",
     createRoleIcon("HuaweiSwitch", "switch", huawei),
     ["huawei", "switch", "ethernet", "network"],
+  ),
+  defineIcon(
+    "vodafone-router",
+    "Vodafone router",
+    "vendors-hardware",
+    createRoleIcon("VodafoneRouter", "router", vodafone),
+    ["vodafone", "smart router 3", "router", "gateway", "ont", "HN8255X6s-8X"],
+    "Router outline with the Vodafone brand mark; theme-aware local vector.",
+  ),
+  defineIcon(
+    "meo-router",
+    "MEO router",
+    "vendors-hardware",
+    createRoleIcon("MeoRouter", "router", meo),
+    ["meo", "router", "gateway", "broadband", "wifi", "fiber", "fibre", "ont"],
+    "Router outline with the MEO brand mark; theme-aware local vector.",
+  ),
+  defineIcon(
+    "digi-router",
+    "DIGI router",
+    "vendors-hardware",
+    createRoleIcon("DigiRouter", "router", digi),
+    ["digi", "router", "gateway", "broadband", "wifi", "fiber", "fibre", "ont"],
+    "Router outline with the DIGI brand mark; theme-aware local vector.",
+  ),
+  defineIcon(
+    "uzo-router",
+    "UZO router",
+    "vendors-hardware",
+    createRoleIcon("UzoRouter", "router", uzo),
+    ["uzo", "router", "gateway", "broadband", "wifi", "fiber", "fibre", "ont"],
+    "Router outline with the UZO brand mark; theme-aware local vector.",
   ),
   defineIcon(
     "asus-router",

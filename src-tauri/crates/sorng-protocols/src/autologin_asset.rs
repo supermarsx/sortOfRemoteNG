@@ -18,6 +18,8 @@ pub const AUTOLOGIN_MODULES_JS: &str = concat!(
     include_str!("autologin/apps/joomla.js"),
     include_str!("autologin/apps/exchange_ecp.js"),
     include_str!("autologin/apps/instagram.js"),
+    include_str!("autologin/apps/linkedin.js"),
+    include_str!("autologin/apps/vodafone_smart_router.js"),
     include_str!("autologin/forms/generic.js"),
     include_str!("autologin/forms/options.js"),
     include_str!("autologin/common/guards.js"),
@@ -147,6 +149,7 @@ mod tests {
         assert!(client.contains("function findLoginForm("));
         assert!(client.contains("function openFreepbxAdmin("));
         assert!(client.contains("function submitCpanelForm("));
+        assert!(client.contains("function vodafoneRouterTarget("));
         assert!(
             client.find("(function ()").unwrap() < client.find("function findLoginForm(").unwrap()
         );

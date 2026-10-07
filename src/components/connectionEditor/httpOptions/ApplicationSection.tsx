@@ -26,13 +26,8 @@ import AutomaticMfaSection from "./AutomaticMfaSection";
 import ExchangeOwaMailboxFields from "./ExchangeOwaMailboxFields";
 import { isSynologyFileConnection } from "../../../types/protocols/synology";
 import CredentialSourceSection from "../CredentialSourceSection";
-import { PORKBUN_LOGIN_URL } from "../../../utils/connection/porkbunProfile";
-import { PTISP_LOGIN_URL } from "../../../utils/connection/ptispProfile";
-import { ADOBE_ADMIN_CONSOLE_URL } from "../../../utils/connection/adobeAdminConsoleProfile";
-import { INSTAGRAM_LOGIN_URL } from "../../../utils/connection/instagramProfile";
-import { CANVA_LOGIN_URL } from "../../../utils/connection/canvaProfile";
+import AmazonMarketplaceFields from "./AmazonMarketplaceFields";
 import { resolveHttpApplicationEmail } from "../../../utils/auth/httpApplicationLogin";
-import { tacticalrmm } from "../../../utils/icons/brand/tacticalRmmBrandIcon";
 
 const MODE_LABELS = {
   manual: "Manual browsing — no saved credentials sent",
@@ -110,23 +105,14 @@ export default function ApplicationSection({ mgr }: { mgr: Mgr }) {
       const googleUrl = applyBuiltInGoogleAuthority
         ? new URL(googleHostedUrl)
         : undefined;
+      const hostedLoginUrl = getHttpApplicationProfile(id)?.hostedLoginUrl;
+      // Preserve the three existing explicit-replacement presets. All other
+      // hosted presets fill blank connections, never an unrelated saved host.
+      const replaceAddress = ["cloudflare", "porkbun", "ptisp"].includes(id);
       const selectedUrl =
-        id === "cloudflare"
-          ? new URL(CLOUDFLARE_DASHBOARD_URL)
-          : id === "porkbun"
-            ? new URL(PORKBUN_LOGIN_URL)
-            : id === "ptisp"
-              ? new URL(PTISP_LOGIN_URL)
-              : id === "adobe-admin-console" && !previous.hostname?.trim()
-                ? new URL(ADOBE_ADMIN_CONSOLE_URL)
-                : id === "instagram" && !previous.hostname?.trim()
-                  ? new URL(INSTAGRAM_LOGIN_URL)
-                  : id === "canva" && !previous.hostname?.trim()
-                    ? new URL(CANVA_LOGIN_URL)
-                    : (id === "chatgpt" || id === "claude") &&
-                        !previous.hostname?.trim()
-                      ? new URL(getHttpApplicationProfile(id)!.hostedLoginUrl!)
-                      : googleUrl;
+        hostedLoginUrl && (replaceAddress || !previous.hostname?.trim())
+          ? new URL(hostedLoginUrl)
+          : googleUrl;
       return {
         ...previous,
         ...(selectedUrl
@@ -141,7 +127,7 @@ export default function ApplicationSection({ mgr }: { mgr: Mgr }) {
         // These staged adapters do not expose the advanced-form editor. Drop
         // another application's overrides on explicit selection so hidden
         // settings cannot make subsequent opt-in impossible to configure.
-        ...(id === "chatgpt" || id === "claude"
+        ...(id === "chatgpt" || id === "claude" || id === "linkedin"
           ? { httpFormAutomation: undefined }
           : {}),
         httpAutoMfa: { version: 1, enabled: false },
@@ -197,7 +183,6 @@ export default function ApplicationSection({ mgr }: { mgr: Mgr }) {
       label: item.label,
       disabled: item.capability === "none",
       title: item.description,
-      ...(item.id === "tacticalrmm" ? { icon: tacticalrmm } : {}),
     })),
   ];
   if (settings && !profile)
@@ -496,55 +481,54 @@ export default function ApplicationSection({ mgr }: { mgr: Mgr }) {
               </p>
             </div>
           )}
-          {profile.hostedLoginUrl && profile.id !== "cloudflare" && (
-            <div className="max-w-2xl space-y-2 rounded border border-[var(--color-border)] p-3">
-              <p className="text-sm">
-                Hosted login address:{" "}
-                <span className="font-mono break-all">
-                  {profile.hostedLoginUrl}
-                </span>
-                . This preset requires that HTTPS origin.
-                {profile.id === "porkbun" || profile.id === "ptisp"
-                  ? ` Selecting this preset sets HTTPS, ${new URL(profile.hostedLoginUrl).hostname} and port 443; certificate policy is preserved.`
-                  : getFirstPartyGoogleHostedApplicationUrl(profile.id) ||
-                      profile.id === "adobe-admin-console" ||
-                      profile.id === "instagram" ||
-                      profile.id === "canva" ||
-                      boundedAiFlow
-                    ? " Blank connections use this built-in address automatically; an existing custom address is preserved."
-                    : " Selection has not changed your address or certificate policy."}
-              </p>
-              <button
-                type="button"
-                className="sor-btn sor-btn-secondary"
-                disabled={settings?.invalid}
-                onClick={() =>
-                  mgr.setFormData((previous) => {
-                    if (
-                      previous.httpApplication?.id !== profile.id ||
-                      !profile.hostedLoginUrl
-                    )
-                      return previous;
-                    const url = new URL(profile.hostedLoginUrl);
-                    return {
-                      ...previous,
-                      protocol: "https",
-                      hostname: url.hostname,
-                      port: 443,
-                      httpAutoMfa: { version: 1, enabled: false },
-                    };
-                  })
-                }
-              >
-                Use {profile.label} login address
-              </button>
-              <p className="text-xs text-[var(--color-textMuted)]">
-                Hosted redirects, MFA, SSO and security keys may need the
-                session's system-browser action. That browser uses separate
-                cookies and its own network/TLS settings.
-              </p>
-            </div>
+          {profile.id === "amazon-shopping" && (
+            <AmazonMarketplaceFields mgr={mgr} />
           )}
+          {profile.hostedLoginUrl &&
+            profile.id !== "cloudflare" &&
+            profile.id !== "amazon-shopping" && (
+              <div className="max-w-2xl space-y-2 rounded border border-[var(--color-border)] p-3">
+                <p className="text-sm">
+                  Hosted login address:{" "}
+                  <span className="font-mono break-all">
+                    {profile.hostedLoginUrl}
+                  </span>
+                  . This preset requires that HTTPS origin.
+                  {profile.id === "porkbun" || profile.id === "ptisp"
+                    ? ` Selecting this preset sets HTTPS, ${new URL(profile.hostedLoginUrl).hostname} and port 443; certificate policy is preserved.`
+                    : " Blank connections use this built-in address automatically; an existing custom address is preserved."}
+                </p>
+                <button
+                  type="button"
+                  className="sor-btn sor-btn-secondary"
+                  disabled={settings?.invalid}
+                  onClick={() =>
+                    mgr.setFormData((previous) => {
+                      if (
+                        previous.httpApplication?.id !== profile.id ||
+                        !profile.hostedLoginUrl
+                      )
+                        return previous;
+                      const url = new URL(profile.hostedLoginUrl);
+                      return {
+                        ...previous,
+                        protocol: "https",
+                        hostname: url.hostname,
+                        port: 443,
+                        httpAutoMfa: { version: 1, enabled: false },
+                      };
+                    })
+                  }
+                >
+                  Use {profile.label} login address
+                </button>
+                <p className="text-xs text-[var(--color-textMuted)]">
+                  Hosted redirects, MFA, SSO and security keys may need the
+                  session's system-browser action. That browser uses separate
+                  cookies and its own network/TLS settings.
+                </p>
+              </div>
+            )}
           {profile.capability !== "none" && (
             <div className="max-w-md">
               <label
@@ -689,6 +673,8 @@ export default function ApplicationSection({ mgr }: { mgr: Mgr }) {
                   "Bounded fixture-tested email/password assistance, without verified live later stages. SSO, email codes, MFA, CAPTCHA and recovery remain interactive. Selector overrides and advanced automation are not supported."
                 ) : profile.id === "adobe-admin-console" ? (
                   "Staged email and password sign-in uses the reviewed Adobe flow without HTTP Basic authentication. SSO, MFA, CAPTCHA and account/profile choice remain interactive. Selector overrides are not supported."
+                ) : profile.id === "linkedin" ? (
+                  "One submission on the recognized LinkedIn login page. Existing field values are preserved. Unknown layouts, MFA, CAPTCHA, passkeys and SSO remain interactive. Selector overrides are not supported."
                 ) : (
                   <>
                     One automatic submission per proxy session. No preemptive
@@ -698,73 +684,83 @@ export default function ApplicationSection({ mgr }: { mgr: Mgr }) {
                   </>
                 )}
               </p>
-              {profile.id !== "adobe-admin-console" && !boundedAiFlow && (
-                <details
-                  key={profile.id}
-                  open={profile.capability === "custom-form" ? true : undefined}
-                  className="max-w-2xl rounded border border-[var(--color-border)] p-3"
-                >
-                  <summary className="cursor-pointer text-sm font-medium">
-                    {profile.capability === "custom-form"
-                      ? "Custom form selectors (required)"
-                      : "Selector overrides (optional)"}
-                  </summary>
-                  <p className="text-xs text-[var(--color-textMuted)] my-3">
-                    {profile.capability === "custom-form" ? (
-                      "Provide all three CSS selectors for visible controls in the same login form. Missing or unmatched selectors block filling; no heuristic fallback is used."
-                    ) : (
-                      <>
-                        Leave blank for{" "}
-                        {reviewedSelectors
-                          ? "the reviewed application selectors"
-                          : "generic detection"}
-                        . An unmatched override never falls back to a different
-                        field.
-                      </>
-                    )}
-                  </p>
-                  <div className="space-y-3">
-                    {(
-                      [
-                        ["usernameSelector", "Username field selector"],
-                        ["passwordSelector", "Password field selector"],
-                        ["submitSelector", "Submit button selector"],
-                      ] as const
-                    ).map(([key, label]) => (
-                      <div key={key}>
-                        <label
-                          htmlFor={`http-app-${key}`}
-                          className="block text-xs mb-1"
-                        >
-                          {label}
-                        </label>
-                        <input
-                          id={`http-app-${key}`}
-                          className="sor-form-input"
-                          maxLength={512}
-                          required={profile.capability === "custom-form"}
-                          value={
-                            mgr.formData.httpAutoLoginSelectors?.[key] ?? ""
-                          }
-                          placeholder={
-                            profile.capability === "custom-form"
-                              ? SELECTOR_EXAMPLES[key]
-                              : (reviewedSelectors?.[key] ?? "Auto-detect")
-                          }
-                          onChange={(event) =>
-                            updateSelector(key, event.target.value)
-                          }
-                        />
-                      </div>
-                    ))}
-                  </div>
-                </details>
-              )}
+              {profile.id !== "adobe-admin-console" &&
+                profile.id !== "linkedin" &&
+                !boundedAiFlow && (
+                  <details
+                    key={profile.id}
+                    open={
+                      profile.capability === "custom-form" ? true : undefined
+                    }
+                    className="max-w-2xl rounded border border-[var(--color-border)] p-3"
+                  >
+                    <summary className="cursor-pointer text-sm font-medium">
+                      {profile.capability === "custom-form"
+                        ? "Custom form selectors (required)"
+                        : "Selector overrides (optional)"}
+                    </summary>
+                    <p className="text-xs text-[var(--color-textMuted)] my-3">
+                      {profile.capability === "custom-form" ? (
+                        "Provide all three CSS selectors for visible controls in the same login form. Missing or unmatched selectors block filling; no heuristic fallback is used."
+                      ) : (
+                        <>
+                          Leave blank for{" "}
+                          {reviewedSelectors
+                            ? "the reviewed application selectors"
+                            : "generic detection"}
+                          . An unmatched override never falls back to a
+                          different field.
+                        </>
+                      )}
+                    </p>
+                    <div className="space-y-3">
+                      {(
+                        [
+                          ["usernameSelector", "Username field selector"],
+                          ["passwordSelector", "Password field selector"],
+                          ["submitSelector", "Submit button selector"],
+                        ] as const
+                      ).map(([key, label]) => (
+                        <div key={key}>
+                          <label
+                            htmlFor={`http-app-${key}`}
+                            className="block text-xs mb-1"
+                          >
+                            {label}
+                          </label>
+                          <input
+                            id={`http-app-${key}`}
+                            className="sor-form-input"
+                            maxLength={512}
+                            required={profile.capability === "custom-form"}
+                            value={
+                              mgr.formData.httpAutoLoginSelectors?.[key] ?? ""
+                            }
+                            placeholder={
+                              profile.capability === "custom-form"
+                                ? SELECTOR_EXAMPLES[key]
+                                : (reviewedSelectors?.[key] ?? "Auto-detect")
+                            }
+                            onChange={(event) =>
+                              updateSelector(key, event.target.value)
+                            }
+                          />
+                        </div>
+                      ))}
+                    </div>
+                  </details>
+                )}
             </>
           )}
-          {!settings?.invalid && !boundedAiFlow && (
-            <AutomaticMfaSection key={profile.id} mgr={mgr} profile={profile} />
-          )}
+          {!settings?.invalid &&
+            profile.id !== "linkedin" &&
+            !boundedAiFlow && (
+              <AutomaticMfaSection
+                key={profile.id}
+                mgr={mgr}
+                profile={profile}
+              />
+            )}
           <p className="text-xs text-[var(--color-textMuted)]">
             Saved passwords follow this connection database's existing
             protection policy. Profile metadata has no secrets. The profile does

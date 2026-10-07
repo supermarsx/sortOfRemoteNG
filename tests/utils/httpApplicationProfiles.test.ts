@@ -31,10 +31,11 @@ const connection = (
 
 describe("HTTP application profile policy", () => {
   it("categorizes the existing applications plus Custom, Webmin, and Cloudflare, with non-web integrations separate", () => {
-    expect(HTTP_APPLICATION_PROFILES).toHaveLength(99);
+    // 149 existing profiles plus Vodafone Smart Router 3 and YouTube Studio.
+    expect(HTTP_APPLICATION_PROFILES).toHaveLength(151);
     expect(
       new Set(HTTP_APPLICATION_PROFILES.map((profile) => profile.id)).size,
-    ).toBe(99);
+    ).toBe(151);
     for (const profile of HTTP_APPLICATION_PROFILES) {
       expect(HTTP_APPLICATION_CATEGORIES[profile.category]).toBeTruthy();
       expect(profile.category === "native").toBe(profile.capability === "none");
@@ -44,6 +45,17 @@ describe("HTTP application profile policy", () => {
         (profile) => profile.capability === "known-form",
       ).map((profile) => profile.id),
     ).toEqual([
+      "youtube-studio",
+      "google-ad-manager",
+      "google-adsense",
+      "google-forms",
+      "google-gemini",
+      "google-workspace-admin",
+      "google-play-store",
+      "google-developers",
+      "google-play-console",
+      "opnsense",
+      "vodafone-smart-router-3",
       "bitwarden-self-hosted",
       "vaultwarden",
       "nextcloud",
@@ -53,10 +65,12 @@ describe("HTTP application profile policy", () => {
       "google-account",
       "google-cloud-console",
       "google-analytics",
+      "google-tag-manager",
       "google-business-profile",
       "google-search-console",
       "google-ads",
       "instagram",
+      "linkedin",
       "youtube",
       "ptisp",
       "sqlpad",
@@ -82,6 +96,7 @@ describe("HTTP application profile policy", () => {
       "gitea",
       "exchange-ecp",
       "brevo",
+      "rdweb",
       "wordpress",
       "joomla",
       "drupal",

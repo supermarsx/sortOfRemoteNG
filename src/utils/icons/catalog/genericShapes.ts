@@ -1,3 +1,4 @@
+import { CREATIVE_SHAPE_ICONS } from "./creativeDeviceIcons";
 import {
   Asterisk,
   ArrowDown,
@@ -428,5 +429,6 @@ export const GENERIC_SHAPE_ICONS = [
     "plain",
   ]),
   ...FRUIT_ICONS,
+  ...CREATIVE_SHAPE_ICONS,
   ...ALPHANUMERIC_MARKER_ICONS,
 ] as const;

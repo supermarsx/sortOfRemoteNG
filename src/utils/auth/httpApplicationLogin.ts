@@ -11,6 +11,10 @@ import {
 import { resolveHttpBasicCredentials } from "./httpCredentials";
 import { YEALINK_SERVLET_UPSTREAM_SUPPORTED } from "./upstreamAuthCapabilities";
 import { normalizeConnectionCredentialSource } from "../security/databaseCredentialVault";
+import {
+  detectAmazonShoppingMarket,
+  getAmazonShoppingMarket,
+} from "../connection/amazonProfiles";
 
 export { YEALINK_SERVLET_UPSTREAM_SUPPORTED };
 
@@ -108,6 +112,28 @@ export function validateHttpApplicationTarget(
   );
   const profileId = settings?.id;
   const profile = profileId ? getHttpApplicationProfile(profileId) : undefined;
+  if (profileId === "amazon-shopping") {
+    const expectedMarket =
+      settings?.amazonMarketplace && settings.amazonMarketplace !== "auto"
+        ? getAmazonShoppingMarket(settings.amazonMarketplace)
+        : detectAmazonShoppingMarket(connection?.hostname ?? "");
+    let valid = false;
+    try {
+      const target = new URL(targetUrl);
+      valid =
+        !settings?.invalid &&
+        !!expectedMarket &&
+        target.protocol === "https:" &&
+        detectAmazonShoppingMarket(targetUrl)?.code === expectedMarket.code;
+    } catch {
+      /* Refuse malformed targets. */
+    }
+    if (!valid)
+      throw new Error(
+        "Amazon Shopping requires a recognized HTTPS storefront on port 443 matching the selected marketplace. Review the saved URL or choose a marketplace in Application settings.",
+      );
+    return;
+  }
   const hostedLoginUrl = profile?.hostedLoginUrl;
   if (!hostedLoginUrl && profileId !== "tacticalrmm" && !profile?.requiresHttps)
     return;
@@ -312,6 +338,19 @@ export function resolveHttpApplicationLogin(
   const profile = getHttpApplicationProfile(settings.id)!;
   if (settings.loginMode === "manual")
     return { credentials: null, upstreamAuthMode: "none", autoLogin: false };
+  if (
+    settings.id === "linkedin" &&
+    (Object.keys(
+      normalizeHttpApplicationSelectors(connection.httpAutoLoginSelectors) ??
+        {},
+    ).length ||
+      connection.httpAutoMfa?.enabled ||
+      connection.httpFormAutomation?.formSelector ||
+      connection.httpFormAutomation?.fields?.length)
+  )
+    throw new Error(
+      "LinkedIn uses its reviewed controls and interactive verification. Clear Advanced selectors, extra form fields and automatic MFA or use manual login.",
+    );
   if (
     settings.id === "exchange-owa" &&
     (Object.keys(

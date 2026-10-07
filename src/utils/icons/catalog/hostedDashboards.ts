@@ -5,6 +5,7 @@ import {
   instagram,
   gmail,
   googleanalytics,
+  googletagmanager,
   googleads,
   googlesearchconsole,
   youtube,
@@ -18,9 +19,18 @@ import {
 } from "../brand/dashboardBrandIcons";
 import { defineIcon } from "./types";
 import { canva } from "../brand/canvaBrandIcon";
+import { linkedin } from "../brand/linkedinBrandIcon";
 
 /** Pure provider marks: no browser/server frames or permission implications. */
 export const HOSTED_DASHBOARD_ICONS = [
+  defineIcon(
+    "linkedin",
+    "LinkedIn",
+    "web-applications",
+    linkedin,
+    ["linkedin", "linked in", "professional network", "careers"],
+    "LinkedIn brand mark, Simple Icons 13.21.0 (CC0-1.0); theme-aware vector.",
+  ),
   defineIcon(
     "canva",
     "Canva",
@@ -80,6 +90,13 @@ export const HOSTED_DASHBOARD_ICONS = [
     "web-applications",
     googleanalytics,
     ["google analytics", "analytics", "ga4"],
+  ),
+  defineIcon(
+    "google-tag-manager",
+    "Google Tag Manager",
+    "web-applications",
+    googletagmanager,
+    ["google tag manager", "tag manager", "gtm", "marketing tags"],
   ),
   defineIcon("google-ads", "Google Ads", "web-applications", googleads, [
     "google ads",
