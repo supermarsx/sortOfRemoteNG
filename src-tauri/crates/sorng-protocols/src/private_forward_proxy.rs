@@ -209,8 +209,8 @@ impl PrivateForwardProxy {
         rand::rngs::OsRng
             .try_fill_bytes(&mut *random)
             .map_err(|_| io::Error::other("Private proxy credential generation failed"))?;
-        let password = Zeroizing::new(hex::encode(&*random));
-        let credentials = Zeroizing::new(format!("{USERNAME}:{}", &*password));
+        let password = Zeroizing::new(hex::encode(random.as_slice()));
+        let credentials = Zeroizing::new(format!("{USERNAME}:{}", password.as_str()));
         let credential_hash: [u8; 32] = Sha256::digest(credentials.as_bytes()).into();
         let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).await?;
         let address = listener.local_addr()?;

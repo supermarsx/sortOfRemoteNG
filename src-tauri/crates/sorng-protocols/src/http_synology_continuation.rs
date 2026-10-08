@@ -458,8 +458,8 @@ async fn dispatch(
     // The dedicated challenge handler never enters dashboard auth routes.
     if let Some(challenge) = &state.network.cloudflare_challenge {
         request = match challenge.dispatch(&state, request).await {
-            Ok(response) => return response,
-            Err(source_request) => source_request,
+            std::ops::ControlFlow::Break(response) => return response,
+            std::ops::ControlFlow::Continue(source_request) => source_request,
         };
     }
     let (state, mesh_root) = if let Some(mesh) = &state.network.tactical_mesh {

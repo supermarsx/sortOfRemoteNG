@@ -2624,17 +2624,13 @@ async fn axum_proxy_handler_inner(
         });
     // PTisp's login URL includes the account email. Diagnostics/recordings
     // must retain only the API origin, never that path or its query.
-    let full_url = if tactical_api_destination.is_some()
-        && state
+    let full_url = if let Some(destination) = tactical_api_destination.as_ref().filter(|_| {
+        state
             .tactical_rmm_api
             .as_ref()
             .is_some_and(|route| !route.is_tactical())
-    {
-        tactical_api_destination
-            .as_ref()
-            .unwrap()
-            .origin()
-            .ascii_serialization()
+    }) {
+        destination.origin().ascii_serialization()
     } else if state.network.google.is_some()
         || state
             .network

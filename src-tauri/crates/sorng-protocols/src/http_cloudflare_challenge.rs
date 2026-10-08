@@ -10,6 +10,7 @@ use reqwest::Url;
 use sha2::{Digest, Sha256};
 use std::{
     collections::BTreeMap,
+    ops::ControlFlow,
     sync::{Arc, Mutex},
 };
 
@@ -377,9 +378,7 @@ fn authorize_policy(
     quote: Option<u8>,
     trust: &TrustedInlineHashes,
 ) -> Option<String> {
-    if quote.is_none() {
-        return None;
-    }
+    quote?;
     let script_tokens = quote_tokens(&trust.scripts, quote);
     let mut directives = split_directives(policy)
         .into_iter()
@@ -462,12 +461,9 @@ fn directive_value(directive: &str) -> &str {
 }
 
 fn fallback_source_list(directives: &[String]) -> Option<String> {
-    let Some(default) = directives
+    let default = directives
         .iter()
-        .find(|directive| directive_name(directive).eq_ignore_ascii_case("default-src"))
-    else {
-        return None;
-    };
+        .find(|directive| directive_name(directive).eq_ignore_ascii_case("default-src"))?;
     if unsafe_inline_without_nonce_or_hash(default) {
         return None;
     }
@@ -752,13 +748,13 @@ impl CloudflareChallenge {
         }
     }
 
-    /// Dispatch before the ordinary credential/router middleware. None means
+    /// Dispatch before the ordinary credential/router middleware. Continue means
     /// this is the original dashboard; every other host is handled or refused.
     pub(super) async fn dispatch(
         &self,
         state: &Arc<AxumProxyState>,
         request: axum::extract::Request,
-    ) -> Result<axum::response::Response, axum::extract::Request> {
+    ) -> ControlFlow<axum::response::Response, axum::extract::Request> {
         let headers = request.headers();
         let host = headers
             .get("host")
@@ -766,7 +762,7 @@ impl CloudflareChallenge {
             .unwrap_or("");
         let local = format!("http://{host}");
         if local == self.source_proxy {
-            return Err(request);
+            return ControlFlow::Continue(request);
         }
         let candidate = self.aliases.lock().ok().and_then(|aliases| {
             aliases
@@ -775,7 +771,7 @@ impl CloudflareChallenge {
                 .map(|(root, alias)| (*root, alias.clone()))
         });
         let Some((root, alias)) = candidate else {
-            return Ok(refused());
+            return ControlFlow::Break(refused());
         };
         let origin = headers.get("origin").and_then(|value| value.to_str().ok());
         let bad_referer = headers.get("referer").is_some_and(|value| {
@@ -812,19 +808,19 @@ impl CloudflareChallenge {
             )
             || state.proxy_policy.page_scripts != super::PageScripts::Allow
         {
-            return Ok(refused());
+            return ControlFlow::Break(refused());
         }
         // Parser-created script/frame loads can precede desktop readiness
         // selection. Wait only for this issued root; never send upstream while
         // pending, and fail on newer selection, stop, or the existing 5s bound.
         if state.network.await_document(root).await.is_err() {
-            return Ok(refused());
+            return ControlFlow::Break(refused());
         }
         let result = state
             .network
             .while_document(root, self.send(state, root, &alias, request))
             .await;
-        Ok(result.unwrap_or_else(|_| refused()))
+        ControlFlow::Break(result.unwrap_or_else(|_| refused()))
     }
 
     async fn send(
