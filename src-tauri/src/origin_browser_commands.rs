@@ -9,6 +9,100 @@ use sorng_commands_core::origin_browser_authority::prewarm::PrewarmRequest;
 use sorng_encryption::EncryptionState;
 use tauri::{State, WebviewWindow};
 
+#[cfg(feature = "native-browser")]
+type StartupDocument = crate::origin_browser_runtime::StartupDocument;
+#[cfg(not(feature = "native-browser"))]
+struct StartupDocument;
+
+pub(crate) fn is_startup_command(command: &str) -> bool {
+    matches!(command, "origin_browser_create" | "origin_browser_prewarm")
+}
+
+/// These two commands cannot use the generated async wrapper: it extracts
+/// arguments only after spawning, when a reload may already have replaced the
+/// issuing document. Capture the native epoch here and move it into the task.
+pub(crate) fn dispatch_startup(invoke: tauri::ipc::Invoke) -> bool {
+    use tauri::ipc::{CommandArg, CommandItem, Invoke};
+    let Invoke {
+        message,
+        resolver,
+        acl,
+    } = invoke;
+    let name = match message.command() {
+        "origin_browser_create" => "origin_browser_create",
+        "origin_browser_prewarm" => "origin_browser_prewarm",
+        _ => {
+            resolver.reject("Unsupported browser startup command");
+            return true;
+        }
+    };
+    let window = match WebviewWindow::from_command(CommandItem {
+        plugin: None,
+        name,
+        key: "window",
+        message: &message,
+        acl: &acl,
+    }) {
+        Ok(window) => window,
+        Err(error) => {
+            resolver.invoke_error(error);
+            return true;
+        }
+    };
+    #[cfg(feature = "native-browser")]
+    let document = crate::origin_browser_runtime::capture_startup_document(window.label());
+    #[cfg(not(feature = "native-browser"))]
+    let document = StartupDocument;
+    macro_rules! request {
+        ($ty:ty) => {
+            match <$ty>::from_command(CommandItem {
+                plugin: None,
+                name,
+                key: "request",
+                message: &message,
+                acl: &acl,
+            }) {
+                Ok(request) => request,
+                Err(_) => {
+                    // Do not echo malformed payload fields, URLs or secrets.
+                    resolver.reject("Browser creation request is invalid");
+                    return true;
+                }
+            }
+        };
+    }
+    if name == "origin_browser_create" {
+        let request = request!(OriginBrowserCreateRequest);
+        resolver.respond_async(async move {
+            let state: State<'_, EncryptionState> = State::from_command(CommandItem {
+                plugin: None,
+                name,
+                key: "state",
+                message: &message,
+                acl: &acl,
+            })?;
+            origin_browser_create(window, state, request, document)
+                .await
+                .map_err(Into::into)
+        });
+    } else {
+        let request = request!(PrewarmRequest);
+        resolver.respond_async(async move {
+            let state: State<'_, EncryptionState> = State::from_command(CommandItem {
+                plugin: None,
+                name,
+                key: "state",
+                message: &message,
+                acl: &acl,
+            })?;
+            origin_browser_prewarm(window, state, request, document)
+                .await
+                .map_err(Into::into)
+        });
+    }
+    true
+}
+
 #[cfg(not(feature = "native-browser"))]
 const UNAVAILABLE: &str = "The packaged real-origin browser is unavailable. No website was opened and no direct-network fallback was used.";
 
@@ -146,20 +240,20 @@ pub(crate) async fn origin_browser_popup(
     { let _ = (window, state, request); Err(UNAVAILABLE.into()) }
 }
 
-#[tauri::command]
-pub(crate) async fn origin_browser_prewarm(
+async fn origin_browser_prewarm(
     window: WebviewWindow,
     state: State<'_, EncryptionState>,
     request: PrewarmRequest,
+    document: StartupDocument,
 ) -> Result<(), String> {
     request.validate().map_err(|error| error.to_string())?;
     #[cfg(feature = "native-browser")]
     {
-        crate::origin_browser_runtime::prewarm(window, &state, request).await
+        crate::origin_browser_runtime::prewarm(window, &state, request, document).await
     }
     #[cfg(not(feature = "native-browser"))]
     {
-        let _ = (window, state, request);
+        let _ = (window, state, request, document);
         Err(UNAVAILABLE.into())
     }
 }
@@ -188,11 +282,11 @@ pub(crate) fn origin_browser_retention_capabilities() -> serde_json::Value {
     })
 }
 
-#[tauri::command]
-pub(crate) async fn origin_browser_create(
+async fn origin_browser_create(
     window: WebviewWindow,
     state: State<'_, EncryptionState>,
     request: OriginBrowserCreateRequest,
+    document: StartupDocument,
 ) -> Result<OriginBrowserCreateResult, String> {
     #[cfg(feature = "native-browser")]
     let timing = crate::origin_browser_startup_diagnostics::Trace::startup(false);
@@ -200,11 +294,11 @@ pub(crate) async fn origin_browser_create(
     #[cfg(feature = "native-browser")]
     {
         timing.mark(crate::origin_browser_startup_diagnostics::TimingStage::CommandValidated);
-        crate::origin_browser_runtime::create(window, &state, request, timing).await
+        crate::origin_browser_runtime::create(window, &state, request, timing, document).await
     }
     #[cfg(not(feature = "native-browser"))]
     {
-        let _ = (window, state, request);
+        let _ = (window, state, request, document);
         Err(UNAVAILABLE.into())
     }
 }

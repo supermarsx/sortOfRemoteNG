@@ -3,6 +3,30 @@
 #[path = "../../../src/origin_browser_startup_diagnostics.rs"]
 mod diagnostics;
 
+#[test]
+fn renderer_lifecycle_fault_is_a_distinct_enum_only_diagnostic() {
+    assert_eq!(
+        serde_json::to_value(diagnostics::Stage::RuntimeFault).unwrap(),
+        "runtime-fault"
+    );
+    assert_eq!(
+        serde_json::to_value(diagnostics::Failure::RendererFault).unwrap(),
+        "renderer-fault"
+    );
+    let runtime = include_str!("../../../src/origin_browser_runtime.rs");
+    let fault = runtime
+        .split("Some(BrowserFault::Renderer)")
+        .nth(1)
+        .unwrap()
+        .split("if matches!(phase, OriginBrowserPhase::Attached)")
+        .next()
+        .unwrap();
+    assert!(
+        fault.contains("diagnostics::record(Stage::RuntimeFault, Some(Failure::RendererFault))")
+    );
+    assert!(!fault.contains("event.display"));
+}
+
 fn in_order(source: &str, needles: &[&str]) {
     let mut rest = source;
     for needle in needles {
@@ -17,7 +41,7 @@ fn in_order(source: &str, needles: &[&str]) {
 fn native_command_and_engine_timings_bracket_existing_work_without_new_checks() {
     let commands = include_str!("../../../src/origin_browser_commands.rs");
     let create = commands
-        .split("pub(crate) async fn origin_browser_create(")
+        .split("async fn origin_browser_create(")
         .nth(1)
         .unwrap();
     in_order(
@@ -26,7 +50,7 @@ fn native_command_and_engine_timings_bracket_existing_work_without_new_checks() 
             "Trace::startup(false)",
             "request.validate()",
             "TimingStage::CommandValidated",
-            "origin_browser_runtime::create(window, &state, request, timing)",
+            "origin_browser_runtime::create(window, &state, request, timing, document)",
         ],
     );
     let entry = include_str!("../../../src/origin_browser_entry.rs");

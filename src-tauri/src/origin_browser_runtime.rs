@@ -7,7 +7,7 @@ use crate::origin_browser_startup_diagnostics::{
     self as diagnostics, Failure, Stage, TimingStage, Trace,
 };
 use sorng_browser_host::{
-    cef_browser::{BrowserEvent, BrowserEventSink, CefBrowserHost},
+    cef_browser::{BrowserEvent, BrowserEventSink, BrowserFault, CefBrowserHost},
     cef_context::{PreparationStatus, PrivateRequestContext},
     cef_runtime::{CefRuntime, ScheduleWake, WakeUnavailable},
     cef_session_retention::{RetentionPolicy, SignInCookie},
@@ -103,6 +103,7 @@ struct Attempt {
     navigation_submitted: AtomicBool,
     identity: BrowserIdentity,
     window: String,
+    document: Arc<flow::ShellDocument>,
     lease: NativeOwnerLease,
     session: Arc<Mutex<OriginBrowserSession>>,
     snapshot: Mutex<OriginBrowserSnapshot>,
@@ -121,7 +122,9 @@ struct Attempt {
 
 impl Attempt {
     fn current(&self) -> bool {
-        !self.cancelled.load(Ordering::Acquire) && self.lease.is_current()
+        !self.cancelled.load(Ordering::Acquire)
+            && self.document.current()
+            && self.lease.is_current()
     }
 
     fn revoke(&self) {
@@ -156,6 +159,7 @@ impl Attempt {
 
 #[derive(Default)]
 struct SharedRegistry {
+    documents: flow::ShellDocuments,
     startup: flow::StartupGate,
     prewarm: origin_browser_authority::prewarm::PrewarmGate,
     admission: flow::RuntimeAdmission,
@@ -163,6 +167,14 @@ struct SharedRegistry {
     attempts: Mutex<HashMap<String, Arc<Attempt>>>,
     closed: Mutex<close_ack::CloseReceipts>,
     exit_requested: Mutex<Option<i32>>,
+}
+
+/// Captured by synchronous shell IPC admission, before Tauri queues the task.
+/// This is native lifetime metadata, never a renderer-supplied authority token.
+pub(crate) struct StartupDocument(Arc<flow::ShellDocument>);
+
+pub(crate) fn capture_startup_document(label: &str) -> StartupDocument {
+    StartupDocument(shared().documents.current(label))
 }
 
 fn shared() -> &'static SharedRegistry {
@@ -188,6 +200,20 @@ pub(crate) async fn prewarm(
     window: WebviewWindow,
     state: &EncryptionState,
     request: origin_browser_authority::prewarm::PrewarmRequest,
+    document: StartupDocument,
+) -> Result<(), String> {
+    let document = document.0;
+    document
+        .run(prewarm_document(window, state, request, &document))
+        .await
+        .ok_or_else(|| STALE.to_owned())?
+}
+
+async fn prewarm_document(
+    window: WebviewWindow,
+    state: &EncryptionState,
+    request: origin_browser_authority::prewarm::PrewarmRequest,
+    document: &Arc<flow::ShellDocument>,
 ) -> Result<(), String> {
     request.validate().map_err(|error| error.to_string())?;
     if window.label() != "main" {
@@ -214,6 +240,7 @@ pub(crate) async fn prewarm(
         &owner.lease,
         Some((&shared().prewarm, &owner)),
         &timing,
+        document,
     )
     .await?;
     timing.mark(TimingStage::CommandCompleted);
@@ -262,16 +289,22 @@ async fn ensure_runtime(
         &origin_browser_authority::prewarm::AuthorizedPrewarm,
     )>,
     timing: &Trace,
+    document: &Arc<flow::ShellDocument>,
 ) -> Result<(), String> {
     timing.mark(TimingStage::RuntimeRequested);
     let deadline = Instant::now() + STARTUP_LIMIT;
     let startup_claim = Arc::new(flow::StartupClaim::default());
     // Dropping an in-flight command also cancels a queued native callback.
-    let cancelled = flow::RevokeOnDrop::new(|| cancel_startup(&startup_claim, Failure::Policy));
+    let cancelled = flow::RevokeOnDrop::new(|| {
+        cancel_startup(startup_claim.cancel_abandoned(document), Failure::Policy);
+    });
     let prewarm_gate = prewarm.map(|(gate, _)| gate);
     let result = tokio::time::timeout(STARTUP_LIMIT, async {
         loop {
-            if !lease.is_current() || prewarm_gate.is_some_and(|gate| !gate.current()) {
+            if !document.current()
+                || !lease.is_current()
+                || prewarm_gate.is_some_and(|gate| !gate.current())
+            {
                 return Err(STALE.to_owned());
             }
             if shared().admission.revoked() {
@@ -326,6 +359,7 @@ async fn ensure_runtime(
                 // Disk work may race database lock, revision or unlock changes.
                 let settings_fence = recheck_startup(window, state, lease, prewarm).await?;
                 let queued_lease = lease.clone();
+                let queued_document = document.clone();
                 let queued_startup_claim = startup_claim.clone();
                 let queued_timing = timing.clone();
                 let app = window.app_handle().clone();
@@ -335,6 +369,7 @@ async fn ensure_runtime(
                     .run_on_main_thread(move || {
                         queued_timing.mark(TimingStage::EngineUiEntered);
                         if sender.is_closed()
+                            || !queued_document.current()
                             || Instant::now() >= deadline
                             || !queued_lease.is_current()
                             || prewarm_gate.is_some_and(|gate| !gate.current())
@@ -354,6 +389,7 @@ async fn ensure_runtime(
                         let result = crate::origin_browser_entry::install(wake, &root, &queued_timing, || {
                             let mut begin = || {
                                 !sender.is_closed()
+                                    && queued_document.current()
                                     && Instant::now() < deadline
                                     && queued_lease.is_current()
                                     && prewarm_gate.is_none_or(|gate| gate.current())
@@ -405,7 +441,10 @@ async fn ensure_runtime(
             flow::wait_for_readiness(
                 deadline.saturating_duration_since(Instant::now()),
                 || {
-                    if !lease.is_current() || prewarm_gate.is_some_and(|gate| !gate.current()) {
+                    if !document.current()
+                        || !lease.is_current()
+                        || prewarm_gate.is_some_and(|gate| !gate.current())
+                    {
                         return Err(STALE.to_owned());
                     }
                     if shared().admission.revoked() {
@@ -424,12 +463,12 @@ async fn ensure_runtime(
     .await;
     let result = match result {
         Ok(Err(error)) if error == STARTUP_TIMED_OUT => {
-            cancel_startup(&startup_claim, Failure::Timeout);
+            cancel_startup(startup_claim.cancel(), Failure::Timeout);
             Err(error)
         }
         Ok(result) => result,
         Err(_) => {
-            cancel_startup(&startup_claim, Failure::Timeout);
+            cancel_startup(startup_claim.cancel(), Failure::Timeout);
             Err(STARTUP_TIMED_OUT.to_owned())
         }
     };
@@ -440,8 +479,8 @@ async fn ensure_runtime(
     result
 }
 
-fn cancel_startup(claim: &flow::StartupClaim, failure: Failure) {
-    if shared().admission.timeout_owned_startup(claim.cancel()) {
+fn cancel_startup(owned_native_start: bool, failure: Failure) {
+    if shared().admission.timeout_owned_startup(owned_native_start) {
         diagnostics::record(Stage::Failed, Some(failure));
         // A timeout cannot cancel an in-progress native call. Never retry it or
         // let a late policy callback restore traffic admission.
@@ -651,14 +690,30 @@ pub(crate) fn revoke_all() {
 }
 
 pub(crate) fn revoke_window(label: &str) {
+    shared().documents.revoke(label);
     cancel_prewarm(label);
+    revoke_stale_window(label);
+}
+
+/// Only the trusted Tauri shell invokes this hook, not a CEF page navigation.
+pub(crate) fn shell_document_started(label: &str) {
+    // Initial shell loading has no old epoch. In particular it must not consume
+    // the once-per-process prewarm gate before any command has used it.
+    if shared().documents.revoke(label) {
+        cancel_prewarm(label);
+        revoke_stale_window(label);
+    }
+}
+
+fn revoke_stale_window(label: &str) {
     for attempt in shared()
         .attempts
         .lock()
         .unwrap_or_else(|e| e.into_inner())
         .values()
     {
-        if attempt.window == label {
+        // A replacement document may already be admitting its own attempt.
+        if attempt.window == label && !attempt.document.current() {
             attempt.revoke();
         }
     }
@@ -797,6 +852,14 @@ impl BrowserEventSink for Sink {
             Lifecycle::Closed => OriginBrowserPhase::Closed,
             Lifecycle::Faulted => OriginBrowserPhase::Failed,
         };
+        if matches!(phase, OriginBrowserPhase::Failed)
+            && matches!(event.state.fault, Some(BrowserFault::Renderer))
+            && !self.attempt.cancelled.load(Ordering::Acquire)
+        {
+            // Renderer lifecycle/bridge failure, not a GPU capability warning.
+            // The queue accepts fixed enums only; no page or native error text.
+            diagnostics::record(Stage::RuntimeFault, Some(Failure::RendererFault));
+        }
         if matches!(phase, OriginBrowserPhase::Attached) {
             self.attempt.timing.mark(TimingStage::BrowserAttached);
             if self.attempt.navigation_submitted.load(Ordering::Acquire)
@@ -817,28 +880,51 @@ impl BrowserEventSink for Sink {
         ) {
             self.attempt.revoke();
         }
-        let publication = display::publish(
-            &self.attempt.snapshot,
-            &event.identity,
-            event.sequence,
-            phase,
-            OriginBrowserPageState {
-                // Address-bar state is emitted only to this trusted owning
-                // window. Diagnostics keep using event.state's redacted data.
-                url: if event.display.url == "about:blank" {
-                    ""
-                } else {
-                    &event.display.url
-                },
-                title: &event.display.title,
-                loading: event.state.loading,
-                can_go_back: event.state.can_go_back,
-                can_go_forward: event.state.can_go_forward,
+        let failure_reason = match event.state.fault {
+            Some(BrowserFault::Renderer) => Some(OriginBrowserFailureReason::Renderer),
+            Some(BrowserFault::Session) => Some(OriginBrowserFailureReason::Session),
+            Some(BrowserFault::Callback) => Some(OriginBrowserFailureReason::Callback),
+            Some(BrowserFault::NativeSurface) => Some(OriginBrowserFailureReason::NativeSurface),
+            Some(BrowserFault::Load) => Some(OriginBrowserFailureReason::Load),
+            None => None,
+        };
+        let page = OriginBrowserPageState {
+            // Address-bar state is emitted only to this trusted owning
+            // window. Diagnostics keep using event.state's redacted data.
+            url: if event.display.url == "about:blank" {
+                ""
+            } else {
+                &event.display.url
             },
-            || self.attempt.current(),
-            // No snapshot lock is held across the owner-window emitter.
-            |next| self.window.emit(ORIGIN_BROWSER_STATE_EVENT, next).is_ok(),
-        );
+            title: &event.display.title,
+            loading: event.state.loading,
+            can_go_back: event.state.can_go_back,
+            can_go_forward: event.state.can_go_forward,
+        };
+        let current = || self.attempt.current();
+        // No snapshot lock is held across the owner-window emitter.
+        let emit = |next| self.window.emit(ORIGIN_BROWSER_STATE_EVENT, next).is_ok();
+        let publication = if failure_reason.is_some() {
+            display::publish_with_reason(
+                &self.attempt.snapshot,
+                &event.identity,
+                event.sequence,
+                (phase, failure_reason),
+                page,
+                current,
+                emit,
+            )
+        } else {
+            display::publish(
+                &self.attempt.snapshot,
+                &event.identity,
+                event.sequence,
+                phase,
+                page,
+                current,
+                emit,
+            )
+        };
         if matches!(
             publication,
             display::Publication::OwnerUnavailable | display::Publication::Failed
@@ -853,6 +939,27 @@ pub(crate) async fn create(
     state: &EncryptionState,
     request: OriginBrowserCreateRequest,
     timing: Trace,
+    document: StartupDocument,
+) -> Result<OriginBrowserCreateResult, String> {
+    let document = document.0;
+    document
+        .run(create_document(
+            window,
+            state,
+            request,
+            timing,
+            document.clone(),
+        ))
+        .await
+        .ok_or_else(|| STALE.to_owned())?
+}
+
+async fn create_document(
+    window: WebviewWindow,
+    state: &EncryptionState,
+    request: OriginBrowserCreateRequest,
+    timing: Trace,
+    document: Arc<flow::ShellDocument>,
 ) -> Result<OriginBrowserCreateResult, String> {
     // Explicitly finish even if an abandoned UI/native callback retains a clone.
     let interrupted = flow::RevokeOnDrop::new(|| timing.finish(0));
@@ -863,7 +970,9 @@ pub(crate) async fn create(
             .await
             .map_err(|e| e.to_string())?;
     timing.mark(TimingStage::Authorized);
-    ensure_runtime(&window, state, &authorized.lease, None, &timing).await?;
+    let preparing_lease = authorized.lease.clone();
+    let owner_setup = flow::RevokeOnDrop::new(move || preparing_lease.revoke());
+    ensure_runtime(&window, state, &authorized.lease, None, &timing, &document).await?;
     authorized
         .lease
         .recheck(&window, state)
@@ -969,6 +1078,7 @@ pub(crate) async fn create(
         ),
         identity,
         window: window.label().into(),
+        document,
         lease: authorized.lease,
         session,
         cancelled: AtomicBool::new(false),
@@ -990,7 +1100,7 @@ pub(crate) async fn create(
     attempt.timing.mark(TimingStage::OwnerCheckedBeforeContext);
     {
         let mut attempts = shared().attempts.lock().map_err(|_| STALE)?;
-        if !shared().admission.ready() {
+        if !shared().admission.ready() || !attempt.current() {
             attempt.revoke();
             return Err(UNAVAILABLE.into());
         }
@@ -1112,6 +1222,7 @@ pub(crate) async fn create(
             // No await after releasing cancellation protection. Only a fully
             // completed creation hands ownership to the persistent registry.
             creation.disarm();
+            owner_setup.disarm();
             timing.mark(TimingStage::CommandCompleted);
             interrupted.disarm();
             Ok(result)

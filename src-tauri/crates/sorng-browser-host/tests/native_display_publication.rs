@@ -2,8 +2,10 @@
 #[path = "../../../src/origin_browser_display.rs"]
 mod display;
 
-use display::{publish, scrub_retained, Publication};
-use sorng_browser_host::ipc::{OriginBrowserPageState, OriginBrowserPhase, OriginBrowserSnapshot};
+use display::{publish, publish_with_reason, scrub_retained, Publication};
+use sorng_browser_host::ipc::{
+    OriginBrowserFailureReason, OriginBrowserPageState, OriginBrowserPhase, OriginBrowserSnapshot,
+};
 use sorng_protocols::origin_browser::{BrowserIdentity, OriginBrowserPolicy};
 use std::{cell::Cell, sync::Mutex};
 
@@ -134,6 +136,125 @@ fn terminal_notifications_never_copy_private_payload_even_when_owner_is_current(
             );
         }
     }
+}
+
+#[test]
+fn renderer_failure_after_revocation_is_delivered_once_without_restoring_page_authority() {
+    let identity = identity();
+    let snapshot = retained(&identity);
+    let traffic_current = Cell::new(true);
+    let deliveries = Cell::new(0);
+    // The native host revokes the session before Sink receives Faulted; Sink
+    // then revokes its lease and scrubs its retained state before publication.
+    traffic_current.set(false);
+    scrub_retained(&snapshot);
+    for expected in [Publication::Published, Publication::IgnoredSequence] {
+        let result = publish_with_reason(
+            &snapshot,
+            &identity,
+            2,
+            (
+                OriginBrowserPhase::Failed,
+                Some(OriginBrowserFailureReason::Renderer),
+            ),
+            private_page(),
+            || traffic_current.get(),
+            |event| {
+                assert!(!traffic_current.get());
+                assert_scrubbed(&event);
+                assert_eq!(wire(&event)["phase"], "failed");
+                assert_eq!(wire(&event)["failureReason"], "renderer");
+                assert_eq!(
+                    wire(&event)["identity"],
+                    wire(&snapshot.lock().unwrap())["identity"]
+                );
+                deliveries.set(deliveries.get() + 1);
+                true
+            },
+        );
+        assert_eq!(result, expected);
+    }
+    assert_eq!(deliveries.get(), 1);
+    assert_eq!(
+        publish(
+            &snapshot,
+            &identity,
+            3,
+            OriginBrowserPhase::Attached,
+            private_page(),
+            || traffic_current.get(),
+            |_| panic!("terminal notification must not restore traffic or disclosure"),
+        ),
+        Publication::OwnerUnavailable
+    );
+    assert_eq!(wire(&snapshot.lock().unwrap())["phase"], "failed");
+    assert_eq!(wire(&snapshot.lock().unwrap())["failureReason"], "renderer");
+    assert!(!traffic_current.get());
+    assert_scrubbed(&snapshot.lock().unwrap());
+}
+
+#[test]
+fn load_failure_reason_survives_terminal_scrubbing_after_owner_revocation() {
+    let identity = identity();
+    let snapshot = retained(&identity);
+    scrub_retained(&snapshot);
+    assert_eq!(
+        publish_with_reason(
+            &snapshot,
+            &identity,
+            2,
+            (
+                OriginBrowserPhase::Failed,
+                Some(OriginBrowserFailureReason::Load)
+            ),
+            private_page(),
+            || false,
+            |event| {
+                assert_scrubbed(&event);
+                assert_eq!(wire(&event)["phase"], "failed");
+                assert_eq!(wire(&event)["failureReason"], "load");
+                true
+            },
+        ),
+        Publication::Published
+    );
+    assert_scrubbed(&snapshot.lock().unwrap());
+    assert_eq!(wire(&snapshot.lock().unwrap())["failureReason"], "load");
+}
+
+#[test]
+fn production_renderer_fault_revokes_before_owner_window_terminal_publication() {
+    let host = include_str!("../src/cef_browser.rs");
+    let fault = host
+        .split("fn fault(&self, browser:")
+        .nth(1)
+        .unwrap()
+        .split("fn publish(&self")
+        .next()
+        .unwrap();
+    assert!(fault.find("self.revoke();").unwrap() < fault.find("self.emit();").unwrap());
+    let runtime = include_str!("../../../src/origin_browser_runtime.rs");
+    let sink = runtime
+        .split("impl BrowserEventSink for Sink")
+        .nth(1)
+        .unwrap()
+        .split("pub(crate) async fn create(")
+        .next()
+        .unwrap();
+    assert!(sink.contains("Lifecycle::Faulted => OriginBrowserPhase::Failed"));
+    assert!(
+        sink.find("self.attempt.revoke();").unwrap()
+            < sink.find("display::publish_with_reason(").unwrap()
+    );
+    for name in ["Renderer", "Session", "Callback", "NativeSurface", "Load"] {
+        assert!(sink.contains(&format!(
+            "Some(BrowserFault::{name}) => Some(OriginBrowserFailureReason::{name})"
+        )));
+    }
+    assert!(sink.contains("None => None"));
+    assert!(sink.contains("|| self.attempt.current()"));
+    assert!(sink.contains("self.window.emit(ORIGIN_BROWSER_STATE_EVENT, next)"));
+    assert!(!sink.contains("emit_all("));
 }
 
 #[test]

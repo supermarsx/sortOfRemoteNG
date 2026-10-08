@@ -738,6 +738,17 @@ pub enum OriginBrowserPhase {
     Failed,
 }
 
+/// Native-classified failure only: never a page string, URL or native error.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum OriginBrowserFailureReason {
+    Renderer,
+    Session,
+    Callback,
+    NativeSurface,
+    Load,
+}
+
 /// Input from a native host callback, never IPC. Values are validated/bounded
 /// before owner-window output. Full URLs are address-bar state, not diagnostics.
 pub struct OriginBrowserPageState<'a> {
@@ -754,6 +765,8 @@ pub struct OriginBrowserSnapshot {
     identity: OriginBrowserIdentity,
     sequence: u64,
     phase: OriginBrowserPhase,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    failure_reason: Option<OriginBrowserFailureReason>,
     /// Only the trusted owning window receives this address-bar value. Never
     /// log/persist this object or use current_url in diagnostic reports.
     current_url: String,
@@ -816,6 +829,7 @@ impl OriginBrowserSnapshot {
             identity,
             sequence,
             phase,
+            failure_reason: None,
             current_url,
             display_url,
             title,
@@ -835,6 +849,12 @@ impl OriginBrowserSnapshot {
 
     pub fn phase(&self) -> OriginBrowserPhase {
         self.phase
+    }
+
+    /// Nonfailed snapshots must never advertise a failure. The fixed reason is
+    /// safe lifecycle metadata and survives subsequent private-data scrubbing.
+    pub fn set_failure_reason(&mut self, reason: Option<OriginBrowserFailureReason>) {
+        self.failure_reason = reason.filter(|_| matches!(self.phase, OriginBrowserPhase::Failed));
     }
 
     /// Retain identity, lifecycle and ordering, but remove owner-private page

@@ -1,6 +1,8 @@
 //! CEF-free owner-window publication boundary. Never retain private page state
 //! after observed revocation and never call an emitter with snapshot locks held.
-use sorng_browser_host::ipc::{OriginBrowserPageState, OriginBrowserPhase, OriginBrowserSnapshot};
+use sorng_browser_host::ipc::{
+    OriginBrowserFailureReason, OriginBrowserPageState, OriginBrowserPhase, OriginBrowserSnapshot,
+};
 use sorng_protocols::origin_browser::BrowserIdentity;
 use std::sync::Mutex;
 
@@ -25,9 +27,32 @@ pub(super) fn publish(
     sequence: u64,
     phase: OriginBrowserPhase,
     page: OriginBrowserPageState<'_>,
+    current: impl FnMut() -> bool,
+    emit: impl FnOnce(OriginBrowserSnapshot) -> bool,
+) -> Publication {
+    publish_with_reason(
+        snapshot,
+        identity,
+        sequence,
+        (phase, None),
+        page,
+        current,
+        emit,
+    )
+}
+
+/// The reason is fixed native lifecycle metadata, never private page content.
+/// Existing callers without a native fault can keep using `publish`.
+pub(super) fn publish_with_reason(
+    snapshot: &Mutex<OriginBrowserSnapshot>,
+    identity: &BrowserIdentity,
+    sequence: u64,
+    phase_and_reason: (OriginBrowserPhase, Option<OriginBrowserFailureReason>),
+    page: OriginBrowserPageState<'_>,
     mut current: impl FnMut() -> bool,
     emit: impl FnOnce(OriginBrowserSnapshot) -> bool,
 ) -> Publication {
+    let (phase, reason) = phase_and_reason;
     let terminal = matches!(
         phase,
         OriginBrowserPhase::Closing | OriginBrowserPhase::Closed | OriginBrowserPhase::Failed
@@ -52,6 +77,7 @@ pub(super) fn publish(
         scrub_retained(snapshot);
         return Publication::Failed;
     };
+    next.set_failure_reason(reason);
     {
         let mut previous = match snapshot.lock() {
             Ok(previous) => previous,

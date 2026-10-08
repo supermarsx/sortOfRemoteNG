@@ -1,11 +1,75 @@
 //! Async handoffs shared with the runtime's CEF-free lifecycle regression tests.
 
 use std::{
+    collections::HashMap,
     future::Future,
-    sync::atomic::{AtomicU8, Ordering},
+    sync::{
+        atomic::{AtomicBool, AtomicU8, Ordering},
+        Arc, Mutex,
+    },
     time::Duration,
 };
-use tokio::sync::oneshot;
+use tokio::sync::{oneshot, Notify};
+
+/// Native window labels select lifetimes, never grant browser authority. Removing
+/// an epoch invalidates every old holder; a replacement cannot revive it.
+#[derive(Default)]
+pub(super) struct ShellDocuments(Mutex<HashMap<String, Arc<ShellDocument>>>);
+
+impl ShellDocuments {
+    pub(super) fn current(&self, label: &str) -> Arc<ShellDocument> {
+        self.0
+            .lock()
+            .unwrap_or_else(|error| error.into_inner())
+            .entry(label.to_owned())
+            .or_default()
+            .clone()
+    }
+
+    pub(super) fn revoke(&self, label: &str) -> bool {
+        let mut documents = self.0.lock().unwrap_or_else(|error| error.into_inner());
+        if let Some(document) = documents.remove(label) {
+            // Invalidate while holding the registry lock: a new caller can only
+            // acquire its fresh epoch after the old one is observably cancelled.
+            document.revoked.store(true, Ordering::Release);
+            document.changed.notify_waiters();
+            true
+        } else {
+            false
+        }
+    }
+}
+
+#[derive(Default)]
+pub(super) struct ShellDocument {
+    revoked: AtomicBool,
+    changed: Notify,
+}
+
+impl ShellDocument {
+    pub(super) fn current(&self) -> bool {
+        !self.revoked.load(Ordering::Acquire)
+    }
+
+    async fn cancelled(&self) {
+        // Register before testing the flag so cancellation between the test and
+        // await cannot be lost, including multiple creates in this document.
+        let changed = self.changed.notified();
+        tokio::pin!(changed);
+        changed.as_mut().enable();
+        if self.current() {
+            changed.await;
+        }
+    }
+
+    pub(super) async fn run<T>(&self, work: impl Future<Output = T>) -> Option<T> {
+        tokio::select! {
+            biased;
+            () = self.cancelled() => None,
+            result = work => self.current().then_some(result),
+        }
+    }
+}
 
 /// Serialize preflight and queued UI startup without tying ownership to a
 /// command future. Only failures BEFORE native initialization may be retried.
@@ -26,9 +90,16 @@ impl StartupClaim {
     }
 
     /// True only for the first cancellation after this caller claimed entry.
-    /// Once claimed, native work may finish, but its traffic must stay revoked.
+    /// The caller decides whether this is a global timeout/policy failure or
+    /// only loss of a shell document that owned no global runtime authority.
     pub(super) fn cancel(&self) -> bool {
         self.0.swap(2, Ordering::AcqRel) == 1
+    }
+
+    /// A document reload cancels queued entry but cannot revoke the shared
+    /// engine. Native work already entered still requires normal policy readback.
+    pub(super) fn cancel_abandoned(&self, document: &ShellDocument) -> bool {
+        self.cancel() && document.current()
     }
 }
 

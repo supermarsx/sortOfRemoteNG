@@ -212,6 +212,18 @@ pub fn run() {
         // check/download/install path. App-owned updater commands in
         // sorng-updater supply settings, status, and private endpoint wiring.
         .plugin(tauri_plugin_updater::Builder::new().build())
+        .on_page_load(|webview, payload| {
+            #[cfg(feature = "native-browser")]
+            if payload.event() == tauri::webview::PageLoadEvent::Started
+                && webview.label() == webview.window().label()
+            {
+                // WebviewWindow commands belong to its same-label shell, not
+                // an unrelated child webview navigating inside that window.
+                origin_browser_runtime::shell_document_started(webview.window().label());
+            }
+            #[cfg(not(feature = "native-browser"))]
+            let _ = (webview, payload);
+        })
         .setup(|app| {
             app_profile::verify_runtime(app)?;
             // Working-data preparation and CEF initialization belong to the

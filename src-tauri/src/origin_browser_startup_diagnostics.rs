@@ -297,6 +297,7 @@ pub(crate) enum Stage {
     Ready,
     Failed,
     ViewFailed,
+    RuntimeFault,
     Closing,
     Closed,
 }
@@ -315,6 +316,7 @@ pub(crate) enum Failure {
     CookieRestore,
     NativeSurface,
     RendererSetup,
+    RendererFault,
     InitialZoom,
     InitialNavigation,
 }

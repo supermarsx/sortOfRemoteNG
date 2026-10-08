@@ -5,6 +5,57 @@ use serde_json::{json, Value};
 use sorng_browser_host::ipc::*;
 use sorng_protocols::origin_browser::OriginBrowserPolicy as NativePolicy;
 
+#[test]
+fn native_failure_reason_is_optional_fixed_and_only_serialized_for_failed_phase() {
+    let native = NativePolicy::new("owner", "connection", "tab", "https://fixture.test").unwrap();
+    for phase in [
+        OriginBrowserPhase::Starting,
+        OriginBrowserPhase::Attached,
+        OriginBrowserPhase::Closing,
+        OriginBrowserPhase::Closed,
+        OriginBrowserPhase::Failed,
+    ] {
+        for (reason, expected) in [
+            (OriginBrowserFailureReason::Renderer, "renderer"),
+            (OriginBrowserFailureReason::Session, "session"),
+            (OriginBrowserFailureReason::Callback, "callback"),
+            (OriginBrowserFailureReason::NativeSurface, "native-surface"),
+            (OriginBrowserFailureReason::Load, "load"),
+        ] {
+            let mut snapshot = OriginBrowserSnapshot::new(
+                native.identity(),
+                1,
+                phase,
+                OriginBrowserPageState {
+                    url: "",
+                    title: "",
+                    loading: false,
+                    can_go_back: false,
+                    can_go_forward: false,
+                },
+            )
+            .unwrap();
+            assert!(serde_json::to_value(&snapshot)
+                .unwrap()
+                .get("failureReason")
+                .is_none());
+            snapshot.set_failure_reason(Some(reason));
+            snapshot.scrub_page_state();
+            let value = serde_json::to_value(&snapshot).unwrap();
+            if matches!(phase, OriginBrowserPhase::Failed) {
+                assert_eq!(value["failureReason"], expected);
+            } else {
+                assert!(value.get("failureReason").is_none());
+            }
+            snapshot.set_failure_reason(None);
+            assert!(serde_json::to_value(&snapshot)
+                .unwrap()
+                .get("failureReason")
+                .is_none());
+        }
+    }
+}
+
 fn owner() -> Value {
     json!({ "ownerDatabaseId": "database-1", "connectionId": "connection-1", "sessionId": "tab-1" })
 }
@@ -572,9 +623,15 @@ fn presentation_requires_safe_integer_revision_and_bounds_when_visible() {
         json!({ "kind": "presentation", "revision": 2, "bounds": null, "visible": false }),
         json!({ "kind": "focus", "presentationRevision": MAX_JS_INTEGER }),
     ] {
-        let expected = control(action);
+        let mut expected = control(action);
         let decoded: OriginBrowserControlRequest =
             decode(expected.clone()).unwrap_or_else(|_| panic!("Valid action rejected"));
+        // Legacy callers may omit these fields on input. Serialization emits
+        // their canonical defaults; do not change the production wire format.
+        if expected["action"]["kind"] == "presentation" {
+            expected["action"]["occlusions"] = json!([]);
+            expected["action"]["inputBlocked"] = json!(false);
+        }
         assert_eq!(serde_json::to_value(decoded).unwrap(), expected);
     }
     for action in [
