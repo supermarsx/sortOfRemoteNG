@@ -137,7 +137,7 @@ describe("ConnectionTemplates", () => {
     );
   });
 
-  it("uses lower-case protocol values with upper-case labels in the create form", () => {
+  it("uses Browser labels without changing lower-case protocol values in the create form", () => {
     render(<ConnectionTemplates />);
     fireEvent.click(screen.getByText(/New Template/));
     const selects = screen.getAllByTestId("select") as HTMLSelectElement[];
@@ -148,8 +148,14 @@ describe("ConnectionTemplates", () => {
     const https = Array.from(protocolSelect!.options).find(
       (o) => o.value === "https",
     );
-    expect(https?.label).toBe("HTTPS");
+    expect(https?.label).toBe("Browser (HTTPS)");
+    expect(
+      Array.from(protocolSelect!.options).find((o) => o.value === "http")
+        ?.label,
+    ).toBe("Browser (HTTP)");
     expect(protocolSelect!.value).toBe("ssh");
+    fireEvent.change(protocolSelect!, { target: { value: "https" } });
+    expect(protocolSelect!.value).toBe("https");
   });
 
   it("does not persist usage counts for built-in templates", async () => {

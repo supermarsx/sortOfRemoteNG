@@ -37,7 +37,7 @@ export function NetworkToolkit({
 }: NetworkToolkitProps) {
   if (!isOpen) return null;
   return embedded ? (
-    <ToolkitWorkspace onClose={onClose} />
+    <ToolkitWorkspace />
   ) : (
     <Modal
       isOpen
@@ -51,7 +51,7 @@ export function NetworkToolkit({
   );
 }
 
-function ToolkitWorkspace({ onClose }: { onClose: () => void }) {
+function ToolkitWorkspace({ onClose }: { onClose?: () => void }) {
   const toolkit = useNetworkToolkit();
   const [selected, setSelected] = useState<NetworkToolId>("ping");
   const [search, setSearch] = useState("");

@@ -297,14 +297,14 @@ const BUILT_IN_PROTOCOL_METADATA: Omit<ProtocolOption, "icon">[] = [
   },
   {
     value: "http",
-    label: "HTTP",
+    label: "Browser (HTTP)",
     desc: "Web Service",
     color: "orange",
     category: "web-server",
   },
   {
     value: "https",
-    label: "HTTPS",
+    label: "Browser (HTTPS)",
     desc: "Secure Web",
     color: "emerald",
     category: "web-server",

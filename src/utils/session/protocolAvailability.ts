@@ -128,7 +128,7 @@ export const BUILT_IN_PROTOCOL_AVAILABILITY = {
       "The app tracks only a launcher process it starts, or uses an untracked native URL handoff. Remote authentication and the framebuffer remain owned by AnyDesk.",
   }),
   http: capability({
-    label: "HTTP",
+    label: "Browser (HTTP)",
     classification: "fully-interactive",
     sessionEntry: "client-owned",
     frontendPath: "src/components/protocol/WebBrowser.tsx",
@@ -137,7 +137,7 @@ export const BUILT_IN_PROTOCOL_AVAILABILITY = {
     detail: "The embedded browser owns its proxy and navigation lifecycle.",
   }),
   https: capability({
-    label: "HTTPS",
+    label: "Browser (HTTPS)",
     classification: "fully-interactive",
     sessionEntry: "client-owned",
     frontendPath: "src/components/protocol/WebBrowser.tsx",

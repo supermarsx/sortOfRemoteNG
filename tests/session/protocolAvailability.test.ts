@@ -75,6 +75,21 @@ const READ_ONLY_MANAGEMENT_PROTOCOLS = [
 ] as const satisfies readonly BuiltInConnectionProtocol[];
 
 describe("protocol availability contract", () => {
+  it.each(["http", "https"] as const)(
+    "labels %s as Browser without changing protocol availability or picker values",
+    (protocol) => {
+      const label = `Browser (${protocol.toUpperCase()})`;
+      expect(getProtocolAvailability(protocol)).toMatchObject({
+        label,
+        classification: "fully-interactive",
+        sessionEntry: "client-owned",
+      });
+      expect(
+        PROTOCOL_OPTIONS.find((option) => option.value === protocol),
+      ).toMatchObject({ value: protocol, label });
+    },
+  );
+
   it("accounts for every persisted built-in protocol exactly once", () => {
     expect(Object.keys(BUILT_IN_PROTOCOL_AVAILABILITY).sort()).toEqual(
       [...BUILT_IN_PROTOCOLS].sort(),

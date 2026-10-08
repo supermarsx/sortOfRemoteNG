@@ -7,8 +7,7 @@ import {
   stripCredentialFields,
   type SanitizedValue,
 } from "../../utils/storage/appDataJsonStore";
-import { normalizeImportedProtocol } from "../../utils/connection/normalizeImportedProtocol";
-import type { ConnectionProtocol } from "../../types/connection/connection";
+import { resolveTemplateProtocol } from "../../utils/connection/resolveTemplateProtocol";
 
 /* ------------------------------------------------------------------ */
 /*  Types                                                              */
@@ -35,13 +34,7 @@ interface ConnectionTemplatesProps {
 }
 
 type CategoryFilter =
-  | "all"
-  | "ssh"
-  | "rdp"
-  | "vnc"
-  | "database"
-  | "web"
-  | "custom";
+  "all" | "ssh" | "rdp" | "vnc" | "database" | "web" | "custom";
 
 interface SettingRow {
   key: string;
@@ -253,14 +246,14 @@ const CATEGORY_FILTERS: { value: CategoryFilter; label: string }[] = [
   { value: "custom", label: "Custom" },
 ];
 
-/** Picker values are the lower-case protocol identifiers; labels stay upper-case. */
+/** Human-facing labels are independent of the lower-case wire protocol values. */
 const PROTOCOL_OPTIONS: ReadonlyArray<{ value: string; label: string }> = [
   { value: "ssh", label: "SSH" },
   { value: "rdp", label: "RDP" },
   { value: "vnc", label: "VNC" },
   { value: "sftp", label: "SFTP" },
-  { value: "http", label: "HTTP" },
-  { value: "https", label: "HTTPS" },
+  { value: "http", label: "Browser (HTTP)" },
+  { value: "https", label: "Browser (HTTPS)" },
   { value: "mysql", label: "MySQL" },
   { value: "mariadb", label: "MariaDB" },
   { value: "postgresql", label: "PostgreSQL" },
@@ -276,17 +269,6 @@ const toProtocolPickerValue = (protocol: string): string =>
 const protocolBadgeLabel = (protocol: string): string =>
   PROTOCOL_OPTIONS.find((p) => p.value === toProtocolPickerValue(protocol))
     ?.label ?? protocol;
-
-/**
- * Resolve a template's protocol string (any casing / alias, e.g. "HTTP",
- * "Web", "K8s") to the canonical connection protocol before it is applied
- * to a new connection. Never falls back to RDP without evidence.
- */
-export const resolveTemplateProtocol = (
-  protocol: string,
-  port?: number,
-): ConnectionProtocol =>
-  normalizeImportedProtocol({ raw: protocol, port }).protocol;
 
 const STORAGE_KEY = "sor-connection-templates";
 

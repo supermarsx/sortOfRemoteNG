@@ -203,12 +203,12 @@ const ProtocolSelector: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
           },
           {
             value: "http",
-            label: t("quickConnect.protocols.http", "HTTP"),
+            label: `Browser (${t("quickConnect.protocols.http", "HTTP")})`,
             icon: getProtocolIcon("http"),
           },
           {
             value: "https",
-            label: t("quickConnect.protocols.https", "HTTPS"),
+            label: `Browser (${t("quickConnect.protocols.https", "HTTPS")})`,
             icon: getProtocolIcon("https"),
           },
           {

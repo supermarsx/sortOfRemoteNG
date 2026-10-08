@@ -91,6 +91,24 @@ describe("GeneralSection validation", () => {
     ).not.toBeInTheDocument();
   });
 
+  it.each(["http", "https"] as const)(
+    "labels %s as Browser while preserving its wire value",
+    (protocol) => {
+      render(<GeneralSection {...defaultProps} />);
+      fireEvent.click(screen.getByTestId("editor-protocol"));
+      fireEvent.mouseDown(
+        screen.getByRole("option", {
+          name: `Browser (${protocol.toUpperCase()})`,
+        }),
+      );
+      expect(mockSetFormData).toHaveBeenCalledOnce();
+      const update = mockSetFormData.mock.lastCall![0];
+      const next =
+        typeof update === "function" ? update(defaultProps.formData) : update;
+      expect(next.protocol).toBe(protocol);
+    },
+  );
+
   it.each(["gcp", "integration:gdrive"] as const)(
     "hides unused address fields for %s",
     (protocol) => {

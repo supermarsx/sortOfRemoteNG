@@ -143,8 +143,8 @@ function proxyStatus(s: ProxySessionDetail): UnifiedSessionStatus {
 
 const PROTOCOL_LABELS: Record<string, string> = {
   anydesk: "AnyDesk",
-  http: "HTTP",
-  https: "HTTPS",
+  http: "Browser (HTTP)",
+  https: "Browser (HTTPS)",
   rdp: "RDP",
   rlogin: "RLogin",
   raw: "Raw Socket",

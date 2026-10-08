@@ -148,6 +148,7 @@ describe("Network Toolkit UI", () => {
     expect(container.querySelector("[title]")).toBeNull();
     expect(mock.state.run).not.toHaveBeenCalled();
     expect(fetch).not.toHaveBeenCalled();
+    expect(screen.queryByRole("button", { name: "Close" })).toBeNull();
     input("Search tools", "blocklist");
     expect(
       screen.getByRole("button", { name: "Domain / DNS blocklist" }),
@@ -158,10 +159,11 @@ describe("Network Toolkit UI", () => {
   });
 
   it("does not mount a hidden panel and supports the themed modal", () => {
-    const view = render(<NetworkToolkit isOpen={false} onClose={vi.fn()} />);
+    const onClose = vi.fn();
+    const view = render(<NetworkToolkit isOpen={false} onClose={onClose} />);
     expect(screen.queryByTestId("network-toolkit")).toBeNull();
     expect(mock.listener).toBeNull();
-    view.rerender(<NetworkToolkit isOpen onClose={vi.fn()} />);
+    view.rerender(<NetworkToolkit isOpen onClose={onClose} />);
     expect(
       screen.getByRole("dialog", { name: "Network Toolkit" }),
     ).toBeVisible();
@@ -171,6 +173,8 @@ describe("Network Toolkit UI", () => {
         .querySelector(".sor-modal-content"),
     ).toHaveClass("h-[85vh]");
     expect(mock.state.run).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "Close" }));
+    expect(onClose).toHaveBeenCalledOnce();
   });
 
   it("requires an explicit route and preserves a separate choice for each tool", async () => {
@@ -633,16 +637,16 @@ describe("Network Toolkit UI", () => {
     expect(screen.queryByLabelText("Session report history")).toBeNull();
   });
 
-  it("cancels and unsubscribes on close/unmount and forgets routing on a fresh session", () => {
+  it("cancels and unsubscribes on tab close and forgets routing on a fresh session", () => {
     const view = setup();
     choose("Routing for this tool", "Direct / local network");
-    fireEvent.click(screen.getByRole("button", { name: "Close" }));
-    expect(view.onClose).toHaveBeenCalledOnce();
+    expect(screen.queryByRole("button", { name: "Close" })).toBeNull();
     view.rerender(
       <NetworkToolkit isOpen={false} embedded onClose={view.onClose} />,
     );
     expect(mock.state.cancel).toHaveBeenCalledOnce();
     expect(mock.unsubscribe).toHaveBeenCalledOnce();
+    expect(view.onClose).not.toHaveBeenCalled();
     view.rerender(<NetworkToolkit isOpen embedded onClose={view.onClose} />);
     expect(
       screen.getByRole("combobox", { name: "Routing for this tool" }),
