@@ -112,7 +112,10 @@ describe("GeneralSection — protocol inferred from pasted URL (t71 RC4)", () =>
     expect(h.get().port).toBe(8443);
     expect(h.get().hostname).toBe("https://portal.example.com:8443/login");
     expect(h.get().authType).toBe("basic");
-    expect(screen.getByTestId("editor-protocol")).toHaveTextContent("HTTPS");
+    expect(screen.getByTestId("editor-protocol")).toHaveTextContent("Browser");
+    expect(screen.getByTestId("editor-browser-protocol")).toHaveTextContent(
+      "HTTPS",
+    );
     expect(toastInfo).toHaveBeenCalledTimes(1);
     expect(toastInfo.mock.calls[0][0]).toContain(
       "Switched protocol to HTTPS because the pasted address starts with https://",

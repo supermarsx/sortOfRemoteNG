@@ -166,59 +166,85 @@ const HostnameField: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
   );
 };
 
-const ProtocolSelector: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
+const ConnectionTypeSelector: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
   const { t } = useTranslation();
 
   return (
-    <div>
-      <label
-        htmlFor="protocol"
-        className="block text-sm font-medium text-[var(--color-textSecondary)] mb-2"
-      >
-        {t("connection.protocol", "Protocol")}
-      </label>
-      <Select
-        id="protocol"
-        data-testid="quick-connect-protocol"
-        value={mgr.protocol}
-        onChange={(v: string) => mgr.setProtocol(v)}
-        options={[
-          {
-            value: "rdp",
-            label: t("quickConnect.protocols.rdp", "RDP (Remote Desktop)"),
-            icon: getProtocolIcon("rdp"),
-          },
-          {
-            value: "ssh",
-            label: t("quickConnect.protocols.ssh", "SSH (Secure Shell)"),
-            icon: getProtocolIcon("ssh"),
-          },
-          {
-            value: "vnc",
-            label: t(
-              "quickConnect.protocols.vnc",
-              "VNC (Virtual Network Computing)",
-            ),
-            icon: getProtocolIcon("vnc"),
-          },
-          {
-            value: "http",
-            label: `Browser (${t("quickConnect.protocols.http", "HTTP")})`,
-            icon: getProtocolIcon("http"),
-          },
-          {
-            value: "https",
-            label: `Browser (${t("quickConnect.protocols.https", "HTTPS")})`,
-            icon: getProtocolIcon("https"),
-          },
-          {
-            value: "telnet",
-            label: t("quickConnect.protocols.telnet", "Telnet"),
-            icon: getProtocolIcon("telnet"),
-          },
-        ]}
-        variant="form"
-      />
+    <div className={mgr.isHttp ? "grid grid-cols-2 gap-3" : undefined}>
+      <div>
+        <label
+          htmlFor="connection-type"
+          className="block text-sm font-medium text-[var(--color-textSecondary)] mb-2"
+        >
+          {t("quickConnect.connectionType", "Connection type")}
+        </label>
+        <Select
+          id="connection-type"
+          data-testid="quick-connect-type"
+          value={mgr.isHttp ? "browser" : mgr.protocol}
+          onChange={(v: string) =>
+            mgr.setProtocol(
+              v === "browser" ? (mgr.isHttp ? mgr.protocol : "https") : v,
+            )
+          }
+          options={[
+            {
+              value: "rdp",
+              label: t("quickConnect.protocols.rdp", "RDP (Remote Desktop)"),
+              icon: getProtocolIcon("rdp"),
+            },
+            {
+              value: "ssh",
+              label: t("quickConnect.protocols.ssh", "SSH (Secure Shell)"),
+              icon: getProtocolIcon("ssh"),
+            },
+            {
+              value: "vnc",
+              label: t(
+                "quickConnect.protocols.vnc",
+                "VNC (Virtual Network Computing)",
+              ),
+              icon: getProtocolIcon("vnc"),
+            },
+            {
+              value: "browser",
+              label: "Browser",
+              icon: getProtocolIcon("https"),
+            },
+            {
+              value: "telnet",
+              label: t("quickConnect.protocols.telnet", "Telnet"),
+              icon: getProtocolIcon("telnet"),
+            },
+          ]}
+          variant="form"
+        />
+      </div>
+      {mgr.isHttp && (
+        <div>
+          <label
+            htmlFor="browser-protocol"
+            className="block text-sm font-medium text-[var(--color-textSecondary)] mb-2"
+          >
+            {t("connection.protocol", "Protocol")}
+          </label>
+          <Select
+            id="browser-protocol"
+            data-testid="quick-connect-protocol"
+            value={mgr.protocol}
+            onChange={(value: string) => mgr.setProtocol(value)}
+            options={[
+              {
+                value: "https",
+                label: "HTTPS",
+                description: "Encrypted (TLS)",
+              },
+              { value: "http", label: "HTTP", description: "Unencrypted" },
+            ]}
+            variant="form"
+          />
+        </div>
+      )}
     </div>
   );
 };
@@ -541,7 +567,7 @@ export const QuickConnect: React.FC<QuickConnectProps> = ({
         <ConnectHeader onClose={onClose} />
         <div className="p-4 space-y-4">
           <HostnameField mgr={mgr} />
-          <ProtocolSelector mgr={mgr} />
+          <ConnectionTypeSelector mgr={mgr} />
           {mgr.isRdp && <RDPCredentials mgr={mgr} />}
           {mgr.isSsh && <SshCredentials mgr={mgr} />}
           {mgr.isVnc && <VncCredentials mgr={mgr} />}

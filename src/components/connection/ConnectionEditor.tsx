@@ -40,6 +40,13 @@ import { getProtocolAvailability } from "../../utils/session/protocolAvailabilit
 import { getRuntimeProtocolUnavailableMessage } from "../../utils/runtime/runtimeCapabilities";
 import { PROTOCOL_CATEGORY_ORDER } from "../../utils/connection/protocolOptionRegistry";
 import {
+  browserConnectionTypeOptions,
+  connectionTypeValue,
+  isBrowserProtocol,
+  resolveConnectionType,
+} from "../../utils/connection/browserConnectionType";
+import { BrowserProtocolSelect } from "../connectionEditor/BrowserProtocolSelect";
+import {
   EXCHANGE_AUTH_METHODS,
   EXCHANGE_ENVIRONMENTS,
   EXCHANGE_INTEGRATION_KEY,
@@ -365,7 +372,10 @@ const matchesProtocolSearch = (
 
 const ProtocolGrid: React.FC<{ mgr: ConnectionEditorMgr }> = ({ mgr }) => {
   const { t } = useTranslation();
-  const allProtocolOptions = mgr.protocolOptions;
+  const allProtocolOptions = React.useMemo(
+    () => browserConnectionTypeOptions(mgr.protocolOptions),
+    [mgr.protocolOptions],
+  );
   const getProtocolCategoryLabel = React.useCallback(
     (category: ConnectionTypeCategory) =>
       String(
@@ -411,7 +421,7 @@ const ProtocolGrid: React.FC<{ mgr: ConnectionEditorMgr }> = ({ mgr }) => {
 
   const openDropdown = React.useCallback(() => {
     const selectedIndex = allProtocolOptions.findIndex(
-      (option) => option.value === mgr.formData.protocol,
+      (option) => option.value === connectionTypeValue(mgr.formData.protocol),
     );
     setSearchQuery("");
     setActiveIndex(selectedIndex >= 0 ? selectedIndex : 0);
@@ -446,8 +456,8 @@ const ProtocolGrid: React.FC<{ mgr: ConnectionEditorMgr }> = ({ mgr }) => {
         ? "http"
         : "https"
       : mgr.formData.protocol;
-  const current = ALL_PROTOCOL_OPTIONS.find(
-    (p) => p.value === displayedProtocol,
+  const current = browserConnectionTypeOptions(ALL_PROTOCOL_OPTIONS).find(
+    (p) => p.value === connectionTypeValue(displayedProtocol),
   );
   const runtimeUnavailableMessage = getRuntimeProtocolUnavailableMessage(
     mgr.formData.protocol,
@@ -489,7 +499,9 @@ const ProtocolGrid: React.FC<{ mgr: ConnectionEditorMgr }> = ({ mgr }) => {
 
   const selectProtocol = React.useCallback(
     (value: string) => {
-      mgr.handleProtocolChange(value);
+      mgr.handleProtocolChange(
+        resolveConnectionType(value, mgr.formData.protocol),
+      );
       closeDropdown(true);
     },
     [mgr, closeDropdown],
@@ -573,7 +585,7 @@ const ProtocolGrid: React.FC<{ mgr: ConnectionEditorMgr }> = ({ mgr }) => {
             const optionIndex = visibleOptions.findIndex(
               (option) => option.value === value,
             );
-            const isSelected = mgr.formData.protocol === value;
+            const isSelected = connectionTypeValue(displayedProtocol) === value;
             const isHighlighted = activeIndex === optionIndex;
             const translatedOptionLabel = labelKey
               ? t(labelKey, optionLabel)
@@ -650,7 +662,7 @@ const ProtocolGrid: React.FC<{ mgr: ConnectionEditorMgr }> = ({ mgr }) => {
         id="editor-protocol-label"
         className="block text-xs font-medium text-[var(--color-textSecondary)] mb-1"
       >
-        {t("connectionEditor.protocolPicker.label", "Protocol")}
+        {t("connectionEditor.connectionType", "Connection type")}
       </label>
       <button
         ref={triggerRef}
@@ -700,9 +712,9 @@ const ProtocolGrid: React.FC<{ mgr: ConnectionEditorMgr }> = ({ mgr }) => {
       {open && (
         <div className="absolute z-50 left-0 right-0 mt-1 flex max-h-72 flex-col bg-[var(--color-surface)] border border-[var(--color-border)] rounded-lg shadow-xl overflow-hidden">
           <p className="border-b border-[var(--color-border)] px-3 py-2 text-xs text-[var(--color-textSecondary)]">
-            For websites and dashboards, choose HTTP or HTTPS, then select
-            Application. Native management integrations remain available in
-            Tools.
+            For websites and dashboards, choose Browser, then select the
+            protocol and Application. Native management integrations remain
+            available in Tools.
           </p>
           <div className="flex items-center gap-2 border-b border-[var(--color-border)] px-3 py-2">
             <Search
@@ -797,6 +809,14 @@ const ProtocolGrid: React.FC<{ mgr: ConnectionEditorMgr }> = ({ mgr }) => {
               </div>
             )}
           </div>
+        </div>
+      )}
+      {isBrowserProtocol(mgr.formData.protocol) && (
+        <div className="mt-3">
+          <BrowserProtocolSelect
+            value={mgr.formData.protocol}
+            onChange={mgr.handleProtocolChange}
+          />
         </div>
       )}
     </div>

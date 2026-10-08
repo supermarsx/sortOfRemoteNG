@@ -8,6 +8,15 @@ import {
   type SanitizedValue,
 } from "../../utils/storage/appDataJsonStore";
 import { resolveTemplateProtocol } from "../../utils/connection/resolveTemplateProtocol";
+import {
+  browserConnectionTypeOptions,
+  browserProtocolPort,
+  changeBrowserProtocol,
+  connectionTypeValue,
+  isBrowserProtocol,
+  resolveConnectionType,
+} from "../../utils/connection/browserConnectionType";
+import { BrowserProtocolSelect } from "../connectionEditor/BrowserProtocolSelect";
 
 /* ------------------------------------------------------------------ */
 /*  Types                                                              */
@@ -261,6 +270,7 @@ const PROTOCOL_OPTIONS: ReadonlyArray<{ value: string; label: string }> = [
   { value: "k8s", label: "K8s" },
   { value: "other", label: "Other" },
 ];
+const CONNECTION_TYPE_OPTIONS = browserConnectionTypeOptions(PROTOCOL_OPTIONS);
 
 const toProtocolPickerValue = (protocol: string): string =>
   protocol.trim().toLowerCase();
@@ -700,19 +710,58 @@ export default function ConnectionTemplates({
         <div className="sor-tpl-row">
           <div className="sor-tpl-field">
             <label className="sor-tpl-label">
-              {t("templates.protocol", "Protocol")}
+              {t("connectionEditor.connectionType", "Connection type")}
             </label>
             <Select
-              value={formProtocol}
-              onChange={(v) => setFormProtocol(v)}
+              value={connectionTypeValue(formProtocol)}
+              onChange={(v) => {
+                const next = resolveConnectionType(v, formProtocol);
+                if (
+                  isBrowserProtocol(next) &&
+                  !isBrowserProtocol(formProtocol)
+                ) {
+                  setFormPort(
+                    browserProtocolPort(formProtocol, formPort, next),
+                  );
+                }
+                setFormProtocol(next);
+              }}
               variant="form-sm"
               className="w-full"
-              options={PROTOCOL_OPTIONS.map((p) => ({
+              options={CONNECTION_TYPE_OPTIONS.map((p) => ({
                 value: p.value,
                 label: p.label,
               }))}
             />
           </div>
+          {isBrowserProtocol(formProtocol) && (
+            <div className="sor-tpl-field">
+              <BrowserProtocolSelect
+                value={formProtocol}
+                onChange={(next) => {
+                  const changed = changeBrowserProtocol(
+                    {
+                      protocol: formProtocol,
+                      port: formPort,
+                      hostname: formSettings.find(
+                        (row) => row.key === "hostname",
+                      )?.value,
+                    },
+                    next,
+                  );
+                  setFormPort(changed.port ?? formPort);
+                  setFormSettings((rows) =>
+                    rows.map((row) =>
+                      row.key === "hostname" && changed.hostname !== undefined
+                        ? { ...row, value: changed.hostname }
+                        : row,
+                    ),
+                  );
+                  setFormProtocol(next);
+                }}
+              />
+            </div>
+          )}
           <div className="sor-tpl-field">
             <label className="sor-tpl-label">
               {t("templates.port", "Port")}

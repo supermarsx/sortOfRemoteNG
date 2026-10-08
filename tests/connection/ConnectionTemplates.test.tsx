@@ -137,25 +137,136 @@ describe("ConnectionTemplates", () => {
     );
   });
 
-  it("uses Browser labels without changing lower-case protocol values in the create form", () => {
+  it("offers one Browser type with HTTPS by default and a separate HTTP choice", () => {
     render(<ConnectionTemplates />);
     fireEvent.click(screen.getByText(/New Template/));
     const selects = screen.getAllByTestId("select") as HTMLSelectElement[];
     const protocolSelect = selects.find((el) =>
-      Array.from(el.options).some((o) => o.value === "https"),
+      Array.from(el.options).some((o) => o.value === "browser"),
     );
     expect(protocolSelect).toBeDefined();
-    const https = Array.from(protocolSelect!.options).find(
-      (o) => o.value === "https",
-    );
-    expect(https?.label).toBe("Browser (HTTPS)");
     expect(
-      Array.from(protocolSelect!.options).find((o) => o.value === "http")
-        ?.label,
-    ).toBe("Browser (HTTP)");
+      Array.from(protocolSelect!.options).filter((o) => o.label === "Browser"),
+    ).toHaveLength(1);
+    expect(
+      Array.from(protocolSelect!.options).some(
+        (o) => o.value === "http" || o.value === "https",
+      ),
+    ).toBe(false);
     expect(protocolSelect!.value).toBe("ssh");
-    fireEvent.change(protocolSelect!, { target: { value: "https" } });
-    expect(protocolSelect!.value).toBe("https");
+    fireEvent.change(protocolSelect!, { target: { value: "browser" } });
+    const transport = screen
+      .getAllByTestId("select")
+      .find((el) => (el as HTMLSelectElement).value === "https")!;
+    expect(transport).toHaveValue("https");
+    expect(screen.getByRole("spinbutton")).toHaveValue(443);
+    fireEvent.change(transport, { target: { value: "http" } });
+    expect(transport).toHaveValue("http");
+    expect(screen.getByRole("spinbutton")).toHaveValue(80);
+    expect(protocolSelect!).toHaveValue("browser");
+  });
+
+  it.each(["http", "https"])(
+    "saves an existing %s template unchanged through the Browser picker",
+    async (protocol) => {
+      const template = {
+        id: "personal-browser",
+        name: "Personal portal",
+        description: "",
+        protocol,
+        port: 8443,
+        category: "web",
+        icon: "🌐",
+        settings: {
+          hostname: `${protocol}://portal.example.test:8443/a?b=%2F#c`,
+        },
+        tags: [],
+        createdAt: "2026-01-01",
+        updatedAt: "2026-01-01",
+        usageCount: 0,
+      };
+      invokeMock.mockImplementation((command: string) => {
+        if (command === "read_app_data")
+          return Promise.resolve(JSON.stringify([template]));
+        if (command === "compare_and_swap_app_data")
+          return Promise.resolve(true);
+        return Promise.resolve([]);
+      });
+      render(<ConnectionTemplates />);
+      fireEvent.click(await screen.findByText("Personal portal"));
+      fireEvent.click(screen.getByText("Edit"));
+      expect(
+        screen
+          .getAllByTestId("select")
+          .some((el) => (el as HTMLSelectElement).value === "browser"),
+      ).toBe(true);
+      expect(
+        screen
+          .getAllByTestId("select")
+          .some((el) => (el as HTMLSelectElement).value === protocol),
+      ).toBe(true);
+      fireEvent.click(screen.getByText("Save"));
+      await waitFor(() =>
+        expect(invokeMock).toHaveBeenCalledWith(
+          "compare_and_swap_app_data",
+          expect.anything(),
+        ),
+      );
+      const args = invokeMock.mock.calls.find(
+        ([command]) => command === "compare_and_swap_app_data",
+      )![1];
+      expect(JSON.parse(args.replacement)[0]).toMatchObject({
+        protocol,
+        port: 8443,
+        settings: template.settings,
+      });
+      expect(args.replacement).not.toContain('"protocol":"browser"');
+    },
+  );
+
+  it("switches a Browser template URL scheme without changing its explicit port or URL suffix", async () => {
+    const template = {
+      id: "custom-browser",
+      name: "Custom portal",
+      description: "",
+      protocol: "http",
+      port: 80,
+      category: "web",
+      icon: "🌐",
+      settings: { hostname: "http://portal.example.test:80/a?b=%2F#c" },
+      tags: [],
+      createdAt: "2026-01-01",
+      updatedAt: "2026-01-01",
+      usageCount: 0,
+    };
+    invokeMock.mockImplementation((command: string) => {
+      if (command === "read_app_data")
+        return Promise.resolve(JSON.stringify([template]));
+      if (command === "compare_and_swap_app_data") return Promise.resolve(true);
+      return Promise.resolve([]);
+    });
+    render(<ConnectionTemplates />);
+    fireEvent.click(await screen.findByText("Custom portal"));
+    fireEvent.click(screen.getByText("Edit"));
+    const transport = screen
+      .getAllByTestId("select")
+      .find((el) => (el as HTMLSelectElement).value === "http")!;
+    fireEvent.change(transport, { target: { value: "https" } });
+    fireEvent.click(screen.getByText("Save"));
+    await waitFor(() =>
+      expect(invokeMock).toHaveBeenCalledWith(
+        "compare_and_swap_app_data",
+        expect.anything(),
+      ),
+    );
+    const args = invokeMock.mock.calls.find(
+      ([command]) => command === "compare_and_swap_app_data",
+    )![1];
+    expect(JSON.parse(args.replacement)[0]).toMatchObject({
+      protocol: "https",
+      port: 80,
+      settings: { hostname: "https://portal.example.test:80/a?b=%2F#c" },
+    });
   });
 
   it("does not persist usage counts for built-in templates", async () => {

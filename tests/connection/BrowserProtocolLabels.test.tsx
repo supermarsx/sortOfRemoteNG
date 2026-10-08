@@ -17,14 +17,23 @@ describe("Browser protocol labels", () => {
           onClearHistory={vi.fn()}
         />,
       );
-      fireEvent.click(screen.getByTestId("quick-connect-protocol"));
+      fireEvent.click(screen.getByTestId("quick-connect-type"));
       fireEvent.mouseDown(
         screen.getByRole("option", {
-          name: `Browser (${protocol.toUpperCase()})`,
+          name: "Browser",
         }),
       );
+      if (protocol === "http") {
+        fireEvent.click(screen.getByTestId("quick-connect-protocol"));
+        fireEvent.mouseDown(
+          screen.getByRole("option", { name: /^HTTP\s*Unencrypted$/ }),
+        );
+      }
+      expect(screen.getByTestId("quick-connect-type")).toHaveTextContent(
+        "Browser",
+      );
       expect(screen.getByTestId("quick-connect-protocol")).toHaveTextContent(
-        `Browser (${protocol.toUpperCase()})`,
+        protocol.toUpperCase(),
       );
       fireEvent.change(screen.getByTestId("quick-connect-hostname"), {
         target: { value: "portal.example.test:8443" },

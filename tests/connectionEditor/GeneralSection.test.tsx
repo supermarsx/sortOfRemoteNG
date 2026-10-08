@@ -92,22 +92,40 @@ describe("GeneralSection validation", () => {
   });
 
   it.each(["http", "https"] as const)(
-    "labels %s as Browser while preserving its wire value",
+    "groups saved %s as Browser without changing its wire value",
     (protocol) => {
-      render(<GeneralSection {...defaultProps} />);
+      const formData = { ...defaultProps.formData, protocol };
+      render(<GeneralSection {...defaultProps} formData={formData} />);
+      expect(screen.getByTestId("editor-browser-protocol")).toHaveTextContent(
+        protocol.toUpperCase(),
+      );
       fireEvent.click(screen.getByTestId("editor-protocol"));
+      expect(screen.getAllByRole("option", { name: /^Browser/ })).toHaveLength(
+        1,
+      );
       fireEvent.mouseDown(
         screen.getByRole("option", {
-          name: `Browser (${protocol.toUpperCase()})`,
+          name: /^Browser/,
         }),
       );
       expect(mockSetFormData).toHaveBeenCalledOnce();
       const update = mockSetFormData.mock.lastCall![0];
-      const next =
-        typeof update === "function" ? update(defaultProps.formData) : update;
+      const next = typeof update === "function" ? update(formData) : update;
       expect(next.protocol).toBe(protocol);
     },
   );
+
+  it("defaults the new Browser choice to HTTPS", () => {
+    render(<GeneralSection {...defaultProps} />);
+    fireEvent.click(screen.getByTestId("editor-protocol"));
+    fireEvent.change(screen.getByPlaceholderText("Search protocols"), {
+      target: { value: "https" },
+    });
+    fireEvent.mouseDown(screen.getByRole("option", { name: /^Browser/ }));
+    expect(
+      mockSetFormData.mock.lastCall![0](defaultProps.formData).protocol,
+    ).toBe("https");
+  });
 
   it.each(["gcp", "integration:gdrive"] as const)(
     "hides unused address fields for %s",

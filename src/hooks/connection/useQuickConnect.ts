@@ -5,7 +5,7 @@ import {
   schemeToProtocol,
 } from "../../utils/connection/sanitizeHostname";
 
-/** Protocols the Quick Connect picker offers (keep in sync with QuickConnect.tsx). */
+/** Wire protocols Quick Connect supports; HTTP/HTTPS share one Browser type. */
 export const QUICK_CONNECT_PROTOCOLS = [
   "rdp",
   "ssh",
@@ -121,20 +121,29 @@ export function useQuickConnect({
   const handleSubmit = useCallback(
     (e: React.FormEvent) => {
       e.preventDefault();
-      if (!hostname.trim()) return;
+      // Enter can submit before blur/paste normalization runs. The URL scheme
+      // remains authoritative, and only the resolved transport's fields apply.
+      const target = deriveQuickConnectTarget(hostname, protocol);
+      const targetHostname = (target?.hostname ?? hostname).trim();
+      const targetProtocol = target?.protocol ?? protocol;
+      if (target) {
+        setHostname(targetHostname);
+        if (target.protocol) setProtocol(targetProtocol);
+      }
+      if (!targetHostname) return;
 
-      if (isSsh) {
+      if (targetProtocol === "ssh") {
         if (!username.trim()) return;
         if (authType === "password" && !password) return;
         if (authType === "key" && !privateKey.trim()) return;
       }
 
       const payload: Parameters<typeof onConnect>[0] = {
-        hostname: hostname.trim(),
-        protocol,
+        hostname: targetHostname,
+        protocol: targetProtocol,
       };
 
-      if (isSsh) {
+      if (targetProtocol === "ssh") {
         payload.username = username.trim();
         payload.authType = authType;
         if (authType === "password") {
@@ -143,18 +152,18 @@ export function useQuickConnect({
           payload.privateKey = privateKey.trim();
           payload.passphrase = passphrase || undefined;
         }
-      } else if (isRdp) {
+      } else if (targetProtocol === "rdp") {
         if (username.trim()) payload.username = username.trim();
         if (password) payload.password = password;
         if (domain.trim()) payload.domain = domain.trim();
-      } else if (isVnc) {
+      } else if (targetProtocol === "vnc") {
         if (password) payload.password = password;
-      } else if (isHttp) {
+      } else if (targetProtocol === "http" || targetProtocol === "https") {
         if (basicAuthUsername.trim())
           payload.basicAuthUsername = basicAuthUsername.trim();
         if (basicAuthPassword) payload.basicAuthPassword = basicAuthPassword;
-        if (isHttps) payload.httpVerifySsl = httpVerifySsl;
-      } else if (isTelnet) {
+        if (targetProtocol === "https") payload.httpVerifySsl = httpVerifySsl;
+      } else if (targetProtocol === "telnet") {
         if (username.trim()) payload.username = username.trim();
         if (password) payload.password = password;
       }
@@ -175,12 +184,6 @@ export function useQuickConnect({
       basicAuthUsername,
       basicAuthPassword,
       httpVerifySsl,
-      isSsh,
-      isRdp,
-      isVnc,
-      isHttp,
-      isHttps,
-      isTelnet,
       onConnect,
       onClose,
       resetFields,

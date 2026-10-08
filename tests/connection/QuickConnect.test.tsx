@@ -33,7 +33,7 @@ describe("QuickConnect", () => {
       render(<QuickConnect {...mockProps} />);
 
       const hostnameInput = screen.getByLabelText("Hostname or IP Address");
-      const protocolSelect = screen.getByLabelText("Protocol");
+      const protocolSelect = screen.getByLabelText("Connection type");
 
       expect(hostnameInput).toBeInTheDocument();
       expect(protocolSelect).toBeInTheDocument();
@@ -58,7 +58,7 @@ describe("QuickConnect", () => {
     it("should update protocol when selecting", () => {
       render(<QuickConnect {...mockProps} />);
 
-      const protocolSelect = screen.getByLabelText("Protocol");
+      const protocolSelect = screen.getByLabelText("Connection type");
       fireEvent.change(protocolSelect, { target: { value: "ssh" } });
 
       expect(protocolSelect).toHaveValue("ssh");
@@ -231,6 +231,169 @@ describe("QuickConnect", () => {
       expect(
         screen.getByText("VNC (Virtual Network Computing)"),
       ).toBeInTheDocument();
+    });
+  });
+
+  describe("Browser connection type", () => {
+    const chooseType = (name: string) => {
+      fireEvent.click(
+        screen.getByRole("combobox", { name: "Connection type" }),
+      );
+      fireEvent.mouseDown(screen.getByRole("option", { name }));
+    };
+    const chooseTransport = (protocol: "http" | "https") => {
+      fireEvent.click(screen.getByRole("combobox", { name: "Protocol" }));
+      fireEvent.mouseDown(
+        screen.getByRole("option", {
+          name:
+            protocol === "http"
+              ? /^HTTP\s*Unencrypted$/
+              : /^HTTPS\s*Encrypted \(TLS\)$/,
+        }),
+      );
+    };
+
+    it("offers one Browser type and defaults its separate protocol to HTTPS", () => {
+      render(<QuickConnect {...mockProps} />);
+      fireEvent.click(
+        screen.getByRole("combobox", { name: "Connection type" }),
+      );
+      expect(screen.getAllByRole("option")).toHaveLength(5);
+      expect(screen.getAllByRole("option", { name: "Browser" })).toHaveLength(
+        1,
+      );
+      expect(
+        screen.queryByRole("option", { name: /HTTP/ }),
+      ).not.toBeInTheDocument();
+      fireEvent.mouseDown(screen.getByRole("option", { name: "Browser" }));
+      expect(
+        screen.getByRole("combobox", { name: "Connection type" }),
+      ).toHaveTextContent("Browser");
+      expect(
+        screen.getByRole("combobox", { name: "Protocol" }),
+      ).toHaveTextContent(/^HTTPS$/);
+      expect(
+        screen.getByRole("checkbox", { name: "Verify TLS certificates" }),
+      ).toBeChecked();
+    });
+
+    it.each(["http", "https"] as const)(
+      "submits the selected %s wire protocol, never the Browser UI type",
+      (protocol) => {
+        render(<QuickConnect {...mockProps} />);
+        chooseType("Browser");
+        chooseTransport(protocol);
+        fireEvent.change(screen.getByTestId("quick-connect-hostname"), {
+          target: { value: "portal.example.test" },
+        });
+        fireEvent.submit(screen.getByRole("form"));
+        expect(mockProps.onConnect).toHaveBeenCalledExactlyOnceWith({
+          hostname: "portal.example.test",
+          protocol,
+          ...(protocol === "https" ? { httpVerifySsl: true } : {}),
+        });
+      },
+    );
+
+    it.each(["http", "https"] as const)(
+      "restores %s history without promoting HTTP to HTTPS",
+      (protocol) => {
+        render(
+          <QuickConnect
+            {...mockProps}
+            history={[{ hostname: "history.example:8080", protocol }]}
+          />,
+        );
+        fireEvent.click(screen.getByRole("button", { name: "History" }));
+        fireEvent.click(
+          screen.getByRole("button", {
+            name: new RegExp(`history.example:8080\\s*${protocol}`, "i"),
+          }),
+        );
+        expect(
+          screen.getByRole("combobox", { name: "Connection type" }),
+        ).toHaveTextContent("Browser");
+        expect(
+          screen.getByRole("combobox", { name: "Protocol" }),
+        ).toHaveTextContent(new RegExp(`^${protocol}$`, "i"));
+        fireEvent.submit(screen.getByRole("form"));
+        expect(mockProps.onConnect).toHaveBeenCalledWith(
+          expect.objectContaining({
+            hostname: "history.example:8080",
+            protocol,
+          }),
+        );
+      },
+    );
+
+    it.each(["http", "https"] as const)(
+      "honors a typed %s URL when Enter submits before blur",
+      (protocol) => {
+        render(<QuickConnect {...mockProps} />);
+        // Credentials from another connection type must not leak into this URL.
+        fireEvent.change(screen.getByLabelText("Username (optional)"), {
+          target: { value: "rdp-user" },
+        });
+        fireEvent.change(screen.getByLabelText("Password (optional)"), {
+          target: { value: "rdp-secret" },
+        });
+        chooseType("Browser");
+        chooseTransport(protocol === "http" ? "https" : "http");
+        fireEvent.change(screen.getByTestId("quick-connect-hostname"), {
+          target: {
+            value: `${protocol}://url-user:url-secret@[::1]:8443/login`,
+          },
+        });
+        fireEvent.submit(screen.getByRole("form"));
+        expect(mockProps.onConnect).toHaveBeenCalledExactlyOnceWith({
+          hostname: "[::1]:8443",
+          protocol,
+          ...(protocol === "https" ? { httpVerifySsl: true } : {}),
+        });
+      },
+    );
+
+    it.each([
+      ["http", "https"],
+      ["https", "http"],
+    ] as const)(
+      "keeps an explicit %s URL consistent when the user then selects %s",
+      (source, selected) => {
+        render(<QuickConnect {...mockProps} />);
+        const hostname = screen.getByTestId("quick-connect-hostname");
+        fireEvent.change(hostname, {
+          target: { value: `${source}://portal.example:8443/login` },
+        });
+        fireEvent.blur(hostname);
+        expect(hostname).toHaveValue("portal.example:8443");
+        chooseTransport(selected);
+        fireEvent.submit(screen.getByRole("form"));
+        expect(mockProps.onConnect).toHaveBeenCalledExactlyOnceWith({
+          hostname: "portal.example:8443",
+          protocol: selected,
+          ...(selected === "https" ? { httpVerifySsl: true } : {}),
+        });
+      },
+    );
+
+    it("keeps an existing Browser transport but uses HTTPS for a fresh Browser selection", () => {
+      render(<QuickConnect {...mockProps} />);
+      chooseType("Browser");
+      chooseTransport("http");
+      chooseType("Browser");
+      expect(
+        screen.getByRole("combobox", { name: "Protocol" }),
+      ).toHaveTextContent(/^HTTP$/);
+      expect(screen.queryByRole("checkbox")).not.toBeInTheDocument();
+      chooseType("SSH (Secure Shell)");
+      expect(
+        screen.queryByRole("combobox", { name: "Protocol" }),
+      ).not.toBeInTheDocument();
+      chooseType("Browser");
+      expect(
+        screen.getByRole("combobox", { name: "Protocol" }),
+      ).toHaveTextContent(/^HTTPS$/);
+      expect(screen.getByRole("checkbox")).toBeChecked();
     });
   });
 

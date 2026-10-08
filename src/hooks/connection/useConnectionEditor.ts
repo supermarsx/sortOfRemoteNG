@@ -61,6 +61,10 @@ import {
 } from "../integrations/useIntegrationConfigStore";
 import { useRuntimeCapabilities } from "../runtime/useRuntimeCapabilities";
 import { getRuntimeProtocolOptions } from "../../utils/connection/protocolOptionRegistry";
+import {
+  changeBrowserProtocol,
+  isBrowserProtocol,
+} from "../../utils/connection/browserConnectionType";
 import { getProtocolDefaultIcon } from "../../utils/icons/resolveConnectionIcon";
 
 /* ═══════════════════════════════════════════════════════════════
@@ -1872,6 +1876,10 @@ export function useConnectionEditor(
 
   const handleProtocolChange = useCallback(
     (protocol: string) => {
+      if (isBrowserProtocol(formData.protocol) && isBrowserProtocol(protocol)) {
+        setFormData((prev) => changeBrowserProtocol(prev, protocol));
+        return;
+      }
       const nextProtocol = protocol as Connection["protocol"];
       const isNextIntegration = isIntegrationConnectionProtocol(protocol);
       const nextAuthType = isIntegrationConnectionProtocol(protocol)

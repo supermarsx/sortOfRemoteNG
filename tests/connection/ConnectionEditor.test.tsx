@@ -621,6 +621,92 @@ describe("ConnectionEditor", () => {
   });
 
   describe("New Connection", () => {
+    it("Browser connection type is searchable by HTTP and defaults to HTTPS", () => {
+      renderWithProviders({ isOpen: true, onClose: vi.fn() });
+      fireEvent.click(screen.getByTestId("editor-protocol"));
+      const search = screen.getByTestId("editor-protocol-search");
+      fireEvent.change(search, { target: { value: "https" } });
+      expect(screen.getAllByRole("option")).toHaveLength(1);
+      expect(screen.getByRole("option")).toHaveTextContent("Browser");
+      fireEvent.keyDown(search, { key: "Enter" });
+      expect(screen.getByTestId("editor-protocol")).toHaveTextContent(
+        "Browser",
+      );
+      expect(screen.getByTestId("editor-browser-protocol")).toHaveTextContent(
+        "HTTPS (secure)",
+      );
+      expect(screen.getByTestId("editor-port")).toHaveValue(443);
+      fireEvent.click(screen.getByTestId("editor-browser-protocol"));
+      fireEvent.mouseDown(
+        screen.getByRole("option", { name: "HTTP (not secure)" }),
+      );
+      expect(screen.getByTestId("editor-browser-protocol")).toHaveTextContent(
+        "HTTP (not secure)",
+      );
+      expect(screen.getByTestId("editor-port")).toHaveValue(80);
+    });
+
+    it.each(["http", "https"] as const)(
+      "Browser connection type preserves a saved %s URL and authentication on save",
+      async (protocol) => {
+        const connection: Connection = {
+          ...mockConnection,
+          protocol,
+          hostname: `${protocol}://portal.example.test:8443/a?b=%2F#c`,
+          port: 8443,
+          authType: "digest",
+          httpVerifySsl: false,
+        };
+        let saved: Connection[] = [];
+        renderWithProviders(
+          { connection, isOpen: true, onClose: vi.fn() },
+          (connections) => {
+            saved = connections;
+          },
+          [connection],
+        );
+        expect(screen.getByTestId("editor-browser-protocol")).toHaveTextContent(
+          protocol.toUpperCase(),
+        );
+        fireEvent.click(screen.getByTestId("editor-protocol"));
+        const options = screen.getAllByRole("option", { name: /^Browser/ });
+        expect(options).toHaveLength(1);
+        expect(options[0]).toHaveAttribute("aria-selected", "true");
+        fireEvent.click(options[0]);
+        fireEvent.change(screen.getByTestId("editor-name"), {
+          target: { value: "Browser renamed" },
+        });
+        fireEvent.click(screen.getByRole("button", { name: "Save" }));
+        await waitFor(() => expect(saved[0]?.name).toBe("Browser renamed"));
+        expect(saved[0]).toMatchObject({
+          protocol,
+          hostname: connection.hostname,
+          port: 8443,
+          authType: "digest",
+          username: connection.username,
+          httpVerifySsl: false,
+        });
+      },
+    );
+
+    it("Browser connection type changes the selected transport without losing URL suffixes or custom ports", () => {
+      const connection: Connection = {
+        ...mockConnection,
+        protocol: "http",
+        hostname: "http://portal.example.test:8080/a?b=%2F#c",
+        port: 8080,
+      };
+      renderWithProviders({ connection, isOpen: true, onClose: vi.fn() });
+      fireEvent.click(screen.getByTestId("editor-browser-protocol"));
+      fireEvent.mouseDown(
+        screen.getByRole("option", { name: "HTTPS (secure)" }),
+      );
+      expect(screen.getByTestId("editor-hostname")).toHaveValue(
+        "https://portal.example.test:8080/a?b=%2F#c",
+      );
+      expect(screen.getByTestId("editor-port")).toHaveValue(8080);
+    });
+
     it("edits a saved legacy Synology File Station target without offering a new protocol entry", async () => {
       const connection: Connection = {
         ...mockConnection,
@@ -638,7 +724,12 @@ describe("ConnectionEditor", () => {
         },
         [connection],
       );
-      expect(screen.getByTestId("editor-protocol")).toHaveTextContent("HTTPS");
+      expect(screen.getByTestId("editor-protocol")).toHaveTextContent(
+        "Browser",
+      );
+      expect(screen.getByTestId("editor-browser-protocol")).toHaveTextContent(
+        "HTTPS",
+      );
       expect(screen.getByTestId("editor-port")).toHaveValue(5001);
       expect(screen.getByTestId("editor-hostname")).toHaveValue(
         "nas.example.test",
@@ -1936,7 +2027,7 @@ describe("ConnectionEditor", () => {
       fireEvent.click(screen.getByTestId("connection-editor-tab-general"));
       fireEvent.click(screen.getByTestId("editor-protocol"));
       fireEvent.click(
-        screen.getByRole("option", { name: /^HTTP\s+Web Service/i }),
+        screen.getByRole("option", { name: /^Browser\s+Websites/i }),
       );
       fireEvent.click(screen.getByTestId("connection-editor-tab-protocol"));
       expect(screen.getByRole("tab", { name: "Application" })).toHaveAttribute(
@@ -2531,10 +2622,14 @@ describe("ConnectionEditor", () => {
     it("should show HTTP options for HTTP protocol", () => {
       renderWithProviders({ isOpen: true, onClose: vi.fn() });
 
-      // Open protocol dropdown and click HTTP by its combined label and description.
+      // Select Browser, then explicitly choose its HTTP transport.
       fireEvent.click(screen.getByTestId("editor-protocol"));
       fireEvent.click(
-        screen.getByRole("option", { name: /^HTTP\s+Web Service/i }),
+        screen.getByRole("option", { name: /^Browser\s+Websites/i }),
+      );
+      fireEvent.click(screen.getByTestId("editor-browser-protocol"));
+      fireEvent.mouseDown(
+        screen.getByRole("option", { name: "HTTP (not secure)" }),
       );
       fireEvent.click(screen.getByTestId("connection-editor-tab-protocol"));
 

@@ -42,6 +42,14 @@ import {
   PROTOCOL_CATEGORY_ORDER,
 } from "../../utils/connection/protocolOptionRegistry";
 import { getRuntimeProtocolUnavailableMessage } from "../../utils/runtime/runtimeCapabilities";
+import {
+  browserConnectionTypeOptions,
+  changeBrowserProtocol,
+  connectionTypeValue,
+  isBrowserProtocol,
+  resolveConnectionType,
+} from "../../utils/connection/browserConnectionType";
+import { BrowserProtocolSelect } from "./BrowserProtocolSelect";
 
 interface GeneralSectionProps {
   formData: Partial<Connection>;
@@ -218,9 +226,11 @@ export const GeneralSection: React.FC<GeneralSectionProps> = ({
         )
       : null);
   const protocolSelectOptions = useMemo(() => {
-    const currentOptions = unavailableCurrentOption
-      ? [...runtimeProtocolOptions, unavailableCurrentOption]
-      : runtimeProtocolOptions;
+    const currentOptions = browserConnectionTypeOptions(
+      unavailableCurrentOption
+        ? [...runtimeProtocolOptions, unavailableCurrentOption]
+        : runtimeProtocolOptions,
+    );
     const options: SelectOption[] = [];
 
     for (const category of PROTOCOL_CATEGORY_ORDER) {
@@ -263,6 +273,8 @@ export const GeneralSection: React.FC<GeneralSectionProps> = ({
                 ? String(t(option.descKey, option.desc))
                 : option.desc,
             icon: option.icon,
+            description:
+              option.value === "browser" ? "HTTP / HTTPS" : undefined,
           };
         }),
       );
@@ -451,6 +463,10 @@ export const GeneralSection: React.FC<GeneralSectionProps> = ({
   ];
 
   const handleProtocolChange = (protocol: string) => {
+    if (isBrowserProtocol(formData.protocol) && isBrowserProtocol(protocol)) {
+      setFormData((prev) => changeBrowserProtocol(prev, protocol));
+      return;
+    }
     setFormData((prev) => ({
       ...prev,
       protocol: protocol as Connection["protocol"],
@@ -615,11 +631,15 @@ export const GeneralSection: React.FC<GeneralSectionProps> = ({
           <>
             <div>
               <label className="block text-sm font-medium text-[var(--color-textSecondary)] mb-2">
-                {t("connectionEditor.protocol", "Protocol")}
+                {t("connectionEditor.connectionType", "Connection type")}
               </label>
               <Select
-                value={formData.protocol ?? ""}
-                onChange={(v: string) => handleProtocolChange(v)}
+                value={connectionTypeValue(formData.protocol)}
+                onChange={(v: string) =>
+                  handleProtocolChange(
+                    resolveConnectionType(v, formData.protocol),
+                  )
+                }
                 data-testid="editor-protocol"
                 options={protocolSelectOptions}
                 placeholder={t(
@@ -640,6 +660,13 @@ export const GeneralSection: React.FC<GeneralSectionProps> = ({
                 </p>
               )}
             </div>
+
+            {isBrowserProtocol(formData.protocol) && (
+              <BrowserProtocolSelect
+                value={formData.protocol}
+                onChange={handleProtocolChange}
+              />
+            )}
 
             {formData.protocol === "ssh" && (
               <div>
