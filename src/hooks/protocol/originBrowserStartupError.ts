@@ -2,6 +2,8 @@ export type OriginBrowserStartupStage =
   "listen" | "status" | "owner-check" | "create" | "resync";
 export interface OriginBrowserStartupFailure {
   stage: OriginBrowserStartupStage;
+  /** Exact native saved-authority failure, never inferred from display text. */
+  reason?: "mfa-origin-mismatch";
   category:
     | "certificate-policy"
     | "certificate-bridge"
@@ -161,6 +163,9 @@ export function originBrowserStartupError(
       : undefined;
   return {
     stage,
+    ...(mfaFailure && stage === "create"
+      ? { reason: "mfa-origin-mismatch" as const }
+      : {}),
     category:
       bridgeFailure && stage === "create"
         ? "certificate-bridge"

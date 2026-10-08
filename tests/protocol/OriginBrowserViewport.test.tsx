@@ -88,6 +88,109 @@ function fixture() {
 }
 
 describe("native browser viewport", () => {
+  it.each([true, false])(
+    "uses the shell-selected loading state (%s) for accessibility",
+    (loading) => {
+      const f = fixture();
+      // The selected popup's state may differ from the root controller.
+      f.ctrl.state = { ...f.ctrl.state, phase: "starting" };
+      f.rerender(
+        <OriginBrowserViewport
+          {...f.props}
+          loading={loading}
+          showLoadingProgress={false}
+        />,
+      );
+      expect(screen.getByRole("region")).toHaveAttribute(
+        "aria-busy",
+        String(loading),
+      );
+      expect(screen.queryByText("Starting native browser…")).toBeNull();
+    },
+  );
+  it.each(["create", "status", "resync"] as const)(
+    "retries a %s startup failure only through an explicit reconnect",
+    (stage) => {
+      const f = fixture();
+      const failure = originBrowserStartupError(stage, "unknown failure");
+      f.ctrl.state = {
+        ...f.ctrl.state,
+        phase: "error",
+        error: failure.message,
+        startupFailure: { stage, category: failure.category },
+      };
+      f.rerender(<OriginBrowserViewport {...f.props} />);
+      const retry = screen.getByRole("button", { name: "Retry browser" });
+      expect(retry).toHaveClass("sor-btn", "sor-btn-primary");
+      expect(retry).toHaveAttribute("type", "button");
+      expect(f.ctrl.reconnect).not.toHaveBeenCalled();
+      f.rerender(<OriginBrowserViewport {...f.props} />);
+      expect(f.ctrl.reconnect).not.toHaveBeenCalled();
+      fireEvent.click(retry);
+      expect(f.ctrl.reconnect).toHaveBeenCalledExactlyOnceWith();
+      expect(f.ctrl.navigate).not.toHaveBeenCalled();
+      expect(f.ctrl.reload).not.toHaveBeenCalled();
+      expect(f.ctrl.close).not.toHaveBeenCalled();
+      f.ctrl.state = { ...f.ctrl.state, phase: "starting", error: null };
+      f.rerender(<OriginBrowserViewport {...f.props} />);
+      expect(
+        screen.queryByRole("button", { name: "Retry browser" }),
+      ).toBeNull();
+    },
+  );
+  it.each([
+    { active: false },
+    { ownerAvailable: false },
+    { dialogOpen: true },
+    { retryAllowed: false },
+  ])("blocks retry after shell eligibility changes: %j", (override) => {
+    const f = fixture();
+    f.ctrl.state = { ...f.ctrl.state, phase: "error" };
+    f.rerender(<OriginBrowserViewport {...f.props} />);
+    const retry = screen.getByRole("button", { name: "Retry browser" });
+    expect(retry).toBeEnabled();
+    f.rerender(<OriginBrowserViewport {...f.props} {...override} />);
+    expect(retry).toBeDisabled();
+    fireEvent.click(retry);
+    expect(f.ctrl.reconnect).not.toHaveBeenCalled();
+  });
+  it.each([
+    "runtime-missing",
+    "platform-unsupported",
+    "containment-unverified",
+    "policy-unavailable",
+    "owner-unavailable",
+    "host-unavailable",
+  ] as const)("does not bypass the %s capability gate with retry", (reason) => {
+    const f = fixture();
+    f.ctrl.state = {
+      ...f.ctrl.state,
+      phase: "unavailable",
+      unavailableReason: reason,
+    };
+    f.rerender(<OriginBrowserViewport {...f.props} />);
+    const retry = screen.queryByRole("button", { name: "Retry browser" });
+    if (reason === "host-unavailable") {
+      expect(retry).toBeEnabled();
+      fireEvent.click(retry!);
+      expect(f.ctrl.reconnect).toHaveBeenCalledOnce();
+    } else {
+      expect(retry).toBeNull();
+      expect(f.ctrl.reconnect).not.toHaveBeenCalled();
+    }
+    expect(f.ctrl.navigate).not.toHaveBeenCalled();
+  });
+  it("does not treat GPU probe or missing-callback console warnings as failures", () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const f = fixture();
+    console.warn("GPU overlay unsupported; GLES 3.1 exceeds supported 3.0");
+    console.warn("[TAURI] Couldn't find callback id 123");
+    f.rerender(<OriginBrowserViewport {...f.props} />);
+    expect(warn).toHaveBeenCalledTimes(2);
+    expect(screen.queryByRole("alert")).toBeNull();
+    expect(screen.queryByRole("button", { name: "Retry browser" })).toBeNull();
+    expect(f.ctrl.reconnect).not.toHaveBeenCalled();
+  });
   it("does not send a transient hide when a clipped menu opens or closes", () => {
     const f = fixture();
     f.rerender(
@@ -266,7 +369,7 @@ describe("native browser viewport", () => {
     ).toBeNull();
     expect(screen.queryByRole("status")).toBeNull();
     expect(
-      f.container.querySelector("button,a,input,select,iframe,webview"),
+      f.container.querySelector("a,input,select,iframe,webview"),
     ).toBeNull();
     fireEvent.pointerDown(screen.getByRole("region"));
     expect(f.ctrl.focus).not.toHaveBeenCalled();
@@ -302,7 +405,7 @@ describe("native browser viewport", () => {
       "strict certificate verification only",
     );
     expect(
-      f.container.querySelector("button,a,input,select,iframe,webview"),
+      f.container.querySelector("a,input,select,iframe,webview"),
     ).toBeNull();
   });
   it("keeps unknown startup errors stage-specific instead of showing certificate or host-unavailable guidance", () => {

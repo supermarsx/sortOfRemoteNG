@@ -4,6 +4,7 @@ import React, { useLayoutEffect, useRef } from "react";
 import {
   AlertTriangle,
   LoaderCircle,
+  RotateCw,
   Settings2,
   ShieldAlert,
 } from "lucide-react";
@@ -32,6 +33,10 @@ export interface OriginBrowserViewportProps {
   preserveRenderingUnderOverlays?: boolean;
   title: string;
   showLoadingProgress?: boolean;
+  /** Shell-selected native view; a popup need not share the root's load state. */
+  loading?: boolean;
+  /** Shell settings and target must be ready before a new attempt is requested. */
+  retryAllowed?: boolean;
   onOpenSettings?: (tab?: SettingsTabId) => void;
   className?: string;
 }
@@ -45,6 +50,8 @@ export function OriginBrowserViewport({
   preserveRenderingUnderOverlays = false,
   title,
   showLoadingProgress = true,
+  loading,
+  retryAllowed = true,
   onOpenSettings,
   className,
 }: OriginBrowserViewportProps) {
@@ -59,6 +66,25 @@ export function OriginBrowserViewport({
     active && ownerAvailable && !dialogOpen && state.phase === "attached";
   const hiddenForOverlay = dialogOpen && !preserveRenderingUnderOverlays;
   const measureRef = useRef<(() => void) | null>(null);
+  const retryable =
+    state.phase === "error" ||
+    (state.phase === "unavailable" &&
+      state.unavailableReason === "host-unavailable");
+  const canRetry =
+    retryable && retryAllowed && active && ownerAvailable && !dialogOpen;
+  const retryAction = retryable && (
+    <button
+      type="button"
+      className="sor-btn sor-btn-primary"
+      disabled={!canRetry}
+      onClick={() => {
+        if (canRetry) controller.reconnect();
+      }}
+    >
+      <RotateCw size={16} aria-hidden="true" />
+      Retry browser
+    </button>
+  );
   const settingsAction = onOpenSettings && (
     <button
       type="button"
@@ -137,7 +163,11 @@ export function OriginBrowserViewport({
       role="region"
       aria-label={title}
       aria-hidden={!active || !ownerAvailable || dialogOpen}
-      aria-busy={state.phase === "starting" || state.snapshot?.loading === true}
+      aria-busy={
+        loading ??
+        (state.phase === "starting" ||
+          (state.phase === "attached" && state.snapshot?.loading === true))
+      }
       tabIndex={interactive ? 0 : -1}
       onFocus={() => {
         if (interactive) void focus();
@@ -165,7 +195,10 @@ export function OriginBrowserViewport({
               " Engine selection is in Settings → Web Browser; no automatic fallback."
             }
           </p>
-          {settingsAction}
+          <div className="flex flex-wrap items-center gap-2">
+            {retryAction}
+            {settingsAction}
+          </div>
         </div>
       )}
       {showLoadingProgress && state.phase === "starting" && (
@@ -207,19 +240,31 @@ export function OriginBrowserViewport({
               global trust policy. No settings were changed and no fallback was
               used.
             </p>
-            {settingsAction}
+            <div className="flex flex-wrap items-center gap-2">
+              {retryAction}
+              {settingsAction}
+            </div>
           </div>
         </div>
       ) : (
-        state.error && (
+        (state.phase === "error" || state.error) && (
           <div
             role="alert"
             className="sor-alert-error m-4 space-y-2 text-sm text-[var(--color-text)]"
           >
-            <p>{state.error}</p>
-            {state.startupFailure?.category === "runtime" &&
-              state.startupFailure.stage === "create" &&
-              settingsAction}
+            <p>{state.error || "Native browser session failed."}</p>
+            {retryable && (
+              <p className="text-[var(--color-textSecondary)]">
+                Retry starts a new browser attempt using the current connection
+                settings.
+              </p>
+            )}
+            <div className="flex flex-wrap items-center gap-2">
+              {retryAction}
+              {state.startupFailure?.category === "runtime" &&
+                state.startupFailure.stage === "create" &&
+                settingsAction}
+            </div>
           </div>
         )
       )}

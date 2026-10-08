@@ -3,6 +3,7 @@
 import { useCallback, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
+import { originBrowserSessionError } from "./originBrowserSessionError";
 import {
   originBrowserStartupError,
   type OriginBrowserStartupStage,
@@ -11,6 +12,7 @@ import {
 import {
   ORIGIN_BROWSER_STATE_EVENT,
   originBrowserBounds,
+  originBrowserFailureReason,
   type OriginBrowserAction,
   type OriginBrowserBounds,
   type OriginBrowserConsent,
@@ -185,10 +187,15 @@ function shellSnapshot(
     )
       return null;
   }
+  const failureReason = originBrowserFailureReason(
+    value.phase,
+    value.failureReason,
+  );
   return {
     identity: copyIdentity(value.identity),
     sequence: value.sequence,
     phase: value.phase,
+    ...(failureReason === undefined ? {} : { failureReason }),
     displayUrl,
     ...(currentUrl === undefined ? {} : { currentUrl }),
     title: Array.from(value.title).filter(printable).join(""),
@@ -485,7 +492,9 @@ export function useOriginBrowser(options: UseOriginBrowserOptions) {
         snapshot,
         phase: snapshot.phase === "failed" ? "error" : snapshot.phase,
         error:
-          snapshot.phase === "failed" ? "Native browser session failed." : null,
+          snapshot.phase === "failed"
+            ? originBrowserSessionError(snapshot.failureReason)
+            : null,
       });
       if (["closing", "closed", "failed"].includes(snapshot.phase)) {
         void closeAttempt(attempt).then((closed) => {
@@ -525,11 +534,14 @@ export function useOriginBrowser(options: UseOriginBrowserOptions) {
     const startupFailed = (error: unknown) => {
       if (!live()) return;
       const failure = originBrowserStartupError(startupStage, error);
+      // Keep the mapper's safe optional recovery discriminator as well as the
+      // stage/category. Its fixed display message is not a classification.
+      const { message, ...startupFailure } = failure;
       setState({
         ...initialState,
         phase: "error",
-        error: failure.message,
-        startupFailure: { stage: failure.stage, category: failure.category },
+        error: message,
+        startupFailure,
       });
       void closeAttempt(attempt);
     };

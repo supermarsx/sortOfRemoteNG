@@ -120,6 +120,53 @@ async function mounted(f = fixture()) {
 }
 
 describe("owner-window native popup adoption", () => {
+  it.each([
+    "renderer",
+    "session",
+    "callback",
+    "native-surface",
+    "load",
+  ] as const)(
+    "preserves only the safe failed-phase %s reason in child snapshots",
+    (failureReason) => {
+      const f = fixture();
+      const snapshot = {
+        identity: source(),
+        sequence: 1,
+        phase: "failed",
+        displayUrl: "https://child.test/",
+        currentUrl: "https://child.test/",
+        title: "Child",
+        loading: false,
+        canGoBack: false,
+        canGoForward: false,
+        failureReason,
+        error: "SECRET native exception",
+      };
+      const inventory = (patch = {}) =>
+        readPopupInventory(
+          {
+            ...f.inventory(),
+            views: [{ ...child(), snapshot: { ...snapshot, ...patch } }],
+          },
+          source(),
+        );
+      expect(inventory()?.views[0].snapshot?.failureReason).toBe(failureReason);
+      expect(JSON.stringify(inventory())).not.toContain("SECRET");
+      for (const patch of [
+        { phase: "attached" },
+        { failureReason: undefined },
+        { failureReason: "future-fault SECRET" },
+        { failureReason: { message: "SECRET" } },
+      ]) {
+        const parsed = inventory(patch);
+        expect(parsed).not.toBeNull();
+        expect(parsed?.views[0].snapshot).not.toHaveProperty("failureReason");
+        expect(JSON.stringify(parsed)).not.toMatch(/SECRET|future-fault/);
+      }
+    },
+  );
+
   it.each(["foreground", "background"] as const)(
     "adopts existing %s child without creating a new connection",
     async (disposition) => {

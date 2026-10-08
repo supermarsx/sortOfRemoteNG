@@ -1,6 +1,7 @@
-import type {
-  OriginBrowserIdentity,
-  OriginBrowserSnapshot,
+import {
+  originBrowserFailureReason,
+  type OriginBrowserIdentity,
+  type OriginBrowserSnapshot,
 } from "./originBrowser";
 
 /** Child commands always retain the source attempt/session, including its
@@ -169,10 +170,15 @@ function readPopupSnapshot(
       return null;
     }
   }
+  const failureReason = originBrowserFailureReason(
+    row.phase,
+    row.failureReason,
+  );
   return Object.freeze({
     identity: Object.freeze({ ...source }),
     sequence: row.sequence as number,
     phase: row.phase as OriginBrowserSnapshot["phase"],
+    ...(failureReason === undefined ? {} : { failureReason }),
     title: row.title,
     displayUrl: row.displayUrl,
     currentUrl: row.currentUrl,

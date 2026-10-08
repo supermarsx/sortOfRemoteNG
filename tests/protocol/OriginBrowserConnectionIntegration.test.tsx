@@ -14,6 +14,11 @@ import type {
   ConnectionSession,
 } from "../../src/types/connection/connection";
 import type { OriginBrowserSnapshot } from "../../src/types/protocols/originBrowser";
+import progressStyles from "../../src/components/protocol/webBrowser/NavigationProgress.module.css";
+import {
+  registerQuickConnectConnection,
+  releaseRuntimeConnection,
+} from "../../src/utils/session/runtimeConnectionRegistry";
 
 const f = vi.hoisted(() => ({
   invoke: vi.fn(),
@@ -29,12 +34,23 @@ const f = vi.hoisted(() => ({
   currentListeners: [] as Array<() => void>,
   snapshotListener: null as null | ((event: any) => void),
   noticeListener: null as null | ((event: any) => void),
+  popupListener: null as null | ((event: any) => void),
   revoked: false,
   serial: 0,
   clipboard: vi.fn(),
   navigationError: undefined as string | null | undefined,
   automationLibrary: { version: 1, scripts: [] as any[], macros: [] as any[] },
+  mfaRepair: vi.fn(),
 }));
+vi.mock(
+  "../../src/components/protocol/webBrowser/OriginMfaOriginRepair",
+  () => ({
+    default: (props: unknown) => {
+      f.mfaRepair(props);
+      return <button type="button">Review MFA origin repair</button>;
+    },
+  }),
+);
 vi.mock("@tauri-apps/api/core", () => ({ invoke: f.invoke }));
 vi.mock("@tauri-apps/api/event", () => ({ listen: f.listen }));
 vi.mock("@tauri-apps/api/webviewWindow", () => ({
@@ -155,6 +171,7 @@ beforeEach(() => {
   f.active = true;
   f.settingsReady = true;
   f.noticeListener = null;
+  f.popupListener = null;
   f.accessListeners = [];
   f.currentListeners = [];
   f.settings = {
@@ -199,6 +216,7 @@ beforeEach(() => {
   f.listen.mockImplementation(async (name, callback) => {
     if (name === "origin-browser-state") f.snapshotListener = callback;
     if (name === "origin-browser-notice") f.noticeListener = callback;
+    if (name === "origin-browser-popups") f.popupListener = callback;
     return vi.fn();
   });
   f.invoke.mockImplementation(async (command, { request }) => {
@@ -310,8 +328,12 @@ beforeEach(() => {
     toJSON: () => ({}),
   });
 });
-afterEach(() => {
+afterEach(async () => {
+  // Settle queued capability/browser replies while their mounted components
+  // and owner-scoped mocks still exist, before unmounting and restoring them.
+  await act(async () => {});
   cleanup();
+  releaseRuntimeConnection(connection.id);
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
   vi.clearAllMocks();
@@ -327,6 +349,306 @@ async function attached() {
 }
 
 describe("real-origin connection-tab integration", () => {
+  const mfaMismatch =
+    "Saved automatic two-factor authentication consent does not match the reviewed login origin. In Application settings, review the authenticator and HTTPS login origin, re-enable automatic codes, and save the connection. Your password and authenticator are unchanged.";
+  const failStartup = (message = mfaMismatch) => {
+    const nativeInvoke = f.invoke.getMockImplementation()!;
+    f.invoke.mockImplementation((command, args) =>
+      command === "origin_browser_create"
+        ? Promise.reject(new Error(message))
+        : nativeInvoke(command, args),
+    );
+  };
+  it("integrates confirmed MFA repair outside the viewport without dismissing the error or retrying", async () => {
+    failStartup();
+    render(<WebBrowser session={session} />);
+    const repair = await screen.findByRole("button", {
+      name: "Review MFA origin repair",
+    });
+    const viewport = screen.getByRole("region");
+    expect(viewport).not.toContainElement(repair);
+    const props = f.mfaRepair.mock.lastCall![0];
+    expect(props.session).toBe(session);
+    expect(props.connection).toBe(connection);
+    expect(props.onOverlayChange).toEqual(expect.any(Function));
+    expect(() => props.assertOwner()).not.toThrow();
+    // The component owns confirmation + durable save/readback. Its completed
+    // callback only dismisses that repair control, never the failure or consent.
+    await act(async () => props.onRepaired());
+    expect(
+      screen.queryByRole("button", { name: "Review MFA origin repair" }),
+    ).toBeNull();
+    expect(screen.getByRole("alert")).toHaveTextContent(mfaMismatch);
+    expect(screen.getByRole("button", { name: "Retry browser" })).toBeEnabled();
+    expect(calls("origin_browser_create")).toHaveLength(1);
+    expect(calls("origin_browser_login")).toHaveLength(0);
+    expect(f.context.dispatchAndFlush).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "Retry browser" }));
+    await screen.findByRole("button", { name: "Review MFA origin repair" });
+    expect(calls("origin_browser_create")).toHaveLength(2);
+  });
+  it.each(["inactive", "owner-revoked"])(
+    "removes the MFA repair integration when %s",
+    async (gate) => {
+      failStartup();
+      const view = render(<WebBrowser session={session} />);
+      await screen.findByRole("button", { name: "Review MFA origin repair" });
+      const props = f.mfaRepair.mock.lastCall![0];
+      if (gate === "inactive") {
+        f.active = false;
+        view.rerender(<WebBrowser session={session} />);
+      } else {
+        f.revoked = true;
+        await act(async () =>
+          f.currentListeners.forEach((listener) => listener()),
+        );
+      }
+      expect(
+        screen.queryByRole("button", { name: "Review MFA origin repair" }),
+      ).toBeNull();
+      expect(() => props.assertOwner()).toThrow();
+      expect(calls("origin_browser_create")).toHaveLength(1);
+      expect(f.context.dispatchAndFlush).not.toHaveBeenCalled();
+    },
+  );
+  it.each(["temporary", "unclassified failure"])(
+    "never offers MFA repair for %s",
+    async (scope) => {
+      failStartup(scope === "temporary" ? mfaMismatch : "unclassified failure");
+      if (scope === "temporary") {
+        f.context.state.connections = [];
+        registerQuickConnectConnection(connection);
+      }
+      render(
+        <WebBrowser
+          session={
+            scope === "temporary"
+              ? { ...session, ownerDatabaseId: undefined }
+              : session
+          }
+        />,
+      );
+      await screen.findByRole("button", { name: "Retry browser" });
+      expect(
+        screen.queryByRole("button", { name: "Review MFA origin repair" }),
+      ).toBeNull();
+      expect(f.mfaRepair).not.toHaveBeenCalled();
+      expect(f.context.dispatchAndFlush).not.toHaveBeenCalled();
+    },
+  );
+  it("reserves a thin loading line outside native bounds and keeps status below the viewport", async () => {
+    const view = await attached();
+    const viewport = screen.getByRole("region", { name: "Fixture native" });
+    const slot = screen.getByTestId("origin-navigation-progress-slot");
+    const status = screen.getByRole("status", { name: "Browser status" });
+    expect(slot).toHaveClass("relative", "h-[2px]", "shrink-0");
+    expect(slot.nextElementSibling).toBe(viewport);
+    expect(viewport.nextElementSibling).toBe(status);
+    expect(status).toHaveClass("border-t", "shrink-0");
+    expect(status).not.toHaveClass("border-b");
+    expect(screen.queryByRole("progressbar")).toBeNull();
+    await act(async () =>
+      f.snapshotListener?.({
+        payload: snapshot("attempt-1", { sequence: 2, loading: true }),
+      }),
+    );
+    const progress = screen.getByRole("progressbar", { name: "Loading page" });
+    expect(progress.parentElement).toBe(slot);
+    expect(viewport).not.toContainElement(progress);
+    expect(progress).toHaveClass(progressStyles.track);
+    expect(progress.firstElementChild).toHaveClass(progressStyles.segment);
+    expect(progress).not.toHaveAttribute("aria-valuenow");
+    expect(progress).toHaveAttribute(
+      "aria-valuetext",
+      "Waiting for the page to become ready",
+    );
+    expect(view.container.querySelector(".animate-spin")).toBeNull();
+    expect(status).toHaveTextContent("Fixture native · Loading");
+    await act(async () =>
+      f.snapshotListener?.({
+        payload: snapshot("attempt-1", { sequence: 3, loading: false }),
+      }),
+    );
+    expect(screen.queryByRole("progressbar")).toBeNull();
+    expect(screen.getByTestId("origin-navigation-progress-slot")).toBe(slot);
+    expect(status).toHaveTextContent("Fixture native");
+    expect(status).not.toHaveTextContent("Loading");
+  });
+  it.each([true, false])(
+    "uses only the shell loading line during startup when progress is %s",
+    async (enabled) => {
+      f.settings.webBrowser.showLoadingProgress = enabled;
+      const nativeInvoke = f.invoke.getMockImplementation()!;
+      let completeCreate!: () => void;
+      f.invoke.mockImplementation((command, args) => {
+        if (command === "origin_browser_create")
+          return new Promise((resolve) => {
+            completeCreate = () => resolve(nativeInvoke(command, args));
+          });
+        return nativeInvoke(command, args);
+      });
+      const view = render(<WebBrowser session={session} />);
+      await waitFor(() =>
+        expect(calls("origin_browser_create")).toHaveLength(1),
+      );
+      expect(!!screen.queryByRole("progressbar")).toBe(enabled);
+      expect(screen.getByRole("region")).toHaveAttribute("aria-busy", "true");
+      expect(view.container.querySelector(".animate-spin")).toBeNull();
+      expect(screen.queryByText("Starting native browser…")).toBeNull();
+      await act(async () => completeCreate());
+      await waitFor(() =>
+        expect(screen.getByRole("button", { name: "Reload" })).toBeEnabled(),
+      );
+      expect(screen.queryByRole("progressbar")).toBeNull();
+    },
+  );
+  it.each([true, false])(
+    "tracks the selected popup loading=%s rather than the hidden root",
+    async (childLoading) => {
+      await attached();
+      await waitFor(() => expect(f.popupListener).not.toBeNull());
+      act(() => {
+        f.snapshotListener?.({
+          payload: snapshot("attempt-1", {
+            sequence: 2,
+            loading: !childLoading,
+          }),
+        });
+        f.popupListener?.({
+          payload: {
+            sourceIdentity: snapshot().identity,
+            sequence: 2,
+            sourceClosed: false,
+            views: [
+              {
+                viewId: "child-1",
+                disposition: "background",
+                phase: "adopted",
+                title: "Popup child",
+                snapshot: snapshot("attempt-1", {
+                  sequence: 2,
+                  title: "Popup child",
+                  currentUrl: "https://fixture.invalid/child",
+                  loading: childLoading,
+                }),
+              },
+            ],
+          },
+        });
+      });
+      fireEvent.click(await screen.findByRole("tab", { name: "Popup child" }));
+      await waitFor(() =>
+        expect(
+          screen.getByRole("tab", { name: "Popup child" }),
+        ).toHaveAttribute("aria-selected", "true"),
+      );
+      expect(!!screen.queryByRole("progressbar")).toBe(childLoading);
+      expect(
+        screen.getByRole("region", { name: "Popup child" }),
+      ).toHaveAttribute("aria-busy", String(childLoading));
+      expect(
+        screen.getByRole("status", { name: "Browser status" }),
+      ).toHaveTextContent(
+        childLoading ? "Popup child · Loading" : "Popup child",
+      );
+      fireEvent.click(screen.getByRole("tab", { name: "Fixture native" }));
+      await waitFor(() =>
+        expect(
+          screen.getByRole("tab", { name: "Fixture native" }),
+        ).toHaveAttribute("aria-selected", "true"),
+      );
+      expect(!!screen.queryByRole("progressbar")).toBe(!childLoading);
+      expect(
+        screen.getByRole("region", { name: "Fixture native" }),
+      ).toHaveAttribute("aria-busy", String(!childLoading));
+      expect(calls("origin_browser_create")).toHaveLength(1);
+    },
+  );
+  it("hides loading animation for inactive tabs and revoked owners", async () => {
+    const view = await attached();
+    act(() =>
+      f.snapshotListener?.({
+        payload: snapshot("attempt-1", { sequence: 2, loading: true }),
+      }),
+    );
+    expect(screen.getByRole("progressbar")).toBeVisible();
+    f.active = false;
+    view.rerender(<WebBrowser session={session} />);
+    expect(screen.queryByRole("progressbar")).toBeNull();
+    f.active = true;
+    view.rerender(<WebBrowser session={session} />);
+    expect(screen.getByRole("progressbar")).toBeVisible();
+    f.revoked = true;
+    await act(async () => f.currentListeners.forEach((listener) => listener()));
+    expect(screen.queryByRole("progressbar")).toBeNull();
+  });
+  it("retries failed startup from the viewport using a new authorized create", async () => {
+    const nativeInvoke = f.invoke.getMockImplementation()!;
+    let failCreate = true;
+    f.invoke.mockImplementation((command, args) => {
+      if (command === "origin_browser_create" && failCreate) {
+        failCreate = false;
+        return Promise.reject(new Error("unknown startup failure"));
+      }
+      return nativeInvoke(command, args);
+    });
+    render(<WebBrowser session={session} />);
+    const retry = await screen.findByRole("button", { name: "Retry browser" });
+    expect(screen.getByRole("alert")).toHaveTextContent(
+      "Native browser startup failed (create)",
+    );
+    expect(calls("origin_browser_create")).toHaveLength(1);
+    expect(f.updateSettings).not.toHaveBeenCalled();
+    fireEvent.click(retry);
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Reload" })).toBeEnabled(),
+    );
+    const requests = calls("origin_browser_create").map(
+      ([, args]) => args.request,
+    );
+    expect(requests).toHaveLength(2);
+    expect(requests[1].requestId).not.toBe(requests[0].requestId);
+    expect(requests[1]).toMatchObject({
+      owner: requests[0].owner,
+      expectedSecurityRevision: "revision-1",
+      sourceSessionId: "unlock-1",
+      policy: { autoLogin: { consent: { kind: "required" } } },
+    });
+    expect(screen.queryByRole("button", { name: "Retry browser" })).toBeNull();
+    expect(calls("origin_browser_navigate")).toHaveLength(0);
+    expect(calls("origin_browser_login")).toHaveLength(0);
+    expect(f.updateSettings).not.toHaveBeenCalled();
+  });
+  it("offers explicit retry after a native failed snapshot without retrying automatically", async () => {
+    await attached();
+    act(() =>
+      f.snapshotListener?.({
+        payload: snapshot("attempt-1", {
+          sequence: 4,
+          phase: "failed",
+          loading: true,
+          failureReason: "renderer",
+        }),
+      }),
+    );
+    const retry = await screen.findByRole("button", { name: "Retry browser" });
+    expect(screen.queryByRole("progressbar")).toBeNull();
+    expect(screen.getByRole("region")).toHaveAttribute("aria-busy", "false");
+    expect(screen.getByRole("alert")).toHaveTextContent(
+      "Native browser session failed: the page renderer stopped or its native communication bridge failed.",
+    );
+    expect(calls("origin_browser_create")).toHaveLength(1);
+    fireEvent.click(retry);
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Reload" })).toBeEnabled(),
+    );
+    expect(calls("origin_browser_create")).toHaveLength(2);
+    expect(calls("origin_browser_close")).toContainEqual([
+      "origin_browser_close",
+      { request: { identity: snapshot().identity } },
+    ]);
+    expect(calls("origin_browser_login")).toHaveLength(0);
+  });
   it("native navigation denial renders the hook message once and clears when the hook clears it", async () => {
     const view = await attached();
     const denied =
@@ -1108,6 +1430,7 @@ describe("real-origin connection-tab integration", () => {
       ).toBeNull();
       fireEvent.click(confirm);
       expect(calls("open_url_external")).toHaveLength(0);
+      await act(async () => {});
     },
   );
   it("confirms ephemeral clear and waits for close acknowledgement before recreating", async () => {
@@ -1171,6 +1494,7 @@ describe("real-origin connection-tab integration", () => {
     expect(
       screen.queryByRole("dialog", { name: "Copy connection credentials" }),
     ).toBeNull();
+    await act(async () => {});
   });
   it("copies a freshly resolved credential through the existing owner-scoped hook, not page state", async () => {
     const capture = f.manager.captureCurrentDatabaseDataTarget;
@@ -1324,12 +1648,13 @@ describe("real-origin connection-tab integration", () => {
         !!screen.queryByRole("group", { name: "Saved website bookmarks" }),
       ).toBe(visible);
       expect(!!screen.queryByLabelText("Browser policy")).toBe(visible);
-      act(() =>
+      await act(async () =>
         f.snapshotListener?.({
           payload: snapshot("attempt-1", { sequence: 2, loading: true }),
         }),
       );
       expect(!!screen.queryByText("Fixture native · Loading")).toBe(visible);
+      expect(!!screen.queryByRole("progressbar")).toBe(visible);
       expect(
         screen.getByRole("region", { name: "Fixture native" }),
       ).toHaveAttribute("aria-busy", "true");
@@ -1366,12 +1691,13 @@ describe("real-origin connection-tab integration", () => {
         !!screen.queryByRole("group", { name: "Saved website bookmarks" }),
       ).toBe(visible);
       expect(!!screen.queryByLabelText("Browser policy")).toBe(visible);
-      act(() =>
+      await act(async () =>
         f.snapshotListener?.({
           payload: snapshot("attempt-1", { sequence: 2, loading: true }),
         }),
       );
       expect(!!screen.queryByText("Fixture native · Loading")).toBe(visible);
+      expect(!!screen.queryByRole("progressbar")).toBe(visible);
       expect(calls("origin_browser_create")[0][1].request.policy).toEqual({
         darkMode: "forced",
         autoLogin: { enabled: true, consent: { kind: "required" } },
@@ -1590,6 +1916,7 @@ describe("real-origin connection-tab integration", () => {
         ([, args]) => args.request.action.kind === "find",
       ),
     ).toHaveLength(0);
+    await act(async () => {});
   });
   it("reviews and saves current-page bookmarks while blocking native input, without reconnecting", async () => {
     const view = await attached();
@@ -1729,6 +2056,7 @@ describe("real-origin connection-tab integration", () => {
     expect(
       screen.queryByRole("group", { name: "Saved website bookmarks" }),
     ).toBeNull();
+    await act(async () => {});
   });
   it("uses themed compact toolbar icons and single app tooltips without an engine selector", async () => {
     const view = await attached();
@@ -1765,6 +2093,7 @@ describe("real-origin connection-tab integration", () => {
       "Stop",
     );
     expect(screen.queryByRole("button", { name: "Reload" })).toBeNull();
+    await act(async () => {});
   });
 
   it("uses shared modal sections and themed actions while fencing dismissal during pending save", async () => {
@@ -1866,6 +2195,7 @@ describe("real-origin connection-tab integration", () => {
         .slice(-2)
         .map(([, args]) => args.request.action.kind),
     ).toEqual(["back", "stop"]);
+    await act(async () => {});
   });
   it("reports capability failure without fallback or an in-tab engine selector", async () => {
     f.invoke.mockImplementation(async (command) =>
@@ -2087,6 +2417,7 @@ describe("real-origin connection-tab integration", () => {
       screen.getByRole("textbox", { name: "Website address" }),
     ).toHaveValue("");
     expect(screen.getByRole("button", { name: "Go" })).toBeDisabled();
+    await act(async () => {});
   });
   it("never exposes a native navigation rejection containing a full sensitive address", async () => {
     await attached();
@@ -2176,6 +2507,9 @@ describe("real-origin connection-tab integration", () => {
       screen.getByRole("textbox", { name: "Website address" }),
     ).toHaveValue("");
     expect(screen.getByRole("button", { name: "Go" })).toBeDisabled();
+    // Keep the immediate revocation assertions above synchronous, then settle
+    // the newly mounted capability notice before the runner yields the test.
+    await act(async () => {});
   });
   it("hides inactive tabs and clips shell dialogs while blocking native input, then restores it", async () => {
     const view = await attached();

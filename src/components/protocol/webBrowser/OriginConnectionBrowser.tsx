@@ -69,6 +69,8 @@ import { useNativeBrowserExtensions } from "../../../hooks/protocol/useNativeBro
 import { useNativeBrowserAppearance } from "../../../hooks/protocol/useNativeBrowserAppearance";
 import { useNativeBrowserExtensionReceipt } from "../../../hooks/protocol/useNativeBrowserExtensionReceipt";
 import NativeBrowserExtensionControls from "./NativeBrowserExtensionControls";
+import progressStyles from "./NavigationProgress.module.css";
+import OriginMfaOriginRepair from "./OriginMfaOriginRepair";
 
 export default function OriginConnectionBrowser({
   session,
@@ -172,7 +174,9 @@ export default function OriginConnectionBrowser({
       closeRef.current = null;
     };
   }, [close]);
-  const { snapshot: rootSnapshot, phase } = browser.state;
+  const { snapshot: rootSnapshot, phase, startupFailure } = browser.state;
+  const [repairedMfaFailure, setRepairedMfaFailure] =
+    useState<typeof startupFailure>(null);
   const bindPopupSource = popupBridge.bind;
   const popupSourceIdentity = rootSnapshot?.identity;
   useLayoutEffect(() => {
@@ -261,6 +265,12 @@ export default function OriginConnectionBrowser({
   }, [rootSnapshot, selectedPopupId, selectedPopup, popupBridge]);
   // Never present the hidden root's address or history as child state.
   const snapshot = selectedPopupId ? selectedPopup?.snapshot : rootSnapshot;
+  const loading =
+    ownerAvailable &&
+    (phase === "starting" ||
+      (phase === "attached" &&
+        snapshot?.phase === "attached" &&
+        snapshot.loading));
   const downloads = useOriginSelectedDownloads(
     rootSnapshot?.identity ?? null,
     selectedPopupId,
@@ -760,44 +770,6 @@ export default function OriginConnectionBrowser({
           <OriginAutomationControls automation={automation} />
         </div>
       )}
-      <div
-        className="flex shrink-0 min-w-0 items-center gap-1.5 border-b border-[var(--color-border)] px-3 py-1 text-xs text-[var(--color-textSecondary)]"
-        role="status"
-      >
-        {browserConfig.showLoadingProgress &&
-          (phase === "starting" || snapshot?.loading) && (
-            <LoaderCircle
-              size={14}
-              aria-hidden="true"
-              className="shrink-0 animate-spin motion-reduce:animate-none text-primary"
-            />
-          )}
-        <span className="min-w-0 flex-1 truncate">
-          {ownerAvailable && snapshot?.title ? snapshot.title : session.name}
-          {isTemporary && (
-            <span title="Bookmarks, favorites and connection settings require a saved connection.">
-              {" · Temporary Quick Connect"}
-            </span>
-          )}
-          {snapshot?.loading
-            ? browserConfig.showLoadingProgress
-              ? " · Loading"
-              : ""
-            : phase !== "attached"
-              ? ` · ${phase}`
-              : ""}
-        </span>
-        {browserConfig.showSecurityInfo && (
-          <span
-            tabIndex={0}
-            aria-label="Browser policy"
-            data-tooltip="Forced dark content. Auto-login requires fresh native consent for each attempt. Requests remain subject to native route and domain policy."
-            className="shrink-0 rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
-          >
-            <ShieldCheck size={14} aria-hidden="true" />
-          </span>
-        )}
-      </div>
       {browserConfigInvalid && (
         <p
           role="alert"
@@ -869,6 +841,42 @@ export default function OriginConnectionBrowser({
         </p>
       )}
       <OriginBrowserNotices notices={notices} />
+      {phase === "error" &&
+        startupFailure?.reason === "mfa-origin-mismatch" &&
+        startupFailure !== repairedMfaFailure &&
+        isActive &&
+        ownerAvailable &&
+        !isTemporary &&
+        connection && (
+          <OriginMfaOriginRepair
+            session={session}
+            connection={connection}
+            assertOwner={assertShellOwner}
+            onOverlayChange={hide}
+            // A confirmed repair never submits credentials or starts an attempt.
+            // Dismiss only this repair control; keep the error and explicit Retry.
+            onRepaired={() => setRepairedMfaFailure(startupFailure)}
+          />
+        )}
+      {browserConfig.showLoadingProgress && (
+        // Native child surfaces paint above DOM overlays. Reserve shell space
+        // outside the measured viewport, even between loads, to avoid jitter.
+        <div
+          className="relative h-[2px] shrink-0"
+          data-testid="origin-navigation-progress-slot"
+        >
+          {isActive && loading && (
+            <div
+              className={progressStyles.track}
+              role="progressbar"
+              aria-label="Loading page"
+              aria-valuetext="Waiting for the page to become ready"
+            >
+              <span className={progressStyles.segment} aria-hidden="true" />
+            </div>
+          )}
+        </div>
+      )}
       <OriginBrowserViewport
         preserveRenderingUnderOverlays
         controller={browser}
@@ -876,9 +884,42 @@ export default function OriginConnectionBrowser({
         ownerAvailable={ownerAvailable}
         dialogOpen={dialogOpen}
         title={snapshot?.title || session.name}
-        showLoadingProgress={browserConfig.showLoadingProgress}
+        showLoadingProgress={false}
+        loading={loading}
+        retryAllowed={
+          settingsReady !== false && !browserConfigInvalid && !!initialUrl
+        }
         onOpenSettings={onOpenSettings}
       />
+      <div
+        className="flex shrink-0 min-w-0 items-center gap-1.5 border-t border-[var(--color-border)] px-3 py-1 text-xs text-[var(--color-textSecondary)]"
+        role="status"
+        aria-label="Browser status"
+      >
+        <span className="min-w-0 flex-1 truncate">
+          {ownerAvailable && snapshot?.title ? snapshot.title : session.name}
+          {isTemporary && (
+            <span title="Bookmarks, favorites and connection settings require a saved connection.">
+              {" · Temporary Quick Connect"}
+            </span>
+          )}
+          {loading && browserConfig.showLoadingProgress
+            ? " · Loading"
+            : phase !== "attached"
+              ? ` · ${phase}`
+              : ""}
+        </span>
+        {browserConfig.showSecurityInfo && (
+          <span
+            tabIndex={0}
+            aria-label="Browser policy"
+            data-tooltip="Forced dark content. Auto-login requires fresh native consent for each attempt. Requests remain subject to native route and domain policy."
+            className="shrink-0 rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+          >
+            <ShieldCheck size={14} aria-hidden="true" />
+          </span>
+        )}
+      </div>
       {editing && canEdit && connection && (
         <BrowserPermissionsDialog
           session={session}

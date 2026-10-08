@@ -50,12 +50,36 @@ export type OriginBrowserCapability =
       readonly reason: OriginBrowserUnavailableReason;
     };
 
+/** Fixed native lifecycle fault categories, not arbitrary exception messages. */
+export type OriginBrowserFailureReason =
+  "renderer" | "session" | "callback" | "native-surface" | "load";
+
+/** Forward-compatible diagnostics: unknown reasons are omitted, never echoed. */
+export function originBrowserFailureReason(
+  phase: unknown,
+  reason: unknown,
+): OriginBrowserFailureReason | undefined {
+  if (phase !== "failed") return undefined;
+  switch (reason) {
+    case "renderer":
+    case "session":
+    case "callback":
+    case "native-surface":
+    case "load":
+      return reason;
+    default:
+      return undefined;
+  }
+}
+
 export interface OriginBrowserSnapshot {
   readonly identity: OriginBrowserIdentity;
   /** Monotonic per native attempt, including status replies and events. */
   readonly sequence: number;
   /** Attachment is a lifecycle fact, never a provider-login readiness claim. */
   readonly phase: "starting" | "attached" | "closing" | "closed" | "failed";
+  /** Present only for failed snapshots; older hosts may omit the cause. */
+  readonly failureReason?: OriginBrowserFailureReason;
   /** Native redacts credentials, query and fragment before emitting. */
   readonly displayUrl: string;
   /** Owner-window address only: full HTTP(S) URL without userinfo. Never log,

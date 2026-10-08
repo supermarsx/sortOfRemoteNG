@@ -1,5 +1,6 @@
 import { act, cleanup, renderHook, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { readFileSync } from "node:fs";
 import {
   useOriginBrowser,
   tauriOriginBrowserTransport,
@@ -388,6 +389,26 @@ describe("origin browser attempt controller", () => {
       });
     },
   );
+  it("preserves the safe MFA repair discriminator from the exact native create failure", async () => {
+    const message = readFileSync(
+      "src-tauri/src/origin_browser_authority.rs",
+      "utf8",
+    ).match(/#\[error\("([^"\n]+)"\)\]\s*MfaOriginMismatch,/)?.[1];
+    expect(message).toBeTruthy();
+    const f = fixture();
+    f.transport.create.mockRejectedValue(message);
+    const { result } = renderHook(() => useOriginBrowser(f.options));
+    await waitFor(() => expect(result.current.state.phase).toBe("error"));
+    expect(result.current.state.startupFailure).toEqual({
+      stage: "create",
+      category: "connection",
+      reason: "mfa-origin-mismatch",
+    });
+    expect(result.current.state.startupFailure).not.toHaveProperty("message");
+    expect(result.current.state.error).toContain("re-enable automatic codes");
+    expect(result.current.state.error).toContain("save the connection");
+  });
+
   it.each(["listen", "status", "create", "resync"] as const)(
     "redacts unknown errors and identifies the %s IPC stage",
     async (stage) => {
@@ -1061,6 +1082,130 @@ describe("origin browser attempt controller", () => {
     expect(f.transport.close).toHaveBeenCalledWith({ identity });
     f.emit(snapshot({ sequence: 2 }));
     expect(f.result.current.state.phase).toBe("error");
+  });
+
+  it.each([
+    [
+      "renderer",
+      "page renderer stopped or its native communication bridge failed",
+    ],
+    ["session", "private browser session was no longer available or valid"],
+    ["callback", "internal native browser callback failed"],
+    ["native-surface", "could not maintain the embedded browser view"],
+    ["load", "page could not be loaded"],
+  ] as const)(
+    "delivers the native %s fault to the shell with recovery and retires once",
+    async (failureReason, detail) => {
+      const f = await mounted();
+      f.emit(snapshot({ sequence: 1, phase: "failed", failureReason }));
+      expect(f.result.current.state.phase).toBe("error");
+      expect(f.result.current.state.snapshot?.failureReason).toBe(
+        failureReason,
+      );
+      expect(f.result.current.state.startupFailure).toBeNull();
+      const error = f.result.current.state.error;
+      expect(error).toContain(detail);
+      expect(error).toContain("Reopen");
+      expect(error).not.toMatch(/GPU|fixture\.invalid|Fixture/);
+      await waitFor(() =>
+        expect(f.transport.close).toHaveBeenCalledExactlyOnceWith({ identity }),
+      );
+      f.emit(snapshot({ sequence: 2 }));
+      expect(f.result.current.state.error).toBe(error);
+    },
+  );
+
+  it.each([
+    undefined,
+    null,
+    "future-fault",
+    "renderer SECRET",
+    { message: "SECRET" },
+  ])(
+    "publishes a generic no-cause failure for an older or unknown fault (%#)",
+    async (failureReason) => {
+      const f = await mounted();
+      f.emit({
+        ...snapshot({ sequence: 1, phase: "failed" }),
+        failureReason,
+        error: "SECRET native exception",
+        details: "SECRET stack",
+      } as unknown as OriginBrowserSnapshot);
+      expect(f.result.current.state.phase).toBe("error");
+      expect(f.result.current.state.error).toContain(
+        "No cause was provided by the native browser.",
+      );
+      expect(f.result.current.state.snapshot).not.toHaveProperty(
+        "failureReason",
+      );
+      expect(JSON.stringify(f.result.current.state)).not.toMatch(
+        /SECRET|future-fault/,
+      );
+    },
+  );
+
+  it("does not diagnose an attached snapshot from an out-of-phase failure reason", async () => {
+    const f = await mounted();
+    f.emit(snapshot({ sequence: 1, failureReason: "renderer" }));
+    expect(f.result.current.state.phase).toBe("attached");
+    expect(f.result.current.state.error).toBeNull();
+    expect(f.result.current.state.snapshot).not.toHaveProperty("failureReason");
+    expect(f.transport.close).not.toHaveBeenCalled();
+  });
+
+  it("ignores stale and foreign native fault events", async () => {
+    const f = await mounted();
+    f.emit(
+      snapshot({ sequence: 0, phase: "failed", failureReason: "renderer" }),
+    );
+    for (const patch of [
+      { ownerDatabaseId: "other-db" },
+      { connectionId: "other-connection" },
+      { sessionId: "other-tab" },
+      { attemptId: "old-attempt" },
+    ]) {
+      f.emit(
+        snapshot({
+          identity: { ...identity, ...patch },
+          sequence: 90,
+          phase: "failed",
+          failureReason: "session",
+        }),
+      );
+    }
+    expect(f.result.current.state.phase).toBe("attached");
+    expect(f.result.current.state.error).toBeNull();
+    expect(f.transport.close).not.toHaveBeenCalled();
+  });
+
+  it("preserves an early native fault reason through the post-create status resync", async () => {
+    const f = fixture();
+    const pending =
+      deferred<Awaited<ReturnType<OriginBrowserTransport["status"]>>>();
+    f.transport.status
+      .mockResolvedValueOnce({
+        capability: { availability: "available" },
+        snapshot: null,
+      })
+      .mockReturnValueOnce(pending.promise);
+    const { result } = renderHook(() => useOriginBrowser(f.options));
+    await waitFor(() => expect(f.transport.status).toHaveBeenCalledTimes(2));
+    f.emit(
+      snapshot({ sequence: 8, phase: "failed", failureReason: "callback" }),
+    );
+    await act(async () =>
+      pending.resolve({
+        capability: { availability: "available" },
+        snapshot: snapshot({ sequence: 2 }),
+      }),
+    );
+    expect(result.current.state.phase).toBe("error");
+    expect(result.current.state.error).toContain(
+      "internal native browser callback failed",
+    );
+    expect(result.current.state.snapshot?.failureReason).toBe("callback");
+    expect(f.transport.control).not.toHaveBeenCalled();
+    expect(f.transport.close).toHaveBeenCalledExactlyOnceWith({ identity });
   });
 
   it("settles a native closing event only when cleanup has been acknowledged", async () => {

@@ -29,6 +29,7 @@ describe("native browser per-view startup diagnostics", () => {
       expect(result).toEqual({
         stage: "create",
         category: "connection",
+        reason: "mfa-origin-mismatch",
         message: `Native browser startup failed (create). ${mfaOriginFailure}`,
       });
       expect(result.message).toContain("re-enable automatic codes");
@@ -48,6 +49,7 @@ describe("native browser per-view startup diagnostics", () => {
         stage === "owner-check" ? "connection" : "ipc",
       );
       expect(result.message).not.toContain("authenticator");
+      expect(result).not.toHaveProperty("reason");
       expect(result.message).not.toContain("re-enable automatic codes");
     },
   );
@@ -66,6 +68,7 @@ describe("native browser per-view startup diagnostics", () => {
     ]) {
       const result = originBrowserStartupError("create", error);
       expect(result.category).toBe("ipc");
+      expect(result).not.toHaveProperty("reason");
       expect(result.message).not.toMatch(
         /authenticator|user:secret|example\.test|token=|SYNTHETIC-SEED/,
       );
