@@ -1,5 +1,6 @@
 # Blank context lines in vendored unified diffs contain the required marker.
 src-tauri/native/ports/**/*.patch -whitespace
+native/cef-patches/**/*.patch whitespace=-blank-at-eol
 
 # Official vendored bytes have pinned hashes (and upstream mixed line endings).
 # Preserve API, license and generated provenance through Git clean/smudge filters.

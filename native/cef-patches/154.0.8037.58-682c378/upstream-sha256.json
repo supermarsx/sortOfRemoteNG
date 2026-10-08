@@ -98,5 +98,50 @@
     "project": "cef",
     "path": "libcef/browser/request_context_impl.h",
     "sha256": "44a21bcc41737fb969493dd37598516190b0779ab60a575e23095bf7359937e5"
+  },
+  {
+    "project": "cef",
+    "path": "libcef/browser/native/native_widget_delegate.cc",
+    "sha256": "55694f7b59c6b109a6c6e980d650b1e7863c59b3a2d2e020f82b882e3d12905a"
+  },
+  {
+    "project": "chromium",
+    "path": "components/soda/soda_features.h",
+    "sha256": "8be1a4dd84686a1323cd00b620c3962ae0661e5460718e53034120d74fb15d15"
+  },
+  {
+    "project": "chromium",
+    "path": "components/soda/soda_features.cc",
+    "sha256": "2ee124b2ffb728c9cb3557e5da48a36a678e62035db1b75ce35b3a988374cb6c"
+  },
+  {
+    "project": "chromium",
+    "path": "components/soda/soda_installer.cc",
+    "sha256": "70abb62f396bf08ff581130062bdb31d403e8bc29d0c99a9e3a9491fdbebe417"
+  },
+  {
+    "project": "chromium",
+    "path": "components/soda/soda_util.cc",
+    "sha256": "7367c9fd8d90212188ba642924df40b89483f708d170ef5093e80f71e080d66f"
+  },
+  {
+    "project": "chromium",
+    "path": "chrome/browser/accessibility/soda_installer_impl.cc",
+    "sha256": "ccae4c401e2d97aab4bf8e2717150748eafc9ffc6485b3f9205fc6b23283a8c7"
+  },
+  {
+    "project": "chromium",
+    "path": "net/dns/host_resolver_manager.cc",
+    "sha256": "420850f98d4d3c2a0b5beb4a8fb7cd75ec3e3a5da1dc2aa7b894dad1e59d461b"
+  },
+  {
+    "project": "chromium",
+    "path": "net/dns/host_resolver_manager_unittest.cc",
+    "sha256": "9085612cd238e9abcbc12e22a7e9221e3f8a7162c74001606b21da2617080b5d"
+  },
+  {
+    "project": "cef",
+    "path": "libcef/browser/download_manager_delegate_impl.cc",
+    "sha256": "93327bbf93d9edaf023908f7240abe6e0ccd70cd331fed061fc380129e75ba0d"
   }
 ]

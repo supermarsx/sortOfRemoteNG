@@ -178,7 +178,7 @@ index 4046a961c9ccfe9dc21bbdd275ee9d0e7f4f8979..c3100154c31edf05a954f4b397e45e1f
    raw_ptr<SSLConfigService> ssl_config_service_;
    raw_ptr<CertVerifier> cert_verifier_;
 diff --git a/net/socket/ssl_client_socket_impl.cc b/net/socket/ssl_client_socket_impl.cc
-index f586acfe0f086bda8db1244fb5c054d8d90b732e..f9128ddc10134ed36416d045bb22519fcd0e000e 100644
+index f586acfe0f086bda8db1244fb5c054d8d90b732e..e700a395e1f50c7c3305be154ef12350d87a5157 100644
 --- a/net/socket/ssl_client_socket_impl.cc
 +++ b/net/socket/ssl_client_socket_impl.cc
 @@ -304,9 +304,16 @@ SSLClientSocketImpl::SSLClientSocketImpl(
@@ -212,7 +212,21 @@ index f586acfe0f086bda8db1244fb5c054d8d90b732e..f9128ddc10134ed36416d045bb22519f
  
    SSLContext* context = SSLContext::GetInstance();
    crypto::OpenSSLErrStackTracer err_tracer(FROM_HERE);
-@@ -1068,6 +1082,16 @@ ssl_verify_result_t SSLClientSocketImpl::VerifyCertCallback(
+@@ -932,7 +946,12 @@ int SSLClientSocketImpl::DoHandshake() {
+       return ERR_IO_PENDING;
+     }
+     if (ssl_error == SSL_ERROR_WANT_CERTIFICATE_VERIFY) {
+-      DCHECK(cert_verifier_request_);
++      // Native verification releases its request before the app's per-socket
++      // admission callback runs. Both operations can independently suspend the
++      // BoringSSL handshake; neither permits application bytes while pending.
++      DCHECK(cert_verifier_request_ ||
++             (context_->tls_admission_delegate() &&
++              tls_admission_state_ == TlsAdmissionState::kPending));
+       next_handshake_state_ = STATE_HANDSHAKE;
+       return ERR_IO_PENDING;
+     }
+@@ -1068,6 +1087,16 @@ ssl_verify_result_t SSLClientSocketImpl::VerifyCertCallback(
  // returned, use OpenSSLPutNetError to add them directly to the
  // OpenSSL error queue.
  ssl_verify_result_t SSLClientSocketImpl::VerifyCert() {
@@ -229,7 +243,7 @@ index f586acfe0f086bda8db1244fb5c054d8d90b732e..f9128ddc10134ed36416d045bb22519f
    if (cert_verification_result_ != kCertVerifyPending) {
      // The certificate verifier updates cert_verification_result_ when
      // it returns asynchronously. If there is a result in
-@@ -1108,7 +1132,8 @@ ssl_verify_result_t SSLClientSocketImpl::VerifyCert() {
+@@ -1108,7 +1137,8 @@ ssl_verify_result_t SSLClientSocketImpl::VerifyCert() {
    // If the certificate is bad and has been previously accepted, use
    // the previous status and bypass the error.
    CertStatus cert_status;
@@ -239,7 +253,7 @@ index f586acfe0f086bda8db1244fb5c054d8d90b732e..f9128ddc10134ed36416d045bb22519f
      server_cert_verify_result_.Reset();
      server_cert_verify_result_.cert_status = cert_status;
      server_cert_verify_result_.verified_cert = server_cert_;
-@@ -1244,11 +1269,28 @@ ssl_verify_result_t SSLClientSocketImpl::HandleVerifyResult() {
+@@ -1244,11 +1274,28 @@ ssl_verify_result_t SSLClientSocketImpl::HandleVerifyResult() {
        // and map all bypassable errors to fatal ones.
        result = ERR_ECH_FALLBACK_CERTIFICATE_INVALID;
      }
@@ -269,7 +283,7 @@ index f586acfe0f086bda8db1244fb5c054d8d90b732e..f9128ddc10134ed36416d045bb22519f
    if (result == OK) {
      return ssl_verify_ok;
    }
-@@ -1262,6 +1304,14 @@ void SSLClientSocketImpl::DoConnectCallback(int rv) {
+@@ -1262,6 +1309,14 @@ void SSLClientSocketImpl::DoConnectCallback(int rv) {
      std::move(user_connect_callback_).Run(rv > OK ? OK : rv);
    }
  }
@@ -284,7 +298,7 @@ index f586acfe0f086bda8db1244fb5c054d8d90b732e..f9128ddc10134ed36416d045bb22519f
  
  void SSLClientSocketImpl::OnHandshakeIOComplete(int result) {
    std::optional<base::ElapsedTimer> timer;
-@@ -1312,6 +1362,12 @@ int SSLClientSocketImpl::DoHandshakeLoop(int last_io_result) {
+@@ -1312,6 +1367,12 @@ int SSLClientSocketImpl::DoHandshakeLoop(int last_io_result) {
  }
  
  int SSLClientSocketImpl::DoPayloadRead(base::span<uint8_t> buf) {
@@ -297,7 +311,7 @@ index f586acfe0f086bda8db1244fb5c054d8d90b732e..f9128ddc10134ed36416d045bb22519f
    crypto::OpenSSLErrStackTracer err_tracer(FROM_HERE);
  
    int rv;
-@@ -1408,6 +1464,12 @@ int SSLClientSocketImpl::DoPayloadRead(base::span<uint8_t> buf) {
+@@ -1408,6 +1469,12 @@ int SSLClientSocketImpl::DoPayloadRead(base::span<uint8_t> buf) {
  }
  
  int SSLClientSocketImpl::DoPayloadWrite() {
@@ -310,7 +324,7 @@ index f586acfe0f086bda8db1244fb5c054d8d90b732e..f9128ddc10134ed36416d045bb22519f
    crypto::OpenSSLErrStackTracer err_tracer(FROM_HERE);
    int rv = SSL_write(ssl_.get(), user_write_buf_->data(), user_write_buf_len_);
  
-@@ -1541,6 +1603,12 @@ void SSLClientSocketImpl::RetryAllOperations() {
+@@ -1541,6 +1608,12 @@ void SSLClientSocketImpl::RetryAllOperations() {
  
  int SSLClientSocketImpl::ClientCertRequestCallback(SSL* ssl) {
    DCHECK(ssl == ssl_.get());
@@ -323,7 +337,7 @@ index f586acfe0f086bda8db1244fb5c054d8d90b732e..f9128ddc10134ed36416d045bb22519f
  
    net_log_.AddEvent(NetLogEventType::SSL_CLIENT_CERT_REQUESTED);
    certificate_requested_ = true;
-@@ -1644,6 +1712,9 @@ SSLClientSessionCache::Key SSLClientSocketImpl::GetSessionCacheKey(
+@@ -1644,6 +1717,9 @@ SSLClientSessionCache::Key SSLClientSocketImpl::GetSessionCacheKey(
  }
  
  bool SSLClientSocketImpl::IsRenegotiationAllowed() const {
@@ -333,7 +347,7 @@ index f586acfe0f086bda8db1244fb5c054d8d90b732e..f9128ddc10134ed36416d045bb22519f
    if (negotiated_protocol_ == NextProto::kProtoUnknown) {
      return ssl_config_.renego_allowed_default;
    }
-@@ -1656,7 +1727,8 @@ bool SSLClientSocketImpl::IsRenegotiationAllowed() const {
+@@ -1656,7 +1732,8 @@ bool SSLClientSocketImpl::IsRenegotiationAllowed() const {
  }
  
  bool SSLClientSocketImpl::IsCachingEnabled() const {
