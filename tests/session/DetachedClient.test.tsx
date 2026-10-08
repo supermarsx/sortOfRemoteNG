@@ -235,6 +235,7 @@ const defaultListenImplementation = vi.mocked(listen).getMockImplementation()!;
 
 vi.mock("@tauri-apps/api/core", () => ({
   invoke: vi.fn(() => Promise.resolve()),
+  isTauri: () => true,
 }));
 
 describe("DetachedClient accessibility", () => {

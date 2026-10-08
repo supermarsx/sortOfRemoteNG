@@ -360,7 +360,7 @@ async fn run_inner(request: &ToolkitRequest, deadline: Instant) -> Result<Value,
             let ip = addresses
                 .into_iter()
                 .map(|address| address.ip())
-                .find(|ip| local.map_or(true, |local| local.is_ipv4() == ip.is_ipv4()))
+                .find(|ip| local.is_none_or(|local| local.is_ipv4() == ip.is_ipv4()))
                 .ok_or("No resolved address matches the selected local IP family")?;
             let args = iperf_args(request, ip)?;
             let output =

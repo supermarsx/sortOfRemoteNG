@@ -88,6 +88,8 @@ function fixture(name: "runScript" | "handleReplayMacro") {
       check();
       return check;
     },
+    reviewScript: () => async () => {},
+    reviewMacro: () => async () => {},
     normalizeSessionQuickActions: () => ({ confirmBeforeScriptRun: true }),
     recordSessionActivity,
     invoke,
@@ -187,6 +189,7 @@ describe("actual SSH action callback activity producers", () => {
         }),
     );
     const running = f.run(script);
+    await vi.waitFor(() => expect(f.invoke).toHaveBeenCalledOnce());
     f.sessionRef.current = {
       id: "session-b",
       connectionId: "connection-a",

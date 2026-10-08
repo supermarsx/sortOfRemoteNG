@@ -1045,6 +1045,9 @@ describe("frontend invoke registrations", () => {
       "src/utils/rdp/rdpBinaryIpcPreflight.ts: command",
       "src/utils/rdp/rdpFrameDeliveryChannel.ts: command",
       "src/utils/security/managementInvoke.ts: command",
+      // Read-only inventory of the fixed app library stores; commands are
+      // read_app_data/read_macro_library (never supplied by imported data).
+      "src/utils/services/cloudSyncPayload.ts: item.command",
       "src/utils/services/whatsappService.ts: cmd",
       "src/utils/session/bmcRuntimeAdapters.ts: commands.dashboard",
       "src/utils/session/bmcRuntimeAdapters.ts: commands.storageControllers",

@@ -62,6 +62,7 @@ export function normalizeBrowserSessions(
       !row.connectionId.trim() ||
       row.connectionId.length > 256 ||
       new TextEncoder().encode(row.connectionId).length > 256 ||
+      // eslint-disable-next-line no-control-regex -- Native IDs must reject ASCII control characters.
       /[\u0000-\u001f\u007f]/u.test(row.connectionId) ||
       ["__proto__", "constructor", "prototype"].includes(row.connectionId) ||
       seen.has(row.connectionId) ||

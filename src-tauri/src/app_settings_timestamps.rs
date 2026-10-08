@@ -321,7 +321,7 @@ fn cloud_telemetry_path(path: &str) -> bool {
         .is_some_and(|tail| cloud_telemetry_field(tail.split('/').next().unwrap_or("")))
 }
 
-fn collect<'a>(settings: &'a Value) -> Result<BTreeMap<String, &'a Value>, String> {
+fn collect(settings: &Value) -> Result<BTreeMap<String, &Value>, String> {
     fn visit<'a>(
         value: &'a Value,
         path: String,

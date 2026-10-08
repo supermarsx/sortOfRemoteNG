@@ -270,7 +270,7 @@ describe("Extended settings section centralization", () => {
     fireEvent.click(devtoolsToggle);
     expect(updateSettings).toHaveBeenCalledWith({ showDevtoolsIcon: false });
 
-    expect(container.querySelectorAll(".sor-settings-card")).toHaveLength(6);
+    expect(container.querySelectorAll(".sor-settings-card")).toHaveLength(7);
     expect(container.querySelector("h3 svg")?.getAttribute("class")).toContain(
       "text-primary",
     );
@@ -279,7 +279,10 @@ describe("Extended settings section centralization", () => {
     const sectionHeaders = Array.from(
       container.querySelectorAll(".sor-settings-section-header"),
     );
-    expect(sectionHeaders).toHaveLength(6);
+    expect(sectionHeaders).toHaveLength(7);
+    expect(sectionHeaders.map((header) => header.textContent)).toContain(
+      "Documents",
+    );
     for (const header of sectionHeaders) {
       const icon = header.firstElementChild;
       expect(icon?.tagName.toLowerCase()).toBe("svg");

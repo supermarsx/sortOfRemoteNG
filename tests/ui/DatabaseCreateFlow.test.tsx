@@ -12,6 +12,7 @@ const managerMocks = vi.hoisted(() => ({
 }));
 
 vi.mock("../../src/utils/connection/databaseManager", () => ({
+  onCurrentDatabaseChange: vi.fn(() => () => {}),
   DatabaseManager: {
     getInstance: () => managerMocks,
   },

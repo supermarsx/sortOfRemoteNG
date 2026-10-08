@@ -140,6 +140,13 @@ beforeEach(async () => {
             securityRevision: lease.securityRevision,
             slots: [],
           };
+        case "database_browser_sessions_describe":
+          expect(args).toEqual({
+            databaseId,
+            sessionId: lease.sessionId,
+            expectedSecurityRevision: lease.securityRevision,
+          });
+          return { version: 1, records: [] };
         case "trust_set_active_database":
           return;
         default:
@@ -278,18 +285,18 @@ describe("credential vault through the real provider and native-round-trip manag
       settings: { retained: true, external: "changed" },
     });
     const external = nativeJson(lease.data);
-    await expect(api.list(api.scope!)).rejects.toThrow(
-      "changed in another window",
-    );
+    // Both the vault CAS check and the native browser projection check reject
+    // external body edits without adopting the foreign baseline.
+    const conflict =
+      /Database (contents changed in another window|body changed during browser projection refresh)/;
+    await expect(api.list(api.scope!)).rejects.toThrow(conflict);
     await expect(
       api.resolve(review, credentialId, ["password"]),
-    ).rejects.toThrow("changed in another window");
+    ).rejects.toThrow(conflict);
     await expect(
       api.compareAndSwap(review, [{ operation: "delete", id: credentialId }]),
-    ).rejects.toThrow("changed in another window");
-    await expect(api.list(api.scope!)).rejects.toThrow(
-      "changed in another window",
-    );
+    ).rejects.toThrow(conflict);
+    await expect(api.list(api.scope!)).rejects.toThrow(conflict);
     expect(writes().length).toBe(writeCount);
     expect(lease.data).toEqual(external);
     expect(lease.data.credentialVault?.entries).toEqual([entry()]);

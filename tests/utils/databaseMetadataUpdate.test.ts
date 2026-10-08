@@ -200,8 +200,11 @@ describe("metadata-only database edits", () => {
         row.id,
         kind === "legacy" ? password : undefined,
       );
-      const draft = structuredClone(data);
-      const history = structuredClone(data.recordMetadata!);
+      // Opening migrates defaults and their ledger. A date-only save starts
+      // from that current body, not the pre-migration fixture (which deletes
+      // the new fields and legitimately creates additional history).
+      const draft = structuredClone((await manager.loadCurrentDatabaseData())!);
+      const history = structuredClone(draft.recordMetadata!);
       const runtime = draft.connections[0] as unknown as {
         createdAt: Date;
         updatedAt: Date;

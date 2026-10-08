@@ -162,7 +162,7 @@ describe("managed protection controls", () => {
     await act(async () => resolve());
     expect(selector).toBeEnabled();
   });
-  it("uses OS vault on explicit Unlock and completes onOpen once even if ready state rerenders its parent before unlock returns", async () => {
+  it("uses OS vault without duplicate inline progress and completes onOpen once if ready state rerenders before unlock returns", async () => {
     fixture.manager.isDatabaseUnlocked.mockReturnValue(false);
     let resolve!: () => void;
     fixture.manager.unlockManagedDatabase.mockImplementation(
@@ -187,7 +187,12 @@ describe("managed protection controls", () => {
       }),
     );
     expect(screen.queryByRole("dialog")).toBeNull();
-    expect(screen.getByRole("status")).toHaveTextContent("OS vault");
+    // Automatic-unlock progress belongs to the opening toast, not a second
+    // dialog or status line inside the protection settings section.
+    expect(screen.queryByRole("status")).toBeNull();
+    expect(onOpen).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "Unlock database" }));
+    expect(fixture.manager.unlockManagedDatabase).toHaveBeenCalledOnce();
     fixture.manager.isDatabaseUnlocked.mockReturnValue(true);
     rerender(
       <ManagedDatabaseProtectionSection
@@ -195,7 +200,9 @@ describe("managed protection controls", () => {
         onOpen={onOpen}
       />,
     );
-    expect(screen.getByRole("status")).toHaveTextContent("OS vault");
+    expect(screen.queryByRole("status")).toBeNull();
+    expect(fixture.manager.unlockManagedDatabase).toHaveBeenCalledOnce();
+    expect(onOpen).not.toHaveBeenCalled();
     await act(async () => resolve());
     await waitFor(() => expect(onOpen).toHaveBeenCalledOnce());
     expect(screen.queryByRole("dialog")).toBeNull();

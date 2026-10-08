@@ -29,6 +29,22 @@ const BambuLab = createLucideIcon("BambuLabPrinterEmblem", [
 
 export const MAKER_PRINTER_ICONS = [
   defineIcon(
+    "elegoo",
+    "Elegoo",
+    "vendors-hardware",
+    Elegoo,
+    ["elegoo", "printer", "3d printing", "filament", "resin"],
+    "Elegoo mark from Simple Icons 16.28.0 (CC0).",
+  ),
+  defineIcon(
+    "bambu-lab",
+    "Bambu Lab",
+    "vendors-hardware",
+    BambuLab,
+    ["bambu lab", "bambulab", "bambu", "bamboo", "printer", "3d printing"],
+    "Bambu Lab mark from Simple Icons 16.28.0 (CC0).",
+  ),
+  defineIcon(
     "elegoo-printer",
     "Elegoo printer",
     "vendors-hardware",

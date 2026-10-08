@@ -58,7 +58,7 @@ async fn endpoints(
     local: Option<IpAddr>,
 ) -> Result<Vec<SocketAddr>, String> {
     let mut addresses = super::resolve(&request.target, port).await?;
-    addresses.retain(|address| local.map_or(true, |local| local.is_ipv4() == address.is_ipv4()));
+    addresses.retain(|address| local.is_none_or(|local| local.is_ipv4() == address.is_ipv4()));
     addresses.sort();
     addresses.dedup();
     addresses.truncate(16);
@@ -465,7 +465,7 @@ fn dhcp_options(
         if length == 0 {
             return Err("Empty DHCP option value".into());
         }
-        if matches!(code, 52 | 53 | 54) && options.contains_key(&code) {
+        if matches!(code, 52..=54) && options.contains_key(&code) {
             return Err("Duplicate DHCP control option".into());
         }
         // RFC 3396: concatenate fragments for non-control options.
@@ -482,7 +482,9 @@ fn ipv4_option(options: &BTreeMap<u8, Vec<u8>>, code: u8, single: bool) -> Resul
         return Err(format!("Invalid IPv4 length in DHCP option {code}"));
     }
     let addresses: Vec<_> = value
-        .chunks_exact(4)
+        .as_chunks::<4>()
+        .0
+        .iter()
         .map(|b| Ipv4Addr::new(b[0], b[1], b[2], b[3]).to_string())
         .collect();
     Ok(if single {

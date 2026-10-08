@@ -22,6 +22,39 @@ const scriptLibrary = vi.hoisted(() => ({
   value: null as PersistedManagedScripts | null,
 }));
 const vaultAttempt = vi.hoisted(() => ({ resolve: vi.fn() }));
+vi.mock("../../src/contexts/SettingsContext", async (original) => {
+  const actual =
+    await original<typeof import("../../src/contexts/SettingsContext")>();
+  return {
+    ...actual,
+    useSettings: () => ({
+      settings: actual.defaultSettings,
+      settingsReady: true,
+      updateSettings: vi.fn(),
+      reloadSettings: vi.fn(),
+    }),
+  };
+});
+// App-wide automation requires an initialized desktop bridge. Keep its storage
+// reads separate from the SSH invoke queue used by connection tests below.
+vi.mock("../../src/utils/tauri/invoke", () => ({
+  getInvoke: async () => async () => null,
+}));
+vi.mock(
+  "../../src/utils/recording/terminalMacroPersistence",
+  async (original) => ({
+    ...(await original<
+      typeof import("../../src/utils/recording/terminalMacroPersistence")
+    >()),
+    loadTerminalMacros: async () => [],
+    terminalMacrosStore: {
+      load: async () => ({
+        value: { version: 1, macros: [], legacyDigest: null },
+        sanitized: false,
+      }),
+    },
+  }),
+);
 vi.mock("../../src/hooks/security/useRuntimeCredentialVault", () => ({
   useRuntimeCredentialVault: () => vaultAttempt.resolve,
 }));

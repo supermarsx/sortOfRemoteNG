@@ -250,6 +250,7 @@ describe("explicit OS-vault cloud capture consent", () => {
     await captureCloudSyncPayload(config());
     expect(fixture.read).toHaveBeenCalledExactlyOnceWith("side", {
       materializeDefaults: true,
+      browserSessionsPassword: config().syncEncryptionPassword,
     });
   });
 

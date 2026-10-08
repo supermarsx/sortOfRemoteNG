@@ -91,6 +91,7 @@ export const defaultSettings: GlobalSettings = {
   reconnectPreviousSessions: false,
   autoOpenLastCollection: true,
   lastOpenedCollectionId: undefined,
+  databaseOpenSet: undefined,
   minimizeToTray: false,
   closeToTray: false,
   showTrayIcon: true,
