@@ -1,4 +1,10 @@
-import React, { useEffect, useLayoutEffect, useRef, useState } from "react";
+import React, {
+  useEffect,
+  useId,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from "react";
 import {
   ArrowDown,
   ArrowUp,
@@ -9,29 +15,55 @@ import {
   X,
 } from "lucide-react";
 import type { OriginBrowserController } from "../../../hooks/protocol/useOriginBrowser";
+import {
+  useOriginFind,
+  type OriginFindResult,
+} from "../../../hooks/protocol/useOriginFind";
+import type { OriginBrowserSnapshot } from "../../../types/protocols/originBrowser";
 import { TextInput } from "../../ui/forms/TextInput";
-import { CheckboxField } from "../../ui/forms/Checkbox";
 
 /** Volatile, attempt-keyed shell controls. No page text or URL is persisted. */
 export default function OriginPageTools({
   controller,
   enabled,
   defaultZoom,
+  activeViewKey = "root",
+  pageSnapshot = controller.state.snapshot,
+  findResult,
+  findOpenRequest,
+  findReady = true,
 }: {
   controller: OriginBrowserController;
   enabled: boolean;
   defaultZoom: number;
+  /** Parent supplies the selected root/popup, not just the source attempt. */
+  activeViewKey?: string;
+  pageSnapshot?: OriginBrowserSnapshot | null;
+  findResult?: OriginFindResult | null;
+  findOpenRequest?: number;
+  findReady?: boolean;
 }) {
   const [zoom, setZoom] = useState<number | null>(null);
   const [zoomPending, setZoomPending] = useState(false);
   const zoomBusy = useRef(false);
-  const [open, setOpen] = useState(false);
-  const [text, setText] = useState("");
-  const [matchCase, setMatchCase] = useState(false);
-  const [findPending, setFindPending] = useState(false);
-  const findBusy = useRef(false);
   const [error, setError] = useState(false);
-  const lastFind = useRef<{ text: string; matchCase: boolean } | null>(null);
+  const owner = pageSnapshot?.identity ?? controller.state.snapshot?.identity;
+  const find = useOriginFind({
+    controls: controller,
+    enabled: enabled && findReady,
+    scopeKey: JSON.stringify([
+      owner?.ownerDatabaseId,
+      owner?.connectionId,
+      owner?.sessionId,
+      owner?.attemptId,
+      activeViewKey,
+    ]),
+    documentKey: pageSnapshot?.currentUrl ?? pageSnapshot?.displayUrl,
+    loading: pageSnapshot?.loading,
+    result: findResult,
+    openRequest: findOpenRequest,
+  });
+  const findId = useId();
   const input = useRef<HTMLInputElement>(null);
   const toggle = useRef<HTMLButtonElement>(null);
   const returnFocus = useRef(false);
@@ -46,19 +78,33 @@ export default function OriginPageTools({
     };
   }, [enabled]);
   useEffect(() => {
-    if (open && enabled) input.current?.focus();
-    if (!open && enabled && returnFocus.current) {
+    if (find.open && enabled) {
+      input.current?.focus();
+      input.current?.select();
+    }
+    if (!find.open && enabled && returnFocus.current) {
       returnFocus.current = false;
       toggle.current?.focus();
     }
-  }, [open, enabled]);
-  // A navigation starts a new document; do not ask native to continue an old find.
+  }, [find.open, find.focusRevision, enabled]);
+  const showFind = find.show;
   useEffect(() => {
-    lastFind.current = null;
-  }, [
-    controller.state.snapshot?.currentUrl,
-    controller.state.snapshot?.loading,
-  ]);
+    if (!enabled) return;
+    const shortcut = (event: KeyboardEvent) => {
+      if (
+        event.defaultPrevented ||
+        event.isComposing ||
+        event.altKey ||
+        !(event.ctrlKey || event.metaKey) ||
+        event.key.toLowerCase() !== "f"
+      )
+        return;
+      event.preventDefault();
+      showFind();
+    };
+    window.addEventListener("keydown", shortcut);
+    return () => window.removeEventListener("keydown", shortcut);
+  }, [enabled, showFind]);
   const applyZoom = async (percent: number) => {
     if (!enabled || zoomBusy.current) return;
     const revision = visibility.current;
@@ -109,50 +155,25 @@ export default function OriginPageTools({
     // Settlement must wake a skipped newer presentation. The revision latch
     // permits only one automatic request per eligibility epoch, even on failure.
   }, [enabled, zoom, zoomPending, setNativeZoom, defaultZoom]);
-  const valid =
-    !!text &&
-    !text.includes("\0") &&
-    new TextEncoder().encode(text).length <= 1024;
-  const search = async (forward: boolean) => {
-    if (!enabled || !valid || findBusy.current) return;
-    const revision = visibility.current;
-    const query = { text, matchCase };
-    findBusy.current = true;
-    setFindPending(true);
-    setError(false);
-    const accepted = await controller.find(
-      text,
-      forward,
-      matchCase,
-      lastFind.current?.text === text &&
-        lastFind.current?.matchCase === matchCase,
-    );
-    findBusy.current = false;
-    if (!live.current) return;
-    setFindPending(false);
-    if (revision !== visibility.current) return;
-    if (accepted) lastFind.current = query;
-    else setError(true);
-  };
-  const closeFind = async () => {
-    if (!enabled || findBusy.current) return;
-    const revision = visibility.current;
-    findBusy.current = true;
-    setFindPending(true);
-    const accepted = await controller.stopFind(true);
-    findBusy.current = false;
-    if (!live.current) return;
-    setFindPending(false);
-    if (revision !== visibility.current) return;
-    if (!accepted) {
-      setError(true);
-      return;
-    }
-    lastFind.current = null;
-    setText("");
+  const closeFind = () => {
     returnFocus.current = true;
-    setOpen(false);
+    find.close();
   };
+  const count = find.result;
+  const noMatches = count?.finalUpdate && count.numberOfMatches === 0;
+  const findStatus = !find.text
+    ? "Type to search"
+    : !find.valid
+      ? "Search text is too long or contains NUL"
+      : noMatches
+        ? "No matches"
+        : count && count.numberOfMatches > 0
+          ? `${count.activeMatchOrdinal || "…"} of ${count.numberOfMatches}`
+          : find.pending
+            ? "Searching…"
+            : find.submitted
+              ? "Search sent"
+              : "Ready to search";
   return (
     <>
       <div
@@ -162,17 +183,17 @@ export default function OriginPageTools({
       >
         <button
           type="button"
-          className="sor-btn sor-icon-btn-sm"
+          className="sor-btn sor-icon-btn-sm !h-6 !w-6"
           aria-label="Zoom out"
           data-tooltip="Zoom out"
           disabled={!enabled || zoomPending || zoom === null || zoom <= 25}
           onClick={() => void applyZoom(Math.max(25, (zoom ?? 100) - 25))}
         >
-          <Minus size={16} aria-hidden="true" />
+          <Minus size={14} aria-hidden="true" />
         </button>
         <button
           type="button"
-          className="sor-btn sor-btn-secondary min-w-14 text-xs"
+          className="sor-btn sor-btn-secondary !h-6 min-w-11 !px-1 text-[11px] tabular-nums"
           aria-label="Reset zoom"
           data-tooltip={
             zoom === null
@@ -196,13 +217,13 @@ export default function OriginPageTools({
         </button>
         <button
           type="button"
-          className="sor-btn sor-icon-btn-sm"
+          className="sor-btn sor-icon-btn-sm !h-6 !w-6"
           aria-label="Zoom in"
           data-tooltip="Zoom in"
           disabled={!enabled || zoomPending || zoom === null || zoom >= 500}
           onClick={() => void applyZoom(Math.min(500, (zoom ?? 100) + 25))}
         >
-          <Plus size={16} aria-hidden="true" />
+          <Plus size={14} aria-hidden="true" />
         </button>
       </div>
       <button
@@ -210,66 +231,92 @@ export default function OriginPageTools({
         type="button"
         className="sor-btn sor-icon-btn-sm shrink-0"
         aria-label="Find in page"
-        data-tooltip="Find in page"
-        aria-expanded={open}
-        disabled={!enabled || findPending}
-        onClick={() => (open ? closeFind() : setOpen(true))}
+        data-tooltip="Find in page (Ctrl+F / ⌘F)"
+        aria-expanded={find.open}
+        aria-controls={find.open ? findId : undefined}
+        disabled={!enabled || !findReady}
+        onClick={() => (find.open ? closeFind() : find.show())}
       >
         <Search size={16} aria-hidden="true" />
       </button>
-      {open && (
+      {find.open && (
         <div
-          role="group"
+          id={findId}
+          role="search"
           aria-label="Find in page controls"
-          className="flex w-full flex-wrap items-center gap-2 border-t border-[var(--color-border)] pt-2"
+          className="flex w-full flex-wrap items-center gap-1 rounded-md border border-[var(--color-border)] bg-[var(--color-background)] p-1.5 shadow-sm"
+          onKeyDown={(event) => {
+            if (event.nativeEvent.isComposing || event.keyCode === 229) return;
+            if (event.key === "Escape") {
+              event.preventDefault();
+              event.stopPropagation();
+              closeFind();
+            } else if (
+              event.key === "Enter" &&
+              event.target === input.current
+            ) {
+              event.preventDefault();
+              event.stopPropagation();
+              find.search(!event.shiftKey);
+            }
+          }}
         >
+          <Search
+            size={15}
+            className="mx-1 shrink-0 text-[var(--color-textSecondary)]"
+            aria-hidden="true"
+          />
           <TextInput
             ref={input}
             variant="form-sm"
-            className="min-w-0 flex-[1_1_12rem]"
+            className={`min-w-0 flex-[1_1_10rem] ${noMatches ? "border-warning" : ""}`}
             aria-label="Find text"
             placeholder="Find in page"
-            value={text}
-            onChange={(value) => {
-              setText(value);
-              lastFind.current = null;
-            }}
+            value={find.text}
+            onChange={find.setText}
             disabled={!enabled}
-            readOnly={findPending}
             autoComplete="off"
             spellCheck={false}
-            aria-invalid={!!text && !valid}
-            onKeyDown={(event) => {
-              if (event.key === "Enter") {
-                event.preventDefault();
-                event.stopPropagation();
-                void search(!event.shiftKey);
-              }
-              if (event.key === "Escape") {
-                event.preventDefault();
-                event.stopPropagation();
-                closeFind();
-              }
-            }}
+            aria-invalid={!!find.text && !find.valid}
+            aria-describedby={`${findId}-status ${findId}-hint`}
+            onCompositionStart={() => find.setComposing(true)}
+            onCompositionEnd={() => find.setComposing(false)}
           />
-          <CheckboxField
-            variant="form"
-            label="Match case"
-            checked={matchCase}
-            onChange={(value) => {
-              setMatchCase(value);
-              lastFind.current = null;
-            }}
-            disabled={!enabled || findPending}
-            wrapperClassName="text-xs"
-          />
+          <span
+            id={`${findId}-status`}
+            role="status"
+            aria-live="polite"
+            aria-atomic="true"
+            className={`mx-1 min-w-16 text-center text-xs tabular-nums ${noMatches ? "text-warning" : "text-[var(--color-textSecondary)]"}`}
+          >
+            {findStatus}
+          </span>
+          <label
+            className="relative shrink-0 cursor-pointer"
+            data-tooltip="Match case"
+          >
+            <input
+              type="checkbox"
+              className="peer sr-only"
+              aria-label="Match case"
+              checked={find.matchCase}
+              onChange={(event) => find.setMatchCase(event.target.checked)}
+              disabled={!enabled}
+            />
+            <span
+              aria-hidden="true"
+              className="sor-btn sor-icon-btn-sm text-xs peer-checked:bg-[var(--color-primary)] peer-checked:text-white peer-focus-visible:outline peer-focus-visible:outline-2 peer-focus-visible:outline-[var(--color-primary)] peer-disabled:opacity-50"
+            >
+              Aa
+            </span>
+          </label>
           <button
             type="button"
             className="sor-btn sor-icon-btn-sm"
             aria-label="Previous match"
             data-tooltip="Previous match (Shift+Enter)"
-            disabled={!enabled || !valid || findPending}
-            onClick={() => void search(false)}
+            disabled={!enabled || !find.valid}
+            onClick={() => find.search(false)}
           >
             <ArrowUp size={16} aria-hidden="true" />
           </button>
@@ -278,10 +325,10 @@ export default function OriginPageTools({
             className="sor-btn sor-icon-btn-sm"
             aria-label="Next match"
             data-tooltip="Next match (Enter)"
-            disabled={!enabled || !valid || findPending}
-            onClick={() => void search(true)}
+            disabled={!enabled || !find.valid}
+            onClick={() => find.search(true)}
           >
-            {findPending ? (
+            {find.pending ? (
               <LoaderCircle
                 size={16}
                 aria-hidden="true"
@@ -296,18 +343,26 @@ export default function OriginPageTools({
             className="sor-btn sor-icon-btn-sm"
             aria-label="Close find"
             data-tooltip="Close find (Escape)"
-            disabled={!enabled || findPending}
+            disabled={!enabled}
             onClick={closeFind}
           >
             <X size={16} aria-hidden="true" />
           </button>
-          {!!text && !valid && (
-            <span role="alert" className="text-xs text-error">
+          {!!find.text && !find.valid && (
+            <span role="alert" className="w-full px-1 text-xs text-error">
               Search text must be at most 1,024 UTF-8 bytes with no NUL
               characters.
             </span>
           )}
+          <span id={`${findId}-hint`} className="sr-only">
+            Enter: next · Shift+Enter: previous · Esc: close
+          </span>
         </div>
+      )}
+      {find.error && (
+        <p role="alert" className="w-full text-xs text-error">
+          {find.error}
+        </p>
       )}
       {error && (
         <p

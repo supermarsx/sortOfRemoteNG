@@ -8,10 +8,10 @@ import React, {
 import {
   ArrowLeft,
   ArrowRight,
-  Globe,
   House,
   LoaderCircle,
   RotateCcw,
+  RotateCw,
   Save,
   Settings2,
   ShieldCheck,
@@ -26,6 +26,7 @@ import { useSettings } from "../../../contexts/SettingsContext";
 import { useSessionRenderActivity } from "../../../contexts/SessionRenderActivityContext";
 import { useOriginBrowser } from "../../../hooks/protocol/useOriginBrowser";
 import { useOriginBrowserOwner } from "../../../hooks/protocol/useOriginBrowserOwner";
+import { useOriginQuickConnection } from "../../../hooks/protocol/useOriginQuickConnection";
 import { useOriginBrowserOverlays } from "../../../hooks/protocol/useOriginBrowserOverlays";
 import { originBrowserConnectionTarget } from "../../../hooks/protocol/originBrowserConnectionTarget";
 import { normalizeWebBrowserSettings } from "../../../utils/settings/webBrowserSettings";
@@ -47,12 +48,27 @@ import OriginBrowserViewport from "./OriginBrowserViewport";
 import { TextInput } from "../../ui/forms/TextInput";
 import OriginBrowserCapabilityNotice from "./OriginBrowserCapabilityNotice";
 import OriginBookmarkBar from "./OriginBookmarkBar";
+import OriginBookmarkButton from "./OriginBookmarkButton";
 import OriginPageTools from "./OriginPageTools";
 import OriginMoreMenu from "./OriginMoreMenu";
+import OriginHistoryMenu from "./OriginHistoryMenu";
+import { useOriginPageMenu } from "../../../hooks/protocol/useOriginPageMenu";
+import { useOriginFindResults } from "../../../hooks/protocol/useOriginFindResults";
+import { useNativeBrowserRecording } from "../../../hooks/protocol/useNativeBrowserRecording";
 import { useOriginWebsiteAutomation } from "../../../hooks/protocol/useOriginWebsiteAutomation";
 import OriginAutomationControls from "./OriginAutomationControls";
 import { useOriginBrowserNotices } from "../../../hooks/protocol/useOriginBrowserNotices";
 import OriginBrowserNotices from "./OriginBrowserNotices";
+import NativeBrowserDownloads from "./NativeBrowserDownloads";
+import { useOriginSelectedDownloads } from "../../../hooks/protocol/useOriginSelectedDownloads";
+import { useNativeOriginPopupBridge } from "../../../hooks/protocol/useNativeOriginPopupBridge";
+import { useOriginBrowserPopups } from "../../../hooks/protocol/useOriginBrowserPopups";
+import { samePopupSource } from "../../../types/protocols/originBrowserPopups";
+import OriginPopupTabs from "./OriginPopupTabs";
+import { useNativeBrowserExtensions } from "../../../hooks/protocol/useNativeBrowserExtensions";
+import { useNativeBrowserAppearance } from "../../../hooks/protocol/useNativeBrowserAppearance";
+import { useNativeBrowserExtensionReceipt } from "../../../hooks/protocol/useNativeBrowserExtensionReceipt";
+import NativeBrowserExtensionControls from "./NativeBrowserExtensionControls";
 
 export default function OriginConnectionBrowser({
   session,
@@ -79,18 +95,30 @@ export default function OriginConnectionBrowser({
       lifetime.current = false;
     };
   }, []);
-  const hideRef = useRef<(() => void) | null>(null);
-  const hide = useCallback(() => hideRef.current?.(), []);
-  const overlayOpen = useOriginBrowserOverlays(hide);
-  const proof = useOriginBrowserOwner(
+  const overlays = useOriginBrowserOverlays(isActive);
+  const hide = overlays.refresh;
+  const overlayOpen = overlays.blocked;
+  const temporary = useOriginQuickConnection(
     session,
-    context.databaseAvailability,
+    context.state.connections,
     closeRef,
   );
+  const isTemporary = !!temporary;
+  // The saved-owner hook revokes on every database selection event. A
+  // temporary tab must neither acquire its proof nor use its close callback.
+  const inactiveCloseRef = useRef<(() => Promise<void>) | null>(null);
+  const savedProof = useOriginBrowserOwner(
+    isTemporary ? { ...session, ownerDatabaseId: undefined } : session,
+    isTemporary ? undefined : context.databaseAvailability,
+    isTemporary ? inactiveCloseRef : closeRef,
+  );
+  const proof = temporary?.proof ?? savedProof;
   const matches = context.state.connections.filter(
     (row) => row.id === session.connectionId,
   );
-  const connection = matches.length === 1 ? matches[0] : undefined;
+  const connection = matches.length === 1 ? matches[0] : temporary?.connection;
+  const ownerDatabaseId =
+    proof?.ownerDatabaseId ?? session.ownerDatabaseId ?? "";
   // Display preferences only. Native independently authenticates its policies.
   let browserConfig = globalBrowserConfig;
   let browserConfigInvalid = false;
@@ -116,9 +144,11 @@ export default function OriginConnectionBrowser({
   const ownerAvailable =
     !!proof && !!connection && !sharedPopupId && !session.reattachOnly;
   const dialogOpen = editing || moreOpen || bookmarksOpen || overlayOpen;
+  const popupBridge = useNativeOriginPopupBridge();
   const browser = useOriginBrowser({
+    transport: popupBridge.browserTransport,
     owner: {
-      ownerDatabaseId: session.ownerDatabaseId ?? "",
+      ownerDatabaseId,
       connectionId: session.connectionId,
       sessionId: session.id,
     },
@@ -129,19 +159,25 @@ export default function OriginConnectionBrowser({
     ownerAvailable,
     active: isActive,
     dialogOpen,
+    preserveRenderingUnderOverlays: true,
+    occlusions: overlays.rectangles,
     consent: { kind: "required" },
     assertOwner: proof?.assertCurrent,
+    quickConnect: temporary?.quickConnect,
   });
-  const { close, setViewport, navigate: nativeNavigate } = browser;
+  const { close, navigate: nativeNavigate } = browser;
   useLayoutEffect(() => {
     closeRef.current = close;
-    hideRef.current = () => setViewport(null);
     return () => {
       closeRef.current = null;
-      hideRef.current = null;
     };
-  }, [close, setViewport]);
-  const { snapshot, phase } = browser.state;
+  }, [close]);
+  const { snapshot: rootSnapshot, phase } = browser.state;
+  const bindPopupSource = popupBridge.bind;
+  const popupSourceIdentity = rootSnapshot?.identity;
+  useLayoutEffect(() => {
+    bindPopupSource(popupSourceIdentity ?? null);
+  }, [bindPopupSource, popupSourceIdentity]);
   const shellScope = useRef({ proof, connection, isActive, session });
   useLayoutEffect(() => {
     shellScope.current = { proof, connection, isActive, session };
@@ -166,6 +202,110 @@ export default function OriginConnectionBrowser({
     assertShellOwner();
     browser.reconnect();
   };
+  const appearanceStatus = useNativeBrowserAppearance(
+    rootSnapshot?.identity ?? null,
+    // Native prepaint darkness remains active while loading. Request the
+    // extension receipt for the settled document, not its retiring predecessor.
+    ownerAvailable && phase === "attached" && !rootSnapshot?.loading,
+    () => {
+      // Theme updates may reach inactive views, but confer no input authority.
+      const current = shellScope.current;
+      if (
+        !lifetime.current ||
+        !ownerAvailable ||
+        !proof ||
+        current.proof !== proof ||
+        current.connection !== connection ||
+        current.session !== session
+      )
+        throw new Error("Browser owner changed.");
+      proof.assertCurrent();
+    },
+  );
+  const popups = useOriginBrowserPopups({
+    sourceIdentity: rootSnapshot?.identity ?? null,
+    enabled: ownerAvailable && phase === "attached",
+    assertOwner: () => {
+      if (!lifetime.current || !ownerAvailable || !proof)
+        throw new Error("Browser owner changed.");
+      proof.assertCurrent();
+    },
+    transport: popupBridge.popupTransport,
+    onActivate: (reference) =>
+      rootSnapshot
+        ? popupBridge.activate(rootSnapshot.identity, reference)
+        : undefined,
+  });
+  const selectedPopupId = samePopupSource(
+    popupBridge.selection?.sourceIdentity,
+    rootSnapshot?.identity,
+  )
+    ? popupBridge.selection!.viewId
+    : null;
+  const selectedPopup = popups.tabs.find(
+    (tab) => tab.viewId === selectedPopupId,
+  );
+  useEffect(() => {
+    if (
+      !rootSnapshot ||
+      !selectedPopupId ||
+      popupBridge.pending ||
+      (selectedPopup &&
+        selectedPopup.phase === "adopted" &&
+        !selectedPopup.closing)
+    )
+      return;
+    // A native window.close/removal can win while its selection ACK is queued.
+    // Repair the bridge target even when the tab hook never committed that ACK.
+    void popupBridge.activate(rootSnapshot.identity, null).catch(() => {});
+  }, [rootSnapshot, selectedPopupId, selectedPopup, popupBridge]);
+  // Never present the hidden root's address or history as child state.
+  const snapshot = selectedPopupId ? selectedPopup?.snapshot : rootSnapshot;
+  const downloads = useOriginSelectedDownloads(
+    rootSnapshot?.identity ?? null,
+    selectedPopupId,
+    ownerAvailable && isActive && phase === "attached" && !popupBridge.pending,
+    assertShellOwner,
+  );
+  const extensionReceipt = useNativeBrowserExtensionReceipt(
+    snapshot?.identity ?? null,
+    ownerAvailable && !isTemporary && isActive && phase === "attached",
+    assertShellOwner,
+  );
+  const extensions = useNativeBrowserExtensions({
+    connection: isTemporary ? undefined : connection,
+    ownerDatabaseId: isTemporary ? undefined : session.ownerDatabaseId,
+    identity: snapshot?.identity ?? null,
+    receipt: extensionReceipt,
+    webBrowserSettings: settings.webBrowser,
+    websiteDarkModeSettings: settings.websiteDarkMode,
+    settingsReady: settingsReady !== false,
+    blocked: !ownerAvailable || !isActive || phase !== "attached",
+    updateConnection: async (replacement) => {
+      assertShellOwner();
+      const scope = context.databaseAvailability;
+      if (
+        isTemporary ||
+        !connection ||
+        replacement.id !== connection.id ||
+        scope?.status !== "ready" ||
+        context
+          .getCurrentConnections?.({
+            databaseId: session.ownerDatabaseId!,
+            generation: scope.generation,
+          })
+          ?.find((row) => row.id === connection.id) !== connection
+      ) {
+        throw new Error(
+          "The saved website changed. Review its settings before saving.",
+        );
+      }
+      await context.dispatchAndFlush({
+        type: "UPDATE_CONNECTION",
+        payload: replacement,
+      });
+    },
+  });
   // Only native knows the current address after redirects. The older-native
   // diagnostic fallback is display-only; never reconstruct from initialUrl.
   const reportedAddress = ownerAvailable
@@ -175,13 +315,51 @@ export default function OriginConnectionBrowser({
     identity: string;
     value: string;
   } | null>(null);
-  const identity = snapshot?.identity.attemptId ?? "";
+  const identity = `${rootSnapshot?.identity.attemptId ?? ""}:${selectedPopupId ?? "root"}`;
   const addressValue =
     ownerAvailable && address?.identity === identity
       ? address.value
       : reportedAddress;
   const attached =
-    phase === "attached" && ownerAvailable && isActive && !dialogOpen;
+    phase === "attached" &&
+    ownerAvailable &&
+    isActive &&
+    !dialogOpen &&
+    !popupBridge.pending &&
+    (!selectedPopupId || selectedPopup?.phase === "adopted");
+  const selectedViewAvailable =
+    ownerAvailable &&
+    isActive &&
+    settingsReady !== false &&
+    phase === "attached" &&
+    !popupBridge.pending &&
+    (!selectedPopupId ||
+      (selectedPopup?.phase === "adopted" && !selectedPopup.closing));
+  const pageMenu = useOriginPageMenu({
+    identity: rootSnapshot?.identity ?? null,
+    viewId: selectedPopupId,
+    enabled: selectedViewAvailable,
+    interactive: attached,
+    assertOwner: assertShellOwner,
+    runInteractive: popupBridge.runInteractive,
+  });
+  const findFeedback = useOriginFindResults({
+    identity: rootSnapshot?.identity ?? null,
+    viewId: selectedPopupId,
+    enabled: selectedViewAvailable,
+    documentKey: JSON.stringify([
+      snapshot?.currentUrl ?? snapshot?.displayUrl,
+      snapshot?.loading,
+    ]),
+    assertOwner: assertShellOwner,
+  });
+  // Opening/closing transient menus must not stop an active recording.
+  const recording = useNativeBrowserRecording({
+    identity: rootSnapshot?.identity ?? null,
+    viewId: selectedPopupId,
+    enabled: selectedViewAvailable,
+    assertOwner: assertShellOwner,
+  });
   const notices = useOriginBrowserNotices({
     identity: snapshot?.identity ?? null,
     enabled:
@@ -194,8 +372,8 @@ export default function OriginConnectionBrowser({
     reload: browser.reload,
   });
   const automation = useOriginWebsiteAutomation({
-    connection,
-    ownerDatabaseId: session.ownerDatabaseId,
+    connection: isTemporary ? undefined : connection,
+    ownerDatabaseId: isTemporary ? undefined : session.ownerDatabaseId,
     settings,
     settingsReady: settingsReady !== false,
     scopeKey: proof
@@ -209,6 +387,9 @@ export default function OriginConnectionBrowser({
     // Our own confirmation/value dialogs hide the native child but must not
     // invalidate their reviewed document. Other browser tools suspend work.
     blocked:
+      !!selectedPopupId ||
+      popupBridge.pending ||
+      isTemporary ||
       !ownerAvailable ||
       !isActive ||
       phase !== "attached" ||
@@ -224,6 +405,10 @@ export default function OriginConnectionBrowser({
     assertOwner: assertShellOwner,
     updateConnection: async (replacement) => {
       assertShellOwner();
+      if (isTemporary)
+        throw new Error(
+          "Save a connection before changing website automation settings.",
+        );
       const scope = context.databaseAvailability;
       if (
         !scope ||
@@ -264,7 +449,13 @@ export default function OriginConnectionBrowser({
     !!addressValue.trim() &&
     (address?.identity === identity || snapshot?.currentUrl !== undefined);
   const [navigationError, setNavigationError] = useState(false);
+  const nativeNavigationError =
+    "navigationError" in browser.state &&
+    typeof browser.state.navigationError === "string"
+      ? browser.state.navigationError
+      : null;
   const canEdit =
+    !isTemporary &&
     context.databaseAvailability?.status === "ready" &&
     context.databaseAvailability.databaseId === session.ownerDatabaseId &&
     !!connection;
@@ -355,6 +546,15 @@ export default function OriginConnectionBrowser({
         >
           <ArrowLeft size={16} aria-hidden="true" />
         </button>
+        <OriginHistoryMenu
+          key={`back-history:${identity}:${ownerAvailable}`}
+          direction="back"
+          controller={pageMenu}
+          canOpen={attached && !!snapshot?.canGoBack}
+          eligible={selectedViewAvailable}
+          assertOwner={assertShellOwner}
+          onOverlayChange={setMoreOpen}
+        />
         <button
           type="button"
           aria-label="Forward"
@@ -365,6 +565,15 @@ export default function OriginConnectionBrowser({
         >
           <ArrowRight size={16} aria-hidden="true" />
         </button>
+        <OriginHistoryMenu
+          key={`forward-history:${identity}:${ownerAvailable}`}
+          direction="forward"
+          controller={pageMenu}
+          canOpen={attached && !!snapshot?.canGoForward}
+          eligible={selectedViewAvailable}
+          assertOwner={assertShellOwner}
+          onOverlayChange={setMoreOpen}
+        />
         <button
           type="button"
           aria-label={snapshot?.loading ? "Stop" : "Reload"}
@@ -435,12 +644,16 @@ export default function OriginConnectionBrowser({
           }
           onClick={browser.reconnect}
         >
-          <Globe size={16} aria-hidden="true" />
+          <RotateCw size={16} aria-hidden="true" />
         </button>
         <button
           type="button"
           aria-label="Browser settings"
-          data-tooltip="Browser settings"
+          data-tooltip={
+            isTemporary
+              ? "Save a connection to change its browser settings."
+              : "Browser settings"
+          }
           className="sor-btn sor-icon-btn-sm shrink-0"
           disabled={!canEdit}
           onClick={() => {
@@ -450,61 +663,99 @@ export default function OriginConnectionBrowser({
         >
           <Settings2 size={16} aria-hidden="true" />
         </button>
+        <NativeBrowserDownloads
+          controller={downloads}
+          allowed={browserConfig.allowDownloads}
+          onOpenSettings={() => onOpenSettings?.("webBrowser")}
+        />
+        <OriginBookmarkButton
+          key={`bookmark-page:${identity}:${ownerAvailable}`}
+          session={session}
+          bookmarks={connection?.httpBookmarks}
+          initialUrl={initialUrl}
+          currentUrl={snapshot?.currentUrl}
+          currentTitle={snapshot?.title}
+          temporary={isTemporary}
+          eligible={
+            ownerAvailable &&
+            isActive &&
+            phase === "attached" &&
+            !popupBridge.pending &&
+            settingsReady !== false
+          }
+          canOpen={attached}
+          assertOwner={assertShellOwner}
+          hideNative={hide}
+          onOverlayChange={setBookmarksOpen}
+        />
+        <NativeBrowserExtensionControls
+          controller={extensions}
+          appearanceStatus={appearanceStatus}
+        />
         <OriginPageTools
           key={`${identity}:${ownerAvailable}`}
           controller={browser}
           enabled={attached && !browserConfigInvalid}
           defaultZoom={browserConfig.defaultZoomPercent}
+          activeViewKey={selectedPopupId ?? "root"}
+          pageSnapshot={snapshot ?? null}
+          findOpenRequest={pageMenu.findOpenRequest}
+          findReady={findFeedback.ready}
+          findResult={findFeedback.result}
         />
         <OriginMoreMenu
           key={`more:${identity}:${ownerAvailable}`}
           currentUrl={snapshot?.currentUrl}
-          eligible={
-            phase === "attached" &&
-            ownerAvailable &&
-            isActive &&
-            settingsReady !== false
-          }
+          eligible={selectedViewAvailable}
           canOpen={attached}
           assertOwner={assertShellOwner}
           hideNative={hide}
           onOverlayChange={setMoreOpen}
           onRestart={restartEphemeralContext}
           session={session}
-          connection={connection}
+          connection={isTemporary ? undefined : connection}
+          pageMenu={pageMenu}
+          recording={recording}
         />
       </form>
-      {ownerAvailable && browserConfig.showBookmarksBar && connection && (
-        <OriginBookmarkBar
-          key={`bookmarks:${identity}:${session.id}:${session.ownerDatabaseId}:${isActive}`}
-          session={session}
-          bookmarks={connection.httpBookmarks}
-          initialUrl={initialUrl}
-          currentUrl={snapshot?.currentUrl}
-          currentTitle={snapshot?.title}
-          eligible={ownerAvailable && isActive && settingsReady !== false}
-          canNavigate={
-            phase === "attached" &&
-            ownerAvailable &&
-            isActive &&
-            settingsReady !== false
-          }
-          assertOwner={assertShellOwner}
-          hideNative={hide}
-          onOverlayChange={setBookmarksOpen}
-          onNavigate={(url, assertCurrent) =>
-            setBookmarkNavigation({ attempt: identity, url, assertCurrent })
-          }
-          automationSlot={
-            <OriginAutomationControls
-              automation={automation}
-              showFavorites={false}
-            />
-          }
-          automation={automation}
-        />
-      )}
-      {ownerAvailable && !browserConfig.showBookmarksBar && (
+      <OriginPopupTabs
+        popups={popups}
+        parentTitle={rootSnapshot?.title || "Website"}
+      />
+      {!isTemporary &&
+        ownerAvailable &&
+        browserConfig.showBookmarksBar &&
+        connection && (
+          <OriginBookmarkBar
+            key={`bookmarks:${identity}:${session.id}:${session.ownerDatabaseId}:${isActive}`}
+            session={session}
+            bookmarks={connection.httpBookmarks}
+            initialUrl={initialUrl}
+            currentUrl={snapshot?.currentUrl}
+            currentTitle={snapshot?.title}
+            eligible={ownerAvailable && isActive && settingsReady !== false}
+            canNavigate={
+              phase === "attached" &&
+              ownerAvailable &&
+              isActive &&
+              settingsReady !== false
+            }
+            assertOwner={assertShellOwner}
+            hideNative={hide}
+            onOverlayChange={setBookmarksOpen}
+            onNavigate={(url, assertCurrent) =>
+              setBookmarkNavigation({ attempt: identity, url, assertCurrent })
+            }
+            automationSlot={
+              <OriginAutomationControls
+                automation={automation}
+                showFavorites={false}
+              />
+            }
+            automation={automation}
+          />
+        )}
+      {!isTemporary && ownerAvailable && !browserConfig.showBookmarksBar && (
         <div className="shrink-0 border-b border-[var(--color-border)] p-2">
           <OriginAutomationControls automation={automation} />
         </div>
@@ -523,6 +774,11 @@ export default function OriginConnectionBrowser({
           )}
         <span className="min-w-0 flex-1 truncate">
           {ownerAvailable && snapshot?.title ? snapshot.title : session.name}
+          {isTemporary && (
+            <span title="Bookmarks, favorites and connection settings require a saved connection.">
+              {" · Temporary Quick Connect"}
+            </span>
+          )}
           {snapshot?.loading
             ? browserConfig.showLoadingProgress
               ? " · Loading"
@@ -552,19 +808,27 @@ export default function OriginConnectionBrowser({
           until these settings are corrected.
         </p>
       )}
-      {navigationError && (
+      {(nativeNavigationError || navigationError) && (
         <p
           role="alert"
           className="sor-alert-error mx-3 mt-2 text-sm text-[var(--color-text)]"
         >
-          Navigation was not accepted. Enter an HTTP or HTTPS address and review
-          the native browser status.
+          {nativeNavigationError ||
+            "Navigation was not accepted. Enter an HTTP or HTTPS address and review the native browser status."}
+        </p>
+      )}
+      {pageMenu.error && (
+        <p
+          role="alert"
+          className="sor-alert-error mx-3 mt-2 text-sm text-[var(--color-text)]"
+        >
+          {pageMenu.error}
         </p>
       )}
       {!ownerAvailable && (
         <OriginBrowserCapabilityNotice
           owner={{
-            ownerDatabaseId: session.ownerDatabaseId ?? "",
+            ownerDatabaseId,
             connectionId: session.connectionId,
             sessionId: session.id,
           }}
@@ -606,6 +870,7 @@ export default function OriginConnectionBrowser({
       )}
       <OriginBrowserNotices notices={notices} />
       <OriginBrowserViewport
+        preserveRenderingUnderOverlays
         controller={browser}
         active={isActive}
         ownerAvailable={ownerAvailable}
@@ -614,13 +879,14 @@ export default function OriginConnectionBrowser({
         showLoadingProgress={browserConfig.showLoadingProgress}
         onOpenSettings={onOpenSettings}
       />
-      {editing && connection && (
+      {editing && canEdit && connection && (
         <BrowserPermissionsDialog
           session={session}
           connection={connection}
           config={globalBrowserConfig}
           onClose={() => setEditing(false)}
           onSave={async (config, permissions, reconnect) => {
+            assertShellOwner();
             const lease = captureSessionDatabaseAccess(session);
             const settingsAtStart = JSON.stringify(settings.webBrowser);
             const assertAccess = () => {

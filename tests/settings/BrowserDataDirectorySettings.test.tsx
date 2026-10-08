@@ -119,4 +119,27 @@ describe("Browser working-data location", () => {
       (screen.getByLabelText("Parent folder") as HTMLInputElement).value,
     ).toBe("/missing");
   });
+
+  it("shows recovery without hiding the saved parent and opens the active fallback", async () => {
+    mocks.invoke.mockResolvedValue({
+      ...current,
+      parentDirectory: "/disconnected-drive",
+      fallbackReason:
+        "The selected folder is unavailable. Using application-local working data; database sessions are unchanged.",
+    });
+    render(<BrowserDataDirectorySettings />);
+    await screen.findByText(/Using application-local working data/);
+    expect(
+      (screen.getByLabelText("Parent folder") as HTMLInputElement).value,
+    ).toBe("/disconnected-drive");
+    expect(screen.getByText(current.activeDirectory)).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Open folder" }));
+    await waitFor(() =>
+      expect(mocks.invoke).toHaveBeenCalledWith("open_browser_data_directory"),
+    );
+    expect(mocks.invoke).not.toHaveBeenCalledWith(
+      "set_browser_data_directory",
+      expect.anything(),
+    );
+  });
 });

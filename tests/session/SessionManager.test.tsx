@@ -1199,6 +1199,32 @@ describe("SessionManager (unified RDP + internal proxy)", () => {
     ).toBeInTheDocument();
   });
 
+  it.each(["http", "https"] as const)(
+    "labels %s frontend sessions as Browser without changing session identity or proxy labels",
+    async (protocol) => {
+      const session: ConnectionSession = { ...SSH_SESSION, protocol };
+      const { result } = renderUnifiedSessionManagerHook({
+        sessions: [session],
+        connections: [],
+      });
+      await waitFor(() => expect(result.current.rdpRows).toHaveLength(1));
+      expect(result.current.frontendConnectionRows[0]).toMatchObject({
+        uid: `${protocol}:${session.id}`,
+        kind: protocol,
+        protocol,
+        groupKey: protocol,
+        kindLabel: `Browser (${protocol.toUpperCase()})`,
+        groupLabel: `Browser (${protocol.toUpperCase()})`,
+      });
+      expect(result.current.frontendConnectionRows[0].frontendSession).toBe(
+        session,
+      );
+      expect(result.current.proxyRows[0]).toMatchObject({
+        kindLabel: "HTTP / HTTPS Proxy",
+      });
+    },
+  );
+
   it("projects SSH frontend sessions from ConnectionContext into unified rows", async () => {
     const { result } = renderUnifiedSessionManagerHook({
       sessions: [SSH_SESSION],

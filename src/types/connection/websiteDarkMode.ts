@@ -1,4 +1,6 @@
 export interface WebsiteDarkTheme {
+  /** Resolve the current app palette at runtime; never persist computed colors. */
+  followAppTheme?: boolean;
   mode: "dynamic" | "filter" | "dynamicFilter" | "customCss";
   brightness: number;
   contrast: number;

@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useLayoutEffect, useRef, useState } from "react";
+import { useCallback, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import {
@@ -16,6 +16,7 @@ import {
   type OriginBrowserConsent,
   type OriginBrowserIdentity,
   type OriginBrowserOwner,
+  type OriginBrowserQuickConnect,
   type OriginBrowserSnapshot,
   type OriginBrowserTransport,
   type OriginBrowserUnavailableReason,
@@ -34,6 +35,7 @@ export const tauriOriginBrowserTransport: OriginBrowserTransport = {
 };
 
 export interface UseOriginBrowserOptions {
+  quickConnect?: OriginBrowserQuickConnect;
   owner: OriginBrowserOwner;
   expectedSecurityRevision: string;
   sourceSessionId: string;
@@ -43,6 +45,9 @@ export interface UseOriginBrowserOptions {
   active: boolean;
   /** Include menus, trust prompts and any UI which can overlap the child. */
   dialogOpen: boolean;
+  /** Native region clipping keeps the uncovered browser painting. */
+  preserveRenderingUnderOverlays?: boolean;
+  occlusions?: readonly OriginBrowserBounds[];
   consent: OriginBrowserConsent;
   transport?: OriginBrowserTransport;
   /** Captured local owner lease, checked again immediately before native work. */
@@ -195,6 +200,8 @@ function shellSnapshot(
 
 interface Attempt {
   cancelled: boolean;
+  verified: boolean;
+  pendingSnapshot: OriginBrowserSnapshot | null;
   attached: boolean;
   identity: OriginBrowserIdentity | null;
   closeTask: Promise<boolean> | null;
@@ -213,15 +220,64 @@ export function useOriginBrowser(options: UseOriginBrowserOptions) {
     owner: { ownerDatabaseId, connectionId, sessionId },
     expectedSecurityRevision,
     sourceSessionId,
-    initialUrl,
+    initialUrl: sourceUrl,
     enabled,
     ownerAvailable,
     active,
     dialogOpen,
+    preserveRenderingUnderOverlays = false,
+    occlusions,
     consent,
     transport = tauriOriginBrowserTransport,
     assertOwner,
+    quickConnect: sourceQuickConnect,
   } = options;
+  // An explicit address-bar hop in a temporary browser is new authority for
+  // that destination, not permission for the old page to contact arbitrary
+  // sites. Retire its private context before creating the replacement.
+  const temporaryScope = JSON.stringify([
+    ownerDatabaseId,
+    connectionId,
+    sessionId,
+    expectedSecurityRevision,
+    sourceSessionId,
+    sourceUrl,
+  ]);
+  const [temporaryTarget, setTemporaryTarget] = useState<{
+    scope: string;
+    definition: OriginBrowserQuickConnect;
+    url: string;
+  } | null>(null);
+  const initialUrl =
+    sourceQuickConnect &&
+    temporaryTarget?.scope === temporaryScope &&
+    temporaryTarget.definition === sourceQuickConnect
+      ? temporaryTarget.url
+      : sourceUrl;
+  const quickConnect = useMemo(() => {
+    if (!sourceQuickConnect || initialUrl === sourceUrl)
+      return sourceQuickConnect;
+    const target = new URL(initialUrl);
+    const original = new URL(sourceUrl);
+    const sameOrigin = target.origin === original.origin;
+    return Object.freeze({
+      protocol:
+        target.protocol === "https:" ? ("https" as const) : ("http" as const),
+      hostname: target.href,
+      port: Number(target.port || (target.protocol === "https:" ? 443 : 80)),
+      // Never carry Basic Auth into a different website. Cookie/profile data
+      // is isolated by the newly allocated native attempt too.
+      httpVerifySsl: sameOrigin ? sourceQuickConnect.httpVerifySsl : true,
+      ...(sameOrigin &&
+        sourceQuickConnect.basicAuthUsername !== undefined && {
+          basicAuthUsername: sourceQuickConnect.basicAuthUsername,
+        }),
+      ...(sameOrigin &&
+        sourceQuickConnect.basicAuthPassword !== undefined && {
+          basicAuthPassword: sourceQuickConnect.basicAuthPassword,
+        }),
+    });
+  }, [sourceQuickConnect, initialUrl, sourceUrl]);
   const consentKind = consent.kind;
   const grantId = consent.kind === "existing-grant" ? consent.grantId : null;
   const [state, setState] = useState<OriginBrowserState>(initialState);
@@ -253,11 +309,14 @@ export function useOriginBrowser(options: UseOriginBrowserOptions) {
     dialogOpen: true,
     ownerAvailable: false,
     enabled: false,
+    preserveRenderingUnderOverlays: false,
+    occlusions: undefined as readonly OriginBrowserBounds[] | undefined,
   });
 
   const closeAttempt = useCallback(
     async (attempt: Attempt): Promise<boolean> => {
       attempt.cancelled = true;
+      attempt.pendingSnapshot = null;
       attempt.unsubscribe?.();
       attempt.unsubscribe = null;
       if (!attempt.identity) return true;
@@ -284,16 +343,25 @@ export function useOriginBrowser(options: UseOriginBrowserOptions) {
       flags.enabled &&
       flags.ownerAvailable &&
       flags.active &&
-      !flags.dialogOpen &&
+      (!flags.dialogOpen || flags.preserveRenderingUnderOverlays) &&
       !!bounds;
-    const key = JSON.stringify({ bounds, visible });
+    const clipping = flags.preserveRenderingUnderOverlays
+      ? { occlusions: flags.occlusions ?? [], inputBlocked: flags.dialogOpen }
+      : {};
+    const key = JSON.stringify({ bounds, visible, ...clipping });
     if (key === attempt.presentationKey) return;
     attempt.presentationKey = key;
     const revision = ++attempt.presentationRevision;
     void attempt.transport
       .control({
         identity: attempt.identity,
-        action: { kind: "presentation", revision, bounds, visible },
+        action: {
+          kind: "presentation",
+          revision,
+          bounds,
+          visible,
+          ...clipping,
+        },
       })
       .catch(() => {
         if (
@@ -307,9 +375,24 @@ export function useOriginBrowser(options: UseOriginBrowserOptions) {
 
   // Commit visibility before starting or reconciling asynchronous native work.
   useLayoutEffect(() => {
-    presentation.current = { active, dialogOpen, ownerAvailable, enabled };
+    presentation.current = {
+      active,
+      dialogOpen,
+      ownerAvailable,
+      enabled,
+      preserveRenderingUnderOverlays,
+      occlusions,
+    };
     present();
-  }, [active, dialogOpen, ownerAvailable, enabled, present]);
+  }, [
+    active,
+    dialogOpen,
+    ownerAvailable,
+    enabled,
+    preserveRenderingUnderOverlays,
+    occlusions,
+    present,
+  ]);
 
   useLayoutEffect(() => {
     const owner = Object.freeze({ ownerDatabaseId, connectionId, sessionId });
@@ -348,6 +431,8 @@ export function useOriginBrowser(options: UseOriginBrowserOptions) {
     }
     const attempt: Attempt = {
       cancelled: false,
+      verified: false,
+      pendingSnapshot: null,
       attached: false,
       identity: null,
       closeTask: null,
@@ -382,6 +467,14 @@ export function useOriginBrowser(options: UseOriginBrowserOptions) {
       const snapshot = shellSnapshot(value);
       if (!snapshot) {
         attempt.fail();
+        return;
+      }
+      if (!attempt.verified) {
+        if (
+          !attempt.pendingSnapshot ||
+          snapshot.sequence > attempt.pendingSnapshot.sequence
+        )
+          attempt.pendingSnapshot = snapshot;
         return;
       }
       if (snapshot.sequence <= attempt.sequence) return;
@@ -463,12 +556,17 @@ export function useOriginBrowser(options: UseOriginBrowserOptions) {
         unavailable(status.capability.reason ?? "host-unavailable");
         return;
       }
-      if (status.capability?.availability !== "available") throw new Error();
+      if (
+        status.capability?.availability !== "available" &&
+        status.capability?.availability !== "deferred"
+      )
+        throw new Error();
       startupStage = "owner-check";
       const requestId = crypto.randomUUID();
       ownerGuard.current?.();
       startupStage = "create";
       const result = await transport.create({
+        ...(quickConnect ? { quickConnect } : {}),
         owner,
         expectedSecurityRevision,
         sourceSessionId,
@@ -502,9 +600,6 @@ export function useOriginBrowser(options: UseOriginBrowserOptions) {
         attempt.fail();
         return;
       }
-      attempt.publish(result.snapshot);
-      if (!live()) return;
-      present();
       startupStage = "resync";
       const refreshed = await transport.status({
         owner,
@@ -516,7 +611,16 @@ export function useOriginBrowser(options: UseOriginBrowserOptions) {
         return;
       }
       if (refreshed.capability?.availability !== "available") throw new Error();
+      // Fold early native events and both replies before exposing a view. A
+      // newer failure/close must not briefly display an older attached state.
+      attempt.publish(result.snapshot);
+      if (!live()) return;
       if (refreshed.snapshot) attempt.publish(refreshed.snapshot);
+      if (!live()) return;
+      const latest = attempt.pendingSnapshot;
+      attempt.pendingSnapshot = null;
+      attempt.verified = true;
+      if (latest) attempt.publish(latest);
     };
     attempt.startup = start().catch(startupFailed);
     return () => {
@@ -539,6 +643,7 @@ export function useOriginBrowser(options: UseOriginBrowserOptions) {
     sourceSessionId,
     initialUrl,
     enabled,
+    quickConnect,
     ownerAvailable,
     consentKind,
     grantId,
@@ -665,12 +770,22 @@ export function useOriginBrowser(options: UseOriginBrowserOptions) {
     [runPageControl],
   );
   const find = useCallback(
-    (text: string, forward = true, matchCase = false, findNext = false) => {
+    (
+      text: string,
+      forward = true,
+      matchCase = false,
+      findNext = false,
+      requestId?: string,
+    ) => {
       if (
         typeof text !== "string" ||
         !text ||
         text.includes("\0") ||
-        new TextEncoder().encode(text).length > 1024
+        new TextEncoder().encode(text).length > 1024 ||
+        (requestId !== undefined &&
+          !/^[\da-f]{8}-[\da-f]{4}-[\da-f]{4}-[\da-f]{4}-[\da-f]{12}$/i.test(
+            requestId,
+          ))
       )
         return Promise.resolve(false);
       return runPageControl({
@@ -679,6 +794,7 @@ export function useOriginBrowser(options: UseOriginBrowserOptions) {
         forward,
         matchCase,
         findNext,
+        ...(requestId === undefined ? {} : { requestId }),
       });
     },
     [runPageControl],
@@ -711,6 +827,22 @@ export function useOriginBrowser(options: UseOriginBrowserOptions) {
         return false;
       try {
         ownerGuard.current?.();
+        if (
+          sourceQuickConnect &&
+          new URL(url).origin !== new URL(initialUrl).origin
+        ) {
+          if (latestScope.current !== commandScope) return false;
+          setState({ ...initialState, phase: "starting" });
+          // Immediately stop accepting actions on the predecessor. The effect
+          // cleanup/start queue below waits for its actual close acknowledgement.
+          void closeAttempt(attempt);
+          setTemporaryTarget({
+            scope: temporaryScope,
+            definition: sourceQuickConnect,
+            url,
+          });
+          return true;
+        }
         await attempt.transport.navigate({ identity: attempt.identity, url });
         return current.current === attempt && !attempt.cancelled;
       } catch {
@@ -718,7 +850,14 @@ export function useOriginBrowser(options: UseOriginBrowserOptions) {
         return false;
       }
     },
-    [state.snapshot],
+    [
+      state.snapshot,
+      sourceQuickConnect,
+      initialUrl,
+      commandScope,
+      temporaryScope,
+      closeAttempt,
+    ],
   );
 
   const close = useCallback(

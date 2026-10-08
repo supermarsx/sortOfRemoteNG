@@ -41,6 +41,8 @@ export type OriginBrowserUnavailableReason =
   | "host-unavailable";
 
 export type OriginBrowserCapability =
+  // An authorized create may start the runtime; this is not verified readiness.
+  | { readonly availability: "deferred" }
   // Only native acceptance of every required policy may report available.
   | { readonly availability: "available" }
   | {
@@ -65,7 +67,18 @@ export interface OriginBrowserSnapshot {
   readonly canGoForward: boolean;
 }
 
+/** Volatile Quick Connect input. No saved-record, route or vault references. */
+export interface OriginBrowserQuickConnect {
+  readonly protocol: "http" | "https";
+  readonly hostname: string;
+  readonly port: number;
+  readonly httpVerifySsl: boolean;
+  readonly basicAuthUsername?: string;
+  readonly basicAuthPassword?: string;
+}
+
 export interface OriginBrowserCreateRequest {
+  readonly quickConnect?: OriginBrowserQuickConnect;
   readonly owner: OriginBrowserOwner;
   /** Compare with authoritative native database state; not renderer authority. */
   readonly expectedSecurityRevision: string;
@@ -94,6 +107,8 @@ export type OriginBrowserAction =
     }
   | {
       readonly kind: "find";
+      /** Correlation only; owner/attempt authority stays native. */
+      readonly requestId?: string;
       /** Nonempty, at most 1,024 UTF-8 bytes; no NUL. */
       readonly text: string;
       readonly forward: boolean;
@@ -112,6 +127,9 @@ export type OriginBrowserAction =
       readonly revision: number;
       readonly bounds: OriginBrowserBounds | null;
       readonly visible: boolean;
+      /** Window-logical rectangles covered by shell menus/dialogs. */
+      readonly occlusions?: readonly OriginBrowserBounds[];
+      readonly inputBlocked?: boolean;
     }
   | {
       readonly kind: "focus";
@@ -123,6 +141,19 @@ export type OriginBrowserAction =
 export interface OriginBrowserStatusRequest {
   readonly owner: OriginBrowserOwner;
   readonly identity?: OriginBrowserIdentity;
+}
+
+export const ORIGIN_BROWSER_FIND_EVENT = "origin-browser-find-result";
+export interface OriginBrowserFindResult {
+  readonly requestId: string;
+  readonly activeMatchOrdinal: number;
+  readonly numberOfMatches: number;
+  readonly finalUpdate: boolean;
+}
+export interface OriginBrowserFindEvent {
+  readonly sourceIdentity: OriginBrowserIdentity;
+  readonly viewId: string | null;
+  readonly result: OriginBrowserFindResult;
 }
 
 export interface OriginBrowserStatusResult {

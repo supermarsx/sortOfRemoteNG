@@ -16,6 +16,8 @@ use std::time::Instant;
 
 #[path = "cef_containment.rs"]
 mod containment;
+#[path = "cef_native_path.rs"]
+mod native_path;
 const POLICY_PENDING: u8 = 0;
 const POLICY_CONFIGURED: u8 = 1;
 const POLICY_FAILED: u8 = 2;
@@ -58,19 +60,7 @@ pub const NATIVE_HOST_RESOLVER_RULES: &str = "MAP * ^NOTFOUND, EXCLUDE 127.0.0.1
 /// verification belongs to package admission; existence alone is NOT trust.
 pub fn native_settings(helper: &Path, resources: &Path) -> Result<Settings, RuntimeError> {
     fn text(path: &Path, file: bool) -> Result<String, RuntimeError> {
-        if !path.is_absolute()
-            || (if file {
-                !path.is_file()
-            } else {
-                !path.is_dir()
-            })
-        {
-            return Err(RuntimeError::InvalidPackagePath);
-        }
-        path.to_str()
-            .filter(|value| !value.contains('\0'))
-            .map(str::to_owned)
-            .ok_or(RuntimeError::InvalidPackagePath)
+        native_path::text(path, file).ok_or(RuntimeError::InvalidPackagePath)
     }
     Ok(Settings {
         // CEF's Windows sandbox bootstrap EXE must dispatch every process;
@@ -106,13 +96,9 @@ pub fn native_settings_with_data_root(
     resources: &Path,
     data_root: &Path,
 ) -> Result<Settings, RuntimeError> {
-    if !data_root.is_absolute() || !data_root.is_dir() {
-        return Err(RuntimeError::InvalidPackagePath);
-    }
-    let root = data_root.to_str().filter(|value| !value.contains('\0'))
-        .ok_or(RuntimeError::InvalidPackagePath)?;
+    let root = native_path::text(data_root, false).ok_or(RuntimeError::InvalidPackagePath)?;
     let mut settings = native_settings(helper, resources)?;
-    settings.root_cache_path = CefString::from(root);
+    settings.root_cache_path = CefString::from(root.as_str());
     Ok(settings)
 }
 
@@ -243,14 +229,15 @@ wrap_app! {
         }
 
         fn on_before_command_line_processing(
-            &self, _process_type: Option<&CefString>, command_line: Option<&mut CommandLine>
+            &self, process_type: Option<&CefString>, command_line: Option<&mut CommandLine>
         ) {
             if let Some(command_line) = command_line {
                 // CEF 682c378 lazily seeds its metrics RNG with BoringSSL.
                 // Lock timing can first-use it inside PartitionAlloc, causing
                 // recursive allocation and a fatal check during startup.
-                // Disable only optional lock telemetry, in browser AND helper
-                // processes. Keep all sandbox/TLS/allocator checks enabled.
+                // Disable optional lock telemetry in browser AND helper
+                // processes, alongside the startup service policy below. Keep
+                // all sandbox/TLS/allocator checks enabled.
                 let disabled = startup_features::disabled_features(
                     &CefString::from(
                         &command_line.switch_value(Some(&CefString::from("disable-features"))),
@@ -260,6 +247,28 @@ wrap_app! {
                     Some(&CefString::from("disable-features")),
                     Some(&CefString::from(disabled.as_str())),
                 );
+                let enabled = startup_features::enabled_features(
+                    &CefString::from(
+                        &command_line.switch_value(Some(&CefString::from("enable-features"))),
+                    ).to_string(),
+                );
+                command_line.append_switch_with_value(
+                    Some(&CefString::from("enable-features")),
+                    Some(&CefString::from(enabled.as_str())),
+                );
+                // Configure before Chrome creates profiles/services. Installing
+                // preferences in OnContextInitialized is too late to prevent
+                // external registry discovery or eager speech-model downloads.
+                command_line.append_switch(Some(&CefString::from(
+                    startup_features::DISABLE_DEFAULT_APPS,
+                )));
+                // Set before profile/renderer creation. Chromium propagates
+                // this browser-process preference to its renderer command line.
+                if process_type.is_none_or(|process| process.to_string().is_empty()) {
+                    command_line.append_switch(Some(&CefString::from(
+                        startup_features::DISABLE_PRINT_PREVIEW,
+                    )));
+                }
                 // Necessary transport restrictions, not a containment proof.
                 // No security-disable, remote-debugging, UA or WebDriver spoof.
                 #[cfg(target_os = "linux")]
@@ -282,10 +291,6 @@ wrap_app! {
                 // rewriting or page-dependent suspension; runtime acceptance
                 // still has to measure first paint on all three platforms.
                 command_line.append_switch(Some(&CefString::from("force-dark-mode")));
-                command_line.append_switch_with_value(
-                    Some(&CefString::from("enable-features")),
-                    Some(&CefString::from("WebContentsForceDark")),
-                );
                 command_line.append_switch_with_value(
                     Some(&CefString::from("force-webrtc-ip-handling-policy")),
                     Some(&CefString::from("disable_non_proxied_udp")),
@@ -839,6 +844,81 @@ mod tests {
     }
 
     #[test]
+    fn startup_policy_avoids_external_extension_discovery_and_eager_speech_downloads() {
+        #[cfg(target_os = "macos")]
+        crate::platform::test_runtime::ensure_loaded();
+        bootstrap_platform::select_pinned_api().unwrap();
+        let app = subprocess_application();
+        for process in ["", "renderer", "utility", "gpu-process"] {
+            let mut command = command_line_create().unwrap();
+            command.append_switch_with_value(
+                Some(&CefString::from("disable-features")),
+                Some(&CefString::from("ExistingFeature<Trial:key/value")),
+            );
+            command.append_switch_with_value(
+                Some(&CefString::from("enable-features")),
+                Some(&CefString::from("ExistingEnabled<Trial:key/value")),
+            );
+            // Multiple callbacks must preserve the existing policy and must not
+            // grow the feature list. No globally disabled graphics or extensions.
+            for _ in 0..2 {
+                app.on_before_command_line_processing(
+                    Some(&CefString::from(process)),
+                    Some(&mut command),
+                );
+                assert_eq!(
+                    command.has_switch(Some(&CefString::from("disable-default-apps"))),
+                    1
+                );
+                assert_eq!(
+                    command.has_switch(Some(&CefString::from("disable-print-preview"))),
+                    i32::from(process.is_empty()),
+                    "only the browser startup callback installs native-dialog policy"
+                );
+                assert_eq!(
+                    CefString::from(&command.switch_value(Some(&CefString::from("disable-features")))).to_string(),
+                    "ExistingFeature<Trial:key/value,RecordLockAcquisitionTime,PreemptiveSodaDownload,SodaComponentUpdates"
+                );
+                let enabled = CefString::from(
+                    &command.switch_value(Some(&CefString::from("enable-features"))),
+                )
+                .to_string();
+                assert_eq!(enabled,
+                    "ExistingEnabled<Trial:key/value,SkipIPv6ReachabilityProbe,WebContentsForceDark");
+                // Inspect the actual native CommandLine after the whole
+                // callback: a second append previously erased the probe flag.
+                for required in ["SkipIPv6ReachabilityProbe", "WebContentsForceDark"] {
+                    assert_eq!(
+                        enabled
+                            .split(',')
+                            .filter(|feature| feature.split(['<', ':']).next() == Some(required))
+                            .count(),
+                        1,
+                        "{process}: {required}"
+                    );
+                }
+                for forbidden in [
+                    "disable-extensions",
+                    "disable-component-update",
+                    "disable-gpu",
+                    "disable-webgl",
+                    "disable-direct-composition",
+                    "disable-logging",
+                    "log-level",
+                    "no-sandbox",
+                    "disable-web-security",
+                ] {
+                    assert_eq!(
+                        command.has_switch(Some(&CefString::from(forbidden))),
+                        0,
+                        "{forbidden}"
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
     fn owned_provider_outlives_app_and_is_dropped_after_explicit_shutdown() {
         #[cfg(target_os = "macos")]
         crate::platform::test_runtime::ensure_loaded();
@@ -1010,7 +1090,7 @@ mod tests {
         assert_eq!(
             CefString::from(&command_line.switch_value(Some(&CefString::from("enable-features"))))
                 .to_string(),
-            "WebContentsForceDark"
+            "SkipIPv6ReachabilityProbe,WebContentsForceDark"
         );
         assert_eq!(
             command_line.has_switch(Some(&CefString::from("disable-quic"))),
@@ -1097,10 +1177,15 @@ mod tests {
         let directory = executable.parent().unwrap();
         let settings = native_settings_with_data_root(&executable, directory, directory).unwrap();
         bootstrap_platform::validate_native_settings(&settings).unwrap();
-        assert_eq!(settings.root_cache_path.to_string(), directory.to_str().unwrap());
+        assert_eq!(
+            settings.root_cache_path.to_string(),
+            native_path::text(directory, false).unwrap()
+        );
         assert!(settings.cache_path.to_string().is_empty());
         assert_eq!(settings.persist_session_cookies, 0);
-        assert!(native_settings_with_data_root(&executable, directory, Path::new("relative")).is_err());
+        assert!(
+            native_settings_with_data_root(&executable, directory, Path::new("relative")).is_err()
+        );
         assert!(native_settings_with_data_root(&executable, directory, &executable).is_err());
     }
 

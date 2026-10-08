@@ -9,6 +9,15 @@ import type { SettingSearchEntry } from "./types";
  */
 export const WEB_BROWSER_SEARCH_ENTRIES: SettingSearchEntry[] = [
   {
+    key: "webBrowser.idlePrewarmEnabled",
+    label: "Prewarm browser while idle",
+    description:
+      "Prepare the native engine after a saved website's database is unlocked. Enabled by default; uses memory earlier to reduce the first website's startup delay without opening a page.",
+    tags: ["prewarm", "warmup", "startup", "idle", "CEF", "memory", "speed"],
+    section: "webBrowser",
+    sectionLabel: "Web Browser",
+  },
+  {
     key: "webBrowser.engine",
     label: "Default browser engine",
     description:
@@ -182,9 +191,10 @@ export const WEB_BROWSER_SEARCH_ENTRIES: SettingSearchEntry[] = [
   },
   {
     key: "webBrowser.popupPolicy",
-    label: "Tactical RMM popups",
-    description: "Open supported Tactical RMM popups in tabs or block them.",
-    tags: ["popup", "window.open", "tabs", "tactical", "rmm"],
+    label: "Website popups",
+    description:
+      "Open allowed native popups as temporary tabs in the same connection or block them. Reopen the website to apply. Legacy support is limited to Tactical RMM.",
+    tags: ["popup", "window.open", "tabs", "native", "tactical", "rmm"],
     section: "webBrowser",
     sectionLabel: "Web Browser",
     values: ["tabs", "Open in tabs", "block", "Block popups"],

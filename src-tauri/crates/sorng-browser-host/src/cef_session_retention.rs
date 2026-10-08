@@ -10,6 +10,20 @@ pub const MAX_COOKIES: usize = 256;
 pub const MAX_COOKIE_BYTES: usize = 256 * 1024;
 pub const MAX_TOTAL_BYTES: usize = 16 * 1024 * 1024;
 
+// CEF's generated enum integers vary by platform (same-site is u32 on Linux,
+// i32 on Windows). Keep the existing signed storage schema without truncating
+// unknown values or making a future enum sentinel into a valid cookie policy.
+#[cfg(any(feature = "cef-host", test))]
+fn cookie_enum_values(
+    same_site: impl TryInto<i32>,
+    priority: impl TryInto<i32>,
+) -> Option<(i32, i32)> {
+    let same_site = same_site.try_into().ok()?;
+    let priority = priority.try_into().ok()?;
+    ((0..=3).contains(&same_site) && (0..=2).contains(&priority))
+        .then_some((same_site, priority))
+}
+
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum RetentionMode {
@@ -298,6 +312,9 @@ pub(crate) mod native {
                         || cookie.path.as_slice().map_or(0, |v| v.len()) > 4096 {
                         state.failed = true; return;
                     }
+                    let Some((same_site, priority)) = cookie_enum_values(
+                        cookie.same_site.get_raw(), cookie.priority.get_raw(),
+                    ) else { keep_going = true; return; };
                     let mut saved = SignInCookie {
                         origin: self.origin.clone(), name: cookie.name.to_string(),
                         value: if self.discovery { String::new() } else { cookie.value.to_string() },
@@ -305,8 +322,8 @@ pub(crate) mod native {
                         secure: cookie.secure != 0, http_only: cookie.httponly != 0,
                         creation: cookie.creation.val,
                         expires: (cookie.has_expires != 0).then_some(cookie.expires.val),
-                        same_site: cookie.same_site.get_raw(),
-                        priority: cookie.priority.get_raw(),
+                        same_site,
+                        priority,
                     };
                     // CEF exposes domain/path, not the historical setter origin.
                     // Bind to one exact currently approved matching origin.
@@ -529,6 +546,33 @@ pub use native::CookieCapture;
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn cookie_enum_values_preserve_signed_and_unsigned_platform_abis() {
+        for same_site in 0..=3 {
+            for priority in 0..=2 {
+                let expected = Some((same_site, priority));
+                assert_eq!(cookie_enum_values(same_site, priority), expected);
+                assert_eq!(cookie_enum_values(same_site as u32, priority), expected);
+                assert_eq!(cookie_enum_values(same_site, priority as u32), expected);
+            }
+        }
+    }
+
+    #[test]
+    fn cookie_enum_values_reject_unknown_sentinels_and_overflow() {
+        for same_site in [-1, 4, i32::MAX] {
+            assert_eq!(cookie_enum_values(same_site, 1), None);
+        }
+        for same_site in [4_u32, i32::MAX as u32 + 1, u32::MAX] {
+            assert_eq!(cookie_enum_values(same_site, 1), None);
+        }
+        for priority in [-1, 3, i32::MAX] {
+            assert_eq!(cookie_enum_values(0, priority), None);
+        }
+        assert_eq!(cookie_enum_values(0, u32::MAX), None);
+    }
+
     fn cookie() -> SignInCookie {
         SignInCookie {
             origin: "https://same.example".into(),

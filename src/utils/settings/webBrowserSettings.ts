@@ -68,6 +68,7 @@ export function normalizeWebBrowserSettings(
         ![
           "version",
           "engine",
+          "idlePrewarmEnabled",
           "showBookmarksBar",
           "showSecurityInfo",
           "showLoadingProgress",
@@ -125,6 +126,7 @@ export function normalizeWebBrowserSettings(
     // Persisted legacy values may be explicit choices or earlier normalized
     // defaults. Without provenance, preserve both; only missing keys migrate.
     engine: row.engine === "legacy" ? "legacy" : "real-origin",
+    idlePrewarmEnabled: boolean(row.idlePrewarmEnabled, true),
     showBookmarksBar: boolean(row.showBookmarksBar, true),
     showSecurityInfo: boolean(row.showSecurityInfo, true),
     showLoadingProgress: boolean(row.showLoadingProgress, true),

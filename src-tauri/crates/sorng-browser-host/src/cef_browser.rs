@@ -4,6 +4,14 @@
 //! before enabling website navigation. No native handle or command is page IPC.
 
 use crate::cef_context::{ContextError, PrivateRequestContext};
+use crate::cef_downloads::DownloadAttachment;
+#[path = "cef_downloads_host.rs"]
+mod cef_downloads_host;
+#[path = "cef_find.rs"]
+mod cef_find;
+pub use cef_find::{NativeFindCompletion, NativeFindResult};
+#[path = "cef_login_totp.rs"]
+mod login_totp;
 use crate::cef_requests::{navigation_allowed, request_handler_with_lifecycle, RequestLifecycle};
 use crate::control::{BrowserControl, ControlError, Lifecycle, ViewportBounds};
 use crate::domain_permissions::WebsitePermissionEngine;
@@ -36,9 +44,19 @@ use std::collections::HashMap;
 use std::marker::PhantomData;
 use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::rc::Rc as ThreadBound;
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
+
+#[path = "cef_popups.rs"]
+mod cef_popups;
+pub use cef_popups::{NativePopupInventory, NativePopupViewState};
+#[path = "cef_appearance.rs"]
+mod cef_appearance;
+pub use cef_appearance::{AppearanceCompletion, AppearanceGuard};
+#[path = "cef_page_menu.rs"]
+mod page_menu;
+pub use page_menu::{HistoryEntry, HistorySnapshot, PageMenuCompletion, PageMenuGuard, PageMenuResult};
 
 static NEXT_CERTIFICATE_REQUEST: AtomicU64 = AtomicU64::new(1);
 static NEXT_AUTOMATION_REQUEST: AtomicU64 = AtomicU64::new(1);
@@ -212,10 +230,86 @@ pub enum NativeNavigationStatus {
     },
 }
 
+/// Native CEF server challenge, never a proxy challenge or renderer message.
+/// The owner must bind credentials to this exact attempt and source origin.
+pub struct NativeHttpAuthChallenge<'a> {
+    pub identity: &'a BrowserIdentity,
+    pub origin_url: &'a str,
+    pub host: &'a str,
+    pub port: u16,
+    pub scheme: &'a str,
+}
+
+trait HttpAuthCompletion {
+    fn continue_with(&self, username: &str, password: &str);
+    fn cancel(&self);
+}
+
+impl HttpAuthCompletion for AuthCallback {
+    fn continue_with(&self, username: &str, password: &str) {
+        self.cont(Some(&CefString::from(username)), Some(&CefString::from(password)));
+    }
+
+    fn cancel(&self) {
+        ImplAuthCallback::cancel(self);
+    }
+}
+
+// Track actual delivery, not the hook's return value. Even a faulty hook that
+// invokes delivery twice, returns false after delivery or panics cannot cause
+// a second native completion. No credentials escape this synchronous scope.
+fn complete_http_basic_auth(
+    callback: Option<&impl HttpAuthCompletion>,
+    grant: impl FnOnce(&mut dyn FnMut(&str, &str)),
+) -> (i32, bool) {
+    let Some(callback) = callback else { return (0, false); };
+    let mut completed = false;
+    let panicked = catch_unwind(AssertUnwindSafe(|| {
+        grant(&mut |username, password| {
+            if !completed {
+                completed = true;
+                callback.continue_with(username, password);
+            }
+        });
+    })).is_err();
+    if !completed {
+        callback.cancel();
+    }
+    (1, panicked)
+}
+
+fn auth_challenge_text(value: Option<&CefString>, max: usize) -> Option<String> {
+    let value = value?.as_slice()?;
+    if value.is_empty() || value.len() > max { return None; }
+    let text = String::from_utf16(value).ok()?;
+    (text.len() <= max && !text.chars().any(char::is_control)).then_some(text)
+}
+
 /// Native owner callbacks. Notifications carry no secrets or frame handles;
 /// credential delivery is a separate synchronous, consent-checked operation.
 pub trait NativeDocumentHooks: Send + Sync {
+    /// Immutable native-authorized appearance plus the current trusted-shell
+    /// palette. No disk IO or caller-provided executable configuration here.
+    fn appearance_configuration(&self) -> Option<String> { None }
     fn on_main_document(&self, identity: &BrowserIdentity, sequence: u64);
+
+    /// Selected native authenticator only. The renderer gets keyboard events,
+    /// never a seed; every key and final submit must recheck current authority.
+    fn with_totp(&self, _request: &crate::native_totp::NativeTotpRequest<'_>,
+        _deliver: &mut dyn FnMut(crate::native_totp::NativeTotpCode<'_>)) -> Option<Duration> { None }
+
+    fn totp_current(&self, _request: &crate::native_totp::NativeTotpRequest<'_>, _submit: bool) -> bool { false }
+
+    /// Separate from form login and proxy credentials. Default denies. Native
+    /// owners must recheck their live grant and invoke delivery synchronously
+    /// at most once, without retaining the callback or performing database IO.
+    fn with_http_basic_auth(
+        &self,
+        _challenge: &NativeHttpAuthChallenge<'_>,
+        _deliver: &mut dyn FnMut(&str, &str),
+    ) -> bool {
+        false
+    }
 
     /// Immutable saved-application policy, queried once during host creation.
     /// A known but unported application must return Unsupported, never Generic.
@@ -387,13 +481,18 @@ impl State {
 }
 
 struct Shared {
+    popup: cef_popups::PopupRole,
     session: Arc<Mutex<OriginBrowserSession>>,
     identity: BrowserIdentity,
     permissions: Arc<WebsitePermissionEngine>,
     state: Arc<Mutex<State>>,
+    // Independent of visibility: clipped views keep painting while shell
+    // overlays must prevent native navigation/system focus from returning.
+    input_blocked: AtomicBool,
     sink: Arc<dyn BrowserEventSink>,
     hooks: Option<Arc<dyn NativeDocumentHooks>>,
     login_budget: Mutex<LoginBudget>,
+    login_totp: Mutex<login_totp::State>,
     feature_gate: Mutex<RendererFeatureGate>,
     login_adapter: NativeLoginAdapter,
     certificate_policy: NativeCertificatePolicy,
@@ -675,6 +774,7 @@ fn emit_state(
 
 #[derive(Clone)]
 struct CleanupOwner {
+    view_closed: Option<Arc<std::sync::atomic::AtomicBool>>,
     state: Arc<Mutex<State>>,
     session: Arc<Mutex<OriginBrowserSession>>,
     identity: BrowserIdentity,
@@ -687,7 +787,8 @@ impl CleanupOwner {
     fn revoked_attempt(&self) -> bool {
         self.session.lock().is_ok_and(|session| {
             session.policy().identity() == &self.identity
-                && session.status() == BrowserSessionStatus::Revoked
+                && (session.status() == BrowserSessionStatus::Revoked
+                    || self.view_closed.as_ref().is_some_and(|closed| closed.load(Ordering::Acquire)))
         })
     }
 
@@ -1052,6 +1153,10 @@ impl Shared {
     }
 
     fn clear_automation(&self) {
+        // UI-thread find slots are document-local. Off-thread revocation also
+        // fences callbacks through current() and the automation generation.
+        cef_find::invalidate(self);
+        self.login_totp.lock().unwrap_or_else(|error| error.into_inner()).cancel();
         self.cancel_media();
         let pending = {
             let mut state = self
@@ -1409,7 +1514,7 @@ impl Shared {
     }
 
     fn login_message(
-        &self,
+        self: &Arc<Self>,
         browser: Option<&Browser>,
         frame: Option<&Frame>,
         source: ProcessId,
@@ -1424,7 +1529,7 @@ impl Shared {
         };
         let name = CefString::from(&message.name()).to_string();
         if source != ProcessId::RENDERER
-            || !matches!(name.as_str(), LOGIN_REQUEST | LOGIN_DELIVERY_STATUS)
+            || !matches!(name.as_str(), LOGIN_REQUEST | LOGIN_DELIVERY_STATUS | crate::native_totp::REQUEST)
         {
             return 0;
         }
@@ -1453,6 +1558,10 @@ impl Shared {
         let Some(args) = message.argument_list().filter(|args| args.size() == 3) else {
             return 1;
         };
+        if name == crate::native_totp::REQUEST {
+            self.totp_message(browser, frame, &args, &url, &origin);
+            return 1;
+        }
         if name == LOGIN_DELIVERY_STATUS {
             if message_text(&args, 0, 1024).as_deref() == Some(&origin)
                 && message_text(&args, 1, 80).as_deref()
@@ -1549,7 +1658,7 @@ impl Shared {
             let ttl = credentials
                 .valid_until
                 .saturating_duration_since(std::time::Instant::now())
-                .min(std::time::Duration::from_secs(2));
+                .min(std::time::Duration::from_secs(if stage.is_action() || stage == NativeLoginStage::FormPrepare { 2 } else { 30 }));
             let Ok(deadline) =
                 (std::time::SystemTime::now() + ttl).duration_since(std::time::UNIX_EPOCH)
             else {
@@ -1588,17 +1697,76 @@ impl Shared {
     }
 
     fn revoke(&self) {
+        cef_appearance::revoke(self);
         self.cancel_certificate(None);
-        let mut session = self
-            .session
-            .lock()
-            .unwrap_or_else(|error| error.into_inner());
-        let _ = session.revoke(&self.identity);
-        drop(session);
+        if let Some(closed) = self.popup.view_closed() {
+            // A native popup owns a view, not the source session/relay lease.
+            closed.store(true, Ordering::Release);
+        } else {
+            let mut session = self
+                .session
+                .lock()
+                .unwrap_or_else(|error| error.into_inner());
+            let _ = session.revoke(&self.identity);
+            drop(session);
+        }
         self.clear_automation();
     }
 
+    #[allow(clippy::too_many_arguments)]
+    fn http_basic_auth(
+        &self,
+        browser: Option<&Browser>,
+        origin_url: Option<&CefString>,
+        host: Option<&CefString>,
+        port: i32,
+        scheme: Option<&CefString>,
+        callback: Option<&AuthCallback>,
+    ) -> i32 {
+        // Observe poisoned/revoked session state even for malformed callbacks.
+        let live = self.current() && self.accepts(browser);
+        let (decision, panicked) = complete_http_basic_auth(callback, |deliver| {
+            if !live { return; }
+            let (Some(origin_url), Some(host), Some(scheme), Some(port)) = (
+                auth_challenge_text(origin_url, 16_384),
+                auth_challenge_text(host, 1024),
+                auth_challenge_text(scheme, 32),
+                u16::try_from(port).ok().filter(|port| *port != 0),
+            ) else { return; };
+            if !scheme.eq_ignore_ascii_case("basic") { return; }
+            let Some(hooks) = self.hooks.as_ref() else { return; };
+            let session = match self.session.lock() {
+                Ok(session) => session,
+                Err(poisoned) => {
+                    let _ = poisoned.into_inner().revoke(&self.identity);
+                    return;
+                }
+            };
+            // Keep the healthy attempt/transport guard through native delivery.
+            // Resource permissions for other origins never imply a login grant.
+            if session.authorize_source_navigation(&self.identity, &origin_url).is_err() {
+                return;
+            }
+            hooks.with_http_basic_auth(&NativeHttpAuthChallenge {
+                identity: &self.identity,
+                origin_url: &origin_url,
+                host: &host,
+                port,
+                scheme: &scheme,
+            }, deliver);
+        });
+        if panicked {
+            // No session guard survives the unwind. Revoke before returning
+            // through CEF, including when a faulty hook panics after delivery.
+            self.revoke();
+        }
+        decision
+    }
+
     fn current(&self) -> bool {
+        if self.popup.view_closed().is_some_and(|closed| closed.load(Ordering::Acquire)) {
+            return false;
+        }
         let session = match self.session.lock() {
             Ok(session) => session,
             Err(poisoned) => {
@@ -1611,6 +1779,16 @@ impl Shared {
                 session.status(),
                 BrowserSessionStatus::NotReady | BrowserSessionStatus::Ready
             )
+    }
+
+    fn focus_allowed(&self, browser: Option<&Browser>) -> bool {
+        !self.input_blocked.load(Ordering::Acquire)
+            && self
+                .state
+                .lock()
+                .is_ok_and(|state| state.control.lifecycle() == Lifecycle::Attached)
+            && self.current()
+            && self.accepts(browser)
     }
 
     fn accepts(&self, browser: Option<&Browser>) -> bool {
@@ -1643,6 +1821,7 @@ impl Shared {
 
     fn cleanup_owner(&self) -> CleanupOwner {
         CleanupOwner {
+            view_closed: self.popup.view_closed(),
             state: self.state.clone(),
             session: self.session.clone(),
             identity: self.identity.clone(),
@@ -1799,10 +1978,13 @@ fn native_bounds(bounds: ViewportBounds, scale: f64) -> Result<Rect, BrowserErro
 /// parent alive while pumping CEF until `lifecycle() == Closed`, then shut down.
 /// Dropping early revokes transport and initiates closure, but cannot pump CEF.
 pub struct CefBrowserHost<'a> {
+    downloads: DownloadAttachment,
     browser: BrowserSlot,
     shared: Arc<Shared>,
-    _context: PrivateRequestContext,
-    _parent: ParentLifetime<'a>,
+    _context: Option<PrivateRequestContext>,
+    _parent: Option<ParentLifetime<'a>>,
+    // A borrowed popup facade never owns a context or closes on scope exit.
+    close_on_drop: bool,
     _ui_thread: PhantomData<ThreadBound<()>>,
 }
 
@@ -1817,7 +1999,9 @@ impl<'a> CefBrowserHost<'a> {
         crate::cef_session_retention::CookieCapture,
         crate::cef_session_retention::RetentionError,
     > {
-        self._context.capture_sign_in_cookies(owner)
+        self._context.as_ref()
+            .ok_or(crate::cef_session_retention::RetentionError::OwnerUnavailable)?
+            .capture_sign_in_cookies(owner)
     }
 
     /// Creates only a hidden, inert bootstrap. The private fixed proxy MUST have
@@ -1902,12 +2086,15 @@ impl<'a> CefBrowserHost<'a> {
         }
         let capabilities = context.capabilities();
         let shared = Arc::new(Shared {
+            popup: cef_popups::PopupRole::root(),
+            input_blocked: AtomicBool::new(false),
             session: session.clone(),
             identity: identity.clone(),
             permissions: permissions.clone(),
             sink,
             hooks,
             login_budget: Mutex::new(LoginBudget::default()),
+            login_totp: Mutex::new(login_totp::State::default()),
             feature_gate: Mutex::new(RendererFeatureGate::default()),
             login_adapter,
             certificate_policy,
@@ -1939,7 +2126,8 @@ impl<'a> CefBrowserHost<'a> {
             Some(shared.clone()),
         );
         let browser_slot = Arc::new(Mutex::new(None));
-        let mut client = NativeClient::new(shared.clone(), request, browser_slot.clone());
+        let downloads = DownloadAttachment::default();
+        let mut client = NativeClient::new(shared.clone(), request, browser_slot.clone(), downloads.clone());
         let settings = BrowserSettings {
             background_color: 0xff121212,
             local_storage: if capabilities.local_storage_enabled {
@@ -1967,6 +2155,9 @@ impl<'a> CefBrowserHost<'a> {
             Some(&CefString::from("login-factory-json")),
             Some(&CefString::from(login_factory_json.as_str())),
         );
+        // Appearance enhancement cannot gate page creation; native prepaint
+        // darkness remains if its renderer configuration cannot be installed.
+        let _ = cef_appearance::write_extra_info(&shared, &mut extra_info);
         let Some(browser) = browser_host_create_browser_sync(
             Some(&info),
             Some(&mut client),
@@ -1992,11 +2183,14 @@ impl<'a> CefBrowserHost<'a> {
                 0,
             );
         }
+        cef_popups::install(&shared, &browser, native_context.clone(), info, settings, extra_info, bounds)?;
         Ok(Self {
             browser: browser_slot,
+            downloads,
             shared,
-            _context: context,
-            _parent: parent,
+            _context: Some(context),
+            _parent: Some(parent),
+            close_on_drop: true,
             _ui_thread: PhantomData,
         })
     }
@@ -2218,11 +2412,12 @@ impl<'a> CefBrowserHost<'a> {
     }
 
     pub fn lifecycle(&self) -> Lifecycle {
-        self.shared
+        let lifecycle = self.shared
             .state
             .lock()
             .map(|state| state.control.lifecycle())
-            .unwrap_or(Lifecycle::Faulted)
+            .unwrap_or(Lifecycle::Faulted);
+        cef_popups::source_lifecycle(&self.shared.popup, lifecycle)
     }
 
     fn check(&self, identity: &BrowserIdentity) -> Result<Browser, BrowserError> {
@@ -2323,6 +2518,27 @@ impl<'a> CefBrowserHost<'a> {
         Ok(())
     }
 
+    /// Request the native print dialog for this exact host (root or popup).
+    /// Success means requested, not that printing or saving a PDF completed.
+    pub fn print_page(&self, identity: &BrowserIdentity) -> Result<(), BrowserError> {
+        page_menu::print(self, identity)
+    }
+
+    pub fn apply_appearance(&self, identity: &BrowserIdentity, json: &str,
+        guard: AppearanceGuard, completion: AppearanceCompletion) -> Result<(), BrowserError> {
+        cef_appearance::apply(self, identity, json, guard, completion)
+    }
+
+    pub fn navigation_history(&self, identity: &BrowserIdentity, guard: PageMenuGuard,
+        completion: PageMenuCompletion) -> Result<(), BrowserError> {
+        page_menu::history(self, identity, guard, completion)
+    }
+
+    pub fn navigate_history(&self, identity: &BrowserIdentity, snapshot_id: &str, index: i32,
+        guard: PageMenuGuard, completion: PageMenuCompletion) -> Result<(), BrowserError> {
+        page_menu::jump(self, identity, snapshot_id, index, guard, completion)
+    }
+
     pub fn stop(&self, identity: &BrowserIdentity) -> Result<(), BrowserError> {
         self.check(identity)?.stop_load();
         Ok(())
@@ -2332,9 +2548,12 @@ impl<'a> CefBrowserHost<'a> {
         let level = crate::ipc::zoom_level_for_percent(percent)
             .map_err(|_| BrowserError::StateUnavailable)?;
         let browser = self.check(identity)?;
-        if self.lifecycle() != Lifecycle::Attached {
-            return Err(ControlError::InvalidTransition.into());
-        }
+        self.shared
+            .state
+            .lock()
+            .map_err(|_| BrowserError::StateUnavailable)?
+            .control
+            .authorize_zoom(identity)?;
         self.native_host(&browser)?.set_zoom_level(level);
         Ok(())
     }
@@ -2352,6 +2571,9 @@ impl<'a> CefBrowserHost<'a> {
         if self.lifecycle() != Lifecycle::Attached {
             return Err(ControlError::InvalidTransition.into());
         }
+        // Legacy dispatch has no result token; never relabel its callbacks as
+        // a newer tracked query. The next tracked call establishes a session.
+        cef_find::invalidate(&self.shared);
         self.native_host(&browser)?.find(
             Some(&CefString::from(text)),
             i32::from(forward),
@@ -2370,6 +2592,7 @@ impl<'a> CefBrowserHost<'a> {
         if self.lifecycle() != Lifecycle::Attached {
             return Err(ControlError::InvalidTransition.into());
         }
+        cef_find::invalidate(&self.shared);
         self.native_host(&browser)?
             .stop_finding(i32::from(clear_selection));
         Ok(())
@@ -2439,9 +2662,39 @@ impl<'a> CefBrowserHost<'a> {
         Ok(())
     }
 
+    pub fn occlude(
+        &self,
+        identity: &BrowserIdentity,
+        bounds: crate::ipc::OriginBrowserBounds,
+        overlays: &[crate::ipc::OriginBrowserBounds],
+        scale: f64,
+        input_blocked: bool,
+    ) -> Result<(), BrowserError> {
+        let browser = self.check(identity)?;
+        // Block reentrant focus before native clipping/blur. A failed update
+        // must remain blocked; only a successful presentation may unblock.
+        self.shared.input_blocked.store(true, Ordering::Release);
+        // NSView dimensions are points; Win32/X11 surfaces use native pixels.
+        #[cfg(target_os = "macos")]
+        let scale = { let _ = scale; 1.0 };
+        let rects = crate::cef_occlusion::visible_rectangles(bounds, overlays, scale)
+            .map_err(|_| BrowserError::NativeSurface)?;
+        let host = self.native_host(&browser)?;
+        if input_blocked { host.set_focus(0); }
+        if crate::cef_occlusion::apply(host.window_handle(), &rects, input_blocked).is_err() {
+            // Never leave an un-clipped child above a trusted shell prompt.
+            let _ = self.hide(identity);
+            return Err(BrowserError::NativeSurface);
+        }
+        self.shared
+            .input_blocked
+            .store(input_blocked, Ordering::Release);
+        Ok(())
+    }
+
     pub fn focus(&self, identity: &BrowserIdentity) -> Result<(), BrowserError> {
         let browser = self.check(identity)?;
-        if self.lifecycle() != Lifecycle::Attached {
+        if !self.shared.focus_allowed(Some(&browser)) {
             return Err(ControlError::InvalidTransition.into());
         }
         self.native_host(&browser)?.set_focus(1);
@@ -2463,7 +2716,9 @@ impl<'a> CefBrowserHost<'a> {
         if identity != self.identity() {
             return Err(ControlError::StaleIdentity.into());
         }
+        self.downloads.revoke();
         self.shared.revoke();
+        cef_popups::close_source(&self.shared.popup);
         let close = {
             let mut state = self
                 .shared
@@ -2533,7 +2788,10 @@ impl CefBrowserHost<'static> {
 impl Drop for CefBrowserHost<'_> {
     fn drop(&mut self) {
         // !Send/!Sync, initialized runtime required by the creation contract.
-        let _ = self.close(self.identity());
+        if self.close_on_drop {
+            let _ = self.close(self.identity());
+            cef_popups::release(&self.shared.popup);
+        }
     }
 }
 
@@ -2590,6 +2848,8 @@ wrap_request_handler! {
         }
         fn on_open_urlfrom_tab(&self, browser: Option<&mut Browser>, frame: Option<&mut Frame>,
             target_url: Option<&CefString>, target_disposition: WindowOpenDisposition, user_gesture: i32) -> i32 {
+            if cef_popups::open_url_from_tab(&self.shared, browser.as_deref(), frame.as_deref(),
+                target_url, target_disposition, user_gesture == 1).is_ok() { return 1; }
             let origin = frame.as_ref().map(|frame| CefString::from(&frame.url()));
             self.shared.capability_denied(browser.as_deref(), origin.as_ref(), target_url, NativeCapabilityKind::Popup, Some(user_gesture == 1));
             self.inner.on_open_urlfrom_tab(browser, frame, target_url, target_disposition, user_gesture)
@@ -2613,7 +2873,13 @@ wrap_request_handler! {
         fn auth_credentials(&self, browser: Option<&mut Browser>, origin_url: Option<&CefString>, is_proxy: i32,
             host: Option<&CefString>, port: i32, realm: Option<&CefString>, scheme: Option<&CefString>, callback: Option<&mut AuthCallback>) -> i32 {
             self.shared.navigation_status(NativeNavigationStatus::AuthChallenge { proxy: is_proxy == 1, callback_present: callback.is_some() });
-            let decision = self.inner.auth_credentials(browser, origin_url, is_proxy, host, port, realm, scheme, callback);
+            let decision = if is_proxy == 0 {
+                self.shared.http_basic_auth(browser.as_deref(), origin_url, host, port, scheme, callback.as_deref())
+            } else {
+                // Preserve the proxy-only release path, including its rejection
+                // of invalid proxy flags. Never fall back to server credentials.
+                self.inner.auth_credentials(browser, origin_url, is_proxy, host, port, realm, scheme, callback)
+            };
             self.shared.navigation_status(NativeNavigationStatus::AuthCompleted { handled: decision == 1 });
             decision
         }
@@ -2635,23 +2901,25 @@ wrap_request_handler! {
 }
 
 wrap_client! {
-    struct NativeClient { shared: Arc<Shared>, request: RequestHandler, browser: BrowserSlot }
+    struct NativeClient { shared: Arc<Shared>, request: RequestHandler, browser: BrowserSlot, downloads: DownloadAttachment }
     impl Client {
         fn request_handler(&self) -> Option<RequestHandler> { Some(NativeRequests::new(self.shared.clone(), self.request.clone())) }
         fn life_span_handler(&self) -> Option<LifeSpanHandler> { Some(NativeLife::new(self.shared.clone(), self.browser.clone())) }
         fn display_handler(&self) -> Option<DisplayHandler> { Some(NativeDisplay::new(self.shared.clone())) }
         fn load_handler(&self) -> Option<LoadHandler> { Some(NativeLoad::new(self.shared.clone())) }
         fn focus_handler(&self) -> Option<FocusHandler> { Some(NativeFocus::new(self.shared.clone())) }
+        fn find_handler(&self) -> Option<FindHandler> { Some(cef_find::handler(self.shared.clone())) }
         fn dialog_handler(&self) -> Option<DialogHandler> { Some(DenyFileDialog::new()) }
         fn jsdialog_handler(&self) -> Option<JsdialogHandler> { Some(DenyJsDialog::new()) }
         fn permission_handler(&self) -> Option<PermissionHandler> { Some(NativePermissions::new(self.shared.clone())) }
-        fn download_handler(&self) -> Option<DownloadHandler> { Some(NativeDownloads::new(self.shared.clone())) }
+        fn download_handler(&self) -> Option<DownloadHandler> { Some(self.downloads.handler()) }
         fn drag_handler(&self) -> Option<DragHandler> { Some(DenyDrag::new()) }
         fn context_menu_handler(&self) -> Option<ContextMenuHandler> { Some(DenyContextMenu::new()) }
         fn command_handler(&self) -> Option<CommandHandler> { Some(DenyCommands::new()) }
         fn on_process_message_received(&self, browser: Option<&mut Browser>, frame: Option<&mut Frame>,
             source_process: ProcessId, message: Option<&mut ProcessMessage>) -> i32 {
             if let (Some(browser), Some(frame), Some(message)) = (browser.as_deref(), frame.as_deref(), message.as_deref()) {
+                if cef_appearance::receive(&self.shared, browser, frame, source_process, message) { return 1; }
                 let owner = self.browser.lock().ok().and_then(|slot| slot.clone());
                 if owner.is_some_and(|owner| owner.is_same(Some(&mut browser.clone())) == 1)
                     && self.shared.automation_message(browser, frame, source_process, message) == 1 { return 1; }
@@ -2666,15 +2934,24 @@ wrap_life_span_handler! {
     struct NativeLife { shared: Arc<Shared>, browser: BrowserSlot }
     impl LifeSpanHandler {
         fn on_before_popup(&self, browser: Option<&mut Browser>, frame: Option<&mut Frame>,
-            _popup_id: i32, target_url: Option<&CefString>, _target_frame_name: Option<&CefString>,
-            _target_disposition: WindowOpenDisposition, user_gesture: i32, _popup_features: Option<&PopupFeatures>,
-            _window_info: Option<&mut WindowInfo>, _client: Option<&mut Option<Client>>,
-            _settings: Option<&mut BrowserSettings>, _extra_info: Option<&mut Option<DictionaryValue>>,
+            popup_id: i32, target_url: Option<&CefString>, _target_frame_name: Option<&CefString>,
+            target_disposition: WindowOpenDisposition, user_gesture: i32, _popup_features: Option<&PopupFeatures>,
+            window_info: Option<&mut WindowInfo>, client: Option<&mut Option<Client>>,
+            settings: Option<&mut BrowserSettings>, extra_info: Option<&mut Option<DictionaryValue>>,
             _no_javascript_access: Option<&mut i32>) -> i32 {
+                if cef_popups::before_popup(&self.shared, browser.as_deref(), frame.as_deref(),
+                    popup_id, target_url, target_disposition, user_gesture == 1,
+                    window_info, client, settings, extra_info).is_ok() { return 0; }
                 let origin = frame.as_ref().map(|frame| CefString::from(&frame.url()));
                 self.shared.capability_denied(browser.as_deref(), origin.as_ref(), target_url, NativeCapabilityKind::Popup, Some(user_gesture == 1));
                 1
             }
+
+        fn on_before_popup_aborted(&self, browser: Option<&mut Browser>, popup_id: i32) {
+            if let Some(browser) = browser {
+                cef_popups::aborted(&self.shared.popup, browser.identifier(), popup_id);
+            }
+        }
 
         fn on_after_created(&self, browser: Option<&mut Browser>) {
             let Some(browser) = browser else { self.shared.fault(None, BrowserFault::NativeSurface); return; };
@@ -2685,20 +2962,25 @@ wrap_life_span_handler! {
                     state.control.attached(&self.shared.identity).and_then(|_| state.control.hide(&self.shared.identity)).is_ok()
                 }
             };
+            *self.browser.lock().unwrap_or_else(|error| error.into_inner()) = Some(browser.clone());
             if !attached || !self.shared.current() {
+                cef_popups::after_created(&self.shared, browser);
                 self.shared.fault(Some(browser), BrowserFault::Session); return;
             }
-            *self.browser.lock().unwrap_or_else(|error| error.into_inner()) = Some(browser.clone());
             let hidden = browser.host().is_some_and(|host| {
                 host.set_focus(0);
                 native_surface::visible(host.window_handle(), false).is_ok()
             });
+            if !cef_popups::after_created(&self.shared, browser) {
+                self.shared.fault(Some(browser), BrowserFault::Session); return;
+            }
             if !hidden { self.shared.fault(Some(browser), BrowserFault::NativeSurface); return; }
             self.shared.publish(Some(browser));
         }
 
         fn do_close(&self, browser: Option<&mut Browser>) -> i32 {
             self.shared.revoke();
+            cef_popups::close_source(&self.shared.popup);
             self.shared.deny_media_on_ui(None);
             {
                 let mut state = self.shared.state.lock().unwrap_or_else(|error| error.into_inner());
@@ -2715,6 +2997,7 @@ wrap_life_span_handler! {
 
         fn on_before_close(&self, _browser: Option<&mut Browser>) {
             self.shared.revoke();
+            cef_popups::close_source(&self.shared.popup);
             self.shared.deny_media_on_ui(None);
             {
                 let mut state = self.shared.state.lock().unwrap_or_else(|error| error.into_inner());
@@ -2730,6 +3013,7 @@ wrap_life_span_handler! {
             let browser = self.browser.lock().unwrap_or_else(|error| error.into_inner()).take();
             drop(browser);
             self.shared.emit();
+            cef_popups::before_close(&self.shared);
         }
     }
 }
@@ -2819,8 +3103,7 @@ wrap_focus_handler! {
     struct NativeFocus { shared: Arc<Shared> }
     impl FocusHandler {
         fn on_set_focus(&self, browser: Option<&mut Browser>, _source: FocusSource) -> i32 {
-            let visible = self.shared.state.lock().is_ok_and(|state| state.control.lifecycle() == Lifecycle::Attached);
-            i32::from(!visible || !self.shared.current() || !self.shared.accepts(browser.as_deref()))
+            i32::from(!self.shared.focus_allowed(browser.as_deref()))
         }
     }
 }
@@ -2871,24 +3154,6 @@ wrap_permission_handler! {
             requesting_origin: Option<&CefString>, requested_permissions: u32, callback: Option<&mut PermissionPromptCallback>) -> i32 {
             self.shared.capability_denied(browser.as_deref(), requesting_origin, None, NativeCapabilityKind::Permission {requested: requested_permissions}, None);
             DenyPermissions::new().on_show_permission_prompt(browser, prompt_id, requesting_origin, requested_permissions, callback)
-        }
-    }
-}
-
-wrap_download_handler! {
-    struct NativeDownloads { shared: Arc<Shared> }
-    impl DownloadHandler {
-        fn can_download(&self, browser: Option<&mut Browser>, url: Option<&CefString>, request_method: Option<&CefString>) -> i32 {
-            let origin = browser.as_ref().and_then(|browser| browser.main_frame()).map(|frame| CefString::from(&frame.url()));
-            self.shared.capability_denied(browser.as_deref(), origin.as_ref(), url, NativeCapabilityKind::Download, None);
-            DenyDownloads::new().can_download(browser, url, request_method)
-        }
-        fn on_before_download(&self, browser: Option<&mut Browser>, download_item: Option<&mut DownloadItem>,
-            suggested_name: Option<&CefString>, callback: Option<&mut BeforeDownloadCallback>) -> i32 {
-            DenyDownloads::new().on_before_download(browser, download_item, suggested_name, callback)
-        }
-        fn on_download_updated(&self, browser: Option<&mut Browser>, download_item: Option<&mut DownloadItem>, callback: Option<&mut DownloadItemCallback>) {
-            DenyDownloads::new().on_download_updated(browser, download_item, callback);
         }
     }
 }
@@ -2991,6 +3256,17 @@ mod native_surface {
             }
             // SW_SHOWNOACTIVATE / SW_HIDE. ShowWindow returns previous state.
             EnableWindow(window, i32::from(visible));
+            if visible {
+                // CEF and the app-shell WebView are sibling child HWNDs. A
+                // visible child below that full-window WebView loads and even
+                // accepts automation while painting nothing the user can see.
+                // Raise only this authorized viewport among its siblings:
+                // HWND_TOP, SWP_NOSIZE | SWP_NOMOVE | SWP_NOACTIVATE. This is
+                // neither a top-level/topmost window nor a focus request.
+                if SetWindowPos(window, std::ptr::null_mut(), 0, 0, 0, 0, 0x0013) == 0 {
+                    return Err(BrowserError::NativeSurface);
+                }
+            }
             ShowWindow(window, if visible { 4 } else { 0 });
         }
         Ok(())
@@ -3050,7 +3326,7 @@ mod native_surface {
         window: cef::sys::cef_window_handle_t,
         visible: bool,
     ) -> Result<(), BrowserError> {
-        let display = get_xdisplay().cast();
+        let display = get_xdisplay().cast::<c_void>();
         if display.is_null() || window == 0 {
             return Err(BrowserError::NativeSurface);
         }
@@ -3067,7 +3343,7 @@ mod native_surface {
         Ok(())
     }
     pub fn resize(window: cef::sys::cef_window_handle_t, rect: &Rect) -> Result<(), BrowserError> {
-        let display = get_xdisplay().cast();
+        let display = get_xdisplay().cast::<c_void>();
         if display.is_null() || window == 0 {
             return Err(BrowserError::NativeSurface);
         }
@@ -3085,7 +3361,7 @@ mod native_surface {
         Ok(())
     }
     pub fn destroy(window: cef::sys::cef_window_handle_t) -> Result<(), BrowserError> {
-        let display = get_xdisplay().cast();
+        let display = get_xdisplay().cast::<c_void>();
         if display.is_null() || window == 0 {
             return Err(BrowserError::NativeSurface);
         }
@@ -3240,6 +3516,48 @@ mod native_surface {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn http_basic_auth_completion_is_once_on_denial_delivery_and_panic() {
+        use std::cell::Cell;
+        #[derive(Default)]
+        struct Completion { continued: Cell<usize>, cancelled: Cell<usize> }
+        impl HttpAuthCompletion for Completion {
+            fn continue_with(&self, _: &str, _: &str) { self.continued.set(self.continued.get() + 1); }
+            fn cancel(&self) { self.cancelled.set(self.cancelled.get() + 1); }
+        }
+        for (mode, expected_continues, expected_cancels, expected_panic) in [
+            (0, 0, 1, false), (1, 1, 0, false), (2, 0, 1, true), (3, 1, 0, true),
+        ] {
+            let completion = Completion::default();
+            let outcome = complete_http_basic_auth(Some(&completion), |deliver| {
+                if mode == 1 || mode == 3 {
+                    deliver("user", "secret");
+                    deliver("user", "secret");
+                }
+                if mode >= 2 { panic!("fixture hook failure"); }
+            });
+            assert_eq!(outcome, (1, expected_panic));
+            assert_eq!(completion.continued.get(), expected_continues);
+            assert_eq!(completion.cancelled.get(), expected_cancels);
+        }
+        assert_eq!(complete_http_basic_auth(None::<&Completion>, |_| panic!("missing callback")), (0, false));
+    }
+
+    #[test]
+    fn http_basic_auth_hook_defaults_to_deny() {
+        struct Hooks;
+        impl NativeDocumentHooks for Hooks {
+            fn on_main_document(&self, _: &BrowserIdentity, _: u64) {}
+        }
+        let policy = sorng_protocols::origin_browser::OriginBrowserPolicy::new(
+            "owner", "connection", "tab", "https://fixture.invalid",
+        ).unwrap();
+        assert!(!Hooks.with_http_basic_auth(&NativeHttpAuthChallenge {
+            identity: policy.identity(), origin_url: "https://fixture.invalid/",
+            host: "fixture.invalid", port: 443, scheme: "basic",
+        }, &mut |_, _| panic!("default hook must not release credentials")));
+    }
     use sorng_protocols::origin_browser::OriginBrowserPolicy;
     use sorng_protocols::private_forward_proxy::{Authority, DialFuture, ProxyLimits};
 
@@ -3836,7 +4154,7 @@ mod tests {
         }
     }
 
-    async fn fixture(sink: Arc<dyn BrowserEventSink>) -> Shared {
+    pub(super) async fn fixture(sink: Arc<dyn BrowserEventSink>) -> Shared {
         let policy =
             OriginBrowserPolicy::new("owner", "connection", "tab", "https://fixture.invalid")
                 .unwrap();
@@ -3854,12 +4172,15 @@ mod tests {
         );
         control.attached(&identity).unwrap();
         Shared {
+            popup: cef_popups::PopupRole::default(),
+            input_blocked: AtomicBool::new(false),
             session: Arc::new(Mutex::new(session)),
             identity,
             permissions: crate::cef_requests::deny_permissions(),
             sink,
             hooks: None,
             login_budget: Mutex::new(LoginBudget::default()),
+            login_totp: Mutex::new(login_totp::State::default()),
             feature_gate: Mutex::new(RendererFeatureGate::default()),
             login_adapter: NativeLoginAdapter::Generic,
             certificate_policy: NativeCertificatePolicy::Strict,
@@ -3934,6 +4255,74 @@ mod tests {
             RedactedUrl::Unavailable
         );
         assert_eq!(redact_url("about:blank"), RedactedUrl::Bootstrap);
+    }
+
+    // Library-owned browser vtable: exercise the actual focus callback without
+    // creating a CEF window, renderer, profile or network connection.
+    fn focus_browser(valid_value: i32, identifier_value: i32) -> Browser {
+        use cef::rc::{ConvertReturnValue, RcImpl};
+        use cef::sys::_cef_browser_t;
+        #[cfg(target_os = "macos")]
+        crate::platform::test_runtime::ensure_loaded();
+        extern "C" fn valid(this: *mut _cef_browser_t) -> i32 {
+            RcImpl::<_cef_browser_t, (i32, i32)>::get(this).interface.0
+        }
+        extern "C" fn identifier(this: *mut _cef_browser_t) -> i32 {
+            RcImpl::<_cef_browser_t, (i32, i32)>::get(this).interface.1
+        }
+        let raw = _cef_browser_t {
+            is_valid: Some(valid),
+            get_identifier: Some(identifier),
+            // SAFETY: Unused vtable slots are nullable. RcImpl installs the
+            // reference-counting callbacks before converting to Browser.
+            ..unsafe { std::mem::zeroed() }
+        };
+        let raw: *mut _cef_browser_t = RcImpl::new(raw, (valid_value, identifier_value)).cast();
+        raw.wrap_result()
+    }
+
+    #[tokio::test]
+    async fn overlay_focus_blocks_navigation_and_system_requests_until_cleared() {
+        let shared = Arc::new(fixture(Arc::new(Sink(Mutex::new(Vec::new())))).await);
+        shared.state.lock().unwrap().browser_id = Some(41);
+        let mut browser = focus_browser(1, 41);
+        let focus = NativeFocus::new(shared.clone());
+        for blocked in [false, true, true, false] {
+            shared.input_blocked.store(blocked, Ordering::Release);
+            assert_eq!(shared.focus_allowed(Some(&browser)), !blocked);
+            for source in [FocusSource::NAVIGATION, FocusSource::SYSTEM] {
+                assert_eq!(
+                    focus.on_set_focus(Some(&mut browser), source),
+                    i32::from(blocked)
+                );
+            }
+            assert_eq!(
+                shared.state.lock().unwrap().control.lifecycle(),
+                Lifecycle::Attached
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn overlay_focus_unblocking_preserves_hidden_identity_and_revocation_guards() {
+        let shared = Arc::new(fixture(Arc::new(Sink(Mutex::new(Vec::new())))).await);
+        shared.state.lock().unwrap().browser_id = Some(41);
+        let mut browser = focus_browser(1, 41);
+        let focus = NativeFocus::new(shared.clone());
+        shared.input_blocked.store(true, Ordering::Release);
+        shared.state.lock().unwrap().control.hide(&shared.identity).unwrap();
+        shared.input_blocked.store(false, Ordering::Release);
+        assert_eq!(focus.on_set_focus(Some(&mut browser), FocusSource::SYSTEM), 1);
+        shared.state.lock().unwrap().control.show(&shared.identity).unwrap();
+        assert_eq!(focus.on_set_focus(Some(&mut browser), FocusSource::SYSTEM), 0);
+        let mut foreign = focus_browser(1, 42);
+        let mut invalid = focus_browser(0, 41);
+        assert_eq!(focus.on_set_focus(Some(&mut foreign), FocusSource::SYSTEM), 1);
+        assert_eq!(focus.on_set_focus(Some(&mut invalid), FocusSource::SYSTEM), 1);
+        assert_eq!(focus.on_set_focus(None, FocusSource::SYSTEM), 1);
+        shared.revoke();
+        shared.input_blocked.store(false, Ordering::Release);
+        assert_eq!(focus.on_set_focus(Some(&mut browser), FocusSource::NAVIGATION), 1);
     }
 
     #[test]
@@ -4334,6 +4723,18 @@ mod tests {
             fn IsWindowEnabled(window: *mut c_void) -> i32;
             fn GetWindowLongW(window: *mut c_void, index: i32) -> i32;
             fn GetWindowRect(window: *mut c_void, rect: *mut WinRect) -> i32;
+            fn GetTopWindow(parent: *mut c_void) -> *mut c_void;
+            fn GetForegroundWindow() -> *mut c_void;
+            fn GetFocus() -> *mut c_void;
+            fn SetWindowPos(
+                window: *mut c_void,
+                after: *mut c_void,
+                x: i32,
+                y: i32,
+                width: i32,
+                height: i32,
+                flags: u32,
+            ) -> i32;
         }
         struct Window(*mut c_void);
         impl Drop for Window {
@@ -4382,6 +4783,29 @@ mod tests {
             )
         });
         assert!(!child.0.is_null());
+        // Model the app-shell WebView sibling. It can cover the whole native
+        // viewport even while the CEF child is WS_VISIBLE and its page loaded.
+        let shell = Window(unsafe {
+            CreateWindowExW(
+                0,
+                class.as_ptr(),
+                empty.as_ptr(),
+                0x50000000,
+                0,
+                0,
+                640,
+                480,
+                parent.0,
+                null,
+                null,
+                null,
+            )
+        });
+        assert!(!shell.0.is_null());
+        assert_ne!(unsafe { SetWindowPos(shell.0, null, 0, 0, 0, 0, 0x0013) }, 0);
+        assert_eq!(unsafe { GetTopWindow(parent.0) }, shell.0);
+        let foreground = unsafe { GetForegroundWindow() };
+        let focus = unsafe { GetFocus() };
         let handle = cef::sys::HWND(child.0.cast());
         native_surface::visible(handle, false).unwrap();
         assert_eq!(unsafe { IsWindowEnabled(child.0) }, 0);
@@ -4407,9 +4831,18 @@ mod tests {
         // Resizing must not unhide/re-enable or focus a background tab.
         assert_eq!(unsafe { IsWindowEnabled(child.0) }, 0);
         assert_eq!(unsafe { GetWindowLongW(child.0, -16) } & 0x10000000, 0);
+        assert_eq!(unsafe { GetTopWindow(parent.0) }, shell.0);
         native_surface::visible(handle, true).unwrap();
         assert_ne!(unsafe { IsWindowEnabled(child.0) }, 0);
         assert_ne!(unsafe { GetWindowLongW(child.0, -16) } & 0x10000000, 0);
+        assert_eq!(unsafe { GetTopWindow(parent.0) }, child.0);
+        assert_eq!(unsafe { GetForegroundWindow() }, foreground);
+        assert_eq!(unsafe { GetFocus() }, focus);
+        // A repeated show repairs stacking after shell changes without focus.
+        assert_ne!(unsafe { SetWindowPos(shell.0, null, 0, 0, 0, 0, 0x0013) }, 0);
+        native_surface::visible(handle, true).unwrap();
+        assert_eq!(unsafe { GetTopWindow(parent.0) }, child.0);
+        assert_eq!(unsafe { GetFocus() }, focus);
         native_surface::destroy(handle).unwrap();
         assert_eq!(unsafe { IsWindow(child.0) }, 0);
         assert_ne!(unsafe { IsWindow(parent.0) }, 0);

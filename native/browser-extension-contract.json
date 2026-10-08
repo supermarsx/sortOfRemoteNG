@@ -1,0 +1,168 @@
+{
+  "version": 1,
+  "status": "App policy enforcement, native receipt command and toolbar integration implemented; full build and live native acceptance pending; Chromium extension installation and management not implemented",
+  "runtime": {
+    "cefRustBindings": "154.3.0",
+    "cefCommit": "682c378d70d5780061e96644dca16ddd8fd157a9",
+    "chromiumVersion": "154.0.8037.58",
+    "chromiumCommit": "a654841425914cbb703a2931e07b70a83aedbafd"
+  },
+  "upstreamEvidence": [
+    {
+      "path": "include/cef_request_context.h",
+      "local": ".artifacts/cef-app-verified-local-05/sdk/include/cef_request_context.h",
+      "sha256": "9096405f61d972b76ca4f44635e461921e160a148de347714d7fbc60d4bcf1c1",
+      "finding": "No LoadExtension/GetExtension/HasExtension/GetExtensions request-context API or CefExtension header in the pinned SDK. Empty cache path uses an off-the-record in-memory context."
+    },
+    {
+      "path": "chrome/browser/devtools/protocol/extensions_handler.cc",
+      "local": "F:/cef-builds/sorng-20261007/src/chrome/browser/devtools/protocol/extensions_handler.cc",
+      "sha256": "86ac661223b7dadeb3b67a40e9b56a88078153980e7b27fd8d43a0aed8087d31",
+      "lines": [213, 304],
+      "finding": "LoadUnpacked, GetExtensions and Uninstall use GetDefaultBrowserContext. Enabling incognito is not per-connection ownership."
+    },
+    {
+      "path": "cef/libcef/browser/chrome/chrome_browser_context.cc",
+      "lines": [146, 165],
+      "finding": "CEF unique off-the-record contexts use GetPrimaryUserProfile as their parent. Chrome-style browser chrome does not replace this ownership."
+    },
+    {
+      "path": "chrome/browser/extensions/api/developer_private/developer_private_functions.cc",
+      "lines": [892, 1018],
+      "finding": "chrome://extensions LoadUnpacked uses browser_context, but the extension services below redirect private contexts to their shared original profile."
+    },
+    {
+      "path": "chrome/browser/extensions/chrome_extension_system_factory.cc",
+      "lines": [49, 61],
+      "finding": "ExtensionSystemShared uses ProfileSelection::kRedirectedToOriginal."
+    },
+    {
+      "paths": [
+        "extensions/browser/extension_registrar_factory.cc:50",
+        "extensions/browser/extension_registry_factory.cc:44",
+        "extensions/browser/extension_prefs_factory.cc:69"
+      ],
+      "finding": "Registrar, registry and preferences use GetContextRedirectedToOriginal. Therefore opening chrome://extensions in a private context does not provide isolated extension installation."
+    },
+    {
+      "path": "chrome/browser/extensions/chrome_extension_system.cc",
+      "lines": [123, 470],
+      "finding": "Shared::InitPrefs uses a profile-path ValueStoreFactoryImpl; the constructor only initializes prefs for non-OTR profiles; InstallUpdate constructs CrxInstaller with GetOriginalProfile. Redirecting service factories alone cannot supply isolated private extension storage or updates."
+    },
+    {
+      "path": "extensions/browser/api/storage/storage_frontend.cc",
+      "lines": [240, 250],
+      "finding": "StorageFrontend::Init asserts that its browser context is not off-the-record. A marked private-context storage implementation and isolated value stores are required; do not simply remove the assertion."
+    }
+  ],
+  "implemented": {
+    "nativeLogin": "saved_login resolves saved app-extension policy before enablement; false skips vault resolution, keeps secrets empty and denies credential callbacks. Existing LoginHooks::prepare selects the Manual adapter.",
+    "nativeAutomation": "NativeAutomationAuthority restricts the existing saved script/macro consent and current global availability. Global inherited revocation is rechecked at each operation. NativeAutomationPermissions remains non-deserializable. Existing owner/document/origin checks and cleanup are retained.",
+    "nativeCapabilities": "website_extensions_enabled=false no longer blocks opening the connection. Forced-dark startup, proxy, TLS and sandbox policy are unchanged.",
+    "persistence": "Existing connection.browserSession.websiteExtensionsEnabled and httpAutomation/httpApplication/httpAutoLogin fields, through the existing database connection writer with captured lease, CAS baseline and durable readback. No new side storage.",
+    "ui": "Shared Select and CheckboxField settings primitives; app login/scripts/macros controls require a matching native receipt. Chromium support is explanatory text only, with no install buttons."
+  },
+  "mainIntegration": {
+    "status": "Wired by main; reviewed in source, not full-build or live verified",
+    "completed": [
+      "sorng-browser-host/src/lib.rs exports native_extensions; origin_browser_authority includes the app extensions authority module.",
+      "origin_browser_commands.rs and invoke_handler.rs register origin_browser_extensions. The request contains identity only; deny_unknown_fields excludes renderer preference grants.",
+      "origin_browser_runtime::extensions checks exact window and full identity, the in-memory current/revocation lease, attached attempt, admission readiness and certificate hooks. It performs no database re-decryption merely to draw toolbar controls. Receipt appEnabled comes from the attempt's native saved preferences; the receipt grants no authority.",
+      "useNativeBrowserExtensionReceipt invokes the native command and fences late results by scope, effect lifetime and owner checks. useNativeBrowserExtensions independently validates receipt fields, identity and database availability.",
+      "OriginConnectionBrowser mounts NativeBrowserExtensionControls and passes the real receipt, saved connection, owner-scoped writer and settings. Temporary connections and inactive/non-attached attempts remain unavailable."
+    ],
+    "receipt": {
+      "version": 1,
+      "identity": ["ownerDatabaseId", "connectionId", "sessionId", "attemptId"],
+      "appControls": true,
+      "appEnabled": "Native attempt's effective website_extensions_enabled boolean",
+      "forcedDark": true,
+      "chromium": "unsupportedPrivateContext"
+    },
+    "authority": "The receipt describes capabilities; it grants no credentials, scripts or network routes. Login remains subject to native consent; scripts/macros use origin_browser_automation with existing saved/global grants, owner/document/origin checks and the app-extension master gate. Forced dark is independent and mandatory. Settings persist in the owning database and apply on reopen.",
+    "pending": [
+      "Full native-feature application build/link of main's integration.",
+      "Live off/on sessions through the real command, LoginHooks and automation receiver, including owner lock/reconnect and overlay behavior on Windows/Linux/macOS."
+    ]
+  },
+  "chromiumEngineProposal": {
+    "status": "Maintained CEF patch already approved by user. Source-reviewed design only; no engine edits or rebuild performed for this handoff. Chromium extension installation remains unimplemented.",
+    "recommendedBoundary": "Preserve the existing private in-memory request context and app-private proxy per connection. Implement extension ownership inside that context rather than using Chrome's original/default profile.",
+    "baselineSafety": "Develop as an opt-in experimental patch series and separate artifact. Preserve the current TLS V2 ABI and working runtime selection. Use an independently negotiated extension ABI/capability; missing or failed extension support must disable only extension management, not baseline browsing or app controls. Never fall back to the default profile, global loaders or direct networking.",
+    "sourceRoot": "F:/cef-builds/sorng-20261007/src",
+    "targetFiles": [
+      {
+        "paths": [
+          "cef/include/cef_sorng_extensions_bridge.h (new)",
+          "cef/libcef/browser/extensions/sorng_extensions_bridge.h (new)",
+          "cef/libcef/browser/extensions/sorng_extensions_bridge.cc (new)",
+          "cef/libcef_dll/sorng_extensions_bridge_exports.cc (new)",
+          "cef/libcef/browser/net_service/sorng_tls_bridge.cc",
+          "cef/libcef/browser/chrome/chrome_browser_context.cc",
+          "cef/BUILD.gn",
+          "cef/cef_paths2.gypi"
+        ],
+        "change": "Add optional versioned extension exports and build registration, with explicit marked context creation before extension services initialize. Reuse existing per-context TLS/proxy binding without changing its V2 ABI or ordinary creation path. A post-initialization attach that has already resolved shared services is insufficient."
+      },
+      {
+        "paths": [
+          "chrome/browser/extensions/chrome_extension_system_factory.cc",
+          "chrome/browser/extensions/chrome_extension_system.cc",
+          "chrome/browser/extensions/chrome_extensions_browser_client.cc",
+          "extensions/browser/extension_registry_factory.cc",
+          "extensions/browser/extension_registrar_factory.cc",
+          "extensions/browser/extension_prefs_factory.cc",
+          "extensions/browser/extension_pref_value_map_factory.cc",
+          "extensions/browser/event_router_factory.cc"
+        ],
+        "change": "Give only marked Sorng contexts independent service selection, initialization, prefs and exact-context identity. Leave stock incognito routing unchanged. Do not globally redefine GetOriginalContext or treat contexts sharing a parent as equivalent."
+      },
+      {
+        "paths": [
+          "extensions/browser/api/storage/storage_frontend.cc",
+          "components/value_store/value_store_factory_impl.cc",
+          "chrome/browser/extensions/chrome_extension_system.cc"
+        ],
+        "change": "Add a separate in-memory value-store implementation for marked contexts; the current factory is the disk-backed reference, not a safe default. Isolate extension prefs, local/session storage, rule/user-script state and their lifetimes. Define native encrypted-database import/export; do not merely remove the OTR DCHECK or substitute a plaintext profile directory."
+      },
+      {
+        "paths": [
+          "extensions/browser/process_manager.cc",
+          "extensions/browser/process_manager_factory.cc",
+          "extensions/browser/service_worker/service_worker_task_queue_factory.cc",
+          "extensions/browser/unpacked_installer.cc",
+          "chrome/browser/extensions/chrome_extension_system.cc",
+          "chrome/browser/extensions/extension_service.cc"
+        ],
+        "change": "Keep spanning/background execution and worker activation inside the marked context; avoid original-profile install/update targets and global autoloaders. Introduce owner-authorized package operations only after registry/storage/worker isolation passes. Audit all transitively used installer/updater and worker factories before claiming a complete patch set."
+      }
+    ],
+    "stages": [
+      {
+        "stage": "Context services",
+        "work": "Add an explicitly marked Sorng private extension context in the maintained CEF patch. Give ExtensionSystemShared, ExtensionRegistry, ExtensionRegistrar, ExtensionPrefs and their required services independent lifetime/state for that marked context. Audit ProcessManager, EventRouter, service-worker queues, user scripts, permission storage and updater factories for redirection to original. Do not change upstream incognito behavior for ordinary profiles. First acceptance: the same extension ID can have distinct install/enabled/storage state in two contexts."
+      },
+      {
+        "stage": "Native management bridge",
+        "work": "Expose a versioned native bridge accepting the retained context handle and generation, with asynchronous enumerate, install validated CRX/unpacked snapshot, enable, disable, reload, update, uninstall and permissions operations. Native owner authorizes each operation. Do not expose arbitrary CDP, filesystem paths, chrome:// management navigation or browser-global command-line loaders through page IPC."
+      },
+      {
+        "stage": "Package and permission policy",
+        "work": "Validate CRX signatures and manifest/permission changes; import unpacked packages as immutable owned snapshots. Request explicit consent for permission increases. Define compatibility for nativeMessaging, debugger, proxy, cross-context tabs and external messaging without bypassing app containment. Reject unsupported permission sets with specific errors. Local package installation and Chrome Web Store installation are separate deliverables; Web Store and update downloads require the owning route and certificate policy."
+      },
+      {
+        "stage": "Networking and native UI",
+        "work": "Bind background service workers, extension pages/options/popups, content-script fetches, update checks and redirects to the same private request context and proxy admission hooks, including requests with no browser/frame. Integrate actions/popups with native window ownership on Windows/Linux/macOS. Preserve sandbox, TLS verification and route grants."
+      },
+      {
+        "stage": "Database persistence",
+        "work": "Store package identity/hash, enablement, granted permissions and supported extension state in the owning encrypted database keyed by saved connection. Restore only into that connection's private context. Revoke workers and flush or discard according to the approved retention policy at lock/close; never reuse the original browser profile or silently persist a plaintext Chromium profile."
+      },
+      {
+        "stage": "Acceptance",
+        "work": "Run two database/connection contexts with matching extension IDs and conflicting storage values. Verify install/enable/disable/update/remove, popup ownership, worker restart, encrypted reopen, lock/revoke and zero state leakage. Capture network evidence for foreground/background/redirect/update traffic through the owning proxy, with direct traffic denied. Run the native matrix on Windows, Linux and macOS before enabling controls."
+      }
+    ],
+    "firstMilestone": "A separate experimental artifact must run two marked contexts with the same extension ID but independent registry/storage/background-worker state, and prove all requests use their owning app proxy. The existing artifact remains selected for live acceptance until baseline regression and isolation checks pass. This is a feasibility milestone, not full extension support."
+  }
+}

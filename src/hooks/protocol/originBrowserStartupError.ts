@@ -2,17 +2,48 @@ export type OriginBrowserStartupStage =
   "listen" | "status" | "owner-check" | "create" | "resync";
 export interface OriginBrowserStartupFailure {
   stage: OriginBrowserStartupStage;
-  category: "certificate-policy" | "certificate-bridge" | "connection" | "ipc";
+  category:
+    | "certificate-policy"
+    | "certificate-bridge"
+    | "connection"
+    | "runtime"
+    | "ipc";
 }
 const certificatePolicyFailure =
   "Saved HTTPS trust policy requires a native certificate adapter; only explicit strict verification is supported";
 const certificateBridgeFailure =
   "The loaded CEF runtime does not provide the required app certificate-verifier bridge. Install or rebuild the patched browser runtime; the saved trust policy was not changed.";
 
+// Exact fixed native stage failures only. Never append arbitrary native error
+// text (including page addresses) or infer a runtime failure from a substring.
+const runtimeFailures = new Set([
+  "Native browser working-data preparation failed. Review Settings > Web Browser and restart if the working folder changed; the owning database and retained cookies were not changed.",
+  "Native browser package or runtime settings could not be prepared. Check the native startup diagnostics before retrying.",
+  "Native browser initialization or policy readiness timed out. Check the native startup diagnostics and restart the app.",
+  "Native browser initialization or policy readiness failed. Check the native startup diagnostics and restart the app.",
+  "The packaged real-origin browser is unavailable; no direct-network fallback was used.",
+  "Native browser private proxy could not start. Reopen the tab and check the native startup diagnostics; no direct-network fallback was used.",
+  "Native browser private context preparation failed. Check the native startup diagnostics for proxy, certificate or storage setup; this is not a saved-password rejection.",
+  "Native browser cookie restoration failed. Reopen the tab and check the native startup diagnostics; no other connection's cookies were used.",
+  "Native browser embedded view creation failed. Reopen the tab and check the native startup diagnostics; this is not a website login failure.",
+  "Native browser renderer setup failed. Reopen the tab and check the native startup diagnostics; the website was not navigated.",
+  "Native browser initial zoom setup failed. Reopen the tab and check the native startup diagnostics; the website was not navigated.",
+  "Native browser first navigation failed. Review this connection's destination permissions and network route, and check the native startup diagnostics.",
+  "Native browser tab preparation timed out. Reopen the tab and check the native startup diagnostics; the database was not locked by this timeout.",
+]);
+
 // Exact native-only strings from origin_browser_login.rs and
 // origin_browser_authority.rs (compiled by sorng-commands-core). Never match a
 // prefix/substring or append native exception text, stack, URL or credentials.
 const knownFailures = new Map<string, string>([
+  ...[
+    "Saved browser session retention settings are invalid.",
+    "Sign-in cookie retention could not be prepared for this database.",
+    "Sign-in cookies could not be read.",
+    "Sign-in cookies could not be read for this unlocked database.",
+    "Retained sign-in cookies could not be restored safely.",
+    "A browser attempt already exists for this tab, or the native browser limit was reached.",
+  ].map((message): [string, string] => [message, message]),
   [
     "This saved automatic-login configuration is not supported by the real-origin browser yet. Choose manual login explicitly in this connection's settings to open it without automatic credential entry.",
     "This connection's automatic-login configuration is not supported by the native browser yet. Review its saved login settings; manual login must be an explicit choice.",
@@ -28,6 +59,10 @@ const knownFailures = new Map<string, string>([
   [
     "Saved website credentials are unavailable. Unlock the owning database and review this connection's credential source before retrying.",
     "Saved website credentials are unavailable. Unlock the owning database and review this connection's credential source before retrying.",
+  ],
+  [
+    "Automatic website login needs complete saved credentials. Edit this connection's website login credentials or linked database-vault entry, or explicitly choose manual login, then reopen the tab.",
+    "Automatic website login needs complete saved credentials. Edit this connection's website login credentials or linked database-vault entry, or explicitly choose manual login, then reopen the tab.",
   ],
   [
     "Website login consent could not be prepared. Review this connection's saved login destinations.",
@@ -84,7 +119,7 @@ const stageGuidance: Record<OriginBrowserStartupStage, string> = {
   "owner-check":
     "The database owner check failed before creation. Unlock the owning database and reopen the connection.",
   create:
-    "The native create request failed. Review the saved connection's login, credentials, permissions and network route before retrying.",
+    "The native create request failed. Reopen the tab and check the native startup diagnostics for the failing step; this message does not establish a credential or GPU failure.",
   resync:
     "Could not read the created browser's state. This attempt is being closed; reopen the tab to retry.",
 };
@@ -100,12 +135,24 @@ export function originBrowserStartupError(
       : error instanceof Error
         ? Object.getOwnPropertyDescriptor(error, "message")?.value
         : undefined;
-  // Only create invokes saved-authority validation, after available capability.
+  // Only create invokes saved-authority validation and deferred native startup.
   // The same text from another stage cannot establish that runtime prerequisite.
   const certificateFailure = candidate === certificatePolicyFailure;
   const bridgeFailure = candidate === certificateBridgeFailure;
+  if (
+    stage === "create" &&
+    typeof candidate === "string" &&
+    runtimeFailures.has(candidate)
+  ) {
+    return {
+      stage,
+      category: "runtime",
+      message: `Native browser startup failed (${stage}). ${candidate}`,
+    };
+  }
   const guidance =
-    typeof candidate === "string" && (!(certificateFailure || bridgeFailure) || stage === "create")
+    typeof candidate === "string" &&
+    (!(certificateFailure || bridgeFailure) || stage === "create")
       ? knownFailures.get(candidate)
       : undefined;
   return {
@@ -114,10 +161,10 @@ export function originBrowserStartupError(
       bridgeFailure && stage === "create"
         ? "certificate-bridge"
         : certificateFailure && stage === "create"
-        ? "certificate-policy"
-        : guidance || stage === "owner-check"
-          ? "connection"
-          : "ipc",
+          ? "certificate-policy"
+          : guidance || stage === "owner-check"
+            ? "connection"
+            : "ipc",
     message: `Native browser startup failed (${stage}). ${guidance ?? stageGuidance[stage]}`,
   };
 }

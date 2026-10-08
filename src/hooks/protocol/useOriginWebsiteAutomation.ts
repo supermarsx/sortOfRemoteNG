@@ -51,27 +51,51 @@ export function useOriginWebsiteAutomation(
   latest.current = options;
   const transport = options.transport ?? tauriOriginAutomationTransport;
   const [refresh, setRefresh] = useState(0);
+  const receiptNeeded = (() => {
+    try {
+      const permissions = resolveHttpAutomationPermissions(
+        options.settings.sessionQuickActions,
+        options.connection?.httpAutomation,
+      );
+      return (
+        permissions.scriptInjectionEnabled ||
+        permissions.interactionMacrosEnabled
+      );
+    } catch {
+      return false;
+    }
+  })();
   const documentKey = JSON.stringify([
     options.identity,
     options.document,
     options.navigationKey,
     options.scopeKey,
     options.ownerDatabaseId,
-    options.blocked,
     options.settingsReady,
+    receiptNeeded,
     refresh,
   ]);
+  // Blocking a menu suspends execution, not the document. Each actual lifecycle
+  // transition gets a distinct token, including A -> B -> A before B settles.
+  const documentEpoch = useMemo(
+    () => ({ documentKey, transport }),
+    [documentKey, transport],
+  );
   const [fetched, setFetched] = useState<{
-    key: string;
+    epoch: object;
     document: OriginAutomationDocument | null;
     failed: boolean;
   } | null>(null);
-  const keyRef = useRef(documentKey);
-  keyRef.current = documentKey;
+  const read = useRef<{
+    epoch: object;
+    promise: ReturnType<typeof requestNativeAutomation>;
+  } | null>(null);
+  const keyRef = useRef(documentEpoch);
+  keyRef.current = documentEpoch;
   const activeDocument =
     options.document !== undefined
       ? options.document
-      : fetched?.key === documentKey
+      : fetched?.epoch === documentEpoch
         ? fetched.document
         : null;
   const documentRef = useRef(activeDocument);
@@ -119,7 +143,9 @@ export function useOriginWebsiteAutomation(
       !options.identity ||
       options.blocked ||
       !options.settingsReady ||
-      !options.scopeKey
+      !options.scopeKey ||
+      !receiptNeeded ||
+      fetched?.epoch === documentEpoch
     )
       return;
     const identity = { ...options.identity };
@@ -133,35 +159,43 @@ export function useOriginWebsiteAutomation(
     } catch {
       return;
     }
-    void requestNativeAutomation(transport, {
-      identity,
-      operation: { action: "document" },
-    }).then(
+    // Keep a single read (including its failure) per document epoch. A menu
+    // opened during the read must not cause another invoke when it closes.
+    if (read.current?.epoch !== documentEpoch) {
+      read.current = {
+        epoch: documentEpoch,
+        promise: requestNativeAutomation(transport, {
+          identity,
+          operation: { action: "document" },
+        }),
+      };
+    }
+    void read.current.promise.then(
       (reply) => {
-        if (!active || keyRef.current !== documentKey) return;
+        if (!active || keyRef.current !== documentEpoch) return;
         try {
           assertCurrent();
           setFetched({
-            key: documentKey,
+            epoch: documentEpoch,
             document: nativeAutomationDocument(identity, reply),
             failed: false,
           });
         } catch {
-          setFetched({ key: documentKey, document: null, failed: true });
+          setFetched({ epoch: documentEpoch, document: null, failed: true });
         }
       },
       () => {
-        if (active && keyRef.current === documentKey)
-          setFetched({ key: documentKey, document: null, failed: true });
+        if (active && keyRef.current === documentEpoch)
+          setFetched({ epoch: documentEpoch, document: null, failed: true });
       },
     );
     return () => {
       active = false;
     };
-    // documentKey captures all scope primitives. Callback identity is not a
-    // navigation, and must not trigger a new receipt on every UI render.
+    // Epoch captures scope/consent/transport changes. Unblocking may subscribe
+    // to the same read, but cannot refresh an already settled document.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [documentKey, transport]);
+  }, [documentEpoch, options.blocked, receiptNeeded, transport]);
   const bridge = useMemo(
     () =>
       new OriginWebsiteAutomationBridge(() => {
@@ -198,7 +232,7 @@ export function useOriginWebsiteAutomation(
   useLayoutEffect(() => () => bridge.dispose(), [bridge]);
   useLayoutEffect(() => {
     bridge.cancel();
-  }, [bridge, documentKey]);
+  }, [bridge, documentEpoch, options.blocked]);
   const automation = useWebAutomation({
     ...options,
     bridge,
@@ -223,7 +257,8 @@ export function useOriginWebsiteAutomation(
       };
     },
   });
-  const documentUnavailable = fetched?.key === documentKey && fetched.failed;
+  const documentUnavailable =
+    fetched?.epoch === documentEpoch && fetched.failed;
   return {
     ...automation,
     documentUnavailable,

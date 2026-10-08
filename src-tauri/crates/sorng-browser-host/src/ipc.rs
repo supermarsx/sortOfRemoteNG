@@ -141,6 +141,28 @@ fn deserialize_find_text<'de, D: Deserializer<'de>>(deserializer: D) -> Result<S
     deserializer.deserialize_str(BoundedString::<MAX_FIND_TEXT_BYTES>)
 }
 
+fn deserialize_find_request_id<'de, D: Deserializer<'de>>(deserializer: D) -> Result<Option<String>, D::Error> {
+    struct OptionalFindId;
+    impl<'de> de::Visitor<'de> for OptionalFindId {
+        type Value = Option<String>;
+        fn expecting(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result { f.write_str("an optional find UUID") }
+        fn visit_none<E: de::Error>(self) -> Result<Self::Value, E> { Ok(None) }
+        fn visit_unit<E: de::Error>(self) -> Result<Self::Value, E> { Ok(None) }
+        fn visit_some<D: Deserializer<'de>>(self, deserializer: D) -> Result<Self::Value, D::Error> {
+            let value = deserializer.deserialize_str(BoundedString::<36>)?;
+            validate_find_request_id(&value).map_err(de::Error::custom)?;
+            Ok(Some(value))
+        }
+    }
+    deserializer.deserialize_option(OptionalFindId)
+}
+
+pub fn validate_find_request_id(value: &str) -> Result<(), OriginBrowserIpcError> {
+    if value.len() == 36 && value.bytes().enumerate().all(|(index, byte)| {
+        if matches!(index, 8 | 13 | 18 | 23) { byte == b'-' } else { byte.is_ascii_hexdigit() }
+    }) { Ok(()) } else { Err(OriginBrowserIpcError::InvalidRequestId) }
+}
+
 fn valid_id(value: &str) -> bool {
     !value.is_empty()
         && value.len() <= MAX_ID_BYTES
@@ -386,7 +408,30 @@ impl OriginBrowserPolicy {
 // Sensitive requests deliberately have no Debug implementation.
 #[derive(Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct OriginBrowserQuickConnect {
+    #[serde(deserialize_with = "deserialize_id")]
+    pub protocol: String,
+    #[serde(deserialize_with = "deserialize_url")]
+    pub hostname: String,
+    pub port: u16,
+    pub http_verify_ssl: bool,
+    pub basic_auth_username: Option<String>,
+    pub basic_auth_password: Option<String>,
+}
+
+impl Drop for OriginBrowserQuickConnect {
+    fn drop(&mut self) {
+        use zeroize::Zeroize;
+        self.basic_auth_username.zeroize();
+        self.basic_auth_password.zeroize();
+    }
+}
+
+#[derive(Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct OriginBrowserCreateRequest {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub quick_connect: Option<OriginBrowserQuickConnect>,
     pub owner: OriginBrowserOwner,
     #[serde(deserialize_with = "deserialize_id")]
     pub expected_security_revision: String,
@@ -404,6 +449,27 @@ pub struct OriginBrowserCreateRequest {
 impl OriginBrowserCreateRequest {
     pub fn validate(&self) -> Result<(), OriginBrowserIpcError> {
         self.owner.validate()?;
+        if let Some(quick) = &self.quick_connect {
+            if self.owner.owner_database_id != format!("quick-connect:{}", self.owner.session_id)
+                || self.expected_security_revision != "quick-connect"
+                || self.source_session_id != self.owner.session_id
+                || !matches!(quick.protocol.as_str(), "http" | "https")
+                || quick.hostname.is_empty()
+                || quick.hostname.len() > MAX_URL_BYTES
+                || quick.port == 0
+                || [&quick.basic_auth_username, &quick.basic_auth_password]
+                    .iter()
+                    .any(|value| {
+                        value
+                            .as_ref()
+                            .is_some_and(|s| s.len() > 16_384 || s.contains('\0'))
+                    })
+            {
+                return Err(OriginBrowserIpcError::InvalidRequest);
+            }
+        } else if self.owner.owner_database_id.starts_with("quick-connect:") {
+            return Err(OriginBrowserIpcError::InvalidOwnerProof);
+        }
         if !valid_id(&self.expected_security_revision) || !valid_id(&self.source_session_id) {
             return Err(OriginBrowserIpcError::InvalidOwnerProof);
         }
@@ -453,6 +519,9 @@ pub enum OriginBrowserAction {
         presentation_revision: u64,
     },
     Find {
+        /// Correlation only; never owner/attempt authority. Old clients omit it.
+        #[serde(default, deserialize_with = "deserialize_find_request_id", skip_serializing_if = "Option::is_none")]
+        request_id: Option<String>,
         #[serde(deserialize_with = "deserialize_find_text")]
         text: String,
         forward: bool,
@@ -469,6 +538,12 @@ pub enum OriginBrowserAction {
         #[serde(deserialize_with = "deserialize_nullable_bounds")]
         bounds: Option<OriginBrowserBounds>,
         visible: bool,
+        /// Shell overlays in window logical coordinates. Only remove pixels;
+        /// these never change navigation or network authority.
+        #[serde(default)]
+        occlusions: Vec<OriginBrowserBounds>,
+        #[serde(default)]
+        input_blocked: bool,
     },
     Focus {
         presentation_revision: u64,
@@ -485,7 +560,10 @@ impl OriginBrowserAction {
             Self::Zoom { percent, .. } => {
                 zoom_level_for_percent(*percent)?;
             }
-            Self::Find { text, .. } => validate_find_text(text)?,
+            Self::Find { text, request_id, .. } => {
+                validate_find_text(text)?;
+                if let Some(request_id) = request_id { validate_find_request_id(request_id)?; }
+            }
             _ => {}
         }
         match self {
@@ -493,6 +571,8 @@ impl OriginBrowserAction {
                 revision,
                 bounds,
                 visible,
+                occlusions,
+                ..
             } => {
                 validate_sequence(*revision)?;
                 if *revision == 0 || (*visible && bounds.is_none()) {
@@ -500,6 +580,12 @@ impl OriginBrowserAction {
                 }
                 if let Some(bounds) = bounds {
                     bounds.validate()?;
+                }
+                if occlusions.len() > 32 {
+                    return Err(OriginBrowserIpcError::InvalidPresentation);
+                }
+                for rect in occlusions {
+                    rect.validate()?;
                 }
                 Ok(())
             }
@@ -631,6 +717,9 @@ pub enum OriginBrowserUnavailableReason {
 #[derive(Clone, Copy, Serialize)]
 #[serde(tag = "availability", rename_all = "kebab-case")]
 pub enum OriginBrowserCapability {
+    /// Implementation exists, but only an authorized create may initialize it.
+    /// No native runtime, TLS bridge or policy readiness is asserted.
+    Deferred,
     /// Only trusted native acceptance of all required policies can report this.
     /// This wire value is not NativeHostReadiness and cannot grant admission.
     Available,
@@ -744,6 +833,10 @@ impl OriginBrowserSnapshot {
         self.sequence
     }
 
+    pub fn phase(&self) -> OriginBrowserPhase {
+        self.phase
+    }
+
     /// Retain identity, lifecycle and ordering, but remove owner-private page
     /// data and activity when the native owner is no longer authorized.
     /// This is logical scrubbing for retention/serialization, not zeroization.
@@ -804,7 +897,14 @@ impl OriginBrowserStatusResult {
     ) -> Result<Self, OriginBrowserIpcError> {
         request.validate()?;
         match (&capability, &request.identity, &snapshot) {
-            (OriginBrowserCapability::Unavailable { .. }, _, Some(_)) => {
+            (OriginBrowserCapability::Deferred, Some(_), _) => {
+                return Err(OriginBrowserIpcError::InvalidStatus);
+            }
+            (
+                OriginBrowserCapability::Unavailable { .. } | OriginBrowserCapability::Deferred,
+                _,
+                Some(_),
+            ) => {
                 return Err(OriginBrowserIpcError::InvalidStatus);
             }
             (_, Some(expected), Some(actual)) if expected != actual.identity() => {

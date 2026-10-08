@@ -264,9 +264,34 @@ import {
 
 describe("QuickConnect — protocol inferred from pasted URL", () => {
   beforeEach(() => {
+    vi.clearAllMocks();
     vi.stubGlobal("requestAnimationFrame", (cb: FrameRequestCallback) => {
       cb(0);
       return 0;
+    });
+  });
+
+  it.each([
+    ["https://[2001:db8::1]:8443/login", "[2001:db8::1]:8443", "https"],
+    ["http://[::1]:8080/", "[::1]:8080", "http"],
+    ["https://[2001:db8::1]/", "[2001:db8::1]", "https"],
+    ["ssh://[::1]:2222", "[::1]:2222", "ssh"],
+    ["https://user:secret@[::1]:8443/path", "[::1]:8443", "https"],
+    ["https://[::1]:0/path", "[::1]:0", "https"],
+    ["https://[::1]:invalid/path", "[::1]:invalid", "https"],
+    ["https://server/path@other.test", "server", "https"],
+  ])("keeps the authority of %s unambiguous", (raw, hostname, protocol) => {
+    expect(deriveQuickConnectTarget(raw, "rdp")).toEqual({
+      hostname,
+      protocol,
+    });
+  });
+
+  it("does not rewrap an already bracketed endpoint without a URL scheme", () => {
+    expect(deriveQuickConnectTarget("[::1]:8443", "https")).toBeUndefined();
+    expect(deriveQuickConnectTarget(" [::1]:8443 ", "https")).toEqual({
+      hostname: "[::1]:8443",
+      protocol: undefined,
     });
   });
 
@@ -321,5 +346,58 @@ describe("QuickConnect — protocol inferred from pasted URL", () => {
     expect(screen.getByTestId("quick-connect-protocol")).toHaveTextContent(
       "HTTP",
     );
+  });
+
+  it.each([true, false])(
+    "submits HTTPS IPv6, Basic credentials and verify=%s",
+    (verify) => {
+      render(<QuickConnect {...mockProps} />);
+      const hostname = screen.getByTestId("quick-connect-hostname");
+      fireEvent.paste(hostname, {
+        clipboardData: { getData: () => "https://[2001:db8::1]:8443/login" },
+      });
+      expect(hostname).toHaveValue("[2001:db8::1]:8443");
+      fireEvent.change(
+        screen.getByLabelText("Basic Auth Username (optional)"),
+        { target: { value: " operator " } },
+      );
+      fireEvent.change(
+        screen.getByLabelText("Basic Auth Password (optional)"),
+        { target: { value: " secret " } },
+      );
+      const checkbox = screen.getByRole("checkbox");
+      expect(checkbox).toBeChecked();
+      if (!verify) fireEvent.click(checkbox);
+      fireEvent.submit(screen.getByRole("form"));
+      expect(mockProps.onConnect).toHaveBeenCalledWith({
+        hostname: "[2001:db8::1]:8443",
+        protocol: "https",
+        basicAuthUsername: "operator",
+        basicAuthPassword: " secret ",
+        httpVerifySsl: verify,
+      });
+      expect(mockProps.onClose).toHaveBeenCalledOnce();
+    },
+  );
+
+  it("submits HTTP Basic authentication without a TLS override", () => {
+    render(<QuickConnect {...mockProps} />);
+    fireEvent.paste(screen.getByTestId("quick-connect-hostname"), {
+      clipboardData: { getData: () => "http://[::1]:8080/admin" },
+    });
+    fireEvent.change(screen.getByLabelText("Basic Auth Username (optional)"), {
+      target: { value: "operator" },
+    });
+    fireEvent.change(screen.getByLabelText("Basic Auth Password (optional)"), {
+      target: { value: "secret" },
+    });
+    expect(screen.queryByRole("checkbox")).not.toBeInTheDocument();
+    fireEvent.submit(screen.getByRole("form"));
+    expect(mockProps.onConnect).toHaveBeenCalledWith({
+      hostname: "[::1]:8080",
+      protocol: "http",
+      basicAuthUsername: "operator",
+      basicAuthPassword: "secret",
+    });
   });
 });

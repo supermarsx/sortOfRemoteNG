@@ -168,6 +168,16 @@ function WebBrowserSettingsContent({
         }}
       />
       <BrowserDataDirectorySettings />
+      <Card>
+        <Toggle
+          settingKey="webBrowser.idlePrewarmEnabled"
+          icon={<Timer size={16} />}
+          label="Prewarm browser while idle"
+          description="Prepare the browser engine after startup when a saved website's database is unlocked. Uses memory earlier to reduce the first website's startup delay. Disabling cancels pending preparation; an engine already started stays loaded until exit."
+          checked={config.idlePrewarmEnabled !== false}
+          onChange={(idlePrewarmEnabled) => update({ idlePrewarmEnabled })}
+        />
+      </Card>
       <div className="space-y-4">
         <SectionHeader
           icon={<Shield size={16} />}
@@ -215,14 +225,13 @@ function WebBrowserSettingsContent({
           />
           <BrowserSelectRow
             settingKey="webBrowser.popupPolicy"
-            label="Tactical RMM popups"
+            label="Website popups"
             description={
               nativeCapabilitiesBlocked
-                ? "The native browser blocks popups. The saved legacy popup preference is inactive."
-                : "Popup handling currently supports Tactical RMM only. Other websites' popup requests are not covered by this setting."
+                ? "Open allowed native popups as temporary tabs within the same connection, or block them. Destination restrictions still apply. Close and reopen the website after changing this setting."
+                : "Legacy popup handling supports Tactical RMM only. Other websites' popup requests are not covered by this setting."
             }
-            value={nativeCapabilitiesBlocked ? "block" : config.popupPolicy}
-            disabled={nativeCapabilitiesBlocked}
+            value={config.popupPolicy}
             onChange={(value) =>
               update({
                 popupPolicy: value as WebBrowserSettingsConfig["popupPolicy"],
@@ -259,15 +268,14 @@ function WebBrowserSettingsContent({
         <Card>
           <p className="text-xs text-[var(--color-textSecondary)]">
             {nativeCapabilitiesBlocked
-              ? "The native browser currently blocks downloads and page dialogs. Saved legacy preferences are preserved but inactive."
+              ? "Native downloads use this connection's browser session and private proxy, with a Save dialog for each file. Reopen the website after changing this setting. Native page dialogs remain unavailable."
               : "Apply on the next reload or navigation in legacy web tabs, including supported popup tabs. Browser and operating-system restrictions still apply. Unapproved destinations remain blocked."}
           </p>
           <Toggle
             settingKey="webBrowser.allowDownloads"
             label="Allow website downloads"
             description="Permit downloads from approved proxy pages. Downloaded files may be unencrypted and are not scanned by this app."
-            checked={!nativeCapabilitiesBlocked && config.allowDownloads}
-            disabled={nativeCapabilitiesBlocked}
+            checked={config.allowDownloads}
             onChange={(allowDownloads) => update({ allowDownloads })}
           />
           <Toggle

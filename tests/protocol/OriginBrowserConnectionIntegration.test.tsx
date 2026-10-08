@@ -32,10 +32,32 @@ const f = vi.hoisted(() => ({
   revoked: false,
   serial: 0,
   clipboard: vi.fn(),
+  navigationError: undefined as string | null | undefined,
   automationLibrary: { version: 1, scripts: [] as any[], macros: [] as any[] },
 }));
 vi.mock("@tauri-apps/api/core", () => ({ invoke: f.invoke }));
 vi.mock("@tauri-apps/api/event", () => ({ listen: f.listen }));
+vi.mock("@tauri-apps/api/webviewWindow", () => ({
+  getCurrentWebviewWindow: () => ({ label: "owner-window" }),
+}));
+vi.mock("../../src/hooks/protocol/useOriginBrowser", async (original) => {
+  const actual =
+    await original<
+      typeof import("../../src/hooks/protocol/useOriginBrowser")
+    >();
+  return {
+    ...actual,
+    useOriginBrowser: (...args: Parameters<typeof actual.useOriginBrowser>) => {
+      const browser = actual.useOriginBrowser(...args);
+      return f.navigationError === undefined
+        ? browser
+        : {
+            ...browser,
+            state: { ...browser.state, navigationError: f.navigationError },
+          };
+    },
+  };
+});
 vi.mock("../../src/contexts/useConnections", () => ({
   useConnections: () => f.context,
 }));
@@ -127,6 +149,7 @@ beforeEach(() => {
     value: { writeText: f.clipboard },
   });
   f.revoked = false;
+  f.navigationError = undefined;
   f.serial = 0;
   f.automationLibrary = { version: 1, scripts: [], macros: [] };
   f.active = true;
@@ -179,6 +202,15 @@ beforeEach(() => {
     return vi.fn();
   });
   f.invoke.mockImplementation(async (command, { request }) => {
+    if (command === "origin_browser_popup") {
+      if (request.action.kind === "downloads") return [];
+      return {
+        sourceIdentity: request.sourceIdentity,
+        sequence: 0,
+        sourceClosed: false,
+        views: [],
+      };
+    }
     if (command === "origin_browser_automation") {
       const operation = request.operation;
       // Mirror the canonical envelope rather than ACKing arbitrary renderer
@@ -262,6 +294,7 @@ beforeEach(() => {
     "ResizeObserver",
     class {
       observe() {}
+      unobserve() {}
       disconnect() {}
     },
   );
@@ -294,6 +327,196 @@ async function attached() {
 }
 
 describe("real-origin connection-tab integration", () => {
+  it("native navigation denial renders the hook message once and clears when the hook clears it", async () => {
+    const view = await attached();
+    const denied =
+      "Navigation was blocked by this connection's destination policy. The current page is unchanged.";
+    f.navigationError = denied;
+    view.rerender(<WebBrowser session={session} />);
+    expect(screen.getAllByText(denied)).toHaveLength(1);
+    expect(screen.getByText(denied)).toHaveAttribute("role", "alert");
+    expect(screen.getByRole("button", { name: "Reload" })).toBeEnabled();
+    expect(calls("origin_browser_close")).toHaveLength(0);
+    f.navigationError = null;
+    view.rerender(<WebBrowser session={session} />);
+    expect(screen.queryByText(denied)).toBeNull();
+    expect(calls("origin_browser_create")).toHaveLength(1);
+  });
+  it("native feature menu prints only after overlay closure and focus acknowledgement", async () => {
+    await attached();
+    fireEvent.click(
+      screen.getByRole("button", { name: "More browser actions" }),
+    );
+    for (const name of [
+      "Print / Save as PDF…",
+      "History menu",
+      "Recording",
+      "Open in new tab",
+      "Find in page",
+    ])
+      expect(screen.getByRole("menuitem", { name })).toBeEnabled();
+    fireEvent.click(
+      screen.getByRole("menuitem", { name: "Print / Save as PDF…" }),
+    );
+    await waitFor(() =>
+      expect(calls("origin_browser_page_menu")).toHaveLength(1),
+    );
+    expect(
+      screen.queryByRole("menu", { name: "More browser actions" }),
+    ).toBeNull();
+    expect(calls("origin_browser_page_menu")[0][1].request).toEqual({
+      identity: snapshot().identity,
+      viewId: null,
+      action: { kind: "print" },
+    });
+    const print = f.invoke.mock.calls.findIndex(
+      ([cmd]) => cmd === "origin_browser_page_menu",
+    );
+    const focus = f.invoke.mock.calls.findIndex(
+      ([cmd, args]) =>
+        cmd === "origin_browser_popup" &&
+        args.request.action.action?.kind === "focus",
+    );
+    expect(focus).toBeGreaterThan(-1);
+    expect(focus).toBeLessThan(print);
+  });
+  it("native feature menu opens a real native tab without creating another context", async () => {
+    await attached();
+    fireEvent.click(
+      screen.getByRole("button", { name: "More browser actions" }),
+    );
+    fireEvent.click(screen.getByRole("menuitem", { name: "Open in new tab" }));
+    await waitFor(() =>
+      expect(
+        calls("origin_browser_popup").some(
+          ([, a]) => a.request.action.kind === "open-tab",
+        ),
+      ).toBe(true),
+    );
+    const request = calls("origin_browser_popup").find(
+      ([, a]) => a.request.action.kind === "open-tab",
+    )![1].request;
+    expect(request.sourceIdentity).toEqual(snapshot().identity);
+    expect(request.action.viewId).toBeNull();
+    expect(request.action.presentationRevision).toBeGreaterThan(0);
+    expect(calls("origin_browser_create")).toHaveLength(1);
+  });
+  it("native feature menu opens the new Find field and focuses it", async () => {
+    await attached();
+    fireEvent.click(
+      screen.getByRole("button", { name: "More browser actions" }),
+    );
+    fireEvent.click(screen.getByRole("menuitem", { name: "Find in page" }));
+    await waitFor(() =>
+      expect(screen.getByRole("textbox", { name: "Find text" })).toHaveFocus(),
+    );
+  });
+  it("native feature menu lists and jumps native history from the back dropdown", async () => {
+    await attached();
+    const original = f.invoke.getMockImplementation()!;
+    f.invoke.mockImplementation((cmd, args) =>
+      cmd === "origin_browser_page_menu" &&
+      args.request.action.kind === "history"
+        ? Promise.resolve({
+            snapshotId: "22",
+            currentIndex: 1,
+            entries: [
+              {
+                index: 0,
+                url: "https://fixture.invalid/before",
+                title: "Before page",
+              },
+              { index: 1, url: "https://fixture.invalid/", title: "Now page" },
+            ],
+          })
+        : original(cmd, args),
+    );
+    act(() =>
+      f.snapshotListener?.({
+        payload: snapshot("attempt-1", { sequence: 2, canGoBack: true }),
+      }),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Back history" }));
+    await waitFor(() =>
+      expect(
+        screen.getByRole("menuitem", { name: /Before page/ }),
+      ).toBeEnabled(),
+    );
+    fireEvent.click(screen.getByRole("menuitem", { name: /Before page/ }));
+    await waitFor(() =>
+      expect(calls("origin_browser_page_menu")).toHaveLength(2),
+    );
+    expect(calls("origin_browser_page_menu")[1][1].request.action).toEqual({
+      kind: "historyJump",
+      snapshotId: "22",
+      index: 0,
+    });
+    expect(calls("origin_browser_navigate")).toHaveLength(0);
+  });
+  it("native feature recording controls stay mounted across panel close and reopen", async () => {
+    await attached();
+    const original = f.invoke.getMockImplementation()!;
+    f.invoke.mockImplementation((cmd, args) =>
+      cmd === "origin_browser_recording"
+        ? Promise.resolve({
+            snapshot: {
+              identity: snapshot().identity,
+              recordingId: "abc-123",
+              metadataOnly: true,
+              phase: "recording",
+              durationMs: 0,
+              entryCount: 0,
+              droppedEntries: 0,
+            },
+            har: null,
+          })
+        : original(cmd, args),
+    );
+    fireEvent.click(
+      screen.getByRole("button", { name: "More browser actions" }),
+    );
+    fireEvent.click(screen.getByRole("menuitem", { name: "Recording" }));
+    expect(screen.getByRole("button", { name: "Start HAR" })).toBeEnabled();
+    expect(screen.getByRole("button", { name: "Start video" })).toBeDisabled(); // no capture API in jsdom
+    fireEvent.click(screen.getByRole("button", { name: "Start HAR" }));
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Stop HAR" })).toBeEnabled(),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Done" }));
+    await waitFor(() =>
+      expect(
+        screen.getByRole("button", { name: "More browser actions" }),
+      ).toBeEnabled(),
+    );
+    fireEvent.click(
+      screen.getByRole("button", { name: "More browser actions" }),
+    );
+    fireEvent.click(
+      screen.getByRole("menuitem", { name: "Recording · active" }),
+    );
+    expect(screen.getByRole("button", { name: "Stop HAR" })).toBeEnabled();
+    expect(
+      calls("origin_browser_recording").filter(
+        ([, a]) => a.request.operation.kind === "start",
+      ),
+    ).toHaveLength(1);
+    expect(
+      calls("origin_browser_recording").some(
+        ([, a]) => a.request.operation.kind === "discard",
+      ),
+    ).toBe(false);
+  });
+  it("uses a compact reconnect rotation icon distinct from the reload icon", async () => {
+    await attached();
+    const reconnect = screen.getByRole("button", { name: "Reconnect" });
+    expect(reconnect).toHaveClass("sor-btn", "sor-icon-btn-sm");
+    expect(reconnect).toHaveAttribute("data-tooltip", "Reconnect");
+    expect(reconnect.querySelector("svg")).toHaveClass("lucide-rotate-cw");
+    expect(reconnect.querySelector("svg")).toHaveAttribute("width", "16");
+    expect(
+      screen.getByRole("button", { name: "Reload" }).querySelector("svg"),
+    ).toHaveClass("lucide-rotate-ccw");
+  });
   it("handles native document timeout with a scoped Reload action even when loading presentation is hidden", async () => {
     f.context.state.connections = [
       {
@@ -741,7 +964,7 @@ describe("real-origin connection-tab integration", () => {
     );
     expect(screen.queryByText(warning)).toBeNull();
   });
-  it("uses a compact page title and policy tooltip, with unsupported actions only in the themed More menu", async () => {
+  it("native feature menu preserves compact title and themed interactive actions", async () => {
     await attached();
     expect(
       screen.queryByText(/Native browser attached|Required policy:/),
@@ -759,12 +982,21 @@ describe("real-origin connection-tab integration", () => {
     fireEvent.click(trigger);
     const menu = screen.getByRole("menu", { name: "More browser actions" });
     expect(menu).toHaveClass("sor-menu-surface");
-    for (const name of ["Print", "Downloads", "History menu", "Recording"])
-      expect(within(menu).getByRole("menuitem", { name })).toBeDisabled();
+    for (const name of [
+      "Print / Save as PDF…",
+      "History menu",
+      "Recording",
+      "Open in new tab",
+      "Find in page",
+    ])
+      expect(within(menu).getByRole("menuitem", { name })).toBeEnabled();
     const presentations = calls("origin_browser_control").filter(
       ([, args]) => args.request.action.kind === "presentation",
     );
-    expect(presentations.slice(-1)[0][1].request.action.visible).toBe(false);
+    expect(presentations.slice(-1)[0][1].request.action).toMatchObject({
+      visible: true,
+      inputBlocked: true,
+    });
     expect(screen.getByRole("button", { name: "Reload" })).toBeDisabled();
     fireEvent.keyDown(menu, { key: "Escape" });
     await waitFor(() =>
@@ -1337,7 +1569,10 @@ describe("real-origin connection-tab integration", () => {
       const actions = calls("origin_browser_control")
         .map(([, args]) => args.request.action)
         .filter((action) => action.kind === "presentation");
-      expect(actions.slice(-1)[0].visible).toBe(false);
+      expect(actions.slice(-1)[0]).toMatchObject({
+        visible: true,
+        inputBlocked: true,
+      });
     });
     act(() => {
       f.revoked = true;
@@ -1356,7 +1591,7 @@ describe("real-origin connection-tab integration", () => {
       ),
     ).toHaveLength(0);
   });
-  it("reviews and saves current-page bookmarks while hiding native, without reconnecting", async () => {
+  it("reviews and saves current-page bookmarks while blocking native input, without reconnecting", async () => {
     const view = await attached();
     act(() =>
       f.snapshotListener?.({
@@ -1372,7 +1607,10 @@ describe("real-origin connection-tab integration", () => {
     const presentations = calls("origin_browser_control").filter(
       ([, args]) => args.request.action.kind === "presentation",
     );
-    expect(presentations.slice(-1)[0][1].request.action.visible).toBe(false);
+    expect(presentations.slice(-1)[0][1].request.action).toMatchObject({
+      visible: true,
+      inputBlocked: true,
+    });
     expect(
       screen.getByRole("menuitem", { name: "Bookmark this page" }),
     ).toBeEnabled();
@@ -1939,12 +2177,13 @@ describe("real-origin connection-tab integration", () => {
     ).toHaveValue("");
     expect(screen.getByRole("button", { name: "Go" })).toBeDisabled();
   });
-  it("hides the native child for inactive tabs and shell portal dialogs, then restores it", async () => {
+  it("hides inactive tabs and clips shell dialogs while blocking native input, then restores it", async () => {
     const view = await attached();
-    const visible = () =>
+    const presentation = () =>
       calls("origin_browser_control")
         .filter(([, args]) => args.request.action.kind === "presentation")
-        .slice(-1)[0]?.[1].request.action.visible;
+        .slice(-1)[0]?.[1].request.action;
+    const visible = () => presentation()?.visible;
     await waitFor(() => expect(visible()).toBe(true));
     f.active = false;
     view.rerender(<WebBrowser session={session} />);
@@ -1955,9 +2194,25 @@ describe("real-origin connection-tab integration", () => {
     const dialog = document.createElement("div");
     dialog.setAttribute("role", "dialog");
     act(() => document.body.append(dialog));
-    await waitFor(() => expect(visible()).toBe(false));
-    act(() => dialog.remove());
-    await waitFor(() => expect(visible()).toBe(true));
+    try {
+      await waitFor(() =>
+        expect(presentation()).toMatchObject({
+          visible: true,
+          inputBlocked: true,
+        }),
+      );
+      expect(presentation().occlusions.length).toBeGreaterThan(0);
+      expect(screen.getByRole("button", { name: "Reload" })).toBeDisabled();
+    } finally {
+      act(() => dialog.remove());
+    }
+    await waitFor(() =>
+      expect(presentation()).toMatchObject({
+        visible: true,
+        inputBlocked: false,
+      }),
+    );
+    expect(screen.getByRole("button", { name: "Reload" })).toBeEnabled();
   });
   it("mounts both permission scopes and closes before persisting and reconnecting", async () => {
     await attached();

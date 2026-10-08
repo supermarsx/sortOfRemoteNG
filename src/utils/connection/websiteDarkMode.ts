@@ -9,6 +9,7 @@ export const MAX_WEBSITE_DARK_CSS_BYTES = 16_384;
 export const MAX_WEBSITE_DARK_PRESETS = 32;
 export const DEFAULT_WEBSITE_DARK_THEME: Readonly<WebsiteDarkTheme> =
   Object.freeze({
+    followAppTheme: true,
     mode: "dynamic",
     brightness: 100,
     contrast: 100,
@@ -24,18 +25,23 @@ export const BUILTIN_WEBSITE_DARK_PRESETS: readonly WebsiteDarkPreset[] =
     {
       id: "builtin-comfortable",
       name: "Comfortable",
-      theme: { ...DEFAULT_WEBSITE_DARK_THEME },
+      theme: { ...DEFAULT_WEBSITE_DARK_THEME, followAppTheme: false },
     },
     {
       id: "builtin-dim",
       name: "Dim",
-      theme: { ...DEFAULT_WEBSITE_DARK_THEME, brightness: 85 },
+      theme: {
+        ...DEFAULT_WEBSITE_DARK_THEME,
+        followAppTheme: false,
+        brightness: 85,
+      },
     },
     {
       id: "builtin-amoled",
       name: "AMOLED",
       theme: {
         ...DEFAULT_WEBSITE_DARK_THEME,
+        followAppTheme: false,
         backgroundColor: "#000000",
         textColor: "#eeeeee",
       },
@@ -45,6 +51,7 @@ export const BUILTIN_WEBSITE_DARK_PRESETS: readonly WebsiteDarkPreset[] =
       name: "Sepia",
       theme: {
         ...DEFAULT_WEBSITE_DARK_THEME,
+        followAppTheme: false,
         sepia: 30,
         backgroundColor: "#211c15",
         textColor: "#e8ddc8",
@@ -130,6 +137,11 @@ export function normalizeWebsiteDarkTheme(value: unknown): WebsiteDarkTheme {
   if (value === undefined) return { ...DEFAULT_WEBSITE_DARK_THEME };
   const theme = record(value, Object.keys(DEFAULT_WEBSITE_DARK_THEME));
   if (
+    theme.followAppTheme !== undefined &&
+    typeof theme.followAppTheme !== "boolean"
+  )
+    throw new Error("Choose whether website colors follow the app theme.");
+  if (
     !["dynamic", "filter", "dynamicFilter", "customCss"].includes(
       theme.mode as string,
     )
@@ -154,6 +166,7 @@ export function normalizeWebsiteDarkTheme(value: unknown): WebsiteDarkTheme {
   if (typeof theme.preserveMedia !== "boolean")
     throw new Error("Choose whether to preserve media.");
   return {
+    followAppTheme: theme.followAppTheme !== false,
     mode: theme.mode as WebsiteDarkTheme["mode"],
     brightness: theme.brightness as number,
     contrast: theme.contrast as number,

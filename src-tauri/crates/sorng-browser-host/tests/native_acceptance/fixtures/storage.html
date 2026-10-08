@@ -1,0 +1,71 @@
+<!doctype html><html><head><meta charset="utf-8"><title>Local private storage probe</title><link rel="icon" href="data:,"></head>
+<body>Disposable same-origin storage probe. No sign-in or external resources.
+<script>
+'use strict';
+// Only the fixture server substitutes this fixed-plan configuration. All
+// identities deliberately use identical cookie, localStorage, DB and key names.
+const config = __STORAGE_CONFIG__;
+const DB = 'sorng-isolation', STORE = 'values', KEY = 'shared-key';
+let proofSubmitted = false;
+function openDatabase() {
+  return new Promise((resolve, reject) => {
+    const request = indexedDB.open(DB, 1);
+    request.onupgradeneeded = () => request.result.createObjectStore(STORE);
+    request.onerror = () => reject(new Error('indexeddb-open'));
+    request.onblocked = () => reject(new Error('indexeddb-blocked'));
+    request.onsuccess = () => resolve(request.result);
+  });
+}
+async function databaseValue(write) {
+  const db = await openDatabase();
+  try {
+    return await new Promise((resolve, reject) => {
+      const tx = db.transaction(STORE, write === null ? 'readonly' : 'readwrite');
+      const store = tx.objectStore(STORE);
+      let value = null;
+      // Resolve only on transaction completion, never on put/get success alone.
+      // A later navigation therefore cannot silently abort an asserted write.
+      tx.oncomplete = () => resolve(value);
+      tx.onerror = tx.onabort = () => reject(new Error('indexeddb-transaction'));
+      if (write !== null) store.put(write, KEY);
+      const read = store.get(KEY);
+      read.onsuccess = () => { value = read.result === undefined ? null : read.result; };
+    });
+  } finally { db.close(); }
+}
+function cookieValue() {
+  const values = document.cookie.split(';').map(v => v.trim()).filter(v => v.startsWith('isolation_script='));
+  return values.length === 0 ? null : values.length === 1 ? values[0].slice('isolation_script='.length) : 'duplicate';
+}
+async function snapshot() {
+  return {cookie: cookieValue(), localStorage: localStorage.getItem(KEY), indexedDb: await databaseValue(null)};
+}
+async function main() {
+  const proof = {step:config.name, origin:location.origin, secure:isSecureContext, top:top===window,
+    tauriAbsent:typeof window.__TAURI_INTERNALS__==='undefined', before:await snapshot()};
+  if (config.write !== null) {
+    document.cookie = `isolation_script=${config.write}; Secure; SameSite=Strict; Path=/`;
+    localStorage.setItem(KEY, config.write);
+    await databaseValue(config.write);
+    const response = await fetch(`/storage-cookie/${config.name}`, {method:'POST'});
+    if (!response.ok) throw new Error('native-cookie-write');
+  }
+  proof.after = await snapshot();
+  proof.httpOnlyHidden = !document.cookie.split(';').some(v => v.trim().startsWith('isolation_native='));
+  proof.ok = true;
+  // Native navigation may begin as soon as the server receives this proof.
+  // Cancellation of its response must not emit a second, stale error proof.
+  proofSubmitted = true;
+  const response = await fetch(`/storage-proof/${config.name}`, {method:'POST',body:JSON.stringify(proof)});
+  if (!response.ok) throw new Error('proof-response');
+  // Serial bounded-rate requests make revocation measurable in each context's
+  // existing TLS socket ledger, including while the other context remains live.
+  for (;;) {
+    await new Promise(resolve => setTimeout(resolve, 150));
+    await fetch('/pulse').catch(() => {});
+  }
+}
+main().catch(() => {
+  if (!proofSubmitted) fetch(`/storage-proof/${config.name}`, {method:'POST',body:JSON.stringify({step:config.name,ok:false,error:'storage-api-or-network'})}).catch(() => {});
+});
+</script></body></html>

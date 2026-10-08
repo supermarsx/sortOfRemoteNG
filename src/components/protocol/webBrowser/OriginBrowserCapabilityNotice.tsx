@@ -43,11 +43,15 @@ export default function OriginBrowserCapabilityNotice({
         setResult({
           scope,
           tone:
-            status.capability.availability === "available" ? "info" : "warning",
+            status.capability.availability === "unavailable"
+              ? "warning"
+              : "info",
           text:
             status.capability.availability === "available"
               ? "Native runtime reports available; owner access is still required."
-              : `Experimental native browser unavailable: ${Object.prototype.hasOwnProperty.call(reasons, status.capability.reason) ? reasons[status.capability.reason] : "host unavailable"}.`,
+              : status.capability.availability === "deferred"
+                ? "The native browser starts after access to this connection's owning database is authorized. Runtime policies are checked during startup."
+                : `Experimental native browser unavailable: ${Object.prototype.hasOwnProperty.call(reasons, status.capability.reason) ? reasons[status.capability.reason] : "host unavailable"}.`,
         });
       })
       .catch(() => {

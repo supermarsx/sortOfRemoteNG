@@ -114,6 +114,178 @@ async function mounted(overrides: Partial<UseOriginBrowserOptions> = {}) {
 }
 
 describe("origin browser attempt controller", () => {
+  it("keeps rendering around shell overlays without allowing focus through them", async () => {
+    const f = await mounted({ preserveRenderingUnderOverlays: true });
+    f.transport.control.mockClear();
+    const occlusions = [{ x: 700, y: 85, width: 110, height: 240 }];
+    f.rerender({ ...f.props, dialogOpen: true, occlusions });
+    await waitFor(() =>
+      expect(f.transport.control).toHaveBeenCalledWith(
+        expect.objectContaining({
+          action: expect.objectContaining({
+            kind: "presentation",
+            bounds,
+            visible: true,
+            inputBlocked: true,
+            occlusions,
+          }),
+        }),
+      ),
+    );
+    expect(await f.result.current.focus()).toBe(false);
+    expect(f.transport.close).not.toHaveBeenCalled();
+    f.rerender({ ...f.props, dialogOpen: false, occlusions: [] });
+    await waitFor(() =>
+      expect(f.transport.control).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          action: expect.objectContaining({
+            kind: "presentation",
+            visible: true,
+            inputBlocked: false,
+            occlusions: [],
+          }),
+        }),
+      ),
+    );
+    f.rerender({ ...f.props, active: false, dialogOpen: true, occlusions });
+    await waitFor(() =>
+      expect(f.transport.control).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          action: expect.objectContaining({ visible: false }),
+        }),
+      ),
+    );
+  });
+  it("sends volatile Quick Connect data only on create, never status or controls", async () => {
+    const quickConnect = {
+      protocol: "https" as const,
+      hostname: "fixture.invalid",
+      port: 443,
+      httpVerifySsl: true,
+      basicAuthUsername: "test-user",
+      basicAuthPassword: "test-only-secret",
+    };
+    const f = await mounted({
+      owner: { ...owner, ownerDatabaseId: "quick-connect:tab-1" },
+      expectedSecurityRevision: "quick-connect",
+      sourceSessionId: "tab-1",
+      quickConnect,
+    });
+    expect(f.transport.create.mock.calls[0][0].quickConnect).toEqual(
+      quickConnect,
+    );
+    for (const calls of [
+      f.transport.status.mock.calls,
+      f.transport.control.mock.calls,
+    ]) {
+      expect(JSON.stringify(calls)).not.toContain("test-only-secret");
+    }
+    f.unmount();
+    await waitFor(() => expect(f.transport.close).toHaveBeenCalled());
+    expect(JSON.stringify(f.transport.close.mock.calls)).not.toContain(
+      "test-only-secret",
+    );
+  });
+  it("permits deferred startup but stays hidden until available post-create status", async () => {
+    const f = fixture();
+    const verified =
+      deferred<Awaited<ReturnType<OriginBrowserTransport["status"]>>>();
+    f.transport.status
+      .mockResolvedValueOnce({
+        capability: { availability: "deferred" },
+        snapshot: null,
+      })
+      .mockImplementationOnce(() => verified.promise);
+    const assertOwner = vi.fn();
+    const { result } = renderHook(() =>
+      useOriginBrowser({ ...f.options, assertOwner }),
+    );
+    act(() => result.current.setViewport(bounds));
+    await waitFor(() => expect(f.transport.status).toHaveBeenCalledTimes(2));
+    expect(assertOwner).toHaveBeenCalledOnce();
+    expect(f.transport.create).toHaveBeenCalledOnce();
+    expect(result.current.state.phase).toBe("starting");
+    f.emit(snapshot({ sequence: 1 }));
+    expect(f.transport.control).not.toHaveBeenCalled();
+    await act(async () =>
+      verified.resolve({
+        capability: { availability: "available" },
+        snapshot: snapshot({ sequence: 2 }),
+      }),
+    );
+    await waitFor(() => expect(result.current.state.phase).toBe("attached"));
+    expect(f.transport.control).toHaveBeenCalled();
+  });
+
+  it("rejects deferred after create and closes without presenting the view", async () => {
+    const f = fixture();
+    f.transport.status.mockResolvedValue({
+      capability: { availability: "deferred" },
+      snapshot: null,
+    });
+    const { result } = renderHook(() => useOriginBrowser(f.options));
+    act(() => result.current.setViewport(bounds));
+    await waitFor(() => expect(result.current.state.phase).toBe("error"));
+    expect(result.current.state.startupFailure?.stage).toBe("resync");
+    expect(f.transport.close).toHaveBeenCalledOnce();
+    expect(f.transport.control).not.toHaveBeenCalled();
+  });
+
+  it("does not create from deferred status when the captured owner was revoked", async () => {
+    const f = fixture();
+    f.transport.status.mockResolvedValue({
+      capability: { availability: "deferred" },
+      snapshot: null,
+    });
+    const { result } = renderHook(() =>
+      useOriginBrowser({
+        ...f.options,
+        assertOwner: () => {
+          throw new Error("revoked");
+        },
+      }),
+    );
+    await waitFor(() => expect(result.current.state.phase).toBe("error"));
+    expect(result.current.state.startupFailure?.stage).toBe("owner-check");
+    expect(f.transport.create).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    "Native browser working-data preparation failed. Review Settings > Web Browser and restart if the working folder changed; the owning database and retained cookies were not changed.",
+    "Native browser package or runtime settings could not be prepared. Check the native startup diagnostics before retrying.",
+    "Native browser initialization or policy readiness timed out. Check the native startup diagnostics and restart the app.",
+    "Native browser initialization or policy readiness failed. Check the native startup diagnostics and restart the app.",
+  ])(
+    "classifies whitelisted startup errors separately from saved login configuration: %s",
+    async (message) => {
+      const f = fixture();
+      f.transport.status.mockResolvedValueOnce({
+        capability: { availability: "deferred" },
+        snapshot: null,
+      });
+      f.transport.create.mockRejectedValue(message);
+      const { result } = renderHook(() => useOriginBrowser(f.options));
+      await waitFor(() => expect(result.current.state.phase).toBe("error"));
+      expect(result.current.state.startupFailure).toEqual({
+        stage: "create",
+        category: "runtime",
+      });
+      expect(result.current.state.error).toContain(message);
+      expect(result.current.state.error).not.toContain("login, credentials");
+    },
+  );
+
+  it("does not echo a page URL appended to a native runtime error", async () => {
+    const f = fixture();
+    f.transport.create.mockRejectedValue(
+      "Native browser initialization or policy readiness failed. Check the native startup diagnostics and restart the app. https://private.invalid/?secret=token",
+    );
+    const { result } = renderHook(() => useOriginBrowser(f.options));
+    await waitFor(() => expect(result.current.state.phase).toBe("error"));
+    expect(result.current.state.error).not.toContain("private.invalid");
+    expect(result.current.state.startupFailure?.category).toBe("ipc");
+  });
+
   it.each(["listen", "status", "resync"] as const)(
     "does not infer certificate policy or CEF availability from certificate text during %s",
     async (stage) => {
@@ -156,6 +328,11 @@ describe("origin browser attempt controller", () => {
     [
       "Saved website credentials are unavailable. Unlock the owning database and review this connection's credential source before retrying.",
       "credential source",
+      "connection",
+    ],
+    [
+      "Automatic website login needs complete saved credentials. Edit this connection's website login credentials or linked database-vault entry, or explicitly choose manual login, then reopen the tab.",
+      "Edit this connection's website login credentials",
       "connection",
     ],
     [
@@ -721,6 +898,94 @@ describe("origin browser attempt controller", () => {
     });
   });
 
+  it("Quick Connect address changes retire the old context and never forward its credentials", async () => {
+    const quickConnect = {
+      protocol: "https" as const,
+      hostname: "fixture.invalid",
+      port: 443,
+      httpVerifySsl: false,
+      basicAuthUsername: "local-user",
+      basicAuthPassword: "private-value",
+    };
+    const f = await mounted({ quickConnect });
+    const closing = deferred<void>();
+    f.transport.close.mockReturnValueOnce(closing.promise);
+    await act(async () => {
+      expect(
+        await f.result.current.navigate(
+          "https://www.google.com/search?q=browser",
+        ),
+      ).toBe(true);
+    });
+    expect(f.transport.navigate).not.toHaveBeenCalled();
+    expect(f.transport.create).toHaveBeenCalledTimes(1);
+    expect(f.transport.close).toHaveBeenCalledWith({ identity });
+    await act(async () => closing.resolve());
+    await waitFor(() => expect(f.transport.create).toHaveBeenCalledTimes(2));
+    expect(f.transport.create.mock.calls[1][0]).toMatchObject({
+      owner,
+      initialUrl: "https://www.google.com/search?q=browser",
+      quickConnect: {
+        protocol: "https",
+        hostname: "https://www.google.com/search?q=browser",
+        port: 443,
+        httpVerifySsl: true,
+      },
+    });
+    expect(f.transport.create.mock.calls[1][0].quickConnect).not.toHaveProperty(
+      "basicAuthUsername",
+    );
+    expect(f.transport.create.mock.calls[1][0].quickConnect).not.toHaveProperty(
+      "basicAuthPassword",
+    );
+    await waitFor(() => expect(f.result.current.state.phase).toBe("attached"));
+    await act(async () => {
+      await f.result.current.navigate("https://www.google.com/other");
+    });
+    expect(f.transport.create).toHaveBeenCalledTimes(2);
+    expect(f.transport.navigate).toHaveBeenLastCalledWith({
+      identity: { ...owner, attemptId: "native-attempt-2" },
+      url: "https://www.google.com/other",
+    });
+  });
+
+  it("Quick Connect address changes do not replace a context whose cleanup failed", async () => {
+    const f = await mounted({
+      quickConnect: {
+        protocol: "https",
+        hostname: "fixture.invalid",
+        port: 443,
+        httpVerifySsl: true,
+      },
+    });
+    f.transport.close.mockRejectedValueOnce("private-close-error");
+    await act(async () => {
+      await f.result.current.navigate("https://www.cloudflare.com/");
+    });
+    await waitFor(() =>
+      expect(f.result.current.state.phase).toBe("unavailable"),
+    );
+    expect(f.transport.create).toHaveBeenCalledTimes(1);
+    expect(JSON.stringify(f.result.current.state)).not.toContain(
+      "private-close-error",
+    );
+  });
+
+  it("saved connections never use temporary address-change authority", async () => {
+    const f = await mounted();
+    await act(async () => {
+      await f.result.current.navigate("https://www.google.com/");
+    });
+    expect(f.transport.navigate).toHaveBeenCalledWith({
+      identity,
+      url: "https://www.google.com/",
+    });
+    expect(f.transport.create).toHaveBeenCalledTimes(1);
+    expect(f.transport.create.mock.calls[0][0]).not.toHaveProperty(
+      "quickConnect",
+    );
+  });
+
   it("rejects raw-script and credential URLs and binds navigation controls to the native identity", async () => {
     const f = await mounted();
     for (const url of [
@@ -894,9 +1159,8 @@ describe("origin browser attempt controller", () => {
       })
       .mockReturnValueOnce(pending.promise);
     const hook = renderHook(() => useOriginBrowser(f.options));
-    await waitFor(() =>
-      expect(hook.result.current.state.phase).toBe("attached"),
-    );
+    await waitFor(() => expect(f.transport.status).toHaveBeenCalledTimes(2));
+    expect(hook.result.current.state.phase).toBe("starting");
     f.emit(snapshot({ sequence: 8, title: "Newer event" }));
     await act(async () =>
       pending.resolve({

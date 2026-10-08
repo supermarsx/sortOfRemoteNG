@@ -1176,6 +1176,47 @@ async fn retired_clear_on_lock_removes_private_record_before_revocation() {
 }
 
 #[tokio::test]
+async fn commit_binding_rejects_each_mismatched_scope_without_writing() {
+    let fixture = fixture(&public_data()).await;
+    let _guard = lock_database_operation(&fixture.root.path().join("databases"))
+        .await
+        .unwrap();
+    let snapshot = managed_snapshot(fixture.root.path(), &fixture.state, "db")
+        .await
+        .unwrap();
+    let mut proposed = public_data();
+    proposed["settings"]["theme"] = "must-not-be-committed".into();
+    for (window, database, token, revision) in [
+        ("other-window", "db", fixture.token.as_str(), "r1"),
+        ("main", "other-database", fixture.token.as_str(), "r1"),
+        ("main", "db", "unissued-token", "r1"),
+        ("main", "db", fixture.token.as_str(), "other-revision"),
+    ] {
+        assert!(commit_session_data(
+            fixture.root.path(),
+            &fixture.state,
+            SessionBinding {
+                window,
+                database,
+                token,
+                revision,
+            },
+            &snapshot,
+            &proposed,
+        )
+        .await
+        .is_err());
+        assert!(
+            managed_snapshot(fixture.root.path(), &fixture.state, "db")
+                .await
+                .unwrap()
+                .data
+                == snapshot.data
+        );
+    }
+}
+
+#[tokio::test]
 async fn new_destination_dek_reencrypts_portable_sessions_and_final_fence_blocks_revoked_owner() {
     let source = with_record();
     let selected = descriptor(&source).unwrap();
@@ -1201,10 +1242,12 @@ async fn new_destination_dek_reencrypts_portable_sessions_and_final_fence_blocks
     commit_session_data(
         fixture.root.path(),
         &fixture.state,
-        "main",
-        "db",
-        &fixture.token,
-        "r1",
+        SessionBinding {
+            window: "main",
+            database: "db",
+            token: &fixture.token,
+            revision: "r1",
+        },
         &snapshot,
         &body,
     )
@@ -1233,10 +1276,12 @@ async fn new_destination_dek_reencrypts_portable_sessions_and_final_fence_blocks
     assert!(commit_session_data(
         fixture.root.path(),
         &fixture.state,
-        "main",
-        "db",
-        &fixture.token,
-        "r1",
+        SessionBinding {
+            window: "main",
+            database: "db",
+            token: &fixture.token,
+            revision: "r1",
+        },
         &stored,
         &public_data()
     )

@@ -9,6 +9,7 @@ import { ConfirmDialog } from "../ui/dialogs/ConfirmDialog";
 import { FeatureErrorBoundary } from "./FeatureErrorBoundary";
 import { ProtocolRepairNotice } from "../connection/ProtocolRepairDialog";
 import type { SettingsTabId } from "../SettingsDialog/settingsConstants";
+import { OriginBrowserCertificateReview } from "../security/OriginBrowserCertificateReview";
 
 const QuickConnect = dynamic(
   () =>
@@ -118,6 +119,8 @@ export const AppDialogs: React.FC<AppDialogsProps> = (props) => {
 
   return (
     <>
+      {/* TLS review can arrive before a browser's create request resolves. */}
+      <OriginBrowserCertificateReview />
       {/* The legacy modal Collection Selector has been replaced by the
           tool-tab DatabasePanel; it now mounts inside the ToolPanel via
           the 'database' tool key. */}

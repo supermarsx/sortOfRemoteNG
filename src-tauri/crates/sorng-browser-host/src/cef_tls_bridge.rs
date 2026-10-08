@@ -10,7 +10,6 @@ use std::{
     ffi::{c_char, c_void, CStr},
     marker::PhantomData,
     panic::{catch_unwind, AssertUnwindSafe},
-    ptr,
     rc::Rc,
     sync::{
         atomic::{AtomicBool, AtomicU64, Ordering},
@@ -18,6 +17,8 @@ use std::{
     },
     time::{Duration, Instant},
 };
+#[cfg(any(target_os = "windows", test))]
+use std::ptr;
 
 pub const CEF_REVISION: &str = "682c378d70d5780061e96644dca16ddd8fd157a9";
 pub const CHROMIUM_VERSION: &str = "154.0.8037.58";

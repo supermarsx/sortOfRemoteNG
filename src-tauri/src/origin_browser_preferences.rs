@@ -3,12 +3,22 @@
 
 use serde_json::{Map, Value};
 use sorng_browser_host::native_capabilities::NativeBrowserCapabilities;
+use sorng_browser_host::native_popups::NativePopupPolicy;
 use std::sync::LazyLock;
+#[path = "origin_browser_appearance_config.rs"]
+mod appearance_config;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, thiserror::Error)]
+#[error("Invalid saved native browser preferences")]
+pub struct InvalidNativeBrowserPreferences;
 
 #[derive(Clone)]
 pub struct NativeBrowserPreferences {
+    pub appearance: sorng_browser_host::native_appearance::AppearanceConfig,
     pub capabilities: NativeBrowserCapabilities,
+    pub allow_downloads: bool,
     pub default_zoom_percent: u64,
+    pub popup_policy: NativePopupPolicy,
     pub initial_load_timeout_seconds: u64,
     pub document_ready_timeout_seconds: u64,
     pub minimum_form_fill_delay_ms: u64,
@@ -71,7 +81,14 @@ fn retention(value: Option<&Value>) -> Result<Value, ()> {
 }
 
 impl NativeBrowserPreferences {
-    pub fn from_saved(connection: &Value, settings: &Value) -> Result<Self, ()> {
+    pub fn from_saved(
+        connection: &Value,
+        settings: &Value,
+    ) -> Result<Self, InvalidNativeBrowserPreferences> {
+        Self::resolve_saved(connection, settings).map_err(|()| InvalidNativeBrowserPreferences)
+    }
+
+    fn resolve_saved(connection: &Value, settings: &Value) -> Result<Self, ()> {
         let empty = Map::new();
         let globals = settings
             .get("webBrowser")
@@ -120,6 +137,14 @@ impl NativeBrowserPreferences {
         let integer = |key, fallback| get(key).and_then(Value::as_u64).unwrap_or(fallback);
         let enabled = |key| get(key).and_then(Value::as_bool).unwrap_or(true);
         let result = Self {
+            appearance: appearance_config::from_saved(connection, settings)?,
+            // This is global saved policy, not a renderer flag or a connection
+            // capability default. Missing legacy settings remain disabled.
+            allow_downloads: globals
+                .get("allowDownloads")
+                .map(|value| value.as_bool().ok_or(()))
+                .transpose()?
+                .unwrap_or(false),
             capabilities: NativeBrowserCapabilities {
                 local_storage_enabled: enabled("localStorageEnabled"),
                 databases_enabled: enabled("databasesEnabled"),
@@ -131,6 +156,14 @@ impl NativeBrowserPreferences {
                 hide_automation_indicator: enabled("hideAutomationIndicator"),
             },
             default_zoom_percent: integer("defaultZoomPercent", 100),
+            // Global saved policy only; connection overrides and renderer
+            // creation payloads cannot grant popups. Match the legacy UI default.
+            popup_policy: match globals.get("popupPolicy") {
+                None => NativePopupPolicy::Tabs,
+                Some(value) if value.as_str() == Some("tabs") => NativePopupPolicy::Tabs,
+                Some(value) if value.as_str() == Some("block") => NativePopupPolicy::Block,
+                _ => return Err(()),
+            },
             initial_load_timeout_seconds: integer("initialLoadTimeoutSeconds", 30),
             document_ready_timeout_seconds: integer("documentReadyTimeoutSeconds", 120),
             minimum_form_fill_delay_ms: integer("minimumFormFillDelayMs", 0),
@@ -170,6 +203,56 @@ mod tests {
     use super::*;
     use serde_json::json;
 
+    #[test]
+    fn invalid_saved_preferences_return_a_typed_non_disclosing_error() {
+        let error = NativeBrowserPreferences::from_saved(
+            &json!({}),
+            &json!({"webBrowser":{"allowDownloads":"SYNTHETIC_PRIVATE_VALUE"}}),
+        )
+        .err()
+        .expect("malformed saved permission must be rejected");
+        assert_eq!(error, InvalidNativeBrowserPreferences);
+        assert_eq!(
+            error.to_string(),
+            "Invalid saved native browser preferences"
+        );
+        assert!(!format!("{error:?}").contains("SYNTHETIC_PRIVATE_VALUE"));
+    }
+
+    #[test]
+    fn popups_resolve_only_valid_saved_global_policy() {
+        for (settings, expected) in [
+            (json!({}), NativePopupPolicy::Tabs),
+            (
+                json!({"webBrowser":{"popupPolicy":"tabs"}}),
+                NativePopupPolicy::Tabs,
+            ),
+            (
+                json!({"webBrowser":{"popupPolicy":"block"}}),
+                NativePopupPolicy::Block,
+            ),
+        ] {
+            assert_eq!(
+                NativeBrowserPreferences::from_saved(&json!({}), &settings)
+                    .unwrap()
+                    .popup_policy,
+                expected
+            );
+        }
+        for invalid in [json!(null), json!(true), json!("allow"), json!(1)] {
+            assert!(NativeBrowserPreferences::from_saved(
+                &json!({}),
+                &json!({"webBrowser":{"popupPolicy":invalid}})
+            )
+            .is_err());
+        }
+        assert!(NativeBrowserPreferences::from_saved(
+            &json!({"browserSession":{"version":1,"popupPolicy":"tabs"}}),
+            &json!({"webBrowser":{"popupPolicy":"block"}})
+        )
+        .is_err());
+    }
+
     fn capability_values(policy: NativeBrowserCapabilities) -> [bool; 8] {
         [
             policy.local_storage_enabled,
@@ -181,6 +264,35 @@ mod tests {
             policy.website_extensions_enabled,
             policy.hide_automation_indicator,
         ]
+    }
+
+    #[test]
+    fn downloads_require_explicit_valid_saved_global_permission() {
+        for (settings, expected) in [
+            (json!({}), false),
+            (json!({"webBrowser":{}}), false),
+            (json!({"webBrowser":{"allowDownloads":false}}), false),
+            (json!({"webBrowser":{"allowDownloads":true}}), true),
+        ] {
+            assert_eq!(
+                NativeBrowserPreferences::from_saved(&json!({}), &settings)
+                    .unwrap()
+                    .allow_downloads,
+                expected
+            );
+        }
+        for invalid in [Value::Null, json!("true"), json!(1), json!({})] {
+            assert!(NativeBrowserPreferences::from_saved(
+                &json!({}),
+                &json!({"webBrowser":{"allowDownloads":invalid}})
+            )
+            .is_err());
+        }
+        assert!(NativeBrowserPreferences::from_saved(
+            &json!({"browserSession":{"version":1,"allowDownloads":true}}),
+            &json!({"webBrowser":{"allowDownloads":false}}),
+        )
+        .is_err());
     }
 
     #[test]

@@ -93,19 +93,25 @@ function Fixture({
   fetchNative = false,
   navigation = "ready",
   identity,
+  blocked = false,
+  settingsReady = true,
+  scopeKey = "db:unlock-1",
 }: {
   doc?: OriginAutomationDocument | null;
   fetchNative?: boolean;
   navigation?: string;
   identity?: OriginAutomationDocument["identity"] | null;
+  blocked?: boolean;
+  settingsReady?: boolean;
+  scopeKey?: string;
 }) {
   current = useOriginWebsiteAutomation({
     connection,
     ownerDatabaseId: "db",
     settings,
-    settingsReady: true,
-    scopeKey: "db:unlock-1",
-    blocked: false,
+    settingsReady,
+    scopeKey,
+    blocked,
     document: fetchNative ? undefined : doc,
     identity:
       identity === undefined && fetchNative ? document.identity : identity,
@@ -115,6 +121,27 @@ function Fixture({
     updateConnection: boundary.update,
   });
   return <OriginAutomationControls automation={current} />;
+}
+const documentReads = () =>
+  request.mock.calls.filter(([value]) => value.operation.action === "document");
+function deferredDocument() {
+  let resolve!: (
+    value: Awaited<ReturnType<OriginAutomationTransport["request"]>>,
+  ) => void;
+  const promise = new Promise<
+    Awaited<ReturnType<OriginAutomationTransport["request"]>>
+  >((done) => {
+    resolve = done;
+  });
+  return {
+    promise,
+    resolve: (documentToken: string) =>
+      resolve({
+        status: "document",
+        documentToken,
+        origin: document.origin,
+      }),
+  };
 }
 async function mount() {
   const view = render(<Fixture />);
@@ -198,6 +225,167 @@ beforeEach(() => {
 });
 afterEach(cleanup);
 describe("native automation hook and reused controls", () => {
+  it.each(["connection", "global"])(
+    "does not read native receipts for appearance-only or disabled %s automation",
+    async (level) => {
+      if (level === "connection") {
+        connection.httpAutomation!.scriptInjectionEnabled = false;
+        connection.httpAutomation!.interactionMacrosEnabled = false;
+      } else {
+        settings.sessionQuickActions.allowWebScriptInjection = false;
+        settings.sessionQuickActions.allowWebMacros = false;
+      }
+      const view = render(<Fixture fetchNative />);
+      await waitFor(() => expect(current.libraryReady).toBe(true));
+      view.rerender(<Fixture fetchNative blocked />);
+      view.rerender(<Fixture fetchNative />);
+      await act(async () => current.refreshDocument());
+      expect(current.pageReady).toBe(false);
+      expect(current.documentUnavailable).toBe(false);
+      expect(request).not.toHaveBeenCalled();
+    },
+  );
+  it.each(["scriptInjectionEnabled", "interactionMacrosEnabled"] as const)(
+    "reads once when %s becomes enabled",
+    async (capability) => {
+      connection.httpAutomation!.scriptInjectionEnabled = false;
+      connection.httpAutomation!.interactionMacrosEnabled = false;
+      const view = render(<Fixture fetchNative />);
+      await waitFor(() => expect(current.libraryReady).toBe(true));
+      expect(documentReads()).toHaveLength(0);
+      connection.httpAutomation![capability] = true;
+      view.rerender(<Fixture fetchNative />);
+      await waitFor(() => expect(current.pageReady).toBe(true));
+      expect(documentReads()).toHaveLength(1);
+    },
+  );
+  it("fails closed without a receipt read for malformed consent", async () => {
+    connection.httpAutomation!.version = 99 as 1;
+    render(<Fixture fetchNative />);
+    await waitFor(() => expect(current.libraryReady).toBe(true));
+    expect(current.pageReady).toBe(false);
+    expect(request).not.toHaveBeenCalled();
+  });
+  it("retains a settled receipt across menu blocking without allowing blocked mutations", async () => {
+    const view = render(<Fixture fetchNative />);
+    await waitFor(() => expect(current.pageReady).toBe(true));
+    view.rerender(<Fixture fetchNative blocked />);
+    expect(current.pageReady).toBe(false);
+    await act(async () => current.execute(script));
+    expect(
+      request.mock.calls.some(([value]) => value.operation.action === "script"),
+    ).toBe(false);
+    view.rerender(<Fixture fetchNative />);
+    await waitFor(() => expect(current.pageReady).toBe(true));
+    await act(async () => current.execute(script));
+    expect(documentReads()).toHaveLength(1);
+    expect(
+      request.mock.calls.find(
+        ([value]) => value.operation.action === "script",
+      )?.[0].operation,
+    ).toMatchObject({ documentToken: "doc-1" });
+  });
+  it("reuses an in-flight receipt through menu blocking", async () => {
+    const pending = deferredDocument();
+    request.mockImplementationOnce(() => pending.promise);
+    const view = render(<Fixture fetchNative />);
+    view.rerender(<Fixture fetchNative blocked />);
+    await act(async () => pending.resolve("pending-menu-document"));
+    expect(current.pageReady).toBe(false);
+    view.rerender(<Fixture fetchNative />);
+    await waitFor(() => expect(current.pageReady).toBe(true));
+    expect(documentReads()).toHaveLength(1);
+  });
+  it("does not retry a failed receipt just because a menu closes", async () => {
+    request.mockResolvedValueOnce({ status: "failed", reason: "unavailable" });
+    const view = render(<Fixture fetchNative />);
+    await waitFor(() => expect(current.documentUnavailable).toBe(true));
+    view.rerender(<Fixture fetchNative blocked />);
+    view.rerender(<Fixture fetchNative />);
+    expect(documentReads()).toHaveLength(1);
+    expect(current.documentUnavailable).toBe(true);
+    await act(async () => current.refreshDocument());
+    await waitFor(() => expect(current.pageReady).toBe(true));
+    expect(documentReads()).toHaveLength(2);
+  });
+  it.each(["navigation", "identity", "scope", "settings", "consent"])(
+    "never revives a cached A receipt after a %s A-B-A transition",
+    async (change) => {
+      const view = render(<Fixture fetchNative />);
+      await waitFor(() => expect(current.pageReady).toBe(true));
+      const b = deferredDocument();
+      const nextA = deferredDocument();
+      const bReads = change === "navigation" || change === "scope";
+      if (bReads) request.mockImplementationOnce(() => b.promise);
+      request.mockImplementationOnce(() => nextA.promise);
+      if (change === "consent") {
+        connection.httpAutomation!.scriptInjectionEnabled = false;
+        connection.httpAutomation!.interactionMacrosEnabled = false;
+      }
+      view.rerender(
+        <Fixture
+          fetchNative
+          navigation={change === "navigation" ? "loading" : "ready"}
+          identity={change === "identity" ? null : document.identity}
+          scopeKey={change === "scope" ? "db:unlock-2" : "db:unlock-1"}
+          settingsReady={change !== "settings"}
+        />,
+      );
+      expect(current.pageReady).toBe(false);
+      connection.httpAutomation!.scriptInjectionEnabled = true;
+      connection.httpAutomation!.interactionMacrosEnabled = true;
+      view.rerender(<Fixture fetchNative />);
+      expect(current.pageReady).toBe(false);
+      await act(async () => {
+        if (bReads) b.resolve("obsolete-b");
+      });
+      expect(current.pageReady).toBe(false);
+      await act(async () => nextA.resolve("fresh-a"));
+      await waitFor(() => expect(current.pageReady).toBe(true));
+      await act(async () => current.execute(script));
+      expect(
+        request.mock.calls.find(
+          ([value]) => value.operation.action === "script",
+        )?.[0].operation,
+      ).toMatchObject({ documentToken: "fresh-a" });
+    },
+  );
+  it("rejects an original pending A reply after navigation A-B-A", async () => {
+    const oldA = deferredDocument(),
+      b = deferredDocument(),
+      nextA = deferredDocument();
+    request
+      .mockImplementationOnce(() => oldA.promise)
+      .mockImplementationOnce(() => b.promise)
+      .mockImplementationOnce(() => nextA.promise);
+    const view = render(<Fixture fetchNative />);
+    view.rerender(<Fixture fetchNative navigation="loading" />);
+    view.rerender(<Fixture fetchNative />);
+    await act(async () => {
+      oldA.resolve("obsolete-a");
+      b.resolve("obsolete-b");
+    });
+    expect(current.pageReady).toBe(false);
+    await act(async () => nextA.resolve("fresh-a"));
+    await waitFor(() => expect(current.pageReady).toBe(true));
+    expect(documentReads()).toHaveLength(3);
+  });
+  it("still checks current owner and permissions before using a cached receipt", async () => {
+    const view = render(<Fixture fetchNative />);
+    await waitFor(() => expect(current.pageReady).toBe(true));
+    view.rerender(<Fixture fetchNative blocked />);
+    view.rerender(<Fixture fetchNative />);
+    await waitFor(() => expect(current.pageReady).toBe(true));
+    connection.httpAutomation!.scriptInjectionEnabled = false;
+    await act(async () => current.execute(script));
+    connection.httpAutomation!.scriptInjectionEnabled = true;
+    boundary.accessible = false;
+    await act(async () => current.execute(script));
+    expect(documentReads()).toHaveLength(1);
+    expect(
+      request.mock.calls.some(([value]) => value.operation.action === "script"),
+    ).toBe(false);
+  });
   it.each([
     "sessionId",
     "attemptId",
@@ -451,5 +639,99 @@ describe("native automation hook and reused controls", () => {
     await waitFor(() => expect(boundary.save).toHaveBeenCalledOnce());
     expect(boundary.save.mock.calls[0][0].steps).toEqual(macro.steps);
     expect(boundary.save.mock.calls[0][0].steps[0]).not.toHaveProperty("value");
+  });
+  it("records, explicitly saves and replays a complete native click/fill/check macro in order", async () => {
+    const steps: WebInteractionMacro["steps"] = [
+      { kind: "click", selector: "html > body > button:nth-of-type(1)" },
+      { kind: "fill", selector: "html > body > input:nth-of-type(1)" },
+      {
+        kind: "check",
+        selector: "html > body > input:nth-of-type(2)",
+        checked: true,
+      },
+    ];
+    const original = request.getMockImplementation()!;
+    request.mockImplementation(async (value) =>
+      value.operation.action === "recordStop"
+        ? {
+            status: "recordingStopped",
+            requestId: value.operation.requestId,
+            steps,
+            truncated: false,
+          }
+        : original(value),
+    );
+    await mount();
+    await act(async () => {
+      expect(await current.startRecording()).toBe(true);
+      await current.stopRecording();
+    });
+    expect(current.steps).toEqual(steps);
+    expect(boundary.save).not.toHaveBeenCalled();
+    const recorded = current.recordedMacro("Recorded native sequence");
+    await act(async () => {
+      expect(await current.save(recorded)).toBe(true);
+    });
+    expect(boundary.save.mock.calls[0][0].steps).toEqual(steps);
+    // Replay re-reads the protected store, not its in-memory saved-item cache.
+    boundary.load.mockResolvedValue({
+      value: { version: 1, scripts: [script], macros: [recorded] },
+    });
+    let replay!: Promise<void>;
+    act(() => {
+      replay = current.execute(recorded);
+    });
+    await waitFor(() => expect(current.valuePrompt?.index).toBe(2));
+    act(() => current.answerValue("transient replay text"));
+    await act(async () => {
+      await replay;
+    });
+    const sent = request.mock.calls
+      .map(([row]) => row.operation)
+      .filter((row) => row.action === "step");
+    expect(sent).toHaveLength(3);
+    expect(sent.map((row) => row.step)).toEqual(steps);
+    expect(sent[1]).toMatchObject({
+      value: "transient replay text",
+      documentToken: "doc-1",
+    });
+    expect(sent[0]).not.toHaveProperty("value");
+    expect(sent[2]).not.toHaveProperty("value");
+    expect(current.executionOutcome).toBe("completed");
+    expect(JSON.stringify(boundary.save.mock.calls)).not.toContain(
+      "transient replay text",
+    );
+  });
+  it("stops replay at a failed native step without retrying or running later steps", async () => {
+    const sequence: WebInteractionMacro = {
+      ...macro,
+      steps: [
+        { kind: "click", selector: "html > body > button:nth-of-type(1)" },
+        {
+          kind: "check",
+          selector: "html > body > input:nth-of-type(1)",
+          checked: true,
+        },
+      ],
+    };
+    boundary.load.mockResolvedValue({
+      value: { version: 1, scripts: [script], macros: [sequence] },
+    });
+    const original = request.getMockImplementation()!;
+    request.mockImplementation(async (value) =>
+      value.operation.action === "step"
+        ? { status: "failed", reason: "executionFailed" }
+        : original(value),
+    );
+    await mount();
+    await act(async () => {
+      await current.execute(sequence);
+    });
+    expect(
+      request.mock.calls.filter(([row]) => row.operation.action === "step"),
+    ).toHaveLength(1);
+    expect(current.executionOutcome).not.toBe("completed");
+    expect(current.error).toMatch(/not confirmed/);
+    expect(boundary.save).not.toHaveBeenCalled();
   });
 });

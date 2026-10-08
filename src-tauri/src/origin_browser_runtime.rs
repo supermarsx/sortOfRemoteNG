@@ -3,6 +3,9 @@
 //! policy readback is required; compiling the `native-browser` flag alone is
 //! insufficient. Operational admission is not a production acceptance claim.
 
+use crate::origin_browser_startup_diagnostics::{
+    self as diagnostics, Failure, Stage, TimingStage, Trace,
+};
 use sorng_browser_host::{
     cef_browser::{BrowserEvent, BrowserEventSink, CefBrowserHost},
     cef_context::{PreparationStatus, PrivateRequestContext},
@@ -41,13 +44,30 @@ mod media;
 
 #[path = "origin_browser_tls.rs"]
 mod tls;
+#[path = "origin_browser_certificate_review.rs"]
+pub(crate) mod certificate_review;
 
 #[path = "origin_browser_runtime_flow.rs"]
 mod flow;
 
 #[path = "origin_browser_display.rs"]
 mod display;
+#[path = "origin_browser_find.rs"]
+mod find;
 
+#[path = "origin_browser_close.rs"]
+mod close_ack;
+
+#[path = "origin_browser_downloads.rs"]
+mod downloads;
+#[path = "origin_browser_popup_runtime.rs"]
+pub(crate) mod popups;
+#[path = "origin_browser_page_menu.rs"]
+pub(crate) mod page_menu;
+#[path = "origin_browser_recording_runtime.rs"]
+pub(crate) mod recording;
+#[path = "origin_browser_appearance.rs"]
+pub(crate) mod appearance;
 #[path = "origin_browser_retention.rs"]
 mod retention;
 #[path = "origin_browser_retention_flow.rs"]
@@ -58,8 +78,29 @@ const UNAVAILABLE: &str =
 const TLS_UNAVAILABLE: &str = "The loaded CEF runtime does not provide the required app certificate-verifier bridge. Install or rebuild the patched browser runtime; the saved trust policy was not changed.";
 const STALE: &str = "This website's database or browser session is no longer available. Reopen it from its owning database.";
 const MAX_ATTEMPTS: usize = 64;
+const STARTUP_LIMIT: Duration = Duration::from_secs(20);
+const DATA_DIRECTORY_FAILED: &str = "Native browser working-data preparation failed. Review Settings > Web Browser and restart if the working folder changed; the owning database and retained cookies were not changed.";
+const PACKAGE_FAILED: &str = "Native browser package or runtime settings could not be prepared. Check the native startup diagnostics before retrying.";
+const STARTUP_TIMED_OUT: &str = "Native browser initialization or policy readiness timed out. Check the native startup diagnostics and restart the app.";
+const STARTUP_FAILED: &str = "Native browser initialization or policy readiness failed. Check the native startup diagnostics and restart the app.";
+const PROXY_FAILED: &str = "Native browser private proxy could not start. Reopen the tab and check the native startup diagnostics; no direct-network fallback was used.";
+const CONTEXT_FAILED: &str = "Native browser private context preparation failed. Check the native startup diagnostics for proxy, certificate or storage setup; this is not a saved-password rejection.";
+const COOKIE_RESTORE_FAILED: &str = "Native browser cookie restoration failed. Reopen the tab and check the native startup diagnostics; no other connection's cookies were used.";
+const VIEW_FAILED: &str = "Native browser embedded view creation failed. Reopen the tab and check the native startup diagnostics; this is not a website login failure.";
+const RENDERER_FAILED: &str = "Native browser renderer setup failed. Reopen the tab and check the native startup diagnostics; the website was not navigated.";
+const ZOOM_FAILED: &str = "Native browser initial zoom setup failed. Reopen the tab and check the native startup diagnostics; the website was not navigated.";
+const NAVIGATION_FAILED: &str = "Native browser first navigation failed. Review this connection's destination permissions and network route, and check the native startup diagnostics.";
+const VIEW_TIMED_OUT: &str = "Native browser tab preparation timed out. Reopen the tab and check the native startup diagnostics; the database was not locked by this timeout.";
+
+fn view_failure(failure: Failure, message: &'static str) -> String {
+    diagnostics::record(Stage::ViewFailed, Some(failure));
+    log::error!("Native browser stage=view-creation failure={failure:?}");
+    message.to_owned()
+}
 
 struct Attempt {
+    timing: Trace,
+    navigation_submitted: AtomicBool,
     identity: BrowserIdentity,
     window: String,
     lease: NativeOwnerLease,
@@ -67,6 +108,7 @@ struct Attempt {
     snapshot: Mutex<OriginBrowserSnapshot>,
     cancelled: AtomicBool,
     login: Arc<login::LoginHooks>,
+    downloads: Arc<downloads::DownloadOwner>,
     automation: Arc<origin_browser_authority::NativeAutomationAuthority>,
     preferences: origin_browser_authority::NativeBrowserPreferences,
     // Cookie-disabled attempts never acquire a retention owner: they cannot
@@ -74,6 +116,7 @@ struct Attempt {
     retention: Option<Arc<retention::NativeCookieRetention>>,
     ordinary_close: AtomicBool,
     load_started: Mutex<Option<Instant>>,
+    closed: close_ack::CloseSignal,
 }
 
 impl Attempt {
@@ -86,7 +129,10 @@ impl Attempt {
             return;
         }
         display::scrub_retained(&self.snapshot);
+        self.timing.finish(0);
         self.login.revoke();
+        self.downloads.revoke();
+        recording::revoke(&self.identity);
         self.lease.revoke();
         if !self.ordinary_close.load(Ordering::Acquire) {
             if let Some(retention) = &self.retention {
@@ -110,9 +156,12 @@ impl Attempt {
 
 #[derive(Default)]
 struct SharedRegistry {
+    startup: flow::StartupGate,
+    prewarm: origin_browser_authority::prewarm::PrewarmGate,
     admission: flow::RuntimeAdmission,
     certificate_hooks: AtomicBool,
     attempts: Mutex<HashMap<String, Arc<Attempt>>>,
+    closed: Mutex<close_ack::CloseReceipts>,
     exit_requested: Mutex<Option<i32>>,
 }
 
@@ -122,7 +171,282 @@ fn shared() -> &'static SharedRegistry {
 }
 
 pub(crate) fn retention_available() -> bool {
-    shared().admission.ready() && shared().certificate_hooks.load(Ordering::Acquire)
+    // This command describes compiled retention support for settings. Runtime
+    // readiness is separately reported by status and enforced on every create.
+    true
+}
+
+pub(crate) fn cancel_prewarm(label: &str) {
+    if label == "main" {
+        shared().prewarm.cancel();
+    }
+}
+
+/// Best-effort engine startup only. No Attempt, private context, relay, browser,
+/// cookie retention, URL navigation or login authority is created here.
+pub(crate) async fn prewarm(
+    window: WebviewWindow,
+    state: &EncryptionState,
+    request: origin_browser_authority::prewarm::PrewarmRequest,
+) -> Result<(), String> {
+    request.validate().map_err(|error| error.to_string())?;
+    if window.label() != "main" {
+        return Err(STALE.to_owned());
+    }
+    if !shared().prewarm.begin() {
+        return Ok(());
+    }
+    let timing = Trace::startup(true);
+    timing.mark(TimingStage::CommandValidated);
+    let interrupted = flow::RevokeOnDrop::new(|| timing.finish(0));
+    let _finish = flow::RevokeOnDrop::new(|| shared().prewarm.cancel());
+    let owner = tokio::time::timeout(
+        STARTUP_LIMIT,
+        origin_browser_authority::prewarm::authorize(&window, state, &request),
+    )
+    .await
+    .map_err(|_| STARTUP_TIMED_OUT.to_owned())?
+    .map_err(|error| error.to_string())?;
+    timing.mark(TimingStage::Authorized);
+    ensure_runtime(
+        &window,
+        state,
+        &owner.lease,
+        Some((&shared().prewarm, &owner)),
+        &timing,
+    )
+    .await?;
+    timing.mark(TimingStage::CommandCompleted);
+    timing.finish(1);
+    interrupted.disarm();
+    Ok(())
+}
+
+async fn recheck_startup(
+    window: &WebviewWindow,
+    state: &EncryptionState,
+    lease: &NativeOwnerLease,
+    prewarm: Option<(
+        &origin_browser_authority::prewarm::PrewarmGate,
+        &origin_browser_authority::prewarm::AuthorizedPrewarm,
+    )>,
+) -> Result<Option<origin_browser_authority::prewarm::SavedSettingsFence>, String> {
+    if let Some((gate, owner)) = prewarm {
+        if !gate.current() {
+            return Err(STALE.to_owned());
+        }
+        let settings = origin_browser_authority::prewarm::recheck(window, state, owner)
+            .await
+            .map_err(|error| error.to_string())?;
+        if !gate.current() {
+            return Err(STALE.to_owned());
+        }
+        return Ok(Some(settings));
+    } else {
+        lease
+            .recheck(window, state)
+            .await
+            .map_err(|_| STALE.to_owned())?;
+    }
+    Ok(None)
+}
+
+/// Called only after saved connection / native DB lease authorization. Neither
+/// status nor a settings capability probe can prepare paths or initialize CEF.
+async fn ensure_runtime(
+    window: &WebviewWindow,
+    state: &EncryptionState,
+    lease: &NativeOwnerLease,
+    prewarm: Option<(
+        &'static origin_browser_authority::prewarm::PrewarmGate,
+        &origin_browser_authority::prewarm::AuthorizedPrewarm,
+    )>,
+    timing: &Trace,
+) -> Result<(), String> {
+    timing.mark(TimingStage::RuntimeRequested);
+    let deadline = Instant::now() + STARTUP_LIMIT;
+    let startup_claim = Arc::new(flow::StartupClaim::default());
+    // Dropping an in-flight command also cancels a queued native callback.
+    let cancelled = flow::RevokeOnDrop::new(|| cancel_startup(&startup_claim, Failure::Policy));
+    let prewarm_gate = prewarm.map(|(gate, _)| gate);
+    let result = tokio::time::timeout(STARTUP_LIMIT, async {
+        loop {
+            if !lease.is_current() || prewarm_gate.is_some_and(|gate| !gate.current()) {
+                return Err(STALE.to_owned());
+            }
+            if shared().admission.revoked() {
+                return Err(STARTUP_FAILED.to_owned());
+            }
+            if shared().admission.ready() {
+                recheck_startup(window, state, lease, prewarm).await?;
+                return if shared().certificate_hooks.load(Ordering::Acquire) {
+                    Ok(())
+                } else {
+                    Err(TLS_UNAVAILABLE.to_owned())
+                };
+            }
+            if let Some(permit) = shared().startup.prepare() {
+                timing.mark(TimingStage::PreflightEntered);
+                recheck_startup(window, state, lease, prewarm).await?;
+                let app = window.app_handle().clone();
+                let prepared = tauri::async_runtime::spawn_blocking(move || {
+                    // Preserve the native working-data fallback and root lock.
+                    let alternatives = [app.path().app_cache_dir(), app.path().app_data_dir()]
+                        .into_iter()
+                        .filter_map(Result::ok)
+                        .collect::<Vec<_>>();
+                    app.path()
+                        .app_local_data_dir()
+                        .ok()
+                        .or_else(|| alternatives.first().cloned())
+                        .ok_or_else(|| DATA_DIRECTORY_FAILED.to_owned())
+                        .and_then(|path| {
+                            sorng_commands_core::browser_data_commands::prepare_for_startup(
+                                &path,
+                                &app.config().identifier,
+                                &alternatives,
+                            )
+                        })
+                })
+                .await;
+                let mut prepared = match prepared {
+                    Ok(Ok(prepared)) => prepared,
+                    _ => {
+                        diagnostics::record(Stage::Failed, Some(Failure::DataDirectory));
+                        log::error!(
+                            "Native browser stage=preparing error=working-data-unavailable"
+                        );
+                        return Err(DATA_DIRECTORY_FAILED.to_owned());
+                    }
+                };
+                let root = prepared.root().to_path_buf();
+                timing.mark(TimingStage::DataPrepared);
+                // Until native entry, cancellation drops the provisional root
+                // lock, including a detached blocking worker's late result.
+                // Disk work may race database lock, revision or unlock changes.
+                let settings_fence = recheck_startup(window, state, lease, prewarm).await?;
+                let queued_lease = lease.clone();
+                let queued_startup_claim = startup_claim.clone();
+                let queued_timing = timing.clone();
+                let app = window.app_handle().clone();
+                let (sender, receiver) = tokio::sync::oneshot::channel();
+                timing.mark(TimingStage::EngineUiQueued);
+                window
+                    .run_on_main_thread(move || {
+                        queued_timing.mark(TimingStage::EngineUiEntered);
+                        if sender.is_closed()
+                            || Instant::now() >= deadline
+                            || !queued_lease.is_current()
+                            || prewarm_gate.is_some_and(|gate| !gate.current())
+                            || settings_fence
+                                .as_ref()
+                                .is_some_and(|fence| !fence.with_current(|| true))
+                            || shared().admission.revoked()
+                        {
+                            // Drop the permit without consuming the native provider.
+                            drop(permit);
+                            let _ = sender.send(Err(STALE.to_owned()));
+                            return;
+                        }
+                        diagnostics::begin(&root);
+                        diagnostics::record(Stage::Preparing, None);
+                        let (wake, pump) = pump_channel();
+                        let result = crate::origin_browser_entry::install(wake, &root, &queued_timing, || {
+                            let mut begin = || {
+                                !sender.is_closed()
+                                    && Instant::now() < deadline
+                                    && queued_lease.is_current()
+                                    && prewarm_gate.is_none_or(|gate| gate.current())
+                                    && !shared().admission.revoked()
+                                    && {
+                                        // Linearize entry against cancellation. A cancelled
+                                        // caller cannot claim; a claimed caller's cancellation
+                                        // revokes pending admission even before begin_native.
+                                        queued_startup_claim.claim_native()
+                                            && permit.begin_native()
+                                            && prepared.commit().is_ok()
+                                    }
+                            };
+                            match settings_fence.as_ref() {
+                                Some(fence) => fence.with_current(begin),
+                                None => begin(),
+                            }
+                        });
+                        let result = match result {
+                            Ok(()) => {
+                                start_pump(app, pump);
+                                if shared().certificate_hooks.load(Ordering::Acquire) {
+                                    Ok(())
+                                } else {
+                                    diagnostics::record(Stage::Failed, Some(Failure::Policy));
+                                    revoke_all();
+                                    Err(TLS_UNAVAILABLE.to_owned())
+                                }
+                            }
+                            Err(error) => {
+                                // EntryError retains the typed RuntimeError / BootstrapError.
+                                // They contain only native fixed messages and numeric codes.
+                                log::error!("Native browser stage=preparing error={error}");
+                                diagnostics::record(Stage::Failed, Some(Failure::Package));
+                                if shared().startup.started() {
+                                    revoke_all();
+                                }
+                                Err(PACKAGE_FAILED.to_owned())
+                            }
+                        };
+                        drop(permit);
+                        let _ = sender.send(result);
+                    })
+                    .map_err(|_| PACKAGE_FAILED.to_owned())?;
+                receiver.await.map_err(|_| STARTUP_FAILED.to_owned())??;
+            }
+            // Concurrent authorized creates share the one startup and actual
+            // policy readback. No ready response is inferred from installation.
+            flow::wait_for_readiness(
+                deadline.saturating_duration_since(Instant::now()),
+                || {
+                    if !lease.is_current() || prewarm_gate.is_some_and(|gate| !gate.current()) {
+                        return Err(STALE.to_owned());
+                    }
+                    if shared().admission.revoked() {
+                        return Err(STARTUP_FAILED.to_owned());
+                    }
+                    // A retryable preflight failure releases its permit. Let
+                    // this independently authorized caller claim the next turn.
+                    Ok(shared().admission.ready() || shared().startup.deferred())
+                },
+                || STARTUP_TIMED_OUT.to_owned(),
+            )
+            .await?;
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+    })
+    .await;
+    let result = match result {
+        Ok(Err(error)) if error == STARTUP_TIMED_OUT => {
+            cancel_startup(&startup_claim, Failure::Timeout);
+            Err(error)
+        }
+        Ok(result) => result,
+        Err(_) => {
+            cancel_startup(&startup_claim, Failure::Timeout);
+            Err(STARTUP_TIMED_OUT.to_owned())
+        }
+    };
+    if result.is_ok() {
+        timing.mark(TimingStage::RuntimeReady);
+        cancelled.disarm();
+    }
+    result
+}
+
+fn cancel_startup(claim: &flow::StartupClaim, failure: Failure) {
+    if shared().admission.timeout_owned_startup(claim.cancel()) {
+        diagnostics::record(Stage::Failed, Some(failure));
+        // A timeout cannot cancel an in-progress native call. Never retry it or
+        // let a late policy callback restore traffic admission.
+        revoke_all();
+    }
 }
 
 struct Pending {
@@ -136,16 +460,20 @@ struct Pending {
 }
 
 struct View {
+    popups: popups::Selection,
     host: CefBrowserHost<'static>,
     attempt: Arc<Attempt>,
     window: WebviewWindow,
     presentation: u64,
     visible: bool,
+    input_blocked: bool,
+    presentation_bounds: Option<(sorng_browser_host::ipc::OriginBrowserBounds, f64)>,
     start: Option<Start>,
     checkpoint: retention_flow::Checkpoint,
 }
 
 fn begin_normal_close(view: &mut View) {
+    popups::hide_selected(view);
     if view.attempt.current() && !view.attempt.ordinary_close.swap(true, Ordering::AcqRel) {
         let _ = view.host.hide(&view.attempt.identity);
         if let Some(retention) = &view.attempt.retention {
@@ -162,6 +490,7 @@ struct Start {
 
 struct UiRegistry {
     runtime: CefRuntime<'static>,
+    closing: bool,
     tls: Option<NativeTlsBridge>,
     pending: Vec<Pending>,
     views: HashMap<String, View>,
@@ -272,14 +601,28 @@ pub(crate) fn install(runtime: CefRuntime<'static>) -> Result<(), String> {
         }
         // Probe actual exports/build pins on CEF UI. A compile flag or package
         // manifest alone cannot activate saved TOFU/pins/custom trust policies.
-        let tls = unsafe { NativeTlsBridge::from_loaded(PATCH_ID) }
-            .ok()
-            .filter(|bridge| bridge.supports_scoped_exceptions() && bridge.supports_custom_ca());
+        let tls = match unsafe { NativeTlsBridge::from_loaded(PATCH_ID) } {
+            Ok(bridge) if bridge.supports_scoped_exceptions() && bridge.supports_custom_ca() => {
+                Some(bridge)
+            }
+            Ok(_) => {
+                log::error!(
+                    "Native browser stage=policy error=certificate-bridge-capabilities-missing"
+                );
+                None
+            }
+            Err(error) => {
+                // This enum contains fixed messages, not certificate/page data.
+                log::error!("Native browser stage=policy error={error}");
+                None
+            }
+        };
         shared()
             .certificate_hooks
             .store(tls.is_some(), Ordering::Release);
         *slot = Some(UiRegistry {
             runtime,
+            closing: false,
             tls,
             pending: Vec::new(),
             views: HashMap::new(),
@@ -294,6 +637,8 @@ pub(crate) fn install(runtime: CefRuntime<'static>) -> Result<(), String> {
 /// Safe on a failing scheduler thread. Network revocation does not depend on
 /// scheduling another UI callback. Native surfaces are closed on the next tick.
 pub(crate) fn revoke_all() {
+    shared().prewarm.cancel();
+    shared().startup.fail();
     shared().admission.revoke();
     for attempt in shared()
         .attempts
@@ -306,6 +651,7 @@ pub(crate) fn revoke_all() {
 }
 
 pub(crate) fn revoke_window(label: &str) {
+    cancel_prewarm(label);
     for attempt in shared()
         .attempts
         .lock()
@@ -396,6 +742,14 @@ pub(crate) fn status(
     window: &WebviewWindow,
     request: &OriginBrowserStatusRequest,
 ) -> Result<OriginBrowserStatusResult, String> {
+    if request.identity.is_none() && !shared().admission.ready() && !shared().admission.revoked() {
+        return OriginBrowserStatusResult::from_native(
+            request,
+            OriginBrowserCapability::Deferred,
+            None,
+        )
+        .map_err(|e| e.to_string());
+    }
     if !shared().admission.ready() || !shared().certificate_hooks.load(Ordering::Acquire) {
         return Ok(OriginBrowserStatusResult::unavailable(
             OriginBrowserUnavailableReason::PolicyUnavailable,
@@ -428,11 +782,12 @@ impl BrowserEventSink for Sink {
         if event.identity != self.attempt.identity {
             return;
         }
+        let mut finished_load = false;
         if let Ok(mut started) = self.attempt.load_started.lock() {
             if event.state.loading {
                 started.get_or_insert_with(Instant::now);
             } else {
-                *started = None;
+                finished_load = started.take().is_some();
             }
         }
         let phase = match event.state.lifecycle {
@@ -442,6 +797,20 @@ impl BrowserEventSink for Sink {
             Lifecycle::Closed => OriginBrowserPhase::Closed,
             Lifecycle::Faulted => OriginBrowserPhase::Failed,
         };
+        if matches!(phase, OriginBrowserPhase::Attached) {
+            self.attempt.timing.mark(TimingStage::BrowserAttached);
+            if self.attempt.navigation_submitted.load(Ordering::Acquire)
+                && finished_load
+                && !event.state.loading
+                && event.display.url != "about:blank"
+                && !event.display.url.is_empty()
+            {
+                // Document completion is observable here; this is not a paint
+                // or successful login claim. No URL enters timing diagnostics.
+                self.attempt.timing.mark(TimingStage::FirstDocumentComplete);
+                self.attempt.timing.finish(2);
+            }
+        }
         if matches!(
             phase,
             OriginBrowserPhase::Closing | OriginBrowserPhase::Closed | OriginBrowserPhase::Failed
@@ -483,22 +852,33 @@ pub(crate) async fn create(
     window: WebviewWindow,
     state: &EncryptionState,
     request: OriginBrowserCreateRequest,
+    timing: Trace,
 ) -> Result<OriginBrowserCreateResult, String> {
-    if !shared().admission.ready() {
-        return Err(UNAVAILABLE.into());
-    }
-    if !shared().certificate_hooks.load(Ordering::Acquire) {
-        return Err(TLS_UNAVAILABLE.into());
-    }
+    // Explicitly finish even if an abandoned UI/native callback retains a clone.
+    let interrupted = flow::RevokeOnDrop::new(|| timing.finish(0));
+    // Validate the real saved owner/source before any filesystem preparation or
+    // CEF startup. This selects policy, but grants no runtime/network readiness.
     let authorized =
         origin_browser_authority::authorize_create_with_certificate_hooks(&window, state, &request)
             .await
             .map_err(|e| e.to_string())?;
+    timing.mark(TimingStage::Authorized);
+    ensure_runtime(&window, state, &authorized.lease, None, &timing).await?;
+    authorized
+        .lease
+        .recheck(&window, state)
+        .await
+        .map_err(|_| STALE.to_owned())?;
+    timing.mark(TimingStage::InitialOwnerChecked);
     let identity = authorized.policy.identity().clone();
     let retention_policy: RetentionPolicy =
         serde_json::from_value(authorized.preferences.retention.clone())
             .map_err(|_| "Saved browser session retention settings are invalid.".to_owned())?;
-    let retention = if authorized.preferences.capabilities.cookies_enabled {
+    // Quick Connect owns only an ephemeral CEF context. Never read, restore or
+    // checkpoint another database's cookies even when global retention is on.
+    let retention = if authorized.preferences.capabilities.cookies_enabled
+        && !authorized.lease.is_temporary()
+    {
         Some(
             retention::NativeCookieRetention::prepare(
                 &window,
@@ -515,6 +895,7 @@ pub(crate) async fn create(
     } else {
         None
     };
+    timing.mark(TimingStage::RetentionPrepared);
     let preparing = retention.clone();
     let retention_setup = flow::RevokeOnDrop::new(move || {
         if let Some(preparing) = preparing {
@@ -534,15 +915,19 @@ pub(crate) async fn create(
     } else {
         Vec::new()
     };
+    timing.mark(TimingStage::CookiesLoaded);
     let login = login::LoginHooks::prepare(
         &window,
         &identity,
         authorized.login,
         authorized.lease.clone(),
+        authorized.basic_auth,
     )
     .await?;
-    // Consent may remain open while the database changes or is locked. Reload
-    // the native authority before starting any website network activity.
+    login.set_appearance_configuration(authorized.preferences.appearance.clone())?;
+    timing.mark(TimingStage::LoginPrepared);
+    // Retention/setup may race database edits or locking. Recheck the native
+    // authority before starting any website network activity.
     authorized
         .lease
         .recheck(&window, state)
@@ -551,12 +936,22 @@ pub(crate) async fn create(
             login.revoke();
             STALE.to_owned()
         })?;
+    timing.mark(TimingStage::OwnerCheckedBeforeProxy);
     let session = Arc::new(Mutex::new(
         OriginBrowserSession::start(authorized.policy, authorized.route, ProxyLimits::default())
             .await
-            .map_err(|_| UNAVAILABLE)?,
+            .map_err(|_| view_failure(Failure::PrivateProxy, PROXY_FAILED))?,
     ));
+    timing.mark(TimingStage::ProxyReady);
     let attempt = Arc::new(Attempt {
+        timing: timing.clone(),
+        navigation_submitted: AtomicBool::new(false),
+        downloads: downloads::DownloadOwner::new(
+            window.clone(),
+            identity.clone(),
+            authorized.lease.clone(),
+            authorized.preferences.allow_downloads,
+        ),
         snapshot: Mutex::new(
             OriginBrowserSnapshot::new(
                 &identity,
@@ -583,6 +978,7 @@ pub(crate) async fn create(
         retention,
         ordinary_close: AtomicBool::new(false),
         load_started: Mutex::new(None),
+        closed: close_ack::CloseSignal::default(),
     });
     let abandoned = attempt.clone();
     let creation = flow::RevokeOnDrop::new(move || abandoned.revoke());
@@ -591,6 +987,7 @@ pub(crate) async fn create(
         attempt.revoke();
         STALE.to_owned()
     })?;
+    attempt.timing.mark(TimingStage::OwnerCheckedBeforeContext);
     {
         let mut attempts = shared().attempts.lock().map_err(|_| STALE)?;
         if !shared().admission.ready() {
@@ -617,7 +1014,9 @@ pub(crate) async fn create(
     let owner_window = window.clone();
     let certificate_hooks =
         tls::CertificateHooks::new(&attempt, authorized.certificates, window.clone());
+    attempt.timing.mark(TimingStage::ViewUiQueued);
     let result = window.clone().run_on_main_thread(move || {
+        queued.timing.mark(TimingStage::UiEntered);
         UI.with(|slot| {
             let mut slot = slot.borrow_mut();
             let Some(ui) = slot.as_mut() else {
@@ -650,19 +1049,23 @@ pub(crate) async fn create(
                     queued.preferences.capabilities,
                 )
             } {
-                Ok(context) => ui.pending.push(Pending {
-                    context,
-                    attempt: queued.clone(),
-                    window,
-                    bounds: request.bounds,
-                    deadline: Instant::now()
-                        + Duration::from_secs(queued.preferences.initial_load_timeout_seconds),
-                    response: sender,
-                    cookies: queued.retention.as_ref().map(|_| cookies),
-                }),
-                Err(_) => {
+                Ok(context) => {
+                    queued.timing.mark(TimingStage::ContextCreated);
+                    ui.pending.push(Pending {
+                        context,
+                        attempt: queued.clone(),
+                        window,
+                        bounds: request.bounds,
+                        deadline: Instant::now()
+                            + Duration::from_secs(queued.preferences.initial_load_timeout_seconds),
+                        response: sender,
+                        cookies: queued.retention.as_ref().map(|_| cookies),
+                    })
+                }
+                Err(error) => {
+                    log::error!("Native browser stage=context-create error={error}");
                     queued.revoke();
-                    let _ = sender.send(Err(UNAVAILABLE.into()));
+                    let _ = sender.send(Err(view_failure(Failure::PrivateContext, CONTEXT_FAILED)));
                 }
             }
         });
@@ -684,6 +1087,7 @@ pub(crate) async fn create(
                     .map_err(|_| STALE.to_owned())
             },
             || async {
+                attempt.timing.mark(TimingStage::FinalOwnerChecked);
                 operate(
                     owner_window.clone(),
                     attempt.clone(),
@@ -699,7 +1103,7 @@ pub(crate) async fn create(
         ),
     )
     .await
-    .map_err(|_| UNAVAILABLE.to_owned())
+    .map_err(|_| view_failure(Failure::Timeout, VIEW_TIMED_OUT))
     .and_then(|v| v);
     match result {
         Ok(snapshot) => {
@@ -708,6 +1112,8 @@ pub(crate) async fn create(
             // No await after releasing cancellation protection. Only a fully
             // completed creation hands ownership to the persistent registry.
             creation.disarm();
+            timing.mark(TimingStage::CommandCompleted);
+            interrupted.disarm();
             Ok(result)
         }
         Err(error) => {
@@ -729,6 +1135,9 @@ async fn operate(
     attempt: Arc<Attempt>,
     operation: Operation,
 ) -> Result<(), String> {
+    if matches!(&operation, Operation::InitialNavigate(_)) {
+        attempt.timing.mark(TimingStage::InitialNavigationQueued);
+    }
     let (sender, receiver) = tokio::sync::oneshot::channel();
     let retained = attempt.clone();
     let is_close = matches!(operation, Operation::Close);
@@ -740,6 +1149,9 @@ async fn operate(
     });
     window
         .run_on_main_thread(move || {
+            if matches!(&operation, Operation::InitialNavigate(_)) {
+                attempt.timing.mark(TimingStage::InitialNavigationEntered);
+            }
             // Cancellation can happen while this callback is queued. Never
             // navigate or change presentation for an abandoned operation;
             // explicit close still runs so native resources can drain.
@@ -748,6 +1160,12 @@ async fn operate(
                 return;
             }
             let result = UI.with(|slot| {
+                // The housekeeping tick can finish cleanup between lookup and
+                // this queued callback. Only an acknowledged exact attempt may
+                // turn a repeated close into success.
+                if is_close && attempt.closed.completed() {
+                    return Ok(());
+                }
                 let mut slot = slot.borrow_mut();
                 let ui = slot.as_mut().ok_or(UNAVAILABLE)?;
                 let view = ui
@@ -765,12 +1183,24 @@ async fn operate(
                     return Err(STALE.into());
                 }
                 let id = &attempt.identity;
+                if let Operation::Control(OriginBrowserAction::Presentation {
+                    revision, bounds, visible, occlusions, input_blocked,
+                }) = &operation {
+                    return popups::present(view, *revision, *bounds, *visible, occlusions, *input_blocked);
+                }
+                if view.popups.selected.is_some()
+                    && matches!(operation, Operation::Navigate(_) | Operation::Control(_)) {
+                    return Err("The requested root view is not selected.".into());
+                }
                 let result = match operation {
                     Operation::InitialNavigate(url) => {
                         // This private operation is reachable only after the
                         // post-preparation NativeOwnerLease::recheck succeeds.
-                        if !view.host.features_ready(id).map_err(|_| UNAVAILABLE)? {
-                            return Err(UNAVAILABLE.into());
+                        if !view.host.features_ready(id).map_err(|error| {
+                            log::error!("Native browser stage=renderer-setup error={error}");
+                            view_failure(Failure::RendererSetup, RENDERER_FAILED)
+                        })? {
+                            return Err(view_failure(Failure::RendererSetup, RENDERER_FAILED));
                         }
                         {
                             let mut session = attempt.session.lock().map_err(|_| STALE)?;
@@ -778,11 +1208,23 @@ async fn operate(
                                 profile_key: session.policy().profile_key().into(),
                                 proxy_endpoint: session.proxy_endpoint(),
                             };
-                            session.report_host(id, report).map_err(|_| UNAVAILABLE)?;
+                            session.report_host(id, report).map_err(|_| {
+                                view_failure(Failure::InitialNavigation, NAVIGATION_FAILED)
+                            })?;
                         }
                         view.host
                             .zoom(id, attempt.preferences.default_zoom_percent as f64)
-                            .and_then(|()| view.host.navigate(id, &url))
+                            .map_err(|error| {
+                                log::error!("Native browser stage=initial-zoom error={error}");
+                                view_failure(Failure::InitialZoom, ZOOM_FAILED)
+                            })?;
+                        attempt.navigation_submitted.store(true, Ordering::Release);
+                        view.host.navigate(id, &url).map_err(|error| {
+                            log::error!("Native browser stage=initial-navigation error={error}");
+                            view_failure(Failure::InitialNavigation, NAVIGATION_FAILED)
+                        })?;
+                        attempt.timing.mark(TimingStage::NavigationSubmitted);
+                        Ok(())
                     }
                     Operation::Navigate(url) => view.host.navigate(id, &url),
                     Operation::Close => {
@@ -798,28 +1240,38 @@ async fn operate(
                             percent,
                             presentation_revision,
                         } => {
-                            if presentation_revision != view.presentation || !view.visible {
+                            if presentation_revision != view.presentation
+                                || !view.visible
+                                || view.input_blocked
+                            {
                                 return Ok(());
                             }
                             view.host.zoom(id, percent)
                         }
                         OriginBrowserAction::Find {
+                            request_id,
                             text,
                             forward,
                             match_case,
                             find_next,
                             presentation_revision,
                         } => {
-                            if presentation_revision != view.presentation || !view.visible {
+                            if presentation_revision != view.presentation
+                                || !view.visible
+                                || view.input_blocked
+                            {
                                 return Ok(());
                             }
-                            view.host.find(id, &text, forward, match_case, find_next)
+                            find::start(view, &view.host, None, request_id.as_deref(), &text, forward, match_case, find_next)
                         }
                         OriginBrowserAction::StopFind {
                             clear_selection,
                             presentation_revision,
                         } => {
-                            if presentation_revision != view.presentation || !view.visible {
+                            if presentation_revision != view.presentation
+                                || !view.visible
+                                || view.input_blocked
+                            {
                                 return Ok(());
                             }
                             view.host.stop_find(id, clear_selection)
@@ -831,7 +1283,10 @@ async fn operate(
                         OriginBrowserAction::Focus {
                             presentation_revision,
                         } => {
-                            if presentation_revision != view.presentation || !view.visible {
+                            if presentation_revision != view.presentation
+                                || !view.visible
+                                || view.input_blocked
+                            {
                                 return Ok(());
                             }
                             view.host.focus(id)
@@ -840,23 +1295,44 @@ async fn operate(
                             revision,
                             bounds,
                             visible,
+                            occlusions,
+                            input_blocked,
                         } => {
                             if revision <= view.presentation {
                                 return Ok(());
                             }
                             view.presentation = revision;
+                            let scale = view.window.scale_factor().map_err(|_| UNAVAILABLE)?;
                             if let Some(bounds) = bounds {
-                                view.host
-                                    .resize(
-                                        id,
-                                        bounds.to_native().map_err(|e| e.to_string())?,
-                                        view.window.scale_factor().map_err(|_| UNAVAILABLE)?,
-                                    )
-                                    .map_err(|_| UNAVAILABLE)?;
+                                if view.presentation_bounds != Some((bounds, scale)) {
+                                    view.host
+                                        .resize(
+                                            id,
+                                            bounds.to_native().map_err(|e| e.to_string())?,
+                                            scale,
+                                        )
+                                        .map_err(|_| UNAVAILABLE)?;
+                                    view.presentation_bounds = Some((bounds, scale));
+                                }
                             }
+                            let was_visible = view.visible;
                             view.visible = visible;
+                            view.input_blocked = input_blocked;
                             if visible {
-                                view.host.show(id)
+                                // Install the region before revealing a previously
+                                // hidden child, then apply input blocking after
+                                // show (which enables native input by default).
+                                let bounds = bounds.ok_or(UNAVAILABLE)?;
+                                view.host
+                                    .occlude(id, bounds, &occlusions, scale, input_blocked)
+                                    .map_err(|_| UNAVAILABLE)?;
+                                if !was_visible {
+                                    view.host.show(id).map_err(|_| UNAVAILABLE)?;
+                                    view.host
+                                        .occlude(id, bounds, &occlusions, scale, input_blocked)
+                                } else {
+                                    Ok(())
+                                }
                             } else {
                                 view.host.hide(id)
                             }
@@ -924,8 +1400,34 @@ pub(crate) async fn close(
     window: WebviewWindow,
     request: OriginBrowserCloseRequest,
 ) -> Result<(), String> {
-    let attempt = lookup(&window, &request.identity)?;
-    operate(window, attempt, Operation::Close).await
+    let key = close_ack::CloseKey::new(
+        window.label(),
+        &request.identity.owner_database_id,
+        &request.identity.connection_id,
+        &request.identity.session_id,
+        &request.identity.attempt_id,
+    );
+    let attempt = match lookup(&window, &request.identity) {
+        Ok(attempt) => attempt,
+        Err(error) => {
+            return if shared()
+                .closed
+                .lock()
+                .map_err(|_| STALE)?
+                .contains(&key, Instant::now())
+            {
+                Ok(())
+            } else {
+                Err(error)
+            };
+        }
+    };
+    operate(window, attempt.clone(), Operation::Close).await?;
+    // Requesting CloseBrowser is not acknowledgment. Wait for OnBeforeClose
+    // and the retention checkpoint drain observed by the housekeeping tick.
+    tokio::time::timeout(Duration::from_secs(20), attempt.closed.wait())
+        .await
+        .map_err(|_| "Native browser cleanup is still pending.".to_owned())
 }
 
 pub(crate) async fn automation(
@@ -982,6 +1484,12 @@ pub(crate) async fn automation(
                     return Err(STALE);
                 }
                 let completing = queued.clone();
+                if view.popups.selected.is_some() && !cleanup {
+                    if let Some(sender) = response.lock().unwrap_or_else(|e| e.into_inner()).take() {
+                        let _ = sender.send(Ok(NativeAutomationReply::Failed { reason: NativeAutomationFailure::Unavailable }));
+                    }
+                    return Ok(());
+                }
                 view.host
                     .automation(
                         &queued.identity,
@@ -1029,14 +1537,106 @@ pub(crate) async fn automation(
     Ok(reply)
 }
 
+pub(crate) fn extensions(
+    window: WebviewWindow,
+    request: sorng_browser_host::native_extensions::NativeBrowserExtensionRequest,
+) -> Result<sorng_browser_host::native_extensions::NativeBrowserExtensionReceipt, String> {
+    let attempt = lookup(&window, &request.identity)?;
+    // A read-only receipt describes the already installed attempt gates, not
+    // a grant. Do not decrypt the database again just to draw toolbar controls.
+    if !attempt.current()
+        || !shared().admission.ready()
+        || !shared().certificate_hooks.load(Ordering::Acquire)
+        || !matches!(
+            attempt.snapshot.lock().map_err(|_| STALE)?.phase(),
+            OriginBrowserPhase::Attached
+        )
+    {
+        return Err(STALE.to_owned());
+    }
+    sorng_browser_host::native_extensions::NativeExtensionGate::new(
+        attempt.identity.clone(),
+        attempt.preferences.capabilities.website_extensions_enabled,
+    )
+    .receipt(&attempt.identity)
+    .map_err(|_| STALE.to_owned())
+}
+
+/// Read or control only the already-authorized native download. No renderer
+/// path or URL is accepted and no second HTTP request is made.
+async fn download_operation(
+    window: WebviewWindow,
+    identity: OriginBrowserIdentity,
+    action: Option<sorng_browser_host::native_downloads::DownloadControlRequest>,
+) -> Result<Vec<sorng_browser_host::native_downloads::DownloadSnapshot>, String> {
+    let attempt = lookup(&window, &identity)?;
+    let (sender, receiver) = tokio::sync::oneshot::channel();
+    window
+        .run_on_main_thread(move || {
+            if sender.is_closed() {
+                return;
+            }
+            let result = UI.with(|slot| {
+                let slot = slot.borrow();
+                let ui = slot.as_ref().ok_or(UNAVAILABLE)?;
+                let view = ui
+                    .views
+                    .get(&attempt.identity.attempt_id().to_string())
+                    .ok_or(STALE)?;
+                if !Arc::ptr_eq(&view.attempt, &attempt)
+                    || !shared().admission.ready()
+                    || !attempt.current()
+                {
+                    return Err(STALE.to_owned());
+                }
+                if let Some(request) = action {
+                    view.host.control_download_across_views(&request).map_err(|_| {
+                        "The download action is unavailable for its current state.".to_owned()
+                    })?;
+                }
+                view.host
+                    .downloads_across_views(&attempt.identity)
+                    .map_err(|_| "Downloads are unavailable for this browser session.".to_owned())
+            });
+            let _ = sender.send(result);
+        })
+        .map_err(|_| UNAVAILABLE.to_owned())?;
+    tokio::time::timeout(Duration::from_secs(5), receiver)
+        .await
+        .map_err(|_| "Download controls did not respond in time.".to_owned())?
+        .map_err(|_| UNAVAILABLE.to_owned())?
+}
+
+pub(crate) async fn downloads(
+    window: WebviewWindow,
+    request: sorng_browser_host::native_downloads::DownloadListRequest,
+) -> Result<Vec<sorng_browser_host::native_downloads::DownloadSnapshot>, String> {
+    download_operation(window, request.identity, None).await
+}
+
+pub(crate) async fn download_control(
+    window: WebviewWindow,
+    request: sorng_browser_host::native_downloads::DownloadControlRequest,
+) -> Result<(), String> {
+    download_operation(window, request.identity.clone(), Some(request))
+        .await
+        .map(|_| ())
+}
+
 /// Main-loop callback. Work is scheduled by CEF, while owner revocation and
 /// pending context completion are checked even when no page is painting.
 pub(crate) fn tick() {
-    UI.with(|slot| {
-        let mut slot = slot.borrow_mut();
-        let Some(ui) = slot.as_mut() else {
+    recording::reap();
+    UI.with(|cell| {
+        // Deferred CEF replies run inside work(). Their owner/selected-view
+        // guards must be able to read this registry during that callback.
+        // A mutable borrow here rejects every otherwise-current history reply.
+        let slot = cell.borrow();
+        let Some(ui) = slot.as_ref() else {
             return;
         };
+        let was_ready = shared().admission.ready();
+        let was_revoked = shared().admission.revoked();
         // On watchdog/shutdown recovery this is a cleanup-only tick. Revoke
         // before CEF callbacks run, including creates queued before the timeout.
         if shared().admission.revoked() {
@@ -1045,28 +1645,56 @@ pub(crate) fn tick() {
             // failure. CEF still needs pump opportunities for queued CloseBrowser
             // tasks and OnBeforeClose; no network admission is restored.
             let _ = ui.runtime.cleanup_only_work();
-        } else if ui.runtime.work().is_err() {
+        } else if let Err(error) = ui.runtime.work() {
+            log::error!("Native browser stage=policy error={error}");
             revoke_all();
         }
+        drop(slot);
+        let mut slot = cell.borrow_mut();
+        let Some(ui) = slot.as_mut() else {
+            return;
+        };
         match ui.runtime.network_policy_configured() {
-            Ok(configured) => shared().admission.observe_policy(configured),
-            Err(_) => revoke_all(),
+            Ok(configured) if ui.tls.is_some() => shared().admission.observe_policy(configured),
+            Ok(_) => revoke_all(),
+            Err(error) => {
+                if !was_revoked {
+                    log::error!("Native browser stage=policy error={error}");
+                }
+                revoke_all();
+            }
         }
         if shared().admission.revoked() {
             revoke_all();
         }
-        if ui.tls.is_some() && cef_tls_bridge::pump_tls().is_err() {
-            revoke_all();
+        if ui.tls.is_some() {
+            if let Err(error) = cef_tls_bridge::pump_tls() {
+                if !was_revoked {
+                    log::error!("Native browser stage=policy error={error}");
+                }
+                revoke_all();
+            }
+        }
+        if !was_revoked && shared().admission.revoked() {
+            diagnostics::record(Stage::Failed, Some(Failure::Policy));
+        } else if !was_ready && shared().admission.ready() {
+            diagnostics::record(Stage::Ready, None);
         }
         let mut waiting = Vec::new();
         for mut pending in ui.pending.drain(..) {
             if !shared().admission.ready()
                 || !pending.attempt.current()
-                || Instant::now() >= pending.deadline
                 || pending.response.is_closed()
             {
                 pending.attempt.revoke();
                 let _ = pending.response.send(Err(STALE.into()));
+                continue;
+            }
+            if Instant::now() >= pending.deadline {
+                pending.attempt.revoke();
+                let _ = pending
+                    .response
+                    .send(Err(view_failure(Failure::Timeout, VIEW_TIMED_OUT)));
                 continue;
             }
             match pending.context.status() {
@@ -1075,9 +1703,12 @@ pub(crate) fn tick() {
                     continue;
                 }
                 PreparationStatus::ProxyConfigured => (),
-                _ => {
+                status => {
+                    log::error!("Native browser stage=context-prepare status={status:?}");
                     pending.attempt.revoke();
-                    let _ = pending.response.send(Err(UNAVAILABLE.into()));
+                    let _ = pending
+                        .response
+                        .send(Err(view_failure(Failure::PrivateContext, CONTEXT_FAILED)));
                     continue;
                 }
             }
@@ -1087,15 +1718,16 @@ pub(crate) fn tick() {
                     let _ = pending.response.send(Err(UNAVAILABLE.into()));
                     continue;
                 };
-                if pending
+                if let Err(error) = pending
                     .context
                     .import_sign_in_cookies(retention.clone(), cookies)
-                    .is_err()
                 {
+                    log::error!("Native browser stage=cookie-restore error={error:?}");
                     pending.attempt.revoke();
-                    let _ = pending.response.send(Err(
-                        "Retained sign-in cookies could not be restored safely.".into(),
-                    ));
+                    let _ = pending.response.send(Err(view_failure(
+                        Failure::CookieRestore,
+                        COOKIE_RESTORE_FAILED,
+                    )));
                     continue;
                 }
                 // Import completion is asynchronous, even for the empty jar.
@@ -1104,6 +1736,7 @@ pub(crate) fn tick() {
                 continue;
             }
             let attempt = pending.attempt;
+            attempt.timing.mark(TimingStage::ContextReady);
             let scale = pending.window.scale_factor().unwrap_or(1.0);
             let sink = Arc::new(Sink {
                 window: pending.window.clone(),
@@ -1124,14 +1757,26 @@ pub(crate) fn tick() {
             };
             match created {
                 Ok(host) => {
+                    if host.enable_downloads(attempt.downloads.clone()).is_err()
+                        || host.enable_popup_downloads(attempt.downloads.clone()).is_err()
+                        || host.configure_popup_policy(attempt.preferences.popup_policy).is_err() {
+                        attempt.revoke();
+                        let _ = host.close(&attempt.identity);
+                        // Retain the host/context until OnBeforeClose. The
+                        // ordinary startup drain reports failure below.
+                        log::error!("Native browser download policy setup failed");
+                    }
                     ui.views.insert(
                         attempt.identity.attempt_id().to_string(),
                         View {
+                            popups: popups::Selection::default(),
                             host,
                             attempt: attempt.clone(),
                             window: pending.window,
                             presentation: 0,
                             visible: false,
+                            input_blocked: false,
+                            presentation_bounds: None,
                             start: Some(Start {
                                 deadline: pending.deadline,
                                 response: pending.response,
@@ -1140,14 +1785,18 @@ pub(crate) fn tick() {
                         },
                     );
                 }
-                Err(_) => {
+                Err(error) => {
+                    log::error!("Native browser stage=view-create error={error}");
                     attempt.revoke();
-                    let _ = pending.response.send(Err(UNAVAILABLE.into()));
+                    let _ = pending
+                        .response
+                        .send(Err(view_failure(Failure::NativeSurface, VIEW_FAILED)));
                 }
             }
         }
         ui.pending = waiting;
         ui.views.retain(|_, view| {
+            popups::poll(view);
             if let Some(retention) = &view.attempt.retention {
                 view.checkpoint
                     .tick(&view.host, retention, view.attempt.current());
@@ -1195,18 +1844,26 @@ pub(crate) fn tick() {
                 if !shared().admission.ready()
                     || !view.attempt.current()
                     || start.response.is_closed()
-                    || Instant::now() >= start.deadline
                 {
                     view.attempt.revoke();
                     let _ = start.response.send(Err(STALE.into()));
+                } else if Instant::now() >= start.deadline {
+                    view.attempt.revoke();
+                    let _ = start
+                        .response
+                        .send(Err(view_failure(Failure::Timeout, VIEW_TIMED_OUT)));
                 } else {
                     match view.host.features_ready(&view.attempt.identity) {
                         Ok(false) => view.start = Some(start),
-                        Err(_) => {
+                        Err(error) => {
+                            log::error!("Native browser stage=renderer-setup error={error}");
                             view.attempt.revoke();
-                            let _ = start.response.send(Err(UNAVAILABLE.into()));
+                            let _ = start
+                                .response
+                                .send(Err(view_failure(Failure::RendererSetup, RENDERER_FAILED)));
                         }
                         Ok(true) => {
+                            view.attempt.timing.mark(TimingStage::RendererReady);
                             // Signal preparation only. The async create path
                             // must recheck saved authority before reporting the
                             // host ready and issuing initial navigation.
@@ -1220,7 +1877,26 @@ pub(crate) fn tick() {
             if !view.attempt.current() && !view.checkpoint.draining() {
                 let _ = view.host.close(&view.attempt.identity);
             }
-            view.host.lifecycle() != Lifecycle::Closed || view.checkpoint.draining()
+            let keep = view.host.lifecycle() != Lifecycle::Closed || view.checkpoint.draining();
+            if !keep {
+                let id = &view.attempt.identity;
+                shared()
+                    .closed
+                    .lock()
+                    .unwrap_or_else(|e| e.into_inner())
+                    .insert(
+                        close_ack::CloseKey::new(
+                            &view.attempt.window,
+                            id.owner_database_id(),
+                            id.connection_id(),
+                            id.session_id(),
+                            &id.attempt_id().to_string(),
+                        ),
+                        Instant::now(),
+                    );
+                view.attempt.closed.complete();
+            }
+            keep
         });
         shared()
             .attempts
@@ -1248,6 +1924,10 @@ pub(crate) fn tick() {
 pub(crate) fn shutdown() -> Result<(), String> {
     UI.with(|slot| {
         if let Some(ui) = slot.borrow_mut().as_mut() {
+            if !ui.closing {
+                ui.closing = true;
+                diagnostics::record(Stage::Closing, None);
+            }
             for view in ui.views.values_mut() {
                 begin_normal_close(view);
             }
@@ -1266,10 +1946,15 @@ pub(crate) fn shutdown() -> Result<(), String> {
         if let Some(ui) = slot.take() {
             // No remaining hosts, pending contexts or callbacks in the registry.
             unsafe {
-                ui.runtime.shutdown().map_err(|_| UNAVAILABLE.to_owned())?;
+                ui.runtime.shutdown().map_err(|error| {
+                    diagnostics::record(Stage::Failed, Some(Failure::Shutdown));
+                    log::error!("Native browser stage=shutdown error={error}");
+                    UNAVAILABLE.to_owned()
+                })?;
                 cef_tls_bridge::after_cef_shutdown();
             }
             shared().certificate_hooks.store(false, Ordering::Release);
+            diagnostics::record(Stage::Closed, None);
         }
         Ok(())
     })

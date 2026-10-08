@@ -9,6 +9,148 @@ use std::{
 use tokio::sync::oneshot;
 
 #[test]
+fn deferred_preflight_is_exclusive_and_retryable_until_native_entry() {
+    let startup = flow::StartupGate::default();
+    assert!(startup.deferred());
+    let permit = startup.prepare().unwrap();
+    assert!(startup.prepare().is_none());
+    assert!(!startup.started());
+    // A path/settings failure or canceled command does not consume the provider.
+    drop(permit);
+    let permit = startup.prepare().unwrap();
+    assert!(permit.begin_native());
+    assert!(!permit.begin_native());
+    drop(permit);
+    assert!(startup.started());
+    assert!(!startup.deferred());
+    assert!(startup.prepare().is_none());
+    startup.fail();
+    assert!(startup.prepare().is_none());
+}
+
+#[test]
+fn revoked_queued_startup_cannot_initialize_or_restore_deferred() {
+    let startup = flow::StartupGate::default();
+    let queued = startup.prepare().unwrap();
+    startup.fail();
+    assert!(!queued.begin_native());
+    drop(queued);
+    assert!(!startup.deferred());
+    assert!(startup.prepare().is_none());
+}
+
+#[tokio::test]
+async fn cancelled_queued_owner_releases_preflight_without_entering_native() {
+    let startup = flow::StartupGate::default();
+    let permit = startup.prepare().unwrap();
+    let (reply, caller) = oneshot::channel::<()>();
+    drop(caller);
+    let owner_current = false;
+    assert!(!(!reply.is_closed() && owner_current && permit.begin_native()));
+    drop(permit);
+    assert!(!startup.started());
+    assert!(startup.prepare().is_some());
+}
+
+#[test]
+fn concurrent_first_connections_issue_exactly_one_native_initialization() {
+    use std::sync::{
+        atomic::{AtomicUsize, Ordering},
+        Arc, Barrier,
+    };
+    let startup = Arc::new(flow::StartupGate::default());
+    let starts = Arc::new(AtomicUsize::new(0));
+    let barrier = Arc::new(Barrier::new(8));
+    let threads: Vec<_> = (0..8)
+        .map(|_| {
+            let (startup, starts, barrier) = (startup.clone(), starts.clone(), barrier.clone());
+            std::thread::spawn(move || {
+                barrier.wait();
+                if let Some(permit) = startup.prepare() {
+                    if permit.begin_native() {
+                        starts.fetch_add(1, Ordering::AcqRel);
+                    }
+                }
+            })
+        })
+        .collect();
+    for thread in threads {
+        thread.join().unwrap();
+    }
+    assert_eq!(starts.load(Ordering::Acquire), 1);
+}
+
+#[tokio::test]
+async fn policy_wait_is_bounded_and_late_success_cannot_reopen_admission() {
+    let startup = flow::StartupGate::default();
+    let admission = flow::RuntimeAdmission::default();
+    let permit = startup.prepare().unwrap();
+    assert!(permit.begin_native());
+    let outcome = flow::wait_for_readiness(
+        Duration::from_millis(5),
+        || Ok::<_, &str>(admission.ready()),
+        || {
+            startup.fail();
+            admission.revoke();
+            "timeout"
+        },
+    )
+    .await;
+    assert_eq!(outcome, Err("timeout"));
+    admission.observe_policy(true);
+    assert!(!admission.ready());
+    assert!(startup.prepare().is_none());
+}
+
+#[tokio::test]
+async fn readiness_wait_rejects_lost_owner_and_does_not_mistake_startup_for_ready() {
+    let admission = flow::RuntimeAdmission::default();
+    assert_eq!(
+        flow::wait_for_readiness(
+            Duration::from_secs(1),
+            || Err::<bool, _>("owner revoked"),
+            || "timeout"
+        )
+        .await,
+        Err("owner revoked")
+    );
+    let checks = Cell::new(0);
+    flow::wait_for_readiness(
+        Duration::from_secs(1),
+        || {
+            checks.set(checks.get() + 1);
+            if checks.get() == 2 {
+                admission.observe_policy(true);
+            }
+            Ok::<_, &str>(admission.ready())
+        },
+        || "timeout",
+    )
+    .await
+    .unwrap();
+    assert_eq!(checks.get(), 2);
+}
+
+#[test]
+fn caller_timeout_only_revokes_its_own_pending_native_startup() {
+    let admission = flow::RuntimeAdmission::default();
+    assert!(!admission.timeout_owned_startup(false));
+    assert!(!admission.revoked());
+    assert!(admission.timeout_owned_startup(true));
+    admission.observe_policy(true);
+    assert!(admission.revoked());
+    assert!(!admission.ready());
+
+    let healthy = flow::RuntimeAdmission::default();
+    healthy.observe_policy(true);
+    for owns_startup in [false, true] {
+        assert!(!healthy.timeout_owned_startup(owns_startup));
+        assert!(healthy.ready());
+        assert!(!healthy.revoked());
+    }
+}
+
+#[test]
 fn native_runtime_stays_pending_until_policy_readback_and_then_admits() {
     let admission = flow::RuntimeAdmission::default();
     assert!(!admission.ready());
@@ -79,7 +221,7 @@ async fn dropping_create_after_preparation_revokes_while_owner_recheck_is_pendin
                 started.send(()).unwrap();
                 Ok::<_, &str>(())
             },
-            || std::future::pending::<Result<(), &str>>(),
+            std::future::pending::<Result<(), &str>>,
             || async { panic!("no navigation before owner recheck") },
         )
         .await
@@ -233,7 +375,7 @@ async fn cancellation_during_recheck_does_not_enqueue_initial_navigation() {
         Duration::from_millis(10),
         flow::admit_prepared(
             async { Ok::<_, &str>(()) },
-            || std::future::pending::<Result<(), &str>>(),
+            std::future::pending::<Result<(), &str>>,
             || async {
                 navigations.set(navigations.get() + 1);
                 Ok(())
@@ -300,4 +442,56 @@ async fn normal_tick_completes_without_revocation() {
             .unwrap(),
         7
     );
+}
+
+#[test]
+fn timeout_between_ui_checks_and_entry_claim_prevents_native_start() {
+    use std::sync::{Arc, Barrier};
+    let gate = flow::StartupGate::default();
+    let claim = flow::StartupClaim::default();
+    let barrier = Arc::new(Barrier::new(2));
+    std::thread::scope(|scope| {
+        let ui = scope.spawn(|| {
+            let permit = gate.prepare().unwrap();
+            barrier.wait(); // Earlier UI cancellation/owner checks succeeded.
+            barrier.wait(); // Timeout wins before entry can be claimed.
+            assert!(!claim.claim_native());
+            drop(permit);
+        });
+        barrier.wait();
+        assert!(!claim.cancel()); // No native ownership: don't revoke others.
+        barrier.wait();
+        ui.join().unwrap();
+    });
+    assert!(gate.deferred());
+    assert!(gate.prepare().is_some()); // A fresh manual retry remains possible.
+}
+
+#[test]
+fn timeout_after_claim_before_global_started_revokes_late_readiness() {
+    use std::sync::{Arc, Barrier};
+    let gate = flow::StartupGate::default();
+    let claim = flow::StartupClaim::default();
+    let admission = flow::RuntimeAdmission::default();
+    let barrier = Arc::new(Barrier::new(2));
+    std::thread::scope(|scope| {
+        let ui = scope.spawn(|| {
+            let permit = gate.prepare().unwrap();
+            assert!(claim.claim_native());
+            barrier.wait(); // Ownership published, global STARTED not yet set.
+            barrier.wait();
+            assert!(!permit.begin_native());
+            admission.observe_policy(true); // A late callback cannot revive it.
+        });
+        barrier.wait();
+        assert!(!gate.started());
+        assert!(admission.timeout_owned_startup(claim.cancel()));
+        gate.fail();
+        barrier.wait();
+        ui.join().unwrap();
+    });
+    assert!(admission.revoked());
+    assert!(!admission.ready());
+    assert!(!claim.claim_native());
+    assert!(!claim.cancel());
 }

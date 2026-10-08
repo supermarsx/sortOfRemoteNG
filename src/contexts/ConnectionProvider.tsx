@@ -97,6 +97,7 @@ import {
 } from "../utils/connection/sessionQuickActions";
 import { applyTrustedRedirectChanges } from "../utils/security/trustedRedirectManagement";
 import { resolveDefaultTabGroup } from "../utils/session/resolveDefaultTabGroup";
+import { getQuickConnectConnection } from "../utils/session/runtimeConnectionRegistry";
 import {
   mergeLocalSessionUpdate,
   reconcileSessionLifecycleSnapshot,
@@ -791,13 +792,28 @@ export const ConnectionProvider: React.FC<{ children: React.ReactNode }> = ({
       ) {
         // Capture ownership at creation, not when a lazy viewer later mounts.
         // Window hydration uses SET_SESSIONS and retains the source owner.
-        action = {
-          ...action,
-          payload: {
-            ...action.payload,
-            ownerDatabaseId: activeDatabaseTargetRef.current?.databaseId,
-          },
-        };
+        const session = action.payload;
+        const quickConnection = getQuickConnectConnection(session.connectionId);
+        const isQuickConnect =
+          !session.reattachOnly &&
+          quickConnection &&
+          !quickConnection.isGroup &&
+          quickConnection.protocol === session.protocol &&
+          quickConnection.hostname === session.hostname &&
+          !stateRef.current.connections.some(
+            (connection) => connection.id === session.connectionId,
+          );
+        // Explicit temporary provenance has no database owner. A generic
+        // runtime row, saved-ID collision, or restored session is not exempt.
+        if (!isQuickConnect) {
+          action = {
+            ...action,
+            payload: {
+              ...session,
+              ownerDatabaseId: activeDatabaseTargetRef.current?.databaseId,
+            },
+          };
+        }
       }
       if (action.type === "DELETE_CONNECTION") {
         action = {

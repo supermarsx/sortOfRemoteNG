@@ -7,6 +7,110 @@ use std::{
 };
 use tokio::sync::oneshot;
 
+/// Serialize preflight and queued UI startup without tying ownership to a
+/// command future. Only failures BEFORE native initialization may be retried.
+#[derive(Default)]
+pub(super) struct StartupGate(AtomicU8);
+
+/// One caller's native-entry boundary. Cancellation and claiming use the SAME
+/// atomic transition: a timeout cannot slip between an earlier cancellation
+/// check and separate publication of native startup ownership.
+#[derive(Default)]
+pub(super) struct StartupClaim(AtomicU8);
+
+impl StartupClaim {
+    pub(super) fn claim_native(&self) -> bool {
+        self.0
+            .compare_exchange(0, 1, Ordering::AcqRel, Ordering::Acquire)
+            .is_ok()
+    }
+
+    /// True only for the first cancellation after this caller claimed entry.
+    /// Once claimed, native work may finish, but its traffic must stay revoked.
+    pub(super) fn cancel(&self) -> bool {
+        self.0.swap(2, Ordering::AcqRel) == 1
+    }
+}
+
+impl StartupGate {
+    const DEFERRED: u8 = 0;
+    const PREPARING: u8 = 1;
+    const STARTED: u8 = 2;
+    const FAILED: u8 = 3;
+
+    pub(super) fn deferred(&self) -> bool {
+        self.0.load(Ordering::Acquire) <= Self::PREPARING
+    }
+
+    pub(super) fn started(&self) -> bool {
+        self.0.load(Ordering::Acquire) >= Self::STARTED
+    }
+
+    pub(super) fn prepare(&self) -> Option<StartupPermit<'_>> {
+        self.0
+            .compare_exchange(
+                Self::DEFERRED,
+                Self::PREPARING,
+                Ordering::AcqRel,
+                Ordering::Acquire,
+            )
+            .ok()?;
+        Some(StartupPermit(self))
+    }
+
+    pub(super) fn fail(&self) {
+        self.0.store(Self::FAILED, Ordering::Release);
+    }
+}
+
+pub(super) struct StartupPermit<'a>(&'a StartupGate);
+
+impl StartupPermit<'_> {
+    /// Commit immediately before CefInitialize. Dropping this permit afterward
+    /// must never make a second native initialization possible.
+    pub(super) fn begin_native(&self) -> bool {
+        self.0
+             .0
+            .compare_exchange(
+                StartupGate::PREPARING,
+                StartupGate::STARTED,
+                Ordering::AcqRel,
+                Ordering::Acquire,
+            )
+            .is_ok()
+    }
+}
+
+impl Drop for StartupPermit<'_> {
+    fn drop(&mut self) {
+        let _ = self.0 .0.compare_exchange(
+            StartupGate::PREPARING,
+            StartupGate::DEFERRED,
+            Ordering::AcqRel,
+            Ordering::Acquire,
+        );
+    }
+}
+
+/// Polling is bounded even when the native UI callback stalls. A timeout cannot
+/// cancel a native call already in progress; its caller must revoke admission.
+pub(super) async fn wait_for_readiness<E>(
+    timeout: Duration,
+    mut check: impl FnMut() -> Result<bool, E>,
+    timed_out: impl FnOnce() -> E,
+) -> Result<(), E> {
+    tokio::time::timeout(timeout, async {
+        loop {
+            if check()? {
+                return Ok(());
+            }
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+    })
+    .await
+    .unwrap_or_else(|_| Err(timed_out()))
+}
+
 /// Native startup may need pump work before its policy is installed. Pending is
 /// not a failure, but watchdog/policy/exit revocation is terminal for this
 /// process. A late successful readback must never restore revoked admission.
@@ -41,6 +145,22 @@ impl RuntimeAdmission {
 
     pub(super) fn revoke(&self) {
         self.0.store(Self::REVOKED, Ordering::Release);
+    }
+
+    /// Only the caller that entered native initialization may fail a pending
+    /// startup. Authority checks and joining callers cannot revoke a ready host.
+    /// The CAS also preserves readiness published concurrently with the timeout.
+    pub(super) fn timeout_owned_startup(&self, owned_native_start: bool) -> bool {
+        owned_native_start
+            && self
+                .0
+                .compare_exchange(
+                    Self::PENDING,
+                    Self::REVOKED,
+                    Ordering::AcqRel,
+                    Ordering::Acquire,
+                )
+                .is_ok()
     }
 }
 

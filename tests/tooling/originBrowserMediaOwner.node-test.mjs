@@ -23,6 +23,21 @@ test('manual and automatic login both capture media ownership independently of l
   assert.equal([...prepare.matchAll(/media_owner: MediaOwner::new\(identity\)/g)].length, 2);
 });
 
+test('saved automatic login prepares a bounded native grant without another authorization prompt', async () => {
+  const prepare = login.slice(login.indexOf('pub(crate) async fn prepare('), login.indexOf('pub(crate) fn revoke('));
+  assert.doesNotMatch(login, /tauri_plugin_dialog|PromptSlot|Authorize website login|Allow this login|\.dialog\(/);
+  assert.doesNotMatch(prepare, /oneshot|run_on_main_thread|receiver|\.show\(/);
+  assert.match(prepare, /if !authority\.enabled\(\)/);
+  assert.match(prepare, /availability\(\) != NativeCredentialAvailability::Saved/);
+  assert.match(prepare, /origins\.is_empty\(\) \|\| origins\.len\(\) > 16 \|\| !lease\.is_current\(\)/);
+  assert.match(prepare, /AttemptConsent::approved\(\s*identity\.clone\(\),\s*origins\.to_vec\(\),\s*Instant::now\(\) \+ CONSENT_LIFETIME,\s*authority\.auto_submit_allowed\(\)/);
+  assert.ok(prepare.indexOf('if !authority.enabled()') < prepare.indexOf('AttemptConsent::approved('));
+  const runtime = await read('src-tauri/src/origin_browser_runtime.rs');
+  const setup = runtime.slice(runtime.indexOf('let login = login::LoginHooks::prepare('), runtime.indexOf('let attempt = Arc::new(Attempt'));
+  assert.ok(setup.indexOf('.recheck(&window, state)') > 0);
+  assert.ok(setup.indexOf('.recheck(&window, state)') < setup.indexOf('OriginBrowserSession::start('));
+});
+
 test('stale media challenges drop their denial token before native prompt dispatch', () => {
   const request = login.slice(login.indexOf('fn on_media_permission('), login.indexOf('fn on_main_document('));
   assert.match(request, /if !self\.media_permission_current\(&challenge\.identity\)\s*\{\s*return;/);

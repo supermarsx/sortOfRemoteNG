@@ -10,6 +10,40 @@ fn owner() -> Value {
 }
 
 #[test]
+fn quick_connect_requires_explicit_temporary_namespace_and_narrow_configuration() {
+    let mut value = create();
+    value["owner"]["ownerDatabaseId"] = json!("quick-connect:tab-1");
+    value["expectedSecurityRevision"] = json!("quick-connect");
+    value["sourceSessionId"] = json!("tab-1");
+    value["quickConnect"] =
+        json!({"protocol":"https","hostname":"example.test", "port":443, "httpVerifySsl":true});
+    assert!(decode::<OriginBrowserCreateRequest>(value.clone()).is_ok());
+    for (path, replacement) in [
+        ("/owner/ownerDatabaseId", json!("database-1")),
+        ("/sourceSessionId", json!("other-tab")),
+        ("/expectedSecurityRevision", json!("saved-revision")),
+        ("/quickConnect/port", json!(0)),
+        ("/quickConnect/protocol", json!("file")),
+    ] {
+        let mut invalid = value.clone();
+        *invalid.pointer_mut(path).unwrap() = replacement;
+        assert_rejected::<OriginBrowserCreateRequest>(invalid);
+    }
+    for field in [
+        "credentialSource",
+        "proxyProfileId",
+        "browserSession",
+        "httpAutomation",
+    ] {
+        let mut invalid = value.clone();
+        invalid["quickConnect"][field] = json!({"id":"saved-secret"});
+        assert_rejected::<OriginBrowserCreateRequest>(invalid);
+    }
+    value.as_object_mut().unwrap().remove("quickConnect");
+    assert_rejected::<OriginBrowserCreateRequest>(value);
+}
+
+#[test]
 fn zoom_percent_is_finite_bounded_and_converted_to_cef_levels() {
     for percent in [25.0, 100.0, 120.0, 500.0] {
         let level = zoom_level_for_percent(percent).unwrap();
@@ -788,6 +822,36 @@ fn status_output_rejects_foreign_snapshots_or_snapshot_without_attempt_request()
 }
 
 #[test]
+fn deferred_capability_never_asserts_an_existing_attempt_or_snapshot() {
+    let native = native_policy();
+    let request: OriginBrowserStatusRequest =
+        decode(json!({ "owner": owner() })).unwrap_or_else(|_| panic!("Valid fixture rejected"));
+    let deferred =
+        OriginBrowserStatusResult::from_native(&request, OriginBrowserCapability::Deferred, None)
+            .unwrap();
+    assert_eq!(
+        serde_json::to_value(deferred).unwrap(),
+        json!({
+            "capability": { "availability": "deferred" }, "snapshot": null
+        })
+    );
+    assert!(OriginBrowserStatusResult::from_native(
+        &request,
+        OriginBrowserCapability::Deferred,
+        Some(snapshot(&native, 0, "", ""))
+    )
+    .is_err());
+    let existing: OriginBrowserStatusRequest = decode(json!({
+        "owner": owner(), "identity": wire_identity(&native)
+    }))
+    .unwrap_or_else(|_| panic!("Valid fixture rejected"));
+    assert!(matches!(
+        OriginBrowserStatusResult::from_native(&existing, OriginBrowserCapability::Deferred, None),
+        Err(OriginBrowserIpcError::InvalidStatus)
+    ));
+}
+
+#[test]
 fn sanitized_decode_errors_never_echo_parser_input_field_names_or_values() {
     for raw in [
         r#"{"private-secret-field":"private-secret-value"}"#,
@@ -816,6 +880,22 @@ fn duplicate_fields_are_rejected_before_native_state_is_consulted() {
         decode_request::<OriginBrowserCreateRequest, _>(&mut deserializer),
         Err(OriginBrowserIpcError::InvalidRequest)
     ));
+}
+
+#[test]
+fn presentation_clipping_is_bounded_and_cannot_change_authority() {
+    let action = json!({"kind":"presentation","revision":1,"bounds":{"x":0,"y":0,"width":800,"height":600},"visible":true,
+        "inputBlocked":true,"occlusions":[{"x":700,"y":20,"width":100,"height":200}]});
+    assert!(decode::<OriginBrowserAction>(action.clone()).is_ok());
+    let mut too_many = action.clone();
+    too_many["occlusions"] = vec![action["occlusions"][0].clone(); 33].into();
+    assert!(decode::<OriginBrowserAction>(too_many).is_err());
+    let mut negative = action.clone();
+    negative["occlusions"][0]["x"] = json!(-1);
+    assert!(decode::<OriginBrowserAction>(negative).is_err());
+    let mut forged = action;
+    forged["ownerDatabaseId"] = json!("another-database");
+    assert!(decode::<OriginBrowserAction>(forged).is_err());
 }
 
 #[test]

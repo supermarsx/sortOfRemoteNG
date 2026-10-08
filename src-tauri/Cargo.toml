@@ -377,6 +377,7 @@ sorng-recording = { path = "crates/sorng-recording" }
 
 serde_json = { workspace = true }
 serde = { workspace = true }
+chrono = { workspace = true }
 rand = { workspace = true }
 hex = { workspace = true }
 sha2 = { workspace = true }
@@ -408,7 +409,6 @@ tokio-test = { workspace = true }
 tempfile = { workspace = true }
 mockall = "0.15"
 serial_test = "4"
-chrono = { workspace = true }
 uuid = { workspace = true }
 # reqwest: real HTTP client for the live-server e2e API suite (tests/api_test.rs,
 # t41-e8). Already in the build graph transitively (sorng-auth etc.); declared
@@ -529,6 +529,12 @@ opt-level = 1
 
 [profile.dev.package.proc-macro2]
 opt-level = 1
+
+# Native browser ownership checks hash the complete encrypted database on each
+# security boundary. Keep those integrity checks, but optimize the small SHA-2
+# implementation even in development (not the whole application/dependency tree).
+[profile.dev.package.sha2]
+opt-level = 2
 
 # Optimize RDP pixel loops and their protocol/decoder consumers in dev too.
 # Named overrides include the first-party crates where generic code is

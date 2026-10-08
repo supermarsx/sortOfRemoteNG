@@ -46,6 +46,15 @@ const TRANSFER_ID: &str = "browser-sessions-transfer";
 const LIMIT: usize = 1024;
 const ERROR: &str = "Native browser session data is unavailable, stale or invalid";
 
+/// Borrowed session identity; construction does not validate or grant access.
+/// Every use must retain the existing session and commit-time revocation checks.
+pub(crate) struct SessionBinding<'a> {
+    pub window: &'a str,
+    pub database: &'a str,
+    pub token: &'a str,
+    pub revision: &'a str,
+}
+
 // The lock command intentionally has no renderer-supplied unlock token. Keep a
 // bounded native witness to tokens already issued by this module, never DEKs.
 #[derive(Clone)]
@@ -159,10 +168,12 @@ pub(crate) async fn before_lock(
             commit_session_data(
                 root,
                 state,
-                &witness.window,
-                database,
-                &witness.token,
-                &witness.revision,
+                SessionBinding {
+                    window: &witness.window,
+                    database,
+                    token: &witness.token,
+                    revision: &witness.revision,
+                },
                 &snapshot,
                 &data.0,
             )
@@ -178,18 +189,22 @@ pub(crate) async fn before_lock(
 pub(crate) async fn after_unlock(
     root: &Path,
     state: &EncryptionState,
-    window: &str,
-    id: &str,
-    token: &str,
-    revision: &str,
+    binding: SessionBinding<'_>,
     snapshot: &ManagedSnapshot,
     data: &mut Value,
 ) -> Result<(), String> {
-    remember_unlock(root, state, window, id, revision, token)?;
+    remember_unlock(
+        root,
+        state,
+        binding.window,
+        binding.database,
+        binding.revision,
+        binding.token,
+    )?;
     let mut records = private(data)?;
     if prune(&mut records, true) {
         put_private(data, records)?;
-        commit_session_data(root, state, window, id, token, revision, snapshot, data).await?;
+        commit_session_data(root, state, binding, snapshot, data).await?;
     }
     Ok(())
 }
@@ -922,13 +937,16 @@ fn import_public(current: &Value, proposed: Value, expected: Value) -> Result<Va
 pub(crate) async fn commit_session_data(
     root: &Path,
     state: &EncryptionState,
-    window: &str,
-    id: &str,
-    session: &str,
-    expected_revision: &str,
+    binding: SessionBinding<'_>,
     snapshot: &ManagedSnapshot,
     data: &Value,
 ) -> Result<SaveResult, String> {
+    let SessionBinding {
+        window,
+        database: id,
+        token: session,
+        revision: expected_revision,
+    } = binding;
     let profile = profile_binding(root)?;
     let access = scope(&profile, id, expected_revision, window, state);
     let key = session_key(session, &access)?;
@@ -962,6 +980,10 @@ pub(crate) async fn commit_session_data(
 }
 
 #[tauri::command]
+#[allow(
+    clippy::too_many_arguments,
+    reason = "Tauri IPC boundary preserves the existing named transfer fields and injected state"
+)]
 pub async fn database_browser_sessions_export<R: Runtime>(
     window: WebviewWindow<R>,
     state: State<'_, EncryptionState>,
@@ -1055,6 +1077,10 @@ pub async fn database_browser_sessions_export<R: Runtime>(
 }
 
 #[tauri::command]
+#[allow(
+    clippy::too_many_arguments,
+    reason = "Tauri IPC boundary preserves the existing named transfer fields and injected state"
+)]
 pub async fn database_browser_sessions_import<R: Runtime>(
     window: WebviewWindow<R>,
     state: State<'_, EncryptionState>,
@@ -1125,10 +1151,12 @@ pub async fn database_browser_sessions_import<R: Runtime>(
     let result = commit_session_data(
         &root,
         &state,
-        window.label(),
-        &database_id,
-        &session_id,
-        &expected_security_revision,
+        SessionBinding {
+            window: window.label(),
+            database: &database_id,
+            token: &session_id,
+            revision: &expected_security_revision,
+        },
         &snapshot,
         &data.0,
     )

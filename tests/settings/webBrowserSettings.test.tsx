@@ -85,6 +85,28 @@ function number(label: string, value: string) {
 }
 
 describe("Web Browser settings", () => {
+  it("enables idle prewarm by default, preserves opt-out and rejects malformed values", () => {
+    expect(normalizeWebBrowserSettings(undefined).idlePrewarmEnabled).toBe(
+      true,
+    );
+    expect(
+      normalizeWebBrowserSettings({ idlePrewarmEnabled: false })
+        .idlePrewarmEnabled,
+    ).toBe(false);
+    expect(() =>
+      normalizeWebBrowserSettings({ idlePrewarmEnabled: "true" }),
+    ).toThrow();
+    const { update } = setup();
+    const toggle = screen.getByRole("checkbox", {
+      name: /^Prewarm browser while idle/,
+    });
+    expect(toggle).toBeChecked();
+    fireEvent.click(toggle);
+    expect(toggle).not.toBeChecked();
+    expect(update).toHaveBeenLastCalledWith({
+      webBrowser: expect.objectContaining({ idlePrewarmEnabled: false }),
+    });
+  });
   it("configures supported default-on native preferences and gates unsupported controls", () => {
     const { update } = setup();
     const card = screen.getByRole("region", {
@@ -529,8 +551,8 @@ describe("Web Browser settings", () => {
       screen.getByText(/Security warnings remain visible/),
     ).toBeInTheDocument();
     expect(
-      screen.getByRole("combobox", { name: "Tactical RMM popups" }),
-    ).toHaveTextContent("Block popups");
+      screen.getByRole("combobox", { name: "Website popups" }),
+    ).toHaveTextContent("Open in tabs");
     expect(
       container.querySelector('[data-setting-key="websiteDarkMode"]'),
     ).toBeInTheDocument();
@@ -558,7 +580,7 @@ describe("Web Browser settings", () => {
     fireEvent.click(
       screen.getByRole("checkbox", { name: /Show security information/ }),
     );
-    choose("Tactical RMM popups", "Block popups");
+    choose("Website popups", "Block popups");
     expect(update).toHaveBeenLastCalledWith({
       webBrowser: {
         ...config,
@@ -577,7 +599,7 @@ describe("Web Browser settings", () => {
     });
   });
 
-  it("shows native-denied capabilities as inactive while preserving legacy values", () => {
+  it("honors native popup preferences while keeping unsupported dialogs inactive", () => {
     const { update } = setup("browser", {
       webBrowser: normalizeWebBrowserSettings({
         allowDownloads: true,
@@ -585,16 +607,35 @@ describe("Web Browser settings", () => {
         popupPolicy: "tabs",
       }),
     });
-    for (const name of [/^Allow website downloads/, /^Allow website dialogs/]) {
+    const downloads = screen.getByRole("checkbox", {
+      name: /^Allow website downloads/,
+    });
+    expect(downloads).toBeEnabled();
+    expect(downloads).toBeChecked();
+    for (const name of [/^Allow website dialogs/]) {
       expect(screen.getByRole("checkbox", { name })).toBeDisabled();
       expect(screen.getByRole("checkbox", { name })).not.toBeChecked();
     }
     expect(
-      screen.getByRole("combobox", { name: "Tactical RMM popups" }),
-    ).toBeDisabled();
+      screen.getByRole("combobox", { name: "Website popups" }),
+    ).toBeEnabled();
     expect(
-      screen.getByRole("combobox", { name: "Tactical RMM popups" }),
-    ).toHaveTextContent("Block popups");
+      screen.getByRole("combobox", { name: "Website popups" }),
+    ).toHaveTextContent("Open in tabs");
+    expect(screen.getByText(/Open allowed native popups/)).toHaveTextContent(
+      "Destination restrictions still apply. Close and reopen the website",
+    );
+    expect(
+      screen.queryByText(/saved legacy popup preference is inactive/),
+    ).toBeNull();
+    expect(
+      SETTINGS_SEARCH_INDEX.find(
+        (entry) => entry.key === "webBrowser.popupPolicy",
+      ),
+    ).toMatchObject({
+      label: "Website popups",
+      tags: expect.arrayContaining(["tactical", "rmm"]),
+    });
     expect(update).not.toHaveBeenCalled();
     number("Website zoom (%)", "125");
     expect(update.mock.lastCall?.[0].webBrowser).toMatchObject({
@@ -602,13 +643,27 @@ describe("Web Browser settings", () => {
       allowPageDialogs: true,
       popupPolicy: "tabs",
     });
+    choose("Website popups", "Block popups");
+    expect(update.mock.lastCall?.[0].webBrowser).toMatchObject({
+      popupPolicy: "block",
+      allowDownloads: true,
+      allowPageDialogs: true,
+    });
+    expect(
+      screen.getByRole("combobox", { name: "Website popups" }),
+    ).toHaveTextContent("Block popups");
+    choose("Website popups", "Open in tabs");
+    expect(update.mock.lastCall?.[0].webBrowser.popupPolicy).toBe("tabs");
     choose("Default browser engine", "Legacy rewrite browser");
     expect(
       screen.getByRole("checkbox", { name: /^Allow website downloads/ }),
     ).toBeChecked();
     expect(
-      screen.getByRole("combobox", { name: "Tactical RMM popups" }),
+      screen.getByRole("combobox", { name: "Website popups" }),
     ).toHaveTextContent("Open in tabs");
+    expect(
+      screen.getByText(/Legacy popup handling supports Tactical RMM only/),
+    ).toBeVisible();
   });
 
   it("saves requested cookie retention without claiming support or exposing unapproved policy controls", () => {

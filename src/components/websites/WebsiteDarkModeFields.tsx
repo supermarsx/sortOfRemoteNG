@@ -23,6 +23,17 @@ export function WebsiteDarkModeFields({
     onChange({ ...theme, ...value });
   return (
     <fieldset disabled={disabled} className="space-y-4 min-w-0">
+      <label className="flex gap-2 items-center text-sm">
+        <Checkbox
+          checked={theme.followAppTheme !== false}
+          onChange={(followAppTheme) => patch({ followAppTheme })}
+        />
+        Follow app theme colors
+      </label>
+      <p className="text-xs text-[var(--color-textMuted)]">
+        Uses the app's current background and text colors and updates when its
+        theme changes. Turn off to use this website's own palette.
+      </p>
       <div className="grid gap-3 sm:grid-cols-2">
         <label className="space-y-1 text-sm">
           <span>Conversion mode</span>
@@ -104,6 +115,7 @@ export function WebsiteDarkModeFields({
                 <input
                   aria-label={label}
                   type="color"
+                  disabled={theme.followAppTheme !== false}
                   value={theme[key]}
                   onChange={(event) => patch({ [key]: event.target.value })}
                   className="h-8 w-10 rounded border border-[var(--color-border)] bg-transparent"

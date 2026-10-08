@@ -167,6 +167,17 @@ impl BrowserControl {
         Ok(())
     }
 
+    /// Zoom is configuration, not focus or visibility. Startup applies it to
+    /// the hidden attached view before first navigation/presentation. It must
+    /// not show the view, authorize navigation, or revive a closing attempt.
+    pub fn authorize_zoom(&self, identity: &BrowserIdentity) -> Result<(), ControlError> {
+        self.check_identity(identity)?;
+        if !matches!(self.lifecycle, Lifecycle::Attached | Lifecycle::Hidden) {
+            return Err(ControlError::InvalidTransition);
+        }
+        Ok(())
+    }
+
     /// Store validated bounds; zero-sized/minimized tabs must hide the view
     /// instead. On a native resize failure, fault and revoke the owning session.
     pub fn resize(
@@ -352,6 +363,10 @@ mod tests {
         assert_eq!(view.hide(&stale), Err(ControlError::StaleIdentity));
         assert_eq!(view.show(&stale), Err(ControlError::StaleIdentity));
         assert_eq!(
+            view.authorize_zoom(&stale),
+            Err(ControlError::StaleIdentity)
+        );
+        assert_eq!(
             view.resize(&stale, bounds()),
             Err(ControlError::StaleIdentity)
         );
@@ -360,6 +375,35 @@ mod tests {
         assert_eq!(view.fault(&stale), Err(ControlError::StaleIdentity));
         assert_eq!(view.lifecycle(), Lifecycle::Attached);
         assert_eq!(view.bounds(), bounds());
+    }
+
+    #[test]
+    fn startup_zoom_accepts_hidden_views_without_showing_or_reviving_them() {
+        let (mut view, id) = control();
+        assert_eq!(
+            view.authorize_zoom(&id),
+            Err(ControlError::InvalidTransition)
+        );
+        view.attached(&id).unwrap();
+        view.authorize_zoom(&id).unwrap();
+        view.hide(&id).unwrap();
+        view.authorize_zoom(&id).unwrap();
+        assert_eq!(view.lifecycle(), Lifecycle::Hidden);
+        view.fault(&id).unwrap();
+        assert_eq!(
+            view.authorize_zoom(&id),
+            Err(ControlError::InvalidTransition)
+        );
+        view.begin_close(&id).unwrap();
+        assert_eq!(
+            view.authorize_zoom(&id),
+            Err(ControlError::InvalidTransition)
+        );
+        view.closed(&id).unwrap();
+        assert_eq!(
+            view.authorize_zoom(&id),
+            Err(ControlError::InvalidTransition)
+        );
     }
 
     #[test]
@@ -419,6 +463,7 @@ mod tests {
             Err(ControlError::Session(BrowserPolicyError::NotReady))
         );
         view.hide(&id).unwrap();
+        view.authorize_zoom(&id).unwrap();
         assert_eq!(
             view.authorize_navigation(&id, &session, url),
             Err(ControlError::Session(BrowserPolicyError::NotReady))

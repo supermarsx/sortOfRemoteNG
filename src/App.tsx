@@ -109,6 +109,7 @@ import { useSessionDetach } from "./hooks/session/useSessionDetach";
 import { useRuntimeConnectionLaunch } from "./hooks/session/useRuntimeConnectionLaunch";
 import { useUpdaterAutoCheck } from "./hooks/updater/useUpdaterAutoCheck";
 import { useStartupFailureAlerts } from "./hooks/app/useStartupFailureAlerts";
+import { useOriginBrowserPrewarm } from "./hooks/protocol/useOriginBrowserPrewarm";
 import { useSettingsWriteFailureAlerts } from "./hooks/app/useSettingsWriteFailureAlerts";
 import { resolveStartupWindowAction } from "./utils/window/trayPolicy";
 import {
@@ -868,6 +869,14 @@ const AppContent: React.FC = () => {
     clearViews: clearGloballyLockedViews,
   });
   const databaseAccess = useDatabaseAccessSuspension();
+  useOriginBrowserPrewarm({
+    appReady: appReady && !showSplash,
+    settingsReady: appSettingsLoaded,
+    locked: globallyLocked || databaseAccess.blocked,
+    closing: closingMainRef,
+    connections: state.connections,
+    settings: appSettings,
+  });
 
   /** Open the connection editor to create a new connection. */
   const handleNewConnection = (parentId?: string): void => {

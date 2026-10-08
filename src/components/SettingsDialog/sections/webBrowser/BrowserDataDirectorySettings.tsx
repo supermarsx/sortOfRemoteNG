@@ -10,6 +10,7 @@ interface BrowserDataDirectory {
   effectiveDirectory: string;
   activeDirectory: string | null;
   restartRequired: boolean;
+  fallbackReason?: string | null;
 }
 
 export default function BrowserDataDirectorySettings() {
@@ -138,21 +139,33 @@ export default function BrowserDataDirectorySettings() {
         >
           Choose an existing folder. The app creates its own profile-specific
           subfolder inside it. This location is not synced. Changes take effect
-          after restarting; no files are moved or deleted.
+          after restarting; no files are moved or deleted. If unavailable at
+          startup, the app tries its per-user data and cache folders without
+          changing this preference or moving database sessions.
         </p>
         {location && (
           <div className="space-y-1 break-all text-xs text-[var(--color-textSecondary)]">
             <p>
-              Configured folder:{" "}
+              {location.fallbackReason
+                ? "Browser folder:"
+                : "Configured folder:"}{" "}
               <span className="select-text">{location.effectiveDirectory}</span>
             </p>
-            {location.restartRequired && (
-              <p>
-                Currently using:{" "}
-                <span className="select-text">{location.activeDirectory}</span>
-              </p>
-            )}
+            {location.restartRequired &&
+              location.activeDirectory !== location.effectiveDirectory && (
+                <p>
+                  Currently using:{" "}
+                  <span className="select-text">
+                    {location.activeDirectory}
+                  </span>
+                </p>
+              )}
           </div>
+        )}
+        {location?.fallbackReason && (
+          <p role="status" className="sor-alert-warning text-xs">
+            {location.fallbackReason}
+          </p>
         )}
         <div className="flex flex-wrap gap-2">
           <button

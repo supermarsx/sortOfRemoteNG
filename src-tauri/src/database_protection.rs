@@ -247,6 +247,220 @@ fn session_key(id: &str, scope: &SessionScope<'_>) -> Result<DatabaseKey, String
         .key(id, scope)
 }
 
+/// Bounded numeric-only diagnostics, not authority. Startup callers must start
+/// before authorization and carry clones through UI/context callbacks. A trace
+/// ends at navigation submission (outcome 1), failure/cancellation (0), or an
+/// explicitly observed first document completion (2). Never infer paint from it.
+pub mod native_browser_timing {
+    use std::sync::{
+        atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering},
+        mpsc, Arc, OnceLock,
+    };
+    use std::time::Instant;
+
+    const MISSING: u64 = u64::MAX;
+    const SLOTS: usize = 16;
+    static STARTUPS: AtomicU32 = AtomicU32::new(0);
+    static RECHECKS: AtomicU32 = AtomicU32::new(0);
+    static SENDER: OnceLock<Option<mpsc::SyncSender<Report>>> = OnceLock::new();
+
+    /// Each array entry is cumulative microseconds since create entry, not a
+    /// wall-clock timestamp. The reached bitmask distinguishes missing from zero.
+    #[repr(usize)]
+    #[derive(Clone, Copy)]
+    pub enum StartupStage {
+        Authorized,
+        RuntimeReady,
+        InitialOwnerChecked,
+        RetentionPrepared,
+        CookiesLoaded,
+        LoginPrepared,
+        OwnerCheckedBeforeProxy,
+        ProxyReady,
+        OwnerCheckedBeforeContext,
+        UiEntered,
+        ContextCreated,
+        ContextReady,
+        BrowserAttached,
+        FinalOwnerChecked,
+        NavigationSubmitted,
+        FirstDocumentComplete,
+    }
+
+    // Kind 1: StartupStage. Kind 2: recheck endpoints: memory checks, database
+    // guard acquired, snapshot read, session key obtained, decrypt/parse, final
+    // digest/dependency/window checks. Adjacent differences give phase costs.
+    struct Report {
+        kind: u8,
+        outcome: u8,
+        total_us: u64,
+        reached: u32,
+        us: [u64; SLOTS],
+    }
+    struct Active {
+        start: Instant,
+        kind: u8,
+        marks: [AtomicU64; SLOTS],
+        finished: AtomicBool,
+        sender: mpsc::SyncSender<Report>,
+    }
+    #[derive(Clone, Default)]
+    pub struct Trace(Option<Arc<Active>>);
+
+    fn micros(start: Instant) -> u64 {
+        start.elapsed().as_micros().min(u128::from(MISSING - 1)) as u64
+    }
+    fn sender() -> Option<&'static mpsc::SyncSender<Report>> {
+        SENDER.get_or_init(|| {
+            let (tx, rx) = mpsc::sync_channel::<Report>(64);
+            std::thread::Builder::new().name("browser-stage-timing".into()).spawn(move || {
+                for r in rx {
+                    log::info!("Native browser timing: kind={} outcome={} total_us={} reached={} us={:?}",
+                        r.kind, r.outcome, r.total_us, r.reached, r.us);
+                }
+            }).ok().map(|_| tx)
+        }).as_ref()
+    }
+    impl Trace {
+        fn sampled(
+            count: &AtomicU32,
+            limit: u32,
+            kind: u8,
+            sender: Option<&mpsc::SyncSender<Report>>,
+        ) -> Self {
+            Self(sender.and_then(|sender| {
+                count
+                    .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |n| {
+                        (n < limit).then(|| n + 1)
+                    })
+                    .ok()?;
+                Some(Arc::new(Active {
+                    start: Instant::now(),
+                    kind,
+                    marks: std::array::from_fn(|_| AtomicU64::new(MISSING)),
+                    finished: AtomicBool::new(false),
+                    sender: sender.clone(),
+                }))
+            }))
+        }
+        pub fn startup() -> Self {
+            Self::sampled(&STARTUPS, 32, 1, sender())
+        }
+        pub(super) fn recheck() -> Self {
+            Self::sampled(&RECHECKS, 128, 2, sender())
+        }
+        pub fn mark(&self, stage: StartupStage) {
+            self.mark_slot(stage as usize);
+        }
+        pub(super) fn mark_slot(&self, slot: usize) {
+            if let Some(active) = &self.0 {
+                // First observation wins: repeated ticks/reloads cannot replace
+                // the original attach/navigation measurement. No UI mutex.
+                let _ = active.marks[slot].compare_exchange(
+                    MISSING,
+                    micros(active.start),
+                    Ordering::Release,
+                    Ordering::Relaxed,
+                );
+            }
+        }
+        pub fn finish(&self, outcome: u8) {
+            if let Some(active) = &self.0 {
+                active.finish(outcome);
+            }
+        }
+        #[cfg(test)]
+        pub(super) fn measured() -> Self {
+            let (tx, _) = mpsc::sync_channel(1);
+            Self::sampled(&AtomicU32::new(0), 1, 2, Some(&tx))
+        }
+        #[cfg(test)]
+        pub(super) fn stages(&self) -> [u64; SLOTS] {
+            std::array::from_fn(|i| self.0.as_ref().unwrap().marks[i].load(Ordering::Acquire))
+        }
+    }
+    impl Active {
+        fn finish(&self, outcome: u8) {
+            if self.finished.swap(true, Ordering::AcqRel) {
+                return;
+            }
+            let mut reached = 0;
+            let us = std::array::from_fn(|i| {
+                let value = self.marks[i].load(Ordering::Acquire);
+                if value == MISSING {
+                    0
+                } else {
+                    reached |= 1 << i;
+                    value
+                }
+            });
+            // No log/file I/O or waiting on the caller, even on queue overflow.
+            let _ = self.sender.try_send(Report {
+                kind: self.kind,
+                outcome,
+                total_us: micros(self.start),
+                reached,
+                us,
+            });
+        }
+    }
+    impl Drop for Active {
+        fn drop(&mut self) {
+            self.finish(0);
+        }
+    }
+
+    #[cfg(test)]
+    mod tests {
+        use super::*;
+
+        #[test]
+        fn concurrent_sampling_and_completion_are_bounded_and_first_mark_wins() {
+            let count = AtomicU32::new(0);
+            let (tx, rx) = mpsc::sync_channel(32);
+            std::thread::scope(|scope| {
+                for _ in 0..8 {
+                    let count = &count;
+                    let tx = &tx;
+                    scope.spawn(move || {
+                        for _ in 0..16 {
+                            let trace = Trace::sampled(count, 32, 1, Some(tx));
+                            trace.mark(StartupStage::Authorized);
+                            if let Some(active) = &trace.0 {
+                                let first = active.marks[0].load(Ordering::Acquire);
+                                trace.clone().mark(StartupStage::Authorized);
+                                assert_eq!(active.marks[0].load(Ordering::Acquire), first);
+                            }
+                            trace.clone().finish(1);
+                            trace.finish(0);
+                        }
+                    });
+                }
+            });
+            let reports: Vec<_> = rx.try_iter().collect();
+            assert_eq!(reports.len(), 32);
+            assert!(reports.iter().all(|r| r.reached == 1 && r.outcome == 1));
+        }
+
+        #[test]
+        fn cancellation_and_full_or_disconnected_queue_never_wait() {
+            let count = AtomicU32::new(0);
+            let (tx, rx) = mpsc::sync_channel(1);
+            let trace = Trace::sampled(&count, 32, 1, Some(&tx));
+            let other = trace.clone();
+            drop(trace);
+            assert!(rx.try_recv().is_err());
+            drop(other);
+            // Queue is now full: all following reports must be discarded.
+            drop(Trace::sampled(&count, 32, 1, Some(&tx)));
+            assert_eq!(rx.try_recv().unwrap().outcome, 0);
+            drop(rx);
+            drop(Trace::sampled(&count, 32, 1, Some(&tx)));
+            assert!(Trace::sampled(&count, 32, 1, None).0.is_none());
+        }
+    }
+}
+
 /// Native-only read/lease boundary. Neither plaintext databases nor unlock
 /// tokens implement Debug or Serialize here. No command exposes this helper.
 pub mod native_browser_owner {
@@ -269,7 +483,29 @@ pub mod native_browser_owner {
         pub changed: bool,
     }
 
+    type Dependencies = std::collections::BTreeMap<(bool, String), [u8; 32]>;
+
+    /// One successful validation, private to this exact lease/token/generation.
+    /// No plaintext, keys, timestamps or cross-owner cache. Both full parsed
+    /// documents participate, including envelope metadata and the entire index.
+    struct RecheckProof {
+        content: ([u8; 32], [u8; 32]),
+        dependencies: Dependencies,
+    }
+
+    fn recheck_content(snapshot: &ManagedSnapshot) -> Result<([u8; 32], [u8; 32]), String> {
+        // managed_snapshot already validates the string envelope. Hash its
+        // exact bytes directly: re-serializing a megabyte JSON string adds a
+        // second escaping/allocation pass without adding any security binding.
+        let envelope = snapshot.data.as_str().ok_or(UNAVAILABLE)?;
+        Ok((
+            digest(&snapshot.index)?,
+            Sha256::digest(envelope.as_bytes()).into(),
+        ))
+    }
+
     struct LeaseInner {
+        temporary: bool,
         state: EncryptionState,
         root: PathBuf,
         configured_root: Option<PathBuf>,
@@ -278,10 +514,12 @@ pub mod native_browser_owner {
         revision: String,
         window: String,
         token: Zeroizing<String>,
+        session_validity: Option<database_sessions::SessionValidity>,
         generation: u64,
         connection_id: String,
         connection_digest: [u8; 32],
-        dependencies: std::sync::Mutex<std::collections::BTreeMap<(bool, String), [u8; 32]>>,
+        dependencies: std::sync::Mutex<Dependencies>,
+        recheck_proof: std::sync::Mutex<Option<RecheckProof>>,
         revoked: AtomicBool,
         cookie_gate: std::sync::Mutex<()>,
     }
@@ -299,6 +537,9 @@ pub mod native_browser_owner {
     }
 
     impl NativeOwnerLease {
+        pub fn is_temporary(&self) -> bool {
+            self.0.temporary
+        }
         /// Worker-only native DB access. Renderer input cannot choose the
         /// database, connection, dependencies, key, or profile for this lease.
         async fn cookie_database<T>(
@@ -307,6 +548,7 @@ pub mod native_browser_owner {
             operation: impl FnOnce(&mut Value, &Value) -> Result<(T, bool), String>,
         ) -> Result<T, String> {
             let inner = &self.0;
+            if inner.temporary { return Err(UNAVAILABLE.into()); }
             let _guard = lock_database_operation(&inner.root.join("databases")).await?;
             if !self.is_current() || !current() {
                 return Err(UNAVAILABLE.into());
@@ -671,7 +913,8 @@ pub mod native_browser_owner {
             .await
         }
 
-        /// Memory-only exact-token check. Never opens files or decrypts a DB.
+        /// Memory-only exact-token check. Never takes the session/commit mutex,
+        /// opens files, duplicates keys or decrypts a DB.
         /// Revocation latches: a stale attempt cannot become current again.
         pub fn is_current(&self) -> bool {
             let inner = &self.0;
@@ -679,19 +922,18 @@ pub mod native_browser_owner {
                 && inner.state.key_generation() == inner.generation
                 && inner.state.artifact_policy_root() == inner.configured_root
                 && !inner.state.artifact_recovery_required()
-                && session_key(
-                    &inner.token,
-                    &scope(
-                        &inner.profile,
-                        &inner.database,
-                        &inner.revision,
-                        &inner.window,
-                        &inner.state,
-                    ),
-                )
-                .is_ok();
+                && (inner.temporary
+                    || (!database_sessions::global().is_poisoned()
+                        && inner
+                            .session_validity
+                            .as_ref()
+                            .is_some_and(|token| token.is_current())));
             if !valid {
-                self.revoke();
+                // Authority is already invalid. Latch that observation without
+                // waiting for a cookie operation to finish. Explicit revoke and
+                // all key deliveries retain their existing serialization gates;
+                // an in-flight operation also checks validity before returning.
+                inner.revoked.store(true, Ordering::Release);
             }
             valid && !inner.revoked.load(Ordering::Acquire)
         }
@@ -711,6 +953,7 @@ pub mod native_browser_owner {
             operation: impl FnOnce(&DatabaseKey) -> Result<T, String>,
         ) -> Result<T, String> {
             let inner = &self.0;
+            if inner.temporary { return Err(UNAVAILABLE.into()); }
             let _gate = inner.cookie_gate.lock().map_err(|_| UNAVAILABLE)?;
             let valid = || {
                 !inner.revoked.load(Ordering::Acquire)
@@ -771,6 +1014,7 @@ pub mod native_browser_owner {
                 };
                 Ok((
                     Self(Arc::new(LeaseInner {
+                        temporary: false,
                         state: inner.state.clone(),
                         root: inner.root.clone(),
                         configured_root: inner.configured_root.clone(),
@@ -779,10 +1023,12 @@ pub mod native_browser_owner {
                         revision: inner.revision.clone(),
                         window: inner.window.clone(),
                         token: Zeroizing::new(inner.token.to_string()),
+                        session_validity: inner.session_validity.clone(),
                         generation: inner.generation,
                         connection_id: inner.connection_id.clone(),
                         connection_digest: inner.connection_digest,
                         dependencies: std::sync::Mutex::new(dependencies),
+                        recheck_proof: std::sync::Mutex::new(None),
                         revoked: AtomicBool::new(false),
                         cookie_gate: std::sync::Mutex::new(()),
                     })),
@@ -803,18 +1049,21 @@ pub mod native_browser_owner {
             window: &WebviewWindow<R>,
             state: &EncryptionState,
         ) -> Result<(), String> {
-            let result = self.recheck_inner(window, state).await;
+            let timing = native_browser_timing::Trace::recheck();
+            let result = self.recheck_inner(window, state, &timing).await;
             if result.is_err() {
                 self.revoke();
             }
-            result.map_err(|_| UNAVAILABLE.to_owned())
+            timing.finish(u8::from(result.is_ok()));
+            result.map(|_| ()).map_err(|_| UNAVAILABLE.to_owned())
         }
 
         async fn recheck_inner<R: Runtime>(
             &self,
             window: &WebviewWindow<R>,
             state: &EncryptionState,
-        ) -> Result<(), String> {
+            timing: &native_browser_timing::Trace,
+        ) -> Result<bool, String> {
             let inner = &self.0;
             if window.label() != inner.window
                 || state.database_session_owner() != inner.state.database_session_owner()
@@ -826,11 +1075,17 @@ pub mod native_browser_owner {
             if native_root(window, state)? != inner.root {
                 return Err(UNAVAILABLE.into());
             }
+            timing.mark_slot(0);
+            if inner.temporary {
+                return Ok(false);
+            }
             let _guard = lock_database_operation(&inner.root.join("databases")).await?;
+            timing.mark_slot(1);
             if native_root(window, state)? != inner.root || !self.is_current() {
                 return Err(UNAVAILABLE.into());
             }
             let snapshot = managed_snapshot(&inner.root, state, &inner.database).await?;
+            timing.mark_slot(2);
             if !is_managed(&snapshot) || revision(&snapshot) != inner.revision {
                 return Err(UNAVAILABLE.into());
             }
@@ -844,23 +1099,45 @@ pub mod native_browser_owner {
                     state,
                 ),
             )?;
-            let data = DatabaseEnvelope::parse(&snapshot.data, &inner.database)?.open(&key)?;
-            let selected = select_connection(&data, &inner.connection_id)?;
-            if connection_digest(selected)? != inner.connection_digest || !self.is_current() {
+            timing.mark_slot(3);
+            let content = recheck_content(&snapshot)?;
+            let reused = {
+                // Only worker paths touch this cache. The database-operation
+                // guard also serializes native dependency registration; keep
+                // the dependency set and proof comparison in one short lease.
+                let dependencies = inner.dependencies.lock().map_err(|_| UNAVAILABLE)?;
+                let proof = inner.recheck_proof.lock().map_err(|_| UNAVAILABLE)?;
+                proof
+                    .as_ref()
+                    .is_some_and(|proof| proof.content == content && proof.dependencies == *dependencies)
+            };
+            if !reused {
+                let data = DatabaseEnvelope::parse(&snapshot.data, &inner.database)?.open(&key)?;
+                let selected = select_connection(&data, &inner.connection_id)?;
+                if connection_digest(selected)? != inner.connection_digest {
+                    return Err(UNAVAILABLE.into());
+                }
+                let dependencies = inner.dependencies.lock().map_err(|_| UNAVAILABLE)?;
+                validate_dependency_set(&data, &dependencies)?;
+                *inner.recheck_proof.lock().map_err(|_| UNAVAILABLE)? = Some(RecheckProof {
+                    content,
+                    dependencies: dependencies.clone(),
+                });
+            }
+            // Neither a cache hit nor publishing a proof renews authority.
+            // Drop dependency/cache guards before any window-revocation path.
+            timing.mark_slot(4);
+            if !self.is_current() {
                 return Err(UNAVAILABLE.into());
             }
-            self.validate_dependencies(&data)?;
-            require_live_unlock_window(window, state)
+            require_live_unlock_window(window, state)?;
+            timing.mark_slot(5);
+            Ok(reused)
         }
 
         fn validate_dependencies(&self, data: &Value) -> Result<(), String> {
             let dependencies = self.0.dependencies.lock().map_err(|_| UNAVAILABLE)?;
-            for ((vault, id), expected) in dependencies.iter() {
-                if digest(select_dependency(data, *vault, id)?)? != *expected {
-                    return Err(UNAVAILABLE.into());
-                }
-            }
-            Ok(())
+            validate_dependency_set(data, &dependencies)
         }
 
         /// Setup-only exact owning-database lookup. Registers the selected
@@ -872,6 +1149,7 @@ pub mod native_browser_owner {
             vault: bool,
             id: &str,
         ) -> Result<Value, String> {
+            if self.is_temporary() { return Err(UNAVAILABLE.into()); }
             let result = async {
                 self.recheck(window, state).await?;
                 let inner = &self.0;
@@ -925,6 +1203,411 @@ pub mod native_browser_owner {
         }
     }
 
+    fn validate_dependency_set(data: &Value, dependencies: &Dependencies) -> Result<(), String> {
+        for ((vault, id), expected) in dependencies {
+            if digest(select_dependency(data, *vault, id)?)? != *expected {
+                return Err(UNAVAILABLE.into());
+            }
+        }
+        Ok(())
+    }
+
+    #[cfg(test)]
+    mod latency_tests {
+        use super::*;
+        use crate::origin_browser_authority::{
+            authorize_create_with_certificate_hooks, NativeCertificateDecision,
+            NativeCertificateEvidence,
+        };
+        use sorng_browser_host::ipc::OriginBrowserCreateRequest;
+        use std::time::Instant;
+        use tauri::test::{mock_builder, mock_context, noop_assets, MockRuntime};
+        use tauri::{WebviewUrl, WebviewWindowBuilder};
+
+        struct Fixture {
+            _app: tauri::App<MockRuntime>,
+            root: tempfile::TempDir,
+            state: EncryptionState,
+            window: WebviewWindow<MockRuntime>,
+            request: OriginBrowserCreateRequest,
+            plaintext_bytes: usize,
+            key: DatabaseKey,
+            envelope: DatabaseEnvelope,
+            data: Value,
+        }
+        impl Fixture {
+            async fn new(padding: usize) -> Self {
+                let app = mock_builder().build(mock_context(noop_assets())).unwrap();
+                let window = WebviewWindowBuilder::new(&app, "main", WebviewUrl::default())
+                    .build()
+                    .unwrap();
+                let root = tempfile::tempdir().unwrap();
+                let state = EncryptionState::new();
+                sorng_encryption::artifact_policy::initialize(&state, root.path()).await;
+                std::fs::create_dir(root.path().join("databases")).unwrap();
+                let profile = profile_binding(root.path()).unwrap();
+                let key = DatabaseKey::generate();
+                let slot = codec::new_vault_slot(
+                    "db",
+                    "key",
+                    "slot".into(),
+                    &profile,
+                    "fixture",
+                    &DatabaseKey::generate(),
+                    &key,
+                )
+                .unwrap();
+                // No user profile, keychain, credentials or network. Padding is
+                // unrelated DB content, not part of the selected row's digest.
+                let data = json!({"connections":[{"id":"saved", "isGroup":false,
+                            "protocol":"https", "hostname":"https://source.example/",
+                            "port":443, "httpsTrustPolicy":"tofu", "httpAutoLogin":false}],
+                            "settings":{}, "fixturePadding":"x".repeat(padding)});
+                let plaintext_bytes = serde_json::to_vec(&data).unwrap().len();
+                let envelope = DatabaseEnvelope::create(
+                    "db",
+                    "key",
+                    "revision",
+                    DataCipher::Aes256Gcm,
+                    vec![slot],
+                    &data,
+                    &key,
+                )
+                .unwrap();
+                sorng_storage::sdbf::safe_write(
+                    &root.path().join("databases/index.json"),
+                    &serde_json::to_vec(&json!([{"id":"db", "name":"fixture",
+                            "isEncrypted":true, "protectionFormat":"sorng-db",
+                            "securityRevision":"revision"}]))
+                    .unwrap(),
+                )
+                .unwrap();
+                sorng_storage::sdbf::safe_write(
+                    &root.path().join("databases/db.json"),
+                    &serde_json::to_vec(&envelope.value().unwrap()).unwrap(),
+                )
+                .unwrap();
+                let token = database_sessions::global()
+                    .lock()
+                    .unwrap()
+                    .insert(
+                        &scope(&profile, "db", "revision", "main", &state),
+                        key.duplicate(),
+                    )
+                    .unwrap();
+                let request = serde_json::from_value(json!({
+                    "owner":{"ownerDatabaseId":"db", "connectionId":"saved", "sessionId":"tab"},
+                    "expectedSecurityRevision":"revision", "sourceSessionId":token,
+                    "requestId":"create", "initialUrl":"https://source.example/",
+                    "bounds":{"x":0,"y":0,"width":800,"height":600}, "visible":false,
+                    "policy":{"darkMode":"forced", "autoLogin":{"enabled":true,
+                        "consent":{"kind":"existing-grant", "grantId":"fixture-hint"}}}
+                }))
+                .unwrap();
+                Self {
+                    _app: app,
+                    root,
+                    state,
+                    window,
+                    request,
+                    plaintext_bytes,
+                    key,
+                    envelope,
+                    data,
+                }
+            }
+
+            async fn lease(&self) -> NativeOwnerLease {
+                read(
+                    &self.window,
+                    &self.state,
+                    "db",
+                    "saved",
+                    "revision",
+                    &self.request.source_session_id,
+                )
+                .await
+                .unwrap()
+                .1
+            }
+
+            fn write_data(&mut self, same_stamp: bool) {
+                self.envelope.replace_data(&self.data, &self.key).unwrap();
+                let path = self.root.path().join("databases/db.json");
+                let bytes = serde_json::to_vec(&self.envelope.value().unwrap()).unwrap();
+                if same_stamp {
+                    write_same_stamp(&path, &bytes);
+                } else {
+                    sorng_storage::sdbf::safe_write(&path, &bytes).unwrap();
+                }
+            }
+        }
+
+        fn write_same_stamp(path: &Path, bytes: &[u8]) {
+            let before = std::fs::metadata(path).unwrap();
+            sorng_storage::sdbf::safe_write(path, bytes).unwrap();
+            std::fs::OpenOptions::new()
+                .write(true)
+                .open(path)
+                .unwrap()
+                .set_times(std::fs::FileTimes::new().set_modified(before.modified().unwrap()))
+                .unwrap();
+            let after = std::fs::metadata(path).unwrap();
+            assert_eq!(before.len(), after.len());
+            assert_eq!(before.modified().unwrap(), after.modified().unwrap());
+        }
+
+        async fn reused(f: &Fixture, lease: &NativeOwnerLease) -> bool {
+            lease
+                .recheck_inner(
+                    &f.window,
+                    &f.state,
+                    &native_browser_timing::Trace::default(),
+                )
+                .await
+                .unwrap()
+        }
+
+        #[tokio::test]
+        async fn recheck_cache_uses_exact_content_and_index_despite_same_length_and_mtime() {
+            let mut f = Fixture::new(32).await;
+            let lease = f.lease().await;
+            assert!(reused(&f, &lease).await); // Seeded by the authenticated initial read.
+            f.data["fixturePadding"] = "y".repeat(32).into();
+            f.write_data(true);
+            assert!(!reused(&f, &lease).await); // Harmless edit must still decrypt once.
+            assert!(reused(&f, &lease).await);
+            let index = f.root.path().join("databases/index.json");
+            let bytes = std::fs::read(&index).unwrap();
+            let mut value: Value =
+                serde_json::from_slice(sorng_storage::sdbf::parse_and_verify(&bytes).unwrap()).unwrap();
+            value[0]["name"] = "fixturf".into();
+            write_same_stamp(&index, &serde_json::to_vec(&value).unwrap());
+            assert!(!reused(&f, &lease).await); // Includes non-revision index fields.
+            assert!(reused(&f, &lease).await);
+            let (fork, _) = lease.fork_for_cookie_retention().unwrap();
+            assert!(fork.0.recheck_proof.lock().unwrap().is_none());
+            assert!(!reused(&f, &fork).await); // A distinct lease does not inherit the proof.
+            assert!(reused(&f, &fork).await);
+        }
+
+        #[tokio::test]
+        async fn recheck_cache_rejects_same_stamp_ciphertext_metadata_row_and_index_tampering() {
+            for change in [
+                "ciphertext",
+                "keyId",
+                "connection",
+                "index-revision",
+                "index-owner",
+            ] {
+                let mut f = Fixture::new(0).await;
+                let lease = f.lease().await;
+                assert!(reused(&f, &lease).await);
+                let path = f.root.path().join(if change.starts_with("index") {
+                    "databases/index.json"
+                } else {
+                    "databases/db.json"
+                });
+                let original = std::fs::read(&path).unwrap();
+                let payload = sorng_storage::sdbf::parse_and_verify(&original).unwrap();
+                let mut value: Value = serde_json::from_slice(payload).unwrap();
+                match change {
+                    "connection" => {
+                        f.data["connections"][0]["hostname"] = "https://sourcf.example/".into();
+                        f.envelope.replace_data(&f.data, &f.key).unwrap();
+                        value = f.envelope.value().unwrap();
+                    }
+                    "ciphertext" => {
+                        let mut envelope: Value =
+                            serde_json::from_str(value.as_str().unwrap()).unwrap();
+                        let mut encoded = envelope["ciphertext"].as_str().unwrap().as_bytes().to_vec();
+                        encoded[0] = if encoded[0] == b'A' { b'B' } else { b'A' };
+                        envelope["ciphertext"] = String::from_utf8(encoded).unwrap().into();
+                        value = serde_json::to_string(&envelope).unwrap().into();
+                    }
+                    "keyId" => {
+                        let mut envelope: Value =
+                            serde_json::from_str(value.as_str().unwrap()).unwrap();
+                        envelope["keyId"] = "kez".into();
+                        value = serde_json::to_string(&envelope).unwrap().into();
+                    }
+                    "index-revision" => value[0]["securityRevision"] = "revisioo".into(),
+                    _ => value[0]["id"] = "zz".into(),
+                }
+                write_same_stamp(&path, &serde_json::to_vec(&value).unwrap());
+                assert!(lease.recheck(&f.window, &f.state).await.is_err());
+                assert!(!lease.is_current());
+                write_same_stamp(&path, payload);
+                assert!(lease.recheck(&f.window, &f.state).await.is_err()); // No ABA revival.
+            }
+        }
+
+        #[tokio::test]
+        async fn recheck_cache_binds_new_dependencies_and_rejects_their_same_stamp_edits() {
+            let mut f = Fixture::new(0).await;
+            f.data["connections"]
+                .as_array_mut()
+                .unwrap()
+                .push(json!({"id":"dependency", "hostname":"one"}));
+            f.write_data(false);
+            let lease = f.lease().await;
+            assert!(reused(&f, &lease).await);
+            lease
+                .read_dependency(&f.window, &f.state, false, "dependency")
+                .await
+                .unwrap();
+            assert!(!reused(&f, &lease).await); // Same ciphertext but a new exact dependency set.
+            assert!(reused(&f, &lease).await);
+            f.data["connections"][1]["hostname"] = "two".into();
+            f.write_data(true);
+            assert!(lease.recheck(&f.window, &f.state).await.is_err());
+            assert!(!lease.is_current());
+        }
+
+        #[tokio::test]
+        async fn recheck_cache_cannot_bypass_replacement_generation_profile_or_window_invalidation() {
+            for change in ["replacement", "generation", "profile", "window"] {
+                let f = Fixture::new(0).await;
+                let lease = f.lease().await;
+                assert!(reused(&f, &lease).await);
+                let other_root = tempfile::tempdir().unwrap();
+                match change {
+                    "replacement" => {
+                        database_sessions::global()
+                            .lock()
+                            .unwrap()
+                            .insert(
+                                &scope(
+                                    &profile_binding(f.root.path()).unwrap(),
+                                    "db",
+                                    "revision",
+                                    "main",
+                                    &f.state,
+                                ),
+                                f.key.duplicate(),
+                            )
+                            .unwrap();
+                    }
+                    "generation" => {
+                        f.state
+                            .install(sorng_encryption::MasterDek::generate())
+                            .await
+                    }
+                    "profile" => {
+                        sorng_encryption::artifact_policy::initialize(&f.state, other_root.path()).await
+                    }
+                    _ => database_sessions::revoke_window(f.state.database_session_owner(), "main"),
+                }
+                assert!(lease.recheck(&f.window, &f.state).await.is_err());
+                assert!(!lease.is_current());
+            }
+        }
+
+        #[tokio::test]
+        #[ignore = "isolated paired latency fixture; run with --ignored --nocapture --test-threads=1"]
+        async fn isolated_recheck_cache_latency() {
+            for padding in [0, 1024 * 1024] {
+                let f = Fixture::new(padding).await;
+                let lease = f.lease().await;
+                for iteration in 0..5 {
+                    *lease.0.recheck_proof.lock().unwrap() = None;
+                    let start = Instant::now();
+                    assert!(!reused(&f, &lease).await);
+                    let cold_us = start.elapsed().as_micros();
+                    let start = Instant::now();
+                    assert!(reused(&f, &lease).await);
+                    println!(
+                        "fixture_bytes={} iteration={} cold_us={} cached_us={}",
+                        f.plaintext_bytes,
+                        iteration,
+                        cold_us,
+                        start.elapsed().as_micros()
+                    );
+                }
+            }
+        }
+        impl Drop for Fixture {
+            fn drop(&mut self) {
+                database_sessions::revoke_owner(self.state.database_session_owner());
+            }
+        }
+
+        /// Deliberately opt-in: serial isolated process because trust runtime
+        /// installation is global. Reports numeric fixture costs, never claims
+        /// app startup, renderer paint, or real certificate-chain validation.
+        #[tokio::test]
+        #[ignore = "isolated latency fixture; run alone with --ignored --nocapture --test-threads=1"]
+        async fn isolated_saved_recheck_and_certificate_latency() {
+            use base64::Engine;
+            use sorng_storage::trust_store;
+            // Public repository test certificate; no new certificate file.
+            let pem = include_str!("../vendor/tiberius-rustls/docker/certs/server.crt");
+            let encoded: String = pem
+                .lines()
+                .filter(|line| !line.starts_with("---"))
+                .map(str::trim)
+                .collect();
+            let der = base64::engine::general_purpose::STANDARD
+                .decode(encoded)
+                .unwrap();
+            for padding in [0, 1024 * 1024] {
+                let f = Fixture::new(padding).await;
+                let start = Instant::now();
+                let authorized =
+                    authorize_create_with_certificate_hooks(&f.window, &f.state, &f.request)
+                        .await
+                        .unwrap();
+                let authorize_us = start.elapsed().as_micros();
+                let runtime = trust_store::install_runtime(
+                    f.root.path().join("databases"),
+                    Some(Arc::new(f.state.clone())),
+                );
+                runtime
+                    .activate_database(Some("db".into()), &["saved".into()])
+                    .await
+                    .unwrap();
+                for iteration in 0..10 {
+                    let before = native_browser_timing::Trace::measured();
+                    authorized
+                        .lease
+                        .recheck_inner(&f.window, &f.state, &before)
+                        .await
+                        .unwrap();
+                    let stages = before.stages();
+                    let costs: Vec<_> = stages[..6]
+                        .iter()
+                        .scan(0, |previous, &end| {
+                            let elapsed = end - *previous;
+                            *previous = end;
+                            Some(elapsed)
+                        })
+                        .collect();
+                    let start = Instant::now();
+                    let verdict = authorized
+                        .certificates
+                        .evaluate(NativeCertificateEvidence {
+                            identity: authorized.policy.identity().clone(),
+                            origin: "https://source.example".into(),
+                            chain_der: vec![der.clone()],
+                            // Synthetic native proof: this measures app evaluation
+                            // and trust I/O, not cryptographic CA validation.
+                            system_ca_valid: true,
+                        })
+                        .await
+                        .unwrap();
+                    let certificate_us = start.elapsed().as_micros();
+                    assert!(matches!(verdict, NativeCertificateDecision::Allow(_)));
+                    let start = Instant::now();
+                    authorized.lease.recheck(&f.window, &f.state).await.unwrap();
+                    let after_us = start.elapsed().as_micros();
+                    println!("fixture_bytes={} iteration={} authorize_us={} before_us={} recheck_phases_us={:?} certificate_us={} after_us={}",
+                                f.plaintext_bytes, iteration, authorize_us, stages[5], costs, certificate_us, after_us);
+                }
+                runtime.set_active(None, None).unwrap();
+            }
+        }
+    }
+
     #[cfg(test)]
     mod cookie_owner_tests {
         use super::*;
@@ -937,7 +1620,13 @@ pub mod native_browser_owner {
                 .unwrap()
                 .insert(&scope("profile", "db", "revision", "main", &state), key)
                 .unwrap();
+            let session_validity = database_sessions::global()
+                .lock()
+                .unwrap()
+                .validity(&token, &scope("profile", "db", "revision", "main", &state))
+                .unwrap();
             NativeOwnerLease(Arc::new(LeaseInner {
+                temporary: false,
                 configured_root: state.artifact_policy_root(),
                 generation: state.key_generation(),
                 state,
@@ -947,9 +1636,11 @@ pub mod native_browser_owner {
                 revision: "revision".into(),
                 window: "main".into(),
                 token: Zeroizing::new(token),
+                session_validity: Some(session_validity),
                 connection_id: "connection".into(),
                 connection_digest: [1; 32],
                 dependencies: std::sync::Mutex::new(Default::default()),
+                recheck_proof: std::sync::Mutex::new(None),
                 revoked: AtomicBool::new(false),
                 cookie_gate: std::sync::Mutex::new(()),
             }))
@@ -992,6 +1683,154 @@ pub mod native_browser_owner {
             let (_, after) = browser.fork_for_cookie_retention().unwrap();
             assert_ne!(before.connection_digest, after.connection_digest);
             assert_eq!(before.connection, after.connection);
+        }
+
+        #[test]
+        fn lock_and_reunlock_never_revive_old_browser_or_retention_leases() {
+            let browser = fixture();
+            let (retention, _) = browser.fork_for_cookie_retention().unwrap();
+            let state = &browser.0.state;
+            let binding = scope("profile", "db", "revision", "main", state);
+            let mut sessions = database_sessions::global().lock().unwrap();
+            sessions.lock(
+                binding.owner,
+                binding.profile,
+                binding.database,
+                binding.window,
+            );
+            let replacement = sessions.insert(&binding, DatabaseKey::generate()).unwrap();
+            drop(sessions);
+            assert!(!browser.is_current());
+            assert!(!retention.is_current());
+            assert!(retention.with_cookie_retention_key(|_| Ok(())).is_err());
+            assert!(session_key(&replacement, &binding).is_ok());
+            database_sessions::revoke_owner(binding.owner);
+        }
+
+        #[tokio::test]
+        async fn generation_and_profile_invalidation_never_revive_clones() {
+            for generation in [true, false] {
+                let browser = fixture();
+                let other = browser.clone();
+                let root = tempfile::tempdir().unwrap();
+                if generation {
+                    browser
+                        .0
+                        .state
+                        .install(sorng_encryption::MasterDek::generate())
+                        .await;
+                } else {
+                    sorng_encryption::artifact_policy::initialize(&browser.0.state, root.path()).await;
+                }
+                assert!(!browser.is_current());
+                assert!(!other.is_current());
+                database_sessions::revoke_owner(browser.0.state.database_session_owner());
+            }
+        }
+
+        /// The reader must finish while the real cookie delivery/commit gate is
+        /// still held. A timeout detects the old registry-mutex dependency.
+        #[test]
+        fn memory_check_does_not_wait_for_cookie_commit_guard() {
+            use std::{
+                sync::mpsc,
+                time::{Duration, Instant},
+            };
+            let browser = fixture();
+            let owner = browser.0.state.database_session_owner();
+            let (retention, _) = browser.fork_for_cookie_retention().unwrap();
+            let (entered_tx, entered_rx) = mpsc::channel();
+            let (release_tx, release_rx) = mpsc::channel();
+            let commit = std::thread::spawn(move || {
+                retention.with_cookie_retention_key(|_| {
+                    entered_tx.send(()).unwrap();
+                    release_rx.recv_timeout(Duration::from_secs(5)).unwrap();
+                    Ok(())
+                })
+            });
+            entered_rx.recv_timeout(Duration::from_secs(5)).unwrap();
+            let (started_tx, started_rx) = mpsc::channel();
+            let (done_tx, done_rx) = mpsc::channel();
+            let reader = std::thread::spawn(move || {
+                let start = Instant::now();
+                started_tx.send(()).unwrap();
+                let valid = browser.is_current();
+                done_tx.send((valid, start.elapsed().as_micros())).unwrap();
+            });
+            started_rx.recv_timeout(Duration::from_secs(5)).unwrap();
+            let completed = done_rx.recv_timeout(Duration::from_secs(2));
+            release_tx.send(()).unwrap();
+            commit.join().unwrap().unwrap();
+            reader.join().unwrap();
+            database_sessions::revoke_owner(owner);
+            let (valid, elapsed) = completed.expect("memory check waited for the commit guard");
+            assert!(valid);
+            println!("commit_guard_held=1 memory_check_us={elapsed}");
+        }
+
+        #[test]
+        fn invalid_memory_check_latches_without_waiting_for_same_lease_delivery() {
+            use std::{sync::mpsc, time::Duration};
+            let browser = fixture();
+            let owner = browser.0.state.database_session_owner();
+            let delivery_lease = browser.clone();
+            let state = browser.0.state.clone();
+            let (entered_tx, entered_rx) = mpsc::channel();
+            let (release_tx, release_rx) = mpsc::channel();
+            let delivery = std::thread::spawn(move || {
+                delivery_lease.with_cookie_retention_key(|_| {
+                    entered_tx.send(()).unwrap();
+                    release_rx.recv_timeout(Duration::from_secs(5)).unwrap();
+                    Ok(())
+                })
+            });
+            entered_rx.recv_timeout(Duration::from_secs(5)).unwrap();
+            state.set_artifact_recovery_required(true);
+            let (done_tx, done_rx) = mpsc::channel();
+            let checked = browser.clone();
+            let reader = std::thread::spawn(move || {
+                done_tx.send(checked.is_current()).unwrap();
+            });
+            let completed = done_rx.recv_timeout(Duration::from_secs(2));
+            release_tx.send(()).unwrap();
+            assert!(delivery.join().unwrap().is_err());
+            reader.join().unwrap();
+            assert!(!completed.expect("invalid check waited for cookie gate"));
+            state.set_artifact_recovery_required(false);
+            assert!(!browser.is_current());
+            database_sessions::revoke_owner(owner);
+        }
+
+        #[test]
+        fn explicit_browser_revocation_still_serializes_with_delivery() {
+            use std::{sync::mpsc, time::Duration};
+            let browser = fixture();
+            let owner = browser.0.state.database_session_owner();
+            let delivery_lease = browser.clone();
+            let revoking_lease = browser.clone();
+            let (entered_tx, entered_rx) = mpsc::channel();
+            let (release_tx, release_rx) = mpsc::channel();
+            let delivery = std::thread::spawn(move || {
+                delivery_lease.with_cookie_retention_key(|_| {
+                    entered_tx.send(()).unwrap();
+                    release_rx.recv_timeout(Duration::from_secs(5)).unwrap();
+                    Ok(())
+                })
+            });
+            entered_rx.recv_timeout(Duration::from_secs(5)).unwrap();
+            let (done_tx, done_rx) = mpsc::channel();
+            let revoke = std::thread::spawn(move || {
+                revoking_lease.revoke();
+                done_tx.send(()).unwrap();
+            });
+            let blocked = done_rx.recv_timeout(Duration::from_millis(30)).is_err();
+            release_tx.send(()).unwrap();
+            delivery.join().unwrap().unwrap();
+            revoke.join().unwrap();
+            assert!(blocked);
+            assert!(!browser.is_current());
+            assert!(browser.with_cookie_retention_key(|_| Ok(())).is_err());
+            database_sessions::revoke_owner(owner);
         }
 
         #[test]
@@ -1113,7 +1952,13 @@ pub mod native_browser_owner {
         token: &str,
         connection: &Value,
     ) -> NativeOwnerLease {
+        let session_validity = database_sessions::global()
+            .lock()
+            .unwrap()
+            .validity(token, &scope(&profile_binding(root).unwrap(), "db", "r1", "main", state))
+            .unwrap();
         NativeOwnerLease(Arc::new(LeaseInner {
+            temporary: false,
             state: state.clone(),
             root: root.into(),
             configured_root: state.artifact_policy_root(),
@@ -1122,10 +1967,12 @@ pub mod native_browser_owner {
             revision: "r1".into(),
             window: "main".into(),
             token: Zeroizing::new(token.into()),
+            session_validity: Some(session_validity),
             generation: state.key_generation(),
             connection_id: connection["id"].as_str().unwrap().into(),
             connection_digest: connection_digest(connection).unwrap(),
             dependencies: std::sync::Mutex::new(Default::default()),
+            recheck_proof: std::sync::Mutex::new(None),
             revoked: AtomicBool::new(false),
             cookie_gate: std::sync::Mutex::new(()),
         }))
@@ -1178,6 +2025,41 @@ pub mod native_browser_owner {
         }
     }
 
+    /// A temporary browser has a window/profile lifetime, never a database key.
+    /// Its namespace cannot be used to read saved connections or vault entries.
+    pub(crate) fn temporary<R: Runtime>(
+        window: &WebviewWindow<R>,
+        state: &EncryptionState,
+        request: &sorng_browser_host::ipc::OriginBrowserCreateRequest,
+        connection: &Value,
+    ) -> Result<NativeOwnerLease, String> {
+        request.validate().map_err(|_| UNAVAILABLE)?;
+        if request.quick_connect.is_none() { return Err(UNAVAILABLE.into()); }
+        require_live_unlock_window(window, state)?;
+        let root = native_root(window, state)?;
+        let lease = NativeOwnerLease(Arc::new(LeaseInner {
+            temporary: true,
+            state: state.clone(),
+            profile: profile_binding(&root)?,
+            root,
+            configured_root: state.artifact_policy_root(),
+            database: request.owner.owner_database_id.clone(),
+            revision: String::new(),
+            window: window.label().into(),
+            token: Zeroizing::new(String::new()),
+            session_validity: None,
+            generation: state.key_generation(),
+            connection_id: request.owner.connection_id.clone(),
+            connection_digest: connection_digest(connection)?,
+            dependencies: std::sync::Mutex::new(Default::default()),
+            recheck_proof: std::sync::Mutex::new(None),
+            revoked: AtomicBool::new(false),
+            cookie_gate: std::sync::Mutex::new(()),
+        }));
+        if !lease.is_current() { return Err(UNAVAILABLE.into()); }
+        Ok(lease)
+    }
+
     /// Only the requested connection escapes this native module; the owning
     /// database is never searched through a global connection-ID index.
     pub(crate) async fn read<R: Runtime>(
@@ -1213,9 +2095,14 @@ pub mod native_browser_owner {
                 token,
                 &scope(&profile, database, expected_revision, window.label(), state),
             )?;
+            let session_validity = database_sessions::global()
+                .lock()
+                .map_err(|_| UNAVAILABLE)?
+                .validity(token, &scope(&profile, database, expected_revision, window.label(), state))?;
             let data = DatabaseEnvelope::parse(&snapshot.data, database)?.open(&key)?;
             let connection = select_connection(&data, connection_id)?.clone();
             let lease = NativeOwnerLease(Arc::new(LeaseInner {
+                temporary: false,
                 state: state.clone(),
                 root,
                 configured_root,
@@ -1224,10 +2111,17 @@ pub mod native_browser_owner {
                 revision: expected_revision.into(),
                 window: window.label().into(),
                 token: Zeroizing::new(token.into()),
+                session_validity: Some(session_validity),
                 generation,
                 connection_id: connection_id.into(),
                 connection_digest: connection_digest(&connection)?,
                 dependencies: std::sync::Mutex::new(std::collections::BTreeMap::new()),
+                // The initial read just authenticated this exact snapshot and
+                // selected row; no dependency has been registered yet.
+                recheck_proof: std::sync::Mutex::new(Some(RecheckProof {
+                    content: recheck_content(&snapshot)?,
+                    dependencies: Dependencies::new(),
+                })),
                 revoked: AtomicBool::new(false),
                 cookie_gate: std::sync::Mutex::new(()),
             }));
@@ -1600,10 +2494,12 @@ async fn unlock_inner(
     browser_sessions::after_unlock(
         root,
         state,
-        window,
-        id,
-        &session_id,
-        &security_revision,
+        browser_sessions::SessionBinding {
+            window,
+            database: id,
+            token: &session_id,
+            revision: &security_revision,
+        },
         &snapshot,
         &mut data,
     )
@@ -1781,10 +2677,12 @@ async fn save_inner(
     let mut result = browser_sessions::commit_session_data(
         root,
         state,
-        window,
-        id,
-        session,
-        expected_revision,
+        browser_sessions::SessionBinding {
+            window,
+            database: id,
+            token: session,
+            revision: expected_revision,
+        },
         &snapshot,
         &data.0,
     )

@@ -19,12 +19,22 @@ pub(crate) fn build() -> InvokeHandler {
     ]);
     let origin_browser_handler = erase_handler(tauri::generate_handler![
         crate::origin_browser_commands::origin_browser_create,
+        crate::origin_browser_commands::origin_browser_prewarm,
+        crate::origin_browser_commands::origin_browser_cancel_prewarm,
         crate::origin_browser_commands::origin_browser_status,
         crate::origin_browser_commands::origin_browser_retention_capabilities,
         crate::origin_browser_commands::origin_browser_navigate,
         crate::origin_browser_commands::origin_browser_control,
         crate::origin_browser_commands::origin_browser_close,
         crate::origin_browser_commands::origin_browser_automation,
+        crate::origin_browser_commands::origin_browser_downloads,
+        crate::origin_browser_commands::origin_browser_download_control,
+        crate::origin_browser_commands::origin_browser_extensions,
+        crate::origin_browser_commands::origin_browser_popup,
+        crate::origin_browser_commands::origin_browser_certificate_review,
+        crate::origin_browser_commands::origin_browser_page_menu,
+        crate::origin_browser_recording::origin_browser_recording,
+        crate::origin_browser_commands::origin_browser_appearance,
     ]);
     let core_handler = sorng_commands_core::build();
     let sessions_handler = sorng_commands_sessions::build();

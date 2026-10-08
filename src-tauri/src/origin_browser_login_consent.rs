@@ -1,5 +1,6 @@
-//! In-memory native consent, scoped to one immutable browser attempt. There is
-//! deliberately no serialized grant, renderer command, or wall-clock ordering.
+//! In-memory authorization derived from the saved automatic-login choice and
+//! scoped to one immutable browser attempt. There is deliberately no dialog,
+//! serialized grant, renderer command, or wall-clock ordering.
 use sorng_protocols::origin_browser::BrowserIdentity;
 use std::{sync::Mutex, time::Instant};
 

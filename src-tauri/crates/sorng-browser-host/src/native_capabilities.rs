@@ -40,9 +40,8 @@ impl NativeBrowserCapabilities {
         if !self.webgl_enabled {
             return Err("Disabling all WebGL, including OffscreenCanvas, is unavailable in the current native browser. No website was opened.");
         }
-        if !self.website_extensions_enabled {
-            return Err("App website-extension selection is unavailable in the current native browser. No website was opened.");
-        }
+        // App login/automation are restricted by the native saved authority.
+        // This does not control mandatory forced-dark styling or Chromium extensions.
         Ok(())
     }
 }
@@ -68,6 +67,7 @@ mod tests {
             cookies_enabled: false,
             media_stream_enabled: false,
             cross_origin_requests_enabled: false,
+            website_extensions_enabled: false,
             ..Default::default()
         }
         .validate()
@@ -79,10 +79,6 @@ mod tests {
             },
             NativeBrowserCapabilities {
                 webgl_enabled: false,
-                ..Default::default()
-            },
-            NativeBrowserCapabilities {
-                website_extensions_enabled: false,
                 ..Default::default()
             },
         ] {

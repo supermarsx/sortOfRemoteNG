@@ -29,7 +29,15 @@ const FORM_MODULES: &str = concat!(
 /// Configuration and credentials are V8 values, NEVER interpolated source.
 /// A true delivery result means accepted, not provider authentication success.
 pub fn form_client_source() -> String {
-    include_str!("native_login_client.js").replace("/* REVIEWED_FORM_MODULES */", FORM_MODULES)
+    // Reuse ONLY the reviewed, read-only challenge validators, not the legacy
+    // code/value-assignment coordinator or its proxy transport.
+    let legacy = include_str!("../../sorng-protocols/src/web_automation_client.js");
+    let begin = legacy.find("  function synologyButtonReady(").expect("reviewed OTP guards");
+    let end = legacy.find("  function probeTotp(").expect("reviewed OTP guard boundary");
+    include_str!("native_login_client.js")
+        .replace("/* REVIEWED_FORM_MODULES */", FORM_MODULES)
+        .replace("/* REVIEWED_TOTP_GUARDS */", &legacy[begin..end])
+        .replace("/* NATIVE_KEYBOARD_CLIENT */", include_str!("native_login_typing.js"))
 }
 
 #[cfg(test)]

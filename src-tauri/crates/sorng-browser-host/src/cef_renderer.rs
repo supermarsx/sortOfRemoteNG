@@ -15,6 +15,8 @@ use std::collections::{HashMap, HashSet};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Duration, Instant};
 use zeroize::Zeroizing;
+#[path = "cef_appearance_renderer.rs"]
+mod appearance;
 
 pub(crate) const LOGIN_REQUEST: &str = "sorng.native.login.request.v1";
 pub(crate) const LOGIN_DELIVERY: &str = "sorng.native.login.delivery.v1";
@@ -27,6 +29,9 @@ struct Document {
     owner: Browser,
     context: V8Context,
     deliver: V8Value,
+    otp: Option<V8Value>,
+    otp_challenge: Option<String>,
+    typing: Option<V8Value>,
     scope: DocumentScope,
 }
 
@@ -233,6 +238,7 @@ fn same_browser(owner: &Browser, browser: &Browser) -> bool {
 }
 
 fn forget_browser(browser: &Browser) {
+    appearance::forget_browser(browser);
     AUTOMATION_DOCUMENTS.with(|documents| {
         documents
             .borrow_mut()
@@ -255,6 +261,7 @@ fn forget_browser(browser: &Browser) {
 }
 
 fn forget_context(context: &mut V8Context) {
+    appearance::forget_context(context);
     AUTOMATION_DOCUMENTS.with(|documents| {
         documents
             .borrow_mut()
@@ -330,6 +337,23 @@ wrap_v8_handler! {
                     || document.context.is_same(Some(&mut current)) != 1 { return None; }
                 let frame = document.context.frame()?;
                 if frame_origin(&frame).as_deref() != Some(&document.scope.origin) { return None; }
+                if event.starts_with("type|") {
+                    let fields: Vec<_> = event.split('|').collect();
+                    if fields.len() != 5 || event.len() > 128 || document.typing.is_none()
+                        || !matches!(fields[1], "start" | "key" | "cancel") { return None; }
+                    let stage = NativeLoginStage::parse(fields[2])?;
+                    if !document.scope.delivered.contains(&stage) || stage.is_action() || stage == NativeLoginStage::FormPrepare
+                        || !stage_allowed(document.scope.adapter, stage, &CefString::from(&frame.url()).to_string()) { return None; }
+                    return Some((frame, document.scope.origin.clone()));
+                }
+                if event.starts_with("totp|") {
+                    let fields: Vec<_> = event.split('|').collect();
+                    if fields.len() != 4 || event.len() > 256 || document.otp.is_none()
+                        || document.otp_challenge.as_deref() != Some(fields[2])
+                        || !matches!(fields[1], "start" | "key" | "finish" | "cancel")
+                        || fields[3].parse::<u8>().is_err() { return None; }
+                    return Some((frame, document.scope.origin.clone()));
+                }
                 if matches!(event.as_str(), "google-completed" | "google-rejected" | "form-completed" | "form-rejected") {
                     let supported = if event.starts_with("google-") { document.scope.adapter == NativeLoginAdapter::Google }
                         else { document.scope.adapter.accepts_stage(NativeLoginStage::Form) || document.scope.adapter.reviewed_provider() };
@@ -348,7 +372,8 @@ wrap_v8_handler! {
                     report(&frame, if event.ends_with("-completed") { "login-completed" } else { "login-rejected" });
                     return 1;
                 }
-                if let Some(mut message) = process_message_create(Some(&CefString::from(LOGIN_REQUEST))) {
+                let request_name = if event.starts_with("totp|") || event.starts_with("type|") { crate::native_totp::REQUEST } else { LOGIN_REQUEST };
+                if let Some(mut message) = process_message_create(Some(&CefString::from(request_name))) {
                     if let Some(args) = message.argument_list() {
                         args.set_string(0, Some(&CefString::from(self.nonce.as_str())));
                         args.set_string(1, Some(&CefString::from(origin.as_str())));
@@ -449,6 +474,17 @@ fn install(browser: &Browser, frame: &Frame, context: &mut V8Context) -> bool {
             return false;
         }
     }
+    let otp_configuration = configuration.value_bykey(Some(&CefString::from("mfa")))
+        .filter(|value| value.is_object() == 1);
+    let otp_challenge = otp_configuration.as_ref()
+        .and_then(|value| value.value_bykey(Some(&CefString::from("id"))))
+        .filter(|value| value.is_string() == 1)
+        .map(|value| CefString::from(&value.string_value()).to_string());
+    let otp = otp_configuration.and_then(|configuration| factory.execute_function_with_context(
+        Some(context), None, Some(&[Some(notify.clone()), Some(configuration),
+            v8_value_create_string(Some(&CefString::from("approved-otp")))])))
+        .filter(|value| value.is_function() == 1);
+    if otp_challenge.is_some() && otp.is_none() { return false; }
     let Some(deliver) = factory
         .execute_function_with_context(
             Some(context),
@@ -457,12 +493,15 @@ fn install(browser: &Browser, frame: &Frame, context: &mut V8Context) -> bool {
                 Some(notify),
                 Some(configuration),
                 v8_value_create_string(Some(&CefString::from(adapter.wire()))),
+                v8_value_create_bool(1),
             ]),
         )
         .filter(|value| value.is_function() == 1)
     else {
         return false;
     };
+    let typing = deliver.value_bykey(Some(&CefString::from("nativeTyping")))
+        .filter(|value| value.is_function() == 1);
     DOCUMENTS.with(|documents| {
         documents.borrow_mut().insert(
             key,
@@ -470,6 +509,9 @@ fn install(browser: &Browser, frame: &Frame, context: &mut V8Context) -> bool {
                 owner: browser.clone(),
                 context: context.clone(),
                 deliver,
+                otp,
+                otp_challenge,
+                typing,
                 scope: DocumentScope {
                     nonce,
                     origin,
@@ -484,6 +526,11 @@ fn install(browser: &Browser, frame: &Frame, context: &mut V8Context) -> bool {
 }
 
 fn receive(browser: &Browser, frame: &Frame, source: ProcessId, message: &ProcessMessage) -> i32 {
+    if appearance::receive(browser, frame, source, message) { return 1; }
+    if source == ProcessId::BROWSER && CefString::from(&message.name()).to_string() == crate::native_totp::DELIVERY {
+        receive_totp(browser, frame, message);
+        return 1;
+    }
     if source == ProcessId::BROWSER
         && CefString::from(&message.name()).to_string() == automation_wire::REQUEST
     {
@@ -501,6 +548,42 @@ fn receive(browser: &Browser, frame: &Frame, source: ProcessId, message: &Proces
     1
 }
 
+fn receive_totp(browser: &Browser, frame: &Frame, message: &ProcessMessage) {
+    let Some(origin) = frame_origin(frame) else { return; };
+    let Some(args) = message.argument_list().filter(|args| args.size() == 7) else { return; };
+    let (Some(nonce), Some(command), Some(challenge)) =
+        (message_text(&args, 0, 80), message_text(&args, 2, 8), message_text(&args, 6, 128)) else { return; };
+    if message_text(&args, 1, 1024).as_deref() != Some(&origin)
+        || !matches!(command.as_str(), "probe" | "submit" | "wait" | "cancel")
+        || args.get_type(3) != ValueType::INT || args.get_type(4) != ValueType::DOUBLE
+        || !args.double(4).is_finite() || args.get_type(5) != ValueType::BOOL { return; }
+    let prepared = DOCUMENTS.with(|documents| {
+        let documents = documents.borrow();
+        let doc = documents.get(&frame_key(browser, frame))?;
+        if !same_browser(&doc.owner, browser) || doc.scope.nonce != nonce || doc.scope.origin != origin
+            || !frame.v8_context().is_some_and(|mut c| doc.context.is_same(Some(&mut c)) == 1) { return None; }
+        let dispatch = if challenge.starts_with("type|") {
+            let parts: Vec<_> = challenge.split('|').collect();
+            if parts.len() != 3 { return None; }
+            let stage = NativeLoginStage::parse(parts[1])?;
+            if !doc.scope.delivered.contains(&stage) { return None; }
+            doc.typing.clone()?
+        } else {
+            if doc.otp_challenge.as_deref() != Some(&challenge) { return None; }
+            doc.otp.clone()?
+        };
+        Some((doc.context.clone(), dispatch))
+    });
+    let Some((mut context, dispatch)) = prepared else { return; };
+    if context.is_valid() != 1 || context.enter() != 1 { return; }
+    let values = [v8_value_create_string(Some(&CefString::from(command.as_str()))),
+        v8_value_create_int(args.int(3)), v8_value_create_double(args.double(4)), v8_value_create_bool(args.bool(5)),
+        v8_value_create_string(Some(&CefString::from(challenge.as_str())))];
+    // No RefCell or native lock is held across a reentrant V8 callback.
+    let _ = dispatch.execute_function_with_context(Some(&mut context), None, Some(&values));
+    context.exit();
+}
+
 // This callback can acknowledge only a previously native-dispatched operation,
 // or append one strictly typed value-free step to a native-started recorder.
 // It cannot request permissions, credentials, navigation, or app operations.
@@ -513,9 +596,7 @@ wrap_v8_handler! {
             let Some(args) = arguments.filter(|args| args.len() == 5) else { return 1; };
             let read = |index: usize, max: usize| -> Option<String> {
                 let value = args.get(index)?.as_ref().filter(|value| value.is_string() == 1)?;
-                let raw = CefString::from(&value.string_value());
-                if raw.as_slice()?.len() > max { return None; }
-                let text = raw.to_string(); (text.len() <= max).then_some(text)
+                automation_wire::string_value(&CefString::from(&value.string_value()), max)
             };
             let (Some(serial), Some(status)) = (read(0, 32), read(1, 8)) else { return 1; };
             let Some(mut current) = v8_context_get_current_context() else { return 1; };
@@ -1000,13 +1081,16 @@ wrap_render_process_handler! {
     impl RenderProcessHandler {
         fn on_browser_created(&self, browser: Option<&mut Browser>, extra_info: Option<&mut DictionaryValue>) {
             let (Some(browser), Some(info)) = (browser, extra_info) else { return; };
-            if info.size() != 3 || info.get_type(Some(&CefString::from("feature-pin"))) != ValueType::STRING
+            if !matches!(info.size(), 3..=5) || info.get_type(Some(&CefString::from("feature-pin"))) != ValueType::STRING
                 || info.get_type(Some(&CefString::from("login-adapter"))) != ValueType::STRING
                 || CefString::from(&info.string(Some(&CefString::from("feature-pin")))).to_string() != FEATURE_PROTOCOL_PIN { return; }
             let selected = CefString::from(&info.string(Some(&CefString::from("login-adapter")))).to_string();
             if info.get_type(Some(&CefString::from("login-factory-json"))) != ValueType::STRING { return; }
             let factory_json = CefString::from(&info.string(Some(&CefString::from("login-factory-json")))).to_string();
             if parse_login_configuration(&factory_json).is_none() { return; }
+            // A failed optional appearance install keeps native prepaint dark;
+            // it must not disable login or prevent the browser from opening.
+            let _ = appearance::created(browser, info);
             let adapter = NativeLoginAdapter::from_wire(&selected);
             ADAPTERS.with(|adapters| adapters.borrow_mut().insert(browser.identifier(), BrowserAdapter {
                 owner: browser.clone(), adapter, factory_json,
@@ -1014,6 +1098,7 @@ wrap_render_process_handler! {
         }
         fn on_context_created(&self, browser: Option<&mut Browser>, frame: Option<&mut Frame>, context: Option<&mut V8Context>) {
             if let (Some(browser), Some(frame), Some(context)) = (browser, frame, context) {
+                let _ = appearance::install(browser, frame, context);
                 if feature_origin(frame).is_some() {
                     let installed = install(browser, frame, context);
                     if installed { install_automation(browser, frame, context); }
@@ -1108,6 +1193,9 @@ mod tests {
                 owner: owner.clone(),
                 context: context.clone(),
                 deliver: raw.wrap_result(),
+                otp: None,
+                otp_challenge: None,
+                typing: None,
                 scope,
             }
         }
@@ -1203,6 +1291,35 @@ mod tests {
         forget_context(&mut current_context);
         assert!(current_context.has_one_ref());
         AUTOMATION_DOCUMENTS.with(|docs| assert!(!docs.borrow().contains_key(&key)));
+    }
+
+    #[test]
+    fn native_automation_wire_accepts_empty_document_request_and_fill_values() {
+        native_api();
+        let args = list_value_create().unwrap();
+        automation_wire::string(&args, 0, "");
+        // CEF represents a present empty STRING with a null/zero-length buffer.
+        // Document replies deliberately have an empty request ID, and clearing
+        // an ordinary input is a legitimate macro operation.
+        assert_eq!(automation_wire::text(&args, 0, 32), Some(String::new()));
+        assert_eq!(automation_wire::text(&args, 1, 32), None);
+        args.set_null(0);
+        assert_eq!(automation_wire::text(&args, 0, 32), None);
+        let action = NativeAutomationAction::Step {
+            document_token: "123:7".into(),
+            origin: "https://fixture.test".into(),
+            request_id: "clear-input".into(),
+            step: NativeAutomationStep::Fill {
+                selector: "html > body > input:nth-of-type(1)".into(),
+            },
+            value: Some(String::new()),
+        };
+        automation_wire::encode_action(&args, "1", &action, 3);
+        assert!(
+            matches!(automation_wire::decode_action(&args), Some((_, _, NativeAutomationAction::Step { value: Some(value), .. })) if value.is_empty())
+        );
+        automation_wire::string(&args, 0, "a".repeat(33).as_str());
+        assert_eq!(automation_wire::text(&args, 0, 32), None);
     }
 
     #[test]
@@ -1518,6 +1635,48 @@ mod tests {
         args
     }
 
+    // Chromium base::Value fatally rejects non-finite doubles at construction.
+    // A Rust-owned getter facade tests our defensive reader without asking CEF
+    // to construct an impossible JSON value. All other reads use the real list.
+    fn login_payload_with_mock_deadline(deadline: f64) -> ListValue {
+        use cef::rc::{ConvertReturnValue, RcImpl};
+        use cef::sys::{_cef_list_value_t, cef_string_userfree_t, cef_value_type_t};
+        struct Payload {
+            inner: ListValue,
+            deadline: f64,
+        }
+        extern "C" fn size(this: *mut _cef_list_value_t) -> usize {
+            RcImpl::<_cef_list_value_t, Payload>::get(this).interface.inner.size()
+        }
+        extern "C" fn kind(this: *mut _cef_list_value_t, index: usize) -> cef_value_type_t {
+            RcImpl::<_cef_list_value_t, Payload>::get(this).interface.inner.get_type(index).into()
+        }
+        extern "C" fn string(this: *mut _cef_list_value_t, index: usize) -> cef_string_userfree_t {
+            RcImpl::<_cef_list_value_t, Payload>::get(this).interface.inner.string(index).into()
+        }
+        extern "C" fn boolean(this: *mut _cef_list_value_t, index: usize) -> i32 {
+            RcImpl::<_cef_list_value_t, Payload>::get(this).interface.inner.bool(index)
+        }
+        extern "C" fn double(this: *mut _cef_list_value_t, index: usize) -> f64 {
+            let payload = &RcImpl::<_cef_list_value_t, Payload>::get(this).interface;
+            if index == 5 { payload.deadline } else { payload.inner.double(index) }
+        }
+        let raw = _cef_list_value_t {
+            get_size: Some(size),
+            get_type: Some(kind),
+            get_string: Some(string),
+            get_bool: Some(boolean),
+            get_double: Some(double),
+            // SAFETY: Only these reader methods are used. RcImpl provides the
+            // reference-counted base and retains the real list until drop.
+            ..unsafe { std::mem::zeroed() }
+        };
+        let raw: *mut _cef_list_value_t = RcImpl::new(raw, Payload {
+            inner: login_payload_fixture(), deadline,
+        }).cast();
+        raw.wrap_result()
+    }
+
     #[test]
     fn native_login_delivery_requires_new_payload_shape_and_bounded_native_options() {
         native_api();
@@ -1532,11 +1691,29 @@ mod tests {
         args.set_string(7, Some(&CefString::from("{\"__proto__\":{}}")));
         assert!(login_delivery_payload(&args, "https://fixture.test").is_none());
         args.set_string(7, Some(&CefString::from(DEFAULT_FORM_OPTIONS)));
-        args.set_double(5, f64::NAN);
-        assert!(login_delivery_payload(&args, "https://fixture.test").is_none());
+        for deadline in [0.0, -1.0] {
+            assert_eq!(args.set_double(5, deadline), 1);
+            assert!(login_delivery_payload(&args, "https://fixture.test").is_none());
+        }
         args.set_double(5, 2_000_000_000_000.0);
         args.set_string(0, Some(&CefString::from("")));
         assert!(login_delivery_payload(&args, "https://fixture.test").is_none());
+    }
+
+    #[test]
+    fn native_login_delivery_rejects_non_finite_deadline_getters_without_cef_value_construction() {
+        native_api();
+        // Positive control ensures the facade reaches the real payload parser,
+        // instead of passing negative tests through a missing mock method.
+        let valid = login_payload_with_mock_deadline(2_000_000_000_000.0);
+        let payload = login_delivery_payload(&valid, "https://fixture.test").unwrap();
+        assert_eq!(payload.deadline, 2_000_000_000_000.0);
+        assert_eq!(payload.options.get_type(), ValueType::DICTIONARY);
+        for deadline in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
+            let args = login_payload_with_mock_deadline(deadline);
+            assert!(!args.double(5).is_finite());
+            assert!(login_delivery_payload(&args, "https://fixture.test").is_none());
+        }
     }
 
     #[test]

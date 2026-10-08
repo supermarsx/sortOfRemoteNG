@@ -35,11 +35,18 @@ export function deriveQuickConnectTarget(
     (QUICK_CONNECT_PROTOCOLS as readonly string[]).includes(schemeProtocol)
       ? schemeProtocol
       : undefined;
-  // Quick Connect has no port field; keep an explicit URL port on the
-  // hostname (`host:8443`) so the session layer can pick it up.
-  const hostname = result.port
-    ? `${result.hostname}:${result.port}`
+  // Keep the URL authority's bracket/port syntax. Rebuilding it from the
+  // sanitised hostname loses IPv6 brackets and can discard invalid ports,
+  // silently selecting a different endpoint. The builder validates it later.
+  const authority = result.stripped
+    ? raw
+        .trim()
+        .replace(/^[a-z][a-z\d+.-]*:\/\//i, "")
+        .split(/[/?#]/, 1)[0]
     : result.hostname;
+  const hostname = result.stripped
+    ? authority.slice(authority.lastIndexOf("@") + 1)
+    : authority;
   return { hostname, protocol };
 }
 

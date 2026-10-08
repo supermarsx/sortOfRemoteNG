@@ -38,6 +38,13 @@ use zeroize::Zeroizing;
 pub use native_browser_owner::NativeOwnerLease;
 #[path = "origin_browser_preferences.rs"]
 mod preferences;
+#[path = "origin_browser_extensions.rs"]
+pub mod extensions;
+#[cfg(test)]
+#[path = "origin_browser_extensions_tests.rs"]
+mod extension_tests;
+#[path = "origin_browser_prewarm.rs"]
+pub mod prewarm;
 pub use preferences::NativeBrowserPreferences;
 #[path = "origin_browser_automation_authority.rs"]
 mod automation;
@@ -46,6 +53,11 @@ pub use automation::NativeAutomationAuthority;
 mod certificates;
 #[path = "origin_browser_credentials.rs"]
 mod credentials;
+#[path = "origin_browser_totp.rs"]
+mod native_totp;
+#[path = "origin_browser_basic_auth.rs"]
+mod basic_auth;
+pub use basic_auth::NativeBasicAuth;
 #[path = "origin_browser_routes.rs"]
 mod routes;
 pub use routes::NativeBrowserRouteServices;
@@ -97,6 +109,7 @@ pub enum NativeAuthorityError {
 /// Native-only immutable snapshot, intentionally without Debug/serde/Clone.
 /// This grants network access only, never login submission or credential consent.
 pub struct NativeAuthorizedBrowser {
+    pub basic_auth: Option<Arc<NativeBasicAuth>>,
     pub policy: OriginBrowserPolicy,
     pub permissions: Arc<WebsitePermissionEngine>,
     pub route: Arc<dyn RouteDialer>,
@@ -108,7 +121,8 @@ pub struct NativeAuthorizedBrowser {
     pub preferences: NativeBrowserPreferences,
 }
 
-/// Native consent provider, implemented by main's grant registry. It MUST
+/// Native consent provider, bound by main to the saved automatic-login choice.
+/// It MUST
 /// verify owner/attempt/exact origin, disclosure and optional submission rights
 /// and hold the grant valid throughout `deliver`. A renderer grant ID is only
 /// a lookup hint, never proof. This callback must not perform DB or network IO.
@@ -130,7 +144,7 @@ pub enum NativeCredentialAvailability {
 }
 
 /// Secret-bearing callback adapter, never Debug/serde. Credentials are borrowed
-/// only after a trusted native verifier supplies a live explicit consent grant.
+/// only after a trusted native verifier supplies a live attempt-scoped grant.
 pub struct NativeLoginAuthority {
     identity: BrowserIdentity,
     enabled: bool,
@@ -145,6 +159,7 @@ pub struct NativeLoginAuthority {
     password: Zeroizing<String>,
     availability: NativeCredentialAvailability,
     manual_submit: bool,
+    totp: Option<native_totp::NativeTotpAuthority>,
 }
 
 impl NativeLoginAuthority {
@@ -176,6 +191,35 @@ impl NativeLoginAuthority {
         self.form_configuration.as_deref()
     }
 
+    pub fn revoke_totp(&self) {
+        if let Some(totp) = &self.totp { totp.revoke(); }
+    }
+
+    pub fn totp_current(&self, request: &sorng_browser_host::native_totp::NativeTotpRequest<'_>,
+        verifier: &dyn NativeLoginConsentVerifier, submit: bool) -> bool {
+        if !self.enabled || !self.supports_default_adapter || self.availability != NativeCredentialAvailability::Saved
+            || !self.totp.as_ref().is_some_and(|totp| totp.current(request)) { return false; }
+        let mut current = false;
+        verifier.with_current_consent(request.identity, request.origin, self.requested_grant_id.as_deref().map(String::as_str), &mut |until, auto| {
+            current = Instant::now() < until && (!submit || (auto && !self.manual_submit));
+        });
+        current
+    }
+
+    pub fn with_totp(&self, request: &sorng_browser_host::native_totp::NativeTotpRequest<'_>,
+        verifier: &dyn NativeLoginConsentVerifier,
+        deliver: &mut dyn FnMut(sorng_browser_host::native_totp::NativeTotpCode<'_>)) -> Option<Duration> {
+        if !self.totp_current(request, verifier, false) { return None; }
+        let mut wait = None;
+        let mut checked = false;
+        verifier.with_current_consent(request.identity, request.origin, self.requested_grant_id.as_deref().map(String::as_str), &mut |until, auto| {
+            if checked { return; }
+            checked = true;
+            if let Some(totp) = &self.totp { wait = totp.with_code(request, until, auto && !self.manual_submit, deliver); }
+        });
+        wait
+    }
+
     /// Literal extra-field values are credential material. Release only under
     /// the SAME exact-owner/origin consent checks as the username/password.
     pub fn with_form_credentials(
@@ -192,7 +236,7 @@ impl NativeLoginAuthority {
         });
     }
 
-    /// Exact credential disclosure candidates for main's explicit native dialog.
+    /// Exact credential disclosure candidates for main's attempt authorization.
     /// These are NOT consent grants and intentionally exclude resource origins.
     pub fn consent_origins(&self) -> &[String] {
         &self.origins
@@ -593,57 +637,35 @@ fn saved_login(
     policy: &OriginBrowserPolicy,
     lease: &NativeOwnerLease,
 ) -> NativeLoginAuthority {
-    let enabled = request.policy.auto_login.enabled
+    let enabled = extensions::saved_app_extensions_enabled(connection, settings).unwrap_or(false)
+        && request.policy.auto_login.enabled
         && match connection.get("httpApplication") {
             None => connection.get("httpAutoLogin") == Some(&Value::Bool(true)),
             Some(application) => {
                 application.get("loginMode").and_then(Value::as_str) == Some("form")
             }
         };
-    let username = connection
-        .get("username")
-        .and_then(Value::as_str)
-        .unwrap_or("");
-    let username = if connection
-        .pointer("/httpApplication/id")
-        .and_then(Value::as_str)
-        == Some("proxmox")
-        && !username.is_empty()
-        && !username.contains('@')
-    {
-        format!(
-            "{}@{}",
-            username,
-            connection
-                .pointer("/httpApplication/realm")
-                .and_then(Value::as_str)
-                .unwrap_or("pam")
-        )
-    } else {
-        username.to_owned()
-    };
-    let password = connection
-        .get("password")
-        .and_then(Value::as_str)
-        .unwrap_or("");
     let application_id = connection
         .pointer("/httpApplication/id")
         .and_then(Value::as_str)
         .unwrap_or("generic-form");
-    let availability = if credentials::vault_id(connection).is_err()
-        || credentials::vault_id(connection).ok().flatten().is_some()
-    {
-        NativeCredentialAvailability::UnsupportedCredentialSource
-    } else if username.is_empty()
-        || (password.is_empty() && application_id != "claude")
-        || username.len() > MAX_CREDENTIAL_BYTES
-        || password.len() > MAX_CREDENTIAL_BYTES
-    {
-        NativeCredentialAvailability::Unavailable
-    } else {
-        NativeCredentialAvailability::Saved
+    let (availability, selected) = match credentials::vault_id(connection) {
+        Ok(None) => match credentials::local(connection) {
+            Ok(selected) => (selected.availability(connection), Some(selected)),
+            Err(_) => (NativeCredentialAvailability::Unavailable, None),
+        },
+        _ => (
+            NativeCredentialAvailability::UnsupportedCredentialSource,
+            None,
+        ),
     };
     let available = enabled && availability == NativeCredentialAvailability::Saved;
+    let selected = selected
+        .filter(|_| available)
+        .unwrap_or_else(|| credentials::Credentials {
+            username: Zeroizing::new(String::new()),
+            password: Zeroizing::new(String::new()),
+        });
     let selectors_supported = connection
         .get("httpAutoLoginSelectors")
         .is_none_or(|value| value.is_null() || value.as_object().is_some_and(|row| row.is_empty()));
@@ -654,9 +676,6 @@ fn saved_login(
                 .get("httpFormAutomation")
                 .is_none_or(Value::is_null)))
         && form.is_ok()
-        && connection.get("httpAutoMfa").is_none_or(|value| {
-            value.is_null() || value.get("enabled") == Some(&Value::Bool(false))
-        })
         && !matches!(
             connection
                 .pointer("/httpApplication/loginMode")
@@ -725,17 +744,10 @@ fn saved_login(
                 Some(Zeroizing::new(grant_id.clone()))
             }
         },
-        username: Zeroizing::new(if available {
-            username.into()
-        } else {
-            String::new()
-        }),
-        password: Zeroizing::new(if available {
-            password.into()
-        } else {
-            String::new()
-        }),
+        username: selected.username,
+        password: selected.password,
         availability,
+        totp: None,
         manual_submit: settings
             .pointer("/webBrowser/manualFormSubmit")
             .and_then(Value::as_bool)
@@ -771,7 +783,22 @@ async fn authorize_create_inner<R: Runtime>(
     request
         .validate()
         .map_err(|_| NativeAuthorityError::InvalidRequest)?;
-    let (connection, lease) = native_browser_owner::read(
+    let (connection, lease) = if let Some(quick) = &request.quick_connect {
+        // Deliberately narrow input: no database/vault references, scripts,
+        // route credentials or retention preferences may be supplied here.
+        let connection = serde_json::json!({
+            "id": request.owner.connection_id,
+            "protocol": quick.protocol,
+            "hostname": quick.hostname,
+            "port": quick.port,
+            "httpVerifySsl": quick.http_verify_ssl,
+            "httpAutoLogin": false,
+        });
+        let lease = native_browser_owner::temporary(window, state, request, &connection)
+            .map_err(|_| NativeAuthorityError::OwnerUnavailable)?;
+        (connection, lease)
+    } else {
+        native_browser_owner::read(
         window,
         state,
         &request.owner.owner_database_id,
@@ -780,7 +807,8 @@ async fn authorize_create_inner<R: Runtime>(
         &request.source_session_id,
     )
     .await
-    .map_err(|_| NativeAuthorityError::OwnerUnavailable)?;
+        .map_err(|_| NativeAuthorityError::OwnerUnavailable)?
+    };
     let initial_url = saved_source(&connection)?;
     let requested =
         Url::parse(&request.initial_url).map_err(|_| NativeAuthorityError::SourceMismatch)?;
@@ -799,7 +827,18 @@ async fn authorize_create_inner<R: Runtime>(
         .validate()
         .map_err(|_| NativeAuthorityError::PolicyUnsupported)?;
     preferences.apply_login_defaults(&mut settings);
-    let (permissions, mut allowed_origins) = if certificate_hooks {
+    let (permissions, mut allowed_origins) = if lease.is_temporary() && initial_url.scheme() == "http" {
+        let policy = settings.pointer("/webBrowser/defaultPolicy");
+        if policy.is_some_and(|p| !p.is_object()
+            || p.get("httpsOnly").is_some_and(|v| v != &Value::Bool(false))
+            || p.get("pageScripts").is_some_and(|v| v != "allow")) {
+            return Err(NativeAuthorityError::PolicyUnsupported);
+        }
+        let defaults = CLASSES.iter().map(|(class, _)| (*class, WebsitePermissionDecision::Allow)).collect();
+        let source = initial_url.origin().ascii_serialization();
+        (WebsitePermissionEngine::temporary_http(&source, &defaults)
+            .map_err(|_| NativeAuthorityError::PolicyUnsupported)?, vec![source])
+    } else if certificate_hooks {
         saved_permissions_inner(&connection, &settings, &initial_url, true)?
     } else {
         saved_permissions(&connection, &settings, &initial_url)?
@@ -849,13 +888,16 @@ async fn authorize_create_inner<R: Runtime>(
     let mut login = saved_login(&connection, &settings, request, &policy, &lease);
     if login.enabled() {
         let selected = credentials::resolve(&connection, &lease, window, state).await?;
-        login.availability = if selected.username.is_empty() || selected.password.is_empty() {
-            NativeCredentialAvailability::Unavailable
-        } else {
-            NativeCredentialAvailability::Saved
-        };
+        login.availability = selected.availability(&connection);
         login.username = selected.username;
         login.password = selected.password;
+        login.totp = native_totp::NativeTotpAuthority::resolve(&connection, &login, window, state).await?;
+        if let Some(totp) = &login.totp {
+            let mut setup: Value = login.form_configuration.as_ref()
+                .and_then(|v| serde_json::from_str(v).ok()).ok_or(NativeAuthorityError::ApplicationUnsupported)?;
+            setup["mfa"] = totp.configuration().clone();
+            login.form_configuration = Some(setup.to_string());
+        }
     }
     let login = Arc::new(login);
     let certificates = Arc::new(NativeCertificateAuthority::new(
@@ -865,7 +907,14 @@ async fn authorize_create_inner<R: Runtime>(
         &lease,
     )?);
     Ok(NativeAuthorizedBrowser {
-        automation: Arc::new(NativeAutomationAuthority::new(&connection, &lease)),
+        basic_auth: request.quick_connect.as_ref()
+            .map(|quick| NativeBasicAuth::new(quick, &policy, &lease))
+            .transpose()?.flatten(),
+        automation: Arc::new(NativeAutomationAuthority::new(
+            &connection,
+            &lease,
+            preferences.capabilities.website_extensions_enabled,
+        )),
         policy,
         permissions: Arc::new(permissions),
         route,
@@ -1905,7 +1954,7 @@ mod tests {
             authorize_create(&self.window, &self.state, &self.request).await
         }
 
-        fn replace_connection(&mut self, connection: Value) {
+        pub(super) fn replace_connection(&mut self, connection: Value) {
             self.envelope
                 .replace_data(
                     &json!({"connections":[connection],"settings":{}}),
@@ -1917,6 +1966,14 @@ mod tests {
                 &serde_json::to_vec(&self.envelope.value().unwrap()).unwrap(),
             )
             .unwrap();
+        }
+
+        pub(super) fn replace_totp_fixture_data(&mut self, data: &Value) {
+            self.envelope.replace_data(data, &self.key).unwrap();
+            sorng_storage::sdbf::safe_write(
+                &self.root.path().join("databases/db.json"),
+                &serde_json::to_vec(&self.envelope.value().unwrap()).unwrap(),
+            ).unwrap();
         }
     }
 
@@ -1948,6 +2005,84 @@ mod tests {
         let mut group = connection();
         group["isGroup"] = true.into();
         assert!(saved_source(&group).is_err());
+    }
+
+    #[tokio::test]
+    async fn quick_connect_never_reads_saved_rows_or_cookie_keys_and_rechecks_its_window() {
+        let mut f = Fixture::new(connection()).await;
+        let mut wire = serde_json::to_value(&f.request).unwrap();
+        wire["owner"]["ownerDatabaseId"] = json!("quick-connect:tab");
+        // Deliberately collide with a saved ID: temporary authority still must
+        // not select the saved row or its form-login secrets.
+        wire["expectedSecurityRevision"] = json!("quick-connect");
+        wire["sourceSessionId"] = json!("tab");
+        wire["initialUrl"] = json!("https://temporary.example:8443/login");
+        wire["quickConnect"] = json!({"protocol":"https","hostname":"https://temporary.example:8443/login", "port":8443,"httpVerifySsl":true});
+        f.request = serde_json::from_value(wire).unwrap();
+        let before = std::fs::read(f.root.path().join("databases/db.json")).unwrap();
+        let authorized = authorize_create_with_certificate_hooks(&f.window, &f.state, &f.request).await.unwrap();
+        assert!(authorized.lease.is_temporary());
+        assert!(authorized.lease.is_current());
+        assert!(!authorized.login.enabled());
+        assert!(authorized.lease.fork_for_cookie_retention().is_err());
+        assert!(authorized.lease.read_dependency(&f.window, &f.state, false, "saved").await.is_err());
+        assert!(authorized.lease.load_cookie_record(|| true).await.is_err());
+        authorized.lease.recheck(&f.window, &f.state).await.unwrap();
+        assert_eq!(before, std::fs::read(f.root.path().join("databases/db.json")).unwrap());
+        let other = WebviewWindowBuilder::new(&f._app, "other", WebviewUrl::default()).build().unwrap();
+        assert!(authorized.lease.recheck(&other, &f.state).await.is_err());
+        assert!(!authorized.lease.is_current());
+    }
+
+    #[tokio::test]
+    async fn quick_connect_source_mismatch_and_saved_owner_downgrade_are_rejected() {
+        let mut f = Fixture::new(connection()).await;
+        let mut wire = serde_json::to_value(&f.request).unwrap();
+        wire["quickConnect"] = json!({"protocol":"https","hostname":"elsewhere.example", "port":443,"httpVerifySsl":true});
+        f.request = serde_json::from_value(wire.clone()).unwrap();
+        assert!(matches!(authorize_create_with_certificate_hooks(&f.window, &f.state, &f.request).await, Err(NativeAuthorityError::InvalidRequest)));
+        wire["owner"]["ownerDatabaseId"] = json!("quick-connect:tab");
+        wire["expectedSecurityRevision"] = json!("quick-connect");
+        wire["sourceSessionId"] = json!("tab");
+        f.request = serde_json::from_value(wire).unwrap();
+        assert!(matches!(authorize_create_with_certificate_hooks(&f.window, &f.state, &f.request).await, Err(NativeAuthorityError::SourceMismatch)));
+    }
+
+    #[tokio::test]
+    async fn quick_connect_works_without_any_database_or_unlock_session() {
+        let app = mock_builder().build(mock_context(noop_assets())).unwrap();
+        let window = WebviewWindowBuilder::new(&app, "main", WebviewUrl::default()).build().unwrap();
+        let root = tempfile::tempdir().unwrap();
+        let state = EncryptionState::new();
+        sorng_encryption::artifact_policy::initialize(&state, root.path()).await;
+        let request = serde_json::from_value(json!({
+            "owner":{"ownerDatabaseId":"quick-connect:tab","connectionId":"temporary","sessionId":"tab"},
+            "expectedSecurityRevision":"quick-connect", "sourceSessionId":"tab", "requestId":"create",
+            "quickConnect":{"protocol":"https","hostname":"temporary.example","port":443,"httpVerifySsl":true},
+            "initialUrl":"https://temporary.example/", "bounds":{"x":0,"y":0,"width":800,"height":600},"visible":false,
+            "policy":{"darkMode":"forced","autoLogin":{"enabled":true,"consent":{"kind":"required"}}}
+        })).unwrap();
+        let authorized = authorize_create_with_certificate_hooks(&window, &state, &request).await.unwrap();
+        assert!(authorized.lease.is_current());
+        assert!(!root.path().join("databases").exists());
+        authorized.lease.recheck(&window, &state).await.unwrap();
+        authorized.lease.revoke();
+        assert!(!authorized.lease.is_current());
+    }
+
+    #[tokio::test]
+    async fn temporary_http_runs_through_its_exact_source_policy() {
+        let mut f = Fixture::new(connection()).await;
+        let mut wire = serde_json::to_value(&f.request).unwrap();
+        wire["owner"]["ownerDatabaseId"] = json!("quick-connect:tab");
+        wire["expectedSecurityRevision"] = json!("quick-connect");
+        wire["sourceSessionId"] = json!("tab");
+        wire["initialUrl"] = json!("http://router.example:8080/");
+        wire["quickConnect"] = json!({"protocol":"http","hostname":"router.example", "port":8080,"httpVerifySsl":true});
+        f.request = serde_json::from_value(wire).unwrap();
+        let authorized = authorize_create_with_certificate_hooks(&f.window, &f.state, &f.request).await.unwrap();
+        assert_eq!(authorized.policy.allowed_origins(), &["http://router.example:8080"]);
+        assert!(authorized.lease.is_temporary());
     }
 
     #[test]
@@ -2595,6 +2730,10 @@ mod tests {
     async fn vault_credentials_are_selected_only_from_owner_and_rechecked_for_edits() {
         let id = "01234567-89ab-4cde-8fab-0123456789ab";
         let mut row = connection();
+        // Dedicated local fields must be ignored just like generic fields when
+        // the selected source is the database vault, even if they are malformed.
+        row["basicAuthUsername"] = json!({"stale":"ignored"});
+        row["basicAuthPassword"] = false.into();
         row["credentialSource"] = json!({"kind":"vault","credentialId":id});
         let mut f = Fixture::new(row.clone()).await;
         let mut data = json!({"connections":[row], "settings":{}, "credentialVault":{
@@ -2674,6 +2813,80 @@ mod tests {
                 .availability(),
             NativeCredentialAvailability::Saved
         );
+    }
+
+    #[tokio::test]
+    async fn vault_login_preserves_application_requirements_without_using_local_secrets() {
+        let id = "01234567-89ab-4cde-8fab-0123456789ab";
+        for (application, facets, expected_user, expected_password, available) in [
+            (
+                "proxmox",
+                json!({"username":"operator","password":"vault-secret"}),
+                "operator@pve",
+                "vault-secret",
+                true,
+            ),
+            (
+                "claude",
+                json!({"username":"email@example.invalid","password":{"unused":true}}),
+                "email@example.invalid",
+                "",
+                true,
+            ),
+            (
+                "generic-form",
+                json!({"username":"operator"}),
+                "operator",
+                "",
+                false,
+            ),
+        ] {
+            let mut row = connection();
+            row["httpApplication"] = json!({"version":1,"id":application,"loginMode":"form"});
+            if application == "proxmox" {
+                row["httpApplication"]["realm"] = "pve".into();
+            }
+            row["credentialSource"] = json!({"kind":"vault","credentialId":id});
+            row["basicAuthUsername"] = "ignored-user".into();
+            row["basicAuthPassword"] = "ignored-secret".into();
+            let initial = saved_source(&row).unwrap().to_string();
+            let mut f = Fixture::new(row.clone()).await;
+            f.request.initial_url = initial;
+            f.envelope
+                .replace_data(
+                    &json!({"connections":[row],"settings":{},"credentialVault":{
+                        "version":1,"revision":1,"entries":[{"id":id,"facets":facets}]
+                    }}),
+                    &f.key,
+                )
+                .unwrap();
+            sorng_storage::sdbf::safe_write(
+                &f.root.path().join("databases/db.json"),
+                &serde_json::to_vec(&f.envelope.value().unwrap()).unwrap(),
+            )
+            .unwrap();
+            let authorized = f.authorize().await.unwrap();
+            assert_eq!(
+                authorized.login.availability(),
+                if available {
+                    NativeCredentialAvailability::Saved
+                } else {
+                    NativeCredentialAvailability::Unavailable
+                }
+            );
+            assert_eq!(authorized.login.username.as_str(), expected_user);
+            assert_eq!(authorized.login.password.as_str(), expected_password);
+            let mut delivered = 0;
+            authorized.login.with_credentials(
+                &NativeLoginRequest {
+                    identity: authorized.policy.identity(),
+                    origin: &authorized.login.consent_origins()[0],
+                },
+                &Consent { allow: true },
+                &mut |_| delivered += 1,
+            );
+            assert_eq!(delivered, usize::from(available));
+        }
     }
 
     #[tokio::test]

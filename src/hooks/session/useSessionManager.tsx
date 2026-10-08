@@ -25,7 +25,6 @@ import {
 import { SettingsManager } from "../../utils/settings/settingsManager";
 import { StatusChecker } from "../../utils/connection/statusChecker";
 import { ScriptEngine } from "../../utils/recording/scriptEngine";
-import { getDefaultPort } from "../../utils/discovery/defaultPorts";
 import { raceWithTimeout } from "../../utils/core/raceWithTimeout";
 import { generateId } from "../../utils/core/id";
 import {
@@ -33,10 +32,14 @@ import {
   usesLegacyGenericTimer,
 } from "../../utils/session/protocolAvailability";
 import {
-  registerRuntimeConnection,
+  registerQuickConnectConnection,
   releaseRuntimeConnection,
   resolveRuntimeConnection,
 } from "../../utils/session/runtimeConnectionRegistry";
+import {
+  createQuickConnectConnection,
+  type QuickConnectConnectionInput,
+} from "../../utils/session/quickConnectConnection";
 import { ConfirmDialog } from "../../components/ui/dialogs/ConfirmDialog";
 import { recordRdpSessionHistory } from "../../utils/rdp/rdpSessionHistory";
 import {
@@ -1052,6 +1055,7 @@ export const useSessionManager = () => {
   const handleConnect = async (
     connection: Connection,
     assertCurrent?: () => void,
+    onSessionOpened?: () => void,
   ): Promise<string | undefined> => {
     assertCurrent?.();
     const settings = settingsManager.getSettings();
@@ -1078,6 +1082,7 @@ export const useSessionManager = () => {
           ownsSingletonIntegrationBackend(session),
       );
       if (existingSession) {
+        onSessionOpened?.();
         setActiveSessionId(existingSession.id);
         return existingSession.id;
       }
@@ -1177,6 +1182,9 @@ export const useSessionManager = () => {
 
     endingSessionIdsRef.current.delete(session.id);
     dispatch({ type: "ADD_SESSION", payload: session });
+    // Capture ownership before an awaited lifecycle hook can throw and before
+    // React necessarily publishes the newly dispatched session to stateRef.
+    onSessionOpened?.();
     await lifecycle.emitStarted(session, connection, { reason: "user" });
 
     // Per-connection focusOnConnect overrides the global setting
@@ -1335,6 +1343,14 @@ export const useSessionManager = () => {
       stateRef.current.sessions.find(
         (candidate) => candidate.id === request.session.id,
       ) ?? request.session;
+    if (
+      !resolveRuntimeConnection(
+        stateRef.current.connections,
+        latest.connectionId,
+      )
+    ) {
+      return false;
+    }
     if (hasSessionVpnCleanupQuarantine(latest)) {
       dispatch({
         type: "UPDATE_SESSION",
@@ -1382,10 +1398,13 @@ export const useSessionManager = () => {
       if (!request.ignoreAttemptLimit && currentAttempts >= maxAttempts) {
         return;
       }
-      const currentConnection =
-        stateRef.current.connections.find(
-          (candidate) => candidate.id === current.connectionId,
-        ) ?? request.connection;
+      const currentConnection = resolveRuntimeConnection(
+        stateRef.current.connections,
+        current.connectionId,
+      );
+      // A pending reconnect must not resurrect a released runtime definition
+      // (or deleted saved record) from the request's stale credential snapshot.
+      if (!currentConnection) return;
       reconnectsInFlightRef.current.add(latest.id);
       void reconnectSession(current, currentConnection).finally(() => {
         reconnectsInFlightRef.current.delete(latest.id);
@@ -1399,8 +1418,9 @@ export const useSessionManager = () => {
    * @param session - Session to re-establish.
    */
   const handleReconnect = async (session: ConnectionSession) => {
-    const connection = state.connections.find(
-      (c) => c.id === session.connectionId,
+    const connection = resolveRuntimeConnection(
+      stateRef.current.connections,
+      session.connectionId,
     );
     if (!connection) return;
     const singletonConflict = findSingletonIntegrationConflict(
@@ -1429,58 +1449,46 @@ export const useSessionManager = () => {
    * @param hostname - Target host name.
    * @param protocol - Connection protocol.
    */
-  const handleQuickConnect = (payload: {
-    hostname: string;
-    protocol: string;
-    username?: string;
-    password?: string;
-    domain?: string;
-    authType?: "password" | "key";
-    privateKey?: string;
-    passphrase?: string;
-    basicAuthUsername?: string;
-    basicAuthPassword?: string;
-    httpVerifySsl?: boolean;
-  }) => {
-    const tempConnection: Connection = {
-      id: generateId(),
-      name: `${t("connections.quickConnect")} - ${payload.hostname}`,
-      protocol: payload.protocol as Connection["protocol"],
-      hostname: payload.hostname,
-      port: getDefaultPort(payload.protocol),
-      isGroup: false,
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-    };
-
-    if (payload.protocol === "ssh") {
-      tempConnection.username = payload.username;
-      tempConnection.authType = payload.authType;
-      tempConnection.password = payload.password;
-      tempConnection.privateKey = payload.privateKey;
-      tempConnection.passphrase = payload.passphrase;
-    } else if (payload.protocol === "rdp") {
-      tempConnection.username = payload.username;
-      tempConnection.password = payload.password;
-      tempConnection.domain = payload.domain;
-    } else if (payload.protocol === "vnc") {
-      tempConnection.password = payload.password;
-    } else if (payload.protocol === "http" || payload.protocol === "https") {
-      if (payload.basicAuthUsername || payload.basicAuthPassword) {
-        tempConnection.authType = "basic";
-        tempConnection.basicAuthUsername = payload.basicAuthUsername;
-        tempConnection.basicAuthPassword = payload.basicAuthPassword;
-      }
-      if (payload.protocol === "https" && payload.httpVerifySsl !== undefined) {
-        tempConnection.httpVerifySsl = payload.httpVerifySsl;
-      }
-    } else if (payload.protocol === "telnet") {
-      tempConnection.username = payload.username;
-      tempConnection.password = payload.password;
+  const handleQuickConnect = async (payload: QuickConnectConnectionInput) => {
+    let tempConnection: Connection;
+    try {
+      tempConnection = createQuickConnectConnection(
+        payload,
+        t("connections.quickConnect"),
+      );
+    } catch (error) {
+      await showAlert(
+        error instanceof Error
+          ? error.message
+          : "Invalid Quick Connect endpoint.",
+      );
+      return;
     }
-
-    registerRuntimeConnection(tempConnection);
-    void handleConnect(tempConnection);
+    registerQuickConnectConnection(tempConnection);
+    let sessionOpened = false;
+    const releaseIfUnclaimed = () => {
+      if (
+        !sessionOpened &&
+        !stateRef.current.sessions.some(
+          (session) => session.connectionId === tempConnection.id,
+        )
+      ) {
+        releaseRuntimeConnection(tempConnection.id);
+      }
+    };
+    try {
+      const sessionId = await handleConnect(tempConnection, undefined, () => {
+        sessionOpened = true;
+      });
+      if (!sessionId) releaseIfUnclaimed();
+    } catch {
+      releaseIfUnclaimed();
+      // Lifecycle errors may occur after ADD_SESSION. Keep its definition and
+      // credentials available for normal close/reconnect; never log secrets.
+      await showAlert(
+        "Quick Connect encountered an error. Review the session or try connecting again.",
+      );
+    }
   };
 
   /**

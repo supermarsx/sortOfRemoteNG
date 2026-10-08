@@ -12,6 +12,8 @@ export interface WebBrowserSettingsConfig extends BrowserNativePreferences {
   version: 1;
   /** Missing preferences select real-origin; runtime availability remains separately gated. */
   engine?: WebBrowserEngine;
+  /** Warm the native engine once while idle after an owning database unlocks. */
+  idlePrewarmEnabled?: boolean;
   showBookmarksBar: boolean;
   showSecurityInfo: boolean;
   showLoadingProgress: boolean;

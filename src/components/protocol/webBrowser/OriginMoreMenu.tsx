@@ -7,9 +7,10 @@ import {
   MoreHorizontal,
   KeyRound,
   Printer,
-  Download,
   History,
   Video,
+  Search,
+  SquarePlus,
 } from "lucide-react";
 import type {
   Connection,
@@ -24,9 +25,14 @@ import {
   ModalFooter,
 } from "../../ui/overlays/Modal";
 import OriginCredentialCopyPanel from "./OriginCredentialCopyPanel";
+import NativeBrowserRecordingControls from "./NativeBrowserRecordingControls";
+import OriginHistoryList from "./OriginHistoryList";
+import type { NativeBrowserRecordingController } from "../../../hooks/protocol/useNativeBrowserRecording";
+import type { OriginPageMenuController } from "../../../hooks/protocol/useOriginPageMenu";
 
 type Review =
-  { kind: "external"; url: string } | { kind: "clear" | "credentials" };
+  | { kind: "external"; url: string }
+  | { kind: "clear" | "credentials" | "history" | "recording" };
 
 /** Mounted per native attempt. Full addresses stay volatile and leave only on
  * an explicit copy/open click; diagnostic URLs and address drafts are not used. */
@@ -40,6 +46,8 @@ export default function OriginMoreMenu({
   onRestart,
   session,
   connection,
+  pageMenu,
+  recording,
 }: {
   currentUrl?: string;
   eligible: boolean;
@@ -50,6 +58,8 @@ export default function OriginMoreMenu({
   onRestart: () => Promise<void>;
   session: ConnectionSession;
   connection?: Connection;
+  pageMenu: OriginPageMenuController;
+  recording: NativeBrowserRecordingController;
 }) {
   const trigger = useRef<HTMLButtonElement>(null);
   const cancel = useRef<HTMLButtonElement>(null);
@@ -156,7 +166,7 @@ export default function OriginMoreMenu({
   const confirm = async () => {
     if (
       !review ||
-      review.kind === "credentials" ||
+      (review.kind !== "external" && review.kind !== "clear") ||
       pending.current ||
       surface.current !== review
     )
@@ -193,7 +203,24 @@ export default function OriginMoreMenu({
       ? "Open in system browser?"
       : review?.kind === "clear"
         ? "Clear this browser session?"
-        : "Copy connection credentials";
+        : review?.kind === "history"
+          ? "Browsing history"
+          : review?.kind === "recording"
+            ? "Recording"
+            : "Copy connection credentials";
+  const runAfterClose = (action: () => void) => {
+    try {
+      check();
+    } catch {
+      dismiss();
+      return;
+    }
+    dismiss();
+    action();
+  };
+  const recordingActive =
+    recording.har.phase === "recording" ||
+    ["recording", "paused"].includes(recording.video.phase);
   return (
     <>
       <button
@@ -201,6 +228,11 @@ export default function OriginMoreMenu({
         type="button"
         className="sor-btn sor-icon-btn-sm shrink-0"
         aria-label="More browser actions"
+        aria-description={
+          recordingActive
+            ? "A recording is active. Open Recording to stop or save it."
+            : undefined
+        }
         data-tooltip="More browser actions"
         aria-haspopup="menu"
         aria-expanded={!!position}
@@ -224,7 +256,11 @@ export default function OriginMoreMenu({
           setPosition({ x: bounds.right - 288, y: bounds.bottom + 4 });
         }}
       >
-        <MoreHorizontal size={16} aria-hidden="true" />
+        <MoreHorizontal
+          size={16}
+          aria-hidden="true"
+          className={recordingActive ? "text-error" : undefined}
+        />
       </button>
       <MenuSurface
         isOpen={!!position && eligible}
@@ -292,33 +328,47 @@ export default function OriginMoreMenu({
           role="separator"
           className="my-1 border-t border-[var(--color-border)]"
         />
-        {(
-          [
-            ["Print", "Native printing is not supported yet.", Printer],
-            [
-              "Downloads",
-              "Native download review is not supported yet.",
-              Download,
-            ],
-            ["History menu", "Only Back and Forward are available.", History],
-            ["Recording", "Native page recording is not supported yet.", Video],
-          ] as const
-        ).map(([label, explanation, Icon]) => (
+        {[
+          {
+            label: "Open in new tab",
+            Icon: SquarePlus,
+            action: () => runAfterClose(pageMenu.openTab),
+          },
+          {
+            label: "Print / Save as PDF…",
+            Icon: Printer,
+            action: () => runAfterClose(pageMenu.print),
+          },
+          {
+            label: "Find in page",
+            Icon: Search,
+            action: () => runAfterClose(pageMenu.find),
+          },
+          {
+            label: "History menu",
+            Icon: History,
+            action: () => {
+              openReview({ kind: "history" });
+              void pageMenu.refreshHistory();
+            },
+          },
+          {
+            label: recordingActive ? "Recording · active" : "Recording",
+            Icon: Video,
+            action: () => openReview({ kind: "recording" }),
+          },
+        ].map(({ label, Icon, action }) => (
           <button
             key={label}
             type="button"
             role="menuitem"
-            disabled
+            disabled={busy || pageMenu.busy}
+            onClick={action}
             aria-label={label}
             className="sor-menu-item items-start gap-2 whitespace-normal disabled:opacity-60"
           >
             <Icon size={16} aria-hidden="true" className="shrink-0 mt-0.5" />
-            <span className="text-left">
-              {label}
-              <span className="block text-xs text-[var(--color-textSecondary)]">
-                {explanation}
-              </span>
-            </span>
+            <span className="text-left">{label}</span>
           </button>
         ))}
         {message && (
@@ -369,6 +419,13 @@ export default function OriginMoreMenu({
                 saved credentials, other tabs, or system-browser sessions.
                 Auto-login will require fresh native consent.
               </p>
+            ) : review.kind === "history" ? (
+              <OriginHistoryList
+                controller={pageMenu}
+                onJump={(index) => runAfterClose(() => pageMenu.jump(index))}
+              />
+            ) : review.kind === "recording" ? (
+              <NativeBrowserRecordingControls controller={recording} />
             ) : (
               connection && (
                 <OriginCredentialCopyPanel
@@ -395,9 +452,11 @@ export default function OriginMoreMenu({
               disabled={busy}
               onClick={dismiss}
             >
-              {review.kind === "credentials" ? "Done" : "Cancel"}
+              {review.kind === "external" || review.kind === "clear"
+                ? "Cancel"
+                : "Done"}
             </button>
-            {review.kind !== "credentials" && (
+            {(review.kind === "external" || review.kind === "clear") && (
               <button
                 type="button"
                 className="sor-btn sor-btn-primary"

@@ -6,7 +6,7 @@
 //! challenge metadata below; no page/IPC-provided authentication is accepted.
 
 use crate::domain_permissions::{
-    canonical_website_permission_origin, EffectiveWebsitePermission, WebsitePermissionDecision,
+    canonical_browser_request_origin, EffectiveWebsitePermission, WebsitePermissionDecision,
     WebsitePermissionEngine, WebsitePermissionQuery,
 };
 use cef::rc::Rc;
@@ -19,6 +19,11 @@ use std::sync::{
     atomic::{AtomicBool, Ordering},
     Arc, Mutex, MutexGuard,
 };
+
+#[path = "native_recording.rs"]
+pub mod recording;
+#[path = "cef_recording.rs"]
+mod recording_callbacks;
 
 /// Create once for a newly created native browser whose initial URL is the
 /// host-generated literal `about:blank`. Do not share this handler between
@@ -89,8 +94,9 @@ fn renderer_failed(
 ///
 /// Callbacks carrying request/download metadata must use
 /// [`context_resource_handler`] instead, to retain their initial denial state.
-/// The host must separately deny downloads discovered from response headers
-/// via its DownloadHandler; request admission alone cannot cover that CEF API.
+/// The host separately authorizes downloads discovered from response headers
+/// through its owner-bound DownloadHandler and native Save dialog. Request
+/// admission never authorizes a filesystem write or changes the network route.
 pub fn resource_handler(
     session: Arc<Mutex<OriginBrowserSession>>,
     identity: BrowserIdentity,
@@ -127,7 +133,10 @@ pub(crate) fn context_resource_handler(
     });
     let allowed =
         scoped_request_allowed(&session, &identity, &permissions, scope.as_ref(), request);
-    let denied = is_download != 0
+    // Download navigation still needs the same origin/class/route approval.
+    // File writes are separately admitted by the owner-bound DownloadHandler;
+    // blanket cancellation here used to prevent that handler from running.
+    let denied = !matches!(is_download, 0 | 1)
         || !matches!(is_navigation, 0 | 1)
         || disable_default_handling.is_none()
         || !allowed;
@@ -153,6 +162,7 @@ fn resource_handler_with_denial(
         permissions,
         scope,
         Arc::new(AtomicBool::new(denied)),
+        Arc::new(Mutex::new(None)),
     )
 }
 
@@ -240,7 +250,7 @@ impl ResourceScope {
             None | Some([]) => None,
             Some(_) if navigation_factory => None,
             Some(value) if value.len() <= 2048 => {
-                Some(canonical_website_permission_origin(&String::from_utf16(value).ok()?).ok()?)
+                Some(canonical_browser_request_origin(&String::from_utf16(value).ok()?).ok()?)
             }
             _ => return None,
         };
@@ -649,6 +659,7 @@ wrap_resource_request_handler! {
         permissions: Arc<WebsitePermissionEngine>,
         scope: Option<ResourceScope>,
         denied: Arc<AtomicBool>,
+        recording: Arc<Mutex<Option<recording::Capture>>>,
     }
 
     impl ResourceRequestHandler {
@@ -667,6 +678,7 @@ wrap_resource_request_handler! {
                 self.denied.store(true, Ordering::Release);
                 ReturnValue::CANCEL
             } else {
+                recording_callbacks::start(&self.recording, &self.identity, request.as_deref());
                 // Synchronous decision; never invoke the async callback too.
                 ReturnValue::CONTINUE
             }
@@ -691,6 +703,7 @@ wrap_resource_request_handler! {
                         })
                     })
                 });
+            recording_callbacks::redirect(&self.recording, request.as_deref(), response.as_deref(), new_url.as_deref(), allowed);
             if !allowed {
                 self.denied.store(true, Ordering::Release);
                 // CEF has no cancel return for this callback. Revoke transport
@@ -701,6 +714,18 @@ wrap_resource_request_handler! {
                     let _ = url.try_set("about:blank#blocked-native-request");
                 }
             }
+        }
+
+        fn on_resource_load_complete(
+            &self,
+            _browser: Option<&mut Browser>,
+            _frame: Option<&mut Frame>,
+            _request: Option<&mut Request>,
+            response: Option<&mut Response>,
+            status: UrlrequestStatus,
+            received_content_length: i64,
+        ) {
+            recording_callbacks::complete(&self.recording, response.as_deref(), status, received_content_length);
         }
 
         fn on_protocol_execution(
@@ -721,6 +746,7 @@ wrap_resource_request_handler! {
 #[cfg(test)]
 mod tests {
     use super::*;
+    include!("cef_recording_tests.rs");
     use crate::domain_permissions::{
         WebsiteDestinationPermissions, WebsiteDomainPermissionsSettings, WebsiteOriginPermissions,
         WebsitePermissionSetting, WebsitePermissionSource, WebsiteRequestClass,
@@ -1039,6 +1065,54 @@ mod tests {
                     1
                 ));
             }
+        }
+    }
+
+    #[tokio::test]
+    async fn downloads_keep_navigation_permissions_and_reject_invalid_metadata() {
+        #[cfg(target_os = "macos")]
+        crate::platform::test_runtime::ensure_loaded();
+        for (download, allow_navigation, expected) in [
+            (1, true, ReturnValue::CONTINUE),
+            (1, false, ReturnValue::CANCEL),
+            (-1, true, ReturnValue::CANCEL),
+            (2, true, ReturnValue::CANCEL),
+        ] {
+            let (session, identity) = session().await;
+            report_synthetic_ready(&mut session.lock().unwrap(), &identity);
+            let session = Arc::new(session);
+            let mut browser = navigation_mocks::browser(1, 41);
+            let mut frame = navigation_mocks::frame(1, 1, Some(browser.clone()));
+            let mut request = navigation_mocks::request(ResourceType::MAIN_FRAME);
+            let mut disabled = 0;
+            let policy = if allow_navigation {
+                Arc::new(allow_classes(&[WebsiteRequestClass::Navigation]))
+            } else {
+                deny_permissions()
+            };
+            let handler = context_resource_handler(
+                session,
+                identity,
+                policy,
+                Some(&request),
+                1,
+                download,
+                Some(&CefString::from("null")),
+                false,
+                true,
+                Some(&mut disabled),
+            );
+            let (mut callback, _) = navigation_mocks::callback();
+            assert_eq!(
+                handler.on_before_resource_load(
+                    Some(&mut browser),
+                    Some(&mut frame),
+                    Some(&mut request),
+                    Some(&mut callback),
+                ),
+                expected
+            );
+            assert_eq!(disabled, i32::from(expected == ReturnValue::CANCEL));
         }
     }
 

@@ -1,0 +1,452 @@
+{
+  "youtube-studio": [
+    {
+      "id": "google-account-totp",
+      "label": "Google Account authenticator code",
+      "codeSelector": "input#totpPin[name=\"totpPin\"][autocomplete=\"one-time-code\"]",
+      "submitSelector": "#totpNext button[type=\"button\"], button#totpNext[type=\"button\"]",
+      "paths": [
+        "/v3/signin/challenge/totp",
+        "/signin/v2/challenge/totp",
+        "/signin/challenge/totp"
+      ],
+      "submission": "google",
+      "origins": [
+        "https://accounts.google.com"
+      ]
+    }
+  ],
+  "google-ad-manager": [
+    {
+      "id": "google-account-totp",
+      "label": "Google Account authenticator code",
+      "codeSelector": "input#totpPin[name=\"totpPin\"][autocomplete=\"one-time-code\"]",
+      "submitSelector": "#totpNext button[type=\"button\"], button#totpNext[type=\"button\"]",
+      "paths": [
+        "/v3/signin/challenge/totp",
+        "/signin/v2/challenge/totp",
+        "/signin/challenge/totp"
+      ],
+      "submission": "google",
+      "origins": [
+        "https://accounts.google.com"
+      ]
+    }
+  ],
+  "google-adsense": [
+    {
+      "id": "google-account-totp",
+      "label": "Google Account authenticator code",
+      "codeSelector": "input#totpPin[name=\"totpPin\"][autocomplete=\"one-time-code\"]",
+      "submitSelector": "#totpNext button[type=\"button\"], button#totpNext[type=\"button\"]",
+      "paths": [
+        "/v3/signin/challenge/totp",
+        "/signin/v2/challenge/totp",
+        "/signin/challenge/totp"
+      ],
+      "submission": "google",
+      "origins": [
+        "https://accounts.google.com"
+      ]
+    }
+  ],
+  "google-forms": [
+    {
+      "id": "google-account-totp",
+      "label": "Google Account authenticator code",
+      "codeSelector": "input#totpPin[name=\"totpPin\"][autocomplete=\"one-time-code\"]",
+      "submitSelector": "#totpNext button[type=\"button\"], button#totpNext[type=\"button\"]",
+      "paths": [
+        "/v3/signin/challenge/totp",
+        "/signin/v2/challenge/totp",
+        "/signin/challenge/totp"
+      ],
+      "submission": "google",
+      "origins": [
+        "https://accounts.google.com"
+      ]
+    }
+  ],
+  "google-gemini": [
+    {
+      "id": "google-account-totp",
+      "label": "Google Account authenticator code",
+      "codeSelector": "input#totpPin[name=\"totpPin\"][autocomplete=\"one-time-code\"]",
+      "submitSelector": "#totpNext button[type=\"button\"], button#totpNext[type=\"button\"]",
+      "paths": [
+        "/v3/signin/challenge/totp",
+        "/signin/v2/challenge/totp",
+        "/signin/challenge/totp"
+      ],
+      "submission": "google",
+      "origins": [
+        "https://accounts.google.com"
+      ]
+    }
+  ],
+  "google-workspace-admin": [
+    {
+      "id": "google-account-totp",
+      "label": "Google Account authenticator code",
+      "codeSelector": "input#totpPin[name=\"totpPin\"][autocomplete=\"one-time-code\"]",
+      "submitSelector": "#totpNext button[type=\"button\"], button#totpNext[type=\"button\"]",
+      "paths": [
+        "/v3/signin/challenge/totp",
+        "/signin/v2/challenge/totp",
+        "/signin/challenge/totp"
+      ],
+      "submission": "google",
+      "origins": [
+        "https://accounts.google.com"
+      ]
+    }
+  ],
+  "google-play-store": [
+    {
+      "id": "google-account-totp",
+      "label": "Google Account authenticator code",
+      "codeSelector": "input#totpPin[name=\"totpPin\"][autocomplete=\"one-time-code\"]",
+      "submitSelector": "#totpNext button[type=\"button\"], button#totpNext[type=\"button\"]",
+      "paths": [
+        "/v3/signin/challenge/totp",
+        "/signin/v2/challenge/totp",
+        "/signin/challenge/totp"
+      ],
+      "submission": "google",
+      "origins": [
+        "https://accounts.google.com"
+      ]
+    }
+  ],
+  "google-developers": [
+    {
+      "id": "google-account-totp",
+      "label": "Google Account authenticator code",
+      "codeSelector": "input#totpPin[name=\"totpPin\"][autocomplete=\"one-time-code\"]",
+      "submitSelector": "#totpNext button[type=\"button\"], button#totpNext[type=\"button\"]",
+      "paths": [
+        "/v3/signin/challenge/totp",
+        "/signin/v2/challenge/totp",
+        "/signin/challenge/totp"
+      ],
+      "submission": "google",
+      "origins": [
+        "https://accounts.google.com"
+      ]
+    }
+  ],
+  "google-play-console": [
+    {
+      "id": "google-account-totp",
+      "label": "Google Account authenticator code",
+      "codeSelector": "input#totpPin[name=\"totpPin\"][autocomplete=\"one-time-code\"]",
+      "submitSelector": "#totpNext button[type=\"button\"], button#totpNext[type=\"button\"]",
+      "paths": [
+        "/v3/signin/challenge/totp",
+        "/signin/v2/challenge/totp",
+        "/signin/challenge/totp"
+      ],
+      "submission": "google",
+      "origins": [
+        "https://accounts.google.com"
+      ]
+    }
+  ],
+  "bitwarden-self-hosted": [
+    {
+      "id": "bitwarden-self-hosted-totp",
+      "label": "Web vault — selected authenticator app",
+      "codeSelector": "app-two-factor-auth form app-two-factor-auth-authenticator input[type=\"text\"]",
+      "submitSelector": "app-two-factor-auth form:has(app-two-factor-auth-authenticator) button[type=\"submit\"]",
+      "paths": [
+        "/"
+      ],
+      "submission": "spa"
+    }
+  ],
+  "vaultwarden": [
+    {
+      "id": "vaultwarden-totp",
+      "label": "Web vault — selected authenticator app",
+      "codeSelector": "app-two-factor-auth form app-two-factor-auth-authenticator input[type=\"text\"]",
+      "submitSelector": "app-two-factor-auth form:has(app-two-factor-auth-authenticator) button[type=\"submit\"]",
+      "paths": [
+        "/"
+      ],
+      "submission": "spa"
+    }
+  ],
+  "nextcloud": [
+    {
+      "id": "nextcloud-totp",
+      "label": "Nextcloud twofactor_totp app — enrolled authenticator",
+      "codeSelector": "form.totp-form[method=\"POST\" i] input[name=\"challenge\"][autocomplete=\"one-time-code\"][inputmode=\"numeric\"]",
+      "submitSelector": "form.totp-form[method=\"POST\" i] button.two-factor-submit[type=\"submit\"]",
+      "paths": [
+        "/login/challenge/totp",
+        "/index.php/login/challenge/totp"
+      ],
+      "submission": "post"
+    }
+  ],
+  "google-account": [
+    {
+      "id": "google-account-totp",
+      "label": "Google Account authenticator code",
+      "codeSelector": "input#totpPin[name=\"totpPin\"][autocomplete=\"one-time-code\"]",
+      "submitSelector": "#totpNext button[type=\"button\"], button#totpNext[type=\"button\"]",
+      "paths": [
+        "/v3/signin/challenge/totp",
+        "/signin/v2/challenge/totp",
+        "/signin/challenge/totp"
+      ],
+      "submission": "google",
+      "origins": [
+        "https://accounts.google.com"
+      ]
+    }
+  ],
+  "google-cloud-console": [
+    {
+      "id": "google-account-totp",
+      "label": "Google Account authenticator code",
+      "codeSelector": "input#totpPin[name=\"totpPin\"][autocomplete=\"one-time-code\"]",
+      "submitSelector": "#totpNext button[type=\"button\"], button#totpNext[type=\"button\"]",
+      "paths": [
+        "/v3/signin/challenge/totp",
+        "/signin/v2/challenge/totp",
+        "/signin/challenge/totp"
+      ],
+      "submission": "google",
+      "origins": [
+        "https://accounts.google.com"
+      ]
+    }
+  ],
+  "google-analytics": [
+    {
+      "id": "google-account-totp",
+      "label": "Google Account authenticator code",
+      "codeSelector": "input#totpPin[name=\"totpPin\"][autocomplete=\"one-time-code\"]",
+      "submitSelector": "#totpNext button[type=\"button\"], button#totpNext[type=\"button\"]",
+      "paths": [
+        "/v3/signin/challenge/totp",
+        "/signin/v2/challenge/totp",
+        "/signin/challenge/totp"
+      ],
+      "submission": "google",
+      "origins": [
+        "https://accounts.google.com"
+      ]
+    }
+  ],
+  "google-tag-manager": [
+    {
+      "id": "google-account-totp",
+      "label": "Google Account authenticator code",
+      "codeSelector": "input#totpPin[name=\"totpPin\"][autocomplete=\"one-time-code\"]",
+      "submitSelector": "#totpNext button[type=\"button\"], button#totpNext[type=\"button\"]",
+      "paths": [
+        "/v3/signin/challenge/totp",
+        "/signin/v2/challenge/totp",
+        "/signin/challenge/totp"
+      ],
+      "submission": "google",
+      "origins": [
+        "https://accounts.google.com"
+      ]
+    }
+  ],
+  "google-business-profile": [
+    {
+      "id": "google-account-totp",
+      "label": "Google Account authenticator code",
+      "codeSelector": "input#totpPin[name=\"totpPin\"][autocomplete=\"one-time-code\"]",
+      "submitSelector": "#totpNext button[type=\"button\"], button#totpNext[type=\"button\"]",
+      "paths": [
+        "/v3/signin/challenge/totp",
+        "/signin/v2/challenge/totp",
+        "/signin/challenge/totp"
+      ],
+      "submission": "google",
+      "origins": [
+        "https://accounts.google.com"
+      ]
+    }
+  ],
+  "google-search-console": [
+    {
+      "id": "google-account-totp",
+      "label": "Google Account authenticator code",
+      "codeSelector": "input#totpPin[name=\"totpPin\"][autocomplete=\"one-time-code\"]",
+      "submitSelector": "#totpNext button[type=\"button\"], button#totpNext[type=\"button\"]",
+      "paths": [
+        "/v3/signin/challenge/totp",
+        "/signin/v2/challenge/totp",
+        "/signin/challenge/totp"
+      ],
+      "submission": "google",
+      "origins": [
+        "https://accounts.google.com"
+      ]
+    }
+  ],
+  "google-ads": [
+    {
+      "id": "google-account-totp",
+      "label": "Google Account authenticator code",
+      "codeSelector": "input#totpPin[name=\"totpPin\"][autocomplete=\"one-time-code\"]",
+      "submitSelector": "#totpNext button[type=\"button\"], button#totpNext[type=\"button\"]",
+      "paths": [
+        "/v3/signin/challenge/totp",
+        "/signin/v2/challenge/totp",
+        "/signin/challenge/totp"
+      ],
+      "submission": "google",
+      "origins": [
+        "https://accounts.google.com"
+      ]
+    }
+  ],
+  "youtube": [
+    {
+      "id": "google-account-totp",
+      "label": "Google Account authenticator code",
+      "codeSelector": "input#totpPin[name=\"totpPin\"][autocomplete=\"one-time-code\"]",
+      "submitSelector": "#totpNext button[type=\"button\"], button#totpNext[type=\"button\"]",
+      "paths": [
+        "/v3/signin/challenge/totp",
+        "/signin/v2/challenge/totp",
+        "/signin/challenge/totp"
+      ],
+      "submission": "google",
+      "origins": [
+        "https://accounts.google.com"
+      ]
+    }
+  ],
+  "gmail": [
+    {
+      "id": "google-account-totp",
+      "label": "Google Account authenticator code",
+      "codeSelector": "input#totpPin[name=\"totpPin\"][autocomplete=\"one-time-code\"]",
+      "submitSelector": "#totpNext button[type=\"button\"], button#totpNext[type=\"button\"]",
+      "paths": [
+        "/v3/signin/challenge/totp",
+        "/signin/v2/challenge/totp",
+        "/signin/challenge/totp"
+      ],
+      "submission": "google",
+      "origins": [
+        "https://accounts.google.com"
+      ]
+    }
+  ],
+  "porkbun": [
+    {
+      "id": "porkbun-totp",
+      "label": "Porkbun authenticator app",
+      "codeSelector": "form#loginForm #twoFactorLoginContainer input#twoFactorLoginCode[autocomplete=\"one-time-code\"]",
+      "submitSelector": "#accountLoginButtonContainer button#accountLoginButton",
+      "paths": [
+        "/account/login"
+      ],
+      "origins": [
+        "https://porkbun.com"
+      ],
+      "submission": "porkbun"
+    }
+  ],
+  "synology-dsm": [
+    {
+      "id": "synology-dsm-otp",
+      "label": "DSM 7 verification code",
+      "codeSelector": "#dsm-otp-fieldset input[name=\"one-time-code\"][autocomplete=\"one-time-code\"]",
+      "submitSelector": "div[role=\"button\"][syno-id=\"otp-panel-next-btn\"]",
+      "paths": [
+        "/",
+        "/webman/index.cgi"
+      ],
+      "submission": "synology"
+    }
+  ],
+  "cloudflare": [
+    {
+      "id": "cloudflare-totp",
+      "label": "Cloudflare authenticator app",
+      "codeSelector": "form input[autocomplete=\"one-time-code\"]",
+      "submitSelector": "form:has(input[autocomplete=\"one-time-code\"]) button[type=\"submit\"]",
+      "paths": [
+        "/login",
+        "/login/"
+      ],
+      "submission": "cloudflare"
+    }
+  ],
+  "tacticalrmm": [
+    {
+      "id": "tacticalrmm-totp",
+      "label": "Tactical RMM authenticator token",
+      "codeSelector": ".q-dialog form input[autocomplete=\"one-time-code\"][inputmode=\"numeric\"]",
+      "submitSelector": ".q-dialog form:has(input[autocomplete=\"one-time-code\"][inputmode=\"numeric\"]) button[type=\"submit\"]",
+      "paths": [
+        "/login"
+      ],
+      "submission": "spa"
+    }
+  ],
+  "guacamole": [
+    {
+      "id": "guacamole-totp",
+      "label": "Apache Guacamole TOTP extension — enrolled authenticator",
+      "codeSelector": "form.login-form .totp-code-field:has(> .totp-enroll.ng-hide) .totp-code input[name=\"guac-totp\"]",
+      "submitSelector": "form.login-form input.continue-login[type=\"submit\"][name=\"login\"]",
+      "paths": [
+        "/guacamole/",
+        "/"
+      ],
+      "submission": "spa"
+    }
+  ],
+  "gitea": [
+    {
+      "id": "gitea-totp",
+      "label": "Gitea local-account authenticator",
+      "codeSelector": "form[action$=\"/user/two_factor\"] input#passcode[name=\"passcode\"][autocomplete=\"one-time-code\"]",
+      "submitSelector": "form[action$=\"/user/two_factor\"] button.ui.primary",
+      "paths": [
+        "/user/two_factor"
+      ],
+      "submission": "post"
+    }
+  ],
+  "wordpress": [
+    {
+      "id": "wordpress-two-factor-totp",
+      "label": "WordPress Two-Factor plugin — authenticator app",
+      "codeSelector": "form[name=\"validate_2fa_form\"]:has(input[name=\"provider\"][value=\"Two_Factor_Totp\"]) input#authcode[autocomplete=\"one-time-code\"]",
+      "submitSelector": "form[name=\"validate_2fa_form\"]:has(input[name=\"provider\"][value=\"Two_Factor_Totp\"]) input#submit[type=\"submit\"]",
+      "paths": [
+        "/wp-login.php"
+      ],
+      "submission": "post"
+    }
+  ],
+  "gdrive": [
+    {
+      "id": "google-account-totp",
+      "label": "Google Account authenticator code",
+      "codeSelector": "input#totpPin[name=\"totpPin\"][autocomplete=\"one-time-code\"]",
+      "submitSelector": "#totpNext button[type=\"button\"], button#totpNext[type=\"button\"]",
+      "paths": [
+        "/v3/signin/challenge/totp",
+        "/signin/v2/challenge/totp",
+        "/signin/challenge/totp"
+      ],
+      "submission": "google",
+      "origins": [
+        "https://accounts.google.com"
+      ]
+    }
+  ]
+}

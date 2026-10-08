@@ -48,10 +48,19 @@ pub(crate) mod event_bridge;
 mod invoke_handler;
 mod native_dialogs;
 mod origin_browser_commands;
+mod origin_browser_recording;
+mod origin_browser_page_request;
+mod origin_browser_appearance_request;
+#[cfg_attr(not(feature = "native-browser"), allow(dead_code))]
+mod origin_browser_certificate_prompt;
 #[cfg(feature = "native-browser")]
 mod origin_browser_entry;
+#[cfg(all(feature = "native-browser", windows))]
+mod origin_browser_network_probe;
 #[cfg(feature = "native-browser")]
 mod origin_browser_runtime;
+#[cfg(feature = "native-browser")]
+mod origin_browser_startup_diagnostics;
 mod splash;
 mod state_registry;
 mod tray;
@@ -174,8 +183,13 @@ pub fn run() {
     #[cfg(feature = "native-browser")]
     match origin_browser_entry::dispatch_app_entry() {
         Ok(sorng_browser_host::bootstrap_platform::ProcessDispatch::Browser) => (),
-        Ok(sorng_browser_host::bootstrap_platform::ProcessDispatch::Exit(code)) => std::process::exit(code),
-        Err(_) => { eprintln!("Packaged native browser startup failed; no browser was started."); return; }
+        Ok(sorng_browser_host::bootstrap_platform::ProcessDispatch::Exit(code)) => {
+            std::process::exit(code)
+        }
+        Err(error) => {
+            eprintln!("Native browser stage=bootstrap error={error}");
+            return;
+        }
     }
     let profile = app_profile::install_process_profile();
 
@@ -200,23 +214,8 @@ pub fn run() {
         .plugin(tauri_plugin_updater::Builder::new().build())
         .setup(|app| {
             app_profile::verify_runtime(app)?;
-            #[cfg(feature = "native-browser")]
-            {
-                use tauri::Manager;
-                let root = app.path().app_local_data_dir().map_err(|error| error.to_string())
-                    .and_then(|path| sorng_commands_core::browser_data_commands::prepare_for_startup(&path, &app.config().identifier));
-                match root {
-                    Ok(root) => {
-                        let (wake, receiver) = origin_browser_runtime::pump_channel();
-                        origin_browser_entry::install(wake, &root).map_err(std::io::Error::other)?;
-                        origin_browser_runtime::start_pump(app.handle().clone(), receiver);
-                    }
-                    // A disconnected custom drive must not prevent opening the
-                    // app's settings to repair it. No alternate directory or
-                    // browser is silently substituted; CEF remains unavailable.
-                    Err(error) => log::warn!("Native browser data location unavailable: {error}"),
-                }
-            }
+            // Working-data preparation and CEF initialization belong to the
+            // first authorized create, after encryption and all native states.
             web_network_guard::install(app);
             state_registry::register(app)?;
             splash::show(app)?;

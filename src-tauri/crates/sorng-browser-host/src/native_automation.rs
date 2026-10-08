@@ -16,6 +16,17 @@ pub struct NativeAutomationPermissions {
     pub macros: bool,
 }
 
+impl NativeAutomationPermissions {
+    /// An additional native saved-policy restriction, never a consent grant.
+    /// Cancel remains cleanup-only in NativeAutomationAction::validate.
+    pub fn restrict_website_extensions(self, enabled: bool) -> Self {
+        Self {
+            scripts: self.scripts && enabled,
+            macros: self.macros && enabled,
+        }
+    }
+}
+
 /// Matches WebInteractionStep. In particular, a saved fill step has NO value.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "camelCase", deny_unknown_fields)]
@@ -305,13 +316,42 @@ pub(crate) const AUTOMATION_FACTORY: &str = r#"
     const style = getComputedStyle(e);
     return style.display !== 'none' && style.visibility !== 'hidden' && e.getClientRects().length > 0;
   }
+  function usable(e) {
+    // :disabled includes disabled fieldsets while preserving the first-legend
+    // exception. Property-only checks miss inherited native disabled state.
+    return !sensitive(e) && visible(e) && !e.disabled && !e.matches(':disabled') &&
+      !((e instanceof HTMLInputElement || e instanceof HTMLTextAreaElement) && e.readOnly);
+  }
   function fillControl(e) {
     return (e instanceof HTMLInputElement && ['text','search','email','url','tel','number','date','datetime-local','month','week','time','range','color'].includes(e.type)) || e instanceof HTMLTextAreaElement || e instanceof HTMLSelectElement;
   }
   function clickControl(e) {
     if (e instanceof HTMLInputElement) return e.type === 'button' || e.type === 'submit';
     if (e instanceof HTMLButtonElement && e.type === 'reset') return false;
+    if (e instanceof HTMLAnchorElement) {
+      if (!e.hasAttribute('href')) return false;
+      try {
+        const target = new URL(e.href, location.href);
+        return ['http:','https:'].includes(target.protocol) && target.origin === location.origin && !target.username && !target.password;
+      } catch (_) { return false; }
+    }
     return e.matches('a,button,[role=button],[role=link]');
+  }
+  function assignFill(e, value) {
+    const proto = e instanceof HTMLTextAreaElement ? HTMLTextAreaElement.prototype : e instanceof HTMLSelectElement ? HTMLSelectElement.prototype : HTMLInputElement.prototype;
+    const descriptor = Object.getOwnPropertyDescriptor(proto, 'value');
+    // Check native value sanitization off-document first. Invalid dates, absent
+    // options and clamped values must not clear/change the original field.
+    const probe = e.cloneNode(false);
+    if (e instanceof HTMLSelectElement) {
+      const option = Array.prototype.find.call(e.options, option => option.value === value);
+      if (!option || option.disabled || option.parentElement instanceof HTMLOptGroupElement && option.parentElement.disabled) return false;
+      probe.appendChild(option.cloneNode(true));
+    }
+    descriptor.set.call(probe, value);
+    if (descriptor.get.call(probe) !== value) return false;
+    descriptor.set.call(e, value);
+    return descriptor.get.call(e) === value;
   }
   function selectorFor(e) {
     const parts = []; let node = e;
@@ -330,7 +370,7 @@ pub(crate) const AUTOMATION_FACTORY: &str = r#"
   function record(event) {
     if (!recording || !event.isTrusted || location.href !== initialUrl) return;
     const e = event.target instanceof Element ? event.target.closest('a,button,input,textarea,select,[role=button],[role=link]') : null;
-    if (!e || sensitive(e) || !visible(e)) return;
+    if (!e || !usable(e)) return;
     const selector = selectorFor(e); if (!selector) return;
     if (event.type === 'change') {
       if (e instanceof HTMLInputElement && ['checkbox','radio'].includes(e.type)) notify('', 'step', 'check', selector, !!e.checked);
@@ -358,16 +398,15 @@ pub(crate) const AUTOMATION_FACTORY: &str = r#"
       const matches = document.querySelectorAll(codeOrSelector);
       if (matches.length !== 1) return false;
       const e = matches[0];
-      if (sensitive(e) || !visible(e) || e.disabled) return false;
+      if (!usable(e)) return false;
       if (kind === 'click') {
-        if (!clickControl(e) || (e instanceof HTMLAnchorElement && new URL(e.href, location.href).origin !== location.origin)) return false;
+        if (!clickControl(e)) return false;
         e.click(); return true;
       }
       if (kind === 'check' && e instanceof HTMLInputElement && ['checkbox','radio'].includes(e.type)) {
         Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'checked').set.call(e, checked);
       } else if (kind === 'fill' && typeof value === 'string' && value.length <= 4096 && fillControl(e)) {
-        const proto = e instanceof HTMLTextAreaElement ? HTMLTextAreaElement.prototype : e instanceof HTMLSelectElement ? HTMLSelectElement.prototype : HTMLInputElement.prototype;
-        Object.getOwnPropertyDescriptor(proto, 'value').set.call(e, value);
+        if (!assignFill(e, value)) return false;
       } else return false;
       e.dispatchEvent(new Event('input', {bubbles:true}));
       e.dispatchEvent(new Event('change', {bubbles:true}));
@@ -390,8 +429,13 @@ pub(crate) mod wire {
         if args.get_type(index) != ValueType::STRING {
             return None;
         }
-        let raw = CefString::from(&args.string(index));
-        if raw.as_slice()?.len() > max {
+        string_value(&CefString::from(&args.string(index)), max)
+    }
+    pub fn string_value(raw: &CefString, max: usize) -> Option<String> {
+        // CEF uses a null/zero-length buffer for a present empty string.
+        // Its type was checked by the caller: empty is not missing. Document
+        // replies, recording notifications and clearing inputs rely on this.
+        if raw.as_slice().is_some_and(|units| units.len() > max) {
             return None;
         }
         let value = raw.to_string();

@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use sorng_browser_host::cef_session_retention::{
     cef_time, validate_cookies, CookieOwner, RetentionError, RetentionMode, RetentionPolicy,
-    SignInCookie, MAX_TOTAL_BYTES,
+    SignInCookie,
 };
 use sorng_commands_core::database_protection::native_browser_owner::{
     NativeCookieOwnerBinding, NativeOwnerLease,
@@ -12,7 +12,6 @@ use sorng_commands_core::database_protection::native_browser_owner::{
 use sorng_encryption::{database_protection::Zeroizing, EncryptionState};
 use sorng_protocols::origin_browser::{BrowserIdentity, OriginBrowserPolicy};
 use std::{
-    collections::HashMap,
     sync::{
         atomic::{AtomicBool, Ordering},
         Arc, Mutex, OnceLock,
@@ -20,8 +19,9 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 use tauri::{Emitter, Manager, Runtime, WebviewWindow};
-const MAX_ACTIVE: usize = 64;
-const MAX_TRACKED: usize = 1024;
+#[path = "origin_browser_retention_registry.rs"]
+mod ownership;
+use ownership::{Registry, Slot};
 fn now() -> u64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -36,47 +36,18 @@ struct MemorySnapshot {
     created: u64,
     cookies: Vec<SignInCookie>,
 }
-struct Slot {
-    generation: u64,
-    binding: String,
-    active: bool,
-    memory: Option<Zeroizing<Vec<u8>>>,
-    expires: u64,
-    cleanup: NativeOwnerLease,
-    database_revision: Option<String>,
-    notify: Arc<dyn Fn() + Send + Sync>,
-}
-#[derive(Default)]
-struct Registry {
-    next: u64,
-    slots: HashMap<String, Slot>,
-}
-impl Registry {
-    fn current(&self, scope: &str, generation: u64, active: bool) -> bool {
-        self.slots
-            .get(scope)
-            .is_some_and(|slot| slot.generation == generation && (!active || slot.active))
-    }
-    fn can_admit(&self, scope: &str) -> bool {
-        capacity_available(
-            self.slots.len(),
-            self.slots.values().filter(|s| s.active).count(),
-            self.slots.contains_key(scope),
-            self.slots.get(scope).is_some_and(|s| s.active),
-        )
-    }
-}
-fn capacity_available(
-    tracked: usize,
-    active: usize,
-    existing: bool,
-    existing_active: bool,
-) -> bool {
-    (existing || tracked < MAX_TRACKED) && (existing_active || active < MAX_ACTIVE)
-}
-fn registry() -> &'static Mutex<Registry> {
-    static STORE: OnceLock<Mutex<Registry>> = OnceLock::new();
+fn registry() -> &'static Mutex<Registry<NativeOwnerLease>> {
+    static STORE: OnceLock<Mutex<Registry<NativeOwnerLease>>> = OnceLock::new();
     STORE.get_or_init(Mutex::default)
+}
+fn retire(scope: &str, generation: u64, clear_memory: bool) -> Result<(), RetentionError> {
+    let retired = registry()
+        .lock()
+        .map_err(failure)?
+        .retire(scope, generation, clear_memory);
+    // Destroy native leases only after releasing the registry mutex.
+    drop(retired);
+    Ok(())
 }
 pub struct NativeCookieRetention {
     lease: NativeOwnerLease,
@@ -105,7 +76,6 @@ fn bindings(
         Sha256::digest(encode(serde_json::json!([
             owner.profile,
             owner.database,
-            owner.window,
             owner.connection
         ]))?)
     );
@@ -113,6 +83,7 @@ fn bindings(
         "{:x}",
         Sha256::digest(encode(serde_json::json!([
             scope,
+            owner.window,
             owner.revision,
             owner.connection_digest,
             owner.unlock_epoch,
@@ -155,33 +126,35 @@ impl NativeCookieRetention {
             );
         });
         let generation = {
-            let mut store = registry().lock().map_err(failure)?;
-            store
-                .slots
-                .retain(|_, s| s.active || s.memory.is_some() || s.database_revision.is_some());
-            if !store.can_admit(&scope) {
-                return Err(RetentionError::Limit);
-            }
-            store.next = store.next.checked_add(1).ok_or(RetentionError::Limit)?;
-            let generation = store.next;
-            let memory = store
-                .slots
-                .remove(&scope)
-                .filter(|s| s.binding == binding && s.expires > stamp)
-                .and_then(|s| s.memory);
-            store.slots.insert(
-                scope.clone(),
-                Slot {
-                    generation,
-                    binding,
-                    active: true,
-                    memory,
-                    expires: stamp + u64::from(policy.max_age_hours) * 3600,
-                    cleanup,
-                    database_revision: None,
-                    notify: notify.clone(),
-                },
-            );
+            // The DB APIs take this coordinator before their final native
+            // commit. Serialize writer handover with that entire transaction,
+            // not just with its final boolean generation check.
+            let _write = sorng_encryption::settings_coordinator::lock_settings_write().await;
+            let retired = registry().lock().map_err(failure)?.prune();
+            drop(retired);
+            let (generation, retired) = lease
+                .with_cookie_retention_key(|_| {
+                    Ok(registry().lock().map_err(failure).and_then(|mut store| {
+                        store.admit(
+                            scope.clone(),
+                            Slot {
+                                generation: 0,
+                                binding,
+                                memory: None,
+                                expires: stamp + u64::from(policy.max_age_hours) * 3600,
+                                cleanup,
+                                database_revision: None,
+                                notify: notify.clone(),
+                            },
+                            lease.clone(),
+                            stamp,
+                        )
+                    }))
+                })
+                .map_err(failure)??;
+            // A previous owner's last EncryptionState clone may be here. Its
+            // destructor takes the unlock mutex; the admission fence is over.
+            drop(retired);
             generation
         };
         Ok(Arc::new(Self {
@@ -200,6 +173,9 @@ impl NativeCookieRetention {
         }))
     }
     pub fn enabled(&self) -> bool {
+        self.retains() && self.generation_current()
+    }
+    fn retains(&self) -> bool {
         self.policy.enabled() && !self.dormant.load(Ordering::Acquire)
     }
     pub fn invalidate(&self) {
@@ -209,12 +185,15 @@ impl NativeCookieRetention {
         !self.invalidated.load(Ordering::Acquire)
             && registry()
                 .lock()
-                .is_ok_and(|r| r.current(&self.scope, self.generation, true))
+                .is_ok_and(|r| r.current(&self.scope, self.generation))
+    }
+    fn write_current(&self) -> bool {
+        !self.invalidated.load(Ordering::Acquire) && self.generation_current()
     }
     fn generation_current(&self) -> bool {
         registry()
             .lock()
-            .is_ok_and(|r| r.current(&self.scope, self.generation, false))
+            .is_ok_and(|r| r.writer(&self.scope, self.generation))
     }
     pub fn load(&self) -> Result<Vec<SignInCookie>, RetentionError> {
         if !self.current() {
@@ -232,21 +211,19 @@ impl NativeCookieRetention {
         }
         let record = loaded.record;
         *self.revision.lock().map_err(failure)? = record.as_ref().map(|r| r.revision.clone());
-        if self.policy.mode != RetentionMode::EncryptedDatabase || !self.enabled() {
+        if self.policy.mode != RetentionMode::EncryptedDatabase || !self.retains() {
             if record.is_some() {
                 self.dormant.store(true, Ordering::Release);
                 return Ok(vec![]);
             }
-            if self.policy.mode != RetentionMode::Memory || !self.enabled() {
+            if self.policy.mode != RetentionMode::Memory || !self.retains() {
                 return Ok(vec![]);
             }
-            let bytes = registry()
-                .lock()
-                .map_err(failure)?
-                .slots
-                .get(&self.scope)
-                .and_then(|s| s.memory.as_ref())
-                .map(|b| Zeroizing::new(b.to_vec()));
+            let bytes =
+                registry()
+                    .lock()
+                    .map_err(failure)?
+                    .memory(&self.scope, self.generation, now());
             let Some(bytes) = bytes else {
                 return Ok(vec![]);
             };
@@ -287,8 +264,8 @@ impl NativeCookieRetention {
     }
     fn touch(&self, created: u64, revision: Option<String>) -> Result<(), RetentionError> {
         let mut store = registry().lock().map_err(failure)?;
-        if !store.current(&self.scope, self.generation, true) {
-            return Err(RetentionError::OwnerUnavailable);
+        if !store.writer(&self.scope, self.generation) {
+            return Ok(());
         }
         let slot = store
             .slots
@@ -298,6 +275,45 @@ impl NativeCookieRetention {
             .min(now() + u64::from(self.policy.idle_timeout_minutes) * 60);
         slot.database_revision = revision;
         Ok(())
+    }
+    fn storage_result<T>(
+        &self,
+        expected: &Option<String>,
+        result: Result<T, String>,
+    ) -> Result<Option<T>, RetentionError> {
+        match result {
+            Ok(value) => Ok(Some(value)),
+            Err(_) if !self.generation_current() || !self.lease.is_current() => Ok(None),
+            Err(error) => {
+                // Another native operation (e.g. reviewed import/clear) can
+                // replace the saved revision without admitting a new tab. Do
+                // not retry a stale jar against its new revision, or repeatedly
+                // try to delete it during close. Keep the live jar read-only.
+                let loaded = tauri::async_runtime::block_on(
+                    self.lease.load_cookie_record(|| self.generation_current()),
+                )
+                .map_err(failure)?;
+                if loaded.changed {
+                    (self.notify)();
+                }
+                let actual = loaded.record.as_ref().map(|r| r.revision.clone());
+                if loaded.dormant || &actual != expected {
+                    self.dormant.store(true, Ordering::Release);
+                    let mut store = registry().lock().map_err(failure)?;
+                    if let Some(slot) = store
+                        .slots
+                        .get_mut(&self.scope)
+                        .filter(|s| s.generation == self.generation)
+                    {
+                        // This attempt cannot expire a replacement record.
+                        slot.database_revision = None;
+                    }
+                    Ok(None)
+                } else {
+                    Err(failure(error))
+                }
+            }
+        }
     }
     pub fn save(&self, mut cookies: Vec<SignInCookie>) -> Result<(), RetentionError> {
         if self.dormant.load(Ordering::Acquire) {
@@ -321,15 +337,19 @@ impl NativeCookieRetention {
         validate_cookies(&cookies, &self.origins, stamp)?;
         if self.policy.mode == RetentionMode::EncryptedDatabase {
             let expected = self.revision.lock().map_err(failure)?.clone();
-            let record = tauri::async_runtime::block_on(self.lease.save_cookie_record(
+            let result = tauri::async_runtime::block_on(self.lease.save_cookie_record(
                 expected.clone(),
                 cookies,
                 self.source.clone(),
                 self.origins.clone(),
                 self.policy,
-                || self.current(),
-            ))
-            .map_err(failure)?;
+                || self.write_current(),
+            ));
+            // A successor may be admitted while this worker waits for the DB
+            // coordinator. Losing persistence authority is not a jar failure.
+            let Some(record) = self.storage_result(&expected, result)? else {
+                return Ok(());
+            };
             let revision = record.as_ref().map(|r| r.revision.clone());
             *self.revision.lock().map_err(failure)? = revision.clone();
             if expected != revision {
@@ -340,6 +360,8 @@ impl NativeCookieRetention {
                 // Identical captures do not change logical revisions. Native
                 // activity checkpoints are bounded to five minutes or close.
                 self.touch(record.created, revision)?;
+            } else {
+                self.touch(created, None)?;
             }
             return Ok(());
         }
@@ -353,36 +375,34 @@ impl NativeCookieRetention {
                     .lock()
                     .map_err(|_| "session registry unavailable")?;
                 if self.invalidated.load(Ordering::Acquire)
-                    || !store.current(&self.scope, self.generation, true)
+                    || !store.current(&self.scope, self.generation)
                 {
                     return Err("session unavailable".into());
                 }
-                let total: usize = store
-                    .slots
-                    .iter()
-                    .filter(|(id, _)| *id != &self.scope)
-                    .map(|(_, s)| s.memory.as_ref().map_or(0, |b| b.len()))
-                    .sum();
-                if total + bytes.len() > MAX_TOTAL_BYTES {
-                    return Err("session storage full".into());
-                }
                 store
-                    .slots
-                    .get_mut(&self.scope)
-                    .ok_or("session unavailable")?
-                    .memory = Some(bytes);
+                    .save_memory(&self.scope, self.generation, bytes)
+                    .map_err(|_| "session storage full")?;
                 Ok(())
             })
             .map_err(failure)?;
         self.touch(created, None)
     }
     fn clear_database(&self) -> Result<(), RetentionError> {
+        if !self.generation_current() || self.dormant.load(Ordering::Acquire) {
+            return Ok(());
+        }
         let expected = self.revision.lock().map_err(failure)?.clone();
-        tauri::async_runtime::block_on(
+        // An attempt that never loaded/saved a record owns nothing to delete.
+        if expected.is_none() {
+            return Ok(());
+        }
+        let result = tauri::async_runtime::block_on(
             self.lease
                 .clear_cookie_record(expected.clone(), || self.generation_current()),
-        )
-        .map_err(failure)?;
+        );
+        if self.storage_result(&expected, result)?.is_none() {
+            return Ok(());
+        }
         *self.revision.lock().map_err(failure)? = None;
         if expected.is_some() {
             (self.notify)();
@@ -411,43 +431,41 @@ impl NativeCookieRetention {
         if delete && self.generation_current() && self.lease.is_current() {
             self.clear_database()?;
         }
-        if let Some(slot) = registry()
-            .lock()
-            .map_err(failure)?
-            .slots
-            .get_mut(&self.scope)
-        {
-            if slot.generation == self.generation {
-                slot.active = false;
-                slot.memory = None;
-            }
-        }
+        retire(&self.scope, self.generation, true)?;
         self.lease.revoke();
         Ok(())
     }
     pub fn finish(&self) -> Result<(), RetentionError> {
         if self.policy.mode == RetentionMode::EncryptedDatabase && self.enabled() {
             let expected = self.revision.lock().map_err(failure)?.clone();
-            tauri::async_runtime::block_on(
-                self.lease.touch_cookie_record(expected, || self.current()),
-            )
-            .map_err(failure)?;
-        }
-        self.invalidate();
-        if let Some(slot) = registry()
-            .lock()
-            .map_err(failure)?
-            .slots
-            .get_mut(&self.scope)
-        {
-            if slot.generation == self.generation {
-                slot.active = false;
+            if expected.is_some() {
+                let result = tauri::async_runtime::block_on(
+                    self.lease
+                        .touch_cookie_record(expected.clone(), || self.write_current()),
+                );
+                self.storage_result(&expected, result)?;
             }
         }
+        self.invalidate();
+        retire(&self.scope, self.generation, false)?;
         self.lease.revoke();
         Ok(())
     }
     pub fn housekeeping() -> Result<usize, RetentionError> {
+        // Snapshot eviction must not invalidate still-live tabs. Unlock/key
+        // revocation, however, removes every affected attempt independently.
+        let attempts: Vec<_> = registry()
+            .lock()
+            .map_err(failure)?
+            .active
+            .iter()
+            .map(|(generation, a)| (*generation, a.scope.clone(), a.lease.clone()))
+            .collect();
+        for (generation, scope, lease) in attempts {
+            if !lease.is_current() {
+                retire(&scope, generation, true)?;
+            }
+        }
         let candidates: Vec<_> = registry()
             .lock()
             .map_err(failure)?
@@ -474,7 +492,7 @@ impl NativeCookieRetention {
                 let removed =
                     tauri::async_runtime::block_on(owner.expire_cookie_record(revision, || {
                         registry().lock().is_ok_and(|r| {
-                            r.current(&scope, generation, false)
+                            r.snapshot_current(&scope, generation)
                                 && r.slots.get(&scope).is_some_and(|s| s.expires <= now())
                         })
                     }))
@@ -484,7 +502,7 @@ impl NativeCookieRetention {
                 }
             }
             let mut store = registry().lock().map_err(failure)?;
-            if store.current(&scope, generation, false)
+            if store.snapshot_current(&scope, generation)
                 && (!current || store.slots.get(&scope).is_some_and(|s| s.expires <= now()))
             {
                 store.slots.remove(&scope);
@@ -507,7 +525,7 @@ impl CookieOwner for NativeCookieRetention {
                     .lock()
                     .map_err(|_| "session registry unavailable")?;
                 if self.invalidated.load(Ordering::Acquire)
-                    || !store.current(&self.scope, self.generation, true)
+                    || !store.current(&self.scope, self.generation)
                 {
                     return Err("session unavailable".into());
                 }
@@ -519,29 +537,17 @@ impl CookieOwner for NativeCookieRetention {
 }
 impl Drop for NativeCookieRetention {
     fn drop(&mut self) {
-        if let Ok(mut store) = registry().lock() {
-            if let Some(slot) = store.slots.get_mut(&self.scope) {
-                if slot.generation == self.generation && slot.active {
-                    slot.active = false;
-                    slot.memory = None;
-                }
-            }
-        }
+        let _ = retire(&self.scope, self.generation, true);
     }
 }
 
 #[cfg(test)]
+#[path = "origin_browser_retention_tests.rs"]
+mod integration_tests;
+
+#[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn sixty_five_retired_connections_do_not_exhaust_the_active_limit() {
-        assert!(capacity_available(65, 0, false, false));
-        assert!(!capacity_available(64, 64, false, false));
-        assert!(!capacity_available(1024, 0, false, false));
-        assert!(capacity_available(1024, 0, true, false));
-        assert!(capacity_available(1024, 64, true, true));
-    }
 
     #[test]
     fn memory_scope_separates_database_connection_window_and_unlock_attempt() {
@@ -573,8 +579,12 @@ mod tests {
             )
             .unwrap();
             assert_ne!(original.1, updated.1);
-            if change < 3 {
+            if change < 2 {
                 assert_ne!(original.0, updated.0);
+            } else {
+                // Windows/attempts share ONE persisted connection snapshot,
+                // but never another window/unlock epoch's in-memory cookies.
+                assert_eq!(original.0, updated.0);
             }
         }
     }

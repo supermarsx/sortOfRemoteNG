@@ -2,21 +2,32 @@
 //! app shell, but neither their contents nor a renderer boolean grant execution.
 use super::{NativeAuthorityError, NativeOwnerLease};
 use serde_json::Value;
+use sorng_browser_host::native_automation::NativeAutomationPermissions;
 use sorng_encryption::EncryptionState;
 use tauri::{Runtime, WebviewWindow};
 
 pub struct NativeAutomationAuthority {
     scripts: bool,
     macros: bool,
+    website_extensions_enabled: bool,
+    website_extension_override: Option<bool>,
     lease: NativeOwnerLease,
 }
 
 impl NativeAutomationAuthority {
-    pub(super) fn new(connection: &Value, lease: &NativeOwnerLease) -> Self {
+    pub(super) fn new(
+        connection: &Value,
+        lease: &NativeOwnerLease,
+        website_extensions_enabled: bool,
+    ) -> Self {
         let (scripts, macros) = saved_consent(connection);
         Self {
             scripts,
             macros,
+            website_extensions_enabled,
+            website_extension_override: connection
+                .pointer("/browserSession/websiteExtensionsEnabled")
+                .and_then(Value::as_bool),
             lease: lease.clone(),
         }
     }
@@ -42,7 +53,18 @@ impl NativeAutomationAuthority {
             .await
             .map_err(|_| NativeAuthorityError::OwnerUnavailable)?;
         let (scripts, macros) = global_availability(&settings);
-        Ok((self.scripts && scripts, self.macros && macros))
+        let global_extensions =
+            super::extensions::saved_app_extensions_enabled(&Value::Null, &settings)
+                .map_err(|_| NativeAuthorityError::PolicyUnsupported)?;
+        let permissions = NativeAutomationPermissions {
+            scripts: self.scripts && scripts,
+            macros: self.macros && macros,
+        }
+        .restrict_website_extensions(
+            self.website_extensions_enabled
+                && self.website_extension_override.unwrap_or(global_extensions),
+        );
+        Ok((permissions.scripts, permissions.macros))
     }
 }
 

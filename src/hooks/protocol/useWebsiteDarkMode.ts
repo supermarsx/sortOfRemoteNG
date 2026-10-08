@@ -31,6 +31,10 @@ import { normalizeAdvancedProtocolConnection } from "../../utils/connection/norm
 import { getRuntimeWebNavigation } from "../../utils/session/runtimeConnectionRegistry";
 import { httpRedirectConnectionOrigin } from "../../utils/protocol/httpRedirectTrustIdentity";
 import { websiteDarkModeSourceIdentity as sourceIdentity } from "../../utils/protocol/websiteDarkModeIdentity";
+import {
+  useWebsiteAppPalette,
+  websiteDarkThemeForPage,
+} from "./useWebsiteAppPalette";
 
 /**
  * What the open page actually got, and why. `engine` and `cssOnly` both mean
@@ -136,6 +140,7 @@ function appearance(connection: Connection) {
 export function useWebsiteDarkMode(
   options: Options,
 ): WebsiteDarkModeController {
+  const appPalette = useWebsiteAppPalette();
   const context = useContext(ConnectionContext);
   const runtimeConnection = options.connection;
   const navigation = runtimeConnection
@@ -495,7 +500,7 @@ export function useWebsiteDarkMode(
   const engineRefused = enabled === true && scriptsPolicy === "inline-only";
   const payloadKey = stableJsonStringify({
     enabled: enabled === true,
-    theme,
+    theme: websiteDarkThemeForPage(theme, appPalette),
     ...(engineRefused ? { cssOnly: true } : {}),
   });
   const applyKey = stableJsonStringify([

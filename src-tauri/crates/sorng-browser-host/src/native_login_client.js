@@ -1,10 +1,164 @@
 // Private native factory; shared modules retain their existing form semantics.
 // No proxy nonce endpoint, page-global callback, or credentials in source.
-(function (notify, configuration, adapter) {
+(function (notify, configuration, adapter, nativeTyping) {
   "use strict";
+  // Independently installed by the renderer with native-owned reviewed MFA
+  // metadata. The OTP closure survives completion of the password adapter.
+  if (adapter === "approved-otp") return approvedOtpStage(notify, configuration);
+  if (configuration?.mfa) {
+    configuration = { ...configuration };
+    delete configuration.mfa;
+  }
+  function approvedOtpStage(signal, setup) {
+    const doc = document;
+    const now = Date.now.bind(Date);
+    const started = now();
+    // This local nonce satisfies the shared DOM guard's shape contract only;
+    // native process/document nonces and owner consent authorize the operation.
+    const guardSetup = { ...setup, nonce: Array.from(crypto.getRandomValues(new Uint8Array(16)), b => b.toString(16).padStart(2, "0")).join("") };
+    let stopped = false, timer, target = null, prefix = "", armed = false;
+    let deadline = 0, autoSubmit = false, pending = false, submitted = false;
+    const emit = (stage, index = 0) => signal(`totp|${stage}|${setup.id}|${index}`);
+    const later = (fn, ms) => { clearTimeout(timer); timer = setTimeout(fn, ms); };
+    const cancel = () => {
+      if (!stopped) emit("cancel");
+      stopped = true; armed = false; prefix = ""; target = null; clearTimeout(timer);
+    };
+    const visible = (el) => el && el.isConnected && el.ownerDocument === doc &&
+      !el.hidden && el.getAttribute("aria-hidden") !== "true" &&
+      getComputedStyle(el).display !== "none" && getComputedStyle(el).visibility !== "hidden" &&
+      (el.offsetParent !== null || el.getClientRects().length > 0);
+    /* REVIEWED_TOTP_GUARDS */
+    function controls(requireReady = false) {
+      if (stopped || document !== doc || window.top !== window ||
+          now() - started > 600000 || location.protocol !== "https:" ||
+          location.origin !== setup.origin || !setup.paths.includes(location.pathname)) return null;
+      try {
+        const found = totpTarget(guardSetup, requireReady);
+        return { ...found, input: found.field, href: location.href };
+      } catch (_) { return null; }
+    }
+    function current(requireReady = false) {
+      const found = controls(requireReady);
+      return target && found && found.input === target.input && found.button === target.button &&
+        found.form === target.form && found.fingerprint === target.fingerprint && found.href === target.href &&
+        found.root === target.root && found.panel === target.panel && sameTotpHandlers(found, target) &&
+        doc.activeElement === target.input && target.input.value === prefix &&
+        (target.input.selectionStart === null ||
+         (target.input.selectionStart === prefix.length && target.input.selectionEnd === prefix.length)) &&
+        (!deadline || now() < deadline);
+    }
+    function discover() {
+      if (stopped) return;
+      const found = controls();
+      if (!found) { if (now() - started < 600000) later(discover, 200); else cancel(); return; }
+      // Never replace manual input or take focus away from another live control.
+      if (found.input.value || (doc.activeElement !== doc.body && doc.activeElement !== found.input)) return;
+      target = found;
+      found.input.focus({ preventScroll: true });
+      later(() => { if (current()) emit("start"); else cancel(); }, setup.fillDelayMs);
+    }
+    function inputEvent(event) {
+      if (!target || stopped) return;
+      if (!armed || !event.isTrusted || event.target !== target.input ||
+          !/^\d$/.test(event.data || "") || event.inputType !== "insertText" ||
+          target.input.value !== prefix + event.data) { cancel(); return; }
+      prefix += event.data;
+      armed = false;
+    }
+    doc.addEventListener("input", inputEvent, true);
+    doc.addEventListener("beforeinput", (event) => {
+      if (!target || stopped) return;
+      if (!armed || !event.isTrusted || !current() || event.target !== target.input ||
+          !/^\d$/.test(event.data || "") || event.inputType !== "insertText") {
+        // Suppress only a pending injected key aimed at a stale target.
+        if (armed) event.preventDefault();
+        cancel();
+      }
+    }, true);
+    doc.addEventListener("keydown", (event) => {
+      if (!target || stopped) return;
+      if (!armed || !current() || !/^\d$/.test(event.key) || event.ctrlKey || event.altKey || event.metaKey) {
+        if (armed) event.preventDefault();
+        cancel();
+      }
+    }, true);
+    doc.addEventListener("pointerdown", () => { if (target) cancel(); }, true);
+    doc.addEventListener("focusin", (event) => {
+      if (target && event.target !== target.input) cancel();
+    }, true);
+    window.addEventListener("pagehide", cancel, { once: true });
+    if (!setup || typeof setup.id !== "string" || !/^[a-z0-9-]{1,128}$/.test(setup.id) ||
+        !Array.isArray(setup.paths) || !Number.isInteger(setup.digits) || setup.digits < 6 || setup.digits > 8 ||
+        [setup.fillDelayMs, setup.submitDelayMs].some(v => !Number.isInteger(v) || v < 0 || v > 30000)) {
+      stopped = true;
+      return () => false;
+    }
+    later(discover, 0);
+    // Metadata only. OTP characters arrive solely through Chromium key events.
+    return function (command, index, until, submit) {
+      if (stopped || !target || !Number.isInteger(index) || !Number.isFinite(until)) return false;
+      if (command === "cancel") { cancel(); return false; }
+      if (command === "wait") {
+        if (deadline || prefix || index < 1 || index > 33020 || !current()) { cancel(); return false; }
+        later(() => { if (current()) emit("start"); else cancel(); }, index);
+        return true;
+      }
+      if (until <= now() || until > now() + 3600000 || (deadline && deadline !== until)) { cancel(); return false; }
+      deadline = until; autoSubmit = submit === true;
+      if (command === "submit") {
+        if (submitted || !autoSubmit || index !== setup.digits || prefix.length !== setup.digits || !current(true) ||
+            target.button.disabled || target.button.getAttribute("aria-disabled") === "true") { cancel(); return false; }
+        const button = target.button;
+        if (setup.submission === "spa" || target.spa) target.form.addEventListener("submit", event => event.preventDefault(), { capture: true, once: true });
+        submitted = true; stopped = true; prefix = ""; target = null;
+        button.click();
+        return true;
+      }
+      if (command !== "probe" || pending || index < 0 || index > setup.digits) { cancel(); return false; }
+      pending = true;
+      // Let Chromium process the previous native key before validating its
+      // resulting input event. Polling never retries or repeats a character.
+      const limit = Math.min(deadline, now() + 1500);
+      const probe = () => {
+        if (stopped) return;
+        if (armed && prefix.length === index - 1 && now() < limit) { later(probe, 25); return; }
+        pending = false;
+        if (armed || prefix.length !== index || !current()) { cancel(); return; }
+        if (index === setup.digits) {
+          if (autoSubmit) {
+            const earliest = now() + setup.submitDelayMs;
+            const settledBy = Math.min(deadline, earliest + 3000);
+            const finish = () => {
+              if (!current() || now() >= settledBy) { cancel(); return; }
+              if (now() < earliest || !current(true)) { later(finish, 50); return; }
+              emit("finish", index);
+            };
+            later(finish, setup.submitDelayMs);
+          } else { stopped = true; prefix = ""; target = null; }
+        } else {
+          armed = true;
+          emit("key", index);
+        }
+      };
+      later(probe, 50);
+      return true;
+    };
+  }
   var stopped = false;
   var cancelActive = null;
   /* REVIEWED_FORM_MODULES */
+  /* NATIVE_KEYBOARD_CLIENT */
+  // Native production always passes true. The old three-argument standalone
+  // harness remains useful for testing the shared provider/form modules.
+  const keyboard = nativeTyping === true ? createLoginKeyboard(notify) : null;
+  const attachKeyboard = deliver => {
+    if (keyboard) Object.defineProperty(deliver, "nativeTyping", { value: keyboard.dispatch });
+    return deliver;
+  };
+  const writeCredential = (element, value, guard, stage, field) => keyboard
+    && !field.startsWith("extra") ? keyboard.write(element, value, guard, stage, field, expires)
+    : Promise.resolve(fillField(element, value, guard));
   const doc = document;
   const origin = location.origin;
   const initialHref = location.href;
@@ -28,6 +182,7 @@
   }
   function cancel() {
     stopped = true;
+    if (keyboard) keyboard.cancel();
     clearTimeout(startTimer);
     clearTimeout(expiryTimer);
     if (cancelActive) cancelActive();
@@ -129,6 +284,7 @@
     }
     function finish(ok) {
       if (stopped) return;
+      if (keyboard) keyboard.cancel();
       if (!ok) clearOwned();
       for (const entry of owned) entry.value = "";
       owned = [];
@@ -145,7 +301,7 @@
       notify(ok ? "form-completed" : "form-rejected");
     }
     function edited(event) {
-      if (event.isTrusted) finish(false);
+      if (event.isTrusted && !keyboard?.ownsEvent(event)) finish(false);
     }
     function painted(node) {
       if (
@@ -811,16 +967,17 @@
         }
         if (!valid(target) || !data || packet !== data)
           throw new Error("expired");
-        const write = (element, value) => {
+        const write = async (element, value, field) => {
           owned.push({ element, value });
-          fillField(element, value, () => valid(target));
+          await writeCredential(element, value, () => valid(target), deliveredStage, field);
           if (!valid(target) || element.value !== value)
             throw new Error("changed");
         };
-        if (deliveredStage === "form") write(target.user, data.username);
-        write(
+        if (deliveredStage === "form") await write(target.user, data.username, "username");
+        await write(
           target.field,
           deliveredStage === "identifier" ? data.username : data.password,
+          deliveredStage === "identifier" ? "username" : "password",
         );
         dropPacket();
         const combined =
@@ -931,7 +1088,7 @@
       )
     )
       return () => false;
-    return providerClient(configuration.provider, configuration.timing);
+    return attachKeyboard(providerClient(configuration.provider, configuration.timing));
   }
   const sharedVisible = isVisible;
   isVisible = function (element) {
@@ -1084,6 +1241,7 @@
     }
     function finish(ok) {
       if (done) return;
+      if (keyboard) keyboard.cancel();
       done = true;
       stopped = true;
       clearInterval(timer);
@@ -1102,7 +1260,7 @@
       notify(ok ? "form-completed" : "form-rejected");
     }
     function edited(event) {
-      if (event.isTrusted) finish(false);
+      if (event.isTrusted && !keyboard?.ownsEvent(event)) finish(false);
     }
     function valid() {
       if (done || !current() || now() >= readyDeadline || !captured)
@@ -1225,16 +1383,16 @@
         if (target.pw.value || target.user?.value) throw new Error("edited");
         captured = captureTarget(target, options);
         const writes = [
-          target.user && [target.user, username],
-          [target.pw, password],
-          ...captured.extras.map((field) => [field.element, field.value]),
+          target.user && [target.user, username, "username"],
+          [target.pw, password, "password"],
+          ...captured.extras.map((field, index) => [field.element, field.value, `extra${index}`]),
         ].filter(Boolean);
         const guard = () => valid() && now() < expires;
-        for (const [element, value] of writes) {
+        for (const [element, value, field] of writes) {
           if (!guard()) throw new Error("expired");
           const entry = { element, value, hash: null };
           records.push(entry);
-          fillField(element, value, guard);
+          await writeCredential(element, value, guard, "form", field);
           if (!guard() || element.value !== value) throw new Error("changed");
         }
         // Drop function-local cleartext before the asynchronous action wait.
@@ -1443,7 +1601,7 @@
       return false;
     };
   }
-  if (adapter === "modular-form") return deferredFormClient();
+  if (adapter === "modular-form") return attachKeyboard(deferredFormClient());
   window.addEventListener("pagehide", cancel, { once: true });
   window.addEventListener("unload", cancel, { once: true });
   window.addEventListener("hashchange", cancel, { once: true });

@@ -43,6 +43,11 @@ vi.mock("../../src/components/connection/ConnectionDiagnostics", () => ({
 vi.mock("../../src/components/security/AutoLockManager", () => ({
   AutoLockManager: () => <div data-testid="auto-lock" />,
 }));
+vi.mock("../../src/components/security/OriginBrowserCertificateReview", () => ({
+  OriginBrowserCertificateReview: () => (
+    <div data-testid="native-certificate-review" />
+  ),
+}));
 
 vi.mock("react-i18next", () => ({
   useTranslation: () => ({
@@ -91,6 +96,10 @@ function makeProps(overrides: Record<string, any> = {}) {
 }
 
 describe("AppDialogs", () => {
+  it("mounts native certificate review globally without an attached session or another open dialog", () => {
+    render(<AppDialogs {...makeProps()} />);
+    expect(screen.getByTestId("native-certificate-review")).toBeInTheDocument();
+  });
   it("renders core dialogs without tool popups", () => {
     const databaseManager = {
       getCurrentDatabase: vi.fn().mockReturnValue(null),

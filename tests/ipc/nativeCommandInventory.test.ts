@@ -7,6 +7,34 @@ import path from "node:path";
 import fs from "node:fs";
 
 describe("native command inventory", () => {
+  it("registers and routes both idle browser prewarm commands", () => {
+    const root = path.resolve(__dirname, "../..");
+    const handler = fs.readFileSync(
+      path.join(root, "src-tauri/src/invoke_handler.rs"),
+      "utf8",
+    );
+    const router = fs
+      .readFileSync(
+        path.join(root, "src-tauri/src/origin_browser_commands.rs"),
+        "utf8",
+      )
+      .split("#[tauri::command]")[0];
+    const commands = extractNativeCommandNames(handler);
+    for (const command of [
+      "origin_browser_prewarm",
+      "origin_browser_cancel_prewarm",
+      "origin_browser_downloads",
+      "origin_browser_download_control",
+      "origin_browser_extensions",
+      "origin_browser_certificate_review",
+      "origin_browser_page_menu",
+      "origin_browser_recording",
+      "origin_browser_appearance",
+    ]) {
+      expect(commands.has(command)).toBe(true);
+      expect(router).toContain(`"${command}"`);
+    }
+  });
   it("forwards every runtime capability feature from the application to core", () => {
     const root = path.resolve(__dirname, "../..");
     const source = fs

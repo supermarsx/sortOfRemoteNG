@@ -206,10 +206,19 @@ fn deserialize_classes<'de, D: Deserializer<'de>>(
 /// Equivalent to the frontend origin-only validator: IDNs become punycode;
 /// default HTTPS ports collapse; other ports/schemes never gain implied grants.
 pub fn canonical_website_permission_origin(value: &str) -> Result<String, DomainPermissionError> {
+    canonical_request_origin_inner(value, false)
+}
+
+/// Native request metadata can be HTTP. Stored domain grants remain HTTPS-only.
+pub fn canonical_browser_request_origin(value: &str) -> Result<String, DomainPermissionError> {
+    canonical_request_origin_inner(value, true)
+}
+
+fn canonical_request_origin_inner(value: &str, allow_http: bool) -> Result<String, DomainPermissionError> {
     static FORBIDDEN: LazyLock<Regex> =
         LazyLock::new(|| Regex::new(r"[\s\p{C}@%*\\?#]").expect("static origin character pattern"));
     static AUTHORITY: LazyLock<Regex> = LazyLock::new(|| {
-        Regex::new(r"(?i)^https://(\[[0-9a-f:.]+\]|[^:/]+)(?::([1-9][0-9]{0,4}))?/?$")
+        Regex::new(r"(?i)^https?://(\[[0-9a-f:.]+\]|[^:/]+)(?::([1-9][0-9]{0,4}))?/?$")
             .expect("static HTTPS authority pattern")
     });
     if value.encode_utf16().count() > MAX_WEBSITE_PERMISSION_ORIGIN_LENGTH
@@ -225,7 +234,7 @@ pub fn canonical_website_permission_origin(value: &str) -> Result<String, Domain
     }
     let url = Url::parse(value).map_err(|_| DomainPermissionError)?;
     let host = url.host_str().ok_or(DomainPermissionError)?;
-    if url.scheme() != "https"
+    if !(url.scheme() == "https" || allow_http && url.scheme() == "http")
         || !url.username().is_empty()
         || url.password().is_some()
         || url.query().is_some()
@@ -330,6 +339,7 @@ pub struct WebsitePermissionQuery<'a> {
 /// Validated immutable policy snapshot; no session identity, proxy or secrets.
 #[derive(Clone)]
 pub struct WebsitePermissionEngine {
+    temporary_http_source: Option<String>,
     shared: WebsiteDomainPermissionsSettings,
     connection: WebsiteDomainPermissionsSettings,
     application_defaults: WebsitePermissionApplicationDefaults,
@@ -343,6 +353,7 @@ impl WebsitePermissionEngine {
         application_defaults: &WebsitePermissionApplicationDefaults,
     ) -> Result<Self, DomainPermissionError> {
         Ok(Self {
+            temporary_http_source: None,
             shared: shared
                 .map(WebsiteDomainPermissionsSettings::normalized)
                 .transpose()?
@@ -356,6 +367,16 @@ impl WebsitePermissionEngine {
         })
     }
 
+    /// Explicit temporary HTTP source, not a reusable domain grant. No other
+    /// origin (including its HTTPS spelling) obtains navigation/resource rights.
+    pub fn temporary_http(source: &str, defaults: &WebsitePermissionApplicationDefaults) -> Result<Self, DomainPermissionError> {
+        let source = canonical_browser_request_origin(source)?;
+        if !source.starts_with("http://") { return Err(DomainPermissionError); }
+        let mut engine = Self::new(None, None, defaults)?;
+        engine.temporary_http_source = Some(source);
+        Ok(engine)
+    }
+
     /// An additional native restriction, never a new route or CORS exception.
     /// Applying an enabled policy cannot undo an existing restriction.
     pub fn restrict_cross_origin_requests(mut self, enabled: bool) -> Self {
@@ -367,6 +388,18 @@ impl WebsitePermissionEngine {
         use WebsitePermissionSource::*;
         if query.native_denied {
             return EffectiveWebsitePermission::denied(NativeConstraint);
+        }
+        if let Some(source) = &self.temporary_http_source {
+            let valid = canonical_browser_request_origin(query.website_origin).as_ref() == Ok(source)
+                && canonical_browser_request_origin(query.destination_origin).as_ref() == Ok(source);
+            let class = WebsiteRequestClass::parse(query.request_class);
+            if !valid || class.is_none() {
+                return EffectiveWebsitePermission::denied(NativeConstraint);
+            }
+            return EffectiveWebsitePermission {
+                decision: self.application_defaults.get(&class.unwrap()).copied().unwrap_or(WebsitePermissionDecision::Deny),
+                source: ApplicationDefault,
+            };
         }
         let (Ok(website), Ok(destination), Some(class)) = (
             canonical_website_permission_origin(query.website_origin),
@@ -441,6 +474,26 @@ pub fn resolve_website_request_permission(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn temporary_http_is_exact_origin_and_does_not_enable_stored_http_grants() {
+        let defaults = [(WebsiteRequestClass::Navigation, WebsitePermissionDecision::Allow),
+            (WebsiteRequestClass::Script, WebsitePermissionDecision::Allow)].into_iter().collect();
+        let engine = WebsitePermissionEngine::temporary_http("http://router.test:8080", &defaults).unwrap();
+        for (destination, native_denied, expected) in [
+            ("http://router.test:8080", false, WebsitePermissionDecision::Allow),
+            ("http://router.test:8080", true, WebsitePermissionDecision::Deny),
+            ("https://router.test:8080", false, WebsitePermissionDecision::Deny),
+            ("http://router.test", false, WebsitePermissionDecision::Deny),
+            ("http://other.test:8080", false, WebsitePermissionDecision::Deny),
+        ] {
+            assert_eq!(engine.resolve(WebsitePermissionQuery { website_origin:"http://router.test:8080", destination_origin:destination,
+                request_class:"navigation", native_denied }).decision, expected);
+        }
+        assert!(canonical_website_permission_origin("http://router.test:8080").is_err());
+        assert_eq!(canonical_browser_request_origin("http://router.test:8080").unwrap(), "http://router.test:8080");
+        assert!(canonical_browser_request_origin("http://user:secret@router.test").is_err());
+    }
     use serde_json::json;
 
     const WEBSITE: &str = "https://example.com";

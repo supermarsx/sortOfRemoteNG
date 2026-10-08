@@ -8,6 +8,8 @@ use std::time::Instant;
 #[path = "native_login_profiles.rs"]
 pub mod login_profiles;
 
+pub use crate::native_totp as totp;
+
 pub const MAX_CREDENTIAL_BYTES: usize = 4096;
 
 /// Fixed for the lifetime of a private native request context. Error callbacks
@@ -67,7 +69,7 @@ pub struct NativeCapabilityRequest {
     /// None when CEF does not supply a reliable gesture signal.
     pub user_gesture: Option<bool>,
 }
-pub(crate) const FEATURE_PROTOCOL_PIN: &str = "cef154.3.0/native-features-v4";
+pub(crate) const FEATURE_PROTOCOL_PIN: &str = "cef154.3.0/native-features-v5";
 
 /// Explicit saved-application selection; never infer a generic fallback from
 /// missing/unknown metadata. Custom selectors/options and multi-step providers
@@ -555,6 +557,9 @@ pub(crate) struct LoginBudget {
 }
 
 impl LoginBudget {
+    pub(crate) fn released(&self, origin: &str, stage: NativeLoginStage) -> bool {
+        self.released.contains(&(origin.to_owned(), stage))
+    }
     pub fn reserve(
         &mut self,
         request: &NativeLoginRequest<'_>,

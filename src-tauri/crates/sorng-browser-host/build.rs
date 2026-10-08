@@ -1,5 +1,6 @@
 fn main() {
     println!("cargo:rerun-if-changed=src/platform/macos_application.mm");
+    println!("cargo:rerun-if-changed=src/platform/macos_occlusion.mm");
     println!("cargo:rerun-if-changed=src/platform/windows_bootstrap_abi.cc");
     println!("cargo:rerun-if-env-changed=CEF_PATH");
     if std::env::var_os("CARGO_FEATURE_CEF_HOST").is_none() {
@@ -33,11 +34,15 @@ fn main() {
         cc::Build::new()
             .cpp(true)
             .file("src/platform/macos_application.mm")
+            .file("src/platform/macos_occlusion.mm")
             .include(root)
-            .flag("-std=c++17")
+            // CEF 154's ref-count headers use C++20 concepts (same_as,
+            // derived_from). The Objective-C++ bridges include those headers.
+            .std("c++20")
             .flag("-fobjc-arc")
             .flag("-mmacosx-version-min=14.0")
             .compile("sorng_cef_application_bridge");
         println!("cargo:rustc-link-lib=framework=AppKit");
+        println!("cargo:rustc-link-lib=framework=QuartzCore");
     }
 }

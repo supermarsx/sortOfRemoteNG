@@ -132,9 +132,12 @@ impl Gate {
         work
     }
 
-    pub(super) fn start_finish(&mut self) {
-        assert!(matches!(self.phase, Phase::Closing(_)) && self.worker.is_none());
+    pub(super) fn claim_finish(&mut self) -> bool {
+        if !matches!(self.phase, Phase::Closing(_)) || self.worker.is_some() {
+            return false;
+        }
         self.worker = Some(Work::Finish);
+        true
     }
 
     pub(super) fn worker(&self) -> Option<Work> {
@@ -181,6 +184,24 @@ impl<T> FailureNotice<T> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn writer_handover_during_periodic_save_waits_then_finishes_once() {
+        let now = Instant::now();
+        let mut gate = Gate::new(now);
+        assert!(!gate.claim_finish());
+        assert_eq!(gate.start_save(now), Work::PeriodicSave);
+        assert!(gate.begin_close(now));
+        assert!(!gate.claim_finish());
+        assert_eq!(gate.worker(), Some(Work::PeriodicSave));
+        assert!(!gate.completed(Ok(()), now));
+        assert!(gate.claim_finish());
+        assert!(!gate.claim_finish());
+        assert_eq!(gate.worker(), Some(Work::Finish));
+        assert!(!gate.completed(Ok(()), now));
+        assert!(!gate.draining());
+        assert!(!gate.claim_finish());
+    }
 
     #[test]
     fn timeout_waits_for_save_then_cleanup_before_releasing_close() {
@@ -273,7 +294,7 @@ mod tests {
         for result in [Ok(()), Err(false)] {
             let mut gate = Gate::new(now);
             gate.begin_close(now);
-            gate.start_finish();
+            assert!(gate.claim_finish());
             assert_eq!(gate.worker(), Some(Work::Finish));
             assert!(gate.draining());
             assert!(!gate.can_capture());

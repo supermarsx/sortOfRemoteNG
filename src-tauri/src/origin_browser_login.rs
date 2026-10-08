@@ -1,58 +1,32 @@
 //! Production bridge from native saved credentials to the isolated CEF login
 //! adapter. Remote content cannot create a grant or choose another database.
 use sorng_browser_host::{
-    cef_browser::NativeDocumentHooks,
+    cef_browser::{NativeDocumentHooks, NativeHttpAuthChallenge},
     native_features::{
         NativeLoginAdapter, NativeLoginCredentials, NativeLoginRequest, NativeLoginStage,
     },
 };
 use sorng_commands_core::origin_browser_authority::{
-    NativeCredentialAvailability, NativeLoginAuthority, NativeLoginConsentVerifier,
+    NativeBasicAuth, NativeCredentialAvailability, NativeLoginAuthority, NativeLoginConsentVerifier,
     NativeLoginRequest as AuthorityRequest, NativeOwnerLease,
 };
 use sorng_protocols::origin_browser::BrowserIdentity;
 use std::{
-    collections::HashSet,
     sync::{
         atomic::{AtomicBool, Ordering},
-        Arc, Mutex, OnceLock,
+        Arc,
     },
     time::{Duration, Instant},
 };
 use tauri::WebviewWindow;
-use tauri_plugin_dialog::{DialogExt, MessageDialogButtons, MessageDialogKind};
 
 #[path = "origin_browser_login_consent.rs"]
 mod consent;
 use consent::AttemptConsent;
+#[path = "origin_browser_login_delivery.rs"]
+mod delivery;
 
 const CONSENT_LIFETIME: Duration = Duration::from_secs(10 * 60);
-const CANCELLED: &str = "Website login was not authorized. No saved credentials were sent. Reopen the website to review consent, or select manual login in its connection settings.";
-
-// One native consent dialog per owning app window. The callback retains this
-// slot until the actual dialog closes, even if its command future is dropped.
-struct PromptSlot(String);
-fn prompts() -> &'static Mutex<HashSet<String>> {
-    static PROMPTS: OnceLock<Mutex<HashSet<String>>> = OnceLock::new();
-    PROMPTS.get_or_init(Mutex::default)
-}
-impl PromptSlot {
-    fn reserve(window: &WebviewWindow) -> Result<Self, String> {
-        let mut active = prompts().lock().map_err(|_| CANCELLED.to_owned())?;
-        if !active.insert(window.label().to_owned()) {
-            return Err("Finish the existing website login consent dialog first.".into());
-        }
-        Ok(Self(window.label().to_owned()))
-    }
-}
-impl Drop for PromptSlot {
-    fn drop(&mut self) {
-        prompts()
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
-            .remove(&self.0);
-    }
-}
 
 // Media ownership is independent of saved-login consent: manual login can
 // request devices too. This is only a liveness fence, never a permission grant.
@@ -82,32 +56,46 @@ impl MediaOwner {
 }
 
 pub(crate) struct LoginHooks {
+    appearance: std::sync::Mutex<sorng_browser_host::native_appearance::AppearanceConfig>,
     window: WebviewWindow,
     authority: Arc<NativeLoginAuthority>,
     lease: NativeOwnerLease,
     media_owner: MediaOwner,
     adapter: NativeLoginAdapter,
     consent: Option<AttemptConsent>,
+    basic_auth: Option<Arc<NativeBasicAuth>>,
 }
 
 impl LoginHooks {
-    /// Runs before a website surface or relay is created. An ExistingGrant
-    /// supplied by application IPC is only a hint: it cannot skip this native
-    /// approval. No usernames, passwords, URL queries or grant IDs are shown.
+    pub(crate) fn set_appearance_configuration(
+        &self, config: sorng_browser_host::native_appearance::AppearanceConfig,
+    ) -> Result<(), String> {
+        config.theme.validate().map_err(str::to_owned)?;
+        if !self.lease.is_current() { return Err("Website owner unavailable.".into()); }
+        *self.appearance.lock().map_err(|_| "Website appearance unavailable.")? = config;
+        Ok(())
+    }
+    /// The owning database's saved automatic-login choice is the authorization;
+    /// no extra dialog is needed on each connection. Native validation still
+    /// binds it to this attempt and its saved login destinations. An IPC grant
+    /// hint cannot enable a saved opt-out or add another destination.
     pub(crate) async fn prepare(
         window: &WebviewWindow,
         identity: &BrowserIdentity,
         authority: Arc<NativeLoginAuthority>,
         lease: NativeOwnerLease,
+        basic_auth: Option<Arc<NativeBasicAuth>>,
     ) -> Result<Arc<Self>, String> {
         if !authority.enabled() {
             return Ok(Arc::new(Self {
+                appearance: std::sync::Mutex::new(Default::default()),
                 window: window.clone(),
                 authority,
                 lease,
                 media_owner: MediaOwner::new(identity),
                 adapter: NativeLoginAdapter::Manual,
                 consent: None,
+                basic_auth,
             }));
         }
         let provider = authority
@@ -123,59 +111,13 @@ impl LoginHooks {
             return Err("This saved automatic-login configuration is not supported by the real-origin browser yet. Choose manual login explicitly in this connection's settings to open it without automatic credential entry.".into());
         }
         if authority.availability() != NativeCredentialAvailability::Saved {
-            return Err("Saved website credentials are unavailable. Unlock the owning database and review this connection's credential source before retrying.".into());
+            return Err("Automatic website login needs complete saved credentials. Edit this connection's website login credentials or linked database-vault entry, or explicitly choose manual login, then reopen the tab.".into());
         }
         let origins = authority.consent_origins();
-        // Keep the complete disclosure visible and bounded, never truncate an
-        // origin list into an approval for unseen destinations.
+        // Keep the entire native-owned destination set bounded. Never truncate
+        // it or widen login authority to the browser's resource destinations.
         if origins.is_empty() || origins.len() > 16 || !lease.is_current() {
             return Err("Website login consent could not be prepared. Review this connection's saved login destinations.".into());
-        }
-        let slot = PromptSlot::reserve(window)?;
-        let behavior = if adapter == NativeLoginAdapter::Claude && authority.auto_submit_allowed() {
-            "Fill and submit the saved email address; complete email verification yourself"
-        } else if adapter == NativeLoginAdapter::Claude {
-            "Fill the saved email address without automatically submitting"
-        } else if authority.auto_submit_allowed() {
-            "Fill and submit the saved username and password"
-        } else {
-            "Fill the saved username and password without automatically submitting"
-        };
-        let message = format!(
-            "{behavior} on these exact website origins?\n\n{}\n\nOnly approve websites you trust. Their scripts can read information entered on the page. This approval is limited to this browser attempt for 10 minutes. It does not authorize other websites, MFA, or CAPTCHA completion.",
-            origins.join("\n")
-        );
-        let (sender, receiver) = tokio::sync::oneshot::channel();
-        let parent = window.clone();
-        let prompt_lease = lease.clone();
-        window
-            .run_on_main_thread(move || {
-                if sender.is_closed() || !prompt_lease.is_current() {
-                    return;
-                }
-                parent
-                    .dialog()
-                    .message(message)
-                    .title("Authorize website login")
-                    .parent(&parent)
-                    .kind(MessageDialogKind::Warning)
-                    .buttons(MessageDialogButtons::OkCancelCustom(
-                        "Allow this login".into(),
-                        "Cancel".into(),
-                    ))
-                    .show(move |approved| {
-                        let _slot = slot;
-                        let _ = sender.send(approved);
-                    });
-            })
-            .map_err(|_| CANCELLED.to_owned())?;
-        let approved = tokio::time::timeout(CONSENT_LIFETIME, receiver)
-            .await
-            .ok()
-            .and_then(Result::ok)
-            .unwrap_or(false);
-        if !approved || !lease.is_current() {
-            return Err(CANCELLED.into());
         }
         let consent = AttemptConsent::approved(
             identity.clone(),
@@ -184,17 +126,23 @@ impl LoginHooks {
             authority.auto_submit_allowed(),
         );
         Ok(Arc::new(Self {
+            appearance: std::sync::Mutex::new(Default::default()),
             window: window.clone(),
             authority,
             lease,
             media_owner: MediaOwner::new(identity),
             adapter,
             consent: Some(consent),
+            basic_auth,
         }))
     }
 
     pub(crate) fn revoke(&self) {
         self.media_owner.revoke();
+        self.authority.revoke_totp();
+        if let Some(basic_auth) = &self.basic_auth {
+            basic_auth.revoke();
+        }
         if let Some(consent) = &self.consent {
             consent.revoke();
         }
@@ -232,6 +180,17 @@ impl LoginHooks {
             },
             self,
             &mut |credentials, options| {
+                if !self.media_owner.current(request.identity, || self.lease.is_current()) {
+                    return;
+                }
+                let Some(credentials) = delivery::project(request, NativeLoginCredentials {
+                    identity: credentials.identity,
+                    origin: credentials.origin,
+                    valid_until: credentials.valid_until,
+                    username: credentials.username,
+                    password: credentials.password,
+                    auto_submit: credentials.auto_submit,
+                }, Instant::now()) else { return; };
                 if matches!(
                     request.stage,
                     NativeLoginStage::FormPrepare | NativeLoginStage::FormSubmit
@@ -239,37 +198,13 @@ impl LoginHooks {
                     // The preparation/action packets are deliberately secret-free.
                     // Reuse the exact native grant verifier on every stage; do
                     // not cache cleartext values while an SPA or delay settles.
-                    let Some(mut metadata) =
-                        options.and_then(|raw| serde_json::from_str::<serde_json::Value>(raw).ok())
-                    else {
+                    let Some(metadata) = options.and_then(delivery::form_metadata) else {
                         return;
                     };
-                    metadata["fields"] = serde_json::json!([]);
-                    let metadata = metadata.to_string();
-                    deliver(
-                        NativeLoginCredentials {
-                            identity: credentials.identity,
-                            origin: credentials.origin,
-                            valid_until: credentials.valid_until,
-                            username: "",
-                            password: "",
-                            auto_submit: credentials.auto_submit,
-                        },
-                        Some(&metadata),
-                    );
+                    deliver(credentials, Some(&metadata));
                     return;
                 }
-                deliver(
-                    NativeLoginCredentials {
-                        identity: credentials.identity,
-                        origin: credentials.origin,
-                        valid_until: credentials.valid_until,
-                        username: credentials.username,
-                        password: credentials.password,
-                        auto_submit: credentials.auto_submit,
-                    },
-                    options,
-                );
+                deliver(credentials, options);
             },
         );
     }
@@ -292,6 +227,73 @@ impl NativeLoginConsentVerifier for LoginHooks {
 }
 
 impl NativeDocumentHooks for LoginHooks {
+    fn appearance_configuration(&self) -> Option<String> {
+        if !self.lease.is_current() { return None; }
+        self.appearance.lock().ok().and_then(|config| serde_json::to_string(&*config).ok())
+    }
+    fn with_totp(&self, request: &sorng_browser_host::native_totp::NativeTotpRequest<'_>,
+        deliver: &mut dyn FnMut(sorng_browser_host::native_totp::NativeTotpCode<'_>)) -> Option<Duration> {
+        if !self.media_owner.current(request.identity, || self.lease.is_current()) { return None; }
+        self.authority.with_totp(request, self, deliver)
+    }
+
+    fn totp_current(&self, request: &sorng_browser_host::native_totp::NativeTotpRequest<'_>, submit: bool) -> bool {
+        self.media_owner.current(request.identity, || self.lease.is_current())
+            && self.authority.totp_current(request, self, submit)
+    }
+
+    fn with_http_basic_auth(
+        &self,
+        challenge: &NativeHttpAuthChallenge<'_>,
+        deliver: &mut dyn FnMut(&str, &str),
+    ) -> bool {
+        if !self.media_owner.current(challenge.identity, || self.lease.is_current()) {
+            return false;
+        }
+        self.basic_auth.as_ref().is_some_and(|auth| {
+            auth.with_credentials(
+                challenge.identity,
+                challenge.origin_url,
+                challenge.host,
+                challenge.port,
+                challenge.scheme,
+                deliver,
+            )
+        })
+    }
+
+    fn on_navigation_status(
+        &self,
+        identity: &BrowserIdentity,
+        status: sorng_browser_host::cef_browser::NativeNavigationStatus,
+    ) {
+        use super::diagnostics::{self, Navigation};
+        use sorng_browser_host::cef_browser::NativeNavigationStatus as Native;
+        if identity != &self.media_owner.identity {
+            return;
+        }
+        // Native-only scalar diagnostics: no URL, title, headers or secrets.
+        // Do not log each resource or query the vault from CEF callbacks.
+        let status = match status {
+            Native::Requested => Navigation::Requested,
+            Native::BeforeBrowse {
+                allowed,
+                main_frame,
+            } => Navigation::Browse {
+                allowed,
+                main_frame,
+            },
+            Native::AuthChallenge {
+                proxy: true,
+                callback_present,
+            } => Navigation::ProxyAuth { callback_present },
+            Native::AuthCompleted { handled } => Navigation::AuthCompleted { handled },
+            Native::LoadError { code, main_frame } => Navigation::LoadError { code, main_frame },
+            _ => return,
+        };
+        diagnostics::navigation(status);
+    }
+
     fn media_permission_current(&self, identity: &BrowserIdentity) -> bool {
         // The host separately enforces the saved media capability, exact live
         // document/origin and one-shot prompt decision. Do not grant those here.
@@ -354,15 +356,18 @@ impl NativeDocumentHooks for LoginHooks {
             },
             self,
             &mut |credentials| {
-                let action = request.stage.is_action();
-                deliver(NativeLoginCredentials {
+                if !self.media_owner.current(request.identity, || self.lease.is_current()) {
+                    return;
+                }
+                let Some(credentials) = delivery::project(request, NativeLoginCredentials {
                     identity: credentials.identity,
                     origin: credentials.origin,
                     valid_until: credentials.valid_until,
-                    username: if action { "" } else { credentials.username },
-                    password: if action { "" } else { credentials.password },
+                    username: credentials.username,
+                    password: credentials.password,
                     auto_submit: credentials.auto_submit,
-                });
+                }, Instant::now()) else { return; };
+                deliver(credentials);
             },
         );
     }

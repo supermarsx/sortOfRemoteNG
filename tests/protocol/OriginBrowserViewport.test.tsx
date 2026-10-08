@@ -88,6 +88,30 @@ function fixture() {
 }
 
 describe("native browser viewport", () => {
+  it("does not send a transient hide when a clipped menu opens or closes", () => {
+    const f = fixture();
+    f.rerender(
+      <OriginBrowserViewport {...f.props} preserveRenderingUnderOverlays />,
+    );
+    vi.mocked(f.ctrl.setViewport).mockClear();
+    f.rerender(
+      <OriginBrowserViewport
+        {...f.props}
+        preserveRenderingUnderOverlays
+        dialogOpen
+      />,
+    );
+    expect(f.ctrl.setViewport).not.toHaveBeenCalledWith(null);
+    const viewport = f.container.querySelector(
+      "[data-origin-browser-viewport]",
+    )!;
+    fireEvent.focus(viewport);
+    expect(f.ctrl.focus).not.toHaveBeenCalled();
+    f.rerender(
+      <OriginBrowserViewport {...f.props} preserveRenderingUnderOverlays />,
+    );
+    expect(f.ctrl.setViewport).not.toHaveBeenCalledWith(null);
+  });
   it.each([
     "runtime-missing",
     "policy-unavailable",
@@ -145,6 +169,42 @@ describe("native browser viewport", () => {
       expect(f.ctrl.close).not.toHaveBeenCalled();
     },
   );
+  it("offers a themed repair-settings action for working-data startup failures without reconnecting", () => {
+    const f = fixture();
+    const onOpenSettings = vi.fn();
+    const failure = originBrowserStartupError(
+      "create",
+      "Native browser working-data preparation failed. Review Settings > Web Browser and restart if the working folder changed; the owning database and retained cookies were not changed.",
+    );
+    f.ctrl.state = {
+      ...f.ctrl.state,
+      phase: "error",
+      error: failure.message,
+      startupFailure: { stage: failure.stage, category: failure.category },
+    };
+    f.rerender(
+      <OriginBrowserViewport {...f.props} onOpenSettings={onOpenSettings} />,
+    );
+    const button = screen.getByRole("button", {
+      name: "Open Web Browser settings",
+    });
+    expect(button).toHaveClass("sor-btn", "sor-btn-secondary");
+    expect(screen.getByRole("alert")).toHaveTextContent(
+      "retained cookies were not changed",
+    );
+    fireEvent.click(button);
+    expect(onOpenSettings).toHaveBeenCalledExactlyOnceWith("webBrowser");
+    expect(f.ctrl.reconnect).not.toHaveBeenCalled();
+    expect(f.ctrl.close).not.toHaveBeenCalled();
+    f.rerender(
+      <OriginBrowserViewport
+        {...f.props}
+        onOpenSettings={onOpenSettings}
+        active={false}
+      />,
+    );
+    expect(button).toBeDisabled();
+  });
   it("honors loading presentation without hiding busy state or runtime failures", () => {
     const f = fixture();
     f.ctrl.state = { ...f.ctrl.state, phase: "starting" };

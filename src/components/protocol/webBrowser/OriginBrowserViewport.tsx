@@ -29,6 +29,7 @@ export interface OriginBrowserViewportProps {
   active: boolean;
   ownerAvailable: boolean;
   dialogOpen: boolean;
+  preserveRenderingUnderOverlays?: boolean;
   title: string;
   showLoadingProgress?: boolean;
   onOpenSettings?: (tab?: SettingsTabId) => void;
@@ -41,6 +42,7 @@ export function OriginBrowserViewport({
   active,
   ownerAvailable,
   dialogOpen,
+  preserveRenderingUnderOverlays = false,
   title,
   showLoadingProgress = true,
   onOpenSettings,
@@ -55,6 +57,7 @@ export function OriginBrowserViewport({
     state.startupFailure.stage === "create";
   const interactive =
     active && ownerAvailable && !dialogOpen && state.phase === "attached";
+  const hiddenForOverlay = dialogOpen && !preserveRenderingUnderOverlays;
   const measureRef = useRef<(() => void) | null>(null);
   const settingsAction = onOpenSettings && (
     <button
@@ -82,7 +85,7 @@ export function OriginBrowserViewport({
       if (
         !active ||
         !ownerAvailable ||
-        dialogOpen ||
+        hiddenForOverlay ||
         document.visibilityState === "hidden"
       ) {
         setViewport(null);
@@ -120,7 +123,7 @@ export function OriginBrowserViewport({
       window.visualViewport?.removeEventListener("scroll", measure);
       setViewport(null);
     };
-  }, [active, ownerAvailable, dialogOpen, setViewport]);
+  }, [active, ownerAvailable, hiddenForOverlay, setViewport]);
 
   // Sibling layout can move this slot without changing its own dimensions.
   useLayoutEffect(() => {
@@ -209,12 +212,15 @@ export function OriginBrowserViewport({
         </div>
       ) : (
         state.error && (
-          <p
+          <div
             role="alert"
-            className="sor-alert-error m-4 text-sm text-[var(--color-text)]"
+            className="sor-alert-error m-4 space-y-2 text-sm text-[var(--color-text)]"
           >
-            {state.error}
-          </p>
+            <p>{state.error}</p>
+            {state.startupFailure?.category === "runtime" &&
+              state.startupFailure.stage === "create" &&
+              settingsAction}
+          </div>
         )
       )}
     </div>

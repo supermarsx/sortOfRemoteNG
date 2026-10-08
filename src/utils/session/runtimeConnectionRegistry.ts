@@ -12,6 +12,22 @@ import type { DatabaseCredentialVaultApi } from "../../types/security/databaseCr
  * process, is never persisted, and is cleared when its session closes.
  */
 const runtimeConnections = new Map<string, Connection>();
+const quickConnectConnections = new Set<Connection>();
+
+/** Explicit provenance: runtime redirects are not Quick Connect authorities. */
+export function registerQuickConnectConnection(connection: Connection): void {
+  registerRuntimeConnection(connection);
+  quickConnectConnections.add(connection);
+}
+
+export function getQuickConnectConnection(
+  connectionId: string,
+): Connection | undefined {
+  const connection = runtimeConnections.get(connectionId);
+  return connection && quickConnectConnections.has(connection)
+    ? connection
+    : undefined;
+}
 /** Reference-only, renderer-local provenance. Never serialize onto a session. */
 export interface TrustedRedirectSource {
   databaseId: string;
@@ -93,6 +109,8 @@ export function registerRuntimeConnection(
   connection: Connection,
   navigation?: RuntimeWebNavigation,
 ): void {
+  const previous = runtimeConnections.get(connection.id);
+  if (previous) quickConnectConnections.delete(previous);
   runtimeConnections.set(connection.id, connection);
   if (navigation) webNavigation.set(connection.id, navigation);
   else webNavigation.delete(connection.id);
@@ -183,6 +201,8 @@ export function resolveRuntimeConnection(
 }
 
 export function releaseRuntimeConnection(connectionId: string): void {
+  const connection = runtimeConnections.get(connectionId);
+  if (connection) quickConnectConnections.delete(connection);
   webNavigation.get(connectionId)?.nativeContinuation?.cancel();
   runtimeConnections.delete(connectionId);
   webNavigation.delete(connectionId);
@@ -208,6 +228,7 @@ export function releaseReplacedRuntimeConnection(
 }
 
 export function clearRuntimeConnectionsForTests(): void {
+  quickConnectConnections.clear();
   for (const navigation of webNavigation.values())
     navigation.nativeContinuation?.cancel();
   runtimeConnections.clear();

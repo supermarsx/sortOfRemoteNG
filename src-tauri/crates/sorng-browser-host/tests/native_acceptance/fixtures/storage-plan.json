@@ -1,0 +1,15 @@
+[
+  {"name":"a-empty","slot":0,"before":null,"write":null,"after":null},
+  {"name":"b-empty","slot":1,"before":null,"write":null,"after":null},
+  {"name":"a-write","slot":0,"before":null,"write":"a-one","after":"a-one"},
+  {"name":"b-after-a","slot":1,"before":null,"write":null,"after":null},
+  {"name":"b-write","slot":1,"before":null,"write":"b-one","after":"b-one"},
+  {"name":"a-after-b","slot":0,"before":"a-one","write":null,"after":"a-one"},
+  {"name":"a-rewrite","slot":0,"before":"a-one","write":"a-two","after":"a-two"},
+  {"name":"b-after-a-rewrite","slot":1,"before":"b-one","write":null,"after":"b-one"},
+  {"name":"b-after-peer-close","slot":1,"before":"b-one","write":null,"after":"b-one"},
+  {"name":"a-reconnect-empty","slot":2,"before":null,"write":null,"after":null},
+  {"name":"a-reconnect-write","slot":2,"before":null,"write":"a-three","after":"a-three"},
+  {"name":"b-after-reconnect","slot":1,"before":"b-one","write":null,"after":"b-one"},
+  {"name":"a-reconnect-read","slot":2,"before":"a-three","write":null,"after":"a-three"}
+]

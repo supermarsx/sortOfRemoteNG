@@ -44,8 +44,9 @@ impl Checkpoint {
         }
         self.capture = None;
         if !owner.enabled() {
-            self.gate.start_finish();
-            self.spawn_work(owner, Work::Finish);
+            if self.gate.claim_finish() {
+                self.spawn_work(owner, Work::Finish);
+            }
             return;
         }
         match host.capture_sign_in_cookies(owner.clone()) {
@@ -146,6 +147,16 @@ impl Checkpoint {
         if !self.gate.can_capture() {
             return;
         }
+        // Writer handover can happen during a periodic worker or native
+        // capture. Keep the worker until acknowledged, then finish the reader
+        // without capturing again or deleting the successor's saved snapshot.
+        if !owner.enabled() {
+            self.capture = None;
+            if self.gate.claim_finish() {
+                self.spawn_work(owner, Work::Finish);
+            }
+            return;
+        }
         if let Some(capture) = &mut self.capture {
             match capture.take() {
                 Ok(cookies) => {
@@ -168,7 +179,7 @@ impl Checkpoint {
                 Err(RetentionError::Pending) => (),
                 Err(error) => self.fail(owner, error),
             }
-        } else if live && owner.enabled() && self.gate.periodic_due(Instant::now()) {
+        } else if live && self.gate.periodic_due(Instant::now()) {
             match host.capture_sign_in_cookies(owner.clone()) {
                 Ok(capture) => self.capture = Some(capture),
                 Err(error) => self.fail(owner, error),

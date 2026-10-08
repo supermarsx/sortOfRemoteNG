@@ -4,7 +4,10 @@
 use crate::database_protection::{random_id, DatabaseKey};
 use std::{
     collections::HashMap,
-    sync::{Mutex, OnceLock},
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        Arc, Mutex, OnceLock,
+    },
 };
 
 const MAX_SESSIONS: usize = 128;
@@ -35,6 +38,18 @@ pub struct SessionScope<'a> {
     pub window: &'a str,
     pub generation: u64,
 }
+/// Secret-free observation of one exact unlock lifetime. This is not a key or
+/// permission to deliver data: delivery still requires the registry lock/key.
+/// Sessions have no hidden TTL; explicit lock/release, replacement, window/state
+/// teardown and generation invalidation end their lifetime. Any future expiry
+/// removal also invalidates this handle through Session::drop.
+#[derive(Clone)]
+pub struct SessionValidity(Arc<AtomicBool>);
+impl SessionValidity {
+    pub fn is_current(&self) -> bool {
+        self.0.load(Ordering::Acquire)
+    }
+}
 struct Session {
     owner: u64,
     profile: String,
@@ -43,6 +58,14 @@ struct Session {
     window: String,
     generation: u64,
     key: DatabaseKey,
+    validity: SessionValidity,
+}
+impl Drop for Session {
+    fn drop(&mut self) {
+        // Every removal path (including registry teardown and scope mismatch)
+        // latches old handles false; reopening always creates a new atomic.
+        self.validity.0.store(false, Ordering::Release);
+    }
 }
 #[derive(Default)]
 pub struct DatabaseSessions {
@@ -96,11 +119,26 @@ impl DatabaseSessions {
                 window: scope.window.into(),
                 generation: scope.generation,
                 key,
+                validity: SessionValidity(Arc::new(AtomicBool::new(true))),
             },
         );
         Ok(id)
     }
     pub fn key(&mut self, id: &str, scope: &SessionScope<'_>) -> Result<DatabaseKey, String> {
+        self.require_scope(id, scope)?;
+        Ok(self.entries[id].key.duplicate())
+    }
+    /// Capture on the worker/setup path under the same exact scope check as
+    /// key delivery. Reading the handle later never contends with disk commits.
+    pub fn validity(
+        &mut self,
+        id: &str,
+        scope: &SessionScope<'_>,
+    ) -> Result<SessionValidity, String> {
+        self.require_scope(id, scope)?;
+        Ok(self.entries[id].validity.clone())
+    }
+    fn require_scope(&mut self, id: &str, scope: &SessionScope<'_>) -> Result<(), String> {
         let session = self
             .entries
             .get(id)
@@ -121,7 +159,7 @@ impl DatabaseSessions {
             }
             return Err("database unlock session is stale or belongs to another window".into());
         }
-        Ok(session.key.duplicate())
+        Ok(())
     }
     pub fn is_unlocked(&mut self, scope: &SessionScope<'_>) -> bool {
         self.entries.values().any(|s| {
@@ -177,6 +215,124 @@ impl DatabaseSessions {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn validity_is_exact_lifetime_and_all_removals_revoke_every_clone() {
+        for removal in 0..7 {
+            let mut sessions = DatabaseSessions::default();
+            let scope = SessionScope {
+                owner: 1,
+                profile: "p",
+                database: "db",
+                revision: "r",
+                window: "main",
+                generation: 0,
+            };
+            let token = sessions.insert(&scope, DatabaseKey::generate()).unwrap();
+            let handle = sessions.validity(&token, &scope).unwrap();
+            let clone = handle.clone();
+            assert!(handle.is_current());
+            match removal {
+                0 => sessions.lock(1, "p", "db", "main"),
+                1 => {
+                    sessions.release(&token, 1, "p", "db", "main").unwrap();
+                }
+                2 => sessions.revoke_database(1, "p", "db"),
+                3 => sessions.revoke_window(1, "main"),
+                4 => {
+                    sessions.insert(&scope, DatabaseKey::generate()).unwrap();
+                }
+                5 => assert!(sessions
+                    .key(
+                        &token,
+                        &SessionScope {
+                            generation: 1,
+                            ..scope
+                        }
+                    )
+                    .is_err()),
+                _ => drop(sessions),
+            }
+            assert!(!handle.is_current());
+            assert!(!clone.is_current());
+        }
+    }
+
+    #[test]
+    fn validity_lookup_preserves_key_scope_and_reunlock_does_not_revive_old_handle() {
+        let mut sessions = DatabaseSessions::default();
+        let scope = SessionScope {
+            owner: 1,
+            profile: "p",
+            database: "db",
+            revision: "r",
+            window: "main",
+            generation: 0,
+        };
+        let token = sessions.insert(&scope, DatabaseKey::generate()).unwrap();
+        let handle = sessions.validity(&token, &scope).unwrap();
+        for wrong in [
+            SessionScope { owner: 2, ..scope },
+            SessionScope {
+                profile: "other",
+                ..scope
+            },
+            SessionScope {
+                window: "other",
+                ..scope
+            },
+        ] {
+            assert!(sessions.validity(&token, &wrong).is_err());
+            assert!(handle.is_current());
+        }
+        assert!(sessions
+            .validity(
+                &token,
+                &SessionScope {
+                    revision: "changed",
+                    ..scope
+                }
+            )
+            .is_err());
+        assert!(!handle.is_current());
+        let fresh = sessions.insert(&scope, DatabaseKey::generate()).unwrap();
+        assert!(sessions.validity(&fresh, &scope).unwrap().is_current());
+        assert!(!handle.is_current());
+    }
+
+    #[test]
+    fn owner_revocation_invalidates_handles_without_touching_other_owners() {
+        let state = crate::EncryptionState::new();
+        let other = crate::EncryptionState::new();
+        let scope = SessionScope {
+            owner: state.database_session_owner(),
+            profile: "p",
+            database: "db",
+            revision: "r",
+            window: "main",
+            generation: 0,
+        };
+        let other_scope = SessionScope {
+            owner: other.database_session_owner(),
+            ..scope
+        };
+        let (handle, unrelated) = {
+            let mut sessions = global().lock().unwrap();
+            let token = sessions.insert(&scope, DatabaseKey::generate()).unwrap();
+            let other_token = sessions
+                .insert(&other_scope, DatabaseKey::generate())
+                .unwrap();
+            (
+                sessions.validity(&token, &scope).unwrap(),
+                sessions.validity(&other_token, &other_scope).unwrap(),
+            )
+        };
+        revoke_owner(scope.owner);
+        assert!(!handle.is_current());
+        assert!(unrelated.is_current());
+        drop(other);
+        assert!(!unrelated.is_current());
+    }
+
     #[test]
     fn release_one_abandoned_unlock_preserves_other_sessions_and_rejects_scope_mismatch() {
         let mut sessions = DatabaseSessions::default();

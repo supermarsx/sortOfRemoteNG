@@ -7,15 +7,24 @@
 //! report until the pinned runtime passes every platform acceptance gate.
 
 pub mod control;
+#[cfg(any(feature = "cef-host", test))]
+mod cef_occlusion;
 pub mod domain_permissions;
 pub mod ipc;
 pub mod message_pump;
 pub mod native_automation;
+pub mod native_appearance;
 pub mod native_capabilities;
 pub mod cef_session_retention;
 #[cfg(any(feature = "cef-host", test))]
 pub mod native_features;
 pub mod native_media;
+pub mod native_totp;
+pub mod native_downloads;
+pub mod native_extensions;
+pub mod native_popups;
+#[cfg(feature = "cef-host")]
+pub mod cef_downloads;
 
 #[cfg(feature = "cef-host")]
 mod cef_renderer;

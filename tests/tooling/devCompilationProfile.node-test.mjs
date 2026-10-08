@@ -93,7 +93,12 @@ test("all fourteen explicit RDP pixel/protocol/decoder hot paths stay opt2 in de
         profile(key)["opt-level"] === 2,
     )
     .map((key) => key.slice("profile.dev.package.".length));
-  assert.deepEqual(actual.sort(), [...runtimePackages].sort());
+  assert.deepEqual(actual.sort(), [...runtimePackages, "sha2"].sort());
+});
+
+test("database integrity hashing stays optimized in development without optimizing all dependencies", () => {
+  assert.deepEqual(profile("profile.dev.package.sha2"), { "opt-level": 2 });
+  assert.equal(profile('profile.dev.package."*"')["opt-level"], 0);
 });
 
 test("all six SQLx packages trade dev optimization for four bounded codegen units", () => {
