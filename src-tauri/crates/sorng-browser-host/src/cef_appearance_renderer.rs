@@ -20,7 +20,7 @@ thread_local! {
     static DOCS: RefCell<HashMap<DocumentKey, AppearanceDocument>> = RefCell::new(HashMap::new());
 }
 static SOURCE: LazyLock<String> = LazyLock::new(|| {
-    include_str!("native_appearance_bootstrap.js")
+    include_str!("native_appearance_bootstrap.js.in")
         .replace(
             "/* BUNDLED_DARKREADER */",
             include_str!("../../sorng-protocols/src/vendor/darkreader/darkreader.js"),

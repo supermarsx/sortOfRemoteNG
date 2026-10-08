@@ -10,8 +10,8 @@ const rendererSource = readFileSync("src-tauri/crates/sorng-browser-host/src/cef
 // Exercise the exact production Rust-owned bootstrap, not a hand-maintained
 // approximation of its vendor/client interface. Both includes remain singular.
 function assembledSource(engine) {
-  assert.match(rendererSource, /include_str!\("native_appearance_bootstrap\.js"\)/);
-  const template = readFileSync("src-tauri/crates/sorng-browser-host/src/native_appearance_bootstrap.js", "utf8");
+  assert.match(rendererSource, /include_str!\("native_appearance_bootstrap\.js\.in"\)/);
+  const template = readFileSync("src-tauri/crates/sorng-browser-host/src/native_appearance_bootstrap.js.in", "utf8");
   for (const marker of ["/* BUNDLED_DARKREADER */", "/* NATIVE_APPEARANCE_CLIENT */"]) {
     assert.equal(template.split(marker).length, 2, "each static include is singular");
     assert.ok(rendererSource.includes(JSON.stringify(marker)), "Rust uses the identical include marker");

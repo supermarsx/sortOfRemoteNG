@@ -1,4 +1,4 @@
-// Native-owned constant template; substitutions are bundled source, never data.
+// Native-owned JavaScript template; substitutions are bundled source, never data.
 (function () {
   "use strict";
   const nativeWindow = globalThis.window;
