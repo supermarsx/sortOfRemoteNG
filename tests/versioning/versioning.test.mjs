@@ -1,7 +1,10 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import test from "node:test";
 import {
+  buildPlan,
   parseArgs as parseSyncVersionArgs,
+  rootWorkspaceMemberManifests,
   rewriteShellAssignment,
   versionDerivedTextMatches,
 } from "../../scripts/sync-version.mjs";
@@ -14,6 +17,87 @@ import {
   rewriteMemberCargoManifest,
   rewriteRootCargoManifest,
 } from "../../scripts/versioning.mjs";
+
+test("root member discovery follows the canonical workspace rather than nested fixtures", () => {
+  const source =
+    '[workspace]\r\nmembers = [\r\n "crates/one", # member\r\n "crates/two",\r\n]\r\n[workspace.package]\r\nversion = "26.50.0"\r\n';
+  assert.deepEqual(rootWorkspaceMemberManifests(source), [
+    "src-tauri/crates/one/Cargo.toml",
+    "src-tauri/crates/two/Cargo.toml",
+  ]);
+  for (const members of [
+    '"crates/one", "crates/one"',
+    '"crates/*"',
+    '"../outside"',
+    '"crates/../outside"',
+    "null",
+  ]) {
+    assert.throws(() =>
+      rootWorkspaceMemberManifests(`[workspace]\nmembers = [${members}]\n`),
+    );
+  }
+  assert.throws(() =>
+    rootWorkspaceMemberManifests(
+      '[workspace]\n# members = ["crates/not-a-member"]\n',
+    ),
+  );
+  assert.throws(() =>
+    rootWorkspaceMemberManifests("[workspace]\nmembers = []\nmembers = []\n"),
+  );
+});
+
+test("version planning preserves standalone acceptance versions and only updates root packages in their locks", () => {
+  // Planning is read-only. Exercise a different version so every accidental
+  // fixture rewrite is visible without changing any manifests or lockfiles.
+  const plan = buildPlan("99.1");
+  const rootManifest = readFileSync(
+    new URL("../../src-tauri/Cargo.toml", import.meta.url),
+    "utf8",
+  );
+  const members = rootWorkspaceMemberManifests(rootManifest);
+  assert.equal(plan.memberManifestCount, members.length);
+  assert.equal(plan.firstPartyPackageCount, members.length + 1);
+  for (const [directory, packageName] of [
+    ["native_acceptance", "sorng-cef-acceptance"],
+    ["native_tls_acceptance", "sorng-cef-tls-acceptance"],
+  ]) {
+    const prefix = `src-tauri/crates/sorng-browser-host/tests/${directory}`;
+    const manifestPath = `${prefix}/Cargo.toml`;
+    assert.ok(!members.includes(manifestPath));
+    assert.ok(
+      !plan.changes.some((change) => change.relativePath === manifestPath),
+    );
+    const manifest = readFileSync(
+      new URL(`../../${manifestPath}`, import.meta.url),
+      "utf8",
+    );
+    assert.match(manifest, /^\[workspace\]\r?$/m);
+    const fixtureVersion = /^version = "([^"]+)"\r?$/m.exec(manifest)[1];
+    const lockChange = plan.changes.find(
+      (change) => change.relativePath === `${prefix}/Cargo.lock`,
+    );
+    assert.ok(
+      lockChange,
+      "root dependency versions remain synchronized in fixture locks",
+    );
+    const fixtureBlock = lockChange.expected
+      .split(/(?=^\[\[package\]\])/m)
+      .find((block) => block.includes(`name = "${packageName}"`));
+    assert.ok(fixtureBlock.includes(`version = "${fixtureVersion}"`));
+    const firstPartyNames = new Set([
+      cargoPackageName(rootManifest),
+      ...members.map((member) =>
+        cargoPackageName(
+          readFileSync(new URL(`../../${member}`, import.meta.url), "utf8"),
+        ),
+      ),
+    ]);
+    assert.equal(
+      lockChange.expected,
+      rewriteCargoLock(lockChange.current, firstPartyNames, "99.1.0").text,
+    );
+  }
+});
 
 test("projects the public YY.N version to machine-only SemVer", () => {
   assert.deepEqual(projectVersion("26.1"), {

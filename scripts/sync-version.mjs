@@ -77,7 +77,43 @@ function walkFiles(relativeDirectory, fileName) {
   return found.sort();
 }
 
-function buildPlan(versionOverride = null, sourceShaOverride = null) {
+// The root manifest, not recursive directory placement, owns membership.
+// Standalone acceptance workspaces below crates/ keep their own package version
+// and lockfile. This repository uses explicit quoted member paths; fail closed
+// if that convention changes instead of silently missing a glob or external path.
+export function rootWorkspaceMemberManifests(source) {
+  const workspace =
+    /^\[workspace\][ \t]*(?:#[^\r\n]*)?\r?\n([\s\S]*?)(?=^\[|(?![\s\S]))/m.exec(
+      source,
+    )?.[1];
+  const declarations = [
+    ...(workspace ?? "")
+      .replace(/#[^\r\n]*/g, "")
+      .matchAll(/^\s*members\s*=\s*\[([\s\S]*?)\]/gm),
+  ];
+  if (declarations.length !== 1)
+    throw new Error(
+      "Root Cargo.toml must declare one explicit workspace members array",
+    );
+  const members = JSON.parse(`[${declarations[0][1].replace(/,\s*$/, "")}]`);
+  const paths = new Set();
+  for (const member of members) {
+    if (
+      typeof member !== "string" ||
+      !/^crates\/[A-Za-z0-9_-]+(?:\/[A-Za-z0-9_-]+)*$/.test(member)
+    )
+      throw new Error(
+        "Workspace members must be explicit paths beneath crates/",
+      );
+    const manifest = `src-tauri/${member}/Cargo.toml`;
+    if (paths.has(manifest))
+      throw new Error(`Duplicate workspace member: ${member}`);
+    paths.add(manifest);
+  }
+  return [...paths].sort();
+}
+
+export function buildPlan(versionOverride = null, sourceShaOverride = null) {
   const authority = JSON.parse(read("version.json"));
   const projection = projectVersion(versionOverride ?? authority.version);
   const changes = [];
@@ -143,13 +179,17 @@ function buildPlan(versionOverride = null, sourceShaOverride = null) {
     rewriteRootCargoManifest(rootManifest, projection.machineVersion),
   );
 
-  const memberManifestPaths = walkFiles("src-tauri/crates", "Cargo.toml");
+  const memberManifestPaths = rootWorkspaceMemberManifests(rootManifest);
   const firstPartyPackageNames = new Set([cargoPackageName(rootManifest)]);
   let productCrateCount = 0;
   let vendorWrapperCount = 0;
 
   for (const manifestPath of memberManifestPaths) {
     const manifest = read(manifestPath);
+    if (/^\[workspace\][ \t]*(?:#[^\r\n]*)?\r?$/m.test(manifest))
+      throw new Error(
+        `Root workspace member declares an independent workspace: ${manifestPath}`,
+      );
     const packageName = cargoPackageName(manifest);
     if (firstPartyPackageNames.has(packageName)) {
       throw new Error(
