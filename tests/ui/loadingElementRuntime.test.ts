@@ -5,7 +5,7 @@ import {
   GOLDEN_ANGLE,
 } from '../../src/components/ui/display/loadingElement/runtime/fibonacciSphere';
 import { hashConfig } from '../../src/components/ui/display/loadingElement/runtime/configHash';
-import { mergeVariantConfig } from '../../src/components/ui/display/loadingElement/LoadingElement';
+import { mergeVariantConfig } from '../../src/components/ui/display/loadingElement/mergeVariantConfig';
 import { DEFAULT_LISSAJOUS, DEFAULT_RING } from '../../src/components/ui/display/loadingElement/defaults';
 
 const TAU = Math.PI * 2;

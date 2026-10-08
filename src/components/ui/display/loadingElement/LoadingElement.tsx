@@ -1,4 +1,3 @@
-/* eslint-disable react-refresh/only-export-components, react/only-export-components -- co-located variant descriptor metadata stays with the component by design */
 import React, { useContext, useMemo, useRef } from "react";
 import SettingsContext from "../../../../contexts/SettingsContext";
 import type { GlobalSettings } from "../../../../types/settings/settings";
@@ -11,6 +10,7 @@ import {
   type VariantConfig,
 } from "./types";
 import { DEFAULT_LOADING_ELEMENT_SETTINGS } from "./defaults";
+import { mergeVariantConfig } from "./mergeVariantConfig";
 import { useAccentColor } from "./runtime/colorResolver";
 import { useElementVisibility } from "./runtime/useElementVisibility";
 
@@ -43,23 +43,6 @@ function deepMerge<T extends Record<string, unknown>>(
   over: Partial<T>,
 ): T {
   return { ...base, ...over };
-}
-
-/**
- * Merge a variant's default config with the user's stored config and any
- * per-call override into a single VariantConfig. The unsafe casts live
- * here because VariantConfig is a non-discriminated union — TS can't
- * unify the spread of different union members on its own.
- */
-export function mergeVariantConfig(
-  defaultConfig: VariantConfig,
-  stored: VariantConfig | undefined,
-  over: Partial<VariantConfig> | undefined,
-): VariantConfig {
-  const seed = defaultConfig as unknown as Record<string, unknown>;
-  const s = (stored ?? {}) as unknown as Record<string, unknown>;
-  const o = (over ?? {}) as unknown as Record<string, unknown>;
-  return { ...seed, ...s, ...o } as unknown as VariantConfig;
 }
 
 const InternalLoadingElement: React.FC<LoadingElementProps> = ({

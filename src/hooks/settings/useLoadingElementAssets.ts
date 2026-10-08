@@ -14,7 +14,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useSettings } from '../../contexts/SettingsContext';
 import { hashConfig } from '../../components/ui/display/loadingElement/runtime/configHash';
 import { recordLoadingElement } from '../../components/ui/display/loadingElement/runtime/recorder';
-import { mergeVariantConfig } from '../../components/ui/display/loadingElement/LoadingElement';
+import { mergeVariantConfig } from '../../components/ui/display/loadingElement/mergeVariantConfig';
 import { REGISTRY } from '../../components/ui/display/loadingElement/registry';
 import {
   ALL_LOADING_ELEMENT_TYPES,
