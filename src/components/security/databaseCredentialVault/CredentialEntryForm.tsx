@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useId, useState } from "react";
 import { Eye, EyeOff, Plus, Trash2 } from "lucide-react";
 import { Checkbox, Select } from "../../ui/forms";
 import type {
@@ -30,14 +30,18 @@ function SecretField({
   disabled: boolean;
 }) {
   const [revealed, setRevealed] = useState(false);
+  const id = useId();
   return (
-    <label className="block space-y-1 text-sm">
-      <span>{label}</span>
-      <div className="flex items-start gap-2">
+    <div className="space-y-1 text-sm">
+      <label htmlFor={id} className="block">
+        {label}
+      </label>
+      <div className="relative">
         {multiline && revealed ? (
           <textarea
+            id={id}
             aria-label={label}
-            className="sor-form-input min-h-32 font-mono"
+            className="sor-form-input min-h-32 w-full pr-10 font-mono"
             spellCheck={false}
             autoComplete="off"
             value={value}
@@ -46,8 +50,9 @@ function SecretField({
           />
         ) : (
           <input
+            id={id}
             aria-label={label}
-            className="sor-form-input"
+            className="sor-form-input w-full pr-10"
             type={revealed ? "text" : "password"}
             autoComplete="new-password"
             spellCheck={false}
@@ -59,7 +64,7 @@ function SecretField({
         )}
         <button
           type="button"
-          className="sor-btn-icon shrink-0"
+          className="sor-btn-icon absolute right-1 top-1 !h-7 !w-7"
           aria-label={`${revealed ? "Hide" : "Reveal"} ${label.toLowerCase()}`}
           aria-pressed={revealed}
           data-tooltip={`${revealed ? "Hide" : "Reveal"} ${label.toLowerCase()}`}
@@ -75,7 +80,7 @@ function SecretField({
           default.
         </span>
       )}
-    </label>
+    </div>
   );
 }
 
@@ -248,14 +253,15 @@ export default function CredentialEntryForm({
     );
   };
   return (
-    <section aria-label="Vault credential editor" className="space-y-4">
-      <h3 className="font-medium">Credential details</h3>
+    <section aria-label="Vault credential editor" className="space-y-3">
       {textField("Credential name", entry.name, (name) =>
         onChange({ ...entry, name }),
       )}
-      <fieldset>
-        <legend className="mb-2 text-sm">Include credential types</legend>
-        <div className="flex flex-wrap gap-x-4 gap-y-2">
+      <fieldset className="rounded border border-[var(--color-border)] bg-[var(--color-surface)] p-3">
+        <legend className="px-1 text-xs font-medium text-[var(--color-textSecondary)]">
+          Include credential types
+        </legend>
+        <div className="grid gap-x-4 gap-y-2 sm:grid-cols-2 lg:grid-cols-3">
           {DATABASE_CREDENTIAL_FACETS.filter(
             (key) => key !== "deviceTrust",
           ).map((key) => (
@@ -270,30 +276,45 @@ export default function CredentialEntryForm({
           ))}
         </div>
       </fieldset>
-      <div className="grid gap-3 sm:grid-cols-2">
-        {(["username", "domain"] as const).map(
-          (key) =>
-            entry.facets[key] !== undefined && (
-              <React.Fragment key={key}>
-                {textField(FACET_LABELS[key], entry.facets[key]!, (value) =>
-                  setFacet(key, value),
-                )}
-              </React.Fragment>
-            ),
-        )}
-      </div>
-      {(["password", "privateKey", "passphrase"] as const).map(
-        (key) =>
-          entry.facets[key] !== undefined && (
-            <SecretField
-              key={key}
-              label={FACET_LABELS[key]}
-              value={entry.facets[key]!}
-              onChange={(value) => setFacet(key, value)}
-              multiline={key === "privateKey"}
-              disabled={busy}
-            />
-          ),
+      {(
+        ["username", "domain", "password", "privateKey", "passphrase"] as const
+      ).some((key) => entry.facets[key] !== undefined) && (
+        <fieldset className="rounded border border-[var(--color-border)] p-3">
+          <legend className="px-1 text-xs font-medium text-[var(--color-textSecondary)]">
+            Login details
+          </legend>
+          <div className="grid gap-3 sm:grid-cols-2">
+            {(["username", "domain"] as const).map(
+              (key) =>
+                entry.facets[key] !== undefined && (
+                  <React.Fragment key={key}>
+                    {textField(FACET_LABELS[key], entry.facets[key]!, (value) =>
+                      setFacet(key, value),
+                    )}
+                  </React.Fragment>
+                ),
+            )}
+            {(["password", "privateKey", "passphrase"] as const).map(
+              (key) =>
+                entry.facets[key] !== undefined && (
+                  <div
+                    key={key}
+                    className={
+                      key === "privateKey" ? "sm:col-span-2" : undefined
+                    }
+                  >
+                    <SecretField
+                      label={FACET_LABELS[key]}
+                      value={entry.facets[key]!}
+                      onChange={(value) => setFacet(key, value)}
+                      multiline={key === "privateKey"}
+                      disabled={busy}
+                    />
+                  </div>
+                ),
+            )}
+          </div>
+        </fieldset>
       )}
       {entry.facets.totp && (
         <fieldset className="space-y-3 rounded border border-[var(--color-border)] p-3">
@@ -474,7 +495,7 @@ export default function CredentialEntryForm({
           trailing slash; passkey bindings need a domain only.
         </p>
       )}
-      <div className="flex justify-end gap-2">
+      <div className="sticky bottom-0 flex justify-end gap-2 border-t border-[var(--color-border)] bg-[var(--color-background)] py-3">
         <button
           type="button"
           className="sor-btn sor-btn-secondary"

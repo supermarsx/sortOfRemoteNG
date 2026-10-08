@@ -40,6 +40,12 @@ vi.mock("../../src/components/security/DatabaseCredentialVault", () => ({
 vi.mock("../../src/components/security/HardwareKeysTab", () => ({
   default: () => <section aria-label="Device manager" />,
 }));
+vi.mock(
+  "../../src/components/security/databaseCredentialVault/CredentialEditorTab",
+  () => ({
+    default: () => <section aria-label="Private credential editor" />,
+  }),
+);
 vi.mock("../../src/components/SettingsDialog/index", () => ({
   SettingsTabContent: ({
     onOpenCredentialVault,
@@ -56,6 +62,7 @@ vi.mock("../../src/components/SettingsDialog/index", () => ({
 }));
 import {
   createSecurityToolSession,
+  createCredentialEditorSession,
   createToolSession,
 } from "../../src/components/app/toolSession";
 import { useSecurityToolSession } from "../../src/hooks/security/useSecurityToolSession";
@@ -68,6 +75,26 @@ afterEach(() => {
   fixture.availability = { status: "ready", databaseId: "db-a", generation: 1 };
 });
 describe("autonomous security tools", () => {
+  it("mounts a separate editor and removes private contents when its database locks", async () => {
+    const session = createCredentialEditorSession({
+      scope: { databaseId: "db-a", generation: 1 },
+      mode: "edit",
+      credentialId: "entry-a",
+    });
+    const view = render(<ToolTabViewer session={session} onClose={vi.fn()} />);
+    expect(
+      await screen.findByRole("region", { name: "Private credential editor" }),
+    ).toBeInTheDocument();
+    expect(fixture.vaultMount).not.toHaveBeenCalled();
+    fixture.availability.status = "suspended";
+    view.rerender(<ToolTabViewer session={session} onClose={vi.fn()} />);
+    expect(
+      screen.queryByRole("region", { name: "Private credential editor" }),
+    ).not.toBeInTheDocument();
+    expect(screen.getByTestId("tool-database-gate")).toHaveTextContent(
+      "Database locked",
+    );
+  });
   it.each(["credentialVault", "hardwareKeys"] as const)(
     "rapid opening %s focuses one session",
     (tool) => {

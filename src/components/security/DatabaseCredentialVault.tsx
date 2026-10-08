@@ -21,7 +21,7 @@ import {
 } from "../../hooks/security/useDatabaseCredentialVault";
 import { ConfirmDialog } from "../ui/dialogs/ConfirmDialog";
 import { Select } from "../ui/forms/Select";
-import CredentialEntryForm from "./databaseCredentialVault/CredentialEntryForm";
+import type { CredentialEditorRequest } from "../../types/security/credentialEditor";
 import { registerCredentialVaultDraft } from "../../utils/security/credentialVaultDrafts";
 import {
   CONNECTION_CREDENTIAL_LABELS,
@@ -38,6 +38,7 @@ interface Props {
   onDirtyChange?: (value: boolean) => void;
   onBusyChange?: (value: boolean) => void;
   onEditConnection?: (connection: Connection) => void;
+  onOpenEditor?: (request: CredentialEditorRequest) => void;
 }
 
 function VaultWorkspace({
@@ -46,6 +47,7 @@ function VaultWorkspace({
   onBusyChange,
   sessionId,
   onEditConnection,
+  onOpenEditor,
 }: Props & { api: DatabaseCredentialVaultApi }) {
   const mgr = useDatabaseCredentialVault(api);
   const inventory = useConnectionCredentialInventory(
@@ -159,8 +161,8 @@ function VaultWorkspace({
   const pages = Math.max(1, Math.ceil(rows.length / 25)),
     currentPage = Math.min(page, pages - 1);
   return (
-    <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
-      <header className="flex flex-wrap items-center gap-3 border-b border-[var(--color-border)] p-4">
+    <div className="flex h-full min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
+      <header className="flex shrink-0 flex-wrap items-center gap-2 border-b border-[var(--color-border)] px-4 py-3">
         <KeyRound size={20} className="text-primary" />
         <h2 className="font-semibold">Database credential vault</h2>
         <span className="text-xs text-[var(--color-textSecondary)]">
@@ -219,8 +221,10 @@ function VaultWorkspace({
           <button
             type="button"
             className="sor-btn sor-btn-primary"
-            disabled={busy || mgr.loading || !mgr.snapshot}
-            onClick={() => request(mgr.create)}
+            disabled={busy || mgr.loading || !mgr.snapshot || !onOpenEditor}
+            onClick={() =>
+              onOpenEditor?.({ mode: "create", scope: { ...api.scope! } })
+            }
           >
             <Plus size={14} />
             New credential
@@ -255,101 +259,129 @@ function VaultWorkspace({
           {mgr.error}
         </p>
       )}
-      <div className="min-h-0 flex-1 overflow-auto p-4">
-        {mgr.draft ? (
-          <CredentialEntryForm
-            key={mgr.draft.id}
-            entry={mgr.draft}
-            onChange={mgr.update}
-            onSave={() => {
-              void mgr.save();
-            }}
-            onCancel={() => request(mgr.discard)}
-            busy={mgr.busy}
-          />
-        ) : (
-          <>
-            <div className="mb-3 flex flex-wrap items-center gap-3">
-              <label className="flex items-center gap-2">
-                <Search size={16} />
-                <input
-                  type="search"
-                  aria-label="Search vault credentials"
-                  className="sor-form-input"
-                  value={search}
-                  onChange={(event) => {
-                    setSearch(event.target.value);
-                    setPage(0);
-                  }}
-                  placeholder="Search names, credential types or sources"
-                />
-              </label>
-              <div className="flex items-center gap-2 text-sm">
-                <label htmlFor="vault-credential-source-filter">Source</label>
-                <Select
-                  id="vault-credential-source-filter"
-                  label="Credential source filter"
-                  variant="form-sm"
-                  value={source}
-                  onChange={(value) => {
-                    setSource(value as typeof source);
-                    setPage(0);
-                  }}
-                  options={[
-                    { value: "all", label: "All sources" },
-                    { value: "vault", label: "Reusable vault" },
-                    { value: "connections", label: "Connections" },
-                  ]}
-                />
-              </div>
+      <div
+        className="min-h-0 flex-1 overflow-x-auto overflow-y-auto overscroll-contain p-4"
+        style={{
+          scrollbarWidth: "thin",
+          scrollbarColor: "var(--color-border) var(--color-background)",
+          scrollbarGutter: "stable",
+        }}
+        role="region"
+        aria-label="Credential inventory"
+        tabIndex={0}
+      >
+        <>
+          <div className="mb-3 flex flex-wrap items-center gap-3">
+            <label className="flex items-center gap-2">
+              <Search size={16} />
+              <input
+                type="search"
+                aria-label="Search vault credentials"
+                className="sor-form-input"
+                value={search}
+                onChange={(event) => {
+                  setSearch(event.target.value);
+                  setPage(0);
+                }}
+                placeholder="Search names, credential types or sources"
+              />
+            </label>
+            <div className="flex items-center gap-2 text-sm">
+              <label htmlFor="vault-credential-source-filter">Source</label>
+              <Select
+                id="vault-credential-source-filter"
+                label="Credential source filter"
+                variant="form-sm"
+                value={source}
+                onChange={(value) => {
+                  setSource(value as typeof source);
+                  setPage(0);
+                }}
+                options={[
+                  { value: "all", label: "All sources" },
+                  { value: "vault", label: "Reusable vault" },
+                  { value: "connections", label: "Connections" },
+                ]}
+              />
             </div>
-            <table
-              className="w-full text-left text-sm"
-              aria-label="Database vault credentials"
-              aria-busy={mgr.loading}
-            >
-              <thead>
-                <tr className="border-b border-[var(--color-border)]">
-                  <th className="p-2">Name</th>
-                  <th className="p-2">Source</th>
-                  <th className="p-2">Credential types</th>
-                  <th className="p-2 text-right">Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {rows
-                  .slice(currentPage * 25, currentPage * 25 + 25)
-                  .map((item) =>
-                    item.source === "connection" ? (
-                      <tr
-                        key={`connection:${item.row.id}`}
-                        className="border-b border-[var(--color-border)]"
-                      >
-                        <td className="p-2 font-medium">
-                          {item.row.name}
-                          <span className="block text-xs font-normal text-[var(--color-textSecondary)]">
-                            {item.row.protocol}
+          </div>
+          <table
+            className="w-full text-left text-sm"
+            aria-label="Database vault credentials"
+            aria-busy={mgr.loading}
+          >
+            <thead>
+              <tr className="border-b border-[var(--color-border)]">
+                <th className="p-2">Name</th>
+                <th className="p-2">Source</th>
+                <th className="p-2">Credential types</th>
+                <th
+                  scope="col"
+                  className="p-2 text-right"
+                  title="Distinct saved connection references in this database; not live sessions"
+                >
+                  Used by
+                </th>
+                <th className="p-2 text-right">Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows
+                .slice(currentPage * 25, currentPage * 25 + 25)
+                .map((item) =>
+                  item.source === "connection" ? (
+                    <tr
+                      key={`connection:${item.row.id}`}
+                      className="border-b border-[var(--color-border)]"
+                    >
+                      <td className="p-2 font-medium">
+                        {item.row.name}
+                        <span className="block text-xs font-normal text-[var(--color-textSecondary)]">
+                          {item.row.protocol}
+                        </span>
+                      </td>
+                      <td className="p-2 text-xs">
+                        {item.row.storage
+                          .map(
+                            (key) => CONNECTION_CREDENTIAL_STORAGE_LABELS[key],
+                          )
+                          .join(" · ")}
+                        {item.row.localValuesIgnored && (
+                          <span className="block text-[var(--color-textSecondary)]">
+                            Local login values retained, not a vault fallback
                           </span>
-                        </td>
-                        <td className="p-2 text-xs">
-                          {item.row.storage
-                            .map(
-                              (key) =>
-                                CONNECTION_CREDENTIAL_STORAGE_LABELS[key],
-                            )
-                            .join(" · ")}
-                          {item.row.localValuesIgnored && (
-                            <span className="block text-[var(--color-textSecondary)]">
-                              Local login values retained, not a vault fallback
-                            </span>
+                        )}
+                      </td>
+                      <td className="p-2 text-[var(--color-textSecondary)]">
+                        {item.row.kinds
+                          .map((key) => CONNECTION_CREDENTIAL_LABELS[key])
+                          .join(", ")}
+                      </td>
+                      <td
+                        className="p-2 text-right text-[var(--color-textSecondary)]"
+                        aria-label="Usage count not applicable to a connection-local row"
+                      >
+                        —
+                      </td>
+                      <td className="p-2 text-right">
+                        <div className="flex justify-end gap-2">
+                          {inventory.migratable.has(item.row.id) && (
+                            <button
+                              type="button"
+                              className="sor-btn sor-btn-secondary"
+                              disabled={busy || mgr.loading || !onOpenEditor}
+                              aria-label={`Move credentials from ${item.row.name} to vault`}
+                              onClick={() =>
+                                onOpenEditor?.({
+                                  mode: "migrate",
+                                  scope: { ...api.scope! },
+                                  connectionId: item.row.id,
+                                })
+                              }
+                            >
+                              Move to vault
+                            </button>
                           )}
-                        </td>
-                        <td className="p-2 text-[var(--color-textSecondary)]">
-                          {item.row.kinds
-                            .map((key) => CONNECTION_CREDENTIAL_LABELS[key])
-                            .join(", ")}
-                        </td>
-                        <td className="p-2 text-right">
                           <button
                             type="button"
                             className="sor-btn sor-btn-secondary"
@@ -364,91 +396,107 @@ function VaultWorkspace({
                           >
                             Edit in connection
                           </button>
-                        </td>
-                      </tr>
-                    ) : (
-                      <tr
-                        key={`vault:${item.row.id}`}
-                        className="border-b border-[var(--color-border)]"
-                      >
-                        <td className="p-2 font-medium">{item.row.name}</td>
-                        <td className="p-2 text-xs">Reusable vault</td>
-                        <td className="p-2 text-[var(--color-textSecondary)]">
-                          {item.row.availableFacets
-                            .map((key) => FACET_LABELS[key])
-                            .join(", ")}
-                        </td>
-                        <td className="p-2">
-                          <div className="flex justify-end gap-2">
-                            <button
-                              type="button"
-                              className="sor-btn sor-btn-secondary"
-                              disabled={busy || mgr.loading}
-                              aria-label={`Edit ${item.row.name}`}
-                              data-tooltip="Explicitly load this credential into the private editor"
-                              onClick={() => {
-                                void mgr.edit(item.row);
-                              }}
-                            >
-                              Edit
-                            </button>
-                            <button
-                              type="button"
-                              className="sor-btn sor-btn-danger"
-                              disabled={busy || mgr.loading}
-                              aria-label={`Delete ${item.row.name}`}
-                              onClick={() => remove(mgr.snapshot!, item.row.id)}
-                            >
-                              Delete
-                            </button>
-                          </div>
-                        </td>
-                      </tr>
-                    ),
-                  )}
-                {!rows.length && (
-                  <tr>
-                    <td
-                      colSpan={4}
-                      className="p-5 text-center text-[var(--color-textSecondary)]"
+                        </div>
+                      </td>
+                    </tr>
+                  ) : (
+                    <tr
+                      key={`vault:${item.row.id}`}
+                      className="border-b border-[var(--color-border)]"
                     >
-                      {mgr.loading
-                        ? "Loading credential metadata…"
-                        : mgr.error
-                          ? "The vault is unavailable. Reload after restoring access."
-                          : search
-                            ? "No matching credentials."
-                            : "No credentials in this source. Create a reusable credential or save credentials in a connection."}
-                    </td>
-                  </tr>
+                      <td className="p-2 font-medium">{item.row.name}</td>
+                      <td className="p-2 text-xs">Reusable vault</td>
+                      <td className="p-2 text-[var(--color-textSecondary)]">
+                        {item.row.availableFacets
+                          .map((key) => FACET_LABELS[key])
+                          .join(", ")}
+                      </td>
+                      <td
+                        className="p-2 text-right tabular-nums"
+                        aria-label={
+                          inventory.usage === null
+                            ? "Usage unavailable"
+                            : `${inventory.usage.get(item.row.id) ?? 0} saved connection references`
+                        }
+                      >
+                        {inventory.usage === null
+                          ? "—"
+                          : (inventory.usage.get(item.row.id) ?? 0)}
+                      </td>
+                      <td className="p-2">
+                        <div className="flex justify-end gap-2">
+                          <button
+                            type="button"
+                            className="sor-btn sor-btn-secondary"
+                            disabled={busy || mgr.loading || !onOpenEditor}
+                            aria-label={`Edit ${item.row.name}`}
+                            data-tooltip="Explicitly load this credential into the private editor"
+                            onClick={() => {
+                              onOpenEditor?.({
+                                mode: "edit",
+                                scope: { ...api.scope! },
+                                credentialId: item.row.id,
+                              });
+                            }}
+                          >
+                            Edit
+                          </button>
+                          <button
+                            type="button"
+                            className="sor-btn sor-btn-danger"
+                            disabled={busy || mgr.loading}
+                            aria-label={`Delete ${item.row.name}`}
+                            onClick={() => remove(mgr.snapshot!, item.row.id)}
+                          >
+                            Delete
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ),
                 )}
-              </tbody>
-            </table>
-            <footer className="mt-3 flex items-center justify-between text-xs">
-              <span>
-                {rows.length} results · Page {currentPage + 1} of {pages}
-              </span>
-              <div className="flex gap-2">
-                <button
-                  type="button"
-                  className="sor-btn sor-btn-secondary"
-                  disabled={currentPage === 0}
-                  onClick={() => setPage(currentPage - 1)}
-                >
-                  Previous
-                </button>
-                <button
-                  type="button"
-                  className="sor-btn sor-btn-secondary"
-                  disabled={currentPage + 1 >= pages}
-                  onClick={() => setPage(currentPage + 1)}
-                >
-                  Next
-                </button>
-              </div>
-            </footer>
-          </>
-        )}
+              {!rows.length && (
+                <tr>
+                  <td
+                    colSpan={5}
+                    className="p-5 text-center text-[var(--color-textSecondary)]"
+                  >
+                    {mgr.loading
+                      ? "Loading credential metadata…"
+                      : mgr.error
+                        ? "The vault is unavailable. Reload after restoring access."
+                        : search
+                          ? "No matching credentials."
+                          : "No credentials in this source. Create a reusable credential or save credentials in a connection."}
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+          <footer className="mt-3 flex items-center justify-between text-xs">
+            <span>
+              {rows.length} results · Page {currentPage + 1} of {pages}
+            </span>
+            <div className="flex gap-2">
+              <button
+                type="button"
+                className="sor-btn sor-btn-secondary"
+                disabled={currentPage === 0}
+                onClick={() => setPage(currentPage - 1)}
+              >
+                Previous
+              </button>
+              <button
+                type="button"
+                className="sor-btn sor-btn-secondary"
+                disabled={currentPage + 1 >= pages}
+                onClick={() => setPage(currentPage + 1)}
+              >
+                Next
+              </button>
+            </div>
+          </footer>
+        </>
       </div>
       {archive && (
         <React.Suspense

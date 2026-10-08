@@ -1666,6 +1666,8 @@ export interface ConnectionSession {
     section: "diagnostics" | "settings";
   };
   recordingPlayer?: { recordingId: string };
+  /** Private editor navigation only; secrets remain in the mounted editor. */
+  credentialEditor?: import("../security/credentialEditor").CredentialEditorRequest;
   /** Non-secret navigation request for the consolidated Session Manager tool. */
   sessionManagerView?: {
     view: "sessions" | "action-log";

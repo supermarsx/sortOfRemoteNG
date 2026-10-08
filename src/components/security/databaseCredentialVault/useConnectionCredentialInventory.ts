@@ -7,6 +7,10 @@ import type {
 } from "../../../types/security/databaseCredentialVault";
 import { credentialVaultScopeKey } from "../../../hooks/security/useDatabaseCredentialVault";
 import {
+  credentialVaultUsage,
+  canMigrateConnectionCredential,
+} from "../../../utils/security/credentialVaultUsage";
+import {
   connectionCredentialInventory,
   type ConnectionCredentialInventoryRow,
 } from "../../../utils/security/connectionCredentialInventory";
@@ -51,6 +55,8 @@ export function useConnectionCredentialInventory(
     };
   }, []);
   let rows: ConnectionCredentialInventoryRow[] = [];
+  let usage: Map<string, number> | null = null;
+  let migratable = new Set<string>();
   let unavailable = !context?.getCurrentConnections || !connectionScope;
   if (
     !loading &&
@@ -60,10 +66,16 @@ export function useConnectionCredentialInventory(
     snapshot.scope.generation === api.scope.generation
   ) {
     try {
-      if (context?.getCurrentConnections && connectionScope)
-        rows = connectionCredentialInventory(
-          context.getCurrentConnections(connectionScope),
+      if (context?.getCurrentConnections && connectionScope) {
+        const connections = context.getCurrentConnections(connectionScope);
+        rows = connectionCredentialInventory(connections);
+        usage = credentialVaultUsage(connections);
+        migratable = new Set(
+          connections
+            .filter(canMigrateConnectionCredential)
+            .map((row) => row.id),
         );
+      }
     } catch {
       unavailable = true;
     }
@@ -117,5 +129,5 @@ export function useConnectionCredentialInventory(
       if (alive.current) setOpening(false);
     }
   };
-  return { rows, unavailable, opening, error, edit };
+  return { rows, usage, migratable, unavailable, opening, error, edit };
 }

@@ -20,6 +20,8 @@ import { acquireCloudSyncDatabaseBarrier } from "../../src/utils/services/cloudS
 import { normalizeDatabaseAutomationLibrary } from "../../src/utils/recording/automationLibraryValidation";
 import { normalizeDatabaseDocuments } from "../../src/utils/documents/validation";
 import { normalizeDatabaseSettings } from "../../src/utils/documents/documentTypePolicy";
+import { migrateConnectionCredential } from "../../src/utils/security/migrateConnectionCredential";
+import { localCredentialFacets } from "../../src/utils/security/connectionCredentialConversion";
 const mock = vi.hoisted(() => ({
   owner: "db-a",
   locked: false,
@@ -189,6 +191,140 @@ async function add(hook: Awaited<ReturnType<typeof mount>>) {
   );
   return hook.result.current.credentialVault!.list(api.scope!);
 }
+
+describe("vault-origin migration through the actual Provider", () => {
+  it("retains local fields when a concurrent vault write replaces the verified values before cleanup", async () => {
+    const hook = await mount();
+    const scope = hook.result.current.credentialVault!.scope!;
+    const original = structuredClone(hook.result.current.state.connections[0]);
+    const destination = { ...entry(), facets: localCredentialFacets(original) };
+    await act(async () => {
+      await expect(
+        migrateConnectionCredential({
+          scope,
+          original,
+          entry: destination,
+          access: () => ({
+            ...hook.result.current,
+            dispatchAndFlush: async (action) => {
+              await hook.result.current.dispatchAndFlush(action);
+              const api = hook.result.current.credentialVault!;
+              const review = await api.list(scope);
+              await api.compareAndSwap(review, [
+                {
+                  operation: "put",
+                  entry: {
+                    ...destination,
+                    facets: { password: "CONCURRENT_VALUE" },
+                  },
+                },
+              ]);
+            },
+          }),
+        }),
+      ).rejects.toThrow("Verified credential changed");
+    });
+    expect(mock.saved!.connections[0].password).toBe(original.password);
+    expect(mock.saved!.credentialVault?.entries[0].facets.password).toBe(
+      "CONCURRENT_VALUE",
+    );
+  });
+  it.each(["ssh", "https", "rdp"] as const)(
+    "verifies the %s link with local fields retained before cleanup through the real reducer/ledger",
+    async (protocol) => {
+      mock.saved!.connections[0] = {
+        ...mock.saved!.connections[0],
+        protocol,
+        username: "LOCAL_ACCOUNT",
+        authType: protocol === "https" ? "basic" : "password",
+        ...(protocol === "https"
+          ? {
+              httpAutoMfa: {
+                version: 1,
+                enabled: true,
+                totpConfigId: "chosen",
+              },
+            }
+          : {}),
+      };
+      const hook = await mount();
+      const scope = hook.result.current.credentialVault!.scope!;
+      const original = structuredClone(
+        hook.result.current.state.connections[0],
+      );
+      const destination = {
+        ...entry(),
+        facets: localCredentialFacets(original),
+      };
+      const firstSave = mock.save.mock.calls.length;
+      await act(() =>
+        migrateConnectionCredential({
+          access: () => hook.result.current,
+          scope,
+          original,
+          entry: destination,
+        }),
+      );
+      const writes = mock.save.mock.calls
+        .slice(firstSave)
+        .map(([data]) => data as StorageData);
+      const linkedIndex = writes.findIndex(
+        (data) => data.connections[0].credentialSource?.kind === "vault",
+      );
+      const cleanedIndex = writes.findIndex(
+        (data) => data.connections[0].password === "",
+      );
+      expect(linkedIndex).toBeGreaterThan(0);
+      expect(cleanedIndex).toBeGreaterThan(linkedIndex);
+      expect(writes[linkedIndex].connections[0]).toMatchObject({
+        username: "LOCAL_ACCOUNT",
+        password: "CONNECTION_LOCAL_UNTOUCHED",
+        credentialSource: { kind: "vault", credentialId: id },
+      });
+      expect(mock.saved!.connections[0]).toMatchObject({
+        username: "",
+        password: "",
+        credentialSource: { kind: "vault", credentialId: id },
+        createdAt: original.createdAt,
+        updatedAt: original.updatedAt,
+      });
+      expect(mock.saved!.credentialVault?.entries[0].facets).toEqual(
+        destination.facets,
+      );
+      expect(mock.verify).toHaveBeenCalled();
+    },
+  );
+
+  it("keeps local fields when protected-file verification fails after the reference save", async () => {
+    const hook = await mount();
+    const scope = hook.result.current.credentialVault!.scope!;
+    const original = structuredClone(hook.result.current.state.connections[0]);
+    mock.verify.mockImplementation(async () => {
+      if (mock.saved!.connections[0].credentialSource?.kind === "vault")
+        throw Error("SIMULATED_SECRET_ERROR");
+    });
+    await act(async () => {
+      await expect(
+        migrateConnectionCredential({
+          access: () => hook.result.current,
+          scope,
+          original,
+          entry: { ...entry(), facets: localCredentialFacets(original) },
+        }),
+      ).rejects.toThrow();
+    });
+    expect(mock.saved!.connections[0]).toMatchObject({
+      password: "CONNECTION_LOCAL_UNTOUCHED",
+      credentialSource: { kind: "vault", credentialId: id },
+    });
+    expect(mock.saved!.credentialVault?.entries).toHaveLength(1);
+    expect(
+      mock.save.mock.calls.every(
+        ([data]) => data.connections[0].password !== "",
+      ),
+    ).toBe(true);
+  });
+});
 
 it("keeps vault reads valid through an upload snapshot while blocking every private library writer", async () => {
   const hook = await mount();

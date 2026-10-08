@@ -28,6 +28,7 @@ import {
 import { ImportExportNavigationContext } from "../ImportExport/navigation";
 import { useTrustCenterSession } from "../../hooks/security/useTrustCenterSession";
 import { useSecurityToolSession } from "../../hooks/security/useSecurityToolSession";
+import { useCredentialEditorSession } from "../../hooks/security/useCredentialEditorSession";
 import type { SettingsTabId } from "../SettingsDialog/settingsConstants";
 import { getToolDescriptor } from "./toolDescriptors";
 import EmptyState from "../ui/display/EmptyState";
@@ -53,6 +54,10 @@ const TrustCenterTab = dynamic(() => import("../security/TrustCenterTab"), {
 });
 const DatabaseCredentialVault = dynamic(
   () => import("../security/DatabaseCredentialVault"),
+  { ssr: false },
+);
+const CredentialEditorTab = dynamic(
+  () => import("../security/databaseCredentialVault/CredentialEditorTab"),
   { ssr: false },
 );
 const HardwareKeysTab = dynamic(() => import("../security/HardwareKeysTab"), {
@@ -287,6 +292,10 @@ export const ToolTabViewer: React.FC<ToolTabViewerProps> = ({
     session,
   );
   const openDocuments = useDocumentSession(onActivateSession);
+  const openCredentialEditor = useCredentialEditorSession(
+    onActivateSession,
+    session,
+  );
   const appDocuments =
     session.protocol === DOCUMENTS_PROTOCOL &&
     session.documentsWorkspace?.scope === "app";
@@ -516,11 +525,21 @@ export const ToolTabViewer: React.FC<ToolTabViewerProps> = ({
   if (session.protocol === CREDENTIAL_VAULT_PROTOCOL)
     return (
       <FeatureErrorBoundary title="The credential vault could not be displayed">
-        <DatabaseCredentialVault
-          key={databaseMountKey}
-          sessionId={session.id}
-          onEditConnection={onEditConnection}
-        />
+        {session.credentialEditor ? (
+          <CredentialEditorTab
+            key={databaseMountKey}
+            request={session.credentialEditor}
+            sessionId={session.id}
+            onClose={onClose}
+          />
+        ) : (
+          <DatabaseCredentialVault
+            key={databaseMountKey}
+            sessionId={session.id}
+            onEditConnection={onEditConnection}
+            onOpenEditor={onActivateSession ? openCredentialEditor : undefined}
+          />
+        )}
       </FeatureErrorBoundary>
     );
   if (session.protocol === HARDWARE_KEYS_PROTOCOL)

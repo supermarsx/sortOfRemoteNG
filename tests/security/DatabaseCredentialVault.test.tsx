@@ -24,6 +24,8 @@ import {
   normalizeDatabaseCredentialEntry,
 } from "../../src/utils/security/databaseCredentialVault";
 import DatabaseCredentialVault from "../../src/components/security/DatabaseCredentialVault";
+import CredentialEditorTab from "../../src/components/security/databaseCredentialVault/CredentialEditorTab";
+import type { CredentialEditorRequest } from "../../src/types/security/credentialEditor";
 import { getCredentialVaultDraft } from "../../src/utils/security/credentialVaultDrafts";
 import CredentialSourceSection from "../../src/components/connectionEditor/CredentialSourceSection";
 import DatabaseCredentialVaultSection from "../../src/components/SettingsDialog/sections/security/DatabaseCredentialVaultSection";
@@ -110,10 +112,38 @@ function facade(initial: DatabaseCredentialEntry[] = []) {
   return { api, snapshot };
 }
 const context = (api: DatabaseCredentialVaultApi): ConnectionContextType =>
-  ({ credentialVault: api }) as ConnectionContextType;
+  ({
+    credentialVault: api,
+    databaseAvailability: {
+      status: "ready",
+      databaseId: api.scope?.databaseId,
+      generation: 7,
+    },
+  }) as ConnectionContextType;
+function VaultTabs({
+  sessionId = "vault-tab",
+  onClose = () => {},
+}: {
+  sessionId?: string;
+  onClose?: () => void;
+}) {
+  const [request, setRequest] = useState<CredentialEditorRequest | null>(null);
+  return request ? (
+    <CredentialEditorTab
+      sessionId={sessionId}
+      request={request}
+      onClose={() => {
+        onClose();
+        setRequest(null);
+      }}
+    />
+  ) : (
+    <DatabaseCredentialVault sessionId={sessionId} onOpenEditor={setRequest} />
+  );
+}
 const mount = (
   api: DatabaseCredentialVaultApi,
-  children: React.ReactNode = <DatabaseCredentialVault />,
+  children: React.ReactNode = <VaultTabs />,
 ) =>
   render(
     <ConnectionContext.Provider value={context(api)}>
@@ -181,6 +211,7 @@ describe("database vault manager", () => {
       ).toBeEnabled(),
     );
     fireEvent.click(screen.getByRole("button", { name: "New credential" }));
+    await screen.findByLabelText("Credential name");
     expect(
       screen.getByRole("button", { name: "Save credential" }),
     ).toBeDisabled();
@@ -241,7 +272,7 @@ describe("database vault manager", () => {
     fireEvent.click(screen.getByRole("button", { name: "Cancel editing" }));
     fireEvent.click(screen.getByRole("button", { name: "Confirm review" }));
     fireEvent.click(
-      screen.getByRole("button", { name: "Delete NAS operator" }),
+      await screen.findByRole("button", { name: "Delete NAS operator" }),
     );
     expect(api.compareAndSwap).toHaveBeenCalledTimes(1);
     fireEvent.click(screen.getByRole("button", { name: "Confirm review" }));
@@ -284,6 +315,7 @@ describe("database vault manager", () => {
       ).toBeEnabled(),
     );
     fireEvent.click(screen.getByRole("button", { name: "New credential" }));
+    await screen.findByLabelText("Credential name");
     fireEvent.change(screen.getByLabelText("Credential name"), {
       target: { value: "External identity" },
     });
@@ -527,13 +559,14 @@ describe("vault picker and settings entry point", () => {
   });
   it("registers only close metadata and advances revision for each private draft edit", async () => {
     const { api } = facade();
-    const view = mount(api, <DatabaseCredentialVault sessionId="vault-tab" />);
+    const view = mount(api, <VaultTabs sessionId="vault-tab" />);
     await waitFor(() =>
       expect(
         screen.getByRole("button", { name: "New credential" }),
       ).toBeEnabled(),
     );
     fireEvent.click(screen.getByRole("button", { name: "New credential" }));
+    await screen.findByLabelText("Credential name");
     fireEvent.change(screen.getByLabelText("Credential name"), {
       target: { value: "SECRET_DRAFT_NAME" },
     });

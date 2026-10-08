@@ -3,6 +3,7 @@ import { ToolDisplayModes } from "../../types/settings/settings";
 import { generateId } from "../../utils/core/id";
 import type { WindowRegistry } from "../../types/windowManager";
 import type { ImportExportNavigation } from "../ImportExport/navigation";
+import type { CredentialEditorRequest } from "../../types/security/credentialEditor";
 
 export type ImportExportToolSession = ConnectionSession & {
   importExportNavigation?: ImportExportNavigation & { requestId: string };
@@ -80,6 +81,35 @@ export const createSecurityToolSession = (
     ? { ownerDatabaseId: databaseId }
     : {}),
   ...(source?.layout?.isDetached ? { layout: { ...source.layout } } : {}),
+});
+
+/** Reuse vault ownership and no-detach rules, without putting secrets in tabs. */
+export const createCredentialEditorSession = (
+  request: CredentialEditorRequest,
+  source?: ConnectionSession,
+): ConnectionSession => ({
+  ...createSecurityToolSession(
+    "credentialVault",
+    source,
+    request.scope.databaseId,
+  ),
+  name:
+    request.mode === "create"
+      ? "New credential"
+      : request.mode === "migrate"
+        ? "Move credential to vault"
+        : "Edit credential",
+  credentialEditor: {
+    scope: {
+      databaseId: request.scope.databaseId,
+      generation: request.scope.generation,
+    },
+    ...(request.mode === "edit"
+      ? { mode: "edit", credentialId: request.credentialId }
+      : request.mode === "migrate"
+        ? { mode: "migrate", connectionId: request.connectionId }
+        : { mode: "create" }),
+  },
 });
 export const ICON_EXPLORER_PROTOCOL = "tool:iconExplorer";
 export const CONNECTION_RECYCLE_BIN_PROTOCOL = "tool:connectionRecycleBin";

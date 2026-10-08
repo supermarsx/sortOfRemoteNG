@@ -29,6 +29,7 @@ export function useSecurityToolSession(
     const existing = sessions.current.find(
       (item) =>
         item.protocol === candidate.protocol &&
+        !item.credentialEditor &&
         !!item.layout?.isDetached === !!candidate.layout?.isDetached &&
         item.layout?.windowId === candidate.layout?.windowId &&
         (tool !== "credentialVault" || item.ownerDatabaseId === databaseId),
