@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 import { TextEncoder } from "node:util";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { websiteDarkThemeForPage } from "../../src/hooks/protocol/useWebsiteAppPalette";
 import {
   DEFAULT_WEBSITE_DARK_THEME,
   normalizeWebsiteDarkTheme,
@@ -16,7 +17,8 @@ interface Controller {
 }
 let controller: Controller;
 const theme = (values: Record<string, unknown> = {}) => ({
-  ...DEFAULT_WEBSITE_DARK_THEME,
+  // Match the production wire payload, not the persisted UI preferences.
+  ...websiteDarkThemeForPage(DEFAULT_WEBSITE_DARK_THEME, null),
   ...values,
 });
 const node = () =>
@@ -74,6 +76,40 @@ afterEach(() => {
 });
 
 describe("injected dark-mode extension runtime", () => {
+  it.each([true, false])(
+    "accepts the production palette projection with followAppTheme=%s",
+    async (followAppTheme) => {
+      const api = reader();
+      const saved = { ...DEFAULT_WEBSITE_DARK_THEME, followAppTheme };
+      const original = { ...saved };
+      for (const palette of [
+        null,
+        { backgroundColor: "#112233", textColor: "#ddeeff" },
+      ]) {
+        const payload = websiteDarkThemeForPage(saved, palette);
+        expect(payload).not.toHaveProperty("followAppTheme");
+        expect(await controller.set({ enabled: true, theme: payload })).toBe(
+          "engine",
+        );
+        const colors = followAppTheme && palette ? palette : saved;
+        expect(api.enable).toHaveBeenLastCalledWith(
+          expect.objectContaining({
+            darkSchemeBackgroundColor: colors.backgroundColor,
+            darkSchemeTextColor: colors.textColor,
+          }),
+          expect.anything(),
+        );
+      }
+      expect(saved).toEqual(original);
+    },
+  );
+  it("keeps UI-only preferences outside the closed page theme schema", async () => {
+    await expect(
+      controller.set({ enabled: true, theme: DEFAULT_WEBSITE_DARK_THEME }),
+    ).rejects.toThrow("Invalid dark-mode extension options");
+    expect(node()).toBeNull();
+    expect(document.querySelector("script")).toBeNull();
+  });
   it("measures an icon batch before writing outlines to avoid layout thrashing", async () => {
     vi.useFakeTimers();
     document.body.innerHTML = Array.from(

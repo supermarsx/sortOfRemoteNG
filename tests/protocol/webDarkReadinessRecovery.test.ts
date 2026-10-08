@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 import { TextEncoder } from "node:util";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { websiteDarkThemeForPage } from "../../src/hooks/protocol/useWebsiteAppPalette";
 import { DEFAULT_WEBSITE_DARK_THEME } from "../../src/utils/connection/websiteDarkMode";
 import { porkbunLoginHtml } from "./fixtures/porkbunLogin";
 
@@ -11,7 +12,8 @@ const source = readFileSync(
 const READINESS_DEADLINE = 3000;
 const PAINT_BUDGET = 100;
 const theme = (values: Record<string, unknown> = {}) => ({
-  ...DEFAULT_WEBSITE_DARK_THEME,
+  // Match the production wire payload, not the persisted UI preferences.
+  ...websiteDarkThemeForPage(DEFAULT_WEBSITE_DARK_THEME, null),
   ...values,
 });
 interface Runtime {
