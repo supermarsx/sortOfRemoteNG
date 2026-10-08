@@ -42,7 +42,7 @@ function fixture(t) {
   const source = (triple, profile = "debug") =>
     path.join(
       root,
-      "src-tauri/target",
+      ".cache/file-viewer-target",
       triple,
       profile,
       "sorng-file-viewer-host.exe",
@@ -125,7 +125,7 @@ for (const [arch, key, triple, machine] of [
   ["x64", "amd64", "x86_64-pc-windows-msvc", 0x8664],
   ["arm64", "arm64", "aarch64-pc-windows-msvc", 0xaa64],
 ]) {
-  test(`stages ${arch} only after its locked build in the shared default target and preserves other targets`, (t) => {
+  test(`stages ${arch} only after its locked build in the stable helper cache and preserves other targets`, (t) => {
     const f = fixture(t);
     const otherKey = key === "amd64" ? "arm64" : "amd64";
     f.write(
@@ -156,10 +156,14 @@ for (const [arch, key, triple, machine] of [
       "--target",
       triple,
       "--target-dir",
-      path.join(f.root, "src-tauri/target"),
+      path.join(f.root, ".cache/file-viewer-target"),
       "--release",
     ]);
     assert.equal(calls[0].options.cwd, path.join(f.root, "src-tauri"));
+    assert.equal(
+      calls[0].options.env.CARGO_TARGET_DIR,
+      path.join(f.root, ".cache/file-viewer-target"),
+    );
     assert.equal(calls[0].options.shell, false);
     assert.equal(calls[0].options.windowsHide, true);
     assert.equal(result.destination, f.destination(key));
@@ -179,19 +183,24 @@ for (const [arch, key, triple, machine] of [
 }
 
 for (const configuration of ["absolute", "relative"]) {
-  test(`uses the ${configuration} configured Cargo target without changing signing or staging paths`, (t) => {
+  test(`uses the ${configuration} helper cache override without changing signing or staging paths`, (t) => {
     const f = fixture(t);
     const configured =
       configuration === "absolute"
         ? path.join(f.root, "custom cache")
-        : "../custom cache";
-    const expected = path.resolve(f.root, "src-tauri", configured);
+        : "custom cache";
+    const expected = path.resolve(f.root, configured);
+    const env = Object.freeze({
+      CARGO_TARGET_DIR: path.join(f.root, "app publication"),
+      SORNG_FILE_VIEWER_CARGO_TARGET_DIR: configured,
+    });
     const result = stageFileViewerHost({
       ...f.options,
-      env: { CARGO_TARGET_DIR: configured },
+      env,
       run: (_command, args, options) => {
         assert.equal(args[args.indexOf("--target-dir") + 1], expected);
-        assert.equal(options.env.CARGO_TARGET_DIR, configured);
+        assert.equal(options.env.CARGO_TARGET_DIR, expected);
+        assert.notEqual(options.env, env);
         assert.equal(options.cwd, path.join(f.root, "src-tauri"));
         f.write(
           path.join(
@@ -208,8 +217,37 @@ for (const configuration of ["absolute", "relative"]) {
     assert.equal(result.destination, f.destination());
     assert.deepEqual(readFileSync(result.destination), executable());
     assert.equal(existsSync(f.source("x86_64-pc-windows-msvc")), false);
+    assert.equal(env.CARGO_TARGET_DIR, path.join(f.root, "app publication"));
   });
 }
+
+test("changing application publication targets reuses one helper cache but still runs Cargo every time", (t) => {
+  const f = fixture(t);
+  const source = f.source("x86_64-pc-windows-msvc");
+  const expected = path.join(f.root, ".cache/file-viewer-target");
+  let builds = 0;
+  for (const publication of [
+    path.join(f.root, "first app output"),
+    "../second app output",
+  ]) {
+    const env = Object.freeze({ CARGO_TARGET_DIR: publication });
+    stageFileViewerHost({
+      ...f.options,
+      env,
+      run: (_command, args, options) => {
+        assert.equal(args[args.indexOf("--target-dir") + 1], expected);
+        assert.equal(options.env.CARGO_TARGET_DIR, expected);
+        assert.equal(existsSync(source), builds > 0);
+        builds++;
+        f.write(source, executable());
+        return { status: 0 };
+      },
+    });
+    assert.equal(env.CARGO_TARGET_DIR, publication);
+  }
+  assert.equal(builds, 2);
+  assert.deepEqual(readFileSync(f.destination()), executable());
+});
 
 test("explicit target overrides host architecture and never reuses a stale cached helper", (t) => {
   const f = fixture(t);
@@ -238,17 +276,20 @@ for (const failure of ["build", "wrong architecture", "missing notice"]) {
     const f = fixture(t);
     const original = Buffer.from("previous helper must remain");
     f.write(f.destination(), original);
+    // Even a valid cached executable cannot rescue a failed Cargo invocation.
+    f.write(f.source("x86_64-pc-windows-msvc"), executable());
     if (failure === "missing notice")
       rmSync(path.join(f.root, "node_modules/pdfjs-dist/LICENSE"));
     assert.throws(() =>
       stageFileViewerHost({
         ...f.options,
         run: () => {
+          if (failure === "build") return { status: 1 };
           f.write(
             f.source("x86_64-pc-windows-msvc"),
             executable(failure === "wrong architecture" ? 0xaa64 : 0x8664),
           );
-          return { status: failure === "build" ? 1 : 0 };
+          return { status: 0 };
         },
       }),
     );

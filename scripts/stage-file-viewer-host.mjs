@@ -131,10 +131,13 @@ export function stageFileViewerHost({
   if (!triple.endsWith("-pc-windows-msvc"))
     throw new Error("The isolated Windows viewer requires the MSVC target.");
   const release = argv.includes("--release");
+  // The application may redirect CARGO_TARGET_DIR to a fresh publication
+  // directory on every invocation. Keep the helper's incremental build cache
+  // stable instead; Cargo still checks the pinned sources on every call below.
+  // This helper-specific override is resolved relative to the repository root.
   const targetDir = path.resolve(
     root,
-    "src-tauri",
-    env.CARGO_TARGET_DIR || "target",
+    env.SORNG_FILE_VIEWER_CARGO_TARGET_DIR || ".cache/file-viewer-target",
   );
   const args = [
     path.join(root, "scripts", "native-build-env.mjs"),
@@ -153,7 +156,7 @@ export function stageFileViewerHost({
   ];
   const result = run(process.execPath, args, {
     cwd: path.join(root, "src-tauri"),
-    env: { ...env },
+    env: { ...env, CARGO_TARGET_DIR: targetDir },
     stdio: "inherit",
     windowsHide: true,
     shell: false,

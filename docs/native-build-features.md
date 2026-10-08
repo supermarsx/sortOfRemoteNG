@@ -23,6 +23,14 @@ The default/full bundle builds OpenH264 from source, with bundled SQLite. It req
 
 ## Development build parallelism and memory
 
+The Windows isolated file-viewer helper uses a stable, dedicated Cargo cache at
+`.cache/file-viewer-target`. An app launch's temporary `CARGO_TARGET_DIR` does not
+invalidate this helper cache. Set `SORNG_FILE_VIEWER_CARGO_TARGET_DIR` to choose
+another location (relative paths resolve from the repository root). Each launch
+still runs the locked incremental build, verifies the executable architecture,
+and applies the configured signing policy before staging it. A failed build or
+verification does not publish a stale substitute.
+
 The two managed Tauri development commands choose Cargo parallelism at each launch from the process-visible CPU count and the current physical free RAM. Their advisory build allowance is `min(40 GiB, max(0, free RAM - 7% of total RAM))`. The estimate reserves 8 GiB within that allowance for Next.js, linking and native helpers, then 1 GiB for each Cargo job, capped by available CPUs. A 40-CPU process with ample free RAM therefore selects 32 jobs, overriding the repository's ordinary 28-job default **only in the dev child environment**.
 
 This is a launch-time sizing heuristic, **not a hard 40 GiB process-tree limit or a guarantee that 7% of RAM remains free**. Individual compiler/linker peaks and unrelated processes vary; Cargo's job limit does not enforce memory usage. If observed headroom is insufficient even for the minimum one-job estimate, the launcher warns and retains one job. It never kills, pauses or retunes an existing build or app, and does not change the application's runtime heap. Restart the managed dev command to recalculate the recommendation.
