@@ -274,46 +274,69 @@ describe("explicit origin-bound automatic website 2FA", () => {
       expect(api.status).not.toMatch(/OTHER-SEED|other-user|private storage/);
     },
   );
-  it("keeps saved Google consent while accepting the exact Account TOTP origin", async () => {
-    conn = {
-      ...conn,
-      hostname: "analytics.google.com",
-      httpApplication: {
-        version: 1,
-        id: "google-analytics",
-        loginMode: "form",
-      },
-      httpAutoMfa: {
-        ...conn.httpAutoMfa!,
-        origin: "https://analytics.google.com",
-        challengeId: "google-account-totp",
-      },
-    };
-    saved = structuredClone(conn);
-    currentUrl = "https://accounts.google.com/v3/signin/challenge/totp";
-    doc = {
-      ...doc!,
-      url: "http://p11111111111111111111111111111111.localhost:41000/v3/signin/challenge/totp",
-    };
-    await mount();
-    expect(requests("totpProbe")).toHaveLength(1);
-    expect(requests("totpProbe")[0].payload).toMatchObject({
-      codeSelector:
-        'input#totpPin[name="totpPin"][autocomplete="one-time-code"]',
-      submitSelector:
-        '#totpNext button[type="button"], button#totpNext[type="button"]',
-      submission: "google",
-    });
-    await reply(requests("totpProbe")[0]);
-    expect(mock.verify).not.toHaveBeenCalled();
-    expect(mock.read).toHaveBeenCalled();
-    expect(mock.compute).toHaveBeenCalledWith("SYNTHETIC-SEED", "SHA1", 6, 30);
-    expect(requests("totpProbe")).toHaveLength(2);
-    await reply(requests("totpProbe")[1]);
-    expect(mock.compute).toHaveBeenCalledWith("SYNTHETIC-SEED", "SHA1", 6, 30);
-    expect(requests("totpSubmit")).toHaveLength(1);
-    expect(requests("totpSubmit")[0].payload.code).toBe("123456");
-  });
+  it.each([
+    ["https://accounts.google.com", true],
+    ["https://analytics.google.com", false],
+  ])(
+    "accepts only explicit Account-origin Google consent (%s)",
+    async (origin, allowed) => {
+      conn = {
+        ...conn,
+        hostname: "analytics.google.com",
+        httpApplication: {
+          version: 1,
+          id: "google-analytics",
+          loginMode: "form",
+        },
+        httpAutoMfa: {
+          ...conn.httpAutoMfa!,
+          origin,
+          challengeId: "google-account-totp",
+        },
+      };
+      saved = structuredClone(conn);
+      currentUrl = "https://accounts.google.com/v3/signin/challenge/totp";
+      doc = {
+        ...doc!,
+        url: "http://p11111111111111111111111111111111.localhost:41000/v3/signin/challenge/totp",
+      };
+      await mount();
+      if (!allowed) {
+        expect(requests("totpProbe")).toHaveLength(0);
+        expect(mock.compute).not.toHaveBeenCalled();
+        expect(saved.httpAutoMfa!.origin).toBe(origin);
+        expect(api.status).toMatch(/Automatic 2FA stopped/);
+        return;
+      }
+      expect(requests("totpProbe")).toHaveLength(1);
+      expect(requests("totpProbe")[0].payload).toMatchObject({
+        codeSelector:
+          'input#totpPin[name="totpPin"][autocomplete="one-time-code"]',
+        submitSelector:
+          '#totpNext button[type="button"], button#totpNext[type="button"]',
+        submission: "google",
+      });
+      await reply(requests("totpProbe")[0]);
+      expect(mock.verify).not.toHaveBeenCalled();
+      expect(mock.read).toHaveBeenCalled();
+      expect(mock.compute).toHaveBeenCalledWith(
+        "SYNTHETIC-SEED",
+        "SHA1",
+        6,
+        30,
+      );
+      expect(requests("totpProbe")).toHaveLength(2);
+      await reply(requests("totpProbe")[1]);
+      expect(mock.compute).toHaveBeenCalledWith(
+        "SYNTHETIC-SEED",
+        "SHA1",
+        6,
+        30,
+      );
+      expect(requests("totpSubmit")).toHaveLength(1);
+      expect(requests("totpSubmit")[0].payload.code).toBe("123456");
+    },
+  );
 
   it("rejects Google Account lookalikes even with saved Google consent", async () => {
     conn = {
@@ -326,7 +349,7 @@ describe("explicit origin-bound automatic website 2FA", () => {
       },
       httpAutoMfa: {
         ...conn.httpAutoMfa!,
-        origin: "https://analytics.google.com",
+        origin: "https://accounts.google.com",
         challengeId: "google-account-totp",
       },
     };

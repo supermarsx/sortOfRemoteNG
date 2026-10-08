@@ -3,6 +3,13 @@ import { describe, expect, it } from "vitest";
 import { originBrowserStartupError } from "../../src/hooks/protocol/originBrowserStartupError";
 
 const runtime = readFileSync("src-tauri/src/origin_browser_runtime.rs", "utf8");
+const authority = readFileSync(
+  "src-tauri/src/origin_browser_authority.rs",
+  "utf8",
+);
+const mfaOriginFailure = authority.match(
+  /#\[error\("([^"\n]+)"\)\]\s*MfaOriginMismatch,/,
+)?.[1];
 const names = [
   "PROXY_FAILED",
   "CONTEXT_FAILED",
@@ -15,6 +22,56 @@ const names = [
 ];
 
 describe("native browser per-view startup diagnostics", () => {
+  it("surfaces the exact native MFA origin mismatch with review/re-enable/save guidance", () => {
+    expect(mfaOriginFailure).toBeTruthy();
+    for (const error of [mfaOriginFailure, new Error(mfaOriginFailure)]) {
+      const result = originBrowserStartupError("create", error);
+      expect(result).toEqual({
+        stage: "create",
+        category: "connection",
+        message: `Native browser startup failed (create). ${mfaOriginFailure}`,
+      });
+      expect(result.message).toContain("re-enable automatic codes");
+      expect(result.message).toContain("save the connection");
+      expect(result.message).toContain(
+        "password and authenticator are unchanged",
+      );
+    }
+  });
+
+  it.each(["listen", "status", "owner-check", "resync"] as const)(
+    "does not infer MFA authority validation from the %s stage",
+    (stage) => {
+      const result = originBrowserStartupError(stage, mfaOriginFailure);
+      expect(result.stage).toBe(stage);
+      expect(result.category).toBe(
+        stage === "owner-check" ? "connection" : "ipc",
+      );
+      expect(result.message).not.toContain("authenticator");
+      expect(result.message).not.toContain("re-enable automatic codes");
+    },
+  );
+
+  it("redacts decorated or object-supplied MFA errors instead of matching a prefix", () => {
+    expect(mfaOriginFailure).toBeTruthy();
+    for (const error of [
+      `${mfaOriginFailure} https://user:secret@example.test/?token=secret`,
+      new Error(`${mfaOriginFailure}\nstack with SYNTHETIC-SEED`),
+      { message: mfaOriginFailure },
+      {
+        get message() {
+          throw new Error("must not read a getter");
+        },
+      },
+    ]) {
+      const result = originBrowserStartupError("create", error);
+      expect(result.category).toBe("ipc");
+      expect(result.message).not.toMatch(
+        /authenticator|user:secret|example\.test|token=|SYNTHETIC-SEED/,
+      );
+    }
+  });
+
   it.each(names)(
     "recognizes the exact native %s message without disclosing arbitrary errors",
     (name) => {

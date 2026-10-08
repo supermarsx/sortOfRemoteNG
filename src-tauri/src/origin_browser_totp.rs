@@ -98,13 +98,18 @@ impl NativeTotpAuthority {
             .ok_or_else(unavailable)?;
         if origin.len() > 512
             || canonical_website_permission_origin(origin).as_deref() != Ok(origin)
-            || !login.origins.iter().any(|o| o == origin)
+        {
+            return Err(unavailable());
+        }
+        if !login.origins.iter().any(|o| o == origin)
             || challenge.get("origins").is_some_and(|v| {
                 v.as_array()
                     .is_none_or(|v| !v.iter().any(|v| v.as_str() == Some(origin)))
             })
         {
-            return Err(unavailable());
+            // Keep exact-origin consent closed; never repair a saved product
+            // origin into an identity-provider grant without explicit review.
+            return Err(NativeAuthorityError::MfaOriginMismatch);
         }
         let vault = if let Some(vault_id) = credentials::vault_id(connection)? {
             if connection
@@ -344,6 +349,46 @@ mod tests {
                 deliver(Instant::now() + Duration::from_secs(60), self.1);
             }
         }
+    }
+
+    #[tokio::test]
+    async fn google_local_totp_requires_explicit_accounts_origin_consent() {
+        let mut row = row();
+        row["hostname"] = "analytics.google.com".into();
+        row["credentialSource"] = json!({"kind":"local"});
+        row["httpApplication"] = json!({"version":1,"id":"google-analytics","loginMode":"form"});
+        row["httpAutoMfa"]["challengeId"] = "google-account-totp".into();
+        // The old editor saved the product origin. Refuse it, with an
+        // actionable fixed diagnostic containing no saved secret or URL.
+        row["httpAutoMfa"]["origin"] = "https://analytics.google.com".into();
+        let mut f = Fixture::new(row.clone()).await;
+        f.request.initial_url = "https://analytics.google.com/analytics/web/".into();
+        assert!(matches!(
+            f.authorize().await,
+            Err(NativeAuthorityError::MfaOriginMismatch)
+        ));
+        let message = NativeAuthorityError::MfaOriginMismatch.to_string();
+        assert!(message.contains("re-enable automatic codes"));
+        assert!(message.contains("save the connection"));
+        assert!(!message.contains(SECRET));
+        assert!(!message.contains("analytics.google.com"));
+
+        // Only the caller's explicit new saved consent changes the pin.
+        row["httpAutoMfa"]["origin"] = "https://accounts.google.com".into();
+        f.replace_connection(row);
+        let auth = f.authorize().await.unwrap();
+        let totp = auth.login.totp.as_ref().unwrap();
+        assert_eq!(totp.origin, "https://accounts.google.com");
+        let mut request = NativeTotpRequest {
+            identity: auth.policy.identity(),
+            origin: "https://accounts.google.com",
+            document_url: "https://accounts.google.com/v3/signin/challenge/totp",
+            challenge: "google-account-totp",
+        };
+        assert!(totp.current(&request));
+        request.origin = "https://analytics.google.com";
+        request.document_url = "https://analytics.google.com/v3/signin/challenge/totp";
+        assert!(!totp.current(&request));
     }
 
     #[tokio::test]

@@ -104,6 +104,8 @@ pub enum NativeAuthorityError {
     RouteUnsupported,
     #[error("Saved website credentials are unavailable or invalid in the owning database; review its credential reference")]
     CredentialUnavailable,
+    #[error("Saved automatic two-factor authentication consent does not match the reviewed login origin. In Application settings, review the authenticator and HTTPS login origin, re-enable automatic codes, and save the connection. Your password and authenticator are unchanged.")]
+    MfaOriginMismatch,
 }
 
 /// Native-only immutable snapshot, intentionally without Debug/serde/Clone.

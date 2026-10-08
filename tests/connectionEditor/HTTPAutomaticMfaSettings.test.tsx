@@ -55,6 +55,103 @@ const enable = () =>
   });
 
 describe("explicit linked website authenticator consent", () => {
+  it.each([
+    ["google-analytics", "analytics.google.com"],
+    ["youtube-studio", "studio.youtube.com"],
+    ["gmail", "mail.google.com"],
+  ])(
+    "pins %s local authenticator consent to the reviewed Google login origin",
+    (id, hostname) => {
+      render(
+        <Fixture
+          value={{
+            ...initial,
+            hostname,
+            port: 443,
+            credentialSource: { kind: "local" },
+            httpApplication: { version: 1, id, loginMode: "form" },
+          }}
+        />,
+      );
+      expect(enable()).toBeDisabled();
+      choose("Connection authenticator", "Fixture — admin");
+      fireEvent.click(enable());
+      expect(draft().httpAutoMfa).toMatchObject({
+        enabled: true,
+        challengeId: "google-account-totp",
+        origin: "https://accounts.google.com",
+        totpConfigId: draft().totpConfigs![0].id,
+      });
+      expect(draft().hostname).toBe(hostname);
+      expect(draft().password).toBe(initial.password);
+      expect(draft().totpConfigs![0].secret).toBe(
+        initial.totpConfigs![0].secret,
+      );
+    },
+  );
+  it("explains old Google product-origin consent without silently changing it or credentials", () => {
+    const value: Partial<Connection> = {
+      ...initial,
+      hostname: "analytics.google.com",
+      port: 443,
+      credentialSource: { kind: "local" },
+      httpApplication: {
+        version: 1,
+        id: "google-analytics",
+        loginMode: "form",
+      },
+      totpConfigs: [{ ...initial.totpConfigs![0], id: "existing" }],
+      httpAutoMfa: {
+        version: 1,
+        enabled: true,
+        totpConfigId: "existing",
+        challengeId: "google-account-totp",
+        origin: "https://analytics.google.com",
+      },
+    };
+    render(<Fixture value={value} />);
+    expect(draft()).toEqual(value);
+    expect(screen.getByRole("alert")).toHaveTextContent(
+      /saved authenticator consent does not match/i,
+    );
+    expect(screen.getByRole("alert")).toHaveTextContent(
+      /https:\/\/accounts.google.com/,
+    );
+    expect(screen.getByRole("alert")).toHaveTextContent(
+      /re-enable automatic codes.*save the connection/i,
+    );
+    fireEvent.click(enable());
+    expect(draft()).toEqual({
+      ...value,
+      httpAutoMfa: {
+        ...value.httpAutoMfa!,
+        origin: "https://accounts.google.com",
+      },
+    });
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
+  it("does not offer Google consent for a changed or unreviewed product host", () => {
+    render(
+      <Fixture
+        value={{
+          ...initial,
+          hostname: "analytics.google.com",
+          port: 443,
+          httpApplication: {
+            version: 1,
+            id: "google-analytics",
+            loginMode: "form",
+          },
+        }}
+      />,
+    );
+    choose("Connection authenticator", "Fixture — admin");
+    fireEvent.click(
+      screen.getByRole("button", { name: "Change host fixture" }),
+    );
+    expect(enable()).toBeDisabled();
+    expect(draft().httpAutoMfa).toEqual({ version: 1, enabled: false });
+  });
   it("requires explicit Cloudflare authenticator consent bound to the dashboard origin", () => {
     render(
       <Fixture
@@ -179,7 +276,9 @@ describe("explicit linked website authenticator consent", () => {
       screen.getByRole("button", { name: "Change host fixture" }),
     );
     expect(draft().httpAutoMfa?.origin).toBe("https://rmm.example.test:8443");
-    expect(screen.getByText(/The address changed:/)).toBeInTheDocument();
+    expect(screen.getByRole("alert")).toHaveTextContent(
+      /saved authenticator consent does not match/,
+    );
     fireEvent.click(enable());
     expect(draft().httpAutoMfa?.origin).toBe(
       "https://changed.example.test:8443",

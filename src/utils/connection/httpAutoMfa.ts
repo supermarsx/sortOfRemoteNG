@@ -3,6 +3,7 @@ import type {
   HttpAutoMfaSettings,
 } from "../../types/connection/connection";
 import { parseCanonicalWebAuthority } from "./sanitizeHostname";
+import googleRoutes from "../protocol/googleHostedRoutes.json";
 
 const invalid = () =>
   new Error(
@@ -61,7 +62,8 @@ export function normalizeHttpAutoMfa(value: unknown): HttpAutoMfaSettings {
 }
 
 export function getHttpAutoMfaOrigin(
-  connection: Pick<Connection, "protocol" | "hostname" | "port">,
+  connection: Pick<Connection, "protocol" | "hostname" | "port"> &
+    Pick<Partial<Connection>, "httpApplication">,
 ): string {
   if (connection.protocol !== "https")
     throw new Error("Automatic 2FA requires HTTPS.");
@@ -72,5 +74,20 @@ export function getHttpAutoMfaOrigin(
     throw invalid();
   const port = connection.port || authority.port || 443;
   if (!Number.isInteger(port) || port < 1 || port > 65535) throw invalid();
-  return new URL(`https://${authority.hostname}:${port}`).origin;
+  const source = new URL(`https://${authority.hostname}:${port}`).origin;
+  if (connection.httpApplication?.invalid) throw invalid();
+  const profileId = connection.httpApplication?.id;
+  const googleSource = profileId
+    ? Object.entries(googleRoutes.profiles).find(
+        ([id]) => id === profileId,
+      )?.[1]
+    : undefined;
+  if (googleSource) {
+    if (source !== googleSource) throw invalid();
+    // Match native saved_login and the reviewed Google TOTP catalog: product,
+    // resource and www.google.com origins are not code-entry authorities.
+    // This computes the editor's proposed pin; it never rewrites saved consent.
+    return "https://accounts.google.com";
+  }
+  return source;
 }

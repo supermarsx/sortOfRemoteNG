@@ -43,6 +43,7 @@ export default function AutomaticMfaSection({
       protocol: mgr.formData.protocol!,
       hostname: mgr.formData.hostname ?? "",
       port: mgr.formData.port!,
+      httpApplication: mgr.formData.httpApplication,
     });
   } catch {
     /* A malformed or non-HTTPS target cannot receive consent. */
@@ -96,6 +97,7 @@ export default function AutomaticMfaSection({
             protocol: previous.protocol!,
             hostname: previous.hostname ?? "",
             port: previous.port!,
+            httpApplication: previous.httpApplication,
           }) !== expectedOrigin
         )
           return previous;
@@ -277,11 +279,21 @@ export default function AutomaticMfaSection({
               automatic 2FA.
             </p>
           )}
-          {configuration?.enabled && (
+          {configuration?.enabled && configuration.origin === origin && (
             <p role="status" className="text-sm">
               Automatic codes enabled in this draft for {configuration.origin}.
-              {configuration.origin !== origin &&
-                " The address changed: codes are blocked until you explicitly enable again for the new origin."}
+            </p>
+          )}
+          {configuration?.enabled && configuration.origin !== origin && (
+            <p role="alert" className="text-sm text-warning">
+              The saved authenticator consent does not match the reviewed login
+              origin. Automatic codes are blocked. Review the authenticator and
+              HTTPS login origin
+              {origin
+                ? ` (${origin})`
+                : " after correcting the connection address"}
+              , then re-enable automatic codes for this origin and save the
+              connection. Your password and authenticator are unchanged.
             </p>
           )}
           <button

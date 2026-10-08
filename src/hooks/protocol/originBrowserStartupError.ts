@@ -13,6 +13,8 @@ const certificatePolicyFailure =
   "Saved HTTPS trust policy requires a native certificate adapter; only explicit strict verification is supported";
 const certificateBridgeFailure =
   "The loaded CEF runtime does not provide the required app certificate-verifier bridge. Install or rebuild the patched browser runtime; the saved trust policy was not changed.";
+const mfaOriginFailure =
+  "Saved automatic two-factor authentication consent does not match the reviewed login origin. In Application settings, review the authenticator and HTTPS login origin, re-enable automatic codes, and save the connection. Your password and authenticator are unchanged.";
 
 // Exact fixed native stage failures only. Never append arbitrary native error
 // text (including page addresses) or infer a runtime failure from a substring.
@@ -89,6 +91,7 @@ const knownFailures = new Map<string, string>([
     "The saved HTTPS trust policy cannot be enforced by this native browser configuration. Review its trust settings and installed browser runtime. No trust-policy change or fallback was applied.",
   ],
   [certificateBridgeFailure, certificateBridgeFailure],
+  [mfaOriginFailure, mfaOriginFailure],
   [
     "Saved application entry or login route has no native translation",
     "This saved application entry or login route has no native translation yet. Review the connection's application settings.",
@@ -139,6 +142,7 @@ export function originBrowserStartupError(
   // The same text from another stage cannot establish that runtime prerequisite.
   const certificateFailure = candidate === certificatePolicyFailure;
   const bridgeFailure = candidate === certificateBridgeFailure;
+  const mfaFailure = candidate === mfaOriginFailure;
   if (
     stage === "create" &&
     typeof candidate === "string" &&
@@ -152,7 +156,7 @@ export function originBrowserStartupError(
   }
   const guidance =
     typeof candidate === "string" &&
-    (!(certificateFailure || bridgeFailure) || stage === "create")
+    (!(certificateFailure || bridgeFailure || mfaFailure) || stage === "create")
       ? knownFailures.get(candidate)
       : undefined;
   return {
