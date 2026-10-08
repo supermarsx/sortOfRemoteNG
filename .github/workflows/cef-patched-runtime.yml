@@ -93,14 +93,14 @@ jobs:
         run: node scripts/cef-runtime-ci.mjs build --inputs "$CEF_INPUTS" --target "$CEF_TARGET" --repository "$GITHUB_REPOSITORY" --execute
       - name: Retain complete source/build/package diagnostics
         if: always() && steps.build.outputs.logs != ''
-        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: cef-engine-logs-${{ matrix.key }}
           path: ${{ steps.build.outputs.logs }}
           retention-days: 30
           if-no-files-found: error
       - name: Transfer verified SDK bundle to protected publisher
-        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: cef-engine-bundle-${{ matrix.key }}
           path: ${{ steps.build.outputs.bundle }}
