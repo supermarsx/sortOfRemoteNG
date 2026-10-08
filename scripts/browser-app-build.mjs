@@ -1,9 +1,9 @@
 #!/usr/bin/env node
 // Normal Tauri build/dev with a mandatory, pinned CEF native entry. Never grants
 // browser admission. No production application is launched by the build verb.
-import { spawn } from "node:child_process";
+import { execFile, spawn } from "node:child_process";
 import { createHash } from "node:crypto";
-import { constants } from "node:fs";
+import { constants, createReadStream } from "node:fs";
 import {
   copyFile,
   cp,
@@ -14,12 +14,15 @@ import {
   readdir,
   realpath,
   rename,
+  rm,
   stat,
   writeFile,
 } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { promisify } from "node:util";
 import {
+  CEF_PIN,
   downloadArchive,
   extractRuntime,
   inspectRuntime,
@@ -40,6 +43,7 @@ import {
   prepareCustomRuntime,
   stageCustomRuntimePackage,
   verifyPreparedCustomRuntime,
+  identitySha256,
 } from "./lib/browser-custom-runtime.mjs";
 import {
   bundleArguments,
@@ -72,6 +76,238 @@ const exists = async (file) =>
 const json = async (file) => JSON.parse(await readFile(file, "utf8"));
 const save = (file, value) =>
   writeFile(file, JSON.stringify(value, null, 2) + "\n", { flag: "wx" });
+
+// Only default dev launches share immutable build inputs. Explicit output and
+// build/bundle invocations retain their private, inspectable artifact layouts.
+export const reuseDevInputs = (options) =>
+  options.mode === "dev" && !options.output;
+
+async function digestFile(file, algorithm = "sha256") {
+  const hash = createHash(algorithm);
+  for await (const chunk of createReadStream(file)) hash.update(chunk);
+  return hash.digest("hex");
+}
+
+/** Publish a complete verified directory, never update an existing cache in
+ * place. Racing publishers can only lose to a nonempty, verified winner. A
+ * corrupt/partial entry is an error, not permission to replace a live SDK. */
+export async function immutableDevCache({
+  cacheRoot,
+  kind,
+  key,
+  create,
+  verify,
+}) {
+  if (!/^[a-z]+$/.test(kind) || !/^[a-f0-9]{64}$/.test(key))
+    throw new Error("Invalid dev cache identity");
+  await mkdir(cacheRoot, { recursive: true });
+  if (!(await lstat(cacheRoot)).isDirectory())
+    throw new Error("Dev cache root must be a real directory");
+  const parent = await realpath(cacheRoot);
+  // Keep MSBuild wrapper paths short; the complete digest is checked on reuse.
+  const destination = path.join(parent, `${kind}-${key.slice(0, 24)}`);
+  const check = async (directory) => {
+    if (!(await lstat(directory)).isDirectory())
+      throw new Error("Dev cache entry must be a real directory");
+    const identity = path.join(directory, "cache-key.json");
+    if (!(await lstat(identity)).isFile() || (await json(identity)).key !== key)
+      throw new Error(
+        "Dev cache identity changed; refusing reuse or replacement",
+      );
+    await verify(directory);
+    return directory;
+  };
+  const present = async () => {
+    try {
+      await lstat(destination);
+      return true;
+    } catch (error) {
+      if (error.code === "ENOENT") return false;
+      throw error;
+    }
+  };
+  if (await present()) return check(destination);
+  const temporary = await mkdtemp(path.join(parent, `.${kind}-`));
+  let published = false;
+  try {
+    await create(temporary);
+    await save(path.join(temporary, "cache-key.json"), { key });
+    await check(temporary);
+    if (await present()) return await check(destination);
+    try {
+      await rename(temporary, destination);
+      published = true;
+    } catch (error) {
+      if (!(
+        ["EEXIST", "ENOTEMPTY", "EPERM", "EACCES"].includes(error.code) &&
+        (await present())
+      ))
+        throw error;
+    }
+    return await check(destination);
+  } finally {
+    // Only our mkdtemp sibling is removed; published/live entries are untouched.
+    if (!published) await rm(temporary, { recursive: true, force: true });
+  }
+}
+
+export async function prepareDevSdkCache(
+  { inputs, preflight, cacheRoot },
+  {
+    prepareSdk = prepareCustomRuntime,
+    verifySdk = verifyPreparedCustomRuntime,
+  } = {},
+) {
+  const artifact = inputs.manifest.artifacts.find(
+    (item) => item.target === inputs.target,
+  );
+  // Hash the preparation implementation as well as all reviewed input pins.
+  const recipe = await Promise.all([
+    digestFile(driver),
+    digestFile(path.join(repo, "scripts/lib/browser-custom-runtime.mjs")),
+    digestFile(path.join(repo, "scripts/browser-runtime-package.mjs")),
+  ]);
+  const key = identitySha256({
+    schema: 1,
+    target: inputs.target,
+    manifest: inputs.manifest,
+    sourceLock: inputs.sourceLock,
+    recipe,
+  });
+  // Derive the prepared inventory from the CURRENT reviewed source, never a
+  // self-asserted receipt beside cached binaries. archive.json is deterministic.
+  const metadata = JSON.stringify({
+    type: "minimal",
+    name: `cef_binary_${CEF_PIN.version}_sorng-custom-${artifact.archive.sha256}.tar.bz2`,
+    sha1: await digestFile(preflight.archivePath, "sha1"),
+  });
+  const customRuntime = {
+    manifest: inputs.manifest,
+    sourceLock: inputs.sourceLock,
+    artifactRoot: await realpath(inputs.artifactRoot),
+    sourceSdk: await realpath(inputs.sdkRoot),
+    sdkFiles: [
+      ...artifact.sdkFiles
+        .filter((entry) => entry.path !== "archive.json")
+        .map((entry) => ({
+          ...entry,
+          path: entry.path.replace(/^(Release|Resources)\//, ""),
+        })),
+      {
+        path: "archive.json",
+        type: "file",
+        size: Buffer.byteLength(metadata),
+        sha256: createHash("sha256").update(metadata).digest("hex"),
+      },
+    ],
+    sourceLockSha256: preflight.sourceLockSha256,
+    archiveSdkRelationship: preflight.archiveSdkRelationship,
+  };
+  const result = {
+    archive: preflight.archivePath,
+    customRuntime,
+    target: inputs.target,
+  };
+  const directory = await immutableDevCache({
+    cacheRoot,
+    kind: "sdk",
+    key,
+    create: async (temporary) => {
+      const prepared = await prepareSdk({
+        ...inputs,
+        output: path.join(temporary, "sdk"),
+      });
+      if (
+        identitySha256(prepared.customRuntime) !== identitySha256(customRuntime)
+      )
+        throw new Error("Dev SDK preparation contract changed");
+    },
+    verify: async (entry) => {
+      const sdk = path.join(entry, "sdk");
+      if (!(await lstat(sdk)).isDirectory())
+        throw new Error("Dev SDK must be a real directory");
+      // Includes fresh source/archive provenance, every prepared byte and V2
+      // exports on EVERY hit, and again after atomic publication.
+      await verifySdk({ ...result, sdk });
+    },
+  });
+  return { ...result, sdk: path.join(directory, "sdk") };
+}
+
+export async function prepareDevRunnerCache(
+  {
+    cacheRoot,
+    source,
+    compilerIdentity,
+    env,
+    platform = process.platform,
+    arch = process.arch,
+  },
+  build = child,
+) {
+  const sourceDigest = await digestFile(source);
+  const identity = {
+    schema: 1,
+    sourceDigest,
+    compilerIdentity,
+    platform,
+    arch,
+  };
+  const key = identitySha256(identity);
+  const filename = `cef-cargo-runner${platform === "win32" ? ".exe" : ""}`;
+  const directory = await immutableDevCache({
+    cacheRoot,
+    kind: "runner",
+    key,
+    create: async (temporary) => {
+      const runner = path.join(temporary, filename);
+      await build("rustc", ["--edition=2021", source, "-o", runner], env);
+      if ((await digestFile(source)) !== sourceDigest)
+        throw new Error("CEF runner source changed during compilation");
+      await save(path.join(temporary, "runner.json"), {
+        identity,
+        sha256: await digestFile(runner),
+      });
+    },
+    verify: async (entry) => {
+      const receipt = path.join(entry, "runner.json");
+      const runner = path.join(entry, filename);
+      const info = await lstat(runner);
+      if (
+        !(await lstat(receipt)).isFile() ||
+        !info.isFile() ||
+        !info.size ||
+        (platform !== "win32" && !(info.mode & 0o111))
+      )
+        throw new Error("Invalid cached CEF runner");
+      const recorded = await json(receipt);
+      if (
+        identitySha256(recorded.identity) !== key ||
+        (await digestFile(runner)) !== recorded.sha256
+      )
+        throw new Error(
+          "Cached CEF runner integrity changed; refusing replacement",
+        );
+    },
+  });
+  return path.join(directory, filename);
+}
+
+export function stableDevConfiguration(config, runner) {
+  const canonical = (value) =>
+    Array.isArray(value)
+      ? value.map(canonical)
+      : value && typeof value === "object"
+        ? Object.fromEntries(
+            Object.keys(value)
+              .sort()
+              .map((key) => [key, canonical(value[key])]),
+          )
+        : value;
+  const result = structuredClone(config);
+  (result.build ??= {}).runner = { cmd: runner };
+  return canonical(result);
+}
 
 export function mergeConfig(base, override) {
   const result = structuredClone(base);
@@ -941,6 +1177,8 @@ export async function prepare(options, environment = process.env) {
       "A reviewed patched runtime selection is required; no official fallback",
     );
   validateBuildHost({ ...options, cef: true });
+  const devReuse = reuseDevInputs(options);
+  const devCacheRoot = path.join(repo, ".cache/cef-dev");
   const manifest = packageManifest(options.target);
   const custom = await loadCustomRuntimeInputs(options);
   const customInputs = custom?.inputs;
@@ -980,10 +1218,16 @@ export async function prepare(options, environment = process.env) {
   let sdk = options.sdk && path.resolve(options.sdk);
   let customRuntime;
   if (customInputs) {
-    ({ sdk, customRuntime } = await prepareCustomRuntime({
-      ...customInputs,
-      output: path.join(root, "sdk"),
-    }));
+    ({ sdk, customRuntime } = devReuse
+      ? await prepareDevSdkCache({
+          inputs: customInputs,
+          preflight: customPreflight,
+          cacheRoot: devCacheRoot,
+        })
+      : await prepareCustomRuntime({
+          ...customInputs,
+          output: path.join(root, "sdk"),
+        }));
   } else if (sdk) {
     const inspected = await inspectRuntime(sdk, options.target);
     if (!inspected.ok)
@@ -1044,10 +1288,27 @@ export async function prepare(options, environment = process.env) {
       } else config.bundle.resources[path.join(root, "native", file)] = file;
     }
   }
-  const runner = path.join(
-    root,
-    `cef-cargo-runner${process.platform === "win32" ? ".exe" : ""}`,
+  const runnerSource = path.join(
+    repo,
+    "scripts/native/browser-cargo-runner.rs",
   );
+  const runner = devReuse
+    ? await prepareDevRunnerCache({
+        cacheRoot: devCacheRoot,
+        source: runnerSource,
+        compilerIdentity: (
+          await promisify(execFile)("rustc", ["--version", "--verbose"], {
+            env,
+            cwd: repo,
+            windowsHide: true,
+          })
+        ).stdout.trim(),
+        env: { ...env, MACOSX_DEPLOYMENT_TARGET: "14.0" },
+      })
+    : path.join(
+        root,
+        `cef-cargo-runner${process.platform === "win32" ? ".exe" : ""}`,
+      );
   const plan = {
     root,
     target: options.target,
@@ -1076,7 +1337,8 @@ export async function prepare(options, environment = process.env) {
     throw new Error(
       "CEF raw Cargo cache must differ from public target directory; this prevents reusing a published launcher as a compiled binary",
     );
-  config.build.runner = { cmd: runner };
+  if (devReuse) config = stableDevConfiguration(config, runner);
+  else config.build.runner = { cmd: runner };
   await save(plan.configFile, config);
   const planFile = path.join(root, "plan.json");
   await save(planFile, plan);
@@ -1102,16 +1364,8 @@ export async function prepare(options, environment = process.env) {
       "link-arg=-Wl,-rpath,$ORIGIN",
     ].join("\x1f");
   if (options.offline) env.CARGO_NET_OFFLINE = "true";
-  await child(
-    "rustc",
-    [
-      "--edition=2021",
-      path.join(repo, "scripts/native/browser-cargo-runner.rs"),
-      "-o",
-      runner,
-    ],
-    env,
-  );
+  if (!devReuse)
+    await child("rustc", ["--edition=2021", runnerSource, "-o", runner], env);
   return { plan, config, env };
 }
 

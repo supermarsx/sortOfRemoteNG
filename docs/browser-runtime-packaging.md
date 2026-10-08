@@ -652,8 +652,9 @@ path; custom configuration uses the contract above and never acquires stock CEF.
   `previous-output`; unrelated artifacts are untouched. A locked output fails;
   the driver never kills an existing app to replace it.
 - `--cef-prepare-only` validates local prerequisites, emits `plan.json` and
-  `build-config.json`, and compiles the tiny native Cargo trampoline; it neither
-  compiles nor launches the app and is not an acceptance check.
+  `build-config.json`, and compiles or verifies/reuses the tiny native Cargo
+  trampoline; it neither compiles nor launches the app and is not an acceptance
+  check.
 
 If the existing `native-build-env.mjs` already performed dynamic dependency
 selection/staging, main sets `SORNG_CEF_NATIVE_PREPARED=1` before routing to the
@@ -661,6 +662,49 @@ driver and forwards its generated resource config. The driver checks the
 Windows DLL map and does not stage those dependencies again. Otherwise normal
 `full` builds select the existing platform dynamic family and invoke its stager
 with run-local resource/license output paths. Explicit feature lists are retained.
+
+### Default dev input reuse (2026-10-08)
+
+Default `dev` invocations, without `--cef-output` or `SORNG_CEF_OUTPUT`, reuse
+the prepared patched SDK and native Cargo runner under `.cache/cef-dev/`:
+
+- `sdk-<content-key>/sdk` keeps `CEF_PATH` stable for identical reviewed inputs.
+  The key binds the target, manifest (including binary/header/archive digests),
+  source lock and preparation implementation. Newly reviewed changed inputs
+  select a different entry; unreviewed source drift fails verification.
+- `runner-<content-key>/cef-cargo-runner[.exe]` keeps `build.runner.cmd` stable
+  for the same runner source, compiler identity and host. Generated dev config
+  uses deterministic object-key ordering, retaining profile, dev URL, security,
+  resource settings and array order. Semantic config changes remain build inputs.
+
+Entries are verified before atomic publication and on reuse. SDK verification
+uses the current reviewed source inventory, not a cache-supplied trust manifest.
+Source/archive provenance, prepared-file integrity and export checks remain
+mandatory; runner integrity is checked too. Corrupt or partial entries fail
+closed without repair or replacement. Concurrent publishers verify the winning
+entry; they do not overwrite it. Per-launch plans and staged runnable payloads
+remain private. Explicit `--cef-output`/`SORNG_CEF_OUTPUT` and all `build`/bundle
+invocations retain their existing private SDK/runner and artifact behavior.
+
+This removes SDK/runner path churn for the normal launcher with pre-staged native
+resources and the normal `full-dev` configuration; it does **not** eliminate all
+possible config path churn. When a dynamic-native feature family reaches the
+driver with `nativePrepared=false`, its native resource/license staging still
+uses run-local directories. Those paths remain in the generated resource map and
+can still change `TAURI_CONFIG` between launches.
+
+Focused verification receipt (2026-10-08):
+
+```sh
+node --test tests/tooling/browserAppBuild.node-test.mjs tests/tooling/fileViewerStaging.node-test.mjs
+```
+
+Result: **46 passed, 1 existing Windows file-symlink privilege skip**. These
+fixture tests cover stable paths/config, input invalidation, corruption rejection,
+concurrent publication and the separate viewer-helper cache. Scoped formatter
+and diff-whitespace checks passed. No Cargo build, dev restart or application
+launch was performed for this change. Real build/relaunch timing and end-to-end
+speedup have **not been measured**.
 
 ### Entry, watch and bundle contracts
 

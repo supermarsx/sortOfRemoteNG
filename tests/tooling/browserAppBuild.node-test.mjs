@@ -1,5 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import {
   mkdtemp,
   mkdir,
@@ -8,6 +9,8 @@ import {
   symlink,
   readlink,
   lstat,
+  readdir,
+  realpath,
   rm,
 } from "node:fs/promises";
 import os from "node:os";
@@ -22,11 +25,433 @@ import {
   locateArchive,
   mergeConfig,
   parseArguments,
+  immutableDevCache,
+  prepareDevSdkCache,
+  prepareDevRunnerCache,
+  reuseDevInputs,
+  stableDevConfiguration,
 } from "../../scripts/browser-app-build.mjs";
 import {
   TARGETS,
+  CEF_PIN,
   packageManifest,
 } from "../../scripts/browser-runtime-package.mjs";
+import { identitySha256 } from "../../scripts/lib/browser-custom-runtime.mjs";
+
+const sha256 = (bytes) => createHash("sha256").update(bytes).digest("hex");
+
+async function devCacheFixture(t) {
+  const root = await mkdtemp(path.join(os.tmpdir(), "cef-dev-cache-"));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const cacheRoot = path.join(root, "cache");
+  const sdkRoot = path.join(root, "source-sdk");
+  const artifactRoot = path.join(root, "artifacts");
+  await mkdir(path.join(sdkRoot, "Release"), { recursive: true });
+  await mkdir(path.join(sdkRoot, "include"));
+  await mkdir(artifactRoot);
+  await writeFile(path.join(sdkRoot, "Release/libcef.dll"), "binary A");
+  await writeFile(path.join(sdkRoot, "include/cef_api_versions.h"), "header A");
+  const archivePath = path.join(artifactRoot, "runtime.tar.bz2");
+  await writeFile(archivePath, "archive A");
+  const sourceLock = { fixture: "not a production source lock" };
+  const inputs = {
+    sdkRoot,
+    artifactRoot,
+    sourceLock,
+    target: "x86_64-pc-windows-msvc",
+  };
+  const preflight = {
+    archivePath,
+    sourceLockSha256: identitySha256(sourceLock),
+    archiveSdkRelationship: "synthetic-fixture",
+  };
+  const refresh = async () => {
+    const pin = async (root, relative) => {
+      const bytes = await readFile(path.join(root, relative));
+      return { path: relative, size: bytes.length, sha256: sha256(bytes) };
+    };
+    inputs.manifest = {
+      artifacts: [
+        {
+          target: inputs.target,
+          archive: await pin(artifactRoot, "runtime.tar.bz2"),
+          sdkFiles: await Promise.all(
+            ["Release/libcef.dll", "include/cef_api_versions.h"].map(
+              async (name) => ({ ...(await pin(sdkRoot, name)), type: "file" }),
+            ),
+          ),
+        },
+      ],
+    };
+  };
+  await refresh();
+  let preparations = 0;
+  let verifications = 0;
+  // Synthetic I/O collaborators isolate cache policy, never execute CEF/Rust.
+  // Production defaults remain the full provenance/export validators.
+  const dependencies = {
+    prepareSdk: async ({ output }) => {
+      preparations++;
+      const artifact = inputs.manifest.artifacts[0];
+      const metadata = JSON.stringify({
+        type: "minimal",
+        name: `cef_binary_${CEF_PIN.version}_sorng-custom-${artifact.archive.sha256}.tar.bz2`,
+        sha1: createHash("sha1")
+          .update(await readFile(archivePath))
+          .digest("hex"),
+      });
+      const sdkFiles = [];
+      for (const entry of artifact.sdkFiles) {
+        const normalized = entry.path.replace(/^Release\//, "");
+        const destination = path.join(output, normalized);
+        await mkdir(path.dirname(destination), { recursive: true });
+        await writeFile(
+          destination,
+          await readFile(path.join(sdkRoot, entry.path)),
+          { flag: "wx" },
+        );
+        sdkFiles.push({ ...entry, path: normalized });
+      }
+      await writeFile(path.join(output, "archive.json"), metadata, {
+        flag: "wx",
+      });
+      sdkFiles.push({
+        path: "archive.json",
+        type: "file",
+        size: Buffer.byteLength(metadata),
+        sha256: sha256(metadata),
+      });
+      return {
+        sdk: output,
+        customRuntime: {
+          manifest: inputs.manifest,
+          sourceLock,
+          artifactRoot: await realpath(artifactRoot),
+          sourceSdk: await realpath(sdkRoot),
+          sdkFiles,
+          sourceLockSha256: preflight.sourceLockSha256,
+          archiveSdkRelationship: preflight.archiveSdkRelationship,
+        },
+      };
+    },
+    verifySdk: async ({ sdk, customRuntime }) => {
+      verifications++;
+      const artifact = inputs.manifest.artifacts[0];
+      assert.equal(
+        sha256(await readFile(archivePath)),
+        artifact.archive.sha256,
+        "source archive changed",
+      );
+      for (const entry of artifact.sdkFiles)
+        assert.equal(
+          sha256(await readFile(path.join(sdkRoot, entry.path))),
+          entry.sha256,
+          "source SDK changed",
+        );
+      for (const entry of customRuntime.sdkFiles)
+        assert.equal(
+          sha256(await readFile(path.join(sdk, entry.path))),
+          entry.sha256,
+          "prepared SDK changed",
+        );
+      // This also proves the cache cannot invent its own trusted manifest.
+      assert.deepEqual(customRuntime.manifest, inputs.manifest);
+    },
+  };
+  const prepare = () =>
+    prepareDevSdkCache({ inputs, preflight, cacheRoot }, dependencies);
+  return {
+    root,
+    cacheRoot,
+    sdkRoot,
+    archivePath,
+    inputs,
+    preflight,
+    refresh,
+    dependencies,
+    prepare,
+    counts: () => ({ preparations, verifications }),
+  };
+}
+
+test("default dev alone reuses inputs; custom output and build/bundle stay private", () => {
+  assert.equal(reuseDevInputs({ mode: "dev" }), true);
+  for (const mode of ["dev", "build"]) {
+    assert.equal(reuseDevInputs({ mode, output: "custom-output" }), false);
+    assert.equal(
+      reuseDevInputs(
+        parseFixtureArguments([mode, "--cef-output=custom-output"], {}),
+      ),
+      false,
+    );
+    assert.equal(
+      reuseDevInputs(
+        parseFixtureArguments([mode], { SORNG_CEF_OUTPUT: "env-output" }),
+      ),
+      false,
+    );
+  }
+  assert.equal(reuseDevInputs({ mode: "build" }), false);
+});
+
+test("identical dev launches retain CEF_PATH, runner/config bytes and SDK mtimes without recompiling", async (t) => {
+  const f = await devCacheFixture(t);
+  const source = path.join(f.root, "runner.rs");
+  await writeFile(source, "synthetic runner source");
+  let builds = 0;
+  const build = async (_command, args) => {
+    builds++;
+    await writeFile(args.at(-1), "synthetic runner binary");
+  };
+  const runnerOptions = {
+    cacheRoot: f.cacheRoot,
+    source,
+    compilerIdentity: "rustc fixture 1",
+    env: {},
+    platform: "win32",
+    arch: "x64",
+  };
+  const first = await f.prepare();
+  const before = await lstat(path.join(first.sdk, "libcef.dll"));
+  const runner = await prepareDevRunnerCache(runnerOptions, build);
+  const second = await f.prepare();
+  const secondRunner = await prepareDevRunnerCache(runnerOptions, build);
+  const config = {
+    identifier: "isolated.profile",
+    build: { devUrl: "http://localhost:3001" },
+    app: { security: { csp: "strict", capabilities: ["unchanged"] } },
+    bundle: { resources: { "native/": "native/" } },
+  };
+  assert.deepEqual(
+    { CEF_PATH: first.sdk, config: stableDevConfiguration(config, runner) },
+    {
+      CEF_PATH: second.sdk,
+      config: stableDevConfiguration(config, secondRunner),
+    },
+  );
+  assert.equal(
+    (await lstat(path.join(second.sdk, "libcef.dll"))).mtimeMs,
+    before.mtimeMs,
+  );
+  assert.equal(f.counts().preparations, 1);
+  assert.ok(
+    f.counts().verifications >= 3,
+    "verification must run on creation, publication and reuse",
+  );
+  assert.equal(builds, 1);
+  assert.deepEqual(stableDevConfiguration(config, runner).app, config.app);
+});
+
+for (const changed of [
+  "Release/libcef.dll",
+  "include/cef_api_versions.h",
+  "archive",
+]) {
+  test(`changed reviewed ${changed} gets a new SDK without overwriting the previous one`, async (t) => {
+    const f = await devCacheFixture(t);
+    const first = await f.prepare();
+    const original = await readFile(path.join(first.sdk, "libcef.dll"));
+    const file =
+      changed === "archive" ? f.archivePath : path.join(f.sdkRoot, changed);
+    const bytes = await readFile(file, "utf8");
+    await writeFile(file, bytes.replace(" A", " B")); // same size, different content
+    await f.refresh(); // stands for the newly reviewed and preflighted manifest
+    const second = await f.prepare();
+    assert.notEqual(second.sdk, first.sdk);
+    assert.deepEqual(
+      await readFile(path.join(first.sdk, "libcef.dll")),
+      original,
+    );
+    assert.equal(f.counts().preparations, 2);
+  });
+}
+
+test("source drift and corrupt cached SDK fail closed without repair", async (t) => {
+  const f = await devCacheFixture(t);
+  const first = await f.prepare();
+  await writeFile(path.join(first.sdk, "libcef.dll"), "corrupt cached bytes");
+  await assert.rejects(f.prepare(), /prepared SDK changed/);
+  assert.equal(f.counts().preparations, 1);
+  assert.equal(
+    await readFile(path.join(first.sdk, "libcef.dll"), "utf8"),
+    "corrupt cached bytes",
+  );
+  await writeFile(
+    path.join(f.sdkRoot, "Release/libcef.dll"),
+    "unreviewed source",
+  );
+  await assert.rejects(f.prepare(), /source SDK changed/);
+});
+
+test("cache reuse cannot substitute a symlink or partial entry", async (t) => {
+  const f = await devCacheFixture(t);
+  const first = await f.prepare();
+  const entry = path.dirname(first.sdk);
+  await rm(path.join(entry, "cache-key.json"));
+  await assert.rejects(f.prepare(), { code: "ENOENT" });
+  assert.equal(f.counts().preparations, 1);
+  const otherCache = path.join(f.root, "junction-cache");
+  await symlink(
+    f.cacheRoot,
+    otherCache,
+    process.platform === "win32" ? "junction" : "dir",
+  );
+  await assert.rejects(
+    prepareDevSdkCache({ ...f, cacheRoot: otherCache }, f.dependencies),
+    /real directory/,
+  );
+});
+
+test("concurrent publication exposes only complete entries and never overwrites the winner", async (t) => {
+  const f = await devCacheFixture(t);
+  let arrived = 0;
+  let release;
+  const gate = new Promise((resolve) => {
+    release = resolve;
+  });
+  const created = [];
+  const create = async (temporary) => {
+    created.push(temporary);
+    await writeFile(path.join(temporary, "payload"), `candidate ${++arrived}`);
+    if (arrived === 2) release();
+    await gate;
+  };
+  let checked = 0;
+  const verify = async (entry) => {
+    assert.match(
+      await readFile(path.join(entry, "payload"), "utf8"),
+      /^candidate [12]$/,
+    );
+    checked++;
+  };
+  const options = {
+    cacheRoot: f.cacheRoot,
+    kind: "fixture",
+    key: sha256("same key"),
+    create,
+    verify,
+  };
+  const [first, second] = await Promise.all([
+    immutableDevCache(options),
+    immutableDevCache(options),
+  ]);
+  assert.equal(first, second);
+  const bytes = await readFile(path.join(first, "payload"));
+  const info = await lstat(path.join(first, "payload"));
+  await immutableDevCache({
+    ...options,
+    create: () => assert.fail("must reuse the winner"),
+  });
+  assert.deepEqual(await readFile(path.join(first, "payload")), bytes);
+  assert.equal(
+    (await lstat(path.join(first, "payload"))).mtimeMs,
+    info.mtimeMs,
+  );
+  assert.ok(checked >= 5);
+  assert.equal(created.length, 2);
+  assert.deepEqual(await readdir(f.cacheRoot), [path.basename(first)]);
+});
+
+test("failed preparation is not published and cannot replace a prior live entry", async (t) => {
+  const f = await devCacheFixture(t);
+  const first = await f.prepare();
+  await writeFile(f.archivePath, "new archive");
+  await f.refresh();
+  await assert.rejects(
+    prepareDevSdkCache(f, {
+      ...f.dependencies,
+      prepareSdk: async ({ output }) => {
+        await mkdir(output);
+        await writeFile(path.join(output, "partial"), "incomplete");
+        throw new Error("preparation failed");
+      },
+    }),
+    /preparation failed/,
+  );
+  assert.deepEqual(await readdir(f.cacheRoot), [
+    path.basename(path.dirname(first.sdk)),
+  ]);
+});
+
+test("runner source/toolchain changes invalidate while cache corruption fails closed", async (t) => {
+  const f = await devCacheFixture(t);
+  const source = path.join(f.root, "runner.rs");
+  await writeFile(source, "runner source A");
+  const options = {
+    cacheRoot: f.cacheRoot,
+    source,
+    compilerIdentity: "compiler A",
+    env: {},
+    platform: "win32",
+    arch: "x64",
+  };
+  let builds = 0;
+  const build = async (_command, args) => {
+    builds++;
+    await writeFile(args.at(-1), `runner ${builds}`);
+  };
+  const first = await prepareDevRunnerCache(options, build);
+  const toolchain = await prepareDevRunnerCache(
+    { ...options, compilerIdentity: "compiler B" },
+    build,
+  );
+  await writeFile(source, "runner source B");
+  const changed = await prepareDevRunnerCache(options, build);
+  assert.equal(new Set([first, toolchain, changed]).size, 3);
+  assert.equal(await readFile(first, "utf8"), "runner 1");
+  await writeFile(changed, "corrupt runner");
+  await assert.rejects(
+    prepareDevRunnerCache(options, build),
+    /integrity changed/,
+  );
+  assert.equal(builds, 3);
+});
+
+test("semantic config ordering is stable; profile, origin, security and resource changes are retained", () => {
+  const config = {
+    identifier: "profile A",
+    build: { devUrl: "http://localhost:3001" },
+    app: { security: { csp: "strict", capabilities: ["one", "two"] } },
+    bundle: { resources: { source: "destination" } },
+  };
+  const canonical = JSON.stringify(
+    stableDevConfiguration(config, "stable-runner"),
+  );
+  assert.equal(
+    JSON.stringify(
+      stableDevConfiguration(
+        Object.fromEntries(Object.entries(config).reverse()),
+        "stable-runner",
+      ),
+    ),
+    canonical,
+  );
+  for (const change of [
+    (c) => {
+      c.identifier = "profile B";
+    },
+    (c) => {
+      c.build.devUrl = "http://localhost:3002";
+    },
+    (c) => {
+      c.app.security.csp = "different";
+    },
+    (c) => {
+      c.app.security.capabilities.reverse();
+    },
+    (c) => {
+      c.bundle.resources.source = "new-destination";
+    },
+  ]) {
+    const updated = structuredClone(config);
+    change(updated);
+    assert.notEqual(
+      JSON.stringify(stableDevConfiguration(updated, "stable-runner")),
+      canonical,
+    );
+  }
+  assert.equal(config.build.runner, undefined);
+});
 
 // These argument/packaging tests deliberately use official SDK fixtures. Normal
 // no-env patched selection is tested separately, not silently defaulted here.
