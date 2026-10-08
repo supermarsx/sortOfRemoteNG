@@ -1,3 +1,10 @@
+---
+title: On-premises Exchange OWA login
+eyebrow: Website connections
+description: Configure Exchange Outlook on the web credentials and delegated mailbox access.
+permalink: /exchange-owa-login/
+---
+
 # On-premises Exchange OWA login
 
 Choose **Exchange Outlook on the web (on-premises)** in the connection's

@@ -1,3 +1,10 @@
+---
+title: Portuguese portal profiles
+eyebrow: Website connections
+description: Portuguese service portal profiles and their current capability limits.
+permalink: /portugal-portal-profiles/
+---
+
 # Portuguese portal profiles
 
 Reviewed on 2026-10-06. Implementation:

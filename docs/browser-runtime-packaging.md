@@ -1,3 +1,10 @@
+---
+title: CEF runtime packaging contract
+eyebrow: Development
+description: Pinned CEF runtime packaging, validation, and platform requirements.
+permalink: /browser-runtime-packaging/
+---
+
 # CEF runtime packaging contract
 
 `scripts/browser-runtime-package.mjs` provides offline inspection plus explicit

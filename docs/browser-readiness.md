@@ -7,7 +7,79 @@ permalink: /browser-readiness/
 
 # Browser readiness evidence
 
-## Current integration checkpoint — 2026-10-07
+## Current integration checkpoint — 2026-10-08
+
+The Windows x64 patched-CEF build has now opened usable websites inside native
+application tabs in an isolated development profile. Local acceptance receipts
+under `.artifacts/cef-live-ui-20261008-r10/` and
+`.artifacts/cef-live-ui-20261008-r13/` record the following observed operations:
+
+- Quick Connect retargeted one app tab from example.com to Google and then
+  Cloudflare. Cross-origin address-bar changes close the predecessor private
+  context before creating a new attempt; they do not expand the old page's
+  network grants or carry its Basic authentication into the new origin.
+- A synthetic Gitea-shaped login completed native typed username, password and
+  TOTP stages. This is local fixture acceptance, not public-provider sign-in.
+- Certificate review appeared in the app's themed dialog. Cancel denied the
+  fixture connection; allow-once resumed that exact certificate challenge.
+- A native Save dialog produced the expected 28-byte fixture download and the
+  app's downloads panel reported completion.
+- Find returned match counts and advanced between matches. Native history
+  listed entries and navigated to one without discarding forward history.
+  A requested new tab adopted the native popup. App-following appearance
+  changes received native acknowledgments.
+- Metadata-only HAR recording started, captured a reload and exported an HTTP
+  200 entry after stopping. The native Windows print dialog was observed and
+  cancelled; no print job was submitted.
+
+The integrated source also includes bounded startup diagnostics, engine-only
+prewarming, working-directory fallback with exclusive profile leases,
+database-owned retained cookies, owner revocation, and native menu clipping.
+Retained cookies remain encrypted in the owning database and cannot be restored
+without its current unlock lease. Temporary browsers do not borrow saved
+database credentials or retained sessions. Working-directory recovery does not
+delete databases or replace the saved directory preference.
+
+These results do **not** make the full rollout complete. Linux/macOS runtime
+acceptance, authenticated Google login, Cloudflare challenge completion, video
+capture acceptance and complete network-containment evidence remain separate
+gates. Installable Chromium extensions are not supported; app website-extension
+controls must not be described as Chromium extension installation. The final
+history timeout-log guard was source-tested after the r13 binary was built.
+The package remains `productionReady: false` until its declared acceptance
+requirements pass. In-process native tabs also cannot isolate every fatal CEF
+browser-process failure from the app process.
+
+### Windows final-client import regression
+
+The normal full-development build rejected a genuine split Shell32 delay-import
+table: four SDK imports were advertised while seven additional call stubs pointed
+outside that table. The final-link policy now anchors both the Shell32 and Winsock
+import closures to the Windows SDK. The guard remains mandatory before staging,
+checks recognized x64 delay stubs across DLL descriptors, and reports the actual
+failing DLL instead of always suggesting Winsock.
+
+On 2026-10-08 the normal offline `browser-app-build.mjs build --debug --cef-static
+--features full-dev --cef-offline --no-bundle` path completed and published a
+matching client DLL (SHA-256
+`ca9cf4534a2b3311a1f97ba8069c2fdc8a92705d3c1d6554243a325d0cc14e94`). All 364
+recognized stubs passed with no unknown candidates; the retained malformed DLL
+still failed the guard. The packaged client's loopback proxy/authentication/
+shutdown probe also passed without opening application profiles or initializing
+CEF. Evidence is in `.artifacts/cef-shell32-linker-evidence-20261008.json` and
+`.artifacts/cef-shell32-network-probe-20261008.json`.
+
+This verifies that link graph and package, not arbitrary future dependencies or
+ARM64 machine-code patterns. Unknown thunk formats retain explicit incomplete
+coverage reporting. Later frontend and session-binding cleanup is covered by
+separate focused checks, not by that binary receipt. No sandbox or trust-policy
+bypass was introduced.
+
+The checkpoints below are historical evidence and may describe failures that
+subsequent patches address. They are retained to distinguish original failures,
+targeted fixes and the narrower operations actually verified.
+
+## Earlier integration checkpoint — 2026-10-07
 
 CEF is selected for the native integration. The app now connects its native
 certificate authority to the maintained TLS bridge V2

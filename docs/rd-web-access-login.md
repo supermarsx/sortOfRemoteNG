@@ -1,3 +1,10 @@
+---
+title: RD Web Access and RemoteApp portal
+eyebrow: Website connections
+description: Configure classic RD Web Access portal form login.
+permalink: /rd-web-access-login/
+---
+
 # RD Web Access / RemoteApp portal
 
 The `rdweb` application preset supports optional **classic RD Web Access form login**. Manual login remains the default. It is not a universal Remote Desktop authentication adapter and signing into the portal does not launch a RemoteApp or native RDP connection.

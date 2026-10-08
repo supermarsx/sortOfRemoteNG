@@ -1,3 +1,10 @@
+---
+title: SSH output buffering and recovery
+eyebrow: SSH
+description: Configure adaptive terminal replay buffers and recover delayed output.
+permalink: /ssh-terminal-buffering/
+---
+
 # SSH output buffering and recovery
 
 Settings → SSH → Output replay buffer controls the native history retained for

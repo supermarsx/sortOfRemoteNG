@@ -1,3 +1,10 @@
+---
+title: OPNsense WebGUI login
+eyebrow: Website connections
+description: Configure optional OPNsense firewall WebGUI form authentication.
+permalink: /opnsense-login/
+---
+
 # OPNsense WebGUI login
 
 The `opnsense` website profile covers the firewall's WebGUI, not its captive

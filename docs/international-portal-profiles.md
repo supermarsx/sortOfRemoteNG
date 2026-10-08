@@ -1,3 +1,10 @@
+---
+title: International portal profiles
+eyebrow: Website connections
+description: Supported international website profiles and authentication boundaries.
+permalink: /international-portal-profiles/
+---
+
 # International portal profiles
 
 Public-source review: 2026-10-06. Scope: the original 21 services in the

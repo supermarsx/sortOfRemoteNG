@@ -1,3 +1,10 @@
+---
+title: Vodafone Smart Router 3
+eyebrow: Website connections
+description: Configure local Vodafone Smart Router 3 browsing and optional automatic login.
+permalink: /vodafone-smart-router-login/
+---
+
 # Vodafone Smart Router 3
 
 In an HTTP/HTTPS connection, select **Vodafone Smart Router 3** under
