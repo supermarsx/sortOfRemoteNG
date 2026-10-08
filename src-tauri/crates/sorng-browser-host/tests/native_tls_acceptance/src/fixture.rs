@@ -203,14 +203,19 @@ async fn serve(
             state.proxy_authorization_leaked|=header.to_ascii_lowercase().contains("proxy-authorization:");
             let host=header.lines().find_map(|l|l.split_once(':').filter(|(k,_)|k.eq_ignore_ascii_case("host")).map(|(_,v)|v.trim()));
             state.host_header_exact &= matches!(host,Some("accounts.google.com"|"accounts.google.com:443"));
-            let (body,cookie)=if path=="/proof"{
+            let (body,cookie)=if let Some(storage)=crate::storage::response(&state,path,&header,&bytes[end..end+len]){
+                storage
+            }else if path=="/proof"{
                 let mut proof:serde_json::Value=serde_json::from_slice(&bytes[end..end+len]).map_err(std::io::Error::other)?;
                 proof["nativeCookieSent"]=header.lines().any(|l|l.split_once(':').is_some_and(|(k,v)|k.eq_ignore_ascii_case("cookie")&&v.contains("tls_fixture=one"))).into();
-                state.proof=Some(proof);("{}","")
+                state.proof=Some(proof);("{}".to_owned(),String::new())
             }else if path=="/manual" || path=="/v3/signin/identifier"{
                 state.initial_cookie_empty=Some(!header.lines().any(|l|l.split_once(':').is_some_and(|(k,v)|k.eq_ignore_ascii_case("cookie")&&!v.trim().is_empty())));
-                (include_str!("page.html"),"Set-Cookie: tls_fixture=one; Secure; HttpOnly; SameSite=Strict; Path=/\r\n")
-            }else{("","")};
+                (include_str!("page.html").to_owned(),"Set-Cookie: tls_fixture=one; Secure; HttpOnly; SameSite=Strict; Path=/\r\n".to_owned())
+            }else if path==crate::static_document::PATH && state.static_document.is_some(){
+                state.static_document.as_ref().unwrap().lock().unwrap().page_requests+=1;
+                (crate::static_document::PAGE.to_owned(),String::new())
+            }else{(String::new(),String::new())};
             format!("HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=utf-8\r\nCache-Control: no-store\r\nConnection: close\r\nContent-Length: {}\r\n{cookie}\r\n{body}",body.len())
         };
         tls.write_all(response.as_bytes()).await?;tls.shutdown().await?;Ok(Outcome::Completed)

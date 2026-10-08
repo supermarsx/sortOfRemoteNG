@@ -2,6 +2,7 @@
 // Normal Tauri build/dev with a mandatory, pinned CEF native entry. Never grants
 // browser admission. No production application is launched by the build verb.
 import { spawn } from "node:child_process";
+import { createHash } from "node:crypto";
 import { constants } from "node:fs";
 import {
   copyFile,
@@ -52,6 +53,7 @@ import {
 } from "./lib/browser-local-runtime.mjs";
 import { ensurePublishedRuntime } from "./lib/browser-runtime-bootstrap.mjs";
 import { ensureBrowserSandboxAccess } from "./lib/browser-sandbox-access.mjs";
+import { validateBrowserClientImports } from "./lib/browser-client-imports.mjs";
 export { prepareWindowsInstallerBundles } from "./lib/browser-installer-bundles.mjs";
 
 const driver = fileURLToPath(import.meta.url);
@@ -701,7 +703,10 @@ export async function stageApplicationPackage(plan, inputs) {
     ? stageCustomRuntimePackage({ ...inputs, plan })
     : stagePackage(inputs));
   if (report.ok && plan.platform === "windows")
-    await ensureBrowserSandboxAccess({ bundle: path.resolve(inputs.output), appName: plan.appName });
+    await ensureBrowserSandboxAccess({
+      bundle: path.resolve(inputs.output),
+      appName: plan.appName,
+    });
   return report;
 }
 
@@ -772,6 +777,25 @@ export async function runCargo(args, environment = process.env) {
   if (plan.platform !== "windows")
     await child("cargo", commands.helper, env, tauriDir);
   const compiled = path.join(plan.cargoTarget, plan.target, commands.profile);
+  if (plan.platform === "windows") {
+    const client = path.join(compiled, "app_lib.dll");
+    const bytes = await readFile(client);
+    // Identify the exact final-link artifact on both success and rejection.
+    // The guard stays before any payload staging; never patch a malformed PE.
+    console.log(
+      `[browser-app-build] Import guard: ${client}; SHA-256 ${createHash("sha256").update(bytes).digest("hex")}`,
+    );
+    const imports = validateBrowserClientImports(bytes, plan.target);
+    const ownership = imports.thunkOwnership;
+    console.log(
+      `[browser-app-build] Winsock: ${imports.delayedImports} delayed imports; ` +
+        `thunk ownership: ${ownership.status} (${ownership.recognizedThunks} recognized)`,
+    );
+    if (ownership.status !== "recognized-patterns-checked")
+      console.warn(
+        "[browser-app-build] Import structure passed, but machine-code delay-thunk coverage is incomplete on this target/compiler. Run the full-client network probe; structural checks alone are not runtime proof.",
+      );
+  }
   // Watch rebuilds get their own retained payload. No broad delete or mutation
   // of an existing launched bundle. A build verb has one fixed bundle source.
   const payload =
@@ -876,7 +900,10 @@ export async function runCargo(args, environment = process.env) {
     );
   }
   if (plan.platform === "windows")
-    await ensureBrowserSandboxAccess({ bundle: path.dirname(executable), appName: plan.appName });
+    await ensureBrowserSandboxAccess({
+      bundle: path.dirname(executable),
+      appName: plan.appName,
+    });
   await child(
     executable,
     commands.runArgs,
@@ -1211,7 +1238,10 @@ export async function main(
         `Published CEF closure failed: ${published.errors.join("; ")}`,
       );
     if (plan.platform === "windows")
-      await ensureBrowserSandboxAccess({ bundle: output, appName: plan.appName });
+      await ensureBrowserSandboxAccess({
+        bundle: output,
+        appName: plan.appName,
+      });
   } else if (options.noBundle) {
     await copyResources(
       config.bundle.resources,

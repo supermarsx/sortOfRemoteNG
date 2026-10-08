@@ -35,6 +35,8 @@ use tao::{
 };
 mod fixture;
 mod ledger;
+mod static_document;
+mod storage;
 use ledger::{Decision, Ledger};
 type Result<T = ()> = std::result::Result<T, Box<dyn std::error::Error>>;
 // The reviewed staged adapter requires this exact origin. The route dialer
@@ -134,6 +136,8 @@ struct State {
     initial_cookie_empty: Option<bool>,
     revoke_observed_ms: u128,
     first_decision: Option<Instant>,
+    storage: Option<Arc<Mutex<storage::Evidence>>>,
+    static_document: Option<Arc<Mutex<static_document::Evidence>>>,
 }
 impl State {
     fn new(name: &'static str) -> Self {
@@ -165,6 +169,9 @@ impl State {
             initial_cookie_empty: None,
             revoke_observed_ms: 0,
             first_decision: None,
+            storage: None,
+            static_document: (name == "staged")
+                .then(|| Arc::new(Mutex::new(static_document::Evidence::default()))),
         }
     }
     fn report(&self, installed: bool, closed: bool, rejected: bool) -> serde_json::Value {
@@ -186,7 +193,8 @@ impl State {
             "sniExact":self.sni_exact,"hostHeaderExact":self.host_header_exact,"evidenceExact":self.evidence_exact,
             "policyMismatch":self.policy_mismatch,"staleCompletionAttempted":self.stale_completion_attempted,
             "initialCookieEmpty":self.initial_cookie_empty,"revokeObservedMs":self.revoke_observed_ms,
-            "grants":self.grants,"proof":self.proof,"tlsInstalled":installed,"closed":closed,"revokedNavigationRejected":rejected})
+            "grants":self.grants,"proof":self.proof,"tlsInstalled":installed,"closed":closed,"revokedNavigationRejected":rejected,
+            "staticDocument":self.static_document.as_ref().map(|e|e.lock().unwrap().report())})
     }
 }
 struct Hooks {
@@ -235,12 +243,20 @@ impl NativeTlsHooks for Hooks {
     }
 }
 impl BrowserEventSink for Hooks {
-    fn on_event(&self, _: BrowserEvent) {}
+    fn on_event(&self, event: BrowserEvent) {
+        if event.identity != self.identity || !self.current.load(Ordering::Acquire) {
+            return;
+        }
+        if let Some(evidence) = &self.state.lock().unwrap().static_document {
+            evidence.lock().unwrap().observe(&event);
+        }
+    }
 }
 impl NativeDocumentHooks for Hooks {
     fn on_main_document(&self, _: &BrowserIdentity, _: u64) {}
     fn login_adapter(&self) -> NativeLoginAdapter {
-        if self.state.lock().unwrap().name == "manual" {
+        let state = self.state.lock().unwrap();
+        if state.name == "manual" || state.storage.is_some() {
             NativeLoginAdapter::Manual
         } else {
             NativeLoginAdapter::Google
@@ -429,6 +445,7 @@ fn execute(bootstrap: &mut dyn RuntimeBootstrap, paths: &BundlePaths) -> Result 
         std::env::var_os("SORNG_CEF_ACCEPTANCE_OUTPUT").ok_or("disposable output required")?,
     );
     let run_id = std::env::var("SORNG_CEF_ACCEPTANCE_RUN_ID")?;
+    let manual_requested = std::env::var("SORNG_CEF_TLS_MANUAL").as_deref() == Ok("true");
     if !output.is_absolute()
         || !output.is_dir()
         || std::fs::read_dir(&output)?.next().is_some()
@@ -447,6 +464,7 @@ fn execute(bootstrap: &mut dyn RuntimeBootstrap, paths: &BundlePaths) -> Result 
     let parent = Arc::new(
         WindowBuilder::new()
             .with_title("Local patched CEF TLS fixture")
+            .with_visible(manual_requested)
             .with_inner_size(tao::dpi::LogicalSize::new(800., 600.))
             .build(&events)?,
     );
@@ -470,6 +488,8 @@ fn execute(bootstrap: &mut dyn RuntimeBootstrap, paths: &BundlePaths) -> Result 
     let mut report = serde_json::json!({"schema":2,"engine":"cef","bindingPin":"154.3.0","evidenceKind":"native-cef-local-fixture",
         "patchId":PATCH_ID,"runId":run_id,"platform":std::env::consts::OS,"productionReady":false,"publicProviderAcceptance":false,
         "loadedBridgeVerified":false,"securitySwitchesClean":false,"networkPolicyConfigured":false,"shutdownComplete":false,"cases":[],"failures":[],
+        "manualRequested":manual_requested,"manualStatus":if manual_requested {"pending"} else {"not-run"},
+        "storageIsolation":{"status":"not-run"},
         "remainingGates":["OS socket/DNS containment","native first paint","public provider acceptance","other platform runtime","app trust authority integration","AIA/OCSP/CRL runtime","HTTP keep-alive runtime"]});
     let mut failures: Vec<String> = vec![];
     let bridge = unsafe { NativeTlsBridge::from_loaded(PATCH_ID) };
@@ -514,11 +534,7 @@ fn execute(bootstrap: &mut dyn RuntimeBootstrap, paths: &BundlePaths) -> Result 
     if failures.is_empty() {
         let mut predecessor: Option<Predecessor> = None;
         for &name in CASES {
-            if name == "manual" && std::env::var("SORNG_CEF_TLS_MANUAL").as_deref() != Ok("true") {
-                failures.push(
-                    "manual not run: use run-tls --manual true and submit the visible fixture"
-                        .into(),
-                );
+            if name == "manual" && !manual_requested {
                 continue;
             }
             let state = Arc::new(Mutex::new(State::new(name)));
@@ -591,12 +607,18 @@ fn execute(bootstrap: &mut dyn RuntimeBootstrap, paths: &BundlePaths) -> Result 
             let mut browser: Option<CefBrowserHost<'static>> = None;
             let mut installed = false;
             let mut navigated = false;
+            let mut static_probe: Option<static_document::Probe> = None;
+            let mut static_completed = false;
             let mut closing: Option<Instant> = None;
             let mut close_sent = false;
             let mut closed = false;
             let mut revoked_rejected = false;
             let began = Instant::now();
-            let deadline = if name == "manual" { 120 } else { 20 };
+            let deadline = match name {
+                "manual" => 120,
+                "staged" => 40,
+                _ => 20,
+            };
             let mut case_error = None;
             let mut parked = false;
             events.run_return(|event, _, flow| {
@@ -666,19 +688,30 @@ fn execute(bootstrap: &mut dyn RuntimeBootstrap, paths: &BundlePaths) -> Result 
                             };
                             owner.report_host(&identity, ready)?;
                             drop(owner);
+                            // Match app startup: default zoom is applied while the
+                            // attached view is still hidden, before first navigation.
+                            // Requiring visibility here aborts every new app tab.
+                            browser.zoom(&identity, 100.0)?;
                             browser.navigate(
                                 &identity,
                                 &format!(
                                     "{ORIGIN}{}",
                                     if name == "manual" {
                                         "/manual"
+                                    } else if name == "staged" {
+                                        static_document::PATH
                                     } else {
                                         "/v3/signin/identifier"
                                     }
                                 ),
                             )?;
-                            browser.show(&identity)?;
-                            browser.focus(&identity)?;
+                            if let Some(evidence) = &state.lock().unwrap().static_document {
+                                static_probe = Some(static_document::Probe::new(evidence.clone()));
+                            }
+                            if manual_requested {
+                                browser.show(&identity)?;
+                                browser.focus(&identity)?;
+                            }
                             navigated = true;
                         }
                         if name == "revoke-pending" {
@@ -697,10 +730,30 @@ fn execute(bootstrap: &mut dyn RuntimeBootstrap, paths: &BundlePaths) -> Result 
                             decide(&state, &certificates, &session, &identity)?;
                         }
                         cef_tls_bridge::pump_tls()?;
+                        if closing.is_none() && !static_completed {
+                            if let Some(probe) = static_probe.as_mut().filter(|p| !p.failed()) {
+                                match probe.advance(browser, &identity) {
+                                    Ok(true) => {
+                                        static_completed = true;
+                                        browser.navigate(
+                                            &identity,
+                                            &format!("{ORIGIN}/v3/signin/identifier"),
+                                        )?;
+                                    }
+                                    Ok(false) => {}
+                                    Err(error) => {
+                                        failures.push(format!("{name}: {error}"));
+                                        probe.fail(error.to_string());
+                                    }
+                                }
+                            }
+                        }
                         let positive = ["manual", "staged", "successor"].contains(&name);
                         let done = {
                             let s = state.lock().unwrap();
-                            if positive {
+                            if static_probe.as_ref().is_some_and(|p| p.failed()) {
+                                true // Failure still follows the normal revoke/close/drain path.
+                            } else if positive {
                                 s.proof.is_some() && s.pulse_requests > 0
                             } else {
                                 s.first_decision
@@ -755,6 +808,14 @@ fn execute(bootstrap: &mut dyn RuntimeBootstrap, paths: &BundlePaths) -> Result 
             });
             if let Some(error) = case_error {
                 failures.push(format!("{name}: {error}"));
+            }
+            if name == "manual" {
+                report["manualStatus"] = if closed && state.lock().unwrap().proof.is_some() {
+                    "observed"
+                } else {
+                    "failed"
+                }
+                .into();
             }
             if parked {
                 predecessor = Some(Predecessor {
@@ -837,6 +898,34 @@ fn execute(bootstrap: &mut dyn RuntimeBootstrap, paths: &BundlePaths) -> Result 
             )?;
             if !closed {
                 break;
+            }
+        }
+        // Additional same-origin probes use the same loaded TLS bridge, custom
+        // CA validation and per-socket ledger as the cases above. No SPKI bypass.
+        if failures.is_empty() {
+            let isolation = storage::run(
+                &runtime,
+                &bridge,
+                certificates.clone(),
+                &asynchronous,
+                &mut events,
+                parent.clone(),
+                &output,
+                &run_id,
+            );
+            match isolation {
+                Ok(isolation) => {
+                    if isolation["status"] != "completed" {
+                        failures.push("same-origin storage isolation probe failed".into());
+                    }
+                    report["storageIsolation"] = isolation;
+                }
+                Err(error) => {
+                    // storage::run never returns with live native owners. Even
+                    // checkpoint I/O failure must still reach ordered shutdown.
+                    failures.push(format!("storage probe reporting failed: {error}"));
+                    report["storageIsolation"] = serde_json::json!({"status":"failed"});
+                }
             }
         }
     }

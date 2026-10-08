@@ -12,6 +12,7 @@ import {
   inspectBundle,
 } from "./browser-runtime-package.mjs";
 import { runAcceptance } from "./cef-browser-acceptance.mjs";
+import { probeBrowserClientNetwork } from "./browser-client-network-probe.mjs";
 import {
   assertIsolatedIdentifier,
   inspectProfileBinary,
@@ -87,12 +88,19 @@ export async function probeWindowsAppEntry({
   if (probe.pid !== result.pid) throw new Error("Entry probe PID mismatch");
   if ((await inspectProfileBinary(dll)).sha256 !== before.sha256)
     throw new Error("App client changed during entry probe");
+  // Minimal CEF fixtures do not contain the real app's native-library graph.
+  // Also exercise its first proxy socket/auth/shutdown path before declaring
+  // the isolated application-entry check successful.
+  const networkProbe = await probeBrowserClientNetwork(bundle, { appName });
+  if (networkProbe.clientSha256 !== before.sha256)
+    throw new Error("App client changed before the network probe");
   return {
     ok: true,
     identifier,
     appName,
     clientSha256: before.sha256,
     entryDispatched: true,
+    networkProbe,
     cefInitialized: false,
     rendererSandbox: "not-tested",
     productionReady: false,

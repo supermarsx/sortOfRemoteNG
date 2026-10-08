@@ -1,6 +1,6 @@
 <!doctype html><html><head><meta charset="utf-8"><title>Local TLS acceptance</title><link rel="icon" href="data:,"></head>
 <body><h1>LOCAL synthetic TLS fixture</h1><p id="instructions"></p>
-<form><input id="identifierId" name="identifier" autocomplete="username"><div id="identifierNext"><button type="submit">Next</button></div></form>
+<form method="post" action="/v3/signin/identifier"><input id="identifierId" name="identifier" type="email" autocomplete="username"><div id="identifierNext"><button type="submit">Next</button></div></form>
 <script>
 const manual = location.pathname === '/manual';
 const proof = {origin:location.origin,secure:isSecureContext,top:top===window,

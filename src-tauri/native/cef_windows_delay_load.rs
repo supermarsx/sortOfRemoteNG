@@ -78,6 +78,79 @@ const CEF_DELAY_LOAD_DLLS: &[&str] = &[
 // initializing this browser-side COM dependency in the sandboxed DLL loader.
 const RUST_DELAY_LOAD_DLLS: &[&str] = &["combase.dll"];
 
+// Canonicalize the pinned app's mixed-source import closures to the Windows SDK.
+// MSVC's delayed-import descriptor merges DLL names case-insensitively while
+// sorting their IAT fragments case-sensitively. Mixing windows-targets' lowercase
+// imports with SDK uppercase imports therefore creates orphan call stubs.
+// Resolve these references before dependency archive scanning. The final-PE
+// guard and full-app network probe protect these lists against graph changes.
+const WINSOCK_IMPORTS: &[&str] = &[
+    "WSAStartup",
+    "WSACleanup",
+    "WSASendMsg",
+    "WSAIoctl",
+    "WSASend",
+    "WSARecv",
+    "freeaddrinfo",
+    "getnameinfo",
+    "getaddrinfo",
+    "WSAGetLastError",
+    "select",
+    "__WSAFDIsSet",
+    "socket",
+    "WSADuplicateSocketW",
+    "shutdown",
+    "sendto",
+    "connect",
+    "WSASocketW",
+    "listen",
+    "send",
+    "recv",
+    "bind",
+    "closesocket",
+    "ioctlsocket",
+    "getsockopt",
+    "setsockopt",
+    "getpeername",
+    "getsockname",
+    "recvfrom",
+    "accept",
+];
+
+// Downloads added SDK SHELL32 imports alongside windows-targets' shell32
+// imports. The resulting descriptor advertised only four SDK entries, leaving
+// seven real call stubs outside its IAT. Anchor BOTH fragments, not just the
+// new downloads functions; changing /DELAYLOAD casing alone cannot merge them.
+const SHELL32_IMPORTS: &[&str] = &[
+    "SHOpenFolderAndSelectItems",
+    "ILCreateFromPathW",
+    "Shell_NotifyIconW",
+    "ILFree",
+    "SHGetKnownFolderPath",
+    "SHCreateItemFromParsingName",
+    "ShellExecuteW",
+    "Shell_NotifyIconGetRect",
+    "DragFinish",
+    "SHAppBarMessage",
+    "DragQueryFileW",
+];
+
+fn canonical_import_directives(cef_enabled: bool, os: &str, env: &str) -> Vec<String> {
+    if !cef_enabled || os != "windows" || env != "msvc" {
+        return Vec::new();
+    }
+    let mut result = Vec::new();
+    for (library, imports) in [("ws2_32", WINSOCK_IMPORTS), ("shell32", SHELL32_IMPORTS)] {
+        result.push(format!("cargo:rustc-link-lib=dylib={library}"));
+        result.extend(
+            imports
+                .iter()
+                .map(|symbol| format!("cargo:rustc-link-arg=/INCLUDE:__imp_{symbol}")),
+        );
+    }
+    result
+}
+
 fn linker_arguments(
     cef_enabled: bool,
     target_os: &str,
@@ -113,6 +186,9 @@ fn linker_arguments(
 pub fn configure(cef_enabled: bool) {
     let os = std::env::var("CARGO_CFG_TARGET_OS").expect("Cargo supplies the target OS");
     let env = std::env::var("CARGO_CFG_TARGET_ENV").unwrap_or_default();
+    for directive in canonical_import_directives(cef_enabled, &os, &env) {
+        println!("{directive}");
+    }
     for argument in linker_arguments(cef_enabled, &os, &env)
         .expect("Cannot link a sandbox-compatible CEF client")
     {
@@ -127,6 +203,62 @@ pub fn configure(cef_enabled: bool) {
 mod tests {
     use super::*;
     use std::collections::BTreeSet;
+
+    #[test]
+    fn canonical_winsock_imports_are_early_anchored_and_remain_delayed() {
+        let directives = canonical_import_directives(true, "windows", "msvc");
+        assert_eq!(directives[0], "cargo:rustc-link-lib=dylib=ws2_32");
+        assert_eq!(
+            directives.len(),
+            WINSOCK_IMPORTS.len() + SHELL32_IMPORTS.len() + 2
+        );
+        assert_eq!(
+            WINSOCK_IMPORTS.len(),
+            WINSOCK_IMPORTS.iter().collect::<BTreeSet<_>>().len()
+        );
+        for symbol in [
+            "WSAStartup",
+            "WSACleanup",
+            "bind",
+            "WSASocketW",
+            "closesocket",
+            "WSARecv",
+        ] {
+            assert!(directives.contains(&format!("cargo:rustc-link-arg=/INCLUDE:__imp_{symbol}")));
+        }
+        assert!(linker_arguments(true, "windows", "msvc")
+            .unwrap()
+            .contains(&"/DELAYLOAD:ws2_32.dll".to_owned()));
+        for (enabled, os, env) in [
+            (false, "windows", "msvc"),
+            (true, "windows", "gnu"),
+            (true, "linux", "gnu"),
+            (true, "macos", ""),
+        ] {
+            assert!(canonical_import_directives(enabled, os, env).is_empty());
+        }
+    }
+
+    #[test]
+    fn canonical_shell32_imports_cover_both_fragments_and_remain_delayed() {
+        let directives = canonical_import_directives(true, "windows", "msvc");
+        let first = WINSOCK_IMPORTS.len() + 1;
+        assert_eq!(directives[first], "cargo:rustc-link-lib=dylib=shell32");
+        assert_eq!(SHELL32_IMPORTS.len(), 11);
+        assert_eq!(
+            directives.len(),
+            directives.iter().collect::<BTreeSet<_>>().len()
+        );
+        for (index, symbol) in SHELL32_IMPORTS.iter().enumerate() {
+            assert_eq!(
+                directives[first + index + 1],
+                format!("cargo:rustc-link-arg=/INCLUDE:__imp_{symbol}")
+            );
+        }
+        assert!(linker_arguments(true, "windows", "msvc")
+            .unwrap()
+            .contains(&"/DELAYLOAD:shell32.dll".to_owned()));
+    }
 
     #[test]
     fn no_msvc_flags_for_non_windows_or_non_cef_builds() {
