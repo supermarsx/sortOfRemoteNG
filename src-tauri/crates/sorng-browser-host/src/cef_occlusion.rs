@@ -159,7 +159,7 @@ pub(crate) fn apply(
     extern "C" {
         fn XDisplayString(display: *mut c_void) -> *const c_char;
     }
-    let display = cef::get_xdisplay().cast();
+    let display = cef::get_xdisplay().cast::<c_void>();
     let window = u32::try_from(window).map_err(|_| ())?;
     if display.is_null() || window <= 1 {
         return Err(());

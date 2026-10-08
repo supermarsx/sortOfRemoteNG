@@ -71,6 +71,76 @@ ${module}
   );
 });
 
+test("actual Linux occlusion block typechecks and detects an untyped X display cast (no CEF/X11 linkage)", async (t) => {
+  const source = (await read("src/cef_occlusion.rs")).replaceAll("\r\n", "\n");
+  const linuxGate = '#[cfg(all(feature = "cef-host", target_os = "linux"))]\n';
+  const start = source.indexOf(linuxGate);
+  const end = source.indexOf(
+    '#[cfg(all(feature = "cef-host", target_os = "macos"))]',
+    start,
+  );
+  const clipRect = source.match(
+    /pub\(crate\) struct ClipRect \{[\s\S]*?\n\}/,
+  )?.[0];
+  assert.ok(
+    clipRect && start >= 0 && end > start,
+    "locate actual Linux occlusion code",
+  );
+  // Include the production apply function AND its checked-X11 adapter. Remove
+  // only their platform gates; metadata compilation never links/calls CEF/X11.
+  const module = source
+    .slice(start, end)
+    .replaceAll(linuxGate, "")
+    .replaceAll(
+      '#[cfg(any(test, all(feature = "cef-host", target_os = "linux")))]\n',
+      "",
+    );
+  assert.match(module, /mod x11_checked/);
+  assert.match(module, /cef::get_xdisplay\(\)\.cast::<c_void>\(\)/);
+  const root = await mkdtemp(path.join(os.tmpdir(), "cef-linux-occlusion-"));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const harness = path.join(root, "occlusion.rs");
+  const prelude = `
+#![allow(dead_code, non_camel_case_types)]
+mod cef {
+    pub mod sys { pub type cef_window_handle_t = std::ffi::c_ulong; }
+    pub struct XDisplay { _opaque: [u8; 0] }
+    pub fn get_xdisplay() -> *mut XDisplay { std::ptr::null_mut() }
+}
+${clipRect}
+`;
+  const compile = () =>
+    spawnSync(
+      "rustc",
+      [
+        "--edition=2021",
+        "--crate-type=lib",
+        "--emit=metadata",
+        "-Dwarnings",
+        harness,
+        "-o",
+        path.join(root, "occlusion.rmeta"),
+      ],
+      { encoding: "utf8", timeout: 60_000 },
+    );
+  await writeFile(
+    harness,
+    prelude + module.replace(".cast::<c_void>()", ".cast()"),
+  );
+  const old = compile();
+  assert.ifError(old.error);
+  assert.notEqual(
+    old.status,
+    0,
+    "the fixture must catch the old inference failure",
+  );
+  assert.match(old.stderr, /E0282/);
+  await writeFile(harness, prelude + module);
+  const fixed = compile();
+  assert.ifError(fixed.error);
+  assert.equal(fixed.status, 0, fixed.stderr);
+});
+
 test("retained cookie capture normalizes both enums without changing the signed schema", async () => {
   const source = await read("src/cef_session_retention.rs");
   assert.match(source, /pub same_site: i32/);
