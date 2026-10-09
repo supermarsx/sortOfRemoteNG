@@ -744,6 +744,23 @@ describe("Web Browser settings", () => {
     ).toBeVisible();
   });
 
+  it("renders the global XSLT control beside dialogs and saves its change without changing dialog policy", () => {
+    const { update } = setup("browser", {
+      webBrowser: normalizeWebBrowserSettings({ allowPageDialogs: true }),
+    });
+    const dialogs = screen.getByRole("checkbox", {
+      name: /^Allow website dialogs/,
+    });
+    const xslt = screen.getByRole("checkbox", { name: /^Enable XSLT/ });
+    expect(dialogs.closest(".sor-settings-card")).toContainElement(xslt);
+    expect(xslt).toBeChecked();
+    fireEvent.click(xslt);
+    expect(update.mock.lastCall?.[0].webBrowser).toMatchObject({
+      xsltEnabled: false,
+      allowPageDialogs: true,
+    });
+  });
+
   it("saves requested cookie retention without claiming support or exposing unapproved policy controls", () => {
     const { update } = setup();
     expect(

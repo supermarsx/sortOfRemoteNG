@@ -1049,7 +1049,9 @@ pub mod native_browser_owner {
             })
         }
 
-        pub(crate) fn profile_root(&self) -> &Path {
+        /// Native-only settings lookup uses the same profile bound to this lease.
+        /// This path is not an IPC parameter and does not confer database access.
+        pub fn profile_root(&self) -> &Path {
             &self.0.root
         }
 

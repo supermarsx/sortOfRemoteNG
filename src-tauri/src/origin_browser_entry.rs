@@ -153,6 +153,7 @@ pub(crate) unsafe fn prepare_unix() -> Result<ProcessDispatch, EntryError> {
 pub(crate) fn install(
     wake: ScheduleWake,
     data_root: &std::path::Path,
+    xslt_enabled: bool,
     timing: &crate::origin_browser_startup_diagnostics::Trace,
     runtime_failure: crate::origin_browser_runtime::runtime_failure::StartupFailureScope<'_>,
     begin_native: impl FnOnce() -> bool,
@@ -206,6 +207,7 @@ pub(crate) fn install(
             Arc::new(|error| {
                 crate::origin_browser_runtime::runtime_failed(error);
             }),
+            xslt_enabled,
         )
     };
     timing.mark(TimingStage::NativeInitializeReturned);

@@ -146,6 +146,15 @@ export const WEB_BROWSER_SEARCH_ENTRIES: SettingSearchEntry[] = [
     sectionLabel: "Web Browser",
   },
   {
+    key: "webBrowser.xsltEnabled",
+    label: "Enable XSLT",
+    description:
+      "Allow native browser XML stylesheet transformations, including legacy portals. Restart the app after changing this global engine setting.",
+    tags: ["xslt", "xml", "stylesheet", "transformation", "rdweb", "compatibility"],
+    section: "webBrowser",
+    sectionLabel: "Web Browser",
+  },
+  {
     key: "websiteDarkMode",
     label: "Website appearance and dark-mode extension",
     description:

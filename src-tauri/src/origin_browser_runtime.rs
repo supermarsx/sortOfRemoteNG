@@ -382,6 +382,22 @@ async fn ensure_runtime(
                 let runtime_failure = shared().runtime_failure.begin();
                 timing.mark(TimingStage::PreflightEntered);
                 recheck_startup(window, state, lease, prewarm).await?;
+                // Engine-wide preferences are loaded only for first startup,
+                // never from IPC or once per tab. Changes require app restart.
+                let settings = crate::app_settings_commands::read_app_settings_inner(
+                    lease.profile_root(),
+                    state,
+                )
+                .await
+                .map_err(|_| "Saved browser application settings could not be read.")?;
+                let xslt_enabled = match settings
+                    .as_ref()
+                    .and_then(|s| s.pointer("/webBrowser/xsltEnabled"))
+                {
+                    None => true,
+                    Some(serde_json::Value::Bool(enabled)) => *enabled,
+                    _ => return Err("Native rejected settings.webBrowser.xsltEnabled: must be a boolean. Review Enable XSLT in Settings > Web Browser.".to_owned()),
+                };
                 let app = window.app_handle().clone();
                 let prepared = tauri::async_runtime::spawn_blocking(move || {
                     // Preserve the native working-data fallback and root lock.
@@ -448,7 +464,7 @@ async fn ensure_runtime(
                         diagnostics::begin(&root);
                         diagnostics::record(Stage::Preparing, None);
                         let (wake, pump) = pump_channel();
-                        let result = crate::origin_browser_entry::install(wake, &root, &queued_timing, runtime_failure, || {
+                        let result = crate::origin_browser_entry::install(wake, &root, xslt_enabled, &queued_timing, runtime_failure, || {
                             let mut begin = || {
                                 !sender.is_closed()
                                     && queued_document.current()

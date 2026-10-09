@@ -21,6 +21,8 @@ export interface WebBrowserSettingsConfig extends BrowserNativePreferences {
   /** Sandbox capabilities for approved proxy documents only. */
   allowDownloads: boolean;
   allowPageDialogs: boolean;
+  /** Global native-engine XML transformations. Changes require an app restart. */
+  xsltEnabled?: boolean;
   /** Ignore saved User-Agent header overrides so headers match the real runtime. */
   preferNativeUserAgent: boolean;
   /** Ignore saved Accept-Language overrides so requests match runtime languages. */

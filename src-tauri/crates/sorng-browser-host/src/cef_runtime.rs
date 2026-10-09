@@ -218,7 +218,7 @@ wrap_browser_process_handler! {
 mod startup_features;
 
 wrap_app! {
-    struct RuntimeApplication { scheduler: Arc<Scheduler> }
+    struct RuntimeApplication { scheduler: Arc<Scheduler>, xslt_enabled: bool }
     impl App {
         fn render_process_handler(&self) -> Option<RenderProcessHandler> {
             Some(crate::cef_renderer::handler())
@@ -268,6 +268,20 @@ wrap_app! {
                     command_line.append_switch(Some(&CefString::from(
                         startup_features::DISABLE_PRINT_PREVIEW,
                     )));
+                    if !self.xslt_enabled {
+                        // A startup-only app setting. Chromium forwards Blink
+                        // feature switches to every renderer; helper callbacks
+                        // must preserve the inherited value, not reset it.
+                        let disabled = startup_features::disabled_blink_features(
+                            &CefString::from(&command_line.switch_value(Some(
+                                &CefString::from("disable-blink-features"),
+                            ))).to_string(),
+                        );
+                        command_line.append_switch_with_value(
+                            Some(&CefString::from("disable-blink-features")),
+                            Some(&CefString::from(disabled.as_str())),
+                        );
+                    }
                 }
                 // Necessary transport restrictions, not a containment proof.
                 // No security-disable, remote-debugging, UA or WebDriver spoof.
@@ -314,7 +328,7 @@ fn scheduler(wake: ScheduleWake, fault: RuntimeFault) -> Arc<Scheduler> {
 /// execute_process BEFORE Tauri, logging, storage or other application code.
 /// No CEF/browser work runs in the wake callback for a helper process.
 pub fn subprocess_application() -> App {
-    RuntimeApplication::new(scheduler(Arc::new(|| Ok(())), Arc::new(|_| {})))
+    RuntimeApplication::new(scheduler(Arc::new(|| Ok(())), Arc::new(|_| {})), true)
 }
 
 enum BootstrapOwner<'a> {
@@ -409,6 +423,7 @@ impl<'bootstrap> CefRuntime<'bootstrap> {
                 settings,
                 wake,
                 fault,
+                true,
             )
         }
     }
@@ -418,9 +433,10 @@ impl<'bootstrap> CefRuntime<'bootstrap> {
         settings: &Settings,
         wake: ScheduleWake,
         fault: RuntimeFault,
+        xslt_enabled: bool,
     ) -> Result<Self, RuntimeError> {
         let scheduler = scheduler(wake, fault);
-        let mut application = RuntimeApplication::new(scheduler.clone());
+        let mut application = RuntimeApplication::new(scheduler.clone(), xslt_enabled);
         unsafe {
             bootstrap
                 .get_mut()
@@ -564,13 +580,20 @@ impl CefRuntime<'static> {
         settings: &Settings,
         wake: ScheduleWake,
         fault: RuntimeFault,
+        xslt_enabled: bool,
     ) -> Result<Self, RuntimeError> {
         bootstrap_platform::validate_native_settings(settings)?;
         INITIALIZATION
             .set(())
             .map_err(|_| RuntimeError::AlreadyStarted)?;
         unsafe {
-            Self::initialize_owner_claimed(BootstrapOwner::Owned(bootstrap), settings, wake, fault)
+            Self::initialize_owner_claimed(
+                BootstrapOwner::Owned(bootstrap),
+                settings,
+                wake,
+                fault,
+                xslt_enabled,
+            )
         }
     }
 }
@@ -623,6 +646,7 @@ mod tests {
                         Ok(())
                     }),
                     Arc::new(move |reason| observed_faults.lock().unwrap().push(reason)),
+                    true,
                 )
                 .unwrap()
             };
@@ -712,6 +736,7 @@ mod tests {
                 &Settings::default(),
                 Arc::new(|| Ok(())),
                 Arc::new(move |reason| observed.lock().unwrap().push(reason)),
+                true,
             )
             .unwrap()
         };
@@ -822,7 +847,7 @@ mod tests {
         #[cfg(target_os = "macos")]
         crate::platform::test_runtime::ensure_loaded();
         bootstrap_platform::select_pinned_api().unwrap();
-        let app = RuntimeApplication::new(scheduler(Arc::new(|| Ok(())), Arc::new(|_| {})));
+        let app = RuntimeApplication::new(scheduler(Arc::new(|| Ok(())), Arc::new(|_| {})), true);
         let mut command_line = command_line_create().expect("native command-line object");
         app.on_before_command_line_processing(None, Some(&mut command_line));
         assert_eq!(
@@ -876,8 +901,13 @@ mod tests {
                     "only the browser startup callback installs native-dialog policy"
                 );
                 assert_eq!(
+                    command.has_switch(Some(&CefString::from("disable-field-trial-config"))),
+                    0,
+                    "profile migration trials must not be globally disabled"
+                );
+                assert_eq!(
                     CefString::from(&command.switch_value(Some(&CefString::from("disable-features")))).to_string(),
-                    "ExistingFeature<Trial:key/value,RecordLockAcquisitionTime,PreemptiveSodaDownload,SodaComponentUpdates"
+                    "ExistingFeature<Trial:key/value,RecordLockAcquisitionTime,PreemptiveSodaDownload,SodaComponentUpdates,XSLTSpecialTrial"
                 );
                 let enabled = CefString::from(
                     &command.switch_value(Some(&CefString::from("enable-features"))),
@@ -969,6 +999,7 @@ mod tests {
                         }
                     }),
                     Arc::new(|_| {}),
+                    true,
                 )
             };
             if fail_wake {

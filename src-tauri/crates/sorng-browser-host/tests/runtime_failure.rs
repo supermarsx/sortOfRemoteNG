@@ -309,6 +309,10 @@ fn production_call_sites_keep_owner_view_and_settings_errors_out_of_engine_evide
             "pub(crate) fn runtime_failed(",
         ),
         ("pub(crate) fn revoke_window(", "pub(crate) fn on_event("),
+        (
+            "let settings = crate::app_settings_commands::read_app_settings_inner(",
+            "let app = window.app_handle()",
+        ),
     ] {
         let region = source
             .split(start)

@@ -34,6 +34,7 @@ import { normalizeBrowserSessionRetention } from "../../../utils/settings/browse
 import { useBrowserRetentionCapabilities } from "../../../hooks/protocol/useBrowserRetentionCapabilities";
 import BrowserNativeCapabilitiesCard from "./webBrowser/BrowserNativeCapabilitiesCard";
 import BrowserDataDirectorySettings from "./webBrowser/BrowserDataDirectorySettings";
+import { BrowserXsltSettings } from "./webBrowser/BrowserXsltSettings";
 
 interface WebBrowserSettingsProps {
   settings: GlobalSettings;
@@ -286,6 +287,7 @@ function WebBrowserSettingsContent({
             disabled={nativeCapabilitiesBlocked}
             onChange={(allowPageDialogs) => update({ allowPageDialogs })}
           />
+          <BrowserXsltSettings config={config} onChange={update} />
         </Card>
       </div>
       <div className="space-y-4">

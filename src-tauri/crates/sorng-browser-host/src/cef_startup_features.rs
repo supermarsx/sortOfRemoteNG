@@ -16,6 +16,15 @@ const DISABLED_FEATURES: &[&str] = &[
     // it does not disable microphone capture, WebRTC or other component updates.
     // An unpatched libcef ignores this name: policy tests are not engine proof.
     "SodaComponentUpdates",
+    // Exclude ONLY the compiled XSLT-off experiment. Chromium's
+    // field_trial_util.cc::ShouldSkipExperiment skips a study if any of its
+    // features has a command-line override. This marker changes messaging, not
+    // XSLT itself; the pinned engine's stable XSLT default and managed policy
+    // remain intact. Do not disable the entire testing config: existing profiles
+    // have one-way migrations (including PrepopulatedEnginesMigration) enabled
+    // by other studies. Turning those off triggers the keywords DB rollback
+    // assertion in template_url_prepopulate_data_resolver.cc.
+    "XSLTSpecialTrial",
 ];
 
 // GetGpuDriverOverlayInfo's missing ID3D11VideoDevice1 path leaves overlays
@@ -47,6 +56,12 @@ pub(crate) fn enabled_features(existing: &str) -> String {
 
 pub(crate) fn disabled_features(existing: &str) -> String {
     merge_features(existing, DISABLED_FEATURES)
+}
+
+/// App-global XSLT opt-out, applied before any renderers exist. Leave unrelated
+/// Blink features and all profile migration trials intact.
+pub(crate) fn disabled_blink_features(existing: &str) -> String {
+    merge_features(existing, &["XSLT"])
 }
 
 fn merge_features(existing: &str, required_features: &[&str]) -> String {
@@ -99,8 +114,8 @@ mod tests {
     }
 
     #[test]
-    fn disables_only_optional_lock_metrics_and_soda_provisioning() {
-        let expected = "RecordLockAcquisitionTime,PreemptiveSodaDownload,SodaComponentUpdates";
+    fn disables_only_optional_services_and_the_xslt_experiment() {
+        let expected = "RecordLockAcquisitionTime,PreemptiveSodaDownload,SodaComponentUpdates,XSLTSpecialTrial";
         assert_eq!(disabled_features(""), expected);
         assert_eq!(disabled_features(" , "), expected);
     }
@@ -109,16 +124,16 @@ mod tests {
     fn retains_existing_cef_disables_including_trial_parameters() {
         assert_eq!(
             disabled_features("LensOverlay,TcpSocketIoCompletionPortWin,Other<Trial:key/value"),
-            "LensOverlay,TcpSocketIoCompletionPortWin,Other<Trial:key/value,RecordLockAcquisitionTime,PreemptiveSodaDownload,SodaComponentUpdates"
+            "LensOverlay,TcpSocketIoCompletionPortWin,Other<Trial:key/value,RecordLockAcquisitionTime,PreemptiveSodaDownload,SodaComponentUpdates,XSLTSpecialTrial"
         );
     }
 
     #[test]
     fn repeated_process_initialization_does_not_duplicate_the_workaround() {
         for value in [
-            "RecordLockAcquisitionTime,PreemptiveSodaDownload,SodaComponentUpdates",
-            "LensOverlay,RecordLockAcquisitionTime<Trial,PreemptiveSodaDownload<Trial,SodaComponentUpdates<Trial",
-            "RecordLockAcquisitionTime:key/value,Other,PreemptiveSodaDownload:key/value,SodaComponentUpdates:key/value",
+            "RecordLockAcquisitionTime,PreemptiveSodaDownload,SodaComponentUpdates,XSLTSpecialTrial",
+            "LensOverlay,RecordLockAcquisitionTime<Trial,PreemptiveSodaDownload<Trial,SodaComponentUpdates<Trial,XSLTSpecialTrial<Trial",
+            "RecordLockAcquisitionTime:key/value,Other,PreemptiveSodaDownload:key/value,SodaComponentUpdates:key/value,XSLTSpecialTrial:key/value",
         ] {
             assert_eq!(disabled_features(value), value);
         }
@@ -130,11 +145,11 @@ mod tests {
     fn completes_partial_policies_without_duplicate_parameterized_features() {
         assert_eq!(
             disabled_features("PreemptiveSodaDownload<Trial:key/value"),
-            "PreemptiveSodaDownload<Trial:key/value,RecordLockAcquisitionTime,SodaComponentUpdates"
+            "PreemptiveSodaDownload<Trial:key/value,RecordLockAcquisitionTime,SodaComponentUpdates,XSLTSpecialTrial"
         );
         assert_eq!(
             disabled_features("RecordLockAcquisitionTime<Trial"),
-            "RecordLockAcquisitionTime<Trial,PreemptiveSodaDownload,SodaComponentUpdates"
+            "RecordLockAcquisitionTime<Trial,PreemptiveSodaDownload,SodaComponentUpdates,XSLTSpecialTrial"
         );
         assert_eq!(DISABLE_DEFAULT_APPS, "disable-default-apps");
         assert_eq!(DISABLE_PRINT_PREVIEW, "disable-print-preview");
@@ -144,11 +159,11 @@ mod tests {
     fn upgrades_eager_only_policy_with_the_companion_engine_feature() {
         assert_eq!(
             disabled_features("RecordLockAcquisitionTime,PreemptiveSodaDownload"),
-            "RecordLockAcquisitionTime,PreemptiveSodaDownload,SodaComponentUpdates"
+            "RecordLockAcquisitionTime,PreemptiveSodaDownload,SodaComponentUpdates,XSLTSpecialTrial"
         );
         assert_eq!(
             disabled_features("SodaComponentUpdates<Trial:key/value"),
-            "SodaComponentUpdates<Trial:key/value,RecordLockAcquisitionTime,PreemptiveSodaDownload"
+            "SodaComponentUpdates<Trial:key/value,RecordLockAcquisitionTime,PreemptiveSodaDownload,XSLTSpecialTrial"
         );
     }
 }

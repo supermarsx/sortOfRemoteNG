@@ -98,6 +98,14 @@ impl NativeBrowserPreferences {
         if globals.get("version").is_some_and(|v| v != &Value::from(1)) {
             return Err(());
         }
+        // Process-wide startup policy is consumed by the runtime entry point,
+        // but malformed saved values must also fail native authorization.
+        if globals
+            .get("xsltEnabled")
+            .is_some_and(|value| !value.is_boolean())
+        {
+            return Err(());
+        }
         let overrides = connection
             .get("browserSession")
             .map(|value| value.as_object().ok_or(()))
@@ -264,6 +272,29 @@ mod tests {
             policy.website_extensions_enabled,
             policy.hide_automation_indicator,
         ]
+    }
+
+    #[test]
+    fn xslt_is_a_strict_optional_global_boolean_not_a_connection_capability() {
+        for value in [json!(true), json!(false)] {
+            assert!(NativeBrowserPreferences::from_saved(
+                &json!({}),
+                &json!({"webBrowser":{"xsltEnabled":value}}),
+            )
+            .is_ok());
+        }
+        for invalid in [Value::Null, json!("true"), json!(1), json!({}), json!([])] {
+            assert!(NativeBrowserPreferences::from_saved(
+                &json!({}),
+                &json!({"webBrowser":{"xsltEnabled":invalid}}),
+            )
+            .is_err());
+        }
+        assert!(NativeBrowserPreferences::from_saved(
+            &json!({"browserSession":{"version":1,"xsltEnabled":false}}),
+            &json!({}),
+        )
+        .is_err());
     }
 
     #[test]
