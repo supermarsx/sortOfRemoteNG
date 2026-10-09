@@ -9,7 +9,7 @@ use crate::origin_browser_startup_diagnostics::{
 use sorng_browser_host::{
     cef_browser::{BrowserEvent, BrowserEventSink, BrowserFault, CefBrowserHost},
     cef_context::{PreparationStatus, PrivateRequestContext},
-    cef_runtime::{CefRuntime, ScheduleWake, WakeUnavailable},
+    cef_runtime::{CefRuntime, RuntimeError, ScheduleWake, WakeUnavailable},
     cef_session_retention::{RetentionPolicy, SignInCookie},
     cef_tls_bridge::{self, NativeTlsBridge, NativeTlsConfig, PATCH_ID},
     control::Lifecycle,
@@ -19,6 +19,7 @@ use sorng_browser_host::{
         NativeAutomationReply,
     },
 };
+use sorng_browser_host::ipc::OriginBrowserRuntimeFailureCode as RuntimeFailureCode;
 use sorng_commands_core::origin_browser_authority::{self, NativeOwnerLease};
 use sorng_encryption::EncryptionState;
 use sorng_protocols::{
@@ -49,6 +50,8 @@ pub(crate) mod certificate_review;
 
 #[path = "origin_browser_runtime_flow.rs"]
 mod flow;
+#[path = "origin_browser_runtime_failure.rs"]
+pub(crate) mod runtime_failure;
 
 #[path = "origin_browser_display.rs"]
 mod display;
@@ -163,6 +166,7 @@ struct SharedRegistry {
     startup: flow::StartupGate,
     prewarm: origin_browser_authority::prewarm::PrewarmGate,
     admission: flow::RuntimeAdmission,
+    runtime_failure: runtime_failure::RuntimeFailureStore,
     certificate_hooks: AtomicBool,
     attempts: Mutex<HashMap<String, Arc<Attempt>>>,
     closed: Mutex<close_ack::CloseReceipts>,
@@ -319,6 +323,7 @@ async fn ensure_runtime(
                 };
             }
             if let Some(permit) = shared().startup.prepare() {
+                let runtime_failure = shared().runtime_failure.begin();
                 timing.mark(TimingStage::PreflightEntered);
                 recheck_startup(window, state, lease, prewarm).await?;
                 let app = window.app_handle().clone();
@@ -345,6 +350,7 @@ async fn ensure_runtime(
                 let mut prepared = match prepared {
                     Ok(Ok(prepared)) => prepared,
                     _ => {
+                        runtime_failure.record(RuntimeFailureCode::DataDirectory);
                         diagnostics::record(Stage::Failed, Some(Failure::DataDirectory));
                         log::error!(
                             "Native browser stage=preparing error=working-data-unavailable"
@@ -386,7 +392,7 @@ async fn ensure_runtime(
                         diagnostics::begin(&root);
                         diagnostics::record(Stage::Preparing, None);
                         let (wake, pump) = pump_channel();
-                        let result = crate::origin_browser_entry::install(wake, &root, &queued_timing, || {
+                        let result = crate::origin_browser_entry::install(wake, &root, &queued_timing, runtime_failure, || {
                             let mut begin = || {
                                 !sender.is_closed()
                                     && queued_document.current()
@@ -400,7 +406,9 @@ async fn ensure_runtime(
                                         // revokes pending admission even before begin_native.
                                         queued_startup_claim.claim_native()
                                             && permit.begin_native()
-                                            && prepared.commit().is_ok()
+                                            && prepared.commit().map_err(|_| {
+                                                runtime_failure.record(RuntimeFailureCode::DataDirectory);
+                                            }).is_ok()
                                     }
                             };
                             match settings_fence.as_ref() {
@@ -416,6 +424,7 @@ async fn ensure_runtime(
                                 } else {
                                     diagnostics::record(Stage::Failed, Some(Failure::Policy));
                                     revoke_all();
+                                    shared().runtime_failure.record_current(RuntimeFailureCode::CertificateBridge);
                                     Err(TLS_UNAVAILABLE.to_owned())
                                 }
                             }
@@ -433,8 +442,14 @@ async fn ensure_runtime(
                         drop(permit);
                         let _ = sender.send(result);
                     })
-                    .map_err(|_| PACKAGE_FAILED.to_owned())?;
-                receiver.await.map_err(|_| STARTUP_FAILED.to_owned())??;
+                    .map_err(|_| {
+                        runtime_failure.record(RuntimeFailureCode::UiDispatch);
+                        PACKAGE_FAILED.to_owned()
+                    })?;
+                receiver.await.map_err(|_| {
+                    runtime_failure.record(RuntimeFailureCode::UiDispatch);
+                    STARTUP_FAILED.to_owned()
+                })??;
             }
             // Concurrent authorized creates share the one startup and actual
             // policy readback. No ready response is inferred from installation.
@@ -481,6 +496,10 @@ async fn ensure_runtime(
 
 fn cancel_startup(owned_native_start: bool, failure: Failure) {
     if shared().admission.timeout_owned_startup(owned_native_start) {
+        // Owner/document cancellation is not evidence of an engine defect.
+        if matches!(failure, Failure::Timeout) {
+            shared().runtime_failure.record_current(RuntimeFailureCode::StartupTimeout);
+        }
         diagnostics::record(Stage::Failed, Some(failure));
         // A timeout cannot cancel an in-progress native call. Never retry it or
         // let a late policy callback restore traffic admission.
@@ -590,14 +609,14 @@ pub(crate) fn start_pump(app: tauri::AppHandle, mut wake: tokio::sync::mpsc::Rec
                 })
                 .is_err()
             {
-                revoke_all();
+                fail_runtime(RuntimeFailureCode::UiDispatch);
                 break;
             }
             // A stalled callback retains its queue slot. Revoke admission at
             // five seconds, then resume cleanup ticks when that callback returns.
             let Ok(next) = flow::wait_for_pump(receiver, Duration::from_secs(5), revoke_all).await
             else {
-                revoke_all();
+                fail_runtime(RuntimeFailureCode::UiDispatch);
                 break;
             };
             // Shutdown has removed the UI registry: never pump a stopped CEF.
@@ -686,6 +705,24 @@ pub(crate) fn revoke_all() {
         .values()
     {
         attempt.revoke();
+    }
+}
+
+/// Runtime callback, unlike owner lock/close: retain its fixed engine cause.
+pub(crate) fn runtime_failed(error: RuntimeError) {
+    fail_runtime(match error {
+        RuntimeError::SchedulerUnavailable | RuntimeError::WrongThread => RuntimeFailureCode::UiDispatch,
+        RuntimeError::NetworkPolicyUnavailable => RuntimeFailureCode::RuntimePolicy,
+        RuntimeError::AlreadyStarted => RuntimeFailureCode::RuntimeInitialization,
+        RuntimeError::Bootstrap(_) | RuntimeError::InvalidPackagePath => RuntimeFailureCode::RuntimePackage,
+    });
+}
+
+fn fail_runtime(code: RuntimeFailureCode) {
+    let was_revoked = shared().admission.revoked();
+    revoke_all();
+    if !was_revoked {
+        shared().runtime_failure.record_current(code);
     }
 }
 
@@ -803,12 +840,14 @@ pub(crate) fn status(
             OriginBrowserCapability::Deferred,
             None,
         )
+        .map(|status| status.with_runtime_failure(shared().runtime_failure.snapshot()))
         .map_err(|e| e.to_string());
     }
     if !shared().admission.ready() || !shared().certificate_hooks.load(Ordering::Acquire) {
-        return Ok(OriginBrowserStatusResult::unavailable(
-            OriginBrowserUnavailableReason::PolicyUnavailable,
-        ));
+        return Ok(
+            OriginBrowserStatusResult::unavailable(OriginBrowserUnavailableReason::PolicyUnavailable)
+                .with_runtime_failure(shared().runtime_failure.snapshot()),
+        );
     }
     let snapshot = match &request.identity {
         None => None,
@@ -1758,7 +1797,7 @@ pub(crate) fn tick() {
             let _ = ui.runtime.cleanup_only_work();
         } else if let Err(error) = ui.runtime.work() {
             log::error!("Native browser stage=policy error={error}");
-            revoke_all();
+            runtime_failed(error);
         }
         drop(slot);
         let mut slot = cell.borrow_mut();
@@ -1766,13 +1805,23 @@ pub(crate) fn tick() {
             return;
         };
         match ui.runtime.network_policy_configured() {
-            Ok(configured) if ui.tls.is_some() => shared().admission.observe_policy(configured),
-            Ok(_) => revoke_all(),
+            Ok(configured) if ui.tls.is_some() => {
+                shared().admission.observe_policy(configured);
+                if !configured && was_ready && !was_revoked {
+                    shared().runtime_failure.record_current(RuntimeFailureCode::RuntimePolicy);
+                }
+            }
+            Ok(_) => {
+                revoke_all();
+                if !was_revoked {
+                    shared().runtime_failure.record_current(RuntimeFailureCode::CertificateBridge);
+                }
+            }
             Err(error) => {
                 if !was_revoked {
                     log::error!("Native browser stage=policy error={error}");
                 }
-                revoke_all();
+                runtime_failed(error);
             }
         }
         if shared().admission.revoked() {
@@ -1783,12 +1832,13 @@ pub(crate) fn tick() {
                 if !was_revoked {
                     log::error!("Native browser stage=policy error={error}");
                 }
-                revoke_all();
+                fail_runtime(RuntimeFailureCode::CertificateBridge);
             }
         }
         if !was_revoked && shared().admission.revoked() {
             diagnostics::record(Stage::Failed, Some(Failure::Policy));
         } else if !was_ready && shared().admission.ready() {
+            shared().runtime_failure.ready_if(|| shared().admission.ready());
             diagnostics::record(Stage::Ready, None);
         }
         let mut waiting = Vec::new();

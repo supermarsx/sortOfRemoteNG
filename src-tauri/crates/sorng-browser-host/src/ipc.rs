@@ -728,6 +728,34 @@ pub enum OriginBrowserCapability {
     },
 }
 
+/// Process-wide engine evidence only. Never settings, owners, URLs or native prose.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum OriginBrowserRuntimeFailureCode {
+    DataDirectory,
+    RuntimePackage,
+    StartupProvider,
+    CertificateBridge,
+    RuntimePolicy,
+    StartupTimeout,
+    UiDispatch,
+    RuntimeInitialization,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum OriginBrowserRuntimeFailureStage {
+    Preparing,
+    Initializing,
+    PolicyReadback,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+pub struct OriginBrowserRuntimeFailure {
+    pub code: OriginBrowserRuntimeFailureCode,
+    pub stage: OriginBrowserRuntimeFailureStage,
+}
+
 #[derive(Clone, Copy, Serialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum OriginBrowserPhase {
@@ -897,6 +925,8 @@ impl OriginBrowserCreateResult {
 pub struct OriginBrowserStatusResult {
     capability: OriginBrowserCapability,
     snapshot: Option<OriginBrowserSnapshot>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    runtime_failure: Option<OriginBrowserRuntimeFailure>,
 }
 
 impl OriginBrowserStatusResult {
@@ -905,7 +935,22 @@ impl OriginBrowserStatusResult {
         Self {
             capability: OriginBrowserCapability::Unavailable { reason },
             snapshot: None,
+            runtime_failure: None,
         }
+    }
+
+    /// Diagnostics do not grant admission or replace the capability reason.
+    /// Ready and owner-only results must not expose an unrelated engine failure.
+    pub fn with_runtime_failure(mut self, failure: Option<OriginBrowserRuntimeFailure>) -> Self {
+        if !matches!(self.capability,
+            OriginBrowserCapability::Available
+                | OriginBrowserCapability::Unavailable {
+                    reason: OriginBrowserUnavailableReason::OwnerUnavailable,
+                }
+        ) {
+            self.runtime_failure = failure;
+        }
+        self
     }
 
     /// This is output formatting, not host validation. The caller must first
@@ -936,6 +981,7 @@ impl OriginBrowserStatusResult {
         Ok(Self {
             capability,
             snapshot,
+            runtime_failure: None,
         })
     }
 }

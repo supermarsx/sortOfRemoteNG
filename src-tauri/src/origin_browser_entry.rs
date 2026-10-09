@@ -154,18 +154,35 @@ pub(crate) fn install(
     wake: ScheduleWake,
     data_root: &std::path::Path,
     timing: &crate::origin_browser_startup_diagnostics::Trace,
+    runtime_failure: crate::origin_browser_runtime::runtime_failure::StartupFailureScope<'_>,
     begin_native: impl FnOnce() -> bool,
 ) -> Result<(), EntryError> {
     use crate::origin_browser_startup_diagnostics::{self as diagnostics, Failure, Stage, TimingStage};
+    use sorng_browser_host::ipc::{
+        OriginBrowserRuntimeFailureCode as Code, OriginBrowserRuntimeFailureStage as RuntimeStage,
+    };
     let executable = std::env::current_exe()
-        .map_err(|_| EntryError::Fixed("Native executable path is unavailable"))?;
-    let paths = BundlePaths::from_executable(&executable).map_err(EntryError::Bootstrap)?;
+        .map_err(|_| {
+            runtime_failure.record(Code::RuntimePackage);
+            EntryError::Fixed("Native executable path is unavailable")
+        })?;
+    let paths = BundlePaths::from_executable(&executable).map_err(|error| {
+        runtime_failure.record(Code::RuntimePackage);
+        EntryError::Bootstrap(error)
+    })?;
     let settings =
         cef_runtime::native_settings_with_data_root(&paths.helper, &paths.resources, data_root)
-            .map_err(EntryError::Runtime)?;
+            .map_err(|error| {
+                runtime_failure.record(Code::RuntimePackage);
+                EntryError::Runtime(error)
+            })?;
     sorng_browser_host::bootstrap_platform::validate_native_settings(&settings)
-        .map_err(EntryError::Bootstrap)?;
+        .map_err(|error| {
+            runtime_failure.record(Code::RuntimePackage);
+            EntryError::Bootstrap(error)
+        })?;
     if !PENDING.with(|slot| slot.borrow().is_some()) {
+        runtime_failure.record(Code::StartupProvider);
         return Err(EntryError::Fixed("Native startup provider is unavailable"));
     }
     if !begin_native() {
@@ -176,6 +193,7 @@ pub(crate) fn install(
     let pending = PENDING
         .with(|slot| slot.borrow_mut().take())
         .expect("provider retained until native startup on this thread");
+    runtime_failure.stage(RuntimeStage::Initializing);
     diagnostics::record(Stage::Initializing, None);
     // The native wrapper includes Windows runtime-access preflight and CEF.
     // Record before entering: a hung call need not return to leave a milestone.
@@ -185,8 +203,8 @@ pub(crate) fn install(
             pending.provider,
             &settings,
             wake,
-            Arc::new(|_| {
-                crate::origin_browser_runtime::revoke_all();
+            Arc::new(|error| {
+                crate::origin_browser_runtime::runtime_failed(error);
             }),
         )
     };
@@ -194,6 +212,7 @@ pub(crate) fn install(
     let runtime = match runtime {
         Ok(runtime) => runtime,
         Err(error) => {
+            runtime_failure.record(Code::RuntimeInitialization);
             timing.finish(0);
             diagnostics::record(Stage::Failed, Some(Failure::Initialization));
             log::error!("Native browser stage=initializing error={error}");
@@ -211,7 +230,11 @@ pub(crate) fn install(
         }
     };
     crate::origin_browser_runtime::install(runtime)
-        .map_err(|_| EntryError::Fixed("Native runtime registry installation failed"))?;
+        .map_err(|_| {
+            runtime_failure.record(Code::RuntimeInitialization);
+            EntryError::Fixed("Native runtime registry installation failed")
+        })?;
+    runtime_failure.stage(RuntimeStage::PolicyReadback);
     timing.mark(TimingStage::RuntimeInstalled);
     Ok(())
 }
