@@ -309,7 +309,7 @@ pub(crate) fn forced_dark_configured(command_line: &CommandLine) -> bool {
         && CefString::from(&command_line.switch_value(Some(&CefString::from("enable-features"))))
             .to_string()
             .split(',')
-            .any(|name| name == "WebContentsForceDark")
+            .any(|name| name.split([':', '<']).next() == Some("WebContentsForceDark"))
         && !CefString::from(&command_line.switch_value(Some(&CefString::from("disable-features"))))
             .to_string()
             .split(',')
@@ -1789,6 +1789,28 @@ mod tests {
             Some(&CefString::from("WebContentsForceDark")),
         );
         assert!(!forced_dark_configured(&line));
+    }
+
+    #[test]
+    fn configured_dark_feature_parameters_do_not_disable_login_installation() {
+        native_api();
+        for feature in [
+            "WebContentsForceDark<ReviewedTrial",
+            "WebContentsForceDark:inversion_method/cielab_based",
+        ] {
+            let line = command_line_create().unwrap();
+            line.append_switch(Some(&CefString::from("force-dark-mode")));
+            line.append_switch_with_value(
+                Some(&CefString::from("enable-features")),
+                Some(&CefString::from(feature)),
+            );
+            assert!(forced_dark_configured(&line), "{feature}");
+            line.append_switch_with_value(
+                Some(&CefString::from("disable-features")),
+                Some(&CefString::from("WebContentsForceDark<OtherTrial")),
+            );
+            assert!(!forced_dark_configured(&line));
+        }
     }
 
     #[test]
