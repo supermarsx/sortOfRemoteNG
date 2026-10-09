@@ -51,6 +51,7 @@ mod invoke_handler;
 mod native_dialogs;
 mod origin_browser_commands;
 mod origin_browser_observability;
+mod origin_browser_diagnostics;
 mod origin_browser_recording;
 mod origin_browser_page_request;
 mod origin_browser_appearance_request;

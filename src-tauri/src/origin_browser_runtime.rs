@@ -76,6 +76,8 @@ pub(crate) mod manual_input;
 pub(crate) mod recording;
 #[path = "origin_browser_appearance.rs"]
 pub(crate) mod appearance;
+#[path = "origin_browser_diagnostics_probe.rs"]
+pub(crate) mod diagnostics_probe;
 #[path = "origin_browser_retention.rs"]
 mod retention;
 #[path = "origin_browser_retention_flow.rs"]
@@ -116,6 +118,8 @@ struct Attempt {
     session: Arc<Mutex<OriginBrowserSession>>,
     failure: BrowserSessionFailureState,
     failure_reported: AtomicBool,
+    permissions: Arc<sorng_browser_host::domain_permissions::WebsitePermissionEngine>,
+    diagnostics_busy: AtomicBool,
     snapshot: Mutex<OriginBrowserSnapshot>,
     cancelled: AtomicBool,
     // Receipt for synchronous capability/relay revocation, not CEF close or
@@ -1320,6 +1324,8 @@ async fn create_document(
         session,
         failure,
         failure_reported: AtomicBool::new(false),
+        permissions: authorized.permissions.clone(),
+        diagnostics_busy: AtomicBool::new(false),
         cancelled: AtomicBool::new(false),
         revocation_complete: AtomicBool::new(false),
         login,
