@@ -5,6 +5,7 @@
 //! not a durability guarantee, diagnosis or containment.
 
 use rand::RngCore;
+use sorng_protocols::private_forward_proxy::PrivateProxyDiagnostics;
 use std::{
     fs::{self, File, OpenOptions},
     io::{self, Write},
@@ -32,6 +33,10 @@ const MAX_TIMED_STARTUPS: u32 = 32;
 const TIMING_SLOTS: usize = 31;
 const MAX_TIMING_RECORDS: usize = MAX_TIMED_STARTUPS as usize * (TIMING_SLOTS + 1);
 const UNREACHED: u64 = u64::MAX;
+
+#[path = "origin_browser_observation_gate.rs"]
+mod observation_gate;
+pub(crate) use observation_gate::ObservationGate;
 
 /// Numeric schema v1: array offsets and stage codes are stable. Values are
 /// cumulative microseconds from native command entry; subtract two reached
@@ -96,6 +101,7 @@ struct ActiveTiming {
     kind: u8,
     marks: [AtomicU64; TIMING_SLOTS],
     finished: AtomicBool,
+    relay_recorded: AtomicBool,
     sender: SyncSender<Message>,
 }
 
@@ -115,6 +121,7 @@ impl Trace {
             kind,
             marks: std::array::from_fn(|_| AtomicU64::new(UNREACHED)),
             finished: AtomicBool::new(false),
+            relay_recorded: AtomicBool::new(false),
             sender: sender.clone(),
         })));
         trace.mark(TimingStage::CommandEntered);
@@ -141,6 +148,22 @@ impl Trace {
         if let Some(active) = &self.0 {
             active.finish(outcome);
         }
+    }
+
+    /// First main-document load failure per sampled attempt, including after
+    /// startup completed. Fixed evidence only; no route mutation or UI/file IO.
+    pub(crate) fn relay_load_error(&self, code: i32, snapshot: PrivateProxyDiagnostics) {
+        let Some(active) = &self.0 else { return };
+        if active.kind != 1 || active.relay_recorded.swap(true, Ordering::Relaxed) {
+            return;
+        }
+        let _ = delivery::enqueue(
+            &active.sender,
+            Message::Navigation(
+                Navigation::PrivateRelay { sample: active.sample, code, snapshot },
+                SystemTime::now(),
+            ),
+        );
     }
 }
 
@@ -337,6 +360,8 @@ struct Journal {
     navigation_records: usize,
     tls_failure_records: usize,
     session_failure_records: usize,
+    observation_records: usize,
+    relay_records: usize,
     timing_records: usize,
 }
 
@@ -350,6 +375,11 @@ pub(crate) enum Navigation {
     ProxyAuth { callback_present: bool },
     AuthCompleted { handled: bool },
     LoadError { code: i32, main_frame: bool },
+    PrivateRelay {
+        sample: u32,
+        code: i32,
+        snapshot: PrivateProxyDiagnostics,
+    },
     TlsEvidence { code: i32, fatal: bool },
     TlsReview,
     TlsAllow,
@@ -357,6 +387,17 @@ pub(crate) enum Navigation {
     TlsFailed,
     TlsBridgeFailed { reason: TlsBridgeFailure },
     SessionFailed { reason: sorng_protocols::origin_browser::BrowserSessionFailure },
+    RendererFeature { sample: u32, checkpoint: &'static str },
+    ResourceAdmission {
+        sample: u32,
+        resource_type: i32,
+        is_navigation: i32,
+        browser_present: bool,
+        frame_present: bool,
+        initiator_empty: bool,
+        initiator_opaque: bool,
+        default_disabled: bool,
+    },
 }
 
 enum Message {
@@ -473,6 +514,8 @@ fn open_journal(root: &Path) -> io::Result<Journal> {
         navigation_records: 0,
         tls_failure_records: 0,
         session_failure_records: 0,
+        observation_records: 0,
+        relay_records: 0,
         timing_records: 0,
     })
 }
@@ -493,17 +536,24 @@ impl Journal {
     fn navigation(&mut self, status: Navigation, timestamp: SystemTime) -> io::Result<()> {
         let tls_failure = matches!(status, Navigation::TlsFailed | Navigation::TlsBridgeFailed { .. });
         let session_failure = matches!(status, Navigation::SessionFailed { .. });
-        // Busy-page observations must not exhaust the failure budget.
-        if (tls_failure && self.tls_failure_records >= MAX_RECORDS)
+        let relay = matches!(status, Navigation::PrivateRelay { .. });
+        let observation = matches!(status, Navigation::RendererFeature { .. } | Navigation::ResourceAdmission { .. });
+        // Resource/renderer observations cannot consume lifecycle/navigation
+        // evidence. Both budgets and the caller's per-attempt gate are bounded.
+        // First-failure relay evidence has its own small budget, so noisy
+        // resource callbacks cannot hide whether a failed tab reached its relay.
+        if (relay && self.relay_records >= MAX_TIMED_STARTUPS as usize)
+            || (observation && self.observation_records >= 512)
+            || (tls_failure && self.tls_failure_records >= MAX_RECORDS)
             || (session_failure && self.session_failure_records >= MAX_RECORDS)
-            || (!tls_failure && !session_failure && self.navigation_records >= 128) {
+            || (!relay && !observation && !tls_failure && !session_failure && self.navigation_records >= 128) {
             return Ok(());
         }
         let record = serde_json::json!({
             "version": 1,
             "timestampUnixMs": timestamp.duration_since(UNIX_EPOCH).unwrap_or_default().as_millis(),
             "processId": std::process::id(),
-            "navigationSequence": self.navigation_records + self.tls_failure_records + self.session_failure_records,
+            "navigationSequence": self.navigation_records + self.observation_records + self.relay_records + self.tls_failure_records + self.session_failure_records,
             "navigation": status,
         });
         let mut bytes = serde_json::to_vec(&record)?;
@@ -512,6 +562,8 @@ impl Journal {
         self.file.sync_data()?;
         if tls_failure { self.tls_failure_records += 1; }
         else if session_failure { self.session_failure_records += 1; }
+        else if relay { self.relay_records += 1; }
+        else if observation { self.observation_records += 1; }
         else { self.navigation_records += 1; }
         Ok(())
     }
@@ -639,6 +691,84 @@ mod tests {
                 _ => panic!("timing fixture emitted a non-timing record"),
             })
             .collect()
+    }
+
+    fn relay_fixture() -> PrivateProxyDiagnostics {
+        PrivateProxyDiagnostics {
+            state: sorng_protocols::private_forward_proxy::PrivateProxyState::Listening,
+            accepted_connections: 0,
+            authentication_challenges: 0,
+            authenticated_requests: 0,
+            destination_denials: 0,
+            upstream_failures: 0,
+            request_rejections: 0,
+            capacity_refusals: 0,
+        }
+    }
+
+    #[test]
+    fn relay_failure_is_once_per_attempt_even_after_timing_completion() {
+        let (sender, receiver) = mpsc::sync_channel(32);
+        let count = AtomicU32::new(0);
+        let first = Trace::sampled(&count, 1, &sender);
+        first.mark(TimingStage::CommandCompleted);
+        first.mark(TimingStage::FirstDocumentComplete);
+        first.finish(2);
+        snapshots(&receiver);
+        for _ in 0..100 {
+            first.relay_load_error(-130, relay_fixture());
+        }
+        let rows: Vec<_> = receiver.try_iter().collect();
+        assert_eq!(rows.len(), 1);
+        assert!(matches!(rows[0], Message::Navigation(
+            Navigation::PrivateRelay { sample: 1, code: -130, .. }, _
+        )));
+        let next = Trace::sampled(&count, 1, &sender);
+        snapshots(&receiver);
+        next.relay_load_error(-130, relay_fixture());
+        assert!(matches!(receiver.try_recv().unwrap(), Message::Navigation(
+            Navigation::PrivateRelay { sample: 2, .. }, _
+        )));
+        let prewarm = Trace::sampled(&count, 2, &sender);
+        snapshots(&receiver);
+        prewarm.relay_load_error(-130, relay_fixture());
+        Trace::default().relay_load_error(-130, relay_fixture());
+        assert!(receiver.try_recv().is_err());
+    }
+
+    #[test]
+    fn relay_journal_is_fixed_and_has_an_independent_bounded_budget() {
+        let temp = tempfile::tempdir().unwrap();
+        let mut journal = open_journal(temp.path()).unwrap();
+        journal.navigation_records = 128;
+        journal.observation_records = 512;
+        for _ in 0..100 {
+            journal.navigation(Navigation::PrivateRelay {
+                sample: 1,
+                code: -130,
+                snapshot: relay_fixture(),
+            }, SystemTime::now()).unwrap();
+        }
+        assert_eq!(journal.relay_records, MAX_TIMED_STARTUPS as usize);
+        assert_eq!(journal.navigation_records, 128);
+        assert_eq!(journal.observation_records, 512);
+        assert_eq!(journal.records, 0);
+        assert_eq!(journal.timing_records, 0);
+        drop(journal);
+        let path = fs::read_dir(temp.path()).unwrap().next().unwrap().unwrap().path();
+        let text = fs::read_to_string(path).unwrap();
+        assert_eq!(text.lines().count(), MAX_TIMED_STARTUPS as usize);
+        let row: serde_json::Value = serde_json::from_str(text.lines().next().unwrap()).unwrap();
+        assert_eq!(row["navigation"], serde_json::json!({
+            "event": "private-relay", "sample": 1, "code": -130,
+            "snapshot": {
+                "state": "listening", "acceptedConnections": 0,
+                "authenticationChallenges": 0, "authenticatedRequests": 0,
+                "destinationDenials": 0, "upstreamFailures": 0,
+                "requestRejections": 0, "capacityRefusals": 0
+            }
+        }));
+        assert_eq!(row.as_object().unwrap().len(), 5);
     }
 
     #[test]
@@ -840,6 +970,32 @@ mod tests {
         );
         let last: serde_json::Value = serde_json::from_str(rows.lines().last().unwrap()).unwrap();
         assert_eq!(last["stage"], "view-failed");
+    }
+
+    #[test]
+    fn renderer_observations_have_a_separate_budget_and_no_owner_or_page_fields() {
+        let temp = tempfile::tempdir().unwrap();
+        let mut journal = open_journal(temp.path()).unwrap();
+        let sample = ObservationGate::default().feature(0).unwrap();
+        for _ in 0..600 {
+            journal.navigation(Navigation::RendererFeature {
+                sample, checkpoint: "renderer-installed",
+            }, SystemTime::now()).unwrap();
+        }
+        assert_eq!(journal.observation_records, 512);
+        assert_eq!(journal.navigation_records, 0);
+        journal.navigation(Navigation::LoadError { code: -105, main_frame: true }, SystemTime::now()).unwrap();
+        assert_eq!(journal.navigation_records, 1);
+        drop(journal);
+        let path = fs::read_dir(temp.path()).unwrap().next().unwrap().unwrap().path();
+        let rows = fs::read_to_string(path).unwrap();
+        assert_eq!(rows.lines().count(), 513);
+        let first: serde_json::Value = serde_json::from_str(rows.lines().next().unwrap()).unwrap();
+        assert_eq!(first["navigation"], serde_json::json!({
+            "event": "renderer-feature", "sample": sample, "checkpoint": "renderer-installed"
+        }));
+        let last: serde_json::Value = serde_json::from_str(rows.lines().last().unwrap()).unwrap();
+        assert_eq!(last["navigationSequence"], 512);
     }
 
     #[test]

@@ -1509,6 +1509,7 @@ impl Shared {
             .lock()
             .is_ok_and(|mut gate| gate.observe(&origin, &pin, status));
         if !valid {
+            self.feature_event(Some(browser), &origin, NativeFeatureStatus::RendererInstallationFailed);
             self.fault(Some(browser), BrowserFault::Renderer);
             return 1;
         }

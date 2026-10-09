@@ -4,6 +4,43 @@
 mod diagnostics;
 
 #[test]
+fn relay_failure_hook_is_identity_fenced_nonblocking_and_diagnostic_only() {
+    let runtime = include_str!("../../../src/origin_browser_runtime.rs");
+    let hook = runtime
+        .split("fn on_event(&self, event: BrowserEvent)")
+        .nth(1)
+        .unwrap()
+        .split("let mut finished_load = false;")
+        .next()
+        .unwrap();
+    in_order(
+        hook,
+        &[
+            "event.identity != self.attempt.identity",
+            "return;",
+            "!self.attempt.cancelled.load(Ordering::Acquire)",
+            "if let Some(failure) = event.state.load_failure",
+            ".try_lock()",
+            ".ok()",
+            "session.proxy_diagnostics()",
+            "relay_load_error(failure.code, relay)",
+        ],
+    );
+    for forbidden in [
+        ".lock()",
+        ".revoke(",
+        "into_inner",
+        "clear_poison",
+        "event.display",
+    ] {
+        assert!(
+            !hook.contains(forbidden),
+            "unexpected diagnostic operation: {forbidden}"
+        );
+    }
+}
+
+#[test]
 fn renderer_lifecycle_fault_is_a_distinct_enum_only_diagnostic() {
     assert_eq!(
         serde_json::to_value(diagnostics::Stage::RuntimeFault).unwrap(),

@@ -56,6 +56,7 @@ impl MediaOwner {
 }
 
 pub(crate) struct LoginHooks {
+    observations: super::diagnostics::ObservationGate,
     appearance: std::sync::Mutex<sorng_browser_host::native_appearance::AppearanceConfig>,
     window: WebviewWindow,
     authority: Arc<NativeLoginAuthority>,
@@ -88,6 +89,7 @@ impl LoginHooks {
     ) -> Result<Arc<Self>, String> {
         if !authority.enabled() {
             return Ok(Arc::new(Self {
+                observations: Default::default(),
                 appearance: std::sync::Mutex::new(Default::default()),
                 window: window.clone(),
                 authority,
@@ -126,6 +128,7 @@ impl LoginHooks {
             authority.auto_submit_allowed(),
         );
         Ok(Arc::new(Self {
+            observations: Default::default(),
             appearance: std::sync::Mutex::new(Default::default()),
             window: window.clone(),
             authority,
@@ -227,6 +230,49 @@ impl NativeLoginConsentVerifier for LoginHooks {
 }
 
 impl NativeDocumentHooks for LoginHooks {
+    fn on_feature_status(
+        &self,
+        identity: &BrowserIdentity,
+        _origin: &str,
+        status: sorng_browser_host::native_features::NativeFeatureStatus,
+    ) {
+        use sorng_browser_host::native_features::{NativeFeatureStatus as F, NativeLoginDeliveryStatus as D};
+        if !self.media_owner.current(identity, || self.lease.is_current()) { return; }
+        // Fixed checkpoints only: the origin, page text, credentials and native
+        // request identity are deliberately absent from the diagnostic payload.
+        let (code, checkpoint) = match status {
+            F::RendererInstalled => (0, "renderer-installed"),
+            F::RendererInstallationFailed => (1, "renderer-installation-failed"),
+            F::LoginFormDetected => (2, "login-form-detected"),
+            F::LoginAdapterCompleted => (3, "login-adapter-completed"),
+            F::LoginAdapterRejected => (4, "login-adapter-rejected"),
+            F::LoginDelivery(delivery) => match delivery {
+                D::NativeNotDelivered => (5, "native-not-delivered"),
+                D::NativeRejectedCurrent => (6, "native-rejected-current"),
+                D::NativeRejectedNavigation => (7, "native-rejected-navigation"),
+                D::NativeRejectedGrant => (8, "native-rejected-grant"),
+                D::NativeMessageFailed => (9, "native-message-failed"),
+                D::NativeSent => (10, "native-sent"),
+                D::RendererReceived => (11, "renderer-received"),
+                D::RendererRejectedFrame => (12, "renderer-rejected-frame"),
+                D::RendererRejectedPayload => (13, "renderer-rejected-payload"),
+                D::RendererRejectedDocument => (14, "renderer-rejected-document"),
+                D::RendererRejectedContext => (15, "renderer-rejected-context"),
+                D::RendererExecuting => (16, "renderer-executing"),
+                D::RendererAccepted => (17, "renderer-accepted"),
+                D::RendererRejected => (18, "renderer-rejected"),
+                D::RendererMissingDocument => (19, "renderer-missing-document"),
+                D::RendererNonceMismatch => (20, "renderer-nonce-mismatch"),
+                D::RendererOriginMismatch => (21, "renderer-origin-mismatch"),
+                D::RendererStageNotRequested => (22, "renderer-stage-not-requested"),
+                D::RendererStageNotAllowed => (23, "renderer-stage-not-allowed"),
+                D::RendererReplay => (24, "renderer-replay"),
+            },
+        };
+        if let Some(sample) = self.observations.feature(code) {
+            super::diagnostics::navigation(super::diagnostics::Navigation::RendererFeature { sample, checkpoint });
+        }
+    }
     fn appearance_configuration(&self) -> Option<String> {
         if !self.lease.is_current() { return None; }
         self.appearance.lock().ok().and_then(|config| serde_json::to_string(&*config).ok())
@@ -289,6 +335,12 @@ impl NativeDocumentHooks for LoginHooks {
             } => Navigation::ProxyAuth { callback_present },
             Native::AuthCompleted { handled } => Navigation::AuthCompleted { handled },
             Native::LoadError { code, main_frame } => Navigation::LoadError { code, main_frame },
+            Native::ResourceAdmission { resource_type, is_navigation, browser_present, frame_present,
+                initiator_empty, initiator_opaque, default_disabled } => {
+                let Some(sample) = self.observations.resource() else { return; };
+                Navigation::ResourceAdmission { sample, resource_type, is_navigation, browser_present,
+                    frame_present, initiator_empty, initiator_opaque, default_disabled }
+            },
             _ => return,
         };
         diagnostics::navigation(status);

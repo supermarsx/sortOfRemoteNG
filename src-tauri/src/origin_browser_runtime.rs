@@ -1027,6 +1027,21 @@ impl BrowserEventSink for Sink {
         if event.identity != self.attempt.identity {
             return;
         }
+        if !self.attempt.cancelled.load(Ordering::Acquire) {
+            if let Some(failure) = event.state.load_failure {
+                // Diagnostics must never wait for, repair, or revoke a session.
+                // Drop the guard before enqueueing the fixed journal snapshot.
+                let relay = self
+                    .attempt
+                    .session
+                    .try_lock()
+                    .ok()
+                    .map(|session| session.proxy_diagnostics());
+                if let Some(relay) = relay {
+                    self.attempt.timing.relay_load_error(failure.code, relay);
+                }
+            }
+        }
         let mut finished_load = false;
         if let Ok(mut started) = self.attempt.load_started.lock() {
             if event.state.loading {
