@@ -336,6 +336,19 @@ pub struct WebsitePermissionQuery<'a> {
     pub native_denied: bool,
 }
 
+/// Native-only, connection-scoped request defaults. This is not a login,
+/// certificate, CORS or page-CSP grant. Explicit domain rules are resolved first.
+#[derive(Clone, Default)]
+pub struct WebsiteNetworkPolicy {
+    pub source_origin: String,
+    pub destination_defaults: BTreeMap<String, WebsitePermissionApplicationDefaults>,
+    pub allow_all_requests: bool,
+    pub allow_all_scripts: bool,
+    pub https_only: bool,
+    pub same_origin_only: bool,
+    pub allow_http_downgrade: bool,
+}
+
 /// Validated immutable policy snapshot; no session identity, proxy or secrets.
 #[derive(Clone)]
 pub struct WebsitePermissionEngine {
@@ -344,6 +357,7 @@ pub struct WebsitePermissionEngine {
     connection: WebsiteDomainPermissionsSettings,
     application_defaults: WebsitePermissionApplicationDefaults,
     cross_origin_requests_enabled: bool,
+    network_policy: Option<WebsiteNetworkPolicy>,
 }
 
 impl WebsitePermissionEngine {
@@ -364,6 +378,7 @@ impl WebsitePermissionEngine {
                 .unwrap_or_default(),
             application_defaults: application_defaults.clone(),
             cross_origin_requests_enabled: true,
+            network_policy: None,
         })
     }
 
@@ -384,6 +399,48 @@ impl WebsitePermissionEngine {
         self
     }
 
+    /// Bind request defaults to one validated source. Stored domain grants
+    /// remain HTTPS-only; HTTP transport is admitted only by this native policy.
+    pub fn with_network_policy(
+        mut self,
+        mut policy: WebsiteNetworkPolicy,
+    ) -> Result<Self, DomainPermissionError> {
+        if self.temporary_http_source.is_some()
+            || policy.destination_defaults.len() > MAX_WEBSITE_PERMISSION_DESTINATIONS
+        {
+            return Err(DomainPermissionError);
+        }
+        policy.source_origin = canonical_browser_request_origin(&policy.source_origin)?;
+        let mut destinations = BTreeMap::new();
+        for (origin, defaults) in policy.destination_defaults {
+            let origin = canonical_browser_request_origin(&origin)?;
+            if destinations.insert(origin, defaults).is_some() {
+                return Err(DomainPermissionError);
+            }
+        }
+        policy.destination_defaults = destinations;
+        self.network_policy = Some(policy);
+        Ok(self)
+    }
+
+    /// Coarse transport/TLS admission only. Resource callbacks must still resolve
+    /// their actual native request class; script access does not grant navigation.
+    pub fn permits_network_origin(&self, source: &str, destination: &str) -> bool {
+        [
+            "script", "stylesheet", "font", "image-media", "fetch-xhr",
+            "frame", "worker", "websocket", "navigation",
+        ]
+        .iter()
+        .any(|class| {
+            self.resolve(WebsitePermissionQuery {
+                website_origin: source,
+                destination_origin: destination,
+                request_class: class,
+                native_denied: false,
+            }).decision == WebsitePermissionDecision::Allow
+        })
+    }
+
     pub fn resolve(&self, query: WebsitePermissionQuery<'_>) -> EffectiveWebsitePermission {
         use WebsitePermissionSource::*;
         if query.native_denied {
@@ -401,15 +458,37 @@ impl WebsitePermissionEngine {
                 source: ApplicationDefault,
             };
         }
+        let canonical = if self.network_policy.is_some() {
+            canonical_browser_request_origin
+        } else {
+            canonical_website_permission_origin
+        };
         let (Ok(website), Ok(destination), Some(class)) = (
-            canonical_website_permission_origin(query.website_origin),
-            canonical_website_permission_origin(query.destination_origin),
+            canonical(query.website_origin),
+            canonical(query.destination_origin),
             WebsiteRequestClass::parse(query.request_class),
         ) else {
             return EffectiveWebsitePermission::denied(InvalidRequest);
         };
         if !self.cross_origin_requests_enabled && website != destination {
             return EffectiveWebsitePermission::denied(NativeConstraint);
+        }
+        if let Some(policy) = &self.network_policy {
+            let broad_class = policy.allow_all_requests
+                || policy.allow_all_scripts
+                    && class == WebsiteRequestClass::Script
+                    && destination.starts_with("https://");
+            if website != policy.source_origin
+                || policy.same_origin_only && website != destination
+                || policy.https_only && !destination.starts_with("https://")
+                || !policy.allow_http_downgrade && website.starts_with("https://")
+                    && destination.starts_with("http://")
+                    && matches!(class, WebsiteRequestClass::Navigation | WebsiteRequestClass::Frame)
+                || !policy.destination_defaults.contains_key(&destination)
+                    && (!broad_class || !broad_request_destination(&destination))
+            {
+                return EffectiveWebsitePermission::denied(NativeConstraint);
+            }
         }
         let own = self
             .connection
@@ -443,6 +522,27 @@ impl WebsitePermissionEngine {
                 return EffectiveWebsitePermission { decision, source };
             }
         }
+        if let Some(policy) = &self.network_policy {
+            if let Some(decision) = policy.destination_defaults
+                .get(&destination).and_then(|defaults| defaults.get(&class))
+            {
+                return EffectiveWebsitePermission {
+                    decision: *decision,
+                    source: ApplicationDefault,
+                };
+            }
+            // Broad defaults never expose the app's local endpoints. Explicit
+            // reviewed destinations and the saved source retain existing rules.
+            if (policy.allow_all_requests || policy.allow_all_scripts
+                    && class == WebsiteRequestClass::Script && destination.starts_with("https://"))
+                && broad_request_destination(&destination)
+            {
+                return EffectiveWebsitePermission {
+                    decision: WebsitePermissionDecision::Allow,
+                    source: ApplicationDefault,
+                };
+            }
+        }
         EffectiveWebsitePermission {
             decision: self
                 .application_defaults
@@ -451,6 +551,17 @@ impl WebsitePermissionEngine {
                 .unwrap_or(WebsitePermissionDecision::Deny),
             source: ApplicationDefault,
         }
+    }
+}
+
+fn broad_request_destination(origin: &str) -> bool {
+    let Ok(url) = Url::parse(origin) else { return false; };
+    match url.host() {
+        Some(url::Host::Domain(host)) => host != "localhost" && !host.ends_with(".localhost"),
+        Some(url::Host::Ipv4(ip)) => !ip.is_loopback() && !ip.is_unspecified(),
+        Some(url::Host::Ipv6(ip)) => !ip.is_loopback() && !ip.is_unspecified()
+            && ip.to_ipv4_mapped().is_none_or(|v4| !v4.is_loopback() && !v4.is_unspecified()),
+        None => false,
     }
 }
 
@@ -470,6 +581,10 @@ pub fn resolve_website_request_permission(
         Err(_) => EffectiveWebsitePermission::denied(WebsitePermissionSource::InvalidPolicy),
     }
 }
+
+#[cfg(test)]
+#[path = "domain_network_policy_tests.rs"]
+mod network_policy_tests;
 
 #[cfg(test)]
 mod tests {

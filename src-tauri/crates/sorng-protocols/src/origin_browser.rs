@@ -5,7 +5,8 @@
 //! and containment of bypass traffic before reporting readiness. There are no
 //! OS-based readiness defaults, direct fallback, TLS interception or IPC grants.
 //! The default grant is source-only. Native callers may explicitly grant exact
-//! additional origins for navigation, redirects and resources in this attempt.
+//! additional origins or a native network predicate for navigation, redirects
+//! and resources in this attempt.
 //! These grants never imply consent to send credentials or perform login there.
 
 use crate::private_forward_proxy::{
@@ -13,13 +14,121 @@ use crate::private_forward_proxy::{
 };
 use serde::Serialize;
 use std::net::{IpAddr, SocketAddr};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex, OnceLock};
 use url::Url;
 use uuid::Uuid;
 
-/// Maximum canonical origins per attempt, including its automatic source grant.
-/// The supplied list is also bounded before validation or deduplication.
+/// Maximum static canonical grants and observed HTTPS retention origins per
+/// attempt. Dynamic network permissions do not inherit this capture limit.
+/// Supplied static/restore lists are bounded before validation or deduplication.
 pub const MAX_ALLOWED_ORIGINS: usize = 128;
+
+/// Native-only network admission captured from the saved connection policy.
+/// Receives canonical HTTP(S) origins, never arbitrary URLs. This is not login,
+/// credential, certificate-trust or direct-network authority.
+pub type NetworkOriginGrant = Arc<dyn Fn(&str) -> bool + Send + Sync>;
+
+struct ObservedNetworkOrigins {
+    origins: Vec<String>,
+    overflowed: bool,
+}
+
+/// Attempt-private retention scope. Clones share observations, not authority
+/// with any other connection/attempt. HTTP cookies remain ephemeral.
+#[derive(Clone)]
+pub struct NetworkOriginTracker {
+    state: Arc<Mutex<ObservedNetworkOrigins>>,
+    grant: NetworkOriginGrant,
+}
+
+impl NetworkOriginTracker {
+    /// Observe only AFTER the native host's final request-class admission.
+    /// Capacity exhaustion disables capture, never ordinary browsing.
+    pub fn observe_network_origin(&self, origin: &str) {
+        observe_network_origin(&self.state, origin, &*self.grant);
+    }
+
+    pub fn retained_network_origins(&self) -> Result<Vec<String>, BrowserPolicyError> {
+        retained_network_origins(&self.state)
+    }
+
+    /// Atomic registration before native cookie import. Rejected input leaves
+    /// the scope unchanged; a prior observation overflow remains terminal.
+    pub fn restore_network_origins(&self, origins: &[String]) -> Result<(), BrowserPolicyError> {
+        restore_network_origins(&self.state, origins, &*self.grant)
+    }
+}
+
+fn observe_network_origin(
+    state: &Mutex<ObservedNetworkOrigins>,
+    value: &str,
+    grant: &dyn Fn(&str) -> bool,
+) {
+    let Ok((origin, _)) = parse_http_origin(value) else {
+        return;
+    };
+    if !origin.starts_with("https://") || !grant(&origin) {
+        return;
+    }
+    if let Ok(mut state) = state.lock() {
+        if !state.origins.contains(&origin) {
+            if state.origins.len() == MAX_ALLOWED_ORIGINS {
+                state.overflowed = true;
+            } else {
+                state.origins.push(origin);
+            }
+        }
+    }
+}
+
+fn retained_network_origins(
+    state: &Mutex<ObservedNetworkOrigins>,
+) -> Result<Vec<String>, BrowserPolicyError> {
+    let state = state.lock().map_err(|_| BrowserPolicyError::Revoked)?;
+    if state.overflowed {
+        return Err(BrowserPolicyError::TooManyOrigins);
+    }
+    Ok(state.origins.clone())
+}
+
+fn restore_network_origins(
+    state: &Mutex<ObservedNetworkOrigins>,
+    origins: &[String],
+    grant: &dyn Fn(&str) -> bool,
+) -> Result<(), BrowserPolicyError> {
+    if origins.len() > MAX_ALLOWED_ORIGINS {
+        state
+            .lock()
+            .map_err(|_| BrowserPolicyError::Revoked)?
+            .overflowed = true;
+        return Err(BrowserPolicyError::TooManyOrigins);
+    }
+    let mut incoming = Vec::with_capacity(origins.len());
+    for value in origins {
+        let (origin, _) = parse_http_origin(value)?;
+        if !origin.starts_with("https://") || !grant(&origin) {
+            return Err(BrowserPolicyError::NavigationNotGranted);
+        }
+        if !incoming.contains(&origin) {
+            incoming.push(origin);
+        }
+    }
+    let mut state = state.lock().map_err(|_| BrowserPolicyError::Revoked)?;
+    let additional = incoming
+        .iter()
+        .filter(|origin| !state.origins.contains(origin))
+        .count();
+    if state.overflowed || state.origins.len() + additional > MAX_ALLOWED_ORIGINS {
+        state.overflowed = true;
+        return Err(BrowserPolicyError::TooManyOrigins);
+    }
+    for origin in incoming {
+        if !state.origins.contains(&origin) {
+            state.origins.push(origin);
+        }
+    }
+    Ok(())
+}
 
 /// Native identity captured from the unlocked database, never inferred by an ID
 /// lookup in a different database. A reconnect always creates a fresh attempt.
@@ -54,6 +163,9 @@ pub struct OriginBrowserPolicy {
     authority: Authority,
     allowed_origins: Vec<String>,
     allowed_authorities: Vec<Authority>,
+    network_origin_grant: Option<NetworkOriginGrant>,
+    relay_endpoint: Arc<OnceLock<SocketAddr>>,
+    observed_network_origins: Arc<Mutex<ObservedNetworkOrigins>>,
     profile_key: String,
 }
 
@@ -121,8 +233,18 @@ impl OriginBrowserPolicy {
             },
             source_origin,
             authority,
+            observed_network_origins: Arc::new(Mutex::new(ObservedNetworkOrigins {
+                origins: origins
+                    .iter()
+                    .filter(|origin| origin.starts_with("https://"))
+                    .cloned()
+                    .collect(),
+                overflowed: false,
+            })),
             allowed_origins: origins,
             allowed_authorities: authorities,
+            network_origin_grant: None,
+            relay_endpoint: Arc::new(OnceLock::new()),
             // Safe opaque profile name: never a database/connection ID or URL.
             profile_key: format!("origin-browser-{}", attempt_id.simple()),
         })
@@ -144,28 +266,116 @@ impl OriginBrowserPolicy {
     pub fn profile_key(&self) -> &str {
         &self.profile_key
     }
+
+    /// Consume the policy to attach immutable native network permissions.
+    /// Exact origins and identity remain unchanged; callers must continue to
+    /// use their separate reviewed login authority for secrets and automation.
+    pub fn with_network_origin_grant(mut self, grant: NetworkOriginGrant) -> Self {
+        self.network_origin_grant = Some(grant);
+        self
+    }
+
+    pub fn permits_network_origin(&self, origin: &str) -> bool {
+        let Ok((origin, authority)) = parse_http_origin(origin) else {
+            return false;
+        };
+        !self
+            .relay_endpoint
+            .get()
+            .is_some_and(|endpoint| is_relay_authority(&authority, *endpoint))
+            && (self.allowed_origins.contains(&origin)
+                || self
+                    .network_origin_grant
+                    .as_ref()
+                    .is_some_and(|grant| grant(&origin)))
+    }
+
+    /// Combined network predicate for native TLS/resource admission. Capturing
+    /// it before session start is safe: the endpoint guard is shared and binds
+    /// once the retained relay exists. It does not confer session readiness.
+    pub fn network_origin_grant(&self) -> NetworkOriginGrant {
+        let origins = self.allowed_origins.clone();
+        let dynamic = self.network_origin_grant.clone();
+        let endpoint = self.relay_endpoint.clone();
+        Arc::new(move |candidate| {
+            let Ok((origin, authority)) = parse_http_origin(candidate) else {
+                return false;
+            };
+            !endpoint
+                .get()
+                .is_some_and(|endpoint| is_relay_authority(&authority, *endpoint))
+                && (origins.contains(&origin)
+                    || dynamic.as_ref().is_some_and(|grant| grant(&origin)))
+        })
+    }
+
+    /// Finite per-attempt cookie capture scope, separate from login authority.
+    /// Network admission alone does not imply a request was actually accepted.
+    pub fn observed_network_origins(&self) -> Result<Vec<String>, BrowserPolicyError> {
+        self.retained_network_origins()
+    }
+
+    /// Compatibility alias for atomic restoration. Use the singular method
+    /// for final request observations so capacity never rejects browsing.
+    /// Capacity errors latch capture failure without partially inserting data.
+    pub fn observe_network_origins(&self, origins: &[String]) -> Result<(), BrowserPolicyError> {
+        self.restore_network_origins(origins)
+    }
+
+    pub fn observe_network_origin(&self, origin: &str) {
+        observe_network_origin(&self.observed_network_origins, origin, &|origin| {
+            self.permits_network_origin(origin)
+        });
+    }
+
+    pub fn retained_network_origins(&self) -> Result<Vec<String>, BrowserPolicyError> {
+        retained_network_origins(&self.observed_network_origins)
+    }
+
+    pub fn restore_network_origins(&self, origins: &[String]) -> Result<(), BrowserPolicyError> {
+        restore_network_origins(&self.observed_network_origins, origins, &|origin| {
+            self.permits_network_origin(origin)
+        })
+    }
+
+    pub fn network_origin_tracker(&self) -> NetworkOriginTracker {
+        NetworkOriginTracker {
+            state: self.observed_network_origins.clone(),
+            grant: self.network_origin_grant(),
+        }
+    }
+
     pub fn destination_grant(&self) -> DestinationGrant {
         // Relay admission is exact host + port. Schemes are checked separately
         // by the native host through authorize_navigation, including redirects
         // and resource requests; an authority alone cannot distinguish schemes.
-        let authorities = self.allowed_authorities.clone();
-        Arc::new(move |candidate| authorities.contains(candidate))
+        let grant = self.network_origin_grant();
+        Arc::new(move |candidate| {
+            grant(&format!("https://{candidate}")) || grant(&format!("http://{candidate}"))
+        })
     }
 
     fn validate_proxy_endpoint(&self, endpoint: SocketAddr) -> Result<(), BrowserPolicyError> {
         validate_private_proxy_endpoint(endpoint)?;
         for authority in &self.allowed_authorities {
-            let host = authority.host();
-            if authority.port() == endpoint.port()
-                && (host.parse::<IpAddr>().is_ok_and(|ip| ip.is_loopback())
-                    || host == "localhost"
-                    || host.ends_with(".localhost"))
-            {
+            if is_relay_authority(authority, endpoint) {
                 return Err(BrowserPolicyError::InvalidProxyEndpoint);
             }
         }
         Ok(())
     }
+}
+
+fn is_relay_authority(authority: &Authority, endpoint: SocketAddr) -> bool {
+    let host = authority.host();
+    authority.port() == endpoint.port()
+        && (host.parse::<IpAddr>().is_ok_and(|ip| match ip {
+            IpAddr::V4(ip) => ip.is_loopback(),
+            IpAddr::V6(ip) => {
+                ip.is_loopback() || ip.to_ipv4_mapped().is_some_and(|ip| ip.is_loopback())
+            }
+        }) || host == "localhost"
+            || host.ends_with(".localhost"))
 }
 
 fn parse_http_origin(value: &str) -> Result<(String, Authority), BrowserPolicyError> {
@@ -305,10 +515,19 @@ impl OriginBrowserSession {
         dialer: Arc<dyn RouteDialer>,
         limits: ProxyLimits,
     ) -> Result<Self, BrowserPolicyError> {
-        let proxy = PrivateForwardProxy::start(dialer, policy.destination_grant(), limits)
+        let grant = policy.destination_grant();
+        let endpoint = policy.relay_endpoint.clone();
+        // Fail closed during the small interval between bind and validation.
+        let bound_grant: DestinationGrant =
+            Arc::new(move |candidate| endpoint.get().is_some() && grant(candidate));
+        let proxy = PrivateForwardProxy::start(dialer, bound_grant, limits)
             .await
             .map_err(|_| BrowserPolicyError::ProxyUnavailable)?;
         policy.validate_proxy_endpoint(proxy.local_addr())?;
+        policy
+            .relay_endpoint
+            .set(proxy.local_addr())
+            .map_err(|_| BrowserPolicyError::InvalidProxyEndpoint)?;
         Ok(Self {
             policy,
             proxy,
@@ -442,7 +661,7 @@ impl OriginBrowserSession {
         Ok(url)
     }
 
-    /// Native admission for navigation, redirects and resources to exact grants.
+    /// Native network admission for navigation, redirects and resources.
     /// Call for each URL immediately before use, not across an await; enforce
     /// scheme here because relay grants can check only the destination authority.
     /// This does not permit login or sending credentials to added origins.
@@ -471,8 +690,7 @@ impl OriginBrowserSession {
         let url = Url::parse(value).map_err(|_| BrowserPolicyError::NavigationNotGranted)?;
         if !self
             .policy
-            .allowed_origins
-            .contains(&url.origin().ascii_serialization())
+            .permits_network_origin(&url.origin().ascii_serialization())
         {
             return Err(BrowserPolicyError::NavigationNotGranted);
         }
@@ -542,6 +760,267 @@ mod tests {
             profile_key: session.policy().profile_key().into(),
             proxy_endpoint: session.proxy_endpoint(),
         }
+    }
+
+    #[test]
+    fn network_grants_validate_origins_without_expanding_exact_login_list() {
+        let original = policy("https://source.invalid");
+        let id = original.identity().clone();
+        let profile = original.profile_key().to_owned();
+        let policy = original.with_network_origin_grant(Arc::new(|origin| {
+            origin == "http://new.invalid:8080" || origin == "https://secure.invalid"
+        }));
+        assert!(policy.identity() == &id);
+        assert_eq!(policy.profile_key(), profile);
+        assert_eq!(policy.allowed_origins(), &["https://source.invalid"]);
+        let grant = policy.network_origin_grant();
+        for origin in [
+            "https://source.invalid",
+            "HTTP://NEW.INVALID:8080/",
+            "https://secure.invalid:443",
+        ] {
+            assert!(grant(origin), "{origin}");
+            assert!(policy.permits_network_origin(origin), "{origin}");
+        }
+        for origin in [
+            "https://new.invalid:8080",
+            "http://secure.invalid:443",
+            "https://other.invalid",
+        ] {
+            assert!(!grant(origin), "{origin}");
+        }
+        assert!((policy.destination_grant())(
+            &Authority::parse("new.invalid:8080").unwrap()
+        ));
+        assert!((policy.destination_grant())(
+            &Authority::parse("secure.invalid:443").unwrap()
+        ));
+        assert!(!(policy.destination_grant())(
+            &Authority::parse("other.invalid:443").unwrap()
+        ));
+        let all =
+            self::policy("https://source.invalid").with_network_origin_grant(Arc::new(|_| true));
+        for origin in [
+            "file:///etc/passwd",
+            "javascript:alert(1)",
+            "wss://other.invalid",
+            "https://@other.invalid",
+            "https://user:secret@other.invalid",
+            "https://other.invalid/path",
+            "https://other.invalid?x=1",
+            "https://other.invalid#x",
+            "https://other.invalid:0",
+            "https://*.invalid",
+            "https://other.invalid\\path",
+            " https://other.invalid",
+            "https://%6fther.invalid",
+            "https://other.invalid\n",
+        ] {
+            assert!(!all.permits_network_origin(origin), "{origin}");
+            assert!(!(all.network_origin_grant())(origin), "{origin}");
+        }
+    }
+
+    #[test]
+    fn observed_origins_are_bounded_atomic_and_never_login_grants() {
+        let policy = policy("https://source.invalid")
+            .with_network_origin_grant(Arc::new(|origin| origin.starts_with("https://")));
+        assert_eq!(
+            policy.observed_network_origins().unwrap(),
+            &["https://source.invalid"]
+        );
+        // Pure admission queries must never grow persisted session scope.
+        assert!(policy.permits_network_origin("https://unobserved.invalid"));
+        assert!((policy.network_origin_grant())(
+            "https://also-unobserved.invalid"
+        ));
+        assert_eq!(policy.observed_network_origins().unwrap().len(), 1);
+        policy
+            .observe_network_origins(&[
+                "HTTPS://NEW.INVALID:443/".into(),
+                "https://new.invalid".into(),
+            ])
+            .unwrap();
+        assert_eq!(
+            policy.observed_network_origins().unwrap(),
+            &["https://source.invalid", "https://new.invalid"]
+        );
+        let snapshot = policy.observed_network_origins().unwrap();
+        for invalid in [
+            "http://new.invalid",
+            "https://user@new.invalid",
+            "https://new.invalid/path",
+        ] {
+            assert!(policy
+                .observe_network_origins(&["https://partial.invalid".into(), invalid.into()])
+                .is_err());
+            assert_eq!(policy.observed_network_origins().unwrap(), snapshot);
+        }
+        let remaining: Vec<_> = (0..MAX_ALLOWED_ORIGINS - 2)
+            .map(|i| format!("https://observed-{i}.invalid"))
+            .collect();
+        policy.observe_network_origins(&remaining).unwrap();
+        assert_eq!(
+            policy.observed_network_origins().unwrap().len(),
+            MAX_ALLOWED_ORIGINS
+        );
+        policy
+            .observe_network_origins(&["https://new.invalid".into()])
+            .unwrap();
+        assert_eq!(policy.allowed_origins(), &["https://source.invalid"]);
+        let another = self::policy("https://source.invalid");
+        assert_eq!(
+            another.observed_network_origins().unwrap(),
+            &["https://source.invalid"]
+        );
+        let tracker = policy.network_origin_tracker();
+        let shared = tracker.clone();
+        tracker.observe_network_origin("http://ephemeral.invalid");
+        assert_eq!(
+            shared.retained_network_origins().unwrap().len(),
+            MAX_ALLOWED_ORIGINS
+        );
+        tracker.observe_network_origin("https://overflow.invalid");
+        assert_eq!(
+            shared.retained_network_origins(),
+            Err(BrowserPolicyError::TooManyOrigins)
+        );
+        assert_eq!(
+            policy.observed_network_origins(),
+            Err(BrowserPolicyError::TooManyOrigins)
+        );
+        assert_eq!(
+            shared.restore_network_origins(&["https://new.invalid".into()]),
+            Err(BrowserPolicyError::TooManyOrigins)
+        );
+        assert_eq!(
+            policy
+                .observed_network_origins
+                .lock()
+                .unwrap()
+                .origins
+                .len(),
+            MAX_ALLOWED_ORIGINS
+        );
+        // Capture exhaustion never changes network admission or login scope.
+        assert!(policy.permits_network_origin("https://overflow.invalid"));
+        assert_eq!(policy.allowed_origins(), &["https://source.invalid"]);
+        assert_eq!(
+            another.observed_network_origins().unwrap(),
+            &["https://source.invalid"]
+        );
+        let http = self::policy("http://ephemeral.invalid");
+        assert!(http.retained_network_origins().unwrap().is_empty());
+
+        let restore =
+            self::policy("https://source.invalid").with_network_origin_grant(Arc::new(|_| true));
+        let oversized: Vec<_> = (0..MAX_ALLOWED_ORIGINS)
+            .map(|i| format!("https://restored-{i}.invalid"))
+            .collect();
+        assert_eq!(
+            restore.restore_network_origins(&oversized),
+            Err(BrowserPolicyError::TooManyOrigins)
+        );
+        assert_eq!(
+            restore.retained_network_origins(),
+            Err(BrowserPolicyError::TooManyOrigins)
+        );
+        assert_eq!(
+            restore.observed_network_origins.lock().unwrap().origins,
+            &["https://source.invalid"]
+        );
+    }
+
+    #[tokio::test]
+    async fn network_grants_keep_source_login_identity_revocation_and_relay_guards() {
+        let policy = policy("https://source.invalid").with_network_origin_grant(Arc::new(|_| true));
+        // Native authorities may retain a predicate before the relay is bound.
+        let retained_grant = policy.network_origin_grant();
+        let tracker = policy.network_origin_tracker();
+        let mut session = session_for_policy(policy).await;
+        let id = session.policy().identity().clone();
+        session.report_host(&id, ready(&session)).unwrap();
+        assert!(session
+            .authorize_navigation(&id, "http://new.invalid:8080/resource")
+            .is_ok());
+        assert_eq!(
+            session.authorize_source_navigation(&id, "http://new.invalid:8080/login"),
+            Err(BrowserPolicyError::NavigationNotGranted)
+        );
+        for host in [
+            "127.0.0.1",
+            "127.0.0.2",
+            "[::1]",
+            "[::ffff:127.0.0.1]",
+            "localhost",
+            "sub.localhost",
+        ] {
+            for scheme in ["http", "https"] {
+                let origin = format!("{scheme}://{host}:{}", session.proxy_endpoint().port());
+                assert!(!retained_grant(&origin), "{origin}");
+                assert!(tracker.restore_network_origins(&[origin.clone()]).is_err());
+                tracker.observe_network_origin(&origin);
+                assert_eq!(
+                    tracker.retained_network_origins().unwrap(),
+                    &["https://source.invalid"]
+                );
+                assert!(
+                    !session.policy().permits_network_origin(&origin),
+                    "{origin}"
+                );
+                assert_eq!(
+                    session.authorize_navigation(&id, &format!("{origin}/resource")),
+                    Err(BrowserPolicyError::NavigationNotGranted)
+                );
+                let authority =
+                    Authority::parse(&format!("{host}:{}", session.proxy_endpoint().port()))
+                        .unwrap();
+                assert!(!(session.policy().destination_grant())(&authority));
+            }
+        }
+        for url in [
+            "https://user:secret@new.invalid",
+            "https://@new.invalid",
+            "https://new.invalid\\path",
+            "file:///tmp/a",
+            "data:text/html,test",
+        ] {
+            assert_eq!(
+                session.authorize_navigation(&id, url),
+                Err(BrowserPolicyError::NavigationNotGranted)
+            );
+        }
+        let stale = self::policy("https://source.invalid").identity().clone();
+        assert_eq!(
+            session.authorize_navigation(&stale, "https://new.invalid"),
+            Err(BrowserPolicyError::StaleIdentity)
+        );
+        session.revoke(&id).unwrap();
+        assert_eq!(
+            session.authorize_navigation(&id, "https://new.invalid"),
+            Err(BrowserPolicyError::Revoked)
+        );
+        assert!(session.with_proxy_credentials(|_, _| ()).is_none());
+        stop(&mut session).await;
+    }
+
+    #[tokio::test]
+    async fn network_callback_does_not_allow_scheme_downgrade() {
+        let mut session = session_for_policy(
+            policy("https://source.invalid")
+                .with_network_origin_grant(Arc::new(|origin| origin == "http://new.invalid:8080")),
+        )
+        .await;
+        let id = session.policy().identity().clone();
+        session.report_host(&id, ready(&session)).unwrap();
+        assert!(session
+            .authorize_navigation(&id, "http://new.invalid:8080/path")
+            .is_ok());
+        assert_eq!(
+            session.authorize_navigation(&id, "https://new.invalid:8080/path"),
+            Err(BrowserPolicyError::NavigationNotGranted)
+        );
+        stop(&mut session).await;
     }
 
     #[test]

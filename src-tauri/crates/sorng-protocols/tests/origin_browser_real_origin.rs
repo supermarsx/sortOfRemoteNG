@@ -168,6 +168,98 @@ async fn upstream_tunnel(listener: &TcpListener) -> TcpStream {
     stream
 }
 
+#[tokio::test]
+async fn dynamic_network_origin_uses_authenticated_private_proxy_and_fixed_upstream() {
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let route =
+        NativeForwardRoute::http_connect(format!("http://{}", listener.local_addr().unwrap()))
+            .unwrap();
+    let policy = OriginBrowserPolicy::new(
+        "fixture-owner",
+        "fixture-connection",
+        "fixture-tab",
+        "https://source.invalid",
+    )
+    .unwrap()
+    .with_network_origin_grant(Arc::new(|origin| origin == ORIGIN));
+    assert_eq!(policy.allowed_origins(), &["https://source.invalid"]);
+    let mut session = OriginBrowserSession::start(policy, Arc::new(route), ProxyLimits::default())
+        .await
+        .unwrap();
+    let identity = session.policy().identity().clone();
+    session
+        .report_host(
+            &identity,
+            NativeHostReadiness::Ready {
+                profile_key: session.policy().profile_key().to_owned(),
+                proxy_endpoint: session.proxy_endpoint(),
+            },
+        )
+        .unwrap();
+    assert!(session
+        .authorize_navigation(&identity, &format!("{ORIGIN}/resource"))
+        .is_ok());
+    assert_eq!(
+        session.authorize_source_navigation(&identity, ORIGIN),
+        Err(BrowserPolicyError::NavigationNotGranted)
+    );
+    let peer = tokio::spawn(async move {
+        // Fails if the dynamic destination bypasses the configured upstream.
+        let mut stream = upstream_tunnel(&listener).await;
+        let mut bytes = [0; 7];
+        bounded(stream.read_exact(&mut bytes)).await.unwrap();
+        assert_eq!(&bytes, b"fixture");
+        bounded(stream.write_all(b"relayed")).await.unwrap();
+        assert_closed(&mut stream).await;
+    });
+    let mut transport = connect_request(&session, AUTHORITY).await;
+    assert!(head(&mut transport).await.starts_with(b"HTTP/1.1 200 "));
+    bounded(transport.write_all(b"fixture")).await.unwrap();
+    let mut bytes = [0; 7];
+    bounded(transport.read_exact(&mut bytes)).await.unwrap();
+    assert_eq!(&bytes, b"relayed");
+    let mut denied = connect_request(&session, "ungranted.invalid:443").await;
+    assert!(head(&mut denied).await.starts_with(b"HTTP/1.1 403 "));
+    session.revoke(&identity).unwrap();
+    assert_closed(&mut transport).await;
+    bounded(peer).await.unwrap();
+    bounded(session.stop()).await.unwrap();
+}
+
+#[tokio::test]
+async fn allow_all_network_grant_cannot_dial_its_own_relay() {
+    use sorng_protocols::private_forward_proxy::{Authority, DialFuture};
+    let policy =
+        OriginBrowserPolicy::new("fixture-owner", "fixture-connection", "fixture-tab", ORIGIN)
+            .unwrap()
+            .with_network_origin_grant(Arc::new(|_| true));
+    let dialer = Arc::new(|_: Authority| -> DialFuture {
+        panic!("self-relay request must be denied before route selection");
+    });
+    let mut session = OriginBrowserSession::start(policy, dialer, ProxyLimits::default())
+        .await
+        .unwrap();
+    for host in [
+        "127.0.0.1",
+        "127.0.0.2",
+        "[::1]",
+        "[::ffff:127.0.0.1]",
+        "localhost",
+        "sub.localhost",
+    ] {
+        let mut transport = connect_request(
+            &session,
+            &format!("{host}:{}", session.proxy_endpoint().port()),
+        )
+        .await;
+        assert!(
+            head(&mut transport).await.starts_with(b"HTTP/1.1 403 "),
+            "{host}"
+        );
+    }
+    bounded(session.stop()).await.unwrap();
+}
+
 #[derive(Clone, Copy)]
 enum RevokeBy {
     Owner,
