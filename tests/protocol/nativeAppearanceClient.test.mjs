@@ -7,9 +7,19 @@ import { transformSync } from "esbuild";
 const source = readFileSync("src-tauri/crates/sorng-browser-host/src/native_appearance_client.js", "utf8");
 const vendor = readFileSync("src-tauri/crates/sorng-protocols/src/vendor/darkreader/darkreader.js", "utf8");
 const rendererSource = readFileSync("src-tauri/crates/sorng-browser-host/src/cef_appearance_renderer.rs", "utf8");
+const proxyTemplate = readFileSync("src-tauri/crates/sorng-browser-host/src/native_darkreader_dom_proxy.js.in", "utf8").replace(/\r\n/g, "\n");
+const nativeProxy = readFileSync("src-tauri/crates/sorng-browser-host/src/native_darkreader_proxy.js", "utf8").replace(/\r\n/g, "\n");
 // Exercise the exact production Rust-owned bootstrap, not a hand-maintained
 // approximation of its vendor/client interface. Both includes remain singular.
-function assembledSource(engine) {
+function assembledSource(engine, adapt = true) {
+  if (engine === vendor && adapt) {
+    // Identical singular replacement as the production Rust adapter. Vendor
+    // bytes remain pinned; this is only for the native V8-owned closure.
+    assert.match(rendererSource, /darkreader::adapt\(include_str!/);
+    engine = engine.replace(/\r\n/g, "\n");
+    assert.equal(engine.split(proxyTemplate).length, 2);
+    engine = engine.replace(proxyTemplate, () => nativeProxy);
+  }
   assert.match(rendererSource, /include_str!\("native_appearance_bootstrap\.js\.in"\)/);
   const template = readFileSync("src-tauri/crates/sorng-browser-host/src/native_appearance_bootstrap.js.in", "utf8");
   for (const marker of ["/* BUNDLED_DARKREADER */", "/* NATIVE_APPEARANCE_CLIENT */"]) {
@@ -56,13 +66,28 @@ function fixture(t, options = {}) {
   win.chrome = { runtime: { sendMessage } };
   const originalChrome = win.chrome;
   const statuses = [];
-  const controller = win.eval(assembledSource(options.real ? vendor : fakeVendor))((revision, status) => statuses.push({ revision, status }));
+  let scriptSinks = 0;
+  if (options.rejectScript) {
+    // A deterministic policy-sink model, not a substitute for Chromium CSP
+    // acceptance: reject the exact script.append sink used by upstream.
+    const append = win.Element.prototype.append;
+    win.Element.prototype.append = function (...values) {
+      if (this.tagName === "SCRIPT") {
+        scriptSinks++;
+        throw new win.TypeError(options.rejectScript);
+      }
+      return append.apply(this, values);
+    };
+    win.trustedTypes = Object.freeze({ createPolicy() { throw Error("must not create a bypass policy"); } });
+  }
+  const controller = win.eval(assembledSource(options.real ? vendor : fakeVendor, options.adapt !== false))((revision, status) => statuses.push({ revision, status }));
   assert.equal(typeof controller.apply, "function");
   let revision = 0;
   const apply = config => controller.apply(config, String(revision++), options.main !== false);
   t.after(() => { controller.dispose(); win.dispatchEvent(new win.Event("pagehide")); win.close(); });
   return { win, doc: win.document, apply, controller, statuses, calls: win.__calls, existingReader, originalChrome, sendMessage,
     config: overrides => ({ enabled: true, theme: { ...theme, ...overrides } }),
+    scriptSinks: () => scriptSinks,
     css: () => win.document.querySelector(".sorng-native-appearance")?.textContent || "" };
 }
 
@@ -82,6 +107,33 @@ test("native appearance dynamic delegates conversion and preserves page globals"
   assert.equal(f.win.chrome, f.originalChrome);
   assert.equal(f.win.chrome.runtime.sendMessage, f.sendMessage);
   assert.equal(f.win.__sorngAppearance, undefined);
+});
+
+test("native bundled hooks avoid inline and TrustedScript sinks on every origin", t => {
+  for (const policy of ["Inline execution blocked by script-src", "This document requires TrustedScript assignment"]) {
+    const baseline = fixture(t, { real: true, adapt: false, rejectScript: policy });
+    assert.equal(baseline.apply(baseline.config()), false);
+    assert.equal(baseline.scriptSinks(), 1, "baseline reproduces the blocked upstream sink");
+    assert.equal(baseline.statuses.at(-1).status, "fallback");
+
+    const fixed = fixture(t, { real: true, rejectScript: policy });
+    const csp = fixed.doc.createElement("meta");
+    csp.httpEquiv = "Content-Security-Policy";
+    csp.content = "script-src 'none'; require-trusted-types-for 'script'; trusted-types 'none'";
+    fixed.doc.head.append(csp);
+    const original = fixed.win.CSSStyleSheet.prototype.insertRule;
+    assert.equal(fixed.apply(fixed.config()), true);
+    assert.equal(fixed.statuses.at(-1).status, "applied");
+    assert.notEqual(fixed.win.CSSStyleSheet.prototype.insertRule, original, "the real stylesheet hooks are installed");
+    assert.equal(fixed.doc.querySelectorAll("script").length, 0);
+    assert.equal(fixed.scriptSinks(), 0, "no DOM-script assignment to block or retry");
+    assert.equal(csp.content, "script-src 'none'; require-trusted-types-for 'script'; trusted-types 'none'");
+    assert.ok(fixed.doc.querySelector(".darkreader--user-agent"));
+    assert.equal(fixed.apply(fixed.config({ backgroundColor: "#102030" })), true);
+    assert.equal(fixed.scriptSinks(), 0, "theme reapplication must also avoid the sink");
+    assert.equal(fixed.apply({ enabled: false }), true);
+    assert.equal(fixed.win.CSSStyleSheet.prototype.insertRule, original, "turning off restores the native stylesheet API");
+  }
 });
 
 test("native appearance reapplies changed app colors and skips identical snapshots", t => {

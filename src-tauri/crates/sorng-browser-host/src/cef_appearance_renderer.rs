@@ -3,6 +3,9 @@ use super::*;
 use crate::native_appearance::{self as policy, AppearanceStatus};
 use std::sync::LazyLock;
 
+#[path = "native_darkreader.rs"]
+mod darkreader;
+
 struct Policy {
     owner: Browser,
     json: String,
@@ -19,16 +22,18 @@ thread_local! {
     static POLICIES: RefCell<HashMap<i32, Policy>> = RefCell::new(HashMap::new());
     static DOCS: RefCell<HashMap<DocumentKey, AppearanceDocument>> = RefCell::new(HashMap::new());
 }
-static SOURCE: LazyLock<String> = LazyLock::new(|| {
-    include_str!("native_appearance_bootstrap.js.in")
-        .replace(
-            "/* BUNDLED_DARKREADER */",
-            include_str!("../../sorng-protocols/src/vendor/darkreader/darkreader.js"),
-        )
-        .replace(
-            "/* NATIVE_APPEARANCE_CLIENT */",
-            include_str!("native_appearance_client.js"),
-        )
+static SOURCE: LazyLock<Option<String>> = LazyLock::new(|| {
+    let engine = darkreader::adapt(include_str!(
+        "../../sorng-protocols/src/vendor/darkreader/darkreader.js"
+    ))?;
+    Some(
+        include_str!("native_appearance_bootstrap.js.in")
+            .replace("/* BUNDLED_DARKREADER */", &engine)
+            .replace(
+                "/* NATIVE_APPEARANCE_CLIENT */",
+                include_str!("native_appearance_client.js"),
+            ),
+    )
 });
 
 pub(super) fn created(browser: &Browser, info: &DictionaryValue) -> bool {
@@ -179,8 +184,11 @@ pub(super) fn install(browser: &Browser, frame: &Frame, context: &mut V8Context)
     };
     let mut factory = None;
     let mut exception = None;
+    let Some(source) = SOURCE.as_ref() else {
+        return false;
+    };
     if context.eval(
-        Some(&CefString::from(SOURCE.as_str())),
+        Some(&CefString::from(source.as_str())),
         None,
         0,
         Some(&mut factory),
