@@ -2144,12 +2144,13 @@ pub(crate) fn tick() {
                 Ok(host) => {
                     if host.enable_downloads(attempt.downloads.clone()).is_err()
                         || host.enable_popup_downloads(attempt.downloads.clone()).is_err()
+                        || host.configure_page_dialogs(attempt.preferences.allow_page_dialogs).is_err()
                         || host.configure_popup_policy(attempt.preferences.popup_policy).is_err() {
                         attempt.revoke();
                         let _ = host.close(&attempt.identity);
                         // Retain the host/context until OnBeforeClose. The
                         // ordinary startup drain reports failure below.
-                        log::error!("Native browser download policy setup failed");
+                        log::error!("Native browser website policy setup failed");
                     }
                     ui.views.insert(
                         attempt.identity.attempt_id().to_string(),

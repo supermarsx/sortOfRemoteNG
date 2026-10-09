@@ -17,6 +17,7 @@ pub struct NativeBrowserPreferences {
     pub appearance: sorng_browser_host::native_appearance::AppearanceConfig,
     pub capabilities: NativeBrowserCapabilities,
     pub allow_downloads: bool,
+    pub allow_page_dialogs: bool,
     pub default_zoom_percent: u64,
     pub popup_policy: NativePopupPolicy,
     pub initial_load_timeout_seconds: u64,
@@ -153,6 +154,11 @@ impl NativeBrowserPreferences {
                 .map(|value| value.as_bool().ok_or(()))
                 .transpose()?
                 .unwrap_or(false),
+            allow_page_dialogs: globals
+                .get("allowPageDialogs")
+                .map(|value| value.as_bool().ok_or(()))
+                .transpose()?
+                .unwrap_or(false),
             capabilities: NativeBrowserCapabilities {
                 local_storage_enabled: enabled("localStorageEnabled"),
                 databases_enabled: enabled("databasesEnabled"),
@@ -272,6 +278,38 @@ mod tests {
             policy.website_extensions_enabled,
             policy.hide_automation_indicator,
         ]
+    }
+
+    #[test]
+    fn dialogs_require_explicit_valid_saved_global_permission() {
+        for (settings, expected) in [
+            (Value::Null, false),
+            (json!({}), false),
+            (json!({"webBrowser":{}}), false),
+            (json!({"webBrowser":{"allowPageDialogs":false}}), false),
+            (json!({"webBrowser":{"allowPageDialogs":true}}), true),
+        ] {
+            assert_eq!(
+                NativeBrowserPreferences::from_saved(&json!({}), &settings)
+                    .unwrap()
+                    .allow_page_dialogs,
+                expected,
+            );
+        }
+        for invalid in [Value::Null, json!("true"), json!(1), json!({}), json!([])] {
+            assert!(NativeBrowserPreferences::from_saved(
+                &json!({}),
+                &json!({"webBrowser":{"allowPageDialogs":invalid}}),
+            )
+            .is_err());
+        }
+        for allowed in [false, true] {
+            assert!(NativeBrowserPreferences::from_saved(
+                &json!({"browserSession":{"version":1,"allowPageDialogs":true}}),
+                &json!({"webBrowser":{"allowPageDialogs":allowed}}),
+            )
+            .is_err());
+        }
     }
 
     #[test]

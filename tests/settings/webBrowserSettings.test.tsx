@@ -677,7 +677,7 @@ describe("Web Browser settings", () => {
     });
   });
 
-  it("honors native popup preferences while keeping unsupported dialogs inactive", () => {
+  it("honors native popup and dialog preferences without resetting them on unrelated edits", () => {
     const { update } = setup("browser", {
       webBrowser: normalizeWebBrowserSettings({
         allowDownloads: true,
@@ -691,8 +691,8 @@ describe("Web Browser settings", () => {
     expect(downloads).toBeEnabled();
     expect(downloads).toBeChecked();
     for (const name of [/^Allow website dialogs/]) {
-      expect(screen.getByRole("checkbox", { name })).toBeDisabled();
-      expect(screen.getByRole("checkbox", { name })).not.toBeChecked();
+      expect(screen.getByRole("checkbox", { name })).toBeEnabled();
+      expect(screen.getByRole("checkbox", { name })).toBeChecked();
     }
     expect(
       screen.getByRole("combobox", { name: "Website popups" }),
@@ -743,6 +743,38 @@ describe("Web Browser settings", () => {
       screen.getByText(/Legacy popup handling supports Tactical RMM only/),
     ).toBeVisible();
   });
+
+  it.each(["real-origin", "legacy"] as const)(
+    "keeps dialogs off by default and persists both choices for %s",
+    (engine) => {
+      const { update } = setup("browser", {
+        webBrowser: normalizeWebBrowserSettings({ engine }),
+      });
+      const dialogs = screen.getByRole("checkbox", {
+        name: /^Allow website dialogs/,
+      });
+      expect(dialogs).toBeEnabled();
+      expect(dialogs).not.toBeChecked();
+      expect(update).not.toHaveBeenCalled();
+      for (const expected of [true, false]) {
+        fireEvent.click(dialogs);
+        expect(update.mock.lastCall?.[0].webBrowser.allowPageDialogs).toBe(
+          expected,
+        );
+        expect((dialogs as HTMLInputElement).checked).toBe(expected);
+      }
+      expect(
+        screen.getByText(/Confirmations and prompts wait for your response/),
+      ).toBeVisible();
+      if (engine === "real-origin") {
+        expect(
+          screen.getByText(
+            /Close and reopen the website to apply download and dialog settings/,
+          ),
+        ).toHaveTextContent("including to its popup tabs");
+      }
+    },
+  );
 
   it("renders the global XSLT control beside dialogs and saves its change without changing dialog policy", () => {
     const { update } = setup("browser", {
@@ -1015,6 +1047,7 @@ describe("Web Browser settings", () => {
       screen.getByRole("combobox", { name: "Page scripts" }),
     ).toBeInTheDocument();
   });
+
   it("repairs malformed shared rules without resetting other browser preferences", async () => {
     const config = normalizeWebBrowserSettings({
       defaultZoomPercent: 125,

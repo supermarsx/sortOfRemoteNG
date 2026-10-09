@@ -34,8 +34,8 @@ import { normalizeBrowserSessionRetention } from "../../../utils/settings/browse
 import { useBrowserRetentionCapabilities } from "../../../hooks/protocol/useBrowserRetentionCapabilities";
 import BrowserNativeCapabilitiesCard from "./webBrowser/BrowserNativeCapabilitiesCard";
 import BrowserDataDirectorySettings from "./webBrowser/BrowserDataDirectorySettings";
-import { BrowserXsltSettings } from "./webBrowser/BrowserXsltSettings";
 import BrowserSettingsRepair from "./webBrowser/BrowserSettingsRepair";
+import { BrowserXsltSettings } from "./webBrowser/BrowserXsltSettings";
 import { diagnoseWebBrowserSettings } from "../../../utils/settings/webBrowserSettingsDiagnostics";
 
 interface WebBrowserSettingsProps {
@@ -288,7 +288,7 @@ function WebBrowserSettingsContent({
         <Card>
           <p className="text-xs text-[var(--color-textSecondary)]">
             {nativeCapabilitiesBlocked
-              ? "Native downloads use this connection's browser session and private proxy, with a Save dialog for each file. Reopen the website after changing this setting. Native page dialogs remain unavailable."
+              ? "Native downloads use this connection's browser session and private proxy, with a Save dialog for each file. Close and reopen the website to apply download and dialog settings, including to its popup tabs."
               : "Apply on the next reload or navigation in legacy web tabs, including supported popup tabs. Browser and operating-system restrictions still apply. Unapproved destinations remain blocked."}
           </p>
           <Toggle
@@ -301,9 +301,8 @@ function WebBrowserSettingsContent({
           <Toggle
             settingKey="webBrowser.allowPageDialogs"
             label="Allow website dialogs"
-            description="Permit alert, confirm and prompt dialogs where supported by the embedded runtime. Does not allow websites to open external windows."
-            checked={!nativeCapabilitiesBlocked && config.allowPageDialogs}
-            disabled={nativeCapabilitiesBlocked}
+            description="Show website alert, confirm, prompt and leave-page dialogs. Confirmations and prompts wait for your response. Does not allow websites to open external windows or prevent forced cleanup."
+            checked={config.allowPageDialogs}
             onChange={(allowPageDialogs) => update({ allowPageDialogs })}
           />
           <BrowserXsltSettings config={config} onChange={update} />

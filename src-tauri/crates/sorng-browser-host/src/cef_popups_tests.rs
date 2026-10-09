@@ -27,6 +27,39 @@ fn child(root: &Arc<Shared>, sink: Arc<dyn BrowserEventSink>) -> Arc<Shared> {
 }
 
 #[tokio::test]
+async fn popup_and_nested_children_inherit_dialog_policy_and_keep_close_fencing() {
+    for allowed in [false, true] {
+        let root = source().await;
+        root.allow_page_dialogs.store(allowed, Ordering::Release);
+        let popup = child(&root, Arc::new(Sink::default()));
+        let nested = child(&popup, Arc::new(Sink::default()));
+        for view in [&popup, &nested] {
+            assert_eq!(view.allow_page_dialogs.load(Ordering::Acquire), allowed);
+            let mut state = view.state.lock().unwrap();
+            state.control.attached(&view.identity).unwrap();
+            state.browser_id = Some(41);
+            drop(state);
+            let mut browser = super::super::tests::focus_browser(1, 41);
+            let handler = NativeJsDialog::new(view.clone());
+            let mut suppress = 7;
+            assert_eq!(handler.on_jsdialog(
+                Some(&mut browser), None, JsdialogType::ALERT, None, None, None,
+                Some(&mut suppress),
+            ), 0);
+            assert_eq!(suppress, i32::from(!allowed));
+            view.revoke();
+            assert_eq!(handler.on_jsdialog(
+                Some(&mut browser), None, JsdialogType::ALERT, None, None, None,
+                Some(&mut suppress),
+            ), 0);
+            assert_eq!(suppress, 1);
+            assert!(root.current());
+        }
+        root.revoke();
+    }
+}
+
+#[tokio::test]
 async fn child_close_authorizes_only_child_cleanup_without_revoking_source() {
     let root = source().await;
     let popup = child(&root, Arc::new(Sink::default()));

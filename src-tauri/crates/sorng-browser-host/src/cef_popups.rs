@@ -204,6 +204,7 @@ fn child_shared(
 ) -> Arc<Shared> {
     Arc::new(Shared {
         input_blocked: AtomicBool::new(false),
+        allow_page_dialogs: AtomicBool::new(source.allow_page_dialogs.load(Ordering::Acquire)),
         popup: role,
         inspector_bootstrap: source.inspector_bootstrap.clone(),
         session: source.session.clone(),

@@ -57,6 +57,9 @@ use std::time::{Duration, Instant};
 
 #[path = "cef_popups.rs"]
 mod cef_popups;
+#[cfg(test)]
+#[path = "cef_dialog_tests.rs"]
+mod dialog_tests;
 pub use cef_popups::{NativePopupInventory, NativePopupViewState};
 #[path = "cef_appearance.rs"]
 mod cef_appearance;
@@ -499,6 +502,8 @@ struct Shared {
     // Independent of visibility: clipped views keep painting while shell
     // overlays must prevent native navigation/system focus from returning.
     input_blocked: AtomicBool,
+    // Set from native-authorized saved globals before website navigation.
+    allow_page_dialogs: AtomicBool,
     sink: Arc<dyn BrowserEventSink>,
     hooks: Option<Arc<dyn NativeDocumentHooks>>,
     login_budget: Mutex<LoginBudget>,
@@ -938,6 +943,10 @@ fn redact_url(value: &str) -> RedactedUrl {
 }
 
 impl Shared {
+    fn page_dialogs_allowed(&self, browser: Option<&Browser>) -> bool {
+        self.allow_page_dialogs.load(Ordering::Acquire) && self.focus_allowed(browser)
+    }
+
     fn media_owner_current(&self) -> bool {
         self.capabilities.media_stream_enabled
             && self.current()
@@ -2011,6 +2020,14 @@ pub struct CefBrowserHost<'a> {
 }
 
 impl<'a> CefBrowserHost<'a> {
+    /// Native-only policy attachment after inert creation, before navigation.
+    /// Popup children inherit this attempt's policy when they are created.
+    pub fn configure_page_dialogs(&self, allowed: bool) -> Result<(), BrowserError> {
+        self.check(self.identity())?;
+        self.shared.allow_page_dialogs.store(allowed, Ordering::Release);
+        Ok(())
+    }
+
     /// Native-only checkpoint accessor. Capture before revoking the attempt or
     /// closing the host, poll the returned operation while pumping CEF, then
     /// save through the owning database's native retention backend.
@@ -2111,6 +2128,7 @@ impl<'a> CefBrowserHost<'a> {
             popup: cef_popups::PopupRole::root(),
             inspector_bootstrap: context.inspector_bootstrap(),
             input_blocked: AtomicBool::new(false),
+            allow_page_dialogs: AtomicBool::new(false),
             session: session.clone(),
             identity: identity.clone(),
             permissions: permissions.clone(),
@@ -2955,7 +2973,7 @@ wrap_client! {
         fn focus_handler(&self) -> Option<FocusHandler> { Some(NativeFocus::new(self.shared.clone())) }
         fn find_handler(&self) -> Option<FindHandler> { Some(cef_find::handler(self.shared.clone())) }
         fn dialog_handler(&self) -> Option<DialogHandler> { Some(DenyFileDialog::new()) }
-        fn jsdialog_handler(&self) -> Option<JsdialogHandler> { Some(DenyJsDialog::new()) }
+        fn jsdialog_handler(&self) -> Option<JsdialogHandler> { Some(NativeJsDialog::new(self.shared.clone())) }
         fn permission_handler(&self) -> Option<PermissionHandler> { Some(NativePermissions::new(self.shared.clone())) }
         fn download_handler(&self) -> Option<DownloadHandler> { Some(self.downloads.handler()) }
         fn drag_handler(&self) -> Option<DragHandler> { Some(DenyDrag::new()) }
@@ -3203,17 +3221,29 @@ wrap_dialog_handler! {
 }
 
 wrap_jsdialog_handler! {
-    struct DenyJsDialog;
+    struct NativeJsDialog { shared: Arc<Shared> }
     impl JsdialogHandler {
-        fn on_jsdialog(&self, _browser: Option<&mut Browser>, _origin_url: Option<&CefString>,
+        fn on_jsdialog(&self, browser: Option<&mut Browser>, _origin_url: Option<&CefString>,
             _dialog_type: JsdialogType, _message_text: Option<&CefString>, _default_prompt_text: Option<&CefString>,
             callback: Option<&mut JsdialogCallback>, suppress_message: Option<&mut i32>) -> i32 {
-            if let Some(callback) = callback { callback.cont(0, None); 1 }
-            else { if let Some(suppress) = suppress_message { *suppress = 1; } 0 }
+            let allowed = self.shared.page_dialogs_allowed(browser.as_deref());
+            // Let CEF present its standard dialog and deliver the user's own
+            // answer. Suppression also retains CEF's dialog-spam protection.
+            // Neither path completes or retains the callback ourselves.
+            if let Some(suppress) = suppress_message {
+                *suppress = i32::from(!allowed);
+                return 0;
+            }
+            if allowed { return 0; }
+            // A malformed callback cannot fall through to native presentation.
+            if let Some(callback) = callback { callback.cont(0, None); }
+            1
         }
-        fn on_before_unload_dialog(&self, _browser: Option<&mut Browser>, _message_text: Option<&CefString>,
+        fn on_before_unload_dialog(&self, browser: Option<&mut Browser>, _message_text: Option<&CefString>,
             _is_reload: i32, callback: Option<&mut JsdialogCallback>) -> i32 {
-            // A denied prompt must never prevent the owner's forced close.
+            if self.shared.page_dialogs_allowed(browser.as_deref()) { return 0; }
+            // Owner cleanup revokes the attempt before CloseBrowser(true).
+            // Disabled, protected, hidden or closing views cannot hold it open.
             if let Some(callback) = callback { callback.cont(1, None); }
             1
         }
@@ -4239,6 +4269,7 @@ mod tests {
             popup: cef_popups::PopupRole::default(),
             inspector_bootstrap: Arc::default(),
             input_blocked: AtomicBool::new(false),
+            allow_page_dialogs: AtomicBool::new(false),
             session: Arc::new(Mutex::new(session)),
             identity,
             permissions: crate::cef_requests::deny_permissions(),
@@ -4954,19 +4985,5 @@ mod tests {
             DenyDrag::new().on_drag_enter(None, None, DragOperationsMask::default()),
             1
         );
-        let mut suppressed = 0;
-        assert_eq!(
-            DenyJsDialog::new().on_jsdialog(
-                None,
-                None,
-                JsdialogType::default(),
-                None,
-                None,
-                None,
-                Some(&mut suppressed)
-            ),
-            0
-        );
-        assert_eq!(suppressed, 1);
     }
 }
