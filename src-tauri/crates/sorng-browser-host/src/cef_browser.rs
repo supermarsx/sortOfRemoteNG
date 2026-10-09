@@ -148,6 +148,8 @@ pub struct BrowserState {
     pub can_go_back: bool,
     pub can_go_forward: bool,
     pub fault: Option<BrowserFault>,
+    /// A failed document request leaves the browser and its history alive.
+    pub load_failure: Option<crate::native_navigation::LoadFailure>,
 }
 
 /// Native only. The app owner chooses the eventual bounded IPC DTO and must
@@ -2136,6 +2138,7 @@ impl<'a> CefBrowserHost<'a> {
                     can_go_back: false,
                     can_go_forward: false,
                     fault: None,
+                    load_failure: None,
                 },
             })),
         });
@@ -2868,6 +2871,7 @@ wrap_request_handler! {
         }
         fn on_before_browse(&self, browser: Option<&mut Browser>, frame: Option<&mut Frame>,
             request: Option<&mut Request>, user_gesture: i32, is_redirect: i32) -> i32 {
+            let mut browser = browser;
             // Includes same-origin subframe reloads: an old document's consent
             // must never be applied to a replacement using the same frame ID.
             self.shared.deny_media_on_ui(None);
@@ -2876,7 +2880,10 @@ wrap_request_handler! {
                 self.shared.automation.lock().unwrap_or_else(|error| error.into_inner()).navigating = true;
                 self.shared.cancel_certificate(None); self.shared.clear_automation();
             }
-            let decision = self.inner.on_before_browse(browser, frame, request, user_gesture, is_redirect);
+            let decision = self.inner.on_before_browse(browser.as_deref_mut(), frame, request, user_gesture, is_redirect);
+            if main_frame && decision == 0 {
+                self.shared.update(browser.as_deref(), |page| page.load_failure = None);
+            }
             if main_frame && decision != 0 {
                 self.shared.automation.lock().unwrap_or_else(|error| error.into_inner()).navigating = false;
             }
@@ -3125,9 +3132,10 @@ wrap_load_handler! {
             // CEF includes child-frame loads here. Only main-frame BeforeBrowse
             // starts the automation fence; an iframe must not cancel typing.
             // Keep the stopped fallback for navigations cancelled before commit,
-            // which do not receive OnLoadEnd. Main-load faults revoke the owner.
+            // which do not receive OnLoadEnd, without clearing a main-load error.
             if is_loading == 0 && self.shared.accepts(browser.as_deref()) && self.shared.current() {
-                self.shared.automation.lock().unwrap_or_else(|error| error.into_inner()).navigating = false;
+                let failed = self.shared.state.lock().map_or(true, |state| state.page.load_failure.is_some());
+                self.shared.automation.lock().unwrap_or_else(|error| error.into_inner()).navigating = failed;
             }
             self.shared.update(browser.as_deref(), |page| {
                 page.loading = is_loading == 1;
@@ -3143,17 +3151,29 @@ wrap_load_handler! {
                 || CefString::from(&frame.identifier()).to_string() != CefString::from(&main.identifier()).to_string() { return; }
             // The main document is ready even if a child is still loading.
             // Generation, revocation and keyboard owner/focus checks remain
-            // independent; a main-load fault revokes the owner before this callback.
-            self.shared.automation.lock().unwrap_or_else(|error| error.into_inner()).navigating = false;
+            // independent; a load error still fences this document.
+            let failed = self.shared.state.lock().map_or(true, |state| state.page.load_failure.is_some());
+            self.shared.automation.lock().unwrap_or_else(|error| error.into_inner()).navigating = failed;
         }
         fn on_load_error(&self, browser: Option<&mut Browser>, frame: Option<&mut Frame>,
             error_code: Errorcode, _error_text: Option<&CefString>, _failed_url: Option<&CefString>) {
+            if !self.shared.accepts(browser.as_deref()) || !self.shared.current() { return; }
             let main_frame = frame.as_ref().is_some_and(|frame| frame.is_main() == 1);
-            self.shared.navigation_status(NativeNavigationStatus::LoadError { code: cef_dll_sys::cef_errorcode_t::from(error_code) as i32, main_frame });
-            // Stop and superseded navigations report ABORTED, not host failure.
-            if error_code != Errorcode::ABORTED && main_frame
-                && self.shared.accepts(browser.as_deref()) {
-                self.shared.fault(browser.as_deref(), BrowserFault::Load);
+            let code = cef_dll_sys::cef_errorcode_t::from(error_code) as i32;
+            self.shared.navigation_status(NativeNavigationStatus::LoadError { code, main_frame });
+            if let Some(failure) = crate::native_navigation::classify_load_error(code, main_frame) {
+                // OnLoadError describes a request, not a crashed browser. Keep
+                // the session for explicit back/navigation/DevTools. Do not
+                // retry a possibly submitted POST or relax any security policy.
+                // OnLoadingStateChange(false) follows errors too and must not
+                // erase this evidence or declare this document successful.
+                self.shared.automation.lock().unwrap_or_else(|error| error.into_inner()).navigating = true;
+                self.shared.clear_automation();
+                self.shared.cancel_certificate(None);
+                self.shared.update(browser.as_deref(), |page| {
+                    page.load_failure = Some(failure);
+                    page.loading = false;
+                });
             }
         }
     }
@@ -4246,6 +4266,7 @@ mod tests {
                     can_go_back: false,
                     can_go_forward: false,
                     fault: None,
+                    load_failure: None,
                 },
             })),
         }

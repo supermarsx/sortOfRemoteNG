@@ -49,6 +49,19 @@ pub(super) fn publish_with_reason(
     sequence: u64,
     phase_and_reason: (OriginBrowserPhase, Option<OriginBrowserFailureReason>),
     page: OriginBrowserPageState<'_>,
+    current: impl FnMut() -> bool,
+    emit: impl FnOnce(OriginBrowserSnapshot) -> bool,
+) -> Publication {
+    publish_with_load_failure(snapshot, identity, sequence, phase_and_reason, None, page, current, emit)
+}
+
+pub(super) fn publish_with_load_failure(
+    snapshot: &Mutex<OriginBrowserSnapshot>,
+    identity: &BrowserIdentity,
+    sequence: u64,
+    phase_and_reason: (OriginBrowserPhase, Option<OriginBrowserFailureReason>),
+    load_failure: Option<sorng_browser_host::native_navigation::LoadFailure>,
+    page: OriginBrowserPageState<'_>,
     mut current: impl FnMut() -> bool,
     emit: impl FnOnce(OriginBrowserSnapshot) -> bool,
 ) -> Publication {
@@ -78,6 +91,7 @@ pub(super) fn publish_with_reason(
         return Publication::Failed;
     };
     next.set_failure_reason(reason);
+    next.set_load_failure(load_failure);
     {
         let mut previous = match snapshot.lock() {
             Ok(previous) => previous,

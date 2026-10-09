@@ -70,6 +70,28 @@ fn owner() -> Value {
 }
 
 #[test]
+fn document_failure_is_attached_only_and_scrubbing_clears_it() {
+    let native = NativePolicy::new("owner", "connection", "tab", "https://fixture.test").unwrap();
+    let failure = sorng_browser_host::native_navigation::classify_load_error(-105, true);
+    for phase in [OriginBrowserPhase::Starting, OriginBrowserPhase::Attached,
+        OriginBrowserPhase::Closing, OriginBrowserPhase::Closed, OriginBrowserPhase::Failed] {
+        let mut snapshot = OriginBrowserSnapshot::new(native.identity(), 1, phase,
+            OriginBrowserPageState { url: "", title: "", loading: false,
+                can_go_back: true, can_go_forward: false }).unwrap();
+        snapshot.set_load_failure(failure);
+        let value = serde_json::to_value(&snapshot).unwrap();
+        if matches!(phase, OriginBrowserPhase::Attached) {
+            assert_eq!(value["loadFailure"], json!({"code": -105, "category": "dns"}));
+            assert!(value.get("failureReason").is_none());
+        } else {
+            assert!(value.get("loadFailure").is_none());
+        }
+        snapshot.scrub_page_state();
+        assert!(serde_json::to_value(&snapshot).unwrap().get("loadFailure").is_none());
+    }
+}
+
+#[test]
 fn quick_connect_requires_explicit_temporary_namespace_and_narrow_configuration() {
     let mut value = create();
     value["owner"]["ownerDatabaseId"] = json!("quick-connect:tab-1");

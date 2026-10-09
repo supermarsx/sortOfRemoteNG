@@ -13,6 +13,7 @@ mod cef_devtools_policy;
 mod cef_occlusion;
 pub mod domain_permissions;
 pub mod ipc;
+pub mod native_navigation;
 pub mod message_pump;
 pub mod native_automation;
 pub mod native_appearance;

@@ -810,6 +810,19 @@ impl From<sorng_protocols::origin_browser::BrowserSessionFailure> for OriginBrow
     }
 }
 
+/// Only native numeric evidence and a fixed category cross into diagnostics.
+#[derive(Clone, Serialize)]
+pub struct OriginBrowserLoadFailure {
+    code: i32,
+    category: &'static str,
+}
+
+impl From<crate::native_navigation::LoadFailure> for OriginBrowserLoadFailure {
+    fn from(failure: crate::native_navigation::LoadFailure) -> Self {
+        Self { code: failure.code, category: failure.category.as_str() }
+    }
+}
+
 /// Input from a native host callback, never IPC. Values are validated/bounded
 /// before owner-window output. Full URLs are address-bar state, not diagnostics.
 pub struct OriginBrowserPageState<'a> {
@@ -828,6 +841,8 @@ pub struct OriginBrowserSnapshot {
     phase: OriginBrowserPhase,
     #[serde(skip_serializing_if = "Option::is_none")]
     failure_reason: Option<OriginBrowserFailureReason>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    load_failure: Option<OriginBrowserLoadFailure>,
     /// Only the trusted owning window receives this address-bar value. Never
     /// log/persist this object or use current_url in diagnostic reports.
     current_url: String,
@@ -891,6 +906,7 @@ impl OriginBrowserSnapshot {
             sequence,
             phase,
             failure_reason: None,
+            load_failure: None,
             current_url,
             display_url,
             title,
@@ -918,10 +934,19 @@ impl OriginBrowserSnapshot {
         self.failure_reason = reason.filter(|_| matches!(self.phase, OriginBrowserPhase::Failed));
     }
 
+    /// A failed document can still have a live browser. Host failures and
+    /// closed attempts use the separate terminal failure reason instead.
+    pub fn set_load_failure(&mut self, failure: Option<crate::native_navigation::LoadFailure>) {
+        self.load_failure = failure
+            .filter(|_| matches!(self.phase, OriginBrowserPhase::Attached))
+            .map(Into::into);
+    }
+
     /// Retain identity, lifecycle and ordering, but remove owner-private page
     /// data and activity when the native owner is no longer authorized.
     /// This is logical scrubbing for retention/serialization, not zeroization.
     pub fn scrub_page_state(&mut self) {
+        self.load_failure = None;
         self.current_url.clear();
         self.display_url.clear();
         self.title.clear();

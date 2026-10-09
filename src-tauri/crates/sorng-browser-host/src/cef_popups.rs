@@ -234,6 +234,7 @@ fn child_shared(
                 can_go_back: false,
                 can_go_forward: false,
                 fault: None,
+                load_failure: None,
             },
         })),
     })

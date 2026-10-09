@@ -216,3 +216,56 @@ fn child_errors_do_not_fence_main_and_completion_cannot_clear_other_invalidation
     load.on_load_end(Some(&mut browser), Some(&mut main), 200);
     assert!(!available(&load));
 }
+
+#[cfg(not(head_load_fault))]
+#[test]
+fn recoverable_error_keeps_history_and_only_allowed_main_navigation_clears_evidence() {
+    let (load, mut requests, mut browser, mut main, mut child) = fixture();
+    let old = generation(&load);
+    load.on_loading_state_change(Some(&mut browser), 1, 1, 1);
+    load.on_load_error(Some(&mut browser), Some(&mut main), Errorcode(-130), None, None);
+    assert!(load.shared.current(), "a document request failure is not owner revocation");
+    assert!(!available(&load));
+    assert_ne!(generation(&load), old);
+    {
+        let state = load.shared.state.lock().unwrap();
+        assert!(!state.page.loading);
+        assert!(state.page.can_go_back && state.page.can_go_forward);
+        assert_eq!(state.page.load_failure.unwrap().code, -130);
+    }
+    requests.on_before_browse(Some(&mut browser), Some(&mut child), None, 0, 0);
+    load.on_load_error(Some(&mut browser), Some(&mut child), Errorcode(-105), None, None);
+    load.on_load_error(Some(&mut browser), Some(&mut main), Errorcode(-3), None, None);
+    load.on_load_end(Some(&mut browser), Some(&mut child), 200);
+    assert_eq!(load.shared.state.lock().unwrap().page.load_failure.unwrap().code, -130);
+    assert!(!available(&load));
+    requests.inner.decision = 1;
+    assert_eq!(requests.on_before_browse(Some(&mut browser), Some(&mut main), None, 0, 0), 1);
+    assert_eq!(load.shared.state.lock().unwrap().page.load_failure.unwrap().code, -130);
+    requests.inner.decision = 0;
+    assert_eq!(requests.on_before_browse(Some(&mut browser), Some(&mut main), None, 0, 0), 0);
+    assert!(load.shared.state.lock().unwrap().page.load_failure.is_none());
+    assert!(!available(&load), "a new request is not yet a completed document");
+    load.on_load_end(Some(&mut browser), Some(&mut main), 200);
+    assert!(available(&load));
+    assert!(load.shared.current());
+    assert_ne!(generation(&load), old);
+}
+
+#[cfg(not(head_load_fault))]
+#[test]
+fn foreign_or_revoked_load_errors_cannot_replace_evidence_or_invalidate_typing_again() {
+    for revoked in [false, true] {
+        let (load, _, mut browser, mut main, _) = fixture();
+        load.on_load_error(Some(&mut browser), Some(&mut main), Errorcode(-105), None, None);
+        let previous = generation(&load);
+        if revoked {
+            load.shared.live.store(false, Ordering::Release);
+        } else {
+            browser.id = 2;
+        }
+        load.on_load_error(Some(&mut browser), Some(&mut main), Errorcode(-130), None, None);
+        assert_eq!(load.shared.state.lock().unwrap().page.load_failure.unwrap().code, -105);
+        assert_eq!(generation(&load), previous);
+    }
+}

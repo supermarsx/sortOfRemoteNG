@@ -1055,6 +1055,7 @@ impl BrowserEventSink for Sink {
             if self.attempt.navigation_submitted.load(Ordering::Acquire)
                 && finished_load
                 && !event.state.loading
+                && event.state.load_failure.is_none()
                 && event.display.url != "about:blank"
                 && !event.display.url.is_empty()
             {
@@ -1098,7 +1099,18 @@ impl BrowserEventSink for Sink {
         let current = || self.attempt.current();
         // No snapshot lock is held across the owner-window emitter.
         let emit = |next| self.window.emit(ORIGIN_BROWSER_STATE_EVENT, next).is_ok();
-        let publication = if failure_reason.is_some() {
+        let publication = if event.state.load_failure.is_some() {
+            display::publish_with_load_failure(
+                &self.attempt.snapshot,
+                &event.identity,
+                event.sequence,
+                (phase, failure_reason),
+                event.state.load_failure,
+                page,
+                current,
+                emit,
+            )
+        } else if failure_reason.is_some() {
             display::publish_with_reason(
                 &self.attempt.snapshot,
                 &event.identity,

@@ -153,6 +153,10 @@ fn inventory(view: &View) -> Result<Value, String> {
                     },
                 )
                 .ok()
+                .map(|mut snapshot| {
+                    snapshot.set_load_failure(state.load_failure);
+                    snapshot
+                })
             });
             views.push(json!({"viewId":child.view_id,"phase":phase,
                 "disposition": if child.disposition == PopupDisposition::Background { "background" } else { "foreground" },
