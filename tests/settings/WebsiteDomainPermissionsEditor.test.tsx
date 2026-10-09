@@ -384,12 +384,130 @@ describe("WebsiteDomainPermissionsEditor", () => {
         } as unknown as WebsiteDomainPermissionsSettings,
       });
       expect(screen.getByRole("alert")).toHaveTextContent(
-        "permissions are invalid",
+        /permission.*invalid/,
       );
       expect(screen.queryByRole("combobox")).not.toBeInTheDocument();
       expect(change).not.toHaveBeenCalled();
     },
   );
+
+  it("lets users explicitly repair malformed data without discarding valid rules", () => {
+    const corrupt = {
+      ...saved(),
+      version: 99,
+    } as unknown as WebsiteDomainPermissionsSettings;
+    const { change } = setup({ settings: corrupt, scope: "connection" });
+    fireEvent.click(screen.getByText("Repair policy JSON"));
+    expect(screen.getByLabelText("Connection policy JSON")).toHaveClass(
+      "sor-form-textarea",
+    );
+    expect(screen.getByLabelText("Connection policy JSON")).toHaveValue(
+      JSON.stringify(corrupt, null, 2),
+    );
+    expect(change).not.toHaveBeenCalled();
+    input("Connection policy JSON", JSON.stringify(saved()));
+    expect(change).not.toHaveBeenCalled();
+    fireEvent.click(
+      screen.getByRole("button", { name: "Use repaired policy" }),
+    );
+    expect(change).toHaveBeenCalledExactlyOnceWith(saved());
+    expect(screen.getByRole("combobox", { name: "Scripts" })).toHaveTextContent(
+      "Allow",
+    );
+    expect(screen.queryByText("Repair policy JSON")).not.toBeInTheDocument();
+  });
+
+  it.each([
+    "null",
+    "undefined",
+    "[]",
+    "{}",
+    '{"secret":"do-not-echo"}',
+    '{"version":1,"websites":[{"origin":"http://secret.example"}]}',
+  ])(
+    "rejects an invalid explicit repair (%s) without echoing its contents in errors",
+    (text) => {
+      const { change } = setup({
+        settings: {
+          ...saved(),
+          version: 99,
+        } as unknown as WebsiteDomainPermissionsSettings,
+      });
+      fireEvent.click(screen.getByText("Repair policy JSON"));
+      input("Shared policy JSON", text);
+      fireEvent.click(
+        screen.getByRole("button", { name: "Use repaired policy" }),
+      );
+      expect(change).not.toHaveBeenCalled();
+      const alerts = screen.getAllByRole("alert");
+      expect(alerts[alerts.length - 1]).toHaveTextContent(
+        "The repair is still invalid",
+      );
+      for (const alert of screen.getAllByRole("alert")) {
+        expect(alert).not.toHaveTextContent("do-not-echo");
+        expect(alert).not.toHaveTextContent("secret.example");
+      }
+    },
+  );
+
+  it("disables malformed-policy repair when read-only", () => {
+    const { change } = setup({
+      settings: {
+        ...saved(),
+        version: 99,
+      } as unknown as WebsiteDomainPermissionsSettings,
+      disabled: true,
+    });
+    fireEvent.click(screen.getByText("Repair policy JSON"));
+    expect(screen.getByLabelText("Shared policy JSON")).toBeDisabled();
+    const apply = screen.getByRole("button", { name: "Use repaired policy" });
+    expect(apply).toBeDisabled();
+    fireEvent.click(apply);
+    expect(change).not.toHaveBeenCalled();
+  });
+
+  it("drops stale repair drafts when the saved policy changes", () => {
+    const onChange = vi.fn();
+    const corrupt = {
+      ...saved(),
+      version: 99,
+    } as unknown as WebsiteDomainPermissionsSettings;
+    const { rerender } = render(
+      <WebsiteDomainPermissionsEditor settings={corrupt} onChange={onChange} />,
+    );
+    fireEvent.click(screen.getByText("Repair policy JSON"));
+    input("Shared policy JSON", JSON.stringify(saved()));
+    const next = {
+      version: 98,
+      websites: [],
+    } as unknown as WebsiteDomainPermissionsSettings;
+    rerender(
+      <WebsiteDomainPermissionsEditor settings={next} onChange={onChange} />,
+    );
+    expect(screen.getByLabelText("Shared policy JSON")).toHaveValue(
+      JSON.stringify(next, null, 2),
+    );
+    fireEvent.click(
+      screen.getByRole("button", { name: "Use repaired policy" }),
+    );
+    expect(onChange).not.toHaveBeenCalled();
+  });
+
+  it("sends malformed inherited rules to shared settings instead of overwriting connection rules", () => {
+    const { change } = setup({
+      settings: saved(),
+      scope: "connection",
+      sharedSettings: {
+        version: 99,
+        websites: [],
+      } as unknown as WebsiteDomainPermissionsSettings,
+    });
+    expect(screen.getByRole("alert")).toHaveTextContent(
+      "Settings → Web Browser first",
+    );
+    expect(screen.queryByText("Repair policy JSON")).not.toBeInTheDocument();
+    expect(change).not.toHaveBeenCalled();
+  });
 
   it("enforces website and destination row limits in the controls", () => {
     const initial = normalizeWebsiteDomainPermissions(undefined);

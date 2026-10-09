@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useId, useState } from "react";
+import React, { useId, useLayoutEffect, useState } from "react";
 import { Plus, Trash2 } from "lucide-react";
 import {
   WEBSITE_REQUEST_CLASSES,
@@ -24,6 +24,7 @@ import {
 } from "../../../../utils/settings/websiteDomainPermissions";
 import { Select } from "../../../ui/forms/Select";
 import { TextInput } from "../../../ui/forms/TextInput";
+import { Textarea } from "../../../ui/forms/Textarea";
 import { FormField } from "../../../ui/forms/FormField";
 
 export interface WebsiteDomainPermissionsEditorProps {
@@ -81,9 +82,27 @@ export default function WebsiteDomainPermissionsEditor(
   let applicationDefaults: WebsitePermissionApplicationDefaults;
   try {
     settings = normalizeWebsiteDomainPermissions(props.settings);
+  } catch {
+    return <InvalidPermissionPolicyEditor {...props} />;
+  }
+  try {
     sharedSettings = normalizeWebsiteDomainPermissions(
       props.scope === "connection" ? props.sharedSettings : undefined,
     );
+  } catch {
+    return (
+      <p
+        role="alert"
+        className="sor-alert-error text-sm text-[var(--color-text)]"
+      >
+        The shared website permission policy is invalid. Repair Shared website
+        request permissions in Settings → Web Browser first. This connection's
+        own rules are unchanged; overriding them cannot repair a malformed
+        shared policy.
+      </p>
+    );
+  }
+  try {
     applicationDefaults = normalizeWebsitePermissionApplicationDefaults(
       props.applicationDefaults,
     );
@@ -93,8 +112,9 @@ export default function WebsiteDomainPermissionsEditor(
         role="alert"
         className="sor-alert-error text-sm text-[var(--color-text)]"
       >
-        Website request permissions are invalid. Correct the saved policy before
-        editing; no rules have been changed.
+        Website request-class defaults are invalid. Each default must be Allow
+        or Deny, not Inherit. Review Settings → Web Browser; no rules have been
+        changed.
       </p>
     );
   }
@@ -105,6 +125,122 @@ export default function WebsiteDomainPermissionsEditor(
       sharedSettings={sharedSettings}
       applicationDefaults={applicationDefaults}
     />
+  );
+}
+
+const MAX_REPAIR_TEXT_LENGTH = 2 * 1024 * 1024;
+function policyRepairText(settings: unknown) {
+  try {
+    const serialized = JSON.stringify(settings, null, 2);
+    return typeof serialized === "string" &&
+      serialized.length <= MAX_REPAIR_TEXT_LENGTH
+      ? serialized
+      : "";
+  } catch {
+    return "";
+  }
+}
+
+/** Malformed data must remain editable. Never discard rules or normalize into
+ * broader inherited access merely by opening this surface. */
+function InvalidPermissionPolicyEditor(
+  props: WebsiteDomainPermissionsEditorProps,
+) {
+  const id = useId();
+  const [draft, setDraft] = useState(() => ({
+    source: props.settings,
+    text: policyRepairText(props.settings),
+    error: "",
+  }));
+  useLayoutEffect(() => {
+    setDraft({
+      source: props.settings,
+      text: policyRepairText(props.settings),
+      error: "",
+    });
+  }, [props.settings]);
+  const current = draft.source === props.settings;
+  return (
+    <section className="min-w-0 space-y-3 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] p-3 text-[var(--color-text)]">
+      <p role="alert" className="sor-alert-error text-sm">
+        {props.scope === "connection" ? "Connection" : "Shared"} website request
+        permissions are invalid. Existing rules are retained until you
+        explicitly apply a valid repair.
+      </p>
+      <p className="text-xs text-[var(--color-textSecondary)]">
+        Required format: version 1 and a websites array. Use exact HTTPS origins
+        without paths, credentials, queries or wildcards. Request-class values
+        must be inherit, allow or deny. Limits: 64 websites, 32 destinations per
+        website and 256 destinations total. Remove duplicate origins and
+        unsupported fields. Review each change; removing a rule may change
+        inherited access.
+      </p>
+      <details>
+        <summary className="cursor-pointer text-sm font-medium">
+          Repair policy JSON
+        </summary>
+        <div className="mt-3 space-y-3">
+          <label htmlFor={`${id}-repair`} className="block text-sm">
+            {props.scope === "connection" ? "Connection" : "Shared"} policy JSON
+          </label>
+          <Textarea
+            id={`${id}-repair`}
+            className="w-full min-h-48 font-mono text-xs"
+            value={current ? draft.text : ""}
+            disabled={props.disabled || !current}
+            spellCheck={false}
+            autoComplete="off"
+            maxLength={MAX_REPAIR_TEXT_LENGTH}
+            onChange={(text) =>
+              setDraft({ source: props.settings, text, error: "" })
+            }
+          />
+          <p className="text-xs text-[var(--color-textSecondary)]">
+            This is a local editor of the stored policy, not a diagnostic
+            export. Nothing is reset automatically. Apply the repaired policy,
+            save the surrounding settings if prompted, then retry the browser
+            explicitly.
+          </p>
+          <button
+            type="button"
+            className="sor-btn sor-btn-secondary"
+            disabled={props.disabled || !current || !draft.text.trim()}
+            onClick={() => {
+              if (props.disabled || !current) return;
+              let next: WebsiteDomainPermissionsSettings;
+              try {
+                if (draft.text.length > MAX_REPAIR_TEXT_LENGTH)
+                  throw new Error();
+                const parsed: unknown = JSON.parse(draft.text);
+                // Empty/null must not silently become an inherited empty policy.
+                if (
+                  !parsed ||
+                  typeof parsed !== "object" ||
+                  Array.isArray(parsed)
+                )
+                  throw new Error();
+                next = normalizeWebsiteDomainPermissions(parsed);
+              } catch {
+                setDraft((value) => ({
+                  ...value,
+                  error:
+                    "The repair is still invalid. Check the required format, exact HTTPS origins, duplicate rules and limits above. No changes were applied.",
+                }));
+                return;
+              }
+              props.onChange(next);
+            }}
+          >
+            Use repaired policy
+          </button>
+          {draft.error && (
+            <p role="alert" className="text-sm text-warning">
+              {draft.error}
+            </p>
+          )}
+        </div>
+      </details>
+    </section>
   );
 }
 
