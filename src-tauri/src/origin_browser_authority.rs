@@ -54,6 +54,8 @@ use permission_validation::{
 #[cfg(test)]
 #[path = "origin_browser_permission_validation_tests.rs"]
 mod permission_validation_tests;
+#[path = "origin_browser_ptisp_defaults.rs"]
+mod ptisp_defaults;
 #[path = "origin_browser_automation_authority.rs"]
 mod automation;
 pub use automation::NativeAutomationAuthority;
@@ -1342,6 +1344,13 @@ fn saved_permissions_inner(
             }
             Ok(())
         };
+        if let Some((destination, classes)) = ptisp_defaults::resource_grant(connection, &origin) {
+            grant(
+                destination,
+                classes,
+                invalid("bundled.ptispRoutes", "route must be an exact HTTPS origin"),
+            )?;
+        }
         let all: Vec<_> = CLASSES.iter().map(|(class, _)| *class).collect();
         if let Some(redirects) = connection.get("httpTrustedRedirectDestinations") {
             let scope = "connection.httpTrustedRedirectDestinations";
