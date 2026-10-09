@@ -72,6 +72,9 @@ pub fn is_command(command: &str) -> bool {
 
 type InvokeHandler = Box<tauri::ipc::InvokeHandler<tauri::Wry>>;
 
+#[path = "command_order.rs"]
+mod command_order;
+
 // `tauri::generate_handler!` expands every command into one match arm. Keep
 // each expansion bounded so rustc never has to lower and codegen the previous
 // 1,117-arm closure as a single unit. The generated predicate is built from
@@ -107,6 +110,9 @@ macro_rules! define_command_group {
                 stringify!($command),
             )*
         ];
+        // A hand-added command must never silently break binary-search routing.
+        // Evaluate after cfg filtering, in normal builds as well as tests.
+        const _: () = command_order::assert_sorted_unique($commands);
     };
 }
 

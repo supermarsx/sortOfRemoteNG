@@ -2,9 +2,11 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
+import os from "node:os";
 import { fileURLToPath } from "node:url";
 import { createHash } from "node:crypto";
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
+import { parseCoreCommandGroups } from "../../scripts/lib/core-command-groups.mjs";
 import {
   renderCommandInventory,
   commandName,
@@ -116,6 +118,65 @@ test("sorted lookup and generated dispatch preserve identical feature gates", ()
   );
   assert.match(source, /COMMAND_NAMES\.binary_search/);
   assert.deepEqual([...extractNativeCommandNames(source)], ["alpha", "zulu"]);
+});
+
+test("core routing rejects unsorted or duplicate command lists at compile time", (t) => {
+  const source = read(`${base("core")}/src/core_handler.rs`);
+  assert.match(
+    source,
+    /const _: \(\) = command_order::assert_sorted_unique\(\$commands\);/,
+  );
+  const groups = parseCoreCommandGroups(source);
+  assert.equal(groups.length, 10);
+  const names = groups.map(({ entries }) => entries.map(commandName));
+  const load = names.find((group) =>
+    group.includes("database_protection_load"),
+  );
+  assert.ok(load, "database loading must be registered");
+  for (const group of names) assert.deepEqual(group, [...group].sort());
+
+  const parent = fs.realpathSync(os.tmpdir());
+  const temp = fs.mkdtempSync(path.join(parent, "sorng-command-order-"));
+  t.after(() => {
+    assert.equal(path.dirname(fs.realpathSync(temp)), parent);
+    assert.ok(path.basename(temp).startsWith("sorng-command-order-"));
+    fs.rmSync(temp, { recursive: true, force: true });
+  });
+  const validator = read(`${base("core")}/src/command_order.rs`);
+  const compile = (lists) =>
+    spawnSync(
+      "rustc",
+      [
+        "--edition=2021",
+        "--crate-type=lib",
+        "--emit=metadata",
+        "--out-dir",
+        temp,
+        "-",
+      ],
+      {
+        encoding: "utf8",
+        windowsHide: true,
+        timeout: 60_000,
+        input: `mod command_order { ${validator} }\n${lists
+          .map(
+            (commands) =>
+              `const _: () = command_order::assert_sorted_unique(&${JSON.stringify(commands)});`,
+          )
+          .join("\n")}`,
+      },
+    );
+  const valid = compile([...names, [], ["one"], ["a", "aa", "b"]]);
+  assert.equal(valid.status, 0, valid.error?.message || valid.stderr);
+  for (const invalid of [
+    ["database_protection_load_plain", "database_protection_load"],
+    ["database_protection_load", "database_protection_load"],
+    ["b", "a"],
+  ]) {
+    const result = compile([invalid]);
+    assert.notEqual(result.status, 0);
+    assert.match(result.stderr, /Core commands must be sorted and unique/);
+  }
 });
 
 test("invalid, duplicate and oversized command registrars are rejected", () => {
