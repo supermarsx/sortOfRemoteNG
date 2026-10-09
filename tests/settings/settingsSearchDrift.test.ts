@@ -66,6 +66,7 @@ const FILE_TAB_OVERRIDES: Record<string, string> = {
   "CloudSyncSettings.tsx": "cloudSync",
   "DiagnosticsSettings.tsx": "diagnostics",
   "GeneralSettings.tsx": "general",
+  "DefaultConnectionSettings.tsx": "general",
   "LanguageSettings.tsx": "language",
   "LayoutSettings.tsx": "layout",
   "MacroSettings.tsx": "macros",

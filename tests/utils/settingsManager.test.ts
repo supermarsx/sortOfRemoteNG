@@ -69,6 +69,39 @@ function seedStoredSettings(seed: Partial<GlobalSettings>): void {
   fakeStoredSettings = { ...(fakeStoredSettings ?? {}), ...seed };
 }
 
+describe("default connection preference", () => {
+  it("defaults existing settings without a preference to HTTPS", async () => {
+    seedStoredSettings({ language: "en-US" });
+    expect(
+      (await SettingsManager.getInstance().loadSettings())
+        .defaultConnectionProtocol,
+    ).toBe("https");
+  });
+
+  it.each(["rdp", "ssh", "vnc", "http", "https", "telnet"] as const)(
+    "preserves the explicit %s preference through save and reload",
+    async (protocol) => {
+      const manager = SettingsManager.getInstance();
+      await manager.loadSettings();
+      await manager.saveSettings({ defaultConnectionProtocol: protocol });
+      expect(fakeStoredSettings?.defaultConnectionProtocol).toBe(protocol);
+      SettingsManager.resetInstance();
+      expect(
+        (await SettingsManager.getInstance().loadSettings())
+          .defaultConnectionProtocol,
+      ).toBe(protocol);
+    },
+  );
+
+  it("normalizes an invalid stored preference to HTTPS", async () => {
+    fakeStoredSettings = { defaultConnectionProtocol: "browser" };
+    expect(
+      (await SettingsManager.getInstance().loadSettings())
+        .defaultConnectionProtocol,
+    ).toBe("https");
+  });
+});
+
 describe("tab opening preferences", () => {
   it("adds foreground editor/tool defaults while preserving legacy background choices", async () => {
     seedStoredSettings({

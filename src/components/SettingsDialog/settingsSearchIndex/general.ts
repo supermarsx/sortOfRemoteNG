@@ -57,6 +57,48 @@ export const GENERAL_SEARCH_ENTRIES: SettingSearchEntry[] = [
 
   // ─── Connections ────────────────────────────────────────────────
   {
+    key: "defaultConnectionProtocol",
+    label: "Default connection type",
+    labelKey: "settingsGeneral.defaultConnectionType",
+    description:
+      "Choose Browser, RDP, SSH, VNC or Telnet for new connections and Quick Connect. Browser defaults to HTTPS; HTTP is configurable. Saved connections and explicit choices are unchanged.",
+    tags: [
+      "default",
+      "connection",
+      "browser",
+      "https",
+      "http",
+      "rdp",
+      "ssh",
+      "vnc",
+      "telnet",
+      "quick connect",
+    ],
+    synonyms: [
+      "new connection type",
+      "default protocol",
+      "default browser protocol",
+    ],
+    values: [
+      "browser",
+      "Browser",
+      "rdp",
+      "RDP (Remote Desktop)",
+      "ssh",
+      "SSH (Secure Shell)",
+      "vnc",
+      "VNC",
+      "telnet",
+      "Telnet",
+      "https",
+      "HTTPS",
+      "http",
+      "HTTP",
+    ],
+    section: "general",
+    sectionLabel: "General",
+  },
+  {
     key: "connectionTimeout",
     label: "Connection timeout",
     labelKey: "settingsGeneral.connectionTimeout",

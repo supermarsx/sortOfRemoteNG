@@ -19,6 +19,7 @@ import {
   defaultExportSecuritySettings,
 } from "../types/settings/settings";
 import { SettingsManager } from "../utils/settings/settingsManager";
+import { DEFAULT_CONNECTION_PROTOCOL } from "../utils/connection/defaultConnectionProtocol";
 import { normalizeWebsiteDarkModeSettings } from "../utils/connection/websiteDarkMode";
 import {
   normalizeWebBrowserSettings,
@@ -78,6 +79,7 @@ export const defaultSettings: GlobalSettings = {
   warnOnExit: true,
   warnOnDetachClose: true,
   quickConnectHistoryEnabled: true,
+  defaultConnectionProtocol: DEFAULT_CONNECTION_PROTOCOL,
   quickConnectHistory: [],
   detectUnexpectedClose: true,
   confirmMainAppClose: false,

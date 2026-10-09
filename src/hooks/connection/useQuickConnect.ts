@@ -1,19 +1,17 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { QuickConnectHistoryEntry } from "../../types/settings/settings";
+import { useSettings } from "../../contexts/SettingsContext";
+import {
+  DEFAULT_CONNECTION_PROTOCOLS,
+  normalizeDefaultConnectionProtocol,
+} from "../../utils/connection/defaultConnectionProtocol";
 import {
   sanitizeHostname,
   schemeToProtocol,
 } from "../../utils/connection/sanitizeHostname";
 
 /** Wire protocols Quick Connect supports; HTTP/HTTPS share one Browser type. */
-export const QUICK_CONNECT_PROTOCOLS = [
-  "rdp",
-  "ssh",
-  "vnc",
-  "http",
-  "https",
-  "telnet",
-] as const;
+export const QUICK_CONNECT_PROTOCOLS = DEFAULT_CONNECTION_PROTOCOLS;
 
 /**
  * Derive hostname/protocol from a pasted or typed address. A scheme is
@@ -79,8 +77,24 @@ export function useQuickConnect({
   onClearHistory,
   onConnect,
 }: UseQuickConnectOptions) {
+  const { settings } = useSettings();
+  const defaultProtocol = normalizeDefaultConnectionProtocol(
+    settings.defaultConnectionProtocol,
+  );
   const [hostname, setHostname] = useState("");
-  const [protocol, setProtocol] = useState("rdp");
+  const [protocol, setProtocolState] = useState<string>(defaultProtocol);
+  const explicitProtocolRef = useRef(false);
+  const setProtocol = useCallback((value: string) => {
+    explicitProtocolRef.current = true;
+    setProtocolState(value);
+  }, []);
+  useEffect(() => {
+    // Settings may finish loading after the dialog is mounted. Honor that
+    // preference only while no address/type/history selection owns the draft.
+    if (!explicitProtocolRef.current && !hostname) {
+      setProtocolState(defaultProtocol);
+    }
+  }, [defaultProtocol, hostname]);
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [domain, setDomain] = useState("");
@@ -101,6 +115,8 @@ export function useQuickConnect({
   const historyItems = historyEnabled ? history : [];
 
   const resetFields = useCallback(() => {
+    explicitProtocolRef.current = false;
+    setProtocolState(defaultProtocol);
     setHostname("");
     setUsername("");
     setPassword("");
@@ -110,7 +126,7 @@ export function useQuickConnect({
     setBasicAuthUsername("");
     setBasicAuthPassword("");
     setHttpVerifySsl(true);
-  }, []);
+  }, [defaultProtocol]);
 
   useEffect(() => {
     if (!isOpen) {
@@ -187,6 +203,7 @@ export function useQuickConnect({
       onConnect,
       onClose,
       resetFields,
+      setProtocol,
     ],
   );
 
@@ -201,19 +218,22 @@ export function useQuickConnect({
       setHostname(derived.hostname);
       if (derived.protocol) setProtocol(derived.protocol);
     },
-    [protocol],
+    [protocol, setProtocol],
   );
 
-  const handleHistorySelect = useCallback((entry: QuickConnectHistoryEntry) => {
-    setHostname(entry.hostname);
-    setProtocol(entry.protocol);
-    setUsername(entry.username ?? "");
-    setAuthType(entry.authType ?? "password");
-    setPassword("");
-    setPrivateKey("");
-    setPassphrase("");
-    setShowHistory(false);
-  }, []);
+  const handleHistorySelect = useCallback(
+    (entry: QuickConnectHistoryEntry) => {
+      setHostname(entry.hostname);
+      setProtocol(entry.protocol);
+      setUsername(entry.username ?? "");
+      setAuthType(entry.authType ?? "password");
+      setPassword("");
+      setPrivateKey("");
+      setPassphrase("");
+      setShowHistory(false);
+    },
+    [setProtocol],
+  );
 
   return {
     hostname,

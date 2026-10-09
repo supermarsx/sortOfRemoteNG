@@ -36,6 +36,10 @@ import { DEFAULT_SESSION_QUICK_ACTIONS } from "../../types/connection/sessionQui
 import { normalizeSessionQuickActions } from "../connection/sessionQuickActions";
 import { normalizeWebsiteDarkModeSettings } from "../connection/websiteDarkMode";
 import {
+  DEFAULT_CONNECTION_PROTOCOL,
+  normalizeDefaultConnectionProtocol,
+} from "../connection/defaultConnectionProtocol";
+import {
   normalizeWebBrowserSettings,
   normalizeInternalProxySettings,
 } from "./webBrowserSettings";
@@ -348,6 +352,7 @@ const DEFAULT_SETTINGS: GlobalSettings = {
   warnOnExit: true,
   warnOnDetachClose: true,
   quickConnectHistoryEnabled: true,
+  defaultConnectionProtocol: DEFAULT_CONNECTION_PROTOCOL,
   quickConnectHistory: [],
   detectUnexpectedClose: true,
   confirmMainAppClose: false,
@@ -1182,6 +1187,9 @@ export class SettingsManager {
     return {
       ...DEFAULT_SETTINGS,
       ...normalizedStored,
+      defaultConnectionProtocol: normalizeDefaultConnectionProtocol(
+        normalizedStored.defaultConnectionProtocol,
+      ),
       showDocumentsInConnectionTree:
         normalizedStored.showDocumentsInConnectionTree === true,
       searchDocumentContents: normalizedStored.searchDocumentContents === true,

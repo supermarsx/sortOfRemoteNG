@@ -64,11 +64,14 @@ describe("QuickConnect", () => {
       expect(protocolSelect).toHaveValue("ssh");
     });
 
-    it("should have RDP as default protocol", () => {
+    it("should default to Browser with HTTPS", () => {
       render(<QuickConnect {...mockProps} />);
 
       // Custom Select shows the selected option label in the trigger button
-      expect(screen.getByText("RDP (Remote Desktop)")).toBeInTheDocument();
+      expect(screen.getByLabelText("Connection type")).toHaveTextContent(
+        "Browser",
+      );
+      expect(screen.getByLabelText("Protocol")).toHaveTextContent(/^HTTPS$/);
     });
   });
 
@@ -82,7 +85,7 @@ describe("QuickConnect", () => {
       fireEvent.change(hostnameInput, { target: { value: "192.168.1.100" } });
 
       // Open the custom Select dropdown and select SSH
-      const protocolTrigger = screen.getByText("RDP (Remote Desktop)");
+      const protocolTrigger = screen.getByLabelText("Connection type");
       fireEvent.click(protocolTrigger);
       fireEvent.mouseDown(screen.getByText("SSH (Secure Shell)"));
 
@@ -130,12 +133,8 @@ describe("QuickConnect", () => {
 
       expect(mockProps.onConnect).toHaveBeenCalledWith({
         hostname: "192.168.1.100",
-        protocol: "rdp",
-        username: undefined,
-        authType: undefined,
-        password: undefined,
-        privateKey: undefined,
-        passphrase: undefined,
+        protocol: "https",
+        httpVerifySsl: true,
       });
     });
 
@@ -176,12 +175,8 @@ describe("QuickConnect", () => {
 
       expect(mockProps.onConnect).toHaveBeenCalledWith({
         hostname: "192.168.1.100",
-        protocol: "rdp",
-        username: undefined,
-        authType: undefined,
-        password: undefined,
-        privateKey: undefined,
-        passphrase: undefined,
+        protocol: "https",
+        httpVerifySsl: true,
       });
     });
   });
@@ -224,7 +219,7 @@ describe("QuickConnect", () => {
       render(<QuickConnect {...mockProps} />);
 
       // Open the custom Select dropdown to see options
-      const protocolTrigger = screen.getByText("RDP (Remote Desktop)");
+      const protocolTrigger = screen.getByLabelText("Connection type");
       fireEvent.click(protocolTrigger);
 
       expect(screen.getByText("SSH (Secure Shell)")).toBeInTheDocument();
@@ -331,6 +326,7 @@ describe("QuickConnect", () => {
       (protocol) => {
         render(<QuickConnect {...mockProps} />);
         // Credentials from another connection type must not leak into this URL.
+        chooseType("RDP (Remote Desktop)");
         fireEvent.change(screen.getByLabelText("Username (optional)"), {
           target: { value: "rdp-user" },
         });

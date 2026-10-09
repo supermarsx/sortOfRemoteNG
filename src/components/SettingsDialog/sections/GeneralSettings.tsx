@@ -20,6 +20,7 @@ import {
 } from "../../ui/settings/SettingsPrimitives";
 import { SettingsConnectionTimeoutRow } from "../../ui/settings/NetworkPrimitives";
 import SectionHeading from "../../ui/SectionHeading";
+import { DefaultConnectionSettings } from "./DefaultConnectionSettings";
 
 interface GeneralSettingsProps {
   settings: GlobalSettings;
@@ -123,6 +124,10 @@ export const GeneralSettings: React.FC<GeneralSettingsProps> = ({
           title={t("connections.title", "Connections")}
         />
         <Card>
+          <DefaultConnectionSettings
+            settings={settings}
+            updateSettings={updateSettings}
+          />
           <SettingsConnectionTimeoutRow
             settingKey="connectionTimeout"
             label={t("settingsGeneral.connectionTimeout", "Connection timeout")}

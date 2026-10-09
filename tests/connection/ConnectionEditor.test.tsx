@@ -138,7 +138,10 @@ vi.mock("../../src/contexts/ToastContext", () => ({
 // Override the global SettingsContext mock so a single test can flip
 // autoSaveEnabled on. Defaults to false, matching vitest.setup.ts, so the
 // other ~293 tests in this file are unaffected. Toggled via settingsMockState.
-const settingsMockState = vi.hoisted(() => ({ autoSaveEnabled: false }));
+const settingsMockState = vi.hoisted(() => ({
+  autoSaveEnabled: false,
+  defaultConnectionProtocol: undefined as string | undefined,
+}));
 
 vi.mock("../../src/contexts/SettingsContext", async (importOriginal) => {
   const actual = await importOriginal<Record<string, unknown>>();
@@ -150,6 +153,7 @@ vi.mock("../../src/contexts/SettingsContext", async (importOriginal) => {
       settings: {
         ...defaults,
         autoSaveEnabled: settingsMockState.autoSaveEnabled,
+        defaultConnectionProtocol: settingsMockState.defaultConnectionProtocol,
       },
       updateSettings: async () => {},
       reloadSettings: async () => {},
@@ -774,10 +778,63 @@ describe("ConnectionEditor", () => {
       renderWithProviders({ isOpen: true, onClose: vi.fn() });
 
       const nameInput = screen.getByTestId("editor-name");
-      // RDP should be selected by default (has active styling)
       expect(nameInput).toHaveValue("");
-      // RDP should be displayed as the selected protocol in the dropdown toggle
-      expect(screen.getByTestId("editor-protocol")).toHaveTextContent(/RDP/);
+      expect(screen.getByTestId("editor-protocol")).toHaveTextContent("Browser");
+      expect(screen.getByTestId("editor-port")).toHaveValue(443);
+    });
+
+    it.each([
+      ["ssh", "SSH", 22],
+      ["http", "Browser", 80],
+      ["rdp", "RDP", 3389],
+    ])(
+      "uses the configured %s default for a blank connection",
+      (protocol, label, port) => {
+        settingsMockState.defaultConnectionProtocol = String(protocol);
+        try {
+          renderWithProviders({ isOpen: true, onClose: vi.fn() });
+          expect(screen.getByTestId("editor-protocol")).toHaveTextContent(
+            String(label),
+          );
+          expect(screen.getByTestId("editor-port")).toHaveValue(Number(port));
+        } finally {
+          settingsMockState.defaultConnectionProtocol = undefined;
+        }
+      },
+    );
+
+    it("does not apply the new default to a saved connection", () => {
+      renderWithProviders({
+        connection: mockConnection,
+        isOpen: true,
+        onClose: vi.fn(),
+      });
+      expect(screen.getByTestId("editor-protocol")).toHaveTextContent("RDP");
+      expect(screen.getByTestId("editor-port")).toHaveValue(3389);
+    });
+
+    it("keeps an in-progress protocol choice when the default changes", () => {
+      const props = { isOpen: true, onClose: vi.fn() };
+      const { rerender } = renderWithProviders(props);
+      fireEvent.change(screen.getByTestId("editor-name"), {
+        target: { value: "My draft" },
+      });
+      fireEvent.click(screen.getByTestId("editor-protocol"));
+      fireEvent.click(screen.getByRole("option", { name: /^SSH/i }));
+      settingsMockState.defaultConnectionProtocol = "rdp";
+      try {
+        rerender(
+          <ConnectionProvider>
+            <ConnectionStateProbe />
+            <ConnectionEditor {...props} />
+          </ConnectionProvider>,
+        );
+        expect(screen.getByTestId("editor-protocol")).toHaveTextContent("SSH");
+        expect(screen.getByTestId("editor-port")).toHaveValue(22);
+        expect(screen.getByTestId("editor-name")).toHaveValue("My draft");
+      } finally {
+        settingsMockState.defaultConnectionProtocol = undefined;
+      }
     });
 
     it("should update form data when inputs change", () => {
@@ -1019,6 +1076,8 @@ describe("ConnectionEditor", () => {
       });
       await waitFor(() => expect(searchInput).toHaveFocus());
 
+      // Start from the first option regardless of the user's default type.
+      fireEvent.keyDown(searchInput, { key: "Home" });
       fireEvent.keyDown(searchInput, { key: "ArrowDown" });
       expect(searchInput).toHaveAttribute(
         "aria-activedescendant",
@@ -2668,7 +2727,7 @@ describe("ConnectionEditor", () => {
       const nameInput = screen.getByTestId("editor-name");
       fireEvent.change(nameInput, { target: { value: "Test Connection" } });
 
-      const hostnameInput = screen.getByPlaceholderText(/192\.168\.1\.100/i);
+      const hostnameInput = screen.getByTestId("editor-hostname");
       fireEvent.change(hostnameInput, {
         target: { value: "test.example.com" },
       });

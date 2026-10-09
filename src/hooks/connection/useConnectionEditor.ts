@@ -31,6 +31,10 @@ import { useConnections } from "../../contexts/useConnections";
 import { useSettings } from "../../contexts/SettingsContext";
 import { useToastContext } from "../../contexts/ToastContext";
 import { getDefaultPort } from "../../utils/discovery/defaultPorts";
+import {
+  DEFAULT_CONNECTION_PROTOCOL,
+  normalizeDefaultConnectionProtocol,
+} from "../../utils/connection/defaultConnectionProtocol";
 import { isEndpointFreeGoogleService } from "../../utils/connection/googleServiceAddressPolicy";
 import { generateId } from "../../utils/core/id";
 import {
@@ -775,9 +779,9 @@ const integrationPersistenceError = (error: unknown): string => {
 
 const DEFAULT_FORM: Partial<Connection> = {
   name: "",
-  protocol: "rdp",
+  protocol: DEFAULT_CONNECTION_PROTOCOL,
   hostname: "",
-  port: 3389,
+  port: 443,
   username: "",
   password: "",
   domain: "",
@@ -870,6 +874,12 @@ export function useConnectionEditor(
     credentialVault?.scope ? { ...credentialVault.scope } : null,
   );
   const { settings } = useSettings();
+  // Defaults are sampled only when a new editing session starts. Preference
+  // updates must never replace an existing connection or an in-progress draft.
+  const defaultProtocolRef = useRef(DEFAULT_CONNECTION_PROTOCOL);
+  defaultProtocolRef.current = normalizeDefaultConnectionProtocol(
+    settings.defaultConnectionProtocol,
+  );
   const { toast } = useToastContext();
   const {
     instances: integrationInstances,
@@ -1212,7 +1222,14 @@ export function useConnectionEditor(
       )
         ? initialParentId
         : undefined;
-      const initial = { ...DEFAULT_FORM, cloudProvider: undefined, parentId };
+      const protocol = defaultProtocolRef.current;
+      const initial = {
+        ...DEFAULT_FORM,
+        protocol,
+        port: getDefaultConnectionPort(protocol),
+        cloudProvider: undefined,
+        parentId,
+      };
       setFormData(initial);
       originalDataRef.current = buildEditorSnapshot(initial);
       isInitializedRef.current = false;

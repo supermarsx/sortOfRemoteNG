@@ -44,6 +44,7 @@ import {
   normalizeInternalProxySettings,
 } from "../../utils/settings/webBrowserSettings";
 import { normalizeWebsiteDarkModeSettings } from "../../utils/connection/websiteDarkMode";
+import { DEFAULT_CONNECTION_PROTOCOL } from "../../utils/connection/defaultConnectionProtocol";
 
 /* ═══════════════════════════════════════════════════════════════
    Tab definition
@@ -194,6 +195,7 @@ export const SETTINGS_TAB_IDS: readonly string[] = SETTINGS_TAB_ID_LIST;
 export const TAB_DEFAULTS: Record<string, (keyof GlobalSettings)[]> = {
   general: [
     "connectionTimeout",
+    "defaultConnectionProtocol",
     "autoSaveEnabled",
     "autoSaveIntervalMinutes",
     "quickConnectHistoryEnabled",
@@ -458,6 +460,7 @@ export const DEFAULT_VALUES: Partial<GlobalSettings> = {
   confirmMainAppClose: false,
   allowSshExternalLinks: false,
   quickConnectHistoryEnabled: true,
+  defaultConnectionProtocol: DEFAULT_CONNECTION_PROTOCOL,
   startMinimized: false,
   startMaximized: false,
   startWithSystem: false,

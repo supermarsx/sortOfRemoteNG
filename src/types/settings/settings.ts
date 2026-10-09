@@ -6,6 +6,7 @@ export * from "../ssh/sshSettings";
 
 // Imports needed for GlobalSettings interface
 import type { BackupConfig } from "./backupSettings";
+import type { DefaultConnectionProtocol } from "../../utils/connection/defaultConnectionProtocol";
 import type { PasswordPolicy } from "../security/passwordPolicy";
 import type { NasFileViewerSettings } from "./nasFileViewers";
 import type { CloudSyncConfig } from "./cloudSyncSettings";
@@ -180,6 +181,8 @@ export interface GlobalSettings {
   warnOnExit: boolean;
   warnOnDetachClose: boolean;
   quickConnectHistoryEnabled: boolean;
+  /** Initial type for blank connection drafts and Quick Connect, not saved records. */
+  defaultConnectionProtocol?: DefaultConnectionProtocol;
   quickConnectHistory: QuickConnectHistoryEntry[];
   detectUnexpectedClose: boolean;
   confirmMainAppClose: boolean;
