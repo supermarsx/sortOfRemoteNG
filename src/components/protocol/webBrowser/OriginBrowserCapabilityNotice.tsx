@@ -1,10 +1,8 @@
 import React, { useEffect, useState } from "react";
 import { AlertTriangle, Info, LoaderCircle } from "lucide-react";
 import { tauriOriginBrowserTransport } from "../../../hooks/protocol/useOriginBrowser";
-import type {
-  OriginBrowserOwner,
-  OriginBrowserUnavailableReason,
-} from "../../../types/protocols/originBrowser";
+import { getOriginBrowserFailureDetails } from "../../../hooks/protocol/originBrowserFailureDetails";
+import type { OriginBrowserOwner } from "../../../types/protocols/originBrowser";
 
 /** Capability lookup needs no unlock token and must remain visible when owner
  * proof is unavailable. This never creates a host, profile or proxy session. */
@@ -32,14 +30,16 @@ export default function OriginBrowserCapabilityNotice({
       .status({ owner: { ownerDatabaseId, connectionId, sessionId } })
       .then((status) => {
         if (!current) return;
-        const reasons: Record<OriginBrowserUnavailableReason, string> = {
-          "runtime-missing": "packaged runtime missing",
-          "platform-unsupported": "platform unsupported",
-          "containment-unverified": "network containment unverified",
-          "policy-unavailable": "required policies unavailable",
-          "owner-unavailable": "owner unavailable",
-          "host-unavailable": "host unavailable",
-        };
+        const unavailable =
+          status.capability.availability === "unavailable"
+            ? getOriginBrowserFailureDetails({
+                phase: "unavailable",
+                unavailableReason: status.capability.reason,
+                runtimeFailure: status.runtimeFailure,
+                snapshot: null,
+                error: null,
+              })[0]
+            : null;
         setResult({
           scope,
           tone:
@@ -51,7 +51,7 @@ export default function OriginBrowserCapabilityNotice({
               ? "Native runtime reports available; owner access is still required."
               : status.capability.availability === "deferred"
                 ? "The native browser starts after access to this connection's owning database is authorized. Runtime policies are checked during startup."
-                : `Experimental native browser unavailable: ${Object.prototype.hasOwnProperty.call(reasons, status.capability.reason) ? reasons[status.capability.reason] : "host unavailable"}.`,
+                : `Experimental native browser unavailable. ${unavailable?.problem} ${unavailable?.nextStep} [${unavailable?.code}]`,
         });
       })
       .catch(() => {

@@ -1,7 +1,11 @@
-import { act, cleanup, renderHook } from "@testing-library/react";
-import { useLayoutEffect } from "react";
+import { act, cleanup, render, renderHook } from "@testing-library/react";
+import React, { useLayoutEffect } from "react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { useOriginBrowserOverlays } from "../../src/hooks/protocol/useOriginBrowserOverlays";
+import {
+  ToastContainer,
+  type ToastMessage,
+} from "../../src/components/ui/dialogs/Toast";
 
 let mutation: () => void;
 let resize: () => void;
@@ -112,6 +116,101 @@ it("ignores hidden overlays and clips tooltips without blocking keyboard input",
   const { result } = renderHook(() => useOriginBrowserOverlays(true));
   expect(result.current.blocked).toBe(false);
   expect(result.current.rectangles).toHaveLength(1);
+});
+
+it("clips visible toast items without blocking the page or their container gaps and restores on removal", () => {
+  const toasts: ToastMessage[] = [
+    { id: "first", type: "info", message: "First toast", duration: 0 },
+    { id: "second", type: "warning", message: "Second toast", duration: 0 },
+  ];
+  const onRemove = vi.fn();
+  const { container, getByText, getByRole, rerender } = render(
+    <ToastContainer toasts={[]} onRemove={onRemove} />,
+  );
+  const { result } = renderHook(() => useOriginBrowserOverlays(true));
+  expect(result.current).toMatchObject({ blocked: false, rectangles: [] });
+
+  rerender(<ToastContainer toasts={toasts} onRemove={onRemove} />);
+  const first = getByText("First toast").closest<HTMLElement>(".toast-item")!;
+  const second = getByText("Second toast").closest<HTMLElement>(".toast-item")!;
+  const containerBounds = vi.fn(() => new DOMRect(280, 80, 240, 340));
+  getByRole("status").getBoundingClientRect = containerBounds;
+  second.getBoundingClientRect = vi.fn(() => new DOMRect(300, 300, 200, 100));
+  act(() => mutation());
+  flush();
+  expect(result.current).toMatchObject({
+    blocked: false,
+    rectangles: [
+      { x: 298, y: 98, width: 204, height: 154 },
+      { x: 298, y: 298, width: 204, height: 104 },
+    ],
+  });
+  expect(first).toHaveAttribute("data-native-browser-occlusion");
+  expect(second).toHaveAttribute("data-native-browser-occlusion");
+  expect(getByRole("status")).not.toHaveAttribute(
+    "data-native-browser-occlusion",
+  );
+  expect(containerBounds).not.toHaveBeenCalled();
+
+  first.hidden = true;
+  act(() => mutation());
+  flush();
+  expect(result.current).toMatchObject({
+    blocked: false,
+    rectangles: [{ x: 298, y: 298, width: 204, height: 104 }],
+  });
+  first.hidden = false;
+  act(() => mutation());
+  flush();
+  expect(result.current.blocked).toBe(false);
+  expect(result.current.rectangles).toHaveLength(2);
+
+  rerender(<ToastContainer toasts={toasts.slice(1)} onRemove={onRemove} />);
+  act(() => mutation());
+  flush();
+  expect(result.current).toMatchObject({
+    blocked: false,
+    rectangles: [{ x: 298, y: 298, width: 204, height: 104 }],
+  });
+  rerender(<ToastContainer toasts={[]} onRemove={onRemove} />);
+  act(() => mutation());
+  flush();
+  expect(container).toBeEmptyDOMElement();
+  expect(result.current).toMatchObject({ blocked: false, rectangles: [] });
+});
+
+it("clips the entire inline failure screen without a dialog feedback loop", () => {
+  const viewport = document.createElement("div");
+  const failure = document.createElement("div");
+  failure.setAttribute("data-native-browser-occlusion", "");
+  failure.innerHTML =
+    '<div role="alert"><button>Retry browser</button><section>Failure diagnostics</section></div>';
+  viewport.append(failure);
+  document.body.append(viewport);
+  const { result } = renderHook(() => {
+    const overlay = useOriginBrowserOverlays(true);
+    useLayoutEffect(() => {
+      // Same relationship as the shell: dialogs hide the viewport from AT.
+      viewport.setAttribute("aria-hidden", String(overlay.blocked));
+    }, [overlay.blocked]);
+    return overlay;
+  });
+  expect(result.current).toMatchObject({
+    blocked: false,
+    rectangles: [{ x: 298, y: 98, width: 204, height: 154 }],
+  });
+  const rectangles = result.current.rectangles;
+  for (let index = 0; index < 3; index++) {
+    act(() => mutation());
+    flush();
+    expect(viewport).toHaveAttribute("aria-hidden", "false");
+    expect(result.current.blocked).toBe(false);
+    expect(result.current.rectangles).toBe(rectangles);
+  }
+  failure.remove();
+  act(() => mutation());
+  flush();
+  expect(result.current).toMatchObject({ blocked: false, rectangles: [] });
 });
 
 it("does not observe, scan or schedule work for inactive tabs", () => {

@@ -65,6 +65,94 @@ async function fixture() {
   return { ...hook, transport, options };
 }
 describe("native controls are fenced to the issuing attempt", () => {
+  it("opens DevTools only on explicit request for the current visible attempt", async () => {
+    const f = await fixture();
+    expect(
+      vi
+        .mocked(f.transport.control)
+        .mock.calls.some(([request]) => request.action.kind === "devtools"),
+    ).toBe(false);
+    await act(async () =>
+      expect(await f.result.current.openDevTools()).toBe(false),
+    );
+    act(() =>
+      f.result.current.setViewport({ x: 0, y: 0, width: 800, height: 500 }),
+    );
+    const action = vi.mocked(f.transport.control).mock.lastCall![0].action;
+    expect(action.kind).toBe("presentation");
+    await act(async () =>
+      expect(await f.result.current.openDevTools()).toBe(true),
+    );
+    expect(f.transport.control).toHaveBeenLastCalledWith({
+      identity: f.result.current.state.snapshot!.identity,
+      action: {
+        kind: "devtools",
+        presentationRevision:
+          action.kind === "presentation" ? action.revision : 0,
+      },
+    });
+  });
+
+  it("keeps the page alive when opening DevTools fails", async () => {
+    const f = await fixture();
+    act(() =>
+      f.result.current.setViewport({ x: 0, y: 0, width: 800, height: 500 }),
+    );
+    vi.mocked(f.transport.control).mockRejectedValueOnce(
+      new Error("private native detail"),
+    );
+    await act(async () =>
+      expect(await f.result.current.openDevTools()).toBe(false),
+    );
+    expect(f.result.current.state.phase).toBe("attached");
+    expect(f.result.current.state.error).toBeNull();
+    expect(f.transport.close).not.toHaveBeenCalled();
+    await act(async () =>
+      expect(await f.result.current.openDevTools()).toBe(true),
+    );
+  });
+
+  it("still revokes DevTools attempts if the owner guard rejects them", async () => {
+    const f = await fixture();
+    act(() =>
+      f.result.current.setViewport({ x: 0, y: 0, width: 800, height: 500 }),
+    );
+    f.rerender({
+      ...f.options,
+      assertOwner: () => {
+        throw new Error("owner locked");
+      },
+    });
+    await act(async () =>
+      expect(await f.result.current.openDevTools()).toBe(false),
+    );
+    expect(f.transport.close).toHaveBeenCalledOnce();
+    expect(
+      vi
+        .mocked(f.transport.control)
+        .mock.calls.some(([request]) => request.action.kind === "devtools"),
+    ).toBe(false);
+  });
+
+  it("does not accept a delayed inspector result after presentation changes", async () => {
+    const f = await fixture();
+    act(() =>
+      f.result.current.setViewport({ x: 0, y: 0, width: 800, height: 500 }),
+    );
+    const pending = deferred();
+    vi.mocked(f.transport.control).mockReturnValueOnce(pending.promise);
+    let result!: Promise<boolean>;
+    act(() => {
+      result = f.result.current.openDevTools();
+    });
+    f.rerender({ ...f.options, active: false });
+    await act(async () => {
+      pending.resolve();
+      expect(await result).toBe(false);
+    });
+    expect(f.result.current.state.phase).toBe("attached");
+  });
+
   it("supplies the current visible revision for zoom, find and stop-find", async () => {
     const f = await fixture();
     act(() =>
@@ -125,6 +213,7 @@ describe("native controls are fenced to the issuing attempt", () => {
       expect(await controller.zoom(125)).toBe(false);
       expect(await controller.find("query")).toBe(false);
       expect(await controller.stopFind()).toBe(false);
+      expect(await controller.openDevTools()).toBe(false);
     };
     await act(async () => check());
     act(() =>

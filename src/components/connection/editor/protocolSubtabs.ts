@@ -302,6 +302,7 @@ export function getProtocolSubtabs(
           "application",
           "authentication",
           "security",
+          "network-path",
           "favorites",
           "advanced",
           "recovery",

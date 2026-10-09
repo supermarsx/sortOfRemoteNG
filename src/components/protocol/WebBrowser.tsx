@@ -6,6 +6,7 @@ import { normalizeWebBrowserSettings } from "../../utils/settings/webBrowserSett
 import type { WebBrowserEngine } from "../../types/settings/webBrowser";
 import type { SettingsTabId } from "../SettingsDialog/settingsConstants";
 import OriginConnectionBrowser from "./webBrowser/OriginConnectionBrowser";
+import { diagnoseWebBrowserSettings } from "../../utils/settings/webBrowserSettingsDiagnostics";
 
 interface WebBrowserProps {
   session: ConnectionSession;
@@ -30,10 +31,36 @@ export const WebBrowser: React.FC<WebBrowserProps> = (props) => {
     config = normalizeWebBrowserSettings(settings.webBrowser);
   } catch {
     return (
-      <p role="alert">
-        Browser settings are invalid. Review Web Browser settings before
-        connecting.
-      </p>
+      <section
+        role="alert"
+        className="m-4 space-y-4 overflow-auto rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] p-4 text-[var(--color-text)]"
+      >
+        <h3 className="font-semibold">Browser settings are invalid</h3>
+        <p className="text-sm">
+          No browser was started. Correct the saved global settings before
+          retrying.
+        </p>
+        <ul className="space-y-3 text-sm" aria-label="Invalid browser settings">
+          {diagnoseWebBrowserSettings(settings.webBrowser).map((issue) => (
+            <li key={issue.field}>
+              <code>{issue.field}</code>
+              <p className="text-[var(--color-textSecondary)]">{issue.fix}</p>
+            </li>
+          ))}
+        </ul>
+        {props.onOpenSettings && (
+          <button
+            type="button"
+            className="sor-btn sor-btn-secondary"
+            disabled={settingsReady === false}
+            onClick={() => {
+              if (settingsReady !== false) props.onOpenSettings?.("webBrowser");
+            }}
+          >
+            Repair Web Browser settings
+          </button>
+        )}
+      </section>
     );
   }
   if (

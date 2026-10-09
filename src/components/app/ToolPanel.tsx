@@ -735,6 +735,11 @@ export const ToolTabViewer: React.FC<ToolTabViewerProps> = ({
           )}
         >
           <ConnectionEditor
+            recoveryNavigation={
+              (
+                session as import("../../utils/session/originBrowserRecovery").BrowserRecoveryEditorSession
+              ).browserRecoveryNavigation
+            }
             initialParentId={session.connectionEditorInitialParentId}
             connection={state.connections.find(
               (c) => c.id === session.connectionId,

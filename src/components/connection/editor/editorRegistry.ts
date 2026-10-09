@@ -2361,7 +2361,7 @@ export const CONNECTION_EDITOR_SEARCH_DESCRIPTORS = [
         id: "network-path",
         focusId: "network-path-section",
         label: "Network Path",
-        protocols: ["ssh", "rdp", "raw", "rlogin", "winrm"],
+        protocols: ["ssh", "rdp", "raw", "rlogin", "winrm", "http", "https"],
         protocolSubtabId: "network-path",
         keywords: [
           "route",

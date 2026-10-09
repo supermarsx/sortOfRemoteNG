@@ -9,6 +9,7 @@ import {
   ArrowLeft,
   ArrowRight,
   House,
+  Code2,
   LoaderCircle,
   RotateCcw,
   RotateCw,
@@ -16,6 +17,8 @@ import {
   Settings2,
   ShieldCheck,
   Square,
+  Video,
+  X,
 } from "lucide-react";
 import type {
   Connection,
@@ -25,6 +28,10 @@ import { useConnections } from "../../../contexts/useConnections";
 import { useSettings } from "../../../contexts/SettingsContext";
 import { useSessionRenderActivity } from "../../../contexts/SessionRenderActivityContext";
 import { useOriginBrowser } from "../../../hooks/protocol/useOriginBrowser";
+import {
+  originBrowserLoadError,
+  originBrowserSessionError,
+} from "../../../hooks/protocol/originBrowserSessionError";
 import { useOriginBrowserOwner } from "../../../hooks/protocol/useOriginBrowserOwner";
 import { useOriginQuickConnection } from "../../../hooks/protocol/useOriginQuickConnection";
 import { useOriginBrowserOverlays } from "../../../hooks/protocol/useOriginBrowserOverlays";
@@ -71,6 +78,19 @@ import { useNativeBrowserExtensionReceipt } from "../../../hooks/protocol/useNat
 import NativeBrowserExtensionControls from "./NativeBrowserExtensionControls";
 import progressStyles from "./NavigationProgress.module.css";
 import OriginMfaOriginRepair from "./OriginMfaOriginRepair";
+import OriginCredentialControls, {
+  OriginToolbarPopover,
+} from "./OriginCredentialControls";
+import NativeBrowserRecordingControls from "./NativeBrowserRecordingControls";
+import { PopoverSurface } from "../../ui/overlays/PopoverSurface";
+import { OriginBrowserFailureDiagnostics } from "./OriginBrowserFailureDiagnostics";
+import {
+  getOriginBrowserFailureDetails,
+  type BrowserRecoveryAction,
+} from "../../../hooks/protocol/originBrowserFailureDetails";
+import { requestOriginBrowserRecovery } from "../../../utils/session/originBrowserRecovery";
+import { getQuickConnectConnection } from "../../../utils/session/runtimeConnectionRegistry";
+import OriginBrowserRecoveryActions from "./OriginBrowserRecoveryActions";
 
 export default function OriginConnectionBrowser({
   session,
@@ -83,7 +103,15 @@ export default function OriginConnectionBrowser({
 }) {
   const context = useConnections();
   const { settings, settingsReady, updateSettings } = useSettings();
-  const globalBrowserConfig = normalizeWebBrowserSettings(settings.webBrowser);
+  // These fallback values are display-only. Invalid shared settings never
+  // reach native creation or the permissions dialog's save path.
+  let globalBrowserConfig = normalizeWebBrowserSettings(undefined);
+  let globalBrowserConfigInvalid = false;
+  try {
+    globalBrowserConfig = normalizeWebBrowserSettings(settings.webBrowser);
+  } catch {
+    globalBrowserConfigInvalid = true;
+  }
   const { isActive } = useSessionRenderActivity();
   const closeRef = useRef<(() => Promise<void>) | null>(null);
   const lifetime = useRef(false);
@@ -123,7 +151,7 @@ export default function OriginConnectionBrowser({
     proof?.ownerDatabaseId ?? session.ownerDatabaseId ?? "";
   // Display preferences only. Native independently authenticates its policies.
   let browserConfig = globalBrowserConfig;
-  let browserConfigInvalid = false;
+  let browserConfigInvalid = globalBrowserConfigInvalid;
   try {
     browserConfig = resolveConnectionBrowserSettings(
       settings.webBrowser,
@@ -135,6 +163,8 @@ export default function OriginConnectionBrowser({
   const [editing, setEditing] = useState(false);
   const [moreOpen, setMoreOpen] = useState(false);
   const [bookmarksOpen, setBookmarksOpen] = useState(false);
+  const [credentialsOpen, setCredentialsOpen] = useState(false);
+  const [recordingOpen, setRecordingOpen] = useState(false);
   const addressRef = useRef<HTMLInputElement>(null);
   let initialUrl = "";
   try {
@@ -145,7 +175,13 @@ export default function OriginConnectionBrowser({
   }
   const ownerAvailable =
     !!proof && !!connection && !sharedPopupId && !session.reattachOnly;
-  const dialogOpen = editing || moreOpen || bookmarksOpen || overlayOpen;
+  const dialogOpen =
+    editing ||
+    moreOpen ||
+    bookmarksOpen ||
+    credentialsOpen ||
+    recordingOpen ||
+    overlayOpen;
   const popupBridge = useNativeOriginPopupBridge();
   const browser = useOriginBrowser({
     transport: popupBridge.browserTransport,
@@ -157,7 +193,7 @@ export default function OriginConnectionBrowser({
     expectedSecurityRevision: proof?.expectedSecurityRevision ?? "",
     sourceSessionId: proof?.sourceSessionId ?? "",
     initialUrl,
-    enabled: settingsReady !== false,
+    enabled: settingsReady !== false && !globalBrowserConfigInvalid,
     ownerAvailable,
     active: isActive,
     dialogOpen,
@@ -175,8 +211,69 @@ export default function OriginConnectionBrowser({
     };
   }, [close]);
   const { snapshot: rootSnapshot, phase, startupFailure } = browser.state;
+  const { connectionStatus } = browser;
+  const liveSession = context.state.sessions.find(
+    (row) => row.id === session.id,
+  );
+  const sessionError =
+    connectionStatus === "error"
+      ? (browser.state.error ??
+        getOriginBrowserFailureDetails(browser.state)
+          .map(
+            (detail) => `${detail.problem} ${detail.nextStep} [${detail.code}]`,
+          )
+          .join(" "))
+      : undefined;
+  const dispatchSession = context.dispatch;
+  useEffect(() => {
+    if (
+      !lifetime.current ||
+      !ownerAvailable ||
+      !proof ||
+      !connectionStatus ||
+      !liveSession ||
+      liveSession.connectionId !== session.connectionId ||
+      liveSession.ownerDatabaseId !== session.ownerDatabaseId ||
+      (liveSession.status === connectionStatus &&
+        liveSession.errorMessage === sessionError)
+    )
+      return;
+    try {
+      proof.assertCurrent();
+    } catch {
+      return;
+    }
+    // A local display patch only: preserve native identity, lifecycle ownership,
+    // and session metadata. Background tabs report attachment too. Root browser
+    // state owns the app session; child selection and pending login do not.
+    dispatchSession({
+      type: "UPDATE_SESSION",
+      payload: {
+        id: session.id,
+        status: connectionStatus,
+        errorMessage: sessionError,
+      },
+    });
+  }, [
+    dispatchSession,
+    liveSession,
+    session.id,
+    session.connectionId,
+    session.ownerDatabaseId,
+    ownerAvailable,
+    proof,
+    connectionStatus,
+    sessionError,
+  ]);
+  // A document load error retains its native attempt for back/address/inspection.
+  const nativeAttached =
+    phase === "attached" ||
+    (phase === "error" &&
+      rootSnapshot?.phase === "attached" &&
+      !!rootSnapshot.loadFailure);
   const [repairedMfaFailure, setRepairedMfaFailure] =
     useState<typeof startupFailure>(null);
+  const [devtoolsError, setDevtoolsError] = useState(false);
   const bindPopupSource = popupBridge.bind;
   const popupSourceIdentity = rootSnapshot?.identity;
   useLayoutEffect(() => {
@@ -228,7 +325,7 @@ export default function OriginConnectionBrowser({
   );
   const popups = useOriginBrowserPopups({
     sourceIdentity: rootSnapshot?.identity ?? null,
-    enabled: ownerAvailable && phase === "attached",
+    enabled: ownerAvailable && nativeAttached,
     assertOwner: () => {
       if (!lifetime.current || !ownerAvailable || !proof)
         throw new Error("Browser owner changed.");
@@ -265,6 +362,25 @@ export default function OriginConnectionBrowser({
   }, [rootSnapshot, selectedPopupId, selectedPopup, popupBridge]);
   // Never present the hidden root's address or history as child state.
   const snapshot = selectedPopupId ? selectedPopup?.snapshot : rootSnapshot;
+  // A selected child owns its failure screen; the hidden root's load error is
+  // not a child failure. Commands still use the bridge's selected-view authority.
+  const viewportState: typeof browser.state =
+    selectedPopupId && nativeAttached
+      ? {
+          ...browser.state,
+          snapshot: snapshot ?? null,
+          phase:
+            snapshot?.loadFailure || snapshot?.phase === "failed"
+              ? "error"
+              : (snapshot?.phase ?? "starting"),
+          error: snapshot?.loadFailure
+            ? originBrowserLoadError(snapshot.loadFailure)
+            : snapshot?.phase === "failed"
+              ? originBrowserSessionError(snapshot.failureReason)
+              : null,
+          startupFailure: null,
+        }
+      : browser.state;
   const loading =
     ownerAvailable &&
     (phase === "starting" ||
@@ -274,7 +390,7 @@ export default function OriginConnectionBrowser({
   const downloads = useOriginSelectedDownloads(
     rootSnapshot?.identity ?? null,
     selectedPopupId,
-    ownerAvailable && isActive && phase === "attached" && !popupBridge.pending,
+    ownerAvailable && isActive && nativeAttached && !popupBridge.pending,
     assertShellOwner,
   );
   const extensionReceipt = useNativeBrowserExtensionReceipt(
@@ -331,7 +447,7 @@ export default function OriginConnectionBrowser({
       ? address.value
       : reportedAddress;
   const attached =
-    phase === "attached" &&
+    nativeAttached &&
     ownerAvailable &&
     isActive &&
     !dialogOpen &&
@@ -341,7 +457,7 @@ export default function OriginConnectionBrowser({
     ownerAvailable &&
     isActive &&
     settingsReady !== false &&
-    phase === "attached" &&
+    nativeAttached &&
     !popupBridge.pending &&
     (!selectedPopupId ||
       (selectedPopup?.phase === "adopted" && !selectedPopup.closing));
@@ -406,7 +522,9 @@ export default function OriginConnectionBrowser({
       !!snapshot?.loading ||
       editing ||
       moreOpen ||
-      bookmarksOpen,
+      bookmarksOpen ||
+      credentialsOpen ||
+      recordingOpen,
     identity: snapshot?.identity ?? null,
     navigationKey: JSON.stringify([
       snapshot?.loading,
@@ -465,10 +583,149 @@ export default function OriginConnectionBrowser({
       ? browser.state.navigationError
       : null;
   const canEdit =
+    !globalBrowserConfigInvalid &&
     !isTemporary &&
     context.databaseAvailability?.status === "ready" &&
     context.databaseAvailability.databaseId === session.ownerDatabaseId &&
     !!connection;
+  const [recoveryError, setRecoveryError] = useState(false);
+  const recoveryAllowed = isActive && !dialogOpen && settingsReady !== false;
+  const recoveryScope = useRef({
+    session,
+    connection,
+    proof,
+    viewportState,
+    recoveryAllowed,
+  });
+  useLayoutEffect(() => {
+    recoveryScope.current = {
+      session,
+      connection,
+      proof,
+      viewportState,
+      recoveryAllowed,
+    };
+  });
+  const temporarySource =
+    !session.ownerDatabaseId &&
+    !!getQuickConnectConnection(session.connectionId);
+  const recover = (action: BrowserRecoveryAction) => {
+    const assertCurrent = () => {
+      const current = recoveryScope.current;
+      if (
+        !lifetime.current ||
+        !recoveryAllowed ||
+        !current.recoveryAllowed ||
+        current.session !== session ||
+        current.connection !== connection ||
+        current.proof !== proof ||
+        current.viewportState !== viewportState
+      )
+        throw new Error("Browser recovery request expired.");
+    };
+    try {
+      assertCurrent();
+      setRecoveryError(false);
+      if (action === "browser-settings") {
+        if (!onOpenSettings)
+          throw new Error("Settings navigation unavailable.");
+        hide();
+        onOpenSettings("webBrowser");
+        return;
+      }
+      if (action === "database" || !ownerAvailable) {
+        const accepted = requestOriginBrowserRecovery(
+          {
+            action: temporarySource ? "quick-connect" : "database",
+            sessionId: session.id,
+            connectionId: session.connectionId,
+            ownerDatabaseId: session.ownerDatabaseId,
+          },
+          assertCurrent,
+        );
+        if (!accepted) throw new Error("Recovery navigation unavailable.");
+        return;
+      }
+      assertShellOwner();
+      if (isTemporary) {
+        if (action === "connection" && attached) {
+          addressRef.current?.focus();
+          addressRef.current?.select();
+          return;
+        }
+        if (
+          [
+            "permissions",
+            "browser-session",
+            "legacy-proxy",
+            "network",
+          ].includes(action)
+        ) {
+          if (!onOpenSettings)
+            throw new Error("Settings navigation unavailable.");
+          hide();
+          onOpenSettings(action === "network" ? "proxy" : "webBrowser");
+          return;
+        }
+      } else {
+        const scope = context.databaseAvailability;
+        captureSessionDatabaseAccess(session)();
+        const rows =
+          scope?.status === "ready" &&
+          scope.databaseId === session.ownerDatabaseId
+            ? context
+                .getCurrentConnections?.({
+                  databaseId: session.ownerDatabaseId!,
+                  generation: scope.generation,
+                })
+                .filter((row) => row.id === session.connectionId)
+            : undefined;
+        if (!canEdit || rows?.length !== 1 || rows[0] !== connection)
+          throw new Error("The saved connection changed.");
+        if (action === "permissions") {
+          hide();
+          setEditing(true);
+          return;
+        }
+      }
+      if (action === "permissions") return;
+      const accepted = requestOriginBrowserRecovery(
+        {
+          action: isTemporary ? "quick-connect" : action,
+          sessionId: session.id,
+          connectionId: session.connectionId,
+          ownerDatabaseId: session.ownerDatabaseId,
+        },
+        () => {
+          assertCurrent();
+          assertShellOwner();
+        },
+      );
+      if (!accepted) throw new Error("Recovery navigation unavailable.");
+    } catch {
+      if (lifetime.current) setRecoveryError(true);
+    }
+  };
+  const recoveryActions = (actions: readonly BrowserRecoveryAction[]) => (
+    <OriginBrowserRecoveryActions
+      actions={actions}
+      onRecover={recover}
+      allowed={recoveryAllowed}
+      temporary={isTemporary || temporarySource}
+    />
+  );
+  const failureActions = getOriginBrowserFailureDetails(viewportState).map(
+    (detail) => detail.action,
+  );
+  // A native permission rejection may involve shared and per-connection rules.
+  if (
+    failureActions.includes("permissions") &&
+    !failureActions.includes("browser-settings")
+  )
+    failureActions.push("browser-settings");
+  if (viewportState.startupFailure?.code === "permissions-invalid")
+    failureActions.push("legacy-proxy");
+  if (!failureActions.length) failureActions.push("browser-settings");
   const navigateTo = useCallback(
     (value: string) => {
       if (!attached) return;
@@ -522,6 +779,7 @@ export default function OriginConnectionBrowser({
     latestAttempt.current = identity;
     setAddress(null);
     setNavigationError(false);
+    setDevtoolsError(false);
   }, [identity, reportedAddress]);
 
   return (
@@ -665,11 +923,8 @@ export default function OriginConnectionBrowser({
               : "Browser settings"
           }
           className="sor-btn sor-icon-btn-sm shrink-0"
-          disabled={!canEdit}
-          onClick={() => {
-            hide();
-            setEditing(true);
-          }}
+          disabled={!canEdit || !ownerAvailable || !recoveryAllowed}
+          onClick={() => recover("permissions")}
         >
           <Settings2 size={16} aria-hidden="true" />
         </button>
@@ -678,6 +933,98 @@ export default function OriginConnectionBrowser({
           allowed={browserConfig.allowDownloads}
           onOpenSettings={() => onOpenSettings?.("webBrowser")}
         />
+        {!isTemporary && connection && (
+          <OriginCredentialControls
+            key={`credentials:${identity}:${session.id}:${session.ownerDatabaseId}`}
+            session={session}
+            connection={connection}
+            eligible={selectedViewAvailable}
+            canOpen={attached}
+            assertOwner={assertShellOwner}
+            onOverlayChange={setCredentialsOpen}
+            typingOptions={{
+              identity: rootSnapshot?.identity ?? null,
+              viewId: selectedPopupId,
+              enabled: selectedViewAvailable && !snapshot?.loading,
+              interactive: attached,
+              documentKey: JSON.stringify([
+                identity,
+                snapshot?.currentUrl ?? snapshot?.displayUrl,
+                snapshot?.loading,
+              ]),
+              runInteractive: popupBridge.runInteractive,
+            }}
+          />
+        )}
+        <OriginToolbarPopover
+          key={`recording:${identity}:${session.id}`}
+          label="Recording"
+          icon={
+            <>
+              <Video size={16} aria-hidden="true" />
+              {(recording.video.phase === "recording" ||
+                recording.har.phase === "recording") && (
+                <span
+                  className="absolute right-0 top-0 h-2 w-2 rounded-full bg-error"
+                  aria-label="Recording active"
+                />
+              )}
+            </>
+          }
+          eligible={selectedViewAvailable}
+          canOpen={attached}
+          scope={identity}
+          assertOwner={assertShellOwner}
+          onOverlayChange={setRecordingOpen}
+        >
+          {({ anchorRef, panelRef, onClose }) => (
+            <PopoverSurface
+              isOpen
+              anchorRef={anchorRef}
+              onClose={onClose}
+              align="end"
+              offset={4}
+            >
+              <section
+                ref={panelRef}
+                aria-label="Recording"
+                className="sor-popover-panel w-96 max-w-[calc(100vw-1rem)] max-h-[calc(100dvh-1rem)] overflow-y-auto text-[var(--color-text)]"
+              >
+                <header className="flex items-center justify-between gap-2 border-b border-[var(--color-border)] p-3">
+                  <h2 className="text-sm font-semibold">Recording</h2>
+                  <button
+                    type="button"
+                    className="sor-icon-btn-sm"
+                    aria-label="Close Recording"
+                    onClick={onClose}
+                  >
+                    <X size={16} aria-hidden="true" />
+                  </button>
+                </header>
+                <div className="p-3">
+                  <NativeBrowserRecordingControls controller={recording} />
+                </div>
+              </section>
+            </PopoverSurface>
+          )}
+        </OriginToolbarPopover>
+        <button
+          type="button"
+          aria-label="Open page DevTools"
+          data-tooltip="Open page DevTools"
+          className="sor-btn sor-icon-btn-sm shrink-0"
+          disabled={!attached}
+          onClick={() => {
+            const attempt = latestAttempt.current;
+            setDevtoolsError(false);
+            void browser.openDevTools().then((accepted) => {
+              if (latestAttempt.current === attempt && lifetime.current)
+                setDevtoolsError(!accepted);
+            });
+          }}
+        >
+          <Code2 size={16} aria-hidden="true" />
+        </button>
         <OriginBookmarkButton
           key={`bookmark-page:${identity}:${ownerAvailable}`}
           session={session}
@@ -771,93 +1118,135 @@ export default function OriginConnectionBrowser({
         </div>
       )}
       {browserConfigInvalid && (
-        <p
+        <div
           role="alert"
           className="sor-alert-error mx-3 mt-2 text-sm text-[var(--color-text)]"
         >
-          Saved browser display preferences are invalid. Review this
-          connection's browser session settings. Page tools are unavailable
-          until these settings are corrected.
-        </p>
+          {globalBrowserConfigInvalid
+            ? "Shared Web Browser settings are invalid. Review and correct the shared configuration in Web Browser settings before connecting."
+            : "Saved browser display preferences are invalid. Review this connection's browser session settings. Page tools are unavailable until these settings are corrected."}
+          <div className="mt-2 flex flex-wrap gap-2">
+            {recoveryActions(
+              globalBrowserConfigInvalid
+                ? ["browser-settings"]
+                : ["browser-session", "browser-settings"],
+            )}
+          </div>
+        </div>
       )}
       {(nativeNavigationError || navigationError) && (
-        <p
+        <div
           role="alert"
           className="sor-alert-error mx-3 mt-2 text-sm text-[var(--color-text)]"
         >
           {nativeNavigationError ||
             "Navigation was not accepted. Enter an HTTP or HTTPS address and review the native browser status."}
-        </p>
+          <div className="mt-2 flex flex-wrap gap-2">
+            {recoveryActions(["connection", "permissions"])}
+          </div>
+        </div>
       )}
       {pageMenu.error && (
-        <p
+        <div
           role="alert"
           className="sor-alert-error mx-3 mt-2 text-sm text-[var(--color-text)]"
         >
           {pageMenu.error}
-        </p>
+          <div className="mt-2 flex flex-wrap gap-2">
+            {recoveryActions(["browser-settings"])}
+          </div>
+        </div>
+      )}
+      {devtoolsError && (
+        <div
+          role="alert"
+          className="sor-alert-error mx-3 mt-2 text-sm text-[var(--color-text)]"
+        >
+          Page DevTools could not be opened for this browser view.
+          <div className="mt-2 flex flex-wrap gap-2">
+            {recoveryActions(["browser-settings"])}
+          </div>
+        </div>
+      )}
+      {recoveryError && (
+        <div
+          role="alert"
+          className="sor-alert-error mx-3 mt-2 text-sm text-[var(--color-text)]"
+        >
+          The recovery view could not be opened. Check that this tab is active
+          in the main window and its owning database is open before reviewing
+          the connection.
+          <div className="mt-2 flex flex-wrap gap-2">
+            {recoveryActions(["database", "browser-settings"])}
+          </div>
+        </div>
       )}
       {!ownerAvailable && (
-        <OriginBrowserCapabilityNotice
-          owner={{
-            ownerDatabaseId,
-            connectionId: session.connectionId,
-            sessionId: session.id,
-          }}
-        />
+        <div className="shrink-0">
+          <OriginBrowserCapabilityNotice
+            owner={{
+              ownerDatabaseId,
+              connectionId: session.connectionId,
+              sessionId: session.id,
+            }}
+          />
+          <div className="mx-3 mb-2 flex flex-wrap gap-2">
+            {recoveryActions([
+              temporarySource ? "connection" : "database",
+              "browser-settings",
+            ])}
+          </div>
+        </div>
       )}
       {sharedPopupId && (
-        <p
+        <div
           role="alert"
           className="sor-alert-error mx-3 mt-2 text-sm text-[var(--color-text)]"
         >
           This legacy popup cannot attach to a real-origin browser. Open its
           saved connection in a new tab.
-        </p>
+          <div className="mt-2 flex flex-wrap gap-2">
+            {recoveryActions(["database"])}
+          </div>
+        </div>
       )}
       {session.reattachOnly && (
-        <p
+        <div
           role="alert"
           className="sor-alert-error mx-3 mt-2 text-sm text-[var(--color-text)]"
         >
           Native browser reattachment is unavailable. Reopen the connection
           explicitly.
-        </p>
+          <div className="mt-2 flex flex-wrap gap-2">
+            {recoveryActions(["database"])}
+          </div>
+        </div>
       )}
       {!connection && (
-        <p
+        <div
           role="alert"
           className="sor-alert-error mx-3 mt-2 text-sm text-[var(--color-text)]"
         >
           The saved connection is unavailable in this database.
-        </p>
+          <div className="mt-2 flex flex-wrap gap-2">
+            {recoveryActions([temporarySource ? "connection" : "database"])}
+          </div>
+        </div>
       )}
       {!initialUrl && connection && (
-        <p
+        <div
           role="alert"
           className="sor-alert-error mx-3 mt-2 text-sm text-[var(--color-text)]"
         >
           The saved website address or application settings are invalid.
-        </p>
+          <div className="mt-2 flex flex-wrap gap-2">
+            {recoveryActions(
+              isTemporary ? ["connection"] : ["connection", "application"],
+            )}
+          </div>
+        </div>
       )}
       <OriginBrowserNotices notices={notices} />
-      {phase === "error" &&
-        startupFailure?.reason === "mfa-origin-mismatch" &&
-        startupFailure !== repairedMfaFailure &&
-        isActive &&
-        ownerAvailable &&
-        !isTemporary &&
-        connection && (
-          <OriginMfaOriginRepair
-            session={session}
-            connection={connection}
-            assertOwner={assertShellOwner}
-            onOverlayChange={hide}
-            // A confirmed repair never submits credentials or starts an attempt.
-            // Dismiss only this repair control; keep the error and explicit Retry.
-            onRepaired={() => setRepairedMfaFailure(startupFailure)}
-          />
-        )}
       {browserConfig.showLoadingProgress && (
         // Native child surfaces paint above DOM overlays. Reserve shell space
         // outside the measured viewport, even between loads, to avoid jitter.
@@ -879,7 +1268,7 @@ export default function OriginConnectionBrowser({
       )}
       <OriginBrowserViewport
         preserveRenderingUnderOverlays
-        controller={browser}
+        controller={{ ...browser, state: viewportState }}
         active={isActive}
         ownerAvailable={ownerAvailable}
         dialogOpen={dialogOpen}
@@ -890,6 +1279,42 @@ export default function OriginConnectionBrowser({
           settingsReady !== false && !browserConfigInvalid && !!initialUrl
         }
         onOpenSettings={onOpenSettings}
+        errorDetails={
+          <OriginBrowserFailureDiagnostics
+            key={`diagnostics:${identity}`}
+            state={viewportState}
+            targetUrl={
+              snapshot?.displayUrl || (selectedPopupId ? "" : initialUrl)
+            }
+            active={isActive && !dialogOpen}
+            ownerAvailable={ownerAvailable}
+            assertOwner={assertShellOwner}
+            onOpenDevTools={() => browser.openDevTools()}
+            onRecover={recover}
+            recoveryAllowed={recoveryAllowed}
+          />
+        }
+        errorActions={
+          <>
+            {recoveryActions(failureActions)}
+            {phase === "error" &&
+              startupFailure?.reason === "mfa-origin-mismatch" &&
+              startupFailure !== repairedMfaFailure &&
+              isActive &&
+              ownerAvailable &&
+              !isTemporary &&
+              connection && (
+                <OriginMfaOriginRepair
+                  session={session}
+                  connection={connection}
+                  assertOwner={assertShellOwner}
+                  onOverlayChange={hide}
+                  // Keep the error and explicit Retry; saving never starts login.
+                  onRepaired={() => setRepairedMfaFailure(startupFailure)}
+                />
+              )}
+          </>
+        }
       />
       <div
         className="flex shrink-0 min-w-0 items-center gap-1.5 border-t border-[var(--color-border)] px-3 py-1 text-xs text-[var(--color-textSecondary)]"
@@ -905,8 +1330,8 @@ export default function OriginConnectionBrowser({
           )}
           {loading && browserConfig.showLoadingProgress
             ? " · Loading"
-            : phase !== "attached"
-              ? ` · ${phase}`
+            : viewportState.phase !== "attached"
+              ? ` · ${viewportState.phase}`
               : ""}
         </span>
         {browserConfig.showSecurityInfo && (
@@ -920,7 +1345,7 @@ export default function OriginConnectionBrowser({
           </span>
         )}
       </div>
-      {editing && canEdit && connection && (
+      {editing && canEdit && ownerAvailable && isActive && connection && (
         <BrowserPermissionsDialog
           session={session}
           connection={connection}

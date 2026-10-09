@@ -608,11 +608,14 @@ export const SessionViewer: React.FC<SessionViewerProps> = ({
       (session.protocol === "http" || session.protocol === "https") &&
       (session.status === "connecting" ||
         session.status === "connected" ||
-        session.status === "reconnecting")
+        session.status === "reconnecting" ||
+        session.status === "error")
     ) {
       // A reviewed redirect replaces the tab's volatile target, not the tab.
       // Keeping this component mounted preserves the iframe, toolbar state and
       // automation lifetime while the next protected proxy is prepared.
+      // The browser also owns its failure details and retry lifecycle. Unmounting
+      // on UPDATE_SESSION error loses the native cause and closes the view.
       return (
         <WebBrowser
           session={session}

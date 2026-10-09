@@ -400,6 +400,125 @@ describe("ConnectionEditor", () => {
   });
 
   describe("Modal Display", () => {
+    it("refuses browser recovery navigation after an owner switch with the same connection id", async () => {
+      const saved = {
+        ...mockConnection,
+        protocol: "https",
+        port: 443,
+      } as Connection;
+      function ScopedRecovery({
+        databaseId,
+        active,
+      }: {
+        databaseId: string;
+        active: boolean;
+      }) {
+        const context = useConnections();
+        return (
+          <ConnectionContext.Provider
+            value={{
+              ...context,
+              databaseAvailability: {
+                status: "ready",
+                databaseId,
+                generation: 1,
+              },
+            }}
+          >
+            <SessionRenderActivityContext.Provider value={{ isActive: active }}>
+              <ConnectionEditor
+                connection={saved}
+                isOpen
+                onClose={vi.fn()}
+                recoveryNavigation={{
+                  requestId: "recovery-owner",
+                  connectionId: saved.id,
+                  ownerDatabaseId: "original-db",
+                  tab: "protocol",
+                  subtab: "advanced",
+                }}
+              />
+            </SessionRenderActivityContext.Provider>
+          </ConnectionContext.Provider>
+        );
+      }
+      const view = render(
+        <ConnectionProvider>
+          <ScopedRecovery databaseId="original-db" active={false} />
+        </ConnectionProvider>,
+      );
+      await screen.findByDisplayValue(saved.name);
+      view.rerender(
+        <ConnectionProvider>
+          <ScopedRecovery databaseId="another-db" active />
+        </ConnectionProvider>,
+      );
+      expect(
+        screen.getByTestId("connection-editor-tab-general"),
+      ).toHaveAttribute("aria-selected", "true");
+      expect(
+        screen.queryByTestId("connection-editor-protocol-subtab-advanced"),
+      ).toBeNull();
+    });
+    it.each([
+      "application",
+      "authentication",
+      "security",
+      "network-path",
+      "advanced",
+    ] as const)(
+      "lands browser recovery in the %s protocol subtab without saving",
+      async (subtab) => {
+        const onClose = vi.fn();
+        const saved = {
+          ...mockConnection,
+          protocol: "https",
+          port: 443,
+        } as Connection;
+        function ScopedRecovery() {
+          const context = useConnections();
+          return (
+            <ConnectionContext.Provider
+              value={{
+                ...context,
+                databaseAvailability: {
+                  status: "ready",
+                  databaseId: "test-db",
+                  generation: 1,
+                },
+              }}
+            >
+              <ConnectionEditor
+                connection={saved}
+                isOpen
+                onClose={onClose}
+                recoveryNavigation={{
+                  requestId: `recovery-${subtab}`,
+                  connectionId: saved.id,
+                  ownerDatabaseId: "test-db",
+                  tab: "protocol",
+                  subtab,
+                }}
+              />
+            </ConnectionContext.Provider>
+          );
+        }
+        render(
+          <ConnectionProvider>
+            <ScopedRecovery />
+          </ConnectionProvider>,
+        );
+        await waitFor(() =>
+          expect(
+            screen.getByTestId(`connection-editor-protocol-subtab-${subtab}`),
+          ).toHaveAttribute("aria-selected", "true"),
+        );
+        expect(
+          screen.getByTestId("connection-editor-tab-protocol"),
+        ).toHaveAttribute("aria-selected", "true");
+        expect(onClose).not.toHaveBeenCalled();
+      },
+    );
     it.each(["http", "https"] as const)(
       "redirects %s application credentials from Basics to the Application subtab",
       async (protocol) => {

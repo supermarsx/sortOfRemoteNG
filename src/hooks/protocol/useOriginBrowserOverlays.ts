@@ -5,7 +5,9 @@ import {
 } from "../../types/protocols/originBrowser";
 
 const overlays =
-  '[role="dialog"], [role="alertdialog"], [role="menu"], [role="listbox"], [role="tooltip"], .sor-popover-surface, .sor-modal-backdrop';
+  '[role="dialog"], [role="alertdialog"], [role="menu"], [role="listbox"], [role="tooltip"], .sor-popover-surface, .sor-modal-backdrop, [data-native-browser-occlusion]';
+// Inline failure screens clip retained native content without becoming a dialog.
+// Blocking here would hide their viewport ancestor and oscillate their clipping.
 const interactiveOverlays =
   '[role="dialog"], [role="alertdialog"], [role="menu"], [role="listbox"], .sor-popover-surface, .sor-modal-backdrop';
 interface OverlayState {
@@ -115,6 +117,7 @@ export function useOriginBrowserOverlays(active: boolean) {
         "aria-hidden",
         "inert",
         "role",
+        "data-native-browser-occlusion",
       ],
     });
     window.addEventListener("resize", schedule);

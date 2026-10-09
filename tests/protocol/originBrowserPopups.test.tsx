@@ -381,6 +381,45 @@ describe("owner-window native popup adoption", () => {
 });
 
 describe("transient popup strip and inventory bounds", () => {
+  it("preserves safe recoverable child load evidence without closing or selecting another tab", async () => {
+    const f = await mounted();
+    const snapshot = {
+      identity: source(),
+      sequence: 1,
+      phase: "attached" as const,
+      currentUrl: "https://fixture.test/",
+      displayUrl: "https://fixture.test/",
+      title: "Child website",
+      loading: false,
+      canGoBack: true,
+      canGoForward: false,
+      loadFailure: {
+        code: -105,
+        category: "dns" as const,
+        text: "SECRET",
+        failedUrl: "https://SECRET",
+      },
+    };
+    act(() => f.emit([child("popup-1", { phase: "adopted", snapshot })]));
+    expect(f.result.current.tabs[0]?.snapshot?.loadFailure).toEqual({
+      code: -105,
+      category: "dns",
+    });
+    expect(JSON.stringify(f.result.current.tabs)).not.toContain("SECRET");
+    expect(f.transport.close).not.toHaveBeenCalled();
+    expect(f.options.onActivate).not.toHaveBeenCalled();
+    act(() =>
+      f.emit([
+        child("popup-1", {
+          phase: "adopted",
+          snapshot: { ...snapshot, sequence: 2, loadFailure: undefined },
+        }),
+      ]),
+    );
+    expect(f.result.current.tabs[0]?.snapshot?.loadFailure).toBeUndefined();
+    expect(f.transport.close).not.toHaveBeenCalled();
+  });
+
   it("selects an adopted native view and exposes child-only close", async () => {
     const f = fixture();
     function Shell() {

@@ -1,5 +1,6 @@
 import {
   originBrowserFailureReason,
+  originBrowserLoadFailure,
   type OriginBrowserIdentity,
   type OriginBrowserSnapshot,
 } from "./originBrowser";
@@ -174,11 +175,13 @@ function readPopupSnapshot(
     row.phase,
     row.failureReason,
   );
+  const loadFailure = originBrowserLoadFailure(row.phase, row.loadFailure);
   return Object.freeze({
     identity: Object.freeze({ ...source }),
     sequence: row.sequence as number,
     phase: row.phase as OriginBrowserSnapshot["phase"],
     ...(failureReason === undefined ? {} : { failureReason }),
+    ...(loadFailure === undefined ? {} : { loadFailure }),
     title: row.title,
     displayUrl: row.displayUrl,
     currentUrl: row.currentUrl,

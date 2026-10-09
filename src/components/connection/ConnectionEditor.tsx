@@ -77,12 +77,15 @@ import { ParentSelector } from "./editor/ParentSelector";
 import { ProtocolSections } from "./editor/ProtocolSections";
 import { useConnectionEditorSearch } from "./editor/useConnectionEditorSearch";
 import type { ConnectionEditorSearchFormData } from "./editor/connectionEditorSearchIndex";
+import type { ConnectionEditorRecoveryNavigation } from "../../utils/session/originBrowserRecovery";
+import { useConnections } from "../../contexts/useConnections";
 
 /* ═══════════════════════════════════════════════════════════════
    Types
    ═══════════════════════════════════════════════════════════════ */
 
 interface ConnectionEditorProps {
+  recoveryNavigation?: ConnectionEditorRecoveryNavigation;
   connection?: Connection;
   initialParentId?: string;
   isOpen: boolean;
@@ -2039,6 +2042,7 @@ const isEditorElementVisible = (element: Element): boolean => {
 };
 
 export const ConnectionEditor: React.FC<ConnectionEditorProps> = ({
+  recoveryNavigation,
   connection,
   initialParentId,
   isOpen,
@@ -2046,6 +2050,7 @@ export const ConnectionEditor: React.FC<ConnectionEditorProps> = ({
   onConnect,
 }) => {
   const mgr = useConnectionEditor(connection, isOpen, onClose, initialParentId);
+  const recoveryContext = useConnections();
   const { isActive } = useSessionRenderActivity();
   const submitInFlight = useRef(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -2174,6 +2179,37 @@ export const ConnectionEditor: React.FC<ConnectionEditorProps> = ({
       setActiveTab("general");
     }
   }, [activeTab, tabs]);
+
+  const recoveryApplied = useRef<string | null>(null);
+  useEffect(() => {
+    if (
+      !isOpen ||
+      !isActive ||
+      !recoveryNavigation ||
+      recoveryNavigation.connectionId !== connection?.id ||
+      mgr.formData.id !== connection?.id ||
+      mgr.formData.protocol !== connection?.protocol ||
+      recoveryContext.databaseAvailability?.status !== "ready" ||
+      recoveryContext.databaseAvailability.databaseId !==
+        recoveryNavigation.ownerDatabaseId ||
+      recoveryApplied.current === recoveryNavigation.requestId
+    )
+      return;
+    recoveryApplied.current = recoveryNavigation.requestId;
+    setActiveTab(recoveryNavigation.tab);
+    if (recoveryNavigation.subtab)
+      activateProtocolSubtab(recoveryNavigation.subtab);
+  }, [
+    isOpen,
+    isActive,
+    connection?.id,
+    recoveryNavigation,
+    activateProtocolSubtab,
+    mgr.formData.id,
+    mgr.formData.protocol,
+    connection?.protocol,
+    recoveryContext.databaseAvailability,
+  ]);
 
   if (!isOpen) return null;
 

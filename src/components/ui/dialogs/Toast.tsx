@@ -216,6 +216,7 @@ export const Toast: React.FC<ToastProps> = ({ toast, onRemove }) => {
 
   return (
     <div
+      data-native-browser-occlusion=""
       onMouseEnter={() => {
         hoveredRef.current = true;
         pauseDismissal();

@@ -296,6 +296,7 @@ describe("ProtocolSections", () => {
       "application",
       "authentication",
       "security",
+      "network-path",
       "favorites",
       "advanced",
       "recovery",
@@ -403,6 +404,7 @@ describe("ProtocolSections", () => {
       "application",
       "authentication",
       "security",
+      "network-path",
       "favorites",
       "advanced",
       "network",
@@ -444,6 +446,17 @@ describe("ProtocolSections", () => {
     );
   });
 
+  it.each(["http", "https"] as const)(
+    "exposes existing Network Path controls for %s recovery",
+    (protocol) => {
+      render(<Harness initial={{ protocol, isGroup: false }} />);
+      fireEvent.click(screen.getByRole("tab", { name: "Network Path" }));
+      expect(screen.getByTestId("network-path-section")).toHaveTextContent(
+        `Network path for ${protocol}`,
+      );
+      expect(screen.queryByTestId("http-options")).not.toBeInTheDocument();
+    },
+  );
   it("uses one dedicated Network Path section for both SSH and RDP", () => {
     render(<Harness initial={{ protocol: "ssh", isGroup: false }} />);
 

@@ -16,6 +16,7 @@ function deferred() {
 }
 function controller(): OriginBrowserController {
   return {
+    connectionStatus: "connected",
     state: {
       phase: "attached",
       snapshot: null,
@@ -29,6 +30,7 @@ function controller(): OriginBrowserController {
     forward: vi.fn(),
     reload: vi.fn(),
     stop: vi.fn(),
+    openDevTools: vi.fn(),
     close: vi.fn(),
     reconnect: vi.fn(),
     zoom: vi.fn().mockResolvedValue(true),

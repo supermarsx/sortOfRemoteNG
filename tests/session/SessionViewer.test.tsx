@@ -589,6 +589,38 @@ describe("SessionViewer", () => {
     expect(screen.getByText(/rdp handshake failed/i)).toBeInTheDocument();
   });
 
+  it.each(["http", "https"] as const)(
+    "retains the same %s browser through failure and retry instead of hiding its diagnostics",
+    async (protocol) => {
+      const session = createSession({ protocol, status: "connecting" });
+      const onOpenSettings = vi.fn();
+      const { rerender } = render(
+        <SessionViewer session={session} onOpenSettings={onOpenSettings} />,
+      );
+      const mountedBrowser = await screen.findByTestId("mock-web-browser");
+      for (const status of ["error", "connecting", "connected"] as const) {
+        rerender(
+          <SessionViewer
+            session={{ ...session, status }}
+            onOpenSettings={onOpenSettings}
+          />,
+        );
+        expect(screen.getByTestId("mock-web-browser")).toBe(mountedBrowser);
+        expect(screen.queryByText("Connection Failed")).not.toBeInTheDocument();
+        expect(mockState.webBrowserProps).toHaveBeenLastCalledWith(
+          expect.objectContaining({
+            session: expect.objectContaining({ id: session.id, status }),
+            onOpenSettings,
+          }),
+        );
+      }
+      rerender(
+        <SessionViewer session={{ ...session, status: "disconnected" }} />,
+      );
+      expect(screen.queryByTestId("mock-web-browser")).not.toBeInTheDocument();
+    },
+  );
+
   it.each(["connecting", "connected", "reconnecting", "error"] as const)(
     "routes RDP %s close requests through the manager using the tab id",
     async (status) => {

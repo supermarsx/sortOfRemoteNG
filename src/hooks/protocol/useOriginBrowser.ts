@@ -3,7 +3,18 @@
 import { useCallback, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
-import { originBrowserSessionError } from "./originBrowserSessionError";
+import type { ConnectionSession } from "../../types/connection/connection";
+import {
+  originBrowserConfigurationDetails,
+  originBrowserNavigationUrl as navigationUrl,
+  validateOriginBrowserConfiguration,
+  type BrowserConfigurationIssue,
+} from "./originBrowserConfiguration";
+import {
+  originBrowserLoadError,
+  originBrowserSessionError,
+} from "./originBrowserSessionError";
+import { getOriginBrowserRuntimeFailureDetail } from "./originBrowserFailureDetails";
 import {
   originBrowserStartupError,
   type OriginBrowserStartupStage,
@@ -13,12 +24,15 @@ import {
   ORIGIN_BROWSER_STATE_EVENT,
   originBrowserBounds,
   originBrowserFailureReason,
+  originBrowserLoadFailure,
+  originBrowserRuntimeFailure,
   type OriginBrowserAction,
   type OriginBrowserBounds,
   type OriginBrowserConsent,
   type OriginBrowserIdentity,
   type OriginBrowserOwner,
   type OriginBrowserQuickConnect,
+  type OriginBrowserRuntimeFailure,
   type OriginBrowserSnapshot,
   type OriginBrowserTransport,
   type OriginBrowserUnavailableReason,
@@ -70,6 +84,11 @@ export interface OriginBrowserState {
   error: string | null;
   /** Safe classification for shell recovery UI; never contains native error text. */
   startupFailure?: OriginBrowserStartupFailure | null;
+  /** Fixed validation codes; never the rejected URL, reference or login grant. */
+  configurationFailure?: { issues: BrowserConfigurationIssue[] } | null;
+  operationFailure?:
+    "presentation" | "navigation" | "control" | "state" | "cleanup" | null;
+  runtimeFailure?: OriginBrowserRuntimeFailure | null;
 }
 
 const initialState: OriginBrowserState = {
@@ -78,6 +97,9 @@ const initialState: OriginBrowserState = {
   unavailableReason: null,
   error: null,
   startupFailure: null,
+  configurationFailure: null,
+  operationFailure: null,
+  runtimeFailure: null,
 };
 
 function sameOwner(a: OriginBrowserOwner, b: OriginBrowserOwner) {
@@ -121,26 +143,6 @@ function sameIdentity(a: OriginBrowserIdentity, b: OriginBrowserIdentity) {
 function printable(character: string) {
   const code = character.charCodeAt(0);
   return code >= 32 && code !== 127;
-}
-
-function navigationUrl(value: string): string | null {
-  if (
-    typeof value !== "string" ||
-    value.length > 16_384 ||
-    /[\s\\]/.test(value) ||
-    !Array.from(value).every(printable)
-  )
-    return null;
-  try {
-    const url = new URL(value);
-    return ["https:", "http:"].includes(url.protocol) &&
-      !url.username &&
-      !url.password
-      ? url.href
-      : null;
-  } catch {
-    return null;
-  }
 }
 
 /** Owner-window display state, NOT diagnostics. Full URLs can contain secrets;
@@ -191,11 +193,13 @@ function shellSnapshot(
     value.phase,
     value.failureReason,
   );
+  const loadFailure = originBrowserLoadFailure(value.phase, value.loadFailure);
   return {
     identity: copyIdentity(value.identity),
     sequence: value.sequence,
     phase: value.phase,
     ...(failureReason === undefined ? {} : { failureReason }),
+    ...(loadFailure === undefined ? {} : { loadFailure }),
     displayUrl,
     ...(currentUrl === undefined ? {} : { currentUrl }),
     title: Array.from(value.title).filter(printable).join(""),
@@ -219,7 +223,9 @@ interface Attempt {
   presentationKey: string;
   transport: OriginBrowserTransport;
   publish: (snapshot: OriginBrowserSnapshot) => void;
-  fail: () => void;
+  fail: (
+    operation?: NonNullable<OriginBrowserState["operationFailure"]>,
+  ) => void;
 }
 
 export function useOriginBrowser(options: UseOriginBrowserOptions) {
@@ -376,7 +382,7 @@ export function useOriginBrowser(options: UseOriginBrowserOptions) {
           !attempt.cancelled &&
           revision === attempt.presentationRevision
         )
-          attempt.fail();
+          attempt.fail("presentation");
       });
   }, []);
 
@@ -405,7 +411,6 @@ export function useOriginBrowser(options: UseOriginBrowserOptions) {
     const owner = Object.freeze({ ownerDatabaseId, connectionId, sessionId });
     const ownerKey = JSON.stringify([ownerDatabaseId, connectionId, sessionId]);
     const retirement = retiring.current;
-    const url = navigationUrl(initialUrl);
     if (!enabled) {
       setState(initialState);
       return;
@@ -418,21 +423,22 @@ export function useOriginBrowser(options: UseOriginBrowserOptions) {
       });
       return;
     }
-    if (
-      !url ||
-      Object.values(owner).some((value) => !value || value.length > 256) ||
-      typeof expectedSecurityRevision !== "string" ||
-      !expectedSecurityRevision ||
-      expectedSecurityRevision.length > 256 ||
-      typeof sourceSessionId !== "string" ||
-      !sourceSessionId ||
-      sourceSessionId.length > 256 ||
-      (consentKind === "existing-grant" && (!grantId || grantId.length > 256))
-    ) {
+    const { url, issues } = validateOriginBrowserConfiguration({
+      initialUrl,
+      ...owner,
+      expectedSecurityRevision,
+      sourceSessionId,
+      consentKind,
+      grantId,
+    });
+    if (!url || issues.length) {
       setState({
         ...initialState,
         phase: "error",
-        error: "Browser configuration is invalid.",
+        error: originBrowserConfigurationDetails(issues)
+          .map((issue) => issue.problem)
+          .join(" "),
+        configurationFailure: { issues },
       });
       return;
     }
@@ -454,12 +460,13 @@ export function useOriginBrowser(options: UseOriginBrowserOptions) {
     };
     current.current = attempt;
     const live = () => current.current === attempt && !attempt.cancelled;
-    attempt.fail = () => {
+    attempt.fail = (operation = "state") => {
       if (!live()) return;
       setState({
         ...initialState,
         phase: "error",
         error: "Native browser operation failed.",
+        operationFailure: operation,
       });
       void closeAttempt(attempt);
     };
@@ -490,11 +497,16 @@ export function useOriginBrowser(options: UseOriginBrowserOptions) {
       setState({
         ...initialState,
         snapshot,
-        phase: snapshot.phase === "failed" ? "error" : snapshot.phase,
+        phase:
+          snapshot.phase === "failed" || snapshot.loadFailure
+            ? "error"
+            : snapshot.phase,
         error:
           snapshot.phase === "failed"
             ? originBrowserSessionError(snapshot.failureReason)
-            : null,
+            : snapshot.loadFailure
+              ? originBrowserLoadError(snapshot.loadFailure)
+              : null,
       });
       if (["closing", "closed", "failed"].includes(snapshot.phase)) {
         void closeAttempt(attempt).then((closed) => {
@@ -506,12 +518,16 @@ export function useOriginBrowser(options: UseOriginBrowserOptions) {
             error: closed
               ? null
               : "Native browser cleanup could not be confirmed.",
+            operationFailure: closed ? null : "cleanup",
           });
         });
       } else present();
     };
     setState({ ...initialState, phase: "starting" });
-    const unavailable = (reason: OriginBrowserUnavailableReason) => {
+    const unavailable = (
+      reason: OriginBrowserUnavailableReason,
+      runtimeFailure?: unknown,
+    ) => {
       if (!live()) return;
       const safeReason: OriginBrowserUnavailableReason = [
         "runtime-missing",
@@ -527,21 +543,63 @@ export function useOriginBrowser(options: UseOriginBrowserOptions) {
         ...initialState,
         phase: "unavailable",
         unavailableReason: safeReason,
+        runtimeFailure: originBrowserRuntimeFailure(runtimeFailure) ?? null,
       });
       void closeAttempt(attempt);
     };
     let startupStage: OriginBrowserStartupStage = "listen";
-    const startupFailed = (error: unknown) => {
+    const startupFailed = async (error: unknown) => {
       if (!live()) return;
       const failure = originBrowserStartupError(startupStage, error);
+      let runtimeFailure: OriginBrowserRuntimeFailure | null = null;
+      // Deferred initialization can fail inside create. Its legacy rejection
+      // string may describe only a wrapper step; prefer the engine's recorded
+      // cause when the same owner/attempt still exists. Never reclassify login,
+      // permission or arbitrary IPC failures from an unrelated global record.
+      if (startupStage === "create" && failure.category === "runtime") {
+        let timer: ReturnType<typeof setTimeout> | undefined;
+        try {
+          ownerGuard.current?.();
+          const refreshed = await Promise.race([
+            transport.status({ owner }),
+            new Promise<null>((resolve) => {
+              timer = setTimeout(() => resolve(null), 3000);
+            }),
+          ]);
+          if (!live()) return;
+          ownerGuard.current?.();
+          if (
+            refreshed?.capability?.availability === "unavailable" &&
+            originBrowserRuntimeFailure(refreshed.runtimeFailure)
+          ) {
+            unavailable(
+              refreshed.capability.reason ?? "host-unavailable",
+              refreshed.runtimeFailure,
+            );
+            return;
+          }
+          if (refreshed?.capability?.availability === "deferred") {
+            runtimeFailure =
+              originBrowserRuntimeFailure(refreshed.runtimeFailure) ?? null;
+          }
+        } catch {
+          // The original allowlisted failure remains useful if this secondary
+          // diagnostic lookup fails. Do not replace it with another IPC error.
+        } finally {
+          if (timer !== undefined) clearTimeout(timer);
+        }
+      }
+      if (!live()) return;
       // Keep the mapper's safe optional recovery discriminator as well as the
       // stage/category. Its fixed display message is not a classification.
       const { message, ...startupFailure } = failure;
+      const engine = getOriginBrowserRuntimeFailureDetail(runtimeFailure);
       setState({
         ...initialState,
         phase: "error",
-        error: message,
+        error: engine ? `${engine.problem} ${engine.nextStep}` : message,
         startupFailure,
+        runtimeFailure,
       });
       void closeAttempt(attempt);
     };
@@ -550,7 +608,14 @@ export function useOriginBrowser(options: UseOriginBrowserOptions) {
       // create reply which arrived only after its React owner was disposed.
       const predecessor = retirement.get(ownerKey);
       if (predecessor && !(await predecessor)) {
-        unavailable("host-unavailable");
+        if (!live()) return;
+        setState({
+          ...initialState,
+          phase: "unavailable",
+          unavailableReason: "host-unavailable",
+          operationFailure: "cleanup",
+        });
+        void closeAttempt(attempt);
         return;
       }
       if (!live()) return;
@@ -565,7 +630,10 @@ export function useOriginBrowser(options: UseOriginBrowserOptions) {
       const status = await transport.status({ owner });
       if (!live()) return;
       if (status.capability?.availability === "unavailable") {
-        unavailable(status.capability.reason ?? "host-unavailable");
+        unavailable(
+          status.capability.reason ?? "host-unavailable",
+          status.runtimeFailure,
+        );
         return;
       }
       if (
@@ -619,7 +687,10 @@ export function useOriginBrowser(options: UseOriginBrowserOptions) {
       });
       if (!live()) return;
       if (refreshed.capability?.availability === "unavailable") {
-        unavailable(refreshed.capability.reason ?? "host-unavailable");
+        unavailable(
+          refreshed.capability.reason ?? "host-unavailable",
+          refreshed.runtimeFailure,
+        );
         return;
       }
       if (refreshed.capability?.availability !== "available") throw new Error();
@@ -674,7 +745,9 @@ export function useOriginBrowser(options: UseOriginBrowserOptions) {
   );
 
   const runControl = useCallback(
-    async (kind: "back" | "forward" | "reload" | "stop" | "focus") => {
+    async (
+      kind: "back" | "forward" | "reload" | "stop" | "focus" | "devtools",
+    ) => {
       const attempt = current.current;
       const flags = presentation.current;
       if (
@@ -693,27 +766,32 @@ export function useOriginBrowser(options: UseOriginBrowserOptions) {
       )
         return false;
       if (
-        kind === "focus" &&
-        (!flags.active || flags.dialogOpen || !viewport.current)
+        (kind === "focus" || kind === "devtools") &&
+        (!viewport.current || attempt.presentationRevision < 1)
       )
         return false;
       const action: OriginBrowserAction =
-        kind === "focus"
+        kind === "focus" || kind === "devtools"
           ? { kind, presentationRevision: attempt.presentationRevision }
           : { kind };
-      const focusBecameStale = () =>
-        action.kind === "focus" &&
+      const presentationBecameStale = () =>
+        (action.kind === "focus" || action.kind === "devtools") &&
         action.presentationRevision !== attempt.presentationRevision;
+      let dispatched = false;
       try {
         ownerGuard.current?.();
+        dispatched = true;
         await attempt.transport.control({ identity: attempt.identity, action });
         return (
           current.current === attempt &&
           !attempt.cancelled &&
-          !focusBecameStale()
+          !presentationBecameStale()
         );
       } catch {
-        if (!focusBecameStale()) attempt.fail();
+        // An inspector failure must leave the failing page available to retry.
+        // Owner-guard rejection still revokes the attempt as for other controls.
+        if (!presentationBecameStale() && (kind !== "devtools" || !dispatched))
+          attempt.fail("control");
         return false;
       }
     },
@@ -767,7 +845,7 @@ export function useOriginBrowser(options: UseOriginBrowserOptions) {
         });
         return !stale();
       } catch {
-        if (!stale()) attempt.fail();
+        if (!stale()) attempt.fail("control");
         return false;
       }
     },
@@ -858,7 +936,7 @@ export function useOriginBrowser(options: UseOriginBrowserOptions) {
         await attempt.transport.navigate({ identity: attempt.identity, url });
         return current.current === attempt && !attempt.cancelled;
       } catch {
-        attempt.fail();
+        attempt.fail("navigation");
         return false;
       }
     },
@@ -892,6 +970,7 @@ export function useOriginBrowser(options: UseOriginBrowserOptions) {
           error: closed
             ? null
             : "Native browser cleanup could not be confirmed.",
+          operationFailure: closed ? null : "cleanup",
         });
       if (requireConfirmation && !closed)
         throw new Error("Native browser cleanup could not be confirmed.");
@@ -908,9 +987,25 @@ export function useOriginBrowser(options: UseOriginBrowserOptions) {
   const forward = useCallback(() => runControl("forward"), [runControl]);
   const reload = useCallback(() => runControl("reload"), [runControl]);
   const stop = useCallback(() => runControl("stop"), [runControl]);
+  const openDevTools = useCallback(() => runControl("devtools"), [runControl]);
+
+  // Verified native attachment is the connection lifecycle. CEF's loading bit
+  // includes later navigation/subresources; login and automation readiness do
+  // not hold an already usable native browser in the session's connecting state.
+  const connectionStatus: ConnectionSession["status"] | null =
+    state.phase === "idle"
+      ? null
+      : state.phase === "starting"
+        ? "connecting"
+        : state.phase === "attached"
+          ? "connected"
+          : state.phase === "error" || state.phase === "unavailable"
+            ? "error"
+            : "disconnected";
 
   return {
     state,
+    connectionStatus,
     setViewport,
     navigate,
     focus,
@@ -918,6 +1013,7 @@ export function useOriginBrowser(options: UseOriginBrowserOptions) {
     forward,
     reload,
     stop,
+    openDevTools,
     zoom,
     find,
     stopFind,

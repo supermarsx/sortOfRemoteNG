@@ -115,6 +115,259 @@ async function mounted(overrides: Partial<UseOriginBrowserOptions> = {}) {
 }
 
 describe("origin browser attempt controller", () => {
+  it("keeps retryable deferred startup while explaining a recorded UI dispatch failure", async () => {
+    const f = fixture();
+    f.transport.status
+      .mockResolvedValueOnce({
+        capability: { availability: "deferred" },
+        snapshot: null,
+      })
+      .mockResolvedValueOnce({
+        capability: { availability: "deferred" },
+        snapshot: null,
+        runtimeFailure: { code: "ui-dispatch", stage: "preparing" },
+      });
+    f.transport.create.mockRejectedValue(
+      "Native browser package or runtime settings could not be prepared. Check the native startup diagnostics before retrying.",
+    );
+    const hook = renderHook(() => useOriginBrowser(f.options));
+    await waitFor(() => expect(hook.result.current.state.phase).toBe("error"));
+    expect(hook.result.current.state.runtimeFailure).toEqual({
+      code: "ui-dispatch",
+      stage: "preparing",
+    });
+    expect(hook.result.current.state.error).toContain("UI thread");
+    expect(hook.result.current.state.error).not.toContain("runtime package");
+    expect(hook.result.current.state.unavailableReason).toBeNull();
+  });
+  it("recovers the recorded engine cause when deferred initialization fails inside create", async () => {
+    const f = fixture();
+    f.transport.status
+      .mockResolvedValueOnce({
+        capability: { availability: "deferred" },
+        snapshot: null,
+      })
+      .mockResolvedValueOnce({
+        capability: {
+          availability: "unavailable",
+          reason: "policy-unavailable",
+        },
+        snapshot: null,
+        runtimeFailure: {
+          code: "ui-dispatch",
+          stage: "initializing",
+          extra: "SECRET",
+        } as never,
+      });
+    f.transport.create.mockRejectedValue(
+      "Native browser package or runtime settings could not be prepared. Check the native startup diagnostics before retrying.",
+    );
+    const hook = renderHook(() => useOriginBrowser(f.options));
+    await waitFor(() =>
+      expect(hook.result.current.state.phase).toBe("unavailable"),
+    );
+    expect(hook.result.current.state.runtimeFailure).toEqual({
+      code: "ui-dispatch",
+      stage: "initializing",
+    });
+    expect(hook.result.current.state.startupFailure).toBeNull();
+    expect(f.transport.status).toHaveBeenCalledTimes(2);
+    expect(JSON.stringify(hook.result.current.state)).not.toContain("SECRET");
+    expect(f.transport.control).not.toHaveBeenCalled();
+  });
+
+  it("keeps the original runtime error when the follow-up diagnostic status fails", async () => {
+    const f = fixture();
+    f.transport.status
+      .mockResolvedValueOnce({
+        capability: { availability: "deferred" },
+        snapshot: null,
+      })
+      .mockRejectedValueOnce(new Error("SECRET"));
+    f.transport.create.mockRejectedValue(
+      "Native browser package or runtime settings could not be prepared. Check the native startup diagnostics before retrying.",
+    );
+    const hook = renderHook(() => useOriginBrowser(f.options));
+    await waitFor(() => expect(hook.result.current.state.phase).toBe("error"));
+    expect(hook.result.current.state.startupFailure?.code).toBe(
+      "runtime-package",
+    );
+    expect(hook.result.current.state.runtimeFailure).toBeNull();
+    expect(JSON.stringify(hook.result.current.state)).not.toContain("SECRET");
+  });
+
+  it("drops a late engine status after the owning database becomes unavailable", async () => {
+    const f = fixture();
+    const pending =
+      deferred<Awaited<ReturnType<OriginBrowserTransport["status"]>>>();
+    f.transport.status
+      .mockResolvedValueOnce({
+        capability: { availability: "deferred" },
+        snapshot: null,
+      })
+      .mockImplementationOnce(() => pending.promise);
+    f.transport.create.mockRejectedValue(
+      "Native browser package or runtime settings could not be prepared. Check the native startup diagnostics before retrying.",
+    );
+    const hook = renderHook((options) => useOriginBrowser(options), {
+      initialProps: f.options,
+    });
+    await waitFor(() => expect(f.transport.status).toHaveBeenCalledTimes(2));
+    hook.rerender({ ...f.options, ownerAvailable: false });
+    await act(async () =>
+      pending.resolve({
+        capability: {
+          availability: "unavailable",
+          reason: "policy-unavailable",
+        },
+        snapshot: null,
+        runtimeFailure: { code: "ui-dispatch", stage: "initializing" },
+      }),
+    );
+    expect(hook.result.current.state.runtimeFailure).toBeNull();
+    expect(hook.result.current.state.unavailableReason).not.toBe(
+      "policy-unavailable",
+    );
+    expect(f.transport.control).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    "data-directory",
+    "runtime-package",
+    "startup-provider",
+    "certificate-bridge",
+    "runtime-policy",
+    "startup-timeout",
+    "ui-dispatch",
+    "runtime-initialization",
+  ] as const)(
+    "preserves engine failure %s without starting a host and clears it on explicit retry",
+    async (code) => {
+      const f = fixture();
+      f.transport.status.mockResolvedValueOnce({
+        capability: {
+          availability: "unavailable",
+          reason: "policy-unavailable",
+        },
+        snapshot: null,
+        runtimeFailure: {
+          code,
+          stage: "preparing",
+          message: "SECRET",
+        } as never,
+      });
+      const hook = renderHook(() => useOriginBrowser(f.options));
+      await waitFor(() =>
+        expect(hook.result.current.state.phase).toBe("unavailable"),
+      );
+      expect(hook.result.current.state.runtimeFailure).toEqual({
+        code,
+        stage: "preparing",
+      });
+      expect(JSON.stringify(hook.result.current.state)).not.toContain("SECRET");
+      expect(f.transport.create).not.toHaveBeenCalled();
+      act(() => hook.result.current.reconnect());
+      await waitFor(() =>
+        expect(hook.result.current.state.phase).toBe("attached"),
+      );
+      expect(hook.result.current.state.runtimeFailure).toBeNull();
+      expect(f.transport.create).toHaveBeenCalledOnce();
+    },
+  );
+
+  it("omits unknown engine failure fields and keeps the known availability reason", async () => {
+    const f = fixture();
+    f.transport.status.mockResolvedValueOnce({
+      capability: { availability: "unavailable", reason: "host-unavailable" },
+      snapshot: null,
+      runtimeFailure: { code: "SECRET", stage: "preparing" } as never,
+    });
+    const hook = renderHook(() => useOriginBrowser(f.options));
+    await waitFor(() =>
+      expect(hook.result.current.state.phase).toBe("unavailable"),
+    );
+    expect(hook.result.current.state.runtimeFailure).toBeNull();
+    expect(hook.result.current.state.unavailableReason).toBe(
+      "host-unavailable",
+    );
+    expect(JSON.stringify(hook.result.current.state)).not.toContain("SECRET");
+    expect(f.transport.create).not.toHaveBeenCalled();
+  });
+
+  it("keeps connection status connected during native page/subresource loading", async () => {
+    const f = await mounted();
+    expect(f.result.current.connectionStatus).toBe("connected");
+    for (const [index, loading] of [true, false, true].entries()) {
+      f.emit(
+        snapshot({ sequence: index + 1, loading, title: "Readable page" }),
+      );
+      expect(f.result.current.connectionStatus).toBe("connected");
+      expect(f.result.current.state.snapshot?.loading).toBe(loading);
+    }
+    expect(f.transport.create).toHaveBeenCalledOnce();
+    expect(f.transport.close).not.toHaveBeenCalled();
+  });
+
+  it("keeps connection status connecting until native attachment is verified", async () => {
+    const f = fixture();
+    const resync =
+      deferred<Awaited<ReturnType<OriginBrowserTransport["status"]>>>();
+    f.transport.status
+      .mockResolvedValueOnce({
+        capability: { availability: "available" },
+        snapshot: null,
+      })
+      .mockReturnValueOnce(resync.promise);
+    const hook = renderHook(() => useOriginBrowser(f.options));
+    await waitFor(() => expect(f.transport.status).toHaveBeenCalledTimes(2));
+    f.emit(snapshot({ sequence: 1, loading: true }));
+    expect(hook.result.current.connectionStatus).toBe("connecting");
+    await act(async () =>
+      resync.resolve({
+        capability: { availability: "available" },
+        snapshot: snapshot({ sequence: 1, loading: true }),
+      }),
+    );
+    expect(hook.result.current.connectionStatus).toBe("connected");
+  });
+
+  it("reports real document and renderer failures as error connection status", async () => {
+    const f = await mounted();
+    f.emit(
+      snapshot({
+        sequence: 1,
+        loading: true,
+        loadFailure: { code: -105, category: "dns" },
+      }),
+    );
+    expect(f.result.current.connectionStatus).toBe("error");
+    expect(f.result.current.state.error).toContain("DNS");
+    f.emit(snapshot({ sequence: 2, loading: true }));
+    expect(f.result.current.connectionStatus).toBe("connected");
+    f.emit(
+      snapshot({ sequence: 3, phase: "failed", failureReason: "renderer" }),
+    );
+    expect(f.result.current.connectionStatus).toBe("error");
+    f.emit(snapshot({ sequence: 4 }));
+    expect(f.result.current.connectionStatus).toBe("error");
+  });
+
+  it("reports unavailable and closed connection status without claiming attachment", async () => {
+    const f = fixture();
+    f.transport.status.mockResolvedValue({
+      capability: { availability: "unavailable", reason: "runtime-missing" },
+      snapshot: null,
+    });
+    const hook = renderHook(() => useOriginBrowser(f.options));
+    await waitFor(() =>
+      expect(hook.result.current.state.phase).toBe("unavailable"),
+    );
+    expect(hook.result.current.connectionStatus).toBe("error");
+    const attached = await mounted();
+    await act(async () => attached.result.current.close());
+    expect(attached.result.current.connectionStatus).toBe("disconnected");
+  });
+
   it("keeps rendering around shell overlays without allowing focus through them", async () => {
     const f = await mounted({ preserveRenderingUnderOverlays: true });
     f.transport.control.mockClear();
@@ -270,6 +523,7 @@ describe("origin browser attempt controller", () => {
       expect(result.current.state.startupFailure).toEqual({
         stage: "create",
         category: "runtime",
+        code: expect.any(String),
       });
       expect(result.current.state.error).toContain(message);
       expect(result.current.state.error).not.toContain("login, credentials");
@@ -378,6 +632,7 @@ describe("origin browser attempt controller", () => {
       expect(result.current.state.startupFailure).toEqual({
         stage: "create",
         category,
+        code: expect.any(String),
       });
       expect(f.unsubscribe).toHaveBeenCalledOnce();
       expect(f.transport.close).not.toHaveBeenCalled();
@@ -403,6 +658,7 @@ describe("origin browser attempt controller", () => {
       stage: "create",
       category: "connection",
       reason: "mfa-origin-mismatch",
+      code: "mfa-origin-mismatch",
     });
     expect(result.current.state.startupFailure).not.toHaveProperty("message");
     expect(result.current.state.error).toContain("re-enable automatic codes");
@@ -649,6 +905,41 @@ describe("origin browser attempt controller", () => {
     expect(result.current.state.phase).toBe("error");
     expect(f.transport.create).not.toHaveBeenCalled();
     expect(f.transport.status).not.toHaveBeenCalled();
+    expect(
+      result.current.state.configurationFailure?.issues.length,
+    ).toBeGreaterThan(0);
+    expect(result.current.state.error).not.toBe(
+      "Browser configuration is invalid.",
+    );
+    expect(result.current.state.error).not.toContain("fixture.invalid");
+    expect(result.current.state.error).not.toContain("secret");
+  });
+
+  it("reports every failed preflight field and clears the evidence after repair", async () => {
+    const f = fixture();
+    const { result, rerender } = renderHook(
+      (options) => useOriginBrowser(options),
+      {
+        initialProps: {
+          ...f.options,
+          expectedSecurityRevision: "",
+          sourceSessionId: "",
+          initialUrl: "",
+        },
+      },
+    );
+    expect(result.current.state.configurationFailure?.issues).toEqual([
+      "url-missing",
+      "expectedSecurityRevision:missing",
+      "sourceSessionId:missing",
+    ]);
+    expect(result.current.state.error).toContain(
+      "security revision is missing",
+    );
+    expect(f.transport.listen).not.toHaveBeenCalled();
+    rerender(f.options);
+    await waitFor(() => expect(result.current.state.phase).toBe("attached"));
+    expect(result.current.state.configurationFailure).toBeNull();
   });
 
   it("ignores other owners, tabs, attempts, duplicates and older status events", async () => {
@@ -987,6 +1278,7 @@ describe("origin browser attempt controller", () => {
       expect(f.result.current.state.phase).toBe("unavailable"),
     );
     expect(f.transport.create).toHaveBeenCalledTimes(1);
+    expect(f.result.current.state.operationFailure).toBe("cleanup");
     expect(JSON.stringify(f.result.current.state)).not.toContain(
       "private-close-error",
     );
@@ -1082,6 +1374,90 @@ describe("origin browser attempt controller", () => {
     expect(f.transport.close).toHaveBeenCalledWith({ identity });
     f.emit(snapshot({ sequence: 2 }));
     expect(f.result.current.state.phase).toBe("error");
+  });
+
+  it("keeps a failed document attached for explicit navigation without replaying a request", async () => {
+    const f = await mounted();
+    f.transport.control.mockClear();
+    const loadFailure = { code: -21, category: "network-changed" as const };
+    f.emit(snapshot({ sequence: 1, loadFailure, canGoBack: true }));
+    expect(f.result.current.state.phase).toBe("error");
+    expect(f.result.current.state.snapshot?.phase).toBe("attached");
+    expect(f.result.current.state.error).toContain("network changed");
+    expect(f.result.current.state.error).toContain("-21");
+    expect(f.transport.close).not.toHaveBeenCalled();
+    expect(f.unsubscribe).not.toHaveBeenCalled();
+    expect(f.transport.navigate).not.toHaveBeenCalled();
+    expect(f.transport.control).not.toHaveBeenCalled();
+    // CEF loading-stopped and title/history events retain the native evidence.
+    f.emit(snapshot({ sequence: 2, loadFailure, loading: false }));
+    expect(f.result.current.state.phase).toBe("error");
+    expect(await f.result.current.back()).toBe(true);
+    expect(
+      await f.result.current.navigate("https://fixture.invalid/next"),
+    ).toBe(true);
+    expect(f.transport.create).toHaveBeenCalledOnce();
+    f.emit(snapshot({ sequence: 3, loading: true }));
+    expect(f.result.current.state.phase).toBe("attached");
+    expect(f.result.current.state.error).toBeNull();
+    f.emit(
+      snapshot({ sequence: 4, phase: "failed", failureReason: "renderer" }),
+    );
+    expect(f.transport.close).toHaveBeenCalledExactlyOnceWith({ identity });
+  });
+
+  it("copies only fixed document-failure fields and ignores stale failures", async () => {
+    const f = await mounted();
+    f.emit({
+      ...snapshot({ sequence: 2 }),
+      loadFailure: {
+        code: -202,
+        category: "certificate",
+        url: "https://SECRET",
+        text: "SECRET",
+      },
+    } as OriginBrowserSnapshot);
+    expect(f.result.current.state.snapshot?.loadFailure).toEqual({
+      code: -202,
+      category: "certificate",
+    });
+    expect(JSON.stringify(f.result.current.state)).not.toContain("SECRET");
+    expect(f.result.current.state.error).toContain("saved trust policy");
+    f.emit(snapshot({ sequence: 1 }));
+    f.emit(
+      snapshot({ sequence: 8, identity: { ...identity, attemptId: "old" } }),
+    );
+    expect(f.result.current.state.phase).toBe("error");
+    f.emit(snapshot({ sequence: 3 }));
+    expect(f.result.current.state.phase).toBe("attached");
+    expect(f.transport.close).not.toHaveBeenCalled();
+  });
+
+  it("preserves an early document failure across create/status resync without closing", async () => {
+    const f = fixture();
+    const pending =
+      deferred<Awaited<ReturnType<OriginBrowserTransport["status"]>>>();
+    f.transport.status
+      .mockResolvedValueOnce({
+        capability: { availability: "available" },
+        snapshot: null,
+      })
+      .mockReturnValueOnce(pending.promise);
+    const { result } = renderHook(() => useOriginBrowser(f.options));
+    await waitFor(() => expect(f.transport.status).toHaveBeenCalledTimes(2));
+    f.emit(
+      snapshot({ sequence: 8, loadFailure: { code: -105, category: "dns" } }),
+    );
+    await act(async () =>
+      pending.resolve({
+        capability: { availability: "available" },
+        snapshot: snapshot({ sequence: 2 }),
+      }),
+    );
+    expect(result.current.state.phase).toBe("error");
+    expect(result.current.state.error).toContain("DNS");
+    expect(result.current.state.snapshot?.loadFailure?.code).toBe(-105);
+    expect(f.transport.close).not.toHaveBeenCalled();
   });
 
   it.each([
@@ -1343,6 +1719,7 @@ describe("origin browser attempt controller", () => {
           reason: "containment-unverified",
         },
         snapshot: null,
+        runtimeFailure: { code: "runtime-policy", stage: "policy-readback" },
       });
     const hook = renderHook(() => useOriginBrowser(f.options));
     await waitFor(() =>
@@ -1351,6 +1728,10 @@ describe("origin browser attempt controller", () => {
     expect(f.transport.close).toHaveBeenCalledWith({ identity });
     expect(f.transport.create).toHaveBeenCalledOnce();
     expect(f.transport.navigate).not.toHaveBeenCalled();
+    expect(hook.result.current.state.runtimeFailure).toEqual({
+      code: "runtime-policy",
+      stage: "policy-readback",
+    });
   });
 });
 

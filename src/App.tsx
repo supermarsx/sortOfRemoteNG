@@ -110,6 +110,7 @@ import { useRuntimeConnectionLaunch } from "./hooks/session/useRuntimeConnection
 import { useUpdaterAutoCheck } from "./hooks/updater/useUpdaterAutoCheck";
 import { useStartupFailureAlerts } from "./hooks/app/useStartupFailureAlerts";
 import { useOriginBrowserPrewarm } from "./hooks/protocol/useOriginBrowserPrewarm";
+import { useOriginBrowserRecovery } from "./hooks/protocol/useOriginBrowserRecovery";
 import { useSettingsWriteFailureAlerts } from "./hooks/app/useSettingsWriteFailureAlerts";
 import { resolveStartupWindowAction } from "./utils/window/trayPolicy";
 import {
@@ -449,6 +450,12 @@ const AppContent: React.FC = () => {
     for (const key of keys) result[key] = makeToolSetter(key);
     toolShowSetters.current = result;
   }
+
+  useOriginBrowserRecovery({
+    activateSession: setActiveSessionId,
+    openDatabases: () => toolShowSetters.current.database(true),
+    openQuickConnect: () => setShowQuickConnect(true),
+  });
 
   // Track when app is fully initialized
   useEffect(() => {

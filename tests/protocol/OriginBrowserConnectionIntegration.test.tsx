@@ -3,18 +3,21 @@ import {
   act,
   cleanup,
   fireEvent,
-  render,
+  render as renderView,
   screen,
   within,
   waitFor,
 } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { ToastProvider } from "../../src/contexts/ToastContext";
 import type {
   Connection,
   ConnectionSession,
 } from "../../src/types/connection/connection";
 import type { OriginBrowserSnapshot } from "../../src/types/protocols/originBrowser";
 import progressStyles from "../../src/components/protocol/webBrowser/NavigationProgress.module.css";
+import { useOriginBrowserRecovery } from "../../src/hooks/protocol/useOriginBrowserRecovery";
+import OriginConnectionBrowser from "../../src/components/protocol/webBrowser/OriginConnectionBrowser";
 import {
   registerQuickConnectConnection,
   releaseRuntimeConnection,
@@ -178,7 +181,8 @@ beforeEach(() => {
     webBrowser: normalizeWebBrowserSettings({ engine: "real-origin" }),
   };
   f.context = {
-    state: { connections: [connection] },
+    state: { connections: [connection], sessions: [session] },
+    dispatch: vi.fn(),
     databaseAvailability: {
       status: "ready",
       databaseId: "database-1",
@@ -333,6 +337,9 @@ afterEach(async () => {
   // and owner-scoped mocks still exist, before unmounting and restoring them.
   await act(async () => {});
   cleanup();
+  // Unmount can queue owner-scoped recording discard; settle it before the
+  // next test installs a new native fixture and counts that fixture's actions.
+  await act(async () => {});
   releaseRuntimeConnection(connection.id);
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
@@ -340,6 +347,9 @@ afterEach(async () => {
 });
 const calls = (name: string) =>
   f.invoke.mock.calls.filter(([command]) => command === name);
+function render(ui: React.ReactNode) {
+  return renderView(ui, { wrapper: ToastProvider });
+}
 async function attached() {
   const view = render(<WebBrowser session={session} />);
   await waitFor(() =>
@@ -349,6 +359,203 @@ async function attached() {
 }
 
 describe("real-origin connection-tab integration", () => {
+  it("publishes connected session status before login consent or automation readiness and while subresources load", async () => {
+    enableAutomation();
+    f.context.state.sessions = [{ ...session, status: "connecting" }];
+    const native = f.invoke.getMockImplementation()!;
+    f.invoke.mockImplementation((command, args) =>
+      command === "origin_browser_automation" ||
+      command === "origin_browser_extensions"
+        ? new Promise(() => {})
+        : native(command, args),
+    );
+    await attached();
+    await waitFor(() =>
+      expect(calls("origin_browser_automation").length).toBeGreaterThan(0),
+    );
+    expect(
+      calls("origin_browser_create")[0][1].request.policy.autoLogin.consent,
+    ).toEqual({ kind: "required" });
+    expect(f.context.dispatch).toHaveBeenLastCalledWith({
+      type: "UPDATE_SESSION",
+      payload: { id: session.id, status: "connected", errorMessage: undefined },
+    });
+    f.context.dispatch.mockClear();
+    for (const [index, loading] of [true, false, true].entries()) {
+      act(() =>
+        f.snapshotListener?.({
+          payload: snapshot("attempt-1", {
+            sequence: index + 1,
+            loading,
+            title: "Readable native page",
+          }),
+        }),
+      );
+    }
+    expect(f.context.dispatch).not.toHaveBeenCalled();
+    expect(calls("origin_browser_create")).toHaveLength(1);
+    expect(calls("origin_browser_close")).toHaveLength(0);
+  });
+
+  it("publishes native session status for background tabs and does not recreate after the status patch", async () => {
+    f.active = false;
+    const pendingSession = { ...session, status: "connecting" as const };
+    f.context.state.sessions = [pendingSession];
+    const view = render(<WebBrowser session={pendingSession} />);
+    await waitFor(() =>
+      expect(f.context.dispatch).toHaveBeenLastCalledWith({
+        type: "UPDATE_SESSION",
+        payload: {
+          id: session.id,
+          status: "connected",
+          errorMessage: undefined,
+        },
+      }),
+    );
+    const connectedSession = {
+      ...pendingSession,
+      status: "connected" as const,
+    };
+    f.context.state.sessions = [connectedSession];
+    f.context.dispatch.mockClear();
+    view.rerender(<WebBrowser session={connectedSession} />);
+    await act(async () => {});
+    expect(f.context.dispatch).not.toHaveBeenCalled();
+    expect(calls("origin_browser_create")).toHaveLength(1);
+    expect(calls("origin_browser_close")).toHaveLength(0);
+  });
+
+  it("publishes real load and renderer errors as session status and clears only recovered load errors", async () => {
+    await attached();
+    f.context.dispatch.mockClear();
+    act(() =>
+      f.snapshotListener?.({
+        payload: snapshot("attempt-1", {
+          sequence: 1,
+          loadFailure: { code: -105, category: "dns" },
+        }),
+      }),
+    );
+    expect(f.context.dispatch).toHaveBeenLastCalledWith({
+      type: "UPDATE_SESSION",
+      payload: {
+        id: session.id,
+        status: "error",
+        errorMessage: expect.stringContaining("DNS"),
+      },
+    });
+    act(() =>
+      f.snapshotListener?.({
+        payload: snapshot("attempt-1", { sequence: 2, loading: true }),
+      }),
+    );
+    expect(f.context.dispatch).toHaveBeenLastCalledWith({
+      type: "UPDATE_SESSION",
+      payload: { id: session.id, status: "connected", errorMessage: undefined },
+    });
+    act(() =>
+      f.snapshotListener?.({
+        payload: snapshot("attempt-1", {
+          sequence: 3,
+          phase: "failed",
+          failureReason: "renderer",
+        }),
+      }),
+    );
+    await waitFor(() =>
+      expect(f.context.dispatch).toHaveBeenLastCalledWith({
+        type: "UPDATE_SESSION",
+        payload: {
+          id: session.id,
+          status: "error",
+          errorMessage: expect.stringContaining("renderer"),
+        },
+      }),
+    );
+    f.context.dispatch.mockClear();
+    act(() =>
+      f.snapshotListener?.({ payload: snapshot("attempt-1", { sequence: 4 }) }),
+    );
+    expect(f.context.dispatch).not.toHaveBeenCalled();
+  });
+
+  it("reports native startup failure as error session status without claiming connected", async () => {
+    failStartup("Browser initial URL does not match its saved source");
+    render(<WebBrowser session={session} />);
+    await waitFor(() =>
+      expect(f.context.dispatch).toHaveBeenLastCalledWith({
+        type: "UPDATE_SESSION",
+        payload: {
+          id: session.id,
+          status: "error",
+          errorMessage: expect.any(String),
+        },
+      }),
+    );
+    expect(
+      f.context.dispatch.mock.calls.some(
+        ([action]: any[]) => action.payload?.status === "connected",
+      ),
+    ).toBe(false);
+  });
+
+  it.each(["removed", "replaced", "revoked"])(
+    "does not publish native session status after its owner is %s",
+    async (change) => {
+      await attached();
+      f.context.dispatch.mockClear();
+      if (change === "removed") f.context.state.sessions = [];
+      if (change === "replaced")
+        f.context.state.sessions = [
+          { ...session, ownerDatabaseId: "other-database" },
+        ];
+      if (change === "revoked") f.revoked = true;
+      act(() =>
+        f.snapshotListener?.({
+          payload: snapshot("attempt-1", { sequence: 1, phase: "failed" }),
+        }),
+      );
+      await act(async () => {});
+      expect(f.context.dispatch).not.toHaveBeenCalled();
+    },
+  );
+
+  it("keeps malformed shared settings recoverable without creating a browser or saving display fallbacks", async () => {
+    f.settings.webBrowser = {
+      ...f.settings.webBrowser,
+      domainPermissions: { version: 999 },
+    };
+    const onOpenSettings = vi.fn();
+    render(
+      <OriginConnectionBrowser
+        session={session}
+        onOpenSettings={onOpenSettings}
+      />,
+    );
+    const warning = screen.getByText(/Shared Web Browser settings are invalid/);
+    fireEvent.click(
+      within(warning).getByRole("button", {
+        name: "Open Web Browser settings",
+      }),
+    );
+    expect(onOpenSettings).toHaveBeenCalledWith("webBrowser");
+    expect(
+      screen.getByRole("button", { name: "Browser settings" }),
+    ).toBeDisabled();
+    await act(async () => {});
+    expect(calls("origin_browser_create")).toHaveLength(0);
+    expect(f.context.dispatchAndFlush).not.toHaveBeenCalled();
+    expect(f.updateSettings).not.toHaveBeenCalled();
+    expect(f.settings.webBrowser.domainPermissions).toEqual({ version: 999 });
+  });
+  function RecoveryConsumer({
+    options,
+  }: {
+    options: Parameters<typeof useOriginBrowserRecovery>[0];
+  }) {
+    useOriginBrowserRecovery(options);
+    return null;
+  }
   const mfaMismatch =
     "Saved automatic two-factor authentication consent does not match the reviewed login origin. In Application settings, review the authenticator and HTTPS login origin, re-enable automatic codes, and save the connection. Your password and authenticator are unchanged.";
   const failStartup = (message = mfaMismatch) => {
@@ -359,14 +566,155 @@ describe("real-origin connection-tab integration", () => {
         : nativeInvoke(command, args),
     );
   };
-  it("integrates confirmed MFA repair outside the viewport without dismissing the error or retrying", async () => {
+  it("provides separate connection and global permission recovery from the native rejection without changing policy", async () => {
+    failStartup("Saved browser permission policy is invalid or unsupported");
+    const openSettings = vi.fn();
+    render(<WebBrowser session={session} onOpenSettings={openSettings} />);
+    const retry = await screen.findByRole("button", { name: "Retry browser" });
+    const alert = retry.closest('[role="alert"]') as HTMLElement;
+    const permissions = within(alert).getByRole("button", {
+      name: "Review website permissions",
+    });
+    expect(permissions).toHaveClass("sor-btn", "sor-btn-secondary");
+    expect(permissions).toHaveAttribute("data-tooltip");
+    fireEvent.click(
+      within(alert).getByRole("button", {
+        name: "Review global website permissions",
+      }),
+    );
+    expect(openSettings).toHaveBeenCalledWith("webBrowser");
+    fireEvent.click(permissions);
+    expect(
+      await screen.findByRole("dialog", {
+        name: "Browser request permissions",
+      }),
+    ).toBeVisible();
+    expect(
+      screen.getByRole("heading", {
+        name: "Shared website request permissions",
+      }),
+    ).toBeVisible();
+    expect(
+      screen.getByRole("heading", {
+        name: "Connection website request overrides",
+      }),
+    ).toBeVisible();
+    expect(calls("origin_browser_create")).toHaveLength(1);
+    expect(calls("origin_browser_login")).toHaveLength(0);
+    expect(f.context.dispatchAndFlush).not.toHaveBeenCalled();
+    expect(f.updateSettings).not.toHaveBeenCalled();
+  });
+  it("opens the owning saved editor's Application subtab from both error and diagnostics actions", async () => {
+    failStartup(
+      "Saved application entry or login route has no native translation",
+    );
+    const options = {
+      activateSession: vi.fn(),
+      openDatabases: vi.fn(),
+      openQuickConnect: vi.fn(),
+    };
+    render(
+      <>
+        <RecoveryConsumer options={options} />
+        <WebBrowser session={session} />
+      </>,
+    );
+    const buttons = await screen.findAllByRole("button", {
+      name: "Review application settings",
+    });
+    expect(buttons.length).toBeGreaterThanOrEqual(2);
+    fireEvent.click(buttons[0]);
+    expect(f.context.dispatch.mock.lastCall[0]).toMatchObject({
+      type: "ADD_SESSION",
+      payload: {
+        ownerDatabaseId: session.ownerDatabaseId,
+        connectionId: session.connectionId,
+        browserRecoveryNavigation: { tab: "protocol", subtab: "application" },
+      },
+    });
+    expect(options.activateSession).toHaveBeenCalledOnce();
+    f.revoked = true;
+    fireEvent.click(buttons[1]);
+    expect(options.activateSession).toHaveBeenCalledOnce();
+    expect(calls("origin_browser_create")).toHaveLength(1);
+    expect(f.context.dispatchAndFlush).not.toHaveBeenCalled();
+  });
+  it("offers a real database destination for a missing saved connection", async () => {
+    f.context.state.connections = [];
+    const options = {
+      activateSession: vi.fn(),
+      openDatabases: vi.fn(),
+      openQuickConnect: vi.fn(),
+    };
+    render(
+      <>
+        <RecoveryConsumer options={options} />
+        <WebBrowser session={session} />
+      </>,
+    );
+    const notice = screen.getByText(
+      "The saved connection is unavailable in this database.",
+    );
+    fireEvent.click(
+      within(notice).getByRole("button", { name: "Open database manager" }),
+    );
+    expect(options.openDatabases).toHaveBeenCalledOnce();
+    expect(f.context.dispatch).not.toHaveBeenCalled();
+    expect(calls("origin_browser_create")).toHaveLength(0);
+  });
+  it("opens Quick Connect correction for a temporary failed startup without editing a saved record", async () => {
+    failStartup("Browser initial URL does not match its saved source");
+    const quickSession = { ...session, ownerDatabaseId: undefined };
+    f.context.state.connections = [];
+    f.context.state.sessions = [quickSession];
+    registerQuickConnectConnection(connection);
+    const options = {
+      activateSession: vi.fn(),
+      openDatabases: vi.fn(),
+      openQuickConnect: vi.fn(),
+    };
+    render(
+      <>
+        <RecoveryConsumer options={options} />
+        <WebBrowser session={quickSession} />
+      </>,
+    );
+    fireEvent.click(
+      await screen.findByRole("button", {
+        name: "Correct Quick Connect settings",
+      }),
+    );
+    expect(options.openQuickConnect).toHaveBeenCalledOnce();
+    expect(
+      f.context.dispatch.mock.calls.every(
+        ([action]: any[]) =>
+          action.type === "UPDATE_SESSION" &&
+          action.payload.id === quickSession.id,
+      ),
+    ).toBe(true);
+    expect(f.context.dispatch).toHaveBeenLastCalledWith({
+      type: "UPDATE_SESSION",
+      payload: {
+        id: quickSession.id,
+        status: "error",
+        errorMessage: expect.any(String),
+      },
+    });
+    expect(f.context.dispatchAndFlush).not.toHaveBeenCalled();
+    expect(calls("origin_browser_create")).toHaveLength(1);
+  });
+  it("integrates confirmed MFA repair inside the viewport alert without dismissing the error or retrying", async () => {
     failStartup();
     render(<WebBrowser session={session} />);
     const repair = await screen.findByRole("button", {
       name: "Review MFA origin repair",
     });
-    const viewport = screen.getByRole("region");
-    expect(viewport).not.toContainElement(repair);
+    const viewport = screen.getByRole("region", { name: session.name });
+    expect(viewport).toContainElement(repair);
+    expect(screen.getByRole("alert")).toContainElement(repair);
+    expect(repair.parentElement).toContainElement(
+      screen.getByRole("button", { name: "Retry browser" }),
+    );
     const props = f.mfaRepair.mock.lastCall![0];
     expect(props.session).toBe(session);
     expect(props.connection).toBe(connection);
@@ -436,6 +784,230 @@ describe("real-origin connection-tab integration", () => {
       expect(f.context.dispatchAndFlush).not.toHaveBeenCalled();
     },
   );
+  it.each(["Credentials & 2FA", "Recording"])(
+    "%s is a compact anchored popup that shields input while keeping native rendering visible",
+    async (label) => {
+      await attached();
+      const trigger = screen.getByRole("button", { name: label });
+      expect(trigger).toHaveClass("sor-icon-btn-sm");
+      expect(trigger).toHaveAttribute("aria-expanded", "false");
+      expect(
+        screen.getByRole("form", { name: "Native browser navigation" }),
+      ).toContainElement(trigger);
+      const start = calls("origin_browser_control").length;
+      fireEvent.click(trigger);
+      const panel = await screen.findByRole("region", { name: label });
+      expect(panel.closest(".sor-popover-surface")).toHaveClass("fixed");
+      expect(panel).toHaveClass("sor-popover-panel");
+      expect(
+        screen.getByRole("form", { name: "Native browser navigation" }),
+      ).not.toContainElement(panel);
+      expect(trigger).toHaveAttribute("aria-expanded", "true");
+      await waitFor(() => {
+        const presentations = calls("origin_browser_control")
+          .slice(start)
+          .filter(([, args]) => args.request.action.kind === "presentation");
+        expect(
+          presentations[presentations.length - 1]?.[1].request.action,
+        ).toMatchObject({
+          visible: true,
+          inputBlocked: true,
+          occlusions: [expect.any(Object)],
+        });
+      });
+      const close = within(panel).getByRole("button", {
+        name: `Close ${label}`,
+      });
+      await waitFor(() => expect(close).toHaveFocus());
+      expect(screen.getByRole("button", { name: "Reload" })).toBeDisabled();
+      const viewport = document.querySelector(
+        "[data-origin-browser-viewport]",
+      )!;
+      expect(viewport).toHaveAttribute("aria-hidden", "true");
+      const focusCalls = calls("origin_browser_control").filter(
+        ([, args]) => args.request.action.kind === "focus",
+      ).length;
+      fireEvent.focus(viewport);
+      fireEvent.pointerDown(viewport);
+      expect(
+        calls("origin_browser_control").filter(
+          ([, args]) => args.request.action.kind === "focus",
+        ),
+      ).toHaveLength(focusCalls);
+      fireEvent.keyDown(close, { key: "Escape" });
+      expect(screen.queryByRole("region", { name: label })).toBeNull();
+      expect(trigger).toHaveFocus();
+      await waitFor(() =>
+        expect(screen.getByRole("button", { name: "Reload" })).toBeEnabled(),
+      );
+      const presentations = calls("origin_browser_control")
+        .slice(start)
+        .filter(([, args]) => args.request.action.kind === "presentation");
+      expect(presentations.length).toBeGreaterThan(1);
+      expect(
+        presentations.every(([, args]) => args.request.action.visible === true),
+      ).toBe(true);
+      expect(
+        presentations[presentations.length - 1]?.[1].request.action,
+      ).toMatchObject({
+        visible: true,
+        inputBlocked: false,
+        occlusions: [],
+      });
+      expect(calls("origin_browser_close")).toHaveLength(0);
+      expect(calls("origin_browser_create")).toHaveLength(1);
+      expect(f.clipboard).not.toHaveBeenCalled();
+    },
+  );
+  it.each(["inactive", "owner-revoked", "connection-replaced"])(
+    "dismisses credential disclosure on %s and does not reopen it automatically",
+    async (gate) => {
+      const view = await attached();
+      fireEvent.click(
+        screen.getByRole("button", { name: "Credentials & 2FA" }),
+      );
+      await screen.findByRole("region", { name: "Credentials & 2FA" });
+      if (gate === "inactive") f.active = false;
+      else if (gate === "connection-replaced")
+        f.context.state.connections = [{ ...connection, username: "changed" }];
+      else {
+        f.revoked = true;
+        act(() =>
+          f.accessListeners.forEach((listener) =>
+            listener({ databaseId: "database-1", status: "suspended" }),
+          ),
+        );
+      }
+      view.rerender(<WebBrowser session={session} />);
+      expect(
+        screen.queryByRole("region", { name: "Credentials & 2FA" }),
+      ).toBeNull();
+      f.active = true;
+      view.rerender(<WebBrowser session={session} />);
+      expect(
+        screen.queryByRole("region", { name: "Credentials & 2FA" }),
+      ).toBeNull();
+      expect(f.clipboard).not.toHaveBeenCalled();
+    },
+  );
+  it("dismisses toolbar popups on outside click, trigger toggle, and focus leaving the panel", async () => {
+    await attached();
+    const trigger = screen.getByRole("button", { name: "Credentials & 2FA" });
+    for (const dismiss of [
+      () => fireEvent.mouseDown(document.body),
+      () => fireEvent.click(trigger),
+      () => {
+        const outside = document.createElement("button");
+        document.body.append(outside);
+        outside.focus();
+        expect(outside).toHaveFocus();
+        outside.remove();
+      },
+    ]) {
+      await waitFor(() => expect(trigger).toBeEnabled());
+      fireEvent.click(trigger);
+      const close = await screen.findByRole("button", {
+        name: "Close Credentials & 2FA",
+      });
+      await waitFor(() => expect(close).toHaveFocus());
+      act(dismiss);
+      expect(
+        screen.queryByRole("region", { name: "Credentials & 2FA" }),
+      ).toBeNull();
+      expect(trigger).toHaveAttribute("aria-expanded", "false");
+    }
+  });
+  it("opens page DevTools explicitly and fences the toolbar action while a popup is open", async () => {
+    await attached();
+    const inspector = screen.getByRole("button", {
+      name: "Open page DevTools",
+    });
+    expect(inspector).toHaveClass("sor-icon-btn-sm");
+    fireEvent.click(inspector);
+    await waitFor(() =>
+      expect(
+        calls("origin_browser_control").filter(
+          ([, args]) => args.request.action.kind === "devtools",
+        ),
+      ).toHaveLength(1),
+    );
+    expect(
+      calls("origin_browser_control").find(
+        ([, args]) => args.request.action.kind === "devtools",
+      )![1].request.action.presentationRevision,
+    ).toBeGreaterThan(0);
+    fireEvent.click(screen.getByRole("button", { name: "Recording" }));
+    expect(inspector).toBeDisabled();
+    expect(calls("origin_browser_create")).toHaveLength(1);
+  });
+  it("keeps a failed document clipped and its browser available for inspection and navigation", async () => {
+    await attached();
+    const start = calls("origin_browser_control").length;
+    act(() =>
+      f.snapshotListener?.({
+        payload: snapshot("attempt-1", {
+          sequence: 2,
+          loadFailure: { code: -105, category: "dns" },
+          canGoBack: true,
+        }),
+      }),
+    );
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent(/DNS|resolve/);
+    const details = screen.getByRole("region", { name: "Browser diagnostics" });
+    expect(alert).not.toContainElement(details);
+    expect(alert.closest("[data-native-browser-occlusion]")).toContainElement(
+      details,
+    );
+    expect(
+      screen.getByRole("button", { name: "Inspect failed page" }),
+    ).toBeEnabled();
+    expect(alert.closest("[data-native-browser-occlusion]")).toHaveClass(
+      "inset-0",
+      "overflow-y-auto",
+    );
+    const viewport = document.querySelector("[data-origin-browser-viewport]")!;
+    expect(viewport).toHaveAttribute("aria-hidden", "false");
+    expect(viewport).toHaveAttribute("tabindex", "-1");
+    await waitFor(() => {
+      const presentations = calls("origin_browser_control")
+        .slice(start)
+        .filter(([, args]) => args.request.action.kind === "presentation");
+      expect(
+        presentations[presentations.length - 1]?.[1].request.action,
+      ).toMatchObject({
+        visible: true,
+        inputBlocked: false,
+        occlusions: [expect.any(Object)],
+      });
+    });
+    expect(screen.getByRole("button", { name: "Retry browser" })).toBeEnabled();
+    expect(screen.getByRole("button", { name: "Back" })).toBeEnabled();
+    expect(
+      screen.getByRole("textbox", { name: "Website address" }),
+    ).toBeEnabled();
+    const inspector = screen.getByRole("button", {
+      name: "Open page DevTools",
+    });
+    expect(inspector).toBeEnabled();
+    fireEvent.click(inspector);
+    await waitFor(() =>
+      expect(
+        calls("origin_browser_control").some(
+          ([, args]) => args.request.action.kind === "devtools",
+        ),
+      ).toBe(true),
+    );
+    expect(calls("origin_browser_close")).toHaveLength(0);
+    act(() =>
+      f.snapshotListener?.({ payload: snapshot("attempt-1", { sequence: 3 }) }),
+    );
+    await waitFor(() => expect(screen.queryByRole("alert")).toBeNull());
+    expect(
+      document.querySelector("[data-native-browser-occlusion]"),
+    ).toBeNull();
+    expect(calls("origin_browser_create")).toHaveLength(1);
+  });
   it("reserves a thin loading line outside native bounds and keeps status below the viewport", async () => {
     const view = await attached();
     const viewport = screen.getByRole("region", { name: "Fixture native" });
@@ -564,6 +1136,80 @@ describe("real-origin connection-tab integration", () => {
       expect(calls("origin_browser_create")).toHaveLength(1);
     },
   );
+  it("shows selected popup diagnostics and preserves the hidden root's distinct load failure", async () => {
+    await attached();
+    await waitFor(() => expect(f.popupListener).not.toBeNull());
+    act(() => {
+      f.snapshotListener?.({
+        payload: snapshot("attempt-1", {
+          sequence: 2,
+          loadFailure: { code: -105, category: "dns" },
+        }),
+      });
+      f.popupListener?.({
+        payload: {
+          sourceIdentity: snapshot().identity,
+          sequence: 2,
+          sourceClosed: false,
+          views: [
+            {
+              viewId: "failed-child",
+              disposition: "background",
+              phase: "adopted",
+              title: "Failed child",
+              snapshot: snapshot("attempt-1", {
+                sequence: 2,
+                title: "Failed child",
+                currentUrl: "https://child.invalid/private?secret=hidden",
+                displayUrl: "https://child.invalid/",
+                canGoBack: true,
+                loadFailure: { code: -118, category: "timeout" },
+              }),
+            },
+          ],
+        },
+      });
+    });
+    fireEvent.click(await screen.findByRole("tab", { name: "Failed child" }));
+    await waitFor(() =>
+      expect(screen.getByRole("tab", { name: "Failed child" })).toHaveAttribute(
+        "aria-selected",
+        "true",
+      ),
+    );
+    const alert = screen.getByRole("alert");
+    expect(alert).toHaveTextContent("timed out");
+    expect(alert).not.toHaveTextContent("DNS");
+    expect(
+      screen.getByRole("region", { name: "Browser diagnostics" }),
+    ).toHaveTextContent("https://child.invalid");
+    expect(
+      screen.getByRole("region", { name: "Browser diagnostics" }),
+    ).not.toHaveTextContent("secret=hidden");
+    expect(screen.getByRole("button", { name: "Back" })).toBeEnabled();
+    expect(
+      screen.getByRole("textbox", { name: "Website address" }),
+    ).toBeEnabled();
+    fireEvent.click(screen.getByRole("button", { name: "Open page DevTools" }));
+    await waitFor(() =>
+      expect(
+        calls("origin_browser_popup").some(
+          ([, args]) =>
+            args.request.action.kind === "control" &&
+            args.request.action.viewId === "failed-child" &&
+            args.request.action.action.kind === "devtools",
+        ),
+      ).toBe(true),
+    );
+    fireEvent.click(screen.getByRole("tab", { name: "Fixture native" }));
+    await waitFor(() =>
+      expect(screen.getByRole("alert")).toHaveTextContent("DNS"),
+    );
+    expect(screen.getByRole("alert")).not.toHaveTextContent("timed out");
+    expect(calls("origin_browser_create")).toHaveLength(1);
+    expect(calls("origin_browser_close")).toHaveLength(0);
+    expect(calls("diagnose_http_connection")).toHaveLength(0);
+  });
   it("hides loading animation for inactive tabs and revoked owners", async () => {
     const view = await attached();
     act(() =>
@@ -633,7 +1279,9 @@ describe("real-origin connection-tab integration", () => {
     );
     const retry = await screen.findByRole("button", { name: "Retry browser" });
     expect(screen.queryByRole("progressbar")).toBeNull();
-    expect(screen.getByRole("region")).toHaveAttribute("aria-busy", "false");
+    expect(
+      screen.getByRole("region", { name: "Fixture native" }),
+    ).toHaveAttribute("aria-busy", "false");
     expect(screen.getByRole("alert")).toHaveTextContent(
       "Native browser session failed: the page renderer stopped or its native communication bridge failed.",
     );
@@ -775,59 +1423,78 @@ describe("real-origin connection-tab integration", () => {
     });
     expect(calls("origin_browser_navigate")).toHaveLength(0);
   });
-  it("native feature recording controls stay mounted across panel close and reopen", async () => {
-    await attached();
-    const original = f.invoke.getMockImplementation()!;
-    f.invoke.mockImplementation((cmd, args) =>
-      cmd === "origin_browser_recording"
-        ? Promise.resolve({
-            snapshot: {
-              identity: snapshot().identity,
-              recordingId: "abc-123",
-              metadataOnly: true,
-              phase: "recording",
-              durationMs: 0,
-              entryCount: 0,
-              droppedEntries: 0,
-            },
-            har: null,
-          })
-        : original(cmd, args),
-    );
-    fireEvent.click(
-      screen.getByRole("button", { name: "More browser actions" }),
-    );
-    fireEvent.click(screen.getByRole("menuitem", { name: "Recording" }));
-    expect(screen.getByRole("button", { name: "Start HAR" })).toBeEnabled();
-    expect(screen.getByRole("button", { name: "Start video" })).toBeDisabled(); // no capture API in jsdom
-    fireEvent.click(screen.getByRole("button", { name: "Start HAR" }));
-    await waitFor(() =>
-      expect(screen.getByRole("button", { name: "Stop HAR" })).toBeEnabled(),
-    );
-    fireEvent.click(screen.getByRole("button", { name: "Done" }));
-    await waitFor(() =>
+  it.each(["toolbar", "more menu"])(
+    "native recording survives closing and reopening its %s",
+    async (surface) => {
+      await attached();
+      const original = f.invoke.getMockImplementation()!;
+      f.invoke.mockImplementation((cmd, args) =>
+        cmd === "origin_browser_recording"
+          ? Promise.resolve({
+              snapshot: {
+                identity: snapshot().identity,
+                recordingId: "abc-123",
+                metadataOnly: true,
+                phase: "recording",
+                durationMs: 0,
+                entryCount: 0,
+                droppedEntries: 0,
+              },
+              har: null,
+            })
+          : original(cmd, args),
+      );
+      const openRecording = (active = false) => {
+        if (surface === "toolbar")
+          fireEvent.click(screen.getByRole("button", { name: "Recording" }));
+        else {
+          fireEvent.click(
+            screen.getByRole("button", { name: "More browser actions" }),
+          );
+          fireEvent.click(
+            screen.getByRole("menuitem", {
+              name: active ? "Recording · active" : "Recording",
+            }),
+          );
+        }
+      };
+      openRecording();
       expect(
-        screen.getByRole("button", { name: "More browser actions" }),
-      ).toBeEnabled(),
-    );
-    fireEvent.click(
-      screen.getByRole("button", { name: "More browser actions" }),
-    );
-    fireEvent.click(
-      screen.getByRole("menuitem", { name: "Recording · active" }),
-    );
-    expect(screen.getByRole("button", { name: "Stop HAR" })).toBeEnabled();
-    expect(
-      calls("origin_browser_recording").filter(
-        ([, a]) => a.request.operation.kind === "start",
-      ),
-    ).toHaveLength(1);
-    expect(
-      calls("origin_browser_recording").some(
-        ([, a]) => a.request.operation.kind === "discard",
-      ),
-    ).toBe(false);
-  });
+        await screen.findByRole("button", { name: "Start HAR" }),
+      ).toBeEnabled();
+      expect(
+        screen.getByRole("button", { name: "Start video" }),
+      ).toBeDisabled(); // no capture API in jsdom
+      fireEvent.click(screen.getByRole("button", { name: "Start HAR" }));
+      await waitFor(() =>
+        expect(screen.getByRole("button", { name: "Stop HAR" })).toBeEnabled(),
+      );
+      fireEvent.click(
+        screen.getByRole("button", {
+          name: surface === "toolbar" ? "Close Recording" : "Done",
+        }),
+      );
+      await waitFor(() =>
+        expect(
+          screen.getByRole("button", { name: "More browser actions" }),
+        ).toBeEnabled(),
+      );
+      openRecording(true);
+      expect(
+        await screen.findByRole("button", { name: "Stop HAR" }),
+      ).toBeEnabled();
+      expect(
+        calls("origin_browser_recording").filter(
+          ([, a]) => a.request.operation.kind === "start",
+        ),
+      ).toHaveLength(1);
+      expect(
+        calls("origin_browser_recording").some(
+          ([, a]) => a.request.operation.kind === "discard",
+        ),
+      ).toBe(false);
+    },
+  );
   it("uses a compact reconnect rotation icon distinct from the reload icon", async () => {
     await attached();
     const reconnect = screen.getByRole("button", { name: "Reconnect" });
@@ -1011,7 +1678,9 @@ describe("real-origin connection-tab integration", () => {
       expect(
         within(library).getByRole("combobox", { name: "Item type" }),
       ).toHaveValue(kind);
-      expect(screen.getByRole("button", { name: "Reload" })).toBeDisabled();
+      await waitFor(() =>
+        expect(screen.getByRole("button", { name: "Reload" })).toBeDisabled(),
+      );
       expect(
         calls("origin_browser_automation").filter(
           ([, args]) => args.request.operation.action !== "document",
@@ -1817,6 +2486,11 @@ describe("real-origin connection-tab integration", () => {
   });
   it("finds forwards/backwards with case controls, no fabricated counts and native selection cleanup", async () => {
     await attached();
+    await waitFor(() =>
+      expect(
+        screen.getByRole("button", { name: "Find in page" }),
+      ).toBeEnabled(),
+    );
     fireEvent.click(screen.getByRole("button", { name: "Find in page" }));
     const input = screen.getByRole("textbox", { name: "Find text" });
     expect(input).toHaveFocus();
@@ -1883,6 +2557,11 @@ describe("real-origin connection-tab integration", () => {
   });
   it("rejects oversized UTF-8 find text and fences controls behind overlays or owner lock", async () => {
     const view = await attached();
+    await waitFor(() =>
+      expect(
+        screen.getByRole("button", { name: "Find in page" }),
+      ).toBeEnabled(),
+    );
     fireEvent.click(screen.getByRole("button", { name: "Find in page" }));
     fireEvent.change(screen.getByRole("textbox", { name: "Find text" }), {
       target: { value: "é".repeat(513) },
@@ -2210,10 +2889,27 @@ describe("real-origin connection-tab integration", () => {
         : undefined,
     );
     render(<WebBrowser session={session} />);
-    await screen.findByText(/runtime is missing/);
-    expect(screen.getByText(/runtime is missing/)).toHaveTextContent(
+    const runtimeNotice = await screen.findByText(
+      /Experimental native browser unavailable\..*runtime is missing/,
+    );
+    expect(runtimeNotice).toHaveTextContent(
       "Experimental native browser unavailable",
     );
+    await waitFor(() =>
+      expect(f.context.dispatch).toHaveBeenLastCalledWith({
+        type: "UPDATE_SESSION",
+        payload: {
+          id: session.id,
+          status: "error",
+          errorMessage: expect.stringContaining(
+            "The packaged native browser runtime is missing.",
+          ),
+        },
+      }),
+    );
+    expect(
+      f.context.dispatch.mock.lastCall?.[0].payload.errorMessage,
+    ).toContain("[unavailable-runtime-missing]");
     expect(f.legacy).not.toHaveBeenCalled();
     expect(calls("origin_browser_create")).toHaveLength(0);
     expect(
@@ -2243,16 +2939,45 @@ describe("real-origin connection-tab integration", () => {
         protocol,
         status: "connected",
       };
-      render(
+      const view = render(
         <SessionViewer
           session={connectedSession}
           onOpenSettings={onOpenSettings}
         />,
       );
 
-      const button = await screen.findByRole("button", {
+      const buttons = await screen.findAllByRole("button", {
         name: "Open Web Browser settings",
       });
+      // Apply the real status publication back to SessionViewer. Previously
+      // this discarded the controller and replaced all diagnostics with a
+      // generic Connection Failed view.
+      const errorUpdate = f.context.dispatch.mock.calls.findLast(
+        ([action]: any[]) =>
+          action.type === "UPDATE_SESSION" && action.payload.status === "error",
+      )?.[0];
+      expect(errorUpdate).toBeDefined();
+      const failedSession = { ...connectedSession, ...errorUpdate.payload };
+      f.context.state.sessions = [failedSession];
+      const diagnosticPanel = screen.getByTestId(
+        "origin-browser-failure-diagnostics",
+      );
+      const statusChecks = calls("origin_browser_status").length;
+      view.rerender(
+        <SessionViewer
+          session={failedSession}
+          onOpenSettings={onOpenSettings}
+        />,
+      );
+      expect(screen.getByTestId("origin-browser-failure-diagnostics")).toBe(
+        diagnosticPanel,
+      );
+      expect(diagnosticPanel).toBeVisible();
+      expect(diagnosticPanel).toHaveTextContent(`unavailable-${reason}`);
+      expect(screen.queryByText("Connection Failed")).not.toBeInTheDocument();
+      expect(calls("origin_browser_status")).toHaveLength(statusChecks);
+      expect(calls("origin_browser_close")).toHaveLength(0);
+      const button = buttons[0];
       expect(button).toBeVisible();
       expect(button).toBeEnabled();
       expect(button).toHaveClass("sor-btn", "sor-btn-secondary");
@@ -2268,10 +2993,51 @@ describe("real-origin connection-tab integration", () => {
       expect(calls("origin_browser_control")).toHaveLength(0);
     },
   );
+  it("uses the retained engine cause in the unavailable banner, tab status and diagnostics", async () => {
+    f.invoke.mockImplementation(async (command) =>
+      command === "origin_browser_status"
+        ? {
+            capability: {
+              availability: "unavailable",
+              reason: "policy-unavailable",
+            },
+            snapshot: null,
+            runtimeFailure: {
+              code: "certificate-bridge",
+              stage: "policy-readback",
+              raw: "PRIVATE_NATIVE_PATH",
+            },
+          }
+        : undefined,
+    );
+    render(<WebBrowser session={session} />);
+    const panel = await screen.findByTestId(
+      "origin-browser-failure-diagnostics",
+    );
+    expect(panel).toHaveTextContent("engine-certificate-bridge");
+    expect(panel).toHaveTextContent("policy-readback");
+    expect(panel).toHaveTextContent("matching patched CEF runtime");
+    expect(document.body.textContent).not.toContain("PRIVATE_NATIVE_PATH");
+    await waitFor(() =>
+      expect(f.context.dispatch).toHaveBeenLastCalledWith({
+        type: "UPDATE_SESSION",
+        payload: {
+          id: session.id,
+          status: "error",
+          errorMessage: expect.stringContaining("[engine-certificate-bridge]"),
+        },
+      }),
+    );
+    expect(calls("origin_browser_create")).toHaveLength(0);
+    expect(f.legacy).not.toHaveBeenCalled();
+  });
+
   it("fails closed when the managed proof accessor is absent", async () => {
     delete f.manager.captureOriginBrowserOwnerProof;
     render(<WebBrowser session={session} />);
-    await screen.findByText(/Unlock the owning database/);
+    await screen.findByText(
+      /Open or unlock the owning database, then reopen the connection from it/,
+    );
     expect(calls("origin_browser_create")).toHaveLength(0);
     expect(f.legacy).not.toHaveBeenCalled();
   });
@@ -2291,7 +3057,7 @@ describe("real-origin connection-tab integration", () => {
     render(<WebBrowser session={session} />);
     await waitFor(() =>
       expect(screen.getByTestId("origin-browser-capability")).toHaveTextContent(
-        "network containment unverified",
+        "Native network containment could not be verified.",
       ),
     );
     expect(screen.getByTestId("origin-browser-capability")).toHaveClass(
@@ -2357,9 +3123,7 @@ describe("real-origin connection-tab integration", () => {
       await waitFor(() =>
         expect(
           screen.getByTestId("origin-browser-capability"),
-        ).toHaveTextContent(
-          "Experimental native browser unavailable: host unavailable.",
-        ),
+        ).toHaveTextContent("No supported structured cause was reported."),
       );
       expect(document.body.textContent).not.toMatch(
         /private-reason|toString|__proto__/,

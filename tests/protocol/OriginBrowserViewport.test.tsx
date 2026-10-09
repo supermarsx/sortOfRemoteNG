@@ -10,6 +10,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { OriginBrowserViewport } from "../../src/components/protocol/webBrowser/OriginBrowserViewport";
 import type { OriginBrowserController } from "../../src/hooks/protocol/useOriginBrowser";
 import { originBrowserStartupError } from "../../src/hooks/protocol/originBrowserStartupError";
+import { Modal } from "../../src/components/ui/overlays/Modal";
 
 let measure: ResizeObserverCallback;
 let rect: DOMRect;
@@ -53,6 +54,7 @@ afterEach(() => {
 
 function controller(): OriginBrowserController {
   return {
+    connectionStatus: "connected",
     state: {
       phase: "attached",
       snapshot: null,
@@ -62,6 +64,7 @@ function controller(): OriginBrowserController {
     setViewport: vi.fn(),
     navigate: vi.fn().mockResolvedValue(true),
     focus: vi.fn().mockResolvedValue(true),
+    openDevTools: vi.fn().mockResolvedValue(true),
     back: vi.fn().mockResolvedValue(true),
     forward: vi.fn().mockResolvedValue(true),
     reload: vi.fn().mockResolvedValue(true),
@@ -88,6 +91,120 @@ function fixture() {
 }
 
 describe("native browser viewport", () => {
+  it("keeps unavailable-owner recovery and diagnostics accessible without exposing native input", () => {
+    const ctrl = controller();
+    ctrl.state = {
+      ...ctrl.state,
+      phase: "unavailable",
+      unavailableReason: "owner-unavailable",
+    };
+    const recover = vi.fn();
+    render(
+      <OriginBrowserViewport
+        controller={ctrl}
+        active
+        ownerAvailable={false}
+        dialogOpen={false}
+        title="Locked browser"
+        errorActions={<button onClick={recover}>Open database manager</button>}
+        errorDetails={
+          <section aria-label="Unavailable diagnostics">
+            Owning database unavailable
+          </section>
+        }
+      />,
+    );
+    const button = screen.getByRole("button", {
+      name: "Open database manager",
+    });
+    expect(
+      screen.getByRole("region", { name: "Unavailable diagnostics" }),
+    ).toBeVisible();
+    expect(button.closest("[data-native-browser-occlusion]")).toHaveClass(
+      "overflow-y-auto",
+    );
+    fireEvent.click(button);
+    expect(recover).toHaveBeenCalledOnce();
+    expect(ctrl.focus).not.toHaveBeenCalled();
+    expect(ctrl.reconnect).not.toHaveBeenCalled();
+    expect(ctrl.setViewport).toHaveBeenCalledWith(null);
+  });
+  it("keeps repair inside the scrollable failure alert while its modal remains accessible above the hidden viewport", () => {
+    const ctrl = controller();
+    ctrl.state = {
+      ...ctrl.state,
+      phase: "error",
+      error: "Reviewed MFA origin does not match.",
+    };
+    function Harness() {
+      const [open, setOpen] = React.useState(false);
+      return (
+        <OriginBrowserViewport
+          controller={ctrl}
+          active
+          ownerAvailable
+          preserveRenderingUnderOverlays
+          dialogOpen={open}
+          title="Failure viewport"
+          errorActions={
+            <>
+              <button onClick={() => setOpen(true)}>Review MFA repair</button>
+              <Modal
+                isOpen={open}
+                onClose={() => setOpen(false)}
+                ariaLabel="Review origin"
+              >
+                <button onClick={() => setOpen(false)}>Cancel repair</button>
+              </Modal>
+            </>
+          }
+          errorDetails={
+            <section aria-label="Failure diagnostics">
+              Detailed failure evidence
+            </section>
+          }
+        />
+      );
+    }
+    render(<Harness />);
+    const alert = screen.getByRole("alert");
+    const repair = screen.getByRole("button", { name: "Review MFA repair" });
+    expect(alert).toContainElement(repair);
+    const diagnostics = screen.getByRole("region", {
+      name: "Failure diagnostics",
+    });
+    expect(alert).not.toContainElement(diagnostics);
+    expect(alert.parentElement).toContainElement(diagnostics);
+    expect(diagnostics.parentElement).toHaveClass("bg-[var(--color-surface)]");
+    expect(alert.parentElement).toHaveAttribute(
+      "data-native-browser-occlusion",
+    );
+    expect(alert.parentElement).toHaveClass(
+      "absolute",
+      "inset-0",
+      "overflow-y-auto",
+    );
+    fireEvent.pointerDown(repair);
+    fireEvent.focus(repair);
+    expect(ctrl.focus).not.toHaveBeenCalled();
+    fireEvent.click(repair);
+    const dialog = screen.getByRole("dialog", { name: "Review origin" });
+    expect(alert).not.toContainElement(dialog);
+    expect(
+      document.querySelector("[data-origin-browser-viewport]"),
+    ).toHaveAttribute("aria-hidden", "true");
+    expect(dialog.closest('[aria-hidden="true"]')).toBeNull();
+    fireEvent.pointerDown(
+      screen.getByRole("button", { name: "Cancel repair" }),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Cancel repair" }));
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(screen.getByRole("button", { name: "Retry browser" })).toBeEnabled();
+    expect(ctrl.focus).not.toHaveBeenCalled();
+    expect(ctrl.reconnect).not.toHaveBeenCalled();
+    expect(ctrl.close).not.toHaveBeenCalled();
+    expect(ctrl.setViewport).not.toHaveBeenCalledWith(null);
+  });
   it.each([true, false])(
     "uses the shell-selected loading state (%s) for accessibility",
     (loading) => {
@@ -596,7 +713,16 @@ describe("native browser viewport", () => {
       "text-[var(--color-text)]",
     );
     expect(screen.getByRole("status")).toHaveTextContent(
-      "Settings → Web Browser; no automatic fallback",
+      "Native network containment could not be verified.",
+    );
+    expect(screen.getByRole("status")).toHaveTextContent(
+      "Review the native runtime and containment diagnostics in Web Browser settings",
+    );
+    expect(screen.getByRole("status")).toHaveTextContent(
+      "unavailable-containment-unverified",
+    );
+    expect(screen.getByRole("status")).toHaveTextContent(
+      "no automatic fallback was used",
     );
     expect(
       view.container.querySelector("iframe,webview,canvas,object,embed"),

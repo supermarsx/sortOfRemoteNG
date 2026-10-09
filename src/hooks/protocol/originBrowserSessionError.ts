@@ -1,3 +1,15 @@
+import { originBrowserLoadFailure } from "../../types/protocols/originBrowser";
+
+/** -130 is connection to the proxy itself, not a website login rejection or
+ * an upstream CONNECT rejection (-111). Do not infer why the endpoint failed. */
+export const nativeProxyConnectionFailure = {
+  title: "The browser could not connect to its private proxy",
+  problem:
+    "CEF could not connect to its configured proxy endpoint. This request did not reach the website through that proxy; the error does not establish a rejected website password.",
+  nextStep:
+    "Use Retry browser to create a fresh private proxy session. If other tabs also fail, inspect the native startup diagnostics and restart the app. Do not change website credentials or bypass proxy protections for this error.",
+} as const;
+
 /** Only fixed lifecycle diagnostics reach the shell. Never append native text,
  * URLs, titles, exception details or unrelated GPU/Chromium log messages. */
 export function originBrowserSessionError(reason: unknown): string {
@@ -33,4 +45,40 @@ export function originBrowserSessionError(reason: unknown): string {
     default:
       return "Native browser session failed. No cause was provided by the native browser. Reopen the tab. If it happens again, restart the app and check native browser diagnostics.";
   }
+}
+
+/** Actionable request failure without guessing a cause from native prose. */
+export function originBrowserLoadError(value: unknown): string {
+  const failure = originBrowserLoadFailure("attached", value);
+  if (!failure)
+    return "The page could not be loaded. Review native browser diagnostics.";
+  if (failure.category === "proxy" && failure.code === -130) {
+    return `${nativeProxyConnectionFailure.problem} ${nativeProxyConnectionFailure.nextStep} (CEF -130.) The browser session remains open; no request was automatically retried.`;
+  }
+  const details = {
+    dns: "DNS resolution failed or was blocked by resolver policy. Check DNS and the connection's network route.",
+    connection:
+      "The connection was refused, closed, or interrupted. Check site availability and the network route.",
+    timeout:
+      "The request timed out. Check site availability and the network route.",
+    "network-changed":
+      "The network changed while the request was loading. Check that the configured route is connected before navigating again.",
+    offline:
+      "The network is offline. Restore the configured connection before navigating again.",
+    proxy:
+      "The configured proxy or tunnel could not complete the request. Check its availability and authentication settings.",
+    certificate:
+      "Certificate verification failed. Review the certificate and this connection's saved trust policy.",
+    tls: "The secure connection could not be established. Check the server's TLS configuration and any required client certificate.",
+    blocked:
+      "A browser or security policy blocked the request. Review destination permissions and the site's security requirements.",
+    http: "The server response could not be loaded. Review the response and request in browser diagnostics.",
+    redirect:
+      "The request exceeded the redirect limit. Review the site's redirect and login configuration.",
+    cache:
+      "The saved response could not be read. Navigate to the page again when ready; resubmitting a form may repeat its action.",
+    other:
+      "The page request failed. Review the numeric error code in native browser diagnostics.",
+  };
+  return `${details[failure.category]} (CEF ${failure.code}.) The browser session remains open; no request was automatically retried.`;
 }

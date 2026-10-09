@@ -50,6 +50,46 @@ export type OriginBrowserCapability =
       readonly reason: OriginBrowserUnavailableReason;
     };
 
+/** Process-wide startup evidence only, never paths, saved settings or secrets. */
+export interface OriginBrowserRuntimeFailure {
+  readonly code:
+    | "data-directory"
+    | "runtime-package"
+    | "startup-provider"
+    | "certificate-bridge"
+    | "runtime-policy"
+    | "startup-timeout"
+    | "ui-dispatch"
+    | "runtime-initialization";
+  readonly stage: "preparing" | "initializing" | "policy-readback";
+}
+
+/** Older hosts omit this field; unknown host values must never become prose. */
+export function originBrowserRuntimeFailure(
+  value: unknown,
+): OriginBrowserRuntimeFailure | undefined {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return;
+  const { code, stage } = value as Record<string, unknown>;
+  if (
+    typeof code !== "string" ||
+    ![
+      "data-directory",
+      "runtime-package",
+      "startup-provider",
+      "certificate-bridge",
+      "runtime-policy",
+      "startup-timeout",
+      "ui-dispatch",
+      "runtime-initialization",
+    ].includes(code) ||
+    (stage !== "preparing" &&
+      stage !== "initializing" &&
+      stage !== "policy-readback")
+  )
+    return;
+  return { code: code as OriginBrowserRuntimeFailure["code"], stage };
+}
+
 /** Fixed native lifecycle fault categories, not arbitrary exception messages. */
 export type OriginBrowserFailureReason =
   | "renderer"
@@ -102,6 +142,8 @@ export interface OriginBrowserSnapshot {
   readonly phase: "starting" | "attached" | "closing" | "closed" | "failed";
   /** Present only for failed snapshots; older hosts may omit the cause. */
   readonly failureReason?: OriginBrowserFailureReason;
+  /** Failed document request on a still-attached browser. Safe diagnostics only. */
+  readonly loadFailure?: OriginBrowserLoadFailure;
   /** Native redacts credentials, query and fragment before emitting. */
   readonly displayUrl: string;
   /** Owner-window address only: full HTTP(S) URL without userinfo. Never log,
@@ -111,6 +153,63 @@ export interface OriginBrowserSnapshot {
   readonly loading: boolean;
   readonly canGoBack: boolean;
   readonly canGoForward: boolean;
+}
+
+export type OriginBrowserLoadFailureCategory =
+  | "dns"
+  | "connection"
+  | "timeout"
+  | "network-changed"
+  | "offline"
+  | "proxy"
+  | "certificate"
+  | "tls"
+  | "blocked"
+  | "http"
+  | "redirect"
+  | "cache"
+  | "other";
+
+export interface OriginBrowserLoadFailure {
+  readonly code: number;
+  readonly category: OriginBrowserLoadFailureCategory;
+}
+
+/** Copy only known scalar evidence; never retain native text or extra fields. */
+export function originBrowserLoadFailure(
+  phase: unknown,
+  value: unknown,
+): OriginBrowserLoadFailure | undefined {
+  if (phase !== "attached" || !value || typeof value !== "object")
+    return undefined;
+  const { code, category } = value as Record<string, unknown>;
+  if (
+    typeof code !== "number" ||
+    !Number.isInteger(code) ||
+    code < -2147483648 ||
+    code >= 0 ||
+    code === -1 ||
+    code === -3
+  )
+    return undefined;
+  switch (category) {
+    case "dns":
+    case "connection":
+    case "timeout":
+    case "network-changed":
+    case "offline":
+    case "proxy":
+    case "certificate":
+    case "tls":
+    case "blocked":
+    case "http":
+    case "redirect":
+    case "cache":
+    case "other":
+      return Object.freeze({ code, category });
+    default:
+      return undefined;
+  }
 }
 
 /** Volatile Quick Connect input. No saved-record, route or vault references. */
@@ -182,6 +281,11 @@ export type OriginBrowserAction =
       /** Native only focuses the current visible presentation revision. */
       readonly presentationRevision: number;
     }
+  | {
+      /** Explicit app-toolbar inspection of this native page only. */
+      readonly kind: "devtools";
+      readonly presentationRevision: number;
+    }
   | { readonly kind: "back" | "forward" | "reload" | "stop" };
 
 export interface OriginBrowserStatusRequest {
@@ -205,6 +309,7 @@ export interface OriginBrowserFindEvent {
 export interface OriginBrowserStatusResult {
   readonly capability: OriginBrowserCapability;
   readonly snapshot: OriginBrowserSnapshot | null;
+  readonly runtimeFailure?: OriginBrowserRuntimeFailure;
 }
 
 export const ORIGIN_BROWSER_STATE_EVENT = "origin-browser-state";

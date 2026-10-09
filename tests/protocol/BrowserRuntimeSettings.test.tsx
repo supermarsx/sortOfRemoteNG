@@ -25,7 +25,10 @@ const mocks = vi.hoisted(() => ({
   settings: {} as GlobalSettings,
   ready: true,
 }));
-vi.mock("@tauri-apps/api/core", () => ({ invoke: mocks.invoke }));
+vi.mock("@tauri-apps/api/core", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@tauri-apps/api/core")>()),
+  invoke: mocks.invoke,
+}));
 vi.mock("@tauri-apps/api/event", () => ({
   listen: async () => () => undefined,
 }));
@@ -443,6 +446,28 @@ describe("browser runtime settings", () => {
         expect(screen.getByTestId("web-navigation-error-screen")).toBeVisible();
     },
   );
+
+  it("names malformed global fields and opens the settings repair without starting a browser", () => {
+    mocks.settings.webBrowser = {
+      version: 1,
+      defaultZoomPercent: 400,
+      cookiesEnabled: "SECRET",
+    } as unknown as GlobalSettings["webBrowser"];
+    const onOpenSettings = vi.fn();
+    render(<WebBrowser session={session} onOpenSettings={onOpenSettings} />);
+    expect(screen.getByRole("alert")).toHaveTextContent(
+      "webBrowser.defaultZoomPercent",
+    );
+    expect(screen.getByRole("alert")).toHaveTextContent(
+      "webBrowser.cookiesEnabled",
+    );
+    expect(screen.getByRole("alert")).not.toHaveTextContent("SECRET");
+    fireEvent.click(
+      screen.getByRole("button", { name: "Repair Web Browser settings" }),
+    );
+    expect(onOpenSettings).toHaveBeenCalledExactlyOnceWith("webBrowser");
+    expect(starts()).toHaveLength(0);
+  });
 
   it("uses the configured initial deadline", async () => {
     browserPreferences({ initialLoadTimeoutSeconds: 12 });

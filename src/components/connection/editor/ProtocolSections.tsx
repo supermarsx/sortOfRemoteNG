@@ -187,7 +187,7 @@ const ProtocolSubtabContent: React.FC<{
 
   if (
     subtabId === "network-path" &&
-    ["ssh", "rdp", "raw", "rlogin", "winrm"].includes(protocol)
+    ["ssh", "rdp", "raw", "rlogin", "winrm", "http", "https"].includes(protocol)
   ) {
     return (
       <NetworkPathSection

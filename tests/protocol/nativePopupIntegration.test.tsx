@@ -104,6 +104,34 @@ describe("selected download reconciliation", () => {
 });
 
 describe("native popup control routing", () => {
+  it("routes DevTools to the selected native popup without creating a session", async () => {
+    const { result } = renderHook(() => useNativeOriginPopupBridge());
+    act(() => result.current.bind(source));
+    const action = { kind: "devtools" as const, presentationRevision: 7 };
+    await result.current.browserTransport.control({ identity: source, action });
+    expect(mocked.invoke).toHaveBeenLastCalledWith("origin_browser_control", {
+      request: { identity: source, action },
+    });
+    await act(async () =>
+      result.current.activate(source, {
+        sourceIdentity: source,
+        viewId: "inspected-popup",
+      }),
+    );
+    await result.current.browserTransport.control({ identity: source, action });
+    expect(mocked.invoke).toHaveBeenLastCalledWith("origin_browser_popup", {
+      request: {
+        sourceIdentity: source,
+        action: { kind: "control", viewId: "inspected-popup", action },
+      },
+    });
+    expect(
+      mocked.invoke.mock.calls.some(
+        ([name]) => name === "origin_browser_create",
+      ),
+    ).toBe(false);
+  });
+
   it("adopts and selects existing child handles without creating another session", async () => {
     const { result } = renderHook(() => useNativeOriginPopupBridge());
     const transport = result.current.browserTransport;
