@@ -127,6 +127,7 @@ pub(crate) fn is_command(command: &str) -> bool {
             | "origin_browser_page_menu"
             | "origin_browser_recording"
             | "origin_browser_appearance"
+            | "origin_browser_manual_input"
     )
 }
 
@@ -139,6 +140,18 @@ pub(crate) fn origin_browser_session_diagnostics(
     { crate::origin_browser_runtime::observability::snapshot(&window) }
     #[cfg(not(feature = "native-browser"))]
     { Ok(crate::origin_browser_observability::SessionDiagnosticsResponse { available: false, sessions: vec![] }) }
+}
+
+#[tauri::command]
+pub(crate) async fn origin_browser_manual_input(
+    window: WebviewWindow,
+    state: State<'_, EncryptionState>,
+    request: sorng_browser_host::native_manual_input::ManualInputRequest,
+) -> Result<sorng_browser_host::native_manual_input::ManualInputResponse, String> {
+    #[cfg(feature = "native-browser")]
+    { crate::origin_browser_runtime::manual_input::operate(window, &state, request).await }
+    #[cfg(not(feature = "native-browser"))]
+    { let _ = (window, state, request); Err(UNAVAILABLE.into()) }
 }
 
 #[tauri::command]
@@ -475,6 +488,7 @@ mod tests {
             "origin_browser_downloads",
             "origin_browser_download_control",
             "origin_browser_extensions",
+            "origin_browser_manual_input",
         ] {
             assert!(is_command(command));
         }

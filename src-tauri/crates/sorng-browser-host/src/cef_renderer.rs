@@ -17,6 +17,8 @@ use std::time::{Duration, Instant};
 use zeroize::Zeroizing;
 #[path = "cef_appearance_renderer.rs"]
 mod appearance;
+#[path = "cef_manual_input_renderer.rs"]
+mod manual_input;
 
 pub(crate) const LOGIN_REQUEST: &str = "sorng.native.login.request.v1";
 pub(crate) const LOGIN_DELIVERY: &str = "sorng.native.login.delivery.v1";
@@ -238,6 +240,7 @@ fn same_browser(owner: &Browser, browser: &Browser) -> bool {
 }
 
 fn forget_browser(browser: &Browser) {
+    manual_input::forget_browser(browser);
     appearance::forget_browser(browser);
     AUTOMATION_DOCUMENTS.with(|documents| {
         documents
@@ -261,6 +264,7 @@ fn forget_browser(browser: &Browser) {
 }
 
 fn forget_context(context: &mut V8Context) {
+    manual_input::forget_context(context);
     appearance::forget_context(context);
     AUTOMATION_DOCUMENTS.with(|documents| {
         documents
@@ -607,6 +611,7 @@ wrap_v8_handler! {
                 let doc = documents.get_mut(&self.key)?;
                 if doc.token != self.token || doc.context.is_same(Some(&mut current)) != 1 || !doc.current(&browser, &frame) { return None; }
                 if status == "step" {
+                    if manual_input::sensitive(&browser, &frame) { return None; }
                     if !serial.is_empty() { return None; }
                     let selector = read(3, 512)?;
                     let step = match read(2, 8)?.as_str() {
@@ -1099,6 +1104,7 @@ wrap_render_process_handler! {
         fn on_context_created(&self, browser: Option<&mut Browser>, frame: Option<&mut Frame>, context: Option<&mut V8Context>) {
             if let (Some(browser), Some(frame), Some(context)) = (browser, frame, context) {
                 let _ = appearance::install(browser, frame, context);
+                manual_input::install(browser, frame, context);
                 if feature_origin(frame).is_some() {
                     let installed = install(browser, frame, context);
                     if installed { install_automation(browser, frame, context); }
@@ -1116,7 +1122,10 @@ wrap_render_process_handler! {
         }
         fn on_process_message_received(&self, browser: Option<&mut Browser>, frame: Option<&mut Frame>, source_process: ProcessId, message: Option<&mut ProcessMessage>) -> i32 {
             match (browser, frame, message) {
-                (Some(browser), Some(frame), Some(message)) => receive(browser, frame, source_process, message),
+                (Some(browser), Some(frame), Some(message)) => {
+                    if manual_input::receive(browser, frame, source_process, message) { 1 }
+                    else { receive(browser, frame, source_process, message) }
+                },
                 _ => 0,
             }
         }

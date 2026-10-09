@@ -9,6 +9,9 @@ use crate::cef_downloads::DownloadAttachment;
 mod cef_downloads_host;
 #[path = "cef_find.rs"]
 mod cef_find;
+#[path = "cef_manual_input.rs"]
+mod manual_input;
+pub use manual_input::{ManualInputCompletion, ManualInputGuard};
 pub use cef_find::{NativeFindCompletion, NativeFindResult};
 #[path = "cef_login_totp.rs"]
 mod login_totp;
@@ -1156,6 +1159,7 @@ impl Shared {
         // UI-thread find slots are document-local. Off-thread revocation also
         // fences callbacks through current() and the automation generation.
         cef_find::invalidate(self);
+        manual_input::invalidate(self);
         self.login_totp.lock().unwrap_or_else(|error| error.into_inner()).cancel();
         self.cancel_media();
         let pending = {
@@ -1533,6 +1537,8 @@ impl Shared {
         {
             return 0;
         }
+        // Explicit manual entry and automatic adapters must never race on a field.
+        if manual_input::active(self) { return 1; }
         let (Some(browser), Some(frame)) = (browser, frame) else {
             return 1;
         };
@@ -2536,6 +2542,11 @@ impl<'a> CefBrowserHost<'a> {
         page_menu::print(self, identity)
     }
 
+    pub fn manual_input(&self, identity: &BrowserIdentity, action: &crate::native_manual_input::ManualInputAction,
+        guard: ManualInputGuard, completion: ManualInputCompletion) -> Result<(), BrowserError> {
+        manual_input::operate(self, identity, action, guard, completion)
+    }
+
     pub fn apply_appearance(&self, identity: &BrowserIdentity, json: &str,
         guard: AppearanceGuard, completion: AppearanceCompletion) -> Result<(), BrowserError> {
         cef_appearance::apply(self, identity, json, guard, completion)
@@ -2932,6 +2943,7 @@ wrap_client! {
             source_process: ProcessId, message: Option<&mut ProcessMessage>) -> i32 {
             if let (Some(browser), Some(frame), Some(message)) = (browser.as_deref(), frame.as_deref(), message.as_deref()) {
                 if cef_appearance::receive(&self.shared, browser, frame, source_process, message) { return 1; }
+                if manual_input::receive(&self.shared, browser, frame, source_process, message) { return 1; }
                 let owner = self.browser.lock().ok().and_then(|slot| slot.clone());
                 if owner.is_some_and(|owner| owner.is_same(Some(&mut browser.clone())) == 1)
                     && self.shared.automation_message(browser, frame, source_process, message) == 1 { return 1; }

@@ -20,6 +20,7 @@ pub mod cef_session_retention;
 pub mod native_features;
 pub mod native_media;
 pub mod native_totp;
+pub mod native_manual_input;
 pub mod native_downloads;
 pub mod native_extensions;
 pub mod native_popups;

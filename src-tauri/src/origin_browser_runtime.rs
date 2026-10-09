@@ -70,6 +70,8 @@ mod downloads;
 pub(crate) mod popups;
 #[path = "origin_browser_page_menu.rs"]
 pub(crate) mod page_menu;
+#[path = "origin_browser_manual_input.rs"]
+pub(crate) mod manual_input;
 #[path = "origin_browser_recording_runtime.rs"]
 pub(crate) mod recording;
 #[path = "origin_browser_appearance.rs"]
