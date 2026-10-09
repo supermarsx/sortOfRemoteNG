@@ -13,7 +13,10 @@ mod recording_observer_tests {
     async fn native_recording_observes_native_worker_completion_and_preserves_admission() {
         #[cfg(target_os = "macos")]
         crate::platform::test_runtime::ensure_loaded();
-        for permitted in [true, false] {
+        for (worker_permitted, fetch_permitted) in
+            [(true, true), (true, false), (false, true), (false, false)]
+        {
+            let permitted = worker_permitted && fetch_permitted;
             let (session, identity) = session().await;
             report_synthetic_ready(&mut session.lock().unwrap(), &identity);
             let owner = Arc::new(Owner(identity.clone(), AtomicBool::new(true)));
@@ -23,11 +26,14 @@ mod recording_observer_tests {
             let mut response = navigation_mocks::response();
             let (mut callback, calls) = navigation_mocks::callback();
             let mut disabled = 0;
-            let permissions = if permitted {
-                Arc::new(allow_classes(&[WebsiteRequestClass::FetchXhr]))
-            } else {
-                deny_permissions()
-            };
+            let classes: Vec<_> = [
+                (worker_permitted, WebsiteRequestClass::Worker),
+                (fetch_permitted, WebsiteRequestClass::FetchXhr),
+            ]
+            .into_iter()
+            .filter_map(|(enabled, class)| enabled.then_some(class))
+            .collect();
+            let permissions = Arc::new(allow_classes(&classes));
             let handler = context_resource_handler(
                 session,
                 identity.clone(),
@@ -88,7 +94,10 @@ mod recording_observer_tests {
         let handler = context_resource_handler(
             Arc::new(session),
             identity.clone(),
-            Arc::new(allow_classes(&[WebsiteRequestClass::FetchXhr])),
+            Arc::new(allow_classes(&[
+                WebsiteRequestClass::Worker,
+                WebsiteRequestClass::FetchXhr,
+            ])),
             Some(&request),
             0,
             0,
