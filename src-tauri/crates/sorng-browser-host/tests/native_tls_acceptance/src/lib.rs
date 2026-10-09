@@ -708,8 +708,14 @@ fn execute(bootstrap: &mut dyn RuntimeBootstrap, paths: &BundlePaths) -> Result 
                             if let Some(evidence) = &state.lock().unwrap().static_document {
                                 static_probe = Some(static_document::Probe::new(evidence.clone()));
                             }
-                            if manual_requested {
+                            // Production credential typing intentionally rejects
+                            // Hidden views. Attach positive login cases like a
+                            // selected tab; the unattended parent remains hidden.
+                            // Child show uses SW_SHOWNOACTIVATE, not native focus.
+                            if manual_requested || matches!(name, "staged" | "successor") {
                                 browser.show(&identity)?;
+                            }
+                            if manual_requested {
                                 browser.focus(&identity)?;
                             }
                             navigated = true;
