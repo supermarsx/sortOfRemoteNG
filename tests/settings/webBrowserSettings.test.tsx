@@ -8,6 +8,7 @@ import {
 } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import WebBrowserSettings from "../../src/components/SettingsDialog/sections/WebBrowserSettings";
+import BrowserNativeCapabilitiesCard from "../../src/components/SettingsDialog/sections/webBrowser/BrowserNativeCapabilitiesCard";
 import InternalProxySettings from "../../src/components/SettingsDialog/sections/InternalProxySettings";
 import ProxySettings from "../../src/components/SettingsDialog/sections/ProxySettings";
 import { defaultSettings } from "../../src/contexts/SettingsContext";
@@ -141,7 +142,9 @@ describe("Web Browser settings", () => {
     ).toBeDisabled();
     expect(within(card).getByText(/deprecated databases switch/)).toBeVisible();
     expect(
-      within(card).getByText(/does not control OffscreenCanvas/),
+      within(card).getByText(
+        /cannot disable all WebGL contexts, including OffscreenCanvas/,
+      ),
     ).toBeVisible();
     expect(
       within(card).getByText(/requests ask you through a native prompt/),
@@ -168,6 +171,81 @@ describe("Web Browser settings", () => {
         Node.DOCUMENT_POSITION_FOLLOWING,
     ).toBeTruthy();
   });
+
+  it.each([true, false])(
+    "WebGL capability guidance preserves the saved global value %s until explicitly changed",
+    (webglEnabled) => {
+      const { update } = setup("browser", {
+        webBrowser: normalizeWebBrowserSettings({ webglEnabled }),
+      });
+      const toggle = screen.getByRole("checkbox", {
+        name: /^Allow page-canvas WebGL/,
+      });
+      expect((toggle as HTMLInputElement).checked).toBe(webglEnabled);
+      expect(toggle).toBeEnabled();
+      const guidance = screen.getByText(/Requires a compatible GPU and driver/);
+      expect(guidance).toBeVisible();
+      expect(guidance).toHaveTextContent(
+        "Chromium’s safety blocklist remains enforced",
+      );
+      expect(guidance).toHaveTextContent(
+        "Off is unsupported because native CEF cannot disable all WebGL contexts, including OffscreenCanvas",
+      );
+      expect(guidance).toHaveTextContent("Off blocks new native attempts");
+      expect(guidance).toHaveTextContent("Existing values are preserved");
+      expect(update).not.toHaveBeenCalled();
+
+      fireEvent.click(screen.getByRole("checkbox", { name: /^Allow cookies/ }));
+      expect(update.mock.lastCall?.[0].webBrowser.webglEnabled).toBe(
+        webglEnabled,
+      );
+      expect((toggle as HTMLInputElement).checked).toBe(webglEnabled);
+      update.mockClear();
+      fireEvent.click(toggle);
+      expect(update).toHaveBeenCalledExactlyOnceWith({
+        webBrowser: expect.objectContaining({ webglEnabled: !webglEnabled }),
+      });
+    },
+  );
+
+  it.each([
+    { saved: true, defaultValue: false, label: "On" },
+    { saved: false, defaultValue: true, label: "Off (unsupported for native)" },
+    { saved: undefined, defaultValue: false, label: "Use app default (off)" },
+    { saved: undefined, defaultValue: true, label: "Use app default (on)" },
+  ])(
+    "WebGL capability guidance preserves the connection selection $label",
+    ({ saved, defaultValue, label }) => {
+      const onChange = vi.fn();
+      const overrides = { webglEnabled: saved };
+      render(
+        <BrowserNativeCapabilitiesCard
+          defaults={normalizeWebBrowserSettings({ webglEnabled: defaultValue })}
+          engine="real-origin"
+          scope="connection"
+          overrides={overrides}
+          onChange={onChange}
+        />,
+      );
+      const select = screen.getByRole("combobox", {
+        name: "Allow page-canvas WebGL",
+      });
+      expect(select).toHaveTextContent(label);
+      expect(
+        screen.getByText(/Requires a compatible GPU and driver/),
+      ).toHaveTextContent("Existing values are preserved");
+      expect(onChange).not.toHaveBeenCalled();
+      fireEvent.click(select);
+      expect(
+        screen.getByRole("option", { name: "Off (unsupported for native)" }),
+      ).toBeVisible();
+      fireEvent.mouseDown(
+        screen.getByRole("option", { name: "On", exact: true }),
+      );
+      expect(onChange).toHaveBeenCalledExactlyOnceWith("webglEnabled", true);
+      expect(overrides.webglEnabled).toBe(saved);
+    },
+  );
 
   it("preserves saved inactive native preferences when editing a supported field", () => {
     const { update } = setup("browser", {

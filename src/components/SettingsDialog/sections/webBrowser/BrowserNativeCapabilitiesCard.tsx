@@ -18,7 +18,7 @@ const capabilities = [
   [
     "webglEnabled",
     "Allow page-canvas WebGL",
-    "Control WebGL on page canvases where supported by the graphics driver. This does not control OffscreenCanvas WebGL and is not a complete GPU-disable switch.",
+    "Requires a compatible GPU and driver; Chromium’s safety blocklist remains enforced. Off is unsupported because native CEF cannot disable all WebGL contexts, including OffscreenCanvas. Off blocks new native attempts. Existing values are preserved.",
   ],
   [
     "cookiesEnabled",
@@ -105,7 +105,13 @@ export default function BrowserNativeCapabilitiesCard({
                   label: `Use app default (${defaults[key] ? "on" : "off"})`,
                 },
                 { value: "true", label: "On" },
-                { value: "false", label: "Off" },
+                {
+                  value: "false",
+                  label:
+                    key === "webglEnabled"
+                      ? "Off (unsupported for native)"
+                      : "Off",
+                },
               ]}
               onChange={(value) =>
                 onChange(
