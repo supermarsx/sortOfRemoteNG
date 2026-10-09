@@ -149,6 +149,11 @@ import {
 } from "../../utils/connection/websiteDarkMode";
 import { httpRedirectTrustIdentity } from "../../utils/protocol/httpRedirectTrustIdentity";
 import { websiteDarkModeSourceIdentity } from "../../utils/protocol/websiteDarkModeIdentity";
+import {
+  readWebsiteAppPalette,
+  useWebsiteAppPalette,
+  websiteDarkThemeForPage,
+} from "./useWebsiteAppPalette";
 import { resolveHttpBookmarkUrl } from "../../utils/protocol/httpBookmarkUrl";
 import {
   HTTP_BOOKMARK_DRAG_TYPE,
@@ -580,6 +585,7 @@ export function useWebBrowser(
   const sessionsRef = useRef(state.sessions);
   sessionsRef.current = state.sessions;
   const { settings, settingsReady } = useSettings();
+  const websiteAppPalette = useWebsiteAppPalette();
   const settingsReadyRef = useRef(settingsReady);
   settingsReadyRef.current = settingsReady;
   const { toast } = useToastContext();
@@ -675,7 +681,10 @@ export function useWebBrowser(
         return null;
       const config = normalizeWebsiteDarkModeConfig(automation.darkMode);
       const global = normalizeWebsiteDarkModeSettings(settings.websiteDarkMode);
-      const theme = config.useGlobalDefaults ? global.defaults : config.theme;
+      const theme = websiteDarkThemeForPage(
+        config.useGlobalDefaults ? global.defaults : config.theme,
+        websiteAppPalette,
+      );
       return {
         backgroundColor: theme.backgroundColor,
         textColor: theme.textColor,
@@ -692,6 +701,7 @@ export function useWebBrowser(
     settings.websiteDarkMode,
     settingsReady,
     state.connections,
+    websiteAppPalette,
   ]);
   const websiteDarkPresentationScope = JSON.stringify([
     session.id,
@@ -794,7 +804,12 @@ export function useWebBrowser(
       if (!automation.forceDark) return null;
       const config = normalizeWebsiteDarkModeConfig(automation.darkMode);
       const global = normalizeWebsiteDarkModeSettings(settings.websiteDarkMode);
-      const theme = config.useGlobalDefaults ? global.defaults : config.theme;
+      // Resolve after the durable preference read, including on the first
+      // navigation before the palette hook's initial effect has rendered.
+      const theme = websiteDarkThemeForPage(
+        config.useGlobalDefaults ? global.defaults : config.theme,
+        readWebsiteAppPalette(),
+      );
       return {
         backgroundColor: theme.backgroundColor,
         textColor: theme.textColor,

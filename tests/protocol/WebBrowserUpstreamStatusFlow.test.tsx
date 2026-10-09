@@ -26,7 +26,8 @@ const mocks = vi.hoisted(() => ({
     proxyKeepaliveEnabled: false,
   },
 }));
-vi.mock("@tauri-apps/api/core", () => ({
+vi.mock("@tauri-apps/api/core", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@tauri-apps/api/core")>()),
   invoke: (command: string, ...args: unknown[]) =>
     command === "web_network_guard_status"
       ? Promise.resolve({

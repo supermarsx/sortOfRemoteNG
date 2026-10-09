@@ -56,7 +56,8 @@ const native = vi.hoisted(() => ({
     macros: { confirmBeforeReplay: true },
   },
 }));
-vi.mock("@tauri-apps/api/core", () => ({
+vi.mock("@tauri-apps/api/core", async (original) => ({
+  ...(await original<typeof import("@tauri-apps/api/core")>()),
   invoke: (command: string, ...args: unknown[]) =>
     command === "web_network_guard_status"
       ? Promise.resolve({
@@ -209,6 +210,8 @@ beforeEach(() => {
 });
 afterEach(() => {
   cleanup();
+  document.body.style.removeProperty("--color-background");
+  document.body.style.removeProperty("--color-text");
   webPopupTabs.revokeSource("shared-source");
   browserSessionPolicy.release("shared-source", proxy.session_id);
   document.removeEventListener("load", holdFrameLoad, true);
@@ -1262,6 +1265,58 @@ describe("cPanel session-aware bookmarks", () => {
 });
 
 describe("real WebBrowser iframe and website automation integration", () => {
+  it.each(["app", "saved", "off"])(
+    "persists the %s palette at proxy document start and across app theme changes",
+    async (mode) => {
+      document.body.style.setProperty("--color-background", "#112233");
+      document.body.style.setProperty("--color-text", "#ddeeff");
+      const darkMode = normalizeWebsiteDarkModeConfig(undefined);
+      darkMode.useGlobalDefaults = false;
+      darkMode.theme.followAppTheme = mode !== "saved";
+      native.connections[0].httpAutomation = {
+        ...native.connections[0].httpAutomation!,
+        forceDark: mode !== "off",
+        darkMode,
+      };
+      const { iframe } = await mount();
+      const palette =
+        mode === "off"
+          ? null
+          : mode === "app"
+            ? { backgroundColor: "#112233", textColor: "#ddeeff" }
+            : { backgroundColor: "#181a1b", textColor: "#e8e6e3" };
+      expect(native.invoke).toHaveBeenCalledWith("start_basic_auth_proxy", {
+        config: expect.objectContaining({ website_dark_mode: palette }),
+      });
+      const src = iframe.src;
+      native.invoke.mockClear();
+      await act(async () => {
+        document.body.style.setProperty("--color-background", "#223344");
+      });
+      if (mode === "app") {
+        await waitFor(() =>
+          expect(native.invoke).toHaveBeenCalledWith(
+            "update_proxy_website_dark_mode",
+            {
+              sessionId: proxy.session_id,
+              palette: { backgroundColor: "#223344", textColor: "#ddeeff" },
+            },
+          ),
+        );
+      }
+      for (const [command, args] of native.invoke.mock.calls) {
+        if (command === "update_proxy_website_dark_mode")
+          expect(args.palette).toEqual(
+            mode === "app"
+              ? { backgroundColor: "#223344", textColor: "#ddeeff" }
+              : palette,
+          );
+        expect(command).not.toMatch(/^(start|stop)_basic_auth_proxy$/);
+      }
+      expect(iframe.src).toBe(src);
+    },
+  );
+
   it("keeps the live document and dark mode when labels and bookmark URLs change before their save finishes", async () => {
     const { iframe, post, emit, rerender } = await mount();
     emit("proxy_document_start");

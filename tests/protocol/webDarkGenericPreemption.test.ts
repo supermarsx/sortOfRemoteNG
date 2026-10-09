@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 import { TextEncoder } from "node:util";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { DEFAULT_WEBSITE_DARK_THEME } from "../../src/utils/connection/websiteDarkMode";
+import { websiteDarkThemeForPage } from "../../src/hooks/protocol/useWebsiteAppPalette";
 
 const source = readFileSync(
   "src-tauri/crates/sorng-protocols/src/web_dark_mode_client.js",
@@ -25,7 +26,7 @@ const enable = () =>
   runtime.controller.set({
     enabled: true,
     cssOnly: true,
-    theme: DEFAULT_WEBSITE_DARK_THEME,
+    theme: websiteDarkThemeForPage(DEFAULT_WEBSITE_DARK_THEME, null),
   });
 const mutations = async () => {
   await Promise.resolve();

@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 import { TextEncoder } from "node:util";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { DEFAULT_WEBSITE_DARK_THEME } from "../../src/utils/connection/websiteDarkMode";
+import { websiteDarkThemeForPage } from "../../src/hooks/protocol/useWebsiteAppPalette";
 
 const source = readFileSync(
   "src-tauri/crates/sorng-protocols/src/web_dark_mode_client.js",
@@ -27,7 +28,7 @@ interface Realm {
 }
 
 const theme = (values: Record<string, unknown> = {}) => ({
-  ...DEFAULT_WEBSITE_DARK_THEME,
+  ...websiteDarkThemeForPage(DEFAULT_WEBSITE_DARK_THEME, null),
   ...values,
 });
 const styles = (doc: Document) =>
