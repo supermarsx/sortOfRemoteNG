@@ -6,7 +6,8 @@
 //! module embeds it in [`PROFILE_MARKER`], which the e2e harness scans for
 //! before it launches anything.
 //!
-//! * [`install_process_profile`] is the first statement of `run()`. It
+//! * [`install_process_profile`] is the first application startup operation
+//!   after native child-process dispatch in `run()`. It
 //!   installs the identity, the keychain namespace and (isolated builds) the
 //!   SSH home, enforces the harness inputs and answers
 //!   `--sorng-profile-probe`, all before tracing, rustls or `tauri::Builder`
@@ -1692,12 +1693,48 @@ mod tests {
             .split("pub fn run() {\n")
             .nth(1)
             .expect("run() in lib.rs");
+        let install = run
+            .find("let profile = app_profile::install_process_profile();")
+            .expect("profile installation in run");
+        // CEF child dispatch is the sole permitted pre-profile operation. It
+        // must exit children and failed bootstrap before application startup;
+        // do not broadly skip cfg blocks or accept other pre-profile work.
+        let code_lines = |body: &str| {
+            body.lines()
+                .map(str::trim)
+                .filter(|line| !line.is_empty() && !line.starts_with("//"))
+                .map(str::to_string)
+                .collect::<Vec<_>>()
+        };
         assert_eq!(
-            first_statement(run).as_deref(),
+            code_lines(&run[..install]),
+            code_lines(
+                r#"
+                #[cfg(feature = "native-browser")]
+                match origin_browser_entry::dispatch_app_entry() {
+                    Ok(sorng_browser_host::bootstrap_platform::ProcessDispatch::Browser) => (),
+                    Ok(sorng_browser_host::bootstrap_platform::ProcessDispatch::Exit(code)) => {
+                        std::process::exit(code)
+                    }
+                    Err(error) => {
+                        eprintln!("Native browser stage=bootstrap error={error}");
+                        return;
+                    }
+                }
+                "#
+            )
+        );
+        assert_eq!(
+            first_statement(&run[install..]).as_deref(),
             Some("let profile = app_profile::install_process_profile();")
         );
-        let install = run.find("install_process_profile()").unwrap();
         assert!(install < run.find("init_tracing();").unwrap());
+        assert!(
+            install
+                < run
+                    .find("rustls::crypto::ring::default_provider()")
+                    .unwrap()
+        );
         assert!(install < run.find("tauri::Builder::default()").unwrap());
         let setup = run.split(".setup(|app| {\n").nth(1).expect("setup closure");
         assert_eq!(

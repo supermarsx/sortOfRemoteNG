@@ -21,7 +21,8 @@ test("diagnostic delivery stays bounded and nonblocking with a stalled writer (s
   assert.match(source, /delivery::start_worker\(MAX_RECORDS,/);
   const callers = source.slice(source.indexOf("pub(crate) fn begin(root:"), source.lastIndexOf("#[cfg(test)]"));
   assert.doesNotMatch(callers, /\.lock\(|\.send\(|sync_data|open_journal|log::/);
-  assert.equal((callers.match(/delivery::enqueue/g) ?? []).length, 2);
+  // Startup, lifecycle and navigation/renderer evidence all use the worker.
+  assert.equal((callers.match(/delivery::enqueue/g) ?? []).length, 3);
 });
 
 test("startup preparation does not acquire the settings mutex; explicit settings writes still do", async () => {
