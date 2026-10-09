@@ -23,7 +23,7 @@ use sorng_browser_host::ipc::OriginBrowserRuntimeFailureCode as RuntimeFailureCo
 use sorng_commands_core::origin_browser_authority::{self, NativeOwnerLease};
 use sorng_encryption::EncryptionState;
 use sorng_protocols::{
-    origin_browser::{BrowserIdentity, BrowserSessionFailure, NativeHostReadiness, OriginBrowserSession},
+    origin_browser::{BrowserIdentity, BrowserSessionFailure, BrowserSessionFailureState, NativeHostReadiness, OriginBrowserSession},
     private_forward_proxy::ProxyLimits,
 };
 use std::{
@@ -109,6 +109,8 @@ struct Attempt {
     document: Arc<flow::ShellDocument>,
     lease: NativeOwnerLease,
     session: Arc<Mutex<OriginBrowserSession>>,
+    failure: BrowserSessionFailureState,
+    failure_reported: AtomicBool,
     snapshot: Mutex<OriginBrowserSnapshot>,
     cancelled: AtomicBool,
     // Receipt for synchronous capability/relay revocation, not CEF close or
@@ -142,7 +144,16 @@ impl Attempt {
     }
 
     fn revoke_inner(&self, reason: Option<BrowserSessionFailure>) {
+        // Retain explicit evidence before publishing cancellation: cleanup can
+        // synchronously or concurrently report a secondary TLS/context fault.
+        if let Some(reason) = reason {
+            self.failure.record_first(reason);
+        }
         if self.cancelled.swap(true, Ordering::AcqRel) {
+            // Cancellation is one-shot; diagnostic evidence is not. A generic
+            // earlier revoke must not hide a later fixed native fault. This
+            // never repeats cleanup, waits on session state, or grants access.
+            self.report_failure();
             return;
         }
         // Inspect owner evidence before cleanup itself revokes the lease.
@@ -150,6 +161,9 @@ impl Attempt {
         let reason = reason.or_else(|| BrowserSessionFailure::owner_loss(
             self.document.current(), self.lease.is_current(), self.lease.is_temporary(),
         ));
+        if let Some(reason) = reason {
+            self.failure.record_first(reason);
+        }
         display::scrub_retained(&self.snapshot);
         self.timing.finish(0);
         self.login.revoke();
@@ -171,7 +185,10 @@ impl Attempt {
         let mut session = self
             .session
             .lock()
-            .unwrap_or_else(|e| e.into_inner());
+            .unwrap_or_else(|e| {
+                self.failure.record_first(BrowserSessionFailure::NativeState);
+                e.into_inner()
+            });
         let revoked = match reason {
             Some(reason) => session.revoke_for(&self.identity, reason),
             None => session.revoke(&self.identity),
@@ -181,6 +198,15 @@ impl Attempt {
             // Never publish on unwind or before the exact session's relay has
             // received its revocation signal. Async retention cleanup may remain.
             self.revocation_complete.store(true, Ordering::Release);
+        }
+        self.report_failure();
+    }
+
+    fn report_failure(&self) {
+        if let Some(reason) = self.failure.get() {
+            if !self.failure_reported.swap(true, Ordering::AcqRel) {
+                diagnostics::navigation(diagnostics::Navigation::SessionFailed { reason });
+            }
         }
     }
 }
@@ -1041,13 +1067,11 @@ impl BrowserEventSink for Sink {
         }
         let failure_reason = match event.state.fault {
             Some(BrowserFault::Renderer) => Some(OriginBrowserFailureReason::Renderer),
-            Some(BrowserFault::Session) => Some(match self.attempt.session.try_lock() {
-                Ok(session) => session.failure_reason().map(Into::into)
-                    .unwrap_or(OriginBrowserFailureReason::Session),
-                Err(std::sync::TryLockError::Poisoned(_)) => OriginBrowserFailureReason::NativeState,
-                // Diagnostics must not block or alter admission on contention.
-                Err(std::sync::TryLockError::WouldBlock) => OriginBrowserFailureReason::Session,
-            }),
+            // This cause was retained before session/relay cleanup. A request
+            // callback holding the session mutex must not erase it from the
+            // first terminal snapshot (the frontend closes on that snapshot).
+            Some(BrowserFault::Session) => Some(self.attempt.failure.get().map(Into::into)
+                .unwrap_or(OriginBrowserFailureReason::Session)),
             Some(BrowserFault::Callback) => Some(OriginBrowserFailureReason::Callback),
             Some(BrowserFault::NativeSurface) => Some(OriginBrowserFailureReason::NativeSurface),
             Some(BrowserFault::Load) => Some(OriginBrowserFailureReason::Load),
@@ -1211,11 +1235,11 @@ async fn create_document(
             STALE.to_owned()
         })?;
     timing.mark(TimingStage::OwnerCheckedBeforeProxy);
-    let session = Arc::new(Mutex::new(
-        OriginBrowserSession::start(authorized.policy, authorized.route, ProxyLimits::default())
+    let session = OriginBrowserSession::start(authorized.policy, authorized.route, ProxyLimits::default())
             .await
-            .map_err(|_| view_failure(Failure::PrivateProxy, PROXY_FAILED))?,
-    ));
+            .map_err(|_| view_failure(Failure::PrivateProxy, PROXY_FAILED))?;
+    let failure = session.failure_state();
+    let session = Arc::new(Mutex::new(session));
     timing.mark(TimingStage::ProxyReady);
     let attempt = Arc::new(Attempt {
         timing: timing.clone(),
@@ -1246,6 +1270,8 @@ async fn create_document(
         document,
         lease: authorized.lease,
         session,
+        failure,
+        failure_reported: AtomicBool::new(false),
         cancelled: AtomicBool::new(false),
         revocation_complete: AtomicBool::new(false),
         login,

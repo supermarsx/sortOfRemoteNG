@@ -24,6 +24,7 @@ fn native_failure_reason_is_optional_fixed_and_only_serialized_for_failed_phase(
             (OriginBrowserFailureReason::PrivateProxy, "private-proxy"),
             (OriginBrowserFailureReason::NativeState, "native-state"),
             (OriginBrowserFailureReason::CertificateBridge, "certificate-bridge"),
+            (OriginBrowserFailureReason::RedirectDenied, "redirect-denied"),
             (OriginBrowserFailureReason::RuntimeUnavailable, "runtime-unavailable"),
             (OriginBrowserFailureReason::OwnerWindow, "owner-window"),
             (OriginBrowserFailureReason::Callback, "callback"),

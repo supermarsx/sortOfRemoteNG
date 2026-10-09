@@ -12,7 +12,8 @@ use crate::domain_permissions::{
 use cef::rc::Rc;
 use cef::*;
 use sorng_protocols::origin_browser::{
-    BrowserIdentity, BrowserSessionStatus, NativeProxyChallenge, OriginBrowserSession,
+    BrowserIdentity, BrowserSessionFailure, BrowserSessionStatus, NativeProxyChallenge,
+    OriginBrowserSession,
 };
 use std::os::raw::c_int;
 use std::sync::{
@@ -24,6 +25,9 @@ use std::sync::{
 pub mod recording;
 #[path = "cef_recording.rs"]
 mod recording_callbacks;
+
+#[path = "native_redirect_policy.rs"]
+mod redirect_policy;
 
 /// Create once for a newly created native browser whose initial URL is the
 /// host-generated literal `about:blank`. Do not share this handler between
@@ -101,7 +105,7 @@ pub fn resource_handler(
     session: Arc<Mutex<OriginBrowserSession>>,
     identity: BrowserIdentity,
 ) -> ResourceRequestHandler {
-    resource_handler_with_denial(session, identity, deny_permissions(), None, true)
+    resource_handler_with_denial(session, identity, deny_permissions(), None, true, false)
 }
 
 /// Shared admission for browser and request-context callbacks. Browser/frame
@@ -140,13 +144,38 @@ pub(crate) fn context_resource_handler(
         || !matches!(is_navigation, 0 | 1)
         || disable_default_handling.is_none()
         || !allowed;
+    // Freeze admission metadata before redirects. A verified frame navigation
+    // can also be cancelled locally by replacing its destination with the inert
+    // URL. Downloads, workers and unclassified native types remain excluded.
+    let isolate_redirect = !denied
+        && is_download == 0
+        && disable_default_handling.as_deref() == Some(&0)
+        && scope.as_ref().is_some_and(|scope| {
+            !scope.worker_context
+                && ((is_navigation == 0
+                    && !scope.navigation_factory
+                    && ordinary_redirect_resource(scope.kind))
+                    || (is_navigation == 1
+                        && verified_navigation_frame
+                        && matches!(
+                            scope.kind,
+                            ResourceType::MAIN_FRAME | ResourceType::SUB_FRAME
+                        )))
+        });
     if denied {
         if let Some(disable) = disable_default_handling {
             *disable = 1;
         }
     }
     // Do not reset an already-set disable flag for an approved request.
-    resource_handler_with_denial(session, identity, permissions, scope, denied)
+    resource_handler_with_denial(
+        session,
+        identity,
+        permissions,
+        scope,
+        denied,
+        isolate_redirect,
+    )
 }
 
 fn resource_handler_with_denial(
@@ -155,6 +184,7 @@ fn resource_handler_with_denial(
     permissions: Arc<WebsitePermissionEngine>,
     scope: Option<ResourceScope>,
     denied: bool,
+    isolate_redirect: bool,
 ) -> ResourceRequestHandler {
     SessionResourceRequestHandler::new(
         session,
@@ -163,7 +193,44 @@ fn resource_handler_with_denial(
         scope,
         Arc::new(AtomicBool::new(denied)),
         Arc::new(Mutex::new(None)),
+        isolate_redirect,
     )
+}
+
+fn ordinary_redirect_resource(kind: ResourceType) -> bool {
+    matches!(
+        kind,
+        ResourceType::SCRIPT
+            | ResourceType::STYLESHEET
+            | ResourceType::FONT_RESOURCE
+            | ResourceType::IMAGE
+            | ResourceType::MEDIA
+            | ResourceType::FAVICON
+            | ResourceType::XHR
+            | ResourceType::SUB_RESOURCE
+    )
+}
+
+fn verified_redirect_frame(
+    browser: Option<&Browser>,
+    frame: Option<&Frame>,
+    scope: Option<&ResourceScope>,
+) -> bool {
+    let (Some(browser), Some(frame)) = (browser, frame) else {
+        return false;
+    };
+    browser.is_valid() == 1
+        && browser.identifier() > 0
+        && frame.is_valid() == 1
+        && matches!(frame.is_main(), 0 | 1)
+        && frame
+            .browser()
+            .is_some_and(|owner| owner.identifier() == browser.identifier())
+        && scope.is_some_and(|scope| match scope.kind {
+            ResourceType::MAIN_FRAME => frame.is_main() == 1,
+            ResourceType::SUB_FRAME => frame.is_main() == 0,
+            _ => ordinary_redirect_resource(scope.kind),
+        })
 }
 
 /// The only resource classification boundary. Labels are derived from native
@@ -412,7 +479,7 @@ fn lock_attempt<'a>(
         Ok(session) => Some(session),
         Err(poisoned) => {
             let mut session = poisoned.into_inner();
-            let _ = session.revoke(identity);
+            let _ = session.revoke_for(identity, BrowserSessionFailure::NativeState);
             None
         }
     }
@@ -690,6 +757,7 @@ wrap_resource_request_handler! {
         scope: Option<ResourceScope>,
         denied: Arc<AtomicBool>,
         recording: Arc<Mutex<Option<recording::Capture>>>,
+        isolate_redirect: bool,
     }
 
     impl ResourceRequestHandler {
@@ -717,15 +785,16 @@ wrap_resource_request_handler! {
 
         fn on_resource_redirect(
             &self,
-            _browser: Option<&mut Browser>,
-            _frame: Option<&mut Frame>,
+            browser: Option<&mut Browser>,
+            frame: Option<&mut Frame>,
             request: Option<&mut Request>,
             response: Option<&mut Response>,
             new_url: Option<&mut CefString>,
         ) {
+            let current_request_allowed = scoped_request_allowed(&self.session, &self.identity, &self.permissions, self.scope.as_ref(), request.as_deref());
             let allowed = !self.denied.load(Ordering::Acquire)
                 && response.is_some()
-                && scoped_request_allowed(&self.session, &self.identity, &self.permissions, self.scope.as_ref(), request.as_deref())
+                && current_request_allowed
                 && new_url.as_deref().is_some_and(|url| {
                     lock_attempt(&self.session, &self.identity).is_some_and(|session| {
                         self.scope.as_ref().is_some_and(|scope| {
@@ -737,12 +806,29 @@ wrap_resource_request_handler! {
             recording_callbacks::redirect(&self.recording, request.as_deref(), response.as_deref(), new_url.as_deref(), allowed);
             if !allowed {
                 self.denied.store(true, Ordering::Release);
-                // CEF has no cancel return for this callback. Revoke transport
-                // even if the mutable URL argument is absent/unwritable. This
-                // also covers an ungranted scheme on an otherwise granted port.
-                revoke_attempt(&self.session, &self.identity);
-                if let Some(url) = new_url {
-                    let _ = url.try_set("about:blank#blocked-native-request");
+                let inert_rewrite_succeeded = new_url.is_some_and(|url| {
+                    url.try_set(redirect_policy::INERT_REDIRECT_TARGET)
+                        && url.as_slice().is_some_and(|value| value.iter().copied()
+                            .eq(redirect_policy::INERT_REDIRECT_TARGET.encode_utf16()))
+                });
+                // CEF 682c378 HandleRedirect accepts this valid replacement;
+                // FollowRedirect restarts admission/OnBeforeResourceLoad (or
+                // rejects the about: scheme earlier). The old handler remains
+                // CANCEL-only; a fresh handler independently denies about:.
+                // No request to the disallowed destination is authorized.
+                if !redirect_policy::isolate_denied_redirect(redirect_policy::RedirectEvidence {
+                    admitted_request: self.isolate_redirect,
+                    current_request_allowed,
+                    verified_frame: verified_redirect_frame(browser.as_deref(), frame.as_deref(), self.scope.as_ref()),
+                    redirect_response: response.as_ref().is_some_and(|response| matches!(response.status(), 301 | 302 | 303 | 307 | 308)),
+                    inert_rewrite_succeeded,
+                }) {
+                    // Unclassified requests and missing/unwritable/unverified
+                    // metadata still revoke the attempt, including its tunnels.
+                    // Retain the first cause before TLS/context teardown.
+                    if let Some(mut session) = lock_attempt(&self.session, &self.identity) {
+                        let _ = session.revoke_for(&self.identity, BrowserSessionFailure::RedirectDenied);
+                    }
                 }
             }
         }
@@ -1298,10 +1384,16 @@ mod tests {
         }
 
         pub(super) fn response() -> Response {
-            // SAFETY: This callback only checks presence; unused vtable entries
-            // are nullable. RcImpl installs the base reference-counting callbacks.
+            extern "C" fn status(_: *mut cef::sys::_cef_response_t) -> c_int {
+                302
+            }
+            // SAFETY: Unused vtable entries are nullable. RcImpl installs the
+            // reference-counting callbacks; redirect isolation checks status.
             let raw: *mut cef::sys::_cef_response_t = RcImpl::new(
-                unsafe { std::mem::zeroed::<cef::sys::_cef_response_t>() },
+                cef::sys::_cef_response_t {
+                    get_status: Some(status),
+                    ..unsafe { std::mem::zeroed() }
+                },
                 (),
             )
             .cast();
@@ -1453,7 +1545,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn native_navigation_factory_redirect_callback_revokes_denied_destination() {
+    async fn native_navigation_factory_redirect_isolates_verified_denial() {
         #[cfg(target_os = "macos")]
         crate::platform::test_runtime::ensure_loaded();
         for (kind, main, class) in [
@@ -1520,15 +1612,25 @@ mod tests {
                     Some(&mut response),
                     denied.as_mut(),
                 );
+                let expected_revoked = denied_target.is_none();
+                let current = session.lock().unwrap();
                 assert_eq!(
-                    session.lock().unwrap().status(),
-                    BrowserSessionStatus::Revoked
+                    current.status(),
+                    if expected_revoked {
+                        BrowserSessionStatus::Revoked
+                    } else {
+                        BrowserSessionStatus::Ready
+                    }
                 );
-                assert!(session
-                    .lock()
-                    .unwrap()
-                    .with_proxy_credentials(|_, _| ())
-                    .is_none());
+                assert_eq!(
+                    current.with_proxy_credentials(|_, _| ()).is_none(),
+                    expected_revoked
+                );
+                assert_eq!(
+                    current.failure_reason(),
+                    expected_revoked.then_some(BrowserSessionFailure::RedirectDenied)
+                );
+                drop(current);
                 if let Some(denied) = denied {
                     assert!(denied.to_string() == "about:blank#blocked-native-request");
                 }

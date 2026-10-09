@@ -329,6 +329,7 @@ struct Journal {
     records: usize,
     navigation_records: usize,
     tls_failure_records: usize,
+    session_failure_records: usize,
     timing_records: usize,
 }
 
@@ -348,6 +349,7 @@ pub(crate) enum Navigation {
     TlsDenied,
     TlsFailed,
     TlsBridgeFailed { reason: TlsBridgeFailure },
+    SessionFailed { reason: sorng_protocols::origin_browser::BrowserSessionFailure },
 }
 
 enum Message {
@@ -462,6 +464,7 @@ fn open_journal(root: &Path) -> io::Result<Journal> {
         records: 0,
         navigation_records: 0,
         tls_failure_records: 0,
+        session_failure_records: 0,
         timing_records: 0,
     })
 }
@@ -481,16 +484,18 @@ impl Journal {
 
     fn navigation(&mut self, status: Navigation, timestamp: SystemTime) -> io::Result<()> {
         let tls_failure = matches!(status, Navigation::TlsFailed | Navigation::TlsBridgeFailed { .. });
+        let session_failure = matches!(status, Navigation::SessionFailed { .. });
         // Busy-page observations must not exhaust the failure budget.
         if (tls_failure && self.tls_failure_records >= MAX_RECORDS)
-            || (!tls_failure && self.navigation_records >= 128) {
+            || (session_failure && self.session_failure_records >= MAX_RECORDS)
+            || (!tls_failure && !session_failure && self.navigation_records >= 128) {
             return Ok(());
         }
         let record = serde_json::json!({
             "version": 1,
             "timestampUnixMs": timestamp.duration_since(UNIX_EPOCH).unwrap_or_default().as_millis(),
             "processId": std::process::id(),
-            "navigationSequence": self.navigation_records + self.tls_failure_records,
+            "navigationSequence": self.navigation_records + self.tls_failure_records + self.session_failure_records,
             "navigation": status,
         });
         let mut bytes = serde_json::to_vec(&record)?;
@@ -498,6 +503,7 @@ impl Journal {
         self.file.write_all(&bytes)?;
         self.file.sync_data()?;
         if tls_failure { self.tls_failure_records += 1; }
+        else if session_failure { self.session_failure_records += 1; }
         else { self.navigation_records += 1; }
         Ok(())
     }
@@ -563,6 +569,35 @@ pub(crate) fn navigation(status: Navigation) {
 mod tests {
     use super::*;
     use std::sync::mpsc;
+
+    #[test]
+    fn session_first_causes_have_an_independent_fixed_only_budget() {
+        use sorng_protocols::origin_browser::BrowserSessionFailure;
+        let temp = tempfile::tempdir().unwrap();
+        let mut journal = open_journal(temp.path()).unwrap();
+        journal.navigation_records = 128;
+        journal.tls_failure_records = MAX_RECORDS;
+        for _ in 0..100 {
+            journal.navigation(Navigation::SessionFailed {
+                reason: BrowserSessionFailure::RedirectDenied,
+            }, SystemTime::now()).unwrap();
+        }
+        assert_eq!(journal.navigation_records, 128);
+        assert_eq!(journal.tls_failure_records, MAX_RECORDS);
+        assert_eq!(journal.session_failure_records, MAX_RECORDS);
+        drop(journal);
+        let path = fs::read_dir(temp.path()).unwrap().next().unwrap().unwrap().path();
+        let text = fs::read_to_string(path).unwrap();
+        assert_eq!(text.lines().count(), MAX_RECORDS);
+        for (index, line) in text.lines().enumerate() {
+            let row: serde_json::Value = serde_json::from_str(line).unwrap();
+            assert_eq!(row["navigation"], serde_json::json!({
+                "event": "session-failed", "reason": "redirect-denied",
+            }));
+            assert_eq!(row["navigationSequence"], 128 + MAX_RECORDS + index);
+            assert_eq!(row.as_object().unwrap().len(), 5);
+        }
+    }
 
     #[test]
     fn tls_failures_have_an_independent_bounded_secret_free_budget() {

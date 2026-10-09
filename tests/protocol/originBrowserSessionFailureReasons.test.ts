@@ -10,6 +10,7 @@ const reasons = [
   "private-context",
   "private-proxy",
   "certificate-bridge",
+  "redirect-denied",
   "native-state",
   "runtime-unavailable",
   "owner-window",
@@ -70,6 +71,10 @@ describe("frontend native-session failure reason contract", () => {
       "certificate-bridge",
       "TLS admission bridge for this private session failed",
     ],
+    [
+      "redirect-denied",
+      "redirect could not be admitted by the session's destination policy",
+    ],
     ["runtime-unavailable", "native browser runtime was no longer available"],
     [
       "owner-window",
@@ -94,6 +99,19 @@ describe("frontend native-session failure reason contract", () => {
     expect(originBrowserSessionError("database-owner")).toContain(
       "does not establish that the database is locked",
     );
+  });
+
+  it("explains a denied redirect without proposing weaker destination or proxy checks", () => {
+    const message = originBrowserSessionError("redirect-denied");
+    expect(message).toContain("Review the connection's permitted destinations");
+    expect(message).toContain("native browser diagnostics");
+    expect(message).toContain(
+      "Keep destination checks, HTTPS trust settings, and proxy protections enabled",
+    );
+    expect(message).toContain(
+      "does not establish rejected website credentials",
+    );
+    expect(message).not.toMatch(/database|unlock|locked|https?:\/\//i);
   });
 
   it("distinguishes the session TLS bridge from certificate rejection without weakening trust", () => {
@@ -128,6 +146,8 @@ describe("frontend native-session failure reason contract", () => {
       "",
       "Renderer",
       "DatabaseOwner",
+      "RedirectDenied",
+      "redirect-denied https://user:SECRET@example.test/?token=SECRET",
       "database-owner https://user:SECRET@example.test/?token=SECRET",
       "future-engine-fault",
       "renderer https://user:SECRET@example.test/?token=SECRET",

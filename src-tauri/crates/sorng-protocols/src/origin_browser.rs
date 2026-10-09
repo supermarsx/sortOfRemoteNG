@@ -465,7 +465,8 @@ pub enum BrowserSessionStatus {
 
 /// Fixed native evidence only. Never contains an owner, endpoint, URL or error text.
 /// This is diagnostic metadata, not an authorization or readiness decision.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "kebab-case")]
 pub enum BrowserSessionFailure {
     DatabaseOwner,
     Watchdog,
@@ -473,6 +474,7 @@ pub enum BrowserSessionFailure {
     PrivateProxy,
     NativeState,
     CertificateBridge,
+    RedirectDenied,
     RuntimeUnavailable,
     OwnerWindow,
 }
@@ -486,6 +488,24 @@ impl BrowserSessionFailure {
         } else {
             None
         }
+    }
+}
+
+/// Attempt-local, fixed diagnostic evidence, independent of the session mutex.
+/// Reading or recording a cause never grants access, changes readiness or revives
+/// a cancelled attempt. Clones must stay with their original native attempt.
+#[derive(Clone, Default)]
+pub struct BrowserSessionFailureState(Arc<OnceLock<BrowserSessionFailure>>);
+
+impl BrowserSessionFailureState {
+    pub fn get(&self) -> Option<BrowserSessionFailure> {
+        self.0.get().copied()
+    }
+
+    /// A generic revoke has no cause; later concrete evidence may fill the slot.
+    /// Cleanup and later faults can never replace an already recorded cause.
+    pub fn record_first(&self, reason: BrowserSessionFailure) {
+        let _ = self.0.set(reason);
     }
 }
 
@@ -521,7 +541,7 @@ pub struct OriginBrowserSession {
     policy: OriginBrowserPolicy,
     proxy: PrivateForwardProxy,
     status: BrowserSessionStatus,
-    failure: Option<BrowserSessionFailure>,
+    failure: BrowserSessionFailureState,
 }
 
 /// Challenge metadata from a trusted native engine callback, never page JS or
@@ -559,7 +579,7 @@ impl OriginBrowserSession {
             policy,
             proxy,
             status: BrowserSessionStatus::NotReady,
-            failure: None,
+            failure: BrowserSessionFailureState::default(),
         })
     }
 
@@ -588,11 +608,17 @@ impl OriginBrowserSession {
 
     /// Observe unexpected relay loss before cleanup deliberately stops it.
     pub fn failure_reason(&self) -> Option<BrowserSessionFailure> {
-        self.failure.or_else(|| {
+        self.failure.get().or_else(|| {
             (matches!(self.status, BrowserSessionStatus::NotReady | BrowserSessionStatus::Ready)
                 && !self.proxy.is_running())
                 .then_some(BrowserSessionFailure::PrivateProxy)
         })
+    }
+
+    /// Capture once when the native attempt is created. Callbacks can then read
+    /// retained evidence without waiting on request/credential session guards.
+    pub fn failure_state(&self) -> BrowserSessionFailureState {
+        self.failure.clone()
     }
 
     /// Native proxy-auth callback only, including setup before host readiness.
@@ -754,14 +780,18 @@ impl OriginBrowserSession {
         self.check_identity(identity)?;
         // The first observed cause wins. A later cleanup/owner check must not
         // relabel a watchdog/context/relay fault as a database access failure.
-        self.failure = self.failure_reason().or(reason);
+        if let Some(reason) = self.failure_reason().or(reason) {
+            self.failure.record_first(reason);
+        }
         self.status = BrowserSessionStatus::Revoked;
         self.proxy.revoke();
         Ok(())
     }
 
     pub async fn stop(&mut self) -> Result<(), BrowserPolicyError> {
-        self.failure = self.failure_reason();
+        if let Some(reason) = self.failure_reason() {
+            self.failure.record_first(reason);
+        }
         self.status = BrowserSessionStatus::Revoked;
         self.proxy
             .stop()
@@ -1894,7 +1924,8 @@ mod tests {
     async fn session_failure_retains_each_specific_cause_through_cleanup_and_owner_loss() {
         use BrowserSessionFailure as Reason;
         for reason in [Reason::DatabaseOwner, Reason::Watchdog, Reason::PrivateContext,
-            Reason::PrivateProxy, Reason::NativeState, Reason::CertificateBridge, Reason::RuntimeUnavailable, Reason::OwnerWindow] {
+            Reason::PrivateProxy, Reason::NativeState, Reason::CertificateBridge, Reason::RedirectDenied,
+            Reason::RuntimeUnavailable, Reason::OwnerWindow] {
             let mut current = session().await;
             let id = current.policy().identity().clone();
             current.report_host(&id, ready(&current)).unwrap();
@@ -1925,6 +1956,78 @@ mod tests {
         fresh.revoke(&fresh_id).unwrap();
         assert_eq!(fresh.failure_reason(), None); // deliberate close is not relay failure
         stop(&mut first).await;
+        stop(&mut fresh).await;
+    }
+
+    #[tokio::test]
+    async fn session_failure_observer_survives_contention_and_poison_without_access() {
+        let mut current = session().await;
+        let id = current.policy().identity().clone();
+        let observer = current.failure_state();
+        current.revoke_for(&id, BrowserSessionFailure::CertificateBridge).unwrap();
+        let session = Mutex::new(current);
+        let guard = session.lock().unwrap();
+        assert!(session.try_lock().is_err());
+        let other_reader = observer.clone();
+        assert_eq!(std::thread::spawn(move || other_reader.get()).join().unwrap(),
+            Some(BrowserSessionFailure::CertificateBridge));
+        assert_eq!(guard.status(), BrowserSessionStatus::Revoked);
+        assert!(guard.with_proxy_credentials(|_, _| ()).is_none());
+        drop(guard);
+        let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            let _guard = session.lock().unwrap();
+            panic!("synthetic poisoned session");
+        }));
+        assert!(session.is_poisoned());
+        assert_eq!(observer.get(), Some(BrowserSessionFailure::CertificateBridge));
+        let mut current = session.into_inner().unwrap_or_else(|error| error.into_inner());
+        stop(&mut current).await;
+    }
+
+    #[tokio::test]
+    async fn session_failure_late_specific_cause_fills_generic_revoke_without_reviving_session() {
+        let mut current = session().await;
+        let id = current.policy().identity().clone();
+        let observer = current.failure_state();
+        current.revoke(&id).unwrap();
+        assert_eq!(observer.get(), None);
+        observer.record_first(BrowserSessionFailure::CertificateBridge);
+        current.revoke_for(&id, BrowserSessionFailure::DatabaseOwner).unwrap();
+        assert_eq!(current.failure_reason(), Some(BrowserSessionFailure::CertificateBridge));
+        assert_eq!(current.status(), BrowserSessionStatus::Revoked);
+        assert!(current.with_proxy_credentials(|_, _| ()).is_none());
+        assert_eq!(current.authorize_navigation(&id, "https://source.invalid"),
+            Err(BrowserPolicyError::Revoked));
+        stop(&mut current).await;
+    }
+
+    #[tokio::test]
+    async fn session_failure_redirect_remains_first_when_tls_and_owner_fail_during_cleanup() {
+        let mut current = session().await;
+        let id = current.policy().identity().clone();
+        let observer = current.failure_state();
+        current.revoke_for(&id, BrowserSessionFailure::RedirectDenied).unwrap();
+        observer.record_first(BrowserSessionFailure::CertificateBridge);
+        observer.record_first(BrowserSessionFailure::DatabaseOwner);
+        assert_eq!(observer.get(), Some(BrowserSessionFailure::RedirectDenied));
+        assert_eq!(current.failure_reason(), Some(BrowserSessionFailure::RedirectDenied));
+        stop(&mut current).await;
+    }
+
+    #[tokio::test]
+    async fn session_failure_observers_are_independent_across_attempts_and_stale_identity() {
+        let mut previous = session().await;
+        let old_id = previous.policy().identity().clone();
+        let old_observer = previous.failure_state();
+        let mut fresh = session().await;
+        let fresh_observer = fresh.failure_state();
+        assert_eq!(fresh.revoke_for(&old_id, BrowserSessionFailure::RedirectDenied),
+            Err(BrowserPolicyError::StaleIdentity));
+        previous.revoke(&old_id).unwrap();
+        old_observer.record_first(BrowserSessionFailure::CertificateBridge);
+        assert_eq!(fresh_observer.get(), None);
+        assert_eq!(fresh.status(), BrowserSessionStatus::NotReady);
+        stop(&mut previous).await;
         stop(&mut fresh).await;
     }
 

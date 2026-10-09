@@ -251,8 +251,11 @@ fn production_renderer_fault_revokes_before_owner_window_terminal_publication() 
             "Some(BrowserFault::{name}) => Some(OriginBrowserFailureReason::{name})"
         )));
     }
-    assert!(sink.contains("Some(BrowserFault::Session) => Some(match self.attempt.session.try_lock()"));
-    assert!(sink.contains("session.failure_reason().map(Into::into)"));
+    assert!(sink.contains("Some(BrowserFault::Session) => Some(self.attempt.failure.get().map(Into::into)"));
+    let reason = sink.split("let failure_reason = match").nth(1).unwrap()
+        .split("let page =").next().unwrap();
+    assert!(!reason.contains("try_lock"));
+    assert!(!reason.contains(".lock()"));
     assert!(sink.contains("None => None"));
     assert!(sink.contains("|| self.attempt.current()"));
     assert!(sink.contains("self.window.emit(ORIGIN_BROWSER_STATE_EVENT, next)"));
@@ -269,6 +272,7 @@ fn session_failure_causes_survive_terminal_publication_without_private_data_or_a
         (Reason::PrivateProxy, "private-proxy"),
         (Reason::NativeState, "native-state"),
         (Reason::CertificateBridge, "certificate-bridge"),
+        (Reason::RedirectDenied, "redirect-denied"),
         (Reason::RuntimeUnavailable, "runtime-unavailable"),
         (Reason::OwnerWindow, "owner-window"),
     ] {
@@ -499,4 +503,53 @@ fn stale_sequences_cannot_overwrite_newer_scrubbed_terminal_snapshot() {
     }
     assert_scrubbed(&snapshot.lock().unwrap());
     assert_eq!(snapshot.lock().unwrap().sequence(), 3);
+}
+
+#[tokio::test]
+async fn session_failure_observation_does_not_depend_on_session_lock_availability() {
+    use sorng_protocols::origin_browser::{BrowserSessionFailure, OriginBrowserSession};
+    use sorng_protocols::private_forward_proxy::{Authority, DialFuture, ProxyLimits};
+    let policy = OriginBrowserPolicy::new("owner", "connection", "tab", "https://fixture.test").unwrap();
+    let mut current = OriginBrowserSession::start(policy,
+        std::sync::Arc::new(|_: Authority| -> DialFuture {
+            Box::pin(async { Err(std::io::Error::other("fixture must not dial")) })
+        }), ProxyLimits::default()).await.unwrap();
+    let identity = current.policy().identity().clone();
+    let snapshot = retained(&identity);
+    let evidence = current.failure_state();
+    current.revoke_for(&identity, BrowserSessionFailure::CertificateBridge).unwrap();
+    // Hold the actual native session guard throughout publication.
+    let session_lock = Mutex::new(current);
+    let guard = session_lock.lock().unwrap();
+    assert!(session_lock.try_lock().is_err());
+    assert_eq!(publish_with_reason(&snapshot, &identity, 2,
+        (OriginBrowserPhase::Failed, evidence.get().map(Into::into)), private_page(),
+        || false, |event| {
+            assert_scrubbed(&event);
+            assert_eq!(wire(&event)["failureReason"], "certificate-bridge");
+            true
+        }), Publication::Published);
+    assert_eq!(wire(&snapshot.lock().unwrap())["failureReason"], "certificate-bridge");
+    drop(guard);
+    session_lock.into_inner().unwrap().stop().await.unwrap();
+}
+
+#[test]
+fn cancellation_records_explicit_evidence_before_publication_and_repeated_cleanup() {
+    let runtime = include_str!("../../../src/origin_browser_runtime.rs");
+    let body = runtime.split("fn revoke_inner(&self, reason:").nth(1).unwrap()
+        .split("// Inspect owner evidence").next().unwrap();
+    assert!(body.contains("self.cancelled.swap(true, Ordering::AcqRel)"));
+    assert!(body.contains("if let Some(reason) = reason"));
+    assert!(body.find("self.failure.record_first(reason)").unwrap()
+        < body.find("self.cancelled.swap(true").unwrap());
+    assert!(body.contains("self.report_failure();"));
+    for cleanup in ["self.lease.revoke()", "session.revoke", ".lock()", "cancelled.store(false"] {
+        assert!(!body.contains(cleanup));
+    }
+    let body = runtime.split("fn revoke_inner(&self, reason:").nth(1).unwrap()
+        .split("fn report_failure").next().unwrap();
+    let owner = body.split("// Inspect owner evidence").nth(1).unwrap();
+    assert!(owner.find("self.failure.record_first(reason)").unwrap()
+        < owner.find("self.login.revoke()").unwrap());
 }

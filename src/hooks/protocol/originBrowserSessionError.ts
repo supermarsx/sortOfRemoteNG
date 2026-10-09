@@ -18,6 +18,8 @@ export function originBrowserSessionError(reason: unknown): string {
       return "Native browser session failed: the app could not safely access native browser session state, so the session was stopped. Use Retry browser. If it repeats, restart the app and review native browser diagnostics in Web Browser settings.";
     case "certificate-bridge":
       return "Native browser session failed: the TLS admission bridge for this private session failed. This report does not establish a server-certificate rejection. Use Retry browser to create a fresh private context. If it repeats, check the TLS journal in native browser diagnostics. Keep HTTPS trust settings and website credentials unchanged.";
+    case "redirect-denied":
+      return "Native browser session failed: a redirect could not be admitted by the session's destination policy. Review the connection's permitted destinations and native browser diagnostics before retrying. Reopen the tab after that review. Keep destination checks, HTTPS trust settings, and proxy protections enabled; this report does not establish rejected website credentials.";
     case "runtime-unavailable":
       return "Native browser session failed: the native browser runtime was no longer available for this session. No specific runtime cause was reported. Review native browser diagnostics in Web Browser settings and restart the app before retrying.";
     case "owner-window":

@@ -59,6 +59,7 @@ export type OriginBrowserFailureReason =
   | "private-context"
   | "private-proxy"
   | "certificate-bridge"
+  | "redirect-denied"
   | "native-state"
   | "runtime-unavailable"
   | "owner-window"
@@ -80,6 +81,7 @@ export function originBrowserFailureReason(
     case "private-context":
     case "private-proxy":
     case "certificate-bridge":
+    case "redirect-denied":
     case "native-state":
     case "runtime-unavailable":
     case "owner-window":

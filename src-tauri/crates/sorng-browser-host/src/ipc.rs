@@ -778,6 +778,7 @@ pub enum OriginBrowserFailureReason {
     PrivateProxy,
     NativeState,
     CertificateBridge,
+    RedirectDenied,
     RuntimeUnavailable,
     OwnerWindow,
     Callback,
@@ -795,6 +796,7 @@ impl From<sorng_protocols::origin_browser::BrowserSessionFailure> for OriginBrow
             Reason::PrivateProxy => Self::PrivateProxy,
             Reason::NativeState => Self::NativeState,
             Reason::CertificateBridge => Self::CertificateBridge,
+            Reason::RedirectDenied => Self::RedirectDenied,
             Reason::RuntimeUnavailable => Self::RuntimeUnavailable,
             Reason::OwnerWindow => Self::OwnerWindow,
         }
