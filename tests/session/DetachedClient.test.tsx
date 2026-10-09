@@ -21,14 +21,16 @@ import {
 import { SettingsProvider } from "../../src/contexts/SettingsContext";
 import { ConnectionContext } from "../../src/contexts/ConnectionContextTypes";
 import type { WindowSessionSync } from "../../src/types/windowManager";
+import { DatabaseManager } from "../../src/utils/connection/databaseManager";
 import {
   getMemoryWatchdog,
   stopMemoryWatchdog,
 } from "../../src/utils/debug/memoryWatchdog";
 
+const searchSession = vi.hoisted(() => ({ id: "s1" }));
 vi.mock("next/navigation", () => ({
   useSearchParams: () => ({
-    get: (key: string) => (key === "sessionId" ? "s1" : null),
+    get: (key: string) => (key === "sessionId" ? searchSession.id : null),
   }),
 }));
 
@@ -241,6 +243,7 @@ vi.mock("@tauri-apps/api/core", () => ({
 describe("DetachedClient accessibility", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    searchSession.id = "s1";
     linkedViewer.enabled = false;
     linkedViewer.mounts = 0;
     linkedViewer.unmounts = 0;
@@ -254,6 +257,7 @@ describe("DetachedClient accessibility", () => {
     syncRegistrations.length = 0;
     settingsSyncHandler = undefined;
     vi.mocked(listen).mockImplementation(defaultListenImplementation);
+    vi.mocked(emit).mockResolvedValue(undefined);
     vi.mocked(invoke).mockResolvedValue(undefined);
   });
 
@@ -633,6 +637,414 @@ describe("DetachedClient accessibility", () => {
     unmount();
   });
 
+  it.each(["plain", "legacy-password"] as const)(
+    "handles a %s owner without trusting snapshot rows",
+    async (kind) => {
+      const manager = DatabaseManager.getInstance();
+      const adopt = vi
+        .spyOn(manager, "adoptPlainDetachedDatabase")
+        .mockResolvedValue(undefined);
+      const release = vi
+        .spyOn(manager, "releaseDetachedDatabaseAccess")
+        .mockResolvedValue(undefined);
+      const dispatch = vi.fn();
+      const loadData = vi.fn().mockResolvedValue(true);
+      vi.mocked(listen).mockImplementation(((
+        eventName: string,
+        handler: any,
+      ) => {
+        if (eventName !== "wm:sync")
+          return (defaultListenImplementation as any)(eventName, handler);
+        syncHandler = handler;
+        return Promise.resolve(vi.fn());
+      }) as any);
+      const view = render(
+        <SettingsProvider>
+          <ConnectionContext.Provider
+            value={
+              {
+                state: { connections: [], sessions: [], tabGroups: [] },
+                dispatch,
+                loadData,
+              } as any
+            }
+          >
+            <DetachedSessionContent onRegisterDisconnect={vi.fn()} />
+          </ConnectionContext.Provider>
+        </SettingsProvider>,
+      );
+      try {
+        await waitFor(() =>
+          expect(
+            vi
+              .mocked(emit)
+              .mock.calls.some(
+                ([, payload]) => (payload as any)?.type === "WINDOW_READY",
+              ),
+          ).toBe(true),
+        );
+        const ready = vi
+          .mocked(emit)
+          .mock.calls.find(
+            ([, payload]) => (payload as any)?.type === "WINDOW_READY",
+          )![1] as { handoffId: string };
+        const snapshot: WindowSessionSync = {
+          windowId: "detached-1",
+          handoffId: ready.handoffId,
+          syncRevision: 1,
+          sessions: [{ ...syncedSession, ownerDatabaseId: "plain-db" } as any],
+          connections: [syncedConnection as any],
+          tabGroups: [],
+          localDatabaseOwner: {
+            databaseId: "plain-db",
+            securityRevision: "plain-r1",
+            kind,
+          },
+        };
+        await act(async () => {
+          syncHandler?.({
+            payload: { ...snapshot, handoffId: undefined, syncRevision: 999 },
+          });
+        });
+        expect(adopt).not.toHaveBeenCalled();
+        await act(async () => {
+          syncHandler?.({ payload: snapshot });
+        });
+        if (kind === "plain") {
+          await waitFor(() =>
+            expect(loadData).toHaveBeenCalledExactlyOnceWith("plain-db"),
+          );
+          expect(adopt).toHaveBeenCalledExactlyOnceWith(
+            "plain-db",
+            "plain-r1",
+            { isCurrent: expect.any(Function) },
+          );
+        } else {
+          expect(adopt).not.toHaveBeenCalled();
+          expect(loadData).not.toHaveBeenCalled();
+          expect(
+            screen.getByText(
+              /legacy password-encrypted database needs a local unlock/,
+            ),
+          ).toBeInTheDocument();
+        }
+        expect(
+          dispatch.mock.calls.every(
+            ([action]) => action.type === "SET_SESSIONS",
+          ),
+        ).toBe(true);
+      } finally {
+        view.unmount();
+        adopt.mockRestore();
+        release.mockRestore();
+      }
+    },
+  );
+
+  it("loads the delegated owner once without replacing full database rows or groups with a window subset", async () => {
+    const manager = DatabaseManager.getInstance();
+    const adopt = vi
+      .spyOn(manager, "adoptDelegatedDatabase")
+      .mockResolvedValue(undefined);
+    const release = vi
+      .spyOn(manager, "releaseDetachedDatabaseAccess")
+      .mockResolvedValue(undefined);
+    const dispatch = vi.fn();
+    const loadData = vi.fn().mockResolvedValue(true);
+    vi.mocked(listen).mockImplementation(((eventName: string, handler: any) => {
+      if (eventName !== "wm:sync")
+        return (defaultListenImplementation as any)(eventName, handler);
+      syncHandler = handler;
+      return Promise.resolve(vi.fn());
+    }) as any);
+    const context = {
+      state: { connections: [], sessions: [], tabGroups: [] },
+      dispatch,
+      loadData,
+    } as any;
+    const view = render(
+      <SettingsProvider>
+        <ConnectionContext.Provider value={context}>
+          <DetachedSessionContent onRegisterDisconnect={vi.fn()} />
+        </ConnectionContext.Provider>
+      </SettingsProvider>,
+    );
+    const grant = {
+      databaseId: "database-a",
+      sessionId: "target-only-token",
+      securityRevision: "revision-a",
+      sessionExpiresAt: null,
+    };
+    await waitFor(() =>
+      expect(
+        vi
+          .mocked(emit)
+          .mock.calls.some(
+            ([, payload]) => (payload as any)?.type === "WINDOW_READY",
+          ),
+      ).toBe(true),
+    );
+    const ready = vi
+      .mocked(emit)
+      .mock.calls.find(
+        ([, payload]) => (payload as any)?.type === "WINDOW_READY",
+      )![1] as { handoffId: string };
+    const snapshot: WindowSessionSync = {
+      windowId: "detached-1",
+      handoffId: ready.handoffId,
+      syncRevision: 1,
+      sessions: [{ ...syncedSession, ownerDatabaseId: "database-a" } as any],
+      connections: [syncedConnection as any],
+      tabGroups: [],
+      activeSessionId: "s1",
+      databaseGrant: grant,
+    };
+    try {
+      await act(async () => {
+        syncHandler?.({
+          payload: {
+            ...snapshot,
+            handoffId: "previous-receiver",
+            syncRevision: 999,
+          },
+        });
+        syncHandler?.({
+          payload: { ...snapshot, handoffId: undefined, syncRevision: 1000 },
+        });
+      });
+      expect(adopt).not.toHaveBeenCalled();
+      await act(async () => {
+        syncHandler?.({ payload: snapshot });
+      });
+      await waitFor(() =>
+        expect(loadData).toHaveBeenCalledExactlyOnceWith("database-a"),
+      );
+      expect(adopt).toHaveBeenCalledExactlyOnceWith("database-a", grant, {
+        isCurrent: expect.any(Function),
+      });
+      for (const syncRevision of [2, 2, 1, 3]) {
+        await act(async () => {
+          syncHandler?.({ payload: { ...snapshot, syncRevision } });
+        });
+      }
+      expect(loadData).toHaveBeenCalledOnce();
+      expect(dispatch.mock.calls.map(([action]) => action.type)).toEqual([
+        "SET_SESSIONS",
+        "SET_SESSIONS",
+        "SET_SESSIONS",
+      ]);
+      await act(async () => {
+        syncHandler?.({
+          payload: {
+            ...snapshot,
+            syncRevision: 4,
+            databaseContentRevision: { databaseId: "database-a", revision: 1 },
+          },
+        });
+      });
+      expect(loadData).toHaveBeenCalledTimes(2);
+      expect(adopt).toHaveBeenCalledOnce();
+      expect(release).not.toHaveBeenCalled();
+      // A foreign grant may not be used to make an identically named row ready.
+      await act(async () => {
+        syncHandler?.({
+          payload: {
+            ...snapshot,
+            syncRevision: 5,
+            databaseGrant: { ...grant, databaseId: "database-b" },
+          },
+        });
+      });
+      expect(release).toHaveBeenCalledExactlyOnceWith("database-a");
+      expect(adopt).toHaveBeenCalledOnce();
+      expect(
+        dispatch.mock.calls.every(([action]) => action.type === "SET_SESSIONS"),
+      ).toBe(true);
+      // A delayed prior revision cannot re-adopt the revoked database.
+      await act(async () => {
+        syncHandler?.({ payload: { ...snapshot, syncRevision: 3 } });
+      });
+      expect(adopt).toHaveBeenCalledOnce();
+    } finally {
+      view.unmount();
+      adopt.mockRestore();
+      release.mockRestore();
+    }
+  });
+
+  it("uses a new lifetime grant while the predecessor's native release is still pending", async () => {
+    const manager = DatabaseManager.getInstance();
+    const adopt = vi
+      .spyOn(manager, "adoptDelegatedDatabase")
+      .mockResolvedValue(undefined);
+    let finishRelease!: () => void;
+    const release = vi
+      .spyOn(manager, "releaseDetachedDatabaseAccess")
+      .mockResolvedValue(undefined)
+      .mockReturnValueOnce(
+        new Promise<void>((resolve) => {
+          finishRelease = resolve;
+        }),
+      );
+    const loadData = vi.fn().mockResolvedValue(true);
+    const dispatch = vi.fn();
+    const ready: Array<{ handoffId: string }> = [];
+    vi.mocked(listen).mockImplementation(((eventName: string, handler: any) => {
+      if (eventName !== "wm:sync")
+        return (defaultListenImplementation as any)(eventName, handler);
+      syncHandler = handler;
+      return Promise.resolve(vi.fn<() => void>());
+    }) as any);
+    const snapshot = (
+      handoffId: string,
+      syncRevision: number,
+    ): WindowSessionSync => ({
+      windowId: "detached-1",
+      handoffId,
+      syncRevision,
+      sessions: [{ ...syncedSession, ownerDatabaseId: "database-a" } as any],
+      connections: [],
+      tabGroups: [],
+      databaseGrant: {
+        databaseId: "database-a",
+        sessionId: `token-${handoffId}`,
+        securityRevision: "revision-a",
+        sessionExpiresAt: null,
+      },
+    });
+    vi.mocked(emit).mockImplementation(async (_, payload) => {
+      if ((payload as any)?.type !== "WINDOW_READY") return;
+      const request = payload as { handoffId: string };
+      ready.push(request);
+      syncHandler?.({ payload: snapshot(request.handoffId, ready.length) });
+    });
+    const content = () => (
+      <SettingsProvider>
+        <ConnectionContext.Provider
+          value={
+            {
+              state: { sessions: [], connections: [], tabGroups: [] },
+              dispatch,
+              loadData,
+            } as any
+          }
+        >
+          <DetachedSessionContent onRegisterDisconnect={vi.fn()} />
+        </ConnectionContext.Provider>
+      </SettingsProvider>
+    );
+    const view = render(content());
+    try {
+      await waitFor(() => expect(loadData).toHaveBeenCalledOnce());
+      // Restart the bootstrap effect while preserving its hook state, as HMR can.
+      searchSession.id = "s2";
+      view.rerender(content());
+      await waitFor(() => expect(loadData).toHaveBeenCalledTimes(2));
+      expect(release).toHaveBeenCalledOnce();
+      expect(ready).toHaveLength(2);
+      expect(ready[0].handoffId).not.toBe(ready[1].handoffId);
+      expect(adopt.mock.calls.map(([, grant]) => grant.sessionId)).toEqual([
+        `token-${ready[0].handoffId}`,
+        `token-${ready[1].handoffId}`,
+      ]);
+      await act(async () => {
+        syncHandler?.({ payload: snapshot(ready[0].handoffId, 999) });
+        finishRelease();
+      });
+      expect(adopt).toHaveBeenCalledTimes(2);
+      expect(loadData).toHaveBeenCalledTimes(2);
+      expect(
+        dispatch.mock.calls.every(([action]) => action.type === "SET_SESSIONS"),
+      ).toBe(true);
+    } finally {
+      finishRelease();
+      view.unmount();
+      adopt.mockRestore();
+      release.mockRestore();
+    }
+  });
+
+  it.each([false, true])(
+    "bounds fresh-grant retries after native adoption failure (permanent=%s)",
+    async (permanent) => {
+      const manager = DatabaseManager.getInstance();
+      const adopt = vi.spyOn(manager, "adoptDelegatedDatabase");
+      if (permanent)
+        adopt.mockRejectedValue(new Error("fixture native failure"));
+      else
+        adopt
+          .mockResolvedValue(undefined)
+          .mockRejectedValueOnce(new Error("fixture native failure"));
+      const release = vi
+        .spyOn(manager, "releaseDetachedDatabaseAccess")
+        .mockResolvedValue(undefined);
+      const loadData = vi.fn().mockResolvedValue(true);
+      const ready: string[] = [];
+      vi.mocked(listen).mockImplementation(((
+        eventName: string,
+        handler: any,
+      ) => {
+        if (eventName !== "wm:sync")
+          return (defaultListenImplementation as any)(eventName, handler);
+        syncHandler = handler;
+        return Promise.resolve(vi.fn<() => void>());
+      }) as any);
+      vi.mocked(emit).mockImplementation(async (_, payload) => {
+        if ((payload as any)?.type !== "WINDOW_READY") return;
+        const { handoffId } = payload as { handoffId: string };
+        ready.push(handoffId);
+        syncHandler?.({
+          payload: {
+            windowId: "detached-1",
+            handoffId,
+            syncRevision: ready.length,
+            sessions: [
+              { ...syncedSession, ownerDatabaseId: "database-a" } as any,
+            ],
+            connections: [],
+            tabGroups: [],
+            databaseGrant: {
+              databaseId: "database-a",
+              sessionId: `target-token-${ready.length}`,
+              securityRevision: "revision-a",
+              sessionExpiresAt: null,
+            },
+          },
+        });
+      });
+      const view = render(
+        <SettingsProvider>
+          <ConnectionContext.Provider
+            value={
+              {
+                state: { sessions: [], connections: [], tabGroups: [] },
+                dispatch: vi.fn(),
+                loadData,
+              } as any
+            }
+          >
+            <DetachedSessionContent onRegisterDisconnect={vi.fn()} />
+          </ConnectionContext.Provider>
+        </SettingsProvider>,
+      );
+      try {
+        await waitFor(() =>
+          expect(adopt).toHaveBeenCalledTimes(permanent ? 3 : 2),
+        );
+        await act(async () => {
+          await Promise.resolve();
+        });
+        expect(ready).toHaveLength(permanent ? 3 : 2);
+        expect(new Set(ready).size).toBe(1);
+        expect(loadData).toHaveBeenCalledTimes(permanent ? 0 : 1);
+      } finally {
+        view.unmount();
+        adopt.mockRestore();
+        release.mockRestore();
+      }
+    },
+  );
+
   it("settles a before-close rejection and retries one later empty sync", async () => {
     (window as any).__TAURI__ = true;
     await renderAndLoadDetachedClient();
@@ -942,7 +1354,128 @@ describe("DetachedClient accessibility", () => {
 
     expect(lateRegistration.unlisten).toHaveBeenCalledTimes(1);
     expect(activeSyncRegistrations()).toHaveLength(0);
+    expect(
+      vi
+        .mocked(emit)
+        .mock.calls.some(
+          ([, payload]) => (payload as any)?.type === "WINDOW_READY",
+        ),
+    ).toBe(false);
   });
+
+  it("waits for the sync listener before requesting an immediate handoff", async () => {
+    let register: (() => void) | undefined;
+    let ready = false;
+    vi.mocked(listen).mockImplementation(((eventName: string, handler: any) => {
+      if (eventName !== "wm:sync")
+        return (defaultListenImplementation as any)(eventName, handler);
+      syncHandler = handler;
+      return new Promise<() => void>((resolve) => {
+        register = () => {
+          ready = true;
+          resolve(vi.fn<() => void>());
+        };
+      });
+    }) as any);
+    vi.mocked(emit).mockImplementation(async (eventName, payload) => {
+      if (
+        eventName === "wm:command" &&
+        (payload as any)?.type === "WINDOW_READY"
+      ) {
+        expect(ready).toBe(true);
+        syncHandler?.({
+          payload: {
+            windowId: "detached-1",
+            syncRevision: 1,
+            sessions: [syncedSession as any],
+            connections: [syncedConnection as any],
+            tabGroups: [],
+            activeSessionId: "s1",
+          },
+        });
+      }
+    });
+    render(<DetachedClient />);
+    await waitFor(() => expect(register).toBeTypeOf("function"));
+    expect(
+      vi
+        .mocked(emit)
+        .mock.calls.some(
+          ([, payload]) => (payload as any)?.type === "WINDOW_READY",
+        ),
+    ).toBe(false);
+    await act(async () => register!());
+    expect(screen.getByTestId("mock-session-viewer")).toBeInTheDocument();
+  });
+
+  it.each(["legacy", "metadata"])(
+    "never hydrates %s local storage as a database owner and accepts a later live handoff",
+    async (format) => {
+      vi.useFakeTimers();
+      vi.mocked(listen).mockImplementation(((
+        eventName: string,
+        handler: any,
+      ) => {
+        if (eventName !== "wm:sync")
+          return (defaultListenImplementation as any)(eventName, handler);
+        syncHandler = handler;
+        return Promise.resolve(vi.fn());
+      }) as any);
+      localStorage.setItem(
+        "detached-session-s1",
+        JSON.stringify(
+          format === "legacy"
+            ? {
+                session: syncedSession,
+                connection: {
+                  ...syncedConnection,
+                  password: "fixture-stale-secret",
+                },
+              }
+            : {
+                version: 2,
+                sessionId: "s1",
+                connectionId: "c1",
+                ownerWindowId: "detached-1",
+              },
+        ),
+      );
+      const view = render(<DetachedClient />);
+      try {
+        await act(async () => vi.advanceTimersByTimeAsync(0));
+        await act(async () => vi.advanceTimersByTimeAsync(2000));
+        expect(
+          screen.queryByTestId("mock-session-viewer"),
+        ).not.toBeInTheDocument();
+        expect(
+          screen.getByText(
+            "Waiting for the session handoff from its owning window.",
+          ),
+        ).toBeInTheDocument();
+        act(() =>
+          syncHandler?.({
+            payload: {
+              windowId: "detached-1",
+              syncRevision: 1,
+              sessions: [syncedSession as any],
+              connections: [syncedConnection as any],
+              tabGroups: [],
+              activeSessionId: "s1",
+            },
+          }),
+        );
+        expect(screen.getByTestId("mock-session-viewer")).toBeInTheDocument();
+        expect(
+          screen.queryByText(
+            "Waiting for the session handoff from its owning window.",
+          ),
+        ).not.toBeInTheDocument();
+      } finally {
+        view.unmount();
+        vi.useRealTimers();
+      }
+    },
+  );
 
   it.each([100, 500, 1000])(
     "does not grow wm:sync listeners across %i accepted emissions",

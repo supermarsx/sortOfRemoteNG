@@ -13,7 +13,10 @@ import {
   assertBrowserSessionTransferPassword,
 } from "../security/browserSessions";
 import { snapshotRecordPayload } from "../storage/recordLedger";
-import { isDatabaseCipher } from "../../types/encryption/databaseProtection";
+import {
+  isDatabaseCipher,
+  isDatabaseSessionLive,
+} from "../../types/encryption/databaseProtection";
 import type {
   DatabaseProtectionCapabilities,
   DatabaseProtectionStatus,
@@ -23,6 +26,7 @@ import type {
   DatabaseProtectionChangeRequest,
   DatabaseProtectionLockResult,
   DatabaseProtectionReleaseSessionResult,
+  DatabaseProtectionSessionGrant,
 } from "../../types/encryption/databaseProtection";
 
 async function nativeInvoke() {
@@ -256,6 +260,60 @@ export const databaseProtection = {
         databaseId,
       },
     );
+  },
+  async delegateSession(
+    databaseId: string,
+    sessionId: string,
+    expectedSecurityRevision: string,
+    targetWindow: string,
+    handoffId: string,
+  ): Promise<DatabaseProtectionSessionGrant> {
+    const result = await (
+      await nativeInvoke()
+    )<DatabaseProtectionSessionGrant>("database_protection_delegate_session", {
+      databaseId,
+      sessionId,
+      expectedSecurityRevision,
+      targetWindow,
+      handoffId,
+    });
+    if (
+      !record(result) ||
+      typeof result.sessionId !== "string" ||
+      !result.sessionId ||
+      result.sessionId === sessionId ||
+      result.securityRevision !== expectedSecurityRevision ||
+      !isDatabaseSessionLive(result.sessionExpiresAt)
+    )
+      throw new Error(
+        "The detached window did not receive a valid database access grant.",
+      );
+    return {
+      sessionId: result.sessionId,
+      securityRevision: result.securityRevision,
+      sessionExpiresAt: result.sessionExpiresAt,
+    };
+  },
+  async loadPlain(databaseId: string, expectedSecurityRevision: string) {
+    const result = await (
+      await nativeInvoke()
+    )<{
+      securityRevision: string;
+      data: StorageData;
+    }>("database_protection_load_plain", {
+      databaseId,
+      expectedSecurityRevision,
+    });
+    if (
+      !record(result) ||
+      result.securityRevision !== expectedSecurityRevision ||
+      !record(result.data) ||
+      !Array.isArray(result.data.connections)
+    )
+      throw new Error(
+        "The local database could not be verified for this window.",
+      );
+    return result;
   },
   async releaseSession(databaseId: string, sessionId: string) {
     const result = await (

@@ -82,6 +82,20 @@ beforeEach(() => {
           value: payloads.get(String(args.databaseId)),
           source: "current",
         };
+      if (command === "database_protection_load_plain") {
+        const row = rows.find((row) => row.id === args.databaseId);
+        if (
+          !row ||
+          row.isEncrypted ||
+          row.protectionFormat ||
+          (row.securityRevision ?? "") !== args.expectedSecurityRevision
+        )
+          throw new Error("protected or changed");
+        return {
+          securityRevision: row.securityRevision ?? "",
+          data: structuredClone(payloads.get(row.id)),
+        };
+      }
       if (
         command === "database_protection_unlock" ||
         command === "database_protection_load"
@@ -159,6 +173,234 @@ afterEach(() => {
 });
 
 describe("native managed database sessions", () => {
+  it("adopts and refreshes plain detached data natively without password, writes or global activation", async () => {
+    rows[0] = {
+      ...rows[0],
+      isEncrypted: false,
+      protectionFormat: undefined,
+      securityRevision: undefined,
+    };
+    const id = rows[0].id;
+    payloads.set(id, structuredClone(data));
+    const manager = DatabaseManager.getInstance();
+    await manager.adoptPlainDetachedDatabase(id, "", { isCurrent: () => true });
+    expect(manager.getCurrentDatabase()?.id).toBe(id);
+    await manager.loadDatabaseData(id);
+    const commands = bridge.invoke.mock.calls.map(([command]) => command);
+    expect(
+      commands.filter(
+        (command) => command === "database_protection_load_plain",
+      ),
+    ).toHaveLength(2);
+    for (const command of [
+      "load_database_data",
+      "database_protection_unlock",
+      "database_protection_save",
+      "save_database_data",
+      "databases_save_index",
+      "trust_set_active_database",
+    ])
+      expect(commands).not.toContain(command);
+    await manager.releaseDetachedDatabaseAccess(id);
+    expect(manager.getCurrentDatabase()).toBeNull();
+    expect(bridge.invoke.mock.calls.map(([command]) => command)).not.toContain(
+      "database_protection_lock",
+    );
+  });
+
+  it("rejects managed and legacy owners rather than transferring passwords", async () => {
+    const manager = DatabaseManager.getInstance();
+    for (const protectionFormat of ["sorng-db" as const, undefined]) {
+      rows[0].protectionFormat = protectionFormat;
+      await expect(
+        manager.adoptPlainDetachedDatabase(rows[0].id, "rev-1", {
+          isCurrent: () => true,
+        }),
+      ).rejects.toThrow("local unlock");
+    }
+    expect(manager.getCurrentDatabase()).toBeNull();
+    expect(bridge.invoke).not.toHaveBeenCalledWith(
+      "database_protection_load_plain",
+      expect.anything(),
+    );
+  });
+
+  it("cannot publish a cancelled plain adoption after native loading completes", async () => {
+    rows[0] = { ...rows[0], isEncrypted: false, protectionFormat: undefined };
+    let resolve!: (value: unknown) => void;
+    const implementation = bridge.invoke.getMockImplementation()!;
+    bridge.invoke.mockImplementation((command, args) =>
+      command === "database_protection_load_plain"
+        ? new Promise((done) => {
+            resolve = done;
+          })
+        : implementation(command, args),
+    );
+    const manager = DatabaseManager.getInstance();
+    let current = true;
+    const adoption = manager.adoptPlainDetachedDatabase(rows[0].id, "rev-1", {
+      isCurrent: () => current,
+    });
+    const rejected = expect(adoption).rejects.toThrow("superseded");
+    await vi.waitFor(() => expect(resolve).toBeTypeOf("function"));
+    current = false;
+    resolve({ securityRevision: "rev-1", data });
+    await rejected;
+    expect(manager.getCurrentDatabase()).toBeNull();
+  });
+
+  it("adopts a detached window grant through native load without unlocking, migrating or writing the database", async () => {
+    const manager = DatabaseManager.getInstance();
+    const { data: _data, ...grant } = lease;
+    await manager.adoptDelegatedDatabase(rows[0].id, grant, {
+      isCurrent: () => true,
+    });
+    expect(manager.getCurrentDatabase()?.id).toBe(rows[0].id);
+    const proof = manager.captureOriginBrowserOwnerProof(rows[0].id);
+    expect(proof.sourceSessionId).toBe(grant.sessionId);
+    expect(bridge.invoke).toHaveBeenCalledWith("database_protection_load", {
+      databaseId: rows[0].id,
+      sessionId: grant.sessionId,
+      expectedSecurityRevision: grant.securityRevision,
+    });
+    const commands = bridge.invoke.mock.calls.map(([command]) => command);
+    expect(commands).not.toContain("database_protection_unlock");
+    expect(commands).not.toContain("database_protection_save");
+    expect(commands).not.toContain("databases_save_index");
+    expect(commands).not.toContain("trust_set_active_database");
+    bridge.invoke.mockClear();
+    await manager.adoptDelegatedDatabase(rows[0].id, grant, {
+      isCurrent: () => true,
+    });
+    expect(bridge.invoke).not.toHaveBeenCalled();
+    const release = manager.releaseDetachedDatabaseAccess(rows[0].id);
+    expect(manager.getCurrentDatabase()).toBeNull();
+    expect(() => proof.assertCurrent()).toThrow();
+    await release;
+    expect(bridge.invoke).toHaveBeenCalledWith(
+      "database_protection_release_session",
+      {
+        databaseId: rows[0].id,
+        sessionId: grant.sessionId,
+      },
+    );
+    expect(bridge.invoke.mock.calls.map(([command]) => command)).not.toContain(
+      "database_protection_lock",
+    );
+    expect(bridge.invoke.mock.calls.map(([command]) => command)).not.toContain(
+      "trust_set_active_database",
+    );
+  });
+
+  it.each(["lock", "supersede", "release"])(
+    "rejects detached handoff when %s races a native load",
+    async (reason) => {
+      const manager = DatabaseManager.getInstance();
+      const { data: _data, ...grant } = lease;
+      const original = bridge.invoke.getMockImplementation()!;
+      let finish!: (value: DatabaseProtectionUnlockResult) => void;
+      let entered!: () => void;
+      const started = new Promise<void>((resolve) => {
+        entered = resolve;
+      });
+      let current = true;
+      bridge.invoke.mockImplementation((command, ...args) => {
+        if (command === "database_protection_load") {
+          entered();
+          return new Promise((resolve) => {
+            finish = resolve;
+          });
+        }
+        return original(command, ...args);
+      });
+      const adoption = manager.adoptDelegatedDatabase(rows[0].id, grant, {
+        isCurrent: () => current,
+      });
+      const rejected = expect(adoption).rejects.toThrow();
+      await started;
+      if (reason === "lock")
+        bridge.locked?.({ payload: { databaseId: rows[0].id } });
+      if (reason === "supersede") current = false;
+      if (reason === "release")
+        await manager.releaseDetachedDatabaseAccess(rows[0].id);
+      finish(structuredClone(lease));
+      await rejected;
+      expect(manager.getCurrentDatabase()).toBeNull();
+      expect(() =>
+        manager.captureOriginBrowserOwnerProof(rows[0].id),
+      ).toThrow();
+      expect(bridge.invoke).toHaveBeenCalledWith(
+        "database_protection_release_session",
+        {
+          databaseId: rows[0].id,
+          sessionId: grant.sessionId,
+        },
+      );
+    },
+  );
+
+  it("late detached cleanup does not mask a newer independent unlock", async () => {
+    const manager = DatabaseManager.getInstance();
+    const { data: _data, ...grant } = lease;
+    await manager.adoptDelegatedDatabase(rows[0].id, grant, {
+      isCurrent: () => true,
+    });
+    lease = { ...lease, sessionId: "replacement-unlock" };
+    await manager.unlockManagedDatabase(rows[0].id, "password-slot", "secret");
+    const replacement = manager.captureOriginBrowserOwnerProof(rows[0].id);
+    await manager.releaseDetachedDatabaseAccess(rows[0].id);
+    replacement.assertCurrent();
+    expect(manager.getCurrentDatabase()?.id).toBe(rows[0].id);
+    expect(bridge.invoke).toHaveBeenCalledWith(
+      "database_protection_release_session",
+      {
+        databaseId: rows[0].id,
+        sessionId: grant.sessionId,
+      },
+    );
+  });
+
+  it("delegates only a live current owner and returns the target token, never the source token", async () => {
+    const manager = DatabaseManager.getInstance();
+    await manager.unlockManagedDatabase(rows[0].id, "password-slot", "secret");
+    await manager.selectDatabase(rows[0].id);
+    const { data: _data, ...grant } = lease;
+    const targetGrant = { ...grant, sessionId: "target-window-grant" };
+    bridge.invoke.mockResolvedValueOnce(targetGrant);
+    await expect(
+      manager.delegateManagedDatabaseToWindow(
+        rows[0].id,
+        "detached-test",
+        "receiver-one",
+      ),
+    ).resolves.toEqual(targetGrant);
+    expect(bridge.invoke).toHaveBeenLastCalledWith(
+      "database_protection_delegate_session",
+      {
+        databaseId: rows[0].id,
+        sessionId: grant.sessionId,
+        expectedSecurityRevision: grant.securityRevision,
+        targetWindow: "detached-test",
+        handoffId: "receiver-one",
+      },
+    );
+    await expect(
+      manager.delegateManagedDatabaseToWindow(
+        "other-database",
+        "detached-test",
+        "receiver-one",
+      ),
+    ).rejects.toThrow();
+    bridge.invoke.mockResolvedValueOnce(grant);
+    await expect(
+      manager.delegateManagedDatabaseToWindow(
+        rows[0].id,
+        "detached-test",
+        "receiver-one",
+      ),
+    ).rejects.toThrow(/valid database access grant/);
+  });
+
   it("captures only the current native browser owner proof without acquiring new authority", async () => {
     const manager = DatabaseManager.getInstance();
     const id = rows[0].id;

@@ -13,6 +13,8 @@ export type WindowId = "main" | `detached-${string}`;
 /** Registry entry for each known window. */
 export interface WindowEntry {
   windowId: WindowId;
+  /** A fresh receiver lifetime must receive a distinct native grant. */
+  handoffId?: string;
   /** Ordered list of session IDs assigned to this window. */
   sessionIds: string[];
   /** Currently focused tab in this window. */
@@ -81,7 +83,7 @@ export type WindowCommand =
       lifecycle: SessionLifecyclePatch;
     }
   | { type: "REORDER_SESSIONS"; windowId: WindowId; sessionIds: string[] }
-  | { type: "WINDOW_READY"; windowId: WindowId }
+  | { type: "WINDOW_READY"; windowId: WindowId; handoffId?: string }
   | { type: "WINDOW_CLOSING"; windowId: WindowId }
   | { type: "SET_ACTIVE_SESSION"; windowId: WindowId; sessionId: string }
   | { type: "RENAME_SESSION"; sessionId: string; name: string }
@@ -99,10 +101,27 @@ export type WindowCommand =
 /** Data pushed from main to a detached window after any state change. */
 export interface WindowSessionSync {
   windowId: WindowId;
+  /** Echo of the receiver lifetime that requested this snapshot/grant. */
+  handoffId?: string;
   /** Sender-owned ordering token used to reject duplicate or stale snapshots. */
   syncRevision: number;
   sessions: ConnectionSession[];
   connections: Connection[];
+  /** Native grant bound to this receiving window; never the source's token. */
+  databaseGrant?: {
+    databaseId: string;
+    sessionId: string;
+    securityRevision: string;
+    sessionExpiresAt: number | null;
+  } | null;
+  /** Routing metadata only. The receiver must verify/load the local file natively. */
+  localDatabaseOwner?: {
+    databaseId: string;
+    securityRevision: string;
+    kind: "plain" | "legacy-password";
+  } | null;
+  /** Post-commit notification, never authority or a replacement database snapshot. */
+  databaseContentRevision?: { databaseId: string; revision: number };
   tabGroups: TabGroup[];
   activeSessionId?: string;
 }

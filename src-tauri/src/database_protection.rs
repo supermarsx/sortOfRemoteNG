@@ -32,6 +32,9 @@ use tauri::{Emitter, Manager, Runtime, State, WebviewWindow};
 pub mod browser_sessions;
 pub use browser_sessions::{database_browser_sessions_export, database_browser_sessions_import};
 
+#[path = "database_session_delegation.rs"]
+pub mod delegation;
+
 const VAULT_SERVICE: &str = "sortofremoteng.internal.database-protection.v1";
 
 /// Generic runtime form of the same production commands, enabling real IPC
@@ -43,6 +46,8 @@ pub fn build<R: Runtime>() -> impl Fn(tauri::ipc::Invoke<R>) -> bool + Send + Sy
         database_protection_unlock,
         database_protection_lock,
         database_protection_release_session,
+        delegation::database_protection_delegate_session,
+        delegation::database_protection_load_plain,
         database_protection_save,
         database_protection_load,
         database_protection_change,

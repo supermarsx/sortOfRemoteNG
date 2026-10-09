@@ -56,11 +56,14 @@ export interface DatabaseProtectionTarget {
   keepSlotIds: string[];
   newSlots: NewDatabaseProtectionSlot[];
 }
-export interface DatabaseProtectionUnlockResult {
+/** A native-issued, window-bound grant; never persist or broadcast it. */
+export interface DatabaseProtectionSessionGrant {
   sessionId: string;
   /** null = open database lifetime; explicit/configured locks still revoke access. */
   sessionExpiresAt: number | null;
   securityRevision: string;
+}
+export interface DatabaseProtectionUnlockResult extends DatabaseProtectionSessionGrant {
   data: StorageData;
 }
 export interface DatabaseProtectionSaveResult {

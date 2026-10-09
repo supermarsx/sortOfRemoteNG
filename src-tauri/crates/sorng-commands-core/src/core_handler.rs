@@ -2,6 +2,7 @@ use crate::vnc::diagnostics as vnc_diagnostics;
 use crate::*;
 use connection_clone_cmds as connection_clone_commands;
 use database_protection::browser_sessions as database_browser_sessions;
+use database_protection::delegation as database_delegation;
 #[cfg(all(feature = "opkssh", not(feature = "ops")))]
 use opkssh_commands::inner as opkssh_inner_commands;
 use sorng_encryption::commands as encryption_commands;
@@ -150,7 +151,9 @@ define_command_group!(
         database_browser_sessions::database_browser_sessions_import,
         database_protection::database_protection_capabilities,
         database_protection::database_protection_change,
+        database_delegation::database_protection_delegate_session,
         database_protection::database_protection_load,
+        database_delegation::database_protection_load_plain,
         database_protection::database_protection_lock,
         database_protection::database_protection_release_session,
         database_protection::database_protection_save,

@@ -44,10 +44,29 @@ pub struct SessionScope<'a> {
 /// teardown and generation invalidation end their lifetime. Any future expiry
 /// removal also invalidates this handle through Session::drop.
 #[derive(Clone)]
-pub struct SessionValidity(Arc<AtomicBool>);
+pub struct SessionValidity(Arc<ValidityState>);
+struct ValidityState {
+    current: AtomicBool,
+    source: Option<SessionValidity>,
+}
 impl SessionValidity {
+    fn new(source: Option<SessionValidity>) -> Self {
+        Self(Arc::new(ValidityState {
+            current: AtomicBool::new(true),
+            source,
+        }))
+    }
     pub fn is_current(&self) -> bool {
-        self.0.load(Ordering::Acquire)
+        let mut node = self;
+        loop {
+            if !node.0.current.load(Ordering::Acquire) {
+                return false;
+            }
+            match &node.0.source {
+                Some(source) => node = source,
+                None => return true,
+            }
+        }
     }
 }
 struct Session {
@@ -59,12 +78,13 @@ struct Session {
     generation: u64,
     key: DatabaseKey,
     validity: SessionValidity,
+    delegated_from: Option<(String, u64, String)>,
 }
 impl Drop for Session {
     fn drop(&mut self) {
         // Every removal path (including registry teardown and scope mismatch)
         // latches old handles false; reopening always creates a new atomic.
-        self.validity.0.store(false, Ordering::Release);
+        self.validity.0.current.store(false, Ordering::Release);
     }
 }
 #[derive(Default)]
@@ -119,10 +139,79 @@ impl DatabaseSessions {
                 window: scope.window.into(),
                 generation: scope.generation,
                 key,
-                validity: SessionValidity(Arc::new(AtomicBool::new(true))),
+                validity: SessionValidity::new(None),
+                delegated_from: None,
             },
         );
         Ok(id)
+    }
+    /// The caller validates the native target before capturing its epoch. All
+    /// registry checks and issuance happen under the caller's single lock.
+    /// No source token or key is delivered to the target renderer.
+    /// The untrusted handoff nonce selects an idempotency lifetime only. Grants
+    /// from older documents remain independent until released/revoked, so a
+    /// delayed old issuance or cleanup cannot invalidate a newer document.
+    pub fn delegate_for_window(
+        &mut self,
+        source_id: &str,
+        source: &SessionScope<'_>,
+        target_window: &str,
+        target_epoch: u64,
+        handoff_id: &str,
+    ) -> Result<String, String> {
+        self.require_scope(source_id, source)?;
+        crate::database_protection::validate_identifier(handoff_id)?;
+        if target_window == source.window || target_window.is_empty() {
+            return Err("database delegation requires a different target window".into());
+        }
+        if self
+            .window_epochs
+            .get(&(source.owner, target_window.to_owned()))
+            != Some(&target_epoch)
+        {
+            return Err("database delegation target window closed".into());
+        }
+        self.prune_revoked();
+        if let Some((id, _)) = self.entries.iter().find(|(_, session)| {
+            session.owner == source.owner
+                && session.profile == source.profile
+                && session.database == source.database
+                && session.revision == source.revision
+                && session.generation == source.generation
+                && session.window == target_window
+                && session
+                    .delegated_from
+                    .as_ref()
+                    .is_some_and(|(id, epoch, handoff)| {
+                        id == source_id && *epoch == target_epoch && handoff == handoff_id
+                    })
+        }) {
+            return Ok(id.clone());
+        }
+        if self.entries.len() >= MAX_SESSIONS {
+            return Err("too many unlocked database sessions; close an existing database".into());
+        }
+        let parent = &self.entries[source_id];
+        let child = Session {
+            owner: source.owner,
+            profile: source.profile.into(),
+            database: source.database.into(),
+            revision: source.revision.into(),
+            generation: source.generation,
+            window: target_window.into(),
+            key: parent.key.duplicate(),
+            validity: SessionValidity::new(Some(parent.validity.clone())),
+            delegated_from: Some((source_id.into(), target_epoch, handoff_id.into())),
+        };
+        let id = random_id();
+        self.entries.insert(id.clone(), child);
+        Ok(id)
+    }
+    fn prune_revoked(&mut self) {
+        // Parent validity contains no key. Dropping a source immediately
+        // invalidates every descendant observation; this also erases their keys.
+        self.entries
+            .retain(|_, session| session.validity.is_current());
     }
     pub fn key(&mut self, id: &str, scope: &SessionScope<'_>) -> Result<DatabaseKey, String> {
         self.require_scope(id, scope)?;
@@ -143,6 +232,10 @@ impl DatabaseSessions {
             .entries
             .get(id)
             .ok_or("database is locked or its session expired")?;
+        if !session.validity.is_current() {
+            self.prune_revoked();
+            return Err("database is locked or its session expired".into());
+        }
         if session.owner != scope.owner
             || session.profile != scope.profile
             || session.database != scope.database
@@ -156,6 +249,7 @@ impl DatabaseSessions {
                 && session.window == scope.window
             {
                 self.entries.remove(id);
+                self.prune_revoked();
             }
             return Err("database unlock session is stale or belongs to another window".into());
         }
@@ -169,6 +263,7 @@ impl DatabaseSessions {
                 && s.revision == scope.revision
                 && s.window == scope.window
                 && s.generation == scope.generation
+                && s.validity.is_current()
         })
     }
     /// Window destruction drops every database key for that window, including
@@ -177,11 +272,13 @@ impl DatabaseSessions {
         self.window_epochs.remove(&(owner, window.to_owned()));
         self.entries
             .retain(|_, s| s.owner != owner || s.window != window);
+        self.prune_revoked();
     }
     pub fn lock(&mut self, owner: u64, profile: &str, database: &str, window: &str) {
         self.entries.retain(|_, s| {
             s.owner != owner || s.profile != profile || s.database != database || s.window != window
         });
+        self.prune_revoked();
     }
     /// Drop only one abandoned unlock result, never another window's lease.
     /// Revision/generation need not match: cleanup must also accept stale own
@@ -204,13 +301,20 @@ impl DatabaseSessions {
         {
             return Err("database unlock session belongs to another scope".into());
         }
-        Ok(self.entries.remove(id).is_some())
+        let released = self.entries.remove(id).is_some();
+        self.prune_revoked();
+        Ok(released)
     }
     pub fn revoke_database(&mut self, owner: u64, profile: &str, database: &str) {
         self.entries
             .retain(|_, s| s.owner != owner || s.profile != profile || s.database != database);
+        self.prune_revoked();
     }
 }
+
+#[cfg(test)]
+#[path = "database_session_delegation_tests.rs"]
+mod delegation_tests;
 
 #[cfg(test)]
 mod tests {

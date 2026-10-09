@@ -92,6 +92,7 @@ import { useDatabaseAccessSuspension } from "../../src/hooks/settings/useDatabas
 import { useGlobalEncryptionGuard } from "../../src/hooks/settings/useGlobalEncryptionGuard";
 import { useLockShortcut } from "../../src/hooks/settings/useLockShortcut";
 import { DatabaseManager } from "../../src/utils/connection/databaseManager";
+import { createDetachedDatabaseHandoff } from "../../src/utils/session/detachedDatabaseHandoff";
 
 /** Protocol → Icon mapping matching main window SessionTabs. */
 const SessionIcon: React.FC<{ protocol: string }> = ({ protocol }) => {
@@ -188,7 +189,9 @@ export const DetachedSessionContent: React.FC<{
   const { t } = useTranslation();
   const searchParams = useSearchParams();
   const sessionId = searchParams.get("sessionId");
-  const { state, dispatch } = useConnections();
+  const { state, dispatch, loadData } = useConnections();
+  const loadDataRef = useRef(loadData);
+  loadDataRef.current = loadData;
   const sessionsRef = useRef(state.sessions);
   sessionsRef.current = state.sessions;
   const authoritativeIdsRef = useRef(new Set<string>());
@@ -338,18 +341,61 @@ export const DetachedSessionContent: React.FC<{
 
   // ── Bootstrap: request sessions from main window via WindowManager ──
   // Emits WINDOW_READY → main pushes wm:sync with our assigned sessions.
-  // Falls back to localStorage after 2 seconds for backward compatibility.
+  // Persisted detached metadata carries no connection data or access authority.
   useEffect(() => {
-    if (hasLoadedRef.current || !sessionId) {
-      if (!sessionId) setError("Missing detached session id.");
+    if (!sessionId) {
+      setError("Missing detached session id.");
       return;
     }
+    hasLoadedRef.current = false;
 
     const myWindowId = getCurrentWindow().label;
+    const handoffId = generateId();
     let mounted = true;
     let fallbackTimer: ReturnType<typeof setTimeout> | null = null;
 
     let unlisten: (() => void) | null = null;
+    let hasDelegatedDatabase = false;
+    let handoffRetries = 0;
+    const requestSnapshot = async () => {
+      if (!mounted) return;
+      const cmd: WindowCommand = {
+        type: "WINDOW_READY",
+        windowId: myWindowId as any,
+        handoffId,
+      };
+      await emit("wm:command", cmd);
+    };
+    const manager = DatabaseManager.getInstance();
+    const databaseHandoff = createDetachedDatabaseHandoff({
+      adopt: (id, grant, options) =>
+        manager.adoptDelegatedDatabase(id, grant, options),
+      adoptPlain: (id, revision, options) =>
+        manager.adoptPlainDetachedDatabase(id, revision, options),
+      load: (id) => loadDataRef.current(id),
+      release: (id) => manager.releaseDetachedDatabaseAccess(id),
+      onLoaded: () => {
+        if (mounted) setError("");
+      },
+      onError: (refresh) => {
+        if (!mounted) return;
+        if (refresh) {
+          setError(
+            "This database could not refresh. Pending local edits were kept; resolve them before retrying the refresh.",
+          );
+          return;
+        }
+        setError(
+          "Unable to open this session's owning database in this window. Retry the handoff from the main window.",
+        );
+        // Retry a transient native failure with fresh source validation for
+        // this receiver lifetime, after the failed local grant was released.
+        if (handoffRetries < 2) {
+          handoffRetries++;
+          void requestSnapshot().catch(() => undefined);
+        }
+      },
+    });
 
     // This is the detached window's only lifetime wm:sync listener. The main
     // sender can complete concurrent emits out of order, so accept only a
@@ -359,6 +405,9 @@ export const DetachedSessionContent: React.FC<{
       if (
         !mounted ||
         payload.windowId !== myWindowId ||
+        (payload.handoffId !== undefined && payload.handoffId !== handoffId) ||
+        (!!(payload.databaseGrant || payload.localDatabaseOwner) &&
+          payload.handoffId !== handoffId) ||
         !Number.isSafeInteger(payload.syncRevision) ||
         payload.syncRevision <= lastAcceptedSyncRevisionRef.current
       ) {
@@ -366,6 +415,7 @@ export const DetachedSessionContent: React.FC<{
       }
       lastAcceptedSyncRevisionRef.current = payload.syncRevision;
       hasLoadedRef.current = true;
+      setError("");
       if (fallbackTimer) {
         clearTimeout(fallbackTimer);
         fallbackTimer = null;
@@ -373,6 +423,41 @@ export const DetachedSessionContent: React.FC<{
 
       const sessions = payload.sessions.map(reviveSession);
       const conns = payload.connections.map(reviveConnection);
+      // A target-window grant is useful only to a session from that exact DB.
+      // Source snapshots never confer database access on their own.
+      const grant =
+        payload.databaseGrant &&
+        sessions.some(
+          (session) =>
+            session.ownerDatabaseId === payload.databaseGrant?.databaseId,
+        )
+          ? payload.databaseGrant
+          : null;
+      const localOwner =
+        !grant &&
+        payload.localDatabaseOwner &&
+        sessions.some(
+          (session) =>
+            session.ownerDatabaseId === payload.localDatabaseOwner?.databaseId,
+        )
+          ? payload.localDatabaseOwner
+          : null;
+      if (localOwner?.kind === "legacy-password") {
+        setError(
+          "This legacy password-encrypted database needs a local unlock. Reattach to the main window, or convert it to managed database protection there and detach again. No password was transferred.",
+        );
+      }
+      const databaseBacked =
+        hasDelegatedDatabase ||
+        !!grant ||
+        !!localOwner ||
+        sessions.some((session) => !!session.ownerDatabaseId);
+      hasDelegatedDatabase ||= !!grant || !!localOwner;
+      void databaseHandoff.update(
+        grant,
+        localOwner,
+        payload.databaseContentRevision,
+      );
       const localTools =
         sessions.length === 0
           ? []
@@ -388,9 +473,12 @@ export const DetachedSessionContent: React.FC<{
       const mergedSessions = [...sessions, ...localTools];
       sessionsRef.current = mergedSessions;
 
-      dispatch({ type: "SET_CONNECTIONS", payload: conns });
+      // loadData establishes the genuine owner and the complete database. A
+      // filtered window snapshot must never replace those autosaved rows/groups.
+      if (!databaseBacked)
+        dispatch({ type: "SET_CONNECTIONS", payload: conns });
       dispatch({ type: "SET_SESSIONS", payload: mergedSessions });
-      if (payload.tabGroups)
+      if (!databaseBacked && payload.tabGroups)
         dispatch({ type: "SET_TAB_GROUPS", payload: payload.tabGroups });
       if (
         payload.activeSessionId &&
@@ -436,52 +524,32 @@ export const DetachedSessionContent: React.FC<{
       }
     })
       .then((release) => {
-        if (mounted) unlisten = release;
-        else release();
+        if (!mounted) {
+          release();
+          return;
+        }
+        unlisten = release;
+        // Tauri listener registration is asynchronous. Requesting the snapshot
+        // before it completes can lose the only initial handoff from main.
+        return requestSnapshot();
       })
-      .catch(() => {});
+      .catch(() => {
+        if (mounted)
+          setError("Unable to request the session from its owning window.");
+      });
 
-    // Request data from main
-    const cmd: WindowCommand = {
-      type: "WINDOW_READY",
-      windowId: myWindowId as any,
-    };
-    emit("wm:command", cmd).catch(() => {});
-
-    // Fallback: if main doesn't respond in 2s, try localStorage
+    // Never revive legacy plaintext snapshots: neither old rows nor opaque
+    // v2 metadata prove that the owning database is still open and unlocked.
     fallbackTimer = setTimeout(() => {
       if (!mounted || hasLoadedRef.current) return;
-      try {
-        const raw = localStorage.getItem(`detached-session-${sessionId}`);
-        if (!raw) {
-          setError("Detached session data not found.");
-          return;
-        }
-        const payload = JSON.parse(raw) as {
-          session: ConnectionSession;
-          connection?: Connection | null;
-        };
-        if (!payload.session) {
-          setError("Detached session payload is invalid.");
-          return;
-        }
-        hasLoadedRef.current = true;
-        const s = reviveSession(payload.session);
-        const c = payload.connection
-          ? reviveConnection(payload.connection)
-          : null;
-        if (c) dispatch({ type: "SET_CONNECTIONS", payload: [c] });
-        dispatch({ type: "ADD_SESSION", payload: s });
-      } catch (err) {
-        console.error("Failed to load detached session:", err);
-        setError("Unable to load detached session data.");
-      }
+      setError("Waiting for the session handoff from its owning window.");
     }, 2000);
 
     return () => {
       mounted = false;
       if (fallbackTimer) clearTimeout(fallbackTimer);
       unlisten?.();
+      void databaseHandoff.dispose();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps, react/exhaustive-deps
   }, [sessionId]);
@@ -2310,7 +2378,9 @@ const DetachedSecurityBoundary: React.FC<{ children: React.ReactNode }> = ({
       dispatch({ type: "SET_TAB_GROUPS", payload: [] });
       dispatch({ type: "CLEAR_SELECTION" });
       dispatch({ type: "SET_SESSIONS", payload: [] });
-      await DatabaseManager.getInstance().closeCurrentDatabase("lock");
+      const manager = DatabaseManager.getInstance();
+      const databaseId = manager.getCurrentDatabase()?.id;
+      if (databaseId) await manager.releaseDetachedDatabaseAccess(databaseId);
     },
     [dispatch],
   );

@@ -74,6 +74,7 @@ import { containsLikelySecretText } from "../storage/appDataJsonStore";
 import type {
   DatabaseAccessState,
   DatabaseProtectionUnlockResult,
+  DatabaseProtectionSessionGrant,
   DatabaseProtectionTarget,
   DatabaseProtectionChangeResult,
 } from "../../types/encryption/databaseProtection";
@@ -514,6 +515,9 @@ export class DatabaseManager {
   private currentPassword: string | null = null;
   private selectionGeneration = 0;
   private operationSelectionRevision = 0;
+  private readonly delegatedSessions = new Map<string, string>();
+  private readonly detachedPlainDatabases = new Set<string>();
+  private readonly pendingDelegatedDatabases = new Set<string>();
   private trustActivationRevision = 0;
   private trustActivationQueue: Promise<void> = Promise.resolve();
   private readonly unlockedDatabasePasswords = new Map<string, string>();
@@ -595,6 +599,7 @@ export class DatabaseManager {
               if (
                 typeof payload?.databaseId === "string" &&
                 (this.managedAccess.has(payload.databaseId) ||
+                  this.pendingDelegatedDatabases.has(payload.databaseId) ||
                   this.currentDatabase?.id === payload.databaseId)
               ) {
                 this.suspendManagedDatabase(payload.databaseId, "locked");
@@ -952,6 +957,7 @@ export class DatabaseManager {
   private installManagedSession(
     id: string,
     result: DatabaseProtectionUnlockResult,
+    activateTrust = !this.delegatedSessions.has(id),
   ): void {
     if (
       !result.sessionId ||
@@ -1005,13 +1011,16 @@ export class DatabaseManager {
         protectionFormat: "sorng-db",
         securityRevision,
       };
-      this.announceDatabaseChange({
-        reason: "security-change",
-        database: this.currentDatabase,
-        databaseId: id,
-        previousDatabaseId: id,
-        connectionIds: this.connectionIdsOf(result.data),
-      });
+      this.announceDatabaseChange(
+        {
+          reason: "security-change",
+          database: this.currentDatabase,
+          databaseId: id,
+          previousDatabaseId: id,
+          connectionIds: this.connectionIdsOf(result.data),
+        },
+        activateTrust,
+      );
     }
     this.emitAccess({
       databaseId: id,
@@ -1055,6 +1064,238 @@ export class DatabaseManager {
       }
       throw error;
     }
+  }
+
+  /** Source authority stays in this window. Only the new target-bound token is returned. */
+  async delegateManagedDatabaseToWindow(
+    id: string,
+    targetWindow: string,
+    handoffId: string,
+  ): Promise<DatabaseProtectionSessionGrant> {
+    const proof = this.captureOriginBrowserOwnerProof(id);
+    const grant = await databaseProtection.delegateSession(
+      id,
+      proof.sourceSessionId,
+      proof.expectedSecurityRevision,
+      targetWindow,
+      handoffId,
+    );
+    proof.assertCurrent();
+    return grant;
+  }
+
+  /** Detached windows establish their own native authority and load the full database.
+   * A wm:sync row snapshot is never proof of unlock and is never installed as database data. */
+  adoptDelegatedDatabase(
+    id: string,
+    grant: DatabaseProtectionSessionGrant,
+    options: { isCurrent: () => boolean },
+  ): Promise<void> {
+    const generation = this.selectionGeneration;
+    const transition = this.databaseTransitionQueue
+      .catch(() => undefined)
+      .then(async () => {
+        const assertCurrent = () => {
+          if (
+            this.disposed ||
+            generation !== this.selectionGeneration ||
+            !options.isCurrent()
+          )
+            throw new Error("Detached database handoff was superseded.");
+        };
+        assertCurrent();
+        if (
+          !grant?.sessionId ||
+          !grant.securityRevision ||
+          !isDatabaseSessionLive(grant.sessionExpiresAt)
+        )
+          throw new Error("Invalid detached database grant.");
+        if (
+          this.currentDatabase?.id === id &&
+          this.delegatedSessions.get(id) === grant.sessionId &&
+          this.managedSessions.get(id)?.securityRevision ===
+            grant.securityRevision &&
+          this.getDatabaseAccessState(id)?.status === "ready"
+        )
+          return;
+        if (this.currentDatabase && this.currentDatabase.id !== id)
+          throw new Error(
+            "Release the previous detached database before changing its owner.",
+          );
+        const epoch = this.captureDatabaseEpoch(id);
+        this.pendingDelegatedDatabases.add(id);
+        try {
+          await this.ensureManagedListener();
+          assertCurrent();
+          this.assertDatabaseEpoch(id, epoch);
+          const database = await this.getDatabase(id);
+          if (
+            !database ||
+            !database.isEncrypted ||
+            database.protectionFormat !== "sorng-db" ||
+            database.securityRevision !== grant.securityRevision
+          )
+            throw new Error(
+              "The detached database identity changed. Reopen it in the main window.",
+            );
+          const result = await databaseProtection.load(
+            id,
+            grant.sessionId,
+            grant.securityRevision,
+          );
+          assertCurrent();
+          this.assertDatabaseEpoch(id, epoch);
+          if (
+            result.sessionId !== grant.sessionId ||
+            result.securityRevision !== grant.securityRevision
+          )
+            throw new Error(
+              "The detached database returned a different access grant.",
+            );
+          this.installManagedSession(id, result, false);
+          this.delegatedSessions.set(id, grant.sessionId);
+          const previousDatabaseId = this.currentDatabase?.id ?? null;
+          this.operationSelectionRevision += 1;
+          this.currentDatabase = database;
+          this.currentPassword = null;
+          this.openedDatabaseIds.add(id);
+          this.announceDatabaseChange(
+            {
+              reason: "open",
+              database,
+              databaseId: id,
+              previousDatabaseId,
+              connectionIds: this.connectionIdsOf(result.data),
+            },
+            false,
+          );
+        } catch (error) {
+          // A delayed cancelled load must not revoke a grant already adopted by a newer snapshot.
+          if (this.managedSessions.get(id)?.sessionId !== grant.sessionId)
+            await databaseProtection.releaseSession(id, grant.sessionId);
+          throw error;
+        } finally {
+          this.pendingDelegatedDatabases.delete(id);
+        }
+      });
+    this.databaseTransitionQueue = transition.then(
+      () => undefined,
+      () => undefined,
+    );
+    return transition;
+  }
+
+  /** Release this window only. Reattach/close must not lock the main window's database. */
+  async releaseDetachedDatabaseAccess(id: string): Promise<void> {
+    this.selectionGeneration += 1;
+    const token = this.delegatedSessions.get(id);
+    this.delegatedSessions.delete(id);
+    const plain = this.detachedPlainDatabases.delete(id);
+    if (!token && !plain) return;
+    if (!token && this.currentDatabase?.isEncrypted) return;
+    // A manual re-unlock may have replaced the handoff while cleanup was queued.
+    // Retire only the old grant, never the replacement's local access.
+    const replacement = this.managedSessions.get(id)?.sessionId;
+    if (token && replacement && replacement !== token) {
+      await databaseProtection.releaseSession(id, token);
+      return;
+    }
+    const current = this.currentDatabase?.id === id;
+    this.suspendManagedDatabase(id, "locked");
+    if (current) {
+      this.currentDatabase = null;
+      this.currentPassword = null;
+      this.operationSelectionRevision += 1;
+      this.announceDatabaseChange(
+        {
+          reason: "close",
+          database: null,
+          databaseId: null,
+          previousDatabaseId: id,
+          connectionIds: [],
+        },
+        false,
+      );
+    }
+    if (token) await databaseProtection.releaseSession(id, token);
+  }
+
+  /** Routing metadata asks for a native local read, never an implicit password unlock. */
+  adoptPlainDetachedDatabase(
+    id: string,
+    expectedSecurityRevision: string,
+    options: { isCurrent: () => boolean },
+  ): Promise<void> {
+    const generation = this.selectionGeneration;
+    const epoch = this.captureDatabaseEpoch(id);
+    const transition = this.databaseTransitionQueue
+      .catch(() => undefined)
+      .then(async () => {
+        const assertCurrent = () => {
+          if (
+            this.disposed ||
+            generation !== this.selectionGeneration ||
+            !options.isCurrent()
+          )
+            throw new Error("Detached database handoff was superseded.");
+          this.assertDatabaseEpoch(id, epoch);
+        };
+        assertCurrent();
+        if (this.currentDatabase && this.currentDatabase.id !== id)
+          throw new Error(
+            "Release the previous detached database before changing its owner.",
+          );
+        this.pendingDelegatedDatabases.add(id);
+        try {
+          await this.ensureManagedListener();
+          const database = await this.getDatabase(id);
+          assertCurrent();
+          if (
+            !database ||
+            database.isEncrypted ||
+            database.protectionFormat ||
+            (database.securityRevision ?? "") !== expectedSecurityRevision
+          )
+            throw new Error(
+              "This database requires a local unlock. No password was transferred.",
+            );
+          // The native command rechecks both index and payload under the database
+          // transaction lock, and also enforces global encryption-at-rest access.
+          const result = await databaseProtection.loadPlain(
+            id,
+            expectedSecurityRevision,
+          );
+          assertCurrent();
+          this.detachedPlainDatabases.add(id);
+          this.managedAccess.delete(id);
+          this.credentialSecurityRevisions.set(id, expectedSecurityRevision);
+          this.latestLoadedRepresentations.set(
+            id,
+            structuredClone(result.data),
+          );
+          this.currentDatabase = database;
+          this.currentPassword = null;
+          this.openedDatabaseIds.add(id);
+          this.operationSelectionRevision += 1;
+          this.announceDatabaseChange(
+            {
+              reason: "open",
+              database,
+              databaseId: id,
+              previousDatabaseId: null,
+              connectionIds: this.connectionIdsOf(result.data),
+            },
+            false,
+          );
+        } finally {
+          this.pendingDelegatedDatabases.delete(id);
+        }
+      });
+    this.databaseTransitionQueue = transition.then(
+      () => undefined,
+      () => undefined,
+    );
+    return transition;
   }
 
   private async lockManagedDatabase(id: string): Promise<void> {
@@ -1278,13 +1519,18 @@ export class DatabaseManager {
    */
   private announceDatabaseChange(
     change: Omit<CurrentDatabaseChange, "trustActivation">,
+    activateTrust = true,
   ): void {
     // Only events about the *active* database move the trust scope. Creating,
     // unlocking, locking or deleting some other database leaves the Trust
     // Center pointed exactly where it was.
     const activeId = change.database?.id ?? null;
+    // Detached adoption/release changes only this JS window. The native active
+    // Trust Center is process-wide and must remain under the main window's
+    // control. Browser trust uses its explicit owning database; legacy reads
+    // still carry expectedDatabaseId and fail closed if that scope differs.
     const trustActivation =
-      change.databaseId === activeId
+      activateTrust && change.databaseId === activeId
         ? this.syncActiveTrustDatabase(activeId, change.connectionIds)
         : Promise.resolve();
     emitCurrentDatabaseChange({ ...change, trustActivation });
@@ -3179,7 +3425,12 @@ export class DatabaseManager {
     }
 
     const invoke = await getInvoke();
-    if (invoke) {
+    if (this.detachedPlainDatabases.has(collectionId)) {
+      // Every detached plain refresh revalidates native protection, not only
+      // initial adoption. A concurrent rekey can never fall back to plaintext.
+      stored = (await databaseProtection.loadPlain(collectionId, revision))
+        .data;
+    } else if (invoke) {
       // Primary path: read via the P1 safe reader. The envelope tells
       // us whether the value came off `.bak`/`.v0.bak` — surface that
       // through the action log so the user knows the recovery ladder

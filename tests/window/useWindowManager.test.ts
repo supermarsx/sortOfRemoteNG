@@ -1,5 +1,11 @@
 import { describe, it, expect, beforeEach, vi, Mock } from "vitest";
 import { renderHook, act, waitFor } from "@testing-library/react";
+import { createElement, type ReactNode } from "react";
+import {
+  ConnectionContext,
+  type ConnectionContextType,
+  type DatabaseAvailability,
+} from "../../src/contexts/ConnectionContextTypes";
 import {
   createWindowSyncRevisionClock,
   useWindowManager,
@@ -13,6 +19,8 @@ import {
   sessionManagerNavigation,
 } from "../../src/components/app/toolSession";
 import { mergeLocalSessionUpdate } from "../../src/utils/session/sessionLifecycle";
+import { DatabaseManager } from "../../src/utils/connection/databaseManager";
+import type { ConnectionSession } from "../../src/types/connection/connection";
 
 // ── Mocks ──────────────────────────────────────────────────────────
 
@@ -513,6 +521,353 @@ describe("useWindowManager", () => {
       result.current.registry.current.windows.has("detached-z" as any),
     ).toBe(true);
   });
+
+  it.each([false, true])(
+    "routes an unmanaged database locally without a delegated password (encrypted=%s)",
+    async (encrypted) => {
+      const manager = DatabaseManager.getInstance();
+      const current = vi.spyOn(manager, "getCurrentDatabase").mockReturnValue({
+        id: "database-a",
+        isEncrypted: encrypted,
+        securityRevision: "plain-r1",
+      } as any);
+      const delegate = vi.spyOn(manager, "delegateManagedDatabaseToWindow");
+      const connections = [makeConnection("conn-owned")];
+      const view = renderHook(
+        () =>
+          useWindowManager({
+            sessions: [makeSession("owned", { ownerDatabaseId: "database-a" })],
+            connections,
+            tabGroups: [],
+            dispatch: vi.fn(),
+            setActiveSessionId: vi.fn(),
+            handleSessionClose: vi.fn(),
+          } as any),
+        {
+          wrapper: ({ children }: { children: ReactNode }) =>
+            createElement(
+              ConnectionContext.Provider,
+              {
+                value: {
+                  databaseAvailability: {
+                    status: "ready",
+                    databaseId: "database-a",
+                    generation: 1,
+                  },
+                } as ConnectionContextType,
+              },
+              children,
+            ),
+        },
+      );
+      try {
+        act(() =>
+          view.result.current.registerWindow("detached-owned", ["owned"]),
+        );
+        view.result.current.registry.current.windows.get(
+          "detached-owned",
+        )!.handoffId = "plain-receiver";
+        await act(async () => view.result.current.syncWindow("detached-owned"));
+        expect(delegate).not.toHaveBeenCalled();
+        expect(mockEmitTo).toHaveBeenLastCalledWith(
+          "detached-owned",
+          "wm:sync",
+          expect.objectContaining({
+            connections: [],
+            databaseGrant: null,
+            localDatabaseOwner: {
+              databaseId: "database-a",
+              securityRevision: "plain-r1",
+              kind: encrypted ? "legacy-password" : "plain",
+            },
+          }),
+        );
+      } finally {
+        view.unmount();
+        current.mockRestore();
+        delegate.mockRestore();
+      }
+    },
+  );
+
+  it("revokes an idle detached snapshot when its owner locks or the database changes", async () => {
+    const grant = {
+      sessionId: "target-token",
+      securityRevision: "revision",
+      sessionExpiresAt: null,
+    };
+    const delegate = vi
+      .spyOn(DatabaseManager.getInstance(), "delegateManagedDatabaseToWindow")
+      .mockResolvedValue(grant);
+    let availability: DatabaseAvailability = {
+      status: "ready",
+      databaseId: "database-a",
+      generation: 1,
+    };
+    const sessions: ConnectionSession[] = [
+      makeSession("owned", { ownerDatabaseId: "database-a" }),
+    ];
+    const connections = [makeConnection("conn-owned")];
+    const props = {
+      sessions,
+      connections,
+      tabGroups: [],
+      dispatch: vi.fn(),
+      setActiveSessionId: vi.fn(),
+      handleSessionClose: vi.fn(),
+    };
+    const view = renderHook((current) => useWindowManager(current as any), {
+      initialProps: props,
+      wrapper: ({ children }: { children: ReactNode }) =>
+        createElement(
+          ConnectionContext.Provider,
+          {
+            value: {
+              databaseAvailability: availability,
+            } as ConnectionContextType,
+          },
+          children,
+        ),
+    });
+    act(() => view.result.current.registerWindow("detached-owned", ["owned"]));
+    await act(async () => view.result.current.syncWindow("detached-owned"));
+    expect(delegate).not.toHaveBeenCalled();
+    expect(mockEmitTo).toHaveBeenLastCalledWith(
+      "detached-owned",
+      "wm:sync",
+      expect.objectContaining({ databaseGrant: null, connections: [] }),
+    );
+    view.result.current.registry.current.windows.get(
+      "detached-owned",
+    )!.handoffId = "receiver-1";
+    await act(async () => view.result.current.syncWindow("detached-owned"));
+    expect(delegate).toHaveBeenCalledWith(
+      "database-a",
+      "detached-owned",
+      "receiver-1",
+    );
+    expect(mockEmitTo).toHaveBeenLastCalledWith(
+      "detached-owned",
+      "wm:sync",
+      expect.objectContaining({
+        connections,
+        databaseGrant: { databaseId: "database-a", ...grant },
+      }),
+    );
+    await act(async () => {
+      await Promise.all([
+        view.result.current.syncWindow("detached-owned"),
+        view.result.current.syncWindow("detached-owned"),
+      ]);
+    });
+    expect(delegate).toHaveBeenCalledOnce();
+    const initialContentRevision =
+      mockEmitTo.mock.calls[mockEmitTo.mock.calls.length - 1][2]
+        .databaseContentRevision;
+    await act(async () => {
+      window.dispatchEvent(
+        new CustomEvent("sorng-database-data-saved", {
+          detail: { databaseId: "database-b" },
+        }),
+      );
+      await view.result.current.syncWindow("detached-owned");
+    });
+    expect(
+      mockEmitTo.mock.calls[mockEmitTo.mock.calls.length - 1][2]
+        .databaseContentRevision,
+    ).toEqual(initialContentRevision);
+    await act(async () => {
+      window.dispatchEvent(
+        new CustomEvent("sorng-database-data-saved", {
+          detail: { databaseId: "database-a" },
+        }),
+      );
+    });
+    const committedRevision =
+      mockEmitTo.mock.calls[mockEmitTo.mock.calls.length - 1][2]
+        .databaseContentRevision;
+    expect(committedRevision.databaseId).toBe("database-a");
+    expect(committedRevision.revision).toBeGreaterThan(
+      initialContentRevision.revision,
+    );
+    view.rerender({
+      ...props,
+      sessions: [{ ...sessions[0], lastActivity: new Date() }],
+    });
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(delegate).toHaveBeenCalledOnce();
+    expect(
+      mockEmitTo.mock.calls[mockEmitTo.mock.calls.length - 1][2]
+        .databaseContentRevision,
+    ).toEqual(committedRevision);
+    await act(async () => {
+      mockWindowListeners.get("wm:command")!({
+        payload: {
+          type: "WINDOW_READY",
+          windowId: "detached-owned",
+          handoffId: "receiver-1",
+        },
+      });
+    });
+    expect(delegate).toHaveBeenCalledTimes(2);
+    for (const next of [
+      { status: "suspended", databaseId: "database-a", generation: 2 },
+      { status: "ready", databaseId: "database-b", generation: 3 },
+    ] as const) {
+      mockEmitTo.mockClear();
+      availability = next;
+      view.rerender(props);
+      await waitFor(() => expect(mockEmitTo).toHaveBeenCalledOnce());
+      expect(mockEmitTo).toHaveBeenLastCalledWith(
+        "detached-owned",
+        "wm:sync",
+        expect.objectContaining({
+          sessions,
+          connections: [],
+          databaseGrant: null,
+        }),
+      );
+    }
+    mockEmitTo.mockClear();
+    availability = { status: "ready", databaseId: "database-a", generation: 4 };
+    view.rerender(props);
+    await waitFor(() => expect(mockEmitTo).toHaveBeenCalledOnce());
+    expect(mockEmitTo).toHaveBeenLastCalledWith(
+      "detached-owned",
+      "wm:sync",
+      expect.objectContaining({ connections }),
+    );
+    mockEmitTo.mockClear();
+    const updated = [{ ...connections[0], name: "Updated owner row" }];
+    view.rerender({ ...props, connections: updated });
+    await waitFor(() => expect(mockEmitTo).toHaveBeenCalledOnce());
+    expect(mockEmitTo).toHaveBeenLastCalledWith(
+      "detached-owned",
+      "wm:sync",
+      expect.objectContaining({ connections: updated }),
+    );
+    expect(delegate).toHaveBeenCalledTimes(3);
+    view.rerender({ ...props, sessions: [] });
+    await act(async () => {
+      await view.result.current.syncWindow("detached-owned");
+    });
+    view.rerender(props);
+    await waitFor(() => expect(delegate).toHaveBeenCalledTimes(4));
+    delegate.mockRestore();
+  });
+
+  it.each(["lock", "new receiver"])(
+    "does not publish a delegated grant that completes after %s",
+    async (change) => {
+      let resolveGrant!: (grant: {
+        sessionId: string;
+        securityRevision: string;
+        sessionExpiresAt: null;
+      }) => void;
+      const delegate = vi
+        .spyOn(DatabaseManager.getInstance(), "delegateManagedDatabaseToWindow")
+        .mockResolvedValue({
+          sessionId: "new-target-token",
+          securityRevision: "revision-a",
+          sessionExpiresAt: null,
+        })
+        .mockReturnValueOnce(
+          new Promise((resolve) => {
+            resolveGrant = resolve;
+          }),
+        );
+      let availability: DatabaseAvailability = {
+        status: "ready",
+        databaseId: "database-a",
+        generation: 1,
+      };
+      const props = {
+        sessions: [makeSession("owned", { ownerDatabaseId: "database-a" })],
+        connections: [makeConnection("conn-owned")],
+        tabGroups: [],
+        dispatch: vi.fn(),
+        setActiveSessionId: vi.fn(),
+        handleSessionClose: vi.fn(),
+      };
+      const view = renderHook((current) => useWindowManager(current as any), {
+        initialProps: props,
+        wrapper: ({ children }: { children: ReactNode }) =>
+          createElement(
+            ConnectionContext.Provider,
+            {
+              value: {
+                databaseAvailability: availability,
+              } as ConnectionContextType,
+            },
+            children,
+          ),
+      });
+      try {
+        act(() =>
+          view.result.current.registerWindow("detached-owned", ["owned"]),
+        );
+        view.result.current.registry.current.windows.get(
+          "detached-owned",
+        )!.handoffId = "receiver-1";
+        await waitFor(() =>
+          expect(mockWindowListeners.get("wm:command")).toBeTypeOf("function"),
+        );
+        const oldSync = view.result.current.syncWindow("detached-owned");
+        const concurrentSync = view.result.current.syncWindow("detached-owned");
+        expect(delegate).toHaveBeenCalledOnce();
+        if (change === "lock") {
+          availability = {
+            ...availability,
+            status: "suspended",
+            generation: 2,
+          };
+          view.rerender(props);
+        } else {
+          await act(async () => {
+            mockWindowListeners.get("wm:command")!({
+              payload: {
+                type: "WINDOW_READY",
+                windowId: "detached-owned",
+                handoffId: "receiver-2",
+              },
+            });
+          });
+        }
+        await waitFor(() => expect(mockEmitTo).toHaveBeenCalledOnce());
+        const lockSnapshot = mockEmitTo.mock.calls[0][2];
+        if (change === "lock") expect(lockSnapshot.databaseGrant).toBeNull();
+        else {
+          expect(lockSnapshot.handoffId).toBe("receiver-2");
+          expect(lockSnapshot.databaseGrant.sessionId).toBe("new-target-token");
+          expect(delegate).toHaveBeenLastCalledWith(
+            "database-a",
+            "detached-owned",
+            "receiver-2",
+          );
+        }
+        await act(async () => {
+          resolveGrant({
+            sessionId: "late-target-token",
+            securityRevision: "revision-a",
+            sessionExpiresAt: null,
+          });
+          await Promise.all([oldSync, concurrentSync]);
+        });
+        const lateSnapshot = mockEmitTo.mock.calls[1][2];
+        expect(lateSnapshot.syncRevision).toBeLessThan(
+          lockSnapshot.syncRevision,
+        );
+        expect(lateSnapshot.databaseGrant).toBeNull();
+        expect(lateSnapshot.handoffId).toBe("receiver-1");
+        expect(lateSnapshot.connections).toEqual([]);
+      } finally {
+        view.unmount();
+        delegate.mockRestore();
+      }
+    },
+  );
 
   it("emits sender-owned sync revisions monotonically across manager remounts", async () => {
     const firstManager = renderWindowManager();

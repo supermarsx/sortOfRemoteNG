@@ -24,7 +24,13 @@ import {
   Connection,
   TabGroup,
 } from "../../types/connection/connection";
-import { ConnectionAction } from "../../contexts/ConnectionContextTypes";
+import {
+  ConnectionAction,
+  ConnectionContext,
+  type DatabaseAvailability,
+} from "../../contexts/ConnectionContextTypes";
+import { selectDetachedSessionConnections } from "../../utils/session/detachedSessionConnections";
+import { DatabaseManager } from "../../utils/connection/databaseManager";
 import {
   WindowId,
   WindowEntry,
@@ -153,7 +159,22 @@ export function useWindowManager({
   handleSessionClose,
   handleSessionDetach,
 }: UseWindowManagerParams) {
+  const databaseAvailability =
+    useContext(ConnectionContext)?.databaseAvailability;
+  const databaseAvailabilityRef = useRef(databaseAvailability);
+  databaseAvailabilityRef.current = databaseAvailability;
+  const delegatedGrantsRef = useRef(
+    new Map<
+      WindowId,
+      {
+        availability: DatabaseAvailability;
+        handoffId: string;
+        pending: ReturnType<DatabaseManager["delegateManagedDatabaseToWindow"]>;
+      }
+    >(),
+  );
   const sessionsRef = useRef(sessions);
+  const contentRevisionsRef = useRef(new Map<string, number>());
   sessionsRef.current = sessions;
   const connectionsRef = useRef(connections);
   connectionsRef.current = connections;
@@ -218,15 +239,20 @@ export function useWindowManager({
   const syncWindow = useCallback(async (windowId: WindowId) => {
     if (windowId === "main") return;
     const entry = registry.current.windows.get(windowId);
-    if (!entry) return;
+    if (!entry) {
+      delegatedGrantsRef.current.delete(windowId);
+      return;
+    }
+    const handoffId = entry.handoffId;
 
     const windowSessions = entry.sessionIds
       .map((id) => sessionsRef.current.find((s) => s.id === id))
       .filter(Boolean) as ConnectionSession[];
 
-    const neededConnIds = new Set(windowSessions.map((s) => s.connectionId));
-    const windowConns = connectionsRef.current.filter((c) =>
-      neededConnIds.has(c.id),
+    const windowConns = selectDetachedSessionConnections(
+      windowSessions,
+      connectionsRef.current,
+      databaseAvailabilityRef.current,
     );
 
     // Include tab groups that are relevant to this window's sessions
@@ -238,11 +264,98 @@ export function useWindowManager({
     );
 
     try {
+      // Reserve ordering before native delegation yields; an old completion
+      // must never outrank a newer lock, database switch or session move.
+      const syncRevision = nextWindowSyncRevision();
+      const availability = databaseAvailabilityRef.current;
+      let databaseGrant: WindowSessionSync["databaseGrant"] = null;
+      let localDatabaseOwner: WindowSessionSync["localDatabaseOwner"] = null;
+      if (
+        availability?.databaseId &&
+        !contentRevisionsRef.current.has(availability.databaseId)
+      ) {
+        // A remounted main sender must invalidate the old receiver's content
+        // hint even if native delegation returns the same live grant.
+        contentRevisionsRef.current.set(
+          availability.databaseId,
+          nextWindowSyncRevision(),
+        );
+      }
+      const databaseContentRevision = availability?.databaseId
+        ? {
+            databaseId: availability.databaseId,
+            revision:
+              contentRevisionsRef.current.get(availability.databaseId) ?? 0,
+          }
+        : undefined;
+      if (
+        handoffId &&
+        windowConns.length &&
+        availability?.status === "ready" &&
+        availability.databaseId
+      ) {
+        const database = DatabaseManager.getInstance().getCurrentDatabase();
+        if (
+          database?.id === availability.databaseId &&
+          !database.protectionFormat
+        ) {
+          localDatabaseOwner = {
+            databaseId: database.id,
+            securityRevision: database.securityRevision ?? "",
+            kind: database.isEncrypted ? "legacy-password" : "plain",
+          };
+          delegatedGrantsRef.current.delete(windowId);
+        } else {
+          try {
+            let cached = delegatedGrantsRef.current.get(windowId);
+            if (
+              !cached ||
+              cached.availability !== availability ||
+              cached.handoffId !== handoffId
+            ) {
+              cached = {
+                availability,
+                handoffId,
+                pending:
+                  DatabaseManager.getInstance().delegateManagedDatabaseToWindow(
+                    availability.databaseId,
+                    windowId,
+                    handoffId,
+                  ),
+              };
+              delegatedGrantsRef.current.set(windowId, cached);
+            }
+            let grant;
+            try {
+              grant = await cached.pending;
+            } catch (error) {
+              if (delegatedGrantsRef.current.get(windowId) === cached)
+                delegatedGrantsRef.current.delete(windowId);
+              throw error;
+            }
+            if (
+              databaseAvailabilityRef.current === availability &&
+              registry.current.windows.get(windowId) === entry &&
+              entry.handoffId === handoffId &&
+              delegatedGrantsRef.current.get(windowId) === cached
+            )
+              databaseGrant = { databaseId: availability.databaseId, ...grant };
+          } catch {
+            // No substitute grant or source token is sent on a raced lock/close.
+          }
+        }
+      } else delegatedGrantsRef.current.delete(windowId);
       const payload: WindowSessionSync = {
         windowId,
-        syncRevision: nextWindowSyncRevision(),
+        handoffId,
+        syncRevision,
         sessions: windowSessions,
-        connections: windowConns,
+        // Plain owners are loaded in full from native storage in the receiver;
+        // never send their credential-bearing rows as handoff metadata.
+        connections: databaseGrant ? windowConns : [],
+        databaseGrant,
+        localDatabaseOwner,
+        databaseContentRevision,
         tabGroups: windowTabGroups,
         activeSessionId: entry.activeSessionId,
       };
@@ -252,6 +365,28 @@ export function useWindowManager({
       // emit failures are also expected when the target window has closed.
     }
   }, []);
+
+  // Connection renders can precede the actual save. Only successful commits
+  // advance this hint; transient transport/status syncs must not reload data.
+  useEffect(() => {
+    const saved = (event: Event) => {
+      const databaseId = (event as CustomEvent<{ databaseId?: string }>).detail
+        ?.databaseId;
+      const availability = databaseAvailabilityRef.current;
+      if (
+        !databaseId ||
+        availability?.status !== "ready" ||
+        availability.databaseId !== databaseId
+      )
+        return;
+      contentRevisionsRef.current.set(databaseId, nextWindowSyncRevision());
+      for (const windowId of registry.current.windows.keys()) {
+        if (windowId !== "main") void syncWindow(windowId);
+      }
+    };
+    window.addEventListener("sorng-database-data-saved", saved);
+    return () => window.removeEventListener("sorng-database-data-saved", saved);
+  }, [syncWindow]);
 
   const releaseClosedSessionOwnership = useCallback(
     async (sessionId: string, requestedSource?: WindowId) => {
@@ -287,9 +422,16 @@ export function useWindowManager({
   // ── Sync detached windows when their sessions change ───────────────
 
   const prevSessionsRef = useRef(sessions);
+  const prevConnectionsRef = useRef(connections);
+  const prevAvailabilityRef = useRef(databaseAvailability);
   useEffect(() => {
     const prev = prevSessionsRef.current;
     prevSessionsRef.current = sessions;
+    const sourceChanged =
+      prevConnectionsRef.current !== connections ||
+      prevAvailabilityRef.current !== databaseAvailability;
+    prevConnectionsRef.current = connections;
+    prevAvailabilityRef.current = databaseAvailability;
 
     for (const [windowId, entry] of registry.current.windows) {
       if (windowId === "main") continue;
@@ -298,9 +440,9 @@ export function useWindowManager({
         const c = sessions.find((s) => s.id === id);
         return p !== c;
       });
-      if (changed) syncWindow(windowId);
+      if (changed || sourceChanged) syncWindow(windowId);
     }
-  }, [sessions, syncWindow]);
+  }, [sessions, connections, databaseAvailability, syncWindow]);
 
   // ── Register a new detached window in the registry ─────────────────
 
@@ -444,6 +586,7 @@ export function useWindowManager({
           const win = windows.find((w) => w.label === currentOwner);
           if (win) await win.close();
           registry.current.windows.delete(currentOwner);
+          delegatedGrantsRef.current.delete(currentOwner);
         } catch {
           /* ignore */
         }
@@ -524,6 +667,7 @@ export function useWindowManager({
               )
               .catch(() => {});
             registry.current.windows.delete(currentOwner);
+            delegatedGrantsRef.current.delete(currentOwner);
           }
         }
       }
@@ -605,6 +749,7 @@ export function useWindowManager({
         handleReattachSession(sid);
       }
       registry.current.windows.delete(windowId);
+      delegatedGrantsRef.current.delete(windowId);
     },
     [handleReattachSession],
   );
@@ -612,9 +757,21 @@ export function useWindowManager({
   const handleCommand = useCallback(
     async (cmd: WindowCommand) => {
       switch (cmd.type) {
-        case "WINDOW_READY":
+        case "WINDOW_READY": {
+          const entry = registry.current.windows.get(cmd.windowId);
+          if (!entry) break;
+          if (
+            cmd.handoffId !== undefined &&
+            (typeof cmd.handoffId !== "string" ||
+              !/^[A-Za-z0-9._:-]{1,256}$/.test(cmd.handoffId))
+          )
+            break;
+          entry.handoffId = cmd.handoffId;
+          // Retry may follow a receiver-side release of a failed grant.
+          delegatedGrantsRef.current.delete(cmd.windowId);
           syncWindow(cmd.windowId);
           break;
+        }
         case "MOVE_SESSION":
           if (
             (registry.current.sessionOwnership.get(cmd.sessionId) ?? "main") !==
@@ -924,6 +1081,7 @@ export function useWindowManager({
               handleReattachSession(sid);
             }
             registry.current.windows.delete(windowId);
+            delegatedGrantsRef.current.delete(windowId);
           }
         }
       } catch {
