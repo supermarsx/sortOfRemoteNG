@@ -1214,11 +1214,14 @@ async fn create_document(
     let preparing_lease = authorized.lease.clone();
     let owner_setup = flow::RevokeOnDrop::new(move || preparing_lease.revoke());
     ensure_runtime(&window, state, &authorized.lease, None, &timing, &document).await?;
-    authorized
-        .lease
-        .recheck(&window, state)
-        .await
-        .map_err(|_| STALE.to_owned())?;
+    // ensure_runtime returns only after a fresh disk-backed owner recheck,
+    // including its already-warm path. No await separates that proof from
+    // this handoff: avoid reading/decrypting the same database a second time.
+    // Still catch synchronous revocation; later asynchronous preparation keeps
+    // its own full rechecks before proxy, context and initial navigation.
+    if !document.current() || !authorized.lease.is_current() {
+        return Err(STALE.to_owned());
+    }
     timing.mark(TimingStage::InitialOwnerChecked);
     let identity = authorized.policy.identity().clone();
     let retention_policy: RetentionPolicy =
