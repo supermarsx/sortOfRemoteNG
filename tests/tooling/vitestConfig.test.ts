@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { availableParallelism } from "node:os";
+import { readFileSync } from "node:fs";
 import vitestConfig, {
   NODE_TEST_SUITE_EXCLUDES,
   resolveTestWorkerCount,
@@ -35,7 +36,7 @@ describe("ordinary Vitest discovery", () => {
     );
   });
 
-  it("leaves dedicated Node test suites to their package scripts", () => {
+  it("leaves dedicated Node test suites to their own runners", () => {
     const config = vitestConfig as {
       test?: { exclude?: readonly string[] };
     };
@@ -45,9 +46,32 @@ describe("ordinary Vitest discovery", () => {
       "tests/e2e-http-fixtures/**/*.mjs",
       "tests/release/**/*.mjs",
       "tests/versioning/**/*.mjs",
+      "tests/protocol/nativeAppearanceClient.test.mjs",
+      "tests/protocol/nativeLoginClient.test.mjs",
+      "tests/protocol/nativeLoginKeyboard.test.mjs",
+      "tests/protocol/nativeTotpClient.test.mjs",
     ]);
     expect(config.test?.exclude).toEqual(
       expect.arrayContaining([...NODE_TEST_SUITE_EXCLUDES]),
     );
+  });
+  it("executes every excluded native browser suite with Node in the transport matrix", () => {
+    const workflow = readFileSync(".github/workflows/ci.yml", "utf8").replace(
+      /\r\n/g,
+      "\n",
+    );
+    const testJob = workflow
+      .split("\n  browser-transport-contracts:\n")[1]
+      ?.split(/\n {2}[a-z][\w-]*:\n/)[0];
+    const nodeCommand = testJob
+      ?.split(/\r?\n/)
+      .find((line) => line.includes("run: node --test"));
+    expect(nodeCommand).toBeDefined();
+    for (const file of NODE_TEST_SUITE_EXCLUDES.filter((path) =>
+      path.startsWith("tests/protocol/"),
+    )) {
+      expect(nodeCommand).toContain(file);
+      expect(readFileSync(file, "utf8")).toContain('from "node:test"');
+    }
   });
 });

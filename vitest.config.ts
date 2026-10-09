@@ -12,8 +12,8 @@ export function resolveTestWorkerCount(parallelism = availableParallelism()) {
 }
 
 /**
- * These suites use Node's built-in test runner and have dedicated package
- * scripts. Keeping them out of Vitest prevents duplicate discovery and the
+ * These suites use Node's built-in test runner via package scripts or explicit
+ * CI steps. Keeping them out of Vitest prevents duplicate discovery and the
  * misleading "No test suite found" errors produced by node:test modules in a
  * jsdom worker.
  */
@@ -22,6 +22,10 @@ export const NODE_TEST_SUITE_EXCLUDES = [
   "tests/e2e-http-fixtures/**/*.mjs",
   "tests/release/**/*.mjs",
   "tests/versioning/**/*.mjs",
+  "tests/protocol/nativeAppearanceClient.test.mjs",
+  "tests/protocol/nativeLoginClient.test.mjs",
+  "tests/protocol/nativeLoginKeyboard.test.mjs",
+  "tests/protocol/nativeTotpClient.test.mjs",
 ] as const;
 
 export default defineConfig({

@@ -499,6 +499,8 @@ jobs:
         with:
           workspaces: src-tauri
           shared-key: browser-transport-contracts
+      - name: Native browser JavaScript contracts (Node runner)
+        run: node --test tests/protocol/nativeAppearanceClient.test.mjs tests/protocol/nativeLoginClient.test.mjs tests/protocol/nativeLoginKeyboard.test.mjs tests/protocol/nativeTotpClient.test.mjs
       - name: Deterministic browser and native transport contracts
         run: npm run browser:readiness -- --native --report .artifacts/browser-readiness-${{ runner.os }}.json
       - name: Real-origin host lifecycle and permission contracts
