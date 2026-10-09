@@ -19,8 +19,22 @@ describe("native command inventory", () => {
         "utf8",
       )
       .split("#[tauri::command]")[0];
-    const commands = extractNativeCommandNames(handler);
+    const startup = fs.readFileSync(
+      path.join(root, "src-tauri/src/origin_browser_commands.rs"),
+      "utf8",
+    );
+    const commands = new Set([
+      ...extractNativeCommandNames(handler),
+      ...extractNativeCommandNames(startup),
+    ]);
+    expect(handler).toContain(
+      "if crate::origin_browser_commands::is_startup_command(command)",
+    );
+    expect(handler).toContain(
+      "return crate::origin_browser_commands::dispatch_startup(invoke)",
+    );
     for (const command of [
+      "origin_browser_create",
       "origin_browser_prewarm",
       "origin_browser_cancel_prewarm",
       "origin_browser_downloads",
@@ -34,6 +48,41 @@ describe("native command inventory", () => {
       expect(commands.has(command)).toBe(true);
       expect(router).toContain(`"${command}"`);
     }
+  });
+  it("counts hand-written startup routes only with real awaited implementations", () => {
+    const source = `
+      fn dispatch_startup(invoke: tauri::ipc::Invoke) -> bool {
+        let name = match message.command() {
+          "startup_real" => "startup_real",
+          "startup_missing" => "startup_missing",
+          "startup_unawaited" => "startup_unawaited",
+          _ => return false,
+        };
+        // resolver.respond_async(async move { startup_missing().await });
+        let decoy = "resolver.respond_async(async move { startup_missing().await });";
+        resolver.respond_async(async move { startup_real(window, request).await });
+        resolver.respond_async(async move { startup_unawaited(window, request) });
+        true
+      }
+      async fn startup_real() {}
+      async fn startup_missing() {}
+      async fn startup_unawaited() {}
+      fn is_command(command: &str) -> bool { matches!(command, "not_dispatched") }
+    `;
+    expect([...extractNativeCommandNames(source)]).toEqual(["startup_real"]);
+    expect([
+      ...extractNativeCommandNames(
+        source.replace(
+          "startup_real(window, request).await",
+          "startup_missing(window, request).await",
+        ),
+      ),
+    ]).toEqual(["startup_missing"]);
+    expect([
+      ...extractNativeCommandNames(
+        source.replace("async fn startup_real() {}", ""),
+      ),
+    ]).toEqual([]);
   });
   it("forwards every runtime capability feature from the application to core", () => {
     const root = path.resolve(__dirname, "../..");

@@ -75,13 +75,54 @@ export function extractNativeCommandNames(input: string): Set<string> {
       commandPaths(list).forEach((name) => names.add(name));
     }
   }
+  // Startup commands capture the issuing document synchronously, so they use
+  // a hand-written dispatcher instead of Tauri's generated async wrapper.
+  // Require the executable command match AND an awaited implementation inside
+  // respond_async; an is_command string or an unused function is not evidence.
+  for (const entry of searchable.matchAll(
+    /\bfn\s+dispatch_startup\([^)]*\)\s*->\s*bool\s*\{/g,
+  )) {
+    const body = balanced(
+      source,
+      entry.index! + entry[0].lastIndexOf("{"),
+    ).body;
+    const code = body.replace(/"(?:\\.|[^"\\])*"/g, (token) =>
+      " ".repeat(token.length),
+    );
+    const dispatch = /match\s+message\.command\(\)\s*\{/.exec(code);
+    if (!dispatch) continue;
+    const routes = balanced(
+      body,
+      dispatch.index + dispatch[0].lastIndexOf("{"),
+    ).body;
+    const implementations = new Set<string>();
+    for (const response of code.matchAll(
+      /resolver\.respond_async\(async\s+move\s*\{/g,
+    )) {
+      const task = balanced(
+        code,
+        response.index! + response[0].lastIndexOf("{"),
+      ).body;
+      for (const call of task.matchAll(/\b([a-z_]\w*)\s*\(/g)) {
+        const args = balanced(task, call.index! + call[0].lastIndexOf("("));
+        if (/^\s*\.await\b/.test(task.slice(args.end)))
+          implementations.add(call[1]);
+      }
+    }
+    for (const route of routes.matchAll(/"([a-z_]\w*)"\s*=>\s*"\1"/g)) {
+      if (
+        implementations.has(route[1]) &&
+        new RegExp(`\\basync\\s+fn\\s+${route[1]}\\s*\\(`).test(searchable)
+      )
+        names.add(route[1]);
+    }
+  }
   return names;
 }
 
 /** Handler files reachable from native command crate module declarations. */
 export function reachableNativeHandlers(root: string): string[] {
   const router = path.join(root, "src-tauri/src/invoke_handler.rs");
-  const source = fs.readFileSync(router, "utf8");
   const files = new Set<string>([router]);
   const visited = new Set<string>();
   const visit = (file: string) => {
@@ -89,6 +130,13 @@ export function reachableNativeHandlers(root: string): string[] {
     visited.add(file);
     const text = withoutComments(fs.readFileSync(file, "utf8"));
     if (/handler\.rs$/.test(file)) files.add(file);
+    for (const call of text.matchAll(
+      /return\s+crate::(\w+)::dispatch_startup\(invoke\)/g,
+    )) {
+      const dispatcher = path.join(root, "src-tauri/src", `${call[1]}.rs`);
+      files.add(dispatcher);
+      visit(dispatcher);
+    }
     // Facades may route to separately compiled command crates. Follow actual
     // builder calls, not every Cargo dependency or stale source directory.
     for (const match of text.matchAll(/(sorng_commands_\w+)::build\(/g)) {
@@ -113,15 +161,6 @@ export function reachableNativeHandlers(root: string): string[] {
       if (next.includes(`${path.sep}sorng-commands-`)) visit(next);
     }
   };
-  for (const match of source.matchAll(/(sorng_commands_\w+)::build\(/g)) {
-    visit(
-      path.join(
-        root,
-        "src-tauri/crates",
-        match[1].replace(/_/g, "-"),
-        "src/lib.rs",
-      ),
-    );
-  }
+  visit(router);
   return [...files].sort();
 }
