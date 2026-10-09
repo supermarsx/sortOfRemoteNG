@@ -246,15 +246,68 @@ fn production_renderer_fault_revokes_before_owner_window_terminal_publication() 
         sink.find("self.attempt.revoke();").unwrap()
             < sink.find("display::publish_with_reason(").unwrap()
     );
-    for name in ["Renderer", "Session", "Callback", "NativeSurface", "Load"] {
+    for name in ["Renderer", "Callback", "NativeSurface", "Load"] {
         assert!(sink.contains(&format!(
             "Some(BrowserFault::{name}) => Some(OriginBrowserFailureReason::{name})"
         )));
     }
+    assert!(sink.contains("Some(BrowserFault::Session) => Some(match self.attempt.session.try_lock()"));
+    assert!(sink.contains("session.failure_reason().map(Into::into)"));
     assert!(sink.contains("None => None"));
     assert!(sink.contains("|| self.attempt.current()"));
     assert!(sink.contains("self.window.emit(ORIGIN_BROWSER_STATE_EVENT, next)"));
     assert!(!sink.contains("emit_all("));
+}
+
+#[test]
+fn session_failure_causes_survive_terminal_publication_without_private_data_or_access() {
+    use sorng_protocols::origin_browser::BrowserSessionFailure as Reason;
+    for (reason, expected) in [
+        (Reason::DatabaseOwner, "database-owner"),
+        (Reason::Watchdog, "watchdog"),
+        (Reason::PrivateContext, "private-context"),
+        (Reason::PrivateProxy, "private-proxy"),
+        (Reason::NativeState, "native-state"),
+        (Reason::CertificateBridge, "certificate-bridge"),
+        (Reason::RuntimeUnavailable, "runtime-unavailable"),
+        (Reason::OwnerWindow, "owner-window"),
+    ] {
+        let identity = identity();
+        let snapshot = retained(&identity);
+        assert_eq!(publish_with_reason(&snapshot, &identity, 53,
+            (OriginBrowserPhase::Failed, Some(reason.into())), private_page(), || false,
+            |event| {
+                assert_scrubbed(&event);
+                assert_eq!(wire(&event)["failureReason"], expected);
+                assert_eq!(wire(&event)["sequence"], 53);
+                assert!(wire(&event).get("loadFailure").is_none());
+                true
+            }), Publication::Published);
+        scrub_retained(&snapshot);
+        assert_eq!(wire(&snapshot.lock().unwrap())["failureReason"], expected);
+        assert_eq!(publish(&snapshot, &identity, 54, OriginBrowserPhase::Attached,
+            private_page(), || false, |_| panic!("diagnostics cannot restore ownership")),
+            Publication::OwnerUnavailable);
+    }
+}
+
+#[test]
+fn production_session_invalidation_records_native_evidence_before_cleanup() {
+    let runtime = include_str!("../../../src/origin_browser_runtime.rs");
+    let revoke = runtime.split("fn revoke_inner(&self, reason:").nth(1).unwrap()
+        .split("#[derive(Default)]").next().unwrap();
+    assert!(revoke.find("BrowserSessionFailure::owner_loss").unwrap()
+        < revoke.find("self.lease.revoke()").unwrap());
+    assert!(revoke.contains("self.lease.is_temporary()"));
+    let watchdog = runtime.split("suspend_for_watchdog()").nth(1).unwrap()
+        .split("}).await").next().unwrap();
+    assert!(watchdog.contains("attempt.revoke_for(BrowserSessionFailure::Watchdog)"));
+    assert!(!watchdog.contains("attempt.revoke();"));
+    let context = include_str!("../src/cef_context.rs");
+    let fail = context.split("fn fail(&self, reason:").nth(1).unwrap()
+        .split("fn revoke(&self)").next().unwrap();
+    assert!(fail.contains("ContextError::ProxyRejected | ContextError::ProxyMismatch"));
+    assert!(fail.find("revoke_for").unwrap() < fail.find("self.revoke()").unwrap());
 }
 
 #[test]

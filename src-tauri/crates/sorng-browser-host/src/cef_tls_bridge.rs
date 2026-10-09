@@ -103,6 +103,23 @@ pub enum NativeTlsDecision {
     AdmitException { mask: u32 },
 }
 
+/// First locally observed bridge failure, not an inferred engine/network cause.
+/// Fixed native metadata only: no hosts, origins, chains, tokens or native text.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum NativeTlsFailure {
+    ContextCreation,
+    InvalidEvidence,
+    InvalidState,
+    OwnerUnavailable,
+    Callback,
+    CompleteRejected,
+    RevokeRejected,
+    EngineRevoked,
+    EngineFailure,
+    PoisonedState,
+    WrongThread,
+}
+
 /// Callback must only enqueue asynchronous authority work, never block CEF UI.
 /// Main rechecks owner/trust/pin/chain/destination before consuming completion.
 pub trait NativeTlsHooks: Send + Sync {
@@ -111,6 +128,11 @@ pub trait NativeTlsHooks: Send + Sync {
     fn is_current(&self) -> bool;
     /// Synchronously revoke proxy/credential leases; enqueue native cleanup.
     fn on_failure(&self);
+    /// Backwards-compatible typed observation. Adapters must forward this
+    /// method explicitly when their wrapped owner needs the fixed reason.
+    fn on_failure_reason(&self, _reason: NativeTlsFailure) {
+        self.on_failure();
+    }
 }
 
 #[repr(C)]
@@ -281,6 +303,7 @@ impl NativeTlsBridge {
                 status: NativeTlsStatus::Initializing,
                 installed: false,
                 revoke_sent: false,
+                failure: None,
                 challenges: BTreeMap::new(),
                 seen: BTreeSet::new(),
             }),
@@ -324,7 +347,7 @@ impl NativeTlsBridge {
             _ui: PhantomData,
         };
         if raw.is_null() {
-            owner.state.fail();
+            owner.state.fail(NativeTlsFailure::ContextCreation);
             return Err(NativeTlsError::Unavailable);
         }
         Ok((raw.wrap_result(), owner))
@@ -382,6 +405,7 @@ struct Data {
     status: NativeTlsStatus,
     installed: bool,
     revoke_sent: bool,
+    failure: Option<NativeTlsFailure>,
     challenges: BTreeMap<u64, Challenge>,
     seen: BTreeSet<u64>,
 }
@@ -398,7 +422,7 @@ fn retained() -> &'static Mutex<BTreeMap<u64, Arc<Shared>>> {
     RETAINED.get_or_init(Mutex::default)
 }
 impl Shared {
-    fn fail(&self) {
+    fn fail(&self, reason: NativeTlsFailure) {
         {
             let mut data = self.data.lock().unwrap_or_else(|e| e.into_inner());
             if matches!(
@@ -408,9 +432,10 @@ impl Shared {
                 return;
             }
             data.status = NativeTlsStatus::Failed;
+            data.failure = Some(reason);
             data.challenges.clear();
         }
-        let _ = catch_unwind(AssertUnwindSafe(|| self.hooks.on_failure()));
+        let _ = catch_unwind(AssertUnwindSafe(|| self.hooks.on_failure_reason(reason)));
     }
     fn revoke(&self) {
         let mut data = self.data.lock().unwrap_or_else(|e| e.into_inner());
@@ -449,7 +474,7 @@ impl NativeTlsCompletion {
             Ok(data) => data,
             Err(poisoned) => {
                 drop(poisoned.into_inner());
-                state.fail();
+                state.fail(NativeTlsFailure::PoisonedState);
                 return;
             }
         };
@@ -634,20 +659,23 @@ unsafe extern "C" fn evidence_callback(user: *mut c_void, raw: *const Evidence) 
     let Some(state) = (unsafe { callback_state(user) }) else {
         return;
     };
-    let result = catch_unwind(AssertUnwindSafe(|| -> Result<(), NativeTlsError> {
-        on_ui()?;
+    let result = catch_unwind(AssertUnwindSafe(|| -> Result<(), NativeTlsFailure> {
+        on_ui().map_err(callback_thread_failure)?;
         if !state.hooks.is_current() {
-            return Err(NativeTlsError::Revoked);
+            return Err(NativeTlsFailure::OwnerUnavailable);
         }
-        let evidence = unsafe { owned_evidence(raw, &state) }?;
+        let evidence = unsafe { owned_evidence(raw, &state) }
+            .map_err(|_| NativeTlsFailure::InvalidEvidence)?;
         {
-            let mut data = state.data.lock().map_err(|_| NativeTlsError::Revoked)?;
-            if data.status != NativeTlsStatus::Installed
-                || data.challenges.len() >= MAX_PENDING
+            let mut data = state.data.lock().map_err(|_| NativeTlsFailure::PoisonedState)?;
+            if data.status != NativeTlsStatus::Installed {
+                return Err(NativeTlsFailure::InvalidState);
+            }
+            if data.challenges.len() >= MAX_PENDING
                 || data.seen.len() >= 65_536
                 || !data.seen.insert(evidence.challenge)
             {
-                return Err(NativeTlsError::Invalid);
+                return Err(NativeTlsFailure::InvalidEvidence);
             }
             data.challenges.insert(
                 evidence.challenge,
@@ -668,20 +696,31 @@ unsafe extern "C" fn evidence_callback(user: *mut c_void, raw: *const Evidence) 
         state.hooks.on_evidence(evidence, completion);
         Ok(())
     }));
-    if !matches!(result, Ok(Ok(()))) {
-        state.fail();
-    }
+    finish_callback(&state, result);
 }
 unsafe extern "C" fn state_callback(user: *mut c_void, token: u64, generation: u64, status: u32) {
     let Some(state) = (unsafe { callback_state(user) }) else {
         return;
     };
-    let result = catch_unwind(AssertUnwindSafe(|| -> Result<(), NativeTlsError> {
-        on_ui()?;
+    let result = catch_unwind(AssertUnwindSafe(|| -> Result<(), NativeTlsFailure> {
+        on_ui().map_err(callback_thread_failure)?;
         accept_state(&state, token, generation, status)
     }));
-    if !matches!(result, Ok(Ok(()))) {
-        state.fail();
+    finish_callback(&state, result);
+}
+
+fn callback_thread_failure(error: NativeTlsError) -> NativeTlsFailure {
+    match error {
+        NativeTlsError::WrongThread => NativeTlsFailure::WrongThread,
+        _ => NativeTlsFailure::InvalidState,
+    }
+}
+
+fn finish_callback(state: &Shared, result: std::thread::Result<Result<(), NativeTlsFailure>>) {
+    match result {
+        Ok(Ok(())) => {}
+        Ok(Err(reason)) => state.fail(reason),
+        Err(_) => state.fail(NativeTlsFailure::Callback),
     }
 }
 
@@ -690,11 +729,11 @@ fn accept_state(
     token: u64,
     generation: u64,
     status: u32,
-) -> Result<(), NativeTlsError> {
+) -> Result<(), NativeTlsFailure> {
     if state.token != token || state.generation != generation {
-        return Err(NativeTlsError::Invalid);
+        return Err(NativeTlsFailure::InvalidState);
     }
-    let mut data = state.data.lock().map_err(|_| NativeTlsError::Revoked)?;
+    let mut data = state.data.lock().map_err(|_| NativeTlsFailure::PoisonedState)?;
     match status {
         1 if !data.installed && data.status == NativeTlsStatus::Initializing => {
             data.installed = true;
@@ -707,21 +746,28 @@ fn accept_state(
         2 if data.status != NativeTlsStatus::Revoked => {
             // Native detach/fault can finish revocation before the app sends
             // its own revoke. State 2 still terminates all userdata callbacks.
-            let native_initiated = !data.revoke_sent;
+            let native_initiated = !data.revoke_sent
+                && !matches!(data.status, NativeTlsStatus::Revoking | NativeTlsStatus::Failed);
+            if native_initiated {
+                data.failure = Some(NativeTlsFailure::EngineRevoked);
+            }
             data.status = NativeTlsStatus::Revoked;
             data.challenges.clear();
             drop(data);
             retained()
                 .lock()
-                .map_err(|_| NativeTlsError::Revoked)?
+                .map_err(|_| NativeTlsFailure::PoisonedState)?
                 .remove(&token);
             if native_initiated {
                 // Revoke app proxy/credential leases too, without holding a
                 // registry or challenge lock across application callbacks.
-                let _ = catch_unwind(AssertUnwindSafe(|| state.hooks.on_failure()));
+                let _ = catch_unwind(AssertUnwindSafe(|| {
+                    state.hooks.on_failure_reason(NativeTlsFailure::EngineRevoked);
+                }));
             }
         }
-        _ => return Err(NativeTlsError::Revoked),
+        3 => return Err(NativeTlsFailure::EngineFailure),
+        _ => return Err(NativeTlsFailure::InvalidState),
     }
     Ok(())
 }
@@ -777,7 +823,7 @@ fn pump_inner() -> Result<(), NativeTlsError> {
             }
         };
         if revoke && unsafe { (state.functions.revoke)(state.token, state.generation) } != 1 {
-            state.fail();
+            state.fail(NativeTlsFailure::RevokeRejected);
         }
         for (challenge, decision) in replies {
             // A synchronous previous reply may revoke this very context.
@@ -789,12 +835,16 @@ fn pump_inner() -> Result<(), NativeTlsError> {
             {
                 break;
             }
-            if !matches!(
-                catch_unwind(AssertUnwindSafe(|| state.hooks.is_current())),
-                Ok(true)
-            ) {
-                state.fail();
-                break;
+            match catch_unwind(AssertUnwindSafe(|| state.hooks.is_current())) {
+                Ok(true) => {}
+                Ok(false) => {
+                    state.fail(NativeTlsFailure::OwnerUnavailable);
+                    break;
+                }
+                Err(_) => {
+                    state.fail(NativeTlsFailure::Callback);
+                    break;
+                }
             }
             let (decision, mask) = match decision {
                 NativeTlsDecision::Deny => (0, 0),
@@ -805,7 +855,7 @@ fn pump_inner() -> Result<(), NativeTlsError> {
                 (state.functions.complete)(state.token, state.generation, challenge, decision, mask)
             } != 1
             {
-                state.fail();
+                state.fail(NativeTlsFailure::CompleteRejected);
                 break;
             }
         }
@@ -883,6 +933,7 @@ mod tests {
                 status: NativeTlsStatus::Installed,
                 installed: true,
                 revoke_sent: false,
+                failure: None,
                 challenges: BTreeMap::new(),
                 seen: BTreeSet::new(),
             }),
@@ -1019,6 +1070,199 @@ mod tests {
         assert!(accept_state(&state, 71, 72, 1).is_err());
         assert!(accept_state(&state, 71, 72, 2).is_err());
         assert_eq!(hooks.failures.load(Ordering::Acquire), 1);
+    }
+
+    #[test]
+    fn requested_teardown_ack_before_pump_does_not_report_failure_or_release_late_decisions() {
+        let _guard = TEST_LOCK.lock().unwrap();
+        REPLIES.lock().unwrap().clear();
+        REVOKES.store(0, Ordering::Release);
+        let (state, hooks) = fixture();
+        retained().lock().unwrap().insert(state.token, state.clone());
+        let late = pending(&state, 9);
+        state.revoke();
+        assert!(!state.data.lock().unwrap().revoke_sent);
+        assert!(accept_state(&state, 71, 99, 2).is_err());
+        assert!(retained().lock().unwrap().contains_key(&71));
+        accept_state(&state, 71, 72, 2).unwrap();
+        assert_eq!(state.data.lock().unwrap().status, NativeTlsStatus::Revoked);
+        assert!(state.data.lock().unwrap().failure.is_none());
+        assert!(!retained().lock().unwrap().contains_key(&71));
+        late.complete(NativeTlsDecision::AdmitNative);
+        finish_callback(&state, Ok(accept_state(&state, 71, 72, 1)));
+        finish_callback(&state, Ok(accept_state(&state, 71, 72, 2)));
+        pump_inner().unwrap();
+        assert!(REPLIES.lock().unwrap().is_empty());
+        assert_eq!(REVOKES.load(Ordering::Acquire), 0);
+        assert_eq!(hooks.failures.load(Ordering::Acquire), 0);
+    }
+
+    #[test]
+    fn failure_then_native_ack_before_pump_notifies_legacy_hook_only_once() {
+        let _guard = TEST_LOCK.lock().unwrap();
+        let (state, hooks) = fixture();
+        retained().lock().unwrap().insert(state.token, state.clone());
+        let late = pending(&state, 9);
+        state.fail(NativeTlsFailure::InvalidEvidence);
+        assert_eq!(hooks.failures.load(Ordering::Acquire), 1);
+        accept_state(&state, 71, 72, 2).unwrap();
+        late.complete(NativeTlsDecision::AdmitNative);
+        state.fail(NativeTlsFailure::CompleteRejected);
+        assert_eq!(state.data.lock().unwrap().failure, Some(NativeTlsFailure::InvalidEvidence));
+        assert_eq!(state.data.lock().unwrap().status, NativeTlsStatus::Revoked);
+        assert!(state.data.lock().unwrap().challenges.is_empty());
+        assert!(!retained().lock().unwrap().contains_key(&71));
+        assert_eq!(hooks.failures.load(Ordering::Acquire), 1);
+    }
+
+    #[test]
+    fn unsolicited_ack_from_initializing_or_installed_still_reports_failure_once() {
+        let _guard = TEST_LOCK.lock().unwrap();
+        for status in [NativeTlsStatus::Initializing, NativeTlsStatus::Installed] {
+            let (state, hooks) = fixture();
+            {
+                let mut data = state.data.lock().unwrap();
+                data.status = status;
+                data.installed = status == NativeTlsStatus::Installed;
+            }
+            retained().lock().unwrap().insert(state.token, state.clone());
+            accept_state(&state, 71, 72, 2).unwrap();
+            assert_eq!(hooks.failures.load(Ordering::Acquire), 1);
+            assert_eq!(state.data.lock().unwrap().failure, Some(NativeTlsFailure::EngineRevoked));
+            assert!(state.data.lock().unwrap().challenges.is_empty());
+            assert!(!retained().lock().unwrap().contains_key(&71));
+            finish_callback(&state, Ok(accept_state(&state, 71, 72, 2)));
+            assert_eq!(hooks.failures.load(Ordering::Acquire), 1);
+        }
+    }
+
+    #[derive(Default)]
+    struct TypedHooks {
+        reasons: Mutex<Vec<NativeTlsFailure>>,
+        state: Mutex<Weak<Shared>>,
+        callback_completed: AtomicU64,
+    }
+    impl NativeTlsHooks for TypedHooks {
+        fn is_current(&self) -> bool { true }
+        fn on_evidence(&self, _: NativeTlsEvidence, _: NativeTlsCompletion) {}
+        fn on_failure(&self) { panic!("typed hook must receive the fixed cause"); }
+        fn on_failure_reason(&self, reason: NativeTlsFailure) {
+            self.reasons.lock().unwrap().push(reason);
+            let state = self.state.lock().unwrap().upgrade().unwrap();
+            // Delivery is outside native-state locks and safe against reentry.
+            assert!(state.data.try_lock().is_ok());
+            assert_eq!(state.data.lock().unwrap().failure, Some(reason));
+            state.fail(NativeTlsFailure::Callback);
+            self.callback_completed.fetch_add(1, Ordering::Release);
+        }
+    }
+    fn typed_fixture(complete_fn: Complete, revoke_fn: Revoke) -> (Arc<Shared>, Arc<TypedHooks>) {
+        let (mut state, _) = fixture();
+        let hooks = Arc::new(TypedHooks::default());
+        let owned = Arc::get_mut(&mut state).unwrap();
+        owned.functions.complete = complete_fn;
+        owned.functions.revoke = revoke_fn;
+        owned.hooks = hooks.clone();
+        *hooks.state.lock().unwrap() = Arc::downgrade(&state);
+        (state, hooks)
+    }
+    unsafe extern "C" fn reject_complete(t: u64, g: u64, c: u64, d: u32, m: u32) -> i32 {
+        REPLIES.lock().unwrap().push((t, g, c, d, m));
+        0
+    }
+    unsafe extern "C" fn reject_revoke(_: u64, _: u64) -> i32 { 0 }
+
+    #[test]
+    fn typed_failures_retain_first_cause_before_reentrant_delivery() {
+        for reason in [NativeTlsFailure::ContextCreation, NativeTlsFailure::InvalidEvidence,
+            NativeTlsFailure::InvalidState, NativeTlsFailure::OwnerUnavailable,
+            NativeTlsFailure::Callback, NativeTlsFailure::CompleteRejected,
+            NativeTlsFailure::RevokeRejected, NativeTlsFailure::EngineRevoked,
+            NativeTlsFailure::EngineFailure, NativeTlsFailure::PoisonedState,
+            NativeTlsFailure::WrongThread] {
+            let (state, hooks) = typed_fixture(complete, revoke);
+            state.fail(reason);
+            state.fail(NativeTlsFailure::Callback);
+            state.revoke();
+            assert_eq!(*hooks.reasons.lock().unwrap(), vec![reason]);
+            assert_eq!(hooks.callback_completed.load(Ordering::Acquire), 1);
+            assert_eq!(state.data.lock().unwrap().failure, Some(reason));
+            assert_eq!(state.data.lock().unwrap().status, NativeTlsStatus::Failed);
+        }
+    }
+
+    #[test]
+    fn complete_zero_is_context_local_failure_for_allow_and_expired_denial() {
+        let _guard = TEST_LOCK.lock().unwrap();
+        for expired in [false, true] {
+            REPLIES.lock().unwrap().clear();
+            let (state, hooks) = typed_fixture(reject_complete, revoke);
+            let (mut independent, _) = fixture();
+            Arc::get_mut(&mut independent).unwrap().token = 81;
+            retained().lock().unwrap().insert(71, state.clone());
+            retained().lock().unwrap().insert(81, independent.clone());
+            let reply = pending(&state, 9);
+            if expired {
+                state.data.lock().unwrap().challenges.get_mut(&9).unwrap().since = Instant::now() - TIMEOUT;
+            }
+            reply.complete(NativeTlsDecision::AdmitNative);
+            pending(&independent, 10).complete(NativeTlsDecision::AdmitNative);
+            assert!(pump_inner().is_ok()); // Never escalates to process-wide runtime failure.
+            assert_eq!(*hooks.reasons.lock().unwrap(), vec![NativeTlsFailure::CompleteRejected]);
+            assert_eq!(hooks.callback_completed.load(Ordering::Acquire), 1);
+            assert_eq!(state.data.lock().unwrap().status, NativeTlsStatus::Failed);
+            assert_eq!(independent.data.lock().unwrap().status, NativeTlsStatus::Installed);
+            assert_eq!(*REPLIES.lock().unwrap(), vec![(71,72,9,if expired {0} else {1},0), (81,72,10,1,0)]);
+            pump_inner().unwrap();
+            assert_eq!(REPLIES.lock().unwrap().len(), 2);
+            accept_state(&state, 71, 72, 2).unwrap();
+            assert_eq!(hooks.reasons.lock().unwrap().len(), 1);
+            retained().lock().unwrap().remove(&81);
+        }
+    }
+
+    #[test]
+    fn expired_challenge_is_denied_without_context_failure_or_second_completion() {
+        let _guard = TEST_LOCK.lock().unwrap();
+        REPLIES.lock().unwrap().clear();
+        let (state, hooks) = typed_fixture(complete, revoke);
+        retained().lock().unwrap().insert(71, state.clone());
+        let late = pending(&state, 9);
+        state.data.lock().unwrap().challenges.get_mut(&9).unwrap().since = Instant::now() - TIMEOUT;
+        pump_inner().unwrap();
+        late.complete(NativeTlsDecision::AdmitNative);
+        pump_inner().unwrap();
+        assert_eq!(*REPLIES.lock().unwrap(), vec![(71,72,9,0,0)]);
+        assert_eq!(state.data.lock().unwrap().status, NativeTlsStatus::Installed);
+        assert!(hooks.reasons.lock().unwrap().is_empty());
+        assert_eq!(hooks.callback_completed.load(Ordering::Acquire), 0);
+        retained().lock().unwrap().remove(&71);
+    }
+
+    #[test]
+    fn engine_state_failure_and_callback_panic_keep_distinct_first_reasons() {
+        let (state, hooks) = typed_fixture(complete, revoke);
+        assert_eq!(accept_state(&state, 71, 99, 3), Err(NativeTlsFailure::InvalidState));
+        finish_callback(&state, Ok(accept_state(&state, 71, 72, 3)));
+        assert_eq!(*hooks.reasons.lock().unwrap(), vec![NativeTlsFailure::EngineFailure]);
+        assert_eq!(hooks.callback_completed.load(Ordering::Acquire), 1);
+        let (state, hooks) = typed_fixture(complete, revoke);
+        finish_callback(&state, Err(Box::new("synthetic callback panic")));
+        assert_eq!(*hooks.reasons.lock().unwrap(), vec![NativeTlsFailure::Callback]);
+        assert_eq!(hooks.callback_completed.load(Ordering::Acquire), 1);
+    }
+
+    #[test]
+    fn rejected_revoke_is_typed_without_global_pump_error() {
+        let _guard = TEST_LOCK.lock().unwrap();
+        let (state, hooks) = typed_fixture(complete, reject_revoke);
+        retained().lock().unwrap().insert(71, state.clone());
+        state.revoke();
+        assert!(pump_inner().is_ok());
+        assert_eq!(*hooks.reasons.lock().unwrap(), vec![NativeTlsFailure::RevokeRejected]);
+        assert_eq!(hooks.callback_completed.load(Ordering::Acquire), 1);
+        accept_state(&state, 71, 72, 2).unwrap();
+        assert_eq!(hooks.reasons.lock().unwrap().len(), 1);
     }
     #[test]
     fn borrowed_chains_are_owned_and_destination_port_is_preserved() {

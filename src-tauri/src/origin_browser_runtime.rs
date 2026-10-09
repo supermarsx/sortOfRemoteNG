@@ -23,7 +23,7 @@ use sorng_browser_host::ipc::OriginBrowserRuntimeFailureCode as RuntimeFailureCo
 use sorng_commands_core::origin_browser_authority::{self, NativeOwnerLease};
 use sorng_encryption::EncryptionState;
 use sorng_protocols::{
-    origin_browser::{BrowserIdentity, NativeHostReadiness, OriginBrowserSession},
+    origin_browser::{BrowserIdentity, BrowserSessionFailure, NativeHostReadiness, OriginBrowserSession},
     private_forward_proxy::ProxyLimits,
 };
 use std::{
@@ -134,9 +134,22 @@ impl Attempt {
     }
 
     fn revoke(&self) {
+        self.revoke_inner(None);
+    }
+
+    fn revoke_for(&self, reason: BrowserSessionFailure) {
+        self.revoke_inner(Some(reason));
+    }
+
+    fn revoke_inner(&self, reason: Option<BrowserSessionFailure>) {
         if self.cancelled.swap(true, Ordering::AcqRel) {
             return;
         }
+        // Inspect owner evidence before cleanup itself revokes the lease.
+        // Explicit watchdog/runtime evidence is not a database-unlock failure.
+        let reason = reason.or_else(|| BrowserSessionFailure::owner_loss(
+            self.document.current(), self.lease.is_current(), self.lease.is_temporary(),
+        ));
         display::scrub_retained(&self.snapshot);
         self.timing.finish(0);
         self.login.revoke();
@@ -155,11 +168,15 @@ impl Attempt {
                 });
             }
         }
-        let revoked = self
+        let mut session = self
             .session
             .lock()
-            .unwrap_or_else(|e| e.into_inner())
-            .revoke(&self.identity);
+            .unwrap_or_else(|e| e.into_inner());
+        let revoked = match reason {
+            Some(reason) => session.revoke_for(&self.identity, reason),
+            None => session.revoke(&self.identity),
+        };
+        drop(session);
         if revoked.is_ok() {
             // Never publish on unwind or before the exact session's relay has
             // received its revocation signal. Async retention cleanup may remain.
@@ -687,7 +704,7 @@ pub(crate) fn start_pump(app: tauri::AppHandle, mut wake: tokio::sync::mpsc::Rec
                     log::warn!("Native browser watchdog suspended admission awaiting UI callback");
                     revoked_attempts = flow::snapshot_attempts(&shared().attempts);
                     for attempt in &revoked_attempts {
-                        attempt.revoke();
+                        attempt.revoke_for(BrowserSessionFailure::Watchdog);
                     }
                 } else {
                     // Startup timeouts, lost dispatch and real runtime faults
@@ -812,7 +829,7 @@ pub(crate) fn revoke_all() {
 
 fn revoke_attempts() {
     flow::visit_attempt_snapshot(&shared().attempts, |attempt| {
-        attempt.revoke();
+        attempt.revoke_for(BrowserSessionFailure::RuntimeUnavailable);
     });
 }
 
@@ -1024,7 +1041,13 @@ impl BrowserEventSink for Sink {
         }
         let failure_reason = match event.state.fault {
             Some(BrowserFault::Renderer) => Some(OriginBrowserFailureReason::Renderer),
-            Some(BrowserFault::Session) => Some(OriginBrowserFailureReason::Session),
+            Some(BrowserFault::Session) => Some(match self.attempt.session.try_lock() {
+                Ok(session) => session.failure_reason().map(Into::into)
+                    .unwrap_or(OriginBrowserFailureReason::Session),
+                Err(std::sync::TryLockError::Poisoned(_)) => OriginBrowserFailureReason::NativeState,
+                // Diagnostics must not block or alter admission on contention.
+                Err(std::sync::TryLockError::WouldBlock) => OriginBrowserFailureReason::Session,
+            }),
             Some(BrowserFault::Callback) => Some(OriginBrowserFailureReason::Callback),
             Some(BrowserFault::NativeSurface) => Some(OriginBrowserFailureReason::NativeSurface),
             Some(BrowserFault::Load) => Some(OriginBrowserFailureReason::Load),

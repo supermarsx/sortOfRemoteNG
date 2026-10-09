@@ -15,7 +15,7 @@ pub use crate::proxy_config::ContextError;
 use crate::proxy_config::{self, FixedProxy, ProxyPreferences};
 use cef::*;
 use sorng_protocols::origin_browser::{
-    BrowserIdentity, BrowserSessionStatus, OriginBrowserSession,
+    BrowserIdentity, BrowserSessionFailure, BrowserSessionStatus, OriginBrowserSession,
 };
 use std::marker::PhantomData;
 use std::rc::Rc as ThreadBound;
@@ -45,7 +45,7 @@ fn lock_session<'a>(
         Err(poisoned) => {
             // Recover only to terminate this attempt's established streams.
             // Keep the mutex poisoned and never revoke a successor's relay.
-            let _ = poisoned.into_inner().revoke(identity);
+            let _ = poisoned.into_inner().revoke_for(identity, BrowserSessionFailure::NativeState);
             Err(ContextError::SessionUnavailable)
         }
     }
@@ -118,6 +118,14 @@ impl Preparation {
     }
 
     fn fail(&self, reason: ContextError) {
+        if !matches!(reason, ContextError::SessionUnavailable) {
+            let failure = match reason {
+                ContextError::ProxyRejected | ContextError::ProxyMismatch => BrowserSessionFailure::PrivateProxy,
+                _ => BrowserSessionFailure::PrivateContext,
+            };
+            let _ = self.session.lock().unwrap_or_else(|err| err.into_inner())
+                .revoke_for(&self.identity, failure);
+        }
         self.revoke();
         if let Ok(mut status) = self.status.lock() {
             *status = PreparationStatus::Failed(reason);
@@ -145,7 +153,7 @@ impl Preparation {
             Ok(status) => status,
             Err(poisoned) => {
                 *poisoned.into_inner() = PreparationStatus::Revoked;
-                let _ = session.revoke(&self.identity);
+                let _ = session.revoke_for(&self.identity, BrowserSessionFailure::NativeState);
                 return Err(ContextError::SessionUnavailable);
             }
         };
@@ -169,7 +177,7 @@ impl Preparation {
             Ok(status) => *status,
             Err(poisoned) => {
                 *poisoned.into_inner() = PreparationStatus::Revoked;
-                let _ = session.revoke(&self.identity);
+                let _ = session.revoke_for(&self.identity, BrowserSessionFailure::NativeState);
                 return PreparationStatus::Revoked;
             }
         };
@@ -708,9 +716,28 @@ impl NativeTlsHooks for ContextTlsHooks {
     }
     fn on_failure(&self) {
         if let Some(preparation) = self.preparation.upgrade() {
+            let _ = preparation.session.lock().unwrap_or_else(|err| err.into_inner())
+                .revoke_for(&preparation.identity, BrowserSessionFailure::CertificateBridge);
             preparation.fail(ContextError::CreationFailed);
         }
         self.hooks.on_failure();
+    }
+
+    fn on_failure_reason(&self, reason: crate::cef_tls_bridge::NativeTlsFailure) {
+        if let Some(preparation) = self.preparation.upgrade() {
+            // A stale owner is not evidence of a broken TLS bridge. Let the
+            // owning attempt record its document/lease evidence before cleanup.
+            if reason == crate::cef_tls_bridge::NativeTlsFailure::OwnerUnavailable {
+                preparation.revoke();
+            } else {
+                let _ = preparation.session.lock().unwrap_or_else(|err| err.into_inner())
+                    .revoke_for(&preparation.identity, BrowserSessionFailure::CertificateBridge);
+                preparation.fail(ContextError::CreationFailed);
+            }
+        }
+        // Forward the fixed reason rather than dropping it at this adapter.
+        // Context cleanup above still happens if the application hook panics.
+        self.hooks.on_failure_reason(reason);
     }
 }
 
@@ -1137,5 +1164,211 @@ mod tests {
                 }
             }
         }).await.expect("poisoned context did not close its active tunnel");
+    }
+
+    mod tls_failure_adapter {
+        use super::*;
+        use crate::cef_tls_bridge::NativeTlsFailure;
+        use std::sync::atomic::{AtomicUsize, Ordering};
+
+        #[derive(Debug, PartialEq, Eq)]
+        struct Observation {
+            reason: Option<NativeTlsFailure>,
+            session_status: Option<BrowserSessionStatus>,
+            preparation_status: Option<PreparationStatus>,
+            first_failure: Option<BrowserSessionFailure>,
+            owner_reason_applied: bool,
+        }
+
+        struct Hooks {
+            preparation: std::sync::Weak<Preparation>,
+            owner_reason: Option<BrowserSessionFailure>,
+            observations: Mutex<Vec<Observation>>,
+            completed: AtomicUsize,
+        }
+
+        impl Hooks {
+            fn observe(&self, reason: Option<NativeTlsFailure>) {
+                let mut observed = Observation {
+                    reason,
+                    session_status: None,
+                    preparation_status: None,
+                    first_failure: None,
+                    owner_reason_applied: false,
+                };
+                if let Some(preparation) = self.preparation.upgrade() {
+                    // Record failed try_lock as None; assert only outside the
+                    // callback, where production catch_unwind cannot hide it.
+                    if let Ok(session) = preparation.session.try_lock() {
+                        observed.session_status = Some(session.status());
+                        observed.first_failure = session.failure_reason();
+                    }
+                    if let Ok(status) = preparation.status.try_lock() {
+                        observed.preparation_status = Some(*status);
+                    }
+                    if let Some(owner_reason) = self.owner_reason {
+                        if let Ok(mut session) = preparation.session.try_lock() {
+                            observed.owner_reason_applied = session
+                                .revoke_for(&preparation.identity, owner_reason)
+                                .is_ok();
+                        }
+                    }
+                }
+                self.observations.lock().unwrap().push(observed);
+                self.completed.fetch_add(1, Ordering::SeqCst);
+            }
+        }
+
+        impl NativeTlsHooks for Hooks {
+            fn on_evidence(&self, _: NativeTlsEvidence, _: NativeTlsCompletion) {}
+            fn is_current(&self) -> bool {
+                true
+            }
+            fn on_failure(&self) {
+                self.observe(None);
+            }
+            fn on_failure_reason(&self, reason: NativeTlsFailure) {
+                self.observe(Some(reason));
+            }
+        }
+
+        fn adapter(
+            preparation: &Arc<Preparation>,
+            owner_reason: Option<BrowserSessionFailure>,
+        ) -> (ContextTlsHooks, Arc<Hooks>) {
+            let hooks = Arc::new(Hooks {
+                preparation: Arc::downgrade(preparation),
+                owner_reason,
+                observations: Mutex::new(Vec::new()),
+                completed: AtomicUsize::new(0),
+            });
+            (
+                ContextTlsHooks {
+                    preparation: Arc::downgrade(preparation),
+                    hooks: hooks.clone(),
+                },
+                hooks,
+            )
+        }
+
+        fn assert_callback(hooks: &Hooks, expected: Observation) {
+            assert_eq!(hooks.completed.load(Ordering::SeqCst), 1);
+            assert_eq!(*hooks.observations.lock().unwrap(), vec![expected]);
+        }
+
+        #[tokio::test]
+        async fn bridge_reason_precedes_cleanup_and_typed_or_legacy_delivery_is_unlocked() {
+            for reason in [
+                Some(NativeTlsFailure::CompleteRejected),
+                Some(NativeTlsFailure::EngineFailure),
+                None,
+            ] {
+                let preparation = Arc::new(preparation().await);
+                let (adapter, hooks) = adapter(&preparation, None);
+                match reason {
+                    Some(reason) => adapter.on_failure_reason(reason),
+                    None => adapter.on_failure(),
+                }
+                assert_callback(
+                    &hooks,
+                    Observation {
+                        reason,
+                        session_status: Some(BrowserSessionStatus::Revoked),
+                        preparation_status: Some(PreparationStatus::Failed(
+                            ContextError::CreationFailed,
+                        )),
+                        first_failure: Some(BrowserSessionFailure::CertificateBridge),
+                        owner_reason_applied: false,
+                    },
+                );
+                assert!(preparation
+                    .session
+                    .lock()
+                    .unwrap()
+                    .with_proxy_credentials(|_, _| ())
+                    .is_none());
+            }
+        }
+
+        #[tokio::test]
+        async fn owner_unavailable_leaves_first_cause_for_owner_evidence() {
+            let preparation = Arc::new(preparation().await);
+            let owner_reason = BrowserSessionFailure::owner_loss(true, false, false).unwrap();
+            let (adapter, hooks) = adapter(&preparation, Some(owner_reason));
+            adapter.on_failure_reason(NativeTlsFailure::OwnerUnavailable);
+            assert_callback(
+                &hooks,
+                Observation {
+                    reason: Some(NativeTlsFailure::OwnerUnavailable),
+                    session_status: Some(BrowserSessionStatus::Revoked),
+                    preparation_status: Some(PreparationStatus::Revoked),
+                    first_failure: None,
+                    owner_reason_applied: true,
+                },
+            );
+            assert_eq!(
+                preparation.session.lock().unwrap().failure_reason(),
+                Some(BrowserSessionFailure::DatabaseOwner)
+            );
+        }
+
+        #[tokio::test]
+        async fn bridge_cleanup_preserves_an_existing_session_failure() {
+            for first in [
+                BrowserSessionFailure::PrivateProxy,
+                BrowserSessionFailure::Watchdog,
+            ] {
+                let preparation = Arc::new(preparation().await);
+                preparation
+                    .session
+                    .lock()
+                    .unwrap()
+                    .revoke_for(&preparation.identity, first)
+                    .unwrap();
+                let (adapter, hooks) = adapter(&preparation, None);
+                adapter.on_failure_reason(NativeTlsFailure::CompleteRejected);
+                assert_callback(
+                    &hooks,
+                    Observation {
+                        reason: Some(NativeTlsFailure::CompleteRejected),
+                        session_status: Some(BrowserSessionStatus::Revoked),
+                        preparation_status: Some(PreparationStatus::Failed(
+                            ContextError::CreationFailed,
+                        )),
+                        first_failure: Some(first),
+                        owner_reason_applied: false,
+                    },
+                );
+            }
+        }
+
+        #[tokio::test]
+        async fn stale_adapter_cannot_relabel_or_revoke_a_successor_session() {
+            let mut stale = preparation().await;
+            let successor = preparation().await;
+            assert!(stale.identity != successor.identity);
+            stale.session = successor.session.clone();
+            let stale = Arc::new(stale);
+            let (adapter, hooks) = adapter(&stale, None);
+            adapter.on_failure_reason(NativeTlsFailure::EngineRevoked);
+            assert_callback(
+                &hooks,
+                Observation {
+                    reason: Some(NativeTlsFailure::EngineRevoked),
+                    session_status: Some(BrowserSessionStatus::NotReady),
+                    preparation_status: Some(PreparationStatus::Failed(ContextError::CreationFailed)),
+                    first_failure: None,
+                    owner_reason_applied: false,
+                },
+            );
+            assert_eq!(
+                *successor.status.lock().unwrap(),
+                PreparationStatus::Initializing
+            );
+            let session = successor.session.lock().unwrap();
+            assert_eq!(session.failure_reason(), None);
+            assert_eq!(session.status(), BrowserSessionStatus::NotReady);
+            assert!(session.with_proxy_credentials(|_, _| ()).is_some());
+        }
     }
 }

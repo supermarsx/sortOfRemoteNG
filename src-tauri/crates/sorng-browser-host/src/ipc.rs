@@ -772,9 +772,33 @@ pub enum OriginBrowserPhase {
 pub enum OriginBrowserFailureReason {
     Renderer,
     Session,
+    DatabaseOwner,
+    Watchdog,
+    PrivateContext,
+    PrivateProxy,
+    NativeState,
+    CertificateBridge,
+    RuntimeUnavailable,
+    OwnerWindow,
     Callback,
     NativeSurface,
     Load,
+}
+
+impl From<sorng_protocols::origin_browser::BrowserSessionFailure> for OriginBrowserFailureReason {
+    fn from(reason: sorng_protocols::origin_browser::BrowserSessionFailure) -> Self {
+        use sorng_protocols::origin_browser::BrowserSessionFailure as Reason;
+        match reason {
+            Reason::DatabaseOwner => Self::DatabaseOwner,
+            Reason::Watchdog => Self::Watchdog,
+            Reason::PrivateContext => Self::PrivateContext,
+            Reason::PrivateProxy => Self::PrivateProxy,
+            Reason::NativeState => Self::NativeState,
+            Reason::CertificateBridge => Self::CertificateBridge,
+            Reason::RuntimeUnavailable => Self::RuntimeUnavailable,
+            Reason::OwnerWindow => Self::OwnerWindow,
+        }
+    }
 }
 
 /// Input from a native host callback, never IPC. Values are validated/bounded

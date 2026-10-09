@@ -463,6 +463,32 @@ pub enum BrowserSessionStatus {
     Revoked,
 }
 
+/// Fixed native evidence only. Never contains an owner, endpoint, URL or error text.
+/// This is diagnostic metadata, not an authorization or readiness decision.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BrowserSessionFailure {
+    DatabaseOwner,
+    Watchdog,
+    PrivateContext,
+    PrivateProxy,
+    NativeState,
+    CertificateBridge,
+    RuntimeUnavailable,
+    OwnerWindow,
+}
+
+impl BrowserSessionFailure {
+    pub fn owner_loss(document_current: bool, lease_current: bool, temporary: bool) -> Option<Self> {
+        if !document_current {
+            Some(Self::OwnerWindow)
+        } else if !lease_current && !temporary {
+            Some(Self::DatabaseOwner)
+        } else {
+            None
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
 pub enum BrowserPolicyError {
     #[error("Browser owner, connection and session identities are required")]
@@ -495,6 +521,7 @@ pub struct OriginBrowserSession {
     policy: OriginBrowserPolicy,
     proxy: PrivateForwardProxy,
     status: BrowserSessionStatus,
+    failure: Option<BrowserSessionFailure>,
 }
 
 /// Challenge metadata from a trusted native engine callback, never page JS or
@@ -532,6 +559,7 @@ impl OriginBrowserSession {
             policy,
             proxy,
             status: BrowserSessionStatus::NotReady,
+            failure: None,
         })
     }
 
@@ -556,6 +584,15 @@ impl OriginBrowserSession {
         } else {
             self.status
         }
+    }
+
+    /// Observe unexpected relay loss before cleanup deliberately stops it.
+    pub fn failure_reason(&self) -> Option<BrowserSessionFailure> {
+        self.failure.or_else(|| {
+            (matches!(self.status, BrowserSessionStatus::NotReady | BrowserSessionStatus::Ready)
+                && !self.proxy.is_running())
+                .then_some(BrowserSessionFailure::PrivateProxy)
+        })
     }
 
     /// Native proxy-auth callback only, including setup before host readiness.
@@ -627,7 +664,7 @@ impl OriginBrowserSession {
             }
             NativeHostReadiness::NotReady => {
                 if self.status == BrowserSessionStatus::Ready {
-                    self.revoke(identity)?;
+                    self.revoke_for(identity, BrowserSessionFailure::PrivateContext)?;
                 }
             }
             NativeHostReadiness::Ready {
@@ -636,7 +673,7 @@ impl OriginBrowserSession {
             } => {
                 if profile_key != self.policy.profile_key || proxy_endpoint != self.proxy_endpoint()
                 {
-                    self.revoke(identity)?;
+                    self.revoke_for(identity, BrowserSessionFailure::PrivateContext)?;
                     return Err(BrowserPolicyError::HostBindingMismatch);
                 }
                 self.status = BrowserSessionStatus::Ready;
@@ -698,13 +735,33 @@ impl OriginBrowserSession {
     }
 
     pub fn revoke(&mut self, identity: &BrowserIdentity) -> Result<(), BrowserPolicyError> {
+        self.revoke_inner(identity, None)
+    }
+
+    pub fn revoke_for(
+        &mut self,
+        identity: &BrowserIdentity,
+        reason: BrowserSessionFailure,
+    ) -> Result<(), BrowserPolicyError> {
+        self.revoke_inner(identity, Some(reason))
+    }
+
+    fn revoke_inner(
+        &mut self,
+        identity: &BrowserIdentity,
+        reason: Option<BrowserSessionFailure>,
+    ) -> Result<(), BrowserPolicyError> {
         self.check_identity(identity)?;
+        // The first observed cause wins. A later cleanup/owner check must not
+        // relabel a watchdog/context/relay fault as a database access failure.
+        self.failure = self.failure_reason().or(reason);
         self.status = BrowserSessionStatus::Revoked;
         self.proxy.revoke();
         Ok(())
     }
 
     pub async fn stop(&mut self) -> Result<(), BrowserPolicyError> {
+        self.failure = self.failure_reason();
         self.status = BrowserSessionStatus::Revoked;
         self.proxy
             .stop()
@@ -1805,6 +1862,7 @@ mod tests {
             .unwrap();
         assert_eq!(session.status, BrowserSessionStatus::Ready);
         assert_eq!(session.status(), BrowserSessionStatus::Revoked);
+        assert_eq!(session.failure_reason(), Some(BrowserSessionFailure::PrivateProxy));
         assert!(session.with_proxy_credentials(|_, _| ()).is_none());
         assert_eq!(
             session.authorize_source_navigation(&id, "https://source.invalid"),
@@ -1819,5 +1877,67 @@ mod tests {
             Err(BrowserPolicyError::Revoked)
         );
         stop(&mut session).await;
+        assert_eq!(session.failure_reason(), Some(BrowserSessionFailure::PrivateProxy));
+    }
+
+    #[test]
+    fn session_failure_owner_evidence_does_not_invent_a_database_for_temporary_tabs() {
+        use BrowserSessionFailure as Reason;
+        assert_eq!(Reason::owner_loss(true, true, false), None);
+        assert_eq!(Reason::owner_loss(true, false, false), Some(Reason::DatabaseOwner));
+        assert_eq!(Reason::owner_loss(false, false, false), Some(Reason::OwnerWindow));
+        assert_eq!(Reason::owner_loss(true, false, true), None);
+        assert_eq!(Reason::owner_loss(false, false, true), Some(Reason::OwnerWindow));
+    }
+
+    #[tokio::test]
+    async fn session_failure_retains_each_specific_cause_through_cleanup_and_owner_loss() {
+        use BrowserSessionFailure as Reason;
+        for reason in [Reason::DatabaseOwner, Reason::Watchdog, Reason::PrivateContext,
+            Reason::PrivateProxy, Reason::NativeState, Reason::CertificateBridge, Reason::RuntimeUnavailable, Reason::OwnerWindow] {
+            let mut current = session().await;
+            let id = current.policy().identity().clone();
+            current.report_host(&id, ready(&current)).unwrap();
+            current.revoke_for(&id, reason).unwrap();
+            current.revoke(&id).unwrap();
+            current.revoke_for(&id, Reason::DatabaseOwner).unwrap();
+            assert_eq!(current.failure_reason(), Some(reason));
+            assert_eq!(current.status(), BrowserSessionStatus::Revoked);
+            assert_eq!(current.authorize_navigation(&id, "https://source.invalid"), Err(BrowserPolicyError::Revoked));
+            stop(&mut current).await;
+            assert_eq!(current.failure_reason(), Some(reason));
+        }
+    }
+
+    #[tokio::test]
+    async fn session_failure_is_attempt_fenced_and_fresh_sessions_have_no_history() {
+        let mut first = session().await;
+        let mut fresh = session().await;
+        let first_id = first.policy().identity().clone();
+        let fresh_id = fresh.policy().identity().clone();
+        assert_eq!(fresh.revoke_for(&first_id, BrowserSessionFailure::Watchdog), Err(BrowserPolicyError::StaleIdentity));
+        assert_eq!(fresh.failure_reason(), None);
+        assert_eq!(fresh.status(), BrowserSessionStatus::NotReady);
+        first.revoke_for(&first_id, BrowserSessionFailure::Watchdog).unwrap();
+        fresh.report_host(&fresh_id, ready(&fresh)).unwrap();
+        assert_eq!(fresh.failure_reason(), None);
+        assert_eq!(fresh.status(), BrowserSessionStatus::Ready);
+        fresh.revoke(&fresh_id).unwrap();
+        assert_eq!(fresh.failure_reason(), None); // deliberate close is not relay failure
+        stop(&mut first).await;
+        stop(&mut fresh).await;
+    }
+
+    #[tokio::test]
+    async fn session_failure_host_binding_mismatch_is_context_not_database() {
+        let mut current = session().await;
+        let id = current.policy().identity().clone();
+        let endpoint = current.proxy_endpoint();
+        assert_eq!(current.report_host(&id, NativeHostReadiness::Ready {
+            profile_key: "different-fixture".into(), proxy_endpoint: endpoint,
+        }), Err(BrowserPolicyError::HostBindingMismatch));
+        current.revoke_for(&id, BrowserSessionFailure::DatabaseOwner).unwrap();
+        assert_eq!(current.failure_reason(), Some(BrowserSessionFailure::PrivateContext));
+        stop(&mut current).await;
     }
 }

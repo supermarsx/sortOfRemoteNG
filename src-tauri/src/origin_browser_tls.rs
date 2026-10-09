@@ -1,9 +1,9 @@
 //! Actual-handshake admission for the patched CEF engine. No renderer verdict,
 //! URL inspection request, or error-only callback can authorize a certificate.
-use super::diagnostics::{self, Navigation};
+use super::diagnostics::{self, Navigation, TlsBridgeFailure};
 use super::Attempt;
 use sorng_browser_host::cef_tls_bridge::{
-    self, NativeTlsCompletion, NativeTlsDecision, NativeTlsEvidence, NativeTlsHooks,
+    self, NativeTlsCompletion, NativeTlsDecision, NativeTlsEvidence, NativeTlsFailure, NativeTlsHooks,
 };
 use sorng_commands_core::origin_browser_authority::{
     NativeCertificateAuthority, NativeCertificateDecision, NativeCertificateEvidence,
@@ -43,7 +43,31 @@ impl NativeTlsHooks for CertificateHooks {
     fn on_failure(&self) {
         diagnostics::navigation(Navigation::TlsFailed);
         if let Some(attempt) = self.attempt.upgrade() {
-            attempt.revoke();
+            attempt.revoke_for(super::BrowserSessionFailure::CertificateBridge);
+        }
+    }
+
+    fn on_failure_reason(&self, reason: NativeTlsFailure) {
+        let fixed = match reason {
+            NativeTlsFailure::ContextCreation => TlsBridgeFailure::ContextCreation,
+            NativeTlsFailure::InvalidEvidence => TlsBridgeFailure::InvalidEvidence,
+            NativeTlsFailure::InvalidState => TlsBridgeFailure::InvalidState,
+            NativeTlsFailure::OwnerUnavailable => TlsBridgeFailure::OwnerUnavailable,
+            NativeTlsFailure::Callback => TlsBridgeFailure::Callback,
+            NativeTlsFailure::CompleteRejected => TlsBridgeFailure::CompleteRejected,
+            NativeTlsFailure::RevokeRejected => TlsBridgeFailure::RevokeRejected,
+            NativeTlsFailure::EngineRevoked => TlsBridgeFailure::EngineRevoked,
+            NativeTlsFailure::EngineFailure => TlsBridgeFailure::EngineFailure,
+            NativeTlsFailure::PoisonedState => TlsBridgeFailure::PoisonedState,
+            NativeTlsFailure::WrongThread => TlsBridgeFailure::WrongThread,
+        };
+        diagnostics::navigation(Navigation::TlsBridgeFailed { reason: fixed });
+        if let Some(attempt) = self.attempt.upgrade() {
+            if reason == NativeTlsFailure::OwnerUnavailable {
+                attempt.revoke();
+            } else {
+                attempt.revoke_for(super::BrowserSessionFailure::CertificateBridge);
+            }
         }
     }
 

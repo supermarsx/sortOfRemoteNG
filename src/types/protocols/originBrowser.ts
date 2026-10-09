@@ -52,7 +52,19 @@ export type OriginBrowserCapability =
 
 /** Fixed native lifecycle fault categories, not arbitrary exception messages. */
 export type OriginBrowserFailureReason =
-  "renderer" | "session" | "callback" | "native-surface" | "load";
+  | "renderer"
+  | "session"
+  | "database-owner"
+  | "watchdog"
+  | "private-context"
+  | "private-proxy"
+  | "certificate-bridge"
+  | "native-state"
+  | "runtime-unavailable"
+  | "owner-window"
+  | "callback"
+  | "native-surface"
+  | "load";
 
 /** Forward-compatible diagnostics: unknown reasons are omitted, never echoed. */
 export function originBrowserFailureReason(
@@ -63,6 +75,14 @@ export function originBrowserFailureReason(
   switch (reason) {
     case "renderer":
     case "session":
+    case "database-owner":
+    case "watchdog":
+    case "private-context":
+    case "private-proxy":
+    case "certificate-bridge":
+    case "native-state":
+    case "runtime-unavailable":
+    case "owner-window":
     case "callback":
     case "native-surface":
     case "load":

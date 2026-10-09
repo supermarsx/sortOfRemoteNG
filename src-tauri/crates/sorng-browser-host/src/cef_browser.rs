@@ -38,7 +38,7 @@ use cef::rc::Rc;
 use cef::*;
 use raw_window_handle::{HasDisplayHandle, HasWindowHandle};
 use sorng_protocols::origin_browser::{
-    BrowserIdentity, BrowserSessionStatus, OriginBrowserSession,
+    BrowserIdentity, BrowserSessionFailure, BrowserSessionStatus, OriginBrowserSession,
 };
 use std::collections::HashMap;
 use std::marker::PhantomData;
@@ -1738,7 +1738,7 @@ impl Shared {
             let session = match self.session.lock() {
                 Ok(session) => session,
                 Err(poisoned) => {
-                    let _ = poisoned.into_inner().revoke(&self.identity);
+                    let _ = poisoned.into_inner().revoke_for(&self.identity, BrowserSessionFailure::NativeState);
                     return;
                 }
             };
@@ -1770,7 +1770,7 @@ impl Shared {
         let session = match self.session.lock() {
             Ok(session) => session,
             Err(poisoned) => {
-                let _ = poisoned.into_inner().revoke(&self.identity);
+                let _ = poisoned.into_inner().revoke_for(&self.identity, BrowserSessionFailure::NativeState);
                 return false;
             }
         };
@@ -1890,6 +1890,10 @@ impl Shared {
                 Ok(state) => state,
                 Err(poisoned) => {
                     drop(poisoned.into_inner());
+                    if self.popup.view_closed().is_none() {
+                        let _ = self.session.lock().unwrap_or_else(|error| error.into_inner())
+                            .revoke_for(&self.identity, BrowserSessionFailure::NativeState);
+                    }
                     self.fault(browser, BrowserFault::Session);
                     return;
                 }
@@ -2440,6 +2444,10 @@ impl<'a> CefBrowserHost<'a> {
         }
         if !self.shared.accepts(browser.as_ref()) {
             if self.shared.state.is_poisoned() {
+                if self.shared.popup.view_closed().is_none() {
+                    let _ = self.shared.session.lock().unwrap_or_else(|error| error.into_inner())
+                        .revoke_for(identity, BrowserSessionFailure::NativeState);
+                }
                 self.shared.fault(browser.as_ref(), BrowserFault::Session);
             }
             return Err(BrowserError::StateUnavailable);
