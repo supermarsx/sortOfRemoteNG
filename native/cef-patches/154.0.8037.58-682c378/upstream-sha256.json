@@ -143,5 +143,10 @@
     "project": "cef",
     "path": "libcef/browser/download_manager_delegate_impl.cc",
     "sha256": "93327bbf93d9edaf023908f7240abe6e0ccd70cd331fed061fc380129e75ba0d"
+  },
+  {
+    "project": "chromium",
+    "path": "base/allocator/partition_allocator/src/partition_alloc/pointers/instance_tracer.cc",
+    "sha256": "853a73637d8aa9cb5c6c93650ca4eead862426185eb37b51f97d6c8bd2283a67"
   }
 ]

@@ -4,3 +4,4 @@ cef 0003-cef-native-widget-lifetime.patch
 chromium 0004-chromium-soda-provisioning.patch
 chromium 0005-chromium-proxy-route-probe.patch
 cef 0006-cef-explicit-download-destination.patch
+chromium 0007-chromium-instance-tracer-reentrancy.patch

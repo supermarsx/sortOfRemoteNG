@@ -83,6 +83,75 @@ also runs it; the separate CEF TLS/storage fixture remains necessary.
 
 ## Frozen contract for Main / Dirac
 
+### Instance-tracer reentrancy follow-up — candidate only, 2026-10-09
+
+`0007-chromium-instance-tracer-reentrancy.patch` changes only
+`InstanceTracer::UntraceImpl` in Chromium's
+`base/allocator/partition_allocator/src/partition_alloc/pointers/instance_tracer.cc`.
+It extracts the map node while holding the storage mutex, then destroys the
+detached node after the guard has released that mutex. Removing the instance
+remains serialized; allocator callbacks no longer run under this mutex when
+the removed node is deallocated. No entries or checks are suppressed.
+
+The isolated Windows acceptance run2 stalled inside `CefInitialize`, before
+browser creation or login. Its captured main-thread stack and matching local
+DLL/PDB resolve to an outer `UntraceImpl` map erase, GWP-ASan quarantine lazy
+initialization, a temporary quarantine branch's `raw_ref` destruction, and a
+second `UntraceImpl` acquiring the same non-recursive mutex. Evidence is in
+`.artifacts/cef-tls-recovery-20261009-run2/pid21116-root-wait.md`. The run timed
+out and is **not an acceptance pass**; this finding does not establish the
+cause of the separate Autodesk/later-tab transport failure.
+
+This patch keeps instance tracing, BackupRefPtr, dangling-pointer detection,
+GWP-ASan, allocator configuration, field trials, and sandbox settings unchanged.
+It addresses the observed node-deallocation reentry only. `TraceImpl` and the
+stack-trace enumeration paths still allocate while holding the mutex; this is
+not a general allocator-reentrancy fix. The standalone regression exercises
+the exact patched function with an instrumented map allocator, not real CEF
+startup or TLS recovery.
+
+The maintained queue is a **candidate**, not an activation of this runtime.
+Existing source-lock, package manifest, SDK bytes, local selection and release
+pins must remain unchanged until a separately inventoried package is built and
+tested. Normal app builds validate those selected package identities, not this
+source patch directory, so adding this candidate does not invalidate recovery05.
+Do not replace its source-lock or DLL in place: that correctly fails the
+selection/provenance checks. A new seven-patch source-lock and package require
+fresh provenance, SDK/archive hashes and deliberate selection after acceptance.
+
+No GN override is needed. The changed translation unit directly feeds
+`raw_ptr.lib`, but that foundational library also feeds Rust libraries and host
+code generators. The attempted incremental `libcef` build was **stopped, not
+completed**: Siso's dry run reported one step, while execution propagated the
+changed archive into generators, generated sources and thousands of dependents.
+The final stopped progress was 125/2891 after about 54 seconds. The current
+`libcef.dll` was not relinked; no candidate SDK package was produced or promoted.
+
+The maintained patch passed exact pinned-source SHA/apply checks. The focused
+`node --test tests/tooling/cefInstanceTracerReentry.node-test.mjs` regression
+passed 2/2: baseline detects the locked-deallocation hazard without hanging;
+the patched function passes 13 checks including 259 allocator reentries.
+This portable model does not link Chromium, GWP-ASan or BRP.
+
+After a separate build-scope review, in a prepared source checkout with the
+existing pinned toolchain environment, the originally proposed command was:
+
+```powershell
+# Review/apply in the engine source checkout only after build approval.
+git apply --check --whitespace=error-all F:/Projects/sortOfRemoteNG/native/cef-patches/154.0.8037.58-682c378/0007-chromium-instance-tracer-reentrancy.patch
+git apply F:/Projects/sortOfRemoteNG/native/cef-patches/154.0.8037.58-682c378/0007-chromium-instance-tracer-reentrancy.patch
+python F:/cef-builds/sorng-20261007/depot_tools/autoninja.py -C out/Release_GN_x64 -j 4 libcef
+```
+
+The exact source hunk was applied, but the build above did not finish. Do not
+retry it based solely on `-n`'s one-step count or call the previous 2-10 minute
+estimate verified. Keep the six earlier patches and GN flags intact. Before
+promotion, a completed reviewed build needs a separate package/output directory,
+fresh provenance/inventory and startup plus complete TLS/storage acceptance.
+Manually linking only the changed object while bypassing dirty generated-input
+dependencies is not an established compact packaging workflow. The existing
+selected SDK remains byte-for-byte unchanged and does not contain this fix.
+
 ### Download destination follow-up — built locally, selection/acceptance scoped
 
 `0006-cef-explicit-download-destination.patch` changes only

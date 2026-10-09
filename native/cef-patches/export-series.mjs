@@ -30,6 +30,8 @@ for (const [local, engine] of [
 }
 const widgetPath = "libcef/browser/native/native_widget_delegate.cc";
 const downloadPath = "libcef/browser/download_manager_delegate_impl.cc";
+const instanceTracerPath =
+  "base/allocator/partition_allocator/src/partition_alloc/pointers/instance_tracer.cc";
 const sodaPaths = [
   "components/soda/soda_features.h",
   "components/soda/soda_features.cc",
@@ -49,6 +51,7 @@ for (const [project, filename, pathspec] of [
       ".",
       ...sodaPaths.map((path) => `:(exclude)${path}`),
       ...probePaths.map((path) => `:(exclude)${path}`),
+      `:(exclude)${instanceTracerPath}`,
     ],
   ],
   [
@@ -60,6 +63,11 @@ for (const [project, filename, pathspec] of [
   ["chromium", "0004-chromium-soda-provisioning.patch", sodaPaths],
   ["chromium", "0005-chromium-proxy-route-probe.patch", probePaths],
   ["cef", "0006-cef-explicit-download-destination.patch", [downloadPath]],
+  [
+    "chromium",
+    "0007-chromium-instance-tracer-reentrancy.patch",
+    [instanceTracerPath],
+  ],
 ]) {
   const cwd = resolve(scratch, project);
   const patch = execFileSync(

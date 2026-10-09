@@ -20,7 +20,8 @@ foreach ($project in @($sources.Keys)) {
       'components/soda/soda_util.cc',
       'chrome/browser/accessibility/soda_installer_impl.cc',
       'net/dns/host_resolver_manager.cc',
-      'net/dns/host_resolver_manager_unittest.cc'
+      'net/dns/host_resolver_manager_unittest.cc',
+      'base/allocator/partition_allocator/src/partition_alloc/pointers/instance_tracer.cc'
     )
   }
   $revision = if ($project -eq 'cef') { '682c378d70d5780061e96644dca16ddd8fd157a9' } else { '154.0.8037.58' }
