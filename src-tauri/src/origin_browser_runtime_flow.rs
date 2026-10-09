@@ -11,6 +11,27 @@ use std::{
 };
 use tokio::sync::{oneshot, Notify};
 
+/// Retain exact attempt instances, then release the registry before revocation
+/// can wait on an attempt's own locks. A replacement at the same key is never
+/// substituted into this walk; admission/document fences stay with the caller.
+pub(super) fn snapshot_attempts<T>(attempts: &Mutex<HashMap<String, Arc<T>>>) -> Vec<Arc<T>> {
+    attempts
+        .lock()
+        .unwrap_or_else(|error| error.into_inner())
+        .values()
+        .cloned()
+        .collect()
+}
+
+pub(super) fn visit_attempt_snapshot<T>(
+    attempts: &Mutex<HashMap<String, Arc<T>>>,
+    mut visit: impl FnMut(Arc<T>),
+) {
+    for attempt in snapshot_attempts(attempts) {
+        visit(attempt);
+    }
+}
+
 /// Native window labels select lifetimes, never grant browser authority. Removing
 /// an epoch invalidates every old holder; a replacement cannot revive it.
 #[derive(Default)]
@@ -182,9 +203,9 @@ pub(super) async fn wait_for_readiness<E>(
     .unwrap_or_else(|_| Err(timed_out()))
 }
 
-/// Native startup may need pump work before its policy is installed. Pending is
-/// not a failure, but watchdog/policy/exit revocation is terminal for this
-/// process. A late successful readback must never restore revoked admission.
+/// Native startup may need pump work before its policy is installed. A ready
+/// host can suspend admission for one stalled UI callback; only that callback's
+/// recovery owner may resume it. Policy/startup/exit revocation stays terminal.
 #[derive(Default)]
 pub(super) struct RuntimeAdmission(AtomicU8);
 
@@ -192,6 +213,7 @@ impl RuntimeAdmission {
     const PENDING: u8 = 0;
     const READY: u8 = 1;
     const REVOKED: u8 = 2;
+    const SUSPENDED: u8 = 3;
 
     pub(super) fn ready(&self) -> bool {
         self.0.load(Ordering::Acquire) == Self::READY
@@ -199,6 +221,27 @@ impl RuntimeAdmission {
 
     pub(super) fn revoked(&self) -> bool {
         self.0.load(Ordering::Acquire) == Self::REVOKED
+    }
+
+    pub(super) fn suspended(&self) -> bool {
+        self.0.load(Ordering::Acquire) == Self::SUSPENDED
+    }
+
+    /// The sole outstanding callback's waiter owns this non-cloneable token.
+    /// Pending startup is deliberately ineligible for transient recovery.
+    pub(super) fn suspend_for_watchdog(&self) -> Option<PumpRecovery<'_>> {
+        self.0
+            .compare_exchange(
+                Self::READY,
+                Self::SUSPENDED,
+                Ordering::AcqRel,
+                Ordering::Acquire,
+            )
+            .ok()?;
+        Some(PumpRecovery {
+            admission: self,
+            armed: true,
+        })
     }
 
     pub(super) fn observe_policy(&self, configured: bool) {
@@ -209,7 +252,10 @@ impl RuntimeAdmission {
                 Ordering::AcqRel,
                 Ordering::Acquire,
             );
-        } else if self.ready() {
+        } else if matches!(
+            self.0.load(Ordering::Acquire),
+            Self::READY | Self::SUSPENDED
+        ) {
             self.revoke();
         }
     }
@@ -232,6 +278,61 @@ impl RuntimeAdmission {
                     Ordering::Acquire,
                 )
                 .is_ok()
+    }
+}
+
+/// Cannot be copied or reused for another stall. Ordinary policy observations
+/// never restore SUSPENDED, so at most one live recovery token can exist.
+pub(super) struct PumpRecovery<'a> {
+    admission: &'a RuntimeAdmission,
+    armed: bool,
+}
+
+impl PumpRecovery<'_> {
+    /// Invoke only after revoking the captured attempts AND receiving the exact
+    /// callback's successful pump/fresh policy readback. Hard revocation wins
+    /// this CAS, including revocation concurrent with callback completion.
+    pub(super) fn complete(mut self, healthy: bool) -> bool {
+        // Disarm BEFORE publishing READY. Another callback can subsequently
+        // suspend the host; this token's destructor must never revoke that epoch.
+        self.armed = false;
+        if !healthy {
+            self.admission.revoke();
+            return false;
+        }
+        self.admission
+            .0
+            .compare_exchange(
+                RuntimeAdmission::SUSPENDED,
+                RuntimeAdmission::READY,
+                Ordering::AcqRel,
+                Ordering::Acquire,
+            )
+            .is_ok()
+    }
+
+    /// Claim abandonment once, without taking registry/attempt locks or calling
+    /// native code. The runtime owner may report a fixed diagnostic only when
+    /// this transition wins; an existing hard failure/shutdown is left alone.
+    pub(super) fn abandon(&mut self) -> bool {
+        if !std::mem::replace(&mut self.armed, false) {
+            return false;
+        }
+        self.admission
+            .0
+            .compare_exchange(
+                RuntimeAdmission::SUSPENDED,
+                RuntimeAdmission::REVOKED,
+                Ordering::AcqRel,
+                Ordering::Acquire,
+            )
+            .is_ok()
+    }
+}
+
+impl Drop for PumpRecovery<'_> {
+    fn drop(&mut self) {
+        self.abandon();
     }
 }
 
@@ -258,9 +359,10 @@ impl<F: FnOnce()> Drop for RevokeOnDrop<F> {
     }
 }
 
-/// Keep the one outstanding UI callback alive after a stall. Revocation runs
-/// immediately at the deadline; only that callback's completion allows the
-/// caller to enqueue another tick. Recovery never restores traffic admission.
+/// Keep the one outstanding UI callback alive after a stall. The deadline
+/// handler finishes revoking attempts before completion is returned, even if
+/// that callback finishes while revocation waits. This alone never restores
+/// admission: the caller must validate completion using its recovery token.
 pub(super) async fn wait_for_pump<T>(
     mut receiver: oneshot::Receiver<T>,
     stall_after: Duration,

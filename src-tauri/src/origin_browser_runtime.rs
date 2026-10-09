@@ -111,6 +111,9 @@ struct Attempt {
     session: Arc<Mutex<OriginBrowserSession>>,
     snapshot: Mutex<OriginBrowserSnapshot>,
     cancelled: AtomicBool,
+    // Receipt for synchronous capability/relay revocation, not CEF close or
+    // OS socket teardown. A second revoke caller must not infer it from cancelled.
+    revocation_complete: AtomicBool,
     login: Arc<login::LoginHooks>,
     downloads: Arc<downloads::DownloadOwner>,
     automation: Arc<origin_browser_authority::NativeAutomationAuthority>,
@@ -152,11 +155,16 @@ impl Attempt {
                 });
             }
         }
-        let _ = self
+        let revoked = self
             .session
             .lock()
             .unwrap_or_else(|e| e.into_inner())
             .revoke(&self.identity);
+        if revoked.is_ok() {
+            // Never publish on unwind or before the exact session's relay has
+            // received its revocation signal. Async retention cleanup may remain.
+            self.revocation_complete.store(true, Ordering::Release);
+        }
     }
 }
 
@@ -570,6 +578,37 @@ pub(crate) fn pump_channel() -> (ScheduleWake, tokio::sync::mpsc::Receiver<()>) 
     (wake, receiver)
 }
 
+/// Runtime-only reporting around the flow token's atomic abandonment fence.
+/// No CEF work, registry walk or attempt lock is safe in this destructor.
+struct PumpSupervisorRecovery(Option<flow::PumpRecovery<'static>>);
+
+impl PumpSupervisorRecovery {
+    fn complete(mut self, healthy: bool) -> bool {
+        // Remove the diagnostic guard before the token can publish READY.
+        self.0.take().is_some_and(|recovery| recovery.complete(healthy))
+    }
+
+    fn incomplete_revocation(mut self) {
+        if self.0.as_mut().is_some_and(|recovery| recovery.abandon()) {
+            // The captured attempts were already cancelled. Do not re-enter
+            // their possibly blocked revokers after this bounded async wait.
+            shared().runtime_failure.record_current(RuntimeFailureCode::UiDispatch);
+            log::error!("Native browser watchdog capability revocation did not complete before deadline");
+        }
+    }
+}
+
+impl Drop for PumpSupervisorRecovery {
+    fn drop(&mut self) {
+        if self.0.as_mut().is_some_and(|recovery| recovery.abandon()) {
+            // fail_runtime would miss this evidence after the successful CAS,
+            // and would take attempt locks. Preserve the store's first cause.
+            shared().runtime_failure.record_current(RuntimeFailureCode::UiDispatch);
+            log::error!("Native browser watchdog recovery supervisor abandoned");
+        }
+    }
+}
+
 pub(crate) fn start_pump(app: tauri::AppHandle, mut wake: tokio::sync::mpsc::Receiver<()>) {
     // This worker is independent of Views and the CEF/UI pump. A database may
     // lock after its last website has closed, or while UI work is stalled.
@@ -600,29 +639,99 @@ pub(crate) fn start_pump(app: tauri::AppHandle, mut wake: tokio::sync::mpsc::Rec
             if app
                 .run_on_main_thread(move || {
                     tick();
-                    let deadline = UI.with(|slot| {
-                        slot.borrow()
-                            .as_ref()
-                            .map(|ui| ui.runtime.deadline().ok().flatten())
+                    let completion = UI.with(|slot| {
+                        let slot = slot.borrow();
+                        let ui = slot.as_ref()?;
+                        let deadline = match ui.runtime.deadline() {
+                            Ok(deadline) => deadline,
+                            Err(error) => {
+                                runtime_failed(error);
+                                None
+                            }
+                        };
+                        // This evidence belongs to this exact queued callback,
+                        // after its pump/cleanup work, never an earlier tick.
+                        let healthy = match ui.runtime.network_policy_configured() {
+                            Ok(true) => !ui.closing
+                                && ui.tls.is_some()
+                                && !shared().admission.revoked(),
+                            Ok(false) => {
+                                if shared().admission.ready() || shared().admission.suspended() {
+                                    fail_runtime(RuntimeFailureCode::RuntimePolicy);
+                                }
+                                false
+                            }
+                            Err(error) => {
+                                runtime_failed(error);
+                                false
+                            }
+                        };
+                        Some((deadline, healthy))
                     });
-                    let _ = sender.send(deadline);
+                    let _ = sender.send(completion);
                 })
                 .is_err()
             {
                 fail_runtime(RuntimeFailureCode::UiDispatch);
                 break;
             }
-            // A stalled callback retains its queue slot. Revoke admission at
-            // five seconds, then resume cleanup ticks when that callback returns.
-            let Ok(next) = flow::wait_for_pump(receiver, Duration::from_secs(5), revoke_all).await
+            // A timer alone suspends a ready host, without poisoning CEF's
+            // scheduler. Keep this callback's token local and finish revoking
+            // every captured attempt before its completion can restore READY.
+            let mut recovery = None;
+            let mut revoked_attempts = Vec::new();
+            let Ok(next) = flow::wait_for_pump(receiver, Duration::from_secs(5), || {
+                recovery = shared().admission.suspend_for_watchdog()
+                    .map(|token| PumpSupervisorRecovery(Some(token)));
+                if recovery.is_some() {
+                    log::warn!("Native browser watchdog suspended admission awaiting UI callback");
+                    revoked_attempts = flow::snapshot_attempts(&shared().attempts);
+                    for attempt in &revoked_attempts {
+                        attempt.revoke();
+                    }
+                } else {
+                    // Startup timeouts, lost dispatch and real runtime faults
+                    // remain terminal. Never reinitialize the native engine.
+                    fail_runtime(RuntimeFailureCode::UiDispatch);
+                }
+            }).await
             else {
                 fail_runtime(RuntimeFailureCode::UiDispatch);
                 break;
             };
             // Shutdown has removed the UI registry: never pump a stopped CEF.
-            let Some(next) = next else {
+            let Some((next, healthy)) = next else {
+                if recovery.is_some() {
+                    fail_runtime(RuntimeFailureCode::UiDispatch);
+                }
                 break;
             };
+            if let Some(recovery) = recovery {
+                if !healthy {
+                    fail_runtime(RuntimeFailureCode::RuntimePolicy);
+                }
+                // A prior caller may still own a revoker after cancelled=true.
+                // Wait only here, off UI and after the exact callback returns;
+                // retain the captured Arcs even if the map removes/replaces them.
+                let revocations_complete = healthy && flow::wait_for_readiness(
+                    Duration::from_secs(5),
+                    || {
+                        if shared().admission.revoked() {
+                            return Err(());
+                        }
+                        Ok(revoked_attempts.iter().all(|attempt| {
+                            attempt.revocation_complete.load(Ordering::Acquire)
+                        }))
+                    },
+                    || (),
+                ).await.is_ok();
+                if healthy && !revocations_complete {
+                    recovery.incomplete_revocation();
+                } else if recovery.complete(healthy) {
+                    shared().runtime_failure.ready_if(|| shared().admission.ready());
+                    log::info!("Native browser watchdog recovered admission after verified UI callback");
+                }
+            }
             let exit_code = *shared()
                 .exit_requested
                 .lock()
@@ -698,14 +807,13 @@ pub(crate) fn revoke_all() {
     shared().prewarm.cancel();
     shared().startup.fail();
     shared().admission.revoke();
-    for attempt in shared()
-        .attempts
-        .lock()
-        .unwrap_or_else(|e| e.into_inner())
-        .values()
-    {
+    revoke_attempts();
+}
+
+fn revoke_attempts() {
+    flow::visit_attempt_snapshot(&shared().attempts, |attempt| {
         attempt.revoke();
-    }
+    });
 }
 
 /// Runtime callback, unlike owner lock/close: retain its fixed engine cause.
@@ -743,17 +851,12 @@ pub(crate) fn shell_document_started(label: &str) {
 }
 
 fn revoke_stale_window(label: &str) {
-    for attempt in shared()
-        .attempts
-        .lock()
-        .unwrap_or_else(|e| e.into_inner())
-        .values()
-    {
+    flow::visit_attempt_snapshot(&shared().attempts, |attempt| {
         // A replacement document may already be admitting its own attempt.
         if attempt.window == label && !attempt.document.current() {
             attempt.revoke();
         }
-    }
+    });
 }
 
 pub(crate) fn on_event(app: &tauri::AppHandle, event: &tauri::RunEvent) {
@@ -1121,6 +1224,7 @@ async fn create_document(
         lease: authorized.lease,
         session,
         cancelled: AtomicBool::new(false),
+        revocation_complete: AtomicBool::new(false),
         login,
         automation: authorized.automation,
         preferences: authorized.preferences,
@@ -1140,6 +1244,7 @@ async fn create_document(
     {
         let mut attempts = shared().attempts.lock().map_err(|_| STALE)?;
         if !shared().admission.ready() || !attempt.current() {
+            drop(attempts);
             attempt.revoke();
             return Err(UNAVAILABLE.into());
         }
@@ -1150,6 +1255,7 @@ async fn create_document(
                     && other.current()
             })
         {
+            drop(attempts);
             attempt.revoke();
             return Err("A browser attempt already exists for this tab, or the native browser limit was reached.".into());
         }
@@ -1786,9 +1892,11 @@ pub(crate) fn tick() {
             return;
         };
         let was_ready = shared().admission.ready();
+        let was_verified = was_ready || shared().admission.suspended();
         let was_revoked = shared().admission.revoked();
-        // On watchdog/shutdown recovery this is a cleanup-only tick. Revoke
-        // before CEF callbacks run, including creates queued before the timeout.
+        // Hard failures/shutdown need cleanup-only work. A transient watchdog
+        // suspension must use the healthy scheduler so its callback can prove
+        // recovery; old attempts stay revoked and new admission stays closed.
         if shared().admission.revoked() {
             revoke_all();
             // The normal scheduler may be terminally stopped after a policy
@@ -1807,7 +1915,7 @@ pub(crate) fn tick() {
         match ui.runtime.network_policy_configured() {
             Ok(configured) if ui.tls.is_some() => {
                 shared().admission.observe_policy(configured);
-                if !configured && was_ready && !was_revoked {
+                if !configured && was_verified && !was_revoked {
                     shared().runtime_failure.record_current(RuntimeFailureCode::RuntimePolicy);
                 }
             }
