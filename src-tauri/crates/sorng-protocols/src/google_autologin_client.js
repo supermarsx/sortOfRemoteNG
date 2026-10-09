@@ -51,7 +51,7 @@
       'input#identifierId[name="identifier"][type="email"], input#identifierId[name="identifier"][type="text"]',
     );
     var button = unique(
-      '#identifierNext button[type="button"], #identifierNext button[type="submit"], button#identifierNext[type="button"], button#identifierNext[type="submit"]',
+      '#identifierNext button[type="button"], #identifierNext button[type="submit"], #identifierNext button:not([type]), button#identifierNext[type="button"], button#identifierNext[type="submit"], button#identifierNext:not([type])',
     );
     if (
       !(field instanceof HTMLInputElement) ||
@@ -81,7 +81,7 @@
       return null;
     var field = unique('input[name="Passwd"][type="password"]');
     var button = unique(
-      '#passwordNext button[type="button"], #passwordNext button[type="submit"], button#passwordNext[type="button"], button#passwordNext[type="submit"]',
+      '#passwordNext button[type="button"], #passwordNext button[type="submit"], #passwordNext button:not([type]), button#passwordNext[type="button"], button#passwordNext[type="submit"], button#passwordNext:not([type])',
     );
     if (
       !(field instanceof HTMLInputElement) ||

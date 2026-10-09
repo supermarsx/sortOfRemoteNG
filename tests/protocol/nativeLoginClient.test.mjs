@@ -718,6 +718,55 @@ const delayedProviderCases = [
     '<div id="loginPhoneModel">Enterprise IP phone SIP-T20P</div><form name="formInput" method="post" autocomplete="off" onsubmit="return false;" action="/servlet?p=login&q=login"><input type="text" name="username"><input type="password" name="pwd"><input type="hidden" name="jumpto" value="status"><input type="hidden" name="acc"><input id="idConfirm" type="button" onclick="OnConfirm()"><input id="idCancel" type="button" onclick="OnClear()"></form>',
   ],
 ];
+for (const wrapped of [false, true]) {
+  test(`Google accepts an implicit-submit Next button (${wrapped ? "wrapped" : "direct"}) through both stages`, async (t) => {
+    const next = (id) => wrapped
+      ? `<div id="${id}"><button>Next</button></div>`
+      : `<button name="action" id="${id}">Next</button>`;
+    const f = providerFixture(t, "google-account",
+      `<form method="POST" novalidate><input id="identifierId" name="identifier" type="text" autocomplete="username"><input name="hiddenPassword" type="password" aria-hidden="true" tabindex="-1">${next("identifierNext")}</form>`,
+      "https://accounts.google.com/v3/signin/identifier");
+    let clicks = 0;
+    f.field("button").onclick = (event) => { event.preventDefault(); clicks++; };
+    await f.advance(700);
+    assert.deepEqual(f.signals, ["identifier"]);
+    assert.equal(f.send("identifier"), true);
+    await f.advance(700);
+    assert.equal(f.field("#identifierId").value, "alice@example.test");
+    assert.equal(f.field('[name="hiddenPassword"]').value, "");
+    assert.equal(clicks, 1);
+    f.w.history.replaceState(null, "", "/v3/signin/challenge/pwd");
+    f.w.document.body.innerHTML = `<form method="POST"><input name="Passwd" type="password">${next("passwordNext")}</form>`;
+    f.field("button").onclick = (event) => { event.preventDefault(); clicks++; };
+    await f.advance(700);
+    assert.equal(f.signals.at(-1), "password");
+    assert.equal(f.send("password"), true);
+    await f.advance(700);
+    assert.equal(f.field('[name="Passwd"]').value, "test-secret");
+    assert.equal(clicks, 2);
+    assert.equal(f.signals.at(-1), "form-completed");
+    assert.equal(f.send("password"), false);
+  });
+}
+
+for (const [name, form, button] of [
+  ["GET", 'method="get"', ""],
+  ["external action", 'method="post" action="https://other.test"', ""],
+  ["form override", 'method="post"', 'formaction="https://other.test"'],
+  ["reset button", 'method="post"', 'type="reset"'],
+  ["other target", 'method="post" target="_blank"', ""],
+]) {
+  test(`Google implicit-button support keeps rejecting ${name}`, async (t) => {
+    const f = providerFixture(t, "google-account",
+      `<form ${form}><input id="identifierId" name="identifier" type="text"><button id="identifierNext" ${button}>Next</button></form>`,
+      "https://accounts.google.com/v3/signin/identifier");
+    await f.advance(1000);
+    assert.deepEqual(f.signals, []);
+    assert.equal(f.send("identifier"), false);
+    assert.equal(f.field("input").value, "");
+  });
+}
+
 for (const [provider, url, html] of delayedProviderCases) {
   test(`${provider} honors >2s minima without cached cleartext while awaiting fresh submit consent`, async (t) => {
     // Assert the actual private packet/record lifetimes at the action request.
@@ -768,6 +817,73 @@ for (const [provider, url, html] of delayedProviderCases) {
     await f.advance(200);
     assert.equal(clicks, 0);
     assert.equal(f.field(isPhone ? '[name="pwd"]' : "input").value, "");
+  });
+}
+
+const googlePasswordToggle = '<input type="checkbox" id="show-password" aria-labelledby="show-password-label"><label id="show-password-label" for="show-password">Show password</label>';
+const googlePasswordForm = (toggle = googlePasswordToggle) =>
+  `<form method="POST"><input name="Passwd" type="password">${toggle}<button id="passwordNext" type="button">Next</button></form>`;
+
+test("Google password stage tolerates its unchecked presentation-only visibility checkbox", async (t) => {
+  const f = providerFixture(t, "google-account",
+    googlePasswordForm(),
+    "https://accounts.google.com/v3/signin/challenge/pwd");
+  let clicks = 0;
+  f.field("button").onclick = () => clicks++;
+  await f.advance(700);
+  assert.deepEqual(f.signals, ["password"]);
+  assert.equal(f.send("password"), true);
+  await f.advance(700);
+  assert.equal(f.field('[name="Passwd"]').value, "test-secret");
+  assert.equal(f.field('[type="checkbox"]').checked, false);
+  assert.equal(clicks, 1);
+  assert.equal(f.signals.at(-1), "form-completed");
+});
+
+for (const [name, toggle] of [
+  ["submitted checkbox", googlePasswordToggle.replace('type="checkbox"', 'type="checkbox" name="consent"')],
+  ["checked checkbox", googlePasswordToggle.replace('type="checkbox"', 'type="checkbox" checked')],
+  ["required checkbox", googlePasswordToggle.replace('type="checkbox"', 'type="checkbox" required')],
+  ["disabled checkbox", googlePasswordToggle.replace('type="checkbox"', 'type="checkbox" disabled')],
+  ["unlabelled checkbox", '<input type="checkbox">'],
+  ["ambiguous checkboxes", googlePasswordToggle + '<input type="checkbox">'],
+  ["unrelated label", googlePasswordToggle.replace('for="show-password"', 'for="other"')],
+  ["changed ARIA association", googlePasswordToggle.replace('aria-labelledby="show-password-label"', 'aria-labelledby="other"')],
+  ["additional text field", googlePasswordToggle + '<input name="account">'],
+  ["OTP challenge", googlePasswordToggle + '<input autocomplete="one-time-code">'],
+  ["CAPTCHA challenge", googlePasswordToggle + '<input name="captcha">'],
+]) {
+  test(`Google password visibility support still rejects ${name}`, async (t) => {
+    const f = providerFixture(t, "google-account", googlePasswordForm(toggle),
+      "https://accounts.google.com/v3/signin/challenge/pwd");
+    await f.advance(700);
+    assert.deepEqual(f.signals, []);
+    assert.equal(f.send("password"), false);
+    assert.equal(f.field('[name="Passwd"]').value, "");
+  });
+}
+
+for (const change of ["checked", "named", "replaced", "label", "form-action"]) {
+  test(`Google password visibility ${change} during focus prevents disclosure`, async (t) => {
+    const f = providerFixture(t, "google-account", googlePasswordForm(),
+      "https://accounts.google.com/v3/signin/challenge/pwd");
+    let clicks = 0;
+    f.field("button").onclick = () => clicks++;
+    await f.advance(700);
+    assert.deepEqual(f.signals, ["password"]);
+    f.field('[name="Passwd"]').addEventListener("focus", () => {
+      const toggle = f.field('[type="checkbox"]');
+      if (change === "checked") toggle.checked = true;
+      if (change === "named") toggle.name = "consent";
+      if (change === "replaced") toggle.replaceWith(toggle.cloneNode(true));
+      if (change === "label") f.field("label").htmlFor = "other";
+      if (change === "form-action") f.field("form").action = "https://other.test/";
+    }, { once: true });
+    f.send("password");
+    await f.advance(700);
+    assert.equal(f.field('[name="Passwd"]').value, "");
+    assert.equal(clicks, 0);
+    assert.equal(f.signals.at(-1), "form-rejected");
   });
 }
 

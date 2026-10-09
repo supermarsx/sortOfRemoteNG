@@ -587,14 +587,41 @@
             : 'input[name="Passwd"][type="password"]',
         );
         const id = stage === "identifier" ? "identifierNext" : "passwordNext";
+        // Google's server-rendered form omits type on its Next button (the
+        // HTML default is submit). Keep the exact reviewed ID and the form,
+        // origin, method and target checks below for this variant too.
         button = only(
           doc,
-          `#${id} button[type="button"], #${id} button[type="submit"], button#${id}[type="button"], button#${id}[type="submit"]`,
+          `#${id} button[type="button"], #${id} button[type="submit"], #${id} button:not([type]), button#${id}[type="button"], button#${id}[type="submit"], button#${id}:not([type])`,
         );
         if (!field || !button || button.disabled) return null;
         form = field.form || doc.body;
         if (!field.form && (button.form || button.type !== "button"))
           return null;
+        if (stage === "password") {
+          // Google's password panel includes a labelled Show password toggle.
+          // It is not a credential or consent field: accept only one unchecked,
+          // unnamed control in this exact form and never change its state.
+          const toggles = Array.from(
+            form.querySelectorAll('input[type="checkbox"]'),
+          ).filter(painted);
+          if (toggles.length > 1) return null;
+          if (toggles.length === 1) {
+            const toggle = toggles[0];
+            const labels = Array.from(toggle.labels || []).filter(painted);
+            if (
+              toggle.form !== field.form || toggle.name || toggle.checked ||
+              toggle.required || toggle.disabled || toggle.readOnly ||
+              toggle.hasAttribute("form") || labels.length !== 1 ||
+              !form.contains(labels[0]) || !labels[0].textContent.trim() ||
+              (toggle.hasAttribute("aria-labelledby") &&
+                toggle.getAttribute("aria-labelledby") !== labels[0].id)
+            ) return null;
+            // Keep the exact checkbox and label in the target snapshot. A
+            // replacement/changed association during delivery fails closed.
+            extra = [toggle, labels[0]];
+          }
+        }
       } else if (provider === "synology-dsm") {
         const roots = doc.querySelectorAll("#sds-login-vue-inst");
         const root =

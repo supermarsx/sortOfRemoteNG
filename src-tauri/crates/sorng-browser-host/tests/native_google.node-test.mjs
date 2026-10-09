@@ -74,6 +74,26 @@ test('fill-only identifier consent does not click Next or request password',asyn
   } finally {f.close();}
 });
 
+for (const [stage,path,html] of [
+  ['identifier','/v3/signin/identifier','<input id="identifierId" name="identifier" type="text"><button id="identifierNext">Next</button>'],
+  ['password','/v3/signin/challenge/pwd','<input name="Passwd" type="password"><button id="passwordNext">Next</button>'],
+]) {
+  test(`reviewed Google helper accepts ${stage} implicit submit without weakening form guards`,async()=> {
+    for (const method of ['post','get']) {
+      const f=fixture(path,`<form method="${method}">${html}</form>`);
+      try {
+        let clicks=0;
+        f.w.document.querySelector('button').onclick=event=>{event.preventDefault();clicks++;};
+        await f.tick();
+        assert.deepEqual(f.events,method==='post'?[stage]:[]);
+        if (method==='post') {
+          assert.equal(f.send(stage),true);await f.tick();assert.equal(clicks,1);
+        } else assert.equal(f.w.document.querySelector('input').value,'');
+      } finally {f.close();}
+    }
+  });
+}
+
 test('new password document requests only password; native host must validate prior identifier grant',async()=> {
   const f=fixture('/v3/signin/challenge/pwd',password);let clicks=0;
   try {

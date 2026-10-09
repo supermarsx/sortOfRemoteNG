@@ -78,41 +78,46 @@ describe("reviewed Google staged auto-login client", () => {
     vi.useRealTimers();
   });
 
-  it("releases only the identifier on the exact identifier page", async () => {
-    install(
-      "/v3/signin/identifier",
-      '<input id="identifierId" name="identifier" type="email"><div id="identifierNext"><button type="button">Next</button></div>',
-    );
-    const reply = {
-      loginFlow: "google",
-      username: "person@example.test",
-      continuation: "a".repeat(32),
-    };
-    fetchMock.mockResolvedValue({ ok: true, json: async () => reply });
-    const button = document.querySelector<HTMLButtonElement>(
-      "#identifierNext button",
-    )!;
-    const click = vi.spyOn(button, "click");
-    client.fetchCredsAndRun("b".repeat(32), undefined, "google");
-    await vi.advanceTimersByTimeAsync(0);
-    expect(fetchMock).toHaveBeenCalledWith(
-      `/__sortofremoteng_autologin?nonce=${"b".repeat(32)}`,
-      expect.objectContaining({
-        credentials: "same-origin",
-        cache: "no-store",
-        redirect: "error",
-      }),
-    );
-    expect(
-      document.querySelector<HTMLInputElement>("#identifierId")!.value,
-    ).toBe("person@example.test");
-    expect(click).toHaveBeenCalledOnce();
-    expect(reply).toEqual({
-      loginFlow: "google",
-      username: null,
-      continuation: null,
-    });
-  });
+  it.each(["explicit", "implicit"])(
+    "releases only the identifier with an %s Next button",
+    async (buttonType) => {
+      install(
+        "/v3/signin/identifier",
+        buttonType === "implicit"
+          ? '<form method="POST"><input id="identifierId" name="identifier" type="text"><button id="identifierNext">Next</button></form>'
+          : '<input id="identifierId" name="identifier" type="email"><div id="identifierNext"><button type="button">Next</button></div>',
+      );
+      const reply = {
+        loginFlow: "google",
+        username: "person@example.test",
+        continuation: "a".repeat(32),
+      };
+      fetchMock.mockResolvedValue({ ok: true, json: async () => reply });
+      const button = document.querySelector<HTMLButtonElement>(
+        "#identifierNext button, button#identifierNext",
+      )!;
+      const click = vi.spyOn(button, "click").mockImplementation(() => {});
+      client.fetchCredsAndRun("b".repeat(32), undefined, "google");
+      await vi.advanceTimersByTimeAsync(0);
+      expect(fetchMock).toHaveBeenCalledWith(
+        `/__sortofremoteng_autologin?nonce=${"b".repeat(32)}`,
+        expect.objectContaining({
+          credentials: "same-origin",
+          cache: "no-store",
+          redirect: "error",
+        }),
+      );
+      expect(
+        document.querySelector<HTMLInputElement>("#identifierId")!.value,
+      ).toBe("person@example.test");
+      expect(click).toHaveBeenCalledOnce();
+      expect(reply).toEqual({
+        loginFlow: "google",
+        username: null,
+        continuation: null,
+      });
+    },
+  );
 
   it.each([
     ["pending", "pagehide"],
@@ -204,32 +209,37 @@ describe("reviewed Google staged auto-login client", () => {
     },
   );
 
-  it("releases only the password on the exact password continuation page", async () => {
-    install(
-      "/v3/signin/challenge/pwd",
-      '<input name="Passwd" type="password"><div id="passwordNext"><button type="button">Next</button></div>',
-    );
-    const reply = { loginFlow: "google", password: "fixture-secret" };
-    fetchMock.mockResolvedValue({ ok: true, json: async () => reply });
-    const button = document.querySelector<HTMLButtonElement>(
-      "#passwordNext button",
-    )!;
-    const click = vi.spyOn(button, "click");
-    client.fetchCredsAndRun("c".repeat(32), undefined, "google-password");
-    await vi.advanceTimersByTimeAsync(0);
-    expect(fetchMock).toHaveBeenCalledWith(
-      `/__sortofremoteng_autologin?phase=password&nonce=${"c".repeat(32)}`,
-      expect.objectContaining({
-        credentials: "same-origin",
-        redirect: "error",
-      }),
-    );
-    expect(
-      document.querySelector<HTMLInputElement>('input[name="Passwd"]')!.value,
-    ).toBe("fixture-secret");
-    expect(click).toHaveBeenCalledOnce();
-    expect(reply.password).toBeNull();
-  });
+  it.each(["explicit", "implicit"])(
+    "releases only the password with an %s Next button",
+    async (buttonType) => {
+      install(
+        "/v3/signin/challenge/pwd",
+        buttonType === "implicit"
+          ? '<form method="POST"><input name="Passwd" type="password"><button id="passwordNext">Next</button></form>'
+          : '<input name="Passwd" type="password"><div id="passwordNext"><button type="button">Next</button></div>',
+      );
+      const reply = { loginFlow: "google", password: "fixture-secret" };
+      fetchMock.mockResolvedValue({ ok: true, json: async () => reply });
+      const button = document.querySelector<HTMLButtonElement>(
+        "#passwordNext button, button#passwordNext",
+      )!;
+      const click = vi.spyOn(button, "click").mockImplementation(() => {});
+      client.fetchCredsAndRun("c".repeat(32), undefined, "google-password");
+      await vi.advanceTimersByTimeAsync(0);
+      expect(fetchMock).toHaveBeenCalledWith(
+        `/__sortofremoteng_autologin?phase=password&nonce=${"c".repeat(32)}`,
+        expect.objectContaining({
+          credentials: "same-origin",
+          redirect: "error",
+        }),
+      );
+      expect(
+        document.querySelector<HTMLInputElement>('input[name="Passwd"]')!.value,
+      ).toBe("fixture-secret");
+      expect(click).toHaveBeenCalledOnce();
+      expect(reply.password).toBeNull();
+    },
+  );
 
   it.each(["stable", "replaced", "render gap"])(
     "follows async email-to-password DOM replacement (%s), once per phase",
