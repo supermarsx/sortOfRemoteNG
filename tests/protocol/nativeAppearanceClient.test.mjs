@@ -277,9 +277,9 @@ test("native appearance actual pinned DarkReader stays private and releases its 
   assert.match(f.css(), /filter:invert/);
 });
 
-test("native appearance wrapper adds no content scanner, observer, script URL, or app bridge", () => {
+test("native appearance wrapper adds no content scanner, script URL, or app bridge", () => {
   assert.doesNotMatch(source, /BUNDLED_DARKREADER/);
-  assert.doesNotMatch(source, /new MutationObserver|querySelectorAll|attachShadow|postMessage|__TAURI|createElement\(["']script/);
+  assert.doesNotMatch(source, /querySelectorAll|attachShadow|postMessage|__TAURI|createElement\(["']script/);
 });
 
 test("native appearance waits for the actual root and acknowledges only the latest revision", t => {
@@ -311,4 +311,95 @@ test("native appearance cancels pre-root installation on off and disposal", t =>
     assert.equal(f.calls.length, 0);
     assert.deepEqual(f.statuses, dispose ? [] : [{ revision: "101", status: "off" }]);
   }
+});
+
+test("native appearance installs as soon as the parser creates a root, before DOM readiness", async t => {
+  for (const main of [true, false]) {
+    const f = fixture(t, { real: true, main });
+    await new Promise(resolve => f.win.addEventListener("load", resolve, { once: true }));
+    // Suppress JSDOM's initial synthetic ready events before modeling a new
+    // document whose parser has not reached readiness yet.
+    Object.defineProperty(f.doc, "readyState", { value: "loading", configurable: true });
+    const root = f.doc.documentElement;
+    root.remove();
+    assert.equal(f.controller.apply(f.config(), "100", main), true);
+    assert.equal(f.controller.apply(f.config({ backgroundColor: "#102030" }), "101", main), true);
+    assert.equal(f.statuses.length, 0);
+    const head = root.querySelector("head");
+    head.remove();
+    f.doc.append(root);
+    // The parser can paint before readystatechange/DOMContentLoaded. A single
+    // mutation checkpoint must already have installed the actual vendor floor.
+    await Promise.resolve();
+    assert.deepEqual(f.statuses, [{ revision: "101", status: "applied" }]);
+    assert.ok(f.doc.querySelector(".darkreader--fallback"));
+    root.prepend(head);
+    await Promise.resolve();
+    assert.ok(f.doc.querySelector(".darkreader--user-agent"));
+  }
+});
+
+test("native appearance retains its palette across cached back/forward restoration", async t => {
+  const f = fixture(t, { real: true });
+  assert.equal(f.apply(f.config({ backgroundColor: "#102030" })), true);
+  const styles = f.doc.querySelector(".darkreader--user-agent");
+  assert.ok(styles);
+  for (let visit = 0; visit < 2; visit++) {
+    f.win.dispatchEvent(new f.win.PageTransitionEvent("pagehide", { persisted: true }));
+    assert.equal(styles.isConnected, true, "a cached document must retain its dark paint");
+    f.win.dispatchEvent(new f.win.PageTransitionEvent("pageshow", { persisted: true }));
+    assert.equal(f.apply(f.config({ backgroundColor: "#102030" })), true);
+    assert.equal(f.doc.querySelector(".darkreader--user-agent"), styles);
+  }
+  assert.equal(f.apply({ enabled: false }), true);
+  assert.equal(styles.isConnected, false, "explicit off still removes owned styling");
+  f.win.dispatchEvent(new f.win.PageTransitionEvent("pagehide", { persisted: false }));
+  assert.equal(f.apply(f.config()), false);
+});
+
+test("native appearance root observation is shallow and released on install, off, and disposal", async t => {
+  for (const finish of ["install", "off", "dispose"]) {
+    const f = fixture(t);
+    await new Promise(resolve => f.win.addEventListener("load", resolve, { once: true }));
+    const root = f.doc.documentElement;
+    const subscriptions = [];
+    let disconnected = 0;
+    const Observer = f.win.MutationObserver;
+    f.win.MutationObserver = class extends Observer {
+      observe(target, options) { subscriptions.push({ target, options }); super.observe(target, options); }
+      disconnect() { disconnected++; super.disconnect(); }
+    };
+    root.remove();
+    f.apply(f.config());
+    assert.equal(subscriptions.length, 1);
+    assert.equal(subscriptions[0].target, f.doc);
+    assert.deepEqual(Object.keys(subscriptions[0].options), ["childList"]);
+    assert.equal(subscriptions[0].options.childList, true);
+    if (finish === "off") f.apply({ enabled: false });
+    if (finish === "dispose") f.controller.dispose();
+    f.doc.append(root);
+    await Promise.resolve();
+    assert.equal(disconnected, 1);
+    assert.equal(f.calls.filter(call => call.kind === "enable").length, finish === "install" ? 1 : 0);
+    root.append(f.doc.createElement("div"));
+    await Promise.resolve();
+    assert.equal(subscriptions.length, 1, "no continuing content watcher");
+  }
+});
+
+test("native appearance cached pagehide aborts resources without revoking the controller", async t => {
+  let signal;
+  const f = fixture(t, { fetch: (_url, options) => {
+    signal = options.signal;
+    return new Promise((_resolve, reject) => signal.addEventListener("abort", () => reject(Error("aborted"))));
+  } });
+  f.apply(f.config());
+  const pending = f.win.__engineFetch("/app.css");
+  f.win.dispatchEvent(new f.win.PageTransitionEvent("pagehide", { persisted: true }));
+  assert.equal(signal.aborted, true);
+  await assert.rejects(pending, /Native appearance resource unavailable/);
+  assert.equal(f.apply(f.config()), true);
+  assert.equal(f.calls.filter(call => call.kind === "enable").length, 1);
+  f.win.dispatchEvent(new f.win.PageTransitionEvent("pagehide", { persisted: false }));
+  assert.equal(f.apply(f.config()), false);
 });

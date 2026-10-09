@@ -1,7 +1,7 @@
 /* Native-only factory(engine, notify) -> { apply(config, revision, main), dispose }.
  * cef_appearance_renderer.rs owns the sole vendored DarkReader initialization,
  * including private CommonJS exports and private window/chrome shims. Retain the
- * returned controller in CEF only. No page bridge or extra DOM observers. */
+ * returned controller in CEF only. No page bridge or content scanning. */
 (function (reader, notify) {
   "use strict";
   const nativeWindow = globalThis.window;
@@ -37,6 +37,7 @@
     doc.removeEventListener("readystatechange", pendingRoot.ready);
     doc.removeEventListener("DOMContentLoaded", pendingRoot.ready);
     nativeWindow.clearTimeout(pendingRoot.timer);
+    pendingRoot.observer.disconnect();
     pendingRoot = null;
   }
 
@@ -85,13 +86,17 @@
       key === "followAppTheme" ? theme[key] !== false : theme[key]])) };
   }
 
-  function cleanup() {
-    cancelRootWait();
+  function cancelFetches() {
     epoch++;
-    enabled = false;
-    activeKey = null;
     for (const controller of fetching) controller.abort();
     fetching.clear();
+  }
+
+  function cleanup() {
+    cancelRootWait();
+    cancelFetches();
+    enabled = false;
+    activeKey = null;
     let ok = true;
     if (dynamicOwned) {
       // enable() can partially install before throwing, so ownership is set
@@ -244,8 +249,10 @@
     catch { return finish(config); }
     if (normalized?.enabled && !doc.documentElement) {
       // CEF can create V8 before the HTML parser has created a root. Preserve
-      // native prepaint dark until a real installation is acknowledged. One
-      // bounded readiness wait, no periodic scans or additional DOM observer.
+      // styling before the parser can paint. Native auto-dark may already be
+      // off after the previous document's successful enhancement. Waiting for
+      // DOMContentLoaded/readystatechange would leave this document unthemed.
+      // Observe only the root insertion, then disconnect; never scan content.
       cleanup();
       const ready = () => {
         if (!pendingRoot || !doc.documentElement) return;
@@ -258,7 +265,9 @@
         if (doc.documentElement) finish(normalized);
         else { try { notify(revision, "fallback"); } catch { cleanup(); } }
       }, 4000);
-      pendingRoot = { ready, timer };
+      const observer = new nativeWindow.MutationObserver(ready);
+      pendingRoot = { ready, timer, observer };
+      observer.observe(doc, { childList: true });
       doc.addEventListener("readystatechange", ready);
       doc.addEventListener("DOMContentLoaded", ready);
       return true; // accepted, not yet acknowledged
@@ -269,8 +278,15 @@
   function dispose() {
     cleanup();
     disposed = true;
-    removeEvent("pagehide", dispose);
+    removeEvent("pagehide", pagehide);
   }
-  addEvent("pagehide", dispose, { once: true });
+  function pagehide(event) {
+    // BFCache keeps this exact context and controller alive. Removing styles
+    // here restores a light document on Back, with no new CEF context install.
+    // Cancel in-flight resource reads but preserve the owned palette/revision.
+    if (event.persisted) cancelFetches();
+    else dispose();
+  }
+  addEvent("pagehide", pagehide);
   return Object.freeze({ apply, dispose });
 })
