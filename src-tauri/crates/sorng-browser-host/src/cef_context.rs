@@ -52,6 +52,30 @@ fn lock_session<'a>(
 }
 
 impl Preparation {
+    fn verify_browser_binding(
+        &self,
+        browser: &Browser,
+        retained: &mut RequestContext,
+    ) -> Result<(), ContextError> {
+        if self.current_status() != PreparationStatus::ProxyConfigured {
+            return Err(ContextError::SessionUnavailable);
+        }
+        let endpoint = {
+            let session = lock_session(&self.session, &self.identity)?;
+            if session.policy().identity() != &self.identity {
+                return Err(ContextError::SessionUnavailable);
+            }
+            session.proxy_endpoint()
+        };
+        // Do not hold session locks across CEF calls. The returned native
+        // browser context, not just the factory argument, must prove ownership.
+        let result = verify_native_browser_binding(browser, retained, endpoint);
+        if let Err(error) = result {
+            self.fail(error);
+        }
+        result
+    }
+
     fn claim_creation(
         &self,
         session: &Arc<Mutex<OriginBrowserSession>>,
@@ -168,6 +192,31 @@ impl Preparation {
 }
 
 struct CefPreferences<'a>(&'a RequestContext);
+
+fn verify_native_browser_binding(
+    browser: &Browser,
+    retained: &mut RequestContext,
+    endpoint: std::net::SocketAddr,
+) -> Result<(), ContextError> {
+    let actual = browser
+        .host()
+        .and_then(|host| host.request_context())
+        .ok_or(ContextError::SharedContext)?;
+    // IsSharingWith is insufficient: two distinct contexts may share storage.
+    // Only IsSame proves that CEF attached this exact retained private context.
+    if actual.is_same(Some(retained)) != 1 || !CefPreferences(&actual).is_private() {
+        return Err(ContextError::SharedContext);
+    }
+    let expected = FixedProxy {
+        mode: "fixed_servers".into(),
+        server: format!("http://{endpoint}"),
+        bypass_list: "<-loopback>".into(),
+    };
+    if CefPreferences(&actual).read().as_ref() != Some(&expected) {
+        return Err(ContextError::ProxyMismatch);
+    }
+    Ok(())
+}
 
 impl ProxyPreferences for CefPreferences<'_> {
     fn is_private(&self) -> bool {
@@ -561,6 +610,20 @@ impl PrivateRequestContext {
         )?;
         Ok(&mut self.context)
     }
+
+    /// Verify CEF's actual browser/context binding before any website navigation.
+    /// A matching preference on the supplied factory argument is not sufficient.
+    /// This proves identity/configuration, not Network Service socket routing.
+    pub(crate) fn verify_browser_binding(&self, browser: &Browser) -> Result<(), ContextError> {
+        if currently_on(ThreadId::UI) != 1 {
+            return Err(ContextError::WrongThread);
+        }
+        if !self.browser_claimed || self.status() != PreparationStatus::ProxyConfigured {
+            return Err(ContextError::SessionUnavailable);
+        }
+        self.preparation
+            .verify_browser_binding(browser, &mut self.context.clone())
+    }
 }
 
 impl Drop for PrivateRequestContext {
@@ -600,6 +663,10 @@ impl NativeTlsHooks for ContextTlsHooks {
         self.hooks.on_failure();
     }
 }
+
+#[cfg(test)]
+#[path = "cef_context_binding_tests.rs"]
+mod binding_tests;
 
 #[cfg(test)]
 mod tests {

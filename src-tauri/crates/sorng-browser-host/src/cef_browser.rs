@@ -2141,7 +2141,7 @@ impl<'a> CefBrowserHost<'a> {
             chrome_zoom_bubble: cef::State::DISABLED,
             ..Default::default()
         };
-        let native_context = context.for_browser_creation(&session, &identity)?;
+        let mut native_context = context.for_browser_creation(&session, &identity)?.clone();
         let mut extra_info = dictionary_value_create().ok_or(BrowserError::CreationFailed)?;
         extra_info.set_string(
             Some(&CefString::from("feature-pin")),
@@ -2164,7 +2164,7 @@ impl<'a> CefBrowserHost<'a> {
             Some(&CefString::from("about:blank")),
             Some(&settings),
             Some(&mut extra_info),
-            Some(native_context),
+            Some(&mut native_context),
         ) else {
             shared.fault(None, BrowserFault::NativeSurface);
             return Err(BrowserError::CreationFailed);
@@ -2172,6 +2172,10 @@ impl<'a> CefBrowserHost<'a> {
         if !shared.accepts(Some(&browser)) || !shared.current() {
             shared.fault(Some(&browser), BrowserFault::NativeSurface);
             return Err(BrowserError::CreationFailed);
+        }
+        if let Err(error) = context.verify_browser_binding(&browser) {
+            shared.fault(Some(&browser), BrowserFault::NativeSurface);
+            return Err(error.into());
         }
         // Blank documents can lazily create their V8 context. Force only that
         // inert context to exist so renderer installation can acknowledge
