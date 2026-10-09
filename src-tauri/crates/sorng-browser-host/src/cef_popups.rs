@@ -205,6 +205,7 @@ fn child_shared(
     Arc::new(Shared {
         input_blocked: AtomicBool::new(false),
         popup: role,
+        inspector_bootstrap: source.inspector_bootstrap.clone(),
         session: source.session.clone(),
         identity: source.identity.clone(),
         permissions: source.permissions.clone(),

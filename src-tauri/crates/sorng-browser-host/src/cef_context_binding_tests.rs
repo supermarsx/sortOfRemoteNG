@@ -278,6 +278,7 @@ async fn browser_binding_failure_revokes_only_the_owned_relay_and_retains_reason
     let successor = session().await;
     let endpoint = owned.proxy_endpoint();
     let preparation = Preparation {
+        inspector_bootstrap: Arc::default(),
         identity: owned.policy().identity().clone(),
         session: Arc::new(Mutex::new(owned)),
         permissions: crate::cef_requests::deny_permissions(),

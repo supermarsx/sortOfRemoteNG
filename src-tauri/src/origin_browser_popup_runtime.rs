@@ -205,6 +205,9 @@ fn control(view: &View, target: Option<&str>, action: OriginBrowserAction) -> Re
             OriginBrowserAction::Focus {
                 presentation_revision,
             } if presentation_revision == view.presentation => host.focus(id),
+            OriginBrowserAction::Devtools {
+                presentation_revision,
+            } if presentation_revision == view.presentation => host.open_devtools(id),
             OriginBrowserAction::Zoom {
                 percent,
                 presentation_revision,
@@ -244,7 +247,8 @@ pub(crate) async fn operate(
             | PopupAction::Control {
                 action: OriginBrowserAction::Back {}
                     | OriginBrowserAction::Forward {}
-                    | OriginBrowserAction::Reload {},
+                    | OriginBrowserAction::Reload {}
+                    | OriginBrowserAction::Devtools { .. },
                 ..
             }
     ) {

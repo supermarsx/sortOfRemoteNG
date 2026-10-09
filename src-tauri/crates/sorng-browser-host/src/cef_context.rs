@@ -30,6 +30,7 @@ pub enum PreparationStatus {
 }
 
 struct Preparation {
+    inspector_bootstrap: Arc<crate::cef_browser::cef_devtools::BootstrapGate>,
     session: Arc<Mutex<OriginBrowserSession>>,
     identity: BrowserIdentity,
     permissions: Arc<WebsitePermissionEngine>,
@@ -307,6 +308,13 @@ wrap_request_context_handler! {
             request_initiator: Option<&CefString>,
             disable_default_handling: Option<&mut i32>,
         ) -> Option<ResourceRequestHandler> {
+            if let Some(handler) = self.preparation.inspector_bootstrap.handler(
+                &self.preparation.session, &self.preparation.identity,
+                browser.is_none(), frame.is_none(), request.as_deref(),
+                is_navigation, is_download, request_initiator,
+            ) {
+                return Some(handler);
+            }
             // Workers can have no browser/frame. Never drop their admission hook.
             let navigation_frame = crate::cef_requests::verified_navigation_frame(browser.as_deref(), frame.as_deref(), request.as_deref(), is_navigation);
             Some(crate::cef_requests::context_resource_handler(
@@ -368,6 +376,7 @@ impl PrivateRequestContext {
             }
         }
         let preparation = Arc::new(Preparation {
+            inspector_bootstrap: Arc::default(),
             session,
             identity,
             permissions,
@@ -488,6 +497,7 @@ impl PrivateRequestContext {
             }
         }
         let preparation = Arc::new(Preparation {
+            inspector_bootstrap: Arc::default(),
             session,
             identity,
             permissions: Arc::new(
@@ -537,6 +547,10 @@ impl PrivateRequestContext {
     /// Native browser creation must reuse its context's immutable snapshot.
     pub(crate) fn permissions(&self) -> Arc<WebsitePermissionEngine> {
         self.preparation.permissions.clone()
+    }
+
+    pub(crate) fn inspector_bootstrap(&self) -> Arc<crate::cef_browser::cef_devtools::BootstrapGate> {
+        self.preparation.inspector_bootstrap.clone()
     }
 
     pub(crate) fn capabilities(&self) -> NativeBrowserCapabilities {
@@ -793,6 +807,7 @@ mod tests {
         .await
         .unwrap();
         Preparation {
+            inspector_bootstrap: Arc::default(),
             session: Arc::new(Mutex::new(session)),
             identity,
             permissions: crate::cef_requests::deny_permissions(),
@@ -1122,6 +1137,7 @@ mod tests {
                     Zeroizing::new(format!("CONNECT fixture.invalid:443 HTTP/1.1\r\nHost: fixture.invalid:443\r\nProxy-Authorization: Basic {}\r\n\r\n", encoded.as_str()))
                 }).unwrap();
                 let preparation = Preparation {
+                    inspector_bootstrap: Arc::default(),
                     session: Arc::new(Mutex::new(session)),
                     identity,
                     permissions: crate::cef_requests::deny_permissions(),

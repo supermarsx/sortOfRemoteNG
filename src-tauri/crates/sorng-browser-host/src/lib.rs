@@ -8,6 +8,8 @@
 
 pub mod control;
 #[cfg(any(feature = "cef-host", test))]
+mod cef_devtools_policy;
+#[cfg(any(feature = "cef-host", test))]
 mod cef_occlusion;
 pub mod domain_permissions;
 pub mod ipc;

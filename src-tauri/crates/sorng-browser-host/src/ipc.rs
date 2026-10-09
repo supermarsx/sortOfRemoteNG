@@ -548,6 +548,10 @@ pub enum OriginBrowserAction {
     Focus {
         presentation_revision: u64,
     },
+    /// Trusted shell only; no URL, script, port or arbitrary protocol command.
+    Devtools {
+        presentation_revision: u64,
+    },
     Back {},
     Forward {},
     Reload {},
@@ -590,6 +594,9 @@ impl OriginBrowserAction {
                 Ok(())
             }
             Self::Focus {
+                presentation_revision,
+            }
+            | Self::Devtools {
                 presentation_revision,
             }
             | Self::Zoom {

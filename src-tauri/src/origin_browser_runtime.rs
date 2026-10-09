@@ -1451,6 +1451,7 @@ async fn operate(
     let (sender, receiver) = tokio::sync::oneshot::channel();
     let retained = attempt.clone();
     let is_close = matches!(operation, Operation::Close);
+    let is_devtools = matches!(operation, Operation::Control(OriginBrowserAction::Devtools { .. }));
     let abandoned = attempt.clone();
     let handoff = flow::RevokeOnDrop::new(move || {
         if !is_close {
@@ -1601,6 +1602,17 @@ async fn operate(
                             }
                             view.host.focus(id)
                         }
+                        OriginBrowserAction::Devtools {
+                            presentation_revision,
+                        } => {
+                            if presentation_revision != view.presentation
+                                || !view.visible
+                                || view.input_blocked
+                            {
+                                return Err("The website presentation changed.".into());
+                            }
+                            view.host.open_devtools(id)
+                        }
                         OriginBrowserAction::Presentation {
                             revision,
                             bounds,
@@ -1664,7 +1676,7 @@ async fn operate(
             UNAVAILABLE.to_owned()
         })?
         .map_err(|_| UNAVAILABLE.to_owned())?;
-    if result.is_ok() {
+    if result.is_ok() || is_devtools {
         handoff.disarm();
     }
     result
@@ -1697,6 +1709,7 @@ pub(crate) async fn control(
         OriginBrowserAction::Back {}
             | OriginBrowserAction::Forward {}
             | OriginBrowserAction::Reload {}
+            | OriginBrowserAction::Devtools { .. }
     ) {
         attempt.lease.recheck(&window, state).await.map_err(|_| {
             attempt.revoke();

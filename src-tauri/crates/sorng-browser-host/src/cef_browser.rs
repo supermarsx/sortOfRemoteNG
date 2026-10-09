@@ -12,6 +12,10 @@ mod cef_find;
 #[path = "cef_manual_input.rs"]
 mod manual_input;
 pub use manual_input::{ManualInputCompletion, ManualInputGuard};
+#[path = "cef_devtools.rs"]
+pub(crate) mod cef_devtools;
+#[path = "cef_context_menu.rs"]
+mod context_menu;
 pub use cef_find::{NativeFindCompletion, NativeFindResult};
 #[path = "cef_login_totp.rs"]
 mod login_totp;
@@ -485,6 +489,7 @@ impl State {
 
 struct Shared {
     popup: cef_popups::PopupRole,
+    inspector_bootstrap: Arc<cef_devtools::BootstrapGate>,
     session: Arc<Mutex<OriginBrowserSession>>,
     identity: BrowserIdentity,
     permissions: Arc<WebsitePermissionEngine>,
@@ -865,6 +870,10 @@ impl CleanupOwner {
             return;
         }
         if stage == CleanupStage::Close {
+            host.close_dev_tools();
+            if !self.issued(browser, browser_id, stage) {
+                return;
+            }
             host.set_focus(0);
             if !self.issued(browser, browser_id, stage) {
                 return;
@@ -2097,6 +2106,7 @@ impl<'a> CefBrowserHost<'a> {
         let capabilities = context.capabilities();
         let shared = Arc::new(Shared {
             popup: cef_popups::PopupRole::root(),
+            inspector_bootstrap: context.inspector_bootstrap(),
             input_blocked: AtomicBool::new(false),
             session: session.clone(),
             identity: identity.clone(),
@@ -2637,6 +2647,7 @@ impl<'a> CefBrowserHost<'a> {
         }
         let host = self.native_host(&browser)?;
         if !visible {
+            host.close_dev_tools();
             host.set_focus(0);
         }
         if native_surface::visible(host.window_handle(), visible).is_err() {
@@ -2703,7 +2714,10 @@ impl<'a> CefBrowserHost<'a> {
         let rects = crate::cef_occlusion::visible_rectangles(bounds, overlays, scale)
             .map_err(|_| BrowserError::NativeSurface)?;
         let host = self.native_host(&browser)?;
-        if input_blocked { host.set_focus(0); }
+        if input_blocked {
+            host.close_dev_tools();
+            host.set_focus(0);
+        }
         if crate::cef_occlusion::apply(host.window_handle(), &rects, input_blocked).is_err() {
             // Never leave an un-clipped child above a trusted shell prompt.
             let _ = self.hide(identity);
@@ -2937,7 +2951,7 @@ wrap_client! {
         fn permission_handler(&self) -> Option<PermissionHandler> { Some(NativePermissions::new(self.shared.clone())) }
         fn download_handler(&self) -> Option<DownloadHandler> { Some(self.downloads.handler()) }
         fn drag_handler(&self) -> Option<DragHandler> { Some(DenyDrag::new()) }
-        fn context_menu_handler(&self) -> Option<ContextMenuHandler> { Some(DenyContextMenu::new()) }
+        fn context_menu_handler(&self) -> Option<ContextMenuHandler> { Some(context_menu::handler(self.shared.clone(), self.browser.clone(), self.downloads.clone())) }
         fn command_handler(&self) -> Option<CommandHandler> { Some(DenyCommands::new()) }
         fn on_process_message_received(&self, browser: Option<&mut Browser>, frame: Option<&mut Frame>,
             source_process: ProcessId, message: Option<&mut ProcessMessage>) -> i32 {
@@ -2957,6 +2971,13 @@ wrap_client! {
 wrap_life_span_handler! {
     struct NativeLife { shared: Arc<Shared>, browser: BrowserSlot }
     impl LifeSpanHandler {
+        fn on_before_dev_tools_popup(&self, _browser: Option<&mut Browser>,
+            _window_info: Option<&mut WindowInfo>, client: Option<&mut Option<Client>>,
+            _settings: Option<&mut BrowserSettings>, extra_info: Option<&mut Option<DictionaryValue>>,
+            use_default_window: Option<&mut i32>) {
+            cef_devtools::prepare_popup(&self.shared, client, extra_info, use_default_window);
+        }
+
         fn on_before_popup(&self, browser: Option<&mut Browser>, frame: Option<&mut Frame>,
             popup_id: i32, target_url: Option<&CefString>, _target_frame_name: Option<&CefString>,
             target_disposition: WindowOpenDisposition, user_gesture: i32, _popup_features: Option<&PopupFeatures>,
@@ -3238,23 +3259,6 @@ wrap_command_handler! {
     struct DenyCommands;
     impl CommandHandler {
         fn on_chrome_command(&self, _browser: Option<&mut Browser>, _command_id: i32, _disposition: WindowOpenDisposition) -> i32 { 1 }
-    }
-}
-
-wrap_context_menu_handler! {
-    struct DenyContextMenu;
-    impl ContextMenuHandler {
-        fn on_before_context_menu(&self, _browser: Option<&mut Browser>, _frame: Option<&mut Frame>,
-            _params: Option<&mut ContextMenuParams>, model: Option<&mut MenuModel>) { if let Some(model) = model { model.clear(); } }
-        fn run_context_menu(&self, _browser: Option<&mut Browser>, _frame: Option<&mut Frame>,
-            _params: Option<&mut ContextMenuParams>, _model: Option<&mut MenuModel>, callback: Option<&mut RunContextMenuCallback>) -> i32 {
-            if let Some(callback) = callback { callback.cancel(); } 1
-        }
-        fn on_context_menu_command(&self, _browser: Option<&mut Browser>, _frame: Option<&mut Frame>,
-            _params: Option<&mut ContextMenuParams>, _command_id: i32, _event_flags: EventFlags) -> i32 { 1 }
-        fn run_quick_menu(&self, _browser: Option<&mut Browser>, _frame: Option<&mut Frame>,
-            _location: Option<&Point>, _size: Option<&Size>, _edit_state_flags: QuickMenuEditStateFlags,
-            callback: Option<&mut RunQuickMenuCallback>) -> i32 { if let Some(callback) = callback { callback.cancel(); } 1 }
     }
 }
 
@@ -4212,6 +4216,7 @@ mod tests {
         control.attached(&identity).unwrap();
         Shared {
             popup: cef_popups::PopupRole::default(),
+            inspector_bootstrap: Arc::default(),
             input_blocked: AtomicBool::new(false),
             session: Arc::new(Mutex::new(session)),
             identity,
@@ -4298,7 +4303,7 @@ mod tests {
 
     // Library-owned browser vtable: exercise the actual focus callback without
     // creating a CEF window, renderer, profile or network connection.
-    fn focus_browser(valid_value: i32, identifier_value: i32) -> Browser {
+    pub(super) fn focus_browser(valid_value: i32, identifier_value: i32) -> Browser {
         use cef::rc::{ConvertReturnValue, RcImpl};
         use cef::sys::_cef_browser_t;
         #[cfg(target_os = "macos")]
