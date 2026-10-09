@@ -49,6 +49,7 @@ const runtimePackages = [
   "openh264",
   "openh264-sys2",
 ];
+const databasePackages = ["sha2", "sorng-encryption", "serde_json", "base64"];
 
 test("development baseline keeps incremental/debug policy and compiles ordinary dependencies without optimization", () => {
   assert.deepEqual(profile("profile.dev"), {
@@ -93,11 +94,12 @@ test("all fourteen explicit RDP pixel/protocol/decoder hot paths stay opt2 in de
         profile(key)["opt-level"] === 2,
     )
     .map((key) => key.slice("profile.dev.package.".length));
-  assert.deepEqual(actual.sort(), [...runtimePackages, "sha2"].sort());
+  assert.deepEqual(actual.sort(), [...runtimePackages, ...databasePackages].sort());
 });
 
-test("database integrity hashing stays optimized in development without optimizing all dependencies", () => {
-  assert.deepEqual(profile("profile.dev.package.sha2"), { "opt-level": 2 });
+test("database integrity and owner codec hot paths stay optimized without optimizing all dependencies", () => {
+  for (const name of databasePackages)
+    assert.deepEqual(profile(`profile.dev.package.${name}`), { "opt-level": 2 });
   assert.equal(profile('profile.dev.package."*"')["opt-level"], 0);
 });
 

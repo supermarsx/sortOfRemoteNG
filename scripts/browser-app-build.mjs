@@ -3,7 +3,7 @@
 // browser admission. No production application is launched by the build verb.
 import { execFile, spawn } from "node:child_process";
 import { createHash } from "node:crypto";
-import { constants, createReadStream } from "node:fs";
+import { constants } from "node:fs";
 import {
   copyFile,
   cp,
@@ -14,7 +14,6 @@ import {
   readdir,
   realpath,
   rename,
-  rm,
   stat,
   writeFile,
 } from "node:fs/promises";
@@ -22,7 +21,6 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import {
-  CEF_PIN,
   downloadArchive,
   extractRuntime,
   inspectRuntime,
@@ -58,6 +56,15 @@ import {
 import { ensurePublishedRuntime } from "./lib/browser-runtime-bootstrap.mjs";
 import { ensureBrowserSandboxAccess } from "./lib/browser-sandbox-access.mjs";
 import { validateBrowserClientImports } from "./lib/browser-client-imports.mjs";
+import {
+  digestFile,
+  immutableDevCache,
+  prepareDevSdkCache,
+} from "./lib/browser-dev-sdk-cache.mjs";
+export {
+  immutableDevCache,
+  prepareDevSdkCache,
+} from "./lib/browser-dev-sdk-cache.mjs";
 export { prepareWindowsInstallerBundles } from "./lib/browser-installer-bundles.mjs";
 
 const driver = fileURLToPath(import.meta.url);
@@ -81,158 +88,6 @@ const save = (file, value) =>
 // build/bundle invocations retain their private, inspectable artifact layouts.
 export const reuseDevInputs = (options) =>
   options.mode === "dev" && !options.output;
-
-async function digestFile(file, algorithm = "sha256") {
-  const hash = createHash(algorithm);
-  for await (const chunk of createReadStream(file)) hash.update(chunk);
-  return hash.digest("hex");
-}
-
-/** Publish a complete verified directory, never update an existing cache in
- * place. Racing publishers can only lose to a nonempty, verified winner. A
- * corrupt/partial entry is an error, not permission to replace a live SDK. */
-export async function immutableDevCache({
-  cacheRoot,
-  kind,
-  key,
-  create,
-  verify,
-}) {
-  if (!/^[a-z]+$/.test(kind) || !/^[a-f0-9]{64}$/.test(key))
-    throw new Error("Invalid dev cache identity");
-  await mkdir(cacheRoot, { recursive: true });
-  if (!(await lstat(cacheRoot)).isDirectory())
-    throw new Error("Dev cache root must be a real directory");
-  const parent = await realpath(cacheRoot);
-  // Keep MSBuild wrapper paths short; the complete digest is checked on reuse.
-  const destination = path.join(parent, `${kind}-${key.slice(0, 24)}`);
-  const check = async (directory) => {
-    if (!(await lstat(directory)).isDirectory())
-      throw new Error("Dev cache entry must be a real directory");
-    const identity = path.join(directory, "cache-key.json");
-    if (!(await lstat(identity)).isFile() || (await json(identity)).key !== key)
-      throw new Error(
-        "Dev cache identity changed; refusing reuse or replacement",
-      );
-    await verify(directory);
-    return directory;
-  };
-  const present = async () => {
-    try {
-      await lstat(destination);
-      return true;
-    } catch (error) {
-      if (error.code === "ENOENT") return false;
-      throw error;
-    }
-  };
-  if (await present()) return check(destination);
-  const temporary = await mkdtemp(path.join(parent, `.${kind}-`));
-  let published = false;
-  try {
-    await create(temporary);
-    await save(path.join(temporary, "cache-key.json"), { key });
-    await check(temporary);
-    if (await present()) return await check(destination);
-    try {
-      await rename(temporary, destination);
-      published = true;
-    } catch (error) {
-      if (!(
-        ["EEXIST", "ENOTEMPTY", "EPERM", "EACCES"].includes(error.code) &&
-        (await present())
-      ))
-        throw error;
-    }
-    return await check(destination);
-  } finally {
-    // Only our mkdtemp sibling is removed; published/live entries are untouched.
-    if (!published) await rm(temporary, { recursive: true, force: true });
-  }
-}
-
-export async function prepareDevSdkCache(
-  { inputs, preflight, cacheRoot },
-  {
-    prepareSdk = prepareCustomRuntime,
-    verifySdk = verifyPreparedCustomRuntime,
-  } = {},
-) {
-  const artifact = inputs.manifest.artifacts.find(
-    (item) => item.target === inputs.target,
-  );
-  // Hash the preparation implementation as well as all reviewed input pins.
-  const recipe = await Promise.all([
-    digestFile(driver),
-    digestFile(path.join(repo, "scripts/lib/browser-custom-runtime.mjs")),
-    digestFile(path.join(repo, "scripts/browser-runtime-package.mjs")),
-  ]);
-  const key = identitySha256({
-    schema: 1,
-    target: inputs.target,
-    manifest: inputs.manifest,
-    sourceLock: inputs.sourceLock,
-    recipe,
-  });
-  // Derive the prepared inventory from the CURRENT reviewed source, never a
-  // self-asserted receipt beside cached binaries. archive.json is deterministic.
-  const metadata = JSON.stringify({
-    type: "minimal",
-    name: `cef_binary_${CEF_PIN.version}_sorng-custom-${artifact.archive.sha256}.tar.bz2`,
-    sha1: await digestFile(preflight.archivePath, "sha1"),
-  });
-  const customRuntime = {
-    manifest: inputs.manifest,
-    sourceLock: inputs.sourceLock,
-    artifactRoot: await realpath(inputs.artifactRoot),
-    sourceSdk: await realpath(inputs.sdkRoot),
-    sdkFiles: [
-      ...artifact.sdkFiles
-        .filter((entry) => entry.path !== "archive.json")
-        .map((entry) => ({
-          ...entry,
-          path: entry.path.replace(/^(Release|Resources)\//, ""),
-        })),
-      {
-        path: "archive.json",
-        type: "file",
-        size: Buffer.byteLength(metadata),
-        sha256: createHash("sha256").update(metadata).digest("hex"),
-      },
-    ],
-    sourceLockSha256: preflight.sourceLockSha256,
-    archiveSdkRelationship: preflight.archiveSdkRelationship,
-  };
-  const result = {
-    archive: preflight.archivePath,
-    customRuntime,
-    target: inputs.target,
-  };
-  const directory = await immutableDevCache({
-    cacheRoot,
-    kind: "sdk",
-    key,
-    create: async (temporary) => {
-      const prepared = await prepareSdk({
-        ...inputs,
-        output: path.join(temporary, "sdk"),
-      });
-      if (
-        identitySha256(prepared.customRuntime) !== identitySha256(customRuntime)
-      )
-        throw new Error("Dev SDK preparation contract changed");
-    },
-    verify: async (entry) => {
-      const sdk = path.join(entry, "sdk");
-      if (!(await lstat(sdk)).isDirectory())
-        throw new Error("Dev SDK must be a real directory");
-      // Includes fresh source/archive provenance, every prepared byte and V2
-      // exports on EVERY hit, and again after atomic publication.
-      await verifySdk({ ...result, sdk });
-    },
-  });
-  return { ...result, sdk: path.join(directory, "sdk") };
-}
 
 export async function prepareDevRunnerCache(
   {
@@ -980,7 +835,23 @@ export async function loadCustomRuntimeInputs(options) {
   return { inputs, preflight };
 }
 
-export async function runCargo(args, environment = process.env) {
+// Every watch rebuild owns a new directory. Stage Windows/Linux directly into
+// the Cargo-shaped launch location so the verified runtime is never copied a
+// second time. Only its parent exists before the exclusive package stager runs.
+export async function applicationPayloadDirectory(plan, commands) {
+  if (commands.verb !== "run") return plan.payload;
+  const root = await mkdtemp(path.join(plan.root, "dev-"));
+  if (plan.platform === "macos") return path.join(root, `${plan.appName}.app`);
+  const payload = path.join(root, "target", plan.target, commands.profile);
+  await mkdir(path.dirname(payload), { recursive: true });
+  return payload;
+}
+
+export async function runCargo(
+  args,
+  environment = process.env,
+  { run = child, stage = stageApplicationPackage } = {},
+) {
   if (!environment.SORNG_CEF_BUILD_PLAN)
     throw new Error("CEF runner must be started by browser-app-build.mjs");
   const plan = await json(environment.SORNG_CEF_BUILD_PLAN);
@@ -1009,9 +880,9 @@ export async function runCargo(args, environment = process.env) {
     // An unsupported scheme fails before networking, even if SDK files change.
     env = customRuntimeEnvironment(env);
   }
-  await child("cargo", commands.application, env, tauriDir);
+  await run("cargo", commands.application, env, tauriDir);
   if (plan.platform !== "windows")
-    await child("cargo", commands.helper, env, tauriDir);
+    await run("cargo", commands.helper, env, tauriDir);
   const compiled = path.join(plan.cargoTarget, plan.target, commands.profile);
   if (plan.platform === "windows") {
     const client = path.join(compiled, "app_lib.dll");
@@ -1034,20 +905,14 @@ export async function runCargo(args, environment = process.env) {
   }
   // Watch rebuilds get their own retained payload. No broad delete or mutation
   // of an existing launched bundle. A build verb has one fixed bundle source.
-  const payload =
-    commands.verb === "run"
-      ? path.join(
-          await mkdtemp(path.join(plan.root, "dev-")),
-          `${plan.appName}${plan.platform === "macos" ? ".app" : "-payload"}`,
-        )
-      : plan.payload;
+  const payload = await applicationPayloadDirectory(plan, commands);
   let appPlist;
   if (plan.platform === "macos") {
     appPlist = path.join(
       path.dirname(payload),
       `${path.basename(payload)}.plist`,
     );
-    await child(
+    await run(
       "python3",
       [
         path.join(repo, "scripts/native/browser-app-plist.py"),
@@ -1070,7 +935,7 @@ export async function runCargo(args, environment = process.env) {
     appName: plan.appName,
     appPlist,
   };
-  const report = await stageApplicationPackage(plan, stageInputs);
+  const report = await stage(plan, stageInputs);
   if (!report.ok) throw new Error("CEF package verification failed");
   const output = path.join(plan.publicTarget, plan.target, commands.profile);
   await mkdir(output, { recursive: true });
@@ -1120,18 +985,10 @@ export async function runCargo(args, environment = process.env) {
   } else {
     // Unique target directory plus .cargo-lock lets Tauri resolve dev resources
     // beside the real Linux executable, not a production /usr/lib directory.
-    const devOutput = path.join(
-      path.dirname(payload),
-      "target",
-      plan.target,
-      commands.profile,
-    );
-    await mkdir(devOutput, { recursive: true });
-    await copyTreeExclusive(payload, devOutput);
-    await writeFile(path.join(devOutput, ".cargo-lock"), "", { flag: "wx" });
-    await copyResources(config.bundle.resources, devOutput);
+    await writeFile(path.join(payload, ".cargo-lock"), "", { flag: "wx" });
+    await copyResources(config.bundle.resources, payload);
     executable = path.join(
-      devOutput,
+      payload,
       `${plan.appName}${plan.platform === "windows" ? ".exe" : ""}`,
     );
   }
@@ -1140,7 +997,7 @@ export async function runCargo(args, environment = process.env) {
       bundle: path.dirname(executable),
       appName: plan.appName,
     });
-  await child(
+  await run(
     executable,
     commands.runArgs,
     { ...env, GDK_BACKEND: "x11" },
@@ -1444,11 +1301,8 @@ export async function main(
     throw new Error(
       `Pre-bundle CEF gate failed: ${inspection.errors.join("; ")}`,
     );
-  const bundleConfig = bundleConfiguration(
-    config,
-    plan,
-    await filesBelow(plan.payload),
-  );
+  const payloadFiles = await filesBelow(plan.payload);
+  const bundleConfig = bundleConfiguration(config, plan, payloadFiles);
   const bundleFile = path.join(plan.root, "bundle-config.json");
   await save(bundleFile, bundleConfig);
   const output = path.join(
@@ -1458,7 +1312,7 @@ export async function main(
   );
   // An unpacked Windows build must also be directly runnable via its bootstrap.
   if (plan.platform !== "macos") {
-    for (const file of await filesBelow(plan.payload)) {
+    for (const file of payloadFiles) {
       if (
         file ===
         (plan.platform === "windows" ? `${plan.appName}.exe` : plan.appName)

@@ -536,6 +536,20 @@ opt-level = 1
 [profile.dev.package.sha2]
 opt-level = 2
 
+# Every native browser tab validates encrypted owner/session data. Preserve
+# those checks and optimize the codec's generic crypto loops where instantiated,
+# plus its JSON/base64 work. Ordinary dependencies remain opt0 for fast builds.
+# The isolated production-codec benchmark covers 500 KiB and 1 MiB payloads;
+# this is a runtime hot-path override, not a weaker development security mode.
+[profile.dev.package.sorng-encryption]
+opt-level = 2
+
+[profile.dev.package.serde_json]
+opt-level = 2
+
+[profile.dev.package.base64]
+opt-level = 2
+
 # Optimize RDP pixel loops and their protocol/decoder consumers in dev too.
 # Named overrides include the first-party crates where generic code is
 # instantiated. Other workspace crates keep the unoptimized dev default.

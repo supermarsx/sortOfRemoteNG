@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import {
+  copyFile,
   mkdtemp,
   mkdir,
   writeFile,
@@ -15,6 +16,7 @@ import {
 } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import { pathToFileURL } from "node:url";
 import {
   backUpPublished,
   bundleConfiguration,
@@ -265,6 +267,65 @@ for (const changed of [
     assert.equal(f.counts().preparations, 2);
   });
 }
+
+test("SDK recipe changes invalidate reuse, but unrelated driver edits retain the verified SDK", async (t) => {
+  const f = await devCacheFixture(t);
+  // A miniature script checkout exercises the actual recipe hashes without
+  // changing the shared working tree or any live cache/target directory.
+  const scripts = path.join(f.root, "checkout", "scripts");
+  await mkdir(path.join(scripts, "lib"), { recursive: true });
+  const recipes = [
+    "lib/browser-dev-sdk-cache.mjs",
+    "lib/browser-custom-runtime.mjs",
+    "browser-runtime-package.mjs",
+  ];
+  for (const relative of recipes)
+    await copyFile(
+      new URL(`../../scripts/${relative}`, import.meta.url),
+      path.join(scripts, relative),
+    );
+  const launcher = path.join(scripts, "browser-app-build.mjs");
+  await writeFile(launcher, "// original launcher\n");
+  const { prepareDevSdkCache: isolatedPrepare } = await import(
+    pathToFileURL(path.join(scripts, recipes[0])).href
+  );
+  const prepare = () =>
+    isolatedPrepare(
+      { inputs: f.inputs, preflight: f.preflight, cacheRoot: f.cacheRoot },
+      f.dependencies,
+    );
+  const first = await prepare();
+  const original = await lstat(path.join(first.sdk, "libcef.dll"));
+  const checks = f.counts().verifications;
+  await writeFile(launcher, "// changed launcher and resource staging\n");
+  assert.equal((await prepare()).sdk, first.sdk);
+  assert.equal(f.counts().preparations, 1);
+  assert.equal(
+    f.counts().verifications,
+    checks + 1,
+    "a reused SDK still undergoes fresh validation",
+  );
+  assert.equal(
+    (await lstat(path.join(first.sdk, "libcef.dll"))).mtimeMs,
+    original.mtimeMs,
+  );
+  let prior = first.sdk;
+  for (const relative of recipes) {
+    const file = path.join(scripts, relative);
+    await writeFile(
+      file,
+      `${await readFile(file, "utf8")}\n// changed preparation recipe\n`,
+    );
+    const current = (await prepare()).sdk;
+    assert.notEqual(current, prior, `${relative} must invalidate the cache`);
+    prior = current;
+  }
+  assert.equal(f.counts().preparations, 4);
+  assert.equal(
+    await readFile(path.join(first.sdk, "libcef.dll"), "utf8"),
+    "binary A",
+  );
+});
 
 test("source drift and corrupt cached SDK fail closed without repair", async (t) => {
   const f = await devCacheFixture(t);

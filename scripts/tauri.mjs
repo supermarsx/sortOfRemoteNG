@@ -5,7 +5,6 @@ import { spawn } from "node:child_process";
 import { createRequire } from "node:module";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { main as managedDev } from "./tauri-dev.mjs";
 import { requiresBrowserBuildDriver } from "./lib/browser-build-route.mjs";
 
 export function routeTauriArguments(args) {
@@ -16,7 +15,10 @@ export function routeTauriArguments(args) {
 
 export async function main(args = process.argv.slice(2), managedDependencies) {
   const route = routeTauriArguments(args);
-  if (route.managed) return managedDev(route.args, managedDependencies);
+  if (route.managed) {
+    const { main: managedDev } = await import("./tauri-dev.mjs");
+    return managedDev(route.args, managedDependencies);
+  }
   const host = managedDependencies?.process ?? process;
   const cli =
     route.args[0] === "build" && requiresBrowserBuildDriver(route.args)
