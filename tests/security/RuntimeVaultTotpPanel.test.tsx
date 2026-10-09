@@ -289,6 +289,10 @@ describe("RuntimeVaultTotpPanel manual disclosure", () => {
           name: "Copy code Vault authenticator (1)",
         }),
       );
+      // Let transport preparation finish so this test exercises a pending
+      // authenticator result, not the earlier clipboard readiness gate.
+      await flush();
+      expect(api.generate).toHaveBeenCalledTimes(1);
       if (reason === "scope") {
         view.rerender(
           <RuntimeVaultTotpPanel

@@ -45,6 +45,9 @@ const mock = vi.hoisted(() => ({
   active: true,
   getCurrentConnections: vi.fn(),
   capture: vi.fn(),
+  nativeClipboard: false,
+  nativeInvoke: vi.fn(),
+  getInvoke: vi.fn(),
 }));
 vi.mock("../../src/contexts/useConnections", () => ({
   useConnections: () => ({
@@ -68,7 +71,7 @@ vi.mock("../../src/utils/connection/databaseManager", () => ({
   onDatabaseAccessChange: () => () => {},
 }));
 vi.mock("../../src/utils/tauri/invoke", () => ({
-  getInvoke: async () => null,
+  getInvoke: mock.getInvoke,
 }));
 vi.mock("../../src/components/ui/overlays/PopoverSurface", () => ({
   PopoverSurface: ({ children }: { children: React.ReactNode }) => (
@@ -174,6 +177,13 @@ function fixture(vault = true, overrides: Partial<Connection> = {}) {
 beforeEach(() => {
   mock.currentDatabaseId = "owner";
   mock.active = true;
+  mock.nativeClipboard = false;
+  mock.nativeInvoke.mockReset().mockResolvedValue({});
+  mock.getInvoke
+    .mockReset()
+    .mockImplementation(async () =>
+      mock.nativeClipboard ? mock.nativeInvoke : null,
+    );
   mock.availability = { status: "ready", databaseId: "owner", generation: 1 };
   mock.capture.mockReset().mockImplementation(() => mock.target);
   mock.getCurrentConnections
@@ -195,6 +205,99 @@ afterEach(() => {
 });
 
 describe("explicit credential copies", () => {
+  it.each([true, false])(
+    "copies on native clipboard without a focused website field or typing controller (vault=%s)",
+    async (vault) => {
+      const input = fixture(vault);
+      mock.nativeClipboard = true;
+      vi.spyOn(document, "hasFocus").mockReturnValue(false);
+      const target: CredentialTypingTarget = {
+        sessionId: input.session.id,
+        assertCurrent: vi.fn(() => {
+          throw new Error("Synthetic empty-field rejection");
+        }),
+        type: vi.fn(async () => {}),
+        dispose: vi.fn(),
+      };
+      const view = render(
+        <CredentialCopyActions {...input} typingTarget={target} />,
+      );
+      fireEvent.click(screen.getByRole("button", { name: "Copy password" }));
+      await flush();
+      expect(screen.getByRole("status")).toHaveTextContent("Password copied.");
+      view.rerender(<CredentialCopyActions {...input} typingTarget={null} />);
+      fireEvent.click(screen.getByRole("button", { name: "Copy username" }));
+      await flush();
+      expect(screen.getByRole("status")).toHaveTextContent("Username copied.");
+      expect(mock.nativeInvoke).toHaveBeenCalledTimes(2);
+      expect(mock.nativeInvoke).toHaveBeenLastCalledWith("secure_clip_copy", {
+        request: expect.objectContaining({
+          kind: "username",
+          value: vault ? "VAULT_USER" : "CURRENT_LOCAL_USER",
+        }),
+      });
+      expect(target.assertCurrent).not.toHaveBeenCalled();
+      expect(target.type).not.toHaveBeenCalled();
+      expect(clipboard).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each(["bridge-discovery", "unavailable-web-clipboard"])(
+    "reports %s before reading credentials and permits a later retry",
+    async (reason) => {
+      const input = fixture();
+      const log = vi.spyOn(console, "error").mockImplementation(() => {});
+      const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+      if (reason === "bridge-discovery")
+        mock.getInvoke.mockRejectedValueOnce(
+          new Error("SYNTHETIC_BRIDGE_DETAIL"),
+        );
+      else
+        Object.defineProperty(navigator, "clipboard", {
+          configurable: true,
+          value: undefined,
+        });
+      render(<CredentialCopyActions {...input} />);
+      fireEvent.click(screen.getByRole("button", { name: "Copy password" }));
+      await flush();
+      expect(screen.getByRole("status")).toHaveTextContent(
+        "Check the secure clipboard settings",
+      );
+      expect(mock.capture).not.toHaveBeenCalled();
+      expect(input.api.resolve).not.toHaveBeenCalled();
+      expect(input.target.readCurrent).not.toHaveBeenCalled();
+      expect(mock.nativeInvoke).not.toHaveBeenCalled();
+      expect(clipboard).not.toHaveBeenCalled();
+      expect(document.body.textContent).not.toMatch(
+        /SYNTHETIC_BRIDGE_DETAIL|VAULT_PASSWORD/,
+      );
+      expect(log).not.toHaveBeenCalled();
+      expect(warn).not.toHaveBeenCalled();
+
+      mock.nativeClipboard = true;
+      fireEvent.click(screen.getByRole("button", { name: "Copy password" }));
+      await flush();
+      expect(screen.getByRole("status")).toHaveTextContent("Password copied.");
+      expect(mock.nativeInvoke).toHaveBeenCalledOnce();
+    },
+  );
+
+  it("rechecks the owner after clipboard preparation and prevents late native disclosure", async () => {
+    const input = fixture(false);
+    const preparation = deferred<typeof mock.nativeInvoke>();
+    mock.getInvoke.mockReturnValueOnce(preparation.promise);
+    render(<CredentialCopyActions {...input} />);
+    fireEvent.click(screen.getByRole("button", { name: "Copy password" }));
+    await flush();
+    mock.currentDatabaseId = "other";
+    await act(async () => preparation.resolve(mock.nativeInvoke));
+    expect(mock.nativeInvoke).not.toHaveBeenCalled();
+    expect(input.target.readCurrent).not.toHaveBeenCalled();
+    expect(screen.getByRole("status")).toHaveTextContent(
+      "Check owning database access",
+    );
+  });
+
   it.each([true, false])(
     "does no background lookup and reads fresh on every click (vault=%s)",
     async (vault) => {
@@ -261,6 +364,53 @@ describe("explicit credential copies", () => {
       expect(clipboard).toHaveBeenCalledExactlyOnceWith("VAULT_PASSWORD");
     },
   );
+
+  it.each([false, true])(
+    "copies both fields through the native clipboard (vault=%s)",
+    async (vault) => {
+      const input = fixture(vault);
+      mock.nativeClipboard = true;
+      clipboard.mockRejectedValue(
+        new DOMException("Document not focused", "NotAllowedError"),
+      );
+      render(<CredentialCopyActions {...input} />);
+      for (const field of ["username", "password"] as const) {
+        fireEvent.click(screen.getByRole("button", { name: `Copy ${field}` }));
+        await flush();
+        expect(mock.nativeInvoke).toHaveBeenLastCalledWith("secure_clip_copy", {
+          request: expect.objectContaining({
+            kind: field,
+            connectionId: input.connection.id,
+            value: vault
+              ? field === "username"
+                ? "VAULT_USER"
+                : "VAULT_PASSWORD"
+              : field === "username"
+                ? "CURRENT_LOCAL_USER"
+                : "CURRENT_LOCAL_PASSWORD",
+          }),
+        });
+      }
+      expect(clipboard).not.toHaveBeenCalled();
+      expect(screen.getByRole("status")).toHaveTextContent("Password copied.");
+    },
+  );
+
+  it("shows clipboard guidance rather than a database error when native writing fails", async () => {
+    const input = fixture(false);
+    mock.nativeClipboard = true;
+    mock.nativeInvoke.mockRejectedValue(new Error("PRIVATE_FAILURE"));
+    render(<CredentialCopyActions {...input} />);
+    fireEvent.click(screen.getByRole("button", { name: "Copy password" }));
+    await flush();
+    expect(screen.getByRole("status")).toHaveTextContent(
+      "Check the secure clipboard settings",
+    );
+    expect(document.body.textContent).not.toMatch(
+      /PRIVATE_FAILURE|CURRENT_LOCAL_PASSWORD/,
+    );
+    expect(clipboard).not.toHaveBeenCalled();
+  });
 
   it("copies a dedicated HTTP pair in manual mode without mixing generic fields", async () => {
     const input = fixture(false, {

@@ -20,12 +20,13 @@ const boundary = vi.hoisted(() => ({
   nativeLock: null as null | (() => void),
   compute: vi.fn(),
   copy: vi.fn(),
+  nativeInvoke: vi.fn(),
 }));
 vi.mock("../../src/hooks/totp/useTOTP", () => ({
   totpApi: { computeCode: boundary.compute },
 }));
 vi.mock("../../src/utils/tauri/invoke", () => ({
-  getInvoke: async () => vi.fn(),
+  getInvoke: async () => boundary.nativeInvoke,
 }));
 vi.mock("@tauri-apps/api/event", () => ({
   listen: async (_name: string, listener: () => void) => {
@@ -97,9 +98,19 @@ beforeEach(() => {
   boundary.accessible = true;
   boundary.compute.mockReset().mockResolvedValue("123456");
   boundary.copy.mockReset().mockResolvedValue(undefined);
+  boundary.nativeInvoke
+    .mockReset()
+    .mockImplementation(async (command, args) => {
+      if (command !== "secure_clip_copy") throw new Error("Unexpected command");
+      return boundary.copy(args.request.value);
+    });
   Object.defineProperty(navigator, "clipboard", {
     configurable: true,
-    value: { writeText: boundary.copy },
+    value: {
+      writeText: vi.fn(() => {
+        throw new Error("Browser clipboard unavailable");
+      }),
+    },
   });
 });
 afterEach(() => {

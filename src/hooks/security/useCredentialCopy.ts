@@ -16,6 +16,10 @@ import {
 } from "../../utils/security/credentialTyping";
 import { totpApi } from "../totp/useTOTP";
 import type { TotpAlgorithm } from "../../types/totp";
+import {
+  CredentialClipboardError,
+  prepareCredentialClipboard,
+} from "../../utils/security/credentialClipboard";
 
 export type CredentialCopyField = "username" | "password";
 export type CredentialCodeSelection =
@@ -127,6 +131,9 @@ export function useCredentialCopy(
     try {
       if (!isCode && field !== "username" && field !== "password")
         throw new Error(failure);
+      assertAttempt();
+      const writeClipboard =
+        action === "copy" ? await prepareCredentialClipboard() : null;
       assertAttempt();
       const manager = DatabaseManager.getInstance();
       const target = manager.captureCurrentDatabaseDataTarget();
@@ -274,7 +281,15 @@ export function useCredentialCopy(
       if (action === "type") assertCredentialText(value);
       const writing =
         action === "copy"
-          ? navigator.clipboard.writeText(value)
+          ? writeClipboard!(
+              value,
+              isCode ? "totpCode" : field,
+              assertDisclosure,
+              {
+                connectionId: connection!.id,
+                ...(isCode ? { expires } : {}),
+              },
+            )
           : typingTarget!.type(
               value,
               assertDisclosure,
@@ -288,14 +303,16 @@ export function useCredentialCopy(
           busy: false,
           message: `${isCode ? "Code" : field === "username" ? "Username" : "Password"} ${action === "copy" ? "copied" : "typed"}.`,
         });
-    } catch {
+    } catch (error) {
       if (current())
         setStatus({
           epoch,
           busy: false,
           message:
             action === "copy"
-              ? failure
+              ? error instanceof CredentialClipboardError
+                ? "Could not copy the selected credential. Check the secure clipboard settings and try again."
+                : failure
               : "Could not type the selected value. Check database access, focus the session field and reopen Credentials & 2FA.",
         });
     } finally {

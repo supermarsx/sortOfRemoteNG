@@ -10,6 +10,7 @@ import {
 import { PopoverSurface } from "../../ui/overlays/PopoverSurface";
 import { getInvoke } from "../../../utils/tauri/invoke";
 import { ENCRYPTION_EVENT_LOCKED } from "../../../types/encryption/encryption";
+import { prepareCredentialClipboard } from "../../../utils/security/credentialClipboard";
 
 export interface WebTotpPanelProps {
   configs: TOTPConfig[];
@@ -17,6 +18,7 @@ export interface WebTotpPanelProps {
   connectionId: string | undefined;
   onClose: () => void;
   anchorRef?: React.RefObject<HTMLElement | null>;
+  className?: string;
   autoMfa?: { status: string | null; canRetry: boolean; retry: () => void };
   credentialActions?: React.ReactNode;
   typingRef?: React.RefObject<HTMLElement | null>;
@@ -34,6 +36,7 @@ export default function WebTotpPanel({
   connectionId,
   onClose,
   anchorRef,
+  className,
   autoMfa,
   credentialActions,
   typingRef,
@@ -232,7 +235,23 @@ export default function WebTotpPanel({
       return;
     }
     try {
-      await navigator.clipboard.writeText(code.value);
+      const writeClipboard = await prepareCredentialClipboard();
+      await writeClipboard(
+        code.value,
+        "totpCode",
+        () => {
+          if (
+            !alive.current ||
+            !canAccess() ||
+            document.hidden ||
+            latest.current.access !== access ||
+            latest.current.configs !== configs ||
+            Date.now() >= code.expires
+          )
+            throw new Error(unavailable);
+        },
+        { connectionId, expires: code.expires },
+      );
       if (alive.current && canAccess() && latest.current.configs === configs)
         setNotice("Code copied. Paste it manually on the website.");
     } catch {
@@ -266,8 +285,9 @@ export default function WebTotpPanel({
         ) : (
           <>
             <p className="text-xs text-[var(--color-textSecondary)]">
-              Copy a code or choose Type code for the captured field. Type does
-              not press Enter or click a submit button.
+              {renderTypeCode
+                ? "Copy a code or choose Type code for the captured field. Type does not press Enter or click a submit button."
+                : "Copy a code and paste it manually on the website."}
             </p>
             {autoMfa?.status && (
               <div className="rounded border border-[var(--color-border)] p-2 space-y-2 text-xs">
@@ -357,6 +377,7 @@ export default function WebTotpPanel({
       align="end"
       offset={4}
       dataTestId="web-totp-popover"
+      className={className}
     >
       {panel}
     </PopoverSurface>

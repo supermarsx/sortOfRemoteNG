@@ -7,11 +7,13 @@ import type {
 import { useSessionRenderActivity } from "../../contexts/SessionRenderActivityContext";
 import { useSessionObservationActivity } from "../../hooks/session/useSessionObservationActivity";
 import { PopoverSurface } from "../ui/overlays/PopoverSurface";
+import { prepareCredentialClipboard } from "../../utils/security/credentialClipboard";
 
 type Props = {
   controller: RuntimeVaultTotpController;
   onClose: () => void;
   anchorRef: React.RefObject<HTMLElement | null>;
+  className?: string;
   footer?: React.ReactNode;
   credentialActions?: React.ReactNode;
   typingRef?: React.RefObject<HTMLElement | null>;
@@ -109,6 +111,15 @@ function Codes({
     setError("");
     setBusy(true);
     try {
+      const writeClipboard = await prepareCredentialClipboard();
+      if (
+        epoch.current !== ticket ||
+        !latestActive.current ||
+        document.hidden ||
+        !latest.current.available ||
+        latest.current.scopeKey !== scope
+      )
+        return;
       const value = await latest.current.generate(id);
       value.assertCurrent();
       if (
@@ -120,7 +131,23 @@ function Codes({
         Date.now() >= value.expires
       )
         return;
-      await navigator.clipboard.writeText(value.code);
+      await writeClipboard(
+        value.code,
+        "totpCode",
+        () => {
+          value.assertCurrent();
+          if (
+            epoch.current !== ticket ||
+            !latestActive.current ||
+            document.hidden ||
+            !latest.current.available ||
+            latest.current.scopeKey !== scope ||
+            Date.now() >= value.expires
+          )
+            throw new Error("Authenticator access changed.");
+        },
+        { expires: value.expires },
+      );
       if (epoch.current === ticket) {
         setNow(Date.now());
         setCode({ ...value, entryId: id });
@@ -161,8 +188,9 @@ function Codes({
       </div>
       {credentialActions}
       <p className="text-xs text-[var(--color-textSecondary)]">
-        Copy generates a fresh code. Type does not press Enter or click a submit
-        button.
+        Copy generates a fresh code.
+        {renderTypeCode &&
+          " Type does not press Enter or click a submit button."}
         {!connectionSource && " Connection-local authenticators are ignored."}
       </p>
       {error && (
@@ -233,13 +261,19 @@ export default function RuntimeVaultTotpPanel({
   controller,
   onClose,
   anchorRef,
+  className,
   footer,
   credentialActions,
   typingRef,
   renderTypeCode,
 }: Props) {
   return (
-    <PopoverSurface isOpen onClose={onClose} anchorRef={anchorRef}>
+    <PopoverSurface
+      isOpen
+      onClose={onClose}
+      anchorRef={anchorRef}
+      className={className}
+    >
       <Codes
         key={controller.scopeKey}
         controller={controller}

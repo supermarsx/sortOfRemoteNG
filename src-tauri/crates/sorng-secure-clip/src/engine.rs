@@ -390,7 +390,55 @@ fn write_clipboard_windows(text: &str) -> Result<(), String> {
 }
 
 #[cfg(target_os = "windows")]
-struct WindowsClipboardGuard;
+struct WindowsClipboardGuard {
+    // Drop after CloseClipboard; the message-only window is thread-local and
+    // never shown, activated or associated with a CEF field's focus.
+    _owner: WindowsClipboardOwner,
+}
+
+#[cfg(target_os = "windows")]
+struct WindowsClipboardOwner(windows_sys::Win32::Foundation::HWND);
+
+#[cfg(target_os = "windows")]
+impl WindowsClipboardOwner {
+    fn new() -> Result<Self, String> {
+        use std::ptr::null_mut;
+        use windows_sys::Win32::UI::WindowsAndMessaging::{CreateWindowExW, HWND_MESSAGE};
+        // SAFETY: STATIC is a system window class. This invisible, message-only
+        // window is created and destroyed on this synchronous calling thread.
+        let window = unsafe {
+            CreateWindowExW(
+                0,
+                windows_sys::core::w!("STATIC"),
+                std::ptr::null(),
+                0,
+                0,
+                0,
+                0,
+                0,
+                HWND_MESSAGE,
+                null_mut(),
+                null_mut(),
+                std::ptr::null(),
+            )
+        };
+        if window.is_null() {
+            Err("The OS clipboard owner could not be created".to_string())
+        } else {
+            Ok(Self(window))
+        }
+    }
+}
+
+#[cfg(target_os = "windows")]
+impl Drop for WindowsClipboardOwner {
+    fn drop(&mut self) {
+        // SAFETY: this object exclusively owns the same-thread hidden window.
+        unsafe {
+            windows_sys::Win32::UI::WindowsAndMessaging::DestroyWindow(self.0);
+        }
+    }
+}
 
 #[cfg(target_os = "windows")]
 impl Drop for WindowsClipboardGuard {
@@ -405,15 +453,17 @@ impl Drop for WindowsClipboardGuard {
 
 #[cfg(target_os = "windows")]
 fn open_clipboard_windows() -> Result<WindowsClipboardGuard, String> {
-    use std::ptr::null_mut;
     use std::thread;
     use std::time::Duration;
     use windows_sys::Win32::System::DataExchange::OpenClipboard;
 
+    let owner = WindowsClipboardOwner::new()?;
     for _ in 0..10 {
-        // SAFETY: a null owner is explicitly supported by OpenClipboard.
-        if unsafe { OpenClipboard(null_mut()) } != 0 {
-            return Ok(WindowsClipboardGuard);
+        // SAFETY: the owner remains alive until after CloseClipboard. A null
+        // owner works for reads, but EmptyClipboard + SetClipboardData fails:
+        // https://learn.microsoft.com/windows/win32/api/winuser/nf-winuser-openclipboard
+        if unsafe { OpenClipboard(owner.0) } != 0 {
+            return Ok(WindowsClipboardGuard { _owner: owner });
         }
         thread::sleep(Duration::from_millis(10));
     }
@@ -1095,6 +1145,24 @@ fn terminate_helper_process_group(child_id: u32) {
 fn terminate_helper_process_group(_child_id: u32) {}
 #[cfg(test)]
 mod tests {
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn clipboard_owner_is_a_valid_invisible_same_thread_window() {
+        use windows_sys::Win32::UI::WindowsAndMessaging::{IsWindow, IsWindowVisible};
+        let owner = super::WindowsClipboardOwner::new().expect("hidden clipboard owner");
+        let handle = owner.0;
+        // No clipboard access or mutation: safe even with the user's own text,
+        // images or files already on their clipboard.
+        unsafe {
+            assert_eq!(IsWindow(handle), 1);
+            assert_eq!(IsWindowVisible(handle), 0);
+        }
+        drop(owner);
+        unsafe {
+            assert_eq!(IsWindow(handle), 0);
+        }
+    }
+
     use super::*;
     use std::io::{Read, Write};
     use std::process::Command;
@@ -1442,3 +1510,7 @@ mod tests {
         assert_eq!(entry.to_display().masked_value, "🔐••••é");
     }
 }
+
+#[cfg(all(test, target_os = "windows"))]
+#[path = "windows_clipboard_tests.rs"]
+mod windows_clipboard_tests;
