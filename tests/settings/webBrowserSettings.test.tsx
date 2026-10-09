@@ -240,7 +240,7 @@ describe("Web Browser settings", () => {
         screen.getByRole("option", { name: "Off (unsupported for native)" }),
       ).toBeVisible();
       fireEvent.mouseDown(
-        screen.getByRole("option", { name: "On", exact: true }),
+        screen.getByRole("option", { name: /^On$/ }),
       );
       expect(onChange).toHaveBeenCalledExactlyOnceWith("webglEnabled", true);
       expect(overrides.webglEnabled).toBe(saved);
