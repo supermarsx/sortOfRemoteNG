@@ -19,6 +19,7 @@ import BrowserSessionRetentionFields from "../../SettingsDialog/sections/webBrow
 import type { Mgr } from "./types";
 import { useBrowserRetentionCapabilities } from "../../../hooks/protocol/useBrowserRetentionCapabilities";
 import BrowserNativeCapabilitiesCard from "../../SettingsDialog/sections/webBrowser/BrowserNativeCapabilitiesCard";
+import BrowserSettingsRepair from "../../SettingsDialog/sections/webBrowser/BrowserSettingsRepair";
 
 const numbers = [
   ["defaultZoomPercent", "Website zoom (%)", 50, 200],
@@ -106,8 +107,19 @@ function SessionOverrides({
       <section className="space-y-3">
         <p role="alert" className="sor-alert-error">
           Browser session overrides are invalid or conflict with inherited
-          delays. Reset them to inherit the global defaults.
+          delays. Repair the saved overrides or explicitly reset them to inherit
+          the global defaults.
         </p>
+        <BrowserSettingsRepair
+          value={mgr.formData.browserSession}
+          label="Browser session overrides JSON"
+          validate={(input) => {
+            const normalized = normalizeBrowserSessionOverrides(input);
+            resolveConnectionBrowserSettings(defaults, normalized);
+            return normalized;
+          }}
+          onApply={save}
+        />
         <button
           type="button"
           className="sor-btn sor-btn-secondary"

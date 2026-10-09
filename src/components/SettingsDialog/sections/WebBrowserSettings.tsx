@@ -35,6 +35,8 @@ import { useBrowserRetentionCapabilities } from "../../../hooks/protocol/useBrow
 import BrowserNativeCapabilitiesCard from "./webBrowser/BrowserNativeCapabilitiesCard";
 import BrowserDataDirectorySettings from "./webBrowser/BrowserDataDirectorySettings";
 import { BrowserXsltSettings } from "./webBrowser/BrowserXsltSettings";
+import BrowserSettingsRepair from "./webBrowser/BrowserSettingsRepair";
+import { diagnoseWebBrowserSettings } from "../../../utils/settings/webBrowserSettingsDiagnostics";
 
 interface WebBrowserSettingsProps {
   settings: GlobalSettings;
@@ -51,8 +53,25 @@ export default function WebBrowserSettings(props: WebBrowserSettingsProps) {
     return (
       <Card>
         <p role="alert">
-          Web Browser settings are invalid. Reset them before editing.
+          Web Browser settings are invalid. Repair the fields below or
+          explicitly reset the defaults.
         </p>
+        <ul className="my-3 space-y-3 text-sm">
+          {diagnoseWebBrowserSettings(props.settings.webBrowser).map(
+            (issue) => (
+              <li key={issue.field}>
+                <code>{issue.field}</code>
+                <p className="text-[var(--color-textSecondary)]">{issue.fix}</p>
+              </li>
+            ),
+          )}
+        </ul>
+        <BrowserSettingsRepair
+          value={props.settings.webBrowser}
+          label="Web Browser settings JSON"
+          validate={normalizeWebBrowserSettings}
+          onApply={(webBrowser) => props.updateSettings({ webBrowser })}
+        />
         <button
           type="button"
           className="sor-btn sor-btn-secondary"

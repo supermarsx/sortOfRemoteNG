@@ -1015,6 +1015,43 @@ describe("Web Browser settings", () => {
       screen.getByRole("combobox", { name: "Page scripts" }),
     ).toBeInTheDocument();
   });
+  it("repairs malformed shared rules without resetting other browser preferences", async () => {
+    const config = normalizeWebBrowserSettings({
+      defaultZoomPercent: 125,
+      allowDownloads: true,
+    });
+    config.domainPermissions = {
+      version: 99,
+      websites: [],
+    } as unknown as NonNullable<typeof config.domainPermissions>;
+    const { update } = setup("browser", { webBrowser: config });
+    expect(screen.getByText("webBrowser.domainPermissions")).toBeVisible();
+    expect(update).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByText("Repair saved settings"));
+    fireEvent.change(screen.getByLabelText("Web Browser settings JSON"), {
+      target: { value: "null" },
+    });
+    fireEvent.click(
+      screen.getByRole("button", { name: "Apply repaired settings" }),
+    );
+    expect(update).not.toHaveBeenCalled();
+    const repaired = {
+      ...config,
+      domainPermissions: { version: 1, websites: [] },
+    };
+    fireEvent.change(screen.getByLabelText("Web Browser settings JSON"), {
+      target: { value: JSON.stringify(repaired) },
+    });
+    fireEvent.click(
+      screen.getByRole("button", { name: "Apply repaired settings" }),
+    );
+    expect(update).toHaveBeenCalledExactlyOnceWith({ webBrowser: repaired });
+    await waitFor(() =>
+      expect(
+        screen.queryByText("Repair saved settings"),
+      ).not.toBeInTheDocument(),
+    );
+  });
 });
 
 describe("Internal Proxy settings", () => {

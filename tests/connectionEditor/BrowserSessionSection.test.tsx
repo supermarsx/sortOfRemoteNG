@@ -45,6 +45,48 @@ function choose(label: string, option: string | RegExp) {
 }
 
 describe("browser connection overrides", () => {
+  it("repairs invalid overrides without clearing unrelated connection edits", () => {
+    const { change } = setup({
+      name: "Unsaved name",
+      browserSession: {
+        version: 1,
+        defaultZoomPercent: 400,
+        cookiesEnabled: false,
+      },
+    });
+    fireEvent.click(screen.getByText("Repair saved settings"));
+    const repaired = {
+      version: 1,
+      defaultZoomPercent: 125,
+      cookiesEnabled: false,
+    };
+    fireEvent.change(screen.getByLabelText("Browser session overrides JSON"), {
+      target: { value: JSON.stringify(repaired) },
+    });
+    expect(change).not.toHaveBeenCalled();
+    fireEvent.click(
+      screen.getByRole("button", { name: "Apply repaired settings" }),
+    );
+    expect(change.mock.lastCall?.[0]).toMatchObject({
+      name: "Unsaved name",
+      browserSession: repaired,
+    });
+  });
+
+  it("refuses repaired overrides which still conflict with inherited delays", () => {
+    shared.settings = { webBrowser: { minimumFormFillDelayMs: 30000 } };
+    const { change } = setup({
+      browserSession: { version: 1, minimumFormSubmitDelayMs: 30000 },
+    });
+    fireEvent.click(screen.getByText("Repair saved settings"));
+    fireEvent.click(
+      screen.getByRole("button", { name: "Apply repaired settings" }),
+    );
+    expect(change).not.toHaveBeenCalled();
+    expect(screen.getAllByRole("alert")[1]).toHaveTextContent(
+      "repair is still invalid",
+    );
+  });
   it.each([
     ["localStorageEnabled", "Allow localStorage"],
     ["webglEnabled", "Allow page-canvas WebGL"],
@@ -61,7 +103,7 @@ describe("browser connection overrides", () => {
       );
       expect(screen.getByRole("combobox", { name: label })).toBeEnabled();
       expect(change).not.toHaveBeenCalled();
-      choose(label, "Off");
+      choose(label, key === "webglEnabled" ? "Off (unsupported for native)" : "Off");
       expect(change.mock.lastCall?.[0].browserSession).toEqual({
         version: 1,
         [key]: false,
@@ -128,7 +170,12 @@ describe("browser connection overrides", () => {
     expect(screen.getByText(/Screen capture is unsupported/)).toHaveTextContent(
       "WebRTC non-proxied UDP remains disabled",
     );
-    expect(screen.getByText(/does not control OffscreenCanvas/)).toBeVisible();
+    const webglGuidance = screen.getByText(/Requires a compatible GPU and driver/);
+    expect(webglGuidance).toBeVisible();
+    expect(webglGuidance).toHaveTextContent(
+      "cannot disable all WebGL contexts, including OffscreenCanvas",
+    );
+    expect(webglGuidance).toHaveTextContent("Off blocks new native attempts");
     expect(
       screen.getByText(
         /Turning this off does not disable globally forced dark styling/,
