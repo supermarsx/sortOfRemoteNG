@@ -56,6 +56,8 @@ use permission_validation::{
 mod permission_validation_tests;
 #[path = "origin_browser_ptisp_defaults.rs"]
 mod ptisp_defaults;
+#[path = "origin_browser_autodesk_defaults.rs"]
+mod autodesk_defaults;
 #[path = "origin_browser_automation_authority.rs"]
 mod automation;
 pub use automation::NativeAutomationAuthority;
@@ -1349,6 +1351,13 @@ fn saved_permissions_inner(
                 destination,
                 classes,
                 invalid("bundled.ptispRoutes", "route must be an exact HTTPS origin"),
+            )?;
+        }
+        if let Some((destination, classes)) = autodesk_defaults::resource_grant(connection, &origin) {
+            grant(
+                destination,
+                classes,
+                invalid("bundled.autodeskRoutes", "route must be an exact HTTPS origin"),
             )?;
         }
         let all: Vec<_> = CLASSES.iter().map(|(class, _)| *class).collect();
