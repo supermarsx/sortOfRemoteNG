@@ -6,6 +6,8 @@ use sorng_browser_host::{
 
 #[derive(Clone, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
+// Preserve strict request decoding even in builds that reject the operation.
+#[cfg_attr(not(feature = "native-browser"), allow(dead_code))]
 pub(crate) struct AppearanceRequest {
     pub identity: OriginBrowserIdentity,
     pub app_palette: Option<AppPalette>,
@@ -18,6 +20,7 @@ pub(crate) struct AppearanceResponse {
     pub following_app_theme: bool,
 }
 
+#[cfg(any(feature = "native-browser", test))]
 impl AppearanceResponse {
     pub(crate) fn acknowledged(status: AppearanceStatus, following_app_theme: bool) -> Self {
         Self {

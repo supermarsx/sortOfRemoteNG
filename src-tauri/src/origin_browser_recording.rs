@@ -4,7 +4,9 @@ use tauri::{State, WebviewWindow};
 
 #[path = "origin_browser_recording_contract.rs"]
 mod contract;
-pub(crate) use contract::{Operation, Request};
+#[cfg(feature = "native-browser")]
+pub(crate) use contract::Operation;
+pub(crate) use contract::Request;
 
 #[tauri::command]
 pub(crate) async fn origin_browser_recording(

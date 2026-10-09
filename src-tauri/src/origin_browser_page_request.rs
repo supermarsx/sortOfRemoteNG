@@ -23,6 +23,7 @@ pub(crate) enum PageMenuAction {
     HistoryJump { snapshot_id: String, index: i32 },
 }
 
+#[cfg(any(feature = "native-browser", test))]
 impl PageMenuRequest {
     pub(crate) fn validate(&self) -> Result<(), &'static str> {
         self.identity
@@ -41,6 +42,7 @@ impl PageMenuRequest {
     }
 }
 
+#[cfg(any(feature = "native-browser", test))]
 pub(crate) fn target_is_current(
     target: Option<&str>,
     selected: Option<&str>,

@@ -3,6 +3,8 @@
 mod config;
 #[path = "../src/native_appearance.rs"]
 mod model;
+// The included app DTO uses the app's native-browser feature, not this crate's.
+#[allow(unexpected_cfgs)]
 #[path = "../../../src/origin_browser_appearance_request.rs"]
 mod request;
 
