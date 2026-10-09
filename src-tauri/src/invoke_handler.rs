@@ -13,11 +13,16 @@ fn is_tray_command(command: &str) -> bool {
 
 pub(crate) fn build() -> InvokeHandler {
     // Always-on command crates
+    let application_log_handler = erase_handler(tauri::generate_handler![
+        crate::application_log_commands::application_logs_list,
+        crate::application_log_commands::application_logs_read,
+    ]);
     let tray_handler = erase_handler(tauri::generate_handler![crate::tray::set_tray_icon_visible]);
     let web_guard_handler = erase_handler(tauri::generate_handler![
         crate::web_network_guard::web_network_guard_status
     ]);
     let origin_browser_handler = erase_handler(tauri::generate_handler![
+        crate::origin_browser_commands::origin_browser_session_diagnostics,
         crate::origin_browser_commands::origin_browser_cancel_prewarm,
         crate::origin_browser_commands::origin_browser_status,
         crate::origin_browser_commands::origin_browser_retention_capabilities,
@@ -62,6 +67,9 @@ pub(crate) fn build() -> InvokeHandler {
 
     Box::new(move |invoke| {
         let command = invoke.message.command();
+        if crate::application_log_commands::is_command(command) {
+            return application_log_handler(invoke);
+        }
         if crate::origin_browser_commands::is_command(command) {
             if crate::origin_browser_commands::is_startup_command(command) {
                 return crate::origin_browser_commands::dispatch_startup(invoke);

@@ -26,6 +26,7 @@ import {
   Search,
   ChevronLeft,
   ChevronRight,
+  NotebookText,
 } from "lucide-react";
 import { ErrorBanner, EmptyState } from "../../ui/display";
 import { Checkbox } from "../../ui/forms";
@@ -40,6 +41,7 @@ import {
 import {
   ProxyLogsTab,
   ProxyStatsTab,
+  BrowserSessionLogsTab,
   StatusBadge,
 } from "../../network/InternalProxyManager";
 import { classifySession } from "../../network/internalProxySessionStatus";
@@ -49,6 +51,7 @@ import {
 } from "../../../hooks/session/useUnifiedSessionManager";
 import { RdpHistoryView } from "./RdpHistoryView";
 import { SshSessionsView } from "./SshSessionsView";
+import { ApplicationLogsView } from "../../monitoring/ApplicationLogsView";
 import { ActionLogViewer } from "../../monitoring/ActionLogViewer";
 import { getProtocolIcon } from "../../connection/connectionTree/helpers";
 import {
@@ -112,6 +115,8 @@ export type SessionManagerView =
   | "rdp-history"
   | "proxy-logs"
   | "proxy-stats"
+  | "browser-logs"
+  | "application-logs"
   | "action-log";
 
 function groupIconForRow(row: UnifiedSessionRow): React.ElementType {
@@ -1206,7 +1211,9 @@ const VIEWS: {
   icon: React.ElementType;
 }[] = [
   { id: "sessions", label: "Sessions", icon: LayoutGrid },
+  { id: "application-logs", label: "Application logs", icon: NotebookText },
   { id: "action-log", label: "Action Log", icon: ScrollText },
+  { id: "browser-logs", label: "Browser sessions", icon: Globe },
   { id: "ssh-sessions", label: "SSH Sessions", icon: SshProtocolIcon },
   { id: "rdp-logs", label: "RDP Logs", icon: ScrollText },
   { id: "rdp-history", label: "RDP History", icon: History },
@@ -1232,6 +1239,9 @@ export const SessionManager: React.FC<SessionManagerProps> = ({
 }) => {
   const { state, dispatch } = useConnections();
   const [view, setView] = useState<SessionManagerView>(initialView);
+  const [browserLogView, setBrowserLogView] = useState<"sessions" | "journal">(
+    "sessions",
+  );
   const mgr = useUnifiedSessionManager({
     isVisible,
     connections,
@@ -1241,13 +1251,17 @@ export const SessionManager: React.FC<SessionManagerProps> = ({
     thumbnailsEnabled: false,
     thumbnailPolicy,
     thumbnailInterval,
-    activeView: view,
+    activeView:
+      view === "browser-logs" && browserLogView === "journal"
+        ? "browser-journal"
+        : view,
   });
   const [logSessionFilter, setLogSessionFilter] = useState<string | null>(null);
 
   useEffect(() => {
     setView(initialView);
     setLogSessionFilter(null);
+    setBrowserLogView("sessions");
   }, [initialView, viewRequestId]);
 
   const handleViewRdpLogs = (sessionId: string) => {
@@ -1368,6 +1382,61 @@ export const SessionManager: React.FC<SessionManagerProps> = ({
 
           {view === "action-log" && (
             <ActionLogViewer isOpen isActive={mgr.observationActive} />
+          )}
+          {view === "application-logs" && (
+            <ApplicationLogsView isActive={mgr.observationActive} />
+          )}
+          {view === "browser-logs" && (
+            <section
+              aria-label="Browser sessions"
+              className="flex h-full min-h-0 min-w-0 flex-col overflow-hidden"
+            >
+              <div
+                role="group"
+                aria-label="Browser log views"
+                className="flex shrink-0 flex-wrap gap-2 border-b border-[var(--color-border)] px-4 py-2"
+              >
+                <button
+                  type="button"
+                  aria-pressed={browserLogView === "sessions"}
+                  onClick={() => setBrowserLogView("sessions")}
+                  className={`sor-option-chip text-xs ${browserLogView === "sessions" ? "sor-option-chip-active" : ""}`}
+                >
+                  Live sessions
+                </button>
+                <button
+                  type="button"
+                  aria-pressed={browserLogView === "journal"}
+                  onClick={() => setBrowserLogView("journal")}
+                  className={`sor-option-chip text-xs ${browserLogView === "journal" ? "sor-option-chip-active" : ""}`}
+                >
+                  Startup journal
+                </button>
+              </div>
+              <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
+                {browserLogView === "sessions" ? (
+                  <div className="min-h-0 flex-1 space-y-3 overflow-auto p-4">
+                    <div className="flex justify-end">
+                      <button
+                        type="button"
+                        onClick={mgr.proxy.handleRefresh}
+                        disabled={!mgr.observationActive || mgr.proxy.isLoading}
+                        className="sor-option-chip text-xs disabled:opacity-40"
+                      >
+                        <RefreshCw size={14} aria-hidden="true" />
+                        Refresh sessions
+                      </button>
+                    </div>
+                    <BrowserSessionLogsTab mgr={mgr.proxy} />
+                  </div>
+                ) : (
+                  <ApplicationLogsView
+                    source="browser"
+                    isActive={mgr.observationActive}
+                  />
+                )}
+              </div>
+            </section>
           )}
 
           {view === "sessions" && (

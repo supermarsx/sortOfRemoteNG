@@ -2,6 +2,10 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import type { ProxyLogDiagnostic } from "../../utils/network/proxyLogDiagnostic";
 import {
+  parseNativeBrowserDiagnostics,
+  type NativeBrowserDiagnostics,
+} from "../../types/network/nativeBrowserDiagnostics";
+import {
   sameSessionSnapshot,
   useVisibleSessionRefresh,
   type SessionRefreshLease,
@@ -35,7 +39,7 @@ export interface ProxyRequestLogEntry {
   diagnostic?: ProxyLogDiagnostic;
 }
 
-export type ManagerTab = "sessions" | "logs" | "stats";
+export type ManagerTab = "sessions" | "logs" | "stats" | "browser-logs";
 
 /* ------------------------------------------------------------------ */
 /*  Helpers                                                            */
@@ -108,11 +112,40 @@ export function useInternalProxyManager(
   const [error, setError] = useState<string>("");
   const [autoRefresh, setAutoRefresh] = useState(true);
   const loadedRef = useRef(false);
-  const loadLogs = (options.view ?? activeTab) === "logs";
+  const view = options.view ?? activeTab;
+  const loadLogs = view === "logs";
+  const loadNative = view !== "sessions";
+  const nativeScope = `${view}:${options.invalidationKey ?? ""}`;
+  const [nativeResult, setNativeResult] = useState<{
+    scope: string;
+    data?: NativeBrowserDiagnostics;
+    error: string;
+  }>();
 
   const fetchData = useCallback(
     async (lease: SessionRefreshLease): Promise<void> => {
       if (!loadedRef.current) setIsLoading(true);
+      // Independent read sources: legacy failure must not hide live CEF relays,
+      // and missing native support must not discard the legacy request log.
+      const nativeRead = loadNative
+        ? invoke<unknown>("origin_browser_session_diagnostics")
+            .then(parseNativeBrowserDiagnostics)
+            .then((data) => {
+              if (!lease.isCurrent()) return;
+              const next = { scope: nativeScope, data, error: "" };
+              setNativeResult((previous) =>
+                sameSessionSnapshot(previous, next) ? previous : next,
+              );
+            })
+            .catch(() => {
+              if (lease.isCurrent())
+                setNativeResult({
+                  scope: nativeScope,
+                  error:
+                    "Native browser diagnostics could not be read. Refresh to retry.",
+                });
+            })
+        : Promise.resolve();
       try {
         const [sessionsData, logData] = await Promise.all([
           invoke<ProxySessionDetail[]>("get_proxy_session_details"),
@@ -134,21 +167,31 @@ export function useInternalProxyManager(
         if (lease.isCurrent())
           setError(e instanceof Error ? e.message : String(e));
       } finally {
+        await nativeRead;
         if (lease.isCurrent()) setIsLoading(false);
       }
     },
-    [loadLogs],
+    [loadLogs, loadNative, nativeScope],
   );
   const observation = useVisibleSessionRefresh({
     enabled: isOpen,
     load: fetchData,
-    invalidationKey: `${loadLogs}:${options.invalidationKey ?? ""}`,
+    invalidationKey: nativeScope,
     intervalMs: autoRefresh ? 15_000 : 0,
   });
   const handleRefresh = observation.refresh;
   useEffect(() => {
-    if (!isOpen) setIsLoading(false);
+    if (!isOpen) {
+      setIsLoading(false);
+      setNativeResult(undefined);
+    }
   }, [isOpen]);
+
+  // Do not display a prior owner/lifecycle snapshot during a coalesced refresh.
+  const currentNative =
+    isOpen && loadNative && nativeResult?.scope === nativeScope
+      ? nativeResult
+      : undefined;
 
   const handleStopSession = async (sessionId: string): Promise<boolean> => {
     observation.invalidate();
@@ -206,6 +249,9 @@ export function useInternalProxyManager(
   return {
     sessions,
     requestLog,
+    nativeDiagnostics: currentNative?.data,
+    nativeDiagnosticsError: currentNative?.error ?? "",
+    nativeDiagnosticsLoading: isOpen && loadNative && !currentNative,
     activeTab,
     setActiveTab,
     isLoading,

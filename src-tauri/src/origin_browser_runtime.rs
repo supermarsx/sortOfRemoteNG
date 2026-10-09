@@ -40,6 +40,9 @@ use tauri::{Emitter, Manager, WebviewWindow};
 #[path = "origin_browser_login.rs"]
 mod login;
 
+#[path = "origin_browser_runtime_observability.rs"]
+pub(crate) mod observability;
+
 #[path = "origin_browser_media.rs"]
 mod media;
 

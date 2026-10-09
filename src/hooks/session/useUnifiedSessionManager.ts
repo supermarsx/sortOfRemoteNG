@@ -130,6 +130,9 @@ export interface UseUnifiedSessionManagerParams {
     | "rdp-logs"
     | "rdp-history"
     | "action-log"
+    | "application-logs"
+    | "browser-logs"
+    | "browser-journal"
     | "proxy-logs"
     | "proxy-stats";
 }
@@ -307,14 +310,18 @@ export function useUnifiedSessionManager({
   // ── Source 2: internal HTTP/HTTPS proxy sessions ──
   const proxy = useInternalProxyManager(
     observationActive &&
-      ["sessions", "proxy-logs", "proxy-stats"].includes(activeView),
+      ["sessions", "proxy-logs", "proxy-stats", "browser-logs"].includes(
+        activeView,
+      ),
     {
       view:
         activeView === "proxy-logs"
           ? "logs"
-          : activeView === "proxy-stats"
-            ? "stats"
-            : "sessions",
+          : activeView === "browser-logs"
+            ? "browser-logs"
+            : activeView === "proxy-stats"
+              ? "stats"
+              : "sessions",
       invalidationKey: lifecycleKey,
     },
   );

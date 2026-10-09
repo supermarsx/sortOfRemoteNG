@@ -35,6 +35,7 @@ import {
 import { Checkbox } from "../ui/forms";
 import { CopyLatestProxyLogButton } from "./CopyLatestProxyLogButton";
 import { proxyLogDestination } from "../../utils/network/proxyLogClipboard";
+import { NativeBrowserDiagnostics } from "./NativeBrowserDiagnostics";
 import {
   classifySession,
   getProxySessionStatusMeta,
@@ -469,6 +470,8 @@ export const ProxyLogsTab: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
   const visible = mgr.requestLog.slice(offset, offset + pageSize);
   return (
     <div className="space-y-3">
+      <NativeBrowserDiagnostics mgr={mgr} />
+      <h3 className="text-sm font-medium">Legacy HTTP proxy request log</h3>
       <div className="flex flex-wrap items-start justify-between gap-3">
         <p className="text-sm text-[var(--color-textSecondary)]">
           Last {mgr.requestLog.length} proxied requests (newest first). Click a
@@ -545,6 +548,8 @@ export const ProxyLogsTab: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
 
 export const ProxyStatsTab: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
   <div className="space-y-4">
+    <NativeBrowserDiagnostics mgr={mgr} />
+    <h3 className="text-sm font-medium">Legacy HTTP proxy statistics</h3>
     {/* Summary cards */}
     <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
       <div className="sor-surface-card p-4 text-center">
@@ -653,12 +658,12 @@ export const ProxyStatsTab: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
     {/* Info panel */}
     <div className="bg-[var(--color-surface)]/50 border border-[var(--color-border)] rounded-lg p-4">
       <h3 className="text-sm font-medium text-[var(--color-textSecondary)] mb-2">
-        About the Internal Proxy
+        About the legacy HTTP proxy
       </h3>
       <div className="text-xs text-[var(--color-textSecondary)] space-y-1.5">
         <p>
-          Each HTTP/HTTPS connection tab opens a per-session mediator on a
-          random loopback port (
+          Legacy HTTP/HTTPS iframe tabs open a per-session mediator on a random
+          loopback port (
           <code className="text-info">127.0.0.1:&lt;port&gt;</code>). The iframe
           loads from that port and the proxy forwards every request to the
           upstream target — injecting Basic Auth credentials when configured.
@@ -687,6 +692,10 @@ export const ProxyStatsTab: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
   </div>
 );
 
+export const BrowserSessionLogsTab: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
+  <NativeBrowserDiagnostics mgr={mgr} mode="sessions" />
+);
+
 /* ------------------------------------------------------------------ */
 /*  Tab bar                                                            */
 /* ------------------------------------------------------------------ */
@@ -700,6 +709,7 @@ const tabs: {
   { id: "sessions", label: "Sessions", icon: Activity, countKey: "sessions" },
   { id: "logs", label: "Request Log", icon: ScrollText, countKey: "logs" },
   { id: "stats", label: "Statistics", icon: BarChart3 },
+  { id: "browser-logs", label: "Browser sessions", icon: Globe },
 ];
 
 /* ------------------------------------------------------------------ */
@@ -775,6 +785,9 @@ export const InternalProxyManager: React.FC<InternalProxyManagerProps> = ({
           {mgr.activeTab === "sessions" && <SessionsTab mgr={mgr} />}
           {mgr.activeTab === "logs" && <ProxyLogsTab mgr={mgr} />}
           {mgr.activeTab === "stats" && <ProxyStatsTab mgr={mgr} />}
+          {mgr.activeTab === "browser-logs" && (
+            <BrowserSessionLogsTab mgr={mgr} />
+          )}
         </div>
       </div>
     </div>

@@ -104,6 +104,23 @@ function mockInvoke(overrides: Record<string, InvokeOverride> = {}) {
         return [] as never;
       case "get_rdp_logs":
         return [] as never;
+      case "origin_browser_session_diagnostics":
+        return { available: true, sessions: [] } as never;
+      case "application_logs_list":
+        return {
+          files: [
+            {
+              id: "native-log",
+              name: "native.log",
+              modifiedUnixMs: 1791558000000,
+              sizeBytes: 40,
+              encrypted: false,
+            },
+          ],
+          truncated: false,
+        } as never;
+      case "application_logs_read":
+        return { text: "Native log fixture", truncated: false } as never;
       case "disconnect_rdp":
       case "detach_rdp_session":
       case "rdp_sign_out":
@@ -468,7 +485,7 @@ describe("SessionManager (unified RDP + internal proxy)", () => {
 
   afterEach(() => cleanup());
 
-  it("embeds Action Log and honors a fresh navigation request in an already-open manager", async () => {
+  it("keeps Application logs separate and preserves Action Log navigation requests", async () => {
     const Harness = ({ request }: { request: string }) => (
       <ToastProvider>
         <ConnectionProvider>
@@ -483,6 +500,12 @@ describe("SessionManager (unified RDP + internal proxy)", () => {
       </ToastProvider>
     );
     const view = render(<Harness request="first" />);
+    expect(
+      screen.getByRole("button", { name: "Application logs" }),
+    ).toHaveClass("sor-sidebar-tab");
+    expect(
+      screen.queryByRole("region", { name: "Application logs" }),
+    ).toBeNull();
     expect(
       await screen.findByRole("region", { name: "Action Log" }),
     ).toBeVisible();
@@ -501,6 +524,50 @@ describe("SessionManager (unified RDP + internal proxy)", () => {
   it("does not render when not visible", () => {
     renderManager({ isVisible: false });
     expect(screen.queryByText("Prod RDP")).not.toBeInTheDocument();
+  });
+
+  it("exposes native application logs and a single browser-journal route separately from Action Log", async () => {
+    renderManager();
+    fireEvent.click(screen.getByRole("button", { name: "Application logs" }));
+    expect(
+      await screen.findByRole("region", { name: "Application logs" }),
+    ).toBeVisible();
+    expect(await screen.findByText("Native log fixture")).toBeVisible();
+    expect(invoke).toHaveBeenCalledWith("application_logs_list", {
+      source: "application",
+    });
+    expect(screen.queryByRole("region", { name: "Action Log" })).toBeNull();
+    fireEvent.click(screen.getByTestId("session-view-browser-logs"));
+    expect(
+      await screen.findByRole("region", { name: "Browser sessions" }),
+    ).toBeVisible();
+    expect(
+      screen.getByRole("button", { name: "Live sessions" }),
+    ).toHaveAttribute("aria-pressed", "true");
+    await waitFor(() =>
+      expect(invoke).toHaveBeenCalledWith("origin_browser_session_diagnostics"),
+    );
+    expect(
+      screen.queryByRole("region", { name: "Browser startup journal" }),
+    ).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Startup journal" }));
+    expect(
+      await screen.findByRole("region", { name: "Browser startup journal" }),
+    ).toBeVisible();
+    expect(await screen.findByText("Native log fixture")).toBeVisible();
+    expect(invoke).toHaveBeenCalledWith("application_logs_list", {
+      source: "browser",
+    });
+    expect(
+      screen.queryByRole("region", { name: "Application logs" }),
+    ).toBeNull();
+    fireEvent.click(screen.getByTestId("session-view-action-log"));
+    expect(
+      await screen.findByRole("region", { name: "Action Log" }),
+    ).toBeVisible();
+    expect(
+      screen.queryByRole("region", { name: "Browser startup journal" }),
+    ).toBeNull();
   });
 
   it("updates automatically without manual refresh controls", async () => {
@@ -1174,7 +1241,7 @@ describe("SessionManager (unified RDP + internal proxy)", () => {
     await screen.findByText("https://example.com");
     fireEvent.click(screen.getByTestId("session-view-proxy-stats"));
     expect(
-      await screen.findByText("About the Internal Proxy"),
+      await screen.findByText("About the legacy HTTP proxy"),
     ).toBeInTheDocument();
   });
 

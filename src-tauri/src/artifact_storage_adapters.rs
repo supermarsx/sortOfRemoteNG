@@ -217,7 +217,7 @@ async fn decode_bytes(
 // Historical log files concatenate independently authenticated envelopes but
 // carry no length prefix. Candidate boundaries are accepted only after GCM
 // authentication; a bounded candidate count prevents pathological scans.
-async fn decode_logs(state: &EncryptionState, bytes: &[u8]) -> Result<Vec<u8>, String> {
+pub(crate) async fn decode_logs(state: &EncryptionState, bytes: &[u8]) -> Result<Vec<u8>, String> {
     if !bytes.starts_with(envelope::MAGIC) {
         return Ok(bytes.to_vec());
     }

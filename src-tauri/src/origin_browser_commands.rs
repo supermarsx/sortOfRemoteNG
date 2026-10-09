@@ -110,6 +110,7 @@ pub(crate) fn is_command(command: &str) -> bool {
     matches!(
         command,
         "origin_browser_create"
+            | "origin_browser_session_diagnostics"
             | "origin_browser_prewarm"
             | "origin_browser_cancel_prewarm"
             | "origin_browser_retention_capabilities"
@@ -127,6 +128,17 @@ pub(crate) fn is_command(command: &str) -> bool {
             | "origin_browser_recording"
             | "origin_browser_appearance"
     )
+}
+
+#[tauri::command]
+pub(crate) fn origin_browser_session_diagnostics(
+    window: WebviewWindow,
+) -> Result<crate::origin_browser_observability::SessionDiagnosticsResponse, String> {
+    crate::application_log_commands::require_shell(&window)?;
+    #[cfg(feature = "native-browser")]
+    { crate::origin_browser_runtime::observability::snapshot(&window) }
+    #[cfg(not(feature = "native-browser"))]
+    { Ok(crate::origin_browser_observability::SessionDiagnosticsResponse { available: false, sessions: vec![] }) }
 }
 
 #[tauri::command]

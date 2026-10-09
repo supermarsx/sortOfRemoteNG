@@ -18,6 +18,13 @@ use std::{
 };
 
 const MAX_RECORDS: usize = 32;
+// Set only by the journal worker after opening a private, validated root.
+// The log viewer never accepts an arbitrary renderer-supplied directory.
+static ACTIVE_JOURNAL_ROOT: OnceLock<PathBuf> = OnceLock::new();
+
+pub(crate) fn journal_root() -> Option<PathBuf> {
+    ACTIVE_JOURNAL_ROOT.get().cloned()
+}
 #[path = "origin_browser_tls_failure.rs"]
 mod tls_failure;
 pub(crate) use tls_failure::TlsBridgeFailure;
@@ -378,6 +385,7 @@ fn dispatcher() -> Option<&'static SyncSender<Message>> {
                                 if let Err(error) = flush_early_timing(&mut opened, &mut early_timing) {
                                     log::warn!("Native browser timing write failed (IO kind {:?})", error.kind());
                                 } else {
+                                    let _ = ACTIVE_JOURNAL_ROOT.set(root.clone());
                                     journal = Some(opened);
                                 }
                             }

@@ -98,6 +98,8 @@ beforeEach(() => {
         bytes_sent: 1,
       };
     if (command === "list_sessions") return [structuredClone(ssh)];
+    if (command === "origin_browser_session_diagnostics")
+      return { available: true, sessions: [] };
     if (command === "get_proxy_session_details") return [{ ...proxy }];
     if (command === "get_proxy_request_log")
       return [
@@ -122,18 +124,42 @@ afterEach(() => {
 });
 
 describe("automatic Session Manager observation", () => {
-  it("does not start native session observation for the Action Log view", async () => {
-    const view = renderHook(() =>
-      useUnifiedSessionManager({
-        isVisible: true,
-        connections: CONNECTIONS,
-        activeBackendSessionIds: BACKENDS,
-        thumbnailsEnabled: false,
-        activeView: "action-log",
-      }),
+  it.each(["action-log", "application-logs", "browser-journal"] as const)(
+    "does not start session polling for the %s view",
+    async (activeView) => {
+      const view = renderHook(() =>
+        useUnifiedSessionManager({
+          isVisible: true,
+          connections: CONNECTIONS,
+          activeBackendSessionIds: BACKENDS,
+          thumbnailsEnabled: false,
+          activeView,
+        }),
+      );
+      await tick(60_000);
+      expect(fixture.invoke).not.toHaveBeenCalled();
+      view.unmount();
+      expect(vi.getTimerCount()).toBe(0);
+    },
+  );
+  it("observes native browser sessions only while the live browser view is selected", async () => {
+    const view = renderHook(
+      ({ activeView }: { activeView: "browser-logs" | "browser-journal" }) =>
+        useUnifiedSessionManager({
+          isVisible: true,
+          connections: CONNECTIONS,
+          activeView,
+        }),
+      { initialProps: { activeView: "browser-logs" } },
     );
+    await tick();
+    expect(calls("origin_browser_session_diagnostics")).toBe(1);
+    expect(calls("list_rdp_sessions")).toBe(0);
+    expect(calls("get_proxy_request_log")).toBe(0);
+    view.rerender({ activeView: "browser-journal" });
+    const count = fixture.invoke.mock.calls.length;
     await tick(60_000);
-    expect(fixture.invoke).not.toHaveBeenCalled();
+    expect(fixture.invoke.mock.calls).toHaveLength(count);
     view.unmount();
     expect(vi.getTimerCount()).toBe(0);
   });
