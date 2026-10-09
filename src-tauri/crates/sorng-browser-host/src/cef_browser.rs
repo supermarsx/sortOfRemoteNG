@@ -3089,14 +3089,29 @@ wrap_load_handler! {
     struct NativeLoad { shared: Arc<Shared> }
     impl LoadHandler {
         fn on_loading_state_change(&self, browser: Option<&mut Browser>, is_loading: i32, can_go_back: i32, can_go_forward: i32) {
-            if self.shared.accepts(browser.as_deref()) && self.shared.current() {
-                self.shared.automation.lock().unwrap_or_else(|error| error.into_inner()).navigating = is_loading == 1;
+            // CEF includes child-frame loads here. Only main-frame BeforeBrowse
+            // starts the automation fence; an iframe must not cancel typing.
+            // Keep the stopped fallback for navigations cancelled before commit,
+            // which do not receive OnLoadEnd. Main-load faults revoke the owner.
+            if is_loading == 0 && self.shared.accepts(browser.as_deref()) && self.shared.current() {
+                self.shared.automation.lock().unwrap_or_else(|error| error.into_inner()).navigating = false;
             }
             self.shared.update(browser.as_deref(), |page| {
                 page.loading = is_loading == 1;
                 page.can_go_back = can_go_back == 1;
                 page.can_go_forward = can_go_forward == 1;
             });
+        }
+        fn on_load_end(&self, browser: Option<&mut Browser>, frame: Option<&mut Frame>, _http_status_code: i32) {
+            if !self.shared.accepts(browser.as_deref()) || !self.shared.current() { return; }
+            let (Some(browser), Some(frame)) = (browser, frame) else { return; };
+            let Some(main) = browser.main_frame() else { return; };
+            if frame.is_valid() != 1 || frame.is_main() != 1 || main.is_valid() != 1
+                || CefString::from(&frame.identifier()).to_string() != CefString::from(&main.identifier()).to_string() { return; }
+            // The main document is ready even if a child is still loading.
+            // Generation, revocation and keyboard owner/focus checks remain
+            // independent; a main-load fault revokes the owner before this callback.
+            self.shared.automation.lock().unwrap_or_else(|error| error.into_inner()).navigating = false;
         }
         fn on_load_error(&self, browser: Option<&mut Browser>, frame: Option<&mut Frame>,
             error_code: Errorcode, _error_text: Option<&CefString>, _failed_url: Option<&CefString>) {
