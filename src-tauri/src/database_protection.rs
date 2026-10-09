@@ -694,7 +694,9 @@ pub mod native_browser_owner {
             policy: sorng_browser_host::cef_session_retention::RetentionPolicy,
             current: impl Fn() -> bool,
         ) -> Result<Option<browser_sessions::NativeCookieRecord>, String> {
-            use sorng_browser_host::cef_session_retention::validate_cookies;
+            use sorng_browser_host::cef_session_retention::{
+                validate_cookies, validate_retention_origins,
+            };
             let inner = &self.0;
             origins.sort();
             origins.dedup();
@@ -716,15 +718,20 @@ pub mod native_browser_owner {
                 if policy != effective || !preferences.capabilities.cookies_enabled {
                     return Err(UNAVAILABLE.into());
                 }
-                let (saved_source, saved_origins) =
-                    crate::origin_browser_authority::saved_retention_scope(
+                let (saved_source, _, grant) =
+                    crate::origin_browser_authority::saved_retention_network_scope(
                         select_connection(data, &inner.connection_id)?,
                         settings,
                     )
                     .map_err(|_| UNAVAILABLE)?;
-                if source_origin != saved_source || origins != saved_origins {
+                if source_origin != saved_source {
                     return Err(UNAVAILABLE.into());
                 }
+                // Broad destination permission is not a wildcard cookie jar.
+                // Revalidate the bounded concrete capture against the current
+                // saved policy inside the owner-fenced database transaction.
+                validate_retention_origins(&origins, &saved_source, &grant)
+                    .map_err(|_| UNAVAILABLE)?;
                 let mut records = browser_sessions::private(data)?;
                 let index = records
                     .records

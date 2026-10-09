@@ -24,6 +24,9 @@ struct Fixture {
 }
 impl Fixture {
     async fn new(mode: RetentionMode) -> Self {
+        Self::with_network_scope(mode, false).await
+    }
+    async fn with_network_scope(mode: RetentionMode, broad: bool) -> Self {
         let app = mock_builder().build(mock_context(noop_assets())).unwrap();
         let window = WebviewWindowBuilder::new(&app, "main", WebviewUrl::default())
             .build()
@@ -60,7 +63,7 @@ impl Fixture {
         let connection = |id: &str| {
             json!({"id":id,"protocol":"https","httpsTrustPolicy":"strict",
             "hostname":"https://same.example/","port":443,"httpAutoLogin":false,
-            "httpProxyPolicy":{"version":1,"externalResourceOrigins":[],"allowExternalFonts":false},
+            "httpProxyPolicy":{"version":1,"externalResourceOrigins":[],"allowExternalFonts":false,"allowAllRequests":broad},
             "browserSession":{"version":1,"sessionRetention":policy}})
         };
         let data = json!({"connections":[connection("one"),connection("two")],"settings":{}});
@@ -200,6 +203,62 @@ fn live(owner: &NativeCookieRetention) -> bool {
 }
 
 #[tokio::test]
+async fn observed_cookie_origins_survive_reopen_without_widening_login_or_other_connections() {
+    for mode in [RetentionMode::Memory, RetentionMode::EncryptedDatabase] {
+        let fixture = Fixture::with_network_scope(mode, true).await;
+        let first = fixture.owner("first", "one").await;
+        assert!(load(&first).await.is_empty());
+        first
+            .observed
+            .observe_network_origin("https://new.example:8443");
+        let mut saved = cookie("new-domain-session");
+        saved.origin = "https://new.example:8443".into();
+        saved.domain = "new.example".into();
+        let writer = first.clone();
+        tauri::async_runtime::spawn_blocking(move || writer.save(vec![saved]))
+            .await
+            .unwrap()
+            .unwrap();
+        let second = fixture.owner("second", "one").await;
+        assert!(!second
+            .origins()
+            .unwrap()
+            .contains(&"https://new.example:8443".into()));
+        assert_eq!(load(&second).await[0].value, "new-domain-session");
+        assert!(second
+            .origins()
+            .unwrap()
+            .contains(&"https://new.example:8443".into()));
+        assert!(load(&fixture.owner("other", "two").await).await.is_empty());
+        let fresh = fixture.authorize("login-check", "one").await;
+        assert!(!fresh
+            .policy
+            .allowed_origins()
+            .contains(&"https://new.example:8443".into()));
+    }
+}
+
+#[tokio::test]
+async fn observation_overflow_preserves_previous_encrypted_snapshot() {
+    let fixture = Fixture::with_network_scope(RetentionMode::EncryptedDatabase, true).await;
+    let owner = fixture.owner("first", "one").await;
+    load(&owner).await;
+    save(&owner, "preserve-me").await;
+    let before = fixture.database_bytes();
+    for index in 0..128 {
+        owner
+            .observed
+            .observe_network_origin(&format!("https://host{index}.example"));
+    }
+    let writer = owner.clone();
+    let result = tauri::async_runtime::spawn_blocking(move || writer.save(vec![]))
+        .await
+        .unwrap();
+    assert_eq!(result, Err(RetentionError::Limit));
+    assert_eq!(fixture.database_bytes(), before);
+}
+
+#[tokio::test]
 async fn duplicate_tabs_keep_live_owners_while_only_latest_saves_or_deletes() {
     for mode in [RetentionMode::Memory, RetentionMode::EncryptedDatabase] {
         let fixture = Fixture::new(mode).await;
@@ -333,7 +392,7 @@ async fn external_snapshot_revision_wins_without_merge_delete_or_cleanup_retry()
                 revision,
                 vec![cookie("imported-session")],
                 a.source.clone(),
-                a.origins.clone(),
+                a.origins().unwrap(),
                 a.policy,
                 || true,
             )

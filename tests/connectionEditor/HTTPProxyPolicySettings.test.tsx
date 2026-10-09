@@ -42,6 +42,19 @@ const fontOptOut = (): Partial<Connection> => ({
 });
 
 describe("Internal proxy controls", () => {
+  it("explains native routing and website security without promising a CSP bypass", () => {
+    render(<Fixture />);
+    expect(screen.getByText(/Native browser: supported website requests/)).toHaveTextContent(
+      "private proxy and isolated browser session",
+    );
+    expect(screen.getByText(/Native browser: permits external script sources/)).toHaveTextContent(
+      "the website still controls inline scripts and eval",
+    );
+    expect(screen.getByText(/Native browser: permits external script sources/)).toHaveTextContent(
+      "Explicit native domain denials remain in force",
+    );
+    expect(draft().httpProxyPolicy).toBeUndefined();
+  });
   it("mounts connection-only overrides with shared inheritance without copying shared grants", () => {
     shared.settings = {
       webBrowser: {
@@ -355,7 +368,7 @@ describe("Internal proxy controls", () => {
       "https://fonts.gstatic.com",
     ]);
     expect(
-      screen.getByText(/No cookies or saved credentials/),
+      screen.getByText(/legacy mode sends anonymous requests/),
     ).toBeInTheDocument();
     expect(
       screen.getByText(/Configure both font stylesheet and font binary/),

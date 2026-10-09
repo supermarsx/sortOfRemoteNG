@@ -35,8 +35,8 @@
 use super::*;
 use serde::{Deserialize, Serialize};
 use sorng_browser_host::cef_session_retention::{
-    validate_cookies, RetentionMode, RetentionPolicy, SignInCookie, MAX_COOKIE_BYTES,
-    MAX_TOTAL_BYTES,
+    validate_cookies, validate_retention_origins, RetentionMode, RetentionPolicy, SignInCookie,
+    MAX_COOKIE_BYTES, MAX_TOTAL_BYTES,
 };
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -682,8 +682,8 @@ pub(crate) fn validate_destination_scope(
     let policy: RetentionPolicy =
         serde_json::from_value(preferences.retention).map_err(|_| ERROR)?;
     policy.validate().map_err(|_| ERROR)?;
-    let (source, origins) =
-        crate::origin_browser_authority::saved_retention_scope(connection, settings)
+    let (source, mut origins, grant) =
+        crate::origin_browser_authority::saved_retention_network_scope(connection, settings)
             .map_err(|_| ERROR)?;
     if source != record.source_origin
         || policy != record.policy
@@ -692,8 +692,13 @@ pub(crate) fn validate_destination_scope(
     {
         return Err(ERROR.into());
     }
-    // Never copy source-device redirect consent. A cookie must already have an
-    // approved exact origin at the destination, even if the source approved it.
+    // A source device's observed origins are not transferable consent. Recheck
+    // every concrete origin with this destination's current network policy.
+    validate_retention_origins(&record.origins, &source, &grant).map_err(|_| ERROR)?;
+    origins.extend(record.origins.iter().cloned());
+    origins.sort();
+    origins.dedup();
+    validate_retention_origins(&origins, &source, &grant).map_err(|_| ERROR)?;
     validate_cookies(&record.cookies, &origins, stamp()).map_err(|_| ERROR)?;
     record.origins = origins;
     Ok(())

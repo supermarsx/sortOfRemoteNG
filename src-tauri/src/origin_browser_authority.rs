@@ -11,8 +11,7 @@ use base64::Engine;
 use serde_json::Value;
 use sorng_browser_host::{
     domain_permissions::{
-        canonical_website_permission_origin, WebsiteDestinationPermissions,
-        WebsiteDomainPermissionsSettings, WebsiteOriginPermissions, WebsitePermissionDecision,
+        canonical_website_permission_origin, WebsiteNetworkPolicy, WebsitePermissionDecision,
         WebsitePermissionEngine, WebsitePermissionQuery, WebsitePermissionSetting,
         WebsiteRequestClass,
     },
@@ -20,7 +19,7 @@ use sorng_browser_host::{
 };
 use sorng_encryption::EncryptionState;
 use sorng_protocols::{
-    origin_browser::{BrowserIdentity, OriginBrowserPolicy},
+    origin_browser::{BrowserIdentity, NetworkOriginGrant, OriginBrowserPolicy},
     private_forward_proxy::{Authority, BoxedStream, DialFuture, RouteDialer},
 };
 use sorng_socket_transport::{Route, SocketConnector, SocketTarget, TcpOptions};
@@ -46,6 +45,15 @@ mod extension_tests;
 #[path = "origin_browser_prewarm.rs"]
 pub mod prewarm;
 pub use preferences::NativeBrowserPreferences;
+#[path = "origin_browser_permission_validation.rs"]
+mod permission_validation;
+use permission_validation::{
+    permission_settings, preference_error, validate_capabilities, validate_proxy_policy,
+    validate_temporary_http_policy,
+};
+#[cfg(test)]
+#[path = "origin_browser_permission_validation_tests.rs"]
+mod permission_validation_tests;
 #[path = "origin_browser_automation_authority.rs"]
 mod automation;
 pub use automation::NativeAutomationAuthority;
@@ -96,6 +104,17 @@ pub enum NativeAuthorityError {
     SourceMismatch,
     #[error("Saved browser permission policy is invalid or unsupported")]
     PolicyUnsupported,
+    #[error("Saved browser policy rejected ({scope}): {rule}")]
+    PolicyInvalid {
+        scope: &'static str,
+        rule: &'static str,
+    },
+    #[error("Saved browser application settings could not be read")]
+    SettingsUnavailable,
+    #[error("Saved browser preferences are invalid")]
+    PreferencesInvalid,
+    #[error("Saved browser capabilities are invalid or unsupported")]
+    CapabilitiesInvalid,
     #[error("Saved HTTPS trust policy requires a native certificate adapter; only explicit strict verification is supported")]
     CertificatePolicyUnsupported,
     #[error("Saved application entry or login route has no native translation")]
@@ -820,26 +839,24 @@ async fn authorize_create_inner<R: Runtime>(
     let mut settings =
         crate::app_settings_commands::read_app_settings_inner(lease.profile_root(), state)
             .await
-            .map_err(|_| NativeAuthorityError::PolicyUnsupported)?
+            .map_err(|_| NativeAuthorityError::SettingsUnavailable)?
             .unwrap_or(Value::Null);
     let preferences = NativeBrowserPreferences::from_saved(&connection, &settings)
-        .map_err(|_| NativeAuthorityError::PolicyUnsupported)?;
-    preferences
-        .capabilities
-        .validate()
-        .map_err(|_| NativeAuthorityError::PolicyUnsupported)?;
+        .map_err(|_| preference_error(&connection, &settings))?;
+    validate_capabilities(&connection, preferences.capabilities)?;
     preferences.apply_login_defaults(&mut settings);
     let (permissions, mut allowed_origins) = if lease.is_temporary() && initial_url.scheme() == "http" {
         let policy = settings.pointer("/webBrowser/defaultPolicy");
-        if policy.is_some_and(|p| !p.is_object()
-            || p.get("httpsOnly").is_some_and(|v| v != &Value::Bool(false))
-            || p.get("pageScripts").is_some_and(|v| v != "allow")) {
-            return Err(NativeAuthorityError::PolicyUnsupported);
+        if let Some(policy) = policy {
+            validate_temporary_http_policy(policy)?;
         }
         let defaults = CLASSES.iter().map(|(class, _)| (*class, WebsitePermissionDecision::Allow)).collect();
         let source = initial_url.origin().ascii_serialization();
         (WebsitePermissionEngine::temporary_http(&source, &defaults)
-            .map_err(|_| NativeAuthorityError::PolicyUnsupported)?, vec![source])
+            .map_err(|_| NativeAuthorityError::PolicyInvalid {
+                scope: "source",
+                rule: "temporary HTTP source origin is invalid",
+            })?, vec![source])
     } else if certificate_hooks {
         saved_permissions_inner(&connection, &settings, &initial_url, true)?
     } else {
@@ -860,7 +877,13 @@ async fn authorize_create_inner<R: Runtime>(
         &initial_url.origin().ascii_serialization(),
         &origins,
     )
-    .map_err(|_| NativeAuthorityError::PolicyUnsupported)?;
+    .map_err(|_| NativeAuthorityError::PolicyInvalid {
+        scope: "effective",
+        rule: "browser identity or allowed origins failed native policy validation",
+    })?
+    .with_network_origin_grant(request_network_grant(
+        permissions.clone(), initial_url.origin().ascii_serialization(),
+    ));
     let expanded_route = routes::expand(window, state, &connection, &lease).await?;
     let hops = Arc::new(saved_route(&expanded_route)?);
     let route_lease = lease.clone();
@@ -1184,28 +1207,40 @@ const CLASSES: [(WebsiteRequestClass, &str); 9] = [
     (WebsiteRequestClass::Navigation, "navigation"),
 ];
 
-fn permission_settings(
-    value: Option<&Value>,
-) -> Result<Option<WebsiteDomainPermissionsSettings>, NativeAuthorityError> {
-    value
-        .map(|v| {
-            serde_json::from_value(v.clone()).map_err(|_| NativeAuthorityError::PolicyUnsupported)
-        })
-        .transpose()
-}
-
 /// Resolve the destination's existing network scope for an imported cookie
 /// snapshot. This is a pure policy check, not browser admission, credential
 /// consent or permission to restore cookies without an unlocked owner lease.
+#[cfg(test)]
 pub(crate) fn saved_retention_scope(
     connection: &Value,
     settings: &Value,
 ) -> Result<(String, Vec<String>), NativeAuthorityError> {
+    let (source, origins, _) = saved_retention_network_scope(connection, settings)?;
+    Ok((source, origins))
+}
+
+/// Current network authority for validating bounded, concrete observed cookie
+/// origins. This never creates a login grant or restores a locked database.
+pub(crate) fn saved_retention_network_scope(
+    connection: &Value,
+    settings: &Value,
+) -> Result<(String, Vec<String>, NetworkOriginGrant), NativeAuthorityError> {
     let source = saved_source(connection)?;
-    let (_, mut origins) = saved_permissions_inner(connection, settings, &source, true)?;
+    let (engine, mut origins) = saved_permissions_inner(connection, settings, &source, true)?;
+    let preferences = NativeBrowserPreferences::from_saved(connection, settings)
+        .map_err(|_| preference_error(connection, settings))?;
+    let cross_origin = preferences.capabilities.cross_origin_requests_enabled;
+    let engine = engine.restrict_cross_origin_requests(cross_origin);
+    let source = source.origin().ascii_serialization();
+    if !cross_origin { origins.retain(|origin| origin == &source); }
     origins.sort();
     origins.dedup();
-    Ok((source.origin().ascii_serialization(), origins))
+    let grant = request_network_grant(engine, source.clone());
+    Ok((source, origins, grant))
+}
+
+fn request_network_grant(engine: WebsitePermissionEngine, source: String) -> NetworkOriginGrant {
+    Arc::new(move |origin| engine.permits_network_origin(&source, origin))
 }
 
 fn saved_permissions(
@@ -1222,16 +1257,19 @@ fn saved_permissions_inner(
     source: &Url,
     certificate_hooks: bool,
 ) -> Result<(WebsitePermissionEngine, Vec<String>), NativeAuthorityError> {
-    let error = NativeAuthorityError::PolicyUnsupported;
+    let invalid = |scope, rule| NativeAuthorityError::PolicyInvalid { scope, rule };
     // The existing domain engine deliberately accepts exact HTTPS origins only.
     if source.scheme() != "https" {
-        return Err(error);
+        return Err(invalid("source", "saved source must use HTTPS"));
     }
     if connection
         .get("httpVerifySsl")
         .is_some_and(|v| v != &Value::Bool(true))
     {
-        return Err(error);
+        return Err(invalid(
+            "connection.httpVerifySsl",
+            "must be true when present",
+        ));
     }
     // Same HTTPS precedence as resolveEffectiveTrustPolicy in the app shell.
     // CEF's system verifier cannot silently replace TOFU/pin/prompt semantics.
@@ -1243,36 +1281,29 @@ fn saved_permissions_inner(
         .get("webBrowser")
         .is_some_and(|value| !value.is_object())
     {
-        return Err(error);
+        return Err(invalid("settings.webBrowser", "must be an object"));
     }
-    // Legacy content-rewriting restrictions cannot be silently lost. Explicit
-    // native domain policies are supported; legacy special modes fail closed.
-    if let Some(policy) = connection
+    // Real-origin pages retain their own CSP/CORS. Connection-only broad flags
+    // widen native source defaults, not credential or certificate permission.
+    let policy = connection
         .get("httpProxyPolicy")
-        .or_else(|| settings.pointer("/webBrowser/defaultPolicy"))
-    {
-        if !policy.is_object()
-            || policy.get("version").is_some_and(|v| v != &Value::from(1))
-            || policy.get("pageScripts").is_some_and(|v| v != "allow")
-            || policy
-                .get("allowAllRequests")
-                .is_some_and(|v| v != &Value::Bool(false))
-            || policy
-                .get("allowAllScripts")
-                .is_some_and(|v| v != &Value::Bool(false))
-            || policy.get("httpsOnly").is_some_and(|v| !v.is_boolean())
-            || policy
-                .get("sameOriginOnly")
-                .is_some_and(|v| !v.is_boolean())
-            || policy
-                .get("queryParameters")
-                .is_some_and(|v| v.as_array().is_none_or(|v| !v.is_empty()))
-        {
-            return Err(error);
-        }
+        .or_else(|| settings.pointer("/webBrowser/defaultPolicy"));
+    let policy_scope = if connection.get("httpProxyPolicy").is_some() {
+        "connection.httpProxyPolicy"
+    } else {
+        "settings.webBrowser.defaultPolicy"
+    };
+    if let Some(policy) = policy {
+        validate_proxy_policy(policy, policy_scope)?;
     }
-    let shared = permission_settings(settings.pointer("/webBrowser/domainPermissions"))?;
-    let own = permission_settings(connection.get("websiteDomainPermissions"))?;
+    let shared = permission_settings(
+        settings.pointer("/webBrowser/domainPermissions"),
+        "settings.webBrowser.domainPermissions",
+    )?;
+    let own = permission_settings(
+        connection.get("websiteDomainPermissions"),
+        "connection.websiteDomainPermissions",
+    )?;
     let origin = source.origin().ascii_serialization();
     let same_origin = connection
         .get("httpProxyPolicy")
@@ -1300,7 +1331,8 @@ fn saved_permissions_inner(
             }
         }
         let mut grant = |destination: &str,
-                         classes: &[WebsiteRequestClass]|
+                         classes: &[WebsiteRequestClass],
+                         error: NativeAuthorityError|
          -> Result<(), NativeAuthorityError> {
             let destination =
                 canonical_website_permission_origin(destination).map_err(|_| error)?;
@@ -1312,51 +1344,75 @@ fn saved_permissions_inner(
         };
         let all: Vec<_> = CLASSES.iter().map(|(class, _)| *class).collect();
         if let Some(redirects) = connection.get("httpTrustedRedirectDestinations") {
+            let scope = "connection.httpTrustedRedirectDestinations";
             if redirects.get("version") != Some(&Value::from(1)) {
-                return Err(error);
+                return Err(invalid(scope, "version must be 1"));
             }
             let origins = redirects
                 .get("origins")
                 .and_then(Value::as_array)
-                .ok_or(error)?;
+                .ok_or(invalid(scope, "origins must be an array"))?;
             if origins.len() > 32 {
-                return Err(error);
+                return Err(invalid(scope, "origins must contain at most 32 entries"));
             }
             // Existing trust permits exact-origin anonymous handoffs, not login.
             for value in origins {
-                grant(value.as_str().ok_or(error)?, &all)?;
+                let error = invalid(scope, "origins[] must be an exact HTTPS origin");
+                grant(value.as_str().ok_or(error)?, &all, error)?;
             }
         }
-        let policy = connection
-            .get("httpProxyPolicy")
-            .or_else(|| settings.pointer("/webBrowser/defaultPolicy"));
         let common: Value = serde_json::from_str(include_str!(
             "../../src/utils/protocol/commonResourceOrigins.json"
         ))
-        .map_err(|_| error)?;
+        .map_err(|_| invalid("bundled.commonResourceOrigins", "must be valid JSON"))?;
+        let resource_scope = if policy
+            .and_then(|p| p.get("externalResourceOrigins"))
+            .is_some()
+        {
+            policy_scope
+        } else {
+            "bundled.commonResourceOrigins"
+        };
         let resources = policy
             .and_then(|p| p.get("externalResourceOrigins"))
             .unwrap_or(&common)
             .as_array()
-            .ok_or(error)?;
+            .ok_or(invalid(
+                resource_scope,
+                "externalResourceOrigins must be an array",
+            ))?;
         if resources.len() > 32 {
-            return Err(error);
+            return Err(invalid(
+                resource_scope,
+                "externalResourceOrigins must contain at most 32 entries",
+            ));
         }
         for row in resources {
             let classes = row
                 .get("kinds")
                 .and_then(Value::as_array)
-                .ok_or(error)?
+                .ok_or(invalid(
+                    resource_scope,
+                    "externalResourceOrigins[].kinds must be an array",
+                ))?
                 .iter()
                 .map(|kind| match kind.as_str() {
                     Some("script") => Ok(WebsiteRequestClass::Script),
                     Some("stylesheet") => Ok(WebsiteRequestClass::Stylesheet),
-                    _ => Err(error),
+                    _ => Err(invalid(
+                        resource_scope,
+                        "externalResourceOrigins[].kinds[] must be script or stylesheet",
+                    )),
                 })
                 .collect::<Result<Vec<_>, _>>()?;
+            let error = invalid(
+                resource_scope,
+                "externalResourceOrigins[].origin must be an exact HTTPS origin",
+            );
             grant(
                 row.get("origin").and_then(Value::as_str).ok_or(error)?,
                 &classes,
+                error,
             )?;
         }
         if policy
@@ -1370,26 +1426,43 @@ fn saved_permissions_inner(
                 "https://cdnjs.cloudflare.com",
                 "https://cdn.jsdelivr.net"
             ]);
+            let font_scope = if policy.and_then(|p| p.get("externalFontOrigins")).is_some() {
+                policy_scope
+            } else {
+                "bundled.externalFontOrigins"
+            };
             let fonts = policy
                 .and_then(|p| p.get("externalFontOrigins"))
                 .unwrap_or(&default_fonts)
                 .as_array()
-                .ok_or(error)?;
+                .ok_or(invalid(font_scope, "externalFontOrigins must be an array"))?;
             if fonts.len() > 16 {
-                return Err(error);
+                return Err(invalid(
+                    font_scope,
+                    "externalFontOrigins must contain at most 16 entries",
+                ));
             }
             for font in fonts {
+                let error = invalid(
+                    font_scope,
+                    "externalFontOrigins[] must be an exact HTTPS origin",
+                );
                 grant(
                     font.as_str().ok_or(error)?,
                     &[WebsiteRequestClass::Stylesheet, WebsiteRequestClass::Font],
+                    error,
                 )?;
             }
         }
         if google_entry(connection).is_some() {
+            let error = invalid(
+                "bundled.googleRoutes",
+                "route entries must be exact HTTPS origins",
+            );
             let id = connection
                 .pointer("/httpApplication/id")
                 .and_then(Value::as_str)
-                .ok_or(error)?;
+                .ok_or(NativeAuthorityError::ApplicationUnsupported)?;
             if GOOGLE_ROUTES["profiles"][id].as_str() != Some(origin.as_str()) {
                 return Err(NativeAuthorityError::ApplicationUnsupported);
             }
@@ -1407,10 +1480,10 @@ fn saved_permissions_inner(
                 })
                 .collect();
             for value in GOOGLE_ROUTES["loginOrigins"].as_array().ok_or(error)? {
-                grant(value.as_str().ok_or(error)?, &all)?;
+                grant(value.as_str().ok_or(error)?, &all, error)?;
             }
             for value in GOOGLE_ROUTES["resourceOrigins"].as_array().ok_or(error)? {
-                grant(value.as_str().ok_or(error)?, &resources)?;
+                grant(value.as_str().ok_or(error)?, &resources, error)?;
             }
             if let Some(values) = connection
                 .pointer("/httpApplication/id")
@@ -1427,25 +1500,47 @@ fn saved_permissions_inner(
                     &resources
                 };
                 for value in values {
-                    grant(value.as_str().ok_or(error)?, classes)?;
+                    grant(value.as_str().ok_or(error)?, classes, error)?;
                 }
             }
         }
     }
-    // Materialize effective per-destination classes so a script-only CDN grant
-    // cannot accidentally acquire navigation/fetch rights from source defaults.
-    let mut destinations = Vec::new();
+    // Keep original explicit rules in the frozen resolver: materializing only
+    // known destinations loses class denies when a new broad source appears.
+    if candidates.len() > sorng_browser_host::domain_permissions::MAX_WEBSITE_PERMISSION_DESTINATIONS {
+        return Err(invalid("effective", "combined destinations must contain at most 32 entries"));
+    }
+    let option = |field| policy.and_then(|p| p.get(field)).and_then(Value::as_bool).unwrap_or(false);
+    let network = WebsiteNetworkPolicy {
+        source_origin: origin.clone(),
+        destination_defaults: candidates.clone(),
+        allow_all_requests: option("allowAllRequests"),
+        allow_all_scripts: option("allowAllScripts"),
+        https_only: option("httpsOnly"),
+        same_origin_only: same_origin,
+        allow_http_downgrade: option("allowHttpDowngradeRedirects"),
+    };
+    let base = WebsitePermissionEngine::new(shared.as_ref(), own.as_ref(), &BTreeMap::new())
+        .map_err(|_| invalid("effective", "domain permission engine validation failed"))?;
+    let engine = base.clone().with_network_policy(network.clone())
+        .map_err(|_| invalid("effective", "native network policy validation failed"))?;
+    // The finite list remains the reviewed static scope for login selection.
+    // Network-only broad defaults must never be substituted for this list.
+    let static_resolver = base.with_network_policy(WebsiteNetworkPolicy {
+        allow_all_requests: false,
+        allow_all_scripts: false,
+        ..network
+    }).map_err(|_| invalid("effective", "native network policy validation failed"))?;
     let mut allowed = Vec::new();
-    for (destination, defaults) in candidates {
-        let resolver = WebsitePermissionEngine::new(shared.as_ref(), own.as_ref(), &defaults)
-            .map_err(|_| error)?;
+    for destination in candidates.keys() {
+        let resolver = &static_resolver;
         let classes: BTreeMap<_, _> = CLASSES
             .iter()
             .map(|(class, name)| {
                 let decision = resolver
                     .resolve(WebsitePermissionQuery {
                         website_origin: &origin,
-                        destination_origin: &destination,
+                        destination_origin: destination,
                         request_class: name,
                         native_denied: false,
                     })
@@ -1460,11 +1555,40 @@ fn saved_permissions_inner(
                 )
             })
             .collect();
-        if destination == origin
+        if destination == &origin
             && classes.get(&WebsiteRequestClass::Navigation)
                 != Some(&WebsitePermissionSetting::Allow)
         {
-            return Err(error);
+            use sorng_browser_host::domain_permissions::WebsitePermissionSource;
+            let decision = resolver.resolve(WebsitePermissionQuery {
+                website_origin: &origin,
+                destination_origin: destination,
+                request_class: "navigation",
+                native_denied: false,
+            });
+            let (scope, rule) = match decision.source {
+                WebsitePermissionSource::ConnectionDestination => (
+                    "connection.websiteDomainPermissions",
+                    "websites[].destinations[].requestClasses.navigation denies initial navigation",
+                ),
+                WebsitePermissionSource::ConnectionClass => (
+                    "connection.websiteDomainPermissions",
+                    "websites[].requestClasses.navigation denies initial navigation",
+                ),
+                WebsitePermissionSource::SharedDestination => (
+                    "settings.webBrowser.domainPermissions",
+                    "websites[].destinations[].requestClasses.navigation denies initial navigation",
+                ),
+                WebsitePermissionSource::SharedClass => (
+                    "settings.webBrowser.domainPermissions",
+                    "websites[].requestClasses.navigation denies initial navigation",
+                ),
+                _ => (
+                    "source",
+                    "source origin is invalid for domain permission resolution",
+                ),
+            };
+            return Err(invalid(scope, rule));
         }
         if classes
             .values()
@@ -1472,21 +1596,7 @@ fn saved_permissions_inner(
         {
             allowed.push(destination.clone());
         }
-        destinations.push(WebsiteDestinationPermissions {
-            origin: destination,
-            request_classes: classes,
-        });
     }
-    let effective = WebsiteDomainPermissionsSettings {
-        version: 1,
-        websites: vec![WebsiteOriginPermissions {
-            origin,
-            request_classes: BTreeMap::new(),
-            destinations,
-        }],
-    };
-    let engine = WebsitePermissionEngine::new(None, Some(&effective), &BTreeMap::new())
-        .map_err(|_| error)?;
     Ok((engine, allowed))
 }
 
@@ -1839,7 +1949,13 @@ mod tests {
         assert!(saved_retention_scope(&connection, &Value::Null).is_err());
         connection.as_object_mut().unwrap().remove("httpVerifySsl");
         connection["httpProxyPolicy"]["allowAllRequests"] = true.into();
-        assert!(saved_retention_scope(&connection, &Value::Null).is_err());
+        let (source, origins, grant) = saved_retention_network_scope(&connection, &Value::Null).unwrap();
+        assert_eq!(origins, vec![source.clone()]);
+        assert!(!grant("https://new.example")); // same-origin still wins
+        connection["httpProxyPolicy"]["sameOriginOnly"] = false.into();
+        let (_, origins, grant) = saved_retention_network_scope(&connection, &Value::Null).unwrap();
+        assert!(!origins.contains(&"https://new.example".into()));
+        assert!(grant("https://new.example"));
     }
 
     #[test]
@@ -2489,10 +2605,9 @@ mod tests {
         ));
         row["httpsTrustPolicy"] = "strict".into();
         row["httpProxyPolicy"] = json!({"allowAllRequests":true});
-        assert!(matches!(
-            saved_permissions(&row, &settings, &source),
-            Err(NativeAuthorityError::PolicyUnsupported)
-        ));
+        assert!(saved_permissions(&row, &settings, &source).is_ok());
+        row["httpsTrustPolicy"] = "always-trust".into();
+        assert!(matches!(saved_permissions(&row, &settings, &source), Err(NativeAuthorityError::CertificatePolicyUnsupported)));
     }
 
     #[tokio::test]

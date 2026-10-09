@@ -211,6 +211,33 @@ fn destination_restore_requires_exact_source_policy_and_existing_origin_grants()
     assert!(validate_destination_scope(&data, &grants, &mut saved).is_err());
 }
 
+#[test]
+fn destination_dynamic_cookie_origins_require_current_broad_permission() {
+    let mut data = public_data();
+    data["connections"][0]["httpProxyPolicy"]["allowAllRequests"] = true.into();
+    let mut saved = record(&data, "synthetic");
+    saved.origins.push("https://observed.example:8443".into());
+    saved.cookies[0].origin = "https://observed.example:8443".into();
+    saved.cookies[0].domain = "observed.example".into();
+    saved.refresh_revision().unwrap();
+    saved.validate().unwrap();
+    validate_destination_scope(&data, &Value::Null, &mut saved).unwrap();
+    assert!(saved
+        .origins
+        .contains(&"https://observed.example:8443".into()));
+    let unchanged = saved.origins.clone();
+    data["connections"][0]["httpProxyPolicy"]["allowAllRequests"] = false.into();
+    assert!(validate_destination_scope(&data, &Value::Null, &mut saved).is_err());
+    assert_eq!(saved.origins, unchanged);
+    data["connections"][0]["httpProxyPolicy"]["allowAllRequests"] = true.into();
+    data["connections"][0]["httpProxyPolicy"]["sameOriginOnly"] = true.into();
+    assert!(validate_destination_scope(&data, &Value::Null, &mut saved).is_err());
+    assert_eq!(saved.origins, unchanged);
+    data["connections"][0]["httpProxyPolicy"]["sameOriginOnly"] = false.into();
+    saved.origins.push("http://insecure.example".into());
+    assert!(validate_destination_scope(&data, &Value::Null, &mut saved).is_err());
+}
+
 #[tokio::test]
 async fn default_ephemeral_device_preserves_imported_record_without_restoring_or_deleting_it() {
     let mut body = public_data();
@@ -711,6 +738,61 @@ async fn same_url_two_native_connection_leases_never_share_cookies() {
             .cookies[0]
             .value,
         "second"
+    );
+}
+
+#[tokio::test]
+async fn native_database_roundtrip_keeps_dynamic_cookie_scope_and_rejects_oversized_replacement() {
+    let mut data = public_data();
+    data["connections"][0]["httpProxyPolicy"]["allowAllRequests"] = true.into();
+    let fixture = fixture(&data).await;
+    let lease = native_browser_owner::test_cookie_lease(
+        fixture.root.path(),
+        &fixture.state,
+        &fixture.token,
+        &data["connections"][0],
+    );
+    let mut dynamic = cookie("synthetic-dynamic-cookie");
+    dynamic.origin = "https://observed.example:8443".into();
+    dynamic.domain = "observed.example".into();
+    let scope = vec!["https://same.example".into(), dynamic.origin.clone()];
+    let record = lease
+        .save_cookie_record(
+            None,
+            vec![dynamic],
+            "https://same.example".into(),
+            scope,
+            policy(),
+            || true,
+        )
+        .await
+        .unwrap()
+        .unwrap();
+    let loaded = lease.load_cookie_record(|| true).await.unwrap();
+    assert!(!loaded.dormant);
+    let restored = loaded.record.unwrap();
+    assert_eq!(restored.cookies[0].value, "synthetic-dynamic-cookie");
+    assert_eq!(restored.cookies[0].origin, "https://observed.example:8443");
+    let before = std::fs::read(fixture.root.path().join("databases/db.json")).unwrap();
+    assert!(!before
+        .windows(b"synthetic-dynamic-cookie".len())
+        .any(|w| w == b"synthetic-dynamic-cookie"));
+    let mut too_many = vec!["https://same.example".into()];
+    too_many.extend((0..128).map(|i| format!("https://host{i}.example")));
+    assert!(lease
+        .save_cookie_record(
+            Some(record.revision),
+            vec![],
+            "https://same.example".into(),
+            too_many,
+            policy(),
+            || true,
+        )
+        .await
+        .is_err());
+    assert_eq!(
+        std::fs::read(fixture.root.path().join("databases/db.json")).unwrap(),
+        before
     );
 }
 

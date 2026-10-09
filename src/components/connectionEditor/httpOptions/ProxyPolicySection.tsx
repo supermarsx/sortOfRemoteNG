@@ -181,11 +181,11 @@ export default function ProxyPolicySection({ mgr }: { mgr: Mgr }) {
           unsupported-request protections remain in force.
         </p>
         <p className="text-xs leading-relaxed text-[var(--color-textMuted)]">
-          Covers HTTP(S) resources and anonymous API requests. Cross-origin
-          pages use isolated anonymous navigation; cross-origin form posts,
-          embedded documents, WebSockets and event streams still need a
-          supported dedicated route. This is destination trust, not a bypass for
-          unsupported transports.
+          Native browser: supported website requests use this connection's
+          private proxy and isolated browser session. Explicit domain denials,
+          HTTPS-only and cross-origin restrictions still apply. This does not
+          disable the website's CSP, CORS, or the browser sandbox. Legacy mode
+          retains its anonymous-request and supported-transport restrictions.
         </p>
         {policy.allowAllRequests && !policy.sameOriginOnly && (
           <p role="status" className="text-xs text-[var(--color-textMuted)]">
@@ -214,15 +214,21 @@ export default function ProxyPolicySection({ mgr }: { mgr: Mgr }) {
             })
           }
           label="Allow all website scripts"
-          description="Trust all current and future HTTPS script sources, inline scripts and eval for this saved connection. Overrides script-specific website CSP, enables website scripts and turns off same-origin-only restrictions."
+          description="Trust current and future HTTPS script sources for this saved connection. Enables website scripts and turns off same-origin-only restrictions."
           variant="form"
         />
         <p className="text-xs leading-relaxed text-warning">
           Scripts can read and change this page, including information you
-          enter. External scripts still download anonymously through the proxy;
-          this does not grant saved credentials, login consent, other network
-          resources or browser sandbox access. Invalid URLs remain blocked.
+          enter. External scripts still load through the proxy; this does not
+          grant saved credentials, login consent, other network resources or
+          browser sandbox access. Invalid URLs remain blocked.
           {!policy.allowAllRequests && " External HTTP scripts remain blocked."}
+        </p>
+        <p className="text-xs leading-relaxed text-[var(--color-textMuted)]">
+          Native browser: permits external script sources through the app's
+          request policy; the website still controls inline scripts and eval
+          through its own CSP. Legacy mode also overrides script-specific CSP.
+          Explicit native domain denials remain in force.
         </p>
         {policy.allowAllScripts &&
           policy.pageScripts === "allow" &&
@@ -240,7 +246,7 @@ export default function ProxyPolicySection({ mgr }: { mgr: Mgr }) {
           disabled={policy.sameOriginOnly}
           onChange={(allowExternalFonts) => update({ allowExternalFonts })}
           label="Load external fonts through proxy"
-          description="Allow anonymous font requests to the exact HTTPS origins below. No cookies or saved credentials are sent; certificate checks stay enabled."
+          description="Allow font requests to the exact HTTPS origins below through the proxy. Native mode uses the isolated browser session; legacy mode sends anonymous requests. This does not grant saved login credentials or bypass certificate checks."
           variant="form"
         />
         <p className="text-xs text-[var(--color-textMuted)]">

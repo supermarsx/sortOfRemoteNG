@@ -541,7 +541,7 @@ impl PrivateRequestContext {
     pub fn import_sign_in_cookies(
         &mut self,
         owner: Arc<dyn CookieOwner>,
-        cookies: Vec<SignInCookie>,
+        mut cookies: Vec<SignInCookie>,
     ) -> Result<(), RetentionError> {
         if !self.capabilities.cookies_enabled
             || self.browser_claimed
@@ -551,11 +551,47 @@ impl PrivateRequestContext {
         {
             return Err(RetentionError::OwnerUnavailable);
         }
-        let origins = lock_session(&self.preparation.session, &self.preparation.identity)
-            .map_err(|_| RetentionError::OwnerUnavailable)?
-            .policy()
-            .allowed_origins()
-            .to_vec();
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs();
+        let stamp = cef_session_retention::cef_time(now)?;
+        // Loading the encrypted snapshot and preparing its context is async;
+        // ordinary cookie expiry during that gap is not a startup failure.
+        cookies.retain(|cookie| cookie.expires.is_none_or(|expires| expires > stamp));
+        let origins = {
+            let session = lock_session(&self.preparation.session, &self.preparation.identity)
+                .map_err(|_| RetentionError::OwnerUnavailable)?;
+            let policy = session.policy();
+            let mut restored = policy
+                .retained_network_origins()
+                .map_err(|error| match error {
+                    sorng_protocols::origin_browser::BrowserPolicyError::TooManyOrigins => {
+                        RetentionError::Limit
+                    }
+                    _ => RetentionError::Invalid,
+                })?;
+            restored.extend(cookies.iter().map(|cookie| cookie.origin.clone()));
+            restored.sort();
+            restored.dedup();
+            cef_session_retention::validate_retention_origins(
+                &restored,
+                policy.source_origin(),
+                &policy.network_origin_grant(),
+            )?;
+            cef_session_retention::validate_cookies(&cookies, &restored, now)?;
+            // Register only validated, owner-bound cookie origins before CEF
+            // import. This neither expands login consent nor grants navigation.
+            policy
+                .restore_network_origins(&restored)
+                .map_err(|error| match error {
+                    sorng_protocols::origin_browser::BrowserPolicyError::TooManyOrigins => {
+                        RetentionError::Limit
+                    }
+                    _ => RetentionError::Invalid,
+                })?;
+            restored
+        };
         match cef_session_retention::native::import(&self.context, owner, &origins, cookies) {
             Ok(import) => {
                 self.cookie_import = Some(import);
@@ -580,11 +616,25 @@ impl PrivateRequestContext {
         {
             return Err(RetentionError::OwnerUnavailable);
         }
-        let origins = lock_session(&self.preparation.session, &self.preparation.identity)
-            .map_err(|_| RetentionError::OwnerUnavailable)?
-            .policy()
-            .allowed_origins()
-            .to_vec();
+        let origins = {
+            let session = lock_session(&self.preparation.session, &self.preparation.identity)
+                .map_err(|_| RetentionError::OwnerUnavailable)?;
+            let policy = session.policy();
+            let origins = policy
+                .retained_network_origins()
+                .map_err(|error| match error {
+                    sorng_protocols::origin_browser::BrowserPolicyError::TooManyOrigins => {
+                        RetentionError::Limit
+                    }
+                    _ => RetentionError::Invalid,
+                })?;
+            cef_session_retention::validate_retention_origins(
+                &origins,
+                policy.source_origin(),
+                &policy.network_origin_grant(),
+            )?;
+            origins
+        };
         cef_session_retention::native::capture(&self.context, owner, origins)
     }
 

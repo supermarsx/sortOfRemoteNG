@@ -4,11 +4,43 @@
 //! renderer's ordinary data projection. None of the secret-bearing types are Debug.
 
 use serde::{Deserialize, Serialize};
+use sorng_protocols::origin_browser::NetworkOriginGrant;
 use zeroize::Zeroize;
 
 pub const MAX_COOKIES: usize = 256;
 pub const MAX_COOKIE_BYTES: usize = 256 * 1024;
 pub const MAX_TOTAL_BYTES: usize = 16 * 1024 * 1024;
+pub const MAX_RETENTION_ORIGINS: usize = 128;
+
+/// Validate concrete cookie-storage origins against today's network policy.
+/// Stored origins are observations, never transferable permission or login
+/// consent. Keep this check independent of the finite automatic-login scope.
+pub fn validate_retention_origins(
+    origins: &[String],
+    source: &str,
+    grant: &NetworkOriginGrant,
+) -> Result<(), RetentionError> {
+    if origins.len() > MAX_RETENTION_ORIGINS {
+        return Err(RetentionError::Limit);
+    }
+    if origins.is_empty() || !origins.iter().any(|origin| origin == source) {
+        return Err(RetentionError::Invalid);
+    }
+    let mut unique = std::collections::BTreeSet::new();
+    for origin in origins {
+        if origin.len() > 4096 || origin.contains('*') || !unique.insert(origin) {
+            return Err(RetentionError::Invalid);
+        }
+        let url = url::Url::parse(origin).map_err(|_| RetentionError::Invalid)?;
+        if url.scheme() != "https"
+            || url.origin().ascii_serialization() != *origin
+            || !grant(origin)
+        {
+            return Err(RetentionError::Invalid);
+        }
+    }
+    Ok(())
+}
 
 // CEF's generated enum integers vary by platform (same-site is u32 on Linux,
 // i32 on Windows). Keep the existing signed storage schema without truncating
@@ -20,8 +52,7 @@ fn cookie_enum_values(
 ) -> Option<(i32, i32)> {
     let same_site = same_site.try_into().ok()?;
     let priority = priority.try_into().ok()?;
-    ((0..=3).contains(&same_site) && (0..=2).contains(&priority))
-        .then_some((same_site, priority))
+    ((0..=3).contains(&same_site) && (0..=2).contains(&priority)).then_some((same_site, priority))
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Deserialize, Serialize)]
@@ -546,6 +577,106 @@ pub use native::CookieCapture;
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn retention_scope_accepts_static_and_observed_origins_not_login_consent() {
+        let source = "https://same.example";
+        let static_only: NetworkOriginGrant = std::sync::Arc::new(move |value| value == source);
+        let broad: NetworkOriginGrant = std::sync::Arc::new(|_| true);
+        let mut origins = vec![source.to_owned()];
+        assert_eq!(
+            validate_retention_origins(&origins, source, &static_only),
+            Ok(())
+        );
+        origins.push("https://new.example:8443".into());
+        assert_eq!(validate_retention_origins(&origins, source, &broad), Ok(()));
+        assert_eq!(
+            validate_retention_origins(&origins, source, &static_only),
+            Err(RetentionError::Invalid)
+        );
+        let deny_new: NetworkOriginGrant =
+            std::sync::Arc::new(|value| value != "https://new.example:8443");
+        assert_eq!(
+            validate_retention_origins(&origins, source, &deny_new),
+            Err(RetentionError::Invalid)
+        );
+    }
+
+    #[test]
+    fn retention_scope_never_persists_http_wildcards_or_noncanonical_origins() {
+        let broad: NetworkOriginGrant = std::sync::Arc::new(|_| true);
+        let source = "https://same.example";
+        for invalid in [
+            "http://plain.example",
+            "https://same.example/path",
+            "https://user@example.com",
+            "https://same.example:443",
+            "https://same.example#fragment",
+            "https://*.example",
+            "*",
+            "null",
+        ] {
+            let origins = vec![source.into(), invalid.into()];
+            assert_eq!(
+                validate_retention_origins(&origins, source, &broad),
+                Err(RetentionError::Invalid)
+            );
+        }
+        assert_eq!(
+            validate_retention_origins(&[], source, &broad),
+            Err(RetentionError::Invalid)
+        );
+        assert_eq!(
+            validate_retention_origins(&[source.into(), source.into()], source, &broad),
+            Err(RetentionError::Invalid)
+        );
+        assert_eq!(
+            validate_retention_origins(&["https://other.example".into()], source, &broad),
+            Err(RetentionError::Invalid)
+        );
+    }
+
+    #[test]
+    fn retention_scope_limit_is_checked_before_grant_and_never_truncated() {
+        let broad: NetworkOriginGrant = std::sync::Arc::new(|_| true);
+        let source = "https://same.example";
+        let mut origins = vec![source.into()];
+        origins.extend((1..MAX_RETENTION_ORIGINS).map(|i| format!("https://host{i}.example")));
+        assert_eq!(validate_retention_origins(&origins, source, &broad), Ok(()));
+        origins.push("https://overflow.example".into());
+        let must_not_run: NetworkOriginGrant =
+            std::sync::Arc::new(|_| panic!("oversized scope must fail first"));
+        assert_eq!(
+            validate_retention_origins(&origins, source, &must_not_run),
+            Err(RetentionError::Limit)
+        );
+        assert_eq!(origins.len(), MAX_RETENTION_ORIGINS + 1);
+    }
+
+    #[test]
+    fn retention_scope_rechecks_revoked_grant_without_altering_observation() {
+        use std::sync::{
+            atomic::{AtomicBool, Ordering},
+            Arc,
+        };
+        let enabled = Arc::new(AtomicBool::new(true));
+        let checked = enabled.clone();
+        let grant: NetworkOriginGrant = Arc::new(move |_| checked.load(Ordering::Acquire));
+        let origins = vec![
+            "https://same.example".into(),
+            "https://observed.example".into(),
+        ];
+        assert_eq!(
+            validate_retention_origins(&origins, &origins[0], &grant),
+            Ok(())
+        );
+        enabled.store(false, Ordering::Release);
+        assert_eq!(
+            validate_retention_origins(&origins, &origins[0], &grant),
+            Err(RetentionError::Invalid)
+        );
+        assert_eq!(origins.len(), 2);
+    }
 
     #[test]
     fn cookie_enum_values_preserve_signed_and_unsigned_platform_abis() {

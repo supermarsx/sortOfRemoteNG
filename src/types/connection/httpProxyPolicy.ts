@@ -20,11 +20,14 @@ export const DEFAULT_EXTERNAL_RESOURCE_ORIGINS: readonly HttpExternalResourceOri
 export interface HttpProxyPolicy {
   version: 1;
   pageScripts: "allow" | "inline-only" | "block";
-  /** Per-connection trust exception for all HTTPS/inline scripts and script CSP.
+  /** Per-connection trust for all HTTPS script sources through the app proxy.
+   * Legacy mode also overrides script CSP; native mode preserves website CSP.
    * pageScripts restrictions and sameOriginOnly still take precedence. */
   allowAllScripts?: boolean;
-  /** Explicit connection-scoped trust for supported anonymous HTTP(S) requests
-   * and isolated navigation. Overrides resource origin lists, not HTTPS,
+  /** Connection-scoped trust for supported HTTP(S) requests and navigation
+   * through the app proxy. Legacy resources retain anonymous transport rules;
+   * native requests use their isolated browser session and website CSP/CORS.
+   * Overrides source lists, not explicit native domain denials, HTTPS,
    * sameOriginOnly, transport support or saved-login/credential consent. */
   allowAllRequests?: boolean;
   httpsOnly: boolean;

@@ -280,7 +280,7 @@ impl NativeCertificatePermit {
 
 pub struct NativeCertificateAuthority {
     browser: BrowserIdentity,
-    allowed_origins: Vec<String>,
+    network_origins: NetworkOriginGrant,
     policy: TrustPolicy,
     system_ca: bool,
     lease: NativeOwnerLease,
@@ -341,7 +341,7 @@ impl NativeCertificateAuthority {
         }
         Ok(Self {
             browser: policy.identity().clone(),
-            allowed_origins: policy.allowed_origins().to_vec(),
+            network_origins: policy.network_origin_grant(),
             policy: saved_policy(connection, settings)?,
             system_ca: settings
                 .get("httpsCaTrustMode")
@@ -364,7 +364,7 @@ impl NativeCertificateAuthority {
         let error = NativeAuthorityError::CertificatePolicyUnsupported;
         if evidence.identity != self.browser
             || !self.lease.is_current()
-            || !self.allowed_origins.contains(&evidence.origin)
+            || !(self.network_origins)(&evidence.origin)
             || canonical_website_permission_origin(&evidence.origin).as_deref()
                 != Ok(evidence.origin.as_str())
         {

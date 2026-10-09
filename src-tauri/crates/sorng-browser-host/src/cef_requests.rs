@@ -178,7 +178,10 @@ fn native_request_class(kind: ResourceType) -> Option<&'static str> {
         ResourceType::STYLESHEET => Some("stylesheet"),
         ResourceType::FONT_RESOURCE => Some("font"),
         ResourceType::IMAGE | ResourceType::MEDIA | ResourceType::FAVICON => Some("image-media"),
-        ResourceType::XHR => Some("fetch-xhr"),
+        // Chromium uses SUB_RESOURCE for generic fetches, including XSLT
+        // document(), manifests and text. They require the same fetch grant;
+        // initiator, destination, worker and redirect constraints still apply.
+        ResourceType::XHR | ResourceType::SUB_RESOURCE => Some("fetch-xhr"),
         ResourceType::WORKER | ResourceType::SHARED_WORKER | ResourceType::SERVICE_WORKER => {
             Some("worker")
         }
@@ -287,21 +290,25 @@ fn resolve_resource(
         }
     };
     let is_worker = class == "worker" || scope.worker_context;
-    // Network/frame/script allowances never imply permission to start a worker
-    // for a third-party origin. Browser-less callbacks also need an explicit
-    // first-party worker grant in addition to their own resource class.
+    // Network/frame/script allowances never imply worker permission. Bind that
+    // permission to the validated native initiator, which may be a newly
+    // admitted page/frame rather than the originally saved website. A worker
+    // script must still be same-origin with its initiator; browser-less resource
+    // callbacks need both the initiator's worker grant and their resource grant.
     let worker_allowed = !is_worker
-        || (scope.initiator.as_deref() == Some(website)
-            && (class != "worker" || destination_origin.as_deref() == Some(website))
-            && permissions
-                .resolve(WebsitePermissionQuery {
-                    website_origin: website,
-                    destination_origin: website,
-                    request_class: "worker",
-                    native_denied: destination.is_none() || !initiator_allowed,
-                })
-                .decision
-                == WebsitePermissionDecision::Allow);
+        || scope.initiator.as_deref().is_some_and(|worker_origin| {
+            initiator_allowed
+                && (class != "worker" || destination_origin.as_deref() == Some(worker_origin))
+                && permissions
+                    .resolve(WebsitePermissionQuery {
+                        website_origin: website,
+                        destination_origin: worker_origin,
+                        request_class: "worker",
+                        native_denied: destination.is_none() || !initiator_allowed,
+                    })
+                    .decision
+                    == WebsitePermissionDecision::Allow
+        });
     permissions.resolve(WebsitePermissionQuery {
         website_origin: website,
         destination_origin: destination_origin.as_deref().unwrap_or(""),
@@ -333,6 +340,29 @@ fn scoped_request_allowed(
         )
         .decision
             == WebsitePermissionDecision::Allow
+}
+
+/// Record only a request that passed native class, initiator and worker policy.
+/// Pure navigation/TLS prechecks must not expand the retained-cookie scope.
+/// Overflow disables complete snapshot capture, not the browser's networking.
+fn observe_admitted_request(
+    session: &Mutex<OriginBrowserSession>,
+    identity: &BrowserIdentity,
+    request: Option<&Request>,
+) {
+    let (Some(session), Some(request)) = (lock_attempt(session, identity), request) else {
+        return;
+    };
+    let value = CefString::from(&request.url()).to_string();
+    if let Ok(url) = session.authorize_navigation(identity, &value) {
+        // HTTP browsing is allowed separately; the durable cookie schema is
+        // HTTPS-only. Never turn an HTTP request into HTTPS persistence consent.
+        if url.scheme() == "https" {
+            session
+                .policy()
+                .observe_network_origin(&url.origin().ascii_serialization());
+        }
+    }
 }
 
 /// UI-thread navigation uses native main/sub-frame identity: CEF resource_type
@@ -678,6 +708,7 @@ wrap_resource_request_handler! {
                 self.denied.store(true, Ordering::Release);
                 ReturnValue::CANCEL
             } else {
+                observe_admitted_request(&self.session, &self.identity, request.as_deref());
                 recording_callbacks::start(&self.recording, &self.identity, request.as_deref());
                 // Synchronous decision; never invoke the async callback too.
                 ReturnValue::CONTINUE
@@ -749,7 +780,7 @@ mod tests {
     include!("cef_recording_tests.rs");
     use crate::domain_permissions::{
         WebsiteDestinationPermissions, WebsiteDomainPermissionsSettings, WebsiteOriginPermissions,
-        WebsitePermissionSetting, WebsitePermissionSource, WebsiteRequestClass,
+        WebsiteNetworkPolicy, WebsitePermissionSetting, WebsitePermissionSource, WebsiteRequestClass,
     };
     use base64::Engine;
     use sorng_protocols::origin_browser::{NativeHostReadiness, OriginBrowserPolicy};
@@ -853,6 +884,311 @@ mod tests {
             initiator: Some("https://fixture.invalid".into()),
             worker_context: false,
             navigation_factory: false,
+        }
+    }
+
+    async fn dynamic_request_fixture(
+        all: bool,
+        scripts: bool,
+        own: Option<&WebsiteDomainPermissionsSettings>,
+    ) -> (
+        OriginBrowserSession,
+        BrowserIdentity,
+        WebsitePermissionEngine,
+    ) {
+        let source = "https://fixture.invalid";
+        let source_defaults = [
+            WebsiteRequestClass::Navigation,
+            WebsiteRequestClass::Frame,
+            WebsiteRequestClass::Script,
+            WebsiteRequestClass::Stylesheet,
+            WebsiteRequestClass::Font,
+            WebsiteRequestClass::ImageMedia,
+            WebsiteRequestClass::FetchXhr,
+            WebsiteRequestClass::Worker,
+        ]
+        .into_iter()
+        .map(|class| (class, WebsitePermissionDecision::Allow))
+        .collect();
+        let permissions = WebsitePermissionEngine::new(None, own, &Default::default())
+            .unwrap()
+            .with_network_policy(WebsiteNetworkPolicy {
+                source_origin: source.into(),
+                destination_defaults: [(source.into(), source_defaults)].into(),
+                allow_all_requests: all,
+                allow_all_scripts: scripts,
+                ..Default::default()
+            })
+            .unwrap();
+        let network = permissions.clone();
+        let policy = OriginBrowserPolicy::new("cef-owner", "cef-connection", "cef-tab", source)
+            .unwrap()
+            .with_network_origin_grant(Arc::new(move |origin| {
+                network.permits_network_origin(source, origin)
+            }));
+        assert_eq!(policy.allowed_origins(), &[source]);
+        let identity = policy.identity().clone();
+        let mut session = OriginBrowserSession::start(
+            policy,
+            Arc::new(|_: Authority| -> DialFuture {
+                panic!("dynamic request admission fixture must not dial a destination")
+            }),
+            ProxyLimits::default(),
+        )
+        .await
+        .unwrap();
+        report_synthetic_ready(&mut session, &identity);
+        (session, identity, permissions)
+    }
+
+    #[tokio::test]
+    async fn dynamic_domain_policy_reaches_actual_native_request_classes_and_redirect_targets() {
+        for (all, scripts) in [(false, true), (true, false)] {
+            let (session, identity, permissions) =
+                dynamic_request_fixture(all, scripts, None).await;
+            for kind in [
+                ResourceType::SCRIPT,
+                ResourceType::STYLESHEET,
+                ResourceType::FONT_RESOURCE,
+                ResourceType::IMAGE,
+                ResourceType::MEDIA,
+                ResourceType::FAVICON,
+                ResourceType::XHR,
+                ResourceType::SUB_RESOURCE,
+                ResourceType::SUB_FRAME,
+                ResourceType::MAIN_FRAME,
+            ] {
+                for destination in [
+                    "https://new.invalid/resource",
+                    "https://redirect.invalid/resource",
+                ] {
+                    let mut scope = first_party_scope(kind);
+                    let expected = if all || kind == ResourceType::SCRIPT {
+                        WebsitePermissionDecision::Allow
+                    } else {
+                        WebsitePermissionDecision::Deny
+                    };
+                    assert_eq!(
+                        resolve_resource(&session, &identity, &permissions, &scope, destination)
+                            .decision,
+                        expected
+                    );
+                    if all {
+                        // A native initiator from an admitted frame/new main page
+                        // is not required to occur in the static login origin list.
+                        scope.initiator = Some("https://new-page.invalid".into());
+                        assert_eq!(
+                            resolve_resource(
+                                &session,
+                                &identity,
+                                &permissions,
+                                &scope,
+                                destination
+                            )
+                            .decision,
+                            expected
+                        );
+                    }
+                }
+            }
+            let scope = first_party_scope(ResourceType::SCRIPT);
+            assert_eq!(
+                resolve_resource(
+                    &session,
+                    &identity,
+                    &permissions,
+                    &scope,
+                    "http://new.invalid/file.js"
+                )
+                .decision,
+                if all {
+                    WebsitePermissionDecision::Allow
+                } else {
+                    WebsitePermissionDecision::Deny
+                }
+            );
+            assert!(!navigation_allowed(
+                &session,
+                &identity,
+                &permissions,
+                "http://new.invalid/",
+                true
+            ));
+            for destination in [
+                "wss://new.invalid/socket",
+                "file:///local",
+                "https://localhost:3001/",
+            ] {
+                assert_eq!(
+                    resolve_resource(&session, &identity, &permissions, &scope, destination)
+                        .decision,
+                    WebsitePermissionDecision::Deny
+                );
+            }
+            let opaque = ResourceScope {
+                initiator: None,
+                ..first_party_scope(ResourceType::XHR)
+            };
+            assert_eq!(
+                resolve_resource(
+                    &session,
+                    &identity,
+                    &permissions,
+                    &opaque,
+                    "https://new.invalid/data"
+                )
+                .decision,
+                WebsitePermissionDecision::Deny
+            );
+            assert_eq!(
+                resolve_resource(
+                    &session,
+                    &identity,
+                    &permissions,
+                    &scope,
+                    "https://new.invalid/resource"
+                )
+                .decision,
+                if all || scripts {
+                    WebsitePermissionDecision::Allow
+                } else {
+                    WebsitePermissionDecision::Deny
+                }
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn dynamic_workers_require_origin_worker_grant_and_independent_resource_grant() {
+        for (all, scripts) in [(true, false), (false, true)] {
+            let (session, identity, permissions) =
+                dynamic_request_fixture(all, scripts, None).await;
+            for kind in [
+                ResourceType::WORKER,
+                ResourceType::SHARED_WORKER,
+                ResourceType::SERVICE_WORKER,
+            ] {
+                let scope = ResourceScope {
+                    initiator: Some("https://new-page.invalid".into()),
+                    ..first_party_scope(kind)
+                };
+                assert_eq!(
+                    resolve_resource(
+                        &session,
+                        &identity,
+                        &permissions,
+                        &scope,
+                        "https://new-page.invalid/worker.js"
+                    )
+                    .decision,
+                    if all {
+                        WebsitePermissionDecision::Allow
+                    } else {
+                        WebsitePermissionDecision::Deny
+                    }
+                );
+                assert_eq!(
+                    resolve_resource(
+                        &session,
+                        &identity,
+                        &permissions,
+                        &scope,
+                        "https://another.invalid/worker.js"
+                    )
+                    .decision,
+                    WebsitePermissionDecision::Deny
+                );
+            }
+            let scope = ResourceScope {
+                initiator: Some("https://new-page.invalid".into()),
+                worker_context: true,
+                ..first_party_scope(ResourceType::XHR)
+            };
+            assert_eq!(
+                resolve_resource(
+                    &session,
+                    &identity,
+                    &permissions,
+                    &scope,
+                    "https://data.invalid/value"
+                )
+                .decision,
+                if all {
+                    WebsitePermissionDecision::Allow
+                } else {
+                    WebsitePermissionDecision::Deny
+                }
+            );
+            for initiator in [None, Some("null".into())] {
+                let scope = ResourceScope {
+                    initiator,
+                    ..scope.clone()
+                };
+                assert_eq!(
+                    resolve_resource(
+                        &session,
+                        &identity,
+                        &permissions,
+                        &scope,
+                        "https://data.invalid/value"
+                    )
+                    .decision,
+                    WebsitePermissionDecision::Deny
+                );
+            }
+        }
+        let own: WebsiteDomainPermissionsSettings = serde_json::from_value(serde_json::json!({"version":1,"websites":[{
+            "origin":"https://fixture.invalid", "destinations":[
+                {"origin":"https://new-page.invalid","requestClasses":{"worker":"deny"}},
+                {"origin":"https://blocked.invalid","requestClasses":{"fetch-xhr":"deny","script":"deny","frame":"deny"}}
+            ]
+        }]})).unwrap();
+        let (session, identity, permissions) =
+            dynamic_request_fixture(true, false, Some(&own)).await;
+        let scope = ResourceScope {
+            initiator: Some("https://new-page.invalid".into()),
+            worker_context: true,
+            ..first_party_scope(ResourceType::XHR)
+        };
+        assert_eq!(
+            resolve_resource(
+                &session,
+                &identity,
+                &permissions,
+                &scope,
+                "https://data.invalid/value"
+            )
+            .decision,
+            WebsitePermissionDecision::Deny
+        );
+        for kind in [
+            ResourceType::XHR,
+            ResourceType::SCRIPT,
+            ResourceType::SUB_FRAME,
+        ] {
+            let scope = first_party_scope(kind);
+            assert_eq!(
+                resolve_resource(
+                    &session,
+                    &identity,
+                    &permissions,
+                    &scope,
+                    "https://new.invalid/value"
+                )
+                .decision,
+                WebsitePermissionDecision::Allow
+            );
+            assert_eq!(
+                resolve_resource(
+                    &session,
+                    &identity,
+                    &permissions,
+                    &scope,
+                    "https://blocked.invalid/value"
+                )
+                .decision,
+                WebsitePermissionDecision::Deny
+            );
         }
     }
 
@@ -1222,6 +1558,7 @@ mod tests {
             (ResourceType::MEDIA, "image-media"),
             (ResourceType::FAVICON, "image-media"),
             (ResourceType::XHR, "fetch-xhr"),
+            (ResourceType::SUB_RESOURCE, "fetch-xhr"),
             (ResourceType::WORKER, "worker"),
             (ResourceType::SHARED_WORKER, "worker"),
             (ResourceType::SERVICE_WORKER, "worker"),
@@ -1234,7 +1571,6 @@ mod tests {
             }
         }
         for unknown in [
-            ResourceType::SUB_RESOURCE,
             ResourceType::OBJECT,
             ResourceType::PREFETCH,
             ResourceType::PING,
@@ -1340,6 +1676,7 @@ mod tests {
         for kind in [
             ResourceType::SCRIPT,
             ResourceType::XHR,
+            ResourceType::SUB_RESOURCE,
             ResourceType::WORKER,
             ResourceType::SHARED_WORKER,
             ResourceType::SERVICE_WORKER,
@@ -1521,7 +1858,7 @@ mod tests {
                 &session, &identity, &engine, denied, true
             ));
         }
-        let unknown = first_party_scope(ResourceType::SUB_RESOURCE);
+        let unknown = first_party_scope(ResourceType::OBJECT);
         assert_eq!(
             resolve_resource(
                 &session,
@@ -1559,6 +1896,79 @@ mod tests {
             .source,
             WebsitePermissionSource::NativeConstraint
         );
+    }
+
+    #[tokio::test]
+    async fn generic_subresources_obey_fetch_permission_and_destination_denies() {
+        let (session, identity) = session_with_origins(&["https://cdn.invalid"]).await;
+        let mut session = session.lock().unwrap();
+        report_synthetic_ready(&mut session, &identity);
+        let policy = WebsiteDomainPermissionsSettings {
+            version: 1,
+            websites: vec![WebsiteOriginPermissions {
+                origin: "https://fixture.invalid".into(),
+                request_classes: [(
+                    WebsiteRequestClass::FetchXhr,
+                    WebsitePermissionSetting::Allow,
+                )]
+                .into(),
+                destinations: vec![WebsiteDestinationPermissions {
+                    origin: "https://cdn.invalid".into(),
+                    request_classes: [(
+                        WebsiteRequestClass::FetchXhr,
+                        WebsitePermissionSetting::Deny,
+                    )]
+                    .into(),
+                }],
+            }],
+        };
+        let engine =
+            WebsitePermissionEngine::new(None, Some(&policy), &Default::default()).unwrap();
+        let stylesheet_only = allow_classes(&[WebsiteRequestClass::Stylesheet]);
+        let scope = first_party_scope(ResourceType::SUB_RESOURCE);
+        for url in [
+            "https://fixture.invalid/RDWeb/Pages/en-US/RDWAStrings.xml",
+            "https://fixture.invalid/extensionless",
+            "https://fixture.invalid/document.png",
+        ] {
+            assert_eq!(
+                resolve_resource(&session, &identity, &engine, &scope, url).decision,
+                WebsitePermissionDecision::Allow
+            );
+            assert_eq!(
+                resolve_resource(&session, &identity, &stylesheet_only, &scope, url).decision,
+                WebsitePermissionDecision::Deny
+            );
+        }
+        let denied = resolve_resource(
+            &session,
+            &identity,
+            &engine,
+            &scope,
+            "https://cdn.invalid/RDWAStrings.xml",
+        );
+        assert_eq!(denied.decision, WebsitePermissionDecision::Deny);
+        assert_eq!(
+            denied.source,
+            WebsitePermissionSource::ConnectionDestination
+        );
+        for initiator in [None, Some("https://ungranted.invalid".into())] {
+            let scope = ResourceScope {
+                initiator,
+                ..first_party_scope(ResourceType::SUB_RESOURCE)
+            };
+            assert_eq!(
+                resolve_resource(
+                    &session,
+                    &identity,
+                    &engine,
+                    &scope,
+                    "https://fixture.invalid/RDWAStrings.xml"
+                )
+                .source,
+                WebsitePermissionSource::NativeConstraint
+            );
+        }
     }
 
     #[tokio::test]
@@ -1657,7 +2067,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn worker_paths_require_explicit_first_party_grant_and_resource_permission() {
+    async fn worker_paths_require_native_initiator_grant_and_resource_permission() {
         let (session, identity) = session_with_origins(&["https://cdn.invalid"]).await;
         let mut session = session.lock().unwrap();
         report_synthetic_ready(&mut session, &identity);
@@ -1759,8 +2169,12 @@ mod tests {
                     &scope,
                     "https://cdn.invalid/data"
                 )
-                .source,
-                WebsitePermissionSource::NativeConstraint
+                .decision,
+                if scope.initiator.is_some() {
+                    WebsitePermissionDecision::Allow
+                } else {
+                    WebsitePermissionDecision::Deny
+                }
             );
         }
     }

@@ -3,14 +3,17 @@
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use sorng_browser_host::cef_session_retention::{
-    cef_time, validate_cookies, CookieOwner, RetentionError, RetentionMode, RetentionPolicy,
-    SignInCookie,
+    cef_time, validate_cookies, validate_retention_origins, CookieOwner, RetentionError,
+    RetentionMode, RetentionPolicy, SignInCookie,
 };
 use sorng_commands_core::database_protection::native_browser_owner::{
     NativeCookieOwnerBinding, NativeOwnerLease,
 };
 use sorng_encryption::{database_protection::Zeroizing, EncryptionState};
-use sorng_protocols::origin_browser::{BrowserIdentity, OriginBrowserPolicy};
+use sorng_protocols::origin_browser::{
+    BrowserIdentity, BrowserPolicyError, NetworkOriginGrant, NetworkOriginTracker,
+    OriginBrowserPolicy,
+};
 use std::{
     sync::{
         atomic::{AtomicBool, Ordering},
@@ -31,9 +34,16 @@ fn now() -> u64 {
 fn failure<T>(_: T) -> RetentionError {
     RetentionError::OwnerUnavailable
 }
+fn origin_failure(error: BrowserPolicyError) -> RetentionError {
+    match error {
+        BrowserPolicyError::TooManyOrigins => RetentionError::Limit,
+        _ => RetentionError::Invalid,
+    }
+}
 #[derive(Serialize, Deserialize)]
 struct MemorySnapshot {
     created: u64,
+    origins: Vec<String>,
     cookies: Vec<SignInCookie>,
 }
 fn registry() -> &'static Mutex<Registry<NativeOwnerLease>> {
@@ -54,7 +64,8 @@ pub struct NativeCookieRetention {
     identity: BrowserIdentity,
     policy: RetentionPolicy,
     source: String,
-    origins: Vec<String>,
+    network_grant: NetworkOriginGrant,
+    observed: NetworkOriginTracker,
     scope: String,
     generation: u64,
     created: Mutex<u64>,
@@ -162,7 +173,8 @@ impl NativeCookieRetention {
             identity: browser.identity().clone(),
             policy,
             source: browser.source_origin().into(),
-            origins,
+            network_grant: browser.network_origin_grant(),
+            observed: browser.network_origin_tracker(),
             scope,
             generation,
             created: Mutex::new(stamp),
@@ -194,6 +206,21 @@ impl NativeCookieRetention {
         registry()
             .lock()
             .is_ok_and(|r| r.writer(&self.scope, self.generation))
+    }
+    fn origins(&self) -> Result<Vec<String>, RetentionError> {
+        let mut origins = self
+            .observed
+            .retained_network_origins()
+            .map_err(origin_failure)?;
+        origins.sort();
+        validate_retention_origins(&origins, &self.source, &self.network_grant)?;
+        Ok(origins)
+    }
+    fn restore_origins(&self, origins: &[String]) -> Result<(), RetentionError> {
+        validate_retention_origins(origins, &self.source, &self.network_grant)?;
+        self.observed
+            .restore_network_origins(origins)
+            .map_err(origin_failure)
     }
     pub fn load(&self) -> Result<Vec<SignInCookie>, RetentionError> {
         if !self.current() {
@@ -235,7 +262,8 @@ impl NativeCookieRetention {
                 c.expires
                     .is_none_or(|e| e > cef_time(stamp).unwrap_or(i64::MAX))
             });
-            validate_cookies(&snapshot.cookies, &self.origins, stamp)?;
+            validate_cookies(&snapshot.cookies, &snapshot.origins, stamp)?;
+            self.restore_origins(&snapshot.origins)?;
             return Ok(snapshot.cookies);
         }
         let Some(mut record) = record else {
@@ -246,8 +274,9 @@ impl NativeCookieRetention {
             return Ok(vec![]);
         }
         if record.source_origin != self.source
-            || record.origins != self.origins
             || record.policy != self.policy
+            || validate_retention_origins(&record.origins, &self.source, &self.network_grant)
+                .is_err()
         {
             self.dormant.store(true, Ordering::Release);
             return Ok(vec![]);
@@ -259,7 +288,8 @@ impl NativeCookieRetention {
             c.expires
                 .is_none_or(|e| e > cef_time(stamp).unwrap_or(i64::MAX))
         });
-        validate_cookies(&record.cookies, &self.origins, stamp)?;
+        validate_cookies(&record.cookies, &record.origins, stamp)?;
+        self.restore_origins(&record.origins)?;
         Ok(record.cookies)
     }
     fn touch(&self, created: u64, revision: Option<String>) -> Result<(), RetentionError> {
@@ -334,14 +364,15 @@ impl NativeCookieRetention {
             c.expires
                 .is_none_or(|e| e > cef_time(stamp).unwrap_or(i64::MAX))
         });
-        validate_cookies(&cookies, &self.origins, stamp)?;
+        let origins = self.origins()?;
+        validate_cookies(&cookies, &origins, stamp)?;
         if self.policy.mode == RetentionMode::EncryptedDatabase {
             let expected = self.revision.lock().map_err(failure)?.clone();
             let result = tauri::async_runtime::block_on(self.lease.save_cookie_record(
                 expected.clone(),
                 cookies,
                 self.source.clone(),
-                self.origins.clone(),
+                origins,
                 self.policy,
                 || self.write_current(),
             ));
@@ -366,7 +397,11 @@ impl NativeCookieRetention {
             return Ok(());
         }
         let created = *self.created.lock().map_err(failure)?;
-        let snapshot = MemorySnapshot { created, cookies };
+        let snapshot = MemorySnapshot {
+            created,
+            origins,
+            cookies,
+        };
         let bytes =
             Zeroizing::new(serde_json::to_vec(&snapshot).map_err(|_| RetentionError::Invalid)?);
         self.lease
