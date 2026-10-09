@@ -824,6 +824,121 @@ const googlePasswordToggle = '<input type="checkbox" id="show-password" aria-lab
 const googlePasswordForm = (toggle = googlePasswordToggle) =>
   `<form method="POST"><input name="Passwd" type="password">${toggle}<button id="passwordNext" type="button">Next</button></form>`;
 
+for (const stage of ["identifier", "password"]) {
+  for (const when of ["initially", "during input"]) {
+    test(`Google ${stage} can fill with Next disabled ${when} and waits for readiness before clicking`, async (t) => {
+      const f = providerFixture(t, "google-account",
+        stage === "password" ? googlePasswordForm()
+          : '<form method="POST"><input id="identifierId" name="identifier" type="email"><button id="identifierNext" type="button">Next</button></form>',
+        `https://accounts.google.com/v3/signin/${stage === "password" ? "challenge/pwd" : "identifier"}`);
+      const button = f.field("button");
+      const field = f.field(stage === "password" ? '[name="Passwd"]' : "#identifierId");
+      let clicks = 0;
+      button.onclick = () => { assert.equal(button.disabled, false); clicks++; };
+      button.disabled = when === "initially";
+      field.addEventListener("input", () => {
+        button.disabled = true;
+        f.w.setTimeout(() => { button.disabled = false; }, 600);
+      }, { once: true });
+      await f.advance(700);
+      assert.deepEqual(f.signals, [stage]);
+      assert.equal(f.send(stage), true);
+      await f.advance(500);
+      assert.equal(field.value, stage === "password" ? "test-secret" : "alice@example.test");
+      assert.equal(button.disabled, true);
+      assert.equal(clicks, 0);
+      await f.advance(400);
+      assert.equal(clicks, 1);
+      assert.equal(f.signals.filter((value) => value === stage).length, 1);
+      assert.equal(f.signals.includes("form-rejected"), false);
+    });
+  }
+}
+
+for (const blocking of ["disabled", "aria-disabled", "aria-busy"]) {
+  test(`Google password never clicks a persistently ${blocking} Next and clears its expired fill`, async (t) => {
+    const f = providerFixture(t, "google-account", googlePasswordForm(),
+      "https://accounts.google.com/v3/signin/challenge/pwd");
+    const button = f.field("button");
+    if (blocking === "disabled") button.disabled = true;
+    else button.setAttribute(blocking, "true");
+    let clicks = 0;
+    button.onclick = () => clicks++;
+    await f.advance(700);
+    assert.deepEqual(f.signals, ["password"]);
+    assert.equal(f.send("password", true, 1000), true);
+    await f.advance(700);
+    assert.equal(f.field('[name="Passwd"]').value, "test-secret");
+    assert.equal(clicks, 0);
+    await f.advance(400);
+    assert.equal(f.field('[name="Passwd"]').value, "");
+    assert.deepEqual(f.signals, ["password", "form-rejected"]);
+    assert.equal(clicks, 0);
+    button.disabled = false;
+    button.removeAttribute(blocking);
+    await f.advance(700);
+    assert.equal(clicks, 0);
+    assert.equal(f.send("password"), false);
+  });
+}
+
+for (const change of ["replacement", "form-action", "route", "pagehide"]) {
+  test(`Google password revalidates ${change} before enabling a previously disabled Next`, async (t) => {
+    const f = providerFixture(t, "google-account", googlePasswordForm(),
+      "https://accounts.google.com/v3/signin/challenge/pwd");
+    const field = f.field('[name="Passwd"]');
+    const button = f.field("button");
+    button.disabled = true;
+    let clicks = 0;
+    f.w.document.addEventListener("click", () => clicks++);
+    await f.advance(700);
+    assert.equal(f.send("password"), true);
+    await f.advance(200);
+    assert.equal(field.value, "test-secret");
+    if (change === "replacement") button.replaceWith(button.cloneNode(true));
+    if (change === "form-action") f.field("form").action = "https://other.test/";
+    if (change === "route") f.w.history.replaceState(null, "", "/v3/signin/challenge/otp");
+    if (change === "pagehide") f.w.dispatchEvent(new f.w.Event("pagehide"));
+    f.field("button").disabled = false;
+    await f.advance(700);
+    assert.equal(field.value, "");
+    assert.equal(clicks, 0);
+    assert.deepEqual(f.signals, ["password", "form-rejected"]);
+    assert.equal(f.send("password"), false);
+  });
+}
+
+test("Google disabled Next neither bypasses the origin grant nor upgrades fill-only consent", async (t) => {
+  const f = providerFixture(t, "google-account", googlePasswordForm(),
+    "https://accounts.google.com/v3/signin/challenge/pwd");
+  f.field("button").disabled = true;
+  let clicks = 0;
+  f.field("button").onclick = () => clicks++;
+  await f.advance(700);
+  assert.equal(f.deliver("https://other.test", "", "test-secret", false, f.now() + 2000, "password"), false);
+  assert.equal(f.send("password", false, 0), false);
+  assert.equal(f.field('[name="Passwd"]').value, "");
+  assert.equal(f.send("password", false), true);
+  await f.advance(700);
+  assert.equal(f.field('[name="Passwd"]').value, "test-secret");
+  assert.deepEqual(f.signals, ["password", "form-completed"]);
+  f.field("button").disabled = false;
+  await f.advance(700);
+  assert.equal(clicks, 0);
+});
+
+test("Google password stops after its readiness bound when native never delivers a grant", async (t) => {
+  const f = providerFixture(t, "google-account", googlePasswordForm(),
+    "https://accounts.google.com/v3/signin/challenge/pwd");
+  f.field("button").disabled = true;
+  await f.advance(700);
+  assert.deepEqual(f.signals, ["password"]);
+  await f.advance(60000);
+  assert.deepEqual(f.signals, ["password", "form-rejected"]);
+  assert.equal(f.send("password"), false);
+  assert.equal(f.field('[name="Passwd"]').value, "");
+});
+
 test("Google password stage tolerates its unchecked presentation-only visibility checkbox", async (t) => {
   const f = providerFixture(t, "google-account",
     googlePasswordForm(),

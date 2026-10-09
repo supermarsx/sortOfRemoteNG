@@ -594,7 +594,10 @@
           doc,
           `#${id} button[type="button"], #${id} button[type="submit"], #${id} button:not([type]), button#${id}[type="button"], button#${id}[type="submit"], button#${id}:not([type])`,
         );
-        if (!field || !button || button.disabled) return null;
+        // Next may be disabled until input validation completes. Keep the
+        // reviewed target stable while filling; ready() gates the later click
+        // on enabled/non-busy controls within the existing grant deadline.
+        if (!field || !button) return null;
         form = field.form || doc.body;
         if (!field.form && (button.form || button.type !== "button"))
           return null;

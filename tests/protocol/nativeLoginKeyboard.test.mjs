@@ -14,7 +14,7 @@ const source = readFileSync(resolve(base,"native_login_client.js"),"utf8")
   .replace("/* NATIVE_KEYBOARD_CLIENT */", () => readFileSync(resolve(base,"native_login_typing.js"),"utf8"));
 const delay = ms => new Promise(resolve => setTimeout(resolve,ms));
 
-function fixture(t, manual = false, google = false, visibilityToggle = false) {
+function fixture(t, manual = false, google = false, visibilityToggle = false, waitForInput = false) {
   const dom = new JSDOM(google
     ? '<form method="POST"><input id="identifierId" name="identifier" type="text" autocomplete="username"><input name="hiddenPassword" type="password" aria-hidden="true" tabindex="-1"><button name="action" id="identifierNext">Next</button></form>'
     : '<form method="post" action="/login"><input id="username"><input id="password" type="password"><button id="login" type="submit">Login</button></form>',{
@@ -41,6 +41,13 @@ function fixture(t, manual = false, google = false, visibilityToggle = false) {
   const options = {version:1,fillDelayMs:30,submitDelayMs:50,detectionTimeoutMs:8000,submit:true,fields:[]};
   let identifierValue;
   doc.addEventListener("submit",event=>{event.preventDefault();submits++;});
+  if (google && waitForInput) {
+    doc.querySelector("button").disabled = true;
+    doc.addEventListener("input", event => {
+      const expected = event.target.name === "identifier" ? values.username : values.password;
+      doc.querySelector("button").disabled = event.target.value !== expected;
+    }, true);
+  }
   if (google) doc.querySelector("button").onclick = event => {
     event.preventDefault();
     identifierValue = doc.getElementById("identifierId").value;
@@ -49,6 +56,7 @@ function fixture(t, manual = false, google = false, visibilityToggle = false) {
     doc.body.innerHTML = '<form method="POST"><input id="password" name="Passwd" type="password">' +
       (visibilityToggle ? '<input type="checkbox" id="show-password" aria-labelledby="show-password-label"><label id="show-password-label" for="show-password">Show password</label>' : '') +
       '<button id="passwordNext">Next</button></form>';
+    if (waitForInput) doc.querySelector("button").disabled = true;
   };
   function key(field, index) {
     const input = doc.getElementById(google && field === "username" ? "identifierId" : field), unit = values[field][index];
@@ -95,6 +103,36 @@ test(`Google implicit Next buttons work with production native-keyboard mode acr
   if (visibilityToggle) assert.equal(f.doc.getElementById("show-password").checked, false);
 });
 }
+
+test("Google native keyboard can fill both stages while Next waits for complete input", async t => {
+  const f = fixture(t, false, true, true, true);
+  for (let i = 0; i < 160 && f.submits() === 0; i++) await delay(50);
+  assert.equal(f.submits(), 1, JSON.stringify(f.signals));
+  assert.equal(f.identifierValue(), f.values.username);
+  assert.equal(f.doc.getElementById("password").value, f.values.password);
+  assert.equal(f.keys.length, f.values.username.length + f.values.password.length);
+  assert.equal(f.signals.filter(s => s === "identifier").length, 1);
+  assert.equal(f.signals.filter(s => s === "password").length, 1);
+  assert.equal(f.signals.at(-1), "form-completed");
+  assert.equal(f.doc.getElementById("show-password").checked, false);
+});
+
+test("Google disabled Next support still cancels native typing when focus moves away", async t => {
+  const f = fixture(t, true, true, false, true);
+  for (let i = 0; i < 40 && !f.signals.includes("type|start|identifier|username|0"); i++) await delay(50);
+  assert.ok(f.signals.includes("type|start|identifier|username|0"));
+  const help = f.doc.createElement("a");
+  help.href = "#help";
+  f.doc.body.appendChild(help);
+  help.focus();
+  assert.equal(f.delivered.nativeTyping("probe", 0, f.until, false, "type|identifier|username"), false);
+  await delay(100);
+  assert.equal(f.doc.activeElement, help);
+  assert.equal(f.doc.getElementById("identifierId").value, "");
+  assert.equal(f.keys.length, 0);
+  assert.equal(f.submits(), 0);
+  assert.equal(f.signals.at(-1), "form-rejected");
+});
 
 test("native production form uses paced keyboard receipts for both username and password", async t => {
   const f=fixture(t);
