@@ -56,6 +56,11 @@ export function useOriginBrowserPopups(options: Options) {
   const driver = useRef<{
     select: (viewId: string | null) => void;
     close: (viewId: string) => Promise<void>;
+    reorder: (
+      viewId: string,
+      targetViewId: string,
+      placement: "before" | "after",
+    ) => void;
   } | null>(null);
 
   useLayoutEffect(() => {
@@ -244,9 +249,33 @@ export function useOriginBrowserPopups(options: Options) {
     };
     const actions = {
       select,
+      reorder: (
+        viewId: string,
+        targetViewId: string,
+        placement: "before" | "after",
+      ) => {
+        if (
+          !current() ||
+          viewId === targetViewId ||
+          !rows.has(viewId) ||
+          !rows.has(targetViewId) ||
+          rows.get(viewId)?.closing ||
+          rows.get(targetViewId)?.closing
+        )
+          return;
+        const order = [...rows.keys()].filter((id) => id !== viewId);
+        const index = order.indexOf(targetViewId);
+        order.splice(index + (placement === "after" ? 1 : 0), 0, viewId);
+        const ordered = order.map((id) => rows.get(id)!);
+        // Map updates retain this display order; new native handles append and
+        // removals leave the survivors in place. Never activate/re-adopt here.
+        rows.clear();
+        for (const row of ordered) rows.set(row.viewId, row);
+        publish();
+      },
       close: async (viewId: string) => {
         const row = rows.get(viewId);
-        if (!row || closing.has(viewId)) return;
+        if (!row || row.closing || closing.has(viewId)) return;
         closing.add(viewId);
         rows.set(viewId, { ...row, closing: true });
         if (activeViewId === viewId) activateParent();
@@ -298,6 +327,11 @@ export function useOriginBrowserPopups(options: Options) {
     select: (viewId: string | null) => driver.current?.select(viewId),
     close: (viewId: string) =>
       driver.current?.close(viewId) ?? Promise.resolve(),
+    reorder: (
+      viewId: string,
+      targetViewId: string,
+      placement: "before" | "after",
+    ) => driver.current?.reorder(viewId, targetViewId, placement),
   };
 }
 
