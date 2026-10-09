@@ -53,6 +53,16 @@ confidence-threshold = 0.8
 # manifests. Third-party licenses are still enforced via the `allow` list above.
 private = { ignore = true }
 
+# CEF's build-time downloader uses this Rust translation of libbzip2.
+# Reviewed 0.2.5/LICENSE: permits source/binary redistribution and modification,
+# retaining notices, accurate attribution, and marking altered source; no
+# endorsement permission is granted. Limit acceptance to the reviewed version.
+# https://spdx.org/licenses/bzip2-1.0.6.html
+[[licenses.exceptions]]
+name = "libbz2-rs-sys"
+version = "=0.2.5"
+allow = ["bzip2-1.0.6"]
+
 [bans]
 multiple-versions = "allow"
 wildcards = "warn"
