@@ -42,6 +42,7 @@ export default defineConfig({
       "**/dist/**",
       "**/.claude/**",
       "**/.orchestration/**",
+      ".artifacts/**",
       ".cache/**",
       "**/e2e/**",
       ...NODE_TEST_SUITE_EXCLUDES,

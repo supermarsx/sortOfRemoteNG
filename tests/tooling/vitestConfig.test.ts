@@ -7,6 +7,15 @@ import vitestConfig, {
 } from "../../vitest.config";
 
 describe("ordinary Vitest discovery", () => {
+  it("does not rediscover verification worktrees and preimages as application source", () => {
+    const config = vitestConfig as {
+      test?: { exclude?: readonly string[] };
+    };
+    expect(config.test?.exclude).toContain(".artifacts/**");
+    const typescript = JSON.parse(readFileSync("tsconfig.json", "utf8"));
+    expect(typescript.exclude).toContain(".artifacts");
+    expect(typescript.include).toEqual(expect.arrayContaining(["**/*.ts", "**/*.tsx"]));
+  });
   it.each([
     [1, 1],
     [2, 1],
