@@ -74,7 +74,7 @@ describe("ordinary Vitest discovery", () => {
       ?.split(/\n {2}[a-z][\w-]*:\n/)[0];
     const nodeCommand = testJob
       ?.split(/\r?\n/)
-      .find((line) => line.includes("run: node --test"));
+      .find((line) => line.includes("run: node --test tests/protocol/"));
     expect(nodeCommand).toBeDefined();
     for (const file of NODE_TEST_SUITE_EXCLUDES.filter((path) =>
       path.startsWith("tests/protocol/"),
@@ -83,4 +83,43 @@ describe("ordinary Vitest discovery", () => {
       expect(readFileSync(file, "utf8")).toContain('from "node:test"');
     }
   });
+  it("runs native std-only suites explicitly after Rust setup in the transport matrix", () => {
+    const workflow = readFileSync(".github/workflows/ci.yml", "utf8").replace(
+      /\r\n/g,
+      "\n",
+    );
+    const testJob = workflow
+      .split("\n  browser-transport-contracts:\n")[1]
+      ?.split(/\n {2}[a-z][\w-]*:\n/)[0];
+    const stepName = "      - name: Native browser std-only contracts (Node + rustc)\n";
+    const toolingStep = testJob?.split(stepName)[1]?.split(/\n      - /)[0];
+    const command = toolingStep
+      ?.split("\n")
+      .find((line) => line.trim().startsWith("run:"));
+    const suites = [
+      "tests/tooling/nativeWarmStartup.node-test.mjs",
+      "tests/tooling/nativeCredentialFocus.node-test.mjs",
+      "tests/tooling/nativeNavigationFailure.node-test.mjs",
+      "tests/tooling/nativeLoginDiagnostics.node-test.mjs",
+      "tests/tooling/cefStartupFieldTrials.node-test.mjs",
+      "tests/tooling/nativeOriginProbe.node-test.mjs",
+    ];
+    expect(command?.trim().split(/\s+/)).toEqual([
+      "run:",
+      "node",
+      "--test",
+      ...suites,
+    ]);
+    expect(toolingStep).not.toMatch(/continue-on-error|if:/);
+    const steps = testJob?.split("\n      - ") ?? [];
+    const rustSetup = steps.findIndex((step) =>
+      step.startsWith("uses: dtolnay/rust-toolchain@"),
+    );
+    expect(rustSetup).toBeGreaterThanOrEqual(0);
+    expect(steps[rustSetup + 1]?.startsWith(stepName.trim().slice(2))).toBe(true);
+    for (const file of suites) {
+      expect(readFileSync(file, "utf8")).toContain('from "node:test"');
+    }
+  });
+
 });
