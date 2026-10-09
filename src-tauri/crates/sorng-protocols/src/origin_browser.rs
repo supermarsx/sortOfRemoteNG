@@ -322,6 +322,11 @@ impl OriginBrowserSession {
     pub fn proxy_endpoint(&self) -> SocketAddr {
         self.proxy.local_addr()
     }
+
+    /// Native owner-fenced diagnostics only; never a readiness or route grant.
+    pub fn proxy_diagnostics(&self) -> crate::private_forward_proxy::PrivateProxyDiagnostics {
+        self.proxy.diagnostics()
+    }
     pub fn status(&self) -> BrowserSessionStatus {
         if matches!(
             self.status,

@@ -23,6 +23,10 @@ use zeroize::{Zeroize, Zeroizing};
 
 #[path = "private_forward_proxy/http.rs"]
 mod forward_http;
+#[path = "private_forward_proxy/lifecycle.rs"]
+mod lifecycle;
+pub use lifecycle::{PrivateProxyDiagnostics, PrivateProxyState};
+use lifecycle::{increment, Observations};
 
 pub trait ProxyStream: AsyncRead + AsyncWrite + Unpin + Send {}
 impl<T: AsyncRead + AsyncWrite + Unpin + Send> ProxyStream for T {}
@@ -196,6 +200,7 @@ pub struct PrivateForwardProxy {
     password: Zeroizing<String>,
     stopped: watch::Sender<bool>,
     task: Option<JoinHandle<io::Result<()>>>,
+    observations: Arc<Observations>,
 }
 
 impl PrivateForwardProxy {
@@ -215,6 +220,7 @@ impl PrivateForwardProxy {
         let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).await?;
         let address = listener.local_addr()?;
         let (stopped, receiver) = watch::channel(false);
+        let observations = Arc::new(Observations::default());
         let task = tokio::spawn(serve(
             listener,
             receiver,
@@ -222,12 +228,14 @@ impl PrivateForwardProxy {
             grant,
             credential_hash,
             limits,
+            observations.clone(),
         ));
         Ok(Self {
             address,
             password,
             stopped,
             task: Some(task),
+            observations,
         })
     }
 
@@ -240,6 +248,14 @@ impl PrivateForwardProxy {
     /// if no caller explicitly revoked it. This is not a future liveness lease.
     pub fn is_running(&self) -> bool {
         !*self.stopped.borrow() && self.task.as_ref().is_some_and(|task| !task.is_finished())
+    }
+
+    /// Secret-free observation only; does not start, probe, or authorize a route.
+    pub fn diagnostics(&self) -> PrivateProxyDiagnostics {
+        self.observations.snapshot(
+            *self.stopped.borrow(),
+            self.task.as_ref().is_none_or(|task| task.is_finished()),
+        )
     }
 
     /// Native browser authentication callback ONLY. Never pass these values to
@@ -256,6 +272,9 @@ impl PrivateForwardProxy {
     /// Immediately signals revocation, including pending dials and active streams.
     /// Call `stop().await` to observe completion and listener/stream release.
     pub fn revoke(&self) {
+        if self.diagnostics().state == PrivateProxyState::TaskEnded {
+            self.observations.task_ended();
+        }
         self.stopped.send_replace(true);
     }
 
@@ -267,7 +286,10 @@ impl PrivateForwardProxy {
         let result = match self.task.as_mut() {
             Some(task) => match task.await {
                 Ok(result) => result,
-                Err(_) => Err(io::Error::other("Private proxy task failed")),
+                Err(_) => {
+                    self.observations.task_ended();
+                    Err(io::Error::other("Private proxy task failed"))
+                }
             },
             None => return Ok(()),
         };
@@ -300,6 +322,7 @@ async fn serve(
     grant: DestinationGrant,
     credential_hash: [u8; 32],
     limits: ProxyLimits,
+    observations: Arc<Observations>,
 ) -> io::Result<()> {
     let mut clients = JoinSet::new();
     let result = loop {
@@ -308,8 +331,16 @@ async fn serve(
             _ = revoked(stop.clone()) => break Ok(()),
             Some(_) = clients.join_next(), if !clients.is_empty() => {},
             accepted = listener.accept() => {
-                let (mut client, _) = match accepted { Ok(value) => value, Err(_) => break Err(io::Error::other("Private proxy listener failed")) };
+                let (mut client, _) = match accepted {
+                    Ok(value) => value,
+                    Err(_) => {
+                        observations.listener_failed();
+                        break Err(io::Error::other("Private proxy listener failed"));
+                    }
+                };
+                increment(&observations.accepted_connections);
                 if clients.len() >= limits.max_clients {
+                    increment(&observations.capacity_refusals);
                     // No unbounded task/queue for rejected clients. The extra
                     // accepted socket exists only for this bounded refusal.
                     tokio::select! {
@@ -322,11 +353,12 @@ async fn serve(
                 let stop = stop.clone();
                 let dialer = dialer.clone();
                 let grant = grant.clone();
+                let observations = observations.clone();
                 clients.spawn(async move {
                     tokio::select! {
                         biased;
                         _ = revoked(stop) => {},
-                        _ = handle_client(client, dialer, grant, credential_hash, limits) => {},
+                        _ = handle_client(client, dialer, grant, credential_hash, limits, observations) => {},
                     }
                 });
             }
@@ -509,6 +541,7 @@ async fn handle_client(
     grant: DestinationGrant,
     credential_hash: [u8; 32],
     limits: ProxyLimits,
+    observations: Arc<Observations>,
 ) {
     let admission = match tokio::time::timeout(
         limits.header_timeout,
@@ -522,11 +555,18 @@ async fn handle_client(
                 Ok(Err(status)) => status,
                 _ => 408,
             };
+            increment(if status == 407 {
+                &observations.authentication_challenges
+            } else {
+                &observations.request_rejections
+            });
             refuse(&mut client, status, limits.response_timeout).await;
             return;
         }
     };
+    increment(&observations.authenticated_requests);
     if !grant(&admission.authority) {
+        increment(&observations.destination_denials);
         refuse(&mut client, 403, limits.response_timeout).await;
         return;
     }
@@ -534,6 +574,7 @@ async fn handle_client(
         match tokio::time::timeout(limits.dial_timeout, dialer.dial(admission.authority)).await {
             Ok(Ok(stream)) => stream,
             result => {
+                increment(&observations.upstream_failures);
                 refuse(
                     &mut client,
                     if result.is_err() { 504 } else { 502 },
@@ -571,3 +612,7 @@ async fn handle_client(
 #[cfg(test)]
 #[path = "private_forward_proxy/tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "private_forward_proxy/lifecycle_tests.rs"]
+mod lifecycle_tests;

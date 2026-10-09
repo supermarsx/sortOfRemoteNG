@@ -7,6 +7,7 @@ mod browser_dns;
 pub mod db;
 pub mod http;
 pub mod origin_browser;
+pub mod origin_browser_diagnostics;
 pub mod private_forward_proxy;
 pub mod private_forward_route;
 pub mod webview_origins;

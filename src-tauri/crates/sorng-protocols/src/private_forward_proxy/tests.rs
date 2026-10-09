@@ -583,6 +583,7 @@ async fn completed_supervisor_results_and_explicit_revocation_are_not_running() 
             password: Zeroizing::new("synthetic-not-a-live-credential".into()),
             stopped,
             task: Some(task),
+            observations: Arc::default(),
         };
         assert!(proxy.is_running());
         finish.send(()).unwrap();
