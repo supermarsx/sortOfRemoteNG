@@ -877,46 +877,138 @@ describe("useSessionManager settings effects", () => {
     expect(result.current.activeSessionId).toBe(foregroundSession.id);
   });
 
-  it("returns the exact created session id and no id when the connection limit rejects creation", async () => {
-    const connection = makeConnection({ id: "conn-correlated" });
-    const { result, rerender } = renderHook(() => useSessionManager());
+  it.each(["ssh", "http", "https", "rdp", "vnc"] as const)(
+    "opens independent %s tabs for repeated connects to the same saved connection",
+    async (protocol) => {
+      const connection = makeConnection({ protocol });
+      const first = makeSession({ connectionId: connection.id, protocol });
+      connectionMocks.state = { connections: [connection], sessions: [first] };
+      const { result, rerender } = renderHook(() => useSessionManager());
+      const opened = vi.fn();
 
-    let createdSessionId: string | undefined;
-    await act(async () => {
-      createdSessionId = await result.current.handleConnect(connection);
+      let secondId: string | undefined;
+      await act(async () => {
+        secondId = await result.current.handleConnect(
+          connection,
+          undefined,
+          opened,
+        );
+      });
+      const second = connectionMocks.dispatch.mock.calls.find(
+        ([action]) => action.type === "ADD_SESSION",
+      )?.[0].payload as ConnectionSession;
+      expect(second).toMatchObject({ connectionId: connection.id, protocol });
+      expect(secondId).toBe(second.id);
+      expect(secondId).not.toBe(first.id);
+      expect(second.backendSessionId).toBeUndefined();
+      expect(result.current.activeSessionId).toBe(secondId);
+      expect(opened).toHaveBeenCalledTimes(1);
+
+      connectionMocks.state = {
+        connections: [connection],
+        sessions: [first, second],
+      };
+      connectionMocks.dispatch.mockClear();
+      rerender();
+      let thirdId: string | undefined;
+      await act(async () => {
+        thirdId = await result.current.handleConnect(connection);
+      });
+      expect(thirdId).toBeTruthy();
+      expect(new Set([first.id, secondId, thirdId]).size).toBe(3);
+      expect(connectionMocks.dispatch).not.toHaveBeenCalledWith(
+        expect.objectContaining({ type: "REMOVE_SESSION" }),
+      );
+    },
+  );
+
+  it("closing one SSH tab preserves its peer and shared connection monitoring", async () => {
+    const connection = makeConnection({ warnOnClose: false });
+    const first = makeSession({
+      connectionId: connection.id,
+      backendSessionId: "ssh-first",
     });
-    const addedSession = connectionMocks.dispatch.mock.calls.find(
-      ([action]) => action.type === "ADD_SESSION",
-    )?.[0].payload as ConnectionSession;
-    expect(createdSessionId).toBe(addedSession.id);
-
+    const second = makeSession({
+      id: "second-tab",
+      connectionId: connection.id,
+      backendSessionId: "ssh-second",
+    });
     connectionMocks.state = {
-      sessions: [addedSession],
       connections: [connection],
+      sessions: [first, second],
     };
     SettingsManager.getInstance().applyInMemory({
-      maxConcurrentConnections: 1,
+      confirmCloseActiveTab: false,
     });
-    connectionMocks.dispatch.mockClear();
-    rerender();
+    const { result, rerender } = renderHook(() => useSessionManager());
+    await act(async () => {
+      expect(await result.current.handleSessionClose(first.id)).toBe(true);
+    });
+    expect(connectionMocks.invoke).toHaveBeenCalledWith("disconnect_ssh", {
+      sessionId: "ssh-first",
+    });
+    expect(connectionMocks.invoke).not.toHaveBeenCalledWith("disconnect_ssh", {
+      sessionId: "ssh-second",
+    });
+    expect(connectionMocks.dispatch).not.toHaveBeenCalledWith({
+      type: "REMOVE_SESSION",
+      payload: second.id,
+    });
+    expect(connectionMocks.stopChecking).not.toHaveBeenCalled();
 
-    let rejectedConnect!: Promise<string | undefined>;
-    act(() => {
-      rejectedConnect = result.current.handleConnect(
-        makeConnection({ id: "conn-rejected" }),
-      );
+    connectionMocks.state = { connections: [connection], sessions: [second] };
+    rerender();
+    await act(async () => {
+      expect(await result.current.handleSessionClose(second.id)).toBe(true);
     });
-    await waitFor(() =>
-      expect(result.current.confirmDialog?.props.message).toMatch(
-        /maximum concurrent connections/i,
-      ),
-    );
-    act(() => result.current.confirmDialog?.props.onConfirm());
-    await expect(rejectedConnect).resolves.toBeUndefined();
-    expect(connectionMocks.dispatch).not.toHaveBeenCalledWith(
-      expect.objectContaining({ type: "ADD_SESSION" }),
+    expect(connectionMocks.stopChecking).toHaveBeenCalledExactlyOnceWith(
+      connection.id,
     );
   });
+
+  it.each(["conn-correlated", "conn-rejected"])(
+    "returns no id when the session limit rejects %s",
+    async (nextConnectionId) => {
+      const connection = makeConnection({ id: "conn-correlated" });
+      const { result, rerender } = renderHook(() => useSessionManager());
+
+      let createdSessionId: string | undefined;
+      await act(async () => {
+        createdSessionId = await result.current.handleConnect(connection);
+      });
+      const addedSession = connectionMocks.dispatch.mock.calls.find(
+        ([action]) => action.type === "ADD_SESSION",
+      )?.[0].payload as ConnectionSession;
+      expect(createdSessionId).toBe(addedSession.id);
+
+      connectionMocks.state = {
+        sessions: [addedSession],
+        connections: [connection],
+      };
+      SettingsManager.getInstance().applyInMemory({
+        maxConcurrentConnections: 1,
+      });
+      connectionMocks.dispatch.mockClear();
+      rerender();
+
+      let rejectedConnect!: Promise<string | undefined>;
+      act(() => {
+        rejectedConnect = result.current.handleConnect(
+          makeConnection({ id: nextConnectionId }),
+        );
+      });
+      await waitFor(() =>
+        expect(result.current.confirmDialog?.props.message).toMatch(
+          /maximum concurrent connections/i,
+        ),
+      );
+      act(() => result.current.confirmDialog?.props.onConfirm());
+      await expect(rejectedConnect).resolves.toBeUndefined();
+      expect(connectionMocks.dispatch).not.toHaveBeenCalledWith(
+        expect.objectContaining({ type: "ADD_SESSION" }),
+      );
+    },
+  );
 
   it.each(singletonIntegrationProtocols)(
     "allows only one healthy %s native session but ignores cold disconnected tabs",

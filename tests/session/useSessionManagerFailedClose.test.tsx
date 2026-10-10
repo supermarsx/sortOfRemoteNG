@@ -27,7 +27,7 @@ const mocks = vi.hoisted(() => {
         holder.state = {
           ...state,
           sessions: state.sessions.map((session) =>
-            session.id === updated.id ? updated : session,
+            session.id === updated.id ? { ...session, ...updated } : session,
           ),
         };
       } else if (action.type === "REMOVE_SESSION") {
@@ -1978,6 +1978,45 @@ describe("handleSessionClose — negative controls (live sessions keep fail-clos
 });
 
 describe("restoreSession duplicate check", () => {
+  it.each(["ssh", "http", "https", "rdp"] as const)(
+    "restores another %s tab for the same saved connection without replacing its live peer",
+    async (protocol) => {
+      const connection = makeConnection("shared-saved-connection", {
+        protocol,
+      });
+      const peer = makeSession("live-peer", connection.id, {
+        protocol,
+        status: "connected",
+        backendSessionId: "peer-actor",
+      });
+      seed([connection], [peer]);
+      const { result, rerender } = renderHook(() => useSessionManager());
+      const persisted = {
+        id: "restored-second-tab",
+        connectionId: connection.id,
+        name: connection.name,
+        protocol,
+        hostname: connection.hostname,
+        status: "connected" as const,
+      };
+      await act(async () => {
+        await result.current.restoreSession(persisted, connection);
+      });
+      expect(sessions()).toHaveLength(2);
+      expect(sessions()[0]).toEqual(peer);
+      expect(sessions()[1]).toMatchObject({
+        id: persisted.id,
+        connectionId: connection.id,
+      });
+      expect(sessions()[1].backendSessionId).toBeUndefined();
+      rerender();
+      await act(async () => {
+        await result.current.restoreSession(persisted, connection);
+      });
+      expect(sessions()).toHaveLength(2);
+    },
+  );
+
   it("reads current state, not the render-time closure", async () => {
     const conn = makeConnection("ssh-restore");
     seed([conn], []);

@@ -3,7 +3,10 @@ import { useTranslation } from "react-i18next";
 import MenuSurface from "../../ui/overlays/MenuSurface";
 import { useConnections } from "../../../contexts/useConnections";
 import { useSettings } from "../../../contexts/SettingsContext";
-import type { Connection } from "../../../types/connection/connection";
+import {
+  isIntegrationConnectionProtocol,
+  type Connection,
+} from "../../../types/connection/connection";
 import { generateId } from "../../../utils/core/id";
 import {
   Activity,
@@ -107,6 +110,9 @@ function TreeItemMenu({
   const { state, dispatch } = useConnections();
   const { settings } = useSettings();
   const { t } = useTranslation();
+  const canOpenAnotherSession = !isIntegrationConnectionProtocol(
+    connection.protocol,
+  );
   const act = (fn: () => void) => (e: React.MouseEvent) => {
     e.stopPropagation();
     fn();
@@ -315,7 +321,16 @@ function TreeItemMenu({
             : t("quickConnect.connect", "Connect")}
         </button>
       )}
-      {!connection.isGroup && !activeSession && (
+      {!connection.isGroup && activeSession && canOpenAnotherSession && (
+        <button
+          onClick={act(() => onConnect(connection))}
+          className="sor-menu-item"
+        >
+          <PlayCircle size={14} className="mr-2" />
+          {t("connections.connectAgain", "Connect again (new tab)")}
+        </button>
+      )}
+      {!connection.isGroup && (!activeSession || canOpenAnotherSession) && (
         <>
           <button
             onClick={act(() => {

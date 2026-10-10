@@ -411,6 +411,21 @@ export const useSessionManager = () => {
     setActiveSessionId(nextSession?.id);
   };
 
+  const releaseUnusedConnectionResources = (session: ConnectionSession) => {
+    // These resources are keyed by saved/runtime connection, not tab. A peer
+    // may still need status monitoring or its temporary connection definition.
+    const hasPeer = stateRef.current.sessions.some(
+      (candidate) =>
+        candidate.id !== session.id &&
+        candidate.connectionId === session.connectionId &&
+        !isToolProtocol(candidate.protocol) &&
+        !isWinmgmtProtocol(candidate.protocol),
+    );
+    if (hasPeer) return;
+    releaseRuntimeConnection(session.connectionId);
+    statusChecker.stopChecking(session.connectionId);
+  };
+
   /**
    * Remove an RDP tab whose backend already emitted its terminal disconnect
    * and completed VPN cleanup. This is also re-checked after an in-flight
@@ -461,9 +476,8 @@ export const useSessionManager = () => {
     });
 
     dispatch({ type: "REMOVE_SESSION", payload: sessionId });
-    releaseRuntimeConnection(endedSession.connectionId);
+    releaseUnusedConnectionResources(endedSession);
     if (connection) {
-      statusChecker.stopChecking(connection.id);
       settingsManager.logAction(
         "info",
         "Session closed",
@@ -1069,13 +1083,11 @@ export const useSessionManager = () => {
       ) ??
       getUnsupportedDirectSessionMessage(connection.protocol);
 
-    // Check for existing session for protocols that should reuse connections
-    const reuseSessionProtocols = ["ssh", "http", "https"];
-    const shouldReuseSession =
-      reuseSessionProtocols.includes(connection.protocol) ||
-      isIntegrationConnectionProtocol(connection.protocol);
-    if (shouldReuseSession) {
-      const existingSession = state.sessions.find(
+    // Direct connections get a fresh tab/transport identity on every Connect.
+    // Integration panels may own a shared native instance; keep their reuse
+    // and singleton safeguards until those backends support independent actors.
+    if (isIntegrationConnectionProtocol(connection.protocol)) {
+      const existingSession = stateRef.current.sessions.find(
         (session) =>
           session.protocol === connection.protocol &&
           session.connectionId === connection.id &&
@@ -1087,7 +1099,7 @@ export const useSessionManager = () => {
         return existingSession.id;
       }
       const singletonConflict = findSingletonIntegrationConflict(
-        state.sessions,
+        stateRef.current.sessions,
         connection.protocol,
       );
       if (singletonConflict) {
@@ -1104,7 +1116,7 @@ export const useSessionManager = () => {
     // not connections — counting them against these limits would
     // be misleading (and lock the user out of opening a session
     // because they have a Settings tab open).
-    const realSessions = state.sessions.filter(
+    const realSessions = stateRef.current.sessions.filter(
       (session) =>
         isRealConnectionSession(session) ||
         (isIntegrationConnectionProtocol(session.protocol) &&
@@ -1674,9 +1686,8 @@ export const useSessionManager = () => {
         }
         if (!isCurrentCloseAttempt(attempt)) return false;
         dispatch({ type: "REMOVE_SESSION", payload: sessionId });
-        releaseRuntimeConnection(session.connectionId);
+        releaseUnusedConnectionResources(session);
         if (connection) {
-          statusChecker.stopChecking(connection.id);
           settingsManager.logAction(
             "info",
             "Session closed",
@@ -2257,10 +2268,9 @@ export const useSessionManager = () => {
       }
 
       dispatch({ type: "REMOVE_SESSION", payload: sessionId });
-      releaseRuntimeConnection(session.connectionId);
+      releaseUnusedConnectionResources(session);
 
       if (connection) {
-        statusChecker.stopChecking(connection.id);
         settingsManager.logAction(
           "info",
           "Session closed",
@@ -2547,13 +2557,8 @@ export const useSessionManager = () => {
       session.name,
     );
 
-    const connection = resolveRuntimeConnection(
-      stateRef.current.connections,
-      session.connectionId,
-    );
     dispatch({ type: "REMOVE_SESSION", payload: sessionId });
-    releaseRuntimeConnection(session.connectionId);
-    if (connection) statusChecker.stopChecking(connection.id);
+    releaseUnusedConnectionResources(session);
 
     moveSelectionAfterSessionClose(sessionId);
 
@@ -2627,12 +2632,14 @@ export const useSessionManager = () => {
     const cleanupQuarantined = hasSessionVpnCleanupQuarantine(sessionData);
     const restoredProtocol = connection.protocol;
 
-    // Check if session already exists (avoid duplicates). Read the ref: the
-    // closure's `state` can be stale when restores run back-to-back.
+    // Restoring the same tab is idempotent, but different tab IDs may point to
+    // the same saved connection. Only shared integration backends retain the
+    // connection-level reuse guard. Read the ref rather than a stale closure.
     const existingSession = stateRef.current.sessions.find(
       (s) =>
         s.id === sessionData.id ||
-        (s.connectionId === sessionData.connectionId &&
+        (isIntegrationConnectionProtocol(restoredProtocol) &&
+          s.connectionId === sessionData.connectionId &&
           s.protocol === restoredProtocol &&
           s.status !== "disconnected" &&
           s.status !== "error"),
