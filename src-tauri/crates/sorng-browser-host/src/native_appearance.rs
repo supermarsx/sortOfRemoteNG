@@ -5,7 +5,56 @@ use std::sync::LazyLock;
 pub const REQUEST: &str = "sorng.native.appearance.apply.v1";
 pub const STATUS: &str = "sorng.native.appearance.status.v1";
 pub const MAX_JSON: usize = 32 * 1024;
+#[cfg(any(feature = "cef-host", test))]
+pub(crate) const MAX_DOCUMENT_TOKEN: usize = 31;
 pub const DEFAULT_JSON: &str = r##"{"enabled":true,"theme":{"followAppTheme":true,"mode":"dynamic","brightness":100,"contrast":100,"sepia":0,"grayscale":0,"backgroundColor":"#181a1b","textColor":"#e8e6e3","preserveMedia":true,"customCss":""}}"##;
+
+/// Renderer-process cache for future contexts, independent of any one document.
+/// Revision zero belongs only to a new context's readiness announcement.
+#[cfg(any(feature = "cef-host", test))]
+pub(crate) struct RevisionedAppearance {
+    pub json: String,
+    revision: u64,
+}
+
+/// Native renderer process + context nonce. This identifies presentation state,
+/// never a credential origin or permission.
+#[cfg(any(feature = "cef-host", test))]
+pub(crate) fn document_token_parts(token: &str) -> Option<(u32, u64)> {
+    let (process, context) = token.split_once(':')?;
+    let canonical = |value: &str| {
+        !value.is_empty() && !value.starts_with('0') && value.bytes().all(|b| b.is_ascii_digit())
+    };
+    if token.len() > MAX_DOCUMENT_TOKEN || !canonical(process) || !canonical(context) {
+        return None;
+    }
+    Some((process.parse().ok()?, context.parse().ok()?))
+}
+
+#[cfg(any(feature = "cef-host", test))]
+impl RevisionedAppearance {
+    pub fn new(json: String) -> Self {
+        Self { json, revision: 0 }
+    }
+
+    pub fn update(&mut self, revision: &str, json: &str) -> bool {
+        if revision.is_empty() || revision.starts_with('0') || revision.len() > 20 {
+            return false;
+        }
+        let Ok(next) = revision.parse::<u64>() else {
+            return false;
+        };
+        if !revision.bytes().all(|c| c.is_ascii_digit())
+            || next < self.revision
+            || (next == self.revision && json != self.json)
+        {
+            return false;
+        }
+        self.revision = next;
+        self.json = json.into();
+        true
+    }
+}
 
 pub fn valid_color(value: &str) -> bool {
     value.len() == 7
@@ -214,6 +263,47 @@ pub fn eligible_document(value: &str) -> bool {
     })
 }
 
+/// Only appearance may enter explicit HTML data child documents. Blob URLs do
+/// not expose a MIME type, so they cannot safely join the HTML acknowledgement
+/// barrier on URL evidence alone. Top-level and credential policies stay narrow.
+pub fn eligible_frame_document(value: &str, is_main: bool) -> bool {
+    if eligible_document(value) {
+        return true;
+    }
+    if is_main
+        || value.len() > 16_384
+        || value.contains('\\')
+        || value.chars().any(char::is_control)
+    {
+        return false;
+    }
+    let Ok(url) = url::Url::parse(value) else {
+        return false;
+    };
+    if url.scheme() != "data" {
+        return false;
+    }
+    let Some((metadata, _)) = url.path().split_once(',') else {
+        return false;
+    };
+    let mut parts = metadata.split(';');
+    let mime = parts.next().unwrap_or_default();
+    if !mime.eq_ignore_ascii_case("text/html")
+        && !mime.eq_ignore_ascii_case("application/xhtml+xml")
+    {
+        return false;
+    }
+    parts.all(|part| {
+        part.eq_ignore_ascii_case("base64")
+            || part.strip_prefix("charset=").is_some_and(|charset| {
+                !charset.is_empty()
+                    && charset
+                        .bytes()
+                        .all(|c| c.is_ascii_alphanumeric() || matches!(c, b'-' | b'_'))
+            })
+    })
+}
+
 #[cfg(feature = "cef-host")]
 pub(crate) mod wire {
     use super::*;
@@ -301,6 +391,73 @@ pub(crate) mod wire {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn late_frame_policy_never_reverts_to_a_stale_broadcast_or_bootstrap_revision() {
+        let mut policy = RevisionedAppearance::new(DEFAULT_JSON.into());
+        let latest = DEFAULT_JSON.replace("#181a1b", "#123456");
+        assert!(policy.update("42", &latest));
+        assert!(policy.update("42", &latest)); // One broadcast targets many frames.
+        for revision in ["0", "41", "42", "042", "", "+43", "18446744073709551616"] {
+            assert!(!policy.update(revision, DEFAULT_JSON));
+            assert_eq!(policy.json, latest);
+        }
+        assert!(policy.update("43", DEFAULT_JSON));
+        assert_eq!(policy.json, DEFAULT_JSON);
+        // A different renderer/browser owner starts a fresh native policy.
+        let mut successor = RevisionedAppearance::new(DEFAULT_JSON.into());
+        assert!(successor.update("1", &latest));
+    }
+
+    #[test]
+    fn document_tokens_distinguish_reloads_and_renderer_process_restarts() {
+        for token in ["1:1", "100:2", "101:1", "4294967295:18446744073709551615"] {
+            assert!(document_token_parts(token).is_some());
+        }
+        for token in [
+            "",
+            "0:1",
+            "1:0",
+            "01:1",
+            "1:01",
+            "1:2:3",
+            "-1:2",
+            "4294967296:1",
+            "1:18446744073709551616",
+        ] {
+            assert!(document_token_parts(token).is_none());
+        }
+    }
+
+    #[test]
+    fn explicit_html_data_is_child_only_and_does_not_admit_privileged_or_untyped_documents() {
+        for url in [
+            "data:text/html,%3Cp%3Ehello%3C/p%3E",
+            "data:text/html;charset=utf-8;base64,PGI+PC9iPg==",
+            "data:application/xhtml+xml,%3Chtml/%3E",
+        ] {
+            assert!(eligible_frame_document(url, false));
+            assert!(!eligible_frame_document(url, true));
+            assert!(!eligible_document(url));
+        }
+        for url in [
+            "data:,hello",
+            "data:text/plain,hello",
+            "data:image/svg+xml,%3Csvg/%3E",
+            "data:application/pdf;base64,xxx",
+            "data:text/html;unknown=1,hello",
+            "blob:https://fixture.invalid/document",
+            "blob:null/document",
+            "file:///private",
+            "chrome://settings",
+            "devtools://devtools/",
+            "javascript:alert(1)",
+            "https://u:p@fixture.invalid/",
+        ] {
+            assert!(!eligible_frame_document(url, false), "{url}");
+            assert!(!eligible_frame_document(url, true), "{url}");
+        }
+    }
+
     #[test]
     fn colors_cannot_be_css_or_resource_locations() {
         for value in [

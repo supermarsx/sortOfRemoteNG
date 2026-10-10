@@ -8,7 +8,7 @@ mod darkreader;
 
 struct Policy {
     owner: Browser,
-    json: String,
+    appearance: policy::RevisionedAppearance,
     extensions_enabled: bool,
 }
 struct AppearanceDocument {
@@ -61,16 +61,25 @@ pub(super) fn created(browser: &Browser, info: &DictionaryValue) -> bool {
     let extensions_enabled = info.get_type(Some(&extension_key)) == ValueType::BOOL
         && info.bool(Some(&extension_key)) == 1;
     POLICIES.with(|p| {
-        p.borrow_mut().insert(
+        let mut p = p.borrow_mut();
+        if let Some(current) = p
+            .get(&browser.identifier())
+            .filter(|p| same_browser(&p.owner, browser))
+        {
+            // Extra-info is a creation-time snapshot. Repeated creation callbacks
+            // for this owner must not reset newer process policy for child frames.
+            return current.extensions_enabled == extensions_enabled;
+        }
+        p.insert(
             browser.identifier(),
             Policy {
                 owner: browser.clone(),
-                json,
+                appearance: policy::RevisionedAppearance::new(json),
                 extensions_enabled,
             },
-        )
-    });
-    true
+        );
+        true
+    })
 }
 
 fn eligible(frame: &Frame) -> bool {
@@ -78,7 +87,23 @@ fn eligible(frame: &Frame) -> bool {
         return false;
     }
     let url = CefString::from(&frame.url()).to_string();
-    policy::eligible_document(&url)
+    policy::eligible_frame_document(&url, frame.is_main() == 1)
+}
+
+fn report(frame: &Frame, nonce: u64, revision: &str, status: &str) {
+    if let Some(mut message) = process_message_create(Some(&CefString::from(policy::STATUS))) {
+        if let Some(args) = message.argument_list() {
+            args.set_string(0, Some(&CefString::from(revision)));
+            args.set_string(1, Some(&CefString::from(status)));
+            args.set_string(
+                2,
+                Some(&CefString::from(
+                    format!("{}:{nonce}", std::process::id()).as_str(),
+                )),
+            );
+            frame.send_process_message(ProcessId::BROWSER, Some(&mut message));
+        }
+    }
 }
 
 wrap_v8_handler! {
@@ -97,13 +122,7 @@ wrap_v8_handler! {
                     && doc.context.is_same(Some(&mut context))==1).then(|| doc.context.frame()).flatten()
             }));
             if let Some(frame)=frame {
-                if let Some(mut message)=process_message_create(Some(&CefString::from(policy::STATUS))) {
-                    if let Some(args)=message.argument_list() {
-                        args.set_string(0,Some(&CefString::from(revision.as_str())));
-                        args.set_string(1,Some(&CefString::from(status.as_str())));
-                        frame.send_process_message(ProcessId::BROWSER,Some(&mut message));
-                    }
-                }
+                report(&frame, self.nonce, &revision, &status);
             }
             1
         }
@@ -153,28 +172,22 @@ pub(super) fn install(browser: &Browser, frame: &Frame, context: &mut V8Context)
         p.borrow()
             .get(&browser.identifier())
             .filter(|p| same_browser(&p.owner, browser))
-            .map(|p| (p.json.clone(), p.extensions_enabled))
+            .map(|p| (p.appearance.json.clone(), p.extensions_enabled))
     });
     let Some((json, extensions_enabled)) = saved else {
         return false;
     };
+    let nonce = NEXT_DOCUMENT.fetch_add(1, Ordering::Relaxed);
     if !extensions_enabled {
         // Native-only master-disabled path: no V8 evaluation, DarkReader or
         // client closure. Browser process will confirm its native override.
-        if let Some(mut message) = process_message_create(Some(&CefString::from(policy::STATUS))) {
-            if let Some(args) = message.argument_list() {
-                args.set_string(0, Some(&CefString::from("0")));
-                args.set_string(1, Some(&CefString::from("fallback")));
-                frame.send_process_message(ProcessId::BROWSER, Some(&mut message));
-            }
-        }
+        report(frame, nonce, "0", "fallback");
         return true;
     }
     if context.is_valid() != 1 {
         return false;
     }
     let key = frame_key(browser, frame);
-    let nonce = NEXT_DOCUMENT.fetch_add(1, Ordering::Relaxed);
     let mut signal = AppearanceSignal::new(key.clone(), nonce);
     let Some(notify) = v8_value_create_function(
         Some(&CefString::from("nativeAppearanceReady")),
@@ -217,7 +230,12 @@ pub(super) fn install(browser: &Browser, frame: &Frame, context: &mut V8Context)
             },
         )
     });
-    apply(browser, frame, &json, "0")
+    let applied = apply(browser, frame, &json, "0");
+    // Root readiness may be deferred, or revision zero may be superseded by an
+    // IPC update before JS reports it. Announce the native context immediately;
+    // the browser deduplicates this and the eventual JS status by document token.
+    report(frame, nonce, "0", "fallback");
+    applied
 }
 
 pub(super) fn receive(
@@ -254,8 +272,7 @@ pub(super) fn receive(
         if !same_browser(&p.owner, browser) || !p.extensions_enabled {
             return false;
         }
-        p.json = json.clone();
-        true
+        p.appearance.update(&revision, &json)
     });
     if current {
         apply(browser, frame, &json, &revision);
@@ -280,4 +297,95 @@ pub(super) fn forget_browser(browser: &Browser) {
         p.borrow_mut()
             .retain(|_, p| !same_browser(&p.owner, browser))
     });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use cef::rc::{ConvertReturnValue, RcImpl};
+
+    fn browser(id: i32) -> Browser {
+        extern "C" fn identifier(this: *mut cef::sys::_cef_browser_t) -> i32 {
+            RcImpl::<cef::sys::_cef_browser_t, i32>::get(this).interface
+        }
+        extern "C" fn same(
+            this: *mut cef::sys::_cef_browser_t,
+            other: *mut cef::sys::_cef_browser_t,
+        ) -> i32 {
+            if other.is_null() {
+                return 0;
+            }
+            let equal = i32::from(this == other);
+            let _other: Browser = other.wrap_result();
+            equal
+        }
+        let raw = cef::sys::_cef_browser_t {
+            get_identifier: Some(identifier),
+            is_same: Some(same),
+            // No browser is launched; unused CEF entries are nullable.
+            ..unsafe { std::mem::zeroed() }
+        };
+        let raw: *mut cef::sys::_cef_browser_t = RcImpl::new(raw, id).cast();
+        raw.wrap_result()
+    }
+
+    fn info() -> DictionaryValue {
+        let _ = cef::api_hash(cef::sys::CEF_API_VERSION_LAST, 0);
+        let info = dictionary_value_create().unwrap();
+        info.set_string(
+            Some(&CefString::from("appearance-json")),
+            Some(&CefString::from(policy::DEFAULT_JSON)),
+        );
+        info.set_bool(Some(&CefString::from("appearance-extensions-enabled")), 1);
+        info
+    }
+
+    #[test]
+    fn repeated_creation_snapshot_preserves_newer_policy_for_late_contexts() {
+        let browser = browser(71);
+        let info = info();
+        assert!(created(&browser, &info));
+        let latest = policy::DEFAULT_JSON.replace("#181a1b", "#123456");
+        POLICIES.with(|p| {
+            assert!(p
+                .borrow_mut()
+                .get_mut(&71)
+                .unwrap()
+                .appearance
+                .update("42", &latest))
+        });
+        assert!(created(&browser, &info));
+        POLICIES.with(|p| {
+            let mut p = p.borrow_mut();
+            let policy = p.get_mut(&71).unwrap();
+            assert_eq!(policy.appearance.json, latest);
+            assert!(!policy.appearance.update("41", policy::DEFAULT_JSON));
+        });
+        forget_browser(&browser);
+    }
+
+    #[test]
+    fn replacement_browser_owner_resets_policy_without_late_old_destroy_removing_it() {
+        let old = browser(72);
+        let successor = browser(72);
+        let info = info();
+        assert!(created(&old, &info));
+        POLICIES.with(|p| {
+            assert!(p
+                .borrow_mut()
+                .get_mut(&72)
+                .unwrap()
+                .appearance
+                .update("42", policy::DEFAULT_JSON))
+        });
+        assert!(created(&successor, &info));
+        forget_browser(&old);
+        POLICIES.with(|p| {
+            let mut p = p.borrow_mut();
+            let policy = p.get_mut(&72).unwrap();
+            assert!(same_browser(&policy.owner, &successor));
+            assert!(policy.appearance.update("1", policy::DEFAULT_JSON));
+        });
+        forget_browser(&successor);
+    }
 }
