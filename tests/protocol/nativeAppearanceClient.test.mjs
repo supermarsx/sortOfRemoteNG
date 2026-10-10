@@ -50,7 +50,7 @@ const fakeVendor = `
 
 function fixture(t, options = {}) {
   const dom = new JSDOM('<!doctype html><html><head></head><body><main>Hello</main><img src="data:,image"></body></html>', {
-    url: "https://fixture.invalid/path", runScripts: "outside-only", pretendToBeVisual: true,
+    url: options.url || "https://fixture.invalid/path", runScripts: "outside-only", pretendToBeVisual: true,
     virtualConsole: new VirtualConsole(),
   });
   const win = dom.window;
@@ -58,8 +58,9 @@ function fixture(t, options = {}) {
   win.fetch = options.fetch || (() => Promise.resolve({ ok: true, text: async () => "" }));
   win.matchMedia = () => ({ matches: false, addListener() {}, removeListener() {}, addEventListener() {}, removeEventListener() {} });
   win.CSS = { supports: () => false, escape: value => value };
-  // JSDOM lacks this Chromium interface; the bundle uses it only for instanceof.
+  // JSDOM lacks these Chromium interfaces; the bundle uses them for instanceof.
   win.SVGStyleElement = class extends win.SVGElement {};
+  win.SVGTextElement = class extends win.SVGElement {};
   const existingReader = { marker: "page-owned" };
   const sendMessage = () => {};
   win.DarkReader = existingReader;
@@ -329,9 +330,285 @@ test("native appearance actual pinned DarkReader stays private and releases its 
   assert.match(f.css(), /filter:invert/);
 });
 
-test("native appearance wrapper adds no content scanner, script URL, or app bridge", () => {
+test("native appearance wrapper adds no content reader, script URL, or app bridge", () => {
   assert.doesNotMatch(source, /BUNDLED_DARKREADER/);
-  assert.doesNotMatch(source, /querySelectorAll|attachShadow|postMessage|__TAURI|createElement\(["']script/);
+  assert.doesNotMatch(source, /innerHTML|innerText|textContent\s*[^=\s]|postMessage|__TAURI|createElement\(["']script/);
+});
+
+function openRoot(f, parent = f.doc.body) {
+  const host = f.doc.createElement("div");
+  parent.append(host);
+  const root = host.attachShadow({ mode: "open" });
+  root.innerHTML = '<div class="panel">Panel<img src="data:,image"></div>';
+  return root;
+}
+const shadowCss = root => root.querySelector(".sorng-native-appearance")?.textContent || "";
+const settle = () => new Promise(resolve => setTimeout(resolve, 40));
+
+test("native filter reaches nested open roots without multiplying the ancestor filter", t => {
+  for (const main of [true, false]) {
+    const f = fixture(t, { main });
+    const root = openRoot(f), nested = openRoot(f, root);
+    const config = f.config({ mode: "filter", customCss: ".panel{border-color:#456!important}" });
+    assert.equal(f.apply(config), true);
+    for (const scope of [root, nested]) {
+      assert.match(shadowCss(scope), /img,video,canvas,svg image,object,embed\{filter:invert/);
+      assert.match(shadowCss(scope), /\.panel\{border-color:#456!important\}/);
+      assert.doesNotMatch(shadowCss(scope), /brightness|contrast|:host\{[^}]*filter:|html:root/);
+    }
+    assert.equal(f.apply(config), true);
+    assert.equal(root.querySelectorAll(".sorng-native-appearance").length, 1);
+    assert.equal(f.apply(f.config({ mode: "filter", preserveMedia: false })), true);
+    assert.equal(shadowCss(root), "", "no unnecessary shadow styles without media compensation or custom CSS");
+    assert.equal(shadowCss(nested), "");
+  }
+});
+
+test("native custom CSS reaches existing, inserted, and late-attached nested open roots", async t => {
+  const f = fixture(t);
+  const root = openRoot(f), nested = openRoot(f, root);
+  const originalAttach = f.win.Element.prototype.attachShadow;
+  assert.equal(f.apply(f.config({ mode: "customCss", customCss: ".panel{border-color:#456!important}" })), true);
+  const inserted = openRoot(f);
+  const late = openRoot(f, nested);
+  const detached = openRoot(f, f.doc.createElement("section"));
+  assert.equal(shadowCss(detached), "", "disconnected trees are not observed");
+  f.doc.body.append(detached.host.parentNode);
+  await settle();
+  for (const scope of [root, nested, inserted, late, detached]) {
+    assert.match(shadowCss(scope), /:host\{color-scheme:dark!important;/);
+    assert.match(shadowCss(scope), /background-color:#181a1b!important;color:#e8e6e3!important/);
+    assert.match(shadowCss(scope), /\.panel\{border-color:#456!important\}/);
+    assert.doesNotMatch(shadowCss(scope), /filter:|brightness|invert/);
+  }
+  const pageStyle = f.doc.createElement("style");
+  pageStyle.textContent = ".panel{margin:1px}";
+  root.append(pageStyle);
+  assert.equal(f.apply({ enabled: false }), true);
+  for (const scope of [root, nested, inserted, late, detached]) assert.equal(shadowCss(scope), "");
+  assert.equal(pageStyle.parentNode, root, "page-owned styles remain untouched");
+  assert.equal(f.win.Element.prototype.attachShadow, originalAttach);
+  assert.equal(shadowCss(openRoot(f, root)), "", "disabled hooks cannot reinstall styles");
+});
+
+test("native shadow styles recover from component replacement and release removed trees", async t => {
+  const f = fixture(t);
+  const root = openRoot(f), nested = openRoot(f, root);
+  f.apply(f.config({ mode: "customCss" }));
+  root.innerHTML = '<div class="replacement">Replacement</div>';
+  await settle();
+  assert.equal(root.querySelectorAll(".sorng-native-appearance").length, 1);
+  assert.equal(shadowCss(nested), "", "removed nested roots release their owned styles");
+  root.append(nested.host);
+  await settle();
+  assert.ok(shadowCss(nested), "reinserted roots are styled again");
+  root.host.remove();
+  await settle();
+  assert.equal(shadowCss(root), "");
+  assert.equal(shadowCss(nested), "");
+  f.doc.body.append(root.host);
+  await settle();
+  assert.ok(shadowCss(root));
+  assert.ok(shadowCss(nested));
+  f.controller.dispose();
+  assert.equal(shadowCss(root), "");
+  assert.equal(shadowCss(nested), "");
+});
+
+test("native shadow work is structural only and does not cross closed or frame contexts", async t => {
+  const f = fixture(t);
+  const subscriptions = [];
+  const Observer = f.win.MutationObserver;
+  f.win.MutationObserver = class extends Observer {
+    observe(target, options) { subscriptions.push({ target, options }); super.observe(target, options); }
+  };
+  const root = openRoot(f);
+  const closedHost = f.doc.createElement("div");
+  f.doc.body.append(closedHost);
+  const closed = closedHost.attachShadow({ mode: "closed" });
+  const frame = f.doc.createElement("iframe");
+  f.doc.body.append(frame);
+  assert.equal(f.apply(f.config({ mode: "filter" })), true);
+  await settle();
+  assert.ok(shadowCss(root));
+  assert.equal(shadowCss(closed), "");
+  assert.equal(frame.contentDocument.querySelector(".sorng-native-appearance"), null, "CEF owns each frame controller");
+  for (const { target, options } of subscriptions) {
+    assert.ok(target === f.doc || target === root);
+    assert.deepEqual(Object.keys(options).sort(), ["childList", "subtree"]);
+    assert.equal(options.childList, true);
+    assert.equal(options.subtree, true);
+  }
+});
+
+test("actual native DarkReader owns dynamic conversion in existing and late nested roots", async t => {
+  const f = fixture(t, { real: true, rejectScript: "TrustedScript required" });
+  const root = openRoot(f), nested = openRoot(f, root);
+  const lateHost = f.doc.createElement("div");
+  const documentHost = f.doc.createElement("div");
+  nested.append(lateHost);
+  f.doc.body.append(documentHost);
+  const originalAttach = f.win.Element.prototype.attachShadow;
+  assert.equal(f.apply(f.config()), true);
+  await settle();
+  for (const scope of [root, nested]) {
+    assert.equal(scope.querySelectorAll(".darkreader--inline").length, 1);
+    assert.equal(shadowCss(scope), "", "no duplicate wrapper conversion pipeline");
+  }
+  const late = lateHost.attachShadow({ mode: "open" });
+  late.innerHTML = '<div class="panel" style="background-color:white;color:black">Late panel</div>';
+  const documentLate = documentHost.attachShadow({ mode: "open" });
+  documentLate.innerHTML = '<div class="panel" style="background-color:white;color:black">Late panel</div>';
+  await settle();
+  for (const scope of [late, documentLate]) {
+    assert.equal(scope.querySelectorAll(".darkreader--inline").length, 1);
+    const panel = scope.querySelector(".panel");
+    assert.ok(panel.hasAttribute("data-darkreader-inline-bgcolor"));
+    panel.style.backgroundColor = "red";
+  }
+  await settle();
+  for (const scope of [late, documentLate]) {
+    assert.match(scope.querySelector(".panel").style.getPropertyValue("--darkreader-inline-bgcolor"), /--darkreader-background-ff0000/);
+  }
+  assert.equal(shadowCss(late), "");
+  assert.equal(f.apply({ enabled: false }), true);
+  for (const scope of [root, nested, late, documentLate]) assert.equal(scope.querySelectorAll(".darkreader").length, 0);
+  assert.equal(f.win.Element.prototype.attachShadow, originalAttach);
+  assert.equal(f.scriptSinks(), 0);
+});
+
+test("actual native DarkReader converts nested inline containers and reapplies settings with local CSS", async t => {
+  for (const mode of ["dynamic", "dynamicFilter"]) {
+    const f = fixture(t, { real: true });
+    const originalDescriptor = Object.getOwnPropertyDescriptor(f.win.Element.prototype, "attachShadow");
+    const root = openRoot(f), nested = openRoot(f, root);
+    const lightPanel = f.doc.querySelector("main");
+    const panels = [lightPanel, root.querySelector(".panel"), nested.querySelector(".panel")];
+    for (const panel of panels) panel.setAttribute("style", "background-color:white!important;color:black!important");
+    const customCss = ".panel{border-color:#abcdef!important}";
+    assert.equal(f.apply(f.config({ mode, customCss })), true);
+    await settle();
+    for (const panel of panels) {
+      assert.ok(panel.hasAttribute("data-darkreader-inline-bgcolor"), "real engine converts light and shadow containers");
+      assert.ok(panel.hasAttribute("data-darkreader-inline-color"));
+      assert.ok(panel.style.getPropertyValue("--darkreader-inline-bgcolor"));
+      assert.notEqual(panel.style.getPropertyValue("--darkreader-inline-bgcolor"), "#ffffff");
+    }
+    for (const scope of [root, nested]) {
+      assert.equal(shadowCss(scope).trim(), customCss, "supplemental sheet contains only the user's CSS");
+      assert.equal(scope.querySelectorAll(".darkreader--inline").length, 1);
+    }
+    // DarkReader keeps an inherited variable reference in inline declarations;
+    // settings changes update its shared definition, not the fallback literal.
+    const backgroundVariable = () => f.doc.querySelector(".darkreader--variables")
+      .sheet.cssRules[0].style.getPropertyValue("--darkreader-background-ffffff");
+    const before = backgroundVariable();
+    assert.ok(before);
+    assert.equal(f.apply(f.config({ mode, customCss, backgroundColor: "#102030", preserveMedia: false })), true);
+    await settle();
+    assert.notEqual(backgroundVariable(), before);
+    panels.forEach(panel => assert.match(panel.style.getPropertyValue("--darkreader-inline-bgcolor"), /var\(--darkreader-background-ffffff,/));
+    for (const scope of [root, nested]) {
+      assert.equal(scope.querySelectorAll(".sorng-native-appearance").length, 1);
+      assert.equal(scope.querySelectorAll(".darkreader--inline").length, 1);
+    }
+    assert.equal(f.apply(f.config({ mode: "filter" })), true);
+    for (const scope of [root, nested]) assert.equal(scope.querySelector(".darkreader--inline"), null);
+    assert.equal(f.apply({ enabled: false }), true);
+    for (const scope of [root, nested]) assert.equal(scope.querySelector(".darkreader"), null);
+    assert.deepEqual(Object.getOwnPropertyDescriptor(f.win.Element.prototype, "attachShadow"), originalDescriptor);
+  }
+});
+
+test("native shadow cleanup restores descriptors, leaves later page hooks, and cancels queued discovery", async t => {
+  const f = fixture(t);
+  const proto = f.win.Element.prototype;
+  const original = Object.getOwnPropertyDescriptor(proto, "attachShadow");
+  const root = openRoot(f);
+  assert.equal(f.apply(f.config({ mode: "customCss" })), true);
+  assert.equal(f.apply(f.config({ mode: "invalid" })), false);
+  assert.equal(shadowCss(root), "");
+  assert.deepEqual(Object.getOwnPropertyDescriptor(proto, "attachShadow"), original);
+  f.apply(f.config({ mode: "customCss" }));
+  const nativeHook = proto.attachShadow;
+  const pageHook = function (...args) { return Reflect.apply(nativeHook, this, args); };
+  proto.attachShadow = pageHook;
+  f.apply({ enabled: false });
+  assert.equal(proto.attachShadow, pageHook, "a later page wrapper is not overwritten");
+  assert.equal(shadowCss(openRoot(f, root)), "", "retained native wrapper is inert");
+  Object.defineProperty(proto, "attachShadow", original);
+
+  const real = fixture(t, { real: true });
+  const realDescriptor = Object.getOwnPropertyDescriptor(real.win.Element.prototype, "attachShadow");
+  const parent = openRoot(real);
+  const host = real.doc.createElement("div");
+  parent.append(host);
+  real.apply(real.config());
+  await settle();
+  const late = host.attachShadow({ mode: "open" });
+  real.apply({ enabled: false });
+  await settle();
+  assert.equal(late.querySelector(".darkreader"), null, "disable cancels queued vendor discovery");
+  assert.deepEqual(Object.getOwnPropertyDescriptor(real.win.Element.prototype, "attachShadow"), realDescriptor);
+});
+
+test("native queued shadow discovery contains hostile DOM and vendor failures and still disables cleanly", { timeout: 5000 }, async t => {
+  for (const failure of ["host", "vendor"]) {
+    const f = fixture(t, { real: true });
+    const original = Object.getOwnPropertyDescriptor(f.win.Element.prototype, "attachShadow");
+    const parent = openRoot(f);
+    const host = f.doc.createElement("div");
+    parent.append(host);
+    const errors = [];
+    f.win.addEventListener("error", event => { errors.push(event.error); event.preventDefault(); });
+    assert.equal(f.apply(f.config()), true);
+    await settle();
+    const root = host.attachShadow({ mode: "open" });
+    // Replace only the surface used by the queued native discovery. Attachment
+    // has succeeded already; neither a host getter nor vendor traversal failure
+    // should become an uncaught page error or prevent normal disable cleanup.
+    const target = failure === "host" ? host : root;
+    const method = failure === "host" ? "getRootNode" : "querySelectorAll";
+    let attempts = 0;
+    target[method] = () => { attempts++; throw Error(`synthetic ${failure} failure`); };
+    try { await settle(); } finally { delete target[method]; }
+    assert.ok(attempts > 0, "the queued discovery exercised the throwing surface");
+    assert.equal(f.apply({ enabled: false }), true);
+    assert.equal(root.querySelector(".darkreader"), null);
+    assert.equal(parent.querySelector(".darkreader"), null);
+    assert.deepEqual(Object.getOwnPropertyDescriptor(f.win.Element.prototype, "attachShadow"), original);
+    assert.deepEqual(errors, [], "optional discovery cannot emit an uncaught microtask error");
+  }
+});
+
+test("actual native appearance controllers remain frame-local without reaching sibling documents", async t => {
+  const parent = fixture(t, { real: true });
+  const child = fixture(t, { real: true, main: false, url: "https://other-origin.invalid/frame" });
+  const root = openRoot(parent), childRoot = openRoot(child);
+  const frame = parent.doc.createElement("iframe");
+  parent.doc.body.append(frame);
+  const frameDescriptor = Object.getOwnPropertyDescriptor(child.win.Element.prototype, "attachShadow");
+  let frameReads = 0;
+  for (const key of ["contentWindow", "contentDocument"]) {
+    Object.defineProperty(frame, key, { configurable: true, get() { frameReads++; throw Error("no cross-frame DOM access"); } });
+  }
+  assert.equal(parent.apply(parent.config({ mode: "dynamicFilter", customCss: ".panel{color:#abc}" })), true);
+  assert.deepEqual(Object.getOwnPropertyDescriptor(child.win.Element.prototype, "attachShadow"), frameDescriptor,
+    "parent install does not patch another context's prototype");
+  assert.equal(child.apply(child.config({ mode: "dynamicFilter", customCss: ".panel{color:#def}" })), true);
+  await settle();
+  assert.match(parent.css(), /html:root\{filter:/);
+  assert.doesNotMatch(child.css(), /filter:/);
+  assert.equal(shadowCss(root).trim(), ".panel{color:#abc}");
+  assert.equal(shadowCss(childRoot).trim(), ".panel{color:#def}");
+  parent.apply({ enabled: false });
+  assert.equal(root.querySelector(".darkreader"), null);
+  assert.equal(childRoot.querySelectorAll(".darkreader--inline").length, 1, "disabling parent does not disable child context");
+  child.apply({ enabled: false });
+  assert.deepEqual(Object.getOwnPropertyDescriptor(child.win.Element.prototype, "attachShadow"), frameDescriptor);
+  assert.equal(frameReads, 0);
+  delete frame.contentWindow;
+  delete frame.contentDocument;
 });
 
 test("native appearance waits for the actual root and acknowledges only the latest revision", t => {

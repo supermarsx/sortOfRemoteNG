@@ -1,7 +1,8 @@
 /* Native-only factory(engine, notify) -> { apply(config, revision, main), dispose }.
  * cef_appearance_renderer.rs owns the sole vendored DarkReader initialization,
  * including private CommonJS exports and private window/chrome shims. Retain the
- * returned controller in CEF only. No page bridge or content scanning. */
+ * returned controller in CEF only. Shadow discovery reads tree structure only,
+ * never page content or another frame's document. No page bridge. */
 (function (reader, notify) {
   "use strict";
   const nativeWindow = globalThis.window;
@@ -30,6 +31,7 @@
   let lastRevision = null;
   let mainFrame = null;
   let pendingRoot = null;
+  let stopShadowStyles = null;
   const fetching = new Set();
 
   function cancelRootWait() {
@@ -98,6 +100,11 @@
     enabled = false;
     activeKey = null;
     let ok = true;
+    if (stopShadowStyles) {
+      // Unwrap our optional CSS hook before DarkReader restores its own hooks.
+      try { stopShadowStyles(); } catch { ok = false; }
+      stopShadowStyles = null;
+    }
     if (dynamicOwned) {
       // enable() can partially install before throwing, so ownership is set
       // before calling it. Never disable a page's unrelated DarkReader object.
@@ -180,6 +187,106 @@
     return css + "\n" + theme.customCss;
   }
 
+  function shadowCssFor(theme) {
+    // Filters composite across shadow boundaries already. Only compensate media
+    // locally; applying another host filter would invert/adjust everything twice.
+    let css = "";
+    if (theme.mode === "filter" && theme.preserveMedia) {
+      css = "img,video,canvas,svg image,object,embed{filter:invert(100%) hue-rotate(180deg)!important;}";
+    } else if (theme.mode === "customCss") {
+      css = `:host{color-scheme:dark!important;background-color:${theme.backgroundColor}!important;color:${theme.textColor}!important;}`;
+    }
+    // Dynamic color conversion belongs exclusively to the pinned engine. Only
+    // user-supplied local CSS needs this supplemental sheet in dynamic modes.
+    return css + "\n" + theme.customCss;
+  }
+
+  function installShadowStyles(theme) {
+    const css = shadowCssFor(theme);
+    if (!css.trim()) return;
+    const roots = new Map();
+    let active = true;
+    const proto = nativeWindow.Element.prototype;
+    const descriptor = Object.getOwnPropertyDescriptor(proto, "attachShadow");
+    const inOpenTree = host => {
+      if (!host.isConnected || host.ownerDocument !== doc) return false;
+      let root = host.getRootNode();
+      while (root.host) {
+        if (root.host.shadowRoot !== root) return false;
+        root = root.host.getRootNode();
+      }
+      return root === doc;
+    };
+    const prune = () => {
+      for (const [root, owned] of roots) {
+        if (inOpenTree(root.host)) continue;
+        owned.observer.disconnect();
+        owned.style.remove();
+        roots.delete(root);
+      }
+    };
+    const scan = node => {
+      // TreeWalker visits elements only, with no text, attributes, computed
+      // styles, frame documents, or input values read. Re-scan only added trees.
+      const walker = doc.createTreeWalker(node, nativeWindow.NodeFilter.SHOW_ELEMENT);
+      let element = node.nodeType === 1 ? node : walker.nextNode();
+      while (element) {
+        if (element.shadowRoot) install(element.shadowRoot);
+        element = walker.nextNode();
+      }
+    };
+    const changed = records => {
+      if (!active) return;
+      if (records.some(record => record.removedNodes.length)) prune();
+      for (const record of records) {
+        // Components often replace a new root's entire contents. Reinsert our
+        // exact owned node, not a selector-matched page stylesheet.
+        const owned = roots.get(record.target.getRootNode());
+        if (owned && owned.style.parentNode !== owned.root) owned.root.appendChild(owned.style);
+        for (const node of record.addedNodes) {
+          if (node.nodeType === 1 && inOpenTree(node)) scan(node);
+        }
+      }
+    };
+    const install = root => {
+      if (!active || roots.has(root) || root.mode !== "open" || !inOpenTree(root.host)) return;
+      const sheet = doc.createElement("style");
+      sheet.className = "sorng-native-appearance darkreader";
+      sheet.setAttribute("data-mode", theme.mode);
+      sheet.textContent = css;
+      const observer = new nativeWindow.MutationObserver(changed);
+      roots.set(root, { root, style: sheet, observer });
+      root.appendChild(sheet);
+      observer.observe(root, { childList: true, subtree: true });
+      scan(root);
+    };
+    const observer = new nativeWindow.MutationObserver(changed);
+    const attach = function (...args) {
+      const root = Reflect.apply(descriptor.value, this, args);
+      // Styling must never change attachShadow's return/throw semantics.
+      try { install(root); } catch { /* a hostile/replaced DOM API is not fatal to the page */ }
+      return root;
+    };
+    stopShadowStyles = () => {
+      active = false;
+      observer.disconnect();
+      for (const owned of roots.values()) {
+        owned.observer.disconnect();
+        owned.style.remove();
+      }
+      roots.clear();
+      // Do not overwrite a later page-owned hook. Any retained wrapper is inert.
+      if (Object.getOwnPropertyDescriptor(proto, "attachShadow")?.value === attach) {
+        Object.defineProperty(proto, "attachShadow", descriptor);
+      }
+    };
+    if (descriptor && typeof descriptor.value === "function" && (descriptor.configurable || descriptor.writable)) {
+      Object.defineProperty(proto, "attachShadow", { ...descriptor, value: attach });
+    }
+    observer.observe(doc, { childList: true, subtree: true });
+    scan(doc);
+  }
+
   function applyTheme(config, main) {
     if (disposed) return false;
     if (config === null) return cleanup();
@@ -222,6 +329,7 @@
         style.textContent = css;
         (doc.head || doc.documentElement).appendChild(style);
       }
+      installShadowStyles(theme);
       activeKey = key;
       return true;
     } catch { cleanup(); return false; }
