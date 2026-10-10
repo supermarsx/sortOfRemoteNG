@@ -23,6 +23,9 @@ use zeroize::{Zeroize, Zeroizing};
 
 #[path = "private_forward_proxy/http.rs"]
 mod forward_http;
+#[path = "private_forward_proxy/accept.rs"]
+mod accept;
+use accept::{AcceptBackoff, AcceptListener};
 #[path = "private_forward_proxy/lifecycle.rs"]
 mod lifecycle;
 pub use lifecycle::{PrivateProxyDiagnostics, PrivateProxyState};
@@ -316,7 +319,7 @@ async fn revoked(mut receiver: watch::Receiver<bool>) {
 }
 
 async fn serve(
-    listener: TcpListener,
+    mut listener: impl AcceptListener,
     stop: watch::Receiver<bool>,
     dialer: Arc<dyn RouteDialer>,
     grant: DestinationGrant,
@@ -325,15 +328,33 @@ async fn serve(
     observations: Arc<Observations>,
 ) -> io::Result<()> {
     let mut clients = JoinSet::new();
+    let mut accept_backoff = AcceptBackoff::default();
+    let mut accept_after = None;
     let result = loop {
         tokio::select! {
             biased;
             _ = revoked(stop.clone()) => break Ok(()),
             Some(_) = clients.join_next(), if !clients.is_empty() => {},
-            accepted = listener.accept() => {
+            accepted = async {
+                if let Some(deadline) = accept_after {
+                    tokio::time::sleep_until(deadline).await;
+                }
+                listener.accept().await
+            } => {
                 let (mut client, _) = match accepted {
-                    Ok(value) => value,
-                    Err(_) => {
+                    Ok(value) => {
+                        accept_backoff = AcceptBackoff::default();
+                        accept_after = None;
+                        value
+                    }
+                    Err(error) => {
+                        if let Some(delay) = accept_backoff.retry_delay(&error) {
+                            // Keep the same listener, credentials, grants and route.
+                            // An absolute deadline survives client-completion wakes;
+                            // revocation and reaping remain live during the delay.
+                            accept_after = Some(tokio::time::Instant::now() + delay);
+                            continue;
+                        }
                         observations.listener_failed();
                         break Err(io::Error::other("Private proxy listener failed"));
                     }
@@ -616,3 +637,7 @@ mod tests;
 #[cfg(test)]
 #[path = "private_forward_proxy/lifecycle_tests.rs"]
 mod lifecycle_tests;
+
+#[cfg(test)]
+#[path = "private_forward_proxy/accept_tests.rs"]
+mod accept_tests;
