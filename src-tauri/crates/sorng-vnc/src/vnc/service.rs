@@ -3,7 +3,7 @@
 //! `VncService` maintains a collection of VNC sessions keyed by id and
 //! provides a high-level async API for the Tauri command layer.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::sync::{atomic::AtomicUsize, Arc, Mutex as StdMutex};
 use tokio::sync::{RwLock, Semaphore};
 use tokio::task::JoinSet;
@@ -104,24 +104,11 @@ impl Default for VncServiceLimits {
     }
 }
 
-#[derive(Clone, Debug, Hash, PartialEq, Eq)]
-struct Endpoint {
-    host: String,
-    port: u16,
-}
-
-impl Endpoint {
-    fn from_config(config: &VncConfig) -> Self {
-        Self {
-            host: config.host.clone(),
-            port: config.port,
-        }
-    }
-}
-
 #[derive(Debug, Default)]
 struct AdmissionState {
-    endpoints: HashSet<Endpoint>,
+    // Count leases, including pending attempts and retained session entries.
+    // Several independent sessions may connect to the same host and port.
+    reserved_sessions: usize,
     reserved_bytes: usize,
 }
 
@@ -139,27 +126,18 @@ impl ResourceAdmission {
         })
     }
 
-    fn reserve(self: &Arc<Self>, endpoint: Endpoint) -> Result<SessionLease, VncError> {
+    fn reserve(self: &Arc<Self>) -> Result<SessionLease, VncError> {
         let mut state = self
             .state
             .lock()
             .map_err(|_| VncError::new(VncErrorKind::Internal, "VNC admission lock is poisoned"))?;
-        if state.endpoints.contains(&endpoint) {
-            return Err(VncError::new(
-                VncErrorKind::AlreadyConnected,
-                format!(
-                    "Already connected or connecting to {}:{}",
-                    endpoint.host, endpoint.port
-                ),
-            ));
-        }
         let next_reserved_bytes = state
             .reserved_bytes
             .checked_add(VNC_SESSION_RESOURCE_RESERVATION_BYTES)
             .ok_or_else(|| {
                 VncError::new(VncErrorKind::Internal, "VNC resource accounting overflow")
             })?;
-        if state.endpoints.len() >= self.limits.max_sessions
+        if state.reserved_sessions >= self.limits.max_sessions
             || next_reserved_bytes > self.limits.resource_budget_bytes
         {
             return Err(VncError::new(
@@ -171,40 +149,34 @@ impl ResourceAdmission {
                 ),
             ));
         }
-        state.endpoints.insert(endpoint.clone());
+        state.reserved_sessions += 1;
         state.reserved_bytes = next_reserved_bytes;
         Ok(SessionLease {
             admission: Arc::clone(self),
-            endpoint: Some(endpoint),
         })
     }
 
     #[cfg(test)]
     fn snapshot(&self) -> (usize, usize) {
         let state = self.state.lock().unwrap();
-        (state.endpoints.len(), state.reserved_bytes)
+        (state.reserved_sessions, state.reserved_bytes)
     }
 }
 
 #[derive(Debug)]
 struct SessionLease {
     admission: Arc<ResourceAdmission>,
-    endpoint: Option<Endpoint>,
 }
 
 impl Drop for SessionLease {
     fn drop(&mut self) {
-        let Some(endpoint) = self.endpoint.take() else {
-            return;
-        };
         let Ok(mut state) = self.admission.state.lock() else {
             return;
         };
-        if state.endpoints.remove(&endpoint) {
-            state.reserved_bytes = state
-                .reserved_bytes
-                .saturating_sub(VNC_SESSION_RESOURCE_RESERVATION_BYTES);
-        }
+        // The lease cannot be cloned; its final owner releases exactly one
+        // reservation, regardless of other sessions at the same endpoint.
+        state.reserved_sessions -= 1;
+        state.reserved_bytes -= VNC_SESSION_RESOURCE_RESERVATION_BYTES;
     }
 }
 
@@ -273,7 +245,7 @@ impl VncService {
         }
         config.validate()?;
         self.prune_disconnected().await;
-        let lease = match self.admission.reserve(Endpoint::from_config(&config)) {
+        let lease = match self.admission.reserve() {
             Ok(lease) => lease,
             Err(error) => return Err(error),
         };
@@ -723,6 +695,16 @@ mod tests {
         }
     }
 
+    async fn wait_for_reserved_sessions(service: &VncService, count: usize) {
+        timeout(Duration::from_secs(1), async {
+            while service.admission.snapshot().0 != count {
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .expect("pending connections did not reserve the expected session count");
+    }
+
     async fn insert_test_session(
         service: &VncService,
         session_id: &str,
@@ -734,10 +716,7 @@ mod tests {
             host: session_id.into(),
             ..VncConfig::default()
         };
-        let lease = service
-            .admission
-            .reserve(Endpoint::from_config(&config))
-            .unwrap();
+        let lease = service.admission.reserve().unwrap();
         let (mut handle, delivery) =
             VncSessionHandle::test_handle(session_id.into(), state, width, height).unwrap();
         handle.config = config;
@@ -928,15 +907,10 @@ mod tests {
         let admission = ResourceAdmission::new(VncServiceLimits::default());
         admission.state.lock().unwrap().reserved_bytes =
             usize::MAX - VNC_SESSION_RESOURCE_RESERVATION_BYTES + 1;
-        let error = admission
-            .reserve(Endpoint {
-                host: "overflow".into(),
-                port: 5900,
-            })
-            .unwrap_err();
+        let error = admission.reserve().unwrap_err();
         assert_eq!(error.kind, VncErrorKind::Internal);
         let state = admission.state.lock().unwrap();
-        assert!(state.endpoints.is_empty());
+        assert_eq!(state.reserved_sessions, 0);
         assert_eq!(
             state.reserved_bytes,
             usize::MAX - VNC_SESSION_RESOURCE_RESERVATION_BYTES + 1
@@ -944,30 +918,149 @@ mod tests {
     }
 
     #[test]
-    fn duplicate_endpoint_semantics_remain_exact_host_and_port() {
+    fn independent_session_leases_release_only_their_own_reservation() {
         let admission = ResourceAdmission::new(VncServiceLimits::default());
-        let first = admission
-            .reserve(Endpoint {
-                host: "VncHost".into(),
-                port: 5900,
-            })
-            .unwrap();
-        let duplicate = admission
-            .reserve(Endpoint {
-                host: "VncHost".into(),
-                port: 5900,
-            })
-            .unwrap_err();
-        assert_eq!(duplicate.kind, VncErrorKind::AlreadyConnected);
-        let case_distinct = admission
-            .reserve(Endpoint {
-                host: "vnchost".into(),
-                port: 5900,
-            })
-            .unwrap();
-        assert_eq!(admission.snapshot().0, 2);
-        drop((first, case_distinct));
+        let first = admission.reserve().unwrap();
+        let second = admission.reserve().unwrap();
+        assert_eq!(
+            admission.snapshot(),
+            (2, 2 * VNC_SESSION_RESOURCE_RESERVATION_BYTES)
+        );
+        drop(first);
+        assert_eq!(
+            admission.snapshot(),
+            (1, VNC_SESSION_RESOURCE_RESERVATION_BYTES)
+        );
+        let third = admission.reserve().unwrap();
+        drop(second);
+        assert_eq!(
+            admission.snapshot(),
+            (1, VNC_SESSION_RESOURCE_RESERVATION_BYTES)
+        );
+        drop(third);
         assert_eq!(admission.snapshot(), (0, 0));
+    }
+
+    #[test]
+    fn simultaneous_reservations_cannot_exceed_session_or_payload_limits() {
+        let reservation = VNC_SESSION_RESOURCE_RESERVATION_BYTES;
+        for limits in [
+            VncServiceLimits {
+                max_sessions: 2,
+                max_connecting: 1,
+                resource_budget_bytes: 3 * reservation,
+            },
+            VncServiceLimits {
+                max_sessions: 3,
+                max_connecting: 1,
+                resource_budget_bytes: 2 * reservation + reservation / 2,
+            },
+        ] {
+            let admission = ResourceAdmission::new(limits);
+            let barrier = Arc::new(std::sync::Barrier::new(8));
+            let attempts: Vec<_> = (0..8)
+                .map(|_| {
+                    let admission = Arc::clone(&admission);
+                    let barrier = Arc::clone(&barrier);
+                    std::thread::spawn(move || {
+                        barrier.wait();
+                        admission.reserve()
+                    })
+                })
+                .collect();
+            let mut leases = Vec::new();
+            let mut rejected = 0;
+            for attempt in attempts {
+                match attempt.join().unwrap() {
+                    Ok(lease) => leases.push(lease),
+                    Err(error) => {
+                        assert_eq!(error.kind, VncErrorKind::Internal);
+                        assert!(error.message.contains("resource limit reached"));
+                        rejected += 1;
+                    }
+                }
+            }
+            assert_eq!(leases.len(), 2);
+            assert_eq!(rejected, 6);
+            assert_eq!(admission.snapshot(), (2, 2 * reservation));
+            drop(leases.pop());
+            assert_eq!(admission.snapshot(), (1, reservation));
+            let replacement = admission.reserve().unwrap();
+            assert!(admission.reserve().is_err());
+            assert_eq!(admission.snapshot(), (2, 2 * reservation));
+            drop(leases);
+            assert_eq!(admission.snapshot(), (1, reservation));
+            drop(replacement);
+            assert_eq!(admission.snapshot(), (0, 0));
+        }
+    }
+
+    #[tokio::test]
+    async fn duplicate_endpoint_attempts_keep_admission_and_cancellation_independent() {
+        let service = Arc::new(VncService::with_limits(test_limits(2, 1)));
+        // Hold the only connect slot so these exercise real admission without
+        // opening sockets or starting handshake tasks.
+        let held_slot = service.connect_slots.acquire().await.unwrap();
+        let first_service = Arc::clone(&service);
+        let first =
+            tokio::spawn(
+                async move { first_service.connect(waiting_config("same.example")).await },
+            );
+        let second_service = Arc::clone(&service);
+        let second =
+            tokio::spawn(
+                async move { second_service.connect(waiting_config("same.example")).await },
+            );
+        wait_for_reserved_sessions(&service, 2).await;
+        assert!(!first.is_finished());
+        assert!(!second.is_finished());
+        assert_eq!(
+            service.admission.snapshot(),
+            (2, 2 * VNC_SESSION_RESOURCE_RESERVATION_BYTES)
+        );
+        let error = timeout(
+            Duration::from_secs(1),
+            service.connect(waiting_config("same.example")),
+        )
+        .await
+        .expect("duplicate attempts must still fail promptly at the resource limit")
+        .unwrap_err();
+        assert_eq!(error.kind, VncErrorKind::Internal);
+        assert!(error.message.contains("resource limit reached"));
+        assert_eq!(
+            service.admission.snapshot(),
+            (2, 2 * VNC_SESSION_RESOURCE_RESERVATION_BYTES)
+        );
+
+        first.abort();
+        assert!(first.await.unwrap_err().is_cancelled());
+        assert!(!second.is_finished());
+        assert_eq!(
+            service.admission.snapshot(),
+            (1, VNC_SESSION_RESOURCE_RESERVATION_BYTES)
+        );
+        let replacement_service = Arc::clone(&service);
+        let replacement = tokio::spawn(async move {
+            replacement_service
+                .connect(waiting_config("same.example"))
+                .await
+        });
+        wait_for_reserved_sessions(&service, 2).await;
+        second.abort();
+        assert!(second.await.unwrap_err().is_cancelled());
+        assert!(!replacement.is_finished());
+        assert_eq!(
+            service.admission.snapshot(),
+            (1, VNC_SESSION_RESOURCE_RESERVATION_BYTES)
+        );
+        replacement.abort();
+        assert!(replacement.await.unwrap_err().is_cancelled());
+        assert_eq!(service.admission.snapshot(), (0, 0));
+        assert_eq!(service.session_count().await, 0);
+        assert_eq!(service.active_tasks.load(Ordering::Acquire), 0);
+        assert_eq!(service.connect_slots.available_permits(), 0);
+        drop(held_slot);
+        assert_eq!(service.connect_slots.available_permits(), 1);
     }
 
     #[tokio::test(start_paused = true)]
@@ -975,11 +1068,8 @@ mod tests {
         for attempts in [100usize, 500, 1_000] {
             let admission = ResourceAdmission::new(VncServiceLimits::default());
             let mut leases = Vec::new();
-            for index in 0..attempts {
-                if let Ok(lease) = admission.reserve(Endpoint {
-                    host: format!("host-{index}"),
-                    port: 5900,
-                }) {
+            for _ in 0..attempts {
+                if let Ok(lease) = admission.reserve() {
                     leases.push(lease);
                 }
             }
@@ -998,7 +1088,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn cancelled_connect_wait_releases_endpoint_and_payload_reservation() {
+    async fn cancelled_connect_wait_releases_session_and_payload_reservation() {
         let service = Arc::new(VncService::with_limits(test_limits(2, 1)));
         let held_slot = service.connect_slots.acquire().await.unwrap();
         let connect_service = Arc::clone(&service);
@@ -1071,6 +1161,7 @@ mod tests {
         let delivery = insert_test_session(&service, session_id, poll_test_state(), 1, 1).await;
         drop(delivery);
         let retained = service.session_entry(session_id).await.unwrap();
+        let another_retained = Arc::clone(&retained);
 
         assert!(service.remove_session(session_id).await);
         assert_eq!(service.session_count().await, 0);
@@ -1078,24 +1169,30 @@ mod tests {
             service.admission.snapshot(),
             (1, VNC_SESSION_RESOURCE_RESERVATION_BYTES)
         );
-        let duplicate = service
-            .admission
-            .reserve(Endpoint {
-                host: session_id.into(),
-                port: 5900,
-            })
-            .unwrap_err();
-        assert_eq!(duplicate.kind, VncErrorKind::AlreadyConnected);
+        let duplicate = service.admission.reserve().unwrap();
+        assert_eq!(
+            service.admission.snapshot(),
+            (2, 2 * VNC_SESSION_RESOURCE_RESERVATION_BYTES)
+        );
+        assert!(service.admission.reserve().is_err());
 
         drop(retained);
-        assert_eq!(service.admission.snapshot(), (0, 0));
-        let replacement = service
-            .admission
-            .reserve(Endpoint {
-                host: session_id.into(),
-                port: 5900,
-            })
-            .unwrap();
+        assert_eq!(
+            service.admission.snapshot(),
+            (2, 2 * VNC_SESSION_RESOURCE_RESERVATION_BYTES)
+        );
+        assert!(service.admission.reserve().is_err());
+        drop(another_retained);
+        assert_eq!(
+            service.admission.snapshot(),
+            (1, VNC_SESSION_RESOURCE_RESERVATION_BYTES)
+        );
+        let replacement = service.admission.reserve().unwrap();
+        assert_eq!(
+            service.admission.snapshot(),
+            (2, 2 * VNC_SESSION_RESOURCE_RESERVATION_BYTES)
+        );
+        drop(duplicate);
         assert_eq!(
             service.admission.snapshot(),
             (1, VNC_SESSION_RESOURCE_RESERVATION_BYTES)
