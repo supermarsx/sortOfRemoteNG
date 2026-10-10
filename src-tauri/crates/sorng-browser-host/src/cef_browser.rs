@@ -60,6 +60,9 @@ mod cef_popups;
 #[cfg(test)]
 #[path = "cef_dialog_tests.rs"]
 mod dialog_tests;
+#[cfg(test)]
+#[path = "cef_session_health_tests.rs"]
+mod session_health_tests;
 pub use cef_popups::{NativePopupInventory, NativePopupViewState};
 #[path = "cef_appearance.rs"]
 mod cef_appearance;
@@ -1808,6 +1811,51 @@ impl Shared {
             )
     }
 
+    /// Observe a lost relay even when a quiet page produces no CEF callbacks.
+    /// Busy guards are not failures; housekeeping must not wait for a request
+    /// callback or touch a replacement attempt. The runtime polls root views
+    /// only, never a popup that borrows its source's session.
+    fn poll_session_health(&self, browser: Option<&Browser>) {
+        if self.popup.view_closed().is_some() {
+            return;
+        }
+        let Ok(state) = self.state.try_lock() else {
+            return;
+        };
+        if !matches!(
+            state.control.lifecycle(),
+            Lifecycle::Starting | Lifecycle::Attached | Lifecycle::Hidden
+        ) {
+            return;
+        }
+        drop(state);
+        let mut session = match self.session.try_lock() {
+            Ok(session) => session,
+            Err(std::sync::TryLockError::WouldBlock) => return,
+            Err(std::sync::TryLockError::Poisoned(error)) => {
+                let mut session = error.into_inner();
+                if session.policy().identity() != &self.identity {
+                    return;
+                }
+                let _ = session.revoke_for(&self.identity, BrowserSessionFailure::NativeState);
+                session
+            }
+        };
+        if session.policy().identity() != &self.identity
+            || matches!(
+                session.status(),
+                BrowserSessionStatus::NotReady | BrowserSessionStatus::Ready
+            )
+        {
+            return;
+        }
+        // Capture the concrete relay/context cause before cleanup stops it.
+        // A fresh Retry will get its own proxy endpoint, credentials and context.
+        let _ = session.revoke(&self.identity);
+        drop(session);
+        self.fault(browser, BrowserFault::Session);
+    }
+
     fn focus_allowed(&self, browser: Option<&Browser>) -> bool {
         !self.input_blocked.load(Ordering::Acquire)
             && self
@@ -2464,6 +2512,19 @@ impl<'a> CefBrowserHost<'a> {
             .map(|state| state.control.lifecycle())
             .unwrap_or(Lifecycle::Faulted);
         cef_popups::source_lifecycle(&self.shared.popup, lifecycle)
+    }
+
+    /// UI-thread housekeeping; does not probe the network or revive a revoked
+    /// session. Lost relays publish the normal terminal snapshot and queue the
+    /// same fenced cleanup used for native faults, without a page callback.
+    pub fn poll_session_health(&self) -> Result<(), BrowserError> {
+        ui_thread()?;
+        let browser = match self.browser.try_lock() {
+            Ok(browser) => browser.clone(),
+            Err(_) => return Ok(()),
+        };
+        self.shared.poll_session_health(browser.as_ref());
+        Ok(())
     }
 
     fn check(&self, identity: &BrowserIdentity) -> Result<Browser, BrowserError> {

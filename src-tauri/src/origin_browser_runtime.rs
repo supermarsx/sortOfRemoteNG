@@ -2185,6 +2185,12 @@ pub(crate) fn tick() {
         }
         ui.pending = waiting;
         ui.views.retain(|_, view| {
+            if view.attempt.current() {
+                // A dead relay may produce no renderer callback on an idle
+                // page. Publish its failure and retire only this attempt;
+                // otherwise it can appear healthy indefinitely and block retry.
+                let _ = view.host.poll_session_health();
+            }
             popups::poll(view);
             if let Some(retention) = &view.attempt.retention {
                 view.checkpoint
