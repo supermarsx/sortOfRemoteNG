@@ -1241,6 +1241,7 @@ async fn connect_ssh(
         return Err(StatusCode::FORBIDDEN);
     }
     let config = SshConnectionConfig {
+        host_key_prompt_id: None,
         host: req.host,
         port: req.port,
         username: req.username,

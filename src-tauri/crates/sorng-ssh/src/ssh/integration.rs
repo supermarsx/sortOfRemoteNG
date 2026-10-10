@@ -402,6 +402,7 @@ fn apply_teardown_result(
 
 fn actor_config(config: ExternalSshConfig<'_>) -> SshConnectionConfig {
     SshConnectionConfig {
+        host_key_prompt_id: None,
         host: config.host.to_string(),
         port: config.port,
         username: config.username.to_string(),

@@ -270,6 +270,10 @@ pub struct SshTotpOptions {
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct SshConnectionConfig {
+    /// Runtime correlation for the initiating connection attempt's host-key prompt.
+    /// Decisions remain keyed by the backend session ID.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub host_key_prompt_id: Option<String>,
     pub host: String,
     pub port: u16,
     pub username: String,
@@ -1158,6 +1162,9 @@ pub enum SshHostKeyPromptDecision {
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct SshHostKeyPromptEvent {
     pub session_id: String,
+    /// Echoed from the initiating attempt; not an authority for trust decisions.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub host_key_prompt_id: Option<String>,
     pub host: String,
     pub port: u16,
     pub username: String,
@@ -1510,8 +1517,56 @@ mod tests {
     }
 
     #[test]
+    fn ssh_connection_config_host_key_prompt_id_is_optional_for_legacy_payloads() {
+        let legacy = serde_json::json!({
+            "host": "example.com",
+            "port": 22,
+            "username": "tester",
+            "jump_hosts": [],
+            "strict_host_key_checking": true
+        });
+        let config: SshConnectionConfig = serde_json::from_value(legacy.clone()).unwrap();
+        assert!(config.host_key_prompt_id.is_none());
+        assert!(config.strict_host_key_checking);
+        assert!(!config.accept_new_host_keys);
+        assert!(serde_json::to_value(&config)
+            .unwrap()
+            .get("host_key_prompt_id")
+            .is_none());
+
+        let mut explicit_null = legacy;
+        explicit_null["host_key_prompt_id"] = serde_json::Value::Null;
+        let config: SshConnectionConfig = serde_json::from_value(explicit_null).unwrap();
+        assert!(config.host_key_prompt_id.is_none());
+    }
+
+    #[test]
+    fn ssh_connection_config_host_key_prompt_id_roundtrips() {
+        let config: SshConnectionConfig = serde_json::from_value(serde_json::json!({
+            "host_key_prompt_id": "tab-2-attempt-3",
+            "host": "example.com",
+            "port": 22,
+            "username": "tester",
+            "jump_hosts": [],
+            "strict_host_key_checking": true
+        }))
+        .unwrap();
+        assert_eq!(
+            config.host_key_prompt_id.as_deref(),
+            Some("tab-2-attempt-3")
+        );
+        let payload = serde_json::to_value(&config).unwrap();
+        assert_eq!(payload["host_key_prompt_id"], "tab-2-attempt-3");
+        let restored: SshConnectionConfig = serde_json::from_value(payload).unwrap();
+        assert_eq!(restored.host_key_prompt_id, config.host_key_prompt_id);
+        assert!(restored.strict_host_key_checking);
+        assert!(!restored.accept_new_host_keys);
+    }
+
+    #[test]
     fn ssh_connection_config_default_fields() {
         let config = SshConnectionConfig {
+            host_key_prompt_id: None,
             host: "example.com".to_string(),
             port: 22,
             username: "user".to_string(),
@@ -1567,6 +1622,7 @@ mod tests {
     fn ssh_connection_config_with_openvpn_and_jump_hosts() {
         // Test that openvpn_config and jump_hosts can coexist
         let config = SshConnectionConfig {
+            host_key_prompt_id: None,
             host: "target.internal".to_string(),
             port: 22,
             username: "admin".to_string(),
@@ -1833,6 +1889,7 @@ mod tests {
     #[test]
     fn ssh_connection_config_serialization_redacts_secret_fields() {
         let config = SshConnectionConfig {
+            host_key_prompt_id: None,
             host: "example.com".to_string(),
             port: 22,
             username: "user".to_string(),

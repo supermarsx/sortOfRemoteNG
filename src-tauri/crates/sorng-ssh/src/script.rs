@@ -309,6 +309,7 @@ impl ScriptService {
                                                             let ssh_service = ssh_service_clone.clone();
                                                             async move {
                                                                 let config = SshConnectionConfig {
+                                                                    host_key_prompt_id: None,
                                                                     host,
                                                                     port,
                                                                     username,

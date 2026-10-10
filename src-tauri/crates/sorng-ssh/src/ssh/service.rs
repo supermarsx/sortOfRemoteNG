@@ -5761,6 +5761,7 @@ impl SshService {
 
         let payload = SshHostKeyPromptEvent {
             session_id: session_id.to_string(),
+            host_key_prompt_id: config.host_key_prompt_id.clone(),
             host: config.host.clone(),
             port: config.port,
             username: config.username.clone(),
@@ -10393,6 +10394,7 @@ mod host_key_prompt_tests {
             assert_eq!(events.len(), 1);
             assert_eq!(events[0].0, "ssh://host-key-prompt");
             assert_eq!(events[0].1["session_id"], "session-accept-save");
+            assert!(events[0].1.get("host_key_prompt_id").is_none());
             assert_eq!(events[0].1["host"], "example.com");
             assert_eq!(events[0].1["status"], "first_use");
             assert_eq!(events[0].1["fingerprint"], "SHA256:test-fingerprint");
@@ -10408,6 +10410,84 @@ mod host_key_prompt_tests {
             Ok(SshHostKeyPromptDecision::AcceptAndSave),
         );
         clear_pending_prompt("session-accept-save");
+    }
+
+    #[tokio::test]
+    async fn simultaneous_host_key_prompts_echo_attempt_ids_and_resolve_by_backend_session() {
+        let emitter = Arc::new(RecordingEmitter::default());
+        let mut prompts = Vec::new();
+
+        for (attempt_id, status) in [
+            ("tab-1-attempt-1", SshHostKeyPromptStatus::FirstUse),
+            ("tab-2-attempt-1", SshHostKeyPromptStatus::Mismatch),
+        ] {
+            let service = test_service(emitter.clone());
+            let mut config = test_config();
+            config.host_key_prompt_id = Some(attempt_id.to_string());
+            let session_id = uuid::Uuid::new_v4().to_string();
+            let pending_session_id = session_id.clone();
+            let task = tokio::spawn(async move {
+                service
+                    .prompt_for_host_key_decision_with_timeout(
+                        &pending_session_id,
+                        &config,
+                        &test_host_key_info(),
+                        status,
+                        Duration::from_secs(5),
+                    )
+                    .await
+            });
+            wait_for_pending_prompt(&session_id).await;
+            prompts.push((session_id, attempt_id, status, task));
+        }
+
+        {
+            let events = emitter
+                .events
+                .lock()
+                .expect("recording emitter mutex poisoned");
+            assert_eq!(events.len(), 2);
+            let pending = PENDING_HOST_KEY_PROMPTS
+                .lock()
+                .expect("pending host-key prompt map poisoned");
+            for (session_id, attempt_id, status, task) in &prompts {
+                let (event, payload) = events
+                    .iter()
+                    .find(|(_, payload)| payload["session_id"] == session_id.as_str())
+                    .expect("each backend session should emit its own prompt");
+                assert_eq!(event, "ssh://host-key-prompt");
+                assert_eq!(payload["host_key_prompt_id"], *attempt_id);
+                assert_eq!(payload["host"], "example.com");
+                assert_eq!(payload["port"], 22);
+                assert_eq!(payload["username"], "tester");
+                assert_eq!(payload["status"], serde_json::to_value(status).unwrap());
+                assert!(pending.contains_key(session_id));
+                assert!(!pending.contains_key(*attempt_id));
+                assert!(!task.is_finished());
+            }
+        }
+
+        // Resolve the later tab first; its response must not resolve the first tab.
+        let (second_session_id, _, _, second_task) = prompts.pop().unwrap();
+        respond_to_prompt(&second_session_id, SshHostKeyPromptDecision::Reject);
+        assert_eq!(
+            second_task.await.unwrap(),
+            Ok(SshHostKeyPromptDecision::Reject)
+        );
+        let (first_session_id, _, _, first_task) = prompts.pop().unwrap();
+        assert!(!first_task.is_finished());
+        assert!(PENDING_HOST_KEY_PROMPTS
+            .lock()
+            .unwrap()
+            .contains_key(&first_session_id));
+        respond_to_prompt(&first_session_id, SshHostKeyPromptDecision::AcceptOnce);
+        assert_eq!(
+            first_task.await.unwrap(),
+            Ok(SshHostKeyPromptDecision::AcceptOnce)
+        );
+        let pending = PENDING_HOST_KEY_PROMPTS.lock().unwrap();
+        assert!(!pending.contains_key(&first_session_id));
+        assert!(!pending.contains_key(&second_session_id));
     }
 
     #[tokio::test]

@@ -8,6 +8,7 @@ import {
   openTerminalLink,
 } from "../../utils/ssh/terminalLinks";
 import { SettingsManager } from "../../utils/settings/settingsManager";
+import { generateId } from "../../utils/core/id";
 import {
   recordSessionActivity,
   type SessionActivityContext,
@@ -183,6 +184,7 @@ const normalizeTerminalBufferSnapshot = (
 type HostKeyPromptDecision = "accept_once" | "accept_and_save" | "reject";
 type SshHostKeyPromptEvent = {
   session_id: string;
+  host_key_prompt_id?: string;
   host: string;
   port: number;
   username: string;
@@ -1832,6 +1834,7 @@ export function useWebTerminal(
         const tcpOptions = sshTerminalConfig?.tcpOptions;
         proxyCommandPassword = sshConnectionConfig.proxyCommandPassword || null;
 
+        const hostKeyPromptId = generateId();
         unlistenHostKeyPrompt = await listen<SshHostKeyPromptEvent>(
           "ssh://host-key-prompt",
           async (event) => {
@@ -1839,6 +1842,9 @@ export function useWebTerminal(
             const expectedPort = currentConnection.port || 22;
             const expectedUsername = sshUsername;
             if (
+              stale() ||
+              isDisposed.current ||
+              payload.host_key_prompt_id !== hostKeyPromptId ||
               payload.host !== currentSession.hostname ||
               payload.port !== expectedPort ||
               payload.username !== expectedUsername
@@ -1864,6 +1870,7 @@ export function useWebTerminal(
               identity,
               connectionId,
             );
+            if (stale() || isDisposed.current) return;
             const isMismatchPrompt =
               payload.status === "mismatch" ||
               verification.status === "mismatch";
@@ -1954,6 +1961,7 @@ export function useWebTerminal(
         );
 
         const sshConfig: Record<string, unknown> = {
+          host_key_prompt_id: hostKeyPromptId,
           host: currentSession.hostname,
           port: currentConnection.port || 22,
           username: sshUsername,

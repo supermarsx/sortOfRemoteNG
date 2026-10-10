@@ -273,6 +273,7 @@ let hostKeyPromptListener:
   | ((event: {
       payload: {
         session_id: string;
+        host_key_prompt_id?: string;
         host: string;
         port: number;
         username: string;
@@ -325,6 +326,17 @@ const renderWithProviders = (session: ConnectionSession) => {
     </ConnectionProvider>,
   );
 };
+
+function latestHostKeyPromptId(): string {
+  const calls = mockInvoke.mock.calls.filter(
+    ([command]) => command === "connect_ssh",
+  );
+  const args = calls[calls.length - 1]?.[1] as {
+    config: { host_key_prompt_id: string };
+  };
+  expect(args.config.host_key_prompt_id).toEqual(expect.any(String));
+  return args.config.host_key_prompt_id;
+}
 
 describe("WebTerminal", () => {
   beforeEach(() => {
@@ -908,6 +920,59 @@ describe("WebTerminal", () => {
       ).toBe(false);
     });
 
+    it("ignores another simultaneous tab's host-key prompt for the same endpoint", async () => {
+      const resolveAttempts: Array<(id: string) => void> = [];
+      mockInvoke.mockImplementation((command) => {
+        if (command === "connect_ssh")
+          return new Promise<string>((resolve) =>
+            resolveAttempts.push(resolve),
+          );
+        if (command === "start_shell") return Promise.resolve("test-shell");
+        return Promise.resolve(undefined);
+      });
+      const first = renderWithProviders(mockSession);
+      await waitFor(() => expect(resolveAttempts).toHaveLength(1));
+      const firstPromptId = latestHostKeyPromptId();
+      const firstListener = hostKeyPromptListener!;
+      const second = renderWithProviders({ ...mockSession, id: "second-tab" });
+      await waitFor(() => expect(resolveAttempts).toHaveLength(2));
+      const secondPromptId = latestHostKeyPromptId();
+      const secondListener = hostKeyPromptListener!;
+      expect(secondPromptId).not.toBe(firstPromptId);
+      const payload = {
+        session_id: "other-backend",
+        host: "192.168.1.100",
+        port: 22,
+        username: "testuser",
+        status: "first_use" as const,
+        fingerprint: "SHA256:other-key",
+        key_type: "ssh-ed25519",
+        key_bits: 256,
+        public_key: "synthetic-key",
+      };
+      await act(async () => {
+        await firstListener({
+          payload: { ...payload, host_key_prompt_id: secondPromptId },
+        });
+        await secondListener({
+          payload: { ...payload, host_key_prompt_id: firstPromptId },
+        });
+        await firstListener({ payload });
+      });
+      expect(screen.queryByText("Unknown Host Key")).not.toBeInTheDocument();
+      expect(
+        mockInvoke.mock.calls.some(
+          ([command]) => command === "ssh_respond_to_host_key_prompt",
+        ),
+      ).toBe(false);
+      await act(async () => {
+        resolveAttempts[0]("first-backend");
+        resolveAttempts[1]("second-backend");
+      });
+      first.unmount();
+      second.unmount();
+    });
+
     it("prompts on first-use host keys and stores them after accept-and-save", async () => {
       let resolveConnect: ((sessionId: string) => void) | undefined;
       let connectAttempt!: Promise<string>;
@@ -951,6 +1016,7 @@ describe("WebTerminal", () => {
         promptListener = hostKeyPromptListener!({
           payload: {
             session_id: "prompt-session-123",
+            host_key_prompt_id: latestHostKeyPromptId(),
             host: "192.168.1.100",
             port: 22,
             username: "testuser",
@@ -1035,6 +1101,7 @@ describe("WebTerminal", () => {
         promptListener = hostKeyPromptListener!({
           payload: {
             session_id: "prompt-session-reject",
+            host_key_prompt_id: latestHostKeyPromptId(),
             host: "192.168.1.100",
             port: 22,
             username: "testuser",
@@ -1130,6 +1197,7 @@ describe("WebTerminal", () => {
         promptListener = hostKeyPromptListener!({
           payload: {
             session_id: "prompt-session-timeout",
+            host_key_prompt_id: latestHostKeyPromptId(),
             host: "192.168.1.100",
             port: 22,
             username: "testuser",
@@ -1146,10 +1214,10 @@ describe("WebTerminal", () => {
 
       const connectionRejection =
         expect(connectAttempt).rejects.toThrow(timeoutMessage);
-      act(() => {
+      await act(async () => {
         rejectConnect(new Error(timeoutMessage));
+        await connectionRejection;
       });
-      await connectionRejection;
 
       await waitFor(() => {
         expect(screen.getByText("Error")).toBeInTheDocument();
