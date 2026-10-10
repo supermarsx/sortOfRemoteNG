@@ -214,8 +214,10 @@ interface Attempt {
   verified: boolean;
   pendingSnapshot: OriginBrowserSnapshot | null;
   attached: boolean;
+  createStarted: boolean;
   identity: OriginBrowserIdentity | null;
   closeTask: Promise<boolean> | null;
+  closeFailed: boolean;
   startup: Promise<void>;
   unsubscribe: (() => void) | null;
   sequence: number;
@@ -311,7 +313,10 @@ export function useOriginBrowser(options: UseOriginBrowserOptions) {
     latestScope.current = commandScope;
   }, [commandScope]);
   const current = useRef<Attempt | null>(null);
-  const retiring = useRef(new Map<string, Promise<boolean>>());
+  // Keep the actual attempts until native confirms closure. A cached false
+  // promise must not permanently poison every later Retry for this tab.
+  const retiring = useRef(new Map<string, Set<Attempt>>());
+  const cleanupRetryRequested = useRef(false);
   const viewport = useRef<OriginBrowserBounds | null>(null);
   const ownerGuard = useRef(assertOwner);
   useLayoutEffect(() => {
@@ -327,18 +332,25 @@ export function useOriginBrowser(options: UseOriginBrowserOptions) {
   });
 
   const closeAttempt = useCallback(
-    async (attempt: Attempt): Promise<boolean> => {
+    async (attempt: Attempt, retryFailed = false): Promise<boolean> => {
       attempt.cancelled = true;
       attempt.pendingSnapshot = null;
       attempt.unsubscribe?.();
       attempt.unsubscribe = null;
       if (!attempt.identity) return true;
+      // Retry only an already rejected acknowledgement, on explicit user
+      // action. Pending requests remain coalesced; successful ones are final.
+      if (retryFailed && attempt.closeFailed) attempt.closeTask = null;
       if (!attempt.closeTask) {
+        attempt.closeFailed = false;
         attempt.closeTask = attempt.transport
           .close({ identity: attempt.identity })
           .then(
             () => true,
-            () => false,
+            () => {
+              attempt.closeFailed = true;
+              return false;
+            },
           );
       }
       // Never expose native error strings, which may contain URLs or secrets.
@@ -411,6 +423,17 @@ export function useOriginBrowser(options: UseOriginBrowserOptions) {
     const owner = Object.freeze({ ownerDatabaseId, connectionId, sessionId });
     const ownerKey = JSON.stringify([ownerDatabaseId, connectionId, sessionId]);
     const retirement = retiring.current;
+    // Only failures known when the user requested Retry may be retried. A
+    // first close rejected during this restart must wait for another action,
+    // rather than silently issuing a second close in the same recovery pass.
+    const retryCleanup = new Set(
+      cleanupRetryRequested.current
+        ? [...(retirement.get(ownerKey) ?? [])].filter(
+            (item) => item.closeFailed,
+          )
+        : [],
+    );
+    cleanupRetryRequested.current = false;
     if (!enabled) {
       setState(initialState);
       return;
@@ -447,8 +470,10 @@ export function useOriginBrowser(options: UseOriginBrowserOptions) {
       verified: false,
       pendingSnapshot: null,
       attached: false,
+      createStarted: false,
       identity: null,
       closeTask: null,
+      closeFailed: false,
       startup: Promise.resolve(),
       unsubscribe: null,
       sequence: -1,
@@ -606,17 +631,29 @@ export function useOriginBrowser(options: UseOriginBrowserOptions) {
     const start = async () => {
       // A reconnect cannot overlap an unacknowledged predecessor, including a
       // create reply which arrived only after its React owner was disposed.
-      const predecessor = retirement.get(ownerKey);
-      if (predecessor && !(await predecessor)) {
+      // Snapshot the set: a later effect cleanup can enqueue this attempt too.
+      // Iterating the live set could then make startup wait on itself.
+      for (const predecessor of [...(retirement.get(ownerKey) ?? [])]) {
+        await predecessor.startup;
         if (!live()) return;
-        setState({
-          ...initialState,
-          phase: "unavailable",
-          unavailableReason: "host-unavailable",
-          operationFailure: "cleanup",
-        });
-        void closeAttempt(attempt);
-        return;
+        const closed = await closeAttempt(
+          predecessor,
+          retryCleanup.has(predecessor),
+        );
+        if (!live()) return;
+        if (!closed) {
+          setState({
+            ...initialState,
+            phase: "unavailable",
+            unavailableReason: "host-unavailable",
+            error:
+              "Native browser cleanup could not be confirmed. Retry browser to check again before starting a replacement.",
+            operationFailure: "cleanup",
+          });
+          void closeAttempt(attempt);
+          return;
+        }
+        retirement.get(ownerKey)?.delete(predecessor);
       }
       if (!live()) return;
       // Install before create. Resync after the reply to cover early events.
@@ -645,6 +682,7 @@ export function useOriginBrowser(options: UseOriginBrowserOptions) {
       const requestId = crypto.randomUUID();
       ownerGuard.current?.();
       startupStage = "create";
+      attempt.createStarted = true;
       const result = await transport.create({
         ...(quickConnect ? { quickConnect } : {}),
         owner,
@@ -709,14 +747,18 @@ export function useOriginBrowser(options: UseOriginBrowserOptions) {
     return () => {
       if (current.current === attempt) current.current = null;
       void closeAttempt(attempt);
-      const predecessor = retirement.get(ownerKey);
-      retirement.set(
-        ownerKey,
-        attempt.startup.then(async () => {
-          const closed = await closeAttempt(attempt);
-          return closed && (!predecessor || (await predecessor));
-        }),
-      );
+      // A cancelled listener/status/waiter cannot reach create. Do not retain
+      // those placeholders behind a slow predecessor on repeated Retry clicks.
+      if (!attempt.identity && !attempt.createStarted) return;
+      const predecessors = retirement.get(ownerKey) ?? new Set<Attempt>();
+      predecessors.add(attempt);
+      retirement.set(ownerKey, predecessors);
+      void attempt.startup.then(async () => {
+        if (!(await closeAttempt(attempt))) return;
+        predecessors.delete(attempt);
+        if (!predecessors.size && retirement.get(ownerKey) === predecessors)
+          retirement.delete(ownerKey);
+      });
     };
   }, [
     ownerDatabaseId,
@@ -958,11 +1000,35 @@ export function useOriginBrowser(options: UseOriginBrowserOptions) {
       }
       const attempt = current.current;
       if (!attempt) return;
+      const ownerKey = JSON.stringify([
+        ownerDatabaseId,
+        connectionId,
+        sessionId,
+      ]);
+      const predecessors = [...(retiring.current.get(ownerKey) ?? [])];
+      const retryCleanup = new Set(
+        requireConfirmation
+          ? [...predecessors, attempt].filter((item) => item.closeFailed)
+          : [],
+      );
       setState({ ...initialState, phase: "closing" });
-      await closeAttempt(attempt);
+      // Default close is also used by viewport effect disposal. Only the
+      // explicit confirmed-close workflow may retry a rejected acknowledgement.
+      await closeAttempt(attempt, retryCleanup.has(attempt));
       // A pending create may still return a native attempt which needs closing.
       await attempt.startup;
-      const closed = await closeAttempt(attempt);
+      let closed = await closeAttempt(attempt);
+      // A blocked successor has no native identity of its own. Closing it must
+      // not falsely acknowledge the failed predecessor it was waiting for.
+      for (const predecessor of predecessors) {
+        await predecessor.startup;
+        const confirmed = await closeAttempt(
+          predecessor,
+          retryCleanup.has(predecessor),
+        );
+        if (confirmed) retiring.current.get(ownerKey)?.delete(predecessor);
+        closed = closed && confirmed;
+      }
       if (current.current === attempt)
         setState({
           ...initialState,
@@ -975,12 +1041,14 @@ export function useOriginBrowser(options: UseOriginBrowserOptions) {
       if (requireConfirmation && !closed)
         throw new Error("Native browser cleanup could not be confirmed.");
     },
-    [closeAttempt, commandScope],
+    [closeAttempt, commandScope, ownerDatabaseId, connectionId, sessionId],
   );
 
   const reconnect = useCallback(() => {
-    if (latestScope.current === commandScope)
+    if (latestScope.current === commandScope) {
+      cleanupRetryRequested.current = true;
       setGeneration((value) => value + 1);
+    }
   }, [commandScope]);
   const focus = useCallback(() => runControl("focus"), [runControl]);
   const back = useCallback(() => runControl("back"), [runControl]);

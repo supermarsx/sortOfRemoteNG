@@ -1284,6 +1284,37 @@ describe("origin browser attempt controller", () => {
     );
   });
 
+  it("an explicit retry can confirm previously failed Quick Connect cleanup before replacing it", async () => {
+    const f = await mounted({
+      quickConnect: {
+        protocol: "https",
+        hostname: "fixture.invalid",
+        port: 443,
+        httpVerifySsl: true,
+      },
+    });
+    f.transport.close.mockRejectedValueOnce("private-close-error");
+    await act(async () => {
+      await f.result.current.navigate("https://www.cloudflare.com/");
+    });
+    await waitFor(() =>
+      expect(f.result.current.state.operationFailure).toBe("cleanup"),
+    );
+    const confirmation = deferred<void>();
+    f.transport.close.mockReturnValueOnce(confirmation.promise);
+    act(() => f.result.current.reconnect());
+    await waitFor(() => expect(f.transport.close).toHaveBeenCalledTimes(2));
+    expect(f.transport.close).toHaveBeenLastCalledWith({ identity });
+    expect(f.transport.create).toHaveBeenCalledTimes(1);
+    await act(async () => confirmation.resolve());
+    await waitFor(() => expect(f.result.current.state.phase).toBe("attached"));
+    expect(f.transport.create).toHaveBeenCalledTimes(2);
+    expect(f.transport.create.mock.calls[1][0].initialUrl).toBe(
+      "https://www.cloudflare.com/",
+    );
+    expect(f.result.current.state.operationFailure).toBeNull();
+  });
+
   it("saved connections never use temporary address-change authority", async () => {
     const f = await mounted();
     await act(async () => {
@@ -1365,6 +1396,212 @@ describe("origin browser attempt controller", () => {
     expect(f.result.current.state.phase).toBe("error");
     expect(f.result.current.state.error).toContain("cleanup");
     expect(JSON.stringify(f.result.current.state)).not.toContain("secret");
+  });
+
+  it("retries a rejected close only after explicit user recovery, never from rerenders", async () => {
+    const f = await mounted();
+    f.transport.close.mockRejectedValueOnce("sensitive-close-error");
+    f.emit(
+      snapshot({ sequence: 1, phase: "failed", failureReason: "renderer" }),
+    );
+    await act(async () => {});
+    f.rerender({ ...f.props, active: false });
+    f.rerender(f.props);
+    expect(f.transport.close).toHaveBeenCalledOnce();
+    expect(f.transport.create).toHaveBeenCalledOnce();
+    expect(f.result.current.state.snapshot?.failureReason).toBe("renderer");
+    act(() => f.result.current.reconnect());
+    await waitFor(() => expect(f.result.current.state.phase).toBe("attached"));
+    expect(f.transport.close).toHaveBeenCalledTimes(2);
+    expect(f.transport.close).toHaveBeenLastCalledWith({ identity });
+    expect(f.transport.create).toHaveBeenCalledTimes(2);
+    expect(f.transport.navigate).not.toHaveBeenCalled();
+    f.emit(
+      snapshot({ sequence: 99, phase: "failed", failureReason: "session" }),
+    );
+    expect(f.result.current.state.phase).toBe("attached");
+    expect(f.result.current.state.snapshot?.identity.attemptId).toBe(
+      "native-attempt-2",
+    );
+  });
+
+  it("retains every unconfirmed predecessor across failed retries and coalesces pending close requests", async () => {
+    const f = await mounted();
+    f.transport.close.mockRejectedValueOnce("first-close-error");
+    await act(async () => f.result.current.close());
+    f.transport.close.mockRejectedValueOnce("second-close-error");
+    act(() => f.result.current.reconnect());
+    await waitFor(() =>
+      expect(f.result.current.state.operationFailure).toBe("cleanup"),
+    );
+    expect(f.transport.close).toHaveBeenCalledTimes(2);
+    expect(f.transport.create).toHaveBeenCalledOnce();
+    const confirmation = deferred<void>();
+    f.transport.close.mockReturnValueOnce(confirmation.promise);
+    act(() => f.result.current.reconnect());
+    await waitFor(() => expect(f.transport.close).toHaveBeenCalledTimes(3));
+    act(() => f.result.current.reconnect());
+    await act(async () => {});
+    expect(f.transport.close).toHaveBeenCalledTimes(3);
+    expect(f.transport.create).toHaveBeenCalledOnce();
+    await act(async () => confirmation.resolve());
+    await waitFor(() => expect(f.result.current.state.phase).toBe("attached"));
+    expect(f.transport.create).toHaveBeenCalledTimes(2);
+    expect(f.transport.close.mock.calls).toEqual([
+      [{ identity }],
+      [{ identity }],
+      [{ identity }],
+    ]);
+    expect(JSON.stringify(f.result.current.state)).not.toContain("close-error");
+  });
+
+  it("checks the current owner lease again after cleanup recovery before creating", async () => {
+    const assertOwner = vi.fn();
+    const f = await mounted({ assertOwner });
+    f.transport.close.mockRejectedValueOnce("close-error");
+    await act(async () => f.result.current.close());
+    const confirmation = deferred<void>();
+    f.transport.close.mockReturnValueOnce(confirmation.promise);
+    act(() => f.result.current.reconnect());
+    await waitFor(() => expect(f.transport.close).toHaveBeenCalledTimes(2));
+    assertOwner.mockImplementation(() => {
+      throw new Error("owner revoked");
+    });
+    await act(async () => confirmation.resolve());
+    await waitFor(() => expect(f.result.current.state.phase).toBe("error"));
+    expect(f.result.current.state.startupFailure?.stage).toBe("owner-check");
+    expect(f.transport.create).toHaveBeenCalledOnce();
+    expect(f.transport.navigate).not.toHaveBeenCalled();
+  });
+
+  it("an explicit close retries failed cleanup without recreating or replaying a page", async () => {
+    const f = await mounted();
+    f.transport.close.mockRejectedValueOnce("close-error");
+    await act(async () => f.result.current.close(true).catch(() => {}));
+    expect(f.result.current.state.operationFailure).toBe("cleanup");
+    await act(async () => f.result.current.close(true));
+    expect(f.result.current.state.phase).toBe("closed");
+    expect(f.transport.close).toHaveBeenCalledTimes(2);
+    expect(f.transport.close).toHaveBeenLastCalledWith({ identity });
+    expect(f.transport.create).toHaveBeenCalledOnce();
+    expect(f.transport.navigate).not.toHaveBeenCalled();
+  });
+
+  it("settings changes and default disposal close cannot retry a failed acknowledgement", async () => {
+    const f = await mounted();
+    f.transport.close.mockRejectedValueOnce("close-error");
+    await act(async () => f.result.current.close());
+    await act(async () => f.result.current.close());
+    f.rerender({ ...f.props, expectedSecurityRevision: "revision-8" });
+    await waitFor(() =>
+      expect(f.result.current.state.operationFailure).toBe("cleanup"),
+    );
+    expect(f.transport.close).toHaveBeenCalledOnce();
+    expect(f.transport.create).toHaveBeenCalledOnce();
+    act(() => f.result.current.reconnect());
+    await waitFor(() => expect(f.result.current.state.phase).toBe("attached"));
+    expect(f.transport.create.mock.calls[1][0].expectedSecurityRevision).toBe(
+      "revision-8",
+    );
+    expect(f.transport.close).toHaveBeenCalledTimes(2);
+  });
+
+  it("closing a blocked replacement still requires cleanup of its unconfirmed native predecessor", async () => {
+    const f = await mounted();
+    f.transport.close.mockRejectedValue("close-error");
+    await act(async () => f.result.current.close());
+    act(() => f.result.current.reconnect());
+    await waitFor(() =>
+      expect(f.result.current.state.operationFailure).toBe("cleanup"),
+    );
+    expect(f.transport.close).toHaveBeenCalledTimes(2);
+    await act(async () => f.result.current.close());
+    expect(f.result.current.state.phase).toBe("error");
+    expect(f.transport.close).toHaveBeenCalledTimes(2);
+    await act(async () => f.result.current.close(true).catch(() => {}));
+    expect(f.result.current.state.phase).toBe("error");
+    expect(f.transport.close).toHaveBeenCalledTimes(3);
+    f.transport.close.mockResolvedValue(undefined);
+    await act(async () => f.result.current.close(true));
+    expect(f.result.current.state.phase).toBe("closed");
+    expect(f.transport.close).toHaveBeenCalledTimes(4);
+    expect(f.transport.close).toHaveBeenLastCalledWith({ identity });
+    expect(f.transport.create).toHaveBeenCalledOnce();
+  });
+
+  it("keeps failed cleanup isolated to its exact owner when switching databases and back", async () => {
+    const f = await mounted();
+    f.transport.close.mockRejectedValueOnce("close-error");
+    await act(async () => f.result.current.close());
+    const otherOwner = { ...owner, ownerDatabaseId: "database-2" };
+    f.rerender({ ...f.props, owner: otherOwner });
+    await waitFor(() => expect(f.result.current.state.phase).toBe("attached"));
+    expect(f.result.current.state.snapshot?.identity.ownerDatabaseId).toBe(
+      "database-2",
+    );
+    expect(f.transport.close).toHaveBeenCalledOnce();
+    f.rerender(f.props);
+    await waitFor(() =>
+      expect(f.result.current.state.operationFailure).toBe("cleanup"),
+    );
+    expect(f.transport.create).toHaveBeenCalledTimes(2);
+    expect(f.transport.close).toHaveBeenLastCalledWith({
+      identity: { ...otherOwner, attemptId: "native-attempt-2" },
+    });
+    act(() => f.result.current.reconnect());
+    await waitFor(() => expect(f.result.current.state.phase).toBe("attached"));
+    expect(f.transport.close).toHaveBeenLastCalledWith({ identity });
+    expect(f.transport.create).toHaveBeenCalledTimes(3);
+    expect(f.result.current.state.snapshot?.identity.ownerDatabaseId).toBe(
+      "database-1",
+    );
+  });
+
+  it("does not create a replacement after unmount during explicit cleanup recovery", async () => {
+    const f = await mounted();
+    f.transport.close.mockRejectedValueOnce("close-error");
+    await act(async () => f.result.current.close());
+    const confirmation = deferred<void>();
+    f.transport.close.mockReturnValueOnce(confirmation.promise);
+    act(() => f.result.current.reconnect());
+    await waitFor(() => expect(f.transport.close).toHaveBeenCalledTimes(2));
+    f.unmount();
+    await act(async () => confirmation.resolve());
+    expect(f.transport.create).toHaveBeenCalledOnce();
+    expect(f.transport.close).toHaveBeenCalledTimes(2);
+    expect(f.transport.listen).toHaveBeenCalledOnce();
+  });
+
+  it("still waits for a late create reply after repeated Retry, then requires acknowledged cleanup", async () => {
+    const f = fixture();
+    const creating = deferred<OriginBrowserCreateResult>();
+    f.transport.create.mockReturnValueOnce(creating.promise);
+    const hook = renderHook(() => useOriginBrowser(f.options));
+    await waitFor(() => expect(f.transport.create).toHaveBeenCalledOnce());
+    for (let retry = 0; retry < 10; retry++) {
+      act(() => hook.result.current.reconnect());
+      await act(async () => {});
+    }
+    expect(f.transport.create).toHaveBeenCalledOnce();
+    expect(f.transport.close).not.toHaveBeenCalled();
+    f.transport.close.mockRejectedValueOnce("late-close-error");
+    await act(async () =>
+      creating.resolve({
+        requestId: f.transport.create.mock.calls[0][0].requestId,
+        snapshot: snapshot(),
+      }),
+    );
+    await waitFor(() =>
+      expect(hook.result.current.state.operationFailure).toBe("cleanup"),
+    );
+    expect(f.transport.create).toHaveBeenCalledOnce();
+    expect(f.transport.close).toHaveBeenCalledExactlyOnceWith({ identity });
+    act(() => hook.result.current.reconnect());
+    await waitFor(() =>
+      expect(hook.result.current.state.phase).toBe("attached"),
+    );
+    expect(f.transport.create).toHaveBeenCalledTimes(2);
+    expect(f.transport.close).toHaveBeenCalledTimes(2);
   });
 
   it("retires on current host failure and ignores subsequent callbacks", async () => {

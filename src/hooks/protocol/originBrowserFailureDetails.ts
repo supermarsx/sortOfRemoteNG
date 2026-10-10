@@ -586,7 +586,7 @@ const operationDetails: Record<
   cleanup: [
     "Native browser cleanup",
     "The native browser did not confirm that the attempt finished closing.",
-    "Allow cleanup to finish before reopening the tab. Review Web Browser diagnostics and restart the app if cleanup remains pending.",
+    "Use Retry browser to check cleanup again. A replacement starts only after the previous attempt is confirmed closed. Review Web Browser diagnostics and restart the app if cleanup remains pending.",
     "browser-settings",
   ],
 };

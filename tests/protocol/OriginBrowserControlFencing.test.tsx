@@ -318,19 +318,19 @@ describe("native controls are fenced to the issuing attempt", () => {
   });
   it("refuses a successor when cleanup is unconfirmed", async () => {
     const f = await fixture();
-    vi.mocked(f.transport.close).mockRejectedValueOnce(
-      new Error("unconfirmed"),
-    );
+    vi.mocked(f.transport.close).mockRejectedValue(new Error("unconfirmed"));
     act(() => f.result.current.reconnect());
     await waitFor(() =>
       expect(f.result.current.state.phase).toBe("unavailable"),
     );
     expect(f.transport.create).toHaveBeenCalledTimes(1);
+    expect(f.transport.close).toHaveBeenCalledTimes(1);
     act(() => f.result.current.reconnect());
     await waitFor(() =>
       expect(f.result.current.state.phase).toBe("unavailable"),
     );
     expect(f.transport.create).toHaveBeenCalledTimes(1);
+    expect(f.transport.close).toHaveBeenCalledTimes(2);
   });
   it("does not send stale toolbar actions behind a modal or from an inactive tab", async () => {
     const f = await fixture();
