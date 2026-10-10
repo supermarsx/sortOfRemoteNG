@@ -44,6 +44,22 @@ const startup = (message: string) =>
   state({ startupFailure: originBrowserStartupError("create", message) });
 
 describe("fixed actionable native failure details", () => {
+  it.each([
+    ["connection.httpProxyPolicy", "legacy-proxy"],
+    ["settings.webBrowser.defaultPolicy", "browser-settings"],
+  ])("explains an explicit HTTPS-only policy blocking HTTP at %s", (scope, action) => {
+    const [detail] = getOriginBrowserFailureDetails(startup(
+      `Saved browser policy rejected (${scope}): httpsOnly blocks the saved HTTP source`,
+    ));
+    expect(detail).toMatchObject({
+      code: `${scope}:https-only-source`,
+      field: `${scope}.httpsOnly`,
+      action,
+    });
+    expect(detail.nextStep).toContain("turn off HTTPS only in this connection");
+    expect(detail.nextStep).toContain("Custom ports do not determine");
+  });
+
   it("prefers recorded engine evidence for a recognized deferred create runtime failure only", () => {
     const runtimeFailure = { code: "ui-dispatch", stage: "preparing" } as const;
     const initial = startup(

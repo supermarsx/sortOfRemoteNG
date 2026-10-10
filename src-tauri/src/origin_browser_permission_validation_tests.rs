@@ -77,12 +77,12 @@ fn source_and_tls_switch_have_separate_non_disclosing_diagnostics() {
     let error = saved_permissions_inner(
         &connection(),
         &Value::Null,
-        &Url::parse("http://PRIVATE_MARKER.example/path").unwrap(),
+        &Url::parse("ftp://PRIVATE_MARKER.example/path").unwrap(),
         true,
     )
     .err()
     .unwrap();
-    assert_eq!(error, diagnostic("source", "saved source must use HTTPS"));
+    assert_eq!(error, diagnostic("source", "saved source must use HTTP or HTTPS"));
     for value in [json!(false), json!(null), json!("PRIVATE_MARKER")] {
         let mut own = connection();
         own["httpVerifySsl"] = value;
@@ -97,6 +97,65 @@ fn source_and_tls_switch_have_separate_non_disclosing_diagnostics() {
         rejected(&connection(), &json!({"webBrowser":null})),
         diagnostic("settings.webBrowser", "must be an object")
     );
+}
+
+#[test]
+fn saved_http_sources_preserve_scheme_port_and_existing_transport_limits() {
+    use WebsitePermissionDecision::{Allow, Deny};
+    for source in [
+        "http://router.example", "http://router.example:443", "http://router.example:8080",
+        "http://192.0.2.10:8443", "http://[2001:db8::1]:65535", "https://router.example:8443",
+    ] {
+        let url = Url::parse(source).unwrap();
+        let mut own = connection();
+        own["httpVerifySsl"] = json!(url.scheme() == "https");
+        own["httpProxyPolicy"] = json!({"sameOriginOnly":true});
+        let before = own.clone();
+        let (engine, origins) = saved_permissions_inner(&own, &Value::Null, &url, true).unwrap();
+        assert_eq!(own, before);
+        assert_eq!(origins, [source]);
+        for (_, class) in CLASSES {
+            assert_eq!(engine.resolve(WebsitePermissionQuery {
+                website_origin: source, destination_origin: source, request_class: class,
+                native_denied: false,
+            }).decision, Allow);
+            assert_eq!(engine.resolve(WebsitePermissionQuery {
+                website_origin: source, destination_origin: source, request_class: class,
+                native_denied: true,
+            }).decision, Deny);
+        }
+        for other in ["http://other.example", "http://router.example:8081", "https://router.example"] {
+            assert!(!engine.permits_network_origin(source, other));
+        }
+    }
+}
+
+#[test]
+fn saved_http_cannot_reuse_https_domain_grants_or_bypass_https_only() {
+    let source = Url::parse("http://router.example:8080/").unwrap();
+    let settings = json!({"webBrowser":{"domainPermissions":{"version":1,"websites":[{
+        "origin":"https://router.example:8080", "destinations":[{
+            "origin":"https://other.example", "requestClasses":{"navigation":"allow"}
+        }]
+    }]}}});
+    let (engine, _) = saved_permissions_inner(&connection(), &settings, &source, true).unwrap();
+    assert!(engine.permits_network_origin("http://router.example:8080", "http://router.example:8080"));
+    assert!(!engine.permits_network_origin("http://router.example:8080", "https://other.example"));
+    for shared in [true, false] {
+        let mut own = connection();
+        let mut settings = json!({});
+        let scope = if shared {
+            settings = json!({"webBrowser":{"defaultPolicy":{"httpsOnly":true}}});
+            "settings.webBrowser.defaultPolicy"
+        } else {
+            own["httpProxyPolicy"] = json!({"httpsOnly":true});
+            "connection.httpProxyPolicy"
+        };
+        assert_eq!(saved_permissions_inner(&own, &settings, &source, true).err(),
+            Some(diagnostic(scope, "httpsOnly blocks the saved HTTP source")));
+        own["httpProxyPolicy"] = json!({"httpsOnly":false});
+        assert!(saved_permissions_inner(&own, &settings, &source, true).is_ok());
+    }
 }
 
 #[test]

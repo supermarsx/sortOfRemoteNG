@@ -117,6 +117,11 @@ const proxyRules = {
     "httpsOnly",
     "Use the HTTPS only checkbox so the saved value is true or false.",
   ],
+  "https-only-source": [
+    "httpsOnly blocks the saved HTTP source",
+    "httpsOnly",
+    "This address uses HTTP, but the effective Internal proxy policy enables HTTPS only. If HTTP is intentional, turn off HTTPS only in this connection's Internal proxy controls and save; otherwise use the server's HTTPS address. Custom ports do not determine whether a site uses TLS.",
+  ],
   "same-origin-type": [
     "sameOriginOnly must be a boolean when present",
     "sameOriginOnly",
@@ -467,12 +472,17 @@ const specificRules = {
   "source-https": [
     "saved source must use HTTPS",
     "",
-    "Review the saved connection address and Application entry URL. Saved website domain policies require an HTTPS source; use a server address that supports HTTPS.",
+    "This older native runtime rejected an HTTP source. Update and restart the app: saved browser sources support HTTP and HTTPS, including custom ports. Keep the protocol that the server actually supports; HTTPS only must be off for an intentional HTTP connection.",
+  ],
+  "source-scheme": [
+    "saved source must use HTTP or HTTPS",
+    "",
+    "Review the saved connection address and Application entry URL. Use HTTP or HTTPS with the server's actual port; a nonstandard port does not require HTTPS.",
   ],
   "source-resolution": [
     "source origin is invalid for domain permission resolution",
     "",
-    "Review the saved connection address and Application entry URL; use an exact supported HTTPS origin.",
+    "Review the saved connection address and Application entry URL; use a supported HTTP or HTTPS origin with the server's actual port.",
   ],
   "source-temporary": [
     "temporary HTTP source origin is invalid",
@@ -624,6 +634,7 @@ export const originBrowserPolicyFailures = [
   }),
   ...policyFailures("source", {
     "source-https": specificRules["source-https"],
+    "source-scheme": specificRules["source-scheme"],
     "source-resolution": specificRules["source-resolution"],
     "source-temporary": specificRules["source-temporary"],
   }),

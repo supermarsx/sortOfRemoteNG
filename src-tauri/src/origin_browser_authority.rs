@@ -1262,13 +1262,15 @@ fn saved_permissions_inner(
     certificate_hooks: bool,
 ) -> Result<(WebsitePermissionEngine, Vec<String>), NativeAuthorityError> {
     let invalid = |scope, rule| NativeAuthorityError::PolicyInvalid { scope, rule };
-    // The existing domain engine deliberately accepts exact HTTPS origins only.
-    if source.scheme() != "https" {
-        return Err(invalid("source", "saved source must use HTTPS"));
+    // Browsing sources are not reusable domain grants. Bind HTTP as well as
+    // HTTPS to the exact saved scheme/host/port through the native network
+    // policy below; never borrow the corresponding HTTPS site's permissions.
+    if !matches!(source.scheme(), "http" | "https") {
+        return Err(invalid("source", "saved source must use HTTP or HTTPS"));
     }
     if connection
         .get("httpVerifySsl")
-        .is_some_and(|v| v != &Value::Bool(true))
+        .is_some_and(|v| !v.is_boolean() || source.scheme() == "https" && v != &Value::Bool(true))
     {
         return Err(invalid(
             "connection.httpVerifySsl",
@@ -1299,6 +1301,9 @@ fn saved_permissions_inner(
     };
     if let Some(policy) = policy {
         validate_proxy_policy(policy, policy_scope)?;
+        if source.scheme() == "http" && policy.get("httpsOnly") == Some(&Value::Bool(true)) {
+            return Err(invalid(policy_scope, "httpsOnly blocks the saved HTTP source"));
+        }
     }
     let shared = permission_settings(
         settings.pointer("/webBrowser/domainPermissions"),
@@ -2204,6 +2209,59 @@ mod tests {
         authorized.lease.recheck(&window, &state).await.unwrap();
         authorized.lease.revoke();
         assert!(!authorized.lease.is_current());
+    }
+
+    #[tokio::test]
+    async fn saved_http_custom_port_uses_private_proxy_and_owning_database_lease() {
+        use sorng_protocols::origin_browser::OriginBrowserSession;
+        use sorng_protocols::private_forward_proxy::ProxyLimits;
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let endpoint = listener.local_addr().unwrap();
+        let origin = format!("http://{endpoint}");
+        let mut row = connection();
+        row["protocol"] = json!("http");
+        row["hostname"] = json!(format!("{origin}/login"));
+        row["port"] = json!(endpoint.port());
+        row["httpVerifySsl"] = json!(false); // No TLS on HTTP; not a TLS bypass.
+        row["httpAutoLogin"] = json!(false);
+        row["httpProxyPolicy"] = json!({"sameOriginOnly":true});
+        let retention = saved_retention_scope(&row, &Value::Null).unwrap();
+        assert_eq!(retention, (origin.clone(), vec![origin.clone()]));
+        let mut f = Fixture::new(row).await;
+        f.request.initial_url = format!("{origin}/login");
+        let authorized = authorize_create_with_certificate_hooks(&f.window, &f.state, &f.request).await.unwrap();
+        assert!(!authorized.lease.is_temporary());
+        assert!(!authorized.login.enabled());
+        assert_eq!(authorized.policy.allowed_origins(), &[origin.clone()]);
+        let route = authorized.route.clone();
+        let mut session = OriginBrowserSession::start(authorized.policy, route.clone(), ProxyLimits::default()).await.unwrap();
+        let credentials = session.with_proxy_credentials(|user, password| {
+            base64::engine::general_purpose::STANDARD.encode(format!("{user}:{password}"))
+        }).unwrap();
+        let server = tokio::spawn(async move {
+            let (mut socket, _) = listener.accept().await.unwrap();
+            let mut header = Vec::new();
+            while !header.ends_with(b"\r\n\r\n") {
+                assert!(header.len() < 4096);
+                header.push(socket.read_u8().await.unwrap());
+            }
+            assert!(header.starts_with(b"GET /login HTTP/1.1\r\n"));
+            assert!(!String::from_utf8(header).unwrap().to_ascii_lowercase().contains("proxy-authorization"));
+            socket.write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\nConnection: close\r\n\r\nOK").await.unwrap();
+        });
+        let response = tokio::time::timeout(Duration::from_secs(5), async {
+            let mut browser = tokio::net::TcpStream::connect(session.proxy_endpoint()).await.unwrap();
+            browser.write_all(format!("GET {origin}/login HTTP/1.1\r\nHost: {endpoint}\r\nProxy-Authorization: Basic {credentials}\r\nConnection: close\r\n\r\n").as_bytes()).await.unwrap();
+            let mut response = String::new();
+            browser.read_to_string(&mut response).await.unwrap();
+            server.await.unwrap();
+            response
+        }).await.unwrap();
+        assert!(response.starts_with("HTTP/1.1 200"));
+        assert!(response.ends_with("OK"));
+        authorized.lease.revoke();
+        assert!(route.dial(Authority::parse(&endpoint.to_string()).unwrap()).await.is_err());
+        session.stop().await.unwrap();
     }
 
     #[tokio::test]
