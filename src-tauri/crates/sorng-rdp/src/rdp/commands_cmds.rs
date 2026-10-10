@@ -182,9 +182,11 @@ pub async fn connect_rdp(
     width: Option<u16>,
     height: Option<u16>,
     rdp_settings: Option<RdpSettingsPayload>,
-    // Stable frontend connection slot ID.  When provided the backend
-    // automatically evicts any prior session occupying the same slot.
+    // Saved connection metadata, shared by independent frontend tabs.
     connection_id: Option<String>,
+    // Stable frontend tab slot. Repeated connects from this tab replace only
+    // its previous actor; omitted by legacy connection/endpoint-slot callers.
+    frontend_session_id: Option<String>,
     // Channel for push-based frame delivery (binary RGBA streamed directly
     // from the session thread to JS -- no base64, no event+invoke round-trip).
     frame_channel: Channel<InvokeResponseBody>,
@@ -197,15 +199,13 @@ pub async fn connect_rdp(
         target_host.as_deref(),
         target_port,
     )?;
-    let replacement_selector = if let Some(ref connection_id) = connection_id {
-        RdpConnectionSelector::ConnectionId(connection_id.clone())
-    } else {
-        RdpConnectionSelector::Endpoint {
-            host: host.clone(),
-            port,
-            username: username.clone(),
-        }
-    };
+    let replacement_selector = RdpConnectionSelector::for_connect(
+        frontend_session_id.as_deref(),
+        connection_id.as_deref(),
+        &host,
+        port,
+        &username,
+    )?;
 
     let session_id = Uuid::new_v4().to_string();
     let (cmd_tx, cmd_rx) = crate::rdp::wake_channel::create_wake_channel()
@@ -227,6 +227,7 @@ pub async fn connect_rdp(
     let session = RdpSession {
         id: session_id.clone(),
         connection_id: connection_id.clone(),
+        frontend_session_id,
         host: host.clone(),
         port,
         target_identity: Some(target_identity),
@@ -402,31 +403,22 @@ pub async fn connect_rdp(
 pub async fn disconnect_rdp(
     state: tauri::State<'_, RdpServiceState>,
     session_id: Option<String>,
-    // Disconnect by stable frontend connection slot ID (preferred).
+    // Legacy connection-slot fallback, only when no exact actor is supplied.
     connection_id: Option<String>,
 ) -> Result<(), String> {
-    let mut outcome = RdpCloseOutcome::NotFound;
-    if let Some(session_id) = session_id {
-        outcome = close_rdp_connection(
+    let outcome = if let Some(selector) =
+        RdpConnectionSelector::for_existing(session_id.as_deref(), connection_id.as_deref())
+    {
+        close_rdp_connection(
             &state,
-            &RdpConnectionSelector::SessionId(session_id),
+            &selector,
             "disconnect requested",
             RDP_WORKER_SHUTDOWN_GRACE,
         )
-        .await;
-    }
-
-    if matches!(outcome, RdpCloseOutcome::NotFound) {
-        if let Some(connection_id) = connection_id {
-            outcome = close_rdp_connection(
-                &state,
-                &RdpConnectionSelector::ConnectionId(connection_id),
-                "disconnect requested",
-                RDP_WORKER_SHUTDOWN_GRACE,
-            )
-            .await;
-        }
-    }
+        .await
+    } else {
+        RdpCloseOutcome::NotFound
+    };
 
     match outcome {
         RdpCloseOutcome::StillClosing {
@@ -451,17 +443,9 @@ pub async fn detach_rdp_session(
 ) -> Result<(), String> {
     let mut service = state.lock().await;
 
-    let target_id = if let Some(ref sid) = session_id {
-        Some(sid.clone())
-    } else if let Some(ref cid) = connection_id {
-        service
-            .connections
-            .values()
-            .find(|c| c.session.connection_id.as_deref() == Some(cid.as_str()))
-            .map(|c| c.session.id.clone())
-    } else {
-        None
-    };
+    let target_id =
+        RdpConnectionSelector::for_existing(session_id.as_deref(), connection_id.as_deref())
+            .and_then(|selector| find_rdp_connection_id(&service, &selector));
 
     let mut did_detach = None;
     if let Some(id) = target_id {
@@ -492,19 +476,12 @@ pub async fn attach_rdp_session(
 ) -> Result<RdpSession, String> {
     let mut service = state.lock().await;
 
-    let target_id = if let Some(ref sid) = session_id {
-        Some(sid.clone())
-    } else if let Some(ref cid) = connection_id {
-        service
-            .connections
-            .values()
-            .find(|c| c.session.connection_id.as_deref() == Some(cid.as_str()))
-            .map(|c| c.session.id.clone())
-    } else {
-        None
-    };
+    let target_id =
+        RdpConnectionSelector::for_existing(session_id.as_deref(), connection_id.as_deref())
+            .and_then(|selector| find_rdp_connection_id(&service, &selector));
 
-    let id = target_id.ok_or("No session_id or connection_id provided")?;
+    let id =
+        target_id.ok_or("No RDP session matches the requested actor or legacy connection slot")?;
     let frame_delivery_credits = Arc::clone(&service.frame_delivery_credits);
     let conn = service
         .connections
@@ -615,19 +592,12 @@ pub async fn reconnect_rdp_session(
 ) -> Result<(), String> {
     let service = state.lock().await;
 
-    let target_id = if let Some(ref sid) = session_id {
-        Some(sid.clone())
-    } else if let Some(ref cid) = connection_id {
-        service
-            .connections
-            .values()
-            .find(|c| c.session.connection_id.as_deref() == Some(cid.as_str()))
-            .map(|c| c.session.id.clone())
-    } else {
-        None
-    };
+    let target_id =
+        RdpConnectionSelector::for_existing(session_id.as_deref(), connection_id.as_deref())
+            .and_then(|selector| find_rdp_connection_id(&service, &selector));
 
-    let id = target_id.ok_or("No session_id or connection_id provided")?;
+    let id =
+        target_id.ok_or("No RDP session matches the requested actor or legacy connection slot")?;
     let conn = service
         .connections
         .get(&id)

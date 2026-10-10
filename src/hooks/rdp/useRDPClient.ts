@@ -1528,9 +1528,9 @@ export function useRDPClient(session: ConnectionSession) {
         },
       );
 
-      // Check for existing backend session to re-attach.
-      // Try by backendSessionId first (carried through detach/reattach), then
-      // fall back to scanning by connection_id.
+      // Only reattach the actor carried by this tab through detach/reattach.
+      // A saved connection can have several live actors; its ID cannot prove
+      // ownership of a viewer or authorize taking over another tab's channel.
       let reattachId: string | undefined;
 
       try {
@@ -1553,22 +1553,11 @@ export function useRDPClient(session: ConnectionSession) {
           })),
         );
 
-        // Prefer exact match by backend session ID
-        const byBackend = sess.backendSessionId
+        reattachId = sess.backendSessionId
           ? existingSessions.find(
               (s) => s.id === sess.backendSessionId && s.connected,
-            )
+            )?.id
           : undefined;
-        // Fall back to connectionId match
-        const connId = conn?.id ?? sess.connectionId;
-        const byConnection =
-          connId && !sess.reattachOnly
-            ? existingSessions.find(
-                (s) => s.connectionId === connId && s.connected,
-              )
-            : undefined;
-
-        reattachId = byBackend?.id ?? byConnection?.id;
 
         if (reattachId) {
           console.log(`[RDP reattach gen=${gen}] found target: ${reattachId}`);
@@ -1652,7 +1641,6 @@ export function useRDPClient(session: ConnectionSession) {
             port: number;
           }>("attach_rdp_session", {
             sessionId: reattachId,
-            connectionId: conn?.id ?? sess.connectionId,
             frameChannel,
           });
 
@@ -1841,6 +1829,7 @@ export function useRDPClient(session: ConnectionSession) {
 
       const connectionDetails = {
         connectionId: conn.id,
+        frontendSessionId: sess.id,
         host: dialHost,
         port: dialPort,
         targetHost,

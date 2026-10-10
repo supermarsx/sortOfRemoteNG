@@ -715,6 +715,18 @@ describe("RDPClient", () => {
       await waitFor(() =>
         expect(result.current.rdpSessionId).toBe("rdp-replacement"),
       );
+      const connectCalls = mockInvoke.mock.calls.filter(
+        ([command]) => command === "connect_rdp",
+      );
+      expect(connectCalls).toHaveLength(2);
+      for (const [, args] of connectCalls) {
+        expect(args).toEqual(
+          expect.objectContaining({
+            connectionId: mockSession.connectionId,
+            frontendSessionId: mockSession.id,
+          }),
+        );
+      }
       expect(storedSession().status).toBe("connecting");
       const replacement = storedSession();
       for (const status of [
@@ -861,6 +873,157 @@ describe("RDPClient", () => {
       ).toBe(false);
       expect(rdpBinaryIpcPreflightMocks.assert).not.toHaveBeenCalled();
     });
+    it("creates separate actors for tabs of one saved connection and disconnects only its own actor", async () => {
+      const implementation = mockInvoke.getMockImplementation()!;
+      const actors: Array<{
+        id: string;
+        connectionId: string;
+        connected: boolean;
+      }> = [];
+      mockInvoke.mockImplementation(
+        async (command: string, args?: InvokeArgs) => {
+          if (command === "list_rdp_sessions") return [...actors];
+          if (command === "connect_rdp") {
+            const actor = {
+              id: `same-connection-actor-${actors.length + 1}`,
+              connectionId: mockSession.connectionId,
+              connected: true,
+            };
+            actors.push(actor);
+            return actor.id;
+          }
+          return implementation(command, args);
+        },
+      );
+      const first = renderHook(() => useRDPClient(mockSession), {
+        wrapper: hookWrapper,
+      });
+      await waitFor(() =>
+        expect(first.result.current.rdpSessionId).toBe(
+          "same-connection-actor-1",
+        ),
+      );
+      const secondSession = { ...mockSession, id: "second-rdp-tab" };
+      const second = renderHook(() => useRDPClient(secondSession), {
+        wrapper: hookWrapper,
+      });
+      await waitFor(() =>
+        expect(second.result.current.rdpSessionId).toBe(
+          "same-connection-actor-2",
+        ),
+      );
+      const connectCalls = mockInvoke.mock.calls.filter(
+        ([command]) => command === "connect_rdp",
+      );
+      expect(connectCalls).toHaveLength(2);
+      expect(connectCalls[0][1]).toEqual(
+        expect.objectContaining({
+          connectionId: mockSession.connectionId,
+          frontendSessionId: mockSession.id,
+        }),
+      );
+      expect(connectCalls[1][1]).toEqual(
+        expect.objectContaining({
+          connectionId: mockSession.connectionId,
+          frontendSessionId: secondSession.id,
+        }),
+      );
+      expect(
+        (connectCalls[0][1] as { frameChannel: unknown }).frameChannel,
+      ).not.toBe(
+        (connectCalls[1][1] as { frameChannel: unknown }).frameChannel,
+      );
+      expect(
+        mockInvoke.mock.calls.some(
+          ([command]) => command === "attach_rdp_session",
+        ),
+      ).toBe(false);
+
+      await act(async () => {
+        expect(await second.result.current.handleDisconnect()).toBe(true);
+      });
+      expect(mockInvoke).toHaveBeenCalledWith("disconnect_rdp", {
+        sessionId: "same-connection-actor-2",
+      });
+      expect(mockInvoke).not.toHaveBeenCalledWith("disconnect_rdp", {
+        sessionId: "same-connection-actor-1",
+      });
+      expect(first.result.current.rdpSessionId).toBe("same-connection-actor-1");
+      second.unmount();
+      first.unmount();
+    });
+
+    it("reattaches the exact backend actor even when a peer of the same saved connection is listed first", async () => {
+      const implementation = mockInvoke.getMockImplementation()!;
+      const retained = { ...mockSession, backendSessionId: "retained-actor" };
+      mockInvoke.mockImplementation(
+        async (command: string, args?: InvokeArgs) => {
+          if (command === "list_rdp_sessions")
+            return ["peer-actor", retained.backendSessionId].map((id) => ({
+              id,
+              connectionId: mockSession.connectionId,
+              connected: true,
+            }));
+          if (command === "attach_rdp_session")
+            return {
+              id: (args as { sessionId: string }).sessionId,
+              desktopWidth: 1280,
+              desktopHeight: 720,
+              host: mockConnection.hostname,
+              port: mockConnection.port,
+            };
+          return implementation(command, args);
+        },
+      );
+      const view = renderHook(() => useRDPClient(retained), {
+        wrapper: hookWrapper,
+      });
+      await waitFor(() =>
+        expect(view.result.current.connectionStatus).toBe("connected"),
+      );
+      expect(view.result.current.rdpSessionId).toBe(retained.backendSessionId);
+      expect(mockInvoke).toHaveBeenCalledWith("attach_rdp_session", {
+        sessionId: retained.backendSessionId,
+        frameChannel: expect.anything(),
+      });
+      expect(
+        mockInvoke.mock.calls.some(([command]) => command === "connect_rdp"),
+      ).toBe(false);
+      view.unmount();
+    });
+
+    it("dials a new actor when its previous actor ended without adopting a same-connection peer", async () => {
+      const implementation = mockInvoke.getMockImplementation()!;
+      mockInvoke.mockImplementation(
+        async (command: string, args?: InvokeArgs) =>
+          command === "list_rdp_sessions"
+            ? [
+                {
+                  id: "peer-actor",
+                  connectionId: mockSession.connectionId,
+                  connected: true,
+                },
+              ]
+            : implementation(command, args),
+      );
+      const retained = { ...mockSession, backendSessionId: "ended-actor" };
+      const view = renderHook(() => useRDPClient(retained), {
+        wrapper: hookWrapper,
+      });
+      await waitFor(() =>
+        expect(view.result.current.rdpSessionId).toBe("rdp-session-123"),
+      );
+      expect(
+        mockInvoke.mock.calls.some(
+          ([command]) => command === "attach_rdp_session",
+        ),
+      ).toBe(false);
+      expect(mockInvoke).not.toHaveBeenCalledWith("disconnect_rdp", {
+        sessionId: "peer-actor",
+      });
+      view.unmount();
+    });
+
     it("never substitutes another same-connection actor or dials anew for explicit reattachment", async () => {
       const manager = DatabaseManager.getInstance();
       const current = vi
@@ -905,7 +1068,7 @@ describe("RDPClient", () => {
       expect(
         mockInvoke.mock.calls.filter(
           ([command]) =>
-            command === "connect_rdp" || command === "reattach_rdp_session",
+            command === "connect_rdp" || command === "attach_rdp_session",
         ),
       ).toEqual([]);
       view.unmount();

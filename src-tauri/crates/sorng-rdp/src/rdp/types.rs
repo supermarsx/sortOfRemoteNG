@@ -194,11 +194,14 @@ pub enum RdpInputAction {
 #[serde(rename_all = "camelCase")]
 pub struct RdpSession {
     pub id: String,
-    /// Stable frontend connection ID used for lifecycle management.
-    /// Multiple `connect_rdp` invocations with the same `connection_id`
-    /// automatically evict any previous session for that slot.
+    /// Saved connection metadata, shared by independent tabs. Legacy callers
+    /// without a frontend session identity also use this as their replacement slot.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub connection_id: Option<String>,
+    /// Stable frontend tab identity across reconnects and viewer detach/attach.
+    /// Replacement and cleanup must never infer this from the saved connection.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub frontend_session_id: Option<String>,
     pub host: String,
     pub port: u16,
     /// Original server identity when TCP is dialled through a local tunnel.

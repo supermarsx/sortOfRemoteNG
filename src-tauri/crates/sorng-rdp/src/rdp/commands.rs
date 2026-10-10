@@ -32,16 +32,10 @@ pub fn build_rdp_binary_ipc_preflight_payload() -> Vec<u8> {
     payload
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum RdpConnectionSelector {
-    SessionId(String),
-    ConnectionId(String),
-    Endpoint {
-        host: String,
-        port: u16,
-        username: String,
-    },
-}
+#[path = "connection_identity.rs"]
+mod connection_identity;
+use connection_identity::RdpConnectionIdentity;
+pub use connection_identity::RdpConnectionSelector;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum RdpCloseOutcome {
@@ -65,24 +59,19 @@ pub fn find_rdp_connection_id(
             .connections
             .contains_key(session_id)
             .then(|| session_id.clone()),
-        RdpConnectionSelector::ConnectionId(connection_id) => service
+        _ => service
             .connections
             .values()
             .find(|connection| {
-                connection.session.connection_id.as_deref() == Some(connection_id.as_str())
-            })
-            .map(|connection| connection.session.id.clone()),
-        RdpConnectionSelector::Endpoint {
-            host,
-            port,
-            username,
-        } => service
-            .connections
-            .values()
-            .find(|connection| {
-                connection.session.host == *host
-                    && connection.session.port == *port
-                    && connection.session.username == *username
+                let session = &connection.session;
+                selector.matches(&RdpConnectionIdentity {
+                    session_id: &session.id,
+                    frontend_session_id: session.frontend_session_id.as_deref(),
+                    connection_id: session.connection_id.as_deref(),
+                    host: &session.host,
+                    port: session.port,
+                    username: &session.username,
+                })
             })
             .map(|connection| connection.session.id.clone()),
     }
@@ -409,6 +398,7 @@ mod worker_lifecycle_tests {
             session: RdpSession {
                 id: session_id.to_string(),
                 connection_id: Some(connection_id.to_string()),
+                frontend_session_id: None,
                 host: "rdp.test".to_string(),
                 port: 3389,
                 target_identity: None,
@@ -697,6 +687,115 @@ mod worker_lifecycle_tests {
         ));
         replacement.gate.open();
         replacement.completion.wait().await;
+        wait_for_full_cleanup(&state).await;
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn tab_replacement_waits_for_its_worker_without_closing_same_connection_peer() {
+        let state = RdpService::new_test_state(TEST_CAPACITY);
+        let live_workers = Arc::new(AtomicUsize::new(0));
+        let first = insert_blocked_worker(
+            &state,
+            "actor-a",
+            "shared-connection",
+            Arc::clone(&live_workers),
+        )
+        .await;
+        let peer = insert_blocked_worker(
+            &state,
+            "actor-b",
+            "shared-connection",
+            Arc::clone(&live_workers),
+        )
+        .await;
+        {
+            let mut service = state.lock().await;
+            service
+                .connections
+                .get_mut("actor-a")
+                .unwrap()
+                .session
+                .frontend_session_id = Some("tab-a".into());
+            service
+                .connections
+                .get_mut("actor-b")
+                .unwrap()
+                .session
+                .frontend_session_id = Some("tab-b".into());
+        }
+        wait_for_live_workers(&live_workers, 2).await;
+        let slot = RdpConnectionSelector::for_connect(
+            Some("tab-a"),
+            Some("shared-connection"),
+            "rdp.test",
+            3389,
+            "tester",
+        )
+        .unwrap();
+        let outcome = close_rdp_connection(&state, &slot, "replace tab a", Duration::ZERO).await;
+        assert!(
+            matches!(outcome, RdpCloseOutcome::StillClosing { ref session_id, generation }
+            if session_id == "actor-a" && generation == first.generation)
+        );
+        {
+            let service = state.lock().await;
+            // The connect path checks this same selector under the service lock
+            // before reserve/spawn/insert, so the closing slot stays occupied.
+            assert_eq!(
+                find_rdp_connection_id(&service, &slot).as_deref(),
+                Some("actor-a")
+            );
+            assert_eq!(
+                service.connections["actor-b"].worker.lifecycle(),
+                RdpWorkerLifecycle::Running
+            );
+            assert!(service.connections["actor-b"].session.connected);
+            assert!(service.connections["actor-b"].session.viewer_attached);
+            assert!(find_rdp_connection_id(
+                &service,
+                &RdpConnectionSelector::ConnectionId("shared-connection".into())
+            )
+            .is_none());
+        }
+        first.gate.open();
+        first.completion.wait().await;
+        remove_completed_rdp_worker(&state, "actor-a", first.generation).await;
+        {
+            let service = state.lock().await;
+            assert!(find_rdp_connection_id(&service, &slot).is_none());
+            assert!(service.connections.contains_key("actor-b"));
+        }
+        let replacement = insert_blocked_worker(
+            &state,
+            "replacement-a",
+            "shared-connection",
+            Arc::clone(&live_workers),
+        )
+        .await;
+        state
+            .lock()
+            .await
+            .connections
+            .get_mut("replacement-a")
+            .unwrap()
+            .session
+            .frontend_session_id = Some("tab-a".into());
+        assert!(!remove_completed_rdp_worker(&state, "actor-a", first.generation).await);
+        {
+            let service = state.lock().await;
+            assert_eq!(
+                find_rdp_connection_id(&service, &slot).as_deref(),
+                Some("replacement-a")
+            );
+            assert_eq!(
+                service.connections["actor-b"].worker.lifecycle(),
+                RdpWorkerLifecycle::Running
+            );
+        }
+        replacement.gate.open();
+        peer.gate.open();
+        replacement.completion.wait().await;
+        peer.completion.wait().await;
         wait_for_full_cleanup(&state).await;
     }
 

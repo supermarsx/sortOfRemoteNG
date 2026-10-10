@@ -64,6 +64,7 @@ fn test_session() -> RdpSession {
     RdpSession {
         id: "session-1".to_string(),
         connection_id: Some("connection-1".to_string()),
+        frontend_session_id: None,
         host: "rdp.example.com".to_string(),
         port: 3389,
         target_identity: None,
@@ -84,8 +85,20 @@ fn target_identity_session_deserializes_legacy_metadata_without_override() {
     assert!(legacy.get("targetIdentity").is_none());
     let session: RdpSession = serde_json::from_value(legacy).unwrap();
     assert!(session.target_identity.is_none());
+    assert!(session.frontend_session_id.is_none());
     assert_eq!(session.host, "rdp.example.com");
     assert_eq!(session.port, 3389);
+}
+
+#[test]
+fn frontend_session_identity_round_trips_separately_from_saved_connection() {
+    let mut session = test_session();
+    session.frontend_session_id = Some("tab-1".into());
+    let value = serde_json::to_value(&session).unwrap();
+    assert_eq!(value["connectionId"], "connection-1");
+    assert_eq!(value["frontendSessionId"], "tab-1");
+    let restored: RdpSession = serde_json::from_value(value).unwrap();
+    assert_eq!(restored.frontend_session_id.as_deref(), Some("tab-1"));
 }
 
 #[test]
