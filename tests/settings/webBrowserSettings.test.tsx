@@ -86,6 +86,46 @@ function number(label: string, value: string) {
 }
 
 describe("Web Browser settings", () => {
+  it.each([undefined, true, false])(
+    "preserves saved cookie restoration %s and changes it only through the themed toggle",
+    (restoreCookies) => {
+      const saved = {
+        ...normalizeWebBrowserSettings(undefined),
+        restoreCookies,
+      };
+      const { update } = setup("browser", { webBrowser: saved });
+      const toggle = screen.getByRole("checkbox", {
+        name: /^Restore saved cookies/,
+      });
+      expect(toggle).toHaveClass("sor-settings-checkbox");
+      expect((toggle as HTMLInputElement).checked).toBe(
+        restoreCookies !== false,
+      );
+      expect(update).not.toHaveBeenCalled();
+      expect(
+        screen.getByText(/Off starts with a fresh temporary cookie jar/),
+      ).toHaveTextContent("same database and connection");
+      expect(
+        screen.getByText(/Off starts with a fresh temporary cookie jar/),
+      ).toHaveTextContent(
+        "this attempt does not restore or change stored cookies",
+      );
+      expect(
+        screen.getByText(/Off starts with a fresh temporary cookie jar/),
+      ).toHaveTextContent(
+        "Configured expiry and clearing on database lock still apply independently",
+      );
+      expect(
+        screen.getByText(/Off starts with a fresh temporary cookie jar/),
+      ).toHaveTextContent(
+        "only to new attempts and never grants permission to send login credentials",
+      );
+      fireEvent.click(toggle);
+      expect(update.mock.lastCall?.[0]).toEqual({
+        webBrowser: { ...saved, restoreCookies: restoreCookies === false },
+      });
+    },
+  );
   it("enables idle prewarm by default, preserves opt-out and rejects malformed values", () => {
     expect(normalizeWebBrowserSettings(undefined).idlePrewarmEnabled).toBe(
       true,
@@ -239,9 +279,7 @@ describe("Web Browser settings", () => {
       expect(
         screen.getByRole("option", { name: "Off (unsupported for native)" }),
       ).toBeVisible();
-      fireEvent.mouseDown(
-        screen.getByRole("option", { name: /^On$/ }),
-      );
+      fireEvent.mouseDown(screen.getByRole("option", { name: /^On$/ }));
       expect(onChange).toHaveBeenCalledExactlyOnceWith("webglEnabled", true);
       expect(overrides.webglEnabled).toBe(saved);
     },
@@ -331,7 +369,7 @@ describe("Web Browser settings", () => {
     expect(saved.sessionRetention.mode).toBe("encrypted-local");
   });
 
-  it("reveals retention policy controls only after the native support probe completes", async () => {
+  it("keeps expiry configurable before native support is confirmed and removes the unavailable note after the probe", async () => {
     const invoke = vi.fn().mockResolvedValue({
       memory: true,
       encryptedDatabase: true,
@@ -342,16 +380,17 @@ describe("Web Browser settings", () => {
     const { update, unmount } = setup();
     try {
       expect(
-        screen.queryByRole("spinbutton", {
+        screen.getByRole("spinbutton", {
           name: "Retained session idle expiry (minutes)",
         }),
-      ).toBeNull();
+      ).toBeEnabled();
+      expect(
+        screen.getByText(/Cookie expiry can be configured now/),
+      ).toBeVisible();
       await waitFor(() =>
         expect(
-          screen.getByRole("spinbutton", {
-            name: "Retained session idle expiry (minutes)",
-          }),
-        ).toBeVisible(),
+          screen.queryByText(/Cookie expiry can be configured now/),
+        ).toBeNull(),
       );
       expect(invoke.mock.calls).toEqual([
         ["origin_browser_retention_capabilities"],
@@ -366,9 +405,9 @@ describe("Web Browser settings", () => {
     }
   });
 
-  it("honors supplied support without probing and keeps unavailable controls hidden", () => {
+  it("honors supplied unavailability without probing and saves requested expiry without activating retention", () => {
     const probe = vi.spyOn(tauriInvoke, "getInvoke");
-    const { unmount } = setup("browser", {}, true, {
+    const { update, unmount } = setup("browser", {}, true, {
       memory: false,
       encryptedDatabase: false,
       policyExpiration: false,
@@ -377,10 +416,20 @@ describe("Web Browser settings", () => {
     try {
       expect(probe).not.toHaveBeenCalled();
       expect(
-        screen.queryByRole("spinbutton", {
+        screen.getByRole("spinbutton", {
           name: "Retained session idle expiry (minutes)",
         }),
-      ).toBeNull();
+      ).toBeEnabled();
+      expect(
+        screen.getByText(/Cookie expiry can be configured now/),
+      ).toHaveTextContent("saving these values does not activate retention");
+      number("Retained session idle expiry (minutes)", "45");
+      number("Retained session maximum age (hours)", "72");
+      expect(update.mock.lastCall?.[0].webBrowser.sessionRetention).toEqual({
+        ...DEFAULT_BROWSER_SESSION_RETENTION,
+        idleTimeoutMinutes: 45,
+        maxAgeHours: 72,
+      });
     } finally {
       unmount();
       probe.mockRestore();
@@ -793,7 +842,7 @@ describe("Web Browser settings", () => {
     });
   });
 
-  it("saves requested cookie retention without claiming support or exposing unapproved policy controls", () => {
+  it("saves requested cookie retention and expiry without claiming runtime support", () => {
     const { update } = setup();
     expect(
       screen.getByRole("combobox", { name: "Requested cookie retention" }),
@@ -806,8 +855,8 @@ describe("Web Browser settings", () => {
       screen.getByText(/saving this preference does not activate retention/),
     ).toHaveAttribute("role", "status");
     expect(
-      screen.queryByRole("spinbutton", { name: /Retained session/ }),
-    ).toBeNull();
+      screen.getAllByRole("spinbutton", { name: /Retained session/ }),
+    ).toHaveLength(2);
     expect(
       screen.queryByRole("checkbox", { name: /Clear retained cookies/ }),
     ).toBeNull();

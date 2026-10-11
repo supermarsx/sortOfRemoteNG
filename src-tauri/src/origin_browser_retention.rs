@@ -72,6 +72,7 @@ pub struct NativeCookieRetention {
     revision: Mutex<Option<String>>,
     invalidated: AtomicBool,
     dormant: AtomicBool,
+    preserve_failed_restore: AtomicBool,
     notify: Arc<dyn Fn() + Send + Sync>,
 }
 fn bindings(
@@ -181,6 +182,7 @@ impl NativeCookieRetention {
             revision: Mutex::new(None),
             invalidated: AtomicBool::new(false),
             dormant: AtomicBool::new(false),
+            preserve_failed_restore: AtomicBool::new(false),
             notify,
         }))
     }
@@ -192,6 +194,11 @@ impl NativeCookieRetention {
     }
     pub fn invalidate(&self) {
         self.invalidated.store(true, Ordering::Release);
+    }
+    /// An import failure is not a request to erase its source snapshot. Actual
+    /// database locking still applies the managed database's clear-on-lock hook.
+    pub fn preserve_restore_source(&self) {
+        self.preserve_failed_restore.store(true, Ordering::Release);
     }
     fn current(&self) -> bool {
         !self.invalidated.load(Ordering::Acquire)
@@ -458,7 +465,14 @@ impl NativeCookieRetention {
         self.end(true)
     }
     pub fn revoke(&self) -> Result<(), RetentionError> {
-        self.end(self.policy.clear_on_database_lock)
+        if self.preserve_failed_restore.load(Ordering::Acquire) {
+            self.invalidate();
+            retire(&self.scope, self.generation, false)?;
+            self.lease.revoke();
+            Ok(())
+        } else {
+            self.end(self.policy.clear_on_database_lock)
+        }
     }
     fn end(&self, delete: bool) -> Result<(), RetentionError> {
         self.invalidate();

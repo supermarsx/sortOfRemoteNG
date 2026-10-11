@@ -43,6 +43,8 @@ export interface BrowserSessionPreferences extends BrowserNativePreferences {
   minimumFormFillDelayMs: number;
   minimumFormSubmitDelayMs: number;
   manualFormSubmit: boolean;
+  /** False uses a fresh temporary jar and leaves retained snapshots untouched. */
+  restoreCookies?: boolean;
   sessionRetention: BrowserSessionRetention;
 }
 

@@ -9,6 +9,9 @@ export type OriginBrowserKnownStartupFailureCode =
   | "private-proxy"
   | "private-context"
   | "cookie-restore"
+  | "cookie-rejected"
+  | "cookie-restore-timeout"
+  | "cookie-restore-invalid"
   | "embedded-view"
   | "renderer-setup"
   | "initial-zoom"
@@ -422,6 +425,11 @@ const preferenceRules = {
     "cookiesEnabled",
     "Use the Cookies checkbox so cookiesEnabled is true or false.",
   ],
+  "cookie-restore-type": [
+    "restoreCookies must be a boolean when present",
+    "restoreCookies",
+    "Use Restore saved cookies to select true or false. Turning it off opens a fresh temporary session without replacing the saved cookies.",
+  ],
   "media-stream-type": [
     "mediaStreamEnabled must be a boolean when present",
     "mediaStreamEnabled",
@@ -703,6 +711,18 @@ const runtimeFailures = new Map<string, OriginBrowserStartupFailureCode>([
   [
     "Native browser cookie restoration failed. Reopen the tab and check the native startup diagnostics; no other connection's cookies were used.",
     "cookie-restore",
+  ],
+  [
+    "Native browser rejected a retained cookie. Disable Restore saved cookies to start fresh without changing the saved snapshot, then reopen the connection.",
+    "cookie-rejected",
+  ],
+  [
+    "Native browser cookie restoration timed out waiting for cookie storage. Retry or disable Restore saved cookies to start fresh without changing the saved snapshot.",
+    "cookie-restore-timeout",
+  ],
+  [
+    "Retained browser cookies do not match the current storage or origin rules. Disable Restore saved cookies to start fresh without changing the saved snapshot.",
+    "cookie-restore-invalid",
   ],
   [
     "Native browser embedded view creation failed. Reopen the tab and check the native startup diagnostics; this is not a website login failure.",

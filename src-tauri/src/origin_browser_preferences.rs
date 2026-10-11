@@ -26,6 +26,7 @@ pub struct NativeBrowserPreferences {
     pub minimum_form_submit_delay_ms: u64,
     pub manual_form_submit: bool,
     pub retention: Value,
+    pub restore_cookies: bool,
 }
 
 static SCHEMA: LazyLock<Value> = LazyLock::new(|| {
@@ -189,6 +190,7 @@ impl NativeBrowserPreferences {
                 .and_then(Value::as_bool)
                 .unwrap_or(true),
             retention: retention(get("sessionRetention"))?,
+            restore_cookies: enabled("restoreCookies"),
         };
         if result.minimum_form_fill_delay_ms + result.minimum_form_submit_delay_ms > 52_000 {
             return Err(());
@@ -216,6 +218,24 @@ impl NativeBrowserPreferences {
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn cookie_restore_defaults_on_and_respects_sparse_connection_overrides() {
+        for global in [None, Some(false), Some(true)] {
+            for local in [None, Some(false), Some(true)] {
+                let mut settings = json!({"webBrowser":{}});
+                let mut connection = json!({"browserSession":{"version":1}});
+                if let Some(value) = global { settings["webBrowser"]["restoreCookies"] = value.into(); }
+                if let Some(value) = local { connection["browserSession"]["restoreCookies"] = value.into(); }
+                let parsed = NativeBrowserPreferences::from_saved(&connection, &settings).unwrap();
+                assert_eq!(parsed.restore_cookies, local.or(global).unwrap_or(true));
+            }
+        }
+        for invalid in [Value::Null, json!("false"), json!(0), json!({}), json!([])] {
+            assert!(NativeBrowserPreferences::from_saved(&json!({}), &json!({"webBrowser":{"restoreCookies":invalid}})).is_err());
+            assert!(NativeBrowserPreferences::from_saved(&json!({"browserSession":{"version":1,"restoreCookies":invalid}}), &json!({})).is_err());
+        }
+    }
 
     #[test]
     fn invalid_saved_preferences_return_a_typed_non_disclosing_error() {

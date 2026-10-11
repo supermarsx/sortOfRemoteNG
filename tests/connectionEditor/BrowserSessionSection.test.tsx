@@ -45,6 +45,76 @@ function choose(label: string, option: string | RegExp) {
 }
 
 describe("browser connection overrides", () => {
+  it.each([undefined, true, false])(
+    "inherits cookie restoration default %s and supports on, off and returning to inheritance",
+    (restoreCookies) => {
+      shared.settings = { webBrowser: { restoreCookies } };
+      const { change } = setup({ name: "Preserve connection" });
+      const label = "Restore saved cookies";
+      const inherited = `Use app default (${restoreCookies !== false ? "on" : "off"})`;
+      expect(screen.getByRole("combobox", { name: label })).toHaveTextContent(
+        inherited,
+      );
+      expect(change).not.toHaveBeenCalled();
+      expect(
+        screen.getByText(/Off starts with a fresh temporary cookie jar/),
+      ).toHaveTextContent("same database and connection");
+      expect(
+        screen.getByText(/Off starts with a fresh temporary cookie jar/),
+      ).toHaveTextContent(
+        "this attempt does not restore or change stored cookies",
+      );
+      expect(
+        screen.getByText(/Off starts with a fresh temporary cookie jar/),
+      ).toHaveTextContent(
+        "Configured expiry and clearing on database lock still apply independently",
+      );
+      expect(
+        screen.getByText(/Off starts with a fresh temporary cookie jar/),
+      ).toHaveTextContent(
+        "only to new attempts and never grants permission to send login credentials",
+      );
+      choose(label, "Off");
+      expect(change.mock.lastCall?.[0]).toEqual({
+        id: "connection",
+        name: "Preserve connection",
+        browserSession: { version: 1, restoreCookies: false },
+      });
+      choose(label, "On");
+      expect(change.mock.lastCall?.[0].browserSession).toEqual({
+        version: 1,
+        restoreCookies: true,
+      });
+      choose(label, inherited);
+      expect(change.mock.lastCall?.[0].browserSession).toBeUndefined();
+    },
+  );
+  it.each([true, false])(
+    "preserves explicit cookie restoration %s, retention and other overrides until edited",
+    (restoreCookies) => {
+      shared.settings = { webBrowser: { restoreCookies: !restoreCookies } };
+      const saved = {
+        version: 1 as const,
+        restoreCookies,
+        cookiesEnabled: false,
+        sessionRetention: {
+          ...DEFAULT_BROWSER_SESSION_RETENTION,
+          mode: "encrypted-database" as const,
+        },
+      };
+      const { change } = setup({ browserSession: saved });
+      expect(
+        screen.getByRole("combobox", { name: "Restore saved cookies" }),
+      ).toHaveTextContent(restoreCookies ? "On" : "Off");
+      expect(change).not.toHaveBeenCalled();
+      choose("Restore saved cookies", restoreCookies ? "Off" : "On");
+      expect(change.mock.lastCall?.[0].browserSession).toEqual({
+        ...saved,
+        restoreCookies: !restoreCookies,
+      });
+      expect(saved.restoreCookies).toBe(restoreCookies);
+    },
+  );
   it("repairs invalid overrides without clearing unrelated connection edits", () => {
     const { change } = setup({
       name: "Unsaved name",
@@ -103,7 +173,10 @@ describe("browser connection overrides", () => {
       );
       expect(screen.getByRole("combobox", { name: label })).toBeEnabled();
       expect(change).not.toHaveBeenCalled();
-      choose(label, key === "webglEnabled" ? "Off (unsupported for native)" : "Off");
+      choose(
+        label,
+        key === "webglEnabled" ? "Off (unsupported for native)" : "Off",
+      );
       expect(change.mock.lastCall?.[0].browserSession).toEqual({
         version: 1,
         [key]: false,
@@ -170,7 +243,9 @@ describe("browser connection overrides", () => {
     expect(screen.getByText(/Screen capture is unsupported/)).toHaveTextContent(
       "WebRTC non-proxied UDP remains disabled",
     );
-    const webglGuidance = screen.getByText(/Requires a compatible GPU and driver/);
+    const webglGuidance = screen.getByText(
+      /Requires a compatible GPU and driver/,
+    );
     expect(webglGuidance).toBeVisible();
     expect(webglGuidance).toHaveTextContent(
       "cannot disable all WebGL contexts, including OffscreenCanvas",
@@ -232,7 +307,7 @@ describe("browser connection overrides", () => {
     expect(legacy.sessionRetention.mode).toBe("encrypted-local");
   });
 
-  it("uses native support to enable policy controls without granting owner access or changing the draft", async () => {
+  it("keeps expiry configurable during the native probe without granting owner access or changing the draft", async () => {
     const invoke = vi.fn().mockResolvedValue({
       memory: true,
       encryptedDatabase: true,
@@ -253,12 +328,15 @@ describe("browser connection overrides", () => {
       expect(screen.getByRole("status")).toHaveTextContent(
         "runtime support has not been confirmed",
       );
+      expect(
+        screen.getByRole("spinbutton", {
+          name: "Retained session idle expiry (minutes)",
+        }),
+      ).toBeEnabled();
       await waitFor(() =>
         expect(
-          screen.getByRole("spinbutton", {
-            name: "Retained session idle expiry (minutes)",
-          }),
-        ).toBeVisible(),
+          screen.queryByText(/Cookie expiry can be configured now/),
+        ).toBeNull(),
       );
       expect(screen.queryByRole("status")).toBeNull();
       expect(invoke.mock.calls).toEqual([
@@ -357,14 +435,28 @@ describe("browser connection overrides", () => {
     );
     expect(screen.getByText(/Only cookies can be retained/)).toBeVisible();
     expect(
-      screen.queryByRole("spinbutton", { name: /Retained session/ }),
-    ).toBeNull();
+      screen.getAllByRole("spinbutton", { name: /Retained session/ }),
+    ).toHaveLength(2);
+    expect(
+      screen.getByText(/Cookie expiry can be configured now/),
+    ).toHaveTextContent("saving these values does not activate retention");
+    const idle = screen.getByRole("spinbutton", {
+      name: "Retained session idle expiry (minutes)",
+    });
+    expect(idle).toBeEnabled();
+    fireEvent.change(idle, { target: { value: "45" } });
+    fireEvent.blur(idle);
+    expect(change.mock.lastCall?.[0].browserSession.sessionRetention).toEqual({
+      ...DEFAULT_BROWSER_SESSION_RETENTION,
+      mode: "encrypted-database",
+      idleTimeoutMinutes: 45,
+    });
     expect(
       screen.queryByRole("checkbox", { name: /Clear retained cookies/ }),
     ).toBeNull();
   });
 
-  it("exposes expiry and snapshot deletion controls only with explicit native approval", () => {
+  it("shows expiry and approved snapshot deletion controls without an unavailable note when supported", () => {
     render(
       <BrowserSessionRetentionFields
         value={DEFAULT_BROWSER_SESSION_RETENTION}
@@ -383,6 +475,9 @@ describe("browser connection overrides", () => {
       }),
     ).toHaveValue(30);
     expect(
+      screen.queryByText(/Cookie expiry can be configured now/),
+    ).toBeNull();
+    expect(
       screen.getByRole("checkbox", {
         name: /^Clear retained cookies when the database locks/,
       }),
@@ -390,6 +485,11 @@ describe("browser connection overrides", () => {
     expect(
       screen.getByText(/Database lock always stops live browser attempts/),
     ).toBeVisible();
+    expect(
+      screen.getByText(/When Restore saved cookies is enabled/),
+    ).toHaveTextContent(
+      "When Restore saved cookies is enabled, changing to ephemeral clears previously retained cookies on the next connection startup",
+    );
   });
 
   it("waits for settings hydration without writing defaults", () => {

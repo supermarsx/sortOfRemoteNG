@@ -77,34 +77,37 @@ export default function BrowserSessionRetentionFields({
         does not confirm that previously retained cookie data has been migrated.
       </p>
       <p className="text-xs text-[var(--color-textMuted)]">
-        Changing to ephemeral clears previously retained cookies on the next
-        connection startup. Saving this preference does not immediately erase
-        existing cookie snapshots.
+        When Restore saved cookies is enabled, changing to ephemeral clears
+        previously retained cookies on the next connection startup. Saving this
+        preference does not immediately erase existing cookie snapshots.
       </p>
-      {capabilities?.policyExpiration === true && (
-        <>
-          <BrowserNumberRow
-            settingKey={`${settingPrefix}.idleTimeoutMinutes`}
-            label="Retained session idle expiry (minutes)"
-            description="0 clears retained data when the attempt closes; maximum 7 days."
-            value={value.idleTimeoutMinutes}
-            min={0}
-            max={10080}
-            onChange={(idleTimeoutMinutes) =>
-              onChange({ ...value, idleTimeoutMinutes })
-            }
-          />
-          <BrowserNumberRow
-            settingKey={`${settingPrefix}.maxAgeHours`}
-            label="Retained session maximum age (hours)"
-            description="Absolute lifetime of retained data, from 1 hour to 1 year."
-            value={value.maxAgeHours}
-            min={1}
-            max={8760}
-            onChange={(maxAgeHours) => onChange({ ...value, maxAgeHours })}
-          />
-        </>
+      {capabilities?.policyExpiration !== true && (
+        <p className="text-sm text-warning">
+          Cookie expiry can be configured now. Runtime expiry support is
+          unavailable or unconfirmed; saving these values does not activate
+          retention. They apply to new attempts when support is available.
+        </p>
       )}
+      <BrowserNumberRow
+        settingKey={`${settingPrefix}.idleTimeoutMinutes`}
+        label="Retained session idle expiry (minutes)"
+        description="0 clears retained data when the attempt closes; maximum 7 days."
+        value={value.idleTimeoutMinutes}
+        min={0}
+        max={10080}
+        onChange={(idleTimeoutMinutes) =>
+          onChange({ ...value, idleTimeoutMinutes })
+        }
+      />
+      <BrowserNumberRow
+        settingKey={`${settingPrefix}.maxAgeHours`}
+        label="Retained session maximum age (hours)"
+        description="Absolute lifetime of retained data, from 1 hour to 1 year."
+        value={value.maxAgeHours}
+        min={1}
+        max={8760}
+        onChange={(maxAgeHours) => onChange({ ...value, maxAgeHours })}
+      />
       {capabilities?.clearOnDatabaseLock === true && (
         <Toggle
           settingKey={`${settingPrefix}.clearOnDatabaseLock`}

@@ -116,7 +116,25 @@ const startupDetails: Record<
   "cookie-restore": [
     "Browser sign-in cookie restoration",
     "The native browser could not restore this session's sign-in cookies.",
-    "Review this connection's browser session retention settings and native startup diagnostics, then reopen the tab.",
+    "Retry, or turn off Restore saved cookies in this connection's browser session settings to open a fresh temporary session. Its saved cookies will not be replaced.",
+    "browser-session",
+  ],
+  "cookie-rejected": [
+    "Retained cookie rejected by Chromium",
+    "Chromium rejected a cookie while restoring this connection's saved sign-in. The failed temporary jar was not opened.",
+    "Turn off Restore saved cookies in this connection's browser session settings and reopen it. This preserves its saved snapshot and starts a fresh temporary sign-in.",
+    "browser-session",
+  ],
+  "cookie-restore-timeout": [
+    "Cookie storage initialization timed out",
+    "Cookie storage did not finish initialization or acknowledge all restored cookies before the deadline.",
+    "Retry browser. If it repeats, turn off Restore saved cookies in this connection's browser session settings and reopen it; saved cookies are preserved.",
+    "browser-session",
+  ],
+  "cookie-restore-invalid": [
+    "Retained cookies do not match current rules",
+    "The retained snapshot failed cookie format, size, expiry or permitted-origin validation. It was not used to open a page.",
+    "Review this connection's destination permissions, or turn off Restore saved cookies in its browser session settings and reopen it with a fresh temporary jar.",
     "browser-session",
   ],
   "embedded-view": [

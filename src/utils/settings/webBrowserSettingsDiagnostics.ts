@@ -32,6 +32,7 @@ for (const field of [
   "databasesEnabled",
   "webglEnabled",
   "cookiesEnabled",
+  "restoreCookies",
   "mediaStreamEnabled",
   "crossOriginRequestsEnabled",
   "websiteExtensionsEnabled",

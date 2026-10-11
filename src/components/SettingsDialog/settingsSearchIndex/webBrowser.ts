@@ -101,6 +101,15 @@ export const WEB_BROWSER_SEARCH_ENTRIES: SettingSearchEntry[] = [
     sectionLabel: "Web Browser",
   },
   {
+    key: "webBrowser.restoreCookies",
+    label: "Restore saved cookies",
+    description:
+      "Restore sign-in cookies for the owning database and connection, or start a fresh temporary jar without replacing the saved snapshot. Reopen the connection to apply.",
+    tags: ["cookies", "restore", "session", "retention", "recovery", "sign-in"],
+    section: "webBrowser",
+    sectionLabel: "Web Browser",
+  },
+  {
     key: "webBrowser.manualFormSubmit",
     label: "Require manual sign-in submission",
     description:

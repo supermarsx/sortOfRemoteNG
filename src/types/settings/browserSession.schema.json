@@ -73,6 +73,7 @@
       "maximum": 30000
     },
     "manualFormSubmit": { "type": "boolean" },
+    "restoreCookies": { "type": "boolean", "default": true, "description": "Restore and checkpoint retained sign-in cookies. False opens a fresh temporary jar without reading, clearing or replacing the saved snapshot." },
     "sessionRetention": { "$ref": "#/$defs/retention" }
   },
   "$defs": {

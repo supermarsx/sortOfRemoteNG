@@ -441,6 +441,12 @@ impl PrivateRequestContext {
         status
     }
 
+    /// Preserve import-specific evidence before generic context failure revokes
+    /// the session. Values and origins never leave the private cookie importer.
+    pub fn cookie_restore_status(&self) -> Result<(), RetentionError> {
+        self.cookie_import.as_ref().map_or(Ok(()), |import| import.status())
+    }
+
     /// Uses the patched loaded engine factory, never stock/shared/disk context.
     /// Main must pump `cef_tls_bridge::pump_tls` on every CEF UI tick, including
     /// after this context moves into a browser, and drain retained callbacks via

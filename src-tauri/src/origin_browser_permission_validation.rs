@@ -65,6 +65,10 @@ pub(super) fn preference_error(connection: &Value, settings: &Value) -> NativeAu
                 "cookiesEnabled must be a boolean when present",
             ),
             (
+                "restoreCookies",
+                "restoreCookies must be a boolean when present",
+            ),
+            (
                 "mediaStreamEnabled",
                 "mediaStreamEnabled must be a boolean when present",
             ),

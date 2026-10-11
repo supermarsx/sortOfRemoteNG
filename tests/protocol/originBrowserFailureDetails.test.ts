@@ -45,20 +45,45 @@ const startup = (message: string) =>
 
 describe("fixed actionable native failure details", () => {
   it.each([
+    "cookie-restore",
+    "cookie-rejected",
+    "cookie-restore-timeout",
+    "cookie-restore-invalid",
+  ] as const)(
+    "offers connection session settings for %s without suggesting snapshot deletion",
+    (code) => {
+      const [detail] = getOriginBrowserFailureDetails(
+        state({
+          startupFailure: { stage: "create", category: "runtime", code },
+        }),
+      );
+      expect(detail.action).toBe("browser-session");
+      expect(detail.nextStep).toContain("Restore saved cookies");
+      expect(JSON.stringify(detail)).not.toContain("SECRET");
+    },
+  );
+  it.each([
     ["connection.httpProxyPolicy", "legacy-proxy"],
     ["settings.webBrowser.defaultPolicy", "browser-settings"],
-  ])("explains an explicit HTTPS-only policy blocking HTTP at %s", (scope, action) => {
-    const [detail] = getOriginBrowserFailureDetails(startup(
-      `Saved browser policy rejected (${scope}): httpsOnly blocks the saved HTTP source`,
-    ));
-    expect(detail).toMatchObject({
-      code: `${scope}:https-only-source`,
-      field: `${scope}.httpsOnly`,
-      action,
-    });
-    expect(detail.nextStep).toContain("turn off HTTPS only in this connection");
-    expect(detail.nextStep).toContain("Custom ports do not determine");
-  });
+  ])(
+    "explains an explicit HTTPS-only policy blocking HTTP at %s",
+    (scope, action) => {
+      const [detail] = getOriginBrowserFailureDetails(
+        startup(
+          `Saved browser policy rejected (${scope}): httpsOnly blocks the saved HTTP source`,
+        ),
+      );
+      expect(detail).toMatchObject({
+        code: `${scope}:https-only-source`,
+        field: `${scope}.httpsOnly`,
+        action,
+      });
+      expect(detail.nextStep).toContain(
+        "turn off HTTPS only in this connection",
+      );
+      expect(detail.nextStep).toContain("Custom ports do not determine");
+    },
+  );
 
   it("prefers recorded engine evidence for a recognized deferred create runtime failure only", () => {
     const runtimeFailure = { code: "ui-dispatch", stage: "preparing" } as const;

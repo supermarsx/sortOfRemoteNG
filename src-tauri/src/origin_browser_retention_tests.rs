@@ -27,6 +27,16 @@ impl Fixture {
         Self::with_network_scope(mode, false).await
     }
     async fn with_network_scope(mode: RetentionMode, broad: bool) -> Self {
+        Self::with_policy(
+            RetentionPolicy {
+                mode,
+                ..Default::default()
+            },
+            broad,
+        )
+        .await
+    }
+    async fn with_policy(policy: RetentionPolicy, broad: bool) -> Self {
         let app = mock_builder().build(mock_context(noop_assets())).unwrap();
         let window = WebviewWindowBuilder::new(&app, "main", WebviewUrl::default())
             .build()
@@ -56,10 +66,6 @@ impl Fixture {
             &key,
         )
         .unwrap();
-        let policy = RetentionPolicy {
-            mode,
-            ..Default::default()
-        };
         let connection = |id: &str| {
             json!({"id":id,"protocol":"https","httpsTrustPolicy":"strict",
             "hostname":"https://same.example/","port":443,"httpAutoLogin":false,
@@ -200,6 +206,40 @@ fn live(owner: &NativeCookieRetention) -> bool {
     let mut delivered = false;
     assert_eq!(owner.with_current(&mut || delivered = true), delivered);
     delivered
+}
+
+#[tokio::test]
+async fn failed_restore_cleanup_preserves_own_snapshot_even_with_clear_on_lock() {
+    for mode in [RetentionMode::Memory, RetentionMode::EncryptedDatabase] {
+        let fixture = Fixture::with_policy(
+            RetentionPolicy {
+                mode,
+                clear_on_database_lock: true,
+                ..Default::default()
+            },
+            false,
+        )
+        .await;
+        let first = fixture.owner("original", "one").await;
+        load(&first).await;
+        save(&first, "preserve-on-restore-failure").await;
+        finish(&first).await;
+        let failed = fixture.owner("failed", "one").await;
+        assert_eq!(load(&failed).await[0].value, "preserve-on-restore-failure");
+        let before = fixture.database_bytes();
+        failed.preserve_restore_source();
+        let revoked = failed.clone();
+        tauri::async_runtime::spawn_blocking(move || revoked.revoke())
+            .await
+            .unwrap()
+            .unwrap();
+        assert!(!live(&failed));
+        assert_eq!(fixture.database_bytes(), before);
+        drop(failed);
+        let next = fixture.owner("retry", "one").await;
+        assert_eq!(load(&next).await[0].value, "preserve-on-restore-failure");
+        assert!(load(&fixture.owner("other", "two").await).await.is_empty());
+    }
 }
 
 #[tokio::test]

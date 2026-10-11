@@ -204,6 +204,13 @@ function WebBrowserSettingsContent({
           title="Browser session isolation and retention"
         />
         <Card>
+          <Toggle
+            settingKey="webBrowser.restoreCookies"
+            label="Restore saved cookies"
+            description="Use cookies saved for the same database and connection on new browser attempts. Off starts with a fresh temporary cookie jar; this attempt does not restore or change stored cookies, even with ephemeral retention selected. Configured expiry and clearing on database lock still apply independently. Applies only to new attempts and never grants permission to send login credentials."
+            checked={config.restoreCookies !== false}
+            onChange={(restoreCookies) => update({ restoreCookies })}
+          />
           <BrowserSessionRetentionFields
             value={normalizeBrowserSessionRetention(config.sessionRetention)}
             capabilities={retentionCapabilities ?? nativeRetentionCapabilities}

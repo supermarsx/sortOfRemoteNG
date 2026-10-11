@@ -29,6 +29,35 @@ const names = [
 ];
 
 describe("native browser per-view startup diagnostics", () => {
+  it.each([
+    [
+      "cookie-rejected",
+      "Native browser rejected a retained cookie. Disable Restore saved cookies to start fresh without changing the saved snapshot, then reopen the connection.",
+    ],
+    [
+      "cookie-restore-timeout",
+      "Native browser cookie restoration timed out waiting for cookie storage. Retry or disable Restore saved cookies to start fresh without changing the saved snapshot.",
+    ],
+    [
+      "cookie-restore-invalid",
+      "Retained browser cookies do not match the current storage or origin rules. Disable Restore saved cookies to start fresh without changing the saved snapshot.",
+    ],
+  ])(
+    "reports the fixed %s restore cause without arbitrary cookie data",
+    (code, message) => {
+      expect(runtime).toContain(JSON.stringify(message));
+      expect(originBrowserStartupError("create", message)).toMatchObject({
+        category: "runtime",
+        code,
+      });
+      const decorated = originBrowserStartupError(
+        "create",
+        `${message} COOKIE_SECRET`,
+      );
+      expect(decorated.code).toBeUndefined();
+      expect(decorated.message).not.toContain("COOKIE_SECRET");
+    },
+  );
   it("surfaces the exact native MFA origin mismatch with review/re-enable/save guidance", () => {
     expect(mfaOriginFailure).toBeTruthy();
     for (const error of [mfaOriginFailure, new Error(mfaOriginFailure)]) {

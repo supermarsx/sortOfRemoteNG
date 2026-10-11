@@ -95,6 +95,7 @@ export function normalizeWebBrowserSettings(
           "defaultPolicy",
           "domainPermissions",
           "sessionRetention",
+          "restoreCookies",
         ].includes(key),
     )
   )
@@ -185,6 +186,7 @@ export function normalizeWebBrowserSettings(
     ),
     defaultPolicy,
     sessionRetention: normalizeBrowserSessionRetention(row.sessionRetention),
+    restoreCookies: boolean(row.restoreCookies, true),
     ...(row.domainPermissions === undefined
       ? {}
       : {

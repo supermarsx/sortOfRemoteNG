@@ -40,6 +40,8 @@ export interface WebBrowserSettingsConfig extends BrowserNativePreferences {
   domainPermissions?: WebsiteDomainPermissionsSettings;
   /** Requested retention only; runtime capabilities determine the effective mode. */
   sessionRetention?: BrowserSessionRetention;
+  /** False skips restoration and checkpointing, preserving stored cookies. */
+  restoreCookies?: boolean;
 }
 
 /** Applied when creating a native proxy session, including its derived routes. */

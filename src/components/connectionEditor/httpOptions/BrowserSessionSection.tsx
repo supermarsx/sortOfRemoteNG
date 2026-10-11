@@ -214,6 +214,30 @@ function SessionOverrides({
         overrides={overrides}
         onChange={update}
       />
+      <BrowserSelectRow
+        settingKey="browserSession.restoreCookies"
+        label="Restore saved cookies"
+        description="Use cookies saved for this same database and connection. Off starts with a fresh temporary cookie jar; this attempt does not restore or change stored cookies, even with ephemeral retention selected. Configured expiry and clearing on database lock still apply independently. Applies only to new attempts and never grants permission to send login credentials."
+        value={
+          overrides.restoreCookies === undefined
+            ? "inherit"
+            : String(overrides.restoreCookies)
+        }
+        options={[
+          {
+            value: "inherit",
+            label: `Use app default (${defaults.restoreCookies !== false ? "on" : "off"})`,
+          },
+          { value: "true", label: "On" },
+          { value: "false", label: "Off" },
+        ]}
+        onChange={(value) =>
+          update(
+            "restoreCookies",
+            value === "inherit" ? undefined : value === "true",
+          )
+        }
+      />
       <label className="flex items-center gap-2 text-sm">
         <Checkbox
           checked={overrides.sessionRetention !== undefined}

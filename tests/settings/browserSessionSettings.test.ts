@@ -21,6 +21,7 @@ describe("browser session contract", () => {
     "crossOriginRequestsEnabled",
     "websiteExtensionsEnabled",
     "hideAutomationIndicator",
+    "restoreCookies",
   ] as const;
   it.each(nativeBooleans)(
     "defaults %s on and preserves explicit false through sparse inheritance",

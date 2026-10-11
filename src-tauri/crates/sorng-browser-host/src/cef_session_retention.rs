@@ -108,6 +108,8 @@ pub enum RetentionError {
     NativeFailure,
     Expired,
     Pending,
+    CookieRejected,
+    Timeout,
 }
 
 /// Implementations must hold their owner/attempt revocation fence throughout
@@ -448,30 +450,80 @@ pub(crate) mod native {
 
     struct ImportState {
         pending: usize,
-        failed: bool,
+        failed: Option<RetentionError>,
+        ready: bool,
+        queued: Option<Vec<SignInCookie>>,
+    }
+    impl ImportState {
+        fn take_ready(
+            &mut self,
+            expired: bool,
+        ) -> Result<Option<Vec<SignInCookie>>, RetentionError> {
+            match self.status(expired) {
+                Err(RetentionError::Pending) if self.ready => Ok(self.queued.take()),
+                Ok(()) => Ok(None),
+                Err(error) => Err(error),
+            }
+        }
+
+        fn status(&self, expired: bool) -> Result<(), RetentionError> {
+            if let Some(error) = self.failed {
+                Err(error)
+            } else if self.pending == 0 {
+                Ok(())
+            } else if expired {
+                Err(RetentionError::Timeout)
+            } else {
+                Err(RetentionError::Pending)
+            }
+        }
     }
     pub(crate) struct CookieImport {
         state: Arc<Mutex<ImportState>>,
         owner: Arc<dyn CookieOwner>,
+        manager: CookieManager,
         deadline: Instant,
     }
     impl CookieImport {
         pub(crate) fn status(&self) -> Result<(), RetentionError> {
             let mut result = Err(RetentionError::OwnerUnavailable);
             if !self.owner.with_current(&mut || {
-                result = self
-                    .state
-                    .lock()
-                    .map_err(|_| RetentionError::NativeFailure)
-                    .and_then(|s| {
-                        if s.failed || (s.pending != 0 && Instant::now() >= self.deadline) {
-                            Err(RetentionError::NativeFailure)
-                        } else if s.pending != 0 {
-                            Err(RetentionError::Pending)
-                        } else {
-                            Ok(())
+                result = (|| {
+                    let queued = {
+                        let mut state = self
+                            .state
+                            .lock()
+                            .map_err(|_| RetentionError::NativeFailure)?;
+                        state.take_ready(Instant::now() >= self.deadline)?
+                    };
+                    if let Some(cookies) = queued {
+                        for saved in cookies {
+                            let cookie = imported_cookie(&saved).inspect_err(|error| {
+                                if let Ok(mut state) = self.state.lock() {
+                                    state.failed = Some(*error);
+                                }
+                            })?;
+                            let mut callback =
+                                ImportCallback::new(self.state.clone(), self.owner.clone());
+                            if self.manager.set_cookie(
+                                Some(&CefString::from(saved.origin.as_str())),
+                                Some(&cookie),
+                                Some(&mut callback),
+                            ) == 0
+                            {
+                                self.state
+                                    .lock()
+                                    .map_err(|_| RetentionError::NativeFailure)?
+                                    .failed = Some(RetentionError::CookieRejected);
+                                return Err(RetentionError::CookieRejected);
+                            }
                         }
-                    });
+                    }
+                    self.state
+                        .lock()
+                        .map_err(|_| RetentionError::NativeFailure)?
+                        .status(Instant::now() >= self.deadline)
+                })();
             }) {
                 return Err(RetentionError::OwnerUnavailable);
             }
@@ -484,11 +536,19 @@ pub(crate) mod native {
             fn on_complete(&self, success: i32) {
                 let current = self.owner.with_current(&mut || {
                     if let Ok(mut state) = self.state.lock() {
-                        state.failed |= success == 0;
+                        if success == 0 { state.failed.get_or_insert(RetentionError::CookieRejected); }
                         state.pending = state.pending.saturating_sub(1);
                     }
                 });
-                if !current { if let Ok(mut state) = self.state.lock() { state.failed = true; } }
+                if !current { if let Ok(mut state) = self.state.lock() { state.failed = Some(RetentionError::OwnerUnavailable); } }
+            }
+        }
+    }
+    wrap_completion_callback! {
+        struct ImportReady { state: Arc<Mutex<ImportState>> }
+        impl CompletionCallback {
+            fn on_complete(&self) {
+                if let Ok(mut state) = self.state.lock() { state.ready = true; }
             }
         }
     }
@@ -509,65 +569,139 @@ pub(crate) mod native {
         {
             return Err(RetentionError::Invalid);
         }
-        let manager = context
-            .cookie_manager(None)
-            .ok_or(RetentionError::NativeFailure)?;
         let state = Arc::new(Mutex::new(ImportState {
             pending: cookies.len(),
-            failed: false,
+            failed: None,
+            ready: false,
+            queued: Some(cookies),
         }));
-        for saved in cookies {
-            let cookie = Cookie {
-                name: CefString::from(saved.name.as_str()),
-                value: CefString::from(saved.value.as_str()),
-                domain: CefString::from(saved.domain.as_str()),
-                path: CefString::from(saved.path.as_str()),
-                secure: i32::from(saved.secure),
-                httponly: i32::from(saved.http_only),
-                creation: Basetime {
-                    val: saved.creation,
-                },
-                last_access: Basetime {
-                    val: cef_time(now())?,
-                },
-                has_expires: i32::from(saved.expires.is_some()),
-                expires: Basetime {
-                    val: saved.expires.unwrap_or(0),
-                },
-                same_site: match saved.same_site {
-                    0 => CookieSameSite::UNSPECIFIED,
-                    1 => CookieSameSite::NO_RESTRICTION,
-                    2 => CookieSameSite::LAX_MODE,
-                    _ => CookieSameSite::STRICT_MODE,
-                },
-                priority: match saved.priority {
-                    0 => CookiePriority::LOW,
-                    1 => CookiePriority::MEDIUM,
-                    _ => CookiePriority::HIGH,
-                },
-                ..Cookie::default()
-            };
-            let mut callback = ImportCallback::new(state.clone(), owner.clone());
-            let mut accepted = false;
-            if !owner.with_current(&mut || {
-                accepted = manager.set_cookie(
-                    Some(&CefString::from(saved.origin.as_str())),
-                    Some(&cookie),
-                    Some(&mut callback),
-                ) != 0;
-            }) || !accepted
-            {
-                if let Ok(mut state) = state.lock() {
-                    state.failed = true;
-                }
-                return Err(RetentionError::NativeFailure);
-            }
-        }
+        // CEF storage initialization is asynchronous. Queue imports only after
+        // its completion callback, not immediately after obtaining the manager.
+        let mut ready = ImportReady::new(state.clone());
+        let manager = context
+            .cookie_manager(Some(&mut ready))
+            .ok_or(RetentionError::NativeFailure)?;
         Ok(CookieImport {
             state,
             owner,
+            manager,
             deadline: Instant::now() + Duration::from_secs(10),
         })
+    }
+
+    fn imported_cookie(saved: &SignInCookie) -> Result<Cookie, RetentionError> {
+        Ok(Cookie {
+            name: CefString::from(saved.name.as_str()),
+            value: CefString::from(saved.value.as_str()),
+            // CEF interprets any supplied domain as a domain cookie. A
+            // captured host-only cookie has no leading dot: leave this
+            // empty to preserve its scope (required for __Host- cookies).
+            domain: CefString::from(if saved.domain.starts_with('.') {
+                saved.domain.as_str()
+            } else {
+                ""
+            }),
+            path: CefString::from(saved.path.as_str()),
+            secure: i32::from(saved.secure),
+            httponly: i32::from(saved.http_only),
+            creation: Basetime {
+                val: saved.creation,
+            },
+            last_access: Basetime {
+                val: cef_time(now())?,
+            },
+            has_expires: i32::from(saved.expires.is_some()),
+            expires: Basetime {
+                val: saved.expires.unwrap_or(0),
+            },
+            same_site: match saved.same_site {
+                0 => CookieSameSite::UNSPECIFIED,
+                1 => CookieSameSite::NO_RESTRICTION,
+                2 => CookieSameSite::LAX_MODE,
+                _ => CookieSameSite::STRICT_MODE,
+            },
+            priority: match saved.priority {
+                0 => CookiePriority::LOW,
+                1 => CookiePriority::MEDIUM,
+                _ => CookiePriority::HIGH,
+            },
+            ..Cookie::default()
+        })
+    }
+
+    #[cfg(test)]
+    mod import_tests {
+        use super::*;
+        #[test]
+        fn host_only_scope_is_preserved_including_host_prefix_and_ip_devices() {
+            #[cfg(target_os = "macos")]
+            crate::platform::test_runtime::ensure_loaded();
+            for domain in ["same.example", "10.1.180.10", "[::1]"] {
+                let mut saved = super::super::tests::cookie();
+                saved.name = "__Host-session".into();
+                saved.domain = domain.into();
+                let cookie = imported_cookie(&saved).unwrap();
+                assert!(cookie.domain.to_string().is_empty());
+                assert_eq!(cookie.name.to_string(), "__Host-session");
+                assert_eq!(cookie.secure, 1);
+                assert_eq!(cookie.httponly, 1);
+                assert_eq!(cookie.path.to_string(), "/");
+            }
+        }
+        #[test]
+        fn domain_cookie_keeps_its_explicit_subdomain_scope() {
+            #[cfg(target_os = "macos")]
+            crate::platform::test_runtime::ensure_loaded();
+            let mut saved = super::super::tests::cookie();
+            saved.domain = ".same.example".into();
+            assert_eq!(
+                imported_cookie(&saved).unwrap().domain.to_string(),
+                ".same.example"
+            );
+        }
+        #[test]
+        fn import_waits_for_callbacks_and_reports_timeout_or_rejection_distinctly() {
+            let mut state = ImportState {
+                pending: 1,
+                failed: None,
+                ready: false,
+                queued: None,
+            };
+            assert_eq!(state.status(false), Err(RetentionError::Pending));
+            assert_eq!(state.status(true), Err(RetentionError::Timeout));
+            state.ready = true;
+            assert_eq!(state.status(false), Err(RetentionError::Pending));
+            state.failed = Some(RetentionError::CookieRejected);
+            assert_eq!(state.status(true), Err(RetentionError::CookieRejected));
+            state.failed = None;
+            state.pending = 0;
+            assert_eq!(state.status(true), Ok(()));
+        }
+
+        #[test]
+        fn cookie_dispatch_waits_for_storage_and_happens_only_once() {
+            let mut state = ImportState {
+                pending: 1,
+                failed: None,
+                ready: false,
+                queued: Some(vec![super::super::tests::cookie()]),
+            };
+            assert!(matches!(
+                state.take_ready(false),
+                Err(RetentionError::Pending)
+            ));
+            assert_eq!(state.queued.as_ref().unwrap().len(), 1);
+            state.ready = true;
+            assert_eq!(state.take_ready(false).unwrap().unwrap().len(), 1);
+            assert!(state.take_ready(false).unwrap().is_none());
+            assert_eq!(state.status(false), Err(RetentionError::Pending));
+            assert!(matches!(
+                state.take_ready(true),
+                Err(RetentionError::Timeout)
+            ));
+            state.pending = 0;
+            assert_eq!(state.status(true), Ok(()));
+        }
     }
 }
 
@@ -704,7 +838,7 @@ mod tests {
         assert_eq!(cookie_enum_values(0, u32::MAX), None);
     }
 
-    fn cookie() -> SignInCookie {
+    pub(super) fn cookie() -> SignInCookie {
         SignInCookie {
             origin: "https://same.example".into(),
             name: "sid".into(),

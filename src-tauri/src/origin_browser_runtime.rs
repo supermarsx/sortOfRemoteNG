@@ -96,6 +96,16 @@ const STARTUP_FAILED: &str = "Native browser initialization or policy readiness 
 const PROXY_FAILED: &str = "Native browser private proxy could not start. Reopen the tab and check the native startup diagnostics; no direct-network fallback was used.";
 const CONTEXT_FAILED: &str = "Native browser private context preparation failed. Check the native startup diagnostics for proxy, certificate or storage setup; this is not a saved-password rejection.";
 const COOKIE_RESTORE_FAILED: &str = "Native browser cookie restoration failed. Reopen the tab and check the native startup diagnostics; no other connection's cookies were used.";
+fn cookie_restore_failure(error: sorng_browser_host::cef_session_retention::RetentionError) -> String {
+    use sorng_browser_host::cef_session_retention::RetentionError;
+    let message = match error {
+        RetentionError::CookieRejected => "Native browser rejected a retained cookie. Disable Restore saved cookies to start fresh without changing the saved snapshot, then reopen the connection.",
+        RetentionError::Timeout => "Native browser cookie restoration timed out waiting for cookie storage. Retry or disable Restore saved cookies to start fresh without changing the saved snapshot.",
+        RetentionError::Invalid | RetentionError::Limit | RetentionError::Expired => "Retained browser cookies do not match the current storage or origin rules. Disable Restore saved cookies to start fresh without changing the saved snapshot.",
+        _ => COOKIE_RESTORE_FAILED,
+    };
+    view_failure(Failure::CookieRestore, message)
+}
 const VIEW_FAILED: &str = "Native browser embedded view creation failed. Reopen the tab and check the native startup diagnostics; this is not a website login failure.";
 const RENDERER_FAILED: &str = "Native browser renderer setup failed. Reopen the tab and check the native startup diagnostics; the website was not navigated.";
 const ZOOM_FAILED: &str = "Native browser initial zoom setup failed. Reopen the tab and check the native startup diagnostics; the website was not navigated.";
@@ -1231,6 +1241,7 @@ async fn create_document(
     // checkpoint another database's cookies even when global retention is on.
     let retention = if authorized.preferences.capabilities.cookies_enabled
         && !authorized.lease.is_temporary()
+        && authorized.preferences.restore_cookies
     {
         Some(
             retention::NativeCookieRetention::prepare(
@@ -1259,7 +1270,7 @@ async fn create_document(
         }
     });
     let cookies = if let Some(load) = retention.clone() {
-        tauri::async_runtime::spawn_blocking(move || load.load())
+        tauri::async_runtime::spawn_blocking(move || load.load().inspect_err(|_| load.preserve_restore_source()))
             .await
             .map_err(|_| "Sign-in cookies could not be read.".to_owned())?
             .map_err(|_| {
@@ -2084,6 +2095,15 @@ pub(crate) fn tick() {
                     .send(Err(view_failure(Failure::Timeout, VIEW_TIMED_OUT)));
                 continue;
             }
+            if let Err(error) = pending.context.cookie_restore_status() {
+                if error != sorng_browser_host::cef_session_retention::RetentionError::Pending {
+                    log::error!("Native browser stage=cookie-restore error={error:?}");
+                    if let Some(retention) = &pending.attempt.retention { retention.preserve_restore_source(); }
+                    pending.attempt.revoke();
+                    let _ = pending.response.send(Err(cookie_restore_failure(error)));
+                    continue;
+                }
+            }
             match pending.context.status() {
                 PreparationStatus::Initializing => {
                     waiting.push(pending);
@@ -2100,6 +2120,13 @@ pub(crate) fn tick() {
                 }
             }
             if let Some(cookies) = pending.cookies.take() {
+                if cookies.is_empty() {
+                    // A new/ephemeral jar needs no import, origin expansion or
+                    // cookie-manager startup. In particular, HTTP-only devices
+                    // must not fail HTTPS-only retained-origin validation here.
+                    waiting.push(pending);
+                    continue;
+                }
                 let Some(retention) = pending.attempt.retention.as_ref() else {
                     pending.attempt.revoke();
                     let _ = pending.response.send(Err(UNAVAILABLE.into()));
@@ -2110,14 +2137,12 @@ pub(crate) fn tick() {
                     .import_sign_in_cookies(retention.clone(), cookies)
                 {
                     log::error!("Native browser stage=cookie-restore error={error:?}");
+                    retention.preserve_restore_source();
                     pending.attempt.revoke();
-                    let _ = pending.response.send(Err(view_failure(
-                        Failure::CookieRestore,
-                        COOKIE_RESTORE_FAILED,
-                    )));
+                    let _ = pending.response.send(Err(cookie_restore_failure(error)));
                     continue;
                 }
-                // Import completion is asynchronous, even for the empty jar.
+                // Import completion is asynchronous for a retained jar.
                 // Never create or navigate a page until native readback passes.
                 waiting.push(pending);
                 continue;
