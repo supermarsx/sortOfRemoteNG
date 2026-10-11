@@ -161,6 +161,24 @@ impl NativeAuthTyping {
 /// Caller still supplies the owner/consent/field receipt to NativeAuthTyping.
 #[cfg(feature = "cef-host")]
 pub fn send_cef_character(browser: &cef::Browser, target: &NativeAuthTarget, unit: u16) -> bool {
+    send_character(browser, target, unit, false)
+}
+
+/// Automatic login only: the private renderer has acknowledged the exact
+/// active DOM input for this character. Tab/window focus is not login consent.
+/// CEF routes keys to this browser's focused frame even when its window is
+/// hidden; never focus/show a host or inject OS-global input to make it work.
+#[cfg(feature = "cef-host")]
+pub(crate) fn send_cef_login_character(
+    browser: &cef::Browser, target: &NativeAuthTarget, unit: u16,
+) -> bool {
+    send_character(browser, target, unit, true)
+}
+
+#[cfg(feature = "cef-host")]
+fn send_character(
+    browser: &cef::Browser, target: &NativeAuthTarget, unit: u16, automatic: bool,
+) -> bool {
     use cef::{ImplBrowser, ImplBrowserHost, ImplFrame};
     if cef::currently_on(cef::ThreadId::UI) != 1
         || browser.is_valid() != 1
@@ -173,7 +191,7 @@ pub fn send_cef_character(browser: &cef::Browser, target: &NativeAuthTarget, uni
     };
     if frame.is_valid() != 1
         || frame.is_main() != 1
-        || frame.is_focused() != 1
+        || (!automatic && frame.is_focused() != 1)
         || cef::CefString::from(&frame.identifier()).to_string() != target.frame_id
         || cef::CefString::from(&frame.url()).to_string() != target.document_url
     {

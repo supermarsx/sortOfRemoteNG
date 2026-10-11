@@ -2,13 +2,27 @@
 use super::*;
 use crate::cef_renderer::message_text;
 use crate::native_totp::input::{
-    send_cef_character, NativeAuthTarget, NativeAuthTyping, TypingStatus,
+    send_cef_login_character, NativeAuthTarget, NativeAuthTyping, TypingStatus,
 };
 use crate::native_totp::{self, NativeTotpCode, NativeTotpRequest};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 #[path = "cef_login_typing.rs"]
 mod keyboard;
+
+// Saved automatic login belongs to the live attempt, including hidden tabs.
+// The separate manual-entry and native focus paths keep their foreground gates.
+fn automatic_input_current(shared: &Shared, browser: &Browser) -> bool {
+    shared.current()
+        && shared.accepts(Some(browser))
+        && shared.state.lock().is_ok_and(|state| {
+            // Inactive presentations block manual input and inspector actions.
+            // A hidden tab's saved login still runs under its per-key consent
+            // and DOM receipt; it neither shows nor focuses the native window.
+            state.control.lifecycle() == Lifecycle::Hidden
+                || !shared.input_blocked.load(Ordering::Acquire)
+        })
+}
 
 #[derive(Default)]
 pub(super) struct State {
@@ -175,12 +189,7 @@ impl Shared {
         };
         let frame_id = CefString::from(&frame.identifier()).to_string();
         let document_current = || {
-            self.current()
-                && !self.input_blocked.load(Ordering::Acquire)
-                && self.state.lock().is_ok_and(|state| {
-                    state.browser_id == Some(browser.identifier())
-                        && state.control.lifecycle() == Lifecycle::Attached
-                })
+            automatic_input_current(self, browser)
                 && frame.is_valid() == 1
                 && frame.is_main() == 1
                 && CefString::from(&frame.url()).to_string() == url
@@ -334,7 +343,7 @@ impl Shared {
                             && target.field_token == nonce
                             && current()
                     },
-                    |target, unit| send_cef_character(browser, target, unit),
+                    |target, unit| send_cef_login_character(browser, target, unit),
                 );
                 if matches!(status, TypingStatus::Sent | TypingStatus::Complete) {
                     pending.next += 1;
@@ -401,6 +410,32 @@ mod tests {
     use super::*;
     use sorng_protocols::origin_browser::OriginBrowserPolicy;
     use std::sync::atomic::AtomicUsize;
+
+    #[tokio::test]
+    async fn background_login_keeps_owner_and_input_guards_without_granting_focus() {
+        struct Sink;
+        impl BrowserEventSink for Sink { fn on_event(&self, _: BrowserEvent) {} }
+        let shared = super::super::tests::fixture(Arc::new(Sink)).await;
+        shared.state.lock().unwrap().browser_id = Some(41);
+        let browser = super::super::tests::focus_browser(1, 41);
+        assert!(automatic_input_current(&shared, &browser));
+        shared.state.lock().unwrap().control.hide(&shared.identity).unwrap();
+        assert!(automatic_input_current(&shared, &browser));
+        assert!(!shared.focus_allowed(Some(&browser)));
+        shared.input_blocked.store(true, Ordering::Release);
+        assert!(automatic_input_current(&shared, &browser));
+        assert!(!shared.focus_allowed(Some(&browser)));
+        shared.state.lock().unwrap().control.show(&shared.identity).unwrap();
+        assert!(!automatic_input_current(&shared, &browser));
+        shared.state.lock().unwrap().control.hide(&shared.identity).unwrap();
+        shared.input_blocked.store(false, Ordering::Release);
+        assert!(automatic_input_current(&shared, &browser));
+        for other in [super::super::tests::focus_browser(1, 42), super::super::tests::focus_browser(0, 41)] {
+            assert!(!automatic_input_current(&shared, &other));
+        }
+        shared.session.lock().unwrap().revoke(&shared.identity).unwrap();
+        assert!(!automatic_input_current(&shared, &browser));
+    }
 
     struct LockedConsentHooks {
         active: Mutex<bool>,

@@ -127,12 +127,7 @@ pub(super) fn receive(
         return;
     };
     let current = || {
-        shared.current()
-            && !shared.input_blocked.load(Ordering::Acquire)
-            && shared.state.lock().is_ok_and(|s| {
-                s.browser_id == Some(browser.identifier())
-                    && s.control.lifecycle() == Lifecycle::Attached
-            })
+        automatic_input_current(shared, browser)
             && frame.is_valid() == 1
             && frame.is_main() == 1
             && CefString::from(&frame.url()).to_string() == url
@@ -255,7 +250,7 @@ pub(super) fn receive(
         let status = pending.input.tick(
             Instant::now(),
             |_| permitted(),
-            |target, unit| send_cef_character(browser, target, unit),
+            |target, unit| send_cef_login_character(browser, target, unit),
         );
         if matches!(status, TypingStatus::Sent | TypingStatus::Complete) {
             pending.next = pending.input.units_sent();

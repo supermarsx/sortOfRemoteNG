@@ -123,6 +123,6 @@ test("OTP renderer contract never receives secrets or sets field values", () => 
   assert.doesNotMatch(otp, /\.value\s*=(?!=)|setNativeValue|dispatchEvent|KeyboardEvent/);
   assert.match(otp, /emit\("key", index\)/);
   const bridge = readFileSync("src-tauri/crates/sorng-browser-host/src/cef_login_totp.rs", "utf8");
-  assert.match(bridge, /send_cef_character\(browser, target, unit\)/);
+  assert.match(bridge, /send_cef_login_character\(browser, target, unit\)/);
   assert.doesNotMatch(bridge, /CefString::from\(code\.code\)/);
 });

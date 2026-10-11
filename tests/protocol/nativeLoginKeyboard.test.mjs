@@ -14,13 +14,21 @@ const source = readFileSync(resolve(base,"native_login_client.js"),"utf8")
   .replace("/* NATIVE_KEYBOARD_CLIENT */", () => readFileSync(resolve(base,"native_login_typing.js"),"utf8"));
 const delay = ms => new Promise(resolve => setTimeout(resolve,ms));
 
-function fixture(t, manual = false, google = false, visibilityToggle = false, waitForInput = false) {
+function fixture(t, manual = false, google = false, visibilityToggle = false, waitForInput = false, background = null) {
   const dom = new JSDOM(google
     ? '<form method="POST"><input id="identifierId" name="identifier" type="text" autocomplete="username"><input name="hiddenPassword" type="password" aria-hidden="true" tabindex="-1"><button name="action" id="identifierNext">Next</button></form>'
     : '<form method="post" action="/login"><input id="username"><input id="password" type="password"><button id="login" type="submit">Login</button></form>',{
     url:google ? "https://accounts.google.com/v3/signin/identifier" : "https://device.test/login",runScripts:"outside-only",
   });
   const win = dom.window, doc = win.document;
+  const errors = [];
+  win.addEventListener("error", event => { errors.push(event.error); event.preventDefault(); });
+  if (background) {
+    Object.defineProperty(doc, "visibilityState", { get: () => "hidden" });
+    Object.defineProperty(doc, "hidden", { get: () => true });
+    doc.hasFocus = () => false;
+    win.focus = () => assert.fail("automatic login must not activate a window");
+  }
   t.after(() => { win.dispatchEvent(new win.Event("pagehide")); win.close(); });
   Object.defineProperty(win.HTMLElement.prototype,"offsetParent",{get(){ return this.parentElement; }});
   win.HTMLElement.prototype.getClientRects = function(){ return this.isConnected ? [{width:100,height:20}] : []; };
@@ -34,7 +42,7 @@ function fixture(t, manual = false, google = false, visibilityToggle = false, wa
     }
     return original(type,callback,...args);
   };
-  const values = { username:google ? "operator@example.test" : "operator", password:"pA55@word" };
+  const values = background || { username:google ? "operator@example.test" : "operator", password:"pA55@word" };
   const signals = [], keys = [];
   let delivered, submits = 0;
   const until = Date.now()+15000;
@@ -85,7 +93,7 @@ function fixture(t, manual = false, google = false, visibilityToggle = false, wa
     },0);
   };
   delivered = win.eval(source)(notify,google ? {provider:"google-account"} : {selectors:{username:"#username",password:"#password",submit:"#login"}},google ? "google-account" : "modular-form",true);
-  return {doc,win,signals,keys,values,until,delivered,submits:()=>submits,identifierValue:()=>identifierValue};
+  return {doc,win,signals,keys,values,until,delivered,errors,submits:()=>submits,identifierValue:()=>identifierValue};
 }
 
 for (const visibilityToggle of [false, true]) {
@@ -157,3 +165,43 @@ test("native credential typing cannot overwrite manual edits while awaiting keyb
   assert.equal(f.submits(),0);
   assert.equal(f.signals.some(s=>s.startsWith("type|key")),false);
 });
+
+test("concurrent background form and Google tabs complete their own login without activation", async t => {
+  // CEF input is modelled here; the production bridge's native gates are covered
+  // separately. Each document remains hidden and unfocused throughout delivery.
+  const tabs = Array.from({ length: 8 }, (_, index) => fixture(
+    t, false, index % 2 === 1, false, false,
+    { username: `operator${index}@example.test`, password: `secret-${index}` },
+  ));
+  for (let i = 0; i < 160 && tabs.some(f => f.submits() === 0); i++) await delay(50);
+  for (const f of tabs) {
+    assert.equal(f.doc.hidden, true);
+    assert.equal(f.doc.hasFocus(), false);
+    assert.equal(f.submits(), 1, JSON.stringify(f.signals));
+    assert.equal(f.doc.getElementById("username")?.value ?? f.identifierValue(), f.values.username);
+    assert.equal(f.doc.getElementById("password").value, f.values.password);
+    assert.equal(f.keys.length, f.values.username.length + f.values.password.length);
+    assert.equal(f.signals.at(-1), "form-completed");
+    assert.deepEqual(f.errors, []);
+  }
+});
+
+for (const change of ["field-focus", "navigation", "form-action", "manual-edit", "pagehide"]) {
+  test(`background automatic typing cancels on ${change} before disclosing a character`, async t => {
+    const f = fixture(t, true, false, false, false, { username: "operator", password: "secret" });
+    for (let i = 0; i < 40 && !f.signals.includes("type|start|form|username|0"); i++) await delay(50);
+    assert.ok(f.signals.includes("type|start|form|username|0"));
+    if (change === "field-focus") f.doc.getElementById("password").focus();
+    if (change === "navigation") f.win.history.replaceState(null, "", "/other");
+    if (change === "form-action") f.doc.querySelector("form").action = "https://other.test/collect";
+    if (change === "manual-edit") f.doc.getElementById("username").value = "manual";
+    if (change === "pagehide") f.win.dispatchEvent(new f.win.Event("pagehide"));
+    f.delivered.nativeTyping("probe", 0, f.until, false, "type|form|username");
+    await delay(100);
+    assert.equal(f.signals.some(s => s.startsWith("type|key")), false);
+    assert.equal(f.doc.getElementById("password").value, "");
+    assert.equal(f.submits(), 0);
+    assert.deepEqual(f.errors, []);
+    if (change === "manual-edit") assert.equal(f.doc.getElementById("username").value, "manual");
+  });
+}

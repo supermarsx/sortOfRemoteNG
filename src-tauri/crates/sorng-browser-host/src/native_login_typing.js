@@ -4,6 +4,9 @@ function createLoginKeyboard(signal) {
   let active = null, lastField = null;
   const acceptedEvents = new WeakSet();
   const now = Date.now.bind(Date);
+  // Provider/form fingerprints may throw after a page changes its action or
+  // controls. Treat that as a stale receipt, including during background waits.
+  const guarded = guard => { try { return guard() === true; } catch (_) { return false; } };
   const send = (row, action, index = 0) => signal(`type|${action}|${row.stage}|${row.field}|${index}`);
   function finish(ok) {
     const row = active;
@@ -16,7 +19,7 @@ function createLoginKeyboard(signal) {
     else { send(row, "cancel"); row.reject(new Error("native-typing-cancelled")); }
   }
   function current(row) {
-    return active === row && now() < row.until && row.guard() &&
+    return active === row && now() < row.until && guarded(row.guard) &&
       location.href === row.url && document.activeElement === row.element &&
       row.element.isConnected && !row.element.disabled && !row.element.readOnly &&
       row.element.value === row.text.slice(0, row.position) &&
@@ -45,7 +48,7 @@ function createLoginKeyboard(signal) {
     const row = active;
     if (!row) return;
     const length = row.element.value.length;
-    if (!row.armed || !event.isTrusted || event.target !== row.element || !row.guard() ||
+    if (!row.armed || !event.isTrusted || event.target !== row.element || !guarded(row.guard) ||
         event.inputType !== "insertText" || length <= row.position || length > row.position + 2 ||
         row.element.value !== row.text.slice(0, length)) { finish(false); return; }
     acceptedEvents.add(event);
@@ -64,7 +67,7 @@ function createLoginKeyboard(signal) {
       return new Promise((resolve, reject) => {
         if (active || !element || element.tagName !== "INPUT" || element.value ||
             typeof text !== "string" || !text || text.length > 4096 || /[\x00-\x1f\x7f]/.test(text) ||
-            !guard() || until <= now() ||
+            !guarded(guard) || until <= now() ||
             ![document.body, element, lastField].includes(document.activeElement)) {
           reject(new Error("native-typing-target")); return;
         }
