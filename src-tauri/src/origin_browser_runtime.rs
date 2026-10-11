@@ -1658,7 +1658,6 @@ async fn operate(
                             presentation_revision,
                         } => {
                             if presentation_revision != view.presentation
-                                || !view.visible
                                 || view.input_blocked
                             {
                                 return Err("The website presentation changed.".into());

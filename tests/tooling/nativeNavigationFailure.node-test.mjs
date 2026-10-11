@@ -19,7 +19,8 @@ test("production load classifier compiles and tests without Cargo or CEF", async
 
 test("CEF callback uses recoverable classification, fences the browser and never consumes error prose", async () => {
   const source = await readFile(new URL("cef_browser.rs", host), "utf8");
-  const load = source.slice(source.indexOf("wrap_load_handler!"), source.indexOf("wrap_focus_handler!"));
+  assert.match(source, /include!\("cef_load\.rs"\)/);
+  const load = await readFile(new URL("cef_load.rs", host), "utf8");
   assert.match(load, /classify_load_error\(code, main_frame\)/);
   assert.match(load, /page\.load_failure = Some\(failure\)/);
   assert.match(load, /!self\.shared\.accepts\(browser\.as_deref\(\)\) \|\| !self\.shared\.current\(\)/);
@@ -62,4 +63,26 @@ test("owner-window IPC retains only fixed load evidence and does not count faile
   assert.match(sink, /Lifecycle::Attached \| Lifecycle::Hidden => OriginBrowserPhase::Attached/);
   const popup = await readFile(new URL("origin_browser_popup_runtime.rs", app), "utf8");
   assert.match(popup, /snapshot\.set_load_failure\(state\.load_failure\)/);
+});
+
+test("hidden diagnostic presentations synchronize input fencing without showing or focusing the page", async () => {
+  const runtime = await readFile(new URL("origin_browser_runtime.rs", app), "utf8");
+  assert.match(runtime, /return popups::present\(view, \*revision, \*bounds, \*visible, occlusions, \*input_blocked\)/);
+  const popup = await readFile(new URL("origin_browser_popup_runtime.rs", app), "utf8");
+  const presentation = popup.slice(popup.indexOf("fn apply_presentation("), popup.indexOf("pub(super) fn present("));
+  const hidden = presentation.slice(presentation.indexOf("} else {"), presentation.indexOf("        Ok(())"));
+  assert.match(hidden, /host\.hide\(id\)/);
+  assert.match(hidden, /bounds\.or\(view\.presentation_bounds/);
+  assert.match(hidden, /host\.occlude\(id, bounds, occlusions, scale, input_blocked\)/);
+  assert.doesNotMatch(hidden, /\.show\(|\.focus\(/);
+  const devtoolsStart = runtime.search(/OriginBrowserAction::Devtools\s*\{\s*presentation_revision\s*,?\s*\}\s*=>/);
+  assert.ok(devtoolsStart >= 0, "missing explicit DevTools control arm");
+  const devtools = runtime.slice(devtoolsStart, runtime.indexOf("OriginBrowserAction::Presentation {", devtoolsStart));
+  assert.match(devtools, /presentation_revision != view\.presentation/);
+  assert.match(devtools, /view\.input_blocked/);
+  assert.doesNotMatch(devtools, /!view\.visible/);
+  const inspector = await readFile(new URL("cef_devtools.rs", host), "utf8");
+  const gate = inspector.slice(inspector.indexOf("fn inspector_owner_current"), inspector.indexOf("impl CefBrowserHost<'_>"));
+  assert.match(gate, /!owner\.input_blocked\.load\(Ordering::Acquire\)/);
+  assert.match(gate, /Lifecycle::Hidden && state\.page\.load_failure\.is_some\(\)/);
 });

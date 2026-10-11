@@ -849,6 +849,7 @@ describe("origin browser attempt controller", () => {
         revision: 1,
         bounds: null,
         visible: false,
+        inputBlocked: true,
       },
     });
     expect(
@@ -1124,12 +1125,24 @@ describe("origin browser attempt controller", () => {
     const f = await mounted();
     expect(f.transport.control).toHaveBeenLastCalledWith({
       identity,
-      action: { kind: "presentation", revision: 1, bounds, visible: true },
+      action: {
+        kind: "presentation",
+        revision: 1,
+        bounds,
+        visible: true,
+        inputBlocked: false,
+      },
     });
     f.rerender({ ...f.props, active: false });
     expect(f.transport.control).toHaveBeenLastCalledWith({
       identity,
-      action: { kind: "presentation", revision: 2, bounds, visible: false },
+      action: {
+        kind: "presentation",
+        revision: 2,
+        bounds,
+        visible: false,
+        inputBlocked: true,
+      },
     });
     expect(await f.result.current.focus()).toBe(false);
     f.rerender({ ...f.props, dialogOpen: true });
@@ -1150,6 +1163,7 @@ describe("origin browser attempt controller", () => {
         revision: 4,
         bounds: null,
         visible: false,
+        inputBlocked: true,
       },
     });
     expect(await f.result.current.focus()).toBe(false);
@@ -1174,7 +1188,13 @@ describe("origin browser attempt controller", () => {
     expect(hook.result.current.state.phase).toBe("attached");
     expect(f.transport.control).toHaveBeenLastCalledWith({
       identity,
-      action: { kind: "presentation", revision: 1, bounds, visible: true },
+      action: {
+        kind: "presentation",
+        revision: 1,
+        bounds,
+        visible: true,
+        inputBlocked: false,
+      },
     });
   });
 
@@ -1625,7 +1645,10 @@ describe("origin browser attempt controller", () => {
     expect(f.transport.close).not.toHaveBeenCalled();
     expect(f.unsubscribe).not.toHaveBeenCalled();
     expect(f.transport.navigate).not.toHaveBeenCalled();
-    expect(f.transport.control).not.toHaveBeenCalled();
+    expect(f.transport.control).toHaveBeenCalledExactlyOnceWith({
+      identity,
+      action: expect.objectContaining({ kind: "presentation", visible: false }),
+    });
     // CEF loading-stopped and title/history events retain the native evidence.
     f.emit(snapshot({ sequence: 2, loadFailure, loading: false }));
     expect(f.result.current.state.phase).toBe("error");
@@ -1637,6 +1660,10 @@ describe("origin browser attempt controller", () => {
     f.emit(snapshot({ sequence: 3, loading: true }));
     expect(f.result.current.state.phase).toBe("attached");
     expect(f.result.current.state.error).toBeNull();
+    expect(f.transport.control).toHaveBeenLastCalledWith({
+      identity,
+      action: expect.objectContaining({ kind: "presentation", visible: true }),
+    });
     f.emit(
       snapshot({ sequence: 4, phase: "failed", failureReason: "renderer" }),
     );
@@ -1669,6 +1696,73 @@ describe("origin browser attempt controller", () => {
     expect(f.result.current.state.phase).toBe("attached");
     expect(f.transport.close).not.toHaveBeenCalled();
   });
+
+  it.each([false, true])(
+    "keeps tunnel diagnostics uncovered and inspector input fenced (preserve overlays: %s)",
+    async (preserveRenderingUnderOverlays) => {
+      const f = await mounted({ preserveRenderingUnderOverlays });
+      const loadFailure = { code: -111, category: "proxy" as const };
+      f.transport.control.mockClear();
+      f.emit(snapshot({ sequence: 1, loadFailure, canGoBack: true }));
+      expect(f.transport.control).toHaveBeenLastCalledWith({
+        identity,
+        action: expect.objectContaining({
+          kind: "presentation",
+          visible: false,
+        }),
+      });
+      expect(f.result.current.state.error).toContain("-111");
+      f.rerender({ ...f.props, active: false });
+      expect(f.transport.control).toHaveBeenLastCalledWith({
+        identity,
+        action: expect.objectContaining({ visible: false, inputBlocked: true }),
+      });
+      expect(await f.result.current.openDevTools()).toBe(false);
+      f.rerender(f.props);
+      expect(f.transport.control).toHaveBeenLastCalledWith({
+        identity,
+        action: expect.objectContaining({
+          visible: false,
+          inputBlocked: false,
+        }),
+      });
+      f.rerender({ ...f.props, dialogOpen: true });
+      expect(f.transport.control).toHaveBeenLastCalledWith({
+        identity,
+        action: expect.objectContaining({ visible: false, inputBlocked: true }),
+      });
+      expect(await f.result.current.openDevTools()).toBe(false);
+      f.rerender(f.props);
+      act(() => f.result.current.setViewport({ ...bounds, width: 900 }));
+      f.emit(snapshot({ sequence: 2, loadFailure, loading: false }));
+      // An old success cannot expose Chromium's error document either.
+      f.emit(snapshot({ sequence: 0 }));
+      expect(await f.result.current.focus()).toBe(false);
+      expect(await f.result.current.zoom(125)).toBe(false);
+      expect(
+        f.transport.control.mock.calls.every(
+          ([request]) =>
+            request.action.kind === "presentation" &&
+            request.action.visible === false,
+        ),
+      ).toBe(true);
+      expect(f.transport.close).not.toHaveBeenCalled();
+      expect(f.transport.navigate).not.toHaveBeenCalled();
+      expect(f.unsubscribe).not.toHaveBeenCalled();
+      expect(await f.result.current.back()).toBe(true);
+      expect(await f.result.current.openDevTools()).toBe(true);
+      expect(f.transport.create).toHaveBeenCalledOnce();
+      f.emit(snapshot({ sequence: 3 }));
+      expect(f.result.current.state.phase).toBe("attached");
+      expect(f.transport.control).toHaveBeenLastCalledWith({
+        identity,
+        action: expect.objectContaining({
+          kind: "presentation",
+          visible: true,
+        }),
+      });
+    },
+  );
 
   it("preserves an early document failure across create/status resync without closing", async () => {
     const f = fixture();
@@ -1901,7 +1995,13 @@ describe("origin browser attempt controller", () => {
     );
     expect(f.transport.control).toHaveBeenCalledExactlyOnceWith({
       identity,
-      action: { kind: "presentation", revision: 1, bounds, visible: false },
+      action: {
+        kind: "presentation",
+        revision: 1,
+        bounds,
+        visible: false,
+        inputBlocked: true,
+      },
     });
     expect(await hook.result.current.focus()).toBe(false);
   });

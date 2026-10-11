@@ -29,7 +29,8 @@ test("production automation fences follow main-document navigation, not child lo
     new URL("fixtures/cefAutomationLoading.rs", import.meta.url),
     "utf8",
   );
-  const load = block(source, "wrap_load_handler! {");
+  assert.match(source, /include!\("cef_load\.rs"\)/);
+  const load = block(await readFile(new URL("cef_load.rs", base), "utf8"), "wrap_load_handler! {");
   // The richer load-error diagnostics are a separate, pending concern. HEAD
   // faults/revokes on main-load errors; run this regression on either contract.
   const diagnosticLoads = load.includes(

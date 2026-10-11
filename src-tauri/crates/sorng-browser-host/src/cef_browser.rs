@@ -3205,59 +3205,9 @@ wrap_display_handler! {
     }
 }
 
-wrap_load_handler! {
-    struct NativeLoad { shared: Arc<Shared> }
-    impl LoadHandler {
-        fn on_loading_state_change(&self, browser: Option<&mut Browser>, is_loading: i32, can_go_back: i32, can_go_forward: i32) {
-            // CEF includes child-frame loads here. Only main-frame BeforeBrowse
-            // starts the automation fence; an iframe must not cancel typing.
-            // Keep the stopped fallback for navigations cancelled before commit,
-            // which do not receive OnLoadEnd, without clearing a main-load error.
-            if is_loading == 0 && self.shared.accepts(browser.as_deref()) && self.shared.current() {
-                let failed = self.shared.state.lock().map_or(true, |state| state.page.load_failure.is_some());
-                self.shared.automation.lock().unwrap_or_else(|error| error.into_inner()).navigating = failed;
-            }
-            self.shared.update(browser.as_deref(), |page| {
-                page.loading = is_loading == 1;
-                page.can_go_back = can_go_back == 1;
-                page.can_go_forward = can_go_forward == 1;
-            });
-        }
-        fn on_load_end(&self, browser: Option<&mut Browser>, frame: Option<&mut Frame>, _http_status_code: i32) {
-            if !self.shared.accepts(browser.as_deref()) || !self.shared.current() { return; }
-            let (Some(browser), Some(frame)) = (browser, frame) else { return; };
-            let Some(main) = browser.main_frame() else { return; };
-            if frame.is_valid() != 1 || frame.is_main() != 1 || main.is_valid() != 1
-                || CefString::from(&frame.identifier()).to_string() != CefString::from(&main.identifier()).to_string() { return; }
-            // The main document is ready even if a child is still loading.
-            // Generation, revocation and keyboard owner/focus checks remain
-            // independent; a load error still fences this document.
-            let failed = self.shared.state.lock().map_or(true, |state| state.page.load_failure.is_some());
-            self.shared.automation.lock().unwrap_or_else(|error| error.into_inner()).navigating = failed;
-        }
-        fn on_load_error(&self, browser: Option<&mut Browser>, frame: Option<&mut Frame>,
-            error_code: Errorcode, _error_text: Option<&CefString>, _failed_url: Option<&CefString>) {
-            if !self.shared.accepts(browser.as_deref()) || !self.shared.current() { return; }
-            let main_frame = frame.as_ref().is_some_and(|frame| frame.is_main() == 1);
-            let code = cef_dll_sys::cef_errorcode_t::from(error_code) as i32;
-            self.shared.navigation_status(NativeNavigationStatus::LoadError { code, main_frame });
-            if let Some(failure) = crate::native_navigation::classify_load_error(code, main_frame) {
-                // OnLoadError describes a request, not a crashed browser. Keep
-                // the session for explicit back/navigation/DevTools. Do not
-                // retry a possibly submitted POST or relax any security policy.
-                // OnLoadingStateChange(false) follows errors too and must not
-                // erase this evidence or declare this document successful.
-                self.shared.automation.lock().unwrap_or_else(|error| error.into_inner()).navigating = true;
-                self.shared.clear_automation();
-                self.shared.cancel_certificate(None);
-                self.shared.update(browser.as_deref(), |page| {
-                    page.load_failure = Some(failure);
-                    page.loading = false;
-                });
-            }
-        }
-    }
-}
+// Load callbacks are isolated so their provisional/error-document semantics
+// can be tested without changing request admission or cookie integration.
+include!("cef_load.rs");
 
 wrap_focus_handler! {
     struct NativeFocus { shared: Arc<Shared> }

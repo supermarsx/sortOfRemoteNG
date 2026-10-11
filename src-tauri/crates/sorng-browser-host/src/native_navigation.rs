@@ -79,10 +79,10 @@ mod tests {
 
     #[test]
     fn cancelled_download_and_subframe_callbacks_do_not_fail_the_tab() {
-        for code in [0, -1, -3] {
+        for code in [0, -1, -3, 200, 301, 401, 403, 404, 407, 500, 502, 503] {
             assert_eq!(classify_load_error(code, true), None);
         }
-        for code in [-2, -21, -105, -200, -27, -379] {
+        for code in [-2, -21, -105, -111, -200, -27, -310, -379] {
             assert_eq!(classify_load_error(code, false), None);
         }
     }
@@ -95,6 +95,7 @@ mod tests {
             (-21, "network-changed"),
             (-106, "offline"),
             (-130, "proxy"),
+            (-111, "proxy"), // ERR_TUNNEL_CONNECTION_FAILED, not an HTTP status
             (-202, "certificate"),
             (-107, "tls"),
             (-20, "blocked"),

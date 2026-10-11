@@ -66,6 +66,14 @@ fn apply_presentation(
                 .map_err(|_| UNAVAILABLE)?;
         } else {
             host.hide(id).map_err(|_| UNAVAILABLE)?;
+            // Hiding a failed page must not retain a stale modal-input fence.
+            // Clipping does not show the native surface; synchronize the current
+            // trusted-shell policy so explicit inspection can recover when its
+            // overlay closes, while inactive presentations stay blocked.
+            if let Some(bounds) = bounds.or(view.presentation_bounds.map(|(bounds, _)| bounds)) {
+                host.occlude(id, bounds, occlusions, scale, input_blocked)
+                    .map_err(|_| UNAVAILABLE)?;
+            }
         }
         Ok(())
     });

@@ -134,6 +134,24 @@ mod bootstrap_tests {
     }
 
     #[tokio::test]
+    async fn hidden_failed_inspection_preserves_overlay_owner_and_page_focus_guards() {
+        let owner = super::super::tests::fixture(Arc::new(Sink)).await;
+        owner.state.lock().unwrap().browser_id = Some(41);
+        let browser = super::super::tests::focus_browser(1, 41);
+        assert!(inspector_owner_current(&owner));
+        owner.state.lock().unwrap().control.hide(&owner.identity).unwrap();
+        assert!(!inspector_owner_current(&owner));
+        owner.state.lock().unwrap().page.load_failure = crate::native_navigation::classify_load_error(-111, true);
+        assert!(inspector_owner_current(&owner));
+        assert!(!owner.focus_allowed(Some(&browser)));
+        owner.input_blocked.store(true, Ordering::Release);
+        assert!(!inspector_owner_current(&owner));
+        owner.input_blocked.store(false, Ordering::Release);
+        owner.state.lock().unwrap().control.begin_close(&owner.identity).unwrap();
+        assert!(!inspector_owner_current(&owner));
+    }
+
+    #[tokio::test]
     async fn bootstrap_requires_explicit_action_and_is_one_shot_per_context() {
         let owner = Arc::new(super::super::tests::fixture(Arc::new(Sink)).await);
         let other = Arc::new(super::super::tests::fixture(Arc::new(Sink)).await);
@@ -182,13 +200,25 @@ mod bootstrap_tests {
     }
 }
 
+// The runtime still requires an explicit action for the selected presentation.
+// A retained failed document is hidden only to uncover the app diagnostics;
+// allowing its inspector must not grant focus/input to the failed page itself.
+fn inspector_owner_current(owner: &Shared) -> bool {
+    owner.current()
+        && !owner.input_blocked.load(Ordering::Acquire)
+        && owner.state.lock().is_ok_and(|state| {
+            state.control.lifecycle() == Lifecycle::Attached
+                || (state.control.lifecycle() == Lifecycle::Hidden && state.page.load_failure.is_some())
+        })
+}
+
 impl CefBrowserHost<'_> {
-    /// Inspect this exact visible native view, including a failed/loading page.
+    /// Inspect the selected native view, including a retained hidden load error.
     /// The caller must authenticate the app window and current presentation.
     /// Repeated calls focus CEF's existing inspector instead of toggling it off.
     pub fn open_devtools(&self, identity: &BrowserIdentity) -> Result<(), BrowserError> {
         let browser = self.check(identity)?;
-        if !self.shared.focus_allowed(Some(&browser)) {
+        if !inspector_owner_current(&self.shared) || !self.shared.accepts(Some(&browser)) {
             return Err(ControlError::InvalidTransition.into());
         }
         let host = self.native_host(&browser)?;
@@ -259,9 +289,7 @@ wrap_life_span_handler! {
         fn on_after_created(&self, browser: Option<&mut Browser>) {
             // Closing/locking the owner cannot leave a late inspector alive.
             let allowed = self.owner.upgrade().is_some_and(|owner| {
-                owner.current()
-                    && !owner.input_blocked.load(Ordering::Acquire)
-                    && owner.state.lock().is_ok_and(|state| state.control.lifecycle() == Lifecycle::Attached)
+                inspector_owner_current(&owner)
             });
             if !allowed {
                 if let Some(host) = browser.and_then(|browser| browser.host()) {

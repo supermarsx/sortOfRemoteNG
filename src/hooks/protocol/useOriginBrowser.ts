@@ -214,6 +214,7 @@ interface Attempt {
   verified: boolean;
   pendingSnapshot: OriginBrowserSnapshot | null;
   attached: boolean;
+  loadFailed: boolean;
   createStarted: boolean;
   identity: OriginBrowserIdentity | null;
   closeTask: Promise<boolean> | null;
@@ -365,14 +366,25 @@ export function useOriginBrowser(options: UseOriginBrowserOptions) {
     const flags = presentation.current;
     const bounds = viewport.current;
     const visible =
+      !attempt.loadFailed &&
       flags.enabled &&
       flags.ownerAvailable &&
       flags.active &&
       (!flags.dialogOpen || flags.preserveRenderingUnderOverlays) &&
       !!bounds;
-    const clipping = flags.preserveRenderingUnderOverlays
-      ? { occlusions: flags.occlusions ?? [], inputBlocked: flags.dialogOpen }
-      : {};
+    const clipping = {
+      ...(flags.preserveRenderingUnderOverlays
+        ? { occlusions: flags.occlusions ?? [] }
+        : {}),
+      // Hidden diagnostic pages retain their context. Fence explicit input and
+      // inspector actions natively when their shell presentation is not active.
+      inputBlocked:
+        !flags.enabled ||
+        !flags.ownerAvailable ||
+        !flags.active ||
+        !bounds ||
+        flags.dialogOpen,
+    };
     const key = JSON.stringify({ bounds, visible, ...clipping });
     if (key === attempt.presentationKey) return;
     attempt.presentationKey = key;
@@ -470,6 +482,7 @@ export function useOriginBrowser(options: UseOriginBrowserOptions) {
       verified: false,
       pendingSnapshot: null,
       attached: false,
+      loadFailed: false,
       createStarted: false,
       identity: null,
       closeTask: null,
@@ -519,6 +532,10 @@ export function useOriginBrowser(options: UseOriginBrowserOptions) {
       if (snapshot.sequence <= attempt.sequence) return;
       attempt.sequence = snapshot.sequence;
       attempt.attached = snapshot.phase === "attached";
+      // A transport failure keeps its context attached for diagnostics and
+      // recovery, but its Chromium error surface must not cover the shell UI.
+      // Update before present(): React state has not committed this snapshot yet.
+      attempt.loadFailed = !!snapshot.loadFailure;
       setState({
         ...initialState,
         snapshot,
@@ -807,6 +824,7 @@ export function useOriginBrowser(options: UseOriginBrowserOptions) {
         !sameIdentity(state.snapshot.identity, attempt.identity)
       )
         return false;
+      if (kind === "focus" && attempt.loadFailed) return false;
       if (
         (kind === "focus" || kind === "devtools") &&
         (!viewport.current || attempt.presentationRevision < 1)
@@ -864,6 +882,7 @@ export function useOriginBrowser(options: UseOriginBrowserOptions) {
         !attempt?.identity ||
         attempt.cancelled ||
         !attempt.attached ||
+        attempt.loadFailed ||
         !flags.enabled ||
         !flags.ownerAvailable ||
         !flags.active ||
