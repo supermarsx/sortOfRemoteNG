@@ -26,6 +26,7 @@ import {
   type RichTextBlockInsertion,
 } from "../../utils/documents/documentInlineInsert";
 import writingStyles from "./documentWriting.module.css";
+import DocumentSourceLayout from "./DocumentSourceLayout";
 
 const RichTextEditor = dynamic(() => import("./RichTextEditor"), {
   ssr: false,
@@ -854,41 +855,48 @@ function BlockFields({
       );
     case "note":
     case "markdown":
-    case "mermaid":
-      return (
-        <>
-          <label className={styles.field}>
-            {block.type === "mermaid"
-              ? "Diagram source"
-              : block.type === "markdown"
-                ? "Markdown source"
-                : "Note"}
-            <textarea
-              className={`sor-form-input ${block.type === "note" ? styles.noteInput : styles.sourceInput}`}
-              rows={block.type === "note" ? 4 : 8}
-              value={block.text}
-              readOnly={ro}
-              maxLength={128 * 1024}
-              onChange={(event) =>
-                change({ ...block, text: event.target.value })
-              }
-            />
-          </label>
-          {block.type === "mermaid" && <MermaidBlock source={block.text} />}{" "}
-          {block.type === "markdown" && (
-            <details className={styles.editorHelp}>
-              <summary>Safe plain-text preview</summary>
-              <pre className={`${styles.text} ${styles.sourcePreview}`}>
-                {block.text}
-              </pre>
-              <p className={styles.help}>
-                Markdown source is preserved. Raw HTML and remote media are not
-                rendered.
-              </p>
-            </details>
-          )}
-        </>
+    case "mermaid": {
+      const source = (
+        <label className={styles.field}>
+          {block.type === "mermaid"
+            ? "Diagram source"
+            : block.type === "markdown"
+              ? "Markdown source"
+              : "Note"}
+          <textarea
+            className={`sor-form-input ${block.type === "note" ? styles.noteInput : styles.sourceInput}`}
+            rows={block.type === "note" ? 4 : 8}
+            value={block.text}
+            readOnly={ro}
+            maxLength={128 * 1024}
+            onChange={(event) => change({ ...block, text: event.target.value })}
+          />
+        </label>
       );
+      if (block.type === "note") return source;
+      return (
+        <DocumentSourceLayout
+          label={block.type === "markdown" ? "Markdown" : "Diagram"}
+          source={source}
+          preview={
+            block.type === "mermaid" ? (
+              <MermaidBlock source={block.text} />
+            ) : (
+              <details className={styles.editorHelp}>
+                <summary>Safe plain-text preview</summary>
+                <pre className={`${styles.text} ${styles.sourcePreview}`}>
+                  {block.text}
+                </pre>
+                <p className={styles.help}>
+                  Markdown source is preserved. Raw HTML and remote media are
+                  not rendered.
+                </p>
+              </details>
+            )
+          }
+        />
+      );
+    }
     case "secret":
       return (
         <div className={styles.grid}>

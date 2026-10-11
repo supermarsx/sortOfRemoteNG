@@ -1,5 +1,5 @@
 "use client";
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useId, useRef, useState } from "react";
 import {
   Check,
   CircleAlert,
@@ -12,6 +12,8 @@ import {
   RotateCcw,
   StickyNote,
   X,
+  Maximize2,
+  Minimize2,
 } from "lucide-react";
 import type {
   DocumentWorkbook,
@@ -23,6 +25,7 @@ import {
   validateDocumentReference,
 } from "../../utils/documents/validation";
 import styles from "./documents.module.css";
+import DocumentResizeHandle from "./DocumentResizeHandle";
 
 export interface SpreadsheetEditorProps {
   workbook: DocumentWorkbook;
@@ -42,6 +45,10 @@ export interface SpreadsheetEditorProps {
 }
 export default function SpreadsheetEditor(props: SpreadsheetEditorProps) {
   const { workbook, documentKey, readOnly = false } = props;
+  const surfaceId = useId();
+  const [expanded, setExpanded] = useState(false);
+  const [height, setHeight] = useState(520);
+  const expandButton = useRef<HTMLButtonElement>(null);
   const latest = useRef(props);
   latest.current = props;
   const container = useRef<HTMLDivElement>(null),
@@ -61,6 +68,7 @@ export default function SpreadsheetEditor(props: SpreadsheetEditorProps) {
     text: string;
     selection: NonNullable<ReturnType<SpreadsheetRuntime["selection"]>>;
   } | null>(null);
+  useEffect(() => setExpanded(false), [documentKey]);
   const apply = (value: DocumentWorkbook) => {
     signature.current = JSON.stringify(value);
     latest.current.onChange(value);
@@ -240,9 +248,33 @@ export default function SpreadsheetEditor(props: SpreadsheetEditorProps) {
   return (
     <section
       aria-label="Document spreadsheet"
-      className={`${styles.editor} ${styles.spreadsheet}`}
+      data-native-browser-occlusion={expanded ? "" : undefined}
+      className={`${styles.editor} ${styles.spreadsheet} ${expanded ? styles.spreadsheetExpanded : ""}`}
+      onKeyDown={(event) => {
+        if (expanded && event.key === "Escape" && !event.defaultPrevented) {
+          event.preventDefault();
+          event.stopPropagation();
+          setExpanded(false);
+          expandButton.current?.focus();
+        }
+      }}
     >
       <div className={styles.actionToolbar}>
+        <button
+          ref={expandButton}
+          type="button"
+          className={`sor-btn sor-btn-secondary ${styles.actionButton}`}
+          aria-expanded={expanded}
+          aria-controls={surfaceId}
+          onClick={() => setExpanded((value) => !value)}
+        >
+          {expanded ? (
+            <Minimize2 size={14} aria-hidden="true" />
+          ) : (
+            <Maximize2 size={14} aria-hidden="true" />
+          )}
+          {expanded ? "Collapse spreadsheet" : "Expand spreadsheet"}
+        </button>
         <div
           role="group"
           aria-label="Cell actions"
@@ -474,10 +506,23 @@ export default function SpreadsheetEditor(props: SpreadsheetEditorProps) {
         </div>
       )}
       <div
+        id={surfaceId}
         ref={container}
         data-testid="document-spreadsheet-surface"
         className={styles.spreadsheetSurface}
+        style={expanded ? undefined : { height }}
       />
+      {!expanded && (
+        <DocumentResizeHandle
+          axis="height"
+          label="Spreadsheet height"
+          controls={surfaceId}
+          value={height}
+          min={240}
+          max={1000}
+          onChange={setHeight}
+        />
+      )}
     </section>
   );
 }

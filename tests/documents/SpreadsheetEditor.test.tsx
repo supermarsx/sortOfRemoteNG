@@ -10,9 +10,12 @@ import {
 } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import SpreadsheetEditor from "../../src/components/documents/SpreadsheetEditor";
+import DocumentBlockEditor from "../../src/components/documents/DocumentBlockEditor";
+import { useOriginBrowserOverlays } from "../../src/hooks/protocol/useOriginBrowserOverlays";
 import type {
   DocumentWorkbook,
   DocumentReference,
+  DocumentBlock,
 } from "../../src/types/documents/document";
 const mocked = vi.hoisted(() => ({
   create: vi.fn(),
@@ -31,6 +34,9 @@ vi.mock("../../src/utils/documents/spreadsheetRuntime", () => ({
 vi.mock("../../src/utils/documents/spreadsheetFiles", () => ({
   importSpreadsheetFile: mocked.importFile,
   exportSpreadsheetFile: vi.fn(),
+}));
+vi.mock("../../src/components/documents/RichTextEditor", () => ({
+  default: () => <textarea aria-label="Writing area" />,
 }));
 const workbook: DocumentWorkbook = {
   version: 1,
@@ -69,6 +75,160 @@ beforeEach(() => {
 });
 afterEach(cleanup);
 describe("document spreadsheet lifecycle", () => {
+  it("registers the expanded panel with the existing native browser occlusion observer", async () => {
+    function Harness() {
+      const overlay = useOriginBrowserOverlays(true);
+      return (
+        <>
+          <SpreadsheetEditor
+            workbook={workbook}
+            documentKey="one"
+            onChange={vi.fn()}
+          />
+          <output data-testid="occlusions">
+            {JSON.stringify(overlay.rectangles)}
+          </output>
+        </>
+      );
+    }
+    render(<Harness />);
+    await waitFor(() => expect(mocked.create).toHaveBeenCalledOnce());
+    const panel = screen.getByRole("region", { name: "Document spreadsheet" });
+    vi.spyOn(panel, "getBoundingClientRect").mockReturnValue({
+      x: 100,
+      y: 50,
+      left: 100,
+      top: 50,
+      right: 700,
+      bottom: 450,
+      width: 600,
+      height: 400,
+      toJSON: () => ({}),
+    });
+    expect(panel).not.toHaveAttribute("data-native-browser-occlusion");
+    fireEvent.click(screen.getByRole("button", { name: "Expand spreadsheet" }));
+    expect(panel).toHaveAttribute("data-native-browser-occlusion");
+    await waitFor(() =>
+      expect(JSON.parse(screen.getByTestId("occlusions").textContent!)).toEqual(
+        [{ x: 98, y: 48, width: 604, height: 404 }],
+      ),
+    );
+    fireEvent.click(
+      screen.getByRole("button", { name: "Collapse spreadsheet" }),
+    );
+    await waitFor(() =>
+      expect(screen.getByTestId("occlusions")).toHaveTextContent("[]"),
+    );
+    expect(mocked.create).toHaveBeenCalledOnce();
+  });
+  it.each(["Write", "Blocks"])(
+    "keeps a single spreadsheet draft through expansion in %s mode",
+    async (mode) => {
+      const onDraft = vi.fn();
+      function Harness() {
+        const [blocks, setBlocks] = React.useState<DocumentBlock[]>([
+          { id: "sheet", type: "spreadsheet", workbook },
+        ]);
+        return (
+          <DocumentBlockEditor
+            blocks={blocks}
+            onChange={(next) => {
+              setBlocks(next);
+              onDraft(next);
+            }}
+            attachments={[]}
+            documentKey="document"
+            renderSpreadsheet={(block, onChange, readOnly) => (
+              <SpreadsheetEditor
+                workbook={block.workbook}
+                onChange={onChange}
+                readOnly={readOnly}
+                documentKey={`document:${block.id}`}
+              />
+            )}
+          />
+        );
+      }
+      render(<Harness />);
+      await waitFor(() => expect(mocked.create).toHaveBeenCalledOnce());
+      fireEvent.click(screen.getByRole("button", { name: mode }));
+      const surface = screen.getByTestId("document-spreadsheet-surface");
+      const changed = structuredClone(workbook);
+      changed.sheets[0].cells.A1.value = "Draft from the engine";
+      act(() => mocked.options!.onChange(changed, []));
+      fireEvent.click(
+        screen.getByRole("button", { name: "Expand spreadsheet" }),
+      );
+      const expandedDraft = structuredClone(changed);
+      expandedDraft.sheets[0].cells.A1.value = "Edited while expanded";
+      act(() => mocked.options!.onChange(expandedDraft, []));
+      fireEvent.click(
+        screen.getByRole("button", { name: "Collapse spreadsheet" }),
+      );
+      fireEvent.click(
+        screen.getByRole("button", {
+          name: mode === "Write" ? "Blocks" : "Write",
+        }),
+      );
+      expect(screen.getByTestId("document-spreadsheet-surface")).toBe(surface);
+      expect(mocked.create).toHaveBeenCalledOnce();
+      expect(mocked.dispose).not.toHaveBeenCalled();
+      expect(onDraft).toHaveBeenLastCalledWith([
+        { id: "sheet", type: "spreadsheet", workbook: expandedDraft },
+      ]);
+    },
+  );
+  it("expands and resizes the same engine while retaining its draft, note and pending review", async () => {
+    const onChange = vi.fn();
+    const validity = vi.fn();
+    render(
+      <SpreadsheetEditor
+        workbook={workbook}
+        documentKey="one"
+        onChange={onChange}
+        onValidityChange={validity}
+      />,
+    );
+    await waitFor(() => expect(mocked.create).toHaveBeenCalledOnce());
+    const surface = screen.getByTestId("document-spreadsheet-surface");
+    const changed = structuredClone(workbook);
+    changed.sheets[0].cells.A1.value = "Unsaved cell";
+    act(() => mocked.options!.onChange(changed, []));
+    expect(onChange).toHaveBeenLastCalledWith(changed);
+    fireEvent.click(screen.getByRole("button", { name: "Cell note" }));
+    const note = screen.getByRole("textbox", { name: "Selected cell note" });
+    fireEvent.change(note, { target: { value: "Unsaved note" } });
+    act(() => mocked.options!.onChange(changed, ["Unsupported formatting"]));
+    const handle = screen.getByRole("separator", {
+      name: "Spreadsheet height",
+    });
+    fireEvent.keyDown(handle, { key: "End" });
+    expect(surface).toHaveStyle({ height: "1000px" });
+    const toggle = screen.getByRole("button", { name: "Expand spreadsheet" });
+    fireEvent.click(toggle);
+    expect(toggle).toHaveAttribute("aria-expanded", "true");
+    expect(screen.getByTestId("document-spreadsheet-surface")).toBe(surface);
+    expect(note).toHaveValue("Unsaved note");
+    fireEvent.change(note, { target: { value: "Note edited while expanded" } });
+    expect(
+      screen.getByRole("region", { name: "Spreadsheet compatibility review" }),
+    ).toBeVisible();
+    expect(validity).toHaveBeenLastCalledWith(false);
+    expect(
+      screen.queryByRole("separator", { name: "Spreadsheet height" }),
+    ).toBeNull();
+    fireEvent.keyDown(note, { key: "Escape" });
+    expect(toggle).toHaveFocus();
+    expect(toggle).toHaveAttribute("aria-expanded", "false");
+    expect(surface).toHaveStyle({ height: "1000px" });
+    expect(note).toHaveValue("Note edited while expanded");
+    expect(mocked.create).toHaveBeenCalledOnce();
+    expect(mocked.dispose).not.toHaveBeenCalled();
+    fireEvent.click(toggle);
+    fireEvent.click(toggle);
+    expect(screen.getByTestId("document-spreadsheet-surface")).toBe(surface);
+    expect(mocked.create).toHaveBeenCalledOnce();
+  });
   it("groups cell and file actions and rechecks a missing link without replacing the engine", async () => {
     const onChange = vi.fn();
     render(

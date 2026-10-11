@@ -83,6 +83,65 @@ afterAll(() => {
   else Reflect.deleteProperty(Range.prototype, "getBoundingClientRect");
 });
 describe("document block draft editor", () => {
+  it.each([
+    ["markdown", "Markdown", "Write"],
+    ["markdown", "Markdown", "Blocks"],
+    ["mermaid", "Diagram", "Write"],
+    ["mermaid", "Diagram", "Blocks"],
+  ] as const)(
+    "resizes %s source/preview splits in %s %s mode without losing text",
+    (type, label, mode) => {
+      render(<Harness initial={[{ id: "source", type, text: "Before" }]} />);
+      fireEvent.click(screen.getByRole("button", { name: mode }));
+      const source = screen.getByRole("textbox", { name: `${label} source` });
+      fireEvent.change(source, { target: { value: "Unsaved source" } });
+      const height = screen.getByRole("separator", {
+        name: `${label} source height`,
+      });
+      fireEvent.keyDown(height, { key: "End" });
+      expect(height.getAttribute("aria-valuenow")).toBe(
+        height.getAttribute("aria-valuemax"),
+      );
+      fireEvent.keyDown(height, { key: "Home" });
+      expect(height).toHaveAttribute("aria-valuenow", "100");
+      fireEvent.click(
+        screen.getByRole("button", { name: "Source and preview side by side" }),
+      );
+      const width = screen.getByRole("separator", {
+        name: `${label} source width`,
+      });
+      expect(width).toHaveAttribute("aria-orientation", "vertical");
+      fireEvent.keyDown(width, { key: "End" });
+      expect(width.getAttribute("aria-valuenow")).toBe(
+        width.getAttribute("aria-valuemax"),
+      );
+      fireEvent.keyDown(width, { key: "Home" });
+      expect(width).toHaveAttribute("aria-valuenow", "160");
+      const overall = screen.getByRole("separator", {
+        name: `${label} source and preview height`,
+      });
+      fireEvent.keyDown(overall, { key: "End" });
+      expect(overall).toHaveAttribute("aria-valuenow", "1000");
+      fireEvent.keyDown(overall, { key: "Home" });
+      expect(overall).toHaveAttribute("aria-valuenow", "240");
+      fireEvent.click(
+        screen.getByRole("button", { name: "Stack source and preview" }),
+      );
+      expect(
+        screen.getByRole("separator", { name: `${label} source height` }),
+      ).toHaveAttribute("aria-valuenow", "100");
+      fireEvent.click(
+        screen.getByRole("button", {
+          name: mode === "Write" ? "Blocks" : "Write",
+        }),
+      );
+      expect(screen.getByRole("textbox", { name: `${label} source` })).toBe(
+        source,
+      );
+      expect(source).toHaveValue("Unsaved source");
+      expect(blocks()[0]).toMatchObject({ text: "Unsaved source" });
+    },
+  );
   it("writes into an empty document and inserts through the real inline slash menu", async () => {
     render(<Harness initial={[]} />);
     const text = await screen.findByRole("textbox", {

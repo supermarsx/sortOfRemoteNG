@@ -13,11 +13,32 @@
 }
 .spreadsheetSurface {
   height: 520px;
-  min-height: 360px;
+  min-height: 240px;
+  max-height: 1000px;
+  flex-shrink: 0;
   position: relative;
   overflow: hidden;
   background: var(--color-surface);
   color: var(--color-text);
+}
+.spreadsheetExpanded {
+  /* The document pane is a containment boundary, so this fills its area in
+     full, tiled and detached sessions without moving or remounting Univer. */
+  position: fixed;
+  inset: 0.5rem;
+  z-index: 30;
+  min-height: 0;
+  padding: 0.75rem;
+  overflow: auto;
+  border: 1px solid var(--color-border);
+  border-radius: 0.5rem;
+  box-shadow: 0 4px 16px
+    color-mix(in srgb, var(--color-background) 65%, transparent);
+}
+.spreadsheetExpanded > .spreadsheetSurface {
+  flex: 1 0 240px;
+  height: auto;
+  max-height: none;
 }
 .documentEditor {
   color-scheme: var(--native-color-scheme, dark);

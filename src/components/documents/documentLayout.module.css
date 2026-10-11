@@ -1,0 +1,133 @@
+.split {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+.stacked {
+  flex-direction: column;
+}
+.sidebar {
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
+  gap: 0.75rem;
+  padding: 0.75rem;
+  min-width: 0;
+  min-height: 0;
+  overflow: auto;
+}
+.sidebar[hidden] {
+  display: none;
+}
+.widthHandle,
+.heightHandle {
+  position: relative;
+  flex-shrink: 0;
+  touch-action: none;
+  user-select: none;
+  background: var(--color-background);
+}
+.widthHandle {
+  width: 8px;
+  cursor: col-resize;
+}
+.heightHandle {
+  height: 8px;
+  cursor: row-resize;
+}
+.widthHandle::after,
+.heightHandle::after {
+  content: "";
+  position: absolute;
+  background: var(--color-border);
+  border-radius: 2px;
+}
+.widthHandle::after {
+  inset: 0 3px;
+}
+.heightHandle::after {
+  inset: 3px 0;
+}
+.widthHandle:hover::after,
+.heightHandle:hover::after,
+.widthHandle:focus-visible::after,
+.heightHandle:focus-visible::after {
+  background: var(--color-primary);
+}
+.widthHandle:focus-visible,
+.heightHandle:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: -2px;
+}
+.viewArea {
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+}
+.viewPane {
+  /* Anchor expanded editors to this pane in every session layout. */
+  contain: layout;
+}
+.sourceLayout {
+  min-width: 0;
+}
+.sourceToolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.375rem;
+  margin-bottom: 0.5rem;
+}
+.sourcePanes {
+  display: flex;
+  min-width: 0;
+  overflow: hidden;
+  border: 1px solid var(--color-border);
+  border-radius: 0.375rem;
+}
+.sourcePane,
+.sourcePreview {
+  min-width: 0;
+  min-height: 0;
+  overflow: auto;
+  padding: 0.5rem;
+}
+.sourcePane {
+  flex-shrink: 0;
+}
+.sourcePreview {
+  flex: 1;
+}
+.sourcePane > label {
+  height: 100%;
+}
+.sourcePane textarea {
+  flex: 1;
+  min-height: 0;
+  width: 100%;
+  resize: none;
+}
+.viewFrame {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 8px;
+  grid-template-rows: minmax(0, 1fr) 8px;
+  max-width: 100%;
+  max-height: 100%;
+  margin-inline: auto;
+}
+.viewContent {
+  min-width: 0;
+  min-height: 0;
+  overflow: auto;
+  padding: 1rem;
+}
+.viewFrame > .heightHandle {
+  grid-column: 1 / -1;
+}
+.compactButton {
+  min-height: 1.75rem;
+  padding: 0.25rem 0.5rem;
+  font-size: 0.75rem;
+}

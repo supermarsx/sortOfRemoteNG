@@ -1,5 +1,5 @@
 "use client";
-import React, { useCallback, useEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useId, useRef, useState } from "react";
 import dynamic from "next/dynamic";
 import {
   FileText,
@@ -16,6 +16,8 @@ import {
   Ticket,
   X,
   Layers,
+  PanelLeftClose,
+  PanelLeftOpen,
 } from "lucide-react";
 import { useConnections } from "../../contexts/useConnections";
 import { useSettings } from "../../contexts/SettingsContext";
@@ -88,6 +90,13 @@ import {
 } from "../../utils/documents/documentTypePolicy";
 import type { DatabaseDocumentType } from "../../types/settings/databaseSettings";
 import type { DocumentBlock } from "../../types/documents/document";
+import {
+  clampDocumentSize,
+  useDocumentArea,
+} from "../../hooks/documents/useDocumentArea";
+import DocumentResizeHandle from "./DocumentResizeHandle";
+import ResizableDocumentView from "./ResizableDocumentView";
+import layoutStyles from "./documentLayout.module.css";
 
 const SpreadsheetEditor = dynamic(() => import("./SpreadsheetEditor"), {
   ssr: false,
@@ -166,6 +175,21 @@ export default function DocumentsWorkspace({
     data,
   };
   const [section, setSection] = useState<Section>("documents");
+  const sidebarId = useId();
+  const split = useDocumentArea();
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [sidebarWidth, setSidebarWidth] = useState(256);
+  const [sidebarHeight, setSidebarHeight] = useState(200);
+  const stacked = split.width < 640;
+  const sidebarMax = stacked
+    ? Math.max(1, Math.min(360, split.height - 168, split.height * 0.45))
+    : Math.max(1, Math.min(480, split.width - 328));
+  const sidebarMin = stacked ? 100 : 192;
+  const sidebarSize = clampDocumentSize(
+    stacked ? sidebarHeight : sidebarWidth,
+    sidebarMin,
+    sidebarMax,
+  );
   const [selectedId, setSelectedId] = useState("");
   const [folder, setFolder] = useState(
     isApp ? "*" : (request.parentFolderId ?? "*"),
@@ -1108,6 +1132,31 @@ export default function DocumentsWorkspace({
     <div
       className="flex h-full min-h-0 flex-col bg-[var(--color-background)] text-[var(--color-text)]"
       data-testid="documents-workspace"
+      onKeyDownCapture={(event) => {
+        if (
+          section !== "documents" ||
+          !currentDocument ||
+          event.defaultPrevented ||
+          !event.currentTarget.contains(event.target as Node) ||
+          !(event.ctrlKey || event.metaKey) ||
+          event.altKey ||
+          event.shiftKey ||
+          event.key.toLowerCase() !== "s"
+        )
+          return;
+        // Capture before embedded editors can swallow the shortcut. Keep it
+        // scoped to this workspace so tiled/hidden sessions cannot also save.
+        event.preventDefault();
+        event.stopPropagation();
+        if (
+          !event.repeat &&
+          !busy &&
+          workspace.dirty &&
+          allValid &&
+          !workspace.stale
+        )
+          void workspace.save();
+      }}
     >
       <header className="flex flex-wrap items-center justify-between gap-3 border-b border-[var(--color-border)] px-4 py-3">
         <div>
@@ -1226,9 +1275,32 @@ export default function DocumentsWorkspace({
         </p>
       )}
       <nav
-        className="flex gap-1 border-b border-[var(--color-border)] px-3 py-2"
+        className="flex flex-wrap gap-1 border-b border-[var(--color-border)] px-3 py-2"
         aria-label="Document workspace sections"
       >
+        <button
+          type="button"
+          className={`sor-btn sor-btn-secondary ${layoutStyles.compactButton}`}
+          aria-label={
+            sidebarCollapsed
+              ? "Expand documents sidebar"
+              : "Collapse documents sidebar"
+          }
+          title={
+            sidebarCollapsed
+              ? "Expand documents sidebar"
+              : "Collapse documents sidebar"
+          }
+          aria-expanded={!sidebarCollapsed}
+          aria-controls={sidebarId}
+          onClick={() => setSidebarCollapsed((value) => !value)}
+        >
+          {sidebarCollapsed ? (
+            <PanelLeftOpen size={14} aria-hidden="true" />
+          ) : (
+            <PanelLeftClose size={14} aria-hidden="true" />
+          )}
+        </button>
         {(
           [
             { id: "documents", label: "Documents", icon: FileText },
@@ -1253,8 +1325,17 @@ export default function DocumentsWorkspace({
           </button>
         ))}
       </nav>
-      <div className="flex min-h-0 flex-1">
-        <aside className="flex w-64 min-w-48 shrink-0 flex-col gap-3 border-r border-[var(--color-border)] p-3">
+      <div
+        ref={split.ref}
+        className={`${layoutStyles.split} ${stacked ? layoutStyles.stacked : ""}`}
+      >
+        <aside
+          id={sidebarId}
+          aria-label="Documents sidebar"
+          hidden={sidebarCollapsed}
+          className={layoutStyles.sidebar}
+          style={stacked ? { height: sidebarSize } : { width: sidebarSize }}
+        >
           <label className="relative">
             <Search
               size={14}
@@ -1583,37 +1664,27 @@ export default function DocumentsWorkspace({
             </div>
           )}
         </aside>
-        <main
-          className={`min-w-0 flex-1 overflow-auto p-4 ${headerStyles.pane}`}
-          onKeyDown={(event) => {
-            if (
-              section !== "documents" ||
-              !currentDocument ||
-              event.defaultPrevented ||
-              !event.currentTarget.contains(event.target as Node) ||
-              !(event.ctrlKey || event.metaKey) ||
-              event.altKey ||
-              event.shiftKey ||
-              event.key.toLowerCase() !== "s"
-            )
-              return;
-            event.preventDefault();
-            event.stopPropagation();
-            if (
-              !event.repeat &&
-              !busy &&
-              workspace.dirty &&
-              allValid &&
-              !workspace.stale
-            )
-              void workspace.save();
-          }}
+        {!sidebarCollapsed && (
+          <DocumentResizeHandle
+            axis={stacked ? "height" : "width"}
+            label={
+              stacked ? "Documents sidebar height" : "Documents sidebar width"
+            }
+            controls={sidebarId}
+            value={sidebarSize}
+            min={sidebarMin}
+            max={sidebarMax}
+            onChange={stacked ? setSidebarHeight : setSidebarWidth}
+          />
+        )}
+        <ResizableDocumentView
+          className={`min-h-0 min-w-0 flex-1 overflow-hidden ${headerStyles.pane}`}
         >
           {selectedId &&
           ((section === "documents" && currentDocument) ||
             (section === "people" && currentPerson) ||
             (section === "tickets" && currentTicket)) ? (
-            <div className="mx-auto max-w-6xl space-y-4">
+            <div className="space-y-4">
               {section !== "documents" && (
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <h3 className="font-semibold">
@@ -2009,7 +2080,7 @@ export default function DocumentsWorkspace({
               )}
             </div>
           )}
-        </main>
+        </ResizableDocumentView>
       </div>
       {chooseLink && (
         <DocumentReferencePicker

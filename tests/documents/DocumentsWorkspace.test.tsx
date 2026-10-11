@@ -285,6 +285,183 @@ function deferred<T>() {
 }
 
 describe("protected document workspace integration", () => {
+  it("collapses the sidebar without losing its filter, selection or document draft", async () => {
+    show();
+    await loaded();
+    const name = editorHeader().getByRole("textbox", { name: "Name" });
+    fireEvent.change(name, { target: { value: "Local draft" } });
+    const search = screen.getByRole("textbox", {
+      name: "Search documents and records",
+    });
+    fireEvent.change(search, { target: { value: "Local" } });
+    const toggle = screen.getByRole("button", {
+      name: "Collapse documents sidebar",
+    });
+    const sidebar = screen.getByRole("complementary", {
+      name: "Documents sidebar",
+    });
+    fireEvent.click(toggle);
+    expect(toggle).toHaveAttribute("aria-expanded", "false");
+    expect(sidebar).not.toBeVisible();
+    expect(
+      screen.queryByRole("separator", { name: "Documents sidebar width" }),
+    ).toBeNull();
+    expect(name).toHaveValue("Local draft");
+    fireEvent.click(toggle);
+    expect(sidebar).toBeVisible();
+    expect(search).toHaveValue("Local");
+    expect(
+      screen.getByRole("button", { name: "Open Local draft" }),
+    ).toBeVisible();
+    expect(editorHeader().getByRole("textbox", { name: "Name" })).toBe(name);
+    expect(mock.store!.compareAndSwap).not.toHaveBeenCalled();
+  });
+
+  it("resizes both axes within the available pane and retains sizes across collapse and tiling", async () => {
+    show();
+    await loaded();
+    const sidebar = screen.getByRole("complementary", {
+      name: "Documents sidebar",
+    });
+    const split = sidebar.parentElement!;
+    const width = screen.getByRole("separator", {
+      name: "Documents sidebar width",
+    });
+    fireEvent.keyDown(width, { key: "End" });
+    expect(width).toHaveAttribute("aria-valuenow", "480");
+    fireEvent.keyDown(width, { key: "ArrowRight" });
+    expect(sidebar).toHaveStyle({ width: "480px" });
+    fireEvent.click(
+      screen.getByRole("button", { name: "Collapse documents sidebar" }),
+    );
+    fireEvent.click(
+      screen.getByRole("button", { name: "Expand documents sidebar" }),
+    );
+    expect(sidebar).toHaveStyle({ width: "480px" });
+    Object.defineProperties(split, {
+      clientWidth: { configurable: true, value: 500 },
+      clientHeight: { configurable: true, value: 500 },
+    });
+    fireEvent(window, new Event("resize"));
+    const height = screen.getByRole("separator", {
+      name: "Documents sidebar height",
+    });
+    expect(height).toHaveAttribute("aria-orientation", "horizontal");
+    fireEvent.keyDown(height, { key: "End" });
+    expect(sidebar).toHaveStyle({ height: "225px" });
+    fireEvent.keyDown(height, { key: "Home" });
+    expect(sidebar).toHaveStyle({ height: "100px" });
+    for (const axis of ["width", "height"]) {
+      const handle = screen.getByRole("separator", {
+        name: `Document view ${axis}`,
+      });
+      fireEvent.keyDown(handle, { key: "Home" });
+      expect(handle.getAttribute("aria-valuenow")).toBe(
+        handle.getAttribute("aria-valuemin"),
+      );
+      fireEvent.keyDown(handle, { key: "End" });
+      expect(handle.getAttribute("aria-valuenow")).toBe(
+        handle.getAttribute("aria-valuemax"),
+      );
+    }
+    Object.defineProperty(split, "clientWidth", {
+      configurable: true,
+      value: 1200,
+    });
+    fireEvent(window, new Event("resize"));
+    expect(
+      screen.getByRole("separator", { name: "Documents sidebar width" }),
+    ).toHaveAttribute("aria-valuenow", "480");
+  });
+
+  it.each([{ ctrlKey: true }, { metaKey: true }])(
+    "captures save from the sidebar and embedded editor with %j",
+    async (modifier) => {
+      show();
+      await loaded();
+      const name = editorHeader().getByRole("textbox", { name: "Name" });
+      const targets = [
+        screen.getByRole("textbox", { name: "Search documents and records" }),
+        screen.getByTestId("mock-spreadsheet"),
+      ];
+      const swallowed = vi.fn((event: KeyboardEvent) =>
+        event.stopPropagation(),
+      );
+      targets[1].addEventListener("keydown", swallowed);
+      for (const [index, target] of targets.entries()) {
+        fireEvent.change(name, {
+          target: { value: `Keyboard draft ${index}` },
+        });
+        expect(fireEvent.keyDown(target, { key: "s", ...modifier })).toBe(
+          false,
+        );
+        await waitFor(() =>
+          expect(
+            editorHeader().getByRole("button", { name: "Save" }),
+          ).toBeDisabled(),
+        );
+        expect(saved.documents[0].name).toBe(`Keyboard draft ${index}`);
+      }
+      expect(mock.store!.compareAndSwap).toHaveBeenCalledTimes(2);
+      expect(swallowed).not.toHaveBeenCalled();
+      expect(mock.save).not.toHaveBeenCalled();
+    },
+  );
+
+  it("saves only the workspace containing keyboard focus when documents are tiled", async () => {
+    render(
+      <>
+        <DocumentsWorkspace sessionId="first" request={request} />
+        <DocumentsWorkspace sessionId="second" request={request} />
+      </>,
+    );
+    await waitFor(() =>
+      expect(screen.getAllByDisplayValue("Inventory")).toHaveLength(2),
+    );
+    const [first, second] = screen
+      .getAllByTestId("documents-workspace")
+      .map((element) => within(element));
+    fireEvent.change(first.getByRole("textbox", { name: "Name" }), {
+      target: { value: "First draft" },
+    });
+    fireEvent.change(second.getByRole("textbox", { name: "Name" }), {
+      target: { value: "Second draft" },
+    });
+    expect(
+      fireEvent.keyDown(
+        second.getByRole("textbox", { name: "Search documents and records" }),
+        { key: "s", metaKey: true },
+      ),
+    ).toBe(false);
+    await waitFor(() => expect(saved.documents[0].name).toBe("Second draft"));
+    expect(mock.store!.compareAndSwap).toHaveBeenCalledOnce();
+    expect(first.getByRole("textbox", { name: "Name" })).toHaveValue(
+      "First draft",
+    );
+    expect(getDocumentDraft("first")?.dirty).toBe(true);
+  });
+
+  it("suppresses browser Save without writing a stale draft from the sidebar", async () => {
+    const view = show();
+    await loaded();
+    fireEvent.change(editorHeader().getByRole("textbox", { name: "Name" }), {
+      target: { value: "Stale draft" },
+    });
+    mock.store!.changeRevision++;
+    view.rerender(
+      <DocumentsWorkspace sessionId="workspace-tab" request={request} />,
+    );
+    expect(editorHeader().getByRole("button", { name: "Save" })).toBeDisabled();
+    expect(
+      fireEvent.keyDown(
+        screen.getByRole("textbox", { name: "Search documents and records" }),
+        { key: "s", ctrlKey: true },
+      ),
+    ).toBe(false);
+    expect(mock.store!.compareAndSwap).not.toHaveBeenCalled();
+    expect(mock.save).not.toHaveBeenCalled();
+  });
+
   it("searches ordinary document contents only with explicit opt-in, never structured secrets", async () => {
     const view = show();
     await loaded();
@@ -540,7 +717,7 @@ describe("protected document workspace integration", () => {
     ["Ctrl", { ctrlKey: true }],
     ["Cmd", { metaKey: true }],
   ] as const)(
-    "does not handle %s+S outside the document editor or in its portals",
+    "does not handle %s+S outside the workspace or in unrelated portals",
     async (_label, modifier) => {
       const view = show();
       await loaded();
@@ -548,11 +725,7 @@ describe("protected document workspace integration", () => {
         target: { value: "Keep this draft local" },
       });
       const shortcut = { key: "s", ...modifier };
-      for (const target of [
-        window,
-        document.body,
-        screen.getByRole("textbox", { name: "Search documents and records" }),
-      ])
+      for (const target of [window, document.body])
         expect(fireEvent.keyDown(target, shortcut)).toBe(true);
       fireEvent.click(
         editorHeader().getByRole("combobox", { name: "Owning folder" }),
