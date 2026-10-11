@@ -25,6 +25,9 @@ export interface ServiceFingerprintEvidence {
 
 // Match complete software identifiers, not mentions in arbitrary banner text.
 const WEB_SERVER = /^(nginx|Apache|Microsoft-IIS)(?:\/([\d.]+))?(?=$|[\s(])/i;
+// iLO exposes this identifier even on responses without a branded HTML title.
+// Its revision is an HTTP server revision, not an iLO firmware version.
+const ILO_SERVER = /^HPE?-iLO-Server(?:\/\d+(?:\.\d+)*)?$/i;
 const FTP_SOFTWARE =
   /\b(vsftpd|ProFTPD|Pure-FTPd|FileZilla Server)(?=$|[\s/()])/i;
 const WEB_PRODUCTS: ReadonlyArray<readonly [string, RegExp]> = [
@@ -59,7 +62,7 @@ const WEB_PRODUCTS: ReadonlyArray<readonly [string, RegExp]> = [
   ],
   [
     "HPE iLO",
-    /^(?:(?:HPE?|Hewlett[ -]Packard(?: Enterprise)?)\s+)?(?:Integrated Lights-Out|iLO)(?:\s*\d+)?(?:\s*[-–|:]\s*(?:Login|Sign In))?$/i,
+    /^(?:(?:HPE?|Hewlett[ -]Packard(?: Enterprise)?)\s+)?(?:Integrated Lights-Out|iLO)(?:\s*\d+)?(?:(?:\s+|\s*[-–|:]\s*)(?:Login|Sign In))?$/i,
   ],
   [
     "Dell iDRAC",
@@ -193,7 +196,7 @@ export function fingerprintService(
   const server =
     http.http_server?.trim() ||
     bannerServer ||
-    (WEB_SERVER.test(text) ? text : undefined);
+    (WEB_SERVER.test(text) || ILO_SERVER.test(text) ? text : undefined);
   const title =
     http.http_title?.trim() ||
     text.match(/<title\b[^>]*>([^<]*)<\/title\s*>/i)?.[1]?.trim();
@@ -235,8 +238,14 @@ export function fingerprintService(
     const branded = title
       ? WEB_PRODUCTS.find(([, pattern]) => pattern.test(title))?.[0]
       : undefined;
+    const applicationTitle =
+      branded && !["nginx", "Apache", "IIS"].includes(branded)
+        ? branded
+        : undefined;
     const serverBrand = server
-      ? WEB_PRODUCTS.find(([, pattern]) => pattern.test(server))?.[0]
+      ? ILO_SERVER.test(server)
+        ? "HPE iLO"
+        : WEB_PRODUCTS.find(([, pattern]) => pattern.test(server))?.[0]
       : undefined;
     // FreshTomato uses the configurable router_name as its Basic-auth realm.
     // Only its exact default is a brand signal; httpd/401/Error and custom
@@ -258,10 +267,11 @@ export function fingerprintService(
     }
     const software = server?.match(WEB_SERVER);
     const product =
-      branded ??
+      applicationTitle ??
       authBrand ??
       tlsBrand ??
       serverBrand ??
+      branded ??
       (/^Apache-Coyote(?:\/|$)/i.test(server ?? "")
         ? "Apache Tomcat / Coyote"
         : undefined) ??

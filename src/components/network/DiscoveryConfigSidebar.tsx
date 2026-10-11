@@ -1,6 +1,8 @@
-import { useState } from "react";
+import { useId, useState } from "react";
 import {
   CheckCheck,
+  ChevronLeft,
+  ChevronRight,
   ListChecks,
   ListX,
   Settings2,
@@ -90,6 +92,8 @@ function ServicePorts({
 }
 
 export function DiscoveryConfigSidebar({ mgr }: { mgr: Manager }) {
+  const [collapsed, setCollapsed] = useState(false);
+  const configurationId = useId();
   const [filter, setFilter] = useState("");
   const [serviceEditorVersion, setServiceEditorVersion] = useState(0);
   const presets = DISCOVERY_SERVICE_PRESETS.filter((preset) =>
@@ -103,13 +107,47 @@ export function DiscoveryConfigSidebar({ mgr }: { mgr: Manager }) {
     <aside
       aria-label="Discovery configuration"
       data-testid="discovery-config-sidebar"
-      className="min-h-0 w-full shrink-0 border-t border-[var(--color-border)] bg-[var(--color-surfaceHover)]/30 lg:w-80 xl:w-96 lg:overflow-y-auto lg:border-l lg:border-t-0"
+      className={`min-h-0 w-full shrink-0 border-t border-[var(--color-border)] bg-[var(--color-surfaceHover)]/30 lg:overflow-y-auto lg:border-l lg:border-t-0 ${collapsed ? "lg:w-12" : "lg:w-80 xl:w-96"}`}
     >
-      <div className="sticky top-0 z-10 flex items-center gap-2 border-b border-[var(--color-border)] bg-[var(--color-surface)] px-4 py-3">
-        <Settings2 size={17} className="text-primary" />
-        <h3 className="font-semibold">Scan configuration</h3>
-      </div>
+      <h3 className="sticky top-0 z-10 border-b border-[var(--color-border)] bg-[var(--color-surface)]">
+        <button
+          type="button"
+          aria-label={
+            collapsed
+              ? "Expand scan configuration"
+              : "Collapse scan configuration"
+          }
+          aria-expanded={!collapsed}
+          aria-controls={configurationId}
+          title={
+            collapsed
+              ? "Expand scan configuration"
+              : "Collapse scan configuration"
+          }
+          onClick={() => setCollapsed((value) => !value)}
+          className={`flex w-full items-center gap-2 py-3 text-[var(--color-text)] hover:bg-[var(--color-surfaceHover)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-primary ${collapsed ? "px-4 lg:justify-center lg:px-0" : "px-4"}`}
+        >
+          <Settings2
+            size={17}
+            aria-hidden="true"
+            className={`shrink-0 text-primary ${collapsed ? "lg:hidden" : ""}`}
+          />
+          <span
+            className={`flex-1 text-left font-semibold ${collapsed ? "lg:sr-only" : ""}`}
+          >
+            Scan configuration
+          </span>
+          {collapsed ? (
+            <ChevronLeft size={17} aria-hidden="true" />
+          ) : (
+            <ChevronRight size={17} aria-hidden="true" />
+          )}
+        </button>
+      </h3>
+      {/* Keep drafts and expanded groups mounted while hiding configuration. */}
       <fieldset
+        id={configurationId}
+        hidden={collapsed}
         disabled={mgr.isScanning}
         className="space-y-5 p-4 disabled:opacity-70"
       >

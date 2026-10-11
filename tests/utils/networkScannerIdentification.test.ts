@@ -34,6 +34,145 @@ afterEach(() => {
 });
 
 describe("native service identification", () => {
+  it.each([false, true])(
+    "keeps an iLO preset as a hint without product evidence (batches=%s)",
+    async (nativeBatchProbes) => {
+      const responses = [
+        { port: 443, open: true },
+        {
+          port: 8443,
+          open: true,
+          http_status: 200,
+          http_server: "httpd",
+          http_title: "Login",
+        },
+        {
+          port: 65000,
+          open: true,
+          identification_error: "certificate_or_tls_failure",
+        },
+      ];
+      invoke.mockImplementation(async (_command, args) =>
+        nativeBatchProbes
+          ? args.probes.map(({ port }: { port: number }) =>
+              responses.find((response) => response.port === port),
+            )
+          : responses.find((response) => response.port === args.port),
+      );
+      const [host] = await new NetworkScanner(true).scanNetwork({
+        ...base,
+        portRanges: [],
+        protocols: ["ilo"],
+        customPorts: { ilo: [443, 8443, 65000] },
+        identifyServices: true,
+        nativeBatchProbes,
+      });
+      expect(
+        host.services.map(({ port, protocol, detection, product }) => ({
+          port,
+          protocol,
+          detection,
+          product,
+        })),
+      ).toEqual([
+        {
+          port: 443,
+          protocol: "https",
+          detection: "port-hint",
+          product: undefined,
+        },
+        {
+          port: 8443,
+          protocol: "https",
+          detection: "identified",
+          product: undefined,
+        },
+        {
+          port: 65000,
+          protocol: "https",
+          detection: "port-hint",
+          product: undefined,
+        },
+      ]);
+      expect(host.services[2].identificationError).toBe(
+        "certificate_or_tls_failure",
+      );
+    },
+  );
+
+  it.each([false, true])(
+    "preserves iLO evidence with overlapping HTTPS presets and custom ports (batches=%s)",
+    async (nativeBatchProbes) => {
+      const responses = [
+        {
+          port: 443,
+          open: true,
+          http_status: 200,
+          http_server: "HP-iLO-Server/1.30",
+          http_title: "Login",
+        },
+        {
+          port: 65000,
+          open: true,
+          http_status: 200,
+          http_server: "nginx/1.24.0",
+          http_title: "HP iLO Sign In",
+        },
+      ];
+      invoke.mockImplementation(async (_command, args) =>
+        nativeBatchProbes
+          ? args.probes.map(({ port }: { port: number }) =>
+              responses.find((response) => response.port === port),
+            )
+          : responses.find((response) => response.port === args.port),
+      );
+      const config = {
+        ...base,
+        portRanges: [],
+        protocols: ["https", "ilo"],
+        customPorts: { https: [443, 65000], ilo: [443, 65000] },
+        identifyServices: true,
+        nativeBatchProbes,
+      };
+      const hosts = await new NetworkScanner(true).scanNetwork(config);
+      expect(hosts[0].services).toHaveLength(2);
+      for (const service of hosts[0].services) {
+        expect(service).toMatchObject({
+          protocol: "https",
+          product: "HPE iLO",
+          detection: "identified",
+        });
+        expect(service.version).toBeUndefined();
+      }
+      expect(hosts[0].services[0].evidence).toContain(
+        "Server: HP-iLO-Server/1.30",
+      );
+      expect(hosts[0].services[1].evidence).toContain("Title: HP iLO Sign In");
+      const probes = nativeBatchProbes
+        ? invoke.mock.calls.flatMap(([, args]) => args.probes)
+        : invoke.mock.calls.map(([, args]) => args);
+      expect(
+        probes.map(({ port, identifyHttp }) => ({ port, identifyHttp })),
+      ).toEqual([
+        { port: 443, identifyHttp: "https" },
+        { port: 65000, identifyHttp: "https" },
+      ]);
+      const saved = normalizeDiscoveryScan(
+        JSON.parse(
+          JSON.stringify({
+            id: "ilo-evidence",
+            startedAt: 1,
+            elapsedMs: 100,
+            outcome: "complete",
+            config,
+            hosts,
+          }),
+        ),
+      );
+      expect(saved.hosts[0].services).toEqual(hosts[0].services);
+    },
+  );
+
   it.each([
     [false, 443, "https"],
     [true, 443, "https"],

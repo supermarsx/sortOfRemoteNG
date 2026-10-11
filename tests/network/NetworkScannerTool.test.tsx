@@ -123,6 +123,125 @@ function expandServiceGroups() {
 }
 
 describe("Network Scanner tool", () => {
+  it("collapses configuration without losing targets, filters, drafts or expanded sections", () => {
+    render(<NetworkDiscovery isOpen embedded onClose={vi.fn()} />);
+    fireEvent.change(screen.getByLabelText("networkDiscovery.ipRange"), {
+      target: { value: "192.0.2.10" },
+    });
+    fireEvent.change(screen.getByLabelText("Filter service presets"), {
+      target: { value: "SSH" },
+    });
+    fireEvent.click(screen.getByText("Remote access"));
+    const ports = screen.getByLabelText("SSH / SFTP / SCP ports");
+    fireEvent.change(ports, { target: { value: "2222, " } });
+    fireEvent.click(screen.getByText("Advanced"));
+    fireEvent.change(screen.getByLabelText("Connection timeout (ms)"), {
+      target: { value: "7000" },
+    });
+    const collapse = screen.getByRole("button", {
+      name: "Collapse scan configuration",
+    });
+    expect(collapse).toHaveAttribute("aria-expanded", "true");
+    const panel = document.getElementById(
+      collapse.getAttribute("aria-controls")!,
+    )!;
+    fireEvent.click(collapse);
+    expect(panel).not.toBeVisible();
+    expect(screen.getByRole("complementary")).toHaveClass("lg:w-12");
+    expect(
+      screen.queryByRole("combobox", { name: "networkDiscovery.ipRange" }),
+    ).toBeNull();
+    expect(
+      screen.getByRole("button", { name: "networkDiscovery.startScan" }),
+    ).toBeVisible();
+    const expand = screen.getByRole("button", {
+      name: "Expand scan configuration",
+    });
+    expect(expand).toHaveAttribute("aria-expanded", "false");
+    fireEvent.click(expand);
+    expect(panel).toBeVisible();
+    expect(screen.getByLabelText("networkDiscovery.ipRange")).toHaveValue(
+      "192.0.2.10",
+    );
+    expect(screen.getByLabelText("Filter service presets")).toHaveValue("SSH");
+    expect(screen.getByLabelText("SSH / SFTP / SCP ports")).toBe(ports);
+    expect(ports).toBeVisible();
+    expect(ports).toHaveValue("2222, ");
+    expect(ports).toHaveAttribute("aria-invalid", "true");
+    expect(screen.getByLabelText("Connection timeout (ms)")).toBeVisible();
+    expect(screen.getByLabelText("Connection timeout (ms)")).toHaveValue(7000);
+    expect(mocks.invoke).not.toHaveBeenCalled();
+  });
+
+  it("keeps a scan running and its controls usable while configuration is collapsed", async () => {
+    let finish!: (value: {
+      open: boolean;
+      http_server: string;
+      http_status: number;
+    }) => void;
+    mocks.invoke.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          finish = resolve;
+        }),
+    );
+    render(<NetworkDiscovery isOpen embedded onClose={vi.fn()} />);
+    fireEvent.change(screen.getByLabelText("networkDiscovery.ipRange"), {
+      target: { value: "192.0.2.10" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Clear services" }));
+    fireEvent.click(screen.getByText("Web services"));
+    fireEvent.click(screen.getByRole("checkbox", { name: /^HTTPS/ }));
+    fireEvent.change(screen.getByLabelText("HTTPS websites ports"), {
+      target: { value: "443" },
+    });
+    fireEvent.click(
+      screen.getByRole("button", { name: "networkDiscovery.startScan" }),
+    );
+    await waitFor(() => expect(mocks.invoke).toHaveBeenCalledOnce());
+    fireEvent.click(
+      screen.getByRole("button", { name: "Collapse scan configuration" }),
+    );
+    expect(
+      screen.getByRole("button", { name: "networkDiscovery.stop" }),
+    ).toBeEnabled();
+    fireEvent.click(screen.getByRole("button", { name: "Pause scan" }));
+    fireEvent.click(screen.getByRole("button", { name: "Resume scan" }));
+    fireEvent.click(
+      screen.getByRole("button", { name: "Expand scan configuration" }),
+    );
+    expect(screen.getByLabelText("networkDiscovery.ipRange")).toBeDisabled();
+    expect(screen.getByLabelText("networkDiscovery.ipRange")).toHaveValue(
+      "192.0.2.10",
+    );
+    fireEvent.click(
+      screen.getByRole("button", { name: "Collapse scan configuration" }),
+    );
+    await act(async () =>
+      finish({
+        open: true,
+        http_server: "HP-iLO-Server/1.30",
+        http_status: 200,
+      }),
+    );
+    expect(await screen.findByText("Scan complete")).toBeVisible();
+    expect(screen.getByRole("heading", { name: "192.0.2.10" })).toBeVisible();
+    expect(
+      within(screen.getByRole("main", { name: "Discovery results" })).getByText(
+        "HPE iLO",
+      ),
+    ).toBeVisible();
+    expect(
+      screen.getByRole("button", { name: "Save to history" }),
+    ).toBeEnabled();
+    expect(mocks.invoke).toHaveBeenCalledOnce();
+    fireEvent.click(
+      screen.getByRole("button", { name: "Expand scan configuration" }),
+    );
+    expect(screen.getByLabelText("networkDiscovery.ipRange")).toBeEnabled();
+    expect(screen.getByRole("checkbox", { name: /^HTTPS/ })).toBeChecked();
+  });
+
   it("starts service categories and Advanced collapsed, without hiding the primary controls", () => {
     render(<NetworkDiscovery isOpen embedded onClose={vi.fn()} />);
     const sections = screen

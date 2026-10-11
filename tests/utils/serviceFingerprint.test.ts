@@ -7,6 +7,99 @@ import {
 import { normalizeDiscoveryScan } from "../../src/utils/discovery/scanHistory";
 
 describe("evidence-based service fingerprinting", () => {
+  it.each([
+    ["HP-iLO-Server/1.30", "Login"],
+    ["HPE-iLO-Server/2.0", "Welcome to nginx!"],
+    ["HP-iLO-Server/1.30", "IIS Windows Server"],
+    ["HPE iLO 5", "Apache2 Debian Default Page: It works"],
+  ])(
+    "identifies iLO from Server %s despite a generic title %s",
+    (server, title) => {
+      const service = fingerprintService(443, undefined, "https", {
+        http_status: 200,
+        http_server: server,
+        http_title: title,
+      });
+      expect(service).toMatchObject({
+        protocol: "https",
+        product: "HPE iLO",
+        detection: "identified",
+      });
+      expect(service.evidence).toContain(`Server: ${server}`);
+      // The HTTP server revision is not the iLO firmware version.
+      expect(service.version).toBeUndefined();
+    },
+  );
+
+  it.each(["HP iLO Sign In", "HPE iLO 5 Login", "iLO 4 - Login"])(
+    "identifies iLO login title %s ahead of a generic web server",
+    (title) => {
+      const service = fingerprintService(65000, undefined, "https", {
+        http_status: 200,
+        http_title: title,
+        http_server: "nginx/1.24.0",
+      });
+      expect(service).toMatchObject({
+        protocol: "https",
+        product: "HPE iLO",
+        detection: "identified",
+      });
+      expect(service.evidence).toContain(`Title: ${title}`);
+      expect(service.version).toBeUndefined();
+    },
+  );
+
+  it("identifies iLO in an HTTP banner while retaining the original HTTP endpoint", () => {
+    const banner =
+      "HTTP/1.1 401 Unauthorized\r\nServer: HP-iLO-Server/1.30\r\n\r\n";
+    expect(fingerprintService(80, banner, "http")).toMatchObject({
+      port: 80,
+      protocol: "http",
+      product: "HPE iLO",
+      detection: "identified",
+      evidence: "HTTP status: 401; Server: HP-iLO-Server/1.30",
+    });
+  });
+
+  it.each([443, 8443, 17988, 17990, 65000])(
+    "does not identify iLO from port %i or its selected preset alone",
+    (port) => {
+      const hint = fingerprintService(port, undefined, "ilo");
+      expect(hint.detection).not.toBe("identified");
+      expect(hint.product).toBeUndefined();
+      const generic = fingerprintService(port, undefined, "ilo", {
+        httpScheme: "https",
+        http_status: 200,
+        http_server: "httpd",
+        http_title: "Login",
+      });
+      expect(generic).toMatchObject({
+        protocol: "https",
+        detection: "identified",
+      });
+      expect(generic.product).toBeUndefined();
+    },
+  );
+
+  it.each([
+    ["HP-iLO-Serverish/1.30", "Login"],
+    ["not-HP-iLO-Server/1.30", "Login"],
+    ["HP-iLO-Server/1.30 guide", "Login"],
+    ["Allegro-Software-RomPager/4.62", "Login"],
+    ["HPE", "Login"],
+    ["httpd", "HP iLO documentation"],
+    ["httpd", "Guide to HPE iLO 5"],
+    ["httpd", "iLO Sign In help"],
+    ["httpd", "Oracle ILOM"],
+  ])("does not infer iLO from lookalikes %s / %s", (server, title) => {
+    expect(
+      fingerprintService(443, undefined, "https", {
+        http_server: server,
+        http_title: title,
+      }).product,
+    ).toBeUndefined();
+  });
+
   it("identifies the final page and preserves its certificate warning through history serialization", () => {
     const service = fingerprintService(80, undefined, "http", {
       httpScheme: "http",
