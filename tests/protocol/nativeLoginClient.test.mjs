@@ -53,6 +53,7 @@ test("native profile snapshot exactly matches all reviewed legacy defaults", asy
           loginFlow: profile.loginFlow,
           emailOnly: profile.emailOnly,
           selectors: profile.selectors,
+          sameOriginLoginFrames: profile.sameOriginLoginFrames,
         },
       ]),
     ),

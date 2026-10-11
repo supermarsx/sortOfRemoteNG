@@ -27,6 +27,12 @@ impl State {
     pub(super) fn cancel(&mut self) {
         self.pending = None;
     }
+
+    pub(super) fn cancel_frame(&mut self, frame_id: &str) {
+        if self.pending.as_ref().is_some_and(|p| p.frame == frame_id) {
+            self.cancel();
+        }
+    }
 }
 
 fn parse(event: &str) -> Option<(&str, NativeLoginStage, &str, usize)> {
@@ -129,14 +135,14 @@ pub(super) fn receive(
     let current = || {
         automatic_input_current(shared, browser)
             && frame.is_valid() == 1
-            && frame.is_main() == 1
+            && shared.login_frames.origin(browser, frame).as_deref() == Some(origin)
             && CefString::from(&frame.url()).to_string() == url
             && shared
                 .automation
                 .lock()
                 .is_ok_and(|s| s.available() && s.generation == generation)
             && shared.session.lock().is_ok_and(|s| {
-                navigation_allowed(&s, &shared.identity, &shared.permissions, url, true)
+                navigation_allowed(&s, &shared.identity, &shared.permissions, url, frame.is_main() == 1)
             })
     };
     let permitted = || {
@@ -294,6 +300,32 @@ wrap_task! {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn navigating_a_login_frame_cancels_only_its_pending_keys_without_resetting_replay_guard() {
+        let now = Instant::now();
+        let identity = sorng_protocols::origin_browser::OriginBrowserPolicy::new(
+            "db", "ilo", "tab", "http://ilo.test:8080",
+        ).unwrap().identity().clone();
+        let url = "http://ilo.test:8080/login.html";
+        let role = "type|form|password";
+        let mut state = State::default();
+        state.used.insert(("document-1".into(), role.into()));
+        state.pending = Some(Pending {
+            nonce: "document-1".into(), role: role.into(), url: url.into(),
+            frame: "ilo-frame".into(), generation: 1,
+            input: NativeAuthTyping::new(NativeAuthTarget {
+                identity, browser_id: 1, frame_id: "ilo-frame".into(),
+                document_sequence: 1, document_url: url.into(), field_token: "document-1".into(),
+            }, "synthetic", Duration::from_millis(20), now, now + Duration::from_secs(10)).unwrap(),
+            next: 0, length: 9, expires: now + Duration::from_secs(10), deadline: 1.0,
+        });
+        state.cancel_frame("unrelated-child");
+        assert!(state.pending.is_some());
+        state.cancel_frame("ilo-frame");
+        assert!(state.pending.is_none());
+        assert!(state.used.contains(&("document-1".into(), role.into())));
+    }
+
     #[test]
     fn typing_requests_only_name_previously_approved_fields_not_values() {
         assert!(parse("type|start|form|username|0").is_some());

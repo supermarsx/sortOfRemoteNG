@@ -46,6 +46,13 @@ struct Pending {
 }
 
 impl State {
+    pub(super) fn cancel_frame(&mut self, frame_id: &str) {
+        if self.pending.as_ref().is_some_and(|p| p.frame_id == frame_id) {
+            self.pending = None;
+        }
+        self.keyboard.cancel_frame(frame_id);
+    }
+
     pub(super) fn cancel(&mut self) {
         self.pending = None;
         self.keyboard.cancel();
@@ -156,7 +163,7 @@ impl Shared {
         }
         // Credential typing shares this channel; automatic OTP consent remains
         // HTTPS-only even when the saved login source explicitly permits HTTP.
-        if https_origin(url).as_deref() != Some(origin) {
+        if frame.is_main() != 1 || https_origin(url).as_deref() != Some(origin) {
             return;
         }
         let Some((action, challenge, index)) = command(&event) else {

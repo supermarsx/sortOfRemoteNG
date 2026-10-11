@@ -47,6 +47,9 @@ export interface HttpApplicationProfile {
   /** Passwordless assistance: resolve only the selected username/email. */
   emailOnly?: boolean;
   selectors?: Readonly<HttpAutoLoginSelectors>;
+  /** Native login may also run in these direct, same-origin named frames.
+   * Profile metadata only; resource permissions never grant frame login. */
+  sameOriginLoginFrames?: readonly string[];
   totpChallenges?: readonly HttpApplicationTotpChallenge[];
   /** Fixed public hosted login, never inferred from a page-supplied redirect. */
   hostedLoginUrl?: string;
@@ -527,12 +530,15 @@ export const HTTP_APPLICATION_PROFILES: readonly HttpApplicationProfile[] = [
     description:
       "Reviewed Payload admin email/username and password form, normally /admin/login. Admin routes, authentication strategies and MFA are project-configurable; this preset does not invent a universal Payload two-factor form. Custom MFA, passkeys and external identity providers remain interactive.",
   },
-  generic(
-    "ilo",
-    "HP / HPE iLO",
-    "management",
-    "Use the iLO web account. Form detection is generic and firmware-dependent; Redfish/RIBCL session tokens do not sign into the browser. MFA remains manual.",
-  ),
+  {
+    ...generic(
+      "ilo",
+      "HP / HPE iLO",
+      "management",
+      "Use the iLO web account. Native login detects the main page or its same-origin appFrame iframe. Form detection is firmware-dependent; Redfish/RIBCL session tokens do not sign into the browser. MFA remains manual.",
+    ),
+    sameOriginLoginFrames: ["appFrame"],
+  },
   {
     id: "webmin",
     label: "Webmin",

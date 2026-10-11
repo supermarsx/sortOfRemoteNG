@@ -34,6 +34,9 @@ pub mod cef_downloads;
 mod cef_renderer;
 
 #[cfg(feature = "cef-host")]
+mod cef_login_frames;
+
+#[cfg(feature = "cef-host")]
 pub mod platform;
 
 #[cfg(any(feature = "cef-host", test))]

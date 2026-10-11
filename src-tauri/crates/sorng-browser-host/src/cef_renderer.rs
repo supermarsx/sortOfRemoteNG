@@ -1,5 +1,5 @@
 //! Renderer-only feature callbacks. Native functions are closure arguments, not
-//! window properties. Credentials cross CEF IPC only to the bound main frame.
+//! window properties. Credentials cross CEF IPC only to a bound login frame.
 
 use crate::native_automation::{
     self as automation, wire as automation_wire, NativeAutomationAction, NativeAutomationStep,
@@ -42,6 +42,7 @@ struct BrowserAdapter {
     owner: Browser,
     adapter: NativeLoginAdapter,
     factory_json: String,
+    login_frames: crate::cef_login_frames::LoginFramePolicy,
 }
 
 pub(crate) const MAX_LOGIN_CONFIGURATION_BYTES: usize = 32 * 1024;
@@ -295,8 +296,12 @@ fn frame_origin(frame: &Frame) -> Option<String> {
 }
 
 fn browser_frame_origin(frame: &Frame) -> Option<String> {
-    (frame.is_main() == 1 && frame.is_valid() == 1)
-        .then(|| browser_origin(&CefString::from(&frame.url()).to_string()))?
+    let browser = frame.browser()?;
+    ADAPTERS.with(|adapters| {
+        adapters.borrow().get(&browser.identifier())
+            .filter(|policy| same_browser(&policy.owner, &browser))?
+            .login_frames.origin(&browser, frame)
+    })
 }
 
 fn feature_origin(frame: &Frame) -> Option<String> {
@@ -400,7 +405,11 @@ wrap_v8_handler! {
 }
 
 fn report(frame: &Frame, status: &str) {
-    let Some(origin) = feature_origin(frame) else {
+    let origin = feature_origin(frame).or_else(|| {
+        matches!(status, "login-completed" | "login-rejected")
+            .then(|| browser_frame_origin(frame)).flatten()
+    });
+    let Some(origin) = origin else {
         return;
     };
     let Some(mut message) = process_message_create(Some(&CefString::from(FEATURE_STATUS))) else {
@@ -428,7 +437,7 @@ fn install(browser: &Browser, frame: &Frame, context: &mut V8Context) -> bool {
     }) else {
         return false;
     };
-    let Some(origin) = feature_origin(frame) else {
+    let Some(origin) = feature_origin(frame).or_else(|| browser_frame_origin(frame)) else {
         return false;
     };
     if context.is_valid() != 1 {
@@ -489,6 +498,7 @@ fn install(browser: &Browser, frame: &Frame, context: &mut V8Context) -> bool {
     let otp_configuration = configuration.value_bykey(Some(&CefString::from("mfa")))
         .filter(|value| {
             value.is_object() == 1
+                && frame.is_main() == 1
                 && (origin == "about:blank" || https_origin(&origin).is_some())
         });
     let otp_challenge = otp_configuration.as_ref()
@@ -1110,6 +1120,7 @@ wrap_render_process_handler! {
             let _ = appearance::created(browser, info);
             let adapter = NativeLoginAdapter::from_wire(&selected);
             ADAPTERS.with(|adapters| adapters.borrow_mut().insert(browser.identifier(), BrowserAdapter {
+                login_frames: crate::cef_login_frames::LoginFramePolicy::from_configuration(adapter, &factory_json),
                 owner: browser.clone(), adapter, factory_json,
             }));
         }
@@ -1121,6 +1132,11 @@ wrap_render_process_handler! {
                     let installed = install(browser, frame, context);
                     if installed { install_automation(browser, frame, context); }
                     report(frame, if installed { "installed" } else { "installation-failed" });
+                } else if browser_frame_origin(frame).is_some() {
+                    // Child login contexts cannot attest the top-level feature
+                    // gate, install OTP/macro/manual-input authority, or fail
+                    // the entire browser if this optional form is unavailable.
+                    let _ = install(browser, frame, context);
                 }
             }
         }
@@ -1423,6 +1439,7 @@ mod tests {
                     owner: successor.clone(),
                     adapter: NativeLoginAdapter::Generic,
                     factory_json: "{}".into(),
+                    login_frames: crate::cef_login_frames::LoginFramePolicy::default(),
                 },
             )
         });

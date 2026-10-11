@@ -416,6 +416,11 @@ fn saved_form_configuration(
         readiness["formSelector"] = selector.clone().into();
     }
     let mut setup = serde_json::json!({"selectors":selectors,"readiness":readiness});
+    // Only the reviewed application catalog can extend login into an iframe.
+    // Saved arbitrary JSON, destination grants and page messages cannot do so.
+    if let Some(frames) = profile.get("sameOriginLoginFrames") {
+        setup["sameOriginLoginFrames"] = frames.clone();
+    }
     if application_id == "cpanel" {
         setup["readinessProfile"] = "cpanel".into();
     }
@@ -429,6 +434,20 @@ fn saved_form_configuration(
 mod login_configuration_tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn ilo_iframe_login_is_catalog_scoped_and_not_a_saved_arbitrary_grant() {
+        let connection = json!({"sameOriginLoginFrames":["untrusted"],
+            "httpApplication":{"sameOriginLoginFrames":["untrusted"]}});
+        let (setup, _) = saved_form_configuration(&connection, "ilo").unwrap().unwrap();
+        let setup: Value = serde_json::from_str(&setup).unwrap();
+        assert_eq!(setup["sameOriginLoginFrames"], json!(["appFrame"]));
+        for id in ["generic-form", "idrac", "webmin"] {
+            let (setup, _) = saved_form_configuration(&connection, id).unwrap().unwrap();
+            let setup: Value = serde_json::from_str(&setup).unwrap();
+            assert!(setup.get("sameOriginLoginFrames").is_none(), "{id}");
+        }
+    }
 
     #[test]
     fn effective_browser_minima_reach_ordinary_and_every_reviewed_provider() {

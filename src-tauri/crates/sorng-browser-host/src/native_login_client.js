@@ -162,6 +162,9 @@
   const doc = document;
   const origin = location.origin;
   const initialHref = location.href;
+  const topDocument = window.top === window;
+  let loginFrame = null;
+  const parentNavigationEvents = ["pagehide", "unload", "hashchange", "popstate"];
   const now = Date.now.bind(Date);
   let requested = false;
   let delivered = false;
@@ -170,11 +173,73 @@
   let expiryTimer;
   let startTimer;
   let config;
+  function authorizedLoginFrame() {
+    try {
+      const parent = window.parent;
+      const element = window.frameElement;
+      if (
+        parent === window || parent !== window.top ||
+        !element || element.tagName !== "IFRAME" || !element.isConnected ||
+        element.ownerDocument !== parent.document ||
+        !parent.document.documentElement.contains(element) ||
+        element.contentWindow !== window || element.contentDocument !== doc ||
+        window.origin !== origin || parent.location.origin !== origin ||
+        parent.location.protocol !== location.protocol ||
+        parent.location.hostname !== location.hostname ||
+        parent.location.port !== location.port ||
+        !config?.sameOriginLoginFrames?.some(name =>
+          name === window.name || name === element.getAttribute("name") ||
+          name === element.getAttribute("id")) ||
+        (element.hasAttribute("sandbox") &&
+          !["allow-scripts", "allow-same-origin"].every(token =>
+            element.getAttribute("sandbox").toLowerCase().split(/\s+/).includes(token)))
+      ) return null;
+      // The structural native gate does not select a DOM name. Exactly one
+      // direct child may match the private allowlist, including mixed id/name
+      // matches. Recheck before every receipt so a later sibling cannot steal
+      // an already selected login. Never descend into peer frame documents.
+      let selected = null;
+      for (const peer of parent.document.querySelectorAll("iframe")) {
+        let matches = false;
+        try {
+          matches = config.sameOriginLoginFrames.includes(peer.getAttribute("id")) ||
+            config.sameOriginLoginFrames.includes(peer.getAttribute("name"));
+          if (!matches)
+            matches = config.sameOriginLoginFrames.includes(peer.contentWindow?.name);
+        } catch (_) { /* An unrelated cross-origin peer cannot expose its name. */ }
+        if (matches) {
+          if (selected) return null;
+          selected = peer;
+        }
+      }
+      if (selected !== element) return null;
+      return { parent, element, document: parent.document, href: parent.location.href };
+    } catch (_) {
+      // Cross-origin and opaque sandbox contexts must fail closed, including
+      // when the top document navigates while a native key receipt is pending.
+      return null;
+    }
+  }
+  function currentLoginContext() {
+    if (topDocument) return window.top === window;
+    const frame = authorizedLoginFrame();
+    return !!(loginFrame && frame && frame.parent === loginFrame.parent &&
+      frame.element === loginFrame.element && frame.document === loginFrame.document &&
+      frame.href === loginFrame.href);
+  }
+  function stopWatchingParent() {
+    if (loginFrame) {
+      try {
+        for (const event of parentNavigationEvents)
+          loginFrame.parent.removeEventListener(event, cancel);
+      } catch (_) { /* The parent may already have navigated cross-origin. */ }
+    }
+  }
   function current() {
     return (
       !stopped &&
       document === doc &&
-      window.top === window &&
+      currentLoginContext() &&
       (location.protocol === "https:" || location.protocol === "http:") &&
       location.origin === origin &&
       (configuration?.provider || location.href === initialHref)
@@ -182,6 +247,7 @@
   }
   function cancel() {
     stopped = true;
+    stopWatchingParent();
     if (keyboard) keyboard.cancel();
     clearTimeout(startTimer);
     clearTimeout(expiryTimer);
@@ -1215,7 +1281,8 @@
   findLoginForm = function (selectors, options) {
     if (!current() || (delivered && now() >= expires)) return null;
     const target = sharedFind(selectors, options);
-    // Native renderer delivery is main-document scoped, not a frame wildcard.
+    // Native delivery belongs to this exact authorized document. Never search
+    // another frame for controls, even when its origin and name would match.
     if (!target || target.pw.ownerDocument !== doc) return null;
     if (target.exchangeEcp) {
       const destination = target.form.querySelector(
@@ -1321,6 +1388,7 @@
       if (keyboard) keyboard.cancel();
       done = true;
       stopped = true;
+      stopWatchingParent();
       clearInterval(timer);
       clearTimeout(lifetime);
       clearTimeout(expiryTimer);
@@ -1578,8 +1646,8 @@
       rawOptions,
       deliveredStage,
     ) {
+      if (!current()) { finish(false); return false; }
       if (
-        !current() ||
         done ||
         expectedOrigin !== origin ||
         deliveredStage !== phase ||
@@ -1644,9 +1712,18 @@
       typeof config !== "object" ||
       Array.isArray(config) ||
       Object.keys(config).some(
-        (key) => !["selectors", "readiness", "readinessProfile"].includes(key),
+        (key) => !["selectors", "readiness", "readinessProfile", "sameOriginLoginFrames"].includes(key),
       )
     )
+      throw new Error();
+    // This allowlist is native-owned configuration, never inferred from page
+    // content or accepted through a later credential/options delivery.
+    if (Object.prototype.hasOwnProperty.call(config, "sameOriginLoginFrames") &&
+        (adapter !== "modular-form" || !Array.isArray(config.sameOriginLoginFrames) ||
+          config.sameOriginLoginFrames.length < 1 || config.sameOriginLoginFrames.length > 8 ||
+          new Set(config.sameOriginLoginFrames).size !== config.sameOriginLoginFrames.length ||
+          config.sameOriginLoginFrames.some(name => typeof name !== "string" ||
+            name.length < 1 || name.length > 128 || /[^A-Za-z0-9_-]/.test(name))))
       throw new Error();
     if (
       config.readinessProfile !== undefined &&
@@ -1671,12 +1748,17 @@
         doc.createDocumentFragment().querySelector(value);
       }
     }
+    if (!topDocument) loginFrame = authorizedLoginFrame();
     if (!current()) throw new Error();
   } catch (_) {
     cancel();
     return function () {
       return false;
     };
+  }
+  if (loginFrame) {
+    for (const event of parentNavigationEvents)
+      loginFrame.parent.addEventListener(event, cancel, { once: true });
   }
   if (adapter === "modular-form") return attachKeyboard(deferredFormClient());
   window.addEventListener("pagehide", cancel, { once: true });
@@ -1737,6 +1819,7 @@
     ).finally(() => {
       clearTimeout(expiryTimer);
       stopped = true;
+      stopWatchingParent();
     });
     return true;
   };

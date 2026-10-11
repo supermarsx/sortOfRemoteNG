@@ -548,7 +548,8 @@
       }
     },
     "ilo": {
-      "capability": "generic-form"
+      "capability": "generic-form",
+      "sameOriginLoginFrames": ["appFrame"]
     },
     "webmin": {
       "capability": "known-form",

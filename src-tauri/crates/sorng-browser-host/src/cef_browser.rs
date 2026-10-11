@@ -514,6 +514,7 @@ struct Shared {
     login_totp: Mutex<login_totp::State>,
     feature_gate: Mutex<RendererFeatureGate>,
     login_adapter: NativeLoginAdapter,
+    login_frames: crate::cef_login_frames::LoginFramePolicy,
     certificate_policy: NativeCertificatePolicy,
     certificate_pending: Mutex<Option<PendingCertificate>>,
     automation: Mutex<AutomationState>,
@@ -1477,6 +1478,22 @@ impl Shared {
         let (Some(browser), Some(frame)) = (browser, frame) else {
             return 1;
         };
+        if frame.is_main() != 1 {
+            // Only fixed login observations from a reviewed child. Iframes
+            // cannot attest/fail the top-level renderer installation gate.
+            if !self.accepts(Some(browser)) || !self.current() { return 1; }
+            let Some(origin) = self.login_frames.origin(browser, frame) else { return 1; };
+            let Some(args) = message.argument_list().filter(|args| args.size() == 3) else { return 1; };
+            if message_text(&args, 0, 1024).as_deref() != Some(&origin)
+                || message_text(&args, 2, 80).as_deref() != Some(FEATURE_PROTOCOL_PIN) { return 1; }
+            let status = match message_text(&args, 1, 40).as_deref() {
+                Some("login-completed") => NativeFeatureStatus::LoginAdapterCompleted,
+                Some("login-rejected") => NativeFeatureStatus::LoginAdapterRejected,
+                _ => return 1,
+            };
+            self.feature_event(Some(browser), &origin, status);
+            return 1;
+        }
         if !self.accepts(Some(browser))
             || !self.current()
             || frame.is_main() != 1
@@ -1569,21 +1586,12 @@ impl Shared {
         };
         if !self.accepts(Some(browser))
             || !self.current()
-            || frame.is_main() != 1
             || frame.is_valid() != 1
         {
             return 1;
         }
-        let Some(main) = browser.main_frame() else {
-            return 1;
-        };
-        if CefString::from(&main.identifier()).to_string()
-            != CefString::from(&frame.identifier()).to_string()
-        {
-            return 1;
-        }
         let url = CefString::from(&frame.url()).to_string();
-        let Some(origin) = browser_origin(&url) else {
+        let Some(origin) = self.login_frames.origin(browser, frame) else {
             return 1;
         };
         let Some(args) = message.argument_list().filter(|args| args.size() == 3) else {
@@ -1653,6 +1661,7 @@ impl Shared {
             outcome = Delivery::NativeRejectedCurrent;
             if !self.current()
                 || !self.accepts(Some(browser))
+                || self.login_frames.origin(browser, frame).as_deref() != Some(&origin)
                 || browser_origin(&CefString::from(&frame.url()).to_string()).as_deref()
                     != Some(&origin)
                 || !stage_allowed(
@@ -1667,7 +1676,7 @@ impl Shared {
                 return;
             };
             outcome = Delivery::NativeRejectedNavigation;
-            if !navigation_allowed(&session, &self.identity, &self.permissions, &url, true) {
+            if !navigation_allowed(&session, &self.identity, &self.permissions, &url, frame.is_main() == 1) {
                 return;
             }
             let Ok(mut budget) = self.login_budget.lock() else {
@@ -2187,6 +2196,7 @@ impl<'a> CefBrowserHost<'a> {
             login_totp: Mutex::new(login_totp::State::default()),
             feature_gate: Mutex::new(RendererFeatureGate::default()),
             login_adapter,
+            login_frames: crate::cef_login_frames::LoginFramePolicy::from_configuration(login_adapter, &login_factory_json),
             certificate_policy,
             certificate_pending: Mutex::new(None),
             automation: Mutex::new(AutomationState::default()),
@@ -2956,6 +2966,12 @@ wrap_request_handler! {
             // Includes same-origin subframe reloads: an old document's consent
             // must never be applied to a replacement using the same frame ID.
             self.shared.deny_media_on_ui(None);
+            if let Some(frame) = frame.as_ref() {
+                // A child can reload to exactly the same URL and frame ID.
+                // Cancel in-flight keystrokes before its document is replaced.
+                self.shared.login_totp.lock().unwrap_or_else(|error| error.into_inner())
+                    .cancel_frame(&CefString::from(&frame.identifier()).to_string());
+            }
             let main_frame = frame.as_ref().is_some_and(|frame| frame.is_main() == 1);
             if main_frame {
                 self.shared.automation.lock().unwrap_or_else(|error| error.into_inner()).navigating = true;
@@ -4291,6 +4307,7 @@ mod tests {
             login_totp: Mutex::new(login_totp::State::default()),
             feature_gate: Mutex::new(RendererFeatureGate::default()),
             login_adapter: NativeLoginAdapter::Generic,
+            login_frames: crate::cef_login_frames::LoginFramePolicy::default(),
             certificate_policy: NativeCertificatePolicy::Strict,
             certificate_pending: Mutex::new(None),
             automation: Mutex::new(AutomationState::default()),

@@ -190,7 +190,9 @@ fn send_character(
         return false;
     };
     if frame.is_valid() != 1
-        || frame.is_main() != 1
+        // Automatic callers validate the reviewed login frame immediately
+        // before each key. Manual typing retains its main-frame boundary.
+        || (!automatic && frame.is_main() != 1)
         || (!automatic && frame.is_focused() != 1)
         || cef::CefString::from(&frame.identifier()).to_string() != target.frame_id
         || cef::CefString::from(&frame.url()).to_string() != target.document_url

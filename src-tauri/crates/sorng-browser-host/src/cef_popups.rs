@@ -213,6 +213,7 @@ fn child_shared(
         hooks: source.hooks.clone(),
         sink,
         login_adapter: source.login_adapter,
+        login_frames: source.login_frames.clone(),
         certificate_policy: source.certificate_policy,
         capabilities: source.capabilities,
         login_budget: Mutex::new(LoginBudget::default()),

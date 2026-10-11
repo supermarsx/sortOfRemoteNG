@@ -21,7 +21,7 @@ const FORM_MODULES: &str = concat!(
     include_str!("../../sorng-protocols/src/autologin/forms/readiness.js"),
 );
 
-/// Evaluate once per main-frame context; keep the returned closure native-only.
+/// Evaluate once per authorized login-frame context; keep the closure native-only.
 /// Factory: (notify, configuration, nativeAdapter) -> deliver.
 /// Configuration: reviewed selectors/readiness OR provider identity/timing.
 /// deliver(origin, username, password, autoSubmit, deadline, optionsOrStage, stage) -> bool.
