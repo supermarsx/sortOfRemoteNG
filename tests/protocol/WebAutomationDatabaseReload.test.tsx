@@ -178,8 +178,6 @@ describe("website exact-owner library refresh", () => {
     const view = await mount();
     const api = view.result.current.context.automationLibrary!;
     const old = { ...script, scope: scope() };
-    await act(() => view.result.current.automation.requestRun(old));
-    expect(view.result.current.automation.pendingRun).toEqual(old);
     const changed = {
       ...original,
       settings: { retained: "external edit" },
@@ -204,14 +202,13 @@ describe("website exact-owner library refresh", () => {
     )!;
     expect(fresh).toMatchObject({ code: "document.URL", scope: scope() });
     expect(h.request).not.toHaveBeenCalled();
-    await act(() => view.result.current.automation.execute(old));
+    await act(() => view.result.current.automation.requestRun(old));
     expect(view.result.current.automation.error).toMatch(
       /changed or was deleted/,
     );
     expect(h.request).not.toHaveBeenCalled();
     await act(() => view.result.current.automation.requestRun(fresh));
-    expect(view.result.current.automation.pendingRun).toEqual(fresh);
-    await act(() => view.result.current.automation.execute(fresh));
+    expect(view.result.current.automation.pendingRun).toBeNull();
     expect(h.request).toHaveBeenCalledWith(
       "script",
       expect.objectContaining({ code: "document.URL" }),

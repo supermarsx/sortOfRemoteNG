@@ -1718,19 +1718,6 @@ describe("real-origin connection-tab integration", () => {
       fireEvent.click(
         screen.getByRole("button", { name: "Mounted native script" }),
       );
-      const confirm = await screen.findByRole("button", {
-        name: "Run on current page",
-      });
-      await waitFor(() =>
-        expect(screen.getByRole("button", { name: "Reload" })).toBeDisabled(),
-      );
-      expect(confirm).toBeEnabled();
-      expect(
-        calls("origin_browser_automation").filter(
-          ([, args]) => args.request.operation.action === "script",
-        ),
-      ).toHaveLength(0);
-      fireEvent.click(confirm);
       await waitFor(() =>
         expect(
           calls("origin_browser_automation").some(
@@ -1738,6 +1725,9 @@ describe("real-origin connection-tab integration", () => {
           ),
         ).toBe(true),
       );
+      expect(
+        screen.queryByRole("button", { name: "Run on current page" }),
+      ).toBeNull();
       const dispatched = calls("origin_browser_automation").find(
         ([, args]) => args.request.operation.action === "script",
       )![1].request;
@@ -1835,7 +1825,7 @@ describe("real-origin connection-tab integration", () => {
       ),
     ).toBe(false);
   });
-  it("does not run a reviewed script after owner revocation", async () => {
+  it("does not dispatch a directly requested script when its owner is revoked during source review", async () => {
     enableAutomation();
     const view = await attached();
     await waitFor(() =>
@@ -1846,7 +1836,6 @@ describe("real-origin connection-tab integration", () => {
     fireEvent.click(
       screen.getByRole("button", { name: "Mounted native script" }),
     );
-    await screen.findByRole("button", { name: "Run on current page" });
     f.revoked = true;
     view.rerender(<WebBrowser session={session} />);
     await waitFor(() =>

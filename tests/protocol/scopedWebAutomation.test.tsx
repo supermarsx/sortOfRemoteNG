@@ -257,7 +257,7 @@ describe("scope-qualified website automation runtime", () => {
       ),
     ).toHaveLength(0);
   });
-  it("compiles persisted TypeScript locally and sends only emitted JavaScript after confirmation", async () => {
+  it("runs persisted TypeScript directly and sends only locally emitted JavaScript", async () => {
     const view = mount();
     const typed: BrowserScript = {
       ...script,
@@ -275,10 +275,7 @@ describe("scope-qualified website automation runtime", () => {
       expect(view.result.current.availableDatabaseScope).toEqual(scope),
     );
     await act(async () => view.result.current.requestRun(scoped(typed)));
-    expect(
-      h.request.mock.calls.filter(([action]) => action === "script"),
-    ).toHaveLength(0);
-    await act(async () => view.result.current.execute(scoped(typed)));
+    expect(view.result.current.pendingRun).toBeNull();
     const calls = h.request.mock.calls.filter(
       ([action]) => action === "script",
     );
@@ -328,7 +325,7 @@ describe("scope-qualified website automation runtime", () => {
       );
       let running!: Promise<void>;
       act(() => {
-        running = view.result.current.execute(scoped(typed));
+        running = view.result.current.requestRun(scoped(typed));
       });
       await waitFor(() => expect(compile).toHaveBeenCalled());
       if (change === "owner") h.lease++;
@@ -417,18 +414,21 @@ describe("scope-qualified website automation runtime", () => {
       "ephemeral-user-value",
     );
   });
-  it("rechecks app-wide source after confirmation too", async () => {
+  it("rechecks app-wide source between the Run click and execution", async () => {
     const view = mount();
     await waitFor(() => expect(view.result.current.libraryReady).toBe(true));
+    h.load
+      .mockResolvedValueOnce({
+        value: { version: 1, scripts: [script], macros: [] },
+      })
+      .mockResolvedValueOnce({
+        value: {
+          version: 1,
+          scripts: [{ ...script, code: "document.URL" }],
+          macros: [],
+        },
+      });
     await act(async () => view.result.current.requestRun(script));
-    h.load.mockResolvedValueOnce({
-      value: {
-        version: 1,
-        scripts: [{ ...script, code: "document.URL" }],
-        macros: [],
-      },
-    });
-    await act(async () => view.result.current.execute(script));
     expect(
       h.request.mock.calls.filter(([action]) => action === "script"),
     ).toHaveLength(0);
@@ -451,19 +451,22 @@ describe("scope-qualified website automation runtime", () => {
       view.connection.httpAutomation!.items[2],
     ]);
   });
-  it("re-resolves database source after confirmation and blocks changed/deleted items", async () => {
+  it("re-resolves database source during a direct run and blocks deleted items", async () => {
     const view = mount();
     await waitFor(() =>
       expect(view.result.current.availableDatabaseScope).toEqual(scope),
     );
     const item = scoped({ ...script, code: "document.URL" });
-    await act(async () => view.result.current.requestRun(item));
-    expect(view.result.current.pendingRun).toEqual(item);
-    view.replace({
-      ...view.getData(),
-      website: { version: 1, scripts: [], macros: [macro] },
+    view.read.mockImplementationOnce(async () => {
+      const selected = structuredClone(view.getData());
+      view.replace({
+        ...view.getData(),
+        website: { version: 1, scripts: [], macros: [macro] },
+      });
+      return selected;
     });
-    await act(async () => view.result.current.execute(item));
+    await act(async () => view.result.current.requestRun(item));
+    expect(view.result.current.pendingRun).toBeNull();
     expect(
       h.request.mock.calls.filter(([action]) => action === "script"),
     ).toHaveLength(0);

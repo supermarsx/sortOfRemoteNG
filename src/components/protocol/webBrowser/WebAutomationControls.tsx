@@ -903,20 +903,14 @@ export function WebAutomationControls({
       {automation.open && (
         <AutomationLibrary automation={automation} onRecord={requestRecord} />
       )}
-      {automation.pendingRun && (
+      {automation.pendingRun?.kind === "macro" && (
         <Modal
           isOpen
           onClose={() => automation.setPendingRun(null)}
           ariaLabel="Review website action"
           panelClassName="max-w-xl mx-4 max-h-[85vh] flex flex-col overflow-hidden"
         >
-          <ModalHeader
-            title={
-              automation.pendingRun.kind === "script"
-                ? "Run JavaScript on this website?"
-                : "Replay website macro?"
-            }
-          />
+          <ModalHeader title="Replay website macro?" />
           <ModalBody className="p-6 space-y-3 min-h-0 overflow-y-auto">
             <p className="text-sm font-medium break-words">
               {automation.pendingRun.name}
@@ -931,16 +925,10 @@ export function WebAutomationControls({
               Navigation or access changes cancel pending steps; completed
               actions cannot be undone.
             </p>
-            {automation.pendingRun.kind === "script" ? (
-              <pre className="text-xs whitespace-pre-wrap break-all max-h-60 overflow-y-auto bg-[var(--color-background)] p-3 rounded">
-                {automation.pendingRun.code}
-              </pre>
-            ) : (
-              <p className="text-sm">
-                {automation.pendingRun.steps.length} steps. Typed values are
-                requested once and are never saved.
-              </p>
-            )}
+            <p className="text-sm">
+              {automation.pendingRun.steps.length} steps. Typed values are
+              requested once and are never saved.
+            </p>
           </ModalBody>
           <ModalFooter className="shrink-0 flex justify-end gap-2">
             <button

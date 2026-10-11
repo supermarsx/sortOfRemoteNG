@@ -1899,12 +1899,6 @@ describe("real WebBrowser iframe and website automation integration", () => {
       ).toBe(true),
     );
     fireEvent.click(screen.getByRole("button", { name: "Demo page action" }));
-    expect(post.mock.calls.some(([data]) => data.action === "script")).toBe(
-      false,
-    );
-    fireEvent.click(
-      await screen.findByRole("button", { name: "Run on current page" }),
-    );
     const request = await waitFor(() => {
       const call = post.mock.calls.find(([data]) => data.action === "script");
       expect(call).toBeDefined();
@@ -1929,9 +1923,6 @@ describe("real WebBrowser iframe and website automation integration", () => {
     });
     await waitFor(() => expect(chip).toBeEnabled());
     fireEvent.click(chip);
-    fireEvent.click(
-      await screen.findByRole("button", { name: "Run on current page" }),
-    );
     const request = await waitFor(() => {
       const call = post.mock.calls.find(([data]) => data.action === "script");
       expect(call).toBeDefined();

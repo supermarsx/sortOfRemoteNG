@@ -32,14 +32,16 @@ export const MACROS_SEARCH_ENTRIES: SettingSearchEntry[] = [
     ],
     [
       "confirmBeforeScriptRun",
-      "Confirm before running scripts",
-      "SSH website JavaScript safety review prompt",
+      "Confirm before running SSH scripts",
+      "SSH terminal commands safety review prompt",
     ],
   ].map(([key, label, terms]) => ({
     key: `sessionQuickActions.${key}`,
     label,
     description:
-      "Global availability and safety preferences; website capabilities still require explicit connection-level consent.",
+      key === "confirmBeforeScriptRun"
+        ? "Review a manual SSH script before execution."
+        : "Global availability and safety preferences; website capabilities still require explicit connection-level consent.",
     tags: terms.split(" "),
     synonyms: [],
     section: "macros",

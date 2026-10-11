@@ -378,16 +378,15 @@ describe("mounted website automation controls and ownership", () => {
     expect(boundary.update).not.toHaveBeenCalled();
     expect(current.favorites).toEqual([]);
   });
-  it("uses the existing confirmation for context-menu run and blocks management while busy", async () => {
+  it("runs a saved script from its context menu directly and blocks management while busy", async () => {
     await mount();
     fireEvent.contextMenu(screen.getByRole("button", { name: "Demo script" }));
     fireEvent.click(screen.getByRole("menuitem", { name: "Run script" }));
-    await screen.findByRole("dialog", { name: "Review website action" });
-    expect(sent("script")).toHaveLength(0);
-    fireEvent.click(
-      screen.getByRole("button", { name: "Run on current page" }),
-    );
     await waitFor(() => expect(current.busy).toBe(true));
+    expect(current.pendingRun).toBeNull();
+    expect(
+      screen.queryByRole("dialog", { name: "Review website action" }),
+    ).toBeNull();
     act(() => current.openLibrary("script"));
     fireEvent.contextMenu(
       screen.getByRole("button", { name: "Demo script" }).parentElement!,
@@ -400,20 +399,89 @@ describe("mounted website automation controls and ownership", () => {
     acknowledge(sent("script")[0]);
     await waitFor(() => expect(current.busy).toBe(false));
   });
-  it("requires explicit confirmation for a favorite and guards rapid duplicate execution", async () => {
+  it("runs a saved script favorite directly and guards rapid duplicate clicks", async () => {
     await mount();
-    fireEvent.click(screen.getByRole("button", { name: "Demo script" }));
-    expect(
-      await screen.findByRole("dialog", { name: "Review website action" }),
-    ).toBeInTheDocument();
-    expect(sent("script")).toHaveLength(0);
-    const run = screen.getByRole("button", { name: "Run on current page" });
+    const run = screen.getByRole("button", { name: "Demo script" });
     fireEvent.click(run);
     fireEvent.click(run);
     await waitFor(() => expect(sent("script")).toHaveLength(1));
+    expect(current.pendingRun).toBeNull();
+    expect(
+      screen.queryByRole("dialog", { name: "Review website action" }),
+    ).toBeNull();
     acknowledge(sent("script")[0]);
     await waitFor(() => expect(current.busy).toBe(false));
   });
+  it("runs a saved library script directly but keeps unsaved and delete confirmations", async () => {
+    await mount();
+    act(() => current.openLibrary("script"));
+    fireEvent.click(screen.getByRole("button", { name: /JS · Demo script/ }));
+    fireEvent.click(screen.getByRole("button", { name: "Run JavaScript" }));
+    await waitFor(() => expect(sent("script")).toHaveLength(1));
+    expect(current.pendingRun).toBeNull();
+    expect(
+      screen.queryByRole("dialog", { name: "Review website action" }),
+    ).toBeNull();
+    acknowledge(sent("script")[0]);
+    await waitFor(() => expect(current.busy).toBe(false));
+    fireEvent.click(screen.getByRole("button", { name: "Delete saved item" }));
+    expect(screen.getByText("Delete saved website item?")).toBeVisible();
+    expect(boundary.remove).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    fireEvent.change(screen.getByLabelText("Name"), {
+      target: { value: "Unsaved name" },
+    });
+    expect(
+      screen.getByRole("button", { name: "Run JavaScript" }),
+    ).toBeDisabled();
+    fireEvent.click(screen.getByRole("button", { name: "Close library" }));
+    expect(screen.getByText("Leave unsaved changes?")).toBeVisible();
+    expect(sent("script")).toHaveLength(1);
+  });
+  it("keeps the replay confirmation for a saved macro", async () => {
+    const macro = {
+      kind: "macro" as const,
+      id: "macro",
+      name: "Demo macro",
+      description: "",
+      steps: [
+        {
+          kind: "click" as const,
+          selector: "html > body > button:nth-of-type(1)",
+        },
+      ],
+      createdAt: script.createdAt,
+      updatedAt: script.updatedAt,
+    };
+    boundary.load.mockResolvedValue({ value: { ...library, macros: [macro] } });
+    connection.httpAutomation!.items!.push({ kind: "macro", id: macro.id });
+    await mount();
+    fireEvent.click(screen.getByRole("button", { name: macro.name }));
+    await screen.findByRole("dialog", { name: "Review website action" });
+    expect(screen.getByText("Replay website macro?")).toBeVisible();
+    expect(sent("step")).toHaveLength(0);
+    fireEvent.click(
+      screen.getByRole("button", { name: "Run on current page" }),
+    );
+    await waitFor(() => expect(sent("step")).toHaveLength(1));
+    acknowledge(sent("step")[0]);
+    await waitFor(() => expect(current.busy).toBe(false));
+  });
+  it.each(["connection", "global"])(
+    "still requires %s script permission for a direct run",
+    async (permission) => {
+      if (permission === "connection")
+        connection.httpAutomation!.scriptInjectionEnabled = false;
+      else settings.sessionQuickActions.allowWebScriptInjection = false;
+      await mount();
+      expect(screen.getByRole("button", { name: script.name })).toBeDisabled();
+      await act(async () => current.requestRun(script));
+      expect(current.error).toMatch(/capability is disabled/);
+      expect(current.pendingRun).toBeNull();
+      expect(sent("script")).toHaveLength(0);
+      expect(boundary.update).not.toHaveBeenCalled();
+    },
+  );
   it("records only an armed typed step, reviews it, and saves a macro without values", async () => {
     await mount();
     fireEvent.click(screen.getByRole("button", { name: "Record macro" }));

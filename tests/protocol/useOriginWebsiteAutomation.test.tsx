@@ -424,9 +424,6 @@ describe("native automation hook and reused controls", () => {
     );
     await waitFor(() => expect(current.pageReady).toBe(true));
     fireEvent.click(screen.getByRole("button", { name: script.name }));
-    fireEvent.click(
-      await screen.findByRole("button", { name: "Run on current page" }),
-    );
     await waitFor(() => expect(current.executionOutcome).toBe("dispatched"));
     expect(
       request.mock.calls.find(
@@ -505,20 +502,16 @@ describe("native automation hook and reused controls", () => {
     );
     await waitFor(() => expect(current.pageReady).toBe(true));
   });
-  it("uses the protected script library and confirmation without iframe or native dark actions", async () => {
+  it("runs the protected saved script directly without iframe or native dark actions", async () => {
     await mount();
     expect(globalThis.document.querySelector("iframe")).toBeNull();
     expect(request).not.toHaveBeenCalled();
     fireEvent.click(screen.getByRole("button", { name: script.name }));
-    await screen.findByRole("button", { name: "Run on current page" });
-    expect(
-      screen.getByRole("button", { name: "Run on current page" }),
-    ).toBeEnabled();
-    expect(request).not.toHaveBeenCalled();
-    fireEvent.click(
-      screen.getByRole("button", { name: "Run on current page" }),
-    );
     await waitFor(() => expect(current.executionOutcome).toBe("dispatched"));
+    expect(current.pendingRun).toBeNull();
+    expect(
+      screen.queryByRole("button", { name: "Run on current page" }),
+    ).toBeNull();
     expect(screen.getByRole("status")).toHaveTextContent(
       "completion is unverified",
     );
@@ -532,20 +525,21 @@ describe("native automation hook and reused controls", () => {
       getSessionActivityLog().some((entry) => entry.code === "completed"),
     ).toBe(false);
   });
-  it("rechecks the library source before injecting reviewed JavaScript", async () => {
+  it("rechecks the library source before injecting a directly requested script", async () => {
     await mount();
+    boundary.load
+      .mockResolvedValueOnce({
+        value: { version: 1, scripts: [script], macros: [] },
+      })
+      .mockResolvedValueOnce({
+        value: {
+          version: 1,
+          scripts: [{ ...script, code: "document.body" }],
+          macros: [],
+        },
+      });
     await act(async () => {
       await current.requestRun(script);
-    });
-    boundary.load.mockResolvedValue({
-      value: {
-        version: 1,
-        scripts: [{ ...script, code: "document.body" }],
-        macros: [],
-      },
-    });
-    await act(async () => {
-      await current.execute(script);
     });
     expect(request).not.toHaveBeenCalled();
     expect(current.error).toMatch(/changed or was deleted/);

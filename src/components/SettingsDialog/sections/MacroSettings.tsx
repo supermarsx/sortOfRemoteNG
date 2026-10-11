@@ -61,7 +61,7 @@ const MacroSettings: React.FC<MacroSettingsProps> = ({
       <SectionHeading
         icon={<ListVideo className="w-5 h-5 text-primary" />}
         title="Macros"
-        description="Configure SSH and website quick actions, script confirmation, and macro replay. Website execution still requires explicit connection-level consent."
+        description="Configure SSH and website quick actions, SSH script confirmation, and macro replay. Website execution still requires explicit connection-level consent."
       />
 
       {/* Replay */}
@@ -163,8 +163,8 @@ const MacroSettings: React.FC<MacroSettingsProps> = ({
           />
           <Toggle
             settingKey="sessionQuickActions.confirmBeforeScriptRun"
-            label="Confirm before running scripts"
-            description="Review a manual SSH or website script before execution."
+            label="Confirm before running SSH scripts"
+            description="Review a manual SSH script before execution."
             checked={quickActions.confirmBeforeScriptRun}
             onChange={(confirmBeforeScriptRun) =>
               updateSettings({

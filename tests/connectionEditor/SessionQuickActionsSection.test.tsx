@@ -42,7 +42,7 @@ describe("connection quick-action settings", () => {
       ["Allow website interaction macros", "allowWebMacros"],
       ["Allow website script injection", "allowWebScriptInjection"],
       ["Allow dark-mode extension", "allowWebForceDark"],
-      ["Confirm before running scripts", "confirmBeforeScriptRun"],
+      ["Confirm before running SSH scripts", "confirmBeforeScriptRun"],
     ];
     for (const [label, key] of controls) {
       fireEvent.click(

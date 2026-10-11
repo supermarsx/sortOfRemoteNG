@@ -994,13 +994,14 @@ export function useWebAutomation(options: Options) {
         setError(message(failure));
       return;
     }
+    // Clicking Run authorizes this invocation of the saved script. execute
+    // still checks capability consent, ownership, source and the current page.
     if (
-      (item.kind === "script"
-        ? permissionsRef.current.value?.confirmBeforeScriptRun
-        : options.settings.macros?.confirmBeforeReplay) !== false
+      item.kind === "macro" &&
+      latest.current.settings.macros?.confirmBeforeReplay !== false
     )
       setPendingRun(structuredClone(item));
-    else void execute(item);
+    else await execute(item);
   };
   const save = async (
     item: ScopedWebAutomationItem,
