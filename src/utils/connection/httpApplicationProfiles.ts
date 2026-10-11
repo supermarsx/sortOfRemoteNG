@@ -53,6 +53,8 @@ export interface HttpApplicationProfile {
   /** Safe source-reviewed path for an explicit external-browser handoff. */
   loginPath?: string;
   loginModes?: readonly HttpApplicationSettings["loginMode"][];
+  /** HTTPS unless explicitly configured for HTTP at the saved origin and port.
+   * Fixed hostedLoginUrl endpoints always retain their exact HTTPS origin. */
   requiresHttps?: boolean;
   loginFlow?:
     | "bitwarden"

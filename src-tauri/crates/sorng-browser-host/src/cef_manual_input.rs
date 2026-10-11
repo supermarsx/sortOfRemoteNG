@@ -14,8 +14,8 @@ use std::{
 
 pub type ManualInputGuard = Arc<dyn Fn() -> bool + Send + Sync>;
 pub type ManualInputCompletion = Box<dyn FnOnce(Result<ManualInputResponse, &'static str>) + Send>;
-const STALE: &str = "Manual typing stopped: the selected view, database, document or focused field changed. Focus an empty main-frame HTTPS input and capture it again.";
-const FIELD: &str = "Manual typing requires an empty focused input in the main frame of the selected HTTPS page. Embedded iframe fields are not supported; focus a supported field before opening Credentials.";
+const STALE: &str = "Manual typing stopped: the selected view, database, document or focused field changed. Focus an empty main-frame input on an HTTPS page or the configured HTTP origin and capture it again.";
+const FIELD: &str = "Manual typing requires an empty focused input in the main frame of the selected HTTPS page or configured HTTP origin. Embedded iframe fields are not supported; focus a supported field before opening Credentials.";
 static NEXT: AtomicU64 = AtomicU64::new(1);
 #[derive(PartialEq, Eq)]
 enum Phase {
@@ -115,6 +115,9 @@ fn current(slot: &Slot, require_input: bool) -> bool {
         && slot.frame.is_valid() == 1
         && slot.frame.is_main() == 1
         && CefString::from(&slot.frame.url()).to_string() == slot.url
+        && shared.session.lock().is_ok_and(|session| {
+            wire::document_allowed(session.policy().source_origin(), &slot.url)
+        })
         && shared
             .automation
             .lock()
@@ -194,7 +197,9 @@ pub(super) fn operate(
                 return Ok(());
             };
             let url = CefString::from(&frame.url()).to_string();
-            if https_origin(&url).is_none() {
+            if !host.shared.session.lock().is_ok_and(|session| {
+                wire::document_allowed(session.policy().source_origin(), &url)
+            }) {
                 completion(Err(FIELD));
                 return Ok(());
             }

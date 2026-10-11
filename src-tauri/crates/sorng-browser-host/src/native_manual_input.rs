@@ -9,6 +9,14 @@ pub const RESPONSE: &str = "sorng.manual-input.response.v1";
 pub const CAPTURE_MS: u64 = 60_000;
 pub const TYPE_MS: u64 = 30_000;
 
+/// HTTPS retains the existing manual-entry policy. HTTP must be the immutable
+/// saved source, never a redirect or a destination admitted by network grants.
+#[cfg(any(feature = "cef-host", test))]
+pub(crate) fn document_allowed(source_origin: &str, document_url: &str) -> bool {
+    crate::native_features::browser_origin(document_url)
+        .is_some_and(|origin| origin.starts_with("https://") || origin == source_origin)
+}
+
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ManualInputRequest {
@@ -141,6 +149,29 @@ impl ManualInputRequest {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn manual_http_input_requires_exact_saved_source_scheme_host_and_port() {
+        let source = "http://device.test:8080";
+        assert!(document_allowed(source, "http://device.test:8080/login?q=x#f"));
+        assert!(document_allowed("http://device.test", "http://device.test:80/login"));
+        for (source, url) in [
+            (source, "http://device.test/login"),
+            (source, "http://device.test:8081/login"),
+            (source, "http://sub.device.test:8080/login"),
+            (source, "http://device.test.evil.test:8080/login"),
+            ("https://device.test:8080", "http://device.test:8080/login"),
+            ("https://device.test", "http://device.test/login"),
+            (source, "http://user:pass@device.test:8080/login"),
+            (source, "file:///login.html"),
+            (source, "about:blank"),
+        ] {
+            assert!(!document_allowed(source, url), "{source} -> {url}");
+        }
+        // HTTPS destinations retain their existing manual-entry semantics.
+        assert!(document_allowed(source, "https://other.test:8443/login"));
+        assert!(document_allowed("https://device.test", "https://other.test/login"));
+    }
+
     #[test]
     fn waiting_for_focus_never_issues_a_capture_token() {
         let response = serde_json::to_value(ManualInputResponse::waiting()).unwrap();

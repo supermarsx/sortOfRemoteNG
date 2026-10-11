@@ -38,7 +38,7 @@ export function normalizeExchangeOwaMailbox(
   return mailbox;
 }
 
-/** initialUrl is the caller's canonical saved HTTPS entry, never a live page URL. */
+/** initialUrl is the caller's canonical saved HTTP(S) entry, never a live page URL. */
 export function resolveExchangeOwaInitialUrl(
   initialUrl: string,
   value: unknown,
@@ -46,8 +46,14 @@ export function resolveExchangeOwaInitialUrl(
   const mailbox = normalizeExchangeOwaMailbox(value);
   if (mailbox === undefined) throw new Error(EXCHANGE_OWA_MAILBOX_ERROR);
   const target = new URL(initialUrl);
-  if (target.protocol !== "https:" || target.username || target.password)
-    throw new Error("Exchange OWA requires HTTPS without URL credentials.");
+  if (
+    !["http:", "https:"].includes(target.protocol) ||
+    target.username ||
+    target.password
+  )
+    throw new Error(
+      "Exchange OWA requires HTTP or HTTPS without URL credentials.",
+    );
   // All permitted characters are safe within one URL pathname segment, including
   // @ and +. Reject percent escapes and path/query delimiters before URL.pathname
   // serialization; the Exchange destination adapter intentionally rejects escapes.
@@ -83,5 +89,5 @@ export const EXCHANGE_OWA_PROFILE: HttpApplicationProfile = {
   usernameLabel: "Domain\\username, UPN, or username",
   selectors: EXCHANGE_OWA_LOGIN_SELECTORS,
   description:
-    "Optional on-premises Exchange OWA forms-based login at your organization's HTTPS mail host. Opens /owa/ or the secondary mailbox below, waits for the native Exchange sign-in form, and clicks its Sign in handler once, preserving the mailbox return destination and hidden fields. Enter the exact account format required by your server; saved or vault credentials use the configured proxy path. Windows authentication, federation/SSO, MFA, password changes and customized forms remain interactive. This is not Outlook Online or Microsoft 365.",
+    "Optional on-premises Exchange OWA forms-based login at your organization's configured mail host and port. Opens /owa/ or the secondary mailbox below, waits for the native Exchange sign-in form, and clicks its Sign in handler once, preserving the mailbox return destination and hidden fields. Enter the exact account format required by your server; saved or vault credentials use the configured proxy path. Windows authentication, federation/SSO, MFA, password changes and customized forms remain interactive. This is not Outlook Online or Microsoft 365.",
 };

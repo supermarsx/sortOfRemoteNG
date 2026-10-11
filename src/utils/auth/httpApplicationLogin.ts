@@ -10,6 +10,7 @@ import {
 } from "../connection/httpApplicationProfiles";
 import { resolveHttpBasicCredentials } from "./httpCredentials";
 import { YEALINK_SERVLET_UPSTREAM_SUPPORTED } from "./upstreamAuthCapabilities";
+import { configuredHttpCredentialOrigin } from "./httpCredentialTransport";
 import { normalizeConnectionCredentialSource } from "../security/databaseCredentialVault";
 import {
   detectAmazonShoppingMarket,
@@ -140,10 +141,16 @@ export function validateHttpApplicationTarget(
   let valid = false;
   try {
     const target = new URL(targetUrl);
+    // Configurable hosts may explicitly use HTTP on their saved port. This is
+    // not redirect consent and cannot relax a fixed hosted provider's origin.
+    const configuredHttp =
+      target.protocol === "http:" &&
+      connection?.httpProxyPolicy?.httpsOnly !== true &&
+      target.origin === configuredHttpCredentialOrigin(connection);
     valid =
       (hostedLoginUrl
         ? target.origin === new URL(hostedLoginUrl).origin
-        : target.protocol === "https:") &&
+        : target.protocol === "https:" || configuredHttp) &&
       !target.username &&
       !target.password;
   } catch {
@@ -155,7 +162,7 @@ export function validateHttpApplicationTarget(
         ? "Cloudflare Dashboard requires HTTPS at dash.cloudflare.com on port 443. Use the dashboard address in Application settings, or choose Generic website for another host."
         : hostedLoginUrl
           ? `${getHttpApplicationProfile(profileId!)!.label} requires HTTPS at ${new URL(hostedLoginUrl).hostname} on port 443. Use the hosted login address in Application settings, or choose a custom profile for another host.`
-          : `${profile?.label ?? "This application"} requires an HTTPS website address. Review the connection protocol and address; API keys are not website passwords.`,
+          : `${profile?.label ?? "This application"} requires an HTTPS website address or the exact configured HTTP origin, including its port. Review the connection protocol and address; API keys are not website passwords.`,
     );
   validateTacticalRmmMeshTarget(connection, targetUrl);
 }

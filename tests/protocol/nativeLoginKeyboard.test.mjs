@@ -14,11 +14,11 @@ const source = readFileSync(resolve(base,"native_login_client.js"),"utf8")
   .replace("/* NATIVE_KEYBOARD_CLIENT */", () => readFileSync(resolve(base,"native_login_typing.js"),"utf8"));
 const delay = ms => new Promise(resolve => setTimeout(resolve,ms));
 
-function fixture(t, manual = false, google = false, visibilityToggle = false, waitForInput = false, background = null) {
+function fixture(t, manual = false, google = false, visibilityToggle = false, waitForInput = false, background = null, url = "https://device.test/login") {
   const dom = new JSDOM(google
     ? '<form method="POST"><input id="identifierId" name="identifier" type="text" autocomplete="username"><input name="hiddenPassword" type="password" aria-hidden="true" tabindex="-1"><button name="action" id="identifierNext">Next</button></form>'
     : '<form method="post" action="/login"><input id="username"><input id="password" type="password"><button id="login" type="submit">Login</button></form>',{
-    url:google ? "https://accounts.google.com/v3/signin/identifier" : "https://device.test/login",runScripts:"outside-only",
+    url:google ? "https://accounts.google.com/v3/signin/identifier" : url,runScripts:"outside-only",
   });
   const win = dom.window, doc = win.document;
   const errors = [];
@@ -32,7 +32,7 @@ function fixture(t, manual = false, google = false, visibilityToggle = false, wa
   t.after(() => { win.dispatchEvent(new win.Event("pagehide")); win.close(); });
   Object.defineProperty(win.HTMLElement.prototype,"offsetParent",{get(){ return this.parentElement; }});
   win.HTMLElement.prototype.getClientRects = function(){ return this.isConnected ? [{width:100,height:20}] : []; };
-  Object.defineProperty(win.crypto,"subtle",{value:webcrypto.subtle});
+  if (win.location.protocol === "https:") Object.defineProperty(win.crypto,"subtle",{value:webcrypto.subtle});
   win.TextEncoder = TextEncoder;
   const listeners = new Map(), original = doc.addEventListener.bind(doc);
   doc.addEventListener = (type, callback, ...args) => {
@@ -46,6 +46,8 @@ function fixture(t, manual = false, google = false, visibilityToggle = false, wa
   const signals = [], keys = [];
   let delivered, submits = 0;
   const until = Date.now()+15000;
+  let expired = false;
+  win.Date.now = () => expired ? until + 1 : Date.now();
   const options = {version:1,fillDelayMs:30,submitDelayMs:50,detectionTimeoutMs:8000,submit:true,fields:[]};
   let identifierValue;
   doc.addEventListener("submit",event=>{event.preventDefault();submits++;});
@@ -88,12 +90,12 @@ function fixture(t, manual = false, google = false, visibilityToggle = false, wa
       } else if(google && ["identifier","password"].includes(event)) {
         delivered("https://accounts.google.com",event==="identifier"?values.username:"",event==="password"?values.password:"",true,until,event);
       } else if(["form-prepare","form","form-submit"].includes(event)) {
-        delivered("https://device.test",event==="form"?values.username:"",event==="form"?values.password:"",true,until,{...options,fields:[]},event);
+        delivered(new URL(url).origin,event==="form"?values.username:"",event==="form"?values.password:"",true,until,{...options,fields:[]},event);
       }
     },0);
   };
   delivered = win.eval(source)(notify,google ? {provider:"google-account"} : {selectors:{username:"#username",password:"#password",submit:"#login"}},google ? "google-account" : "modular-form",true);
-  return {doc,win,signals,keys,values,until,delivered,errors,submits:()=>submits,identifierValue:()=>identifierValue};
+  return {doc,win,signals,keys,values,until,delivered,errors,expire:()=>{expired=true;},submits:()=>submits,identifierValue:()=>identifierValue};
 }
 
 for (const visibilityToggle of [false, true]) {
@@ -165,6 +167,42 @@ test("native credential typing cannot overwrite manual edits while awaiting keyb
   assert.equal(f.submits(),0);
   assert.equal(f.signals.some(s=>s.startsWith("type|key")),false);
 });
+
+test("HTTP custom-port production typing completes with private receipts and no SubtleCrypto", async t => {
+  const f = fixture(t, false, false, false, false, null, "http://device.test:8080/login");
+  assert.equal(f.win.crypto.subtle, undefined);
+  for (let i = 0; i < 100 && f.submits() === 0; i++) await delay(50);
+  assert.equal(f.submits(), 1, JSON.stringify(f.signals));
+  assert.equal(f.doc.getElementById("username").value, f.values.username);
+  assert.equal(f.doc.getElementById("password").value, f.values.password);
+  assert.equal(f.keys.length, f.values.username.length + f.values.password.length);
+  assert.equal(f.signals.at(-1), "form-completed");
+  assert.deepEqual(f.errors, []);
+});
+
+for (const change of ["manual-edit", "wrong-receipt", "expired-grant", "action-scheme", "action-port"]) {
+  test(`HTTP typing rejects ${change} before sending keys without SubtleCrypto`, async t => {
+    const f = fixture(t, true, false, false, false, null, "http://device.test:8080/login");
+    assert.equal(f.win.crypto.subtle, undefined);
+    for (let i = 0; i < 40 && !f.signals.includes("type|start|form|username|0"); i++) await delay(50);
+    assert.ok(f.signals.includes("type|start|form|username|0"));
+    if (change === "manual-edit") f.doc.getElementById("username").value = "manual-user";
+    if (change === "action-scheme") f.doc.querySelector("form").action = "https://device.test:8080/login";
+    if (change === "action-port") f.doc.querySelector("form").action = "http://device.test:8081/login";
+    if (change === "expired-grant") f.expire();
+    // A true result only queues the probe; authorization is its later key receipt.
+    assert.equal(f.delivered.nativeTyping("probe", 0, f.until, false,
+      change === "wrong-receipt" ? "type|form|password" : "type|form|username"), change !== "wrong-receipt");
+    await delay(100);
+    assert.equal(f.doc.getElementById("password").value, "");
+    assert.equal(f.keys.length, 0);
+    assert.equal(f.signals.some(signal => signal.startsWith("type|key")), false);
+    assert.equal(f.submits(), 0);
+    if (change !== "wrong-receipt") assert.equal(f.signals.at(-1), "form-rejected");
+    assert.deepEqual(f.errors, []);
+    if (change === "manual-edit") assert.equal(f.doc.getElementById("username").value, "manual-user");
+  });
+}
 
 test("concurrent background form and Google tabs complete their own login without activation", async t => {
   // CEF input is modelled here; the production bridge's native gates are covered

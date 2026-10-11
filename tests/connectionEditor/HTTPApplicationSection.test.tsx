@@ -77,6 +77,67 @@ function choose(label: string, option: string) {
   fireEvent.click(screen.getByLabelText(label));
   fireEvent.mouseDown(screen.getByRole("option", { name: option }));
 }
+
+it("keeps HTTP form login opt-in and warns with its exact configured port", () => {
+  render(
+    <Fixture
+      value={{
+        ...initial,
+        protocol: "http",
+        port: 8080,
+        httpApplication: {
+          version: 1,
+          id: "exchange-owa",
+          loginMode: "manual",
+        },
+      }}
+    />,
+  );
+  expect(
+    screen.queryByText(/HTTP transmits credentials unencrypted/),
+  ).not.toBeInTheDocument();
+  choose("Application login mode", "Automatic form login — explicitly opt in");
+  expect(
+    screen.getByText(/HTTP transmits credentials unencrypted/),
+  ).toHaveTextContent(
+    "HTTP transmits credentials unencrypted to http://fixture.example.test:8080.",
+  );
+  expect(JSON.parse(screen.getByTestId("value").textContent!)).toMatchObject({
+    protocol: "http",
+    hostname: initial.hostname,
+    port: 8080,
+    httpApplication: { version: 1, id: "exchange-owa", loginMode: "form" },
+  });
+});
+
+it("warns for legacy HTTP auto-login without changing its opt-in", () => {
+  const formData: Partial<Connection> = {
+    ...initial,
+    protocol: "http",
+    port: 8080,
+    httpAutoLogin: true,
+  };
+  const { rerender } = render(
+    <HTTPOptions
+      formData={formData}
+      setFormData={() => {}}
+      sections={["advanced"]}
+    />,
+  );
+  expect(
+    screen.getByText(/HTTP transmits credentials unencrypted/),
+  ).toHaveTextContent("http://fixture.example.test:8080");
+  rerender(
+    <HTTPOptions
+      formData={{ ...formData, protocol: "https" }}
+      setFormData={() => {}}
+      sections={["advanced"]}
+    />,
+  );
+  expect(
+    screen.queryByText(/HTTP transmits credentials unencrypted/),
+  ).not.toBeInTheDocument();
+});
 const value = () =>
   JSON.parse(screen.getByTestId("value").textContent!) as Partial<Connection>;
 

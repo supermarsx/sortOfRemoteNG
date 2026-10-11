@@ -212,15 +212,42 @@ describe("Exchange OWA mailbox metadata and URL", () => {
       expect(getHttpApplicationExternalTarget(input, target)).toBeNull();
     expect(() =>
       resolveExchangeOwaInitialUrl(
-        "http://mail.example.test/",
-        "shared@example.test",
-      ),
-    ).toThrow(/HTTPS/);
-    expect(() =>
-      resolveExchangeOwaInitialUrl(
         "https://user:pass@mail.example.test/",
         "shared@example.test",
       ),
     ).toThrow(/credentials/);
+  });
+
+  it.each([
+    [
+      "http://mail.example.test:8080/",
+      undefined,
+      "http://mail.example.test:8080/owa/",
+    ],
+    [
+      "http://mail.example.test:8080/owa/?view=calendar#week",
+      undefined,
+      "http://mail.example.test:8080/owa/?view=calendar#week",
+    ],
+    [
+      "http://mail.example.test:8080/owa/?view=calendar#week",
+      "shared@example.test",
+      "http://mail.example.test:8080/owa/shared@example.test/",
+    ],
+  ])(
+    "preserves configured HTTP OWA origin and port: %s",
+    (initial, mailbox, expected) => {
+      expect(resolveExchangeOwaInitialUrl(initial, mailbox)).toBe(expected);
+    },
+  );
+
+  it.each([
+    "ftp://mail.example.test/",
+    "file:///owa/",
+    "http://user:secret@mail.example.test/",
+  ])("rejects non-web or credential-bearing OWA sources: %s", (initial) => {
+    expect(() => resolveExchangeOwaInitialUrl(initial, undefined)).toThrow(
+      /HTTP or HTTPS without URL credentials/,
+    );
   });
 });

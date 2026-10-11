@@ -29,7 +29,8 @@ use crate::native_automation::{
 };
 use crate::native_capabilities::NativeBrowserCapabilities;
 use crate::native_features::{
-    https_origin, stage_allowed, LoginBudget, NativeCapabilityKind, NativeCapabilityRequest,
+    browser_origin, https_origin, stage_allowed, LoginBudget, NativeCapabilityKind,
+    NativeCapabilityRequest,
     NativeCertificateChallenge, NativeCertificateDecision, NativeCertificatePolicy,
     NativeFeatureStatus, NativeLoginAdapter, NativeLoginCredentials, NativeLoginRequest,
     NativeLoginStage, RendererFeatureGate, FEATURE_PROTOCOL_PIN,
@@ -1495,7 +1496,7 @@ impl Shared {
         let origin = if url == "about:blank" {
             url
         } else {
-            let Some(origin) = https_origin(&url) else {
+            let Some(origin) = browser_origin(&url) else {
                 return 1;
             };
             origin
@@ -1582,7 +1583,7 @@ impl Shared {
             return 1;
         }
         let url = CefString::from(&frame.url()).to_string();
-        let Some(origin) = https_origin(&url) else {
+        let Some(origin) = browser_origin(&url) else {
             return 1;
         };
         let Some(args) = message.argument_list().filter(|args| args.size() == 3) else {
@@ -1652,7 +1653,7 @@ impl Shared {
             outcome = Delivery::NativeRejectedCurrent;
             if !self.current()
                 || !self.accepts(Some(browser))
-                || https_origin(&CefString::from(&frame.url()).to_string()).as_deref()
+                || browser_origin(&CefString::from(&frame.url()).to_string()).as_deref()
                     != Some(&origin)
                 || !stage_allowed(
                     self.login_adapter,

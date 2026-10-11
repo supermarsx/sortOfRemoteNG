@@ -115,6 +115,28 @@ async function mounted(overrides: Partial<UseOriginBrowserOptions> = {}) {
 }
 
 describe("origin browser attempt controller", () => {
+  it.each([
+    { kind: "required" },
+    { kind: "existing-grant", grantId: "grant-http" },
+  ] satisfies UseOriginBrowserOptions["consent"][])(
+    "passes configured HTTP to native with unchanged $kind consent",
+    async (consent) => {
+      const test = await mounted({
+        initialUrl: "http://fixture.invalid:8080/login",
+        consent,
+      });
+      expect(test.transport.create).toHaveBeenCalledExactlyOnceWith(
+        expect.objectContaining({
+          owner,
+          initialUrl: "http://fixture.invalid:8080/login",
+          policy: {
+            darkMode: "forced",
+            autoLogin: { enabled: true, consent },
+          },
+        }),
+      );
+    },
+  );
   it("keeps retryable deferred startup while explaining a recorded UI dispatch failure", async () => {
     const f = fixture();
     f.transport.status

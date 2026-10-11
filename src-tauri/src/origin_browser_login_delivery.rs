@@ -13,7 +13,7 @@ pub(super) fn project<'a>(
     if !request.adapter.accepts_stage(request.stage)
         || request.identity != credentials.identity
         || request.origin != credentials.origin
-        || origin.scheme() != "https"
+        || !matches!(origin.scheme(), "http" | "https")
         || origin.origin().ascii_serialization() != request.origin
         || credentials.valid_until <= now
         || (request.stage.is_action() && !credentials.auto_submit)
@@ -156,6 +156,30 @@ mod tests {
     }
 
     #[test]
+    fn native_login_delivery_supports_explicit_http_custom_port_without_retargeting() {
+        let policy = OriginBrowserPolicy::new("db", "connection", "tab", "http://device.test:8080").unwrap();
+        let now = Instant::now();
+        for stage in [NativeLoginStage::FormPrepare, NativeLoginStage::Form, NativeLoginStage::FormSubmit] {
+            let request = NativeLoginRequest {
+                identity: policy.identity(), origin: policy.source_origin(),
+                adapter: NativeLoginAdapter::ModularForm, stage,
+            };
+            for origin in [policy.source_origin(), "http://device.test", "http://device.test:8081", "https://device.test:8080"] {
+                let delivered = project(&request, NativeLoginCredentials {
+                    identity: policy.identity(), origin, valid_until: now + Duration::from_secs(1),
+                    username: "user", password: "secret", auto_submit: true,
+                }, now);
+                if origin == policy.source_origin() {
+                    let delivered = delivered.expect("exact HTTP source delivery");
+                    assert_eq!(delivered.password, if stage == NativeLoginStage::Form { "secret" } else { "" });
+                } else {
+                    assert!(delivered.is_none(), "different origin must not receive credentials");
+                }
+            }
+        }
+    }
+
+    #[test]
     fn native_login_delivery_rejects_stale_owner_origin_expiry_and_unapproved_submit() {
         let policy =
             OriginBrowserPolicy::new("db", "connection", "tab", "https://example.test").unwrap();
@@ -193,7 +217,7 @@ mod tests {
                 &request,
                 NativeLoginCredentials {
                     identity: policy.identity(),
-                    origin: if case >= 5 {
+                    origin: if case == 6 {
                         request.origin
                     } else {
                         policy.source_origin()

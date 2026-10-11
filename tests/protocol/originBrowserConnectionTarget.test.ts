@@ -37,6 +37,30 @@ describe("native connection target", () => {
       originBrowserConnectionTarget({ ...connection, port: 8443 }, session),
     ).toBe("https://fixture.invalid:8443/");
   });
+  it.each([undefined, "shared@example.test"])(
+    "builds the configured HTTP OWA source with mailbox %s",
+    (exchangeOwaMailbox) => {
+      const httpConnection: Connection = {
+        ...connection,
+        protocol: "http",
+        port: 8080,
+        httpApplication: {
+          version: 1,
+          id: "exchange-owa",
+          loginMode: "form",
+          exchangeOwaMailbox,
+        },
+      };
+      expect(
+        originBrowserConnectionTarget(httpConnection, {
+          ...session,
+          protocol: "http",
+        }),
+      ).toBe(
+        `http://fixture.invalid:8080/owa/${exchangeOwaMailbox ? `${exchangeOwaMailbox}/` : ""}`,
+      );
+    },
+  );
   it.each([
     "http://fixture.invalid",
     "https://fixture.invalid:8443",

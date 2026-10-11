@@ -70,11 +70,11 @@ test("native profile snapshot exactly matches all reviewed legacy defaults", asy
     JSON.parse(JSON.stringify(expected)),
   );
 });
-function fixture(t, configuration = { selectors }) {
+function fixture(t, configuration = { selectors }, url = "https://device.test/login") {
   const dom = new JSDOM(
     '<form method="post" action="/login"><input id="username"><input id="password" type="password"><button id="login" type="submit">Login</button></form>',
     {
-      url: "https://device.test/login",
+      url,
       runScripts: "outside-only",
     },
   );
@@ -102,13 +102,14 @@ function fixture(t, configuration = { selectors }) {
   );
   return {
     window: dom.window,
+    navigate: (url) => dom.reconfigure({ url }),
     signals,
     deliver,
     submits: () => submits,
     field: (id) => dom.window.document.getElementById(id),
     send: (submit = false, deadline = Date.now() + 2000, options) =>
       deliver(
-        "https://device.test",
+        new URL(url).origin,
         "alice",
         "test-secret",
         submit,
@@ -151,6 +152,49 @@ test("explicit native submit consent submits once", async (t) => {
   assert.equal(f.send(true), true);
   await delay(10);
   assert.equal(f.submits(), 1);
+});
+
+for (const submit of [false, true]) {
+  test(`HTTP custom-port selected form preserves submit consent (${submit})`, async (t) => {
+    const f = fixture(t, { selectors }, "http://device.test:8080/login");
+    await delay(40);
+    assert.deepEqual(f.signals, ["form"]);
+    assert.equal(f.send(submit), true);
+    await delay(10);
+    assert.equal(f.field("username").value, "alice");
+    assert.equal(f.field("password").value, "test-secret");
+    assert.equal(f.submits(), Number(submit));
+  });
+}
+
+for (const origin of ["http://other.test:8080", "https://device.test:8080", "http://device.test:8081", "http://device.test"]) {
+  test(`HTTP selected form rejects wrong delivery origin ${origin}`, async (t) => {
+    const f = fixture(t, { selectors }, "http://device.test:8080/login");
+    await delay(40);
+    assert.equal(f.deliver(origin, "alice", "secret", true, Date.now() + 2000), false);
+    assert.equal(f.field("username").value, "");
+    assert.equal(f.field("password").value, "");
+    assert.equal(f.submits(), 0);
+  });
+  test(`HTTP selected form rejects wrong action origin ${origin}`, async (t) => {
+    const f = fixture(t, { selectors }, "http://device.test:8080/login");
+    f.window.document.querySelector("form").action = `${origin}/login`;
+    await delay(40);
+    assert.ok(!f.signals.includes("form"));
+    assert.equal(f.send(true), false);
+    assert.equal(f.field("password").value, "");
+  });
+}
+
+test("HTTPS credentials cannot follow a redirect to the same HTTP host and port", async (t) => {
+  const f = fixture(t, { selectors }, "https://device.test:8080/login");
+  await delay(40);
+  assert.deepEqual(f.signals, ["form"]);
+  f.navigate("http://device.test:8080/login");
+  assert.equal(f.send(true), false);
+  assert.equal(f.deliver("http://device.test:8080", "alice", "secret", true, Date.now() + 2000), false);
+  assert.equal(f.field("password").value, "");
+  assert.equal(f.submits(), 0);
 });
 
 test("missing explicit selector never falls back to generic discovery", async (t) => {
@@ -277,7 +321,29 @@ function nativeFixture(
   w.clearTimeout = w.clearInterval = (id) => jobs.delete(id);
   w.Date.now = () => clock;
   w.TextEncoder = TextEncoder;
-  Object.defineProperty(w, "crypto", { value: webcrypto });
+  const digests = new Set();
+  // Chromium exposes random bytes, but not SubtleCrypto, on ordinary HTTP.
+  if (new URL(url).protocol === "https:")
+    Object.defineProperty(w, "crypto", { value: {
+      getRandomValues: array => webcrypto.getRandomValues(array),
+      subtle: {
+        async digest(...args) {
+          const pending = webcrypto.subtle.digest(...args);
+          digests.add(pending);
+          try { return await pending; }
+          finally { digests.delete(pending); }
+        },
+      },
+    } });
+  async function settle() {
+    await delay(1);
+    // Cancellation clears all simulated timers, but its real WebCrypto cleanup
+    // may still be running. Drain it before asserting or advancing the clock.
+    while (digests.size) {
+      await Promise.all([...digests]);
+      await delay(1);
+    }
+  }
   Object.defineProperty(w.HTMLElement.prototype, "offsetParent", {
     get() {
       return this.parentElement;
@@ -305,6 +371,7 @@ function nativeFixture(
   });
   return {
     w,
+    navigate: (url) => dom.reconfigure({ url }),
     signals,
     deliver,
     field: (selector) => w.document.querySelector(selector),
@@ -348,10 +415,10 @@ function nativeFixture(
         if (job.interval) job.at += job.interval;
         else jobs.delete(id);
         job.callback();
-        await delay(1);
+        await settle();
       }
       clock = end;
-      await delay(1);
+      await settle();
     },
   };
 }
@@ -653,11 +720,11 @@ const formOptions = (overrides = {}) => ({
   fields: [],
   ...overrides,
 });
-function deferredFixture(t) {
+function deferredFixture(t, url = "https://device.test/login") {
   return nativeFixture(
     t,
     '<form method="post"><input id="username"><input id="password" type="password"><input id="realm"><button id="login" type="submit">Log in</button></form>',
-    "https://device.test/login",
+    url,
     { selectors, readiness: { detectionTimeoutMs: 15000 } },
     "modular-form",
   );
@@ -1053,16 +1120,106 @@ test("ordinary SPA can enable its submit button after the credential TTL without
   assert.equal(f.submits(), 1);
 });
 
-test("native provider refuses cleartext origins and same-origin child frames", async (t) => {
-  const insecure = providerFixture(
-    t,
-    "bitwarden-self-hosted",
-    bitwardenMarkup,
-    "http://device.test/login",
-  );
-  await insecure.advance(1000);
-  assert.deepEqual(insecure.signals, []);
-  assert.equal(insecure.send("identifier"), false);
+for (const submit of [false, true]) {
+  test(`HTTP deferred login completes without SubtleCrypto (submit ${submit})`, async (t) => {
+    const f = deferredFixture(t, "http://device.test:8080/login");
+    assert.equal(f.w.crypto.subtle, undefined);
+    const options = () => formOptions({ fillDelayMs: 0, submitDelayMs: 3000 });
+    await f.advance(100);
+    assert.equal(f.send("form-prepare", submit, 2000, options()), true);
+    await f.advance(100);
+    assert.equal(f.send("form", submit, 2000, options()), true);
+    await f.advance(3200);
+    assert.equal(f.field("#username").value, "alice@example.test");
+    assert.equal(f.field("#password").value, "test-secret");
+    assert.equal(f.submits(), 0);
+    if (submit) {
+      assert.equal(f.signals.at(-1), "form-submit");
+      assert.equal(f.send("form-submit", true, 2000, options()), true);
+      await f.advance(100);
+    }
+    assert.equal(f.submits(), Number(submit));
+    assert.equal(f.signals.at(-1), "form-completed");
+  });
+}
+
+for (const change of ["manual-edit", "action", "navigation", "expiry", "pagehide"]) {
+  test(`HTTP deferred receipt cancels on ${change} without SubtleCrypto`, async (t) => {
+    const f = deferredFixture(t, "http://device.test:8080/login");
+    const options = () => formOptions({ fillDelayMs: 0, submitDelayMs: 3000 });
+    await f.advance(100);
+    f.send("form-prepare", true, 2000, options());
+    await f.advance(100);
+    f.send("form", true, 2000, options());
+    await f.advance(100);
+    assert.equal(f.field("#password").value, "test-secret");
+    if (change === "manual-edit") f.field("#password").value = "manual-value";
+    if (change === "action") f.field("form").action = "http://device.test:8081/login";
+    if (change === "navigation") f.navigate("https://device.test:8080/login");
+    if (change === "pagehide") f.w.dispatchEvent(new f.w.Event("pagehide"));
+    await f.advance(change === "expiry" ? 16000 : 3200);
+    assert.equal(f.send("form-submit", true, 2000, options()), false);
+    assert.equal(f.field("#password").value, change === "manual-edit" ? "manual-value" : "");
+    assert.equal(f.submits(), 0);
+    assert.equal(f.signals.at(-1), "form-rejected");
+  });
+}
+
+for (const origin of ["http://other.test:8080", "https://device.test:8080", "http://device.test:8081", "http://device.test"]) {
+  test(`HTTP deferred stages require exact origin ${origin}`, async (t) => {
+    const f = deferredFixture(t, "http://device.test:8080/login");
+    const options = () => formOptions({ fillDelayMs: 0, submitDelayMs: 0 });
+    for (const stage of ["form-prepare", "form", "form-submit"]) {
+      await f.advance(200);
+      assert.equal(f.signals.at(-1), stage);
+      assert.equal(f.deliver(origin, stage === "form" ? "alice" : "", stage === "form" ? "secret" : "", true, f.now() + 2000, options(), stage), false);
+      assert.equal(f.send(stage, true, 2000, options()), true);
+    }
+    await f.advance(100);
+    assert.equal(f.submits(), 1);
+  });
+}
+
+for (const edited of [false, true]) {
+test(`HTTP Bitwarden custom port checks identity receipts without SubtleCrypto (edited ${edited})`, async (t) => {
+  const f = providerFixture(t, "bitwarden-self-hosted", bitwardenMarkup, "http://device.test:8080/login");
+  assert.equal(f.w.crypto.subtle, undefined);
+  f.field('[data-testid="login-continue-button"]').onclick = () => {
+    f.field("#email").hidden = true;
+    f.field("#masterPassword").hidden = false;
+    f.field('[data-testid="login-continue-button"]').hidden = true;
+    f.field('[data-testid="login-submit-button"]').hidden = false;
+  };
+  await f.advance(600);
+  assert.equal(f.signals.at(-1), "identifier");
+  assert.equal(f.send("identifier"), true);
+  await f.advance(1200);
+  assert.equal(f.signals.at(-1), "password");
+  if (edited) f.field("#email").value = "manual-user@example.test";
+  assert.equal(f.send("password"), true);
+  await f.advance(600);
+  assert.equal(f.field("#masterPassword").value, edited ? "" : "test-secret");
+  assert.equal(f.submits(), Number(!edited));
+  assert.equal(f.signals.at(-1), edited ? "form-rejected" : "form-completed");
+});
+}
+
+for (const [provider, url, markup] of delayedProviderCases.filter(([provider]) =>
+  ["google-account", "cloudflare", "adobe-admin-console", "chatgpt", "claude"].includes(provider))) {
+  for (const changedUrl of [url.replace("https:", "http:"), url.replace(new URL(url).host, `${new URL(url).host}:8443`)]) {
+    test(`${provider} keeps its fixed HTTPS origin: rejects ${changedUrl}`, async (t) => {
+      const html = markup.includes("<form") ? markup : `<form method="post">${markup}</form>`;
+      const f = providerFixture(t, provider, html, changedUrl);
+      await f.advance(1000);
+      assert.ok(!f.signals.includes("identifier"));
+      assert.equal(f.send("identifier"), false);
+      assert.equal(f.submits(), 0);
+      assert.ok([...f.w.document.querySelectorAll('input:not([type="hidden"])')].every(field => !field.value));
+    });
+  }
+}
+
+test("native provider refuses same-origin child frames", async (t) => {
   const f = providerFixture(
     t,
     "claude",

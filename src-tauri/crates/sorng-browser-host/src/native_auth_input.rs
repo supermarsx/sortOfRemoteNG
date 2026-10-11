@@ -53,7 +53,7 @@ impl NativeAuthTyping {
             || target.field_token.is_empty()
             || target.field_token.len() > 128
             || target.document_url.len() > 8192
-            || url.scheme() != "https"
+            || !matches!(url.scheme(), "http" | "https")
             || !url.has_host()
             || !url.username().is_empty()
             || url.password().is_some()
@@ -374,18 +374,44 @@ mod tests {
         assert!(input.text.is_empty());
     }
     #[test]
-    fn native_auth_input_rejects_cleartext_shortcut_controls_and_impossible_deadlines() {
+    fn native_auth_input_accepts_http_custom_port_and_rechecks_owner_before_each_character() {
         let now = Instant::now();
-        let mut cleartext = target();
-        cleartext.document_url = "http://example.test/login".into();
-        assert!(NativeAuthTyping::new(
-            cleartext,
-            "secret",
-            Duration::from_millis(20),
-            now,
-            now + Duration::from_secs(1)
-        )
-        .is_none());
+        let mut http = target();
+        http.document_url = "http://device.test:8080/login".into();
+        http.identity = OriginBrowserPolicy::new("db", "connection", "tab", "http://device.test:8080")
+            .unwrap().identity().clone();
+        let identity = http.identity.clone();
+        let mut input = NativeAuthTyping::new(
+            http, "ab", Duration::from_millis(20), now, now + Duration::from_secs(1),
+        ).unwrap();
+        let mut checks = 0;
+        assert_eq!(input.tick(now, |receipt| {
+            checks += 1;
+            receipt.identity == identity
+                && receipt.document_url == "http://device.test:8080/login"
+                && receipt.browser_id == 1 && receipt.frame_id == "main"
+                && receipt.document_sequence == 7 && receipt.field_token == "private-field-receipt"
+        }, |_, unit| unit == u16::from(b'a')), TypingStatus::Sent);
+        assert_eq!(checks, 2);
+        assert_eq!(input.tick(now + Duration::from_millis(20), |_| false,
+            |_, _| panic!("revoked HTTP target must not receive the next character")), TypingStatus::Cancelled);
+        assert!(input.text.is_empty());
+    }
+
+    #[test]
+    fn native_auth_input_rejects_non_browser_urls_shortcut_controls_and_impossible_deadlines() {
+        let now = Instant::now();
+        for url in [
+            "file:///login.html", "data:text/html,x", "about:blank", "ftp://device.test/login",
+            "http://user:pass@device.test:8080/login", "http://device.test\\@evil.test/login",
+            "http://device.test:8080/login\n", "http://device.test:8080/log in",
+        ] {
+            let mut invalid = target();
+            invalid.document_url = url.into();
+            assert!(NativeAuthTyping::new(
+                invalid, "secret", Duration::from_millis(20), now, now + Duration::from_secs(1)
+            ).is_none(), "{url}");
+        }
         assert!(NativeAuthTyping::new(
             target(),
             "secret\t\n",

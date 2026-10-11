@@ -120,7 +120,7 @@ pub(crate) async fn operate(
             let result=if let Some(target)=request.view_id.as_deref() {
                 view.host.with_popup(&attempt.identity,target,perform).map_err(|_|"The selected child website is unavailable.".to_string())?
             } else {perform(&view.host)};
-            result.map_err(|_|"Manual typing is unavailable in this browser attempt. Focus an empty main-frame HTTPS input and capture it again.".to_string())
+            result.map_err(|_|"Manual typing is unavailable in this browser attempt. Focus an empty main-frame HTTP or HTTPS input and capture it again.".to_string())
         });
         if let Err(error)=result {if let Some(sender)=sender.lock().ok().and_then(|mut s|s.take()) {let _=sender.send(Err(error));}}
     }).map_err(|_|UNAVAILABLE)?;

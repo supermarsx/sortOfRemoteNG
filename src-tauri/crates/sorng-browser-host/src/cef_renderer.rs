@@ -5,8 +5,9 @@ use crate::native_automation::{
     self as automation, wire as automation_wire, NativeAutomationAction, NativeAutomationStep,
 };
 use crate::native_features::{
-    https_origin, stage_allowed, NativeLoginAdapter, NativeLoginDeliveryStatus as Delivery,
-    NativeLoginStage, FEATURE_PROTOCOL_PIN, MAX_CREDENTIAL_BYTES,
+    browser_origin, https_origin, stage_allowed, NativeLoginAdapter,
+    NativeLoginDeliveryStatus as Delivery, NativeLoginStage, FEATURE_PROTOCOL_PIN,
+    MAX_CREDENTIAL_BYTES,
 };
 use cef::rc::Rc;
 use cef::*;
@@ -209,7 +210,7 @@ impl DocumentScope {
         if self.nonce != nonce {
             return Err(Delivery::RendererNonceMismatch);
         }
-        if self.origin != origin {
+        if self.origin != origin || browser_origin(url).as_deref() != Some(origin) {
             return Err(Delivery::RendererOriginMismatch);
         }
         if !self.requested.contains(&stage) {
@@ -288,8 +289,14 @@ fn frame_key(browser: &Browser, frame: &Frame) -> DocumentKey {
 }
 
 fn frame_origin(frame: &Frame) -> Option<String> {
+    // Automation and automatic OTP retain their HTTPS-only frame boundary.
     (frame.is_main() == 1 && frame.is_valid() == 1)
         .then(|| https_origin(&CefString::from(&frame.url()).to_string()))?
+}
+
+fn browser_frame_origin(frame: &Frame) -> Option<String> {
+    (frame.is_main() == 1 && frame.is_valid() == 1)
+        .then(|| browser_origin(&CefString::from(&frame.url()).to_string()))?
 }
 
 fn feature_origin(frame: &Frame) -> Option<String> {
@@ -300,7 +307,7 @@ fn feature_origin(frame: &Frame) -> Option<String> {
     if url == "about:blank" {
         Some(url)
     } else {
-        https_origin(&url)
+        browser_origin(&url)
     }
 }
 
@@ -340,7 +347,7 @@ wrap_v8_handler! {
                 if document.scope.nonce != self.nonce
                     || document.context.is_same(Some(&mut current)) != 1 { return None; }
                 let frame = document.context.frame()?;
-                if frame_origin(&frame).as_deref() != Some(&document.scope.origin) { return None; }
+                if browser_frame_origin(&frame).as_deref() != Some(&document.scope.origin) { return None; }
                 if event.starts_with("type|") {
                     let fields: Vec<_> = event.split('|').collect();
                     if fields.len() != 5 || event.len() > 128 || document.typing.is_none()
@@ -351,6 +358,7 @@ wrap_v8_handler! {
                     return Some((frame, document.scope.origin.clone()));
                 }
                 if event.starts_with("totp|") {
+                    if frame_origin(&frame).as_deref() != Some(&document.scope.origin) { return None; }
                     let fields: Vec<_> = event.split('|').collect();
                     if fields.len() != 4 || event.len() > 256 || document.otp.is_none()
                         || document.otp_challenge.as_deref() != Some(fields[2])
@@ -479,7 +487,10 @@ fn install(browser: &Browser, frame: &Frame, context: &mut V8Context) -> bool {
         }
     }
     let otp_configuration = configuration.value_bykey(Some(&CefString::from("mfa")))
-        .filter(|value| value.is_object() == 1);
+        .filter(|value| {
+            value.is_object() == 1
+                && (origin == "about:blank" || https_origin(&origin).is_some())
+        });
     let otp_challenge = otp_configuration.as_ref()
         .and_then(|value| value.value_bykey(Some(&CefString::from("id"))))
         .filter(|value| value.is_string() == 1)
@@ -553,7 +564,7 @@ fn receive(browser: &Browser, frame: &Frame, source: ProcessId, message: &Proces
 }
 
 fn receive_totp(browser: &Browser, frame: &Frame, message: &ProcessMessage) {
-    let Some(origin) = frame_origin(frame) else { return; };
+    let Some(origin) = browser_frame_origin(frame) else { return; };
     let Some(args) = message.argument_list().filter(|args| args.size() == 7) else { return; };
     let (Some(nonce), Some(command), Some(challenge)) =
         (message_text(&args, 0, 80), message_text(&args, 2, 8), message_text(&args, 6, 128)) else { return; };
@@ -573,7 +584,8 @@ fn receive_totp(browser: &Browser, frame: &Frame, message: &ProcessMessage) {
             if !doc.scope.delivered.contains(&stage) { return None; }
             doc.typing.clone()?
         } else {
-            if doc.otp_challenge.as_deref() != Some(&challenge) { return None; }
+            if frame_origin(frame).as_deref() != Some(&origin)
+                || doc.otp_challenge.as_deref() != Some(&challenge) { return None; }
             doc.otp.clone()?
         };
         Some((doc.context.clone(), dispatch))
@@ -908,7 +920,7 @@ fn receive_automation(browser: &Browser, frame: &Frame, message: &ProcessMessage
 }
 
 fn report_delivery(frame: &Frame, status: Delivery) {
-    let (Some(origin), Some(code)) = (frame_origin(frame), status.renderer_wire()) else {
+    let (Some(origin), Some(code)) = (browser_frame_origin(frame), status.renderer_wire()) else {
         return;
     };
     let Some(mut message) = process_message_create(Some(&CefString::from(LOGIN_DELIVERY_STATUS)))
@@ -1001,7 +1013,7 @@ fn receive_delivery(
     frame: &Frame,
     message: &ProcessMessage,
 ) -> Result<Delivery, Delivery> {
-    let Some(origin) = frame_origin(frame) else {
+    let Some(origin) = browser_frame_origin(frame) else {
         return Err(Delivery::RendererRejectedFrame);
     };
     let Some(payload) = message
@@ -1516,7 +1528,7 @@ mod tests {
         );
         assert_eq!(
             scope.claim("synthetic-document", origin, stage, "http://fixture.test"),
-            Err(Delivery::RendererStageNotAllowed)
+            Err(Delivery::RendererOriginMismatch)
         );
         assert!(scope.delivered.is_empty());
         assert_eq!(
@@ -1527,6 +1539,32 @@ mod tests {
             scope.claim("synthetic-document", origin, stage, origin),
             Err(Delivery::RendererReplay)
         );
+    }
+
+    #[test]
+    fn http_document_delivery_preserves_exact_origin_port_nonce_and_single_use() {
+        let origin = "http://fixture.test:8080";
+        let url = "http://fixture.test:8080/login";
+        let stage = NativeLoginStage::Form;
+        let mut scope = document_scope(NativeLoginAdapter::Generic, origin);
+        assert_eq!(scope.claim("synthetic-document", origin, stage, url),
+            Err(Delivery::RendererStageNotRequested));
+        scope.requested.insert(stage);
+        assert_eq!(scope.claim("old-document", origin, stage, url),
+            Err(Delivery::RendererNonceMismatch));
+        for changed_url in [
+            "https://fixture.test:8080/login", "http://fixture.test/login",
+            "http://fixture.test:8081/login", "http://sub.fixture.test:8080/login",
+        ] {
+            assert_eq!(scope.claim("synthetic-document", origin, stage, changed_url),
+                Err(Delivery::RendererOriginMismatch));
+        }
+        assert_eq!(scope.claim("synthetic-document", "https://fixture.test:8080", stage, url),
+            Err(Delivery::RendererOriginMismatch));
+        assert!(scope.delivered.is_empty());
+        assert_eq!(scope.claim("synthetic-document", origin, stage, url), Ok(()));
+        assert_eq!(scope.claim("synthetic-document", origin, stage, url),
+            Err(Delivery::RendererReplay));
     }
 
     #[test]

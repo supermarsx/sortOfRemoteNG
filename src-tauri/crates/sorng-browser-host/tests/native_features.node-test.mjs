@@ -146,9 +146,36 @@ test('credential text is data, not executable script source',()=> {
   } finally {f.close();}
 });
 
-test('HTTP documents never request credentials',()=> {
-  const f=fixture(form,'http://fixture.test/login');
-  try {assert.equal(f.requests,0);assert.equal(f.send(),false);} finally {f.close();}
+test('HTTP custom-port documents fill and submit only for their exact configured origin',()=> {
+  const f=fixture(form,'http://fixture.test:8080/login');
+  try {
+    assert.equal(f.requests,1);
+    for (const origin of ['http://other.test:8080', 'https://fixture.test:8080', 'http://fixture.test:8081', 'http://fixture.test']) {
+      assert.equal(f.send(origin),false);
+      assert.equal(f.window.document.querySelector('[type=password]').value,'');
+    }
+    assert.equal(f.send('http://fixture.test:8080'),true);
+    assert.equal(f.window.document.querySelector('[type=password]').value,'synthetic-password');
+    assert.equal(f.submits,1);
+    assert.equal(f.send('http://fixture.test:8080'),false);
+  } finally {f.close();}
+});
+
+test('HTTP legacy form rejects wrong action scheme/host/port and HTTPS redirect grants', () => {
+  for (const origin of ['https://fixture.test:8080', 'http://other.test:8080', 'http://fixture.test:8081']) {
+    const f = fixture(form.replace('/login', `${origin}/login`), 'http://fixture.test:8080/login');
+    try { assert.equal(f.requests, 0); assert.equal(f.send('http://fixture.test:8080'), false); }
+    finally { f.close(); }
+  }
+  const f = fixture(form, 'https://fixture.test:8080/login');
+  try {
+    assert.equal(f.requests, 1);
+    f.dom.reconfigure({ url: 'http://fixture.test:8080/login' });
+    assert.equal(f.send('https://fixture.test:8080'), false);
+    assert.equal(f.send('http://fixture.test:8080'), false);
+    assert.equal(f.window.document.querySelector('[type=password]').value, '');
+    assert.equal(f.submits, 0);
+  } finally { f.close(); }
 });
 
 const porkbun = '<div id="accountLoginContainer"><form id="loginForm" method="post" action="/blank" target="lame_login_iframe" data-pbrf>'
@@ -197,7 +224,7 @@ test('unsupported selected applications never discover or fill the generic form'
 });
 
 test('selected Porkbun never falls back to a generic form at another origin or path',()=> {
-  for (const url of ['https://fixture.test/login','https://porkbun.com/other']) {
+  for (const url of ['https://fixture.test/login','https://porkbun.com/other','http://porkbun.com/account/login']) {
     const f=fixture(form,url,'porkbun');
     try {assert.equal(f.requests,0);assert.equal(f.send(new URL(url).origin),false);} finally {f.close();}
   }
@@ -216,6 +243,17 @@ function setupExchange(window) {
   Object.defineProperty(window, '__sorng_map_navigation', {get() {throw new Error('no legacy mapping access');}});
 }
 for (const [adapter, destination] of [['exchange-ecp','/ecp/'], ['exchange-owa','/owa/shared@example.test/']]) {
+  test(`${adapter} supports exact HTTP custom-port destinations`, () => {
+    const origin = 'http://fixture.test:8080';
+    const f = fixture(exchangeForm(origin + destination), origin + '/owa/auth/logon.aspx', adapter, setupExchange);
+    try {
+      assert.equal(f.requests, 1);
+      assert.equal(f.send(origin), true);
+      assert.equal(f.window.nativeFixtureClicks, 1);
+      assert.equal(f.window.document.querySelector('[name=destination]').value, origin + destination);
+      assert.equal(f.window.document.querySelector('[type=password]').value, 'synthetic-password');
+    } finally { f.close(); }
+  });
   test(`${adapter} uses the reviewed real-origin handler and leaves destination intact`, () => {
     const f = fixture(exchangeForm(destination), 'https://fixture.test/owa/auth/logon.aspx', adapter, setupExchange);
     try {
@@ -246,7 +284,8 @@ for (const [label, html, url] of [
   ['password expiry', exchangeForm(), 'https://fixture.test/owa/auth/logon.aspx?reason=2'],
   ['duplicate destination', exchangeForm().replace('</form>', '<input type="hidden" name="destination" value="/owa/"></form>'), 'https://fixture.test/owa/auth/logon.aspx'],
   ['GET method', exchangeForm().replace('method="post"','method="get"'), 'https://fixture.test/owa/auth/logon.aspx'],
-  ['cleartext', exchangeForm(), 'http://fixture.test/owa/auth/logon.aspx'],
+  ['wrong destination scheme', exchangeForm('https://fixture.test:8080/owa/'), 'http://fixture.test:8080/owa/auth/logon.aspx'],
+  ['wrong destination port', exchangeForm('http://fixture.test:8081/owa/'), 'http://fixture.test:8080/owa/auth/logon.aspx'],
   ['MFA control', exchangeForm().replace('</form>', '<input autocomplete="one-time-code"></form>'), 'https://fixture.test/owa/auth/logon.aspx'],
 ]) {
   test(`native Exchange rejects ${label} before credential request`, () => {
@@ -272,10 +311,21 @@ test('native Vodafone uses reviewed form-less handler, not an invented POST', ()
     assert.equal(f.window.document.querySelector('#userpwd').value, 'synthetic-password');
   } finally {f.close();}
 });
-test('native Vodafone rejects duplicates, changed handlers, and HTTP', () => {
+test('native Vodafone supports exact HTTP custom-port credentials', () => {
+  const f = fixture(vodafone, 'http://fixture.test:8080/', 'vodafone-smart-router-3', setupVodafone);
+  try {
+    assert.equal(f.requests, 1);
+    assert.equal(f.send('https://fixture.test:8080'), false);
+    assert.equal(f.send('http://fixture.test:8081'), false);
+    assert.equal(f.send('http://fixture.test:8080'), true);
+    assert.equal(f.window.nativeFixtureClicks, 1);
+    assert.equal(f.window.document.querySelector('#userpwd').value, 'synthetic-password');
+  } finally { f.close(); }
+});
+
+test('native Vodafone rejects duplicates and changed handlers', () => {
   for (const [html, url, change] of [
     [vodafone + '<input id="username">', 'https://fixture.test/', false],
-    [vodafone, 'http://fixture.test/', false],
     [vodafone, 'https://fixture.test/', true],
   ]) {
     const f = fixture(html, url, 'vodafone-smart-router-3', setupVodafone);

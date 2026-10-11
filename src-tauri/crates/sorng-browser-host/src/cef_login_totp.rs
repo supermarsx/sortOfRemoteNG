@@ -154,6 +154,11 @@ impl Shared {
             keyboard::receive(self, browser, frame, &nonce, &event, url, origin);
             return;
         }
+        // Credential typing shares this channel; automatic OTP consent remains
+        // HTTPS-only even when the saved login source explicitly permits HTTP.
+        if https_origin(url).as_deref() != Some(origin) {
+            return;
+        }
         let Some((action, challenge, index)) = command(&event) else {
             return;
         };

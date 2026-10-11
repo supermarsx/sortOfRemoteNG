@@ -90,6 +90,19 @@ test("saved manual submit leaves a fully typed OTP for the user", async t => {
   assert.equal(f.signals.some(s => s.includes("|finish|")), false);
 });
 
+test("HTTP password support does not grant automatic TOTP on an exact HTTP origin", async t => {
+  const f = fixture(t, {
+    url: "http://device.test:8080/user/two_factor",
+    setup: { origin: "http://device.test:8080" },
+  });
+  await delay(100);
+  assert.deepEqual(f.signals, []);
+  assert.equal(f.dispatch("probe", 0, f.expiry, true), false);
+  assert.deepEqual(f.typed, []);
+  assert.equal(f.input.value, "");
+  assert.equal(f.submits(), 0);
+});
+
 test("manual code and another focused control are never overwritten", async t => {
   const f = fixture(t);
   f.input.value = "999";

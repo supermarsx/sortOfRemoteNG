@@ -28,6 +28,7 @@ import { isSynologyFileConnection } from "../../../types/protocols/synology";
 import CredentialSourceSection from "../CredentialSourceSection";
 import AmazonMarketplaceFields from "./AmazonMarketplaceFields";
 import { resolveHttpApplicationEmail } from "../../../utils/auth/httpApplicationLogin";
+import HttpCredentialWarning from "../../security/HttpCredentialWarning";
 
 const MODE_LABELS = {
   manual: "Manual browsing — no saved credentials sent",
@@ -556,6 +557,7 @@ export default function ApplicationSection({ mgr }: { mgr: Mgr }) {
           )}
           {settings?.loginMode !== "manual" && !settings?.invalid && (
             <>
+              <HttpCredentialWarning connection={mgr.formData} />
               <div className="max-w-2xl space-y-2">
                 <p className="text-sm font-medium">Website credential source</p>
                 <p className="text-xs text-[var(--color-textSecondary)]">

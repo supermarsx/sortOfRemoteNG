@@ -19,7 +19,7 @@
   let stopped = false;
 
   function target() {
-    if (window.top !== window || location.protocol !== "https:" || location.origin !== origin) return null;
+    if (window.top !== window || !["http:", "https:"].includes(location.protocol) || location.origin !== origin) return null;
     if (adapter === "vodafone-smart-router-3") {
       const reviewed = vodafoneRouterTarget(doc, {
         username: '#mainbody #logindiv input#username[type="text"]:enabled:not([readonly])',
@@ -53,6 +53,7 @@
       return reviewed;
     }
     if (adapter === "porkbun") {
+      if (location.protocol !== "https:") return null;
       if ((location.hostname !== "porkbun.com" && location.hostname !== "www.porkbun.com") || location.pathname !== "/account/login") return null;
       const selectors = {
         username: 'form#loginForm input#loginUsername[name="loginUsername"][autocomplete="username"]',

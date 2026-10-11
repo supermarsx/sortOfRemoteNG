@@ -11,7 +11,7 @@ struct ManualDocument {
 thread_local! { static DOCS: RefCell<HashMap<DocumentKey, ManualDocument>> = RefCell::new(HashMap::new()); }
 
 pub(super) fn install(browser: &Browser, frame: &Frame, context: &mut V8Context) {
-    if frame_origin(frame).is_none() || context.is_valid() != 1 {
+    if browser_frame_origin(frame).is_none() || context.is_valid() != 1 {
         return;
     }
     let mut dispatch = None;
@@ -70,7 +70,7 @@ pub(super) fn receive(
     if CefString::from(&message.name()).to_string() != wire::REQUEST {
         return false;
     }
-    if source != ProcessId::BROWSER || frame_origin(frame).is_none() {
+    if source != ProcessId::BROWSER || browser_frame_origin(frame).is_none() {
         return true;
     }
     let Some(args) = message.argument_list().filter(|a| a.size() == 4) else {

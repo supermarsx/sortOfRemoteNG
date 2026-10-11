@@ -10,6 +10,7 @@
     "value",
   ).get;
   const focus = HTMLElement.prototype.focus;
+  const doc = document;
   const initialOrigin = location.origin;
   let target = null,
     targetUrl = "",
@@ -48,6 +49,7 @@
       )) ||
       el instanceof HTMLTextAreaElement) &&
     el.isConnected &&
+    el.ownerDocument === doc &&
     !el.disabled &&
     !el.readOnly &&
     el.getClientRects().length > 0;
@@ -106,7 +108,9 @@
         invalid = true;
         return true;
       }
-      if (location.origin !== initialOrigin || location.protocol !== "https:")
+      if (document !== doc || window.top !== window ||
+          location.origin !== initialOrigin ||
+          !["http:", "https:"].includes(location.protocol))
         return false;
       if (action === "capture") {
         const el = focusedElement();

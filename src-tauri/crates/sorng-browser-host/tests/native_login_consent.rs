@@ -36,6 +36,46 @@ fn approved_exact_origin_and_attempt_receive_only_the_approved_submission_right(
 }
 
 #[test]
+fn explicit_http_consent_binds_custom_port_owner_expiry_and_revocation() {
+    let origin = "http://login.example:8080";
+    let policy = OriginBrowserPolicy::new("db", "connection", "tab", origin).unwrap();
+    let owner = policy.identity();
+    let now = Instant::now();
+    let expires = now + Duration::from_secs(60);
+    let grant = AttemptConsent::approved(owner.clone(), vec![origin.into()], expires, false);
+    let mut rights = None;
+    grant.with_current(owner, origin, now, &mut |until, submit| rights = Some((until, submit)));
+    assert_eq!(rights, Some((expires, false)));
+    for other in [
+        "https://login.example:8080", "http://login.example", "http://login.example:8081",
+        "http://sub.login.example:8080", "http://login.example.evil.test:8080",
+        "http://login.example:8080/path",
+    ] {
+        grant.with_current(owner, other, now, &mut |_, _| panic!("HTTP origin mismatch"));
+    }
+    for (db, tab) in [("other-db", "tab"), ("db", "other-tab"), ("db", "tab")] {
+        let other = OriginBrowserPolicy::new(db, "connection", tab, origin).unwrap();
+        grant.with_current(other.identity(), origin, now, &mut |_, _| panic!("HTTP owner mismatch"));
+    }
+    grant.with_current(owner, origin, expires, &mut |_, _| panic!("HTTP grant expired"));
+    grant.revoke();
+    grant.with_current(owner, origin, now, &mut |_, _| panic!("HTTP grant revoked"));
+}
+
+#[test]
+fn https_consent_never_implicitly_authorizes_http_at_the_same_custom_port() {
+    let owner = identity("db", "tab");
+    let now = Instant::now();
+    let grant = AttemptConsent::approved(
+        owner.clone(), vec!["https://login.example:8080".into()],
+        now + Duration::from_secs(60), true,
+    );
+    for origin in ["http://login.example:8080", "http://login.example"] {
+        grant.with_current(&owner, origin, now, &mut |_, _| panic!("implicit HTTPS downgrade"));
+    }
+}
+
+#[test]
 fn another_database_tab_or_reconnect_cannot_reuse_consent() {
     let owner = identity("db", "tab");
     let now = Instant::now();

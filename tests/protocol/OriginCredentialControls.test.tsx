@@ -109,18 +109,21 @@ const session = {
 function Harness({
   transport,
   vault = false,
+  protocol = "https",
 }: {
   transport: (
     request: OriginCredentialInputRequest,
   ) => Promise<OriginCredentialInputReply>;
   vault?: boolean;
+  protocol?: "http" | "https";
 }) {
   const [overlay, setOverlay] = useState(false);
   const connection = useRef({
     id: "connection",
     name: "Test",
-    protocol: "https",
+    protocol,
     hostname: "example.test",
+    port: protocol === "http" ? 8080 : 443,
     ...(vault
       ? { credentialSource: { kind: "vault", credentialId: "credential" } }
       : {}),
@@ -129,7 +132,7 @@ function Harness({
     <>
       <output data-testid="overlay">{String(overlay)}</output>
       <OriginCredentialControls
-        session={session}
+        session={{ ...session, protocol }}
         connection={connection.current}
         eligible
         canOpen={!overlay}
@@ -200,6 +203,44 @@ function cancelNotification() {
 }
 
 describe("native credential toolbar parity", () => {
+  it.each(["username", "password", "code"])(
+    "warns before explicit HTTP %s typing and still waits for a native capture",
+    async (field) => {
+      const request = transport();
+      render(<Harness transport={request} protocol="http" />);
+      await open();
+      expect(screen.getByRole("note")).toHaveTextContent(
+        "HTTP transmits credentials unencrypted to http://example.test:8080.",
+      );
+      expect(screen.getByText(/HTTP typing is limited/)).toBeVisible();
+      expect(request).not.toHaveBeenCalled();
+      expect(mock.type).not.toHaveBeenCalled();
+      expect(mock.code).not.toHaveBeenCalled();
+      fireEvent.click(screen.getByRole("button", { name: `Type ${field}` }));
+      await waitFor(() =>
+        expect(request.mock.calls.some(([r]) => r.action.kind === "type")).toBe(
+          true,
+        ),
+      );
+      expect(request.mock.calls[0][0]).toMatchObject({
+        identity,
+        viewId: "child",
+        action: { kind: "capture" },
+      });
+      expect(
+        request.mock.calls.find(([r]) => r.action.kind === "type")?.[0],
+      ).toMatchObject({
+        identity,
+        viewId: "child",
+        action: {
+          kind: "type",
+          captureId: "receipt",
+          credentialKind: field === "code" ? "totp" : "credential",
+          restoreFocus: true,
+        },
+      });
+    },
+  );
   it.each([false, true])(
     "opens, copies and reopens silently without native capture (vault: %s)",
     async (vault) => {

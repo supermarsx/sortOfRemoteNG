@@ -10,6 +10,7 @@ import {
 } from "../../../hooks/security/useCredentialCopy";
 import type { OriginCredentialTypingController } from "../../../hooks/security/useOriginCredentialTyping";
 import { Select } from "../../ui/forms/Select";
+import HttpCredentialWarning from "../../security/HttpCredentialWarning";
 
 /** The shared hook owns secret resolution and database lease checks. */
 export default function OriginCredentialCopyPanel({
@@ -37,6 +38,7 @@ export default function OriginCredentialCopyPanel({
           ? "Choose Type, then click an empty website field. Typing never presses Enter."
           : "Open Credentials & 2FA on the toolbar to type into a website field."}
       </p>
+      <HttpCredentialWarning connection={connection} />
       <div className="flex flex-wrap gap-2">
         {(["username", "password"] as const).map((field) => (
           <React.Fragment key={field}>
@@ -111,8 +113,9 @@ export default function OriginCredentialCopyPanel({
             </label>
           </div>
           <p className="text-xs text-[var(--color-textSecondary)]">
-            Type hides this popup and waits up to 30 seconds for an empty HTTPS
-            field. Cancel from the typing notification.
+            Type hides this popup and waits up to 30 seconds for an empty field
+            on an allowed origin. HTTP typing is limited to the configured
+            origin, including its port. Cancel from the typing notification.
           </p>
         </div>
       )}

@@ -3,6 +3,7 @@ import React from "react";
 import { Checkbox } from "../../ui/forms";
 import { InfoTooltip } from "../../ui/InfoTooltip";
 import type { HttpAutoLoginSelectors } from "../../../types/connection/connection";
+import HttpCredentialWarning from "../../security/HttpCredentialWarning";
 
 /**
  * t20: per-connection opt-in for proxy-side web auto-login. When
@@ -20,10 +21,7 @@ const AutoLoginSection: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
 
   const enabled = mgr.formData.httpAutoLogin ?? false;
 
-  const updateSelector = (
-    key: keyof HttpAutoLoginSelectors,
-    value: string,
-  ) => {
+  const updateSelector = (key: keyof HttpAutoLoginSelectors, value: string) => {
     const next: HttpAutoLoginSelectors = {
       ...(mgr.formData.httpAutoLoginSelectors || {}),
       [key]: value.trim() === "" ? undefined : value,
@@ -54,12 +52,13 @@ const AutoLoginSection: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
         </span>
       </label>
       <p className="text-xs text-[var(--color-textMuted)] mt-1">
-        Submits this connection's saved credentials into the device's login
-        form on connect. Multi-factor / CAPTCHA prompts are left to you.
+        Submits this connection's saved credentials into the device's login form
+        on connect. Multi-factor / CAPTCHA prompts are left to you.
       </p>
 
       {enabled && (
         <div className="mt-3 space-y-3 pl-1">
+          <HttpCredentialWarning connection={mgr.formData} />
           <p className="text-xs font-medium text-[var(--color-textSecondary)]">
             Advanced: form field selectors (optional){" "}
             <InfoTooltip text="CSS selectors that override the automatic login-form detection. Leave blank to auto-detect. Set these only if auto-login targets the wrong fields on this device." />
@@ -70,7 +69,9 @@ const AutoLoginSection: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
             </label>
             <input
               type="text"
-              value={mgr.formData.httpAutoLoginSelectors?.usernameSelector || ""}
+              value={
+                mgr.formData.httpAutoLoginSelectors?.usernameSelector || ""
+              }
               onChange={(e) =>
                 updateSelector("usernameSelector", e.target.value)
               }
@@ -84,7 +85,9 @@ const AutoLoginSection: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
             </label>
             <input
               type="text"
-              value={mgr.formData.httpAutoLoginSelectors?.passwordSelector || ""}
+              value={
+                mgr.formData.httpAutoLoginSelectors?.passwordSelector || ""
+              }
               onChange={(e) =>
                 updateSelector("passwordSelector", e.target.value)
               }

@@ -8,7 +8,7 @@ const source = readFileSync(
   new URL("../src/native_manual_input_client.js", import.meta.url),
   "utf8",
 );
-function fixture() {
+function fixture(url = "https://example.test/login") {
   const listeners = new Map();
   let time = 10;
   const doc = {
@@ -37,6 +37,7 @@ function fixture() {
       this._value = "";
       this.type = "text";
       this.isConnected = true;
+      this.ownerDocument = doc;
       this.disabled = false;
       this.readOnly = false;
     }
@@ -53,10 +54,12 @@ function fixture() {
     }
   }
   const win = { addEventListener: doc.addEventListener };
+  win.top = win;
+  const parsed = new URL(url);
   const location = {
-    href: "https://example.test/login",
-    protocol: "https:",
-    origin: "https://example.test",
+    href: parsed.href,
+    protocol: parsed.protocol,
+    origin: parsed.origin,
   };
   const context = vm.createContext({
     document: doc,
@@ -91,9 +94,9 @@ function fixture() {
 // Real DOM focus retargeting matters here: focusin between fields under the
 // same shadow host does not reach document. Only the native window blur and
 // clock are simulated; no browser/profile/network or real credentials are used.
-function domFixture(t) {
+function domFixture(t, url = "https://example.test/login") {
   const dom = new JSDOM("<!doctype html><body></body>", {
-    url: "https://example.test/login",
+    url,
     runScripts: "outside-only",
   });
   t.after(() => dom.window.close());
@@ -324,14 +327,18 @@ test("closed shadow roots and iframe fields remain unsupported", (t) => {
   }
 });
 
-test("fresh captures reject another origin, HTTP and an unobserved focus loss", () => {
+test("fresh captures reject another origin, HTTPS downgrade and an unobserved focus loss", () => {
   for (const kind of ["origin", "http", "unobserved-blur"]) {
     const f = fixture();
     if (kind === "origin") {
       f.location.href = "https://other.test/login";
       f.location.origin = "https://other.test";
     }
-    if (kind === "http") f.location.protocol = "http:";
+    if (kind === "http") {
+      f.location.protocol = "http:";
+      f.location.origin = "http://example.test";
+      f.location.href = "http://example.test/login";
+    }
     if (kind === "unobserved-blur") f.doc.focused = false;
     assert.equal(f.run("capture", "a", 0), false, kind);
   }
@@ -398,7 +405,11 @@ for (const condition of [
     if (condition === "nonempty") f.input._value = "existing";
     if (condition === "hidden") f.input.getClientRects = () => [];
     if (condition === "iframe") f.doc.activeElement = { tagName: "IFRAME" };
-    if (condition === "http") f.location.protocol = "http:";
+    if (condition === "http") {
+      f.location.protocol = "http:";
+      f.location.origin = "http://example.test";
+      f.location.href = "http://example.test/login";
+    }
     if (condition === "length-mismatch") {
       assert.equal(f.run("restore", "a", 0), true);
       assert.equal(f.run("check", "a", 1), false);
@@ -419,6 +430,55 @@ test("textarea and password fields are supported; capture never clears existing 
     el._value = "";
     assert.equal(f.run("capture", "a", 0), true);
   }
+});
+
+test("HTTP custom-port manual typing captures, restores and validates the exact shadow field", (t) => {
+  const f = domFixture(t, "http://example.test:8080/login");
+  const input = f.input(f.shadow());
+  input.type = "password";
+  input.focus();
+  f.blur();
+  assert.equal(f.run("capture", "a", 0), true);
+  f.focusWindow();
+  assert.equal(f.run("restore", "a", 0), true);
+  input.value = "x";
+  assert.equal(f.run("check", "a", 1), true);
+  assert.equal(f.run("check", "wrong-token", 1), false);
+  assert.equal(f.run("restore", "a", 0), false);
+});
+
+for (const change of ["host", "scheme", "port", "frame", "owner", "manual-edit", "expired-blur"]) {
+  test(`HTTP manual typing preserves the ${change} guard`, () => {
+    const f = fixture("http://example.test:8080/login");
+    if (change === "expired-blur") {
+      f.doc.focused = false;
+      f.fire("blur", { target: f.win, isTrusted: true });
+      f.advance(1501);
+      assert.equal(f.run("capture", "a", 0), false);
+      return;
+    }
+    assert.equal(f.run("capture", "a", 0), true);
+    if (["host", "scheme", "port"].includes(change)) {
+      const url = new URL(change === "host" ? "http://other.test:8080/login"
+        : change === "scheme" ? "https://example.test:8080/login" : "http://example.test:8081/login");
+      Object.assign(f.location, { href: url.href, origin: url.origin, protocol: url.protocol });
+    }
+    if (change === "frame") f.win.top = {};
+    if (change === "owner") f.input.ownerDocument = {};
+    if (change === "manual-edit") f.input._value = "manual-user";
+    assert.equal(f.run("restore", "a", 0), false);
+    assert.equal(f.run("check", "a", 0), false);
+    assert.equal(f.input.value, change === "manual-edit" ? "manual-user" : "");
+  });
+}
+
+test("manual typing never captures unsupported schemes or a child frame", () => {
+  for (const url of ["file:///login", "ftp://example.test/login", "about:blank"]) {
+    assert.equal(fixture(url).run("capture", "a", 0), false);
+  }
+  const f = fixture("http://example.test:8080/login");
+  f.win.top = {};
+  assert.equal(f.run("capture", "a", 0), false);
 });
 
 test("native restore follows one-shot validation and still awaits renderer receipt before keys", () => {

@@ -140,6 +140,21 @@ impl NativeLoginAdapter {
     pub fn supported(self) -> bool {
         self != Self::Unsupported
     }
+    /// Only explicitly selected generic or self-hosted login contracts may use
+    /// HTTP. This is transport eligibility, never saved-origin or owner consent.
+    fn allows_http_credentials(self) -> bool {
+        matches!(
+            self,
+            Self::Generic
+                | Self::ModularForm
+                | Self::Bitwarden
+                | Self::Synology
+                | Self::Yealink
+                | Self::ExchangeEcp
+                | Self::ExchangeOwa
+                | Self::VodafoneSmartRouter
+        )
+    }
     /// Stage shape only; native frame URL, owner, consent and expiry must still
     /// be checked by the caller. Manual and unknown adapters release nothing.
     pub fn accepts_stage(self, stage: NativeLoginStage) -> bool {
@@ -306,9 +321,12 @@ pub(crate) fn stage_allowed(
         NativeLoginStage::FormSubmit => NativeLoginStage::Form,
         other => other,
     };
-    let Some(origin) = https_origin(url) else {
+    let Some(origin) = browser_origin(url) else {
         return false;
     };
+    if !adapter.allows_http_credentials() && !origin.starts_with("https://") {
+        return false;
+    }
     match adapter {
         NativeLoginAdapter::Cloudflare => {
             origin == "https://dash.cloudflare.com"
@@ -534,12 +552,15 @@ pub struct NativeLoginCredentials<'a> {
     pub auto_submit: bool,
 }
 
-pub(crate) fn https_origin(value: &str) -> Option<String> {
+/// HTTP(S) document origin, including its scheme and non-default port. Parsing
+/// never authorizes a destination: callers must still match the exact saved
+/// source/consent and current native frame/owner. HTTPS grants do not cover HTTP.
+pub(crate) fn browser_origin(value: &str) -> Option<String> {
     if value.len() > 16_384 || value.contains('\\') || value.chars().any(char::is_control) {
         return None;
     }
     let url = url::Url::parse(value).ok()?;
-    if url.scheme() != "https"
+    if !matches!(url.scheme(), "http" | "https")
         || url.host_str().is_none()
         || !url.username().is_empty()
         || url.password().is_some()
@@ -547,6 +568,11 @@ pub(crate) fn https_origin(value: &str) -> Option<String> {
         return None;
     }
     Some(url.origin().ascii_serialization())
+}
+
+/// Keep secure-only capabilities separate from credential/manual-input support.
+pub(crate) fn https_origin(value: &str) -> Option<String> {
+    browser_origin(value).filter(|origin| origin.starts_with("https://"))
 }
 
 /// One release per exact origin and stage for this attempt. Reloads,
@@ -569,7 +595,9 @@ impl LoginBudget {
         if credentials.identity != request.identity
             || !request.adapter.accepts_stage(request.stage)
             || credentials.origin != request.origin
-            || https_origin(request.origin).as_deref() != Some(request.origin)
+            || browser_origin(request.origin).as_deref() != Some(request.origin)
+            || (!request.adapter.allows_http_credentials()
+                && !request.origin.starts_with("https://"))
             || credentials.valid_until <= Instant::now()
             || (!metadata
                 && request.stage != NativeLoginStage::Password
@@ -700,7 +728,7 @@ mod tests {
             NativeLoginStage::Identifier,
             "https://device.test/login"
         ));
-        assert!(!stage_allowed(
+        assert!(stage_allowed(
             NativeLoginAdapter::ModularForm,
             NativeLoginStage::Form,
             "http://device.test/login"
@@ -815,11 +843,15 @@ mod tests {
             assert_eq!(NativeLoginAdapter::from_wire(adapter.wire()), adapter);
             assert!(stage_allowed(adapter, NativeLoginStage::Identifier, url));
             assert!(!stage_allowed(adapter, NativeLoginStage::Form, url));
-            assert!(!stage_allowed(
-                adapter,
-                NativeLoginStage::Identifier,
-                &url.replacen("https:", "http:", 1)
-            ));
+            assert_eq!(
+                stage_allowed(
+                    adapter,
+                    NativeLoginStage::Identifier,
+                    &url.replacen("https:", "http:", 1)
+                ),
+                matches!(adapter, NativeLoginAdapter::Bitwarden | NativeLoginAdapter::Synology),
+                "only the self-hosted provider contracts admit HTTP"
+            );
         }
         for (adapter, url) in [
             (
@@ -1039,7 +1071,7 @@ mod tests {
     }
 
     #[test]
-    fn credential_origins_exclude_inherited_opaque_cleartext_and_userinfo() {
+    fn secure_capability_origins_exclude_inherited_opaque_cleartext_and_userinfo() {
         for url in [
             "http://example.test",
             "about:blank",
@@ -1054,6 +1086,90 @@ mod tests {
             https_origin("https://EXAMPLE.test:443/login?q=x#f").as_deref(),
             Some("https://example.test")
         );
+    }
+
+    #[test]
+    fn browser_origins_preserve_http_scheme_and_custom_port_without_secure_grants() {
+        for (url, origin) in [
+            ("http://DEVICE.test:8080/login?q=x#f", "http://device.test:8080"),
+            ("http://device.test:80/login", "http://device.test"),
+            ("https://device.test:8443/login", "https://device.test:8443"),
+            ("http://[::1]:8080/login", "http://[::1]:8080"),
+        ] {
+            assert_eq!(browser_origin(url).as_deref(), Some(origin));
+            if origin.starts_with("http://") {
+                assert_eq!(https_origin(url), None);
+            }
+        }
+        for url in [
+            "about:blank", "data:text/html,x", "file:///login.html",
+            "blob:http://device.test/id", "ftp://device.test", "ws://device.test",
+            "http://user:pass@device.test", "http://device.test\\@evil.test",
+            "http://device.test\n", "http://",
+        ] {
+            assert_eq!(browser_origin(url), None, "{url}");
+        }
+    }
+
+    #[test]
+    fn http_login_stages_support_generic_modular_and_self_hosted_contracts() {
+        use NativeLoginAdapter::*;
+        use NativeLoginStage::*;
+        for (adapter, stage, path) in [
+            (Generic, Form, "/login"),
+            (ModularForm, FormPrepare, "/login"),
+            (ModularForm, Form, "/login"),
+            (ModularForm, FormSubmit, "/login"),
+            (Bitwarden, Identifier, "/#/login"),
+            (Bitwarden, Password, "/#/login"),
+            (Bitwarden, PasswordSubmit, "/#/login"),
+            (Synology, Identifier, "/#/signin"),
+            (Synology, Password, "/#/signin/password"),
+            (Synology, PasswordSubmit, "/#/signin/password"),
+            (Yealink, Form, "/servlet?p=login"),
+            (Yealink, FormSubmit, "/servlet?p=login"),
+            (ExchangeEcp, Form, "/owa/auth/logon.aspx?reason=0"),
+            (ExchangeOwa, Form, "/owa/auth/logon.aspx?reason=0"),
+            (VodafoneSmartRouter, Form, "/login"),
+        ] {
+            let url = format!("http://device.test:8080{path}");
+            assert!(stage_allowed(adapter, stage, &url), "{adapter:?} {stage:?}");
+        }
+        for adapter in [ExchangeEcp, ExchangeOwa] {
+            assert!(!stage_allowed(adapter, Form, "http://device.test:8080/owa/auth/logon.aspx?reason=2"));
+            assert!(!stage_allowed(adapter, Form, "http://device.test:8080/owa/auth/change.aspx"));
+        }
+        assert!(!stage_allowed(Synology, Password, "http://device.test:8080/#/signin"));
+        for adapter in [Manual, Unsupported] {
+            assert!(!stage_allowed(adapter, Form, "http://device.test:8080/login"));
+        }
+    }
+
+    #[test]
+    fn fixed_public_provider_stages_and_budgets_stay_https_only() {
+        use NativeLoginAdapter::*;
+        use NativeLoginStage::*;
+        for (adapter, stage, url) in [
+            (Porkbun, Form, "https://porkbun.com/account/login"),
+            (Google, Identifier, "https://accounts.google.com/v3/signin/identifier"),
+            (Cloudflare, Identifier, "https://dash.cloudflare.com/login"),
+            (Adobe, Identifier, "https://auth.services.adobe.com/en_US/index.html"),
+            (ChatGpt, Identifier, "https://auth.openai.com/log-in"),
+            (Claude, Identifier, "https://claude.ai/login"),
+        ] {
+            assert!(stage_allowed(adapter, stage, url));
+            let http = url.replacen("https://", "http://", 1);
+            assert!(!stage_allowed(adapter, stage, &http));
+            let origin = browser_origin(&http).unwrap();
+            let policy = OriginBrowserPolicy::new("owner", "connection", "tab", &origin).unwrap();
+            let request = NativeLoginRequest { identity: policy.identity(), origin: &origin, adapter, stage };
+            let credentials = NativeLoginCredentials {
+                identity: policy.identity(), origin: &origin,
+                valid_until: Instant::now() + Duration::from_secs(30),
+                username: "synthetic-user", password: "synthetic-password", auto_submit: true,
+            };
+            assert!(!LoginBudget::default().reserve(&request, &credentials));
+        }
     }
 
     #[test]
@@ -1144,7 +1260,7 @@ mod tests {
             assert!(adapter.accepts_stage(NativeLoginStage::Form));
             assert!(!adapter.accepts_stage(NativeLoginStage::Identifier));
             assert!(!adapter.accepts_stage(NativeLoginStage::Password));
-            assert!(!stage_allowed(
+            assert!(stage_allowed(
                 adapter,
                 NativeLoginStage::Form,
                 "http://fixture.test/owa/auth/logon.aspx"
@@ -1281,5 +1397,67 @@ mod tests {
         credentials.valid_until = Instant::now() + Duration::from_secs(30);
         assert!(budget.reserve(&request, &credentials));
         assert!(!budget.reserve(&request, &credentials));
+    }
+
+    #[test]
+    fn http_disclosure_still_requires_exact_consent_owner_origin_port_and_expiry() {
+        let origin = "http://device.test:8080";
+        let policy = OriginBrowserPolicy::new("owner", "connection", "tab", origin).unwrap();
+        let other = OriginBrowserPolicy::new("owner", "connection", "tab", origin).unwrap();
+        let request = NativeLoginRequest {
+            identity: policy.identity(), origin,
+            adapter: NativeLoginAdapter::Generic, stage: NativeLoginStage::Form,
+        };
+        let mut credentials = NativeLoginCredentials {
+            identity: policy.identity(), origin,
+            valid_until: Instant::now() + Duration::from_secs(30),
+            username: "synthetic-user", password: "synthetic-password", auto_submit: false,
+        };
+        let mut budget = LoginBudget::default();
+        for other_origin in [
+            "https://device.test:8080", "http://device.test", "http://device.test:8081",
+            "http://sub.device.test:8080", "http://device.test:8080/login",
+        ] {
+            credentials.origin = other_origin;
+            assert!(!budget.reserve(&request, &credentials));
+        }
+        credentials.origin = origin;
+        credentials.identity = other.identity();
+        assert!(!budget.reserve(&request, &credentials));
+        credentials.identity = policy.identity();
+        credentials.valid_until = Instant::now();
+        assert!(!budget.reserve(&request, &credentials));
+        credentials.valid_until = Instant::now() + Duration::from_secs(30);
+        assert!(budget.reserve(&request, &credentials));
+        assert!(!budget.reserve(&request, &credentials));
+    }
+
+    #[test]
+    fn http_password_budget_cannot_reuse_https_or_another_port_identifier_stage() {
+        let origin = "http://device.test:8080";
+        let policy = OriginBrowserPolicy::new("owner", "connection", "tab", origin).unwrap();
+        let mut request = NativeLoginRequest {
+            identity: policy.identity(), origin,
+            adapter: NativeLoginAdapter::Bitwarden, stage: NativeLoginStage::Identifier,
+        };
+        let mut credentials = NativeLoginCredentials {
+            identity: policy.identity(), origin,
+            valid_until: Instant::now() + Duration::from_secs(30),
+            username: "synthetic-user", password: "synthetic-password", auto_submit: true,
+        };
+        let mut budget = LoginBudget::default();
+        for identifier_origin in ["https://device.test:8080", "http://device.test:8081"] {
+            request.origin = identifier_origin;
+            credentials.origin = identifier_origin;
+            assert!(budget.reserve(&request, &credentials));
+        }
+        request.origin = origin;
+        credentials.origin = origin;
+        request.stage = NativeLoginStage::Password;
+        assert!(!budget.reserve(&request, &credentials));
+        request.stage = NativeLoginStage::Identifier;
+        assert!(budget.reserve(&request, &credentials));
+        request.stage = NativeLoginStage::Password;
+        assert!(budget.reserve(&request, &credentials));
     }
 }

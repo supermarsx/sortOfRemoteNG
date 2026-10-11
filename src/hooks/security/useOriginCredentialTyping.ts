@@ -17,7 +17,7 @@ import {
 } from "../../utils/security/credentialTyping";
 
 const unavailable =
-  "Typing is unavailable for this website field. Choose Type to try again in an empty HTTPS field.";
+  "Typing is unavailable for this website field. Choose Type to try again in an empty field on an allowed origin. HTTP typing is limited to the configured origin, including its port.";
 const timedOut =
   "Typing timed out waiting for an empty website field. Choose Type to try again.";
 const incomplete =

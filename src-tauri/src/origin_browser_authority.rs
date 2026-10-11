@@ -11,7 +11,7 @@ use base64::Engine;
 use serde_json::Value;
 use sorng_browser_host::{
     domain_permissions::{
-        canonical_website_permission_origin, WebsiteNetworkPolicy, WebsitePermissionDecision,
+        canonical_browser_request_origin, canonical_website_permission_origin, WebsiteNetworkPolicy, WebsitePermissionDecision,
         WebsitePermissionEngine, WebsitePermissionQuery, WebsitePermissionSetting,
         WebsiteRequestClass,
     },
@@ -283,7 +283,10 @@ impl NativeLoginAuthority {
             || request.identity != &self.identity
             || !self.lease.is_current()
             || !self.origins.iter().any(|origin| origin == request.origin)
-            || canonical_website_permission_origin(request.origin).as_deref() != Ok(request.origin)
+            // Only the saved source (which may explicitly be HTTP) and separately
+            // reviewed HTTPS login destinations enter `origins`. Resource grants
+            // and redirects cannot downgrade or extend credential authority.
+            || canonical_browser_request_origin(request.origin).as_deref() != Ok(request.origin)
         {
             return;
         }
@@ -1105,6 +1108,11 @@ fn saved_source(connection: &Value) -> Result<Url, NativeAuthorityError> {
         url.set_fragment(None);
         let hosted = profile.get("hostedLoginUrl").and_then(Value::as_str);
         if let Some(hosted) = hosted {
+            // HTTP support is for explicitly configured hosts, not a downgrade
+            // of a bundled public provider's HTTPS login contract.
+            if url.scheme() != "https" {
+                return Err(NativeAuthorityError::ApplicationUnsupported);
+            }
             url.set_path(Url::parse(hosted).map_err(|_| error)?.path());
         } else if let Some(path) = application.get("loginPath") {
             let path = path
@@ -1153,7 +1161,7 @@ fn safe_login_path(path: &str) -> bool {
 
 fn apply_owa_mailbox(url: &mut Url, value: Option<&Value>) -> Result<(), NativeAuthorityError> {
     let error = NativeAuthorityError::ApplicationUnsupported;
-    if url.scheme() != "https" {
+    if !matches!(url.scheme(), "http" | "https") {
         return Err(error);
     }
     let raw = match value {
@@ -2817,6 +2825,82 @@ mod tests {
 
     struct Consent {
         allow: bool,
+    }
+
+    #[tokio::test]
+    async fn http_login_requires_exact_saved_origin_consent_and_live_database() {
+        let origin = "http://source.example:8080";
+        let mut row = connection();
+        row["protocol"] = json!("http");
+        row["hostname"] = json!(format!("{origin}/login"));
+        row["port"] = json!(8080);
+        row["httpVerifySsl"] = json!(false);
+        let mut f = Fixture::new(row).await;
+        f.request.initial_url = format!("{origin}/login");
+        let authorized = f.authorize().await.unwrap();
+        assert!(authorized.login.enabled());
+        assert!(authorized.login.supports_default_adapter());
+        assert_eq!(authorized.login.consent_origins(), &[origin]);
+        let request = NativeLoginRequest {
+            identity: authorized.policy.identity(),
+            origin,
+        };
+        let mut count = 0;
+        authorized.login.with_credentials(&request, &Consent { allow: false }, &mut |_| count += 1);
+        assert_eq!(count, 0);
+        authorized.login.with_credentials(&request, &Consent { allow: true }, &mut |credentials| {
+            assert_eq!(credentials.origin, origin);
+            assert_eq!(credentials.password, "fixture-secret");
+            count += 1;
+        });
+        assert_eq!(count, 1);
+        for other in [
+            "http://source.example", "http://source.example:8081",
+            "https://source.example:8080", "http://other.example:8080",
+            "http://source.example:8080/path", "http://user@source.example:8080",
+        ] {
+            authorized.login.with_credentials(
+                &NativeLoginRequest { identity: request.identity, origin: other },
+                &Consent { allow: true }, &mut |_| panic!("origin mismatch disclosed credentials"),
+            );
+        }
+        let other = OriginBrowserPolicy::new("db", "saved", "another-tab", origin).unwrap();
+        authorized.login.with_credentials(
+            &NativeLoginRequest { identity: other.identity(), origin },
+            &Consent { allow: true }, &mut |_| panic!("another tab received credentials"),
+        );
+        authorized.lease.revoke();
+        authorized.login.with_credentials(&request, &Consent { allow: true }, &mut |_| count += 1);
+        assert_eq!(count, 1);
+    }
+
+    #[test]
+    fn http_owa_entry_preserves_custom_port_and_mailbox() {
+        let mut row = connection();
+        row["protocol"] = json!("http");
+        row["hostname"] = json!("http://mail.example:8080");
+        row["port"] = json!(8080);
+        row["httpApplication"] = json!({"version":1,"id":"exchange-owa","loginMode":"form"});
+        assert_eq!(saved_source(&row).unwrap().as_str(), "http://mail.example:8080/owa/");
+        row["httpApplication"]["exchangeOwaMailbox"] = json!("shared@example.com");
+        assert_eq!(saved_source(&row).unwrap().as_str(), "http://mail.example:8080/owa/shared@example.com/");
+    }
+
+    #[test]
+    fn http_support_never_downgrades_fixed_hosted_application_sources() {
+        for (id, profile) in APPLICATION_TARGETS["profiles"].as_object().unwrap() {
+            let Some(hosted) = profile.get("hostedLoginUrl").and_then(Value::as_str) else {
+                continue;
+            };
+            let mut source = Url::parse(hosted).unwrap();
+            source.set_scheme("http").unwrap();
+            let mut row = connection();
+            row["protocol"] = json!("http");
+            row["hostname"] = json!(source.as_str());
+            row["port"] = json!(80);
+            row["httpApplication"] = json!({"version":1,"id":id,"loginMode":"form"});
+            assert_eq!(saved_source(&row).unwrap_err(), NativeAuthorityError::ApplicationUnsupported, "{id}");
+        }
     }
 
     #[tokio::test]
