@@ -14,6 +14,7 @@ import type {
   ConnectionSession,
 } from "../../src/types/connection/connection";
 import type { DatabaseAvailability } from "../../src/contexts/ConnectionContextTypes";
+import type { CurrentDatabaseChange } from "../../src/utils/connection/databaseManager";
 import type {
   OriginBrowserIdentity,
   OriginBrowserSnapshot,
@@ -24,12 +25,14 @@ const f = vi.hoisted(() => ({
   listen: vi.fn(),
   captureProof: vi.fn(),
   updateSettings: vi.fn(),
+  dispatch: vi.fn(),
   dispatchAndFlush: vi.fn(),
   automation: vi.fn(),
   connections: [] as Connection[],
+  sessions: [] as ConnectionSession[],
   availability: { status: "none", generation: 0 } as DatabaseAvailability,
   databaseId: undefined as string | undefined,
-  currentListeners: new Set<() => void>(),
+  currentListeners: new Set<(change: CurrentDatabaseChange) => void>(),
   accessListeners: new Set<(event: { databaseId: string }) => void>(),
   showBookmarksBar: true,
   serial: 0,
@@ -41,8 +44,9 @@ vi.mock("@tauri-apps/api/webviewWindow", () => ({
 }));
 vi.mock("../../src/contexts/useConnections", () => ({
   useConnections: () => ({
-    state: { connections: f.connections },
+    state: { connections: f.connections, sessions: f.sessions },
     databaseAvailability: f.availability,
+    dispatch: f.dispatch,
     dispatchAndFlush: f.dispatchAndFlush,
     getCurrentConnections: () => f.connections,
   }),
@@ -68,7 +72,9 @@ vi.mock("../../src/utils/connection/databaseManager", () => ({
     getInstance: () => ({
       getCurrentDatabase: () => (f.databaseId ? { id: f.databaseId } : null),
       captureOriginBrowserOwnerProof: f.captureProof,
-      onCurrentDatabaseChange: (callback: () => void) => {
+      onCurrentDatabaseChange: (
+        callback: (change: CurrentDatabaseChange) => void,
+      ) => {
         f.currentListeners.add(callback);
         return () => f.currentListeners.delete(callback);
       },
@@ -97,6 +103,7 @@ vi.mock("../../src/components/protocol/webBrowser/OriginBookmarkBar", () => ({
 }));
 
 import OriginConnectionBrowser from "../../src/components/protocol/webBrowser/OriginConnectionBrowser";
+import { ToastProvider } from "../../src/contexts/ToastContext";
 import { useOriginQuickConnection } from "../../src/hooks/protocol/useOriginQuickConnection";
 import {
   clearRuntimeConnectionsForTests,
@@ -143,10 +150,28 @@ const snapshot = (identity: OriginBrowserIdentity): OriginBrowserSnapshot => ({
 });
 const calls = (command: string) =>
   f.invoke.mock.calls.filter(([name]) => name === command);
+// The payload DatabaseManager hands its subscribers when `databaseId` is
+// opened or unlocked; `previousDatabaseId` is the selection before the event.
+const databaseChanged = (
+  reason: CurrentDatabaseChange["reason"],
+  databaseId: string,
+  previousDatabaseId: string | null,
+) =>
+  f.currentListeners.forEach((callback) =>
+    callback({
+      reason,
+      database: { id: databaseId } as CurrentDatabaseChange["database"],
+      databaseId,
+      previousDatabaseId,
+      connectionIds: [],
+      trustActivation: Promise.resolve(),
+    }),
+  );
 
 beforeEach(() => {
   clearRuntimeConnectionsForTests();
   f.connections = [];
+  f.sessions = [];
   f.availability = { status: "none", generation: 0 };
   f.databaseId = undefined;
   f.currentListeners.clear();
@@ -212,8 +237,15 @@ afterEach(() => {
   vi.clearAllMocks();
 });
 
+// The shell reads its own tab from the session list, as it does in the app.
+function mount(tab: ConnectionSession) {
+  f.sessions = [tab];
+  return render(<OriginConnectionBrowser session={tab} />, {
+    wrapper: ToastProvider,
+  });
+}
 async function attached(tab = session()) {
-  const view = render(<OriginConnectionBrowser session={tab} />);
+  const view = mount(tab);
   await waitFor(() =>
     expect(screen.getByRole("button", { name: "Reload" })).toBeEnabled(),
   );
@@ -284,7 +316,7 @@ describe("native Quick Connect shell", () => {
     act(() => {
       f.databaseId = "new-db";
       f.availability = { status: "ready", databaseId: "new-db", generation: 2 };
-      f.currentListeners.forEach((callback) => callback());
+      databaseChanged("open", "new-db", null);
       f.accessListeners.forEach((callback) =>
         callback({ databaseId: "new-db" }),
       );
@@ -364,6 +396,9 @@ describe("native Quick Connect shell", () => {
         ),
       ),
     ).not.toMatch(/volatile-|other-/);
+    expect(JSON.stringify(f.dispatch.mock.calls)).not.toMatch(
+      /volatile-|other-|basicAuth|quickConnect/,
+    );
     expect(localWrite).not.toHaveBeenCalled();
     expect(sessionWrite).not.toHaveBeenCalled();
     expect(f.dispatchAndFlush).not.toHaveBeenCalled();
@@ -384,7 +419,7 @@ describe("native Quick Connect shell", () => {
       ...(kind === "missing saved" && { ownerDatabaseId: "saved-db" }),
       ...(kind === "restored session" && { reattachOnly: true }),
     });
-    render(<OriginConnectionBrowser session={tab} />);
+    mount(tab);
     await act(async () => {});
     expect(calls("origin_browser_create")).toHaveLength(0);
     expect(screen.getByRole("button", { name: "Reload" })).toBeDisabled();
@@ -398,7 +433,7 @@ describe("native Quick Connect shell", () => {
     f.availability = { status: "ready", databaseId: "saved-db", generation: 1 };
     f.databaseId = "saved-db";
     const tab = session({ ownerDatabaseId: "saved-db" });
-    const view = render(<OriginConnectionBrowser session={tab} />);
+    const view = mount(tab);
     await act(async () => {});
     expect(f.captureProof).toHaveBeenCalled();
     expect(calls("origin_browser_create")).toHaveLength(0);
@@ -408,7 +443,7 @@ describe("native Quick Connect shell", () => {
       sourceSessionId: "saved-unlock",
       assertCurrent: () => {},
     });
-    act(() => f.currentListeners.forEach((callback) => callback()));
+    act(() => databaseChanged("unlock", "saved-db", "saved-db"));
     view.rerender(<OriginConnectionBrowser session={tab} />);
     await waitFor(() => expect(calls("origin_browser_create")).toHaveLength(1));
     const create = calls("origin_browser_create")[0][1].request;
@@ -472,7 +507,7 @@ describe("native Quick Connect shell", () => {
     );
     registerQuickConnectConnection(connection());
     const tab = session();
-    const view = render(<OriginConnectionBrowser session={tab} />);
+    const view = mount(tab);
     await waitFor(() => expect(calls("origin_browser_create")).toHaveLength(1));
     const request = calls("origin_browser_create")[0][1].request;
     act(() => releaseRuntimeConnection(tab.connectionId));

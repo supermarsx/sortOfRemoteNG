@@ -27,12 +27,13 @@ describe("read-only native browser capability notice", () => {
     [{ availability: "available" }, "Native runtime reports available", false],
     [
       { availability: "unavailable", reason: "runtime-missing" },
-      "packaged runtime missing",
+      "The packaged native browser runtime is missing\\..*\\[unavailable-runtime-missing\\]",
       true,
     ],
+    // An unrecognized reason gets the generic detail, never its own text.
     [
       { availability: "unavailable", reason: "PRIVATE_NATIVE_ERROR" },
-      "host unavailable",
+      "No supported structured cause was reported\\..*\\[unavailable-unknown\\]",
       true,
     ],
   ])(

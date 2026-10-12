@@ -34,7 +34,7 @@ const f = vi.hoisted(() => ({
   settingsReady: true,
   updateSettings: vi.fn(),
   accessListeners: [] as Array<(event: any) => void>,
-  currentListeners: [] as Array<() => void>,
+  currentListeners: [] as Array<(change: any) => void>,
   snapshotListener: null as null | ((event: any) => void),
   noticeListener: null as null | ((event: any) => void),
   popupListener: null as null | ((event: any) => void),
@@ -208,7 +208,7 @@ beforeEach(() => {
       sourceSessionId: "unlock-1",
       assertCurrent,
     }),
-    onCurrentDatabaseChange: (callback: () => void) => {
+    onCurrentDatabaseChange: (callback: (change: any) => void) => {
       f.currentListeners.push(callback);
       return vi.fn();
     },
@@ -345,6 +345,19 @@ afterEach(async () => {
   vi.unstubAllGlobals();
   vi.clearAllMocks();
 });
+// The payload DatabaseManager hands its subscribers when the owning database
+// is locked while it is the selected one.
+const ownerLocked = () =>
+  f.currentListeners.forEach((listener) =>
+    listener({
+      reason: "lock",
+      database: null,
+      databaseId: null,
+      previousDatabaseId: "database-1",
+      connectionIds: [],
+      trustActivation: Promise.resolve(),
+    }),
+  );
 const calls = (name: string) =>
   f.invoke.mock.calls.filter(([command]) => command === name);
 function render(ui: React.ReactNode) {
@@ -747,9 +760,7 @@ describe("real-origin connection-tab integration", () => {
         view.rerender(<WebBrowser session={session} />);
       } else {
         f.revoked = true;
-        await act(async () =>
-          f.currentListeners.forEach((listener) => listener()),
-        );
+        await act(async () => ownerLocked());
       }
       expect(
         screen.queryByRole("button", { name: "Review MFA origin repair" }),
@@ -973,10 +984,12 @@ describe("real-origin connection-tab integration", () => {
       const presentations = calls("origin_browser_control")
         .slice(start)
         .filter(([, args]) => args.request.action.kind === "presentation");
+      // The engine's own error page stays hidden behind the app diagnostics;
+      // the attempt is retained and its input is not fenced.
       expect(
         presentations[presentations.length - 1]?.[1].request.action,
       ).toMatchObject({
-        visible: true,
+        visible: false,
         inputBlocked: false,
         occlusions: [expect.any(Object)],
       });
@@ -1225,7 +1238,7 @@ describe("real-origin connection-tab integration", () => {
     view.rerender(<WebBrowser session={session} />);
     expect(screen.getByRole("progressbar")).toBeVisible();
     f.revoked = true;
-    await act(async () => f.currentListeners.forEach((listener) => listener()));
+    await act(async () => ownerLocked());
     expect(screen.queryByRole("progressbar")).toBeNull();
   });
   it("retries failed startup from the viewport using a new authorized create", async () => {

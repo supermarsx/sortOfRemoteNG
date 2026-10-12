@@ -353,7 +353,7 @@ describe("InternalProxyManager", () => {
     // The info panel lives inside the Statistics tab.
     await screen.findByText("Sessions");
     fireEvent.click(screen.getByText("Statistics"));
-    const infoHeader = await screen.findByText("About the Internal Proxy");
+    const infoHeader = await screen.findByText("About the legacy HTTP proxy");
     // Pre-P4 copy claimed a non-existent sortofremote-proxy:// URI
     // scheme and a "no local TCP ports" guarantee. Those claims are
     // gone; the new copy honestly describes the loopback mediator.

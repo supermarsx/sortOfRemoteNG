@@ -37,7 +37,12 @@ import { defaultCloudSyncConfig } from "../../src/types/settings/cloudSyncSettin
 import { useCloudSyncScheduler } from "../../src/hooks/sync/useCloudSyncScheduler";
 import type { StorageData } from "../../src/utils/storage/storage";
 import type { ConnectionDatabase } from "../../src/types/connection/connection";
-import { collection, fullData, trust } from "../fixtures/fullDatabaseArchive";
+import {
+  NOW,
+  collection,
+  fullData,
+  trust,
+} from "../fixtures/fullDatabaseArchive";
 
 let stored: StorageData;
 let rows: ConnectionDatabase[];
@@ -55,7 +60,10 @@ function body(value: StorageData) {
   return stableJsonStringify(rest);
 }
 beforeEach(async () => {
-  vi.useFakeTimers({ shouldAdvanceTime: true });
+  // Start at the fixture's own epoch. On the wall clock its Recycle Bin entry
+  // outlives the default retention, and the purge on load is a durable write
+  // that the scheduler rightly syncs.
+  vi.useFakeTimers({ shouldAdvanceTime: true, now: Date.parse(NOW) });
   DatabaseManager.resetInstance();
   vi.clearAllMocks();
   native.listeners.clear();
