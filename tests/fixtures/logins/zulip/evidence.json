@@ -1,0 +1,76 @@
+{
+  "$schema": "../evidence.schema.json",
+  "version": 1,
+  "id": "zulip",
+  "class": "A",
+  "mechanism": "form",
+  "source": "https://github.com/zulip/zulip/blob/b31982251ff82d0b02e59f63ad21f19204e37aea/templates/zerver/login.html",
+  "reviewed": "2026-10-12",
+  "summary": "One POST form (login_form) on the organisation's own origin at /login/ and /accounts/login/, shown when the organisation allows password sign-in. The project publishes the template with the controls written out.",
+  "sources": [
+    {
+      "id": "template",
+      "kind": "public-source",
+      "title": "Zulip Server 12.3 login template",
+      "url": "https://github.com/zulip/zulip/blob/b31982251ff82d0b02e59f63ad21f19204e37aea/templates/zerver/login.html",
+      "commit": "b31982251ff82d0b02e59f63ad21f19204e37aea",
+      "version": "12.3",
+      "retrieved": "2026-10-12"
+    },
+    {
+      "id": "routes",
+      "kind": "public-source",
+      "title": "Zulip Server 12.3 URL routes: the template is served on accounts/login/ and login/",
+      "url": "https://github.com/zulip/zulip/blob/b31982251ff82d0b02e59f63ad21f19204e37aea/zproject/urls.py",
+      "commit": "b31982251ff82d0b02e59f63ad21f19204e37aea",
+      "version": "12.3",
+      "lines": "644-730",
+      "retrieved": "2026-10-12"
+    }
+  ],
+  "selectors": [
+    {
+      "selector": "form#login_form input#id_username[name=\"username\"]",
+      "role": "username",
+      "source": "template",
+      "basis": "observed",
+      "locator": "lines 65-66 (form), 76-79 (input)",
+      "note": "The type attribute is text or email depending on a server setting, so the selector does not rely on it."
+    },
+    {
+      "selector": "form#login_form input#id_password[name=\"password\"][type=\"password\"]",
+      "role": "password",
+      "source": "template",
+      "basis": "observed",
+      "locator": "lines 92-94"
+    },
+    {
+      "selector": "form#login_form button[type=\"submit\"][name=\"button\"]",
+      "role": "control",
+      "source": "template",
+      "basis": "observed",
+      "locator": "line 117"
+    }
+  ],
+  "fixtures": [
+    {
+      "file": "fixture.html",
+      "path": "/login/",
+      "derivedFrom": ["template"]
+    }
+  ],
+  "staysInteractive": [
+    {
+      "kind": "single-sign-on",
+      "note": "External methods (SAML, OIDC, social) are separate buttons below the form. An organisation with password sign-in turned off shows no form at all, and the login then stops as a layout mismatch."
+    },
+    {
+      "kind": "totp",
+      "note": "A server with the two-factor wizard enabled shows a token step after the password. Its fields are rendered by the wizard at run time and are not pinned here."
+    }
+  ],
+  "schemaGaps": [
+    "The path gate names paths at the host root, and the format has no installation-relative gate. An installation under a sub-path is not covered. Nothing is filled there."
+  ],
+  "notes": "The same form id, field ids, field names and submit button are in the template of releases 5.0, 8.0 and 10.0 (read at those tags on 2026-10-12). Releases older than 5.0 were not read. LDAP sign-in uses this same form. The form posts to /accounts/login/, where a failed sign-in shows it again."
+}

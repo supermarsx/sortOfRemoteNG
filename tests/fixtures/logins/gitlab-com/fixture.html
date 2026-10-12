@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Synthetic fixture: GitLab sign-in, single form</title>
+  </head>
+  <body>
+    <div id="js-sign-in-form-app">
+      <form
+        id="sign-in-form"
+        action="/users/sign_in"
+        method="post"
+        novalidate
+        data-testid="sign-in-form"
+      >
+        <div>
+          <label for="user_login">Account</label>
+          <input
+            id="user_login"
+            name="user[login]"
+            autocomplete="username"
+            autocapitalize="off"
+            autocorrect="off"
+            required
+            data-testid="username-field"
+          />
+        </div>
+        <div>
+          <label for="user_password">Secret</label>
+          <div class="gl-field-error-anchor gl-relative">
+            <input
+              id="user_password"
+              name="user[password]"
+              type="password"
+              autocomplete="current-password"
+              required
+              data-testid="password-field"
+            />
+          </div>
+        </div>
+        <button
+          type="submit"
+          class="js-no-auto-disable"
+          data-testid="sign-in-button"
+        >
+          Continue
+        </button>
+      </form>
+      <form method="post" class="gl-mt-3" data-testid="passkey-form">
+        <button type="submit" data-testid="passkey-login-button">
+          Passkey
+        </button>
+      </form>
+    </div>
+  </body>
+</html>

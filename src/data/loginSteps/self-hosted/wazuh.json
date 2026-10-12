@@ -1,0 +1,28 @@
+{
+  "$schema": "../../../types/connection/httpLoginSteps.schema.json",
+  "version": 1,
+  "id": "wazuh",
+  "evidence": {
+    "class": "A",
+    "source": "https://github.com/wazuh/wazuh-security-dashboards-plugin/blob/6e338eeeec1b7ba4f76741f1989f1de8f6b63c74/public/apps/login/login-page.tsx",
+    "reviewed": "2026-10-12"
+  },
+  "credentialOrigins": [],
+  "loginSteps": [
+    {
+      "kind": "form",
+      "paths": ["/app/login"],
+      "selectors": {
+        "username": "form input[data-test-subj=\"user-name\"][aria-label=\"username_input\"]",
+        "password": "form input[data-test-subj=\"password\"][aria-label=\"password_input\"][type=\"password\"]"
+      }
+    },
+    {
+      "kind": "submit",
+      "submission": "spa",
+      "selectors": {
+        "control": "form button[data-test-subj=\"submit\"][type=\"submit\"]"
+      }
+    }
+  ]
+}

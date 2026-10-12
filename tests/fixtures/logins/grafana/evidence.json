@@ -1,0 +1,258 @@
+{
+  "$schema": "../evidence.schema.json",
+  "version": 1,
+  "id": "grafana",
+  "class": "A",
+  "mechanism": "form",
+  "source": "https://github.com/grafana/grafana/blob/6193dc03311b631b9727b560d24369e683dc396e/public/app/core/components/Login/LoginForm.tsx",
+  "reviewed": "2026-10-12",
+  "summary": "A single-page form on the login route (/login, or that route under the configured sub-path), submitted by a script handler. The fields carry test ids that the project publishes for its own end-to-end tests; releases before 10.2.3 carry the same texts as aria-label instead.",
+  "sources": [
+    {
+      "id": "login-form",
+      "kind": "public-source",
+      "title": "Grafana 13.2.3 login form component",
+      "url": "https://github.com/grafana/grafana/blob/6193dc03311b631b9727b560d24369e683dc396e/public/app/core/components/Login/LoginForm.tsx",
+      "commit": "6193dc03311b631b9727b560d24369e683dc396e",
+      "version": "13.2.3",
+      "retrieved": "2026-10-12"
+    },
+    {
+      "id": "selectors",
+      "kind": "public-source",
+      "title": "Grafana 13.2.3 end-to-end selectors: the login url and the test ids of the username, password and submit controls, with the values used before 10.2.3",
+      "url": "https://github.com/grafana/grafana/blob/6193dc03311b631b9727b560d24369e683dc396e/packages/grafana-e2e-selectors/src/selectors/pages.ts",
+      "commit": "6193dc03311b631b9727b560d24369e683dc396e",
+      "version": "13.2.3",
+      "lines": "120-139",
+      "retrieved": "2026-10-12"
+    },
+    {
+      "id": "password-field",
+      "kind": "public-source",
+      "title": "Grafana 13.2.3 password field: an input whose type starts as password and that carries the password test id",
+      "url": "https://github.com/grafana/grafana/blob/6193dc03311b631b9727b560d24369e683dc396e/public/app/core/components/PasswordField/PasswordField.tsx",
+      "commit": "6193dc03311b631b9727b560d24369e683dc396e",
+      "version": "13.2.3",
+      "lines": "10-18",
+      "retrieved": "2026-10-12"
+    },
+    {
+      "id": "ui-input",
+      "kind": "public-source",
+      "title": "Grafana 13.2.3 UI input: the remaining props are spread on a native input",
+      "url": "https://github.com/grafana/grafana/blob/6193dc03311b631b9727b560d24369e683dc396e/packages/grafana-ui/src/components/Input/Input.tsx",
+      "commit": "6193dc03311b631b9727b560d24369e683dc396e",
+      "version": "13.2.3",
+      "lines": "107-115",
+      "retrieved": "2026-10-12"
+    },
+    {
+      "id": "ui-button",
+      "kind": "public-source",
+      "title": "Grafana 13.2.3 UI button: a native button with the given type and the remaining props spread on it",
+      "url": "https://github.com/grafana/grafana/blob/6193dc03311b631b9727b560d24369e683dc396e/packages/grafana-ui/src/components/Button/Button.tsx",
+      "commit": "6193dc03311b631b9727b560d24369e683dc396e",
+      "version": "13.2.3",
+      "lines": "103-107",
+      "retrieved": "2026-10-12"
+    },
+    {
+      "id": "routes",
+      "kind": "public-source",
+      "title": "Grafana 13.2.3 routes: the login page is /login",
+      "url": "https://github.com/grafana/grafana/blob/6193dc03311b631b9727b560d24369e683dc396e/public/app/routes/routes.tsx",
+      "commit": "6193dc03311b631b9727b560d24369e683dc396e",
+      "version": "13.2.3",
+      "lines": "456-462",
+      "retrieved": "2026-10-12"
+    },
+    {
+      "id": "login-page",
+      "kind": "public-source",
+      "title": "Grafana 13.2.3 login page: shows the login form, or a change-password form after a sign-in; its links are prefixed with the configured sub-url",
+      "url": "https://github.com/grafana/grafana/blob/6193dc03311b631b9727b560d24369e683dc396e/public/app/core/components/Login/LoginPage.tsx",
+      "commit": "6193dc03311b631b9727b560d24369e683dc396e",
+      "version": "13.2.3",
+      "lines": "41-83",
+      "retrieved": "2026-10-12"
+    },
+    {
+      "id": "change-password",
+      "kind": "public-source",
+      "title": "Grafana 13.2.3 change-password form: reuses the password component, and with it the password test id, without a username field. profile/ChangePasswordForm.tsx and Signup/SignupPage.tsx at the same commit do the same.",
+      "url": "https://github.com/grafana/grafana/blob/6193dc03311b631b9727b560d24369e683dc396e/public/app/core/components/ForgottenPassword/ChangePassword.tsx",
+      "commit": "6193dc03311b631b9727b560d24369e683dc396e",
+      "version": "13.2.3",
+      "lines": "67-118",
+      "retrieved": "2026-10-12"
+    },
+    {
+      "id": "sub-path",
+      "kind": "public-source",
+      "title": "Grafana 13.2.3 default configuration: root_url and serve_from_sub_path, the settings for serving Grafana under a sub-path",
+      "url": "https://github.com/grafana/grafana/blob/6193dc03311b631b9727b560d24369e683dc396e/conf/defaults.ini",
+      "commit": "6193dc03311b631b9727b560d24369e683dc396e",
+      "version": "13.2.3",
+      "lines": "63-66",
+      "retrieved": "2026-10-12"
+    },
+    {
+      "id": "login-form-9",
+      "kind": "public-source",
+      "title": "Grafana 9.5.21 login form component: the layout before 10.2.3",
+      "url": "https://github.com/grafana/grafana/blob/dd4eea5e9a9cbd5cc26e45a8cdf9782f80e4826a/public/app/core/components/Login/LoginForm.tsx",
+      "commit": "dd4eea5e9a9cbd5cc26e45a8cdf9782f80e4826a",
+      "version": "9.5.21",
+      "retrieved": "2026-10-12"
+    },
+    {
+      "id": "selectors-9",
+      "kind": "public-source",
+      "title": "Grafana 9.5.21 end-to-end selectors: Username input field, Password input field, Login button",
+      "url": "https://github.com/grafana/grafana/blob/dd4eea5e9a9cbd5cc26e45a8cdf9782f80e4826a/packages/grafana-e2e-selectors/src/selectors/pages.ts",
+      "commit": "dd4eea5e9a9cbd5cc26e45a8cdf9782f80e4826a",
+      "version": "9.5.21",
+      "lines": "9-14",
+      "retrieved": "2026-10-12"
+    },
+    {
+      "id": "password-field-9",
+      "kind": "public-source",
+      "title": "Grafana 9.5.21 password field: type password and the password aria-label",
+      "url": "https://github.com/grafana/grafana/blob/dd4eea5e9a9cbd5cc26e45a8cdf9782f80e4826a/public/app/core/components/PasswordField/PasswordField.tsx",
+      "commit": "dd4eea5e9a9cbd5cc26e45a8cdf9782f80e4826a",
+      "version": "9.5.21",
+      "lines": "18-25",
+      "retrieved": "2026-10-12"
+    },
+    {
+      "id": "ui-9",
+      "kind": "public-source",
+      "title": "Grafana 9.5.21 UI input: the remaining props are spread on a native input. Button/Button.tsx line 64 does the same on a native button, and Forms/Form.tsx lines 41-50 render a form element.",
+      "url": "https://github.com/grafana/grafana/blob/dd4eea5e9a9cbd5cc26e45a8cdf9782f80e4826a/packages/grafana-ui/src/components/Input/Input.tsx",
+      "commit": "dd4eea5e9a9cbd5cc26e45a8cdf9782f80e4826a",
+      "version": "9.5.21",
+      "lines": "58-61",
+      "retrieved": "2026-10-12"
+    }
+  ],
+  "selectors": [
+    {
+      "selector": "form input[data-testid=\"data-testid Username input field\"], form:has(input#current-password[aria-label=\"Password input field\"]) input[aria-label=\"Username input field\"]",
+      "role": "username",
+      "source": "login-form",
+      "basis": "observed",
+      "locator": "lines 34, 40-47: Input with the username test id; source selectors lines 124-127 (both values); source ui-input lines 107-115 spread it on a native input",
+      "fixture": "fixture.html",
+      "note": "Application-specific: the test id is the string Grafana publishes for its own tests and, among the components read, only the login form uses it. The older alternative also requires Grafana's current-password field in the same form."
+    },
+    {
+      "selector": "form:has(input[data-testid=\"data-testid Username input field\"]) input[data-testid=\"data-testid Password input field\"][type=\"password\"], form:has(input[aria-label=\"Username input field\"]) input#current-password[aria-label=\"Password input field\"][type=\"password\"]",
+      "role": "password",
+      "source": "login-form",
+      "basis": "observed",
+      "locator": "lines 54-59: PasswordField; source password-field lines 14-17 (type, test id); source selectors lines 128-131; source ui-input lines 107-115 (native input)",
+      "fixture": "fixture.html",
+      "note": "The password component is reused by other forms with the same test id (source change-password), so both alternatives require the login form's username field in the same form. The type changes to text only when the user turns the show switch on."
+    },
+    {
+      "selector": "form:has(input[data-testid=\"data-testid Username input field\"]) button[data-testid=\"data-testid Login button\"][type=\"submit\"], form:has(input#current-password[aria-label=\"Password input field\"]) button[aria-label=\"Login button\"][type=\"submit\"]",
+      "role": "control",
+      "source": "login-form",
+      "basis": "observed",
+      "locator": "lines 61-68: Button, type submit, login test id; source selectors lines 132-135; source ui-button lines 103-107 (native button, props spread)",
+      "fixture": "fixture.html",
+      "note": "Tied to the login form through its username field (current layout) or its current-password field (older layout)."
+    },
+    {
+      "selector": "form input[data-testid=\"data-testid Username input field\"], form:has(input#current-password[aria-label=\"Password input field\"]) input[aria-label=\"Username input field\"]",
+      "role": "username",
+      "source": "login-form-9",
+      "basis": "observed",
+      "locator": "lines 32, 36-42: Input with aria-label from the selectors file (source selectors-9 line 11); source ui-9 lines 58-61 spread it on a native input",
+      "fixture": "fixture.legacy.html"
+    },
+    {
+      "selector": "form:has(input[data-testid=\"data-testid Username input field\"]) input[data-testid=\"data-testid Password input field\"][type=\"password\"], form:has(input[aria-label=\"Username input field\"]) input#current-password[aria-label=\"Password input field\"][type=\"password\"]",
+      "role": "password",
+      "source": "login-form-9",
+      "basis": "observed",
+      "locator": "lines 45-50: PasswordField with id current-password; source password-field-9 lines 18-25 (type, aria-label; selectors-9 line 12); source ui-9 lines 58-61",
+      "fixture": "fixture.legacy.html"
+    },
+    {
+      "selector": "form:has(input[data-testid=\"data-testid Username input field\"]) button[data-testid=\"data-testid Login button\"][type=\"submit\"], form:has(input#current-password[aria-label=\"Password input field\"]) button[aria-label=\"Login button\"][type=\"submit\"]",
+      "role": "control",
+      "source": "login-form-9",
+      "basis": "observed",
+      "locator": "lines 52-59: Button, type submit, aria-label from source selectors-9 line 13; source ui-9: Button.tsx line 64 (native button, props spread)",
+      "fixture": "fixture.legacy.html"
+    },
+    {
+      "selector": "form input[data-testid=\"data-testid Username input field\"], form:has(input#current-password[aria-label=\"Password input field\"]) input[aria-label=\"Username input field\"]",
+      "role": "username",
+      "source": "login-form",
+      "basis": "observed",
+      "locator": "lines 34, 40-47: Input with the username test id; source selectors lines 124-127 (both values); source ui-input lines 107-115 spread it on a native input",
+      "fixture": "fixture.subpath.html",
+      "note": "Application-specific: the test id is the string Grafana publishes for its own tests and, among the components read, only the login form uses it. The older alternative also requires Grafana's current-password field in the same form."
+    },
+    {
+      "selector": "form:has(input[data-testid=\"data-testid Username input field\"]) input[data-testid=\"data-testid Password input field\"][type=\"password\"], form:has(input[aria-label=\"Username input field\"]) input#current-password[aria-label=\"Password input field\"][type=\"password\"]",
+      "role": "password",
+      "source": "login-form",
+      "basis": "observed",
+      "locator": "lines 54-59: PasswordField; source password-field lines 14-17 (type, test id); source selectors lines 128-131; source ui-input lines 107-115 (native input)",
+      "fixture": "fixture.subpath.html",
+      "note": "The password component is reused by other forms with the same test id (source change-password), so both alternatives require the login form's username field in the same form. The type changes to text only when the user turns the show switch on."
+    },
+    {
+      "selector": "form:has(input[data-testid=\"data-testid Username input field\"]) button[data-testid=\"data-testid Login button\"][type=\"submit\"], form:has(input#current-password[aria-label=\"Password input field\"]) button[aria-label=\"Login button\"][type=\"submit\"]",
+      "role": "control",
+      "source": "login-form",
+      "basis": "observed",
+      "locator": "lines 61-68: Button, type submit, login test id; source selectors lines 132-135; source ui-button lines 103-107 (native button, props spread)",
+      "fixture": "fixture.subpath.html",
+      "note": "Tied to the login form through its username field (current layout) or its current-password field (older layout)."
+    }
+  ],
+  "fixtures": [
+    {
+      "file": "fixture.html",
+      "path": "/login",
+      "derivedFrom": ["login-form", "password-field", "selectors", "ui-input"],
+      "note": "The layout of 10.2.3 and later. Field ids are generated at run time and are left out."
+    },
+    {
+      "file": "fixture.legacy.html",
+      "path": "/login",
+      "derivedFrom": ["login-form-9"],
+      "note": "The layout of releases before 10.2.3, on the same path. An alternative to fixture.html, not a later step."
+    },
+    {
+      "file": "fixture.subpath.html",
+      "path": "/grafana/login",
+      "derivedFrom": [
+        "login-form",
+        "password-field",
+        "selectors",
+        "ui-input",
+        "login-page",
+        "sub-path"
+      ],
+      "note": "The current layout as served from a sub-path; /grafana/ is an example prefix. The steps have no path gate, and this fixture shows that they match there."
+    }
+  ],
+  "staysInteractive": [
+    {
+      "kind": "single-sign-on",
+      "note": "OAuth and SAML providers are buttons under the form. With the login form disabled by configuration only those remain."
+    },
+    {
+      "kind": "other",
+      "note": "After a sign-in the same page can show a change-password form (it has a skip button); nothing is typed there."
+    }
+  ],
+  "notes": "No path gate, as agreed for applications whose every selector is application-specific: each alternative names a Grafana test id, or Grafana's older labels together with its current-password field, and the password and button alternatives require the login form's username field. Under a sub-path the route is that prefix followed by login. Current layout also read at 10.4.19, 11.6.0 and 12.4.0; older layout at 10.2.2 and 8.5.27 (tags read 2026-10-12). In 8.5.27 the button has no type attribute, so that release is not covered. The inputs are React-controlled and need real input events."
+}

@@ -1,0 +1,27 @@
+{
+  "$schema": "../../../types/connection/httpLoginSteps.schema.json",
+  "version": 1,
+  "id": "osticket",
+  "evidence": {
+    "class": "A",
+    "source": "https://github.com/osTicket/osTicket/blob/8d38b0619649a50ee7cbbf37085f5d297fdc6f36/include/staff/login.tpl.php",
+    "reviewed": "2026-10-12"
+  },
+  "credentialOrigins": [],
+  "loginSteps": [
+    {
+      "kind": "form",
+      "selectors": {
+        "username": "form#login:has(input[name=\"do\"][value=\"scplogin\"]) input#name[name=\"userid\"]",
+        "password": "form#login:has(input[name=\"do\"][value=\"scplogin\"]) input#pass[name=\"passwd\"][type=\"password\"]"
+      }
+    },
+    {
+      "kind": "submit",
+      "submission": "click",
+      "selectors": {
+        "control": "form#login:has(input[name=\"do\"][value=\"scplogin\"]) button.submit[type=\"submit\"][name=\"submit\"]"
+      }
+    }
+  ]
+}

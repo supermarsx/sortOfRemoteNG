@@ -1,0 +1,147 @@
+{
+  "$schema": "../evidence.schema.json",
+  "version": 1,
+  "id": "zabbix",
+  "class": "A",
+  "mechanism": "form",
+  "source": "https://github.com/zabbix/zabbix/blob/bd350f540cdb6665dbeb144503b5426f9a0dc2ad/ui/include/views/general.login.php",
+  "reviewed": "2026-10-12",
+  "summary": "One POST form on index.php of the frontend, built by the project's own HTML helper classes. With a TOTP method required for the user, index_mfa.php then asks for a verification code.",
+  "sources": [
+    {
+      "id": "view",
+      "kind": "public-source",
+      "title": "Zabbix 7.4.15 login view",
+      "url": "https://github.com/zabbix/zabbix/blob/bd350f540cdb6665dbeb144503b5426f9a0dc2ad/ui/include/views/general.login.php",
+      "commit": "bd350f540cdb6665dbeb144503b5426f9a0dc2ad",
+      "version": "7.4.15",
+      "retrieved": "2026-10-12"
+    },
+    {
+      "id": "helpers",
+      "kind": "public-source",
+      "title": "Zabbix 7.4.15 input helper: writes type, id and name from its arguments. CTextBox.php line 22 and CPassBox.php line 20 pass the types text and password; zbx_formatDomId (include/func.inc.php lines 896-898) leaves these names unchanged.",
+      "url": "https://github.com/zabbix/zabbix/blob/bd350f540cdb6665dbeb144503b5426f9a0dc2ad/ui/include/classes/html/CInput.php",
+      "commit": "bd350f540cdb6665dbeb144503b5426f9a0dc2ad",
+      "version": "7.4.15",
+      "lines": "26-39",
+      "retrieved": "2026-10-12"
+    },
+    {
+      "id": "submit-helper",
+      "kind": "public-source",
+      "title": "Zabbix 7.4.15 submit helper: a CButton with the type submit (line 21). CButton.php lines 19-26 write a button element with id and name from its argument.",
+      "url": "https://github.com/zabbix/zabbix/blob/bd350f540cdb6665dbeb144503b5426f9a0dc2ad/ui/include/classes/html/CSubmit.php",
+      "commit": "bd350f540cdb6665dbeb144503b5426f9a0dc2ad",
+      "version": "7.4.15",
+      "lines": "17-24",
+      "retrieved": "2026-10-12"
+    },
+    {
+      "id": "selenium",
+      "kind": "public-source",
+      "title": "Zabbix 7.4.15 browser-test page object: signs in through the elements with ids name, password and enter",
+      "url": "https://github.com/zabbix/zabbix/blob/bd350f540cdb6665dbeb144503b5426f9a0dc2ad/ui/tests/include/web/CPage.php",
+      "commit": "bd350f540cdb6665dbeb144503b5426f9a0dc2ad",
+      "version": "7.4.15",
+      "lines": "626-636",
+      "retrieved": "2026-10-12"
+    },
+    {
+      "id": "entry",
+      "kind": "public-source",
+      "title": "Zabbix 7.4.15 index.php: shows the login view, signs in, and redirects to index_mfa.php when the user has a second factor",
+      "url": "https://github.com/zabbix/zabbix/blob/bd350f540cdb6665dbeb144503b5426f9a0dc2ad/ui/index.php",
+      "commit": "bd350f540cdb6665dbeb144503b5426f9a0dc2ad",
+      "version": "7.4.15",
+      "lines": "22-118",
+      "retrieved": "2026-10-12"
+    },
+    {
+      "id": "mfa-view",
+      "kind": "public-source",
+      "title": "Zabbix 7.4.15 verification code view, shown by index_mfa.php",
+      "url": "https://github.com/zabbix/zabbix/blob/bd350f540cdb6665dbeb144503b5426f9a0dc2ad/ui/include/views/mfa.login.php",
+      "commit": "bd350f540cdb6665dbeb144503b5426f9a0dc2ad",
+      "version": "7.4.15",
+      "retrieved": "2026-10-12"
+    },
+    {
+      "id": "docs",
+      "kind": "vendor-documentation",
+      "title": "Zabbix 7.4 quickstart: the frontend URL is /zabbix on Apache and the host root on Nginx",
+      "url": "https://www.zabbix.com/documentation/7.4/en/manual/quickstart/login",
+      "retrieved": "2026-10-12"
+    }
+  ],
+  "selectors": [
+    {
+      "selector": "form input#name[name=\"name\"][type=\"text\"]",
+      "role": "username",
+      "source": "view",
+      "basis": "observed",
+      "locator": "lines 58, 65: CTextBox('name') in a CForm; source helpers lines 26-39 (type, id, name on the input); source selenium line 634 locates id name"
+    },
+    {
+      "selector": "form input#password[name=\"password\"][type=\"password\"]",
+      "role": "password",
+      "source": "view",
+      "basis": "observed",
+      "locator": "line 70: CPassBox('password'); source helpers lines 26-39 (type, id, name on the input); source selenium line 635 locates id password"
+    },
+    {
+      "selector": "form button#enter[name=\"enter\"][type=\"submit\"]",
+      "role": "control",
+      "source": "view",
+      "basis": "observed",
+      "locator": "line 77: CSubmit('enter'); source submit-helper lines 17-24 (button, type submit, id, name); source selenium line 636 clicks id enter"
+    },
+    {
+      "selector": "form:not(:has(input[name=\"totp_secret\"])) input#verification_code[name=\"verification_code\"]",
+      "role": "totp-code",
+      "source": "mfa-view",
+      "basis": "observed",
+      "locator": "lines 75-85 (form without totp_secret), 49-72 (enrolment form with it), 81: CTextBox('verification_code'); source helpers lines 26-39 (id, name)",
+      "fixture": "fixture.totp.html",
+      "note": "The first sign-in with a new second factor shows the same field next to a new secret and its QR code. That enrolment form is excluded on purpose: a saved authenticator secret cannot answer it."
+    },
+    {
+      "selector": "form button#enter[name=\"enter\"][type=\"submit\"]",
+      "role": "totp-submit",
+      "source": "mfa-view",
+      "basis": "observed",
+      "locator": "line 84: CSubmit('enter'); source submit-helper lines 17-24 (button, type submit, id, name)",
+      "fixture": "fixture.totp.html"
+    }
+  ],
+  "fixtures": [
+    {
+      "file": "fixture.html",
+      "path": "/index.php",
+      "derivedFrom": ["view", "helpers"]
+    },
+    {
+      "file": "fixture.totp.html",
+      "path": "/index_mfa.php",
+      "derivedFrom": ["mfa-view", "helpers"]
+    }
+  ],
+  "staysInteractive": [
+    {
+      "kind": "single-sign-on",
+      "note": "SAML and HTTP sign-in are links under the form. A frontend set to HTTP sign-in by default redirects away from the form."
+    },
+    {
+      "kind": "device-approval",
+      "note": "A Duo second factor redirects to the Duo prompt."
+    },
+    {
+      "kind": "totp",
+      "note": "The verification code is filled only with a saved authenticator secret and automatic 2FA turned on. Enrolling a new authenticator (the QR code page) is always done by hand."
+    }
+  ],
+  "schemaGaps": [
+    "A frontend under a prefix other than the two documented ones cannot be gated: the format has exact paths and directory prefixes only, no path-suffix or installation-relative gate. Such a frontend is not covered. Nothing is filled there."
+  ],
+  "notes": "Path gate: /index.php and / for a frontend at the host root, /zabbix/index.php and /zabbix/ for the packaged Apache setup (source docs). A frontend under any other prefix is outside the gate and stays manual. The same CTextBox('name'), CPassBox('password') and CSubmit('enter') calls are in the login view of 6.0.48 and 7.0.31 (read at those tags on 2026-10-12); the verification code view exists from 7.0. Releases older than 6.0 were not read."
+}

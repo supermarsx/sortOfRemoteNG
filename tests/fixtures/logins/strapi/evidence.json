@@ -1,0 +1,154 @@
+{
+  "$schema": "../evidence.schema.json",
+  "version": 1,
+  "id": "strapi",
+  "class": "B",
+  "mechanism": "form",
+  "source": "https://github.com/strapi/strapi/blob/ca3974dac3171b4ffc94d70c27f1df7e4dad5a7d/packages/core/admin/admin/src/pages/Auth/components/Login.tsx",
+  "reviewed": "2026-10-12",
+  "summary": "Administrator login of the admin panel, a single-page form at /admin/auth/login. The form declares method PUT and is submitted by a script handler. The field names are in the public source; the rendered markup was not seen.",
+  "sources": [
+    {
+      "id": "login",
+      "kind": "public-source",
+      "title": "Strapi 5.57.0 admin login component",
+      "url": "https://github.com/strapi/strapi/blob/ca3974dac3171b4ffc94d70c27f1df7e4dad5a7d/packages/core/admin/admin/src/pages/Auth/components/Login.tsx",
+      "commit": "ca3974dac3171b4ffc94d70c27f1df7e4dad5a7d",
+      "version": "5.57.0",
+      "retrieved": "2026-10-12"
+    },
+    {
+      "id": "inputs",
+      "kind": "public-source",
+      "title": "Strapi 5.57.0 password input of the admin form: sets the type and passes the field name to the design system field",
+      "url": "https://github.com/strapi/strapi/blob/ca3974dac3171b4ffc94d70c27f1df7e4dad5a7d/packages/core/admin/admin/src/components/FormInputs/Password.tsx",
+      "commit": "ca3974dac3171b4ffc94d70c27f1df7e4dad5a7d",
+      "version": "5.57.0",
+      "lines": "22-44",
+      "retrieved": "2026-10-12"
+    },
+    {
+      "id": "routes",
+      "kind": "public-source",
+      "title": "Strapi 5.57.0 admin router and auth types: the login screen is the route auth/login of the admin panel",
+      "url": "https://github.com/strapi/strapi/blob/ca3974dac3171b4ffc94d70c27f1df7e4dad5a7d/packages/core/admin/admin/src/pages/Auth/constants.ts",
+      "commit": "ca3974dac3171b4ffc94d70c27f1df7e4dad5a7d",
+      "version": "5.57.0",
+      "lines": "9-18",
+      "retrieved": "2026-10-12"
+    },
+    {
+      "id": "package",
+      "kind": "public-source",
+      "title": "Strapi 5.57.0 admin package manifest: the design system is pinned to 2.2.4 (line 92); styled-components is a peer dependency with the range ^6.0.0 (line 185)",
+      "url": "https://github.com/strapi/strapi/blob/ca3974dac3171b4ffc94d70c27f1df7e4dad5a7d/packages/core/admin/package.json",
+      "commit": "ca3974dac3171b4ffc94d70c27f1df7e4dad5a7d",
+      "version": "5.57.0",
+      "lines": "92-185",
+      "retrieved": "2026-10-12"
+    },
+    {
+      "id": "ds-field",
+      "kind": "public-source",
+      "title": "Strapi design system 2.2.4 field: the input is a native input that receives the field name and the remaining props",
+      "url": "https://github.com/strapi/design-system/blob/1dcb5b571ca951bf7dcec068557ba58e243cad41/packages/design-system/src/components/Field/Field.tsx",
+      "commit": "1dcb5b571ca951bf7dcec068557ba58e243cad41",
+      "version": "2.2.4",
+      "lines": "136-217",
+      "retrieved": "2026-10-12"
+    },
+    {
+      "id": "ds-button",
+      "kind": "public-source",
+      "title": "Strapi design system 2.2.4 button: a native button that keeps the given type",
+      "url": "https://github.com/strapi/design-system/blob/1dcb5b571ca951bf7dcec068557ba58e243cad41/packages/design-system/src/components/Button/Button.tsx",
+      "commit": "1dcb5b571ca951bf7dcec068557ba58e243cad41",
+      "version": "2.2.4",
+      "lines": "51-74",
+      "retrieved": "2026-10-12"
+    },
+    {
+      "id": "email-input",
+      "kind": "public-source",
+      "title": "Strapi 5.57.0 email input of the admin form: passes the field name to the design system field and sets type email",
+      "url": "https://github.com/strapi/strapi/blob/ca3974dac3171b4ffc94d70c27f1df7e4dad5a7d/packages/core/admin/admin/src/components/FormInputs/Email.tsx",
+      "commit": "ca3974dac3171b4ffc94d70c27f1df7e4dad5a7d",
+      "version": "5.57.0",
+      "lines": "18-27",
+      "retrieved": "2026-10-12"
+    },
+    {
+      "id": "form-component",
+      "kind": "public-source",
+      "title": "Strapi 5.57.0 admin form component: a design system Box with the tag form, the given method and a submit handler",
+      "url": "https://github.com/strapi/strapi/blob/ca3974dac3171b4ffc94d70c27f1df7e4dad5a7d/packages/core/admin/admin/src/components/Form.tsx",
+      "commit": "ca3974dac3171b4ffc94d70c27f1df7e4dad5a7d",
+      "version": "5.57.0",
+      "lines": "495-500",
+      "retrieved": "2026-10-12"
+    },
+    {
+      "id": "ds-box",
+      "kind": "public-source",
+      "title": "Strapi design system 2.2.4 box: the tag prop is handed to styled-components as the element to render",
+      "url": "https://github.com/strapi/design-system/blob/1dcb5b571ca951bf7dcec068557ba58e243cad41/packages/design-system/src/primitives/Box/Box.tsx",
+      "commit": "1dcb5b571ca951bf7dcec068557ba58e243cad41",
+      "version": "2.2.4",
+      "lines": "385-441",
+      "retrieved": "2026-10-12"
+    }
+  ],
+  "selectors": [
+    {
+      "selector": "form input[name=\"email\"]",
+      "role": "username",
+      "source": "login",
+      "basis": "inferred",
+      "locator": "lines 100-101 (Form), 114-123 (field named email); source email-input line 18 (name to the field); source ds-field lines 195-210, 217 (styled input); source form-component, ds-box (form tag)",
+      "note": "Inferred, not observed: the element is created by styled-components (styled.input, or a tag handed to it), which Strapi takes as a peer dependency with a version range and which was not read. The type is email in 5.57.0 and was the form's string type up to at least 5.20.0, so the selector does not rely on it."
+    },
+    {
+      "selector": "form input[name=\"password\"][type=\"password\"]",
+      "role": "password",
+      "source": "login",
+      "basis": "inferred",
+      "locator": "lines 124-132 (field named password); source inputs lines 22, 43 (name to the field, type password); source ds-field lines 195-210, 217 (styled input)",
+      "note": "Inferred, not observed: the element is created by styled-components (styled.input, or a tag handed to it), which Strapi takes as a peer dependency with a version range and which was not read. The type changes to text only when the user clicks the show button, which is a button of type button."
+    },
+    {
+      "selector": "form button[type=\"submit\"]",
+      "role": "control",
+      "source": "login",
+      "basis": "inferred",
+      "locator": "lines 144-146 (Button, type submit); source ds-button lines 51-74: a Flex with the tag button and that type; source ds-box lines 385-441 (tag to styled-components)",
+      "note": "Inferred, not observed: the element is created by styled-components (styled.input, or a tag handed to it), which Strapi takes as a peer dependency with a version range and which was not read."
+    }
+  ],
+  "fixtures": [
+    {
+      "file": "fixture.html",
+      "path": "/admin/auth/login",
+      "derivedFrom": ["login", "inputs", "ds-field", "ds-button"],
+      "note": "Field ids are generated at run time and are left out."
+    }
+  ],
+  "staysInteractive": [
+    {
+      "kind": "single-sign-on",
+      "note": "The Enterprise edition adds provider buttons under the same form."
+    },
+    {
+      "kind": "other",
+      "note": "A project without an administrator redirects to the registration form at another path, which the path gate excludes."
+    }
+  ],
+  "unverified": [
+    "The rendered markup. The field names, the password type and the submit type are written in Strapi's source and in its design system, which is pinned to 2.2.4, but the elements themselves are created by styled-components, which Strapi does not pin to an exact version (peer dependency ^6.0.0) and which was not read.",
+    "Whether the 4.x line renders the same attributes: its login component reads the same at 4.25.22, but its design system was not read."
+  ],
+  "neededFromUser": "The login page of the user's Strapi saved as \"Webpage, Complete\", or one sign-in with this layout. Save any page signed out and with no password typed in; keep the \"_files\" folder beside the .html and both outside the repository: they can hold the account name.",
+  "schemaGaps": [
+    "A project with a custom admin path serves the login screen elsewhere. The format has no installation-relative gate, and the generic field selectors need an exact path, so only the default /admin path at the host root is covered. Under another admin path or a sub-path nothing is filled."
+  ],
+  "notes": "The selectors are generic (field names only); the exact path gate is what keeps them to the login screen, because the registration screens of the same panel also have fields named email and password. The login component has the same field names, password type, submit button and method at 5.0.0, 5.20.0, 5.40.0 and 5.50.0 (read at those tags on 2026-10-12). The project's own tests locate the fields by label and role, so they confirm no attribute. The inputs are React-controlled: they need real input events."
+}

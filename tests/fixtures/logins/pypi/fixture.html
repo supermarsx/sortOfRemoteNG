@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Synthetic fixture: PyPI log in</title>
+  </head>
+  <body>
+    <form method="post" action="/account/login/" id="login-form">
+      <div class="form-group">
+        <label for="username" class="form-group__label">Account</label>
+        <input
+          id="username"
+          name="username"
+          type="text"
+          autocapitalize="off"
+          autocomplete="username"
+          spellcheck="false"
+          required
+          class="form-group__field"
+          tabindex="1"
+          value=""
+        />
+      </div>
+      <div data-controller="password" class="form-group">
+        <label for="password" class="form-group__label">Secret</label>
+        <label for="show-password">
+          <input
+            data-password-target="showPassword"
+            id="show-password"
+            type="checkbox"
+            tabindex="3"
+          />
+          Show
+        </label>
+        <input
+          id="password"
+          name="password"
+          type="password"
+          required
+          class="form-group__field"
+          autocomplete="current-password"
+          spellcheck="false"
+          data-password-target="password"
+          tabindex="2"
+        />
+        <div class="form-group">
+          <input
+            type="submit"
+            value="Continue"
+            class="button button--primary"
+            tabindex="4"
+          />
+        </div>
+      </div>
+    </form>
+  </body>
+</html>

@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Synthetic fixture: Grafana login, layout before 10.2.3</title>
+  </head>
+  <body>
+    <div>
+      <form>
+        <div>
+          <label>Account</label>
+          <div>
+            <input
+              autocapitalize="none"
+              aria-label="Username input field"
+              value=""
+            />
+          </div>
+        </div>
+        <div>
+          <label>Secret</label>
+          <div>
+            <input
+              id="current-password"
+              type="password"
+              autocomplete="current-password"
+              aria-label="Password input field"
+            />
+            <button
+              type="button"
+              role="switch"
+              aria-checked="false"
+              aria-label="Show password"
+            >
+              Show
+            </button>
+          </div>
+        </div>
+        <button type="submit" aria-label="Login button">Continue</button>
+      </form>
+    </div>
+  </body>
+</html>

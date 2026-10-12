@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Synthetic fixture: Wazuh dashboard login</title>
+  </head>
+  <body>
+    <form>
+      <div>
+        <input
+          type="text"
+          data-test-subj="user-name"
+          aria-label="username_input"
+          value=""
+        />
+      </div>
+      <div>
+        <input
+          type="password"
+          data-test-subj="password"
+          aria-label="password_input"
+          spellcheck="false"
+        />
+      </div>
+      <div>
+        <button
+          data-test-subj="submit"
+          aria-label="basicauth_login_button"
+          type="submit"
+        >
+          Continue
+        </button>
+      </div>
+      <div>
+        <a
+          data-test-subj="submit"
+          aria-label="openid_login_button"
+          href="/auth/openid/captureUrlFragment"
+          >Other</a
+        >
+      </div>
+    </form>
+  </body>
+</html>

@@ -1,0 +1,112 @@
+{
+  "$schema": "../evidence.schema.json",
+  "version": 1,
+  "id": "mailcow",
+  "class": "A",
+  "mechanism": "form",
+  "source": "https://github.com/mailcow/mailcow-dockerized/blob/81f6f7b002f2681b732aed74ae53179377def5e0/data/web/templates/admin_index.twig",
+  "reviewed": "2026-10-12",
+  "summary": "One POST form with the fields login_user and pass_user, written out in the templates of the mailcow UI. Current releases have three login pages with the same form: / for mailbox users, /admin and /domainadmin.",
+  "sources": [
+    {
+      "id": "admin-template",
+      "kind": "public-source",
+      "title": "mailcow 2026-09a administrator login template",
+      "url": "https://github.com/mailcow/mailcow-dockerized/blob/81f6f7b002f2681b732aed74ae53179377def5e0/data/web/templates/admin_index.twig",
+      "commit": "81f6f7b002f2681b732aed74ae53179377def5e0",
+      "version": "2026-09a",
+      "retrieved": "2026-10-12"
+    },
+    {
+      "id": "user-template",
+      "kind": "public-source",
+      "title": "mailcow 2026-09a mailbox user login template, served on / by data/web/index.php",
+      "url": "https://github.com/mailcow/mailcow-dockerized/blob/81f6f7b002f2681b732aed74ae53179377def5e0/data/web/templates/user_index.twig",
+      "commit": "81f6f7b002f2681b732aed74ae53179377def5e0",
+      "version": "2026-09a",
+      "lines": "45-68",
+      "retrieved": "2026-10-12"
+    },
+    {
+      "id": "domainadmin-template",
+      "kind": "public-source",
+      "title": "mailcow 2026-09a domain administrator login template",
+      "url": "https://github.com/mailcow/mailcow-dockerized/blob/81f6f7b002f2681b732aed74ae53179377def5e0/data/web/templates/domainadmin_index.twig",
+      "commit": "81f6f7b002f2681b732aed74ae53179377def5e0",
+      "version": "2026-09a",
+      "lines": "39-58",
+      "retrieved": "2026-10-12"
+    },
+    {
+      "id": "pages",
+      "kind": "public-source",
+      "title": "mailcow 2026-09a administrator page script: data/web/admin/index.php renders the admin template; data/web/index.php and data/web/domainadmin/index.php do the same for the other two",
+      "url": "https://github.com/mailcow/mailcow-dockerized/blob/81f6f7b002f2681b732aed74ae53179377def5e0/data/web/admin/index.php",
+      "commit": "81f6f7b002f2681b732aed74ae53179377def5e0",
+      "version": "2026-09a",
+      "retrieved": "2026-10-12"
+    },
+    {
+      "id": "tfa-modal",
+      "kind": "public-source",
+      "title": "mailcow 2026-09a two-factor confirmation dialog, shown on the same page after the password is accepted. The script that opens it and selects an authenticator is in templates/base.twig lines 246-292.",
+      "url": "https://github.com/mailcow/mailcow-dockerized/blob/81f6f7b002f2681b732aed74ae53179377def5e0/data/web/templates/modals/footer.twig",
+      "commit": "81f6f7b002f2681b732aed74ae53179377def5e0",
+      "version": "2026-09a",
+      "lines": "134-290",
+      "retrieved": "2026-10-12"
+    }
+  ],
+  "selectors": [
+    {
+      "selector": "form[method=\"post\"] input#login_user[name=\"login_user\"]",
+      "role": "username",
+      "source": "admin-template",
+      "basis": "observed",
+      "locator": "lines 39 (form) and 44 (input); the same input is at user-template line 51 and domainadmin-template line 44",
+      "note": "On the mailbox user page the type is text or email depending on the request, so the selector does not rely on it."
+    },
+    {
+      "selector": "form[method=\"post\"] input#pass_user[name=\"pass_user\"][type=\"password\"]",
+      "role": "password",
+      "source": "admin-template",
+      "basis": "observed",
+      "locator": "line 51; user-template line 58; domainadmin-template line 51",
+      "note": "A button beside the field switches the type to text while the user wants to see the password."
+    },
+    {
+      "selector": "form:has(input#login_user[name=\"login_user\"]) button[type=\"submit\"][value=\"Login\"]",
+      "role": "control",
+      "source": "admin-template",
+      "basis": "observed",
+      "locator": "line 56; user-template line 66; domainadmin-template line 56",
+      "note": "The value attribute is a fixed word in the template; the visible label is translated."
+    }
+  ],
+  "fixtures": [
+    {
+      "file": "fixture.html",
+      "path": "/",
+      "derivedFrom": ["admin-template", "user-template"]
+    }
+  ],
+  "staysInteractive": [
+    {
+      "kind": "totp",
+      "note": "After the password a dialog on the same page asks for the second factor. With more than one authenticator the user first picks one from a list, which the format's challenge cannot do, so no challenge is defined."
+    },
+    {
+      "kind": "security-key",
+      "note": "WebAuthn and Yubico OTP are tabs of the same dialog, and a FIDO2 link is shown under the form."
+    },
+    {
+      "kind": "single-sign-on",
+      "note": "The mailbox user page can show an identity-provider button and can hide the form when single sign-on is forced."
+    }
+  ],
+  "schemaGaps": [
+    "The authenticator-code dialog needs a click on the chosen authenticator before its code field is usable (it opens by itself only when the account has exactly one authenticator and no other method). A TOTP challenge has a code selector and a submit selector only, no preceding click and no condition on the dialog being open.",
+    "The path gate names paths at the host root, and the format has no installation-relative gate. An installation under a sub-path is not covered. Nothing is filled there."
+  ],
+  "notes": "The form, the two ids and names and the submit button are the same at 2022-12, 2023-12a and 2024-08a, where one page on / serves every role, and at 2025-03 and 2025-09 with the three pages (read at those tags on 2026-10-12). The path gate lists /, /admin and /domainadmin with and without a trailing slash; whether the web server keeps or adds the slash was not determined. The saved credential must belong to the role of the page that is opened."
+}

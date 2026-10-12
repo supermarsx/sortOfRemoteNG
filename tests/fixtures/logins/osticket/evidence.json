@@ -1,0 +1,132 @@
+{
+  "$schema": "../evidence.schema.json",
+  "version": 1,
+  "id": "osticket",
+  "class": "A",
+  "mechanism": "form",
+  "source": "https://github.com/osTicket/osTicket/blob/8d38b0619649a50ee7cbbf37085f5d297fdc6f36/include/staff/login.tpl.php",
+  "reviewed": "2026-10-12",
+  "summary": "The staff control panel login: one POST form (id login) at scp/login.php under the installation root, written out in a PHP template. A script on the page sends the form in the background and then redirects.",
+  "sources": [
+    {
+      "id": "template",
+      "kind": "public-source",
+      "title": "osTicket 1.18.4 staff login template",
+      "url": "https://github.com/osTicket/osTicket/blob/8d38b0619649a50ee7cbbf37085f5d297fdc6f36/include/staff/login.tpl.php",
+      "commit": "8d38b0619649a50ee7cbbf37085f5d297fdc6f36",
+      "version": "1.18.4",
+      "retrieved": "2026-10-12"
+    },
+    {
+      "id": "entry",
+      "kind": "public-source",
+      "title": "osTicket 1.18.4 staff bootstrap: a signed-out request to the staff panel is redirected to scp/login.php under the installation's root path",
+      "url": "https://github.com/osTicket/osTicket/blob/8d38b0619649a50ee7cbbf37085f5d297fdc6f36/scp/staff.inc.php",
+      "commit": "8d38b0619649a50ee7cbbf37085f5d297fdc6f36",
+      "version": "1.18.4",
+      "lines": "51-61",
+      "retrieved": "2026-10-12"
+    },
+    {
+      "id": "client-login",
+      "kind": "public-source",
+      "title": "osTicket 1.18.4 client portal login form, for comparison: other ids and field names",
+      "url": "https://github.com/osTicket/osTicket/blob/8d38b0619649a50ee7cbbf37085f5d297fdc6f36/include/client/login.inc.php",
+      "commit": "8d38b0619649a50ee7cbbf37085f5d297fdc6f36",
+      "version": "1.18.4",
+      "lines": "20-32",
+      "retrieved": "2026-10-12"
+    },
+    {
+      "id": "root-path",
+      "kind": "public-source",
+      "title": "osTicket 1.18.4 bootstrap: the root path is worked out from where the installation lives, so a sub-directory installation has every page under that prefix (get_root_path, include/class.osticket.php lines 480-510)",
+      "url": "https://github.com/osTicket/osTicket/blob/8d38b0619649a50ee7cbbf37085f5d297fdc6f36/bootstrap.php",
+      "commit": "8d38b0619649a50ee7cbbf37085f5d297fdc6f36",
+      "version": "1.18.4",
+      "lines": "388-391",
+      "retrieved": "2026-10-12"
+    }
+  ],
+  "selectors": [
+    {
+      "selector": "form#login:has(input[name=\"do\"][value=\"scplogin\"]) input#name[name=\"userid\"]",
+      "role": "username",
+      "source": "template",
+      "basis": "observed",
+      "locator": "lines 25 (form), 43 (hidden field do with the value scplogin), 45-47 (input)",
+      "fixture": "fixture.html",
+      "note": "Application-specific: the form must hold osTicket's hidden field do with the value scplogin (staff control panel login). The client portal form and the second-factor state of this form do not have it."
+    },
+    {
+      "selector": "form#login:has(input[name=\"do\"][value=\"scplogin\"]) input#pass[name=\"passwd\"][type=\"password\"]",
+      "role": "password",
+      "source": "template",
+      "basis": "observed",
+      "locator": "lines 43 (hidden field) and 48 (input)",
+      "fixture": "fixture.html",
+      "note": "Same form condition as the username selector."
+    },
+    {
+      "selector": "form#login:has(input[name=\"do\"][value=\"scplogin\"]) button.submit[type=\"submit\"][name=\"submit\"]",
+      "role": "control",
+      "source": "template",
+      "basis": "observed",
+      "locator": "lines 43 (hidden field) and 52-55 (button)",
+      "fixture": "fixture.html",
+      "note": "Same form condition. While a second factor is pending the form has another hidden value and another button (lines 27-40), which this selector does not match."
+    },
+    {
+      "selector": "form#login:has(input[name=\"do\"][value=\"scplogin\"]) input#name[name=\"userid\"]",
+      "role": "username",
+      "source": "template",
+      "basis": "observed",
+      "locator": "lines 25 (form), 43 (hidden field do with the value scplogin), 45-47 (input)",
+      "fixture": "fixture.subpath.html",
+      "note": "Application-specific: the form must hold osTicket's hidden field do with the value scplogin (staff control panel login). The client portal form and the second-factor state of this form do not have it."
+    },
+    {
+      "selector": "form#login:has(input[name=\"do\"][value=\"scplogin\"]) input#pass[name=\"passwd\"][type=\"password\"]",
+      "role": "password",
+      "source": "template",
+      "basis": "observed",
+      "locator": "lines 43 (hidden field) and 48 (input)",
+      "fixture": "fixture.subpath.html",
+      "note": "Same form condition as the username selector."
+    },
+    {
+      "selector": "form#login:has(input[name=\"do\"][value=\"scplogin\"]) button.submit[type=\"submit\"][name=\"submit\"]",
+      "role": "control",
+      "source": "template",
+      "basis": "observed",
+      "locator": "lines 43 (hidden field) and 52-55 (button)",
+      "fixture": "fixture.subpath.html",
+      "note": "Same form condition. While a second factor is pending the form has another hidden value and another button (lines 27-40), which this selector does not match."
+    }
+  ],
+  "fixtures": [
+    {
+      "file": "fixture.html",
+      "path": "/scp/login.php",
+      "derivedFrom": ["template"],
+      "note": "The inline submit handler of the real form is left out."
+    },
+    {
+      "file": "fixture.subpath.html",
+      "path": "/support/scp/login.php",
+      "derivedFrom": ["template", "root-path"],
+      "note": "The same page of an installation in a sub-directory; /support/ is an example prefix. The steps have no path gate, and this fixture shows that they match there."
+    }
+  ],
+  "staysInteractive": [
+    {
+      "kind": "email-code",
+      "note": "With two-factor authentication on, the form is shown again with a verification field built from a dynamic form; the built-in method sends the code by email. That field is not pinned."
+    },
+    {
+      "kind": "single-sign-on",
+      "note": "External authentication plugins add links under the form."
+    }
+  ],
+  "notes": "No path gate, as agreed for applications whose every selector is application-specific: all three require the form with id login that holds the hidden field do with the value scplogin, then the field ids and names of the template. That hidden field, the form id, the two field ids and names and the submit button are the same at 1.10.7, 1.12.6, 1.14.8, 1.15.8 and 1.17.6 (tags read 2026-10-12). The client portal login is a different form (source client-login) and is not covered: this profile signs agents into the staff panel."
+}

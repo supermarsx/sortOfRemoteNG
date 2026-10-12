@@ -1,0 +1,124 @@
+{
+  "$schema": "../evidence.schema.json",
+  "version": 1,
+  "id": "wazuh",
+  "class": "A",
+  "mechanism": "form",
+  "source": "https://github.com/wazuh/wazuh-security-dashboards-plugin/blob/6e338eeeec1b7ba4f76741f1989f1de8f6b63c74/public/apps/login/login-page.tsx",
+  "reviewed": "2026-10-12",
+  "summary": "The dashboard's security plugin renders a single-page form at /app/login. Its button calls a script handler that posts the two values in the background; the form has no action.",
+  "sources": [
+    {
+      "id": "login-page",
+      "kind": "public-source",
+      "title": "Wazuh security dashboards plugin 4.14.8 login page",
+      "url": "https://github.com/wazuh/wazuh-security-dashboards-plugin/blob/6e338eeeec1b7ba4f76741f1989f1de8f6b63c74/public/apps/login/login-page.tsx",
+      "commit": "6e338eeeec1b7ba4f76741f1989f1de8f6b63c74",
+      "version": "4.14.8",
+      "retrieved": "2026-10-12"
+    },
+    {
+      "id": "routes",
+      "kind": "public-source",
+      "title": "Wazuh security dashboards plugin 4.14.8 constants: the login page is the application /app/login",
+      "url": "https://github.com/wazuh/wazuh-security-dashboards-plugin/blob/6e338eeeec1b7ba4f76741f1989f1de8f6b63c74/common/index.ts",
+      "commit": "6e338eeeec1b7ba4f76741f1989f1de8f6b63c74",
+      "version": "4.14.8",
+      "lines": "26-35",
+      "retrieved": "2026-10-12"
+    },
+    {
+      "id": "dashboard-package",
+      "kind": "public-source",
+      "title": "Wazuh dashboard 4.14.8 package manifest: the EUI import is OpenSearch UI 1.19.0",
+      "url": "https://github.com/wazuh/wazuh-dashboard/blob/42db785a5bc758527b4471b74d5298358855e40d/package.json",
+      "commit": "42db785a5bc758527b4471b74d5298358855e40d",
+      "version": "4.14.8",
+      "lines": "179",
+      "retrieved": "2026-10-12"
+    },
+    {
+      "id": "oui-text",
+      "kind": "public-source",
+      "title": "OpenSearch UI 1.19.0 text field: remaining props are spread on a native input of type text",
+      "url": "https://github.com/opensearch-project/oui/blob/25ac429c3570dbb73d4d9ddf32a21947a7820d4c/src/components/form/field_text/field_text.tsx",
+      "commit": "25ac429c3570dbb73d4d9ddf32a21947a7820d4c",
+      "version": "1.19.0",
+      "lines": "103-113",
+      "retrieved": "2026-10-12"
+    },
+    {
+      "id": "oui-password",
+      "kind": "public-source",
+      "title": "OpenSearch UI 1.19.0 password field: a native input whose type starts as password in dual mode",
+      "url": "https://github.com/opensearch-project/oui/blob/25ac429c3570dbb73d4d9ddf32a21947a7820d4c/src/components/form/field_password/field_password.tsx",
+      "commit": "25ac429c3570dbb73d4d9ddf32a21947a7820d4c",
+      "version": "1.19.0",
+      "lines": "105-191",
+      "retrieved": "2026-10-12"
+    },
+    {
+      "id": "oui-button",
+      "kind": "public-source",
+      "title": "OpenSearch UI 1.19.0 button: a native button without href, an anchor with one",
+      "url": "https://github.com/opensearch-project/oui/blob/25ac429c3570dbb73d4d9ddf32a21947a7820d4c/src/components/button/button.tsx",
+      "commit": "25ac429c3570dbb73d4d9ddf32a21947a7820d4c",
+      "version": "1.19.0",
+      "lines": "231-315",
+      "retrieved": "2026-10-12"
+    },
+    {
+      "id": "oui-form",
+      "kind": "public-source",
+      "title": "OpenSearch UI 1.19.0 form: renders the element named by its component prop",
+      "url": "https://github.com/opensearch-project/oui/blob/25ac429c3570dbb73d4d9ddf32a21947a7820d4c/src/components/form/form.tsx",
+      "commit": "25ac429c3570dbb73d4d9ddf32a21947a7820d4c",
+      "version": "1.19.0",
+      "lines": "113-116",
+      "retrieved": "2026-10-12"
+    }
+  ],
+  "selectors": [
+    {
+      "selector": "form input[data-test-subj=\"user-name\"][aria-label=\"username_input\"]",
+      "role": "username",
+      "source": "login-page",
+      "basis": "observed",
+      "locator": "lines 195-203 (field), 299 (form); source oui-text lines 103-113 put both attributes on a native input; source oui-form lines 113-116 render the form element",
+      "note": "The attribute values are written in the plugin. That they end up on an input element was read in the component library the dashboard pins, not seen in rendered markup."
+    },
+    {
+      "selector": "form input[data-test-subj=\"password\"][aria-label=\"password_input\"][type=\"password\"]",
+      "role": "password",
+      "source": "login-page",
+      "basis": "observed",
+      "locator": "lines 208-216; source oui-password lines 105-107 start the type as password, lines 181-191 put the attributes on a native input",
+      "note": "The type changes to text only when the user clicks the show button."
+    },
+    {
+      "selector": "form button[data-test-subj=\"submit\"][type=\"submit\"]",
+      "role": "control",
+      "source": "login-page",
+      "basis": "observed",
+      "locator": "lines 222-232; source oui-button lines 283 and 304-306: a native button with the given type when there is no href",
+      "note": "The single sign-on buttons carry the same data-test-subj but have an href, so the library renders them as anchors."
+    }
+  ],
+  "fixtures": [
+    {
+      "file": "fixture.html",
+      "path": "/app/login",
+      "derivedFrom": ["login-page", "oui-text", "oui-password", "oui-button"]
+    }
+  ],
+  "staysInteractive": [
+    {
+      "kind": "single-sign-on",
+      "note": "OpenID Connect and SAML are separate link buttons. A dashboard configured for those only shows no username and password fields, and the login then stops as a layout mismatch."
+    }
+  ],
+  "schemaGaps": [
+    "A dashboard with a configured base path has the page at that prefix followed by app/login. The format has no path-suffix or installation-relative gate, so only a dashboard at the host root is covered. Under a base path nothing is filled."
+  ],
+  "notes": "The same data-test-subj and aria-label values, the password type and the form element are in the plugin at 4.9.0, 4.9.2, 4.12.0 and 5.0.0-rc1 (read at those tags on 2026-10-12). Wazuh's own fork of the plugin starts at 4.9.0; dashboards older than that ship another build that was not read. Class names are not used: the library's class prefix was not verified. The component library is pinned to an exact version (source dashboard-package). The inputs are React-controlled: they need real input events, not a value assignment."
+}

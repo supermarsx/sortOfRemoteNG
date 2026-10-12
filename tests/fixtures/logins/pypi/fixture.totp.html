@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Synthetic fixture: PyPI two-factor page</title>
+  </head>
+  <body>
+    <div class="twofa-login">
+      <form id="webauthn-auth-form">
+        <button
+          type="submit"
+          id="webauthn-auth-begin"
+          class="button button--primary"
+          disabled
+        >
+          Device
+        </button>
+      </form>
+      <form method="post" action="/account/two-factor/" id="totp-auth-form">
+        <div class="form-group">
+          <label for="totp_value" class="form-group__label">Code</label>
+          <input
+            id="totp_value"
+            name="totp_value"
+            type="text"
+            autocapitalize="off"
+            autocomplete="one-time-code"
+            inputmode="numeric"
+            required
+            spellcheck="false"
+            class="form-group__field"
+            value=""
+          />
+        </div>
+        <div class="form-group">
+          <input
+            type="submit"
+            value="Continue"
+            class="button button--primary"
+          />
+        </div>
+      </form>
+    </div>
+  </body>
+</html>

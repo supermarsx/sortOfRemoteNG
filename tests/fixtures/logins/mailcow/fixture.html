@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Synthetic fixture: mailcow UI login</title>
+  </head>
+  <body>
+    <div class="card">
+      <div class="card-body">
+        <form method="post" autofill="off">
+          <div class="d-flex mt-3">
+            <label class="visually-hidden" for="login_user">Account</label>
+            <div class="input-group">
+              <input
+                name="login_user"
+                autocorrect="off"
+                autocapitalize="none"
+                type="text"
+                id="login_user"
+                class="form-control"
+                required
+                autofocus
+                autocomplete="username"
+              />
+            </div>
+          </div>
+          <div class="d-flex mt-3">
+            <label class="visually-hidden" for="pass_user">Secret</label>
+            <div class="input-group">
+              <input
+                name="pass_user"
+                type="password"
+                id="pass_user"
+                class="form-control"
+                required
+                autocomplete="current-password"
+              />
+              <button type="button" class="input-group-text" tabindex="-1">
+                Show
+              </button>
+            </div>
+          </div>
+          <div class="d-flex justify-content-between mt-4">
+            <button
+              type="submit"
+              class="btn btn-xs-lg btn-success w-100 mt-2 mx-auto"
+              value="Login"
+            >
+              Continue
+            </button>
+          </div>
+        </form>
+        <div class="d-flex flex-column align-items-center">
+          <a class="btn btn-xs-lg btn-secondary w-100" href="#" id="fido2-login"
+            >Key</a
+          >
+        </div>
+      </div>
+    </div>
+  </body>
+</html>

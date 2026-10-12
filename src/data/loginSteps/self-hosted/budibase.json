@@ -1,0 +1,26 @@
+{
+  "$schema": "../../../types/connection/httpLoginSteps.schema.json",
+  "version": 1,
+  "id": "budibase",
+  "evidence": {
+    "class": "A",
+    "source": "https://github.com/Budibase/budibase/blob/14408436477684d293acb99cda297f2cdc147783/packages/builder/src/pages/builder/auth/login.svelte",
+    "reviewed": "2026-10-12"
+  },
+  "credentialOrigins": [],
+  "loginSteps": [
+    {
+      "kind": "form",
+      "paths": ["/builder/auth/login"],
+      "selectors": {
+        "username": "div.fancy-form:has(input[type=\"password\"]) div.fancy-field input[type=\"text\"]",
+        "password": "div.fancy-form div.fancy-field input[type=\"password\"]"
+      }
+    },
+    {
+      "kind": "submit",
+      "submission": "spa",
+      "selectors": { "control": "button.spectrum-Button.spectrum-Button--cta" }
+    }
+  ]
+}

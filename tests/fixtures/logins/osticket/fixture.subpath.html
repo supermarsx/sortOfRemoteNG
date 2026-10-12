@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Synthetic fixture: osTicket staff login in a sub-directory</title>
+  </head>
+  <body>
+    <div id="loginBox">
+      <form action="login.php" method="post" id="login">
+        <input type="hidden" name="do" value="scplogin" />
+        <fieldset>
+          <input
+            type="text"
+            name="userid"
+            id="name"
+            value=""
+            autofocus
+            autocorrect="off"
+            autocapitalize="off"
+          />
+          <input
+            type="password"
+            name="passwd"
+            id="pass"
+            maxlength="128"
+            autocorrect="off"
+            autocapitalize="off"
+          />
+          <button class="submit button pull-right" type="submit" name="submit">
+            Continue
+          </button>
+        </fieldset>
+      </form>
+    </div>
+  </body>
+</html>

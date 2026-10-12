@@ -1,0 +1,186 @@
+{
+  "$schema": "../evidence.schema.json",
+  "version": 1,
+  "id": "ghost",
+  "class": "A",
+  "mechanism": "form",
+  "source": "https://github.com/TryGhost/Ghost/blob/056f6bfa657f2175b924106fcb25c3fc245bb4e7/apps/ember-admin/app/templates/signin.hbs",
+  "reviewed": "2026-10-12",
+  "summary": "Staff sign-in of the admin application, one document at /ghost/ with hash routes. A script handler submits the form. Release 6.69.0 ships two layouts of the screen (Ember and React) with the same field ids and names; the server's public site data decides which one is shown.",
+  "sources": [
+    {
+      "id": "signin-ember",
+      "kind": "public-source",
+      "title": "Ghost 6.69.0 sign-in template of the Ember admin",
+      "url": "https://github.com/TryGhost/Ghost/blob/056f6bfa657f2175b924106fcb25c3fc245bb4e7/apps/ember-admin/app/templates/signin.hbs",
+      "commit": "056f6bfa657f2175b924106fcb25c3fc245bb4e7",
+      "version": "6.69.0",
+      "retrieved": "2026-10-12"
+    },
+    {
+      "id": "task-button",
+      "kind": "public-source",
+      "title": "Ghost 6.69.0 Ember task button: a button element that takes its type attribute from the template",
+      "url": "https://github.com/TryGhost/Ghost/blob/056f6bfa657f2175b924106fcb25c3fc245bb4e7/apps/ember-admin/app/components/gh-task-button.js",
+      "commit": "056f6bfa657f2175b924106fcb25c3fc245bb4e7",
+      "version": "6.69.0",
+      "lines": "21-30",
+      "retrieved": "2026-10-12"
+    },
+    {
+      "id": "signin-react",
+      "kind": "public-source",
+      "title": "Ghost 6.69.0 sign-in screen of the React admin",
+      "url": "https://github.com/TryGhost/Ghost/blob/056f6bfa657f2175b924106fcb25c3fc245bb4e7/apps/admin/src/auth/signin.tsx",
+      "commit": "056f6bfa657f2175b924106fcb25c3fc245bb4e7",
+      "version": "6.69.0",
+      "retrieved": "2026-10-12"
+    },
+    {
+      "id": "react-parts",
+      "kind": "public-source",
+      "title": "Ghost 6.69.0 auth layout: the submit button of the React screen is a Button with the type submit",
+      "url": "https://github.com/TryGhost/Ghost/blob/056f6bfa657f2175b924106fcb25c3fc245bb4e7/apps/admin/src/auth/auth-layout.tsx",
+      "commit": "056f6bfa657f2175b924106fcb25c3fc245bb4e7",
+      "version": "6.69.0",
+      "lines": "83-120",
+      "retrieved": "2026-10-12"
+    },
+    {
+      "id": "owner",
+      "kind": "public-source",
+      "title": "Ghost 6.69.0: which admin serves the auth screens (React when the public site data says so, otherwise Ember)",
+      "url": "https://github.com/TryGhost/Ghost/blob/056f6bfa657f2175b924106fcb25c3fc245bb4e7/apps/admin/src/auth/use-auth-screens-owner.ts",
+      "commit": "056f6bfa657f2175b924106fcb25c3fc245bb4e7",
+      "version": "6.69.0",
+      "retrieved": "2026-10-12"
+    },
+    {
+      "id": "e2e",
+      "kind": "public-source",
+      "title": "Ghost 6.69.0 end-to-end page object: the sign-in page is /ghost/ with the hash route signin",
+      "url": "https://github.com/TryGhost/Ghost/blob/056f6bfa657f2175b924106fcb25c3fc245bb4e7/e2e/helpers/pages/admin/login-page.ts",
+      "commit": "056f6bfa657f2175b924106fcb25c3fc245bb4e7",
+      "version": "6.69.0",
+      "lines": "13",
+      "retrieved": "2026-10-12"
+    },
+    {
+      "id": "shade-input",
+      "kind": "public-source",
+      "title": "Ghost 6.69.0 UI input: a native input with the given type and the remaining props spread on it",
+      "url": "https://github.com/TryGhost/Ghost/blob/056f6bfa657f2175b924106fcb25c3fc245bb4e7/apps/shade/src/components/ui/input.tsx",
+      "commit": "056f6bfa657f2175b924106fcb25c3fc245bb4e7",
+      "version": "6.69.0",
+      "lines": "6-22",
+      "retrieved": "2026-10-12"
+    },
+    {
+      "id": "shade-input-group",
+      "kind": "public-source",
+      "title": "Ghost 6.69.0 UI input-group input: a native input with the props spread on it",
+      "url": "https://github.com/TryGhost/Ghost/blob/056f6bfa657f2175b924106fcb25c3fc245bb4e7/apps/shade/src/components/ui/input-group.tsx",
+      "commit": "056f6bfa657f2175b924106fcb25c3fc245bb4e7",
+      "version": "6.69.0",
+      "lines": "173-185",
+      "retrieved": "2026-10-12"
+    },
+    {
+      "id": "shade-button",
+      "kind": "public-source",
+      "title": "Ghost 6.69.0 UI button: a native button with the props spread on it",
+      "url": "https://github.com/TryGhost/Ghost/blob/056f6bfa657f2175b924106fcb25c3fc245bb4e7/apps/shade/src/components/ui/button.tsx",
+      "commit": "056f6bfa657f2175b924106fcb25c3fc245bb4e7",
+      "version": "6.69.0",
+      "lines": "131-158",
+      "retrieved": "2026-10-12"
+    }
+  ],
+  "selectors": [
+    {
+      "selector": "form input#identification[name=\"identification\"][type=\"email\"]",
+      "role": "username",
+      "source": "signin-ember",
+      "basis": "observed",
+      "locator": "lines 15 (form) and 23-36 (input)",
+      "fixture": "fixture.html"
+    },
+    {
+      "selector": "form:has(input#identification[name=\"identification\"]) input#password[name=\"password\"][type=\"password\"]",
+      "role": "password",
+      "source": "signin-ember",
+      "basis": "observed",
+      "locator": "lines 42-53, in the form of lines 15-76 that holds the identification input",
+      "fixture": "fixture.html",
+      "note": "The sign-up and setup screens are on the same pathname and reuse the id and name password, so the selector requires the identification field in the same form."
+    },
+    {
+      "selector": "form:has(input#identification[name=\"identification\"]) button[type=\"submit\"]",
+      "role": "control",
+      "source": "signin-ember",
+      "basis": "observed",
+      "locator": "lines 68-75: GhTaskButton with type submit; source task-button lines 21-30 make it a button element with that type",
+      "fixture": "fixture.html",
+      "note": "The other button of the form (forgotten password) has type button in both layouts."
+    },
+    {
+      "selector": "form input#identification[name=\"identification\"][type=\"email\"]",
+      "role": "username",
+      "source": "signin-react",
+      "basis": "observed",
+      "locator": "lines 116 (form), 121-139 (Input with id, name, type); source shade-input lines 9-19 spread the props on a native input",
+      "fixture": "fixture.react.html"
+    },
+    {
+      "selector": "form:has(input#identification[name=\"identification\"]) input#password[name=\"password\"][type=\"password\"]",
+      "role": "password",
+      "source": "signin-react",
+      "basis": "observed",
+      "locator": "lines 144-155 (InputGroupInput with id, name, type); source shade-input-group lines 173-185 spread the props on a native input",
+      "fixture": "fixture.react.html"
+    },
+    {
+      "selector": "form:has(input#identification[name=\"identification\"]) button[type=\"submit\"]",
+      "role": "control",
+      "source": "signin-react",
+      "basis": "observed",
+      "locator": "line 166: SubmitButton; source react-parts line 106 (type submit); source shade-button lines 134-156 (native button, props spread)",
+      "fixture": "fixture.react.html"
+    }
+  ],
+  "fixtures": [
+    {
+      "file": "fixture.html",
+      "path": "/ghost/",
+      "derivedFrom": ["signin-ember", "task-button"],
+      "note": "The Ember layout. The real form action is a javascript: URL with code; the fixture keeps the bare marker."
+    },
+    {
+      "file": "fixture.react.html",
+      "path": "/ghost/",
+      "derivedFrom": [
+        "signin-react",
+        "react-parts",
+        "shade-input",
+        "shade-input-group",
+        "shade-button"
+      ],
+      "note": "The React layout of the same screen on the same path. It is an alternative to fixture.html, not a later step."
+    }
+  ],
+  "staysInteractive": [
+    {
+      "kind": "email-code",
+      "note": "A sign-in from a new device, or on a site that requires 2FA, continues on the verify route with a code sent by email."
+    },
+    {
+      "kind": "other",
+      "note": "An account flagged for a password reset is shown a notice instead of being signed in."
+    }
+  ],
+  "schemaGaps": [
+    "The admin is one document at /ghost/ and its screens are hash routes. The format cannot gate on the fragment, so the sign-in, sign-up, setup and reset screens cannot be told apart by path. The steps are safe only because the password and submit selectors require the identification field, which the other screens do not have.",
+    "A site installed in a sub-directory has the admin at that prefix followed by ghost/. The format has no path-suffix or installation-relative gate, so only an installation at the host root is covered. Under a sub-directory nothing is filled."
+  ],
+  "notes": "Field ids, names and types are identical in the Ember template of 5.82.0, 5.130.5, 6.0.0 and 6.40.0 (file ghost/admin/app/templates/signin.hbs, read at those tags on 2026-10-12). The React screen was not in the releases read before 6.69.0. Releases before 5.82.0 were not read. Member sign-in on the public site is a different page and is not covered."
+}

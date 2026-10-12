@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Synthetic fixture: Strapi administrator login</title>
+  </head>
+  <body>
+    <main>
+      <form method="PUT" novalidate>
+        <div>
+          <div>
+            <label>Account</label>
+            <div>
+              <input
+                name="email"
+                type="email"
+                autocomplete="email"
+                aria-required="true"
+                value=""
+              />
+            </div>
+          </div>
+          <div>
+            <label>Secret</label>
+            <div>
+              <input
+                name="password"
+                type="password"
+                autocomplete="password"
+                aria-required="true"
+              />
+              <div>
+                <button type="button">Show</button>
+              </div>
+            </div>
+          </div>
+          <button type="submit">Continue</button>
+        </div>
+      </form>
+    </main>
+  </body>
+</html>

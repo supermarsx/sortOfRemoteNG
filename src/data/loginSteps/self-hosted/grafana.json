@@ -1,0 +1,27 @@
+{
+  "$schema": "../../../types/connection/httpLoginSteps.schema.json",
+  "version": 1,
+  "id": "grafana",
+  "evidence": {
+    "class": "A",
+    "source": "https://github.com/grafana/grafana/blob/6193dc03311b631b9727b560d24369e683dc396e/public/app/core/components/Login/LoginForm.tsx",
+    "reviewed": "2026-10-12"
+  },
+  "credentialOrigins": [],
+  "loginSteps": [
+    {
+      "kind": "form",
+      "selectors": {
+        "username": "form input[data-testid=\"data-testid Username input field\"], form:has(input#current-password[aria-label=\"Password input field\"]) input[aria-label=\"Username input field\"]",
+        "password": "form:has(input[data-testid=\"data-testid Username input field\"]) input[data-testid=\"data-testid Password input field\"][type=\"password\"], form:has(input[aria-label=\"Username input field\"]) input#current-password[aria-label=\"Password input field\"][type=\"password\"]"
+      }
+    },
+    {
+      "kind": "submit",
+      "submission": "spa",
+      "selectors": {
+        "control": "form:has(input[data-testid=\"data-testid Username input field\"]) button[data-testid=\"data-testid Login button\"][type=\"submit\"], form:has(input#current-password[aria-label=\"Password input field\"]) button[aria-label=\"Login button\"][type=\"submit\"]"
+      }
+    }
+  ]
+}

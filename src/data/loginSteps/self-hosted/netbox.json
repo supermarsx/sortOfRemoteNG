@@ -1,0 +1,28 @@
+{
+  "$schema": "../../../types/connection/httpLoginSteps.schema.json",
+  "version": 1,
+  "id": "netbox",
+  "evidence": {
+    "class": "A",
+    "source": "https://github.com/netbox-community/netbox/blob/251458b89a5eb2f5fe0d20ecd1140ba08f141a9c/netbox/templates/login.html",
+    "reviewed": "2026-10-12"
+  },
+  "credentialOrigins": [],
+  "loginSteps": [
+    {
+      "kind": "form",
+      "paths": ["/login/"],
+      "selectors": {
+        "username": "form input#id_username[name=\"username\"]",
+        "password": "form input#id_password[name=\"password\"][type=\"password\"]"
+      }
+    },
+    {
+      "kind": "submit",
+      "submission": "click",
+      "selectors": {
+        "control": "form:has(input#id_password[name=\"password\"]) button[type=\"submit\"]"
+      }
+    }
+  ]
+}

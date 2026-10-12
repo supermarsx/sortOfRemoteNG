@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Synthetic fixture: Ghost staff sign-in, Ember layout</title>
+  </head>
+  <body>
+    <form
+      id="login"
+      method="post"
+      action="javascript:"
+      class="gh-signin"
+      novalidate="novalidate"
+    >
+      <div>
+        <label for="identification">Account</label>
+        <span class="gh-input-icon gh-icon-mail">
+          <input
+            id="identification"
+            type="email"
+            class="gh-input email"
+            name="identification"
+            autocapitalize="off"
+            autocorrect="off"
+            autocomplete="username"
+            data-test-input="email"
+          />
+        </span>
+      </div>
+      <div>
+        <label for="password">Secret</label>
+        <span class="gh-input-icon gh-icon-lock forgotten-wrap">
+          <input
+            id="password"
+            type="password"
+            class="gh-input password"
+            name="password"
+            autocomplete="current-password"
+            autocorrect="off"
+            data-test-input="password"
+          />
+          <button
+            type="button"
+            class="forgotten-link gh-btn gh-btn-link gh-btn-icon"
+          >
+            Help
+          </button>
+        </span>
+      </div>
+      <button
+        type="submit"
+        class="login gh-btn gh-btn-login gh-btn-block gh-btn-icon"
+        data-test-button="sign-in"
+      >
+        Continue
+      </button>
+    </form>
+  </body>
+</html>

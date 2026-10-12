@@ -1,0 +1,28 @@
+{
+  "$schema": "../../../types/connection/httpLoginSteps.schema.json",
+  "version": 1,
+  "id": "gitlab-com",
+  "evidence": {
+    "class": "B",
+    "source": "https://github.com/gitlabhq/gitlabhq/blob/ecff27ae76032d42095793aa7639d3e73ae6f0de/app/assets/javascripts/authentication/sign_in/components/sign_in_form.vue",
+    "reviewed": "2026-10-12"
+  },
+  "credentialOrigins": [],
+  "loginSteps": [
+    {
+      "kind": "form",
+      "paths": ["/users/sign_in"],
+      "selectors": {
+        "username": "form#sign-in-form input[name=\"user[login]\"][autocomplete=\"username\"]",
+        "password": "form#sign-in-form input[name=\"user[password]\"][type=\"password\"]"
+      }
+    },
+    {
+      "kind": "submit",
+      "submission": "click",
+      "selectors": {
+        "control": "form#sign-in-form button[data-testid=\"sign-in-button\"][type=\"submit\"]"
+      }
+    }
+  ]
+}

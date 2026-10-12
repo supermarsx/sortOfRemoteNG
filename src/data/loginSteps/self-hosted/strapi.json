@@ -1,0 +1,28 @@
+{
+  "$schema": "../../../types/connection/httpLoginSteps.schema.json",
+  "version": 1,
+  "id": "strapi",
+  "evidence": {
+    "class": "B",
+    "source": "https://github.com/strapi/strapi/blob/ca3974dac3171b4ffc94d70c27f1df7e4dad5a7d/packages/core/admin/admin/src/pages/Auth/components/Login.tsx",
+    "reviewed": "2026-10-12"
+  },
+  "credentialOrigins": [],
+  "loginSteps": [
+    {
+      "kind": "form",
+      "paths": ["/admin/auth/login"],
+      "selectors": {
+        "username": "form input[name=\"email\"]",
+        "password": "form input[name=\"password\"][type=\"password\"]"
+      }
+    },
+    {
+      "kind": "submit",
+      "submission": "spa",
+      "selectors": {
+        "control": "form button[type=\"submit\"]"
+      }
+    }
+  ]
+}

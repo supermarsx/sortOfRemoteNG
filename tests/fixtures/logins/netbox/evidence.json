@@ -1,0 +1,132 @@
+{
+  "$schema": "../evidence.schema.json",
+  "version": 1,
+  "id": "netbox",
+  "class": "A",
+  "mechanism": "form",
+  "source": "https://github.com/netbox-community/netbox/blob/251458b89a5eb2f5fe0d20ecd1140ba08f141a9c/netbox/templates/login.html",
+  "reviewed": "2026-10-12",
+  "summary": "One POST form at /login/ on the connection's own origin. The template writes the form, the two labels and the button; the two inputs are rendered from Django's standard authentication form.",
+  "sources": [
+    {
+      "id": "template",
+      "kind": "public-source",
+      "title": "NetBox 4.7.2 login template",
+      "url": "https://github.com/netbox-community/netbox/blob/251458b89a5eb2f5fe0d20ecd1140ba08f141a9c/netbox/templates/login.html",
+      "commit": "251458b89a5eb2f5fe0d20ecd1140ba08f141a9c",
+      "version": "4.7.2",
+      "retrieved": "2026-10-12"
+    },
+    {
+      "id": "view",
+      "kind": "public-source",
+      "title": "NetBox 4.7.2 login view: the form is Django's AuthenticationForm; the route is login/ (netbox/netbox/urls.py line 21)",
+      "url": "https://github.com/netbox-community/netbox/blob/251458b89a5eb2f5fe0d20ecd1140ba08f141a9c/netbox/account/views.py",
+      "commit": "251458b89a5eb2f5fe0d20ecd1140ba08f141a9c",
+      "version": "4.7.2",
+      "lines": "46-110",
+      "retrieved": "2026-10-12"
+    },
+    {
+      "id": "auth-form",
+      "kind": "public-source",
+      "title": "Django 6.1.1, the version NetBox pins: AuthenticationForm has a text field username and a password field password",
+      "url": "https://github.com/django/django/blob/249b13d6e93ee3164dee8ed1775395622a50c337/django/contrib/auth/forms.py",
+      "commit": "249b13d6e93ee3164dee8ed1775395622a50c337",
+      "version": "6.1.1",
+      "lines": "305-316",
+      "retrieved": "2026-10-12"
+    },
+    {
+      "id": "input-template",
+      "kind": "public-source",
+      "title": "Django 6.1.1 input template: type, name and the widget attributes are written on an input element",
+      "url": "https://github.com/django/django/blob/249b13d6e93ee3164dee8ed1775395622a50c337/django/forms/templates/django/forms/widgets/input.html",
+      "commit": "249b13d6e93ee3164dee8ed1775395622a50c337",
+      "version": "6.1.1",
+      "retrieved": "2026-10-12"
+    },
+    {
+      "id": "login-test",
+      "kind": "public-source",
+      "title": "NetBox 4.7.2 authentication tests: post the fields username and password to the login view",
+      "url": "https://github.com/netbox-community/netbox/blob/251458b89a5eb2f5fe0d20ecd1140ba08f141a9c/netbox/netbox/tests/test_authentication.py",
+      "commit": "251458b89a5eb2f5fe0d20ecd1140ba08f141a9c",
+      "version": "4.7.2",
+      "lines": "1029-1033",
+      "retrieved": "2026-10-12"
+    },
+    {
+      "id": "bound-field",
+      "kind": "public-source",
+      "title": "Django 6.1.1 bound field: the input's name is the field name (line 20) and its id comes from the form's auto_id pattern (lines 96-98, 244-254), which django/forms/forms.py line 77 sets to id_ followed by the name",
+      "url": "https://github.com/django/django/blob/249b13d6e93ee3164dee8ed1775395622a50c337/django/forms/boundfield.py",
+      "commit": "249b13d6e93ee3164dee8ed1775395622a50c337",
+      "version": "6.1.1",
+      "lines": "20-254",
+      "retrieved": "2026-10-12"
+    },
+    {
+      "id": "widgets",
+      "kind": "public-source",
+      "title": "Django 6.1.1 widgets: TextInput has the type text (line 434), PasswordInput the type password (line 469)",
+      "url": "https://github.com/django/django/blob/249b13d6e93ee3164dee8ed1775395622a50c337/django/forms/widgets.py",
+      "commit": "249b13d6e93ee3164dee8ed1775395622a50c337",
+      "version": "6.1.1",
+      "lines": "413-470",
+      "retrieved": "2026-10-12"
+    },
+    {
+      "id": "requirements",
+      "kind": "public-source",
+      "title": "NetBox 4.7.2 requirements: Django is pinned to exactly 6.1.1",
+      "url": "https://github.com/netbox-community/netbox/blob/251458b89a5eb2f5fe0d20ecd1140ba08f141a9c/requirements.txt",
+      "commit": "251458b89a5eb2f5fe0d20ecd1140ba08f141a9c",
+      "version": "4.7.2",
+      "lines": "2",
+      "retrieved": "2026-10-12"
+    }
+  ],
+  "selectors": [
+    {
+      "selector": "form input#id_username[name=\"username\"]",
+      "role": "username",
+      "source": "template",
+      "basis": "observed",
+      "locator": "lines 42, 53 (label for id_username), 54 (field); source auth-form line 311 (field); source bound-field, input-template (name and id on the input); source login-test line 1030",
+      "note": "The template writes the id in its label. The input itself is rendered by Django, pinned to an exact version (source requirements): name from the field name, id from the auto_id pattern."
+    },
+    {
+      "selector": "form input#id_password[name=\"password\"][type=\"password\"]",
+      "role": "password",
+      "source": "template",
+      "basis": "observed",
+      "locator": "lines 61 (label), 62 (field); source auth-form lines 312-316; source widgets line 469 (type password); source bound-field, input-template (name, id); source login-test line 1031"
+    },
+    {
+      "selector": "form:has(input#id_password[name=\"password\"]) button[type=\"submit\"]",
+      "role": "control",
+      "source": "template",
+      "basis": "observed",
+      "locator": "lines 69-71, inside the form of lines 42-73",
+      "note": "Each single sign-on backend is its own form with its own submit button (lines 94-104), so the button is tied to the form that holds the password field."
+    }
+  ],
+  "fixtures": [
+    {
+      "file": "fixture.html",
+      "path": "/login/",
+      "derivedFrom": ["template", "auth-form", "input-template"]
+    }
+  ],
+  "staysInteractive": [
+    {
+      "kind": "single-sign-on",
+      "note": "Configured backends are extra forms under the login form. With the login form hidden by configuration only those remain, and the login stops as a layout mismatch."
+    }
+  ],
+  "schemaGaps": [
+    "An installation with a base path serves the page at that prefix followed by login/. The format has no path-suffix or installation-relative gate, and these are Django's generic field ids, so the gate stays: only an installation at the host root is covered. Under a base path nothing is filled."
+  ],
+  "notes": "The template has the same form, labels and button, and the view the same Django form, at 4.0.11, 4.2.9 and 4.4.10 (read at those tags on 2026-10-12). Release 3.7.8 uses its own form class and a template without the labels; it was not reviewed further and may not match. No second factor is part of this login in the source read."
+}

@@ -1,0 +1,36 @@
+{
+  "$schema": "../../../types/connection/httpLoginSteps.schema.json",
+  "version": 1,
+  "id": "pypi",
+  "evidence": {
+    "class": "A",
+    "source": "https://github.com/pypi/warehouse/blob/f43a0f79dbaf40e4888110ad5b1d5e0ad87121b6/warehouse/templates/accounts/login.html",
+    "reviewed": "2026-10-12"
+  },
+  "credentialOrigins": [],
+  "loginSteps": [
+    {
+      "kind": "form",
+      "paths": ["/account/login/"],
+      "selectors": {
+        "username": "form#login-form input#username[name=\"username\"][autocomplete=\"username\"]",
+        "password": "form#login-form input#password[name=\"password\"][type=\"password\"]"
+      }
+    },
+    {
+      "kind": "submit",
+      "submission": "click",
+      "selectors": { "control": "form#login-form input[type=\"submit\"]" }
+    }
+  ],
+  "totpChallenges": [
+    {
+      "id": "pypi-totp",
+      "label": "PyPI authentication code",
+      "codeSelector": "form#totp-auth-form input#totp_value[name=\"totp_value\"]",
+      "submitSelector": "form#totp-auth-form input[type=\"submit\"]",
+      "paths": ["/account/two-factor/"],
+      "submission": "post"
+    }
+  ]
+}

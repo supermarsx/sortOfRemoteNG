@@ -1,0 +1,28 @@
+{
+  "$schema": "../../../types/connection/httpLoginSteps.schema.json",
+  "version": 1,
+  "id": "zulip",
+  "evidence": {
+    "class": "A",
+    "source": "https://github.com/zulip/zulip/blob/b31982251ff82d0b02e59f63ad21f19204e37aea/templates/zerver/login.html",
+    "reviewed": "2026-10-12"
+  },
+  "credentialOrigins": [],
+  "loginSteps": [
+    {
+      "kind": "form",
+      "paths": ["/login/", "/accounts/login/"],
+      "selectors": {
+        "username": "form#login_form input#id_username[name=\"username\"]",
+        "password": "form#login_form input#id_password[name=\"password\"][type=\"password\"]"
+      }
+    },
+    {
+      "kind": "submit",
+      "submission": "click",
+      "selectors": {
+        "control": "form#login_form button[type=\"submit\"][name=\"button\"]"
+      }
+    }
+  ]
+}

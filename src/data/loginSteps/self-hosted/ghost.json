@@ -1,0 +1,28 @@
+{
+  "$schema": "../../../types/connection/httpLoginSteps.schema.json",
+  "version": 1,
+  "id": "ghost",
+  "evidence": {
+    "class": "A",
+    "source": "https://github.com/TryGhost/Ghost/blob/056f6bfa657f2175b924106fcb25c3fc245bb4e7/apps/ember-admin/app/templates/signin.hbs",
+    "reviewed": "2026-10-12"
+  },
+  "credentialOrigins": [],
+  "loginSteps": [
+    {
+      "kind": "form",
+      "paths": ["/ghost/"],
+      "selectors": {
+        "username": "form input#identification[name=\"identification\"][type=\"email\"]",
+        "password": "form:has(input#identification[name=\"identification\"]) input#password[name=\"password\"][type=\"password\"]"
+      }
+    },
+    {
+      "kind": "submit",
+      "submission": "spa",
+      "selectors": {
+        "control": "form:has(input#identification[name=\"identification\"]) button[type=\"submit\"]"
+      }
+    }
+  ]
+}

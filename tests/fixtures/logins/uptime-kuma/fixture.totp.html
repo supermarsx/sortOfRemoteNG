@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Synthetic fixture: Uptime Kuma token prompt</title>
+  </head>
+  <body>
+    <main>
+      <div class="form-container">
+        <div class="form">
+          <form class="pt-3">
+            <div>
+              <div class="form-floating mt-3">
+                <input
+                  id="otp"
+                  type="text"
+                  maxlength="6"
+                  class="form-control"
+                  autocomplete="one-time-code"
+                  required
+                />
+                <label for="otp">Code</label>
+              </div>
+            </div>
+            <div class="form-check">
+              <input
+                id="remember"
+                type="checkbox"
+                value="remember-me"
+                class="form-check-input"
+              />
+              <label class="form-check-label" for="remember">Keep</label>
+            </div>
+            <button class="w-100 btn btn-primary" type="submit">
+              Continue
+            </button>
+          </form>
+        </div>
+      </div>
+    </main>
+  </body>
+</html>

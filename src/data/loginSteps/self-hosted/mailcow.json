@@ -1,0 +1,28 @@
+{
+  "$schema": "../../../types/connection/httpLoginSteps.schema.json",
+  "version": 1,
+  "id": "mailcow",
+  "evidence": {
+    "class": "A",
+    "source": "https://github.com/mailcow/mailcow-dockerized/blob/81f6f7b002f2681b732aed74ae53179377def5e0/data/web/templates/admin_index.twig",
+    "reviewed": "2026-10-12"
+  },
+  "credentialOrigins": [],
+  "loginSteps": [
+    {
+      "kind": "form",
+      "paths": ["/", "/admin", "/admin/", "/domainadmin", "/domainadmin/"],
+      "selectors": {
+        "username": "form[method=\"post\"] input#login_user[name=\"login_user\"]",
+        "password": "form[method=\"post\"] input#pass_user[name=\"pass_user\"][type=\"password\"]"
+      }
+    },
+    {
+      "kind": "submit",
+      "submission": "click",
+      "selectors": {
+        "control": "form:has(input#login_user[name=\"login_user\"]) button[type=\"submit\"][value=\"Login\"]"
+      }
+    }
+  ]
+}

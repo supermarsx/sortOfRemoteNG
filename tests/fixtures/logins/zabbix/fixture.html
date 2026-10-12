@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Synthetic fixture: Zabbix sign-in</title>
+  </head>
+  <body>
+    <main>
+      <form method="post" action="index.php" accept-charset="utf-8">
+        <ul>
+          <li>
+            <label for="name">Account</label>
+            <input
+              type="text"
+              id="name"
+              name="name"
+              value=""
+              maxlength="255"
+              data-field-type="text-box"
+              autofocus
+            />
+          </li>
+          <li>
+            <label for="password">Secret</label>
+            <input
+              type="password"
+              id="password"
+              name="password"
+              maxlength="255"
+              autocomplete="off"
+              data-field-type="text-box"
+            />
+          </li>
+          <li>
+            <button type="submit" id="enter" name="enter">Continue</button>
+          </li>
+        </ul>
+      </form>
+    </main>
+  </body>
+</html>

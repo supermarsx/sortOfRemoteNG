@@ -1,0 +1,112 @@
+{
+  "$schema": "../evidence.schema.json",
+  "version": 1,
+  "id": "uptime-kuma",
+  "class": "A",
+  "mechanism": "form",
+  "source": "https://github.com/louislam/uptime-kuma/blob/7ca4a3debd76443d8452da95d4040200a1479af4/src/components/Login.vue",
+  "reviewed": "2026-10-12",
+  "summary": "A single-page form shown in place of the dashboard while signed out. A script handler sends it over the application's socket; there is no POST action. With two-factor enabled the same form then asks for a token.",
+  "sources": [
+    {
+      "id": "login",
+      "kind": "public-source",
+      "title": "Uptime Kuma 2.5.6 login component",
+      "url": "https://github.com/louislam/uptime-kuma/blob/7ca4a3debd76443d8452da95d4040200a1479af4/src/components/Login.vue",
+      "commit": "7ca4a3debd76443d8452da95d4040200a1479af4",
+      "version": "2.5.6",
+      "retrieved": "2026-10-12"
+    },
+    {
+      "id": "password-input",
+      "kind": "public-source",
+      "title": "Uptime Kuma 2.5.6 HiddenInput component, which renders the password input of the login component",
+      "url": "https://github.com/louislam/uptime-kuma/blob/7ca4a3debd76443d8452da95d4040200a1479af4/src/components/HiddenInput.vue",
+      "commit": "7ca4a3debd76443d8452da95d4040200a1479af4",
+      "version": "2.5.6",
+      "retrieved": "2026-10-12"
+    },
+    {
+      "id": "layout",
+      "kind": "public-source",
+      "title": "Uptime Kuma 2.5.6 layout and router: the login component replaces every dashboard route while signed out",
+      "url": "https://github.com/louislam/uptime-kuma/blob/7ca4a3debd76443d8452da95d4040200a1479af4/src/layouts/Layout.vue",
+      "commit": "7ca4a3debd76443d8452da95d4040200a1479af4",
+      "version": "2.5.6",
+      "lines": "128-131",
+      "retrieved": "2026-10-12"
+    },
+    {
+      "id": "login-1x",
+      "kind": "public-source",
+      "title": "Uptime Kuma 1.23.16 login component, for comparison",
+      "url": "https://github.com/louislam/uptime-kuma/blob/5bb329fa0e8af9395911f33d5a6d6bb9b128c0f7/src/components/Login.vue",
+      "commit": "5bb329fa0e8af9395911f33d5a6d6bb9b128c0f7",
+      "version": "1.23.16",
+      "retrieved": "2026-10-12"
+    }
+  ],
+  "selectors": [
+    {
+      "selector": "div.form-container form input#floatingInput[type=\"text\"]",
+      "role": "username",
+      "source": "login",
+      "basis": "observed",
+      "locator": "lines 2-4 (container and form), 6-14 (input)"
+    },
+    {
+      "selector": "div.form-container form input.form-control[type=\"password\"]",
+      "role": "password",
+      "source": "login",
+      "basis": "observed",
+      "locator": "lines 19-25 use HiddenInput; source password-input lines 3-13 write the input with class form-control and bind its type, line 60 sets that type to password",
+      "note": "The type starts as password and becomes text only when the user clicks the show button. Release 1.23.16 writes the input directly with type password and class form-control (source login-1x, line 13)."
+    },
+    {
+      "selector": "div.form-container form button.btn-primary[type=\"submit\"]",
+      "role": "control",
+      "source": "login",
+      "basis": "observed",
+      "locator": "lines 60-62"
+    },
+    {
+      "selector": "div.form-container form input#otp",
+      "role": "totp-code",
+      "source": "login",
+      "basis": "observed",
+      "locator": "lines 28-43",
+      "fixture": "fixture.totp.html"
+    },
+    {
+      "selector": "div.form-container form button.btn-primary[type=\"submit\"]",
+      "role": "totp-submit",
+      "source": "login",
+      "basis": "observed",
+      "locator": "lines 60-62; the same button submits the token",
+      "fixture": "fixture.totp.html"
+    }
+  ],
+  "fixtures": [
+    {
+      "file": "fixture.html",
+      "path": "/dashboard",
+      "derivedFrom": ["login", "password-input"]
+    },
+    {
+      "file": "fixture.totp.html",
+      "path": "/dashboard",
+      "derivedFrom": ["login"],
+      "note": "The same form after the server asked for a token: the two credential fields are replaced by the token field."
+    }
+  ],
+  "staysInteractive": [
+    {
+      "kind": "totp",
+      "note": "The token prompt is filled only when the user saved an authenticator secret and turned automatic 2FA on; otherwise it is typed by hand."
+    }
+  ],
+  "schemaGaps": [
+    "The path gate names paths at the host root, and the format has no installation-relative gate. An installation under a sub-path is not covered. Nothing is filled there."
+  ],
+  "notes": "In 2.5.6 the id floatingPassword is given to the HiddenInput component and not written on its input, so no selector relies on it. The container, form, username id, a password-type input with class form-control, the otp id and the submit button are also in the login component of 1.18.5, 1.21.3, 1.23.16 and 2.0.0 (read at those tags on 2026-10-12); older releases were not read. The setup page at /setup reuses the two ids and is outside the path gate. An instance with authentication disabled shows no form."
+}

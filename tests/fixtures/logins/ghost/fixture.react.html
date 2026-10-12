@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Synthetic fixture: Ghost staff sign-in, React layout</title>
+  </head>
+  <body>
+    <div id="root">
+      <form novalidate>
+        <div>
+          <label for="identification">Account</label>
+          <input
+            autocapitalize="off"
+            autocomplete="username"
+            autocorrect="off"
+            data-test-input="email"
+            id="identification"
+            name="identification"
+            type="email"
+            value=""
+          />
+        </div>
+        <div>
+          <label for="password">Secret</label>
+          <div>
+            <input
+              data-slot="input-group-control"
+              autocomplete="current-password"
+              autocorrect="off"
+              data-test-input="password"
+              id="password"
+              name="password"
+              type="password"
+            />
+            <div>
+              <button type="button">Help</button>
+            </div>
+          </div>
+        </div>
+        <button type="submit">Continue</button>
+      </form>
+    </div>
+  </body>
+</html>

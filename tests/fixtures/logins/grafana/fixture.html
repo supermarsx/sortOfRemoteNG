@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Synthetic fixture: Grafana login, current layout</title>
+  </head>
+  <body>
+    <div>
+      <form>
+        <div>
+          <label>Account</label>
+          <div>
+            <input
+              autocapitalize="none"
+              data-testid="data-testid Username input field"
+              value=""
+            />
+          </div>
+        </div>
+        <div>
+          <label>Secret</label>
+          <div>
+            <input
+              type="password"
+              autocomplete="current-password"
+              data-testid="data-testid Password input field"
+            />
+          </div>
+        </div>
+        <button type="submit" data-testid="data-testid Login button">
+          Continue
+        </button>
+      </form>
+    </div>
+  </body>
+</html>

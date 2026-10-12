@@ -1,0 +1,147 @@
+{
+  "$schema": "../evidence.schema.json",
+  "version": 1,
+  "id": "pypi",
+  "class": "A",
+  "mechanism": "form",
+  "source": "https://github.com/pypi/warehouse/blob/f43a0f79dbaf40e4888110ad5b1d5e0ad87121b6/warehouse/templates/accounts/login.html",
+  "reviewed": "2026-10-12",
+  "summary": "One POST form (login-form) at /account/login/ on pypi.org, then a second page at /account/two-factor/ with a POST form for an authenticator code beside a security-key form. The site's source is public; its fields are rendered by a form library.",
+  "sources": [
+    {
+      "id": "template",
+      "kind": "public-source",
+      "title": "PyPI (warehouse) login template at the head of the main branch on the review date",
+      "url": "https://github.com/pypi/warehouse/blob/f43a0f79dbaf40e4888110ad5b1d5e0ad87121b6/warehouse/templates/accounts/login.html",
+      "commit": "f43a0f79dbaf40e4888110ad5b1d5e0ad87121b6",
+      "retrieved": "2026-10-12"
+    },
+    {
+      "id": "forms",
+      "kind": "public-source",
+      "title": "PyPI (warehouse) account forms: username and totp_value are string fields, password is a password field",
+      "url": "https://github.com/pypi/warehouse/blob/f43a0f79dbaf40e4888110ad5b1d5e0ad87121b6/warehouse/accounts/forms.py",
+      "commit": "f43a0f79dbaf40e4888110ad5b1d5e0ad87121b6",
+      "lines": "102-215",
+      "retrieved": "2026-10-12"
+    },
+    {
+      "id": "form-library",
+      "kind": "public-source",
+      "title": "WTForms 3.2.2, the version PyPI pins: an input is written with id and name equal to the field name, the widget's type, and the keyword arguments of the template call as attributes",
+      "url": "https://github.com/pallets-eco/wtforms/blob/ea57c11591556333b4f0ac494d1e5d3f250ab305/src/wtforms/widgets/core.py",
+      "commit": "ea57c11591556333b4f0ac494d1e5d3f250ab305",
+      "version": "3.2.2",
+      "lines": "40-207",
+      "retrieved": "2026-10-12"
+    },
+    {
+      "id": "functional-test",
+      "kind": "public-source",
+      "title": "PyPI (warehouse) functional test: fills the rendered forms login-form and totp-auth-form through the field names username, password and totp_value",
+      "url": "https://github.com/pypi/warehouse/blob/f43a0f79dbaf40e4888110ad5b1d5e0ad87121b6/tests/functional/manage/test_views.py",
+      "commit": "f43a0f79dbaf40e4888110ad5b1d5e0ad87121b6",
+      "lines": "63-82",
+      "retrieved": "2026-10-12"
+    },
+    {
+      "id": "two-factor",
+      "kind": "public-source",
+      "title": "PyPI (warehouse) two-factor template",
+      "url": "https://github.com/pypi/warehouse/blob/f43a0f79dbaf40e4888110ad5b1d5e0ad87121b6/warehouse/templates/accounts/two-factor.html",
+      "commit": "f43a0f79dbaf40e4888110ad5b1d5e0ad87121b6",
+      "retrieved": "2026-10-12"
+    },
+    {
+      "id": "routes",
+      "kind": "public-source",
+      "title": "PyPI (warehouse) routes: /account/login/, /account/two-factor/, /account/confirm-login/",
+      "url": "https://github.com/pypi/warehouse/blob/f43a0f79dbaf40e4888110ad5b1d5e0ad87121b6/warehouse/routes.py",
+      "commit": "f43a0f79dbaf40e4888110ad5b1d5e0ad87121b6",
+      "lines": "191-220",
+      "retrieved": "2026-10-12"
+    },
+    {
+      "id": "requirements",
+      "kind": "public-source",
+      "title": "PyPI (warehouse) requirements: WTForms is pinned to exactly 3.2.2",
+      "url": "https://github.com/pypi/warehouse/blob/f43a0f79dbaf40e4888110ad5b1d5e0ad87121b6/requirements/main.txt",
+      "commit": "f43a0f79dbaf40e4888110ad5b1d5e0ad87121b6",
+      "lines": "2628",
+      "retrieved": "2026-10-12"
+    }
+  ],
+  "selectors": [
+    {
+      "selector": "form#login-form input#username[name=\"username\"][autocomplete=\"username\"]",
+      "role": "username",
+      "source": "template",
+      "basis": "observed",
+      "locator": "lines 18-20, 31 (label), 37-45 (field call); source forms line 103 (field); source form-library lines 169-179 (id, name, arguments on the input); source functional-test line 68",
+      "note": "The template writes the autocomplete value and, in its label, the id. The input itself is written by the form library, pinned to an exact version (source requirements); the functional test fills the rendered field by its name."
+    },
+    {
+      "selector": "form#login-form input#password[name=\"password\"][type=\"password\"]",
+      "role": "password",
+      "source": "template",
+      "basis": "observed",
+      "locator": "lines 56 (label), 71-78 (field call); source forms line 215; source form-library lines 169-179, 207 (id, name, type password); source functional-test line 69",
+      "note": "A checkbox on the page switches the type to text while the user wants to see the password."
+    },
+    {
+      "selector": "form#login-form input[type=\"submit\"]",
+      "role": "control",
+      "source": "template",
+      "basis": "observed",
+      "locator": "lines 89-92"
+    },
+    {
+      "selector": "form#totp-auth-form input#totp_value[name=\"totp_value\"]",
+      "role": "totp-code",
+      "source": "two-factor",
+      "basis": "observed",
+      "locator": "lines 65-67, 79 (label), 85-93 (field call); source forms line 119; source form-library lines 169-179 (id, name); source functional-test lines 74-78",
+      "fixture": "fixture.totp.html"
+    },
+    {
+      "selector": "form#totp-auth-form input[type=\"submit\"]",
+      "role": "totp-submit",
+      "source": "two-factor",
+      "basis": "observed",
+      "locator": "lines 101-103",
+      "fixture": "fixture.totp.html"
+    }
+  ],
+  "fixtures": [
+    {
+      "file": "fixture.html",
+      "path": "/account/login/",
+      "derivedFrom": ["template", "forms", "form-library"]
+    },
+    {
+      "file": "fixture.totp.html",
+      "path": "/account/two-factor/",
+      "derivedFrom": ["two-factor", "forms", "form-library"],
+      "note": "Both forms of the page: the security-key form with its own submit button, and the authenticator form."
+    }
+  ],
+  "staysInteractive": [
+    {
+      "kind": "security-key",
+      "note": "An account with only a security key has no authenticator form on the second page."
+    },
+    {
+      "kind": "totp",
+      "note": "The authenticator code is filled only with a saved secret and automatic 2FA turned on."
+    },
+    {
+      "kind": "device-approval",
+      "note": "A sign-in from a device the site has not seen is redirected to /account/confirm-login/ and waits for the link in an email."
+    },
+    {
+      "kind": "other",
+      "note": "Recovery codes are a separate page."
+    }
+  ],
+  "notes": "The hosted page was not captured: pypi.org/robots.txt (read 2026-10-12) disallows /account/ for every user agent. The site has no release numbers and deploys from its main branch, so the cited commit is the source as of the review date, not a pinned release; later changes are not covered. No CAPTCHA is part of the login form in this source (it is used on registration)."
+}

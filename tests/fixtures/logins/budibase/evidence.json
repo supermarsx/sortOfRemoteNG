@@ -1,0 +1,108 @@
+{
+  "$schema": "../evidence.schema.json",
+  "version": 1,
+  "id": "budibase",
+  "class": "A",
+  "mechanism": "form",
+  "source": "https://github.com/Budibase/budibase/blob/14408436477684d293acb99cda297f2cdc147783/packages/builder/src/pages/builder/auth/login.svelte",
+  "reviewed": "2026-10-12",
+  "summary": "The builder's login screen at /builder/auth/login: two inputs in a div container and a separate button that calls a script handler. There is no form element and the inputs have no id or name.",
+  "sources": [
+    {
+      "id": "login",
+      "kind": "public-source",
+      "title": "Budibase 3.49.0 builder login page",
+      "url": "https://github.com/Budibase/budibase/blob/14408436477684d293acb99cda297f2cdc147783/packages/builder/src/pages/builder/auth/login.svelte",
+      "commit": "14408436477684d293acb99cda297f2cdc147783",
+      "version": "3.49.0",
+      "retrieved": "2026-10-12"
+    },
+    {
+      "id": "fancy-input",
+      "kind": "public-source",
+      "title": "Budibase 3.49.0 FancyInput: a native input whose type is the given type, text by default, inside a FancyField",
+      "url": "https://github.com/Budibase/budibase/blob/14408436477684d293acb99cda297f2cdc147783/packages/bbui/src/FancyForm/FancyInput.svelte",
+      "commit": "14408436477684d293acb99cda297f2cdc147783",
+      "version": "3.49.0",
+      "lines": "10-79",
+      "retrieved": "2026-10-12"
+    },
+    {
+      "id": "button",
+      "kind": "public-source",
+      "title": "Budibase 3.49.0 Button: a native button with class spectrum-Button, plus spectrum-Button--cta when the cta prop is set",
+      "url": "https://github.com/Budibase/budibase/blob/14408436477684d293acb99cda297f2cdc147783/packages/bbui/src/Button/Button.svelte",
+      "commit": "14408436477684d293acb99cda297f2cdc147783",
+      "version": "3.49.0",
+      "lines": "45-59",
+      "retrieved": "2026-10-12"
+    },
+    {
+      "id": "fancy-form",
+      "kind": "public-source",
+      "title": "Budibase 3.49.0 FancyForm: a div with the class fancy-form around its content",
+      "url": "https://github.com/Budibase/budibase/blob/14408436477684d293acb99cda297f2cdc147783/packages/bbui/src/FancyForm/FancyForm.svelte",
+      "commit": "14408436477684d293acb99cda297f2cdc147783",
+      "version": "3.49.0",
+      "lines": "27-29",
+      "retrieved": "2026-10-12"
+    },
+    {
+      "id": "fancy-field",
+      "kind": "public-source",
+      "title": "Budibase 3.49.0 FancyField: a div with the class fancy-field around a content and a field div",
+      "url": "https://github.com/Budibase/budibase/blob/14408436477684d293acb99cda297f2cdc147783/packages/bbui/src/FancyForm/FancyField.svelte",
+      "commit": "14408436477684d293acb99cda297f2cdc147783",
+      "version": "3.49.0",
+      "lines": "41-53",
+      "retrieved": "2026-10-12"
+    }
+  ],
+  "selectors": [
+    {
+      "selector": "div.fancy-form:has(input[type=\"password\"]) div.fancy-field input[type=\"text\"]",
+      "role": "username",
+      "source": "login",
+      "basis": "observed",
+      "locator": "lines 133-152: first FancyInput, no type; source fancy-input lines 10, 70-79 (input, type text by default); source fancy-form line 27, fancy-field lines 41-53 (div classes)",
+      "note": "The single sign-on buttons sit in another fancy-form without inputs, so the selector requires the password field in the same container."
+    },
+    {
+      "selector": "div.fancy-form div.fancy-field input[type=\"password\"]",
+      "role": "password",
+      "source": "login",
+      "basis": "observed",
+      "locator": "lines 153-172: FancyInput with type password; source fancy-input lines 70-79 (input); source fancy-form line 27, fancy-field lines 41-53 (div classes)"
+    },
+    {
+      "selector": "button.spectrum-Button.spectrum-Button--cta",
+      "role": "control",
+      "source": "login",
+      "basis": "observed",
+      "locator": "lines 178-185: Button with cta; source button lines 45-59 (native button, class spectrum-Button, spectrum-Button--cta for cta)",
+      "note": "The button has no type attribute and stands outside the container of the fields. It is the only cta button of the screen."
+    }
+  ],
+  "fixtures": [
+    {
+      "file": "fixture.html",
+      "path": "/builder/auth/login",
+      "derivedFrom": ["login", "fancy-input", "button"]
+    }
+  ],
+  "staysInteractive": [
+    {
+      "kind": "single-sign-on",
+      "note": "Google and OIDC buttons are shown above the fields. With single sign-on enforced the fields and the button are not rendered."
+    },
+    {
+      "kind": "other",
+      "note": "An account flagged for a forced password reset is sent to the reset screen after signing in."
+    }
+  ],
+  "schemaGaps": [
+    "The screen has no form element: two inputs in div containers and a button elsewhere in the page, wired by script. The format describes this as a form step with an spa submit, but an engine that looks for an enclosing form will find none.",
+    "The selectors are class names and input types, not application-specific ids, so the path gate stays, and it names the builder at the host root. An installation under a sub-path is not covered. Nothing is filled there."
+  ],
+  "notes": "The selectors rely on authored class names and input types, because the inputs have no id, name or test id. The login page uses the same FancyForm, FancyInput and cta Button at 2.13.0, 2.32.17, 3.0.0 and 3.20.0 (read at those tags on 2026-10-12); the components behind them were read at 3.49.0 only. Pressing Enter anywhere on the screen also submits. The cloud account portal is another site, and login components inside published apps were not read; neither is covered."
+}

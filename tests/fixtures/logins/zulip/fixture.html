@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Synthetic fixture: Zulip password login</title>
+  </head>
+  <body>
+    <form
+      name="login_form"
+      id="login_form"
+      method="post"
+      class="login-form"
+      action="/accounts/login/"
+    >
+      <input type="hidden" name="next" value="" />
+      <div class="input-box">
+        <input
+          id="id_username"
+          type="text"
+          name="username"
+          class="required"
+          value=""
+          required
+        />
+        <label for="id_username">Account</label>
+      </div>
+      <div class="input-box password-div">
+        <input
+          id="id_password"
+          name="password"
+          class="required"
+          type="password"
+          autocomplete="off"
+          required
+        />
+        <label for="id_password">Secret</label>
+      </div>
+      <button type="submit" name="button" class="full-width">Continue</button>
+    </form>
+  </body>
+</html>

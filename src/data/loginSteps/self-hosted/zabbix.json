@@ -1,0 +1,38 @@
+{
+  "$schema": "../../../types/connection/httpLoginSteps.schema.json",
+  "version": 1,
+  "id": "zabbix",
+  "evidence": {
+    "class": "A",
+    "source": "https://github.com/zabbix/zabbix/blob/bd350f540cdb6665dbeb144503b5426f9a0dc2ad/ui/include/views/general.login.php",
+    "reviewed": "2026-10-12"
+  },
+  "credentialOrigins": [],
+  "loginSteps": [
+    {
+      "kind": "form",
+      "paths": ["/", "/index.php", "/zabbix/", "/zabbix/index.php"],
+      "selectors": {
+        "username": "form input#name[name=\"name\"][type=\"text\"]",
+        "password": "form input#password[name=\"password\"][type=\"password\"]"
+      }
+    },
+    {
+      "kind": "submit",
+      "submission": "click",
+      "selectors": {
+        "control": "form button#enter[name=\"enter\"][type=\"submit\"]"
+      }
+    }
+  ],
+  "totpChallenges": [
+    {
+      "id": "zabbix-totp",
+      "label": "Zabbix verification code",
+      "codeSelector": "form:not(:has(input[name=\"totp_secret\"])) input#verification_code[name=\"verification_code\"]",
+      "submitSelector": "form button#enter[name=\"enter\"][type=\"submit\"]",
+      "paths": ["/index_mfa.php", "/zabbix/index_mfa.php"],
+      "submission": "post"
+    }
+  ]
+}

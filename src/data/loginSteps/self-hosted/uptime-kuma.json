@@ -1,0 +1,39 @@
+{
+  "$schema": "../../../types/connection/httpLoginSteps.schema.json",
+  "version": 1,
+  "id": "uptime-kuma",
+  "evidence": {
+    "class": "A",
+    "source": "https://github.com/louislam/uptime-kuma/blob/7ca4a3debd76443d8452da95d4040200a1479af4/src/components/Login.vue",
+    "reviewed": "2026-10-12"
+  },
+  "credentialOrigins": [],
+  "loginSteps": [
+    {
+      "kind": "form",
+      "paths": ["/dashboard"],
+      "pathPrefixes": ["/dashboard/"],
+      "selectors": {
+        "username": "div.form-container form input#floatingInput[type=\"text\"]",
+        "password": "div.form-container form input.form-control[type=\"password\"]"
+      }
+    },
+    {
+      "kind": "submit",
+      "submission": "spa",
+      "selectors": {
+        "control": "div.form-container form button.btn-primary[type=\"submit\"]"
+      }
+    }
+  ],
+  "totpChallenges": [
+    {
+      "id": "uptime-kuma-totp",
+      "label": "Uptime Kuma two-factor token",
+      "codeSelector": "div.form-container form input#otp",
+      "submitSelector": "div.form-container form button.btn-primary[type=\"submit\"]",
+      "paths": ["/dashboard"],
+      "submission": "spa"
+    }
+  ]
+}
