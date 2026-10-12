@@ -1,0 +1,21 @@
+{
+  "$schema": "../../../types/connection/httpLoginSteps.schema.json",
+  "version": 1,
+  "id": "tplink-switch",
+  "evidence": {
+    "class": "A",
+    "source": "https://github.com/supermarsx/cdp-auth/blob/2b1d1b428c9c78e84ad851f37760ce7df6b8ca56/readme.md",
+    "reviewed": "2026-10-12"
+  },
+  "credentialOrigins": [],
+  "loginSteps": [
+    {
+      "kind": "form",
+      "selectors": {
+        "username": "input#username",
+        "password": "input#password"
+      }
+    },
+    { "kind": "submit", "submission": "enter" }
+  ]
+}

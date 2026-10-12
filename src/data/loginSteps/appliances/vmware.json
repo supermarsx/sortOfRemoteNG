@@ -1,0 +1,27 @@
+{
+  "$schema": "../../../types/connection/httpLoginSteps.schema.json",
+  "version": 1,
+  "id": "vmware",
+  "evidence": {
+    "class": "B",
+    "source": "https://github.com/vmware/vic-ui/blob/09e1b2db1a7e9883d82757bc170f8c61ab158603/h5c/vic/src/vic-webapp/e2e/pages/loginPage.ts",
+    "reviewed": "2026-10-12"
+  },
+  "credentialOrigins": [],
+  "loginSteps": [
+    {
+      "kind": "form",
+      "paths": ["/websso/SAML2/SSO"],
+      "pathPrefixes": ["/websso/SAML2/SSO/"],
+      "selectors": {
+        "username": "input#username",
+        "password": "input#password[type=\"password\"]"
+      }
+    },
+    {
+      "kind": "submit",
+      "submission": "spa",
+      "selectors": { "control": "#submit" }
+    }
+  ]
+}

@@ -1,0 +1,28 @@
+{
+  "$schema": "../../../types/connection/httpLoginSteps.schema.json",
+  "version": 1,
+  "id": "draytek",
+  "evidence": {
+    "class": "B",
+    "source": "https://github.com/highlight-slm/Draytek-Web-Auto-Configuration/blob/0b3e96b892fb332a1252fc231b30561b2374071f/draytekwebadmin/pages/login_page.py",
+    "reviewed": "2026-10-12"
+  },
+  "credentialOrigins": [],
+  "loginSteps": [
+    {
+      "kind": "form",
+      "paths": ["/", "/weblogin.htm"],
+      "selectors": {
+        "username": "input[name=\"sUserName\"], form[name=\"LoginForm\"] input#sUsername",
+        "password": "input[name=\"sSysPass\"], form[name=\"LoginForm\"] input#sPassword[type=\"password\"]"
+      }
+    },
+    {
+      "kind": "submit",
+      "submission": "click",
+      "selectors": {
+        "control": "[name=\"btnOk\"], form[name=\"LoginForm\"] input[type=\"submit\"]"
+      }
+    }
+  ]
+}

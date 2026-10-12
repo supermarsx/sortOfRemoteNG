@@ -1,0 +1,136 @@
+{
+  "$schema": "../evidence.schema.json",
+  "version": 1,
+  "id": "vmware",
+  "class": "B",
+  "mechanism": "form",
+  "source": "https://github.com/vmware/vic-ui/blob/09e1b2db1a7e9883d82757bc170f8c61ab158603/h5c/vic/src/vic-webapp/e2e/pages/loginPage.ts",
+  "reviewed": "2026-10-12",
+  "summary": "vCenter Server: the vSphere Client sends a signed-out visitor to the Single Sign-On page under /websso/SAML2/SSO on the same host, which has a username input, a password input and a script-handled Login button. The ESXi Host Client is not covered.",
+  "sources": [
+    {
+      "id": "vic-ui",
+      "kind": "secondary",
+      "title": "VMware vic-ui end-to-end tests: page object that signs in to the vSphere Client of a vCenter Server Appliance",
+      "url": "https://github.com/vmware/vic-ui/blob/09e1b2db1a7e9883d82757bc170f8c61ab158603/h5c/vic/src/vic-webapp/e2e/pages/loginPage.ts",
+      "commit": "09e1b2db1a7e9883d82757bc170f8c61ab158603",
+      "lines": "25-45",
+      "retrieved": "2026-10-12",
+      "note": "VMware's own plugin tests, not vCenter's source. The file was last changed on 2018-06-29. tests/resources/Vsphere-UI-Util.robot lines 19-30 use the same three ids, opens the appliance at /ui (line 107) and names appliance build 7515524 (line 74); the vSphere release is not stated."
+    },
+    {
+      "id": "lightwave-view",
+      "kind": "secondary",
+      "title": "VMware Lightwave (open-source identity service), the username and password entry view of its web single sign-on",
+      "url": "https://github.com/vmware/lightwave/blob/a04d91710cc997d3ba746c977cabe5b75b16b20e/vmidentity/service/src/main/webapp/WEB-INF/views/unpentry.jsp",
+      "commit": "a04d91710cc997d3ba746c977cabe5b75b16b20e",
+      "lines": "104-125",
+      "retrieved": "2026-10-12",
+      "note": "Lightwave is not vCenter Server. Its login script mentions the vSphere Web Client and its ids equal the ones vic-ui uses on a real appliance, which is why it is cited for the markup. The view was last changed on 2018-04-03; the repository is archived."
+    },
+    {
+      "id": "lightwave-script",
+      "kind": "secondary",
+      "title": "VMware Lightwave web single sign-on script: the Login button posts by script, Enter does the same",
+      "url": "https://github.com/vmware/lightwave/blob/a04d91710cc997d3ba746c977cabe5b75b16b20e/vmidentity/service/src/main/webapp/resources/js/websso.js",
+      "commit": "a04d91710cc997d3ba746c977cabe5b75b16b20e",
+      "lines": "49-53",
+      "retrieved": "2026-10-12",
+      "note": "submitentry, lines 723-810: an XMLHttpRequest POST to the page's own URL, no form element. Lines 743-745 stop it while a required logon banner checkbox is unticked."
+    },
+    {
+      "id": "lightwave-routes",
+      "kind": "secondary",
+      "title": "VMware Lightwave SSO controller: the entry view is served on /websso/SAML2/SSO and /websso/SAML2/SSO/{tenant}",
+      "url": "https://github.com/vmware/lightwave/blob/a04d91710cc997d3ba746c977cabe5b75b16b20e/vmidentity/websso/src/main/java/com/vmware/identity/SsoController.java",
+      "commit": "a04d91710cc997d3ba746c977cabe5b75b16b20e",
+      "lines": "89-118",
+      "retrieved": "2026-10-12",
+      "note": "Line 115 returns a choose-identity-provider view instead when several providers are configured."
+    },
+    {
+      "id": "esxi-thread",
+      "kind": "secondary",
+      "title": "Forum thread on filling the ESXi 7.0 web interface: input#username and input#password, no login button given",
+      "url": "https://community.royalapps.com/t/esxi-7-0-webui-auto-fill/1621",
+      "retrieved": "2026-10-12",
+      "note": "Posts of June 2022. Recorded for the ESXi Host Client, which the steps do not cover."
+    }
+  ],
+  "selectors": [
+    {
+      "selector": "input#username",
+      "role": "username",
+      "source": "lightwave-view",
+      "basis": "observed",
+      "locator": "line 108",
+      "note": "vic-ui uses the same id on a real appliance (loginPage.ts line 25)."
+    },
+    {
+      "selector": "input#password[type=\"password\"]",
+      "role": "password",
+      "source": "lightwave-view",
+      "basis": "observed",
+      "locator": "line 112",
+      "note": "vic-ui uses the same id (loginPage.ts line 26); the tag and type are from Lightwave only."
+    },
+    {
+      "selector": "#submit",
+      "role": "control",
+      "source": "vic-ui",
+      "basis": "observed",
+      "locator": "lines 27 and 45",
+      "note": "Lightwave has it as an input of type submit with a script handler (unpentry.jsp line 124)."
+    },
+    {
+      "selector": "#username",
+      "role": "username",
+      "source": "vic-ui",
+      "basis": "observed",
+      "locator": "lines 25 and 40-42",
+      "note": "Not used by the steps."
+    },
+    {
+      "selector": "#password",
+      "role": "password",
+      "source": "vic-ui",
+      "basis": "observed",
+      "locator": "lines 26 and 43-44",
+      "note": "Not used by the steps."
+    }
+  ],
+  "fixtures": [
+    {
+      "file": "fixture.html",
+      "path": "/websso/SAML2/SSO/vsphere.local",
+      "derivedFrom": ["lightwave-view", "lightwave-routes", "vic-ui"],
+      "note": "The three controls inside the div with id loginForm, as in the Lightwave view; there is no form element. The last path segment is the tenant; vsphere.local is the domain of the account in vic-ui's test settings."
+    }
+  ],
+  "staysInteractive": [
+    {
+      "kind": "consent",
+      "note": "A logon banner with a required checkbox: the Login button does nothing until it is ticked (Lightwave script, lines 743-745)."
+    },
+    {
+      "kind": "client-certificate",
+      "note": "Smart card sign-in, a checkbox on the same page (Lightwave view, lines 117-119)."
+    },
+    {
+      "kind": "other",
+      "note": "RSA SecurID passcode and Windows session authentication, both options on the same page (Lightwave view, lines 114-122)."
+    },
+    {
+      "kind": "single-sign-on",
+      "note": "With several identity providers a chooser is shown instead of the form (Lightwave controller, line 115). A vCenter that delegates sign-in to an external provider leaves the host, and nothing is typed there."
+    }
+  ],
+  "unverified": [
+    "That a given vCenter Server serves this page: the markup is from Lightwave, VMware's open-source identity service, and the ids from VMware's plugin tests of 2018 against one appliance build. No vCenter 7 or 8 page was read.",
+    "The path on vCenter. /websso/SAML2/SSO and the tenant path are Lightwave's routes; vic-ui opens /ui and does not say where the form appears.",
+    "The ESXi Host Client. A forum thread gives input#username and input#password for ESXi 7.0 and no login button; its page is not under the gated path, so nothing is typed there.",
+    "An external Platform Services Controller on another host (older deployments): its origin is not the connection's, so nothing is typed there."
+  ],
+  "neededFromUser": "The login page of your vCenter saved as \"Webpage, Complete\" with the vCenter version and the address shown in the address bar without its query. For an ESXi host, the Host Client login page saved the same way. Save any page signed out and with no password typed in; keep the \"_files\" folder beside the .html and both outside the repository: they can hold the account name.",
+  "notes": "Submission is spa: the Login control has a script handler and the page has no form element. Lightwave's script also submits on Enter anywhere in the document (lines 49-53); the click is used because VMware's tests click the button on a real appliance."
+}

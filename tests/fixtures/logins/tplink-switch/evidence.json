@@ -1,0 +1,70 @@
+{
+  "$schema": "../evidence.schema.json",
+  "version": 1,
+  "id": "tplink-switch",
+  "class": "A",
+  "mechanism": "form",
+  "source": "https://github.com/supermarsx/cdp-auth/blob/2b1d1b428c9c78e84ad851f37760ce7df6b8ca56/readme.md",
+  "reviewed": "2026-10-12",
+  "summary": "Username and password inputs with the ids username and password in the top document of the switch's own page, submitted with the Enter key. This is the login the user's cdp-auth tool lists as known working for a TP-Link managed switch.",
+  "sources": [
+    {
+      "id": "strings",
+      "kind": "cdp-auth",
+      "title": "cdp-auth readme, Known working logins: the TP-Link managed switch configuration string with the two input ids",
+      "url": "https://github.com/supermarsx/cdp-auth/blob/2b1d1b428c9c78e84ad851f37760ce7df6b8ca56/readme.md",
+      "commit": "2b1d1b428c9c78e84ad851f37760ce7df6b8ca56",
+      "path": "readme.md",
+      "lines": "34",
+      "retrieved": "2026-10-12",
+      "note": "Lines 73-75 define the positions of the string: username input id, password input id. The line is already present at commit 5a77efeb (2023-09-19). The switch model, series and firmware are not stated."
+    },
+    {
+      "id": "flow",
+      "kind": "cdp-auth",
+      "title": "cdp-auth field_id mode: wait up to 10 s for the username element by id, set both inputs by id, then press Enter with the password input focused",
+      "url": "https://github.com/supermarsx/cdp-auth/blob/2b1d1b428c9c78e84ad851f37760ce7df6b8ca56/source/auth-automation.ts",
+      "commit": "2b1d1b428c9c78e84ad851f37760ce7df6b8ca56",
+      "path": "source/auth-automation.ts",
+      "lines": "59-89",
+      "retrieved": "2026-10-12",
+      "note": "The ids are read from the configuration string, not written in the script. The Enter key is sent by pressEnterKey, lines 415-446."
+    },
+    {
+      "id": "set-value",
+      "kind": "cdp-auth",
+      "title": "cdp-auth setValueOfId: the element is found in the top document with the selector #id",
+      "url": "https://github.com/supermarsx/cdp-auth/blob/2b1d1b428c9c78e84ad851f37760ce7df6b8ca56/source/values-id.ts",
+      "commit": "2b1d1b428c9c78e84ad851f37760ce7df6b8ca56",
+      "path": "source/values-id.ts",
+      "lines": "13-37",
+      "retrieved": "2026-10-12"
+    }
+  ],
+  "selectors": [
+    {
+      "selector": "input#username",
+      "role": "username",
+      "source": "strings",
+      "basis": "observed",
+      "locator": "line 34, third field of the string; lines 73-74 say it is the username input id"
+    },
+    {
+      "selector": "input#password",
+      "role": "password",
+      "source": "strings",
+      "basis": "observed",
+      "locator": "line 34, fourth field of the string; lines 73-74 say it is the password input id"
+    }
+  ],
+  "fixtures": [
+    {
+      "file": "fixture.html",
+      "path": "/",
+      "derivedFrom": ["strings", "set-value"],
+      "note": "The source gives the two ids only. The page path, the type attributes and whether a form element wraps the inputs are not in the source; no selector relies on them and the steps carry no path gate."
+    }
+  ],
+  "staysInteractive": [],
+  "notes": "Firmware: cdp-auth names the device only as a TP-Link managed switch. TP-Link ships several switch web interfaces, and nothing read here says which series or firmware the string was used on, so the steps may not match other series. A layout mismatch types nothing. cdp-auth sets the values by script; here they are typed. No submit control is known, so submission is the Enter key in the password field, as in cdp-auth. The ids username and password are common: the profile must only ever be chosen by the user for a TP-Link switch, never detected from a page."
+}

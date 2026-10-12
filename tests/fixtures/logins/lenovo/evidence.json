@@ -1,0 +1,54 @@
+{
+  "$schema": "../evidence.schema.json",
+  "version": 1,
+  "id": "lenovo",
+  "class": "C",
+  "mechanism": "none",
+  "reviewed": "2026-10-12",
+  "summary": "The XClarity Controller has a user name and password login window, but no public source shows its markup, so there is nothing to write selectors from. The profile keeps its current behaviour.",
+  "sources": [
+    {
+      "id": "xcc-guide",
+      "kind": "vendor-documentation",
+      "title": "Lenovo XClarity Controller documentation, Logging in to the XClarity Controller",
+      "url": "https://pubs.lenovo.com/xcc/dw1lm_t_loggingintotheimm",
+      "retrieved": "2026-10-12",
+      "note": "Prose and a screenshot: choose a language, type the user name and password in the login window, click Login. No markup."
+    },
+    {
+      "id": "xcc3-guide",
+      "kind": "vendor-documentation",
+      "title": "Lenovo XClarity Controller 3 documentation, the same page: adds the one-time-password step",
+      "url": "https://pubs.lenovo.com/xcc3/dw1lm_t_loggingintotheimm",
+      "retrieved": "2026-10-12",
+      "note": "With Use MFA for Web Login enabled, the page moves to a one-time-password verification after the user name and password. No markup."
+    },
+    {
+      "id": "web-api",
+      "kind": "secondary",
+      "title": "Third-party certificate tool that signs in through the web interface's own API",
+      "url": "https://github.com/Julien-404/xcc-cert-renewer/blob/5562ec5887d91b42057727a8ad276bd15bc0647b/scripts/xcc-deploy-cert.py",
+      "commit": "5562ec5887d91b42057727a8ad276bd15bc0647b",
+      "lines": "97-131",
+      "retrieved": "2026-10-12",
+      "note": "The web interface signs in with a script request to /api/login carrying a JSON body, not with a form post, so the request says nothing about the page's field ids or names."
+    }
+  ],
+  "selectors": [],
+  "fixtures": [],
+  "staysInteractive": [
+    {
+      "kind": "other",
+      "note": "The whole sign-in, until a layout is known. On XClarity Controller 3 a one-time password can follow the password."
+    }
+  ],
+  "lookedFor": [
+    "Lenovo's XClarity Controller and XClarity Controller 3 documentation: prose and screenshots of the login window, no markup.",
+    "Public repositories (searches for XClarity, XCC, IMM2 and ThinkSystem with Selenium, Playwright and Puppeteer terms): API and Redfish clients only. The one tool that follows the web interface uses its JSON login request, which does not reveal the page's fields.",
+    "Forums of connection managers and password managers that publish field ids for other controllers: no ids for XClarity or IMM2.",
+    "Public panel-detection templates: none for the XClarity Controller. The Lenovo ones found are for other products (ThinkServer System Manager, a fan and power controller).",
+    "Not done: no device was contacted and no firmware was opened."
+  ],
+  "neededFromUser": "The login page of your XClarity Controller saved as \"Webpage, Complete\", with the server model and the controller generation and firmware version (XCC, XCC2, XCC3 or the older IMM2). If you mean XClarity Administrator instead, say so: it is a different product with its own login page. Save any page signed out and with no password typed in; keep the \"_files\" folder beside the .html and both outside the repository: they can hold the account name.",
+  "notes": "The catalog label is Lenovo XClarity. This review took it as the XClarity Controller, the management controller of a server, because the profile sits with the other controllers. XClarity Administrator was not researched."
+}

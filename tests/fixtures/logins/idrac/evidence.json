@@ -1,0 +1,161 @@
+{
+  "$schema": "../evidence.schema.json",
+  "version": 1,
+  "id": "idrac",
+  "class": "B",
+  "mechanism": "form",
+  "source": "https://forum.devolutions.net/topics/24899/idrac-html5-support",
+  "reviewed": "2026-10-12",
+  "summary": "A username and password form on the controller's own origin, submitted with the Enter key. iDRAC9 serves a script-rendered form named idracStartScreen; iDRAC7 a form with id auth. Each step lists both. Known from forum posts only.",
+  "sources": [
+    {
+      "id": "page-source",
+      "kind": "secondary",
+      "title": "Forum thread in which a user posted the HTML of the iDRAC9 login page of a PowerEdge R640",
+      "url": "https://forum.devolutions.net/topics/24899/idrac-html5-support",
+      "retrieved": "2026-10-12",
+      "note": "Read through a text extraction, attribute by attribute; the thread opened on 2016-04-05 and the iDRAC9 post is from about 2017. No firmware version is given. The form has no action; its submit button is disabled until both fields are valid."
+    },
+    {
+      "id": "settings",
+      "kind": "secondary",
+      "title": "Forum thread with the control ids users entered to fill the iDRAC login: iDRAC7 (form auth, user, password) and iDRAC9 (idracStartScreen, username, password, Enter)",
+      "url": "https://forum.devolutions.net/topics/34422/idrac-autofill-credentials",
+      "retrieved": "2026-10-12",
+      "note": "Thread of 2020-09-22. The iDRAC7 values are for a PowerEdge R720 and worked once the page's own submit function was called; two iDRAC9 users report that Enter submits. No firmware versions."
+    },
+    {
+      "id": "button",
+      "kind": "secondary",
+      "title": "Forum thread: the iDRAC9 login button has no id, a scripted click did not sign in, Enter did",
+      "url": "https://forum.devolutions.net/topics/33061/start-virtual-console-from-idrac",
+      "retrieved": "2026-10-12",
+      "note": "Thread of 2020-01-10."
+    },
+    {
+      "id": "paths",
+      "kind": "secondary",
+      "title": "Public panel-detection template for iDRAC: the pages are /restgui/start.html and /login.html",
+      "url": "https://github.com/projectdiscovery/nuclei-templates/blob/f8b8b8dcd70d93826c3767e1829ef8243af9f03b/http/exposed-panels/dell-idrac.yaml",
+      "commit": "f8b8b8dcd70d93826c3767e1829ef8243af9f03b",
+      "version": "v10.5.0",
+      "lines": "22-34",
+      "retrieved": "2026-10-12"
+    },
+    {
+      "id": "legacy-request",
+      "kind": "secondary",
+      "title": "Public login-request template for older iDRAC: a form post of the fields user and password to /data/login, sent from /login.html",
+      "url": "https://github.com/projectdiscovery/nuclei-templates/blob/f8b8b8dcd70d93826c3767e1829ef8243af9f03b/http/default-logins/dell/dell-idrac-default-login.yaml",
+      "commit": "f8b8b8dcd70d93826c3767e1829ef8243af9f03b",
+      "version": "v10.5.0",
+      "retrieved": "2026-10-12",
+      "note": "Wire level only, read for the request shape. It agrees with the iDRAC7 ids user and password and with the /login.html path. The iDRAC9 template beside it posts to /sysmgmt/2015/bmc/session with headers, which says nothing about the page."
+    },
+    {
+      "id": "guide",
+      "kind": "vendor-documentation",
+      "title": "iDRAC9 7.xx User's Guide, Logging in to iDRAC: the sign-in methods it lists",
+      "url": "https://www.dell.com/support/manuals/en-us/idrac9-lifecycle-controller-v7.x-series/idrac9_7.xx_ug/logging-in-to-idrac?guid=guid-6ef5c4b7-0a34-4b4c-a04d-ba3e1b4ee3e2&lang=en-us",
+      "retrieved": "2026-10-12",
+      "note": "Only the section titles were read: local, Active Directory and LDAP users, OpenID Connect, single sign-on, smart card, Simple 2FA, RSA SecurID 2FA, forced change of password. No markup."
+    }
+  ],
+  "selectors": [
+    {
+      "selector": "form[name=\"idracStartScreen\"] input[name=\"username\"], form#auth #user",
+      "role": "username",
+      "source": "settings",
+      "basis": "inferred",
+      "note": "The iDRAC9 and iDRAC7 alternatives below joined into one list, because the format types a credential in one step per origin."
+    },
+    {
+      "selector": "form[name=\"idracStartScreen\"] input[name=\"password\"][type=\"password\"], form#auth #password",
+      "role": "password",
+      "source": "settings",
+      "basis": "inferred",
+      "note": "The two alternatives below joined into one list. The iDRAC9 page also has a hidden input named password_hidden, which the exact name excludes."
+    },
+    {
+      "selector": "form[name=\"idracStartScreen\"] input[name=\"username\"]",
+      "role": "username",
+      "source": "page-source",
+      "basis": "observed",
+      "locator": "the post with the iDRAC9 page source: form name idracStartScreen, input name username, type text",
+      "fixture": "fixture.html"
+    },
+    {
+      "selector": "form[name=\"idracStartScreen\"] input[name=\"password\"][type=\"password\"]",
+      "role": "password",
+      "source": "page-source",
+      "basis": "observed",
+      "locator": "the same post: input name password, type password",
+      "fixture": "fixture.html"
+    },
+    {
+      "selector": "form[name=\"idracStartScreen\"] button[type=\"submit\"]",
+      "role": "other",
+      "source": "page-source",
+      "basis": "observed",
+      "locator": "the same post: button class cux-button, type submit, no id",
+      "fixture": "fixture.html",
+      "note": "Not used by the steps: users report that a scripted click did not sign in and that Enter did."
+    },
+    {
+      "selector": "form#auth #user",
+      "role": "username",
+      "source": "settings",
+      "basis": "observed",
+      "locator": "the iDRAC7 settings post: Form ID auth, Username ID user",
+      "fixture": "fixture.idrac7.html"
+    },
+    {
+      "selector": "form#auth #password",
+      "role": "password",
+      "source": "settings",
+      "basis": "observed",
+      "locator": "the iDRAC7 settings post: Form ID auth, Password ID password",
+      "fixture": "fixture.idrac7.html"
+    }
+  ],
+  "fixtures": [
+    {
+      "file": "fixture.html",
+      "path": "/restgui/start.html",
+      "derivedFrom": ["page-source", "paths"],
+      "note": "The controls of the posted iDRAC9 form, including the hidden password_hidden input that precedes the real password field. The path is from the detection template."
+    },
+    {
+      "file": "fixture.idrac7.html",
+      "path": "/login.html",
+      "derivedFrom": ["settings", "paths"],
+      "note": "Three ids from one user's settings. The input types, the submit control and the hidden domain field that post mentions are not known. The path is from the detection template."
+    }
+  ],
+  "staysInteractive": [
+    {
+      "kind": "email-code",
+      "note": "Simple 2FA, where enabled (user's guide section title)."
+    },
+    {
+      "kind": "other",
+      "note": "RSA SecurID 2FA, a forced change of the default password after sign-in, and choosing a directory domain in the drop-down beside the fields."
+    },
+    {
+      "kind": "client-certificate",
+      "note": "Smart card sign-in."
+    },
+    {
+      "kind": "single-sign-on",
+      "note": "Single sign-on and OpenID Connect."
+    }
+  ],
+  "unverified": [
+    "Everything: the selectors come from forum posts of 2017 and 2020, not from Dell source or a saved page. No firmware version is known for any of them.",
+    "Current iDRAC9 firmware (4.x to 7.x) and iDRAC10: their login pages were not read.",
+    "iDRAC7 and iDRAC8: only three ids from one user are known. Whether Enter submits that form is not known; that user needed the page's own submit function.",
+    "The page paths, which are taken from a detection template. The steps carry no path gate."
+  ],
+  "neededFromUser": "The login page of your iDRAC saved as \"Webpage, Complete\", with the iDRAC generation and firmware version. One successful sign-in with this layout would also confirm it. Save any page signed out and with no password typed in; keep the \"_files\" folder beside the .html and both outside the repository: they can hold the account name.",
+  "notes": "The iDRAC9 form is rendered by script and its button stays disabled until the fields hold valid input, so the values must be typed, which is what the engines do. Submission is Enter because that is what the forum users found to work; a click on the unnamed button is not used."
+}

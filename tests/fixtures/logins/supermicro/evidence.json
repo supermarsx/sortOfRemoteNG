@@ -1,0 +1,87 @@
+{
+  "$schema": "../evidence.schema.json",
+  "version": 1,
+  "id": "supermicro",
+  "class": "B",
+  "mechanism": "form",
+  "source": "https://github.com/Alfredooe/FakeSupermicroIPMILogin/blob/1403021a66779e44d767ae15c017c6260ab408a7/app/static/index.html",
+  "reviewed": "2026-10-12",
+  "summary": "The classic Supermicro BMC web interface: one POST form on the controller's own origin whose fields are named name and pwd and which posts to /cgi/login.cgi. The newer Redfish-era interface is not covered.",
+  "sources": [
+    {
+      "id": "imitation",
+      "kind": "secondary",
+      "title": "A third-party imitation of the Supermicro BMC login page: the only markup found",
+      "url": "https://github.com/Alfredooe/FakeSupermicroIPMILogin/blob/1403021a66779e44d767ae15c017c6260ab408a7/app/static/index.html",
+      "commit": "1403021a66779e44d767ae15c017c6260ab408a7",
+      "lines": "43-47",
+      "retrieved": "2026-10-12",
+      "note": "Not the vendor's page: a hobby project of 2024 that mimics it. Its form name, field names and submit input agree with the two wire-level sources; its form action is empty. Which board or firmware it was modelled on is not stated."
+    },
+    {
+      "id": "console",
+      "kind": "secondary",
+      "title": "Cloudpods BMC console helper for Supermicro: the HTML login is a form post of the fields name and pwd to /cgi/login.cgi",
+      "url": "https://github.com/yunionio/cloudpods/blob/2ad374c903c41a894720fb0d46413d1426cc6971/pkg/util/redfish/bmconsole/supermicro.go",
+      "commit": "2ad374c903c41a894720fb0d46413d1426cc6971",
+      "version": "v4.0.5-rc.4",
+      "lines": "28-46",
+      "retrieved": "2026-10-12",
+      "note": "Wire level only: it shows the request, not the page. The Referer it sends is the root page."
+    },
+    {
+      "id": "request",
+      "kind": "secondary",
+      "title": "Public login-request template for the Supermicro BMC: the same two field names and the same path",
+      "url": "https://github.com/projectdiscovery/nuclei-templates/blob/f8b8b8dcd70d93826c3767e1829ef8243af9f03b/http/default-logins/supermicro/supermicro-default-login.yaml",
+      "commit": "f8b8b8dcd70d93826c3767e1829ef8243af9f03b",
+      "version": "v10.5.0",
+      "lines": "17-21",
+      "retrieved": "2026-10-12",
+      "note": "Read for the request shape only. Wire level, no markup."
+    }
+  ],
+  "selectors": [
+    {
+      "selector": "form[name=\"form1\"] input[name=\"name\"]",
+      "role": "username",
+      "source": "imitation",
+      "basis": "observed",
+      "locator": "lines 43-44",
+      "note": "The field name is also the one the two wire-level sources post."
+    },
+    {
+      "selector": "form[name=\"form1\"] input[name=\"pwd\"][type=\"password\"]",
+      "role": "password",
+      "source": "imitation",
+      "basis": "observed",
+      "locator": "lines 43 and 45",
+      "note": "The field name is also the one the two wire-level sources post."
+    },
+    {
+      "selector": "form[name=\"form1\"] input[type=\"submit\"]",
+      "role": "control",
+      "source": "imitation",
+      "basis": "observed",
+      "locator": "lines 43 and 46",
+      "note": "Known from the imitation only."
+    }
+  ],
+  "fixtures": [
+    {
+      "file": "fixture.html",
+      "path": "/",
+      "derivedFrom": ["imitation", "console", "request"],
+      "note": "The form of the imitation with the action of the wire-level sources. Without the imitation's script, inline handler, layout table and image."
+    }
+  ],
+  "staysInteractive": [],
+  "unverified": [
+    "The markup as a whole: it is taken from an imitation of the page, supported only by two tools that post the same field names. No vendor page or source was read.",
+    "Which boards and firmware serve this form. Nothing read names a generation; the newer Redfish-era interface of current boards was not found in any public source and is not covered.",
+    "The submit control and the page path. The steps carry no path gate.",
+    "Directory sign-in (Active Directory, LDAP, RADIUS) and any second factor: nothing about them was read."
+  ],
+  "neededFromUser": "The login page of your BMC saved as \"Webpage, Complete\", with the board model and BMC firmware version. One successful sign-in with this layout would also confirm it. Save any page signed out and with no password typed in; keep the \"_files\" folder beside the .html and both outside the repository: they can hold the account name.",
+  "notes": "A public repository titled as Supermicro IPMI firmware source code exists (devicenull/supermicro_ipmi_firmware). It was not opened: firmware is outside what this review may read."
+}

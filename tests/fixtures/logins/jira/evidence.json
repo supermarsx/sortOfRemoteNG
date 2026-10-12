@@ -1,0 +1,182 @@
+{
+  "$schema": "../evidence.schema.json",
+  "version": 1,
+  "id": "jira",
+  "class": "B",
+  "mechanism": "form",
+  "source": "https://github.com/atlassian/dc-app-performance-toolkit/blob/22ae127c4f18b959459bd441b32e0ad816850c9c/app/selenium_ui/jira/pages/selectors.py",
+  "reviewed": "2026-10-12",
+  "summary": "Jira Data Center: one username and password form at login.jsp on the instance's own origin. Releases from 10.2 serve a new form, older releases and legacy mode the classic one; each step lists the ids of both. Jira Cloud is not covered.",
+  "sources": [
+    {
+      "id": "toolkit",
+      "kind": "secondary",
+      "title": "Atlassian Data Center App Performance Toolkit 8.10.4, Selenium locators of the Jira login page",
+      "url": "https://github.com/atlassian/dc-app-performance-toolkit/blob/22ae127c4f18b959459bd441b32e0ad816850c9c/app/selenium_ui/jira/pages/selectors.py",
+      "commit": "22ae127c4f18b959459bd441b32e0ad816850c9c",
+      "version": "release-8.10.4",
+      "lines": "18-86",
+      "retrieved": "2026-10-12",
+      "note": "Atlassian's own test toolkit, not Jira's source. Its README lists the supported Jira releases as 10.3.15 and 11.3.1. app/selenium_ui/jira/pages/pages.py lines 31-66 open login.jsp, use the classic ids when login-form-submit is present and the others otherwise, type both values and click. app/jira.yml line 12 documents a /jira context path."
+    },
+    {
+      "id": "actions",
+      "kind": "secondary",
+      "title": "Atlassian jira-actions 3.28.2, login page object for the classic form",
+      "url": "https://github.com/atlassian/jira-actions/blob/3c4984bb3a5200009cbe197dbfc10a337c86b72e/src/main/kotlin/com/atlassian/performance/tools/jiraactions/api/page/LoginPage.kt",
+      "commit": "3c4984bb3a5200009cbe197dbfc10a337c86b72e",
+      "version": "release-3.28.2",
+      "lines": "12-21",
+      "retrieved": "2026-10-12",
+      "note": "Atlassian's own WebDriver actions. WebJira.kt line 19 opens login.jsp."
+    },
+    {
+      "id": "upgrade-notes",
+      "kind": "vendor-documentation",
+      "title": "Jira Software 10.3.x upgrade notes: new login experience with two-step verification since 10.2, and the legacy mode property",
+      "url": "https://confluence.atlassian.com/jirasoftware/jira-software-10-3-x-upgrade-notes-1472791008.html",
+      "retrieved": "2026-10-12",
+      "note": "Names the system property atlassian.authentication.legacy.mode=true, which brings the classic form back. No markup."
+    }
+  ],
+  "selectors": [
+    {
+      "selector": "#login-form-username, #username-field",
+      "role": "username",
+      "source": "toolkit",
+      "basis": "observed",
+      "locator": "lines 81 and 84",
+      "note": "Classic id first, then the id of the 10.2 form."
+    },
+    {
+      "selector": "#login-form-password, #password-field",
+      "role": "password",
+      "source": "toolkit",
+      "basis": "observed",
+      "locator": "lines 82 and 85"
+    },
+    {
+      "selector": "#login-form-submit, #login-button",
+      "role": "control",
+      "source": "toolkit",
+      "basis": "observed",
+      "locator": "lines 83 and 86"
+    },
+    {
+      "selector": "#username-field",
+      "role": "username",
+      "source": "toolkit",
+      "basis": "observed",
+      "locator": "line 84",
+      "fixture": "fixture.html",
+      "note": "One alternative of the list above, pinned to its own fixture."
+    },
+    {
+      "selector": "#password-field",
+      "role": "password",
+      "source": "toolkit",
+      "basis": "observed",
+      "locator": "line 85",
+      "fixture": "fixture.html",
+      "note": "One alternative of the list above, pinned to its own fixture."
+    },
+    {
+      "selector": "#login-button",
+      "role": "control",
+      "source": "toolkit",
+      "basis": "observed",
+      "locator": "line 86",
+      "fixture": "fixture.html",
+      "note": "One alternative of the list above, pinned to its own fixture."
+    },
+    {
+      "selector": "#login-form-username",
+      "role": "username",
+      "source": "toolkit",
+      "basis": "observed",
+      "locator": "line 81",
+      "fixture": "fixture.legacy.html",
+      "note": "One alternative of the list above, pinned to its own fixture."
+    },
+    {
+      "selector": "#login-form-password",
+      "role": "password",
+      "source": "toolkit",
+      "basis": "observed",
+      "locator": "line 82",
+      "fixture": "fixture.legacy.html",
+      "note": "One alternative of the list above, pinned to its own fixture."
+    },
+    {
+      "selector": "#login-form-submit",
+      "role": "control",
+      "source": "toolkit",
+      "basis": "observed",
+      "locator": "line 83",
+      "fixture": "fixture.legacy.html",
+      "note": "One alternative of the list above, pinned to its own fixture."
+    },
+    {
+      "selector": "#login-form [name=\"os_username\"]",
+      "role": "username",
+      "source": "actions",
+      "basis": "observed",
+      "locator": "lines 12 and 19",
+      "fixture": "fixture.legacy.html",
+      "note": "The same classic field as the toolkit's login-form-username, found by name. Not used by the steps."
+    },
+    {
+      "selector": "#login-form [name=\"os_password\"]",
+      "role": "password",
+      "source": "actions",
+      "basis": "observed",
+      "locator": "lines 12 and 20",
+      "fixture": "fixture.legacy.html",
+      "note": "Not used by the steps."
+    },
+    {
+      "selector": "#login-form #login-form-submit",
+      "role": "control",
+      "source": "actions",
+      "basis": "observed",
+      "locator": "lines 12 and 21",
+      "fixture": "fixture.legacy.html",
+      "note": "Not used by the steps."
+    }
+  ],
+  "fixtures": [
+    {
+      "file": "fixture.html",
+      "path": "/login.jsp",
+      "derivedFrom": ["toolkit"],
+      "note": "The form of 10.2 and later: three ids. The form element, its method, the control tags and the type attributes are not in the source."
+    },
+    {
+      "file": "fixture.legacy.html",
+      "path": "/login.jsp",
+      "derivedFrom": ["toolkit", "actions"],
+      "note": "The classic form: the ids and the two field names inside the element with id login-form. Its method, the tag of the submit control and the type attributes are not in the sources."
+    }
+  ],
+  "staysInteractive": [
+    {
+      "kind": "totp",
+      "note": "Two-step verification, since Jira 10.2: the code is asked after the password. The toolkit does not handle that step, so its fields are not known and no challenge is written."
+    },
+    {
+      "kind": "other",
+      "note": "Jira Cloud. No source for its sign-in was read and the profile has no hosted login URL to capture, so a Cloud site is a layout mismatch and nothing is typed."
+    }
+  ],
+  "unverified": [
+    "All six ids: they come from Atlassian's test tooling, not from Jira's source or a saved page.",
+    "Whether the 10.2 form stays on login.jsp after a redirect, and whether either form is an ordinary POST form. The steps use the click submission; a form without a POST action would need the spa submission.",
+    "The login form shown on the dashboard to a signed-out visitor, and any release older than the classic form these tools target.",
+    "Single sign-on, CAPTCHA after failed attempts and other administrator options: nothing about them was read."
+  ],
+  "neededFromUser": "Your Jira login page saved as \"Webpage, Complete\" with the Jira version, or one successful sign-in with this layout. For Jira Cloud, say so: it needs its own profile. Save any page signed out and with no password typed in; keep the \"_files\" folder beside the .html and both outside the repository: they can hold the account name.",
+  "schemaGaps": [
+    "A path gate for login.jsp under any context path (/login.jsp, /jira/login.jsp, /anything/login.jsp) cannot be written: paths are exact and prefixes are directories. The steps therefore carry no path gate and rely on the ids."
+  ],
+  "notes": "Versions: the toolkit supports Jira Data Center 10.3.15 and 11.3.1 and still carries the classic ids for instances running in legacy mode. The two tools agree on the classic form (login-form, os_username, os_password, login-form-submit)."
+}

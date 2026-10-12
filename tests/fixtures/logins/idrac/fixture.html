@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Synthetic fixture: iDRAC9 start screen login</title>
+  </head>
+  <body>
+    <form name="idracStartScreen" novalidate>
+      <input
+        class="cui-start-screen-username cui-textbox"
+        name="username"
+        type="text"
+        required
+        maxlength="512"
+        autocomplete="off"
+      />
+      <input type="password" name="password_hidden" style="display: none" />
+      <input
+        class="cui-start-screen-password cui-textbox"
+        name="password"
+        type="password"
+        required
+        maxlength="254"
+        autocomplete="off"
+      />
+      <button class="cux-button" type="submit">Log In</button>
+    </form>
+  </body>
+</html>

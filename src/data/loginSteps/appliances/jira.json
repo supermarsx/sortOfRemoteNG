@@ -1,0 +1,25 @@
+{
+  "$schema": "../../../types/connection/httpLoginSteps.schema.json",
+  "version": 1,
+  "id": "jira",
+  "evidence": {
+    "class": "B",
+    "source": "https://github.com/atlassian/dc-app-performance-toolkit/blob/22ae127c4f18b959459bd441b32e0ad816850c9c/app/selenium_ui/jira/pages/selectors.py",
+    "reviewed": "2026-10-12"
+  },
+  "credentialOrigins": [],
+  "loginSteps": [
+    {
+      "kind": "form",
+      "selectors": {
+        "username": "#login-form-username, #username-field",
+        "password": "#login-form-password, #password-field"
+      }
+    },
+    {
+      "kind": "submit",
+      "submission": "click",
+      "selectors": { "control": "#login-form-submit, #login-button" }
+    }
+  ]
+}

@@ -1,0 +1,144 @@
+{
+  "$schema": "../evidence.schema.json",
+  "version": 1,
+  "id": "draytek",
+  "class": "B",
+  "mechanism": "form",
+  "source": "https://github.com/highlight-slm/Draytek-Web-Auto-Configuration/blob/0b3e96b892fb332a1252fc231b30561b2374071f/draytekwebadmin/pages/login_page.py",
+  "reviewed": "2026-10-12",
+  "summary": "One username and password form on the router's own origin that posts to /cgi-bin/wlogin.cgi. Two sources give two different sets of field names, so each step lists both; neither was confirmed against a device.",
+  "sources": [
+    {
+      "id": "module",
+      "kind": "secondary",
+      "title": "Third-party Selenium automation of the DrayOS web console (draytekwebadmin), login page object",
+      "url": "https://github.com/highlight-slm/Draytek-Web-Auto-Configuration/blob/0b3e96b892fb332a1252fc231b30561b2374071f/draytekwebadmin/pages/login_page.py",
+      "commit": "0b3e96b892fb332a1252fc231b30561b2374071f",
+      "lines": "11-13",
+      "retrieved": "2026-10-12",
+      "note": "Its README lists the tested devices: Vigor 2860 and 2860Ln, firmware 3.8.9.4_BT to 3.8.9.7_BT. The module opens the console's root URL (draytekwebadmin/draytek.py line 137) and finds the fields by name."
+    },
+    {
+      "id": "fixture-server",
+      "kind": "repository",
+      "title": "In-repository fake DrayOS web console: the login page template",
+      "path": "e2e/fixtures/draytek/server.mjs",
+      "lines": "147-194",
+      "retrieved": "2026-10-12",
+      "note": "An emulator written for the DrayTek panel tests. It models the classic (below 4.4), token (4.4 and later) and RSA variants with one visible form. Where its element ids came from is not recorded in the plan or logs of that task, which cite wire-level sources only."
+    },
+    {
+      "id": "crate",
+      "kind": "repository",
+      "title": "In-repository DrayOS client: login page path, login CGI path and the markers it treats as a login form",
+      "path": "src-tauri/crates/sorng-draytek/src/client.rs",
+      "lines": "16-82",
+      "retrieved": "2026-10-12"
+    }
+  ],
+  "selectors": [
+    {
+      "selector": "input[name=\"sUserName\"], form[name=\"LoginForm\"] input#sUsername",
+      "role": "username",
+      "source": "module",
+      "basis": "inferred",
+      "note": "The two alternatives below joined into one list, because the format types a credential in one step per origin. Inferred as a whole: no single source shows both."
+    },
+    {
+      "selector": "input[name=\"sSysPass\"], form[name=\"LoginForm\"] input#sPassword[type=\"password\"]",
+      "role": "password",
+      "source": "module",
+      "basis": "inferred",
+      "note": "The two alternatives below joined into one list."
+    },
+    {
+      "selector": "[name=\"btnOk\"], form[name=\"LoginForm\"] input[type=\"submit\"]",
+      "role": "control",
+      "source": "module",
+      "basis": "inferred",
+      "note": "The two alternatives below joined into one list."
+    },
+    {
+      "selector": "input[name=\"sUserName\"]",
+      "role": "username",
+      "source": "module",
+      "basis": "observed",
+      "locator": "draytekwebadmin/pages/login_page.py line 11",
+      "fixture": "fixture.html",
+      "note": "Found by name as a text-input page element; the name is what the source shows."
+    },
+    {
+      "selector": "input[name=\"sSysPass\"]",
+      "role": "password",
+      "source": "module",
+      "basis": "observed",
+      "locator": "draytekwebadmin/pages/login_page.py line 12",
+      "fixture": "fixture.html"
+    },
+    {
+      "selector": "[name=\"btnOk\"]",
+      "role": "control",
+      "source": "module",
+      "basis": "observed",
+      "locator": "draytekwebadmin/pages/login_page.py line 13; clicked at line 24",
+      "fixture": "fixture.html",
+      "note": "The source does not show the element's tag."
+    },
+    {
+      "selector": "form[name=\"LoginForm\"] input#sUsername",
+      "role": "username",
+      "source": "fixture-server",
+      "basis": "observed",
+      "locator": "lines 184-185",
+      "fixture": "fixture.repository.html"
+    },
+    {
+      "selector": "form[name=\"LoginForm\"] input#sPassword[type=\"password\"]",
+      "role": "password",
+      "source": "fixture-server",
+      "basis": "observed",
+      "locator": "lines 184-186",
+      "fixture": "fixture.repository.html"
+    },
+    {
+      "selector": "form[name=\"LoginForm\"] input[type=\"submit\"]",
+      "role": "control",
+      "source": "fixture-server",
+      "basis": "observed",
+      "locator": "lines 184-189",
+      "fixture": "fixture.repository.html"
+    }
+  ],
+  "fixtures": [
+    {
+      "file": "fixture.html",
+      "path": "/",
+      "derivedFrom": ["module", "crate"],
+      "note": "The three names are from the module. The form element, its action and the type attributes are not in the module; the action is the login CGI path of the crate."
+    },
+    {
+      "file": "fixture.repository.html",
+      "path": "/weblogin.htm",
+      "derivedFrom": ["fixture-server"],
+      "note": "The controls of the fake router's login template, without its script and inline handler. It serves this page on / and on /weblogin.htm (line 332)."
+    }
+  ],
+  "staysInteractive": [
+    {
+      "kind": "totp",
+      "note": "An administrator second factor (mail, SMS, mOTP or TOTP) where enabled. Known only from a web search summary of DrayTek knowledge-base articles 6127 and 7580; the pages themselves answered HTTP 403 to an automated read."
+    },
+    {
+      "kind": "captcha",
+      "note": "A validation code on the login page where the firmware has that option on. Same search summary; not read on a vendor page."
+    }
+  ],
+  "unverified": [
+    "Which field names a given firmware serves. sUserName, sSysPass and btnOk are what a third-party tool used on Vigor 2860 firmware 3.8.9; sUsername, sPassword and a form named LoginForm are what the in-repository fake router serves. Nobody has compared either with a device.",
+    "Firmware 4.x and DrayOS 5, the Linux-based models (Vigor 2960, 3900, 3910) and VigorAP access points: no markup of any of them was read.",
+    "The path of the login page. The gate accepts / and /weblogin.htm, the two paths the in-repository sources name.",
+    "Whether the page shows a validation code or asks for a second factor."
+  ],
+  "neededFromUser": "The login page of your Vigor saved as \"Webpage, Complete\", with the model and firmware version. One successful sign-in with this layout would also confirm it. Save any page signed out and with no password typed in; keep the \"_files\" folder beside the .html and both outside the repository: they can hold the account name.",
+  "notes": "The plan expected class A from the in-repository fixture server. It is B here because a public tool that drove real devices uses other field names than that fixture, and the fixture's ids cannot be traced to a device. The page's own script encodes the two values before the form is posted, on every variant the crate knows (plain, token, RSA), so typing into the visible fields and clicking the button is the same on all three. A failed sign-in shows the form again on /cgi-bin/wlogin.cgi, which the path gate excludes."
+}

@@ -1,0 +1,120 @@
+{
+  "$schema": "../evidence.schema.json",
+  "version": 1,
+  "id": "ilo",
+  "class": "A",
+  "mechanism": "form",
+  "source": "https://github.com/supermarsx/cdp-auth/blob/2b1d1b428c9c78e84ad851f37760ce7df6b8ca56/readme.md",
+  "reviewed": "2026-10-12",
+  "summary": "Username and password inputs inside the same-origin iframe appFrame of the iLO page, submitted with the Enter key. This is the login the user's cdp-auth tool lists as known working for HP iLO.",
+  "sources": [
+    {
+      "id": "strings",
+      "kind": "cdp-auth",
+      "title": "cdp-auth readme, Known working logins: the iLO configuration string with the two input ids and the iframe id",
+      "url": "https://github.com/supermarsx/cdp-auth/blob/2b1d1b428c9c78e84ad851f37760ce7df6b8ca56/readme.md",
+      "commit": "2b1d1b428c9c78e84ad851f37760ce7df6b8ca56",
+      "path": "readme.md",
+      "lines": "29",
+      "retrieved": "2026-10-12",
+      "note": "Lines 97-99 define the positions of the string: username input id, password input id, iframe id. The line is already present at commit 5a77efeb (2023-09-19). The iLO generation and firmware are not stated."
+    },
+    {
+      "id": "flow",
+      "kind": "cdp-auth",
+      "title": "cdp-auth field_id+iframe mode: set both inputs by id inside the iframe found by id, then press Enter",
+      "url": "https://github.com/supermarsx/cdp-auth/blob/2b1d1b428c9c78e84ad851f37760ce7df6b8ca56/source/auth-automation.ts",
+      "commit": "2b1d1b428c9c78e84ad851f37760ce7df6b8ca56",
+      "path": "source/auth-automation.ts",
+      "lines": "214-229",
+      "retrieved": "2026-10-12",
+      "note": "The ids are read from the configuration string, not written in the script. The Enter key is sent by pressEnterKey, lines 415-446."
+    },
+    {
+      "id": "frame-access",
+      "kind": "cdp-auth",
+      "title": "cdp-auth setValueOfIdInIframe: the iframe is reached through contentWindow.document, so it is same-origin",
+      "url": "https://github.com/supermarsx/cdp-auth/blob/2b1d1b428c9c78e84ad851f37760ce7df6b8ca56/source/values-id-iframe.ts",
+      "commit": "2b1d1b428c9c78e84ad851f37760ce7df6b8ca56",
+      "path": "source/values-id-iframe.ts",
+      "lines": "11-28",
+      "retrieved": "2026-10-12"
+    },
+    {
+      "id": "catalog",
+      "kind": "repository",
+      "title": "The existing iLO profile (the entry with id ilo), which already pins the same-origin login frame appFrame",
+      "path": "src/utils/connection/httpApplicationProfiles.ts",
+      "retrieved": "2026-10-12"
+    },
+    {
+      "id": "frame-tests",
+      "kind": "repository",
+      "title": "Native frame-scoped login tests for appFrame; their form is generic and does not use the iLO field ids",
+      "path": "tests/protocol/nativeLoginFrames.test.mjs",
+      "retrieved": "2026-10-12"
+    },
+    {
+      "id": "ilo5-thread",
+      "kind": "secondary",
+      "title": "Forum thread on filling the iLO 5 login: other ids than the ones cdp-auth records",
+      "url": "https://forum.devolutions.net/topics/33863/hpe-ilo-5-auto-submit",
+      "retrieved": "2026-10-12",
+      "note": "Thread of 2020-06-13, iLO 5 firmware 2.14: form id login-form, username id username, password id password, login button id login-form__submit. It does not say whether the form is inside a frame. Not used by any selector here."
+    },
+    {
+      "id": "ilo5-template",
+      "kind": "secondary",
+      "title": "Public panel-detection template for iLO 5: the login document is /html/login.html",
+      "url": "https://github.com/projectdiscovery/nuclei-templates/blob/f8b8b8dcd70d93826c3767e1829ef8243af9f03b/http/exposed-panels/hp-ilo-5.yaml",
+      "commit": "f8b8b8dcd70d93826c3767e1829ef8243af9f03b",
+      "version": "v10.5.0",
+      "retrieved": "2026-10-12",
+      "note": "Not used by any selector or fixture here."
+    }
+  ],
+  "selectors": [
+    {
+      "selector": "input#usernameInput",
+      "role": "username",
+      "source": "strings",
+      "basis": "observed",
+      "locator": "line 29, third field of the string; lines 97-98 say it is the username input id",
+      "fixture": "fixture.frame.html"
+    },
+    {
+      "selector": "input#passwordInput",
+      "role": "password",
+      "source": "strings",
+      "basis": "observed",
+      "locator": "line 29, fourth field of the string; lines 97-98 say it is the password input id",
+      "fixture": "fixture.frame.html"
+    }
+  ],
+  "fixtures": [
+    {
+      "file": "fixture.html",
+      "path": "/",
+      "derivedFrom": ["strings", "frame-access", "catalog"],
+      "note": "The top document holds only the iframe with id appFrame (line 29, fifth field). The path is the connection's own URL; the source names none."
+    },
+    {
+      "file": "fixture.frame.html",
+      "path": "/",
+      "frame": "appFrame",
+      "derivedFrom": ["strings", "frame-access"],
+      "note": "The source gives the two ids only. The frame document's path, the type attributes and whether a form element wraps the inputs are not in the source; no selector relies on them and the steps carry no path gate."
+    }
+  ],
+  "staysInteractive": [
+    {
+      "kind": "other",
+      "note": "Any second factor or directory sign-in the administrator enabled. The existing profile text says MFA remains manual; cdp-auth records nothing after the Enter key."
+    }
+  ],
+  "schemaGaps": [
+    "The existing generic iLO profile looks for the form in the top document or in appFrame. The steps format types each credential in one step per origin, so a top-document alternative cannot be written beside the frame step. The steps cover the appFrame layout only, which is the one cdp-auth records.",
+    "iLO 5 firmware 2.14 has other ids according to a forum thread (source ilo5-thread). They are not in the steps: where that form sits (top document or frame) is not known, and a selector from a forum post would make the whole login unverified."
+  ],
+  "notes": "Firmware: cdp-auth does not say which iLO generation or firmware the string was used on. The steps match only a login inside an iframe with id appFrame whose inputs have these two ids; on any other generation it is a layout mismatch and nothing is typed. cdp-auth sets the values by script; here they are typed. No submit control is known, so submission is the Enter key in the password field, as in cdp-auth."
+}

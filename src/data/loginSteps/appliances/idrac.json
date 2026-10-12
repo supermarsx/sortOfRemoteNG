@@ -1,0 +1,21 @@
+{
+  "$schema": "../../../types/connection/httpLoginSteps.schema.json",
+  "version": 1,
+  "id": "idrac",
+  "evidence": {
+    "class": "B",
+    "source": "https://forum.devolutions.net/topics/24899/idrac-html5-support",
+    "reviewed": "2026-10-12"
+  },
+  "credentialOrigins": [],
+  "loginSteps": [
+    {
+      "kind": "form",
+      "selectors": {
+        "username": "form[name=\"idracStartScreen\"] input[name=\"username\"], form#auth #user",
+        "password": "form[name=\"idracStartScreen\"] input[name=\"password\"][type=\"password\"], form#auth #password"
+      }
+    },
+    { "kind": "submit", "submission": "enter" }
+  ]
+}

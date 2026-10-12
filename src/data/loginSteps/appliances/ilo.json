@@ -1,0 +1,22 @@
+{
+  "$schema": "../../../types/connection/httpLoginSteps.schema.json",
+  "version": 1,
+  "id": "ilo",
+  "evidence": {
+    "class": "A",
+    "source": "https://github.com/supermarsx/cdp-auth/blob/2b1d1b428c9c78e84ad851f37760ce7df6b8ca56/readme.md",
+    "reviewed": "2026-10-12"
+  },
+  "credentialOrigins": [],
+  "loginSteps": [
+    {
+      "kind": "form",
+      "frame": "appFrame",
+      "selectors": {
+        "username": "input#usernameInput",
+        "password": "input#passwordInput"
+      }
+    },
+    { "kind": "submit", "submission": "enter" }
+  ]
+}

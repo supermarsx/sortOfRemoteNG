@@ -1,0 +1,44 @@
+{
+  "$schema": "../evidence.schema.json",
+  "version": 1,
+  "id": "eaton-ups",
+  "class": "C",
+  "mechanism": "none",
+  "reviewed": "2026-10-12",
+  "summary": "The Network-M2 and Network-M3 cards have a user name and password login page, but no public source shows its markup, so there is nothing to write selectors from. The profile stays manual.",
+  "sources": [
+    {
+      "id": "catalog",
+      "kind": "repository",
+      "title": "The existing Eaton profile (the entry with id eaton-ups): manual, no universal login selectors assumed",
+      "path": "src/utils/connection/hostedDashboardProfiles.ts",
+      "retrieved": "2026-10-12"
+    },
+    {
+      "id": "web-api",
+      "kind": "secondary",
+      "title": "Public scanner check for the card's web sign-in: a JSON request to the card's own REST service, not a form post",
+      "url": "https://github.com/runZeroInc/oobscan/blob/dbc03d7511e5afabf7accc5b9ef204fd66525fe8/pkg/check/web_login_eaton.go",
+      "commit": "dbc03d7511e5afabf7accc5b9ef204fd66525fe8",
+      "lines": "14-24",
+      "retrieved": "2026-10-12",
+      "note": "Read for the request shape only: the user name and password travel as JSON to /rest/mbdetnrs/1.0/oauth2/token. That says nothing about the page's field ids or names."
+    }
+  ],
+  "selectors": [],
+  "fixtures": [],
+  "staysInteractive": [
+    {
+      "kind": "other",
+      "note": "The whole sign-in, until a layout is known. According to a search summary of Eaton's user's guides, the first sign-in forces a change of the default password and directory users sign in with a prefix (ldap or radius, then the account)."
+    }
+  ],
+  "lookedFor": [
+    "Eaton's Network-M2 and Network-M3 user's guides on eaton.com: found by search, but two PDF reads timed out, so they were not read. The search summary describes a login page, a forced password change at first sign-in and LDAP and RADIUS accounts. Whether the guides show any markup could not be checked.",
+    "Public repositories (searches for the card's REST namespace and for Eaton UPS tools): exporters and home-automation integrations that use the REST service, MQTT or SNMP. None drives or reproduces the login page.",
+    "The card's sign-in request, from a public scanner check: JSON to the REST service. That points to a script-rendered page, and the request does not reveal its fields.",
+    "Not done: no device was contacted, no firmware was opened, and the capture tool was not run (the profile has no hosted login URL)."
+  ],
+  "neededFromUser": "The login page of your card saved as \"Webpage, Complete\" once it has finished loading, with the card model (Network-M2 or Network-M3) and firmware version. Say also whether you sign in with a local, LDAP or RADIUS account. Save any page signed out and with no password typed in; keep the \"_files\" folder beside the .html and both outside the repository: they can hold the account name.",
+  "notes": "Older Eaton cards (Network-MS and earlier) and Eaton PDUs have other web interfaces and were not researched. If the login is a script-rendered page, as the sign-in request suggests, a saved copy must be the rendered page, not the page source."
+}
