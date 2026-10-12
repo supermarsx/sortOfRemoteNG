@@ -1,0 +1,437 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:sortofremoteng:login-evidence:1",
+  "title": "Evidence for one application's login",
+  "description": "tests/fixtures/logins/<id>/evidence.json: where every login selector of one application came from, what was built from it, and what is not known. This schema covers structure and bounds. tests/tooling/loginFixtureCorpus.node-test.mjs is authoritative and additionally requires: id equal to the directory name and to a catalog profile (or proposedProfile); real dates, none in the future, no source retrieved after the review; unique source ids; source equal to the citation of a listed source; every selector and fixture citing listed sources; class A only when every selector is observed in an authoritative source; an observed selector that matches its cited capture, or whose ids and field names occur in its cited repository file; cited repository paths that exist and lie outside this corpus and the steps data; public sources pinned to a commit or release, never a moving branch; captures that exist, match their hash and, when anonymous, were made from the application's own hostedLoginUrl; fixture files that exist, are listed, are synthetic and are matched by their selectors; nothing resembling a credential or a private address; and agreement with the application's steps file in src/data/loginSteps when there is one.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "version",
+    "id",
+    "class",
+    "mechanism",
+    "reviewed",
+    "summary",
+    "sources",
+    "selectors",
+    "fixtures",
+    "staysInteractive"
+  ],
+  "properties": {
+    "$schema": { "const": "../evidence.schema.json" },
+    "version": { "const": 1 },
+    "id": { "$ref": "#/$defs/applicationId" },
+    "proposedProfile": {
+      "const": true,
+      "description": "Set only for an application that is not in the catalog yet."
+    },
+    "class": {
+      "enum": ["A", "B", "C"],
+      "description": "A: every selector was observed in an authoritative source. B: at least one selector is inferred or comes from a public page captured anonymously or from secondary material; an informed guess until the user confirms it. C: nothing to build from; no selectors, no fixture, no steps."
+    },
+    "mechanism": {
+      "enum": ["form", "adapter", "http-auth", "none"],
+      "description": "form: a page form filled through selectors. adapter: a dedicated in-repository staged adapter (catalog loginFlow). http-auth: HTTP Basic or Digest, no page. none: class C."
+    },
+    "source": {
+      "$ref": "#/$defs/citation",
+      "description": "The primary citation: the url, path or capture of one entry of sources. The steps file's evidence.source repeats it."
+    },
+    "reviewed": {
+      "$ref": "#/$defs/date",
+      "description": "The date of this review. The steps file's evidence.reviewed repeats it."
+    },
+    "summary": { "$ref": "#/$defs/prose" },
+    "sources": {
+      "type": "array",
+      "maxItems": 16,
+      "items": { "$ref": "#/$defs/source" }
+    },
+    "selectors": {
+      "type": "array",
+      "maxItems": 48,
+      "items": { "$ref": "#/$defs/selector" }
+    },
+    "fixtures": {
+      "type": "array",
+      "maxItems": 12,
+      "items": { "$ref": "#/$defs/fixture" }
+    },
+    "staysInteractive": {
+      "type": "array",
+      "maxItems": 12,
+      "items": { "$ref": "#/$defs/interactive" },
+      "description": "What the user still does by hand. An empty list states that nothing is known to interrupt the login."
+    },
+    "unverified": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 12,
+      "items": { "$ref": "#/$defs/prose" },
+      "description": "Class B only: each thing that was not observed, for example the step after the identifier, or other firmware versions."
+    },
+    "lookedFor": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 12,
+      "items": { "$ref": "#/$defs/prose" },
+      "description": "Class C: what was examined and what it showed."
+    },
+    "neededFromUser": {
+      "$ref": "#/$defs/prose",
+      "description": "Class B and C: what would turn this into class A."
+    },
+    "schemaGaps": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 12,
+      "items": { "$ref": "#/$defs/prose" },
+      "description": "Anything about this login that the steps format could not express."
+    },
+    "notes": { "$ref": "#/$defs/prose" }
+  },
+  "allOf": [
+    {
+      "if": {
+        "required": ["class"],
+        "properties": { "class": { "const": "C" } }
+      },
+      "then": {
+        "required": ["lookedFor", "neededFromUser"],
+        "properties": {
+          "mechanism": { "const": "none" },
+          "selectors": { "maxItems": 0 },
+          "fixtures": { "maxItems": 0 }
+        }
+      },
+      "else": {
+        "required": ["source"],
+        "properties": {
+          "mechanism": { "enum": ["form", "adapter", "http-auth"] },
+          "sources": { "minItems": 1 }
+        }
+      }
+    },
+    {
+      "if": {
+        "required": ["class"],
+        "properties": { "class": { "const": "B" } }
+      },
+      "then": { "required": ["unverified", "neededFromUser"] }
+    },
+    {
+      "if": {
+        "required": ["class"],
+        "properties": { "class": { "const": "A" } }
+      },
+      "then": { "not": { "required": ["unverified"] } }
+    },
+    {
+      "if": {
+        "required": ["mechanism"],
+        "properties": { "mechanism": { "const": "form" } }
+      },
+      "then": {
+        "properties": {
+          "selectors": { "minItems": 1 },
+          "fixtures": { "minItems": 1 }
+        }
+      }
+    },
+    {
+      "if": {
+        "required": ["mechanism"],
+        "properties": { "mechanism": { "const": "http-auth" } }
+      },
+      "then": {
+        "properties": {
+          "selectors": { "maxItems": 0 },
+          "fixtures": { "maxItems": 0 }
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "applicationId": {
+      "type": "string",
+      "maxLength": 80,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9-]*$",
+      "description": "Application profile id; equal to the directory name."
+    },
+    "sourceId": { "type": "string", "pattern": "^[a-z][a-z0-9-]{0,31}$" },
+    "date": {
+      "type": "string",
+      "pattern": "^[0-9]{4}-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12][0-9]|3[01])$"
+    },
+    "prose": {
+      "type": "string",
+      "minLength": 3,
+      "maxLength": 600,
+      "pattern": "^[^\\u0000-\\u001f\\u007f-\\u009f]+$"
+    },
+    "citation": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 512,
+      "pattern": "^[^\\u0000-\\u0020\\u007f-\\u009f]+$"
+    },
+    "httpsUrl": {
+      "type": "string",
+      "maxLength": 512,
+      "pattern": "^https://[^\\u0000-\\u0020\\u007f-\\u009f/?#@]+(?:[/?#][^\\u0000-\\u0020\\u007f-\\u009f]*)?$",
+      "description": "An https URL with no user information."
+    },
+    "repositoryPath": {
+      "type": "string",
+      "maxLength": 256,
+      "pattern": "^(?!.*(?:^|/)\\.{1,2}(?:/|$))[A-Za-z0-9_@.+-]+(?:/[A-Za-z0-9_@.+-]+)*$",
+      "description": "A path with forward slashes, relative to the root of the repository the source names."
+    },
+    "selectorText": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 512,
+      "pattern": "^[^\\u0000-\\u0020\\u007f-\\u009f](?:[^\\u0000-\\u001f\\u007f-\\u009f]*[^\\u0000-\\u0020\\u007f-\\u009f])?$",
+      "description": "A CSS selector, with the bounds of the steps format."
+    },
+    "fixtureFile": {
+      "type": "string",
+      "pattern": "^fixture(?:\\.[a-z0-9-]+)*\\.html$"
+    },
+    "origin": {
+      "type": "string",
+      "maxLength": 512,
+      "pattern": "^https://(?![a-z0-9.-]*\\.(?:localhost|local|test|invalid|example|onion|alt|internal|arpa|localdomain|lan|home|corp|mail|intranet|private)(?::|$))(?=[a-z0-9.-]{1,253}(?::|$))(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\\.)+[a-z](?:[a-z0-9-]{0,61}[a-z0-9])?(?::(?!443$)(?:[1-9][0-9]{0,3}|[1-5][0-9]{4}|6[0-4][0-9]{3}|65[0-4][0-9]{2}|655[0-2][0-9]|6553[0-5]))?$",
+      "description": "An exact HTTPS origin of a public DNS name, as in the steps format: the same pattern as $defs.origin of src/types/connection/httpLoginSteps.schema.json, which refuses IP literals, single-label hosts and special-use or private-use suffixes."
+    },
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "kind", "title", "retrieved"],
+      "properties": {
+        "id": { "$ref": "#/$defs/sourceId" },
+        "kind": {
+          "enum": [
+            "repository",
+            "public-source",
+            "cdp-auth",
+            "user-capture",
+            "user-confirmation",
+            "anonymous-capture",
+            "vendor-documentation",
+            "secondary"
+          ],
+          "description": "Authoritative, able to support class A: repository (a fixture, adapter or test in this repository), public-source (the application's own published source at a commit or release), cdp-auth (the user's cdp-auth tool at a commit), user-capture (a page the user saved, read with --from-file), user-confirmation (the user signed in with this layout). Not authoritative, class B only: anonymous-capture (a public hosted page rendered once without an account), vendor-documentation, secondary. Recollection is not a source and has no kind."
+        },
+        "title": { "$ref": "#/$defs/prose" },
+        "url": { "$ref": "#/$defs/httpsUrl" },
+        "path": { "$ref": "#/$defs/repositoryPath" },
+        "lines": {
+          "type": "string",
+          "pattern": "^[1-9][0-9]{0,5}(?:-[1-9][0-9]{0,5})?$"
+        },
+        "commit": { "type": "string", "pattern": "^[0-9a-f]{7,40}$" },
+        "version": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[^\\u0000-\\u001f\\u007f-\\u009f]+$"
+        },
+        "retrieved": {
+          "$ref": "#/$defs/date",
+          "description": "The date the source was read, captured or confirmed."
+        },
+        "capture": {
+          "type": "string",
+          "pattern": "^(?:\\.\\./[A-Za-z0-9][A-Za-z0-9-]*/)?capture(?:\\.[a-z0-9-]+)*\\.json$",
+          "description": "The capture file in this directory, or in a sibling application's directory when both share one hostedLoginUrl."
+        },
+        "captureSha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$",
+          "description": "The captureSha256 the capture tool printed: the hash of the capture's canonical JSON."
+        },
+        "note": { "$ref": "#/$defs/prose" }
+      },
+      "allOf": [
+        {
+          "if": {
+            "required": ["kind"],
+            "properties": { "kind": { "const": "repository" } }
+          },
+          "then": {
+            "required": ["path"],
+            "not": {
+              "anyOf": [{ "required": ["url"] }, { "required": ["capture"] }]
+            }
+          }
+        },
+        {
+          "if": {
+            "required": ["kind"],
+            "properties": { "kind": { "const": "public-source" } }
+          },
+          "then": {
+            "required": ["url"],
+            "anyOf": [{ "required": ["commit"] }, { "required": ["version"] }],
+            "not": { "required": ["capture"] }
+          }
+        },
+        {
+          "if": {
+            "required": ["kind"],
+            "properties": { "kind": { "const": "cdp-auth" } }
+          },
+          "then": {
+            "required": ["url", "commit", "path"],
+            "not": { "required": ["capture"] }
+          }
+        },
+        {
+          "if": {
+            "required": ["kind"],
+            "properties": { "kind": { "const": "user-capture" } }
+          },
+          "then": {
+            "required": ["capture", "captureSha256"],
+            "not": {
+              "anyOf": [{ "required": ["url"] }, { "required": ["path"] }]
+            }
+          }
+        },
+        {
+          "if": {
+            "required": ["kind"],
+            "properties": { "kind": { "const": "anonymous-capture" } }
+          },
+          "then": {
+            "required": ["url", "capture", "captureSha256"],
+            "not": { "required": ["path"] }
+          }
+        },
+        {
+          "if": {
+            "required": ["kind"],
+            "properties": { "kind": { "const": "user-confirmation" } }
+          },
+          "then": {
+            "required": ["note"],
+            "not": {
+              "anyOf": [
+                { "required": ["url"] },
+                { "required": ["path"] },
+                { "required": ["capture"] }
+              ]
+            }
+          }
+        },
+        {
+          "if": {
+            "required": ["kind"],
+            "properties": {
+              "kind": { "enum": ["vendor-documentation", "secondary"] }
+            }
+          },
+          "then": { "required": ["url"], "not": { "required": ["capture"] } }
+        }
+      ]
+    },
+    "selector": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["selector", "role", "source", "basis"],
+      "properties": {
+        "selector": { "$ref": "#/$defs/selectorText" },
+        "role": {
+          "enum": [
+            "username",
+            "password",
+            "control",
+            "wait-for",
+            "totp-code",
+            "totp-submit",
+            "other"
+          ],
+          "description": "control: a clicked pre-step or submit control."
+        },
+        "source": { "$ref": "#/$defs/sourceId" },
+        "basis": {
+          "enum": ["observed", "inferred"],
+          "description": "observed: the attributes the selector relies on are present in the cited source. inferred: not seen there; worked out from it."
+        },
+        "locator": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200,
+          "pattern": "^[^\\u0000-\\u001f\\u007f-\\u009f]+$",
+          "description": "Where in the source the element is: a line range, or the element's id in a capture."
+        },
+        "fixture": {
+          "$ref": "#/$defs/fixtureFile",
+          "description": "The fixture document the selector must match. Without it, any fixture of the directory."
+        },
+        "note": { "$ref": "#/$defs/prose" }
+      },
+      "if": {
+        "required": ["basis"],
+        "properties": { "basis": { "const": "observed" } }
+      },
+      "then": { "required": ["locator"] }
+    },
+    "fixture": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["file", "path", "derivedFrom"],
+      "properties": {
+        "file": { "$ref": "#/$defs/fixtureFile" },
+        "origin": {
+          "$ref": "#/$defs/origin",
+          "description": "The origin this document is served on. Omit it for the connection's own origin, as in the steps format."
+        },
+        "path": {
+          "type": "string",
+          "maxLength": 512,
+          "pattern": "^(?!.*/\\.{1,2}(?:/|$))/(?:[A-Za-z0-9._~-]+/)*[A-Za-z0-9._~-]*$",
+          "description": "The pathname this document is served on."
+        },
+        "frame": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_-]{1,128}$",
+          "description": "Set when this document is the content of that same-origin child frame of the top fixture."
+        },
+        "derivedFrom": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 8,
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/sourceId" }
+        },
+        "note": { "$ref": "#/$defs/prose" }
+      }
+    },
+    "interactive": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind"],
+      "properties": {
+        "kind": {
+          "enum": [
+            "captcha",
+            "device-approval",
+            "passkey",
+            "security-key",
+            "sms-code",
+            "email-code",
+            "totp",
+            "single-sign-on",
+            "client-certificate",
+            "account-chooser",
+            "consent",
+            "other"
+          ]
+        },
+        "note": { "$ref": "#/$defs/prose" }
+      }
+    }
+  }
+}
