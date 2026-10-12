@@ -22,6 +22,9 @@ pub(crate) struct AppearanceResponse {
 
 #[cfg(any(feature = "native-browser", test))]
 impl AppearanceResponse {
+    // Reduced-feature test builds keep this for the browser-host contract test
+    // that includes this file; the app itself has no caller there.
+    #[cfg_attr(not(feature = "native-browser"), allow(dead_code))]
     pub(crate) fn acknowledged(status: AppearanceStatus, following_app_theme: bool) -> Self {
         Self {
             status,
