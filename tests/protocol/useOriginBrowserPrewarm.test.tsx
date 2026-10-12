@@ -69,6 +69,13 @@ function options(patch: Partial<Options> = {}): Options {
     ...patch,
   };
 }
+const commands = () => mocks.invoke.mock.calls.map(([command]) => command);
+function visibility(state: DocumentVisibilityState) {
+  vi.spyOn(document, "visibilityState", "get").mockReturnValue(state);
+  act(() => {
+    document.dispatchEvent(new Event("visibilitychange"));
+  });
+}
 async function idle(didTimeout = false) {
   await act(async () => {
     vi.advanceTimersByTime(2_000);
@@ -128,6 +135,7 @@ beforeEach(() => {
 });
 afterEach(() => {
   cleanup();
+  vi.restoreAllMocks();
   vi.useRealTimers();
   vi.unstubAllGlobals();
 });
@@ -299,6 +307,115 @@ describe("idle native engine prewarm", () => {
       ]);
     },
   );
+
+  it("keeps dispatched native work when a connection save replaces the connections array", async () => {
+    mocks.invoke.mockImplementation(() => new Promise(() => {}));
+    const initial = options();
+    const { rerender } = renderHook(useOriginBrowserPrewarm, {
+      initialProps: initial,
+    });
+    await idle();
+    // Every save publishes a new array and a new object for the edited row.
+    rerender({ ...initial, connections: [{ ...website, name: "Renamed" }] });
+    rerender({
+      ...initial,
+      connections: [
+        { id: "ssh", protocol: "ssh" } as Connection,
+        { ...website, name: "Renamed", port: 8443 },
+        { id: "later", protocol: "http" } as Connection,
+      ],
+    });
+    expect(commands()).toEqual(["origin_browser_prewarm"]);
+  });
+
+  it("does not restart the idle delay when a connection save replaces the connections array", async () => {
+    const initial = options();
+    const { rerender } = renderHook(useOriginBrowserPrewarm, {
+      initialProps: initial,
+    });
+    act(() => vi.advanceTimersByTime(1_999));
+    rerender({ ...initial, connections: [{ ...website, name: "Renamed" }] });
+    act(() => vi.advanceTimersByTime(1));
+    expect(window.requestIdleCallback).toHaveBeenCalledTimes(1);
+    await idle();
+    expect(commands()).toEqual(["origin_browser_prewarm"]);
+  });
+
+  it.each([
+    [
+      "another website becomes the first one",
+      [{ id: "other", protocol: "http" } as Connection, website],
+    ],
+    ["the website is removed", [{ id: "ssh", protocol: "ssh" } as Connection]],
+    ["the website becomes a group", [{ ...website, isGroup: true }]],
+  ] as const)(
+    "cancels dispatched native work when %s",
+    async (_, connections) => {
+      mocks.invoke.mockImplementation(() => new Promise(() => {}));
+      const initial = options();
+      const { rerender } = renderHook(useOriginBrowserPrewarm, {
+        initialProps: initial,
+      });
+      await idle();
+      rerender({ ...initial, connections });
+      expect(commands()).toEqual([
+        "origin_browser_prewarm",
+        "origin_browser_cancel_prewarm",
+      ]);
+    },
+  );
+
+  it("keeps dispatched native work while the app document is hidden", async () => {
+    mocks.invoke.mockImplementation(() => new Promise(() => {}));
+    renderHook(useOriginBrowserPrewarm, { initialProps: options() });
+    await idle();
+    visibility("hidden");
+    expect(commands()).toEqual(["origin_browser_prewarm"]);
+    visibility("visible");
+    expect(commands()).toEqual(["origin_browser_prewarm"]);
+  });
+
+  it.each(["lock", "database change", "close"])(
+    "still cancels dispatched native work on %s while hidden",
+    async (reason) => {
+      mocks.invoke.mockImplementation(() => new Promise(() => {}));
+      renderHook(useOriginBrowserPrewarm, { initialProps: options() });
+      await idle();
+      visibility("hidden");
+      act(() => {
+        if (reason === "lock") {
+          mocks.capture.mockImplementation(() => {
+            throw new Error("locked");
+          });
+          mocks.access();
+        }
+        if (reason === "database change") {
+          mocks.current.mockReturnValue(null);
+          mocks.database();
+        }
+        if (reason === "close") mocks.close();
+      });
+      expect(commands()).toEqual([
+        "origin_browser_prewarm",
+        "origin_browser_cancel_prewarm",
+      ]);
+    },
+  );
+
+  it("stops queued idle work while hidden and schedules it again once visible", async () => {
+    renderHook(useOriginBrowserPrewarm, { initialProps: options() });
+    act(() => vi.advanceTimersByTime(2_000));
+    const late = [...callbacks.values()][0];
+    visibility("hidden");
+    act(() => {
+      late({ didTimeout: false, timeRemaining: () => 20 });
+    });
+    await idle();
+    expect(mocks.invoke).not.toHaveBeenCalled();
+    visibility("visible");
+    await idle();
+    expect(commands()).toEqual(["origin_browser_prewarm"]);
+  });
 
   it("does not retry failures or surface them into shell initialization", async () => {
     mocks.invoke.mockRejectedValue(new Error("native runtime unavailable"));

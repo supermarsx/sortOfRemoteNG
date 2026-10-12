@@ -31,6 +31,12 @@ export function useOriginBrowserPrewarm({
   settings,
 }: Options) {
   const attempted = useRef(false);
+  // Every save replaces the array and the edited row. Only the identity of
+  // the website native is asked to authorize may restart or cancel this work.
+  const connectionId = connections.find(
+    (row) =>
+      !row.isGroup && (row.protocol === "http" || row.protocol === "https"),
+  )?.id;
   let enabled = false;
   try {
     const config = normalizeWebBrowserSettings(settings.webBrowser);
@@ -66,22 +72,19 @@ export function useOriginBrowserPrewarm({
     };
     const closingNow = () => disposed || closingWindow || closing.current;
     const refresh = () => {
-      if (closingNow() || document.visibilityState === "hidden") {
+      if (closingNow()) {
         cancel();
+        return;
+      }
+      if (document.visibilityState === "hidden") {
+        // Minimizing stops speculation that has not started. It must not
+        // abandon a dispatched engine start, which native cannot undo.
+        if (!pendingNative) cancel();
         return;
       }
       try {
         const database = manager.getCurrentDatabase();
-        if (!database) {
-          cancel();
-          return;
-        }
-        const connection = connections.find(
-          (row) =>
-            !row.isGroup &&
-            (row.protocol === "http" || row.protocol === "https"),
-        );
-        if (!connection) {
+        if (!database || connectionId === undefined) {
           cancel();
           return;
         }
@@ -90,7 +93,7 @@ export function useOriginBrowserPrewarm({
         const key = JSON.stringify([
           database.id,
           proof.expectedSecurityRevision,
-          connection.id,
+          connectionId,
         ]);
         proof.assertCurrent();
         if (ownerKey === key) return;
@@ -122,7 +125,7 @@ export function useOriginBrowserPrewarm({
           void invoke("origin_browser_prewarm", {
             request: {
               ownerDatabaseId: proof.ownerDatabaseId,
-              connectionId: connection.id,
+              connectionId,
               expectedSecurityRevision: proof.expectedSecurityRevision,
               sourceSessionId: proof.sourceSessionId,
             },
@@ -197,5 +200,5 @@ export function useOriginBrowserPrewarm({
       document.removeEventListener("visibilitychange", refresh);
       window.removeEventListener("pagehide", close);
     };
-  }, [appReady, settingsReady, locked, enabled, closing, connections]);
+  }, [appReady, settingsReady, locked, enabled, closing, connectionId]);
 }

@@ -16,6 +16,17 @@ interface OverlayState {
 }
 const inactiveState: OverlayState = { blocked: false, rectangles: [] };
 
+/** Attributes and styles only; an empty layout box is the sampler's to read. */
+function shown(node: HTMLElement) {
+  if (node.closest('[hidden], [aria-hidden="true"], [inert]')) return false;
+  const style = getComputedStyle(node);
+  return (
+    style.display !== "none" &&
+    style.visibility !== "hidden" &&
+    style.visibility !== "collapse"
+  );
+}
+
 /** Cut out actual shell overlay rectangles instead of unmapping the browser. */
 export function useOriginBrowserOverlays(active: boolean) {
   const [state, setState] = useState<OverlayState | null>(null);
@@ -48,14 +59,7 @@ export function useOriginBrowserOverlays(active: boolean) {
           resize.observe(node);
           observed.add(node);
         }
-        if (node.closest('[hidden], [aria-hidden="true"], [inert]')) continue;
-        const style = getComputedStyle(node);
-        if (
-          style.display === "none" ||
-          style.visibility === "hidden" ||
-          style.visibility === "collapse"
-        )
-          continue;
+        if (!shown(node)) continue;
         // Empty for display:none ancestors; visibility is inherited. Avoid
         // walking every ancestor's styles for every application mutation.
         const box = node.getBoundingClientRect();
@@ -136,18 +140,26 @@ export function useOriginBrowserOverlays(active: boolean) {
   }, [active]);
   // Activation must not present an unclipped native child before the layout
   // effect has sampled overlays that appeared while this tab was inactive.
-  const pendingBounds =
-    active && !state && typeof window !== "undefined"
-      ? originBrowserBounds({
-          x: 0,
-          y: 0,
-          width: window.innerWidth,
-          height: window.innerHeight,
-        })
-      : null;
+  const pending = active && !state && typeof window !== "undefined";
+  const pendingBounds = pending
+    ? originBrowserBounds({
+        x: 0,
+        y: 0,
+        width: window.innerWidth,
+        height: window.innerHeight,
+      })
+    : null;
+  // Blocking also takes native focus and closes DevTools, so that clip blocks
+  // only while an interactive overlay may already be showing. A superset of
+  // what the sample can block for the same document.
+  const pendingBlocked =
+    pending &&
+    Array.from(
+      document.querySelectorAll<HTMLElement>(interactiveOverlays),
+    ).some(shown);
   const presentation = active
     ? (state ?? {
-        blocked: true,
+        blocked: pendingBlocked,
         rectangles: pendingBounds ? [pendingBounds] : [],
       })
     : inactiveState;

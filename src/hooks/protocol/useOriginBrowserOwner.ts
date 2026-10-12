@@ -24,23 +24,23 @@ export function useOriginBrowserOwner(
   } | null>(null);
   useLayoutEffect(() => {
     const manager = DatabaseManager.getInstance();
+    const owner = session.ownerDatabaseId;
     let disposed = false;
+    let held: OriginBrowserOwnerProof | null = null;
     const revoke = () => {
+      held = null;
       void closeRef.current?.();
       setCaptured(null);
     };
-    const capture = () => {
-      if (disposed) return;
-      revoke();
+    const acquire = () => {
       try {
-        const owner = session.ownerDatabaseId;
         if (
           !owner ||
           availability?.status !== "ready" ||
           availability.databaseId !== owner ||
           manager.getCurrentDatabase()?.id !== owner
         )
-          return;
+          return null;
         const proof = manager.captureOriginBrowserOwnerProof(owner);
         if (
           !proof ||
@@ -48,16 +48,60 @@ export function useOriginBrowserOwner(
           !proof.expectedSecurityRevision ||
           !proof.sourceSessionId
         )
-          return;
+          return null;
         proof.assertCurrent();
-        setCaptured({ scope, proof });
+        return proof;
       } catch {
         /* An unavailable owner must never acquire a fallback grant. */
+        return null;
       }
     };
-    const offCurrent = manager.onCurrentDatabaseChange(capture);
+    const lapsed = () => {
+      try {
+        held?.assertCurrent();
+        return false;
+      } catch {
+        return true;
+      }
+    };
+    const capture = () => {
+      if (disposed) return;
+      const proof = acquire();
+      // Native binds the attempt to exactly these values. A re-capture that
+      // repeats them is the same authority; closing would end the tab with
+      // nothing changed to start it again.
+      if (
+        held &&
+        proof &&
+        proof.expectedSecurityRevision === held.expectedSecurityRevision &&
+        proof.sourceSessionId === held.sourceSessionId
+      ) {
+        if (!lapsed()) return;
+        held = proof;
+        setCaptured({ scope, proof });
+        return;
+      }
+      revoke();
+      if (!proof) return;
+      held = proof;
+      setCaptured({ scope, proof });
+    };
+    const offCurrent = manager.onCurrentDatabaseChange((change) => {
+      // Creating, unlocking, locking, closing or deleting another database
+      // neither names this owner nor moves the selection to or from it. A
+      // null id means the event ended the selection it names as previous.
+      const subject = change.databaseId ?? change.previousDatabaseId;
+      const selected = change.database?.id ?? null;
+      if (
+        subject !== owner &&
+        (change.previousDatabaseId === owner) === (selected === owner) &&
+        !lapsed()
+      )
+        return;
+      capture();
+    });
     const offAccess = manager.onDatabaseAccessChange((event) => {
-      if (event.databaseId === session.ownerDatabaseId) capture();
+      if (event.databaseId === owner) capture();
     });
     capture();
     return () => {
