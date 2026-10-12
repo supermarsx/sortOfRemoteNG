@@ -266,6 +266,26 @@ export const BRAND_ICON_SLUGS = [
   "youtube",
   "icloud",
   "mcdonalds",
+  // Application portals: a supported web application's own mark (suggestions only).
+  "googlegemini",
+  "notion",
+  "arlo",
+  "uptimekuma",
+  "steam",
+  "kimi",
+  "npm",
+  "reddit",
+  "tesla",
+  "ebay",
+  "x",
+  "vaultwarden",
+  "apacheguacamole",
+  "brevo",
+  "googleplay",
+  "pypi",
+  "googleadsense",
+  "googleforms",
+  "youtubestudio",
 ] as const;
 
 /** A slug known to be vendored into `generatedBrandIcons.ts`. */

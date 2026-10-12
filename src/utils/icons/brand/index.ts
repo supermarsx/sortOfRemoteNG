@@ -78,6 +78,7 @@ export * from "./messagingPublisherBrandIcons";
 export * from "./hostingHistoricalBrandIcons";
 export * from "./telecomPublisherBrandIcons";
 export * from "./hostingIdentifierIcons";
+export * from "./applicationPortalIdentifierIcons";
 export * from "./dashboardBrandIcons";
 export * from "./retracedProviderBrandIcons";
 

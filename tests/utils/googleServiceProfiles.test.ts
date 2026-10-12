@@ -39,7 +39,7 @@ describe("additional Google website profiles", () => {
     ).toEqual(entries);
   });
 
-  it("suggests the existing YouTube vector for Studio without replacing a saved icon", () => {
+  it("suggests the YouTube Studio vector for Studio without replacing a saved icon", () => {
     const connection = {
       protocol: "https" as const,
       icon: "star",
@@ -53,8 +53,8 @@ describe("additional Google website profiles", () => {
       applicationId: "youtube-studio",
       applicationLabel: "YouTube Studio",
       icon: {
-        key: "youtube",
-        icon: getConnectionIconDefinition("youtube")!.icon,
+        key: "youtube-studio",
+        icon: getConnectionIconDefinition("youtube-studio")!.icon,
       },
     });
     expect(connection.icon).toBe("star");

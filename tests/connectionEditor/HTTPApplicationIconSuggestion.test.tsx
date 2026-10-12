@@ -62,6 +62,43 @@ function Fixture({
 const readValue = () =>
   JSON.parse(screen.getByTestId("value").textContent!) as Partial<Connection>;
 
+/**
+ * [application, what it suggested before it had an icon of its own, what it
+ * suggests now]. The first 23 suggested a generic glyph; the rest suggested
+ * their family's mark.
+ */
+const OWN_ICON_SUGGESTIONS = [
+  ["google-gemini", "bot", "google-gemini"],
+  ["notion", "file-text", "notion"],
+  ["arlo", "camera", "arlo"],
+  ["uptime-kuma", "activity", "uptime-kuma"],
+  ["steam", "web-application", "steam"],
+  ["kimi", "bot", "kimi"],
+  ["npm", "package", "npm"],
+  ["reddit", "web-application", "reddit"],
+  ["tesla", "vehicle", "tesla"],
+  ["ebay", "web-application", "ebay"],
+  ["x", "web-application", "x"],
+  ["vaultwarden", "web-application", "vaultwarden"],
+  ["guacamole", "web-application", "guacamole"],
+  ["brevo", "web-application", "brevo"],
+  ["chatgpt", "bot", "chatgpt"],
+  ["autoridade-tributaria", "building-government", "autoridade-tributaria"],
+  ["seguranca-social-direta", "people", "seguranca-social"],
+  ["irn-online", "building-government", "irn"],
+  ["e-redes", "lightning", "e-redes"],
+  ["imt-online", "vehicle", "imt"],
+  ["via-verde", "vehicle", "via-verde"],
+  ["zabbix", "activity", "zabbix"],
+  ["lovable", "code", "lovable"],
+  ["google-play-store", "android", "google-play"],
+  ["google-play-console", "android", "google-play"],
+  ["pypi", "python", "pypi"],
+  ["google-adsense", "google", "google-adsense"],
+  ["google-forms", "google", "google-forms"],
+  ["youtube-studio", "youtube", "youtube-studio"],
+] as const;
+
 describe("HTTP application icon suggestions", () => {
   it("covers exactly the selectable application profiles with stable existing keys", () => {
     expect(Object.keys(HTTP_APPLICATION_ICON_SUGGESTIONS).sort()).toEqual(
@@ -79,6 +116,58 @@ describe("HTTP application icon suggestions", () => {
       "nginx-proxy-manager",
     );
   });
+
+  it.each(OWN_ICON_SUGGESTIONS)(
+    "suggests %s an icon of its own and keeps the earlier %s choice valid",
+    (id, earlier, own) => {
+      const connection = {
+        protocol: "https" as const,
+        httpApplication: {
+          version: 1 as const,
+          id,
+          loginMode: "manual" as const,
+        },
+      };
+      const suggestion = getHttpApplicationIconSuggestion(connection);
+      expect(suggestion?.icon.key).toBe(own);
+      // The earlier key is a persisted value: it stays, with its own artwork.
+      const kept = getConnectionIconDefinition(earlier);
+      expect(kept).toBeDefined();
+      expect(kept?.icon).not.toBe(suggestion?.icon.icon);
+      expect(
+        resolveEffectiveConnectionIcon({ ...connection, icon: earlier }),
+      ).toMatchObject({ key: earlier, source: "override" });
+      // Still a suggestion: nothing chosen means the protocol's icon.
+      expect(resolveEffectiveConnectionIcon(connection).key).toBe("https");
+    },
+  );
+
+  it.each(OWN_ICON_SUGGESTIONS)(
+    "replaces a saved icon for %s only through the explicit action",
+    (id, earlier, own) => {
+      const saved: Partial<Connection> = {
+        ...initial,
+        icon: earlier,
+        httpApplication: { version: 1, id, loginMode: "manual" },
+      };
+      const setFormData = vi.fn();
+      render(
+        <ApplicationIconSuggestion
+          formData={saved}
+          setFormData={setFormData}
+        />,
+      );
+      expect(setFormData).not.toHaveBeenCalled();
+      fireEvent.click(
+        screen.getByRole("button", { name: "Use suggested icon" }),
+      );
+      expect(setFormData).toHaveBeenCalledTimes(1);
+      const update = setFormData.mock.calls[0][0] as (
+        value: Partial<Connection>,
+      ) => Partial<Connection>;
+      expect(update(saved)).toEqual({ ...saved, icon: own });
+    },
+  );
 
   it.each(HTTP_APPLICATION_PROFILES)(
     "uses a passive existing choice for selectable $id only",

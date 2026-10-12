@@ -6,7 +6,7 @@ export const HOSTED_DASHBOARD_ICON_SUGGESTIONS = {
   "network-solutions": "network-solutions",
   time4vps: "time4vps",
   contabo: "contabo",
-  chatgpt: "bot",
+  chatgpt: "chatgpt",
   claude: "claude",
   openrouter: "openrouter",
   "gitlab-com": "gitlab-ci",

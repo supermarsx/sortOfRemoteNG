@@ -203,6 +203,7 @@ test("every brand icon is a themed passive Lucide icon with its declared artwork
     RETRACED_PROVIDER_BRAND_ICONS,
     putty,
     noip,
+    tacticalrmm,
     vscode,
   } = await importBrandModule();
 
@@ -220,6 +221,7 @@ test("every brand icon is a themed passive Lucide icon with its declared artwork
     ...Object.keys(RETRACED_PROVIDER_BRAND_ICONS),
     "putty",
     "noip",
+    "tacticalrmm",
     "vscode",
   ];
   assert.equal(
@@ -234,6 +236,7 @@ test("every brand icon is a themed passive Lucide icon with its declared artwork
   );
   assert.equal(BRAND_ICONS.putty, putty);
   assert.equal(BRAND_ICONS.noip, noip);
+  assert.equal(BRAND_ICONS.tacticalrmm, tacticalrmm);
   assert.equal(BRAND_ICONS.vscode, vscode);
   const providerGeometry = {
     microsoftteams: [
@@ -465,6 +468,7 @@ test("historical marks preserve the version-pinned upstream path bytes", async (
     linode: "7c0a82f4e746975fea5c77d96e3631fd73ceeb8f9d7f17188c509567671a7388",
     microsoftoffice:
       "06c1849fc67d842ab3ee501b24252737980095211358ae42e6efcff4e4172077",
+    openai: "3fae9b38d571a5ab5aa662bc279dcda580855d6ca6b35330e4b4ba171367ffb1",
   };
   assert.deepEqual(
     [...HISTORICAL_BRAND_ICON_NAMES].sort(),
@@ -480,6 +484,100 @@ test("historical marks preserve the version-pinned upstream path bytes", async (
       createHash("sha256").update(paths[0][1]).digest("hex"),
       digest,
       `${name} drifted from the documented upstream source`,
+    );
+  }
+});
+
+test("the pinned OpenAI mark rebuilds its recorded upstream SVG byte for byte", async () => {
+  const { BRAND_ICONS, BRAND_ICON_SLUGS, openai } = await importBrandModule();
+  const source = fs.readFileSync(
+    path.join(BRAND_DIRECTORY, "historicalBrandIcons.ts"),
+    "utf8",
+  );
+  const pinned =
+    /\/\*\* Simple Icons 15\.22\.0; SVG SHA-256: ([0-9a-f]{64})\. \*\/\s*export const openai = createBrandIcon\(\s*"OpenAI",/u.exec(
+      source,
+    );
+  assert.notEqual(
+    pinned,
+    null,
+    "the OpenAI pin must record its release and source SVG SHA-256 beside the export",
+  );
+  assert.equal(
+    pinned[1],
+    "2b4a04ddc2395b20d168694d3850ce2050a702c4a0cdeb4d8b31b9a970481a8c",
+  );
+
+  const markup = renderToStaticMarkup(createElement(openai));
+  const paths = [...markup.matchAll(/<path d="([^"]+)"/gu)];
+  assert.equal(paths.length, 1);
+  // simple-icons ships one canonical single-line SVG per mark, so the recorded
+  // source hash is reproducible offline from the vendored path alone.
+  assert.equal(
+    createHash("sha256")
+      .update(
+        `<svg role="img" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><title>OpenAI</title><path d="${paths[0][1]}"/></svg>`,
+      )
+      .digest("hex"),
+    pinned[1],
+    "the vendored path is not the one in the pinned 15.22.0 openai.svg",
+  );
+  assert.equal(BRAND_ICONS.openai, openai);
+  assert.ok(
+    !BRAND_ICON_SLUGS.includes("openai"),
+    "OpenAI is pinned precisely because the installed simple-icons dropped it",
+  );
+  assert.ok(
+    !fs.existsSync(
+      path.join(REPOSITORY_ROOT, "node_modules/simple-icons/icons/openai.svg"),
+    ),
+    "the installed simple-icons carries openai again; vendor it through brandIconSlugs.ts instead",
+  );
+});
+
+// Supported web applications whose own mark the installed simple-icons carries.
+const APPLICATION_PORTAL_SLUGS = [
+  "googlegemini",
+  "notion",
+  "arlo",
+  "uptimekuma",
+  "steam",
+  "kimi",
+  "npm",
+  "reddit",
+  "tesla",
+  "ebay",
+  "x",
+  "vaultwarden",
+  "apacheguacamole",
+  "brevo",
+  "googleplay",
+  "pypi",
+  "googleadsense",
+  "googleforms",
+  "youtubestudio",
+];
+
+test("application portal marks are vendored verbatim from the installed simple-icons", async () => {
+  const slugs = parseBrandIconSlugs(SLUGS_SOURCE);
+  const { BRAND_ICONS, GENERATED_BRAND_ICONS } = await importBrandModule();
+
+  for (const slug of APPLICATION_PORTAL_SLUGS) {
+    assert.ok(
+      slugs.includes(slug),
+      `${slug} is not requested in brandIconSlugs.ts`,
+    );
+    const Icon = GENERATED_BRAND_ICONS[slug];
+    assert.notEqual(Icon, undefined, `${slug} has no generated mark`);
+    assert.equal(BRAND_ICONS[slug], Icon, `${slug} must reach the registry`);
+
+    const markup = renderToStaticMarkup(createElement(Icon));
+    const paths = [...markup.matchAll(/<path d="([^"]+)"/gu)];
+    assert.equal(paths.length, 1, `${slug} must stay a single path`);
+    assert.equal(
+      paths[0][1],
+      readBrandIcon(slug).path,
+      `${slug} drifted from the installed simple-icons path`,
     );
   }
 });

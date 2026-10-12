@@ -40,6 +40,7 @@ import { BUSINESS_SYSTEM_ICONS } from "./businessSystems";
 import { BANKING_ICONS } from "./banking";
 import { ADMIN_PANEL_ICONS } from "./adminPanels";
 import { HOSTED_DASHBOARD_ICONS } from "./hostedDashboards";
+import { APPLICATION_PORTAL_ICONS } from "./applicationPortals";
 import { AMAZON_APPLICATION_ICONS } from "./amazonApplications";
 import { RD_WEB_APPLICATION_ICONS } from "./rdWebApplications";
 
@@ -53,6 +54,7 @@ export const WEB_APPLICATION_ICONS = [
   ...RD_WEB_APPLICATION_ICONS,
   ...ADMIN_PANEL_ICONS,
   ...HOSTED_DASHBOARD_ICONS,
+  ...APPLICATION_PORTAL_ICONS,
   defineIcon("autodesk", "Autodesk", "web-applications", autodesk, [
     "autodesk",
     "autodesk account",
