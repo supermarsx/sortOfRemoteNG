@@ -210,8 +210,10 @@ as historical where the product's current branding differs.
 | Microsoft Dynamics 365 | [Simple Icons 11.0.0](https://raw.githubusercontent.com/simple-icons/simple-icons/11.0.0/icons/dynamics365.svg)        | Exported as `microsoftdynamics365`, but the upstream filename is **dynamics365.svg**. [Publisher icon terms](https://learn.microsoft.com/en-us/dynamics365/get-started/icons) limit their stated permission to diagrams, training, and documentation; historical collection availability is not a blanket permission for app redistribution. |
 | Slack                  | [Simple Icons 11.0.0](https://raw.githubusercontent.com/simple-icons/simple-icons/11.0.0/icons/slack.svg)              | Historical collection path; [Slack brand guidelines](https://slack.com/brand-guidelines) remain applicable.                                                                                                                                                                                                                                  |
 | T-Mobile               | [Simple Icons 11.0.0](https://raw.githubusercontent.com/simple-icons/simple-icons/11.0.0/icons/tmobile.svg)            | Exact historical T-Mobile path, byte-identical to the installed Deutsche Telekom shared T symbol; [publisher brand portal](https://tmap.t-mobile.com/portals/pro74u7a/EXTBrandPortal) is recorded upstream. Source SVG SHA-256 and path digest are verified independently.                                                                   |
+| OpenAI                 | [Simple Icons 15.22.0](https://raw.githubusercontent.com/simple-icons/simple-icons/15.22.0/icons/openai.svg)           | Pre-2025-rebrand mark, used as the artwork of the `chatgpt` key. Upstream cites `https://openai.com/brand` and removed the mark in 16.0.0 because publisher permission was not obtained; see [application portal icons](#pinned-openai-mark-for-chatgpt).                                                                                    |
 
-The pinned releases' collection licenses are [11.0.0 CC0](https://github.com/simple-icons/simple-icons/blob/11.0.0/LICENSE.md),
+The pinned releases' collection licenses are [15.22.0 CC0](https://github.com/simple-icons/simple-icons/blob/15.22.0/LICENSE.md),
+[11.0.0 CC0](https://github.com/simple-icons/simple-icons/blob/11.0.0/LICENSE.md),
 [9.0.0 CC0](https://github.com/simple-icons/simple-icons/blob/9.0.0/LICENSE.md), and
 [7.0.0 CC0](https://github.com/simple-icons/simple-icons/blob/7.0.0/LICENSE.md), and
 [5.0.0 CC0](https://github.com/simple-icons/simple-icons/blob/5.0.0/LICENSE.md).
@@ -806,3 +808,167 @@ pure passive rendering, exact collection/publisher geometry and strict icon
 library export/import. The `messaging` contact-sheet family renders the actual
 catalog components at 16/24/32/96px in both themes, including the large Explorer
 preview size.
+
+## Application portal icons (2026-10-12)
+
+Twenty-three supported website applications suggested a generic glyph, and six
+more suggested their family's mark although their own was installed. Each now
+suggests an icon of its own, through 28 catalog keys in
+`src/utils/icons/catalog/applicationPortals.ts`. A key names the application,
+not the artwork, so artwork can be replaced later without changing a saved
+connection.
+
+Nothing that existed changes. Every earlier key still resolves to the same
+artwork, including the glyphs these applications suggested before. The mapping
+stays a suggestion that the editor applies only when asked: a saved icon is
+never replaced, and the tree and tabs keep their automatic icon. `lxd` (a
+combined LXD / Incus profile) and the four profiles that name no product
+(`custom`, `generic-form`, `http-basic`, `http-digest`) keep a neutral glyph by
+design.
+
+| Application                                | Earlier suggestion    | Key                     | Artwork                           |
+| ------------------------------------------ | --------------------- | ----------------------- | --------------------------------- |
+| `google-gemini`                            | `bot`                 | `google-gemini`         | Installed mark `googlegemini`     |
+| `notion`                                   | `file-text`           | `notion`                | Installed mark `notion`           |
+| `arlo`                                     | `camera`              | `arlo`                  | Installed mark `arlo`             |
+| `uptime-kuma`                              | `activity`            | `uptime-kuma`           | Installed mark `uptimekuma`       |
+| `steam`                                    | `web-application`     | `steam`                 | Installed mark `steam`            |
+| `kimi`                                     | `bot`                 | `kimi`                  | Installed mark `kimi`             |
+| `npm`                                      | `package`             | `npm`                   | Installed mark `npm`              |
+| `reddit`                                   | `web-application`     | `reddit`                | Installed mark `reddit`           |
+| `tesla`                                    | `vehicle`             | `tesla`                 | Installed mark `tesla`            |
+| `ebay`                                     | `web-application`     | `ebay`                  | Installed mark `ebay`             |
+| `x`                                        | `web-application`     | `x`                     | Installed mark `x`                |
+| `vaultwarden`                              | `web-application`     | `vaultwarden`           | Installed mark `vaultwarden`      |
+| `guacamole`                                | `web-application`     | `guacamole`             | Installed mark `apacheguacamole`  |
+| `brevo`                                    | `web-application`     | `brevo`                 | Installed mark `brevo`            |
+| `chatgpt`                                  | `bot`                 | `chatgpt`               | Pinned historical mark `openai`   |
+| `autoridade-tributaria`                    | `building-government` | `autoridade-tributaria` | App-authored AT initials          |
+| `seguranca-social-direta`                  | `people`              | `seguranca-social`      | App-authored SS initials          |
+| `irn-online`                               | `building-government` | `irn`                   | App-authored IRN initials         |
+| `e-redes`                                  | `lightning`           | `e-redes`               | App-authored ER initials          |
+| `imt-online`                               | `vehicle`             | `imt`                   | App-authored IMT initials         |
+| `via-verde`                                | `vehicle`             | `via-verde`             | App-authored VV initials          |
+| `zabbix`                                   | `activity`            | `zabbix`                | App-authored ZB initials          |
+| `lovable`                                  | `code`                | `lovable`               | App-authored L with code chevrons |
+| `google-play-store`, `google-play-console` | `android`             | `google-play`           | Installed mark `googleplay`       |
+| `pypi`                                     | `python`              | `pypi`                  | Installed mark `pypi`             |
+| `google-adsense`                           | `google`              | `google-adsense`        | Installed mark `googleadsense`    |
+| `google-forms`                             | `google`              | `google-forms`          | Installed mark `googleforms`      |
+| `youtube-studio`                           | `youtube`             | `youtube-studio`        | Installed mark `youtubestudio`    |
+
+### Installed marks
+
+Nineteen marks use the unchanged single paths of the installed Simple Icons
+16.28.0 package (collection license CC0-1.0), vendored through
+`brandIconSlugs.ts` and `npm run icons:brand:generate`. Their geometry is
+preserved and only the fill follows the selected icon color. The sources below
+are copied from the installed `simple-icons/data/simple-icons.json`; an absent
+individual license field is **not** a claim of unrestricted publisher rights.
+
+| Mark             | Publisher source recorded upstream                                                                                                |
+| ---------------- | --------------------------------------------------------------------------------------------------------------------------------- |
+| Google Gemini    | [Source](https://gemini.google.com)                                                                                               |
+| Notion           | [Source](https://www.notion.so)                                                                                                   |
+| Arlo             | [Source](https://www.arlo.com)                                                                                                    |
+| Uptime Kuma      | [Source](https://uptime.kuma.pet)                                                                                                 |
+| Steam            | [Source and guidelines](https://partner.steamgames.com/doc/marketing/branding)                                                    |
+| Kimi             | [Source and guidelines](https://moonshotai.github.io/Branding-Guide)                                                              |
+| npm              | [Source](https://www.npmjs.com); [guidelines](https://docs.npmjs.com/policies/logos-and-usage)                                    |
+| Reddit           | [Source and guidelines](https://www.redditinc.com/brand)                                                                          |
+| Tesla            | [Source](https://www.tesla.com/tesla-gallery)                                                                                     |
+| eBay             | [Source](https://go.developer.ebay.com/logos)                                                                                     |
+| X                | [Source](https://x.com); [guidelines](https://about.x.com/en/who-we-are/brand-toolkit)                                            |
+| Vaultwarden      | [Source](https://github.com/dani-garcia/vaultwarden/blob/44e9e1a58ed37bf4b352bb499fd3e97adcd3b26b/resources/vaultwarden-icon.svg) |
+| Apache Guacamole | [Source](https://apache.org/logos)                                                                                                |
+| Brevo            | [Source](https://www.brevo.com)                                                                                                   |
+| Google Play      | [Source and guidelines](https://partnermarketinghub.withgoogle.com/brands/google-play/visual-identity/primary-logos/)             |
+| PyPI             | [Source](https://pypi.org)                                                                                                        |
+| Google AdSense   | [Source](https://www.google.com/adsense/)                                                                                         |
+| Google Forms     | [Source](https://about.google/products/#all-products)                                                                             |
+| YouTube Studio   | [Source](https://www.youtube.com)                                                                                                 |
+
+Only Apache Guacamole records an individual license: the installed metadata
+gives [Apache-2.0](https://www.apache.org/licenses/LICENSE-2.0) for its artwork.
+The [ASF trademark policy](https://www.apache.org/foundation/marks/) still
+applies; the mark identifies the project, not this app or an endorsement.
+`google-play` serves both the Play Store and the Play Console. The earlier
+family marks (`google`, `android`, `python`, `youtube`) are unchanged and remain
+selectable.
+
+### Pinned OpenAI mark for ChatGPT
+
+The `chatgpt` key uses the exact path from
+[Simple Icons 15.22.0](https://raw.githubusercontent.com/simple-icons/simple-icons/15.22.0/icons/openai.svg),
+exported as `openai` from `historicalBrandIcons.ts`. SVG SHA-256:
+`2b4a04ddc2395b20d168694d3850ce2050a702c4a0cdeb4d8b31b9a970481a8c`. Rendered
+path SHA-256: `3fae9b38d571a5ab5aa662bc279dcda580855d6ca6b35330e4b4ba171367ffb1`.
+The release metadata cites `https://openai.com/brand` as both source and
+guidelines and records no individual license field.
+
+15.22.0 is the last release that carries the file, and the file is byte-identical
+from 11.0.0 through 15.22.0. Simple Icons removed the mark in 16.0.0:
+[pull request 13944](https://github.com/simple-icons/simple-icons/pull/13944)
+("Remove OpenAI", merged 2025-11-29) closes
+[issue 12739](https://github.com/simple-icons/simple-icons/issues/12739), which
+was opened on 2025-02-11 after OpenAI's rebrand and is labelled
+`permission required`. **Upstream dropped the mark because publisher permission
+was not obtained.** That is why the installed 16.28.0 package no longer has it.
+
+This is therefore the pre-rebrand mark, not a claim to current OpenAI or ChatGPT
+branding, and the catalog description says so. Its historical availability under
+the collection's CC0 license is not a grant of trademark permission. If the mark
+should not ship, the `chatgpt` entry can take an app-authored identifier instead:
+the key, the suggestion and saved connections stay as they are.
+
+### App-authored identifiers
+
+Eight applications have no mark in Simple Icons, installed or historical. Their
+icons in `applicationPortalIdentifierIcons.ts` are app-authored initials. They
+are **not official logos**, their catalog descriptions say so, and they are not
+included in `BRAND_ICONS`. Each is one path on the 24×24 grid with the default
+2px round stroke: no font, no fill, no raster tracing and no reuse of publisher
+lettering or symbols.
+
+Each publisher's own public site was checked on 2026-10-12 for a compact
+official vector and for its terms. An official mark was to be used only where a
+vector exists, reduces to one flat path without redrawing, and the publisher's
+terms do not forbid it. None met all three. The references below establish
+which organization a label identifies and why its mark is not used; they are
+not the source of the authored shapes.
+
+| Key                     | Identifier           | Publisher checked and why its mark is not used                                                                                                                                                                                                                                                                                                                                                                                                      |
+| ----------------------- | -------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `zabbix`                | ZB initials          | **Terms forbid it.** An [official SVG](https://assets.zabbix.com/img/logo/zabbix.svg) exists, but the [trademark policy](https://www.zabbix.com/trademark) requires the logo unaltered, forbids changing its color or using the letters without the rectangle, and lists use in altered form among the uses that need a trademark license. A single path in the connection color is an altered form.                                                |
+| `lovable`               | L with code chevrons | **Terms forbid it.** An [official icon](https://lovable.dev/icon.svg) exists, a silhouette filled with gradients. The [brand hub](https://lovablebrand.lovable.app/brand/logo) linked from [lovable.dev/brand](https://lovable.dev/brand) allows approved colors only and forbids changing the logo's colors.                                                                                                                                       |
+| `e-redes`               | ER initials          | **Terms forbid it.** An [official SVG](https://www.e-redes.pt/themes/custom/eredes_theme/logo.svg) exists. The [site terms](https://www.e-redes.pt/pt-pt/politica-e-condicoes/termos-e-condicoes) (sections 6 and 8) prohibit using, reproducing or altering its marks and logos without prior written consent, and the identity manual in its press kit requires approval before the symbol is shown apart from the logo.                          |
+| `irn`                   | IRN initials         | **Terms forbid it.** Only raster logos were found on the [IRN site](https://irn.justica.gov.pt/). Its [legal notice](https://irn.justica.gov.pt/Avisos-Legais) requires prior written authorization for any modification or commercial use.                                                                                                                                                                                                         |
+| `via-verde`             | VV initials          | **Terms unclear.** An [official SVG](https://www.viaverde.pt/Portals/_default/skins/viaverde2/assets/images/brand-logo_footer.svg) exists and its symbol would reduce to one path. The public pages read carry data-protection text only; no statement on logo or trademark use was found.                                                                                                                                                          |
+| `imt`                   | IMT initials         | **Terms unclear.** An [official SVG](https://www.imt-ip.pt/wp-content/uploads/2026/10/logo-imt.svg) exists, but it is multi-color with blend modes and masks, so its symbol does not survive as one flat path. The [terms of use](https://www.imt-ip.pt/termos-de-utilizacao-e-responsabilidade/) cover the site's information, not its logo.                                                                                                       |
+| `autoridade-tributaria` | AT initials          | **Terms unclear.** An [official SVG](https://info.portaldasfinancas.gov.pt/_layouts/15/images/portalat/logo-at.svg) exists on the AT information portal: a two-tone emblem of about two dozen paths. The [site terms](https://info.portaldasfinancas.gov.pt/pt/quem_somos/privacidade/Pages/privacidade.aspx) allow reproducing site information for non-commercial purposes with the source named; nothing addresses the emblem or its adaptation. |
+| `seguranca-social`      | SS initials          | **No official vector found.** [Segurança Social Direta](https://www.seg-social.pt/ptss/) declares only a raster favicon; its header logo is injected at runtime, and its terms page could not be read as text.                                                                                                                                                                                                                                      |
+
+Reference SHA-256 values of the publisher files that were examined. None of
+these files is vendored:
+
+| Reference                 | SHA-256                                                            |
+| ------------------------- | ------------------------------------------------------------------ |
+| Zabbix SVG                | `a0de3d17d8b771acc60f5668583b1605089497c32c684a7da89e5ceb8a286c63` |
+| Lovable icon SVG          | `65dce568167fd564ff24e5d2cab3847ec387b3e618411f08cb9069a84f78cbd3` |
+| E-REDES SVG               | `579f198ec3d545123849700196333c2680e7950501bb021c2dcfba3645b19335` |
+| Via Verde SVG             | `afda4dd882f2b07172c7cc474441b6f6d2be0e1b298042cbd8b1d75289d2ac71` |
+| IMT SVG                   | `68e4c2aa58c81b79d23a66a041fa826625e6d68fe00f5e74819b0f36fdb14701` |
+| Autoridade Tributária SVG | `c682e80e9110b5f73cb1fbfc8875cf761732543215d4fb503da216ef294cf042` |
+
+Zabbix is a registered trademark of Zabbix LLC. Any of the eight can take its
+publisher's mark later, if the publisher's permission or a suitable asset is
+supplied: the entry's artwork changes and its key stays.
+
+`tests/icons/applicationIconCoverage.test.ts` fails when a selectable
+application suggests an unmodified Lucide glyph, apart from the five profiles
+named above. `tests/icons/applicationPortalIcons.test.tsx` checks every key for
+search, a single passive path on the 24×24 grid, theme color only, and strict
+icon-library export/import at 16/24/32/96px in both themes; it also requires an
+identifier to say it is not an official logo and to stay out of `BRAND_ICONS`.
+`tests/connectionEditor/HTTPApplicationIconSuggestion.test.tsx` pins the 29
+suggestions above and that a saved icon is never replaced.
