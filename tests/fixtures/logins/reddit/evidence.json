@@ -1,0 +1,60 @@
+{
+  "$schema": "../evidence.schema.json",
+  "version": 1,
+  "id": "reddit",
+  "class": "C",
+  "mechanism": "none",
+  "reviewed": "2026-10-12",
+  "summary": "The login page has username and password entry, but its fields sit inside shadow roots of a custom element and there is no form element. The steps format cannot address such fields, so nothing is filled.",
+  "sources": [
+    {
+      "id": "robots",
+      "kind": "vendor-documentation",
+      "title": "robots.txt of the site: every path is disallowed for every agent",
+      "url": "https://www.reddit.com/robots.txt",
+      "retrieved": "2026-10-12",
+      "note": "Read 2026-10-12 at 19:02 UTC with a plain request. The sha256 of the file as read begins 41aea42110242175."
+    },
+    {
+      "id": "review-notes",
+      "kind": "repository",
+      "title": "This repository's review of the Reddit preset: what the public login page offers",
+      "path": "docs/international-portal-profiles.md",
+      "lines": "221-226",
+      "retrieved": "2026-10-12"
+    },
+    {
+      "id": "keepassxc-sites",
+      "kind": "secondary",
+      "title": "KeePassXC-Browser's list of sign-in pages that need special handling: Shadow DOM queries on Reddit",
+      "url": "https://github.com/keepassxreboot/keepassxc-browser/blob/8b0b2c4347126f4983f59ea7dd6ca2a2a667cf48/keepassxc-browser/common/sites.js",
+      "commit": "8b0b2c4347126f4983f59ea7dd6ca2a2a667cf48",
+      "lines": "150-158",
+      "retrieved": "2026-10-12"
+    }
+  ],
+  "selectors": [],
+  "fixtures": [],
+  "staysInteractive": [
+    {
+      "kind": "other",
+      "note": "The whole sign-in."
+    },
+    {
+      "kind": "other",
+      "note": "The public page also offers phone sign-in, a one-time link and a verification step, as recorded in this repository's review notes."
+    }
+  ],
+  "lookedFor": [
+    "robots.txt of www.reddit.com, read 2026-10-12: Disallow: / for every agent. The page was therefore not rendered and no capture exists.",
+    "This repository's review notes: the public page shows email or username entry, phone entry, a one-time link and verification text. No selectors were adopted.",
+    "KeePassXC-Browser's site list at commit 8b0b2c4: on this site the login fields are found only through Shadow DOM queries, and only once an element auth-flow-manager with step-name login is present (lines 150-158, added 2025-01-03); there is no form, and the submit control is a button with the class login (lines 257-258, added 2025-06-08).",
+    "Chromium's public password-manager site tests (commit 88f1fe85) hold no recipes: they are kept in an internal repository. Mozilla's published password recipes (13 records, read 2026-10-12) have no entry for this sign-in."
+  ],
+  "neededFromUser": "Nothing you can supply makes this expressible today. Saved pages would establish the markup, but the steps format must first be able to address a field inside a shadow root. KeePassXC also lists a login page at old.reddit.com, which is another origin than the catalog's and was not examined.",
+  "schemaGaps": [
+    "Fields inside a shadow root. A step selector is evaluated in the document and cannot reach the username and password inputs, which a current password manager finds only through Shadow DOM queries.",
+    "No form element around the fields. The submit control is a button outside any form, so a submission would have to be the single-page kind even if the fields were reachable."
+  ],
+  "notes": "This is class C because of the steps format, not because the page lacks a password form."
+}

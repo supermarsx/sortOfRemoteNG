@@ -1,0 +1,68 @@
+{
+  "$schema": "../evidence.schema.json",
+  "version": 1,
+  "id": "steam",
+  "class": "C",
+  "mechanism": "none",
+  "reviewed": "2026-10-12",
+  "summary": "A script-rendered sign-in page followed by a Steam Guard code. No public material that may be read shows its account name or password field, so nothing is filled.",
+  "sources": [
+    {
+      "id": "robots",
+      "kind": "vendor-documentation",
+      "title": "robots.txt of the store host: /login/ is not disallowed",
+      "url": "https://store.steampowered.com/robots.txt",
+      "retrieved": "2026-10-12",
+      "note": "Read 2026-10-12 at 19:02 UTC with a plain request. The sha256 of the file as read begins d7943b2b8e930d73."
+    },
+    {
+      "id": "terms",
+      "kind": "vendor-documentation",
+      "title": "Steam Subscriber Agreement, updated 2026-09-10: section 4.C, Automation",
+      "url": "https://store.steampowered.com/subscriber_agreement/",
+      "retrieved": "2026-10-12",
+      "note": "Read through a fetch tool that returns short quote fragments, not whole sentences."
+    },
+    {
+      "id": "review-notes",
+      "kind": "repository",
+      "title": "This repository's review of the Steam preset",
+      "path": "docs/international-portal-profiles.md",
+      "lines": "181-185",
+      "retrieved": "2026-10-12"
+    },
+    {
+      "id": "keepassxc-sites",
+      "kind": "secondary",
+      "title": "KeePassXC-Browser's list of sign-in pages that need special handling: the segmented code form on Steam",
+      "url": "https://github.com/keepassxreboot/keepassxc-browser/blob/8b0b2c4347126f4983f59ea7dd6ca2a2a667cf48/keepassxc-browser/common/sites.js",
+      "commit": "8b0b2c4347126f4983f59ea7dd6ca2a2a667cf48",
+      "lines": "184-195",
+      "retrieved": "2026-10-12"
+    }
+  ],
+  "selectors": [],
+  "fixtures": [],
+  "staysInteractive": [
+    {
+      "kind": "other",
+      "note": "The whole sign-in."
+    },
+    {
+      "kind": "other",
+      "note": "A Steam Guard code entered in five separate fields of one form (KeePassXC, entries from 2022)."
+    },
+    {
+      "kind": "device-approval",
+      "note": "Device approval and QR sign-in are named as not automated by this repository's review notes."
+    }
+  ],
+  "lookedFor": [
+    "robots.txt of store.steampowered.com, read 2026-10-12 at 19:02 UTC: /login/ is not disallowed.",
+    "The Steam Subscriber Agreement, last updated 2026-09-10, section 4.C, Automation. Fragment as returned by the fetch tool: \"You may not use any form of scripts, bots, macros, or other non-human-controlled systems\" (the sentence continues; the rest was not shown). The tool reported, without showing the sentence, that its scope is stated by the words \"in any manner\" and that the listed cases follow \"including but not limited to\". On that reading the page was not rendered and no capture exists.",
+    "This repository's review notes: the provider's help links the /login/ address; an earlier static read returned page metadata and a limited shell. No markup.",
+    "KeePassXC-Browser's site list at commit 8b0b2c4: on the store host the code entry is a form of five fields (lines 189-193, entries from 2022). No account name or password field is described.",
+    "Chromium's public password-manager site tests (commit 88f1fe85) hold no recipes: they are kept in an internal repository. Mozilla's published password recipes (13 records, read 2026-10-12) have no entry for this sign-in."
+  ],
+  "neededFromUser": "In your own browser, signed out: open https://store.steampowered.com/login/ and save the sign-in page. If the password is asked on a second page, save that one too before typing the password. Note the address of each up to the question mark. Save each as Webpage, Complete (HTML only re-downloads the address and misses a scripted or submitted form). Keep the files outside the repository: they can hold your account name. Import: node scripts/capture-login-page.mjs --id steam --from-file <file.html>"
+}

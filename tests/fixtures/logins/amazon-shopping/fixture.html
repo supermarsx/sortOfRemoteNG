@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Synthetic fixture: identifier step, claim layout</title>
+  </head>
+  <body>
+    <div id="authportal-center-section">
+      <div id="claim-collection-container">
+        <form
+          id="ap_login_form"
+          name="signIn"
+          method="post"
+          novalidate
+          action="/ax/claim"
+        >
+          <input
+            type="email"
+            id="ap_email_login"
+            name="email"
+            autocomplete="username"
+          />
+          <!-- Autofill hint of the source page: present, never displayed. -->
+          <input
+            type="password"
+            id="auth-credential-autofill-hint"
+            name="password"
+            class="aok-hidden"
+            hidden
+          />
+          <span id="continue">
+            <span class="a-button-inner">
+              <input
+                class="a-button-input"
+                type="submit"
+                aria-labelledby="continue-announce"
+              />
+            </span>
+          </span>
+        </form>
+      </div>
+    </div>
+  </body>
+</html>

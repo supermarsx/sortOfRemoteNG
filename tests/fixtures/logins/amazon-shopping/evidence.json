@@ -1,0 +1,215 @@
+{
+  "$schema": "../evidence.schema.json",
+  "version": 1,
+  "id": "amazon-shopping",
+  "class": "B",
+  "mechanism": "form",
+  "source": "https://github.com/alexdlaird/amazon-orders/blob/a52f8a1904d581876a896b46193dd6af9691aad5/tests/resources/auth/signin-claim-username.html",
+  "reviewed": "2026-10-12",
+  "summary": "Identifier first on the storefront's own origin: the email on the sign-in page at /ap/signin, then the password on the page that follows. The catalog address is the storefront home page; the user reaches the sign-in page through the store's own Sign in link.",
+  "sources": [
+    {
+      "id": "claim-username",
+      "kind": "secondary",
+      "title": "A third party's saved copy of the identifier page (claim layout), kept as a test resource of the amazon-orders library. Added there on 2025-08-24 as part of its new claim auth flow; the page's own footer carries the year 2025",
+      "url": "https://github.com/alexdlaird/amazon-orders/blob/a52f8a1904d581876a896b46193dd6af9691aad5/tests/resources/auth/signin-claim-username.html",
+      "commit": "a52f8a1904d581876a896b46193dd6af9691aad5",
+      "retrieved": "2026-10-12"
+    },
+    {
+      "id": "claim-password",
+      "kind": "secondary",
+      "title": "A third party's saved copy of the password page, same library, added on the same day; the page's own footer carries the year 2025",
+      "url": "https://github.com/alexdlaird/amazon-orders/blob/a52f8a1904d581876a896b46193dd6af9691aad5/tests/resources/auth/signin-claim-password.html",
+      "commit": "a52f8a1904d581876a896b46193dd6af9691aad5",
+      "retrieved": "2026-10-12"
+    },
+    {
+      "id": "signin-legacy",
+      "kind": "secondary",
+      "title": "A third party's saved copy of the older identifier page, same library, in that repository since 2024-01-08",
+      "url": "https://github.com/alexdlaird/amazon-orders/blob/a52f8a1904d581876a896b46193dd6af9691aad5/tests/resources/auth/signin.html",
+      "commit": "a52f8a1904d581876a896b46193dd6af9691aad5",
+      "retrieved": "2026-10-12"
+    },
+    {
+      "id": "flow",
+      "kind": "secondary",
+      "title": "The library's sign-in flow: it requests /ap/signin and looks for the forms in the answer",
+      "url": "https://github.com/alexdlaird/amazon-orders/blob/a52f8a1904d581876a896b46193dd6af9691aad5/amazonorders/session.py",
+      "commit": "a52f8a1904d581876a896b46193dd6af9691aad5",
+      "lines": "262-300",
+      "retrieved": "2026-10-12"
+    },
+    {
+      "id": "challenge-forms",
+      "kind": "secondary",
+      "title": "The library's list of forms that can follow sign-in: challenge, device chooser, verification code",
+      "url": "https://github.com/alexdlaird/amazon-orders/blob/a52f8a1904d581876a896b46193dd6af9691aad5/amazonorders/selectors.py",
+      "commit": "a52f8a1904d581876a896b46193dd6af9691aad5",
+      "lines": "87-111",
+      "retrieved": "2026-10-12"
+    },
+    {
+      "id": "preset-notes",
+      "kind": "repository",
+      "title": "This repository's review of the Amazon presets: the home page is the entry, sign-in is manual, challenges stay interactive",
+      "path": "docs/hosted-dashboard-profiles.md",
+      "lines": "144-198",
+      "retrieved": "2026-10-12"
+    },
+    {
+      "id": "robots",
+      "kind": "vendor-documentation",
+      "title": "robots.txt of the storefront: /ap/signin and /gp/sign-in are disallowed for every agent",
+      "url": "https://www.amazon.com/robots.txt",
+      "retrieved": "2026-10-12",
+      "note": "Read 2026-10-12 at 19:02 UTC with a plain request. The sha256 of the file as read begins 74fa27e28cd9d80b."
+    },
+    {
+      "id": "keepassxc-sites",
+      "kind": "secondary",
+      "title": "KeePassXC-Browser's list of sign-in pages that need special handling: the storefronts' /ap/ pages and the code page",
+      "url": "https://github.com/keepassxreboot/keepassxc-browser/blob/8b0b2c4347126f4983f59ea7dd6ca2a2a667cf48/keepassxc-browser/common/sites.js",
+      "commit": "8b0b2c4347126f4983f59ea7dd6ca2a2a667cf48",
+      "lines": "197-200",
+      "retrieved": "2026-10-12"
+    }
+  ],
+  "selectors": [
+    {
+      "selector": "form[name=\"signIn\"] input#ap_email_login[type=\"email\"][name=\"email\"], form[name=\"signIn\"] input#ap_email[type=\"email\"][name=\"email\"]",
+      "role": "username",
+      "source": "claim-username",
+      "basis": "observed",
+      "locator": "line 1890 for the first alternative; the second alternative is the older layout, cited separately below",
+      "note": "Two layouts of the identifier page in one list. Requiring type email keeps the list off the hidden field that reuses the id ap_email on the password page."
+    },
+    {
+      "selector": "form[name=\"signIn\"] input#ap_email_login[type=\"email\"][name=\"email\"]",
+      "role": "username",
+      "source": "claim-username",
+      "basis": "observed",
+      "locator": "form at line 510, input at line 1890",
+      "fixture": "fixture.html"
+    },
+    {
+      "selector": "form[name=\"signIn\"] input#ap_email[type=\"email\"][name=\"email\"]",
+      "role": "username",
+      "source": "signin-legacy",
+      "basis": "observed",
+      "locator": "form at line 303, input at line 340",
+      "fixture": "fixture.legacy.html"
+    },
+    {
+      "selector": "form[name=\"signIn\"] span#continue input.a-button-input[type=\"submit\"]",
+      "role": "control",
+      "source": "claim-username",
+      "basis": "observed",
+      "locator": "line 1990",
+      "fixture": "fixture.html",
+      "note": "In this layout the id continue is on the wrapping span only; the submit input has no id."
+    },
+    {
+      "selector": "form[name=\"signIn\"] span#continue input.a-button-input[type=\"submit\"]",
+      "role": "control",
+      "source": "signin-legacy",
+      "basis": "observed",
+      "locator": "line 370",
+      "fixture": "fixture.legacy.html",
+      "note": "In the older layout the wrapping span and the submit input both carry the id continue."
+    },
+    {
+      "selector": "form[name=\"signIn\"] input#ap_password[type=\"password\"]",
+      "role": "wait-for",
+      "source": "claim-password",
+      "basis": "observed",
+      "locator": "form at line 353, input at line 443",
+      "fixture": "fixture.password.html"
+    },
+    {
+      "selector": "form[name=\"signIn\"] input#ap_password[type=\"password\"][name=\"password\"]",
+      "role": "password",
+      "source": "claim-password",
+      "basis": "observed",
+      "locator": "form at line 353, input at line 443",
+      "fixture": "fixture.password.html"
+    },
+    {
+      "selector": "form[name=\"signIn\"] input#signInSubmit[type=\"submit\"]",
+      "role": "control",
+      "source": "claim-password",
+      "basis": "observed",
+      "locator": "line 476",
+      "fixture": "fixture.password.html"
+    },
+    {
+      "selector": "form[name=\"signIn\"] input#auth-credential-autofill-hint[type=\"password\"][name=\"password\"]",
+      "role": "other",
+      "source": "claim-username",
+      "basis": "observed",
+      "locator": "line 1928",
+      "fixture": "fixture.html",
+      "note": "Not a step target. The identifier page holds a password-type field that is never displayed. The password selector names the id of the real field so that it cannot match this one."
+    },
+    {
+      "selector": "form[name=\"signInWithPasskeyButton\"] button#continue[type=\"button\"]",
+      "role": "other",
+      "source": "claim-password",
+      "basis": "observed",
+      "locator": "form at line 536, button at line 570",
+      "fixture": "fixture.password.html",
+      "note": "Not a step target. On the password page the id continue belongs to the passkey button. The identifier submit selector is anchored to the sign-in form and to a submit input so that it cannot match it."
+    }
+  ],
+  "fixtures": [
+    {
+      "file": "fixture.html",
+      "path": "/ap/signin",
+      "derivedFrom": ["claim-username"],
+      "note": "The source hides the autofill hint with a class. The fixture has no styles, so it also sets the hidden attribute."
+    },
+    {
+      "file": "fixture.legacy.html",
+      "path": "/ap/signin",
+      "derivedFrom": ["signin-legacy"],
+      "note": "The older layout of the same step. The hidden attribute on the hint is added for the same reason."
+    },
+    {
+      "file": "fixture.password.html",
+      "path": "/ax/claim",
+      "derivedFrom": ["claim-password"],
+      "note": "The path is the action of the identifier form in the claim layout. The saved file does not record the address it was served on."
+    }
+  ],
+  "staysInteractive": [
+    {
+      "kind": "captcha",
+      "note": "The saved pages attach an anti-automation challenge to the sign-in form, and the library lists image challenge forms that follow sign-in. Automatic login stops there."
+    },
+    {
+      "kind": "passkey",
+      "note": "The password page offers passkey sign-in in a separate form, and its state data suggests the prompt can open by itself."
+    },
+    {
+      "kind": "totp",
+      "note": "A two-step verification form with a device chooser can follow the password. KeePassXC-Browser places the code page at an address containing /ap/mfa (an entry from 2020). No authenticator challenge is written: the exact address and the fields of that page were not established."
+    },
+    {
+      "kind": "other",
+      "note": "A verification code sent by the provider, and an intent confirmation page, are listed by the library as further forms that can follow."
+    }
+  ],
+  "unverified": [
+    "The live page was not rendered. robots.txt of www.amazon.com disallows /ap/signin for every agent, so no anonymous capture was made. Every selector comes from a third party's saved copies.",
+    "Currency. The claim-layout copies entered the source repository on 2025-08-24, described there as a new flow, and their footer says 2025: about fourteen months old. The older layout's copy has been there since 2024-01-08: nearly three years old. The provider changes this page often and the markup carries experiment markers, so the layout served today may differ.",
+    "Fidelity. The pages are test resources of a third-party library: copies of real pages that its author saved and may have trimmed or altered. They are not the user's pages, and nobody has signed in with these steps.",
+    "The pathname of the password page. The saved file does not record it. The gate lists the two form actions seen, /ap/signin and /ax/claim; a redirect to another path would leave the password step idle. The code page is known to be at /ap/mfa, not at a form action, so the same may hold here.",
+    "Whether the identifier page is always at /ap/signin. The library requests that path and follows redirects without recording where it ends.",
+    "Other storefronts. The copies are of www.amazon.com. KeePassXC-Browser treats the /ap/ pages of every www.amazon host as one sign-in flow (an entry last touched in 2023), but the markup of the other marketplace hosts of the catalog was not examined.",
+    "Whether clicking the submit control behaves as a plain form post. The identifier form sits inside an element that marks a scripted submit action.",
+    "Which of the challenges an account meets after the password, and in which order."
+  ],
+  "neededFromUser": "In your own browser, signed out: open your storefront, follow its Sign in link, and save the first sign-in page; enter the user name, continue, and save the password page before typing the password. Note the address of each up to the question mark. Save each as Webpage, Complete (HTML only re-downloads the address and misses a scripted or submitted form). Keep the files outside the repository: they can hold your account name. Import: node scripts/capture-login-page.mjs --id amazon-shopping --from-file <file.html>",
+  "notes": "The cited library signs in to read a user's own order history and also automates the provider's challenges. Only the markup of its saved sign-in pages is used here; nothing of its challenge handling is, and no step touches a challenge form. Chromium's public password-manager site tests were examined at commit 88f1fe85 and hold no recipes: they are kept in an internal repository. Mozilla's published password recipes have no entry for this sign-in."
+}

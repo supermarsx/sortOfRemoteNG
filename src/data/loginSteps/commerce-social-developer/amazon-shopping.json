@@ -1,0 +1,42 @@
+{
+  "$schema": "../../../types/connection/httpLoginSteps.schema.json",
+  "version": 1,
+  "id": "amazon-shopping",
+  "evidence": {
+    "class": "B",
+    "source": "https://github.com/alexdlaird/amazon-orders/blob/a52f8a1904d581876a896b46193dd6af9691aad5/tests/resources/auth/signin-claim-username.html",
+    "reviewed": "2026-10-12"
+  },
+  "credentialOrigins": [],
+  "loginSteps": [
+    {
+      "kind": "identifier",
+      "paths": ["/ap/signin"],
+      "selectors": {
+        "username": "form[name=\"signIn\"] input#ap_email_login[type=\"email\"][name=\"email\"], form[name=\"signIn\"] input#ap_email[type=\"email\"][name=\"email\"]"
+      }
+    },
+    {
+      "kind": "submit",
+      "submission": "click",
+      "selectors": {
+        "control": "form[name=\"signIn\"] span#continue input.a-button-input[type=\"submit\"]"
+      }
+    },
+    {
+      "kind": "password",
+      "paths": ["/ap/signin", "/ax/claim"],
+      "waitFor": "form[name=\"signIn\"] input#ap_password[type=\"password\"]",
+      "selectors": {
+        "password": "form[name=\"signIn\"] input#ap_password[type=\"password\"][name=\"password\"]"
+      }
+    },
+    {
+      "kind": "submit",
+      "submission": "click",
+      "selectors": {
+        "control": "form[name=\"signIn\"] input#signInSubmit[type=\"submit\"]"
+      }
+    }
+  ]
+}

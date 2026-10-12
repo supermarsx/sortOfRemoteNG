@@ -1,0 +1,56 @@
+{
+  "$schema": "../evidence.schema.json",
+  "version": 1,
+  "id": "kimi",
+  "class": "C",
+  "mechanism": "none",
+  "reviewed": "2026-10-12",
+  "summary": "How sign-in works is not established. The web application opens on its chat content with a sign-in action; no evidence of a password form was found, and what search results quote points to a bound mobile number and email instead.",
+  "sources": [
+    {
+      "id": "robots",
+      "kind": "vendor-documentation",
+      "title": "robots.txt of the site: the root is allowed",
+      "url": "https://www.kimi.com/robots.txt",
+      "retrieved": "2026-10-12",
+      "note": "Read 2026-10-12 at 19:02 UTC with a plain request. The sha256 of the file as read begins c7701d8d42320bcd."
+    },
+    {
+      "id": "terms",
+      "kind": "vendor-documentation",
+      "title": "Kimi Terms of Services, effective 2026-08-31: section 4.6 (e)",
+      "url": "https://www.kimi.com/user/agreement/en/modelUse?version=v2",
+      "retrieved": "2026-10-12",
+      "note": "Read through a fetch tool that returns short quote fragments. The same address without the version parameter serves the text effective 2024-01-05, which has no such clause."
+    },
+    {
+      "id": "review-notes",
+      "kind": "repository",
+      "title": "This repository's review of the Kimi preset",
+      "path": "docs/international-portal-profiles.md",
+      "lines": "194-199",
+      "retrieved": "2026-10-12"
+    }
+  ],
+  "selectors": [],
+  "fixtures": [],
+  "staysInteractive": [
+    {
+      "kind": "other",
+      "note": "The whole sign-in."
+    },
+    {
+      "kind": "other",
+      "note": "Regional authentication and account verification are named as manual by this repository's review notes."
+    }
+  ],
+  "lookedFor": [
+    "robots.txt of www.kimi.com, read 2026-10-12 at 19:02 UTC: the root is allowed.",
+    "The provider's Terms of Services, effective 2026-08-31 and last updated 2026-08-24, section 4.6 (e). Fragments as returned by the fetch tool: \"Writing or using any automated scripts, programs, or tools (including but not limited to bots, crawlers,\", \"scheduled tasks, etc.) to simulate manual operations, so as to achieve automated or bulk use of our products or services;\". The page was therefore not rendered and no capture exists.",
+    "Which text is current. The address of the terms without its version parameter served the text effective 2024-01-05, in which the tool found no clause on automated access. The clause above is in the text served with the parameter, which names the later dates.",
+    "This repository's review notes: the root shows chat and workspace content and a sign-in action; no login pathname is inferred from a button. No markup.",
+    "A web search for how sign-in works: the results quote the provider's help pages as describing a mobile number bound to the account as its sign-in identifier, and a bound email. They quote no password login for the web application. The developer platform, a different product, is described as using an emailed code and Google. None of those pages was read as a source.",
+    "KeePassXC-Browser's site list (commit 8b0b2c4) has no entry for this site. Chromium's public password-manager site tests (commit 88f1fe85) hold no recipes. Mozilla's published password recipes (13 records, read 2026-10-12) have no entry for this sign-in."
+  ],
+  "neededFromUser": "First say how you sign in at https://www.kimi.com/: with a password, with a code sent to a phone or an email, or through another account. Without a password form a saved password has nothing to fill and this stays manual. If there is one: in your own browser, save the page or dialog that holds it. Save each as Webpage, Complete (HTML only re-downloads the address and misses a scripted or submitted form). Keep the files outside the repository: they can hold your account name. Import: node scripts/capture-login-page.mjs --id kimi --from-file <file.html>"
+}

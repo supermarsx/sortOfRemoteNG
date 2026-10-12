@@ -1,0 +1,60 @@
+{
+  "$schema": "../evidence.schema.json",
+  "version": 1,
+  "id": "x",
+  "class": "C",
+  "mechanism": "none",
+  "reviewed": "2026-10-12",
+  "summary": "A script-rendered, multi-page login flow. No public material that may be read shows its username or password field, so nothing is filled.",
+  "sources": [
+    {
+      "id": "robots",
+      "kind": "vendor-documentation",
+      "title": "robots.txt of the site: every path is disallowed for agents the file does not name",
+      "url": "https://x.com/robots.txt",
+      "retrieved": "2026-10-12",
+      "note": "Read 2026-10-12 at 19:02 UTC with a plain request. The sha256 of the file as read begins 14a72e33b3e9af07."
+    },
+    {
+      "id": "review-notes",
+      "kind": "repository",
+      "title": "This repository's review of the X preset: the documented login address, and that the flow path is not guessed",
+      "path": "docs/international-portal-profiles.md",
+      "lines": "242-248",
+      "retrieved": "2026-10-12"
+    },
+    {
+      "id": "keepassxc-sites",
+      "kind": "secondary",
+      "title": "KeePassXC-Browser's list of sign-in pages that need special handling: the login flow page and its code field, under the former domain",
+      "url": "https://github.com/keepassxreboot/keepassxc-browser/blob/8b0b2c4347126f4983f59ea7dd6ca2a2a667cf48/keepassxc-browser/common/sites.js",
+      "commit": "8b0b2c4347126f4983f59ea7dd6ca2a2a667cf48",
+      "lines": "165-177",
+      "retrieved": "2026-10-12"
+    }
+  ],
+  "selectors": [],
+  "fixtures": [],
+  "staysInteractive": [
+    {
+      "kind": "other",
+      "note": "The whole sign-in."
+    },
+    {
+      "kind": "other",
+      "note": "Account-access challenges described by the provider's login help, as recorded in this repository's review notes."
+    },
+    {
+      "kind": "totp",
+      "note": "A code step exists in the flow: KeePassXC identifies its field as a generic text input named text (an entry from 2021)."
+    }
+  ],
+  "lookedFor": [
+    "robots.txt of x.com, read 2026-10-12: the group for every agent it does not name says Disallow: /. The page was therefore not rendered and no capture exists.",
+    "This repository's review notes: the provider documents the /login address; direct retrieval failed in the earlier review; a current internal flow path was deliberately not guessed. No markup.",
+    "KeePassXC-Browser's site list at commit 8b0b2c4, in entries from 2021 written for the former domain: the login flow page is /i/flow/login, and its code field is an input of type text named text. No username or password field is described, and the site has since moved to another domain.",
+    "Chromium's public password-manager site tests (commit 88f1fe85) hold no recipes: they are kept in an internal repository. Mozilla's published password recipes (13 records, read 2026-10-12) have no entry for this sign-in."
+  ],
+  "neededFromUser": "In your own browser, signed out: open https://x.com/login and save the first sign-in page; enter the user name, continue, and save the password page before typing the password. Note the address of each up to the question mark. Save each as Webpage, Complete (HTML only re-downloads the address and misses a scripted or submitted form). Keep the files outside the repository: they can hold your account name. Import: node scripts/capture-login-page.mjs --id x --from-file <file.html>",
+  "notes": "The one field the old note describes shows why a saved page is needed: inputs in this flow carry generic names, so a selector has to come from the page itself."
+}

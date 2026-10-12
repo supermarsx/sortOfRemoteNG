@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Synthetic fixture: identifier step, older layout</title>
+  </head>
+  <body>
+    <div id="authportal-center-section">
+      <form
+        name="signIn"
+        method="post"
+        novalidate
+        action="/ap/signin"
+        class="auth-validate-form"
+      >
+        <input type="email" id="ap_email" name="email" maxlength="128" />
+        <!-- Autofill hint of the source page: present, never displayed. -->
+        <input
+          type="password"
+          id="ap-credential-autofill-hint"
+          name="password"
+          class="hide"
+          hidden
+        />
+        <!-- The source repeats the id on the wrapper and on the control. -->
+        <span id="continue">
+          <span class="a-button-inner">
+            <input
+              id="continue"
+              class="a-button-input"
+              type="submit"
+              aria-labelledby="continue-announce"
+            />
+          </span>
+        </span>
+      </form>
+    </div>
+  </body>
+</html>

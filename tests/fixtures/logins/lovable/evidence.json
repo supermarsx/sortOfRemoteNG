@@ -1,0 +1,55 @@
+{
+  "$schema": "../evidence.schema.json",
+  "version": 1,
+  "id": "lovable",
+  "class": "C",
+  "mechanism": "none",
+  "reviewed": "2026-10-12",
+  "summary": "A script-rendered login page whose terms forbid access by automated tools. Search results quote the provider's documentation as offering email and password beside other sign-in methods, but no markup of that form is available, so nothing is filled.",
+  "sources": [
+    {
+      "id": "robots",
+      "kind": "vendor-documentation",
+      "title": "robots.txt of the site: /login is not disallowed",
+      "url": "https://lovable.dev/robots.txt",
+      "retrieved": "2026-10-12",
+      "note": "Read 2026-10-12 at 19:02 UTC with a plain request. The sha256 of the file as read begins 320e2cc26fde651d."
+    },
+    {
+      "id": "terms",
+      "kind": "vendor-documentation",
+      "title": "Lovable Terms, last updated 2026-08-28: License Restrictions",
+      "url": "https://lovable.dev/terms",
+      "retrieved": "2026-10-12",
+      "note": "Read through a fetch tool that returns short quote fragments, not whole sentences."
+    },
+    {
+      "id": "review-notes",
+      "kind": "repository",
+      "title": "This repository's review of the Lovable preset",
+      "path": "docs/international-portal-profiles.md",
+      "lines": "201-206",
+      "retrieved": "2026-10-12"
+    }
+  ],
+  "selectors": [],
+  "fixtures": [],
+  "staysInteractive": [
+    {
+      "kind": "other",
+      "note": "The whole sign-in."
+    },
+    {
+      "kind": "single-sign-on",
+      "note": "Search results quote the provider's documentation as offering Google, GitHub and Apple sign-in, and SAML or OIDC sign-in for business plans. Those pages were not read as a source."
+    }
+  ],
+  "lookedFor": [
+    "robots.txt of lovable.dev, read 2026-10-12 at 19:02 UTC: /login is not disallowed.",
+    "The provider's Terms, last updated 2026-08-28 and effective 2026-08-15, License Restrictions. Fragment as returned by the fetch tool: \"use automated tools (such as bots, scrapers, or crawlers) to access or interact with the Services without our\"; the tool gave the continuation as \"written permission;\". The page was therefore not rendered and no capture exists. The Platform Rules and other documents the terms refer to were not part of what the tool read.",
+    "This repository's review notes: an earlier static read returned a login title with a loading shell, judged insufficient for selector or identity-provider assumptions. No markup.",
+    "A web search for how sign-in works: the results quote the provider's documentation as listing email and password, Google, GitHub and Apple, and single sign-on for business plans. So a password form is described, but nothing found shows it. The documentation pages were not fetched, because the terms cover the Services.",
+    "KeePassXC-Browser's site list (commit 8b0b2c4) has no entry for this site. Chromium's public password-manager site tests (commit 88f1fe85) hold no recipes. Mozilla's published password recipes (13 records, read 2026-10-12) have no entry for this sign-in."
+  ],
+  "neededFromUser": "In your own browser, signed out: open https://lovable.dev/login and save the sign-in page. If the password is asked on a second page, save that one too before typing the password. Note the address of each up to the question mark. Save each as Webpage, Complete (HTML only re-downloads the address and misses a scripted or submitted form). Keep the files outside the repository: they can hold your account name. Import: node scripts/capture-login-page.mjs --id lovable --from-file <file.html>"
+}

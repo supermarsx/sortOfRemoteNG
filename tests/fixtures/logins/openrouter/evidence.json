@@ -1,0 +1,56 @@
+{
+  "$schema": "../evidence.schema.json",
+  "version": 1,
+  "id": "openrouter",
+  "class": "C",
+  "mechanism": "none",
+  "reviewed": "2026-10-12",
+  "summary": "A hosted sign-in page whose terms forbid copying information from the site by automated means. Whether its email sign-in takes a password is not established, and no public material found shows its form, so nothing is filled.",
+  "sources": [
+    {
+      "id": "robots",
+      "kind": "vendor-documentation",
+      "title": "robots.txt of the site: /sign-in is not disallowed",
+      "url": "https://openrouter.ai/robots.txt",
+      "retrieved": "2026-10-12",
+      "note": "Read 2026-10-12 at 19:02 UTC with a plain request. The sha256 of the file as read begins da49e54afb63a184."
+    },
+    {
+      "id": "terms",
+      "kind": "vendor-documentation",
+      "title": "OpenRouter Terms of Service, last updated 2026-08-31: section 7, Prohibited Conduct, items 5 and 6",
+      "url": "https://openrouter.ai/terms",
+      "retrieved": "2026-10-12",
+      "note": "Read through a fetch tool that returns short quote fragments, not whole sentences."
+    },
+    {
+      "id": "preset-notes",
+      "kind": "repository",
+      "title": "This repository's hosted-dashboard table: the sign-in address, and that API keys are separate",
+      "path": "docs/hosted-dashboard-profiles.md",
+      "lines": "53",
+      "retrieved": "2026-10-12"
+    }
+  ],
+  "selectors": [],
+  "fixtures": [],
+  "staysInteractive": [
+    {
+      "kind": "other",
+      "note": "The whole sign-in."
+    },
+    {
+      "kind": "single-sign-on",
+      "note": "Search results quote third-party guides that name Google, GitHub and wallet sign-in beside email. None of those pages was read as a source."
+    }
+  ],
+  "lookedFor": [
+    "robots.txt of openrouter.ai, read 2026-10-12 at 19:02 UTC: /sign-in is not disallowed.",
+    "The provider's Terms of Service, last updated 2026-08-31, section 7, Prohibited Conduct, item 5. Fragments as returned by the fetch tool: \"develop, support or use software, devices, scripts, robots or any other means or processes\", \"(such as crawlers, browser plugins, add-ons or any other automated technology)\", \"to scrape or copy any information on the Site or the Services;\".",
+    "The same section, item 6, fragment as returned by the fetch tool: \"bypass any technical measures implemented by OpenRouter that are designed to prevent scraping;\". Copying the form's structure is what a capture does, so on item 5 the page was not rendered and no capture exists.",
+    "This repository's preset table: the sign-in address only. No markup.",
+    "A web search for how sign-in works: the results quote third-party guides naming Google, GitHub, email and wallet sign-in. They do not say whether the email option takes a password or sends a code or link, and they do not name the identity provider.",
+    "KeePassXC-Browser's site list (commit 8b0b2c4) has no entry for this site. Chromium's public password-manager site tests (commit 88f1fe85) hold no recipes. Mozilla's published password recipes (13 records, read 2026-10-12) have no entry for this sign-in."
+  ],
+  "neededFromUser": "First say how you sign in at https://openrouter.ai/sign-in: with a password, or with a code, a link or another account. If with a password: in your own browser, signed out, save the sign-in page, and the password page too if it is a separate one, before typing the password. Save each as Webpage, Complete (HTML only re-downloads the address and misses a scripted or submitted form). Keep the files outside the repository: they can hold your account name. Import: node scripts/capture-login-page.mjs --id openrouter --from-file <file.html>"
+}

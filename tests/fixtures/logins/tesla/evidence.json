@@ -1,0 +1,53 @@
+{
+  "$schema": "../evidence.schema.json",
+  "version": 1,
+  "id": "tesla",
+  "class": "C",
+  "mechanism": "none",
+  "reviewed": "2026-10-12",
+  "summary": "The account address redirects to the provider's separate sign-in service on another origin. A public write-up names the parameters that service accepts but shows no field of the page a browser receives, so nothing is filled.",
+  "sources": [
+    {
+      "id": "review-notes",
+      "kind": "repository",
+      "title": "This repository's review of the Tesla preset: the redirect to the sign-in service",
+      "path": "docs/international-portal-profiles.md",
+      "lines": "228-233",
+      "retrieved": "2026-10-12"
+    },
+    {
+      "id": "sso-writeup",
+      "kind": "secondary",
+      "title": "A third-party description of the sign-in service for non-browser clients, last changed 2023-03-14",
+      "url": "https://github.com/timdorr/tesla-api/blob/08ad7b1b41ef1b35900e21fda660712568fd30b9/docs/api-basics/authentication.md",
+      "commit": "08ad7b1b41ef1b35900e21fda660712568fd30b9",
+      "lines": "7-135",
+      "retrieved": "2026-10-12"
+    }
+  ],
+  "selectors": [],
+  "fixtures": [],
+  "staysInteractive": [
+    {
+      "kind": "other",
+      "note": "The whole sign-in."
+    },
+    {
+      "kind": "other",
+      "note": "The write-up describes a firewall that blocks repeated requests and a protection that requires running the page's script when the client looks like a browser."
+    },
+    {
+      "kind": "totp",
+      "note": "The write-up describes a passcode field for accounts with multi-factor sign-in (2023)."
+    }
+  ],
+  "lookedFor": [
+    "robots.txt of www.tesla.com: HTTP 403 at 19:02:36 UTC on 2026-10-12 to a plain request without a browser user agent. The body was a denial page of the site's edge server; fragments: \"Access Denied\", \"You don't have permission to access\". The rules could not be read.",
+    "The terms page of www.tesla.com (/legal/terms): the fetch tool reported HTTP 403 between 19:03 and 19:08 UTC on 2026-10-12 and returned no body; the exact time was not recorded. After these two refusals no other client and no further request was tried, and the page was not rendered.",
+    "This repository's review notes: opening the account address redirected to the provider's sign-in service at auth.tesla.com. No markup.",
+    "A third-party write-up at commit 08ad7b1, last changed 2023-03-14: the sign-in page is /oauth2/v3/authorize on auth.tesla.com; its form carries hidden session fields and is posted back with parameters named identity and credential. It describes a client that is not a browser and says a browser-like client is served a script-based protection instead. It shows no field markup.",
+    "KeePassXC-Browser's site list (commit 8b0b2c4) has no entry for this site. Chromium's public password-manager site tests (commit 88f1fe85) hold no recipes. Mozilla's published password recipes (13 records, read 2026-10-12) have no entry for this sign-in."
+  ],
+  "neededFromUser": "In your own browser, signed out: open https://www.tesla.com/teslaaccount, let it send you to the sign-in service, and save the sign-in page. If the password is asked on a second page, save that one too before typing the password. Note the address of each up to the question mark. Save each as Webpage, Complete (HTML only re-downloads the address and misses a scripted or submitted form). Keep the files outside the repository: they can hold your account name. Import: node scripts/capture-login-page.mjs --id tesla --from-file <file.html>",
+  "notes": "Sign-in is on another origin than the catalog address. A steps file would have to list that origin as a credential origin. It is not listed, and no steps are written from parameter names: no field of the page has been seen, and the one source says a browser is served something else."
+}

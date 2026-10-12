@@ -1,0 +1,81 @@
+{
+  "$schema": "../evidence.schema.json",
+  "version": 1,
+  "id": "aws-console",
+  "class": "C",
+  "mechanism": "none",
+  "reviewed": "2026-10-12",
+  "summary": "Sign-in happens on a separate AWS sign-in host and differs by identity type: root user, IAM user or a federated identity. Nothing that may be read shows the current form fields, so nothing is filled.",
+  "sources": [
+    {
+      "id": "robots",
+      "kind": "vendor-documentation",
+      "title": "robots.txt of the console host: every path is disallowed for every agent except /ls/docs",
+      "url": "https://console.aws.amazon.com/robots.txt",
+      "retrieved": "2026-10-12",
+      "note": "Read 2026-10-12 at 19:02 UTC with a plain request. The sha256 of the file as read begins 890a8daf42221a73."
+    },
+    {
+      "id": "profile-notes",
+      "kind": "repository",
+      "title": "This repository's AWS console profiles: entry points, identity types, and the statement that no password form is inferred",
+      "path": "src/utils/connection/awsConsoleProfiles.ts",
+      "lines": "3-52",
+      "retrieved": "2026-10-12"
+    },
+    {
+      "id": "preset-notes",
+      "kind": "repository",
+      "title": "This repository's review of the Amazon and AWS presets",
+      "path": "docs/hosted-dashboard-profiles.md",
+      "lines": "181-198",
+      "retrieved": "2026-10-12"
+    },
+    {
+      "id": "keepassxc-sites",
+      "kind": "secondary",
+      "title": "KeePassXC-Browser's list of sign-in pages that need special handling: the AWS submit button",
+      "url": "https://github.com/keepassxreboot/keepassxc-browser/blob/8b0b2c4347126f4983f59ea7dd6ca2a2a667cf48/keepassxc-browser/common/sites.js",
+      "commit": "8b0b2c4347126f4983f59ea7dd6ca2a2a667cf48",
+      "lines": "231-236",
+      "retrieved": "2026-10-12"
+    }
+  ],
+  "selectors": [],
+  "fixtures": [],
+  "staysInteractive": [
+    {
+      "kind": "other",
+      "note": "The whole sign-in."
+    },
+    {
+      "kind": "captcha",
+      "note": "Named as remaining interactive by this repository's reviewed profile text."
+    },
+    {
+      "kind": "totp",
+      "note": "Multi-factor sign-in is named as remaining interactive by the same profile text."
+    },
+    {
+      "kind": "single-sign-on",
+      "note": "Federated identities and IAM Identity Center use an administrator-provided portal, saved as a separate website."
+    },
+    {
+      "kind": "passkey"
+    },
+    {
+      "kind": "security-key"
+    }
+  ],
+  "lookedFor": [
+    "robots.txt of console.aws.amazon.com, read 2026-10-12: Disallow: / for every agent, with only /ls/docs allowed. The page was therefore not rendered and no capture exists.",
+    "This repository's profile and review notes: the console entry point, the identity types, and the reviewed statement that no single account ID, alias or password form is inferred. They hold no markup.",
+    "KeePassXC-Browser's site list at commit 8b0b2c4: sign-in is treated as a multi-page flow on signin.aws.amazon.com (line 16, an entry from 2020), and the submit button has the id signin_button and sits outside the form (lines 231-236, from 2021). No input field is described, and both entries are about five years old.",
+    "Chromium's public password-manager site tests (commit 88f1fe85) hold no recipes: they are kept in an internal repository. Mozilla's published password recipes (13 records, read 2026-10-12) have no entry for an AWS host."
+  ],
+  "neededFromUser": "In your own browser, signed out: open https://console.aws.amazon.com/ with the identity you use (root user or IAM user) and save the first sign-in page; enter the user name, continue, and save the password page before typing the password. Note the address of each up to the question mark. Save each as Webpage, Complete (HTML only re-downloads the address and misses a scripted or submitted form). Keep the files outside the repository: they can hold your account name. Import: node scripts/capture-login-page.mjs --id aws-console --from-file <file.html>",
+  "schemaGaps": [
+    "An IAM user signs in with three values: the account ID or alias, the user name and the password (this repository's profile text). The steps format types a username and a password and has no third value. Root-user sign-in may fit the format; its fields are not established."
+  ],
+  "notes": "The three AWS partitions are separate applications with separate hosts. What is recorded here concerns the commercial partition only."
+}

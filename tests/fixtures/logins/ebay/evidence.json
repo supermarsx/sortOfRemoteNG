@@ -1,0 +1,60 @@
+{
+  "$schema": "../evidence.schema.json",
+  "version": 1,
+  "id": "ebay",
+  "class": "C",
+  "mechanism": "none",
+  "reviewed": "2026-10-12",
+  "summary": "A multi-page sign-in on the provider's sign-in host, with password, linked-provider and passkey branches. Only the password field's id is known, from an old third-party note; the identifier field that comes first is not, so nothing is filled.",
+  "sources": [
+    {
+      "id": "robots",
+      "kind": "vendor-documentation",
+      "title": "robots.txt of the sign-in host: every path is disallowed, and its header states that automated access without express permission is prohibited",
+      "url": "https://signin.ebay.com/robots.txt",
+      "retrieved": "2026-10-12",
+      "note": "Read 2026-10-12 at 19:02 UTC with a plain request. The sha256 of the file as read begins 523580592a172a1e."
+    },
+    {
+      "id": "review-notes",
+      "kind": "repository",
+      "title": "This repository's review of the eBay preset: the /signin/ path and the sign-in branches",
+      "path": "docs/international-portal-profiles.md",
+      "lines": "235-240",
+      "retrieved": "2026-10-12"
+    },
+    {
+      "id": "keepassxc-sites",
+      "kind": "secondary",
+      "title": "KeePassXC-Browser's list of sign-in pages that need special handling: the eBay password field and submit button",
+      "url": "https://github.com/keepassxreboot/keepassxc-browser/blob/8b0b2c4347126f4983f59ea7dd6ca2a2a667cf48/keepassxc-browser/common/sites.js",
+      "commit": "8b0b2c4347126f4983f59ea7dd6ca2a2a667cf48",
+      "lines": "224-230",
+      "retrieved": "2026-10-12"
+    }
+  ],
+  "selectors": [],
+  "fixtures": [],
+  "staysInteractive": [
+    {
+      "kind": "other",
+      "note": "The whole sign-in."
+    },
+    {
+      "kind": "passkey",
+      "note": "A passkey branch is described by the provider's sign-in help, as recorded in this repository's review notes."
+    },
+    {
+      "kind": "single-sign-on",
+      "note": "Sign-in through a linked provider is described by the same help page."
+    }
+  ],
+  "lookedFor": [
+    "robots.txt of signin.ebay.com, read 2026-10-12: Disallow: / for every agent, under a header stating that the use of robots or other automated means without the provider's express permission is strictly prohibited. The page was therefore not rendered and no capture exists.",
+    "This repository's review notes: the host redirects to its /signin/ path and shows an account-entry form; password, linked-provider and passkey branches exist. They hold no markup.",
+    "KeePassXC-Browser's site list at commit 8b0b2c4: sign-in is a multi-page flow on the provider's sign-in hosts (lines 23-25, entries from 2022 and 2023); the password field is recognised by the id pass (lines 85-87, from 2020 and 2021); the submit control is the first element of type button in a form that posts to the www host (lines 224-230, from 2021). The identifier field is not described.",
+    "Chromium's public password-manager site tests (commit 88f1fe85) hold no recipes: they are kept in an internal repository. Mozilla's published password recipes (13 records, read 2026-10-12) have no entry for this sign-in."
+  ],
+  "neededFromUser": "In your own browser, signed out: open https://signin.ebay.com/signin/ and save the first sign-in page; enter the user name, continue, and save the password page before typing the password. Note the address of each up to the question mark. Save each as Webpage, Complete (HTML only re-downloads the address and misses a scripted or submitted form). Keep the files outside the repository: they can hold your account name. Import: node scripts/capture-login-page.mjs --id ebay --from-file <file.html>",
+  "notes": "No steps were written from the one known field. It is on the second page, the note that names it is about five years old, and an identifier step must come first."
+}

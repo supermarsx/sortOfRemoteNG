@@ -1,0 +1,46 @@
+{
+  "$schema": "../evidence.schema.json",
+  "version": 1,
+  "id": "arlo",
+  "class": "C",
+  "mechanism": "none",
+  "reviewed": "2026-10-12",
+  "summary": "A hosted web portal whose host answers automated requests with a challenge page, so its sign-in page was not read. No public material found shows its form, so nothing is filled.",
+  "sources": [
+    {
+      "id": "terms",
+      "kind": "vendor-documentation",
+      "title": "Arlo Terms of Service on the United States site, updated 2024-09-02: section 8, Member Conduct",
+      "url": "https://us.arlo.com/pages/arlo-terms-of-service",
+      "retrieved": "2026-10-12",
+      "note": "Read through a fetch tool that returns short quote fragments. The text it was given ended after section 24. The page states that these terms do not apply to customers in Europe."
+    },
+    {
+      "id": "review-notes",
+      "kind": "repository",
+      "title": "This repository's review of the Arlo preset",
+      "path": "docs/international-portal-profiles.md",
+      "lines": "160-166",
+      "retrieved": "2026-10-12"
+    }
+  ],
+  "selectors": [],
+  "fixtures": [],
+  "staysInteractive": [
+    {
+      "kind": "other",
+      "note": "The whole sign-in."
+    },
+    {
+      "kind": "device-approval",
+      "note": "A new browser has to be approved as trusted, per the provider's documentation cited in this repository's review notes."
+    }
+  ],
+  "lookedFor": [
+    "robots.txt of my.arlo.com: HTTP 403 at 19:02:37 UTC on 2026-10-12, and of www.arlo.com: HTTP 403 at 19:08:45 UTC, each to a plain request without a browser user agent. Both bodies were a challenge page; fragments: \"Just a moment...\", \"Enable JavaScript and cookies to continue\". The rules could not be read. No other client and no second attempt was tried. These refusals are why the page was not rendered and no capture exists.",
+    "The Arlo Terms of Service on the United States site, updated 2024-09-02, section 8, Member Conduct. Fragment as returned by the fetch tool: \"use any data mining, robots, or similar data gathering or extraction methods designed to scrape\" (the sentence continues; the rest was not shown). The same page says: \"These terms do not apply to Arlo customers using Arlo products and services in Europe.\" The terms that apply to a customer in Europe were not read, so this clause is recorded and is not the reason given above.",
+    "This repository's review notes: the provider's guides name my.arlo.com and require interactive authentication and browser trust approval; direct retrieval failed in the earlier review. No markup.",
+    "KeePassXC-Browser's site list (commit 8b0b2c4) has no entry for this site. Chromium's public password-manager site tests (commit 88f1fe85) hold no recipes. Mozilla's published password recipes (13 records, read 2026-10-12) have no entry for this sign-in."
+  ],
+  "neededFromUser": "In your own browser, signed out: open https://my.arlo.com/ and save the sign-in page. If the password is asked on a second page, save that one too before typing the password. Note the address of each up to the question mark. Save each as Webpage, Complete (HTML only re-downloads the address and misses a scripted or submitted form). Keep the files outside the repository: they can hold your account name. Import: node scripts/capture-login-page.mjs --id arlo --from-file <file.html>"
+}

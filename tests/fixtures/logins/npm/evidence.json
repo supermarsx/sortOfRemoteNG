@@ -1,0 +1,51 @@
+{
+  "$schema": "../evidence.schema.json",
+  "version": 1,
+  "id": "npm",
+  "class": "C",
+  "mechanism": "none",
+  "reviewed": "2026-10-12",
+  "summary": "A hosted sign-in page whose host answers automated requests with a challenge page and whose terms restrict automating access to the website. No public material found shows its form, so nothing is filled.",
+  "sources": [
+    {
+      "id": "terms",
+      "kind": "vendor-documentation",
+      "title": "npm Open Source Terms, last updated 2022-03-10: Acceptable Use, item 9",
+      "url": "https://docs.npmjs.com/policies/open-source-terms",
+      "retrieved": "2026-10-12",
+      "note": "Read through a fetch tool that returns short quote fragments, not whole sentences."
+    },
+    {
+      "id": "review-notes",
+      "kind": "repository",
+      "title": "This repository's review of the npm preset",
+      "path": "docs/international-portal-profiles.md",
+      "lines": "208-213",
+      "retrieved": "2026-10-12"
+    }
+  ],
+  "selectors": [],
+  "fixtures": [],
+  "staysInteractive": [
+    {
+      "kind": "other",
+      "note": "The whole sign-in."
+    },
+    {
+      "kind": "totp",
+      "note": "Two-factor sign-in is documented by the provider, as recorded in this repository's review notes."
+    },
+    {
+      "kind": "security-key",
+      "note": "Security-key and recovery behaviour is documented by the provider, per the same notes."
+    }
+  ],
+  "lookedFor": [
+    "robots.txt of www.npmjs.com: HTTP 403 at 19:02:38 UTC on 2026-10-12 to a plain request without a browser user agent. The body was a challenge page; fragments of it: \"Just a moment...\", \"Enable JavaScript and cookies to continue\". The rules could not be read. No other client and no second attempt was tried.",
+    "The npm Open Source Terms, last updated 2022-03-10, Acceptable Use, item 9. Fragments as returned by the fetch tool: \"You will not automate access to, use, or monitor the Website, such as with a web crawler, browser plug-in or add-on\", \"or other computer program that is not a web browser.\" The capture tool drives a web browser by script; whether item 9 covers that is for a reader of the whole clause to judge. With the refused robots file the page was not rendered and no capture exists.",
+    "This repository's review notes: direct retrieval of the login address returned HTTP 403 in the earlier review, and the preset adopts no form selectors. No markup.",
+    "KeePassXC-Browser's site list (commit 8b0b2c4) has no entry for this site. Chromium's public password-manager site tests (commit 88f1fe85) hold no recipes. Mozilla's published password recipes (13 records, read 2026-10-12) have no entry for this sign-in."
+  ],
+  "neededFromUser": "In your own browser, signed out: open https://www.npmjs.com/login and save the sign-in page. If the password is asked on a second page, save that one too before typing the password. Note the address of each up to the question mark. Save each as Webpage, Complete (HTML only re-downloads the address and misses a scripted or submitted form). Keep the files outside the repository: they can hold your account name. Import: node scripts/capture-login-page.mjs --id npm --from-file <file.html>",
+  "notes": "The terms were read once on the provider's documentation host before their content was known. No further automated request was made to the provider's web hosts."
+}

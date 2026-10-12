@@ -1,0 +1,71 @@
+{
+  "$schema": "../evidence.schema.json",
+  "version": 1,
+  "id": "aws-console-govcloud",
+  "class": "C",
+  "mechanism": "none",
+  "reviewed": "2026-10-12",
+  "summary": "The console of the AWS GovCloud (US) partition, with its own hosts and identities provided by an administrator. Nothing that may be read shows its sign-in form, so nothing is filled.",
+  "sources": [
+    {
+      "id": "robots",
+      "kind": "vendor-documentation",
+      "title": "robots.txt of the GovCloud console host: every path is disallowed for every agent except /ls/docs",
+      "url": "https://console.amazonaws-us-gov.com/robots.txt",
+      "retrieved": "2026-10-12",
+      "note": "Read 2026-10-12 at 19:02 UTC with a plain request. The sha256 of the file as read begins 890a8daf42221a73."
+    },
+    {
+      "id": "profile-notes",
+      "kind": "repository",
+      "title": "This repository's AWS console profiles: the GovCloud entry point and its separate identity",
+      "path": "src/utils/connection/awsConsoleProfiles.ts",
+      "lines": "3-52",
+      "retrieved": "2026-10-12"
+    },
+    {
+      "id": "preset-notes",
+      "kind": "repository",
+      "title": "This repository's review of the Amazon and AWS presets",
+      "path": "docs/hosted-dashboard-profiles.md",
+      "lines": "181-198",
+      "retrieved": "2026-10-12"
+    }
+  ],
+  "selectors": [],
+  "fixtures": [],
+  "staysInteractive": [
+    {
+      "kind": "other",
+      "note": "The whole sign-in."
+    },
+    {
+      "kind": "captcha",
+      "note": "Named as remaining interactive by this repository's reviewed profile text."
+    },
+    {
+      "kind": "totp",
+      "note": "Multi-factor sign-in is named as remaining interactive by the same profile text."
+    },
+    {
+      "kind": "single-sign-on"
+    },
+    {
+      "kind": "passkey"
+    },
+    {
+      "kind": "security-key"
+    }
+  ],
+  "lookedFor": [
+    "robots.txt of console.amazonaws-us-gov.com, read 2026-10-12: Disallow: / for every agent, with only /ls/docs allowed. The page was therefore not rendered and no capture exists.",
+    "This repository's profile and review notes: the GovCloud entry point and the rule that a linked commercial account grants no browser sign-in. They hold no markup.",
+    "Material about the commercial partition. KeePassXC-Browser's site list names signin.aws.amazon.com only. That is another host of another partition and is not evidence for this one.",
+    "Chromium's public password-manager site tests (commit 88f1fe85) hold no recipes: they are kept in an internal repository. Mozilla's published password recipes (13 records, read 2026-10-12) have no entry for an AWS host."
+  ],
+  "neededFromUser": "In your own browser, signed out: open https://console.amazonaws-us-gov.com/ with the identity you use and save the first sign-in page; enter the user name, continue, and save the password page before typing the password. Note the address of each up to the question mark. Save each as Webpage, Complete (HTML only re-downloads the address and misses a scripted or submitted form). Keep the files outside the repository: they can hold your account name. Import: node scripts/capture-login-page.mjs --id aws-console-govcloud --from-file <file.html>",
+  "schemaGaps": [
+    "An IAM user signs in with three values: the account ID or alias, the user name and the password (this repository's profile text). The steps format types a username and a password and has no third value."
+  ],
+  "notes": "Not covered by any source. The sign-in host of this partition was not established from anything read; it is not assumed to mirror the commercial one."
+}
