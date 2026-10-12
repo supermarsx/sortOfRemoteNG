@@ -16,7 +16,9 @@ use std::pin::Pin;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
-use tokio::net::{TcpListener, TcpStream};
+#[cfg(test)]
+use tokio::net::TcpListener;
+use tokio::net::TcpStream;
 use tokio::sync::watch;
 use tokio::task::{JoinHandle, JoinSet};
 use zeroize::{Zeroize, Zeroizing};
@@ -25,7 +27,10 @@ use zeroize::{Zeroize, Zeroizing};
 mod forward_http;
 #[path = "private_forward_proxy/accept.rs"]
 mod accept;
-use accept::{AcceptBackoff, AcceptListener};
+use accept::{
+    rebind, AcceptBackoff, AcceptListener, Endpoint, ListenerSource, LoopbackSource, RebindBudget,
+    Rebound,
+};
 #[path = "private_forward_proxy/lifecycle.rs"]
 mod lifecycle;
 pub use lifecycle::{PrivateProxyDiagnostics, PrivateProxyState};
@@ -196,6 +201,9 @@ impl ProxyLimits {
 
 const USERNAME: &str = "sorng-private-proxy";
 const RELAY_BUFFER: usize = 32 * 1024;
+// Over-capacity sockets answered with a 503 at any one time, in addition to
+// `max_clients`. Beyond this the socket is dropped without a response.
+const MAX_PENDING_REFUSALS: usize = 32;
 
 // Deliberately no Debug, Clone, Serialize or credential-bearing error messages.
 pub struct PrivateForwardProxy {
@@ -207,7 +215,19 @@ pub struct PrivateForwardProxy {
 }
 
 impl PrivateForwardProxy {
+    /// Binds an ephemeral loopback port, retrying a failed bind a bounded
+    /// number of times. On failure only the last `io::ErrorKind` survives, in
+    /// the returned error and in the log; the native error text does not.
     pub async fn start(
+        dialer: Arc<dyn RouteDialer>,
+        grant: DestinationGrant,
+        limits: ProxyLimits,
+    ) -> io::Result<Self> {
+        Self::start_with(LoopbackSource, dialer, grant, limits).await
+    }
+
+    async fn start_with<S: ListenerSource>(
+        source: S,
         dialer: Arc<dyn RouteDialer>,
         grant: DestinationGrant,
         limits: ProxyLimits,
@@ -220,12 +240,12 @@ impl PrivateForwardProxy {
         let password = Zeroizing::new(hex::encode(random.as_slice()));
         let credentials = Zeroizing::new(format!("{USERNAME}:{}", password.as_str()));
         let credential_hash: [u8; 32] = Sha256::digest(credentials.as_bytes()).into();
-        let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).await?;
-        let address = listener.local_addr()?;
+        let endpoint = Endpoint::bind(source).await?;
+        let address = endpoint.address;
         let (stopped, receiver) = watch::channel(false);
         let observations = Arc::new(Observations::default());
         let task = tokio::spawn(serve(
-            listener,
+            endpoint,
             receiver,
             dialer,
             grant,
@@ -318,8 +338,8 @@ async fn revoked(mut receiver: watch::Receiver<bool>) {
     }
 }
 
-async fn serve(
-    mut listener: impl AcceptListener,
+async fn serve<S: ListenerSource>(
+    endpoint: Endpoint<S>,
     stop: watch::Receiver<bool>,
     dialer: Arc<dyn RouteDialer>,
     grant: DestinationGrant,
@@ -327,67 +347,116 @@ async fn serve(
     limits: ProxyLimits,
     observations: Arc<Observations>,
 ) -> io::Result<()> {
+    let Endpoint {
+        listener,
+        mut source,
+        address,
+    } = endpoint;
     let mut clients = JoinSet::new();
+    let mut refusals = JoinSet::new();
     let mut accept_backoff = AcceptBackoff::default();
+    let mut rebinds = RebindBudget::default();
     let mut accept_after = None;
-    let result = loop {
-        tokio::select! {
-            biased;
-            _ = revoked(stop.clone()) => break Ok(()),
-            Some(_) = clients.join_next(), if !clients.is_empty() => {},
-            accepted = async {
-                if let Some(deadline) = accept_after {
-                    tokio::time::sleep_until(deadline).await;
-                }
-                listener.accept().await
-            } => {
-                let (mut client, _) = match accepted {
-                    Ok(value) => {
-                        accept_backoff = AcceptBackoff::default();
-                        accept_after = None;
-                        value
+    let result = {
+        // Scoped so that every exit releases the listening socket before cleanup.
+        let mut listener = listener;
+        loop {
+            tokio::select! {
+                biased;
+                _ = revoked(stop.clone()) => break Ok(()),
+                Some(_) = clients.join_next(), if !clients.is_empty() => {},
+                Some(_) = refusals.join_next(), if !refusals.is_empty() => {},
+                accepted = async {
+                    if let Some(deadline) = accept_after {
+                        tokio::time::sleep_until(deadline).await;
                     }
-                    Err(error) => {
-                        if let Some(delay) = accept_backoff.retry_delay(&error) {
-                            // Keep the same listener, credentials, grants and route.
-                            // An absolute deadline survives client-completion wakes;
-                            // revocation and reaping remain live during the delay.
-                            accept_after = Some(tokio::time::Instant::now() + delay);
-                            continue;
+                    listener.accept().await
+                } => {
+                    let (mut client, _) = match accepted {
+                        Ok(value) => {
+                            accept_backoff = AcceptBackoff::default();
+                            rebinds = RebindBudget::default();
+                            accept_after = None;
+                            value
                         }
-                        observations.listener_failed();
-                        break Err(io::Error::other("Private proxy listener failed"));
+                        Err(error) => {
+                            if let Some(delay) = accept_backoff.retry_delay(&error) {
+                                // Keep the same listener, credentials, grants and route.
+                                // An absolute deadline survives client-completion wakes;
+                                // revocation and reaping remain live during the delay.
+                                accept_after = Some(tokio::time::Instant::now() + delay);
+                                continue;
+                            }
+                            // This listener is finished, but the browser context can
+                            // only ever reach this endpoint: release the port and bind
+                            // it again. Kind only; the error text never leaves here.
+                            let kind = error.kind();
+                            log::warn!(
+                                "Private proxy listener accept failed ({kind:?}); rebinding its endpoint"
+                            );
+                            drop(listener);
+                            match rebind(
+                                &mut source,
+                                address,
+                                kind,
+                                &mut rebinds,
+                                &stop,
+                                &mut clients,
+                                &mut refusals,
+                            )
+                            .await
+                            {
+                                Rebound::Listener(rebound) => {
+                                    listener = rebound;
+                                    accept_backoff = AcceptBackoff::default();
+                                    accept_after = None;
+                                    continue;
+                                }
+                                Rebound::Revoked => break Ok(()),
+                                Rebound::Exhausted => {
+                                    observations.listener_failed();
+                                    break Err(io::Error::other("Private proxy listener failed"));
+                                }
+                            }
+                        }
+                    };
+                    increment(&observations.accepted_connections);
+                    if clients.len() >= limits.max_clients {
+                        increment(&observations.capacity_refusals);
+                        // Never awaited here: a refused peer that neither reads nor
+                        // closes must not delay the next accept. The side set is
+                        // bounded; beyond it the extra socket is simply dropped.
+                        if refusals.len() < MAX_PENDING_REFUSALS {
+                            let stop = stop.clone();
+                            refusals.spawn(async move {
+                                tokio::select! {
+                                    biased;
+                                    _ = revoked(stop) => {},
+                                    _ = refuse_busy(&mut client, limits.response_timeout) => {},
+                                }
+                            });
+                        }
+                        continue;
                     }
-                };
-                increment(&observations.accepted_connections);
-                if clients.len() >= limits.max_clients {
-                    increment(&observations.capacity_refusals);
-                    // No unbounded task/queue for rejected clients. The extra
-                    // accepted socket exists only for this bounded refusal.
-                    tokio::select! {
-                        biased;
-                        _ = revoked(stop.clone()) => break Ok(()),
-                        _ = refuse_busy(&mut client, limits.response_timeout) => {},
-                    }
-                    continue;
+                    let stop = stop.clone();
+                    let dialer = dialer.clone();
+                    let grant = grant.clone();
+                    let observations = observations.clone();
+                    clients.spawn(async move {
+                        tokio::select! {
+                            biased;
+                            _ = revoked(stop) => {},
+                            _ = handle_client(client, dialer, grant, credential_hash, limits, observations) => {},
+                        }
+                    });
                 }
-                let stop = stop.clone();
-                let dialer = dialer.clone();
-                let grant = grant.clone();
-                let observations = observations.clone();
-                clients.spawn(async move {
-                    tokio::select! {
-                        biased;
-                        _ = revoked(stop) => {},
-                        _ = handle_client(client, dialer, grant, credential_hash, limits, observations) => {},
-                    }
-                });
             }
         }
     };
-    drop(listener);
     clients.abort_all();
+    refusals.abort_all();
     while clients.join_next().await.is_some() {}
+    while refusals.join_next().await.is_some() {}
     result
 }
 

@@ -534,6 +534,100 @@ async fn client_cap_includes_pending_dials_and_stop_cancels_them() {
 }
 
 #[tokio::test]
+async fn over_capacity_clients_never_delay_an_admitted_clients_accept() {
+    const FLOOD: usize = 40;
+    // Refusing inline cost up to 100 ms per silent peer: 4 s for this flood.
+    const BOUND: Duration = Duration::from_secs(2);
+    let target = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let calls = Arc::new(AtomicUsize::new(0));
+    let mut proxy = PrivateForwardProxy::start(
+        tcp_dialer(target.local_addr().unwrap(), calls.clone()),
+        Arc::new(|_| true),
+        ProxyLimits {
+            max_clients: 1,
+            ..ProxyLimits::default()
+        },
+    )
+    .await
+    .unwrap();
+    // A silent, unauthenticated reader holds the only slot.
+    let mut holder = TcpStream::connect(proxy.local_addr()).await.unwrap();
+    holder.write_all(b"CON").await.unwrap();
+    timeout(TEST_DEADLINE, async {
+        while proxy.diagnostics().accepted_connections < 1 {
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .unwrap();
+    // None of these peers ever reads its refusal or closes its socket.
+    let mut flood = Vec::new();
+    for _ in 0..FLOOD {
+        flood.push(TcpStream::connect(proxy.local_addr()).await.unwrap());
+    }
+    timeout(BOUND, async {
+        while proxy.diagnostics().capacity_refusals < FLOOD as u32 {
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .expect("over-capacity peers delayed the accept loop");
+    // Free the slot. A new client is then admitted without waiting for the
+    // refusals that are still pending.
+    drop(holder);
+    let request = request("example.test:443", &auth(&proxy));
+    let mut client = timeout(BOUND, async {
+        while proxy.diagnostics().request_rejections < 1 {
+            tokio::task::yield_now().await;
+        }
+        loop {
+            let mut client = TcpStream::connect(proxy.local_addr()).await.unwrap();
+            client.write_all(&request).await.unwrap();
+            let mut status = [0u8; 12];
+            // A refusal or a dropped socket only means the freed slot has not
+            // been reaped yet; it is never a reason to wait for other peers.
+            if client.read_exact(&mut status).await.is_ok() && &status == b"HTTP/1.1 200" {
+                break client;
+            }
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .expect("over-capacity peers delayed an admitted client");
+    assert!(head(&mut client).await.ends_with("\r\n\r\n"));
+    let (mut upstream, _) = timeout(TEST_DEADLINE, target.accept())
+        .await
+        .unwrap()
+        .unwrap();
+    upstream.write_all(b"admitted").await.unwrap();
+    let mut received = [0u8; 8];
+    timeout(TEST_DEADLINE, client.read_exact(&mut received))
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(&received, b"admitted");
+    assert_eq!(calls.load(Ordering::SeqCst), 1);
+    // Every over-capacity peer was refused or dropped, and none was served.
+    let mut refused = 0;
+    for mut peer in flood {
+        let mut reply = Vec::new();
+        let _ = timeout(TEST_DEADLINE, peer.read_to_end(&mut reply))
+            .await
+            .unwrap();
+        if !reply.is_empty() {
+            assert!(reply.starts_with(b"HTTP/1.1 503 "));
+            refused += 1;
+        }
+    }
+    assert!(
+        (MAX_PENDING_REFUSALS..=FLOOD).contains(&refused),
+        "{refused}"
+    );
+    assert!(proxy.diagnostics().capacity_refusals >= FLOOD as u32);
+    proxy.stop().await.unwrap();
+}
+
+#[tokio::test]
 async fn unexpected_supervisor_cancellation_revokes_readiness_and_credentials() {
     let mut proxy = PrivateForwardProxy::start(
         forbidden_dialer(Arc::new(AtomicUsize::new(0))),
