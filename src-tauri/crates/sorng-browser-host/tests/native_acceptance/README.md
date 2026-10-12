@@ -46,6 +46,85 @@ first paint remains `not-run` until a pixel/frame capture is collected. Netlog
 checks do not replace OS DNS/socket tripwires or renderer sandbox token evidence.
 Missing observations always fail acceptance; the tool never unlocks runtime Ready.
 
+## Measurement mode: hidden, blocked, concurrent and background logins
+
+`measure` runs the same client and fixture server through eleven scenarios and
+prints observations, not a verdict. Its report is marked `mode: "measure"`; the
+acceptance validator rejects such a report and nothing here unlocks Ready.
+
+```powershell
+node scripts/cef-browser-acceptance.mjs measure --executable .artifacts/cef-acceptance-bundle-NEW/sorng_cef_acceptance.exe --output NEW_DIR [--window-ms 5000..40000] [--only SCENARIO_ID,...]
+```
+
+Build and stage as above; any bundle staged from this client works. A full run
+takes about 2 min 40 s (default 12 s window) and opens one 800x600 window titled
+"Local CEF acceptance — synthetic fixtures only"; the `e-covered` scenario adds a
+second, slightly larger "decoy" window for 15 s. Both are shown without
+activation and the fixture window is disabled, so a run never takes the keyboard
+or the foreground and cannot be clicked into. It writes
+`NEW_DIR/measurement-matrix.txt` (the M1-M7 matrix), `NEW_DIR/measurements.json`
+(matrix plus runner summary) and `NEW_DIR/run-*/native-report.json` (every raw
+page and native observation under `measurements`). The exit code is 0 when the
+tool ran cleanly; whether a login completed is a result, not a failure.
+
+| Scenario                                        | What is presented                                                                      | Feeds |
+| ----------------------------------------------- | -------------------------------------------------------------------------------------- | ----- |
+| `baseline-visible`                              | shown view; hidden at 60 % of the window                                               | M1-M3 |
+| `a-hidden-after-attach`                         | `show`, `focus`, `hide`, then navigate; shown again at 60 %                            | M1-M3 |
+| `b-born-hidden-1x1`, `b-born-hidden-1280x800`   | never shown; the second runs 2.5 windows                                               | M1-M4 |
+| `b-born-hidden-generic`                         | never shown, `Generic` adapter                                                         | M3    |
+| `c-visible-input-blocked`                       | `occlude(.., true)`, `show`, `occlude(.., true)`                                       | M3    |
+| `d-concurrent`                                  | three browsers navigated in one loop turn: shown, hidden after attach, born hidden     | M5    |
+| `f-relay-capacity`                              | 40 WebSockets and 2 x 6 held requests through one relay                                | M7    |
+| `e-inactive`, `e-covered`, `e-minimized-hidden` | fixture window not foreground; covered by the decoy; minimized with a born-hidden view | M6    |
+
+Logins use `ModularForm`, the adapter production selects for a saved form
+profile and the only form path that types through CEF key events
+(`FormPrepare`, `Form`, `FormSubmit`). `Generic` assigns field values in page
+script and sends no key event, so it cannot answer whether keys reach a hidden
+frame. The hooks grant ten minutes, as the app's attempt consent does, so the
+production budgets are what limits a login. Credentials are the same synthetic
+literals; the route admits only `fixture.test:443` and `frame.test:443`.
+
+The page probes are passive: a chained 20 ms timer and `requestAnimationFrame`
+counted per second, `visibilitychange`, capture-phase `keydown`/`beforeinput`/
+`input` counts with `isTrusted`, and layout boxes. Reports carry counts, sizes
+and times, never a typed value. Each row of the matrix is `MEASURED` only when
+its page report covers the whole window and the native state was the planned
+one at navigation (lifecycle, child-window `WS_VISIBLE`, window state for M6);
+otherwise it prints its reasons and no value. Window state, the child windows
+and the exposure estimate are Windows-only: elsewhere the three `e-*` scenarios
+are skipped and their rows stay `NOT MEASURED`.
+
+First results (Windows 11 x64, 2026-10-12; host and protocols at `af3a0002`;
+two full runs, and three earlier ones taken while the machine was short of
+loopback ports that gave the same values; per-run values in
+`.orchestration/logs/t101-e1r.md`):
+
+- A hidden native view is not a hidden page. `document.visibilityState` was
+  `visible` at start and end in every hidden slot, with no `visibilitychange`
+  when a view was hidden or shown mid-window, when the fixture window was
+  covered, and when it was minimized.
+- Hiding a view does not throttle its timers or frames: 42-49 ticks of a 20 ms
+  timer and 27-33 frames per second, hidden or visible, including over 30 s. In
+  one run the timer ran at 32-35 ticks per second (31 ms apart) for about 100 s
+  in shown and hidden views alike; frames, key timing and login times did not
+  change and the cause was not determined.
+- Key events reach a hidden frame, including one never shown and never focused:
+  22+20 trusted `input` events at the same 35-38 ms per key as visible.
+- A visible view with input blocked received no key: the login was rejected
+  right after its `form` delivery, in five runs of five.
+- A 1x1 view gives the page a 14x14 viewport and its narrow-screen layout.
+- Three concurrent logins all completed, in 1.8-2.1 s against 1.7-1.9 s alone.
+- 52 requested connections against a relay limit of 32: 20 refusals every run,
+  seen by the page as 19-20 failed WebSockets and at most one failed request.
+
+macOS and Linux are not measured. The app shell itself (the Tauri window, its
+overlays and its tab management) was not measured either: these results are for
+the standalone client only. The three acceptance attempts (`run`) still
+create their window focused and enabled; a shown view takes native focus when
+it navigates, which is how an early measurement launch took the foreground.
+
 ## Portable gate and remaining platform measurements
 
 The same `run --executable ... --output NEW_DIR` and report validator work on

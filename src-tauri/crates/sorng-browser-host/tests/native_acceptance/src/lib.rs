@@ -34,6 +34,7 @@ use tao::{
 #[cfg(windows)]
 mod exception_observer;
 mod fixture;
+mod measure;
 
 #[cfg(windows)]
 #[no_mangle]
@@ -328,6 +329,9 @@ fn execute(bootstrap: &mut dyn RuntimeBootstrap, paths: &BundlePaths) -> Result<
             "acceptance requires a fresh empty directory, never an existing profile".into(),
         );
     }
+    // Opt-in measurements replace the three acceptance attempts below; their
+    // report is marked and the runner never reads it as acceptance evidence.
+    let measuring = measure::requested()?;
     #[cfg(windows)]
     exception_observer::install_if_enabled(&output)?;
     let async_runtime = tokio::runtime::Runtime::new()?;
@@ -346,6 +350,8 @@ fn execute(bootstrap: &mut dyn RuntimeBootstrap, paths: &BundlePaths) -> Result<
         WindowBuilder::new()
             .with_title("Local CEF acceptance — synthetic fixtures only")
             .with_inner_size(tao::dpi::LogicalSize::new(800., 600.))
+            // A measurement run never takes the foreground from the desktop.
+            .with_focused(!measuring)
             .build(&events)?,
     );
     let mut settings = cef_runtime::native_settings(&paths.helper, &paths.resources)?;
@@ -392,6 +398,31 @@ fn execute(bootstrap: &mut dyn RuntimeBootstrap, paths: &BundlePaths) -> Result<
     );
     if !native_login_prompt_disabled {
         failures.push("native command line missing disable-chrome-login-prompt".into());
+    }
+    if measuring {
+        let stopped = measure::run(
+            measure::Run {
+                runtime: &runtime,
+                fixture: &fixture,
+                events: &mut events,
+                parent: parent.clone(),
+                async_runtime: &async_runtime,
+                initialized: &initialized,
+                output: &output,
+            },
+            &mut failures,
+        );
+        let _ = observe_network_policy(&runtime, &fixture, "before-shutdown");
+        unsafe {
+            runtime.shutdown()?;
+        }
+        fixture.write_report(&output, &failures)?;
+        stopped?;
+        return if failures.is_empty() {
+            Ok(())
+        } else {
+            Err(failures.join("; ").into())
+        };
     }
     for (name, origin, path, google) in [
         ("generic", "https://fixture.test", "/", false),

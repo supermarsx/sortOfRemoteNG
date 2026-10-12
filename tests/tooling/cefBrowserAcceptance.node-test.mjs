@@ -17,6 +17,11 @@ import {
   summarizeProxyTrace,
   acceptanceCustomPlan,
   stageAcceptance,
+  MEASUREMENT_SCENARIOS,
+  MEASUREMENT_VARIABLES,
+  measurementPlan,
+  assessMeasurementReport,
+  formatMeasurementMatrix,
 } from "../../scripts/cef-browser-acceptance.mjs";
 import {
   assessStorageIsolation,
@@ -1292,4 +1297,834 @@ test("both runner suites apply the crash gate before their final acceptance verd
     /nativeTlsFixtureAccepted:\s*suite === ["']tls["'] && assessed\.failures\.length\s*===\s*0/,
   );
   assert.match(runner, /nativeFailureReason,\s*nativeCrashSummary,\s*platform/);
+});
+
+// ---------------------------------------------------------------------------
+// Measurement mode: scenarios (a)-(f) and the M1-M7 matrix. Every report below
+// is synthetic validator input; none of it is a measurement.
+// ---------------------------------------------------------------------------
+
+const acceptanceRoot = new URL(
+  "../../src-tauri/crates/sorng-browser-host/tests/native_acceptance/",
+  import.meta.url,
+);
+const acceptanceSource = (name) =>
+  readFileSync(new URL(name, acceptanceRoot), "utf8").replaceAll("\r\n", "\n");
+const HIDDEN_PRESENTATIONS = ["hidden-after-attach", "born-hidden"];
+
+function syntheticMeasurementReport() {
+  const box = (width) => ({
+    width,
+    height: 21,
+    visible: true,
+    inViewport: width <= 800,
+  });
+  const keyRow = (count, hidden) => ({
+    keydown: count,
+    trustedKeydown: count,
+    beforeinput: count,
+    input: count,
+    trustedInput: count,
+    focusedDocument: 0,
+    hiddenDocument: hidden ? count : 0,
+    activeTarget: count,
+    inputAtMs: [300, 330, 360],
+    firstAtMs: 300,
+    lastAtMs: 900,
+    medianGapMs: 30,
+    maxGapMs: 45,
+  });
+  const page = (id, hidden, width, height) => ({
+    slot: id,
+    kind: "final",
+    reason: "window-elapsed",
+    atMs: 11700,
+    windowMs: 12000,
+    visibility: {
+      initial: hidden ? "hidden" : "visible",
+      initialHasFocus: false,
+      current: hidden ? "hidden" : "visible",
+      hidden,
+      hasFocus: false,
+      changes: [],
+    },
+    timer: {
+      requestedMs: 20,
+      count: 90,
+      medianMs: 21,
+      p95Ms: 30,
+      maxMs: 44,
+      ticksPerSecond: [45, 45],
+    },
+    animationFrame: {
+      count: hidden ? 0 : 120,
+      medianMs: hidden ? null : 16,
+      p95Ms: hidden ? null : 17,
+      maxMs: hidden ? null : 30,
+      framesPerSecond: hidden ? [0, 0] : [60, 60],
+    },
+    messageTasks: {
+      roundTrips: 50,
+      runs: [{ atMs: 1500, visibility: "visible", totalMs: 1.5 }],
+    },
+    keys: {
+      username: keyRow(22, hidden),
+      password: keyRow(20, hidden),
+      other: 0,
+    },
+    layout: {
+      innerWidth: width,
+      innerHeight: height,
+      devicePixelRatio: 1,
+      compactQuery: width < 600,
+      compactShown: width < 600,
+      form: box(300),
+      username: box(150),
+      password: box(150),
+      submit: box(60),
+      fluid: box(width),
+    },
+    login: {
+      submitted: true,
+      valuesMatch: true,
+      submittedAtMs: 1500,
+      usernameLength: 22,
+      passwordLength: 20,
+    },
+  });
+  const shell = (kind) => ({
+    supported: true,
+    visible: true,
+    minimized: kind === "minimized",
+    foreground: false,
+    exposedPermille: ["covered", "minimized"].includes(kind) ? 0 : 1000,
+    coveringWindows: kind === "covered" ? 1 : 0,
+    decoy:
+      kind === "covered"
+        ? {
+            shown: true,
+            foreground: false,
+            aboveFixture: true,
+            coversFixture: true,
+          }
+        : null,
+  });
+  const relay = {
+    state: "listening",
+    acceptedConnections: 9,
+    authenticationChallenges: 4,
+    authenticatedRequests: 5,
+    destinationDenials: 0,
+    upstreamFailures: 0,
+    requestRejections: 0,
+    capacityRefusals: 0,
+  };
+  const slot = (plan) => {
+    const hidden = HIDDEN_PRESENTATIONS.includes(plan.presentation);
+    const [width, height] =
+      plan.id === "b-born-hidden-1x1"
+        ? [1, 1]
+        : plan.id.startsWith("b-born-hidden-")
+          ? [1280, 800]
+          : [800, 600];
+    const final =
+      plan.adapter === "manual"
+        ? {
+            slot: plan.id,
+            kind: "final",
+            reason: "capacity",
+            atMs: 7000,
+            capacity: {
+              sockets: { requested: 40, open: 26, error: 14, closed: 14 },
+              holds: {
+                sameHost: { requested: 6, pending: 6, completed: 0, failed: 0 },
+                otherHost: {
+                  requested: 6,
+                  pending: 0,
+                  completed: 0,
+                  failed: 6,
+                },
+              },
+              settledAtMs: 7000,
+            },
+          }
+        : page(plan.id, hidden, width, height);
+    return {
+      ...plan,
+      width,
+      height,
+      navigated: true,
+      navigationError: null,
+      lifecycleAtNavigation: hidden ? "Hidden" : "Attached",
+      inputBlockedRequested: plan.presentation === "visible-input-blocked",
+      childWindow: {
+        atNavigation: {
+          known: true,
+          visible: !hidden,
+          styleVisible: !hidden,
+          enabled: plan.presentation === "visible",
+          width,
+          height,
+        },
+      },
+      lifecycleAtEnd: hidden ? "Hidden" : "Attached",
+      reports: { final },
+      reportReceivedMs: { login: 1600, final: 11900 },
+      navigationToLoginReportMs: 1600,
+      relay,
+      native: {
+        features: [
+          { atMs: 20, status: "RendererInstalled", bootstrap: true },
+          { atMs: 1500, status: "LoginAdapterCompleted", bootstrap: false },
+        ],
+        credentialCalls: { form: 44, "form-prepare": 1, "form-submit": 1 },
+      },
+    };
+  };
+  return {
+    schema: 1,
+    engine: "cef",
+    bindingPin: "154.3.0",
+    mode: "measure",
+    productionReady: false,
+    failures: [],
+    measurements: {
+      schema: 1,
+      windowMs: 12000,
+      only: null,
+      plan: structuredClone(MEASUREMENT_SCENARIOS),
+      relayMaxClients: 32,
+      scenarios: MEASUREMENT_SCENARIOS.map((plan) => ({
+        id: plan.id,
+        shell: plan.shell,
+        page: plan.page,
+        windowMs: plan.longWindow ? 30000 : 12000,
+        navigated: true,
+        closed: true,
+        windowState: {
+          atNavigation: shell(plan.shell),
+          atEnd: shell(plan.shell),
+          everForeground: false,
+        },
+        slots: plan.slots.map(slot),
+        ...(plan.page === "capacity"
+          ? {
+              capacity: {
+                requested: { sockets: 40, holdsPerHost: 6, holdHosts: 2 },
+                relayMaxClients: 32,
+                relay: {
+                  ...relay,
+                  acceptedConnections: 61,
+                  capacityRefusals: 20,
+                },
+                fixture: {
+                  socketsAccepted: 26,
+                  holdsAccepted: 6,
+                  heldPeak: 32,
+                },
+              },
+            }
+          : {}),
+      })),
+    },
+  };
+}
+
+const measurementRow = (report, id) =>
+  assessMeasurementReport(report).rows.find((row) => row.id === id);
+const measurementSlot = (report, id) =>
+  report.measurements.scenarios
+    .flatMap((scenario) => scenario.slots)
+    .find((slot) => slot.id === id);
+const measurementScenario = (report, id) =>
+  report.measurements.scenarios.find((scenario) => scenario.id === id);
+
+test("measurement scenario table mirrors the native client's table and covers (a)-(f)", () => {
+  const rust = acceptanceSource("src/measure.rs");
+  const labels = Object.fromEntries(
+    [...rust.matchAll(/Self::(\w+) => "([a-z-]+)"/g)].map((m) => [m[1], m[2]]),
+  );
+  const table = rust.slice(
+    rust.indexOf("pub(crate) const SCENARIOS: &[ScenarioPlan] = &["),
+    rust.indexOf("impl Presentation {"),
+  );
+  const native = table
+    .split("ScenarioPlan {")
+    .slice(1)
+    .map((block) => {
+      const slots = [
+        ...block.matchAll(
+          /login\(\s*"([^"]+)",\s*Presentation::(\w+)|SlotPlan \{\s*id: "([^"]+)",\s*presentation: Presentation::(\w+),[^}]*?adapter: Adapter::(\w+)/g,
+        ),
+      ].map((m) =>
+        m[1]
+          ? { id: m[1], presentation: labels[m[2]], adapter: "modular-form" }
+          : { id: m[3], presentation: labels[m[4]], adapter: labels[m[5]] },
+      );
+      return {
+        id: /id: "([^"]+)"/.exec(block)[1],
+        shell: labels[/shell: Shell::(\w+)/.exec(block)[1]],
+        page: labels[/page: Page::(\w+)/.exec(block)[1]],
+        longWindow: /long_window: (true|false)/.exec(block)[1] === "true",
+        slots,
+      };
+    });
+  assert.deepEqual(native, MEASUREMENT_SCENARIOS);
+  // The helper used by most rows must stay the key-pipeline adapter.
+  assert.match(
+    rust,
+    /const fn login\([^)]*\) -> SlotPlan \{[^}]*adapter: Adapter::ModularForm,/s,
+  );
+  const slots = MEASUREMENT_SCENARIOS.flatMap((scenario) => scenario.slots);
+  assert.equal(new Set(slots.map((slot) => slot.id)).size, slots.length);
+  for (const required of [
+    "a-hidden-after-attach",
+    "b-born-hidden-1x1",
+    "b-born-hidden-1280x800",
+    "c-visible-input-blocked",
+    "d-visible",
+    "d-hidden-after-attach",
+    "d-born-hidden",
+    "e-inactive",
+    "f-relay-capacity",
+  ])
+    assert.ok(
+      slots.some((slot) => slot.id === required),
+      required,
+    );
+  const concurrent = MEASUREMENT_SCENARIOS.find((s) => s.id === "d-concurrent");
+  assert.deepEqual(
+    concurrent.slots.map((slot) =>
+      HIDDEN_PRESENTATIONS.includes(slot.presentation),
+    ),
+    [false, true, true],
+  );
+  // Window-state scenarios run last: they change the fixture window.
+  const changed = MEASUREMENT_SCENARIOS.findIndex(
+    (s) => s.shell !== "as-launched",
+  );
+  assert.ok(
+    MEASUREMENT_SCENARIOS.slice(changed).every(
+      (s) => s.shell !== "as-launched",
+    ),
+  );
+});
+
+test("a measurement report is never acceptance evidence and never claims readiness", () => {
+  const report = syntheticMeasurementReport();
+  const acceptance = assessNativeReport(report);
+  assert.equal(acceptance.ok, false);
+  assert.ok(
+    acceptance.failures.includes(
+      "measurement report is not acceptance evidence",
+    ),
+  );
+  const matrix = assessMeasurementReport(report);
+  assert.equal(matrix.productionReady, false);
+  assert.equal(matrix.actualCefAcceptance, false);
+  // The same guard must not fire for an ordinary acceptance report.
+  assert.ok(
+    !assessNativeReport({ schema: 1 }).failures.includes(
+      "measurement report is not acceptance evidence",
+    ),
+  );
+});
+
+test("a complete synthetic report yields seven MEASURED rows carrying only observed values", () => {
+  const matrix = assessMeasurementReport(syntheticMeasurementReport());
+  assert.deepEqual(
+    matrix.rows.map((row) => [row.id, row.status]),
+    ["M1", "M2", "M3", "M4", "M5", "M6", "M7"].map((id) => [id, "MEASURED"]),
+  );
+  assert.equal(matrix.complete, true);
+  const value = (id) => matrix.rows.find((row) => row.id === id).value;
+  assert.equal(value("M1")["a-hidden-after-attach"].initial, "hidden");
+  assert.equal(value("M1")["baseline-visible"].initial, "visible");
+  assert.equal(value("M1")["b-born-hidden-1x1"].childWindowShown, false);
+  assert.deepEqual(
+    value("M2")["b-born-hidden-1280x800"].framesPerSecond,
+    [0, 0],
+  );
+  assert.equal(value("M3")["b-born-hidden-generic"].adapter, "generic");
+  assert.equal(value("M3")["b-born-hidden-1x1"].username.hiddenDocument, 22);
+  // Per-key timestamps stay in the raw report, not in the matrix.
+  assert.equal("inputAtMs" in value("M3")["baseline-visible"].username, false);
+  assert.equal(value("M4").changed, true);
+  assert.ok(value("M4").differences.includes("compactShown"));
+  assert.deepEqual(Object.keys(value("M5")), [
+    "d-visible",
+    "d-hidden-after-attach",
+    "d-born-hidden",
+  ]);
+  assert.equal(value("M6")["e-covered"].shellAtNavigation.decoyCovers, true);
+  assert.equal(value("M7").capacityRefusals, 20);
+  assert.deepEqual(value("M7").requested, { sockets: 40, holds: 12 });
+  const text = formatMeasurementMatrix(matrix);
+  assert.match(
+    text,
+    /^Real-engine measurements \(local synthetic fixtures; not acceptance\)/,
+  );
+  assert.match(text, /measured 7\/7$/);
+  assert.match(
+    text,
+    /capacity_refusals=20 requested=52 \(40 sockets \+ 12 holds\) relayMaxClients=32/,
+  );
+});
+
+test("a login that did not complete is a measured result, not a missing measurement", () => {
+  const report = syntheticMeasurementReport();
+  const slot = measurementSlot(report, "c-visible-input-blocked");
+  Object.assign(slot.reports.final.login, {
+    submitted: false,
+    valuesMatch: false,
+    submittedAtMs: null,
+    usernameLength: 0,
+    passwordLength: 0,
+  });
+  Object.assign(slot.reports.final.keys.username, { keydown: 0, input: 0 });
+  slot.native.features.push({
+    atMs: 900,
+    status: "LoginAdapterRejected",
+    bootstrap: false,
+  });
+  const row = measurementRow(report, "M3");
+  assert.equal(row.status, "MEASURED");
+  const seen = row.value["c-visible-input-blocked"];
+  assert.equal(seen.completed, false);
+  assert.equal(seen.completionMs, null);
+  assert.equal(seen.username.input, 0);
+  assert.equal(seen.lastFeature, "LoginAdapterRejected");
+});
+
+test("rows without a window-complete report or the planned native condition are NOT MEASURED and carry no value", () => {
+  const cases = [
+    [
+      "M1",
+      /baseline-visible: no window-complete page report/,
+      (r) => delete measurementSlot(r, "baseline-visible").reports.final,
+    ],
+    [
+      "M2",
+      /a-hidden-after-attach: native view was not Hidden at navigation/,
+      (r) =>
+        (measurementSlot(r, "a-hidden-after-attach").lifecycleAtNavigation =
+          "Attached"),
+    ],
+    [
+      "M3",
+      /b-born-hidden-1x1: native child window was shown at navigation/,
+      (r) =>
+        (measurementSlot(
+          r,
+          "b-born-hidden-1x1",
+        ).childWindow.atNavigation.styleVisible = true),
+    ],
+    [
+      "M3",
+      /c-visible-input-blocked: input-blocked state was not as planned/,
+      (r) =>
+        (measurementSlot(r, "c-visible-input-blocked").inputBlockedRequested =
+          false),
+    ],
+    [
+      "M3",
+      /baseline-visible: native child window was hidden at navigation/,
+      (r) =>
+        (measurementSlot(
+          r,
+          "baseline-visible",
+        ).childWindow.atNavigation.styleVisible = false),
+    ],
+    [
+      "M4",
+      /b-born-hidden-1x1: view was not created at 1x1/,
+      (r) => (measurementSlot(r, "b-born-hidden-1x1").width = 800),
+    ],
+    [
+      "M5",
+      /d-born-hidden: navigation was not admitted/,
+      (r) => (measurementSlot(r, "d-born-hidden").navigated = false),
+    ],
+    [
+      "M5",
+      /d-visible: scenario did not run/,
+      (r) =>
+        (r.measurements.scenarios = r.measurements.scenarios.filter(
+          (scenario) => scenario.id !== "d-concurrent",
+        )),
+    ],
+    [
+      "M6",
+      /e-inactive: fixture window was foreground/,
+      (r) =>
+        (measurementScenario(r, "e-inactive").windowState.atEnd.foreground =
+          true),
+    ],
+    [
+      "M6",
+      // Foreground between the two sampled states still disqualifies the row.
+      /e-covered: fixture window was foreground/,
+      (r) =>
+        (measurementScenario(r, "e-covered").windowState.everForeground = true),
+    ],
+    [
+      "M6",
+      /e-minimized-hidden: fixture window was foreground/,
+      (r) =>
+        delete measurementScenario(r, "e-minimized-hidden").windowState
+          .everForeground,
+    ],
+    [
+      "M6",
+      /e-covered: fixture window was not shown to be covered/,
+      (r) =>
+        (measurementScenario(
+          r,
+          "e-covered",
+        ).windowState.atNavigation.decoy.coversFixture = false),
+    ],
+    [
+      "M6",
+      /e-covered: fixture window was not shown to be covered/,
+      (r) =>
+        (measurementScenario(r, "e-covered").windowState.atEnd.exposedPermille =
+          40),
+    ],
+    [
+      "M6",
+      /e-minimized-hidden: fixture window was not minimized/,
+      (r) =>
+        (measurementScenario(
+          r,
+          "e-minimized-hidden",
+        ).windowState.atNavigation.minimized = false),
+    ],
+    [
+      "M6",
+      /e-minimized-hidden: scenario skipped \(shell-control-unavailable\)/,
+      (r) =>
+        (measurementScenario(r, "e-minimized-hidden").skipped =
+          "shell-control-unavailable"),
+    ],
+    [
+      "M6",
+      /e-inactive: window state was not observed/,
+      (r) =>
+        (measurementScenario(r, "e-inactive").windowState.atNavigation = {
+          supported: false,
+        }),
+    ],
+    [
+      "M7",
+      /requested connections did not exceed the relay limit/,
+      (r) =>
+        (measurementScenario(r, "f-relay-capacity").capacity.relayMaxClients =
+          64),
+    ],
+    [
+      "M7",
+      /no long-lived connection reached the fixture/,
+      (r) =>
+        Object.assign(
+          measurementScenario(r, "f-relay-capacity").capacity.fixture,
+          { socketsAccepted: 0, holdsAccepted: 0 },
+        ),
+    ],
+    [
+      "M7",
+      /relay diagnostics not reported/,
+      (r) =>
+        delete measurementScenario(r, "f-relay-capacity").capacity.relay
+          .capacityRefusals,
+    ],
+  ];
+  for (const [id, reason, mutate] of cases) {
+    const report = syntheticMeasurementReport();
+    mutate(report);
+    const matrix = assessMeasurementReport(report);
+    const row = matrix.rows.find((entry) => entry.id === id);
+    assert.equal(row.status, "NOT MEASURED", String(reason));
+    assert.equal(row.value, null, String(reason));
+    assert.ok(
+      row.reasons.some((text) => reason.test(text)),
+      `${reason}: ${row.reasons}`,
+    );
+    assert.equal(matrix.complete, false);
+    const lines = formatMeasurementMatrix(matrix).split("\n");
+    const at = lines.findIndex((line) => line.startsWith(`${id} `));
+    assert.match(lines[at], /: NOT MEASURED$/);
+    // Reasons only: no observed value is printed under an unmeasured row.
+    for (
+      let next = at + 1;
+      next < lines.length && lines[next].startsWith("   ");
+      next++
+    )
+      assert.ok(row.reasons.includes(lines[next].trim()), lines[next]);
+  }
+  // The capacity page's own report is supporting detail, not a condition.
+  const unreported = syntheticMeasurementReport();
+  delete measurementSlot(unreported, "f-relay-capacity").reports.final;
+  assert.equal(measurementRow(unreported, "M7").status, "MEASURED");
+  assert.equal(measurementRow(unreported, "M7").value.page, null);
+});
+
+test("stale, foreign or differently planned reports measure nothing", () => {
+  for (const mutate of [
+    (r) => (r.mode = "acceptance"),
+    (r) => delete r.mode,
+    (r) => (r.bindingPin = "154.2.0"),
+    (r) => (r.productionReady = true),
+    (r) => (r.measurements.schema = 2),
+    (r) => (r.measurements.scenarios = null),
+    (r) => r.measurements.plan.pop(),
+    (r) => (r.measurements.plan[0].slots[0].presentation = "born-hidden"),
+    (r) => (r.measurements.plan[3].longWindow = false),
+  ]) {
+    const report = syntheticMeasurementReport();
+    mutate(report);
+    const matrix = assessMeasurementReport(report);
+    assert.equal(matrix.measured, 0);
+    assert.ok(
+      matrix.rows.every(
+        (row) =>
+          row.value === null &&
+          row.reasons.some((reason) =>
+            reason.includes("no measurement report"),
+          ),
+      ),
+    );
+  }
+  assert.equal(assessMeasurementReport(undefined).measured, 0);
+  assert.match(
+    formatMeasurementMatrix(assessMeasurementReport(undefined)),
+    /measured 0\/7$/,
+  );
+  // Key order must not matter: the native serializer sorts object keys.
+  const reordered = syntheticMeasurementReport();
+  reordered.measurements.plan = reordered.measurements.plan.map((plan) => ({
+    slots: plan.slots.map((slot) => ({
+      adapter: slot.adapter,
+      presentation: slot.presentation,
+      id: slot.id,
+    })),
+    shell: plan.shell,
+    page: plan.page,
+    longWindow: plan.longWindow,
+    id: plan.id,
+  }));
+  assert.equal(assessMeasurementReport(reordered).measured, 7);
+});
+
+test("measurement options are validated before a profile is created or a process launched", async () => {
+  assert.deepEqual(measurementPlan(), {
+    windowMs: 12000,
+    only: undefined,
+    scenarios: MEASUREMENT_SCENARIOS.map((scenario) => scenario.id),
+    // Ten ordinary windows, one long window, set-up per scenario and start-up.
+    expectedMs: 10 * 12000 + 30000 + 11 * 12000 + 15000,
+  });
+  assert.deepEqual(
+    measurementPlan({ windowMs: "5000", only: "e-covered,baseline-visible" }),
+    {
+      windowMs: 5000,
+      only: ["e-covered", "baseline-visible"],
+      // Run order is the table's, whatever order was asked for.
+      scenarios: ["baseline-visible", "e-covered"],
+      expectedMs: 2 * 5000 + 2 * 12000 + 15000,
+    },
+  );
+  assert.equal(
+    measurementPlan({ windowMs: 40000, only: "b-born-hidden-1280x800" })
+      .expectedMs,
+    60000 + 12000 + 15000,
+  );
+  for (const options of [
+    { windowMs: 4999 },
+    { windowMs: 40001 },
+    { windowMs: "12s" },
+    { only: "" },
+    { only: "unknown" },
+    { only: "baseline-visible,baseline-visible" },
+    { only: "baseline-visible, e-covered" },
+  ]) {
+    assert.throws(
+      () => measurementPlan(options),
+      /Invalid windowMs|measurement scenario/,
+    );
+    await assert.rejects(
+      runAcceptance({
+        executable: "never-launched",
+        output: "never-created",
+        suite: "measure",
+        ...options,
+      }),
+      /Invalid windowMs|measurement scenario/,
+    );
+  }
+  for (const options of [{ windowMs: 12000 }, { only: "baseline-visible" }])
+    for (const suite of ["legacy", "tls"])
+      await assert.rejects(
+        runAcceptance({
+          executable: "never-launched",
+          output: "never-created",
+          suite,
+          ...options,
+        }),
+        /apply to measure/,
+      );
+});
+
+test("the runner scrubs inherited mode variables, starts hidden and returns measurements before any acceptance verdict", () => {
+  const source = readFileSync(
+    new URL("../../scripts/cef-browser-acceptance.mjs", import.meta.url),
+    "utf8",
+  ).replaceAll("\r\n", "\n");
+  const runner = source.slice(
+    source.indexOf("export async function runAcceptance("),
+    source.indexOf("async function main(args)"),
+  );
+  assert.deepEqual(MEASUREMENT_VARIABLES, [
+    "SORNG_CEF_ACCEPTANCE_MODE",
+    "SORNG_CEF_MEASURE_WINDOW_MS",
+    "SORNG_CEF_MEASURE_ONLY",
+  ]);
+  const scrub = runner.indexOf(
+    "for (const name of MEASUREMENT_VARIABLES) delete env[name];",
+  );
+  const set = runner.indexOf('env.SORNG_CEF_ACCEPTANCE_MODE = "measure";');
+  const spawned = runner.indexOf("const child = spawn(executable");
+  assert.ok(scrub > 0 && scrub < set && set < spawned);
+  // The mode is set only inside the measure branch.
+  assert.match(
+    runner.slice(scrub, spawned),
+    /if \(measurePlan\) \{\s*env\.SORNG_CEF_ACCEPTANCE_MODE = "measure";/,
+  );
+  // Hidden at start: the native client then shows its window without
+  // activating it, so a run never takes the foreground.
+  assert.match(runner.slice(spawned, spawned + 200), /windowsHide: true,/);
+  assert.doesNotMatch(runner, /windowsHide: (?!true)/);
+  const branch = runner.indexOf("if (measurePlan) {", spawned);
+  const verdict = runner.indexOf("assessNativeTlsReport(native, runId)");
+  assert.ok(branch > 0 && verdict > branch);
+  const measured = runner.slice(branch, verdict);
+  assert.match(
+    measured,
+    /return report;\s*\}\s*\/\/ Independent of positive\/negative TLS outcomes/,
+  );
+  assert.doesNotMatch(measured, /nativeTlsFixtureAccepted|acceptance\.json/);
+  assert.match(
+    measured,
+    /actualCefAcceptance: false,\s*publicProviderAcceptance: false,\s*productionReady: false,/,
+  );
+});
+
+test("the native measurement client sends no input, takes no focus and uses only synthetic loopback fixtures", () => {
+  const library = acceptanceSource("src/lib.rs");
+  const measure = acceptanceSource("src/measure.rs");
+  const server = acceptanceSource("src/fixture.rs");
+  // Mode selection precedes window creation, and a measuring window is built
+  // unfocused; an unknown mode is an error, not a silent acceptance run.
+  const requested = library.indexOf("let measuring = measure::requested()?;");
+  const window = library.indexOf("WindowBuilder::new()");
+  assert.ok(requested > 0 && requested < window);
+  assert.match(library, /\.with_focused\(!measuring\)/);
+  assert.match(measure, /_ => Err\("unknown acceptance mode"\.into\(\)\)/);
+  assert.match(measure, /\.with_focused\(false\)/);
+  // The fixture window is disabled before it is first shown, so a navigating
+  // view cannot pull native focus (and with it the foreground) into it.
+  assert.match(
+    measure,
+    /pub\(super\) fn present_inert\(window: &Window\) \{\s*if let Some\(window\) = hwnd\(window\) \{\s*unsafe \{\s*EnableWindow\(window, 0\);\s*ShowWindow\(window, SW_SHOWNOACTIVATE\);/,
+  );
+  assert.ok(
+    measure.indexOf("shell::present_inert(&run.parent);") <
+      measure.indexOf("for plan in SCENARIOS {"),
+  );
+  assert.equal(measure.match(/EnableWindow\(/g).length, 2);
+  // No synthetic input, cursor, clipboard or cross-process focus API.
+  assert.doesNotMatch(
+    measure,
+    /SendInput|keybd_event|mouse_event|SetCursorPos|PostMessage|SendMessage|OpenClipboard|SetClipboardData|AttachThreadInput|BringWindowToTop|SwitchToThisWindow|\.set_focus\(/,
+  );
+  // The foreground is only ever handed to this process's own decoy window.
+  assert.deepEqual(
+    [...measure.matchAll(/SetForegroundWindow\(([^)]*)\)/g)].map((m) => m[1]),
+    ["window: Hwnd", "decoy"],
+  );
+  assert.match(
+    measure,
+    /Shell::Inactive if !foreground => vec!\["already-inactive"\]/,
+  );
+  // Synthetic credentials and a fixture-only route.
+  assert.match(measure, /const USERNAME: &str = "synthetic@example\.test";/);
+  assert.match(measure, /const PASSWORD: &str = "synthetic-local-only";/);
+  assert.match(
+    measure,
+    /\["fixture\.test", "frame\.test"\]\s*\.contains\(&authority\.host\(\)\)/,
+  );
+  assert.match(measure, /tokio::net::TcpStream::connect\(address\)/);
+  assert.doesNotMatch(
+    measure,
+    /lookup_host|ToSocketAddrs|std::fs::|std::env::(?!var\(|VarError)/,
+  );
+  // Measurement routes are served before the legacy trace and never reach it.
+  assert.match(
+    server,
+    /if crate::measure::serves\(route\) \{\s*return crate::measure::serve\(/,
+  );
+  assert.match(
+    measure,
+    /"\/measure-login" \| "\/measure-capacity" \| "\/measure-report" \| "\/measure-hold" \| "\/measure-socket"/,
+  );
+  // The report marks its mode only when a measurement document exists.
+  assert.match(
+    server,
+    /if let Some\(measurements\) = &state\.measure\.document \{\s*report\["mode"\] = "measure"\.into\(\);/,
+  );
+});
+
+test("measurement fixture pages observe passively and report counts, never typed values", () => {
+  const login = acceptanceSource("fixtures/measure-login.html");
+  const capacity = acceptanceSource("fixtures/measure-capacity.html");
+  for (const page of [login, capacity]) {
+    assert.doesNotMatch(
+      page,
+      /clipboard|execCommand|document\.cookie|localStorage|sessionStorage|window\.open|eval\(/i,
+    );
+    // Relative fixture routes or the two synthetic hosts only.
+    for (const [, url] of page.matchAll(
+      /["'`]((?:https?|wss?):\/\/[^"'`]+)["'`]/g,
+    ))
+      assert.match(url, /^(?:https|wss):\/\/(?:fixture|frame)\.test\//, url);
+  }
+  // The only default action prevented is the form's own submission.
+  assert.equal(login.match(/preventDefault\(\)/g).length, 1);
+  assert.match(
+    login,
+    /form\.addEventListener\('submit', event => \{\s*event\.preventDefault\(\);/,
+  );
+  assert.doesNotMatch(
+    login,
+    /\.focus\(|\.blur\(|\.click\(|dispatchEvent|\.value\s*=[^=]/,
+  );
+  // Field values are only measured or compared with the synthetic literals.
+  for (const [use] of login.matchAll(/\.value\b[^\n;,)}]*/g))
+    assert.match(
+      use,
+      /^\.value(?:\.length| === '(?:synthetic@example\.test|synthetic-local-only)')/,
+      use,
+    );
+  assert.match(login, /setTimeout\(tick, 20\)/);
+  assert.match(login, /requestAnimationFrame\(frame\)/);
+  assert.match(login, /document\.addEventListener\('visibilitychange'/);
+  // Capacity: both socket pools and two hosts, released before the report.
+  assert.match(
+    capacity,
+    /new WebSocket\('wss:\/\/fixture\.test\/measure-socket'\)/,
+  );
+  assert.match(capacity, /'https:\/\/frame\.test\/measure-hold\?i=' \+ index/);
+  const release = capacity.indexOf("abort.abort();");
+  assert.ok(
+    release > 0 && release < capacity.indexOf("fetch('/measure-report'"),
+  );
 });

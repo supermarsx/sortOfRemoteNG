@@ -1,0 +1,134 @@
+<!doctype html><html><head><meta charset="utf-8"><title>Local synthetic measurement login</title>
+<style>#layout-compact{display:none}#layout-fluid{width:100%;height:4px}@media (max-width:599px){#layout-wide{display:none}#layout-compact{display:block}}</style></head>
+<body style="margin:0;background:white;color:black"><h1>Local synthetic measurement login</h1>
+<div id="layout-wide">wide layout</div><div id="layout-compact">compact layout</div><div id="layout-fluid"></div>
+<form method="post" action="/submitted"><input name="username" autocomplete="username"><input name="password" type="password" autocomplete="current-password"><button type="submit">Sign in</button></form>
+<script>
+// Passive probes only: no focus change, no preventDefault on key events, no
+// history change. Reports carry counts, sizes and times, never a typed value.
+const query = new URLSearchParams(location.search);
+const config = { slot: query.get('slot') || '', windowMs: Math.min(60000, Math.max(3000, Number(query.get('w')) || 12000)) };
+const started = performance.now();
+const at = () => Math.round(performance.now() - started);
+const form = document.querySelector('form');
+const controls = { form, username: form.username, password: form.password, submit: form.querySelector('button'), fluid: document.getElementById('layout-fluid') };
+
+// M1: what the document itself reports, and every change of it.
+const visibility = { initial: document.visibilityState, initialHasFocus: document.hasFocus(), changes: [] };
+document.addEventListener('visibilitychange', () => {
+  if (visibility.changes.length < 16) visibility.changes.push({ atMs: at(), state: document.visibilityState });
+});
+
+// M2: a chained 20 ms timer (the login client polls at 20-30 ms) and
+// requestAnimationFrame, counted per elapsed second so a delayed onset of
+// throttling is visible. A page throttled to 1 Hz shows 1 where a visible
+// page shows about 50.
+const cadence = () => ({ gaps: [], perSecond: [], last: performance.now() });
+const beat = probe => {
+  const now = performance.now();
+  if (probe.gaps.length < 4096) probe.gaps.push(now - probe.last);
+  probe.last = now;
+  const second = Math.floor((now - started) / 1000);
+  if (second < 60) { while (probe.perSecond.length <= second) probe.perSecond.push(0); probe.perSecond[second]++; }
+};
+const summarize = probe => {
+  const perSecond = probe.perSecond.slice();
+  while (perSecond.length < Math.min(60, Math.ceil((performance.now() - started) / 1000))) perSecond.push(0);
+  if (!probe.gaps.length) return { count: 0, medianMs: null, p95Ms: null, maxMs: null, perSecond };
+  const sorted = probe.gaps.slice().sort((a, b) => a - b);
+  const pick = share => Math.round(sorted[Math.min(sorted.length - 1, Math.floor(share * sorted.length))]);
+  return { count: sorted.length, medianMs: pick(0.5), p95Ms: pick(0.95), maxMs: Math.round(sorted[sorted.length - 1]), perSecond };
+};
+let stopped = false;
+const timer = cadence(), frames = cadence();
+const tick = () => { beat(timer); if (!stopped) setTimeout(tick, 20); };
+setTimeout(tick, 20);
+const frame = () => { beat(frames); if (!stopped) requestAnimationFrame(frame); };
+requestAnimationFrame(frame);
+
+// M2, timer-independent scheduling: how long 50 chained MessageChannel round
+// trips take. This is the alternative a design without timers would lean on.
+const messageTasks = { roundTrips: 50, runs: [] };
+const measureMessageTasks = () => new Promise(resolve => {
+  const channel = new MessageChannel();
+  const begun = performance.now();
+  let left = messageTasks.roundTrips;
+  channel.port1.onmessage = () => {
+    if (--left > 0) { channel.port2.postMessage(0); return; }
+    channel.port1.close();
+    if (messageTasks.runs.length < 8) messageTasks.runs.push({ atMs: at(), visibility: document.visibilityState, totalMs: Math.round((performance.now() - begun) * 10) / 10 });
+    resolve();
+  };
+  channel.port2.postMessage(0);
+});
+
+// M3: key events that reach the two login fields, whether Chromium marked
+// them trusted, and what the document reported when the text arrived.
+const keyRow = () => ({ keydown: 0, trustedKeydown: 0, beforeinput: 0, input: 0, trustedInput: 0, focusedDocument: 0, hiddenDocument: 0, activeTarget: 0, inputAtMs: [] });
+const keys = { username: keyRow(), password: keyRow(), other: 0 };
+for (const type of ['keydown', 'beforeinput', 'input']) document.addEventListener(type, event => {
+  const row = event.target === controls.username ? keys.username : event.target === controls.password ? keys.password : null;
+  if (!row) { keys.other++; return; }
+  row[type]++;
+  if (type === 'keydown' && event.isTrusted) row.trustedKeydown++;
+  if (type !== 'input') return;
+  if (event.isTrusted) row.trustedInput++;
+  if (document.hasFocus()) row.focusedDocument++;
+  if (document.visibilityState === 'hidden') row.hiddenDocument++;
+  if (document.activeElement === event.target) row.activeTarget++;
+  if (row.inputAtMs.length < 64) row.inputAtMs.push(at());
+}, true);
+const typing = row => {
+  const times = row.inputAtMs;
+  if (times.length < 2) return { firstAtMs: times[0] ?? null, lastAtMs: times[0] ?? null, medianGapMs: null, maxGapMs: null };
+  const gaps = times.slice(1).map((time, index) => time - times[index]).sort((a, b) => a - b);
+  return { firstAtMs: times[0], lastAtMs: times[times.length - 1], medianGapMs: gaps[Math.floor(gaps.length / 2)], maxGapMs: gaps[gaps.length - 1] };
+};
+
+// M4: the viewport the page was given and what it does to the layout. The
+// login form keeps its intrinsic size; the two marker blocks and the fluid bar
+// show which variant a responsive site would render.
+const box = element => {
+  const rect = element.getBoundingClientRect();
+  return { width: Math.round(rect.width), height: Math.round(rect.height), visible: element.offsetParent !== null || element.getClientRects().length > 0, inViewport: rect.right > 0 && rect.bottom > 0 && rect.left < innerWidth && rect.top < innerHeight };
+};
+const layout = () => ({ innerWidth, innerHeight, devicePixelRatio, compactQuery: matchMedia('(max-width: 599px)').matches, compactShown: getComputedStyle(document.getElementById('layout-compact')).display !== 'none', form: box(form), username: box(controls.username), password: box(controls.password), submit: box(controls.submit), fluid: box(controls.fluid) });
+
+const login = { submitted: false, valuesMatch: false, submittedAtMs: null };
+const snapshot = (kind, reason) => {
+  const timing = summarize(timer), painting = summarize(frames);
+  return {
+    slot: config.slot, kind, reason, atMs: at(), windowMs: config.windowMs,
+    visibility: { initial: visibility.initial, initialHasFocus: visibility.initialHasFocus, current: document.visibilityState, hidden: document.hidden, hasFocus: document.hasFocus(), changes: visibility.changes },
+    timer: { requestedMs: 20, count: timing.count, medianMs: timing.medianMs, p95Ms: timing.p95Ms, maxMs: timing.maxMs, ticksPerSecond: timing.perSecond },
+    animationFrame: { count: painting.count, medianMs: painting.medianMs, p95Ms: painting.p95Ms, maxMs: painting.maxMs, framesPerSecond: painting.perSecond },
+    messageTasks,
+    keys: { username: { ...keys.username, ...typing(keys.username) }, password: { ...keys.password, ...typing(keys.password) }, other: keys.other },
+    layout: layout(),
+    login: { ...login, usernameLength: controls.username.value.length, passwordLength: controls.password.value.length },
+  };
+};
+const sent = {};
+const send = (kind, reason) => {
+  if (sent[kind]) return;
+  sent[kind] = true;
+  const body = JSON.stringify(snapshot(kind, reason));
+  if (kind === 'final') stopped = true;
+  const post = attempt => fetch('/measure-report', { method: 'POST', body }).catch(() => { if (attempt < 3) setTimeout(() => post(attempt + 1), 500); });
+  post(0);
+};
+form.addEventListener('submit', event => {
+  event.preventDefault();
+  if (login.submitted) return;
+  login.submitted = true;
+  login.submittedAtMs = at();
+  login.valuesMatch = controls.username.value === 'synthetic@example.test' && controls.password.value === 'synthetic-local-only';
+  // Completion is reported at once; the probes run on to the end of the window.
+  send('login', 'submitted');
+});
+setTimeout(() => { measureMessageTasks(); send('sample', 'sample'); }, 1500);
+setTimeout(() => { measureMessageTasks(); send('mid', 'half-window'); }, Math.round(config.windowMs / 2));
+setTimeout(() => measureMessageTasks().then(() => send('final', 'window-elapsed')), config.windowMs - 300);
+// Sent only if the message-task probe above never finished.
+setTimeout(() => send('final', 'window-elapsed-without-message-tasks'), config.windowMs + 700);
+</script></body></html>

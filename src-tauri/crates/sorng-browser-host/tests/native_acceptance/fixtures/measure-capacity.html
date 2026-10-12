@@ -1,0 +1,49 @@
+<!doctype html><html><head><meta charset="utf-8"><title>Local synthetic relay capacity</title></head>
+<body style="margin:0;background:white;color:black"><h1>Local synthetic relay capacity</h1>
+<script>
+// Scenario (f): ask one relay for more long-lived connections than it admits.
+// WebSockets and plain requests use separate Chromium socket pools, so both
+// are opened, and the plain requests go to two fixture hosts because Chromium
+// opens at most six connections per host. The fixture holds every one of them;
+// nothing is sent over them.
+const query = new URLSearchParams(location.search);
+const bounded = (name, fallback, max) => Math.min(max, Math.max(0, Number.isInteger(Number(query.get(name))) ? Number(query.get(name)) : fallback));
+const config = { slot: query.get('slot') || '', sockets: bounded('sockets', 40, 64), holds: bounded('holds', 6, 6), settleMs: 7000 };
+const started = performance.now();
+const at = () => Math.round(performance.now() - started);
+const sockets = { requested: config.sockets, open: 0, error: 0, closed: 0, firstOpenAtMs: null, lastOpenAtMs: null };
+const holdRow = () => ({ requested: config.holds, pending: config.holds, completed: 0, failed: 0 });
+const holds = { sameHost: holdRow(), otherHost: holdRow() };
+const live = [];
+for (let index = 0; index < config.sockets; index++) {
+  const socket = new WebSocket('wss://fixture.test/measure-socket');
+  socket.onopen = () => { sockets.open++; sockets.firstOpenAtMs ??= at(); sockets.lastOpenAtMs = at(); };
+  socket.onerror = () => sockets.error++;
+  socket.onclose = () => sockets.closed++;
+  live.push(socket);
+}
+const abort = new AbortController();
+let counting = true;
+const hold = (row, url, options) => fetch(url, { ...options, cache: 'no-store', signal: abort.signal }).then(
+  response => { if (!counting) return; row.pending--; if (response.ok || response.type === 'opaque') row.completed++; else row.failed++; },
+  () => { if (!counting) return; row.pending--; row.failed++; },
+);
+for (let index = 0; index < config.holds; index++) {
+  hold(holds.sameHost, '/measure-hold?i=' + index, {});
+  hold(holds.otherHost, 'https://frame.test/measure-hold?i=' + index, { mode: 'no-cors' });
+}
+setTimeout(() => {
+  const body = JSON.stringify({
+    slot: config.slot, kind: 'final', reason: 'capacity', atMs: at(),
+    visibility: { current: document.visibilityState, hidden: document.hidden, hasFocus: document.hasFocus() },
+    capacity: { sockets: { ...sockets }, holds: { sameHost: { ...holds.sameHost }, otherHost: { ...holds.otherHost } }, settledAtMs: at() },
+  });
+  // The counts above are final. Release relay capacity and this host's six
+  // connections before the report itself needs one through the same relay.
+  counting = false;
+  abort.abort();
+  for (const socket of live) socket.close();
+  const post = attempt => fetch('/measure-report', { method: 'POST', body }).catch(() => { if (attempt < 6) setTimeout(() => post(attempt + 1), 700); });
+  setTimeout(() => post(0), 700);
+}, config.settleMs);
+</script></body></html>

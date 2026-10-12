@@ -35,6 +35,7 @@ pub struct Observations {
     pub tls_accepted: usize,
     pub tls_completed: usize,
     pub tls_failed: usize,
+    pub measure: crate::measure::ServerState,
 }
 impl Observations {
     fn with_journal(output: &Path) -> std::io::Result<Self> {
@@ -218,6 +219,11 @@ impl Fixture {
                         }
                         let header = String::from_utf8_lossy(&request[..header_end]);
                         let path = header.lines().next().and_then(|l| l.split_whitespace().nth(1)).unwrap_or("/");
+                        // Measurement routes keep their own bounded counters and stay out of the trace.
+                        let route = path.split('?').next().unwrap_or(path);
+                        if crate::measure::serves(route) {
+                            return crate::measure::serve(tls, &state, route, &header, &request[header_end..header_end + length]).await;
+                        }
                         let cookie = header.lines().find_map(|l| l.strip_prefix("Cookie: ").or_else(|| l.strip_prefix("cookie: "))).unwrap_or("");
                         let (body, extra) = {
                         let mut state = state.lock().unwrap();
@@ -252,10 +258,13 @@ impl Fixture {
                         let response = format!("HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=utf-8\r\nCache-Control: no-store\r\nContent-Length: {}\r\nConnection: close\r\n{extra}\r\n{body}", body.len());
                         tls.write_all(response.as_bytes()).await?;
                         tls.shutdown().await?;
-                        Ok::<(), std::io::Error>(())
+                        Ok::<crate::measure::Served, std::io::Error>(crate::measure::Served::Legacy)
                     }).await;
                     let outcome = match result {
-                        Ok(Ok(())) => "completed",
+                        Ok(Ok(crate::measure::Served::Legacy)) => "completed",
+                        Ok(Ok(crate::measure::Served::Measure)) => return,
+                        // Held outside the five-second request deadline, by design.
+                        Ok(Ok(crate::measure::Served::Held(held))) => return held.wait(&final_state).await,
                         Ok(Err(_)) => "io-or-tls-failure",
                         Err(_) => "deadline",
                     };
@@ -283,9 +292,7 @@ impl Fixture {
     }
     fn write_snapshot(&self, output: &Path, file: &str, failures: &[String]) -> Result<()> {
         let state = self.observations.lock().unwrap();
-        std::fs::write(
-            output.join(file),
-            serde_json::to_vec_pretty(&serde_json::json!({
+        let mut report = serde_json::json!({
                 "schema":1,"engine":"cef","bindingPin":"154.3.0","platform":std::env::consts::OS,
                 "productionReady":false,"fixtureAddress":self.address.to_string(),"requests":state.requests,
                 "networkPolicy":state.network_policy_readback,
@@ -298,8 +305,17 @@ impl Fixture {
                 "proxyAuthorizationLeaked":state.leaked_proxy_auth,"failures":failures,
                 "darkPaint":{"domStyleObserved":state.proofs.iter().any(|p| p.get("domBackground").is_some()),"nativePixelsCaptured":false,"firstPaint":"not-run"},
                 "missingEvidence":["renderer-sandbox-token","native-first-paint","dns-and-socket-tripwires"]
-            }))?,
-        )?;
+        });
+        // Measurement mode only. Such a report is never acceptance evidence.
+        if let Some(measurements) = &state.measure.document {
+            report["mode"] = "measure".into();
+            report["measurements"] = measurements.clone();
+            report["measureServer"] = serde_json::json!({
+                "requests":state.measure.requests,"reports":state.measure.reports.len(),
+                "rejectedReports":state.measure.rejected_reports
+            });
+        }
+        std::fs::write(output.join(file), serde_json::to_vec_pretty(&report)?)?;
         Ok(())
     }
 }
