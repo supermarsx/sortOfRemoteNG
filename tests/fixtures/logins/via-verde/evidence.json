@@ -1,0 +1,42 @@
+{
+  "$schema": "../evidence.schema.json",
+  "version": 1,
+  "id": "via-verde",
+  "class": "C",
+  "mechanism": "none",
+  "reviewed": "2026-10-12",
+  "summary": "The private-customer area, entered with an e-mail address and a password according to the site's conditions. Its sign-in page was not captured: one clause of those conditions can be read as forbidding it, and an unclear clause is treated as a prohibition. Nothing else describes its markup.",
+  "sources": [
+    {
+      "id": "conditions",
+      "kind": "vendor-documentation",
+      "title": "Via Verde: general conditions of use of the site, version 05 of 2018-04-27",
+      "url": "https://www.viaverde.pt/Portals/0/Documentos/TermosCondicoes/ViaVerde_Condicoes_Gerais_Utilizacao_do_Site_ViaVerde.pdf",
+      "retrieved": "2026-10-12",
+      "note": "Clause 3.2 c): users refrain from obtaining «qualquer tipo de material acessível através do Site, empregando para o efeito meios ou procedimentos distintos daqueles que tenham sido postos à sua disposição». Clauses 2.2 and 2.3: the reserved area is entered with the e-mail address as user name and a password. Clause 6 forbids copying the site's content, design included, without permission."
+    },
+    {
+      "id": "portal-review",
+      "kind": "repository",
+      "title": "The in-repository review of the Portuguese portals of 2026-10-06, section Via Verde",
+      "path": "docs/portugal-portal-profiles.md",
+      "lines": "183-194",
+      "retrieved": "2026-10-12"
+    }
+  ],
+  "selectors": [],
+  "fixtures": [],
+  "staysInteractive": [
+    {
+      "kind": "other",
+      "note": "The whole sign-in, with registration and recovery, which the in-repository review found on the same page."
+    }
+  ],
+  "lookedFor": [
+    "The site's conditions of use: clause 3.2 c) forbids obtaining material accessible through the site by means other than those the operator made available. It does not name automation, so it is unclear whether one anonymous capture falls under it. An unclear result counts as not clean: no capture was made.",
+    "robots.txt of www.viaverde.pt: it does not disallow /particulares/login.",
+    "The in-repository review of 2026-10-06: the public page has several input groups (sign-in, registration and recovery), so no form was selected then.",
+    "No other public description of the sign-in page's markup was looked for."
+  ],
+  "neededFromUser": "The sign-in page saved from your own browser as an HTML file that contains the fields of the form, and the page that asks for the password if that is a separate one. It is read offline, nothing is fetched from the site, and a page you saved yourself can support a reviewed login. The page is the public one at /particulares/login. Or your decision that one anonymous capture of it is acceptable under clause 3.2 c). Save any page signed out, with no password typed in, as \"Webpage, Complete\"; keep the \"_files\" folder beside the .html and both outside the repository: they can hold the account name."
+}

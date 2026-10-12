@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="pt">
+  <head>
+    <meta charset="utf-8" />
+    <title>Synthetic fixture: My Vodafone sign-in panel</title>
+  </head>
+  <body>
+    <div id="headerMenu">
+      <ul id="login-register-login-list">
+        <li>
+          <form role="form" hidden>
+            <input type="text" id="login__name--reset" name="login__name" />
+            <button id="recover--password--button" type="submit"></button>
+          </form>
+        </li>
+        <li>
+          <form method="post" role="form">
+            <label for="login__name">
+              <input type="text" id="login__name" name="login__name" required />
+            </label>
+            <label for="login__password">
+              <input
+                type="password"
+                id="login__password"
+                name="login__password"
+                required
+              />
+            </label>
+            <input
+              type="checkbox"
+              id="login__remember-me"
+              name="login__remember-me"
+            />
+            <button id="login--button" type="submit"></button>
+          </form>
+        </li>
+      </ul>
+    </div>
+  </body>
+</html>

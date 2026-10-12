@@ -1,0 +1,180 @@
+{
+  "$schema": "../evidence.schema.json",
+  "version": 1,
+  "id": "autoridade-tributaria",
+  "class": "B",
+  "mechanism": "form",
+  "source": "https://github.com/supermarsx/cdp-auth/blob/2b1d1b428c9c78e84ad851f37760ce7df6b8ca56/source/auth-automation.ts",
+  "reviewed": "2026-10-12",
+  "summary": "Taxpayer number and password on the tax authority's authentication host (www.acesso.gov.pt, /v2/loginForm), behind a tab that is clicked first; the catalog entry page is the portal home and has no form. The flow is the one of the user's cdp-auth specAt. That script holds no field selector and predates a redesign of the page, so every selector is inferred from public third-party automations of the redesigned page. Nobody observed that page for this review.",
+  "sources": [
+    {
+      "id": "cdp-auth",
+      "kind": "cdp-auth",
+      "title": "The user's cdp-auth tool, function specAt, committed 2024-05-24: the flow for this portal",
+      "url": "https://github.com/supermarsx/cdp-auth/blob/2b1d1b428c9c78e84ad851f37760ce7df6b8ca56/source/auth-automation.ts",
+      "commit": "2b1d1b428c9c78e84ad851f37760ce7df6b8ca56",
+      "path": "source/auth-automation.ts",
+      "lines": "461-504",
+      "retrieved": "2026-10-12",
+      "note": "Navigates to the address the user configured, calls click on the element with id tab2 (line 468), sets two elements whose ids are items 3 and 4 of the user's own settings string (lines 476 and 496), then presses Enter with the second one focused (line 503). The address and the two ids are not in the script. The readme of the same commit lists eight known working logins (lines 27-34) and none for this portal. Read, not run."
+    },
+    {
+      "id": "entry-page",
+      "kind": "anonymous-capture",
+      "title": "The catalog entry page, rendered once without an account",
+      "url": "https://www.portaldasfinancas.gov.pt/at/html/index.html",
+      "capture": "capture.json",
+      "captureSha256": "7e8d424c1e9cf7d50244364b80e93ef719529b3fd4c6949ea450115228247d2a",
+      "retrieved": "2026-10-12",
+      "note": "The portal home: one search form, no credential field, no element with id tab2, no frame. The capture ended on the catalog host itself. The sign-in form is on another host, which the capture tool does not load."
+    },
+    {
+      "id": "powercell",
+      "kind": "secondary",
+      "title": "PowerPrecision/PowerCell, gov_scraper.py, changed 2026-10-10: third-party automation of the redesigned sign-in",
+      "url": "https://github.com/PowerPrecision/PowerCell/blob/db1d6eaa8bf9c9d0ec3bff9d3796b995708349a8/backend/services/gov_scraper.py",
+      "commit": "db1d6eaa8bf9c9d0ec3bff9d3796b995708349a8",
+      "lines": "65-103",
+      "retrieved": "2026-10-12",
+      "note": "Opens https://www.acesso.gov.pt/v2/loginForm?partID=PFIN&path=/geral/dashboard&selectedAuthMethod=N and says the taxpayer-number tab still has to be clicked, after which the fields appear (lines 631-651). Its comments date a new interface to May 2025. Its candidate lists hold the tab by role and visible name, then [id$='-trigger-N'], then a legacy id; input[name='username']; input[name='password'] and input[type='password']. The lists are fallbacks: which entry matches is not recorded."
+    },
+    {
+      "id": "ateess",
+      "kind": "secondary",
+      "title": "miguelfazenda/DownloadPDFs-ATeSS, autenticacao.py, changed 2026-03-14: third-party automation of the redesigned sign-in",
+      "url": "https://github.com/miguelfazenda/DownloadPDFs-ATeSS/blob/f7fec59007a55251f7346b716c7a4864d5c43390/novo/autenticacao.py",
+      "commit": "f7fec59007a55251f7346b716c7a4864d5c43390",
+      "lines": "7-18",
+      "retrieved": "2026-10-12",
+      "note": "Opens https://www.acesso.gov.pt/v2/loginForm?partID=PFAP&path=/geral/dashboard, clicks the element with id radix-:ra:-trigger-N, types into the elements named username and password, then clicks the button of the form."
+    },
+    {
+      "id": "caderneta-predial",
+      "kind": "secondary",
+      "title": "rgl/caderneta-predial, tests/global.setup.ts, sign-in changed 2025-08-04: third-party automation of the redesigned sign-in",
+      "url": "https://github.com/rgl/caderneta-predial/blob/cde03e1e730479660db8d43169d2bb5a3c1632cd/tests/global.setup.ts",
+      "commit": "cde03e1e730479660db8d43169d2bb5a3c1632cd",
+      "lines": "29-50",
+      "retrieved": "2026-10-12",
+      "note": "Opens a service of the portal and is sent to the sign-in. The commit of 2025-08-04, described as matching the latest changes of the site, replaced text and placeholder lookups with: a tab named NIF, two text boxes, a button named Autenticar, and a check for a text box named Código SMS after the password is accepted. It finds controls by role and label, not by id."
+    },
+    {
+      "id": "caderneta-mock",
+      "kind": "secondary",
+      "title": "rgl/caderneta-predial, tests/mocks.ts: that project's own test double of the sign-in form",
+      "url": "https://github.com/rgl/caderneta-predial/blob/cde03e1e730479660db8d43169d2bb5a3c1632cd/tests/mocks.ts",
+      "commit": "cde03e1e730479660db8d43169d2bb5a3c1632cd",
+      "lines": "13-26",
+      "retrieved": "2026-10-12",
+      "note": "A hand-written stand-in, not a copy of the page: a form with a text input named username and a password input named password."
+    },
+    {
+      "id": "irspt-rs",
+      "kind": "secondary",
+      "title": "jo-neves/irspt-rs, irspt_api_auth.rs, changed 2024-02-15: third-party automation of the page before the redesign",
+      "url": "https://github.com/jo-neves/irspt-rs/blob/64da59f0815463475efbbaefeb1966838163be6a/irspt-core/src/api/irspt_api_auth.rs",
+      "commit": "64da59f0815463475efbbaefeb1966838163be6a",
+      "lines": "12-36",
+      "retrieved": "2026-10-12",
+      "note": "Clicks the label whose for attribute is tab2, sets the inputs with ids username and password-nif, clicks the element with id sbmtLogin. Its constants.rs (lines 4-5) gives the page as https://www.acesso.gov.pt/v2/loginForm?partID=PFAP&path=/geral/home."
+    },
+    {
+      "id": "password-checker",
+      "kind": "secondary",
+      "title": "brenoportella/password_AT_checker, src/login.py, changed 2025-04-15: third-party automation of the page just before the redesign",
+      "url": "https://github.com/brenoportella/password_AT_checker/blob/26308739f3bf19be7fb8df56beb931ee811ab85f/src/login.py",
+      "commit": "26308739f3bf19be7fb8df56beb931ee811ab85f",
+      "lines": "7-30",
+      "retrieved": "2026-10-12",
+      "note": "Opens https://www.acesso.gov.pt/v2/loginForm?partID=PFAP&path=/geral/dashboard, clicks the second tab label, then uses the element with id username, the element named password and the element with id sbmtLogin."
+    },
+    {
+      "id": "at-guide",
+      "kind": "vendor-documentation",
+      "title": "Autoridade Tributária e Aduaneira: user guide of the taxpayer authentication service",
+      "url": "https://info.portaldasfinancas.gov.pt/pt/apoio_contribuinte/Manuais/Documents/Guia_servicos_AT_Autenticacao_Contribuintes.pdf",
+      "retrieved": "2026-10-12",
+      "note": "Names three means of authentication to choose from: CC/CMD, NIF and EORI. Describes the second factor, available to taxpayers without a business or professional activity: once it is on, every sign-in with NIF and password also asks for a single-use code sent by SMS, valid for 5 minutes. Pictures and text, no markup."
+    },
+    {
+      "id": "at-terms",
+      "kind": "vendor-documentation",
+      "title": "Autoridade Tributária e Aduaneira: general terms and conditions of use of the site",
+      "url": "https://info.portaldasfinancas.gov.pt/pt/quem_somos/privacidade/Pages/privacidade.aspx",
+      "retrieved": "2026-10-12",
+      "note": "States that transactions require the user to authenticate with the system available at the portal, and that the site's information may be reproduced when the source is named, for non-commercial purposes. No clause on automated access. No markup."
+    }
+  ],
+  "selectors": [
+    {
+      "selector": "[role=\"tab\"][id$=\"-trigger-N\"]",
+      "role": "control",
+      "source": "powercell",
+      "basis": "inferred",
+      "note": "The pre-step click on the taxpayer-number tab. The sources address it three ways: by role and visible name NIF (caderneta-predial line 30; powercell lines 77 and 81-82), which a selector cannot express; by its whole id (ateess line 12), whose first part is generated; by the end of the id (powercell line 83). Chosen: the tab role plus the end of the id, the letter powercell also passes as selectedAuthMethod, so the generated part is not matched. It rests on one project that runs with that id and one that lists it as a candidate."
+    },
+    {
+      "selector": "input[name=\"username\"]",
+      "role": "username",
+      "source": "powercell",
+      "basis": "observed",
+      "locator": "lines 75 and 89",
+      "note": "Also ateess (line 13), which runs with it. The name attribute is the stable choice: powercell calls it so, and no id of the redesigned field is in any source."
+    },
+    {
+      "selector": "input[name=\"password\"][type=\"password\"]",
+      "role": "password",
+      "source": "powercell",
+      "basis": "inferred",
+      "note": "The name is in powercell (lines 75 and 98) and ateess (line 14). The type is not stated for the redesigned field: powercell lists it only as a separate fallback (line 99) and caderneta-mock has it on a test double. It is required here so the password is typed into nothing but a password field."
+    }
+  ],
+  "fixtures": [
+    {
+      "file": "fixture.html",
+      "path": "/at/html/index.html",
+      "derivedFrom": ["entry-page"],
+      "note": "The first document of the flow: the portal home. No step runs on it."
+    },
+    {
+      "file": "fixture.login.html",
+      "origin": "https://www.acesso.gov.pt",
+      "path": "/v2/loginForm",
+      "derivedFrom": ["powercell", "ateess", "caderneta-predial", "at-guide"],
+      "note": "The redesigned page after the tab was clicked: the sources say the fields are rendered only then. Three tabs as the guide names three means; the id of the middle one is the id ateess uses. Nothing here was seen on the page itself."
+    }
+  ],
+  "staysInteractive": [
+    {
+      "kind": "other",
+      "note": "Reaching the sign-in form. The catalog entry is the portal home; the user opens its sign-in link or a service that asks for authentication. The steps act only once the browser shows the form on the authentication host."
+    },
+    {
+      "kind": "sms-code",
+      "note": "Per the authority's guide: with the second factor on, a single-use code sent by SMS is asked after the password. caderneta-predial checks for that field. The page that asks for it was not observed."
+    },
+    {
+      "kind": "single-sign-on",
+      "note": "The other means on the same page (CC/CMD, that is citizen card and Chave Móvel Digital, and EORI) are not automated. Only the taxpayer-number-and-password means is."
+    }
+  ],
+  "unverified": [
+    "The sign-in page was redesigned after cdp-auth's commit of 2024-05-24. The element with id tab2 that cdp-auth clicks, and the field ids in the user's own cdp-auth settings, very probably describe a page that no longer exists. They are not in the steps.",
+    "The current layout was NOT observed for this review. It is inferred from three third-party projects: rgl/caderneta-predial (sign-in code of 2025-08-04), miguelfazenda/DownloadPDFs-ATeSS (2026-03-14) and PowerPrecision/PowerCell (2026-10-10). The page can change again at any time.",
+    "The sign-in page was not loaded or captured: the capture tool loads the catalog entry page only, and that is the portal home.",
+    "That the tab click works. The tab is matched by its role and the end of its id; if the page names its tabs differently today, the step matches nothing and the login stops before anything is typed.",
+    "That the redesigned password field has the type password.",
+    "That Enter in the password field submits the redesigned form. cdp-auth pressed Enter on the earlier page; the later projects click the submit button of the form.",
+    "That specAt as published runs to its end. Its wait after the tab click (lines 472-474) awaits a promise that the code never resolves, so the lines that fill the fields may not be reached at that commit. A released build may differ.",
+    "That the form is served on /v2/loginForm of www.acesso.gov.pt for every service of the portal, and what the page shows after a failed attempt.",
+    "Everything after the password: the SMS code page was not observed.",
+    "Whether the authentication host answers an embedded browser differently. One of the projects conceals its automated browser from the site; this application does not."
+  ],
+  "neededFromUser": "The sign-in page saved from your own browser with the NIF tab open, as an HTML file that contains the two fields; it is then read offline. Also useful: your cdp-auth settings for this portal, that is the address in the Hostname field and the User field string (spec_at, taxpayer number, username field id, password field id; leave the taxpayer number out), and whether cdp-auth still signs in with them today. Save any page signed out, with no password typed in, as \"Webpage, Complete\"; keep the \"_files\" folder beside the .html and both outside the repository: they can hold the account name.",
+  "schemaGaps": [
+    "The sign-in link on the portal home cannot be a click step: a click needs a credential step on the same origin, and no credential is typed on www.portaldasfinancas.gov.pt. The steps start at the sign-in form.",
+    "The taxpayer-number tab cannot be chosen by its label, which is how two of the three sources find it: a step has selectors only."
+  ],
+  "notes": "www.acesso.gov.pt is the only credential origin because four independent pinned sources open the form there, at /v2/loginForm: irspt-rs (2024-02-15), password-checker (2025-04-15), ateess (2026-03-14) and powercell (2026-10-10). Before the capture: the catalog host serves no robots.txt (HTTP 404) and the terms of the site have no clause on automated access. caderneta-predial warns that about three failed attempts lock the account: a wrong saved password costs one attempt per sign-in."
+}

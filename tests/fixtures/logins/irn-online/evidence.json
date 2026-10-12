@@ -1,0 +1,40 @@
+{
+  "$schema": "../evidence.schema.json",
+  "version": 1,
+  "id": "irn-online",
+  "class": "C",
+  "mechanism": "none",
+  "reviewed": "2026-10-12",
+  "summary": "The registry platform hands sign-in to a government identity realm over SAML. The in-repository review names citizen-card, digital-key and representative sign-in there and records no user name and password form.",
+  "sources": [
+    {
+      "id": "portal-review",
+      "kind": "repository",
+      "title": "The in-repository review of the Portuguese portals of 2026-10-06, section IRN online",
+      "path": "docs/portugal-portal-profiles.md",
+      "lines": "93-107",
+      "retrieved": "2026-10-12"
+    },
+    {
+      "id": "profile",
+      "kind": "repository",
+      "title": "The catalog profile irn-online and the comment above it",
+      "path": "src/utils/connection/portugalPortalProfiles.ts",
+      "retrieved": "2026-10-12"
+    }
+  ],
+  "selectors": [],
+  "fixtures": [],
+  "staysInteractive": [
+    {
+      "kind": "single-sign-on",
+      "note": "The whole sign-in: the platform redirects to the realm justica of the registry's authentication host, where the user chooses citizen card, Chave Móvel Digital or representative sign-in."
+    }
+  ],
+  "lookedFor": [
+    "The in-repository review of 2026-10-06: an anonymous request to /Login was answered with a redirect to a SAML endpoint of the realm justica on autenticacao.irn.justica.gov.pt. The sign-in destination was not inspected, and the profile automates neither citizen-card nor digital-key nor representative sign-in.",
+    "Nothing was loaded or captured from any site of the registry for this review. The review made the same day for the application icons reports that the registry's legal notice prohibits automated extraction from its portals and requires prior written authorisation for commercial use or modification of its content. That notice was not read again here.",
+    "No source of the sign-in page's markup is cited anywhere in this repository, and none was looked for on the registry's own sites."
+  ],
+  "neededFromUser": "How you sign in there: with a password, a citizen card or the digital key. If your account has a user name and password form, that page saved from your own browser as an HTML file that contains its fields; it is read offline and nothing is fetched from the registry. Save any page signed out, with no password typed in, as \"Webpage, Complete\"; keep the \"_files\" folder beside the .html and both outside the repository: they can hold the account name."
+}

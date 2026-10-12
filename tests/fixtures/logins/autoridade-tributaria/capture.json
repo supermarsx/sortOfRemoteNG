@@ -1,0 +1,350 @@
+{
+  "schema": "sorng-login-capture/1",
+  "sanitizer": 3,
+  "applicationId": "autoridade-tributaria",
+  "capturedAt": "2026-10-12",
+  "mode": "hosted",
+  "engine": "Microsoft Edge headless (Edg/146.0.3856.84)",
+  "source": {
+    "kind": "hosted-login",
+    "requestedUrl": "https://www.portaldasfinancas.gov.pt/at/html/index.html",
+    "finalUrl": "https://www.portaldasfinancas.gov.pt/at/html/index.html",
+    "httpStatus": 200
+  },
+  "limits": {
+    "navigations": 1,
+    "scriptsExecuted": true,
+    "loadEvent": true,
+    "settleMs": 10000,
+    "dialogsDismissed": 0,
+    "input": "none",
+    "truncated": false,
+    "redirects": "public-hosts-only"
+  },
+  "network": {
+    "contacted": [
+      "catia.portaldasfinancas.gov.pt:443",
+      "fonts.googleapis.com:443",
+      "www.portaldasfinancas.gov.pt:443"
+    ],
+    "refused": 1
+  },
+  "observations": ["no-password-field"],
+  "frames": [
+    {
+      "index": 0,
+      "parent": null,
+      "name": null,
+      "sameOriginAsTop": true,
+      "url": "https://www.portaldasfinancas.gov.pt/at/html/index.html",
+      "controls": 12,
+      "tree": {
+        "tag": "html",
+        "attributes": {
+          "lang": "pt-PT",
+          "class": null,
+          "style": null
+        },
+        "children": [
+          {
+            "tag": "body",
+            "attributes": {},
+            "children": [
+              {
+                "tag": "div",
+                "attributes": {
+                  "class": "page-wrap"
+                },
+                "children": [
+                  {
+                    "tag": "header",
+                    "attributes": {
+                      "role": "banner",
+                      "class": "main-header"
+                    },
+                    "children": [
+                      {
+                        "tag": "a",
+                        "attributes": {
+                          "fragment": "main",
+                          "class": "skip-to-main",
+                          "style": null,
+                          "href": "#"
+                        },
+                        "rendered": true
+                      },
+                      {
+                        "tag": "div",
+                        "attributes": {
+                          "class": "main-header-body"
+                        },
+                        "children": [
+                          {
+                            "tag": "div",
+                            "attributes": {
+                              "class": "container-wrapper"
+                            },
+                            "children": [
+                              {
+                                "tag": "a",
+                                "attributes": {
+                                  "class": "burger-menu",
+                                  "href": "#",
+                                  "title": null
+                                },
+                                "rendered": true
+                              },
+                              {
+                                "tag": "div",
+                                "attributes": {
+                                  "class": "col-xs-12 col-sm-12 col-md-9 no-pad"
+                                },
+                                "children": [
+                                  {
+                                    "tag": "nav",
+                                    "attributes": {
+                                      "class": "main-nav"
+                                    },
+                                    "children": [
+                                      {
+                                        "tag": "ul",
+                                        "attributes": {
+                                          "id": "menus"
+                                        },
+                                        "children": [
+                                          {
+                                            "tag": "li",
+                                            "attributes": {},
+                                            "children": [
+                                              {
+                                                "tag": "div",
+                                                "attributes": {
+                                                  "class": "menu-item-container"
+                                                },
+                                                "children": [
+                                                  {
+                                                    "tag": "a",
+                                                    "attributes": {
+                                                      "href": "#",
+                                                      "title": null,
+                                                      "class": "submenu1"
+                                                    },
+                                                    "rendered": false
+                                                  }
+                                                ]
+                                              }
+                                            ]
+                                          },
+                                          {
+                                            "tag": "li",
+                                            "attributes": {},
+                                            "children": [
+                                              {
+                                                "tag": "div",
+                                                "attributes": {
+                                                  "class": "menu-item-container"
+                                                },
+                                                "children": [
+                                                  {
+                                                    "tag": "a",
+                                                    "attributes": {
+                                                      "href": "#",
+                                                      "title": null,
+                                                      "class": "submenu2"
+                                                    },
+                                                    "rendered": false
+                                                  }
+                                                ]
+                                              }
+                                            ]
+                                          },
+                                          {
+                                            "tag": "li",
+                                            "attributes": {},
+                                            "children": [
+                                              {
+                                                "tag": "div",
+                                                "attributes": {
+                                                  "class": "menu-item-container"
+                                                },
+                                                "children": [
+                                                  {
+                                                    "tag": "a",
+                                                    "attributes": {
+                                                      "href": "#",
+                                                      "title": null,
+                                                      "class": "submenu3"
+                                                    },
+                                                    "rendered": false
+                                                  }
+                                                ]
+                                              }
+                                            ]
+                                          }
+                                        ]
+                                      }
+                                    ]
+                                  }
+                                ]
+                              }
+                            ]
+                          }
+                        ]
+                      }
+                    ]
+                  },
+                  {
+                    "tag": "main",
+                    "attributes": {
+                      "role": "main",
+                      "id": "main"
+                    },
+                    "children": [
+                      {
+                        "tag": "div",
+                        "attributes": {
+                          "class": "container-fluid no-pad"
+                        },
+                        "children": [
+                          {
+                            "tag": "div",
+                            "attributes": {
+                              "class": "header relative"
+                            },
+                            "children": [
+                              {
+                                "tag": "div",
+                                "attributes": {
+                                  "class": "container-wrapper content"
+                                },
+                                "children": [
+                                  {
+                                    "tag": "form",
+                                    "attributes": {
+                                      "action": "https://sitfiscal.portaldasfinancas.gov.pt/geral/search",
+                                      "method": "get"
+                                    },
+                                    "rendered": true,
+                                    "children": [
+                                      {
+                                        "tag": "label",
+                                        "attributes": {
+                                          "id": "lblSearch",
+                                          "hidden": ""
+                                        },
+                                        "rendered": false
+                                      },
+                                      {
+                                        "tag": "input",
+                                        "attributes": {
+                                          "type": "search",
+                                          "name": "query",
+                                          "id": "query",
+                                          "placeholder": null,
+                                          "aria-labelledby": "lblSearch"
+                                        },
+                                        "rendered": true
+                                      },
+                                      {
+                                        "tag": "input",
+                                        "attributes": {
+                                          "type": "hidden",
+                                          "name": "appName",
+                                          "value": null
+                                        },
+                                        "rendered": false
+                                      },
+                                      {
+                                        "tag": "input",
+                                        "attributes": {
+                                          "type": "submit",
+                                          "aria-label": null,
+                                          "value": "Pesquisar",
+                                          "onclick": null
+                                        },
+                                        "rendered": true
+                                      }
+                                    ]
+                                  }
+                                ]
+                              }
+                            ]
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "tag": "div",
+                "attributes": {
+                  "id": "rasaWebchatPro"
+                },
+                "children": [
+                  {
+                    "tag": "div",
+                    "attributes": {
+                      "class": "",
+                      "style": null
+                    },
+                    "children": [
+                      {
+                        "tag": "div",
+                        "attributes": {
+                          "class": "rw-widget-container"
+                        },
+                        "children": [
+                          {
+                            "tag": "button",
+                            "attributes": {
+                              "type": "button",
+                              "class": "rw-launcher",
+                              "aria-label": null
+                            },
+                            "rendered": true,
+                            "children": [
+                              {
+                                "tag": "div",
+                                "attributes": {
+                                  "class": "rw-open-launcher__container"
+                                },
+                                "children": [
+                                  {
+                                    "tag": "div",
+                                    "attributes": {
+                                      "class": "rw-tooltip-body"
+                                    },
+                                    "children": [
+                                      {
+                                        "tag": "div",
+                                        "attributes": {
+                                          "class": "rw-tooltip-close"
+                                        },
+                                        "children": [
+                                          {
+                                            "tag": "button",
+                                            "attributes": {},
+                                            "rendered": false
+                                          }
+                                        ]
+                                      }
+                                    ]
+                                  }
+                                ]
+                              }
+                            ]
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    }
+  ]
+}

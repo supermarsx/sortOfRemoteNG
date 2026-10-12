@@ -1,0 +1,31 @@
+{
+  "$schema": "../../../types/connection/httpLoginSteps.schema.json",
+  "version": 1,
+  "id": "seguranca-social-direta",
+  "evidence": {
+    "class": "B",
+    "source": "https://github.com/diegobarbosa88/atualizacao-app-magnetic-place/blob/13a76ea14b7005f9f5f9e6a3576f7cab6e484f4d/api/_obterDeclaracoesRemuneracoesSSD.js",
+    "reviewed": "2026-10-12"
+  },
+  "credentialOrigins": [],
+  "loginSteps": [
+    {
+      "kind": "click",
+      "paths": ["/sso/login"],
+      "selectors": { "control": "#toogleAuth" }
+    },
+    {
+      "kind": "form",
+      "paths": ["/sso/login"],
+      "selectors": {
+        "username": "input#username",
+        "password": "input#password[type=\"password\"]"
+      }
+    },
+    {
+      "kind": "submit",
+      "submission": "click",
+      "selectors": { "control": "#submitBtn" }
+    }
+  ]
+}

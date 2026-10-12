@@ -1,0 +1,124 @@
+{
+  "$schema": "../evidence.schema.json",
+  "version": 1,
+  "id": "imt-online",
+  "class": "B",
+  "mechanism": "form",
+  "source": "https://servicos.imt-ip.pt/login.aspx",
+  "reviewed": "2026-10-12",
+  "summary": "One page with three ways in: two buttons that hand off to a government authentication service, and a form of its own with three fields (taxpayer number, user name, password). The form needs a value the steps format does not carry and the buttons lead to another origin, so there is evidence and a fixture but no steps file.",
+  "sources": [
+    {
+      "id": "page",
+      "kind": "anonymous-capture",
+      "title": "The public sign-in page, rendered once without an account",
+      "url": "https://servicos.imt-ip.pt/login.aspx",
+      "capture": "capture.json",
+      "captureSha256": "a78ec1de6c0b3ae1ded95eb43fd651aa2bc3b345b1a818faedccc84840e04e0f",
+      "retrieved": "2026-10-12",
+      "note": "Loaded and ended on the catalog host itself, HTTP 200, one frame. One page-wide POST form (form#Form, action /login.aspx) holds a sign-in module with two script-driven buttons and a group of three fields with its own submit button. A first run the same day stopped at the tool's own name lookup with nothing loaded; this is the single rerun the coordinator allowed."
+    },
+    {
+      "id": "portal-terms",
+      "kind": "vendor-documentation",
+      "title": "IMT Online: conditions of use of the services portal",
+      "url": "https://servicos.imt-ip.pt/termos.aspx",
+      "retrieved": "2026-10-12",
+      "note": "States that using the portal presupposes strong authentication mechanisms of the public administration, such as the authentication system of the tax authority or the citizen card. Forbids attempts to alter or load information or to endanger the system, and protects the content by copyright. No clause on automated access. Linked from the footer of the captured page. No markup."
+    },
+    {
+      "id": "site-terms",
+      "kind": "vendor-documentation",
+      "title": "Instituto da Mobilidade e dos Transportes: terms of use and responsibility of the institute's site",
+      "url": "https://www.imt-ip.pt/termos-de-utilizacao-e-responsabilidade/",
+      "retrieved": "2026-10-12",
+      "note": "Items 4 and 5: the site's information may be used freely when the source is named, and not for profit or unlawful ends. Item 12 forbids attempts to alter the site or to endanger it. No clause on automated access."
+    },
+    {
+      "id": "portal-review",
+      "kind": "repository",
+      "title": "The in-repository review of the Portuguese portals of 2026-10-06, section IMT Online",
+      "path": "docs/portugal-portal-profiles.md",
+      "lines": "169-181",
+      "retrieved": "2026-10-12"
+    }
+  ],
+  "selectors": [
+    {
+      "selector": "form#Form input#dnn_ctr561_ViewLogin_txtNif[type=\"text\"]",
+      "role": "other",
+      "source": "page",
+      "basis": "observed",
+      "locator": "frames[0], form#Form, div#dnn_ctr561_ModuleContent, input#dnn_ctr561_ViewLogin_txtNif (rendered; its label has the id lblNIF)",
+      "note": "The third value of the page's own form: a taxpayer number, by the ids of the field and of its label. A saved connection has no value for it."
+    },
+    {
+      "selector": "form#Form input#dnn_ctr561_ViewLogin_txtUserName[type=\"text\"]",
+      "role": "username",
+      "source": "page",
+      "basis": "observed",
+      "locator": "frames[0], form#Form, div#dnn_ctr561_ModuleContent, input#dnn_ctr561_ViewLogin_txtUserName (rendered; label lblUserName)"
+    },
+    {
+      "selector": "form#Form input#dnn_ctr561_ViewLogin_txtPassword[type=\"password\"]",
+      "role": "password",
+      "source": "page",
+      "basis": "observed",
+      "locator": "frames[0], form#Form, div#dnn_ctr561_ModuleContent, input#dnn_ctr561_ViewLogin_txtPassword (rendered; label lblPassword)"
+    },
+    {
+      "selector": "form#Form input#dnn_ctr561_ViewLogin_btLoginR[type=\"submit\"]",
+      "role": "control",
+      "source": "page",
+      "basis": "observed",
+      "locator": "frames[0], form#Form, div#dnn_ctr561_ModuleContent, input#dnn_ctr561_ViewLogin_btLoginR (rendered), the submit button of the three-field group"
+    },
+    {
+      "selector": "form#Form input#dnn_ctr561_ViewLogin_lbLoginPNif[type=\"button\"]",
+      "role": "control",
+      "source": "page",
+      "basis": "observed",
+      "locator": "frames[0], form#Form, div#dnn_ctr561_ModuleContent, input#dnn_ctr561_ViewLogin_lbLoginPNif (rendered, has a click handler)",
+      "note": "The first of the two hand-off buttons. Not used by any step."
+    },
+    {
+      "selector": "form#Form input#dnn_ctr561_ViewLogin_lbLoginENif[type=\"button\"]",
+      "role": "control",
+      "source": "page",
+      "basis": "observed",
+      "locator": "frames[0], form#Form, div#dnn_ctr561_ModuleContent, input#dnn_ctr561_ViewLogin_lbLoginENif (rendered, has a click handler)",
+      "note": "The second of the two hand-off buttons. Not used by any step."
+    }
+  ],
+  "fixtures": [
+    {
+      "file": "fixture.html",
+      "path": "/login.aspx",
+      "derivedFrom": ["page"],
+      "note": "The sign-in module of the page-wide form: the two buttons, the three fields with their labels, and the group's submit button. The hidden state fields of the form are left out."
+    }
+  ],
+  "staysInteractive": [
+    {
+      "kind": "single-sign-on",
+      "note": "The two buttons. Per the portal's conditions and the in-repository review they lead to government authentication (the tax authority's sign-in, citizen card, Chave Móvel Digital). Where they lead was not observed."
+    },
+    {
+      "kind": "other",
+      "note": "The page's own form: its three fields are filled and submitted by hand, because there is no steps file."
+    }
+  ],
+  "unverified": [
+    "The page can change at any time. This is one anonymous render on the review date. The number 561 in every id is the page's own module number and changes if the module is replaced.",
+    "What each control means. A capture keeps no text: that the three fields take a taxpayer number, a user name and a password, and which button serves individuals and which businesses, is read from the ids (lblNIF, txtUserName, txtPassword, lbLoginPNif, lbLoginENif, btLoginR) and from the in-repository review, which names individuals, businesses and representatives.",
+    "Who signs in with the three-field form, and whether the user name is typed alone or always together with the taxpayer number.",
+    "Where the two buttons lead and what that page looks like. Nothing was clicked.",
+    "Nothing after a submit was observed, because no account was used."
+  ],
+  "neededFromUser": "Which of the three ways you sign in. If it is one of the two buttons: the page it opens, saved from your own browser as an HTML file. If it is the form on the page: what its first field takes and whether your account uses it. Save any page signed out, with no password typed in, as \"Webpage, Complete\"; keep the \"_files\" folder beside the .html and both outside the repository: they can hold the account name.",
+  "schemaGaps": [
+    "The page's own form asks for three values: a taxpayer number, a user name and a password. A steps file types a user name and a password only, so the form cannot be completed and must not be submitted.",
+    "The two buttons hand off to another origin. A click step must be followed by a credential step on its own origin, and the fields these buttons lead to are on the other one, which was not observed and so cannot be listed as a credential origin."
+  ],
+  "notes": "Checked before the capture: servicos.imt-ip.pt serves no robots.txt (HTTP 404); neither the portal's conditions of use nor the institute's site terms has a clause on automated access. The capture loaded the page once and sent no input."
+}

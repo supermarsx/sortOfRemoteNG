@@ -1,0 +1,42 @@
+{
+  "$schema": "../evidence.schema.json",
+  "version": 1,
+  "id": "meo-particulares",
+  "class": "C",
+  "mechanism": "none",
+  "reviewed": "2026-10-12",
+  "summary": "The my MEO customer area. Its sign-in page was not captured, because the conditions of use of the customer area forbid tools that collect and extract data from it. Nothing else describes its markup.",
+  "sources": [
+    {
+      "id": "conditions",
+      "kind": "vendor-documentation",
+      "title": "MEO: conditions of use of the customer area, document Mod.C/1003009 of 2026-03-25",
+      "url": "https://conteudos.meo.pt/meo/Documentos/Condicoes-Utilizacao/condicoes-area-cliente.pdf",
+      "retrieved": "2026-10-12",
+      "note": "Clause 8.6: «É-lhe expressamente proibida a extração e/ou utilização sistemática de parte ou de todo o conteúdo da Área de Cliente sem a autorização prévia e expressa da MEO. Em particular, é proibida qualquer forma de data mining ou a utilização de outras ferramentas e/ou instrumentos de recolha e extração de dados para reutilização de partes da Área de Cliente». Clause 3.1: access needs a login."
+    },
+    {
+      "id": "portal-review",
+      "kind": "repository",
+      "title": "The in-repository review of the Portuguese portals of 2026-10-06, section MEO individuals and companies",
+      "path": "docs/portugal-portal-profiles.md",
+      "lines": "122-142",
+      "retrieved": "2026-10-12"
+    }
+  ],
+  "selectors": [],
+  "fixtures": [],
+  "staysInteractive": [
+    {
+      "kind": "other",
+      "note": "The whole sign-in. The in-repository review names the operator's identity account, Google and Apple options, verification and account association."
+    }
+  ],
+  "lookedFor": [
+    "The conditions of use of the customer area: clause 8.6 forbids data mining and any other tool that collects and extracts data to reuse parts of the customer area without the operator's prior express authorisation. An anonymous capture is such a tool, so none was made.",
+    "robots.txt: my.meo.pt answers that address with its application shell and states no rule.",
+    "The in-repository review of 2026-10-06: only a script shell was seen at the entry; no form was read.",
+    "No other public description of the sign-in page's markup was looked for."
+  ],
+  "neededFromUser": "The sign-in page saved from your own browser as an HTML file that contains the fields of the form, and the page that asks for the password if that is a separate one. It is read offline, nothing is fetched from the site, and a page you saved yourself can support a reviewed login. Or the operator's authorisation, or your decision that one anonymous capture of the public page is acceptable despite the clause. Save any page signed out, with no password typed in, as \"Webpage, Complete\"; keep the \"_files\" folder beside the .html and both outside the repository: they can hold the account name."
+}

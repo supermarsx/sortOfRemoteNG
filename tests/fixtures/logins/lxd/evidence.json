@@ -1,0 +1,35 @@
+{
+  "$schema": "../evidence.schema.json",
+  "version": 1,
+  "id": "lxd",
+  "class": "C",
+  "mechanism": "none",
+  "reviewed": "2026-10-12",
+  "summary": "The LXD and Incus web interface authenticates with a client certificate (mutual TLS) or with OpenID Connect. The catalog records no user name and password form.",
+  "sources": [
+    {
+      "id": "profile",
+      "kind": "repository",
+      "title": "The catalog profile lxd (LXD / Incus): its description",
+      "path": "src/utils/connection/httpApplicationProfiles.ts",
+      "retrieved": "2026-10-12"
+    }
+  ],
+  "selectors": [],
+  "fixtures": [],
+  "staysInteractive": [
+    {
+      "kind": "client-certificate",
+      "note": "Mutual TLS: the browser presents a certificate the server trusts."
+    },
+    {
+      "kind": "single-sign-on",
+      "note": "OpenID Connect, where the server is configured for it."
+    }
+  ],
+  "lookedFor": [
+    "The catalog profile's own description: a manual web interface only if one is installed; the native mutual-TLS and OpenID Connect credentials are not transferred into the browser.",
+    "No page of the application was read or captured: a self-hosted server is never contacted, and the description names no password form to look for."
+  ],
+  "neededFromUser": "Nothing turns this into a saved-password login as described. If your installation does show a user name and password form, save that page from your own browser as an HTML file that contains its fields. Save any page signed out, with no password typed in, as \"Webpage, Complete\"; keep the \"_files\" folder beside the .html and both outside the repository: they can hold the account name."
+}

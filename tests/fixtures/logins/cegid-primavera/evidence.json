@@ -1,0 +1,50 @@
+{
+  "$schema": "../evidence.schema.json",
+  "version": 1,
+  "id": "cegid-primavera",
+  "class": "C",
+  "mechanism": "none",
+  "reviewed": "2026-10-12",
+  "summary": "The myCegid customer portal hands sign-in to the vendor's identity service (id.cegid.cloud). That host's robots rules disallow every path for every agent, so its sign-in page was not captured. Nothing else describes its markup.",
+  "sources": [
+    {
+      "id": "robots",
+      "kind": "vendor-documentation",
+      "title": "Cegid identity service: robots.txt",
+      "url": "https://id.cegid.cloud/robots.txt",
+      "retrieved": "2026-10-12",
+      "note": "29 bytes: a byte order mark, then the lines User-Agent: * and Disallow: /. Read on 2026-10-12; its SHA-256 begins ebe2d5da6553aa0c (the full value is in the review log)."
+    },
+    {
+      "id": "legal-notice",
+      "kind": "vendor-documentation",
+      "title": "Cegid: legal notice of the corporate website",
+      "url": "https://www.cegid.com/global/legal-notice/",
+      "retrieved": "2026-10-12",
+      "note": "Forbids any representation of the site, in whole or in part, by any process, without the vendor's permission, and forbids collecting the personal data found on it. It is the notice of www.cegid.com and has no clause on automated access."
+    },
+    {
+      "id": "portal-review",
+      "kind": "repository",
+      "title": "The in-repository review of the Portuguese portals of 2026-10-06, section Cegid Primavera customer portal",
+      "path": "docs/portugal-portal-profiles.md",
+      "lines": "45-62",
+      "retrieved": "2026-10-12"
+    }
+  ],
+  "selectors": [],
+  "fixtures": [],
+  "staysInteractive": [
+    {
+      "kind": "single-sign-on",
+      "note": "The whole sign-in, on the vendor's identity service."
+    }
+  ],
+  "lookedFor": [
+    "A request for robots.txt on the catalog host, mycegid.ila.cegid.com, was answered with HTTP 302 (reason phrase OAuth Redirection) to https://id.cegid.cloud/connect/authorize, which the in-repository review of 2026-10-06 also found for the entry itself. Sign-in therefore happens on id.cegid.cloud.",
+    "robots.txt of id.cegid.cloud disallows every path for every agent. A blanket rule on the host that serves the sign-in form counts as a prohibition: a capture would load a page of that host, so none was made.",
+    "The vendor's legal notice: a general prohibition to reproduce the corporate site, nothing on automated access.",
+    "No other public description of the sign-in page's markup was looked for."
+  ],
+  "neededFromUser": "The sign-in page saved from your own browser as an HTML file that contains the fields of the form, and the page that asks for the password if that is a separate one. It is read offline, nothing is fetched from the site, and a page you saved yourself can support a reviewed login. The page is the one on id.cegid.cloud that the portal sends you to. Save any page signed out, with no password typed in, as \"Webpage, Complete\"; keep the \"_files\" folder beside the .html and both outside the repository: they can hold the account name."
+}

@@ -1,0 +1,28 @@
+{
+  "$schema": "../../../types/connection/httpLoginSteps.schema.json",
+  "version": 1,
+  "id": "vodafone-portugal",
+  "evidence": {
+    "class": "B",
+    "source": "https://my.vodafone.pt/",
+    "reviewed": "2026-10-12"
+  },
+  "credentialOrigins": [],
+  "loginSteps": [
+    {
+      "kind": "form",
+      "paths": ["/main.html"],
+      "selectors": {
+        "username": "#login-register-login-list form[method=\"post\"] input#login__name[name=\"login__name\"]",
+        "password": "#login-register-login-list form[method=\"post\"] input#login__password[name=\"login__password\"][type=\"password\"]"
+      }
+    },
+    {
+      "kind": "submit",
+      "submission": "click",
+      "selectors": {
+        "control": "#login-register-login-list form[method=\"post\"] button#login--button[type=\"submit\"]"
+      }
+    }
+  ]
+}

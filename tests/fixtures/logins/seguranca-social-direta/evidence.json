@@ -1,0 +1,140 @@
+{
+  "$schema": "../evidence.schema.json",
+  "version": 1,
+  "id": "seguranca-social-direta",
+  "class": "B",
+  "mechanism": "form",
+  "source": "https://github.com/diegobarbosa88/atualizacao-app-magnetic-place/blob/13a76ea14b7005f9f5f9e6a3576f7cab6e484f4d/api/_obterDeclaracoesRemuneracoesSSD.js",
+  "reviewed": "2026-10-12",
+  "summary": "Social-security number (NISS) and password in a section of the sign-in page (/sso/login on the portal's own origin) that is collapsed until its heading is clicked. The catalog entry lands on the public portal home, which has no form, so the selectors come from public third-party automations, not from the page.",
+  "sources": [
+    {
+      "id": "ssd-rpa",
+      "kind": "secondary",
+      "title": "diegobarbosa88/atualizacao-app-magnetic-place, _obterDeclaracoesRemuneracoesSSD.js: third-party automation of this sign-in, changed 2026-09-09",
+      "url": "https://github.com/diegobarbosa88/atualizacao-app-magnetic-place/blob/13a76ea14b7005f9f5f9e6a3576f7cab6e484f4d/api/_obterDeclaracoesRemuneracoesSSD.js",
+      "commit": "13a76ea14b7005f9f5f9e6a3576f7cab6e484f4d",
+      "lines": "655-678",
+      "retrieved": "2026-10-12",
+      "note": "Opens https://www.seg-social.pt/sso/login?service=https%3A%2F%2Fwww.seg-social.pt%2Fptss%2Fcaslogin (line 657), clicks the element with id toogleAuth (line 196), fills the elements with ids username and password (lines 662-663) and clicks the control labelled Entrar (line 675). Its comments say the section is collapsed by default, quote the heading as a link element with that id (line 182) and say the ids were read from the page (line 257). They describe a verification code sent by e-mail after the password when two-factor authentication is on (lines 24-33 and 337-361)."
+    },
+    {
+      "id": "ateess",
+      "kind": "secondary",
+      "title": "miguelfazenda/DownloadPDFs-ATeSS, autenticacao.py: third-party automation, changed 2026-03-14",
+      "url": "https://github.com/miguelfazenda/DownloadPDFs-ATeSS/blob/f7fec59007a55251f7346b716c7a4864d5c43390/novo/autenticacao.py",
+      "commit": "f7fec59007a55251f7346b716c7a4864d5c43390",
+      "lines": "45-65",
+      "retrieved": "2026-10-12",
+      "note": "Opens the same address as ssd-rpa (line 47), clicks the element with id toogleAuth, types into the elements with ids username and password, clicks the element with id submitBtn, then clicks, when present, the elements with ids continuarBtn and btnContinuarSemAtivar (the second one is commented as a two-factor prompt)."
+    },
+    {
+      "id": "powercell",
+      "kind": "secondary",
+      "title": "PowerPrecision/PowerCell, gov_scraper.py: third-party automation, changed 2026-10-10",
+      "url": "https://github.com/PowerPrecision/PowerCell/blob/db1d6eaa8bf9c9d0ec3bff9d3796b995708349a8/backend/services/gov_scraper.py",
+      "commit": "db1d6eaa8bf9c9d0ec3bff9d3796b995708349a8",
+      "lines": "155-199",
+      "retrieved": "2026-10-12",
+      "note": "Says the catalog address only leads to the public home and that the form is at /sso/login, which it opens as https://app.seg-social.pt/sso/login (line 158), a different host from the other two projects. Its candidate lists start with #toogleAuth, #username, #password and #submitBtn; the lists are fallbacks and which entry matches is not recorded."
+    },
+    {
+      "id": "entry-page",
+      "kind": "anonymous-capture",
+      "title": "The catalog entry page, rendered once without an account",
+      "url": "https://www.seg-social.pt/ptss/",
+      "capture": "capture.json",
+      "captureSha256": "66927e7cd1b3326e7f3dc70569a77f78fb57711b51327e1dd13b257a51263b37",
+      "retrieved": "2026-10-12",
+      "note": "Redirects to /ptss/pssd/home on the catalog host itself, the public portal home: a search box, a header menu button, a cookie notice form, no credential field. The sign-in page is another page, which the capture tool does not load."
+    },
+    {
+      "id": "terms",
+      "kind": "vendor-documentation",
+      "title": "Segurança Social Direta: terms and conditions of the service, updated 2024-01-17",
+      "url": "https://www.plataformaservicos.seg-social.pt/psi/assets/docs/Seguranca_Social_Direta_Termos_Condicoes.pdf",
+      "retrieved": "2026-10-12",
+      "note": "States that access uses a password together with the NISS, and that the citizen card or Chave Móvel Digital can be used instead. Its intellectual-property section forbids copying content for commercial use or distribution; it has no clause on automated access. No markup."
+    }
+  ],
+  "selectors": [
+    {
+      "selector": "#toogleAuth",
+      "role": "control",
+      "source": "ssd-rpa",
+      "basis": "observed",
+      "locator": "lines 182 and 196",
+      "note": "The heading that opens the own-account section. Also ateess (line 50) and powercell (line 166)."
+    },
+    {
+      "selector": "input#username",
+      "role": "username",
+      "source": "ssd-rpa",
+      "basis": "observed",
+      "locator": "lines 254-258 and 662",
+      "note": "Also ateess (line 52) and powercell (line 171)."
+    },
+    {
+      "selector": "input#password[type=\"password\"]",
+      "role": "password",
+      "source": "ssd-rpa",
+      "basis": "inferred",
+      "note": "The id is in ssd-rpa (lines 257 and 663), ateess (line 54) and powercell (line 179). The type is in no source: it is required here so the password is typed into nothing but a password field."
+    },
+    {
+      "selector": "#submitBtn",
+      "role": "control",
+      "source": "ateess",
+      "basis": "observed",
+      "locator": "line 56",
+      "note": "Also powercell (line 185). ssd-rpa clicks the control by its label, Entrar, without naming an id."
+    }
+  ],
+  "fixtures": [
+    {
+      "file": "fixture.html",
+      "path": "/ptss/pssd/home",
+      "derivedFrom": ["entry-page"],
+      "note": "The first document of the flow: the public portal home the catalog entry redirects to. No step runs on it."
+    },
+    {
+      "file": "fixture.login.html",
+      "path": "/sso/login",
+      "derivedFrom": ["ssd-rpa", "ateess", "powercell"],
+      "note": "The sign-in page with the own-account section open. The sources give ids, not markup: the kind of element behind submitBtn and the form around the fields are assumed. Nothing here was seen on the page itself."
+    }
+  ],
+  "staysInteractive": [
+    {
+      "kind": "other",
+      "note": "Reaching the sign-in page: the catalog entry is the public portal home, and the user opens its sign-in action. After the password, ateess clicks a prompt with id continuarBtn when one is shown; the steps do not."
+    },
+    {
+      "kind": "email-code",
+      "note": "With two-factor authentication on, ssd-rpa describes a verification code sent by e-mail and a field labelled for it after the password. ateess names a prompt that offers to turn two-factor authentication on. Neither page was observed."
+    },
+    {
+      "kind": "single-sign-on",
+      "note": "Citizen card and Chave Móvel Digital, offered on the same page per the terms and ssd-rpa, are not automated."
+    },
+    {
+      "kind": "consent",
+      "note": "A cookie notice is fixed to the bottom of the portal pages (form#cookieForm in the capture; ssd-rpa dismisses it before working on a page)."
+    }
+  ],
+  "unverified": [
+    "The sign-in page was NOT observed for this review. Its layout is inferred from three third-party projects: miguelfazenda/DownloadPDFs-ATeSS (2026-03-14), diegobarbosa88/atualizacao-app-magnetic-place (2026-09-09, whose author says the ids were read from the page) and PowerPrecision/PowerCell (2026-10-10). The page can change at any time.",
+    "The sign-in page was not loaded or captured: the catalog entry lands on the public portal home.",
+    "That the portal's own sign-in action leads to /sso/login on www.seg-social.pt. Two projects open that address directly; a third opens the same path on app.seg-social.pt, which is not listed as a credential origin.",
+    "Which control of the portal home opens the sign-in page. The capture shows a header menu button and no control that can be told apart as the sign-in action (a capture keeps no text), so the steps have no click on that page.",
+    "What kind of element submitBtn is, and that the password field has the type password.",
+    "That the form is an ordinary POST form, as the submit step assumes. The sources call the page a CAS sign-in page; none shows its form element.",
+    "What a click on the heading does when the section is already open.",
+    "Everything after the submit: the e-mail code page, the prompt to turn on two-factor authentication and the prompt with id continuarBtn."
+  ],
+  "neededFromUser": "The sign-in page (/sso/login, with the Segurança Social user section open) saved from your own browser as an HTML file that contains the two fields, or one sign-in with this layout. Save any page signed out, with no password typed in, as \"Webpage, Complete\"; keep the \"_files\" folder beside the .html and both outside the repository: they can hold the account name.",
+  "schemaGaps": [
+    "The prompts after the password (the control with id continuarBtn, the two-factor offer) cannot be clicked: a click is a pre-step only."
+  ],
+  "notes": "Checked before the capture: robots.txt of www.seg-social.pt disallows nothing, and the service terms have no clause on automated access. The capture loaded the entry page once and sent no input."
+}

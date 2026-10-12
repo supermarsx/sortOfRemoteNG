@@ -1,0 +1,75 @@
+{
+  "$schema": "../evidence.schema.json",
+  "version": 1,
+  "id": "digi-portugal",
+  "class": "B",
+  "mechanism": "form",
+  "source": "https://mydigi.digi.pt/",
+  "reviewed": "2026-10-12",
+  "summary": "One script-driven sign-in panel at /login on the connection's own origin: an identifier field (mobile number or e-mail address), a password field and a button, with no form element around them. A cookie consent dialog covers the page on a first visit.",
+  "sources": [
+    {
+      "id": "page",
+      "kind": "anonymous-capture",
+      "title": "The public My DIGI entry, rendered once without an account",
+      "url": "https://mydigi.digi.pt/",
+      "capture": "capture.json",
+      "captureSha256": "f493c9f95bee5ec01ba9feb41e700495387336989242b98b53769cc7fe333a18",
+      "retrieved": "2026-10-12",
+      "note": "The entry address forwards to /login on the catalog host itself; no other host served the page. The sign-in controls are in the top document; the two other frames belong to the consent tool and hold no control."
+    },
+    {
+      "id": "legal-notice",
+      "kind": "vendor-documentation",
+      "title": "DIGI Portugal: legal notice and conditions of use of the website",
+      "url": "https://www.digi.pt/legal/aviso-legal",
+      "retrieved": "2026-10-12",
+      "note": "Clause 4.5: the access data of My DIGI are a password together with the mobile number given at registration or, for fibre-only customers, the e-mail address. Clause 3.4 forbids reproducing or copying the website's contents; it has no clause on automated access. No markup."
+    }
+  ],
+  "selectors": [
+    {
+      "selector": "#AuthLoginStep input#AuthLoginStepUser[type=\"text\"]",
+      "role": "username",
+      "source": "page",
+      "basis": "observed",
+      "locator": "frames[0], div#AuthLoginStep, div[data-cy=user-login], input#AuthLoginStepUser (rendered)"
+    },
+    {
+      "selector": "#AuthLoginStep input#AuthLoginStepPassword[type=\"password\"]",
+      "role": "password",
+      "source": "page",
+      "basis": "observed",
+      "locator": "frames[0], div#AuthLoginStep, div[data-cy=password-login], input#AuthLoginStepPassword (rendered)"
+    },
+    {
+      "selector": "#AuthLoginStep #AuthLoginStepButton button.button-login",
+      "role": "control",
+      "source": "page",
+      "basis": "observed",
+      "locator": "frames[0], div#AuthLoginStep, div#AuthLoginStepButton, button.button-login (rendered, disabled while the fields are empty)"
+    }
+  ],
+  "fixtures": [
+    {
+      "file": "fixture.html",
+      "path": "/login",
+      "derivedFrom": ["page"],
+      "note": "In the capture the button is disabled until the fields have a value. The fixture has no script, so it leaves the disabled attribute out. The button's unusual type value, principal, is the page's own."
+    }
+  ],
+  "staysInteractive": [
+    {
+      "kind": "consent",
+      "note": "A cookie consent dialog (div#CybotCookiebotDialog, overlay template) was displayed over the page in the capture. It is not answered by the steps."
+    }
+  ],
+  "unverified": [
+    "The page can change at any time. This is one anonymous render on the review date; the generated class names seen in it are not used by any selector.",
+    "Nothing after the button was observed, because no account was used: whether a code by SMS or e-mail, or any other check, follows the password.",
+    "That the button becomes enabled when the application types into the two fields, and that a click on it signs in. The panel has no form element, so the page's script handles the button.",
+    "Whether the consent dialog has to be answered before the fields accept input."
+  ],
+  "neededFromUser": "One sign-in with this layout, or the page that follows the password saved as \"Webpage, Complete\" if one is shown. Save any page signed out and with no password typed in; keep the \"_files\" folder beside the .html and both outside the repository: they can hold the account name.",
+  "notes": "Checked before the capture: robots.txt of mydigi.digi.pt disallows nothing, and the legal notice has no clause on automated access. The capture loaded the page once and sent no input."
+}

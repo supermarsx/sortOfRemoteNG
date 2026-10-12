@@ -1,0 +1,90 @@
+{
+  "$schema": "../evidence.schema.json",
+  "version": 1,
+  "id": "vodafone-portugal",
+  "class": "B",
+  "mechanism": "form",
+  "source": "https://my.vodafone.pt/",
+  "reviewed": "2026-10-12",
+  "summary": "One POST form with a user name and a password in the sign-in panel of /main.html, on the connection's own origin. The page carries an invisible reCAPTCHA, and the operator's conditions say a code sent by SMS follows the password.",
+  "sources": [
+    {
+      "id": "page",
+      "kind": "anonymous-capture",
+      "title": "The public My Vodafone entry, rendered once without an account",
+      "url": "https://my.vodafone.pt/",
+      "capture": "capture.json",
+      "captureSha256": "dc6149a707eff881881a54455f058ea0f12675689b0abbb07db5a46eb9d87dae",
+      "retrieved": "2026-10-12",
+      "note": "The entry address forwards to /main.html on the catalog host itself; no other host served the page. The sign-in panel is in the top document, inside the header menu, and was rendered. The other frames are empty or belong to reCAPTCHA; none holds a sign-in control."
+    },
+    {
+      "id": "conditions",
+      "kind": "vendor-documentation",
+      "title": "Vodafone Portugal: conditions of the My Vodafone service",
+      "url": "https://www.vodafone.pt/info/termos-condicoes/my-vodafone-no-pc.html",
+      "retrieved": "2026-10-12",
+      "note": "States that a second factor applies to both ways of signing in: with the registration credentials, the password and then a verification code sent by SMS; with the customer's own Vodafone number, a code by SMS and a PIN. It forbids reproducing the service's content without permission; it has no clause on automated access. No markup."
+    }
+  ],
+  "selectors": [
+    {
+      "selector": "#login-register-login-list form[method=\"post\"] input#login__name[name=\"login__name\"]",
+      "role": "username",
+      "source": "page",
+      "basis": "observed",
+      "locator": "frames[0], ul#login-register-login-list, second li, form (method post), input#login__name (type text, rendered)",
+      "note": "The id is used because a hidden password-recovery form in the same list has another input with the same name."
+    },
+    {
+      "selector": "#login-register-login-list form[method=\"post\"] input#login__password[name=\"login__password\"][type=\"password\"]",
+      "role": "password",
+      "source": "page",
+      "basis": "observed",
+      "locator": "frames[0], ul#login-register-login-list, second li, form (method post), input#login__password (rendered)"
+    },
+    {
+      "selector": "#login-register-login-list form[method=\"post\"] button#login--button[type=\"submit\"]",
+      "role": "control",
+      "source": "page",
+      "basis": "observed",
+      "locator": "frames[0], ul#login-register-login-list, second li, form (method post), button#login--button (rendered, disabled while the fields are empty)"
+    }
+  ],
+  "fixtures": [
+    {
+      "file": "fixture.html",
+      "path": "/main.html",
+      "derivedFrom": ["page"],
+      "note": "In the capture the submit button is disabled until the fields have a value. The fixture has no script, so it leaves the disabled attribute out. The hidden recovery form is kept because its input shares the name of the user-name field."
+    }
+  ],
+  "staysInteractive": [
+    {
+      "kind": "captcha",
+      "note": "The capture has a reCAPTCHA frame and response field, neither displayed: an invisible reCAPTCHA. A challenge can appear when the form is submitted."
+    },
+    {
+      "kind": "sms-code",
+      "note": "Per the operator's conditions: a verification code sent by SMS after the password. The page that asks for it was not observed."
+    },
+    {
+      "kind": "consent",
+      "note": "A cookie dialog (div#cookiesModal) is part of the page. It is not answered by the steps."
+    },
+    {
+      "kind": "other",
+      "note": "Signing in with the customer's own Vodafone number (code by SMS and a PIN) is a different path and is not automated."
+    }
+  ],
+  "unverified": [
+    "The page can change at any time. This is one anonymous render on the review date.",
+    "Nothing after the submit was observed, because no account was used: the reCAPTCHA outcome and the SMS code page.",
+    "What the page's script does on submit. The form declares the method post and no action, and the reCAPTCHA response field is outside the form, so a script very likely takes part; the steps click the form's own submit button.",
+    "That the submit button becomes enabled when the application types into the two fields.",
+    "That the sign-in panel is in view without opening the header menu. The capture reports the form as rendered, which says it has a layout box, not that it is on screen.",
+    "Whether another host ever takes over the password step. The in-repository review of 2026-10-06 (docs/portugal-portal-profiles.md) mentions authorisation addresses on login.vodafone.pt; the capture shows the form on my.vodafone.pt, and no step runs anywhere else."
+  ],
+  "neededFromUser": "One sign-in with this layout, or the sign-in panel and the code page that follows it saved as \"Webpage, Complete\". Save any page signed out and with no password typed in; keep the \"_files\" folder beside the .html and both outside the repository: they can hold the account name.",
+  "notes": "Checked before the capture: robots.txt of my.vodafone.pt disallows /LOGIN and /LOGOUT but neither the entry address nor /main.html, where the form is, and the service conditions have no clause on automated access. Only the catalog entry address was loaded, once, with no input."
+}

@@ -1,0 +1,1931 @@
+{
+  "schema": "sorng-login-capture/1",
+  "sanitizer": 3,
+  "applicationId": "digi-portugal",
+  "capturedAt": "2026-10-12",
+  "mode": "hosted",
+  "engine": "Microsoft Edge headless (Edg/146.0.3856.84)",
+  "source": {
+    "kind": "hosted-login",
+    "requestedUrl": "https://mydigi.digi.pt/",
+    "finalUrl": "https://mydigi.digi.pt/login",
+    "httpStatus": 200
+  },
+  "limits": {
+    "navigations": 1,
+    "scriptsExecuted": true,
+    "loadEvent": true,
+    "settleMs": 12000,
+    "dialogsDismissed": 0,
+    "input": "none",
+    "truncated": false,
+    "redirects": "public-hosts-only"
+  },
+  "network": {
+    "contacted": [
+      "consent.cookiebot.com:443",
+      "consentcdn.cookiebot.com:443",
+      "mydigi.digi.pt:443",
+      "www.googletagmanager.com:443"
+    ],
+    "refused": 1
+  },
+  "observations": ["cross-origin-frame", "password-field"],
+  "frames": [
+    {
+      "index": 0,
+      "parent": null,
+      "name": null,
+      "sameOriginAsTop": true,
+      "url": "https://mydigi.digi.pt/login",
+      "controls": 64,
+      "tree": {
+        "tag": "html",
+        "attributes": {
+          "lang": "pt"
+        },
+        "children": [
+          {
+            "tag": "body",
+            "attributes": {
+              "style": null
+            },
+            "children": [
+              {
+                "tag": "div",
+                "attributes": {
+                  "id": "CybotCookiebotDialog",
+                  "name": "CybotCookiebotDialog",
+                  "role": "region",
+                  "aria-labelledby": "CybotCookiebotDialogBodyContentTitle",
+                  "tabindex": "-1",
+                  "lang": "en",
+                  "dir": "ltr",
+                  "data-nosnippet": "",
+                  "ng-non-bindable": "",
+                  "style": null,
+                  "data-template": "overlay",
+                  "class": "CybotCookiebotDialogActive"
+                },
+                "rendered": true,
+                "children": [
+                  {
+                    "tag": "div",
+                    "attributes": {
+                      "class": "CybotCookiebotDialogContentWrapper"
+                    },
+                    "children": [
+                      {
+                        "tag": "div",
+                        "attributes": {
+                          "id": "CybotCookiebotDialogHeader"
+                        },
+                        "children": [
+                          {
+                            "tag": "div",
+                            "attributes": {
+                              "id": "CybotCookiebotDialogHeaderLogosWrapper"
+                            },
+                            "children": [
+                              {
+                                "tag": "a",
+                                "attributes": {
+                                  "href": "https://www.cookiebot.com/en/what-is-behind-powered-by-cookiebot/",
+                                  "rel": "noopener nofollow",
+                                  "target": "_blank",
+                                  "id": "CybotCookiebotDialogPoweredbyCybot",
+                                  "aria-label": null,
+                                  "tabindex": "-1"
+                                },
+                                "rendered": true
+                              }
+                            ]
+                          }
+                        ]
+                      },
+                      {
+                        "tag": "div",
+                        "attributes": {
+                          "id": "CybotCookiebotDialogNav",
+                          "class": "CybotCookiebotScrollAreaSide"
+                        },
+                        "children": [
+                          {
+                            "tag": "ul",
+                            "attributes": {
+                              "id": "CybotCookiebotDialogNavList",
+                              "class": "CybotCookiebotDialogNavItems",
+                              "role": "tablist"
+                            },
+                            "rendered": true,
+                            "children": [
+                              {
+                                "tag": "li",
+                                "attributes": {
+                                  "class": "CybotCookiebotDialogNavItem",
+                                  "role": "presentation"
+                                },
+                                "children": [
+                                  {
+                                    "tag": "a",
+                                    "attributes": {
+                                      "id": "CybotCookiebotDialogNavDeclaration",
+                                      "class": "CybotCookiebotDialogNavItemLink CybotCookiebotDialogActive",
+                                      "href": "#",
+                                      "data-target": "CybotCookiebotDialogBody",
+                                      "tabindex": "0",
+                                      "role": "tab",
+                                      "aria-selected": "true",
+                                      "aria-controls": "CybotCookiebotDialogBody",
+                                      "lang": "en"
+                                    },
+                                    "rendered": true
+                                  }
+                                ]
+                              },
+                              {
+                                "tag": "li",
+                                "attributes": {
+                                  "class": "CybotCookiebotDialogNavItem",
+                                  "role": "presentation"
+                                },
+                                "children": [
+                                  {
+                                    "tag": "a",
+                                    "attributes": {
+                                      "id": "CybotCookiebotDialogNavDetails",
+                                      "class": "CybotCookiebotDialogNavItemLink",
+                                      "href": "#",
+                                      "data-target": "CybotCookiebotDialogTabContentDetails",
+                                      "tabindex": "-1",
+                                      "role": "tab",
+                                      "aria-selected": "false",
+                                      "aria-controls": "CybotCookiebotDialogTabContentDetails",
+                                      "lang": "en"
+                                    },
+                                    "rendered": true
+                                  }
+                                ]
+                              },
+                              {
+                                "tag": "li",
+                                "attributes": {
+                                  "id": "CybotCookiebotDialogNavItemAdSettings",
+                                  "class": "CybotCookiebotDialogNavItem CybotCookiebotDialogHide",
+                                  "role": "presentation"
+                                },
+                                "children": [
+                                  {
+                                    "tag": "a",
+                                    "attributes": {
+                                      "id": "CybotCookiebotDialogNavAdSettings",
+                                      "class": "CybotCookiebotDialogNavItemLink",
+                                      "href": "#",
+                                      "data-target": "CybotCookiebotDialogDetailBodyContentTextIABv2",
+                                      "tabindex": "-1",
+                                      "role": "tab",
+                                      "aria-selected": "false",
+                                      "aria-controls": "CybotCookiebotDialogDetailBodyContentTextIABv2",
+                                      "lang": "en"
+                                    },
+                                    "rendered": false
+                                  }
+                                ]
+                              },
+                              {
+                                "tag": "li",
+                                "attributes": {
+                                  "class": "CybotCookiebotDialogNavItem",
+                                  "role": "presentation"
+                                },
+                                "children": [
+                                  {
+                                    "tag": "a",
+                                    "attributes": {
+                                      "id": "CybotCookiebotDialogNavAbout",
+                                      "class": "CybotCookiebotDialogNavItemLink",
+                                      "href": "#",
+                                      "data-target": "CybotCookiebotDialogDetailBodyContentTextAbout",
+                                      "tabindex": "-1",
+                                      "role": "tab",
+                                      "aria-selected": "false",
+                                      "aria-controls": "CybotCookiebotDialogDetailBodyContentTextAbout",
+                                      "lang": "en"
+                                    },
+                                    "rendered": true
+                                  }
+                                ]
+                              }
+                            ]
+                          }
+                        ]
+                      },
+                      {
+                        "tag": "div",
+                        "attributes": {
+                          "id": "CybotCookiebotDialogTabContent"
+                        },
+                        "children": [
+                          {
+                            "tag": "div",
+                            "attributes": {
+                              "id": "CybotCookiebotDialogBody",
+                              "class": "CybotCookiebotDialogTabPanel",
+                              "role": "tabpanel",
+                              "aria-labelledby": "CybotCookiebotDialogNavDeclaration",
+                              "lang": "en"
+                            },
+                            "children": [
+                              {
+                                "tag": "div",
+                                "attributes": {
+                                  "class": "CybotCookiebotScrollContainer"
+                                },
+                                "children": [
+                                  {
+                                    "tag": "div",
+                                    "attributes": {
+                                      "id": "CybotCookiebotDialogBodyContent",
+                                      "class": "CybotCookiebotScrollArea"
+                                    },
+                                    "children": [
+                                      {
+                                        "tag": "div",
+                                        "attributes": {
+                                          "id": "CybotCookiebotDialogBodyContentDsrText",
+                                          "class": "CybotCookiebotDialogDsrFormUrlDiv",
+                                          "lang": "en",
+                                          "style": null
+                                        },
+                                        "children": [
+                                          {
+                                            "tag": "a",
+                                            "attributes": {
+                                              "href": "[",
+                                              "rel": "noopener noreferrer nofollow",
+                                              "target": "_blank",
+                                              "id": "CybotCookiebotDialogDsrFormUrl"
+                                            },
+                                            "rendered": false
+                                          }
+                                        ]
+                                      }
+                                    ]
+                                  }
+                                ]
+                              },
+                              {
+                                "tag": "div",
+                                "attributes": {
+                                  "class": "CybotCookiebotDialogBodyBottomWrapper"
+                                },
+                                "children": [
+                                  {
+                                    "tag": "div",
+                                    "attributes": {
+                                      "id": "CybotCookiebotDialogBodyLevelWrapper",
+                                      "class": "CybotCookiebotDialogHide"
+                                    },
+                                    "children": [
+                                      {
+                                        "tag": "div",
+                                        "attributes": {
+                                          "id": "CybotCookiebotDialogBodyLevelButtons"
+                                        },
+                                        "children": [
+                                          {
+                                            "tag": "div",
+                                            "attributes": {
+                                              "id": "CybotCookiebotDialogBodyLevelButtonsTable"
+                                            },
+                                            "children": [
+                                              {
+                                                "tag": "div",
+                                                "attributes": {
+                                                  "id": "CybotCookiebotDialogBodyLevelButtonsRow"
+                                                },
+                                                "children": [
+                                                  {
+                                                    "tag": "div",
+                                                    "attributes": {
+                                                      "id": "CybotCookiebotDialogBodyLevelButtonsSelectPane"
+                                                    },
+                                                    "children": [
+                                                      {
+                                                        "tag": "div",
+                                                        "attributes": {
+                                                          "role": "group",
+                                                          "aria-labelledby": "CybotCookiebotDialogBodyLevelButtonsSelectPaneLegend"
+                                                        },
+                                                        "children": [
+                                                          {
+                                                            "tag": "div",
+                                                            "attributes": {
+                                                              "id": "CybotCookiebotDialogBodyFieldsetInnerContainer"
+                                                            },
+                                                            "children": [
+                                                              {
+                                                                "tag": "div",
+                                                                "attributes": {
+                                                                  "class": "CybotCookiebotDialogBodyLevelButtonWrapper"
+                                                                },
+                                                                "children": [
+                                                                  {
+                                                                    "tag": "label",
+                                                                    "attributes": {
+                                                                      "class": "CybotCookiebotDialogBodyLevelButtonLabel",
+                                                                      "for": "CybotCookiebotDialogBodyLevelButtonNecessary"
+                                                                    },
+                                                                    "rendered": false
+                                                                  },
+                                                                  {
+                                                                    "tag": "div",
+                                                                    "attributes": {
+                                                                      "class": "CybotCookiebotDialogBodyLevelButtonSliderWrapper CybotCookiebotDialogBodyLevelButtonSliderWrapperDisabled"
+                                                                    },
+                                                                    "children": [
+                                                                      {
+                                                                        "tag": "input",
+                                                                        "attributes": {
+                                                                          "type": "checkbox",
+                                                                          "id": "CybotCookiebotDialogBodyLevelButtonNecessary",
+                                                                          "class": "CybotCookiebotDialogBodyLevelButton CybotCookiebotDialogBodyLevelButtonDisabled",
+                                                                          "disabled": "disabled",
+                                                                          "checked": "checked"
+                                                                        },
+                                                                        "rendered": false
+                                                                      }
+                                                                    ]
+                                                                  }
+                                                                ]
+                                                              },
+                                                              {
+                                                                "tag": "div",
+                                                                "attributes": {
+                                                                  "class": "CybotCookiebotDialogBodyLevelButtonWrapper"
+                                                                },
+                                                                "children": [
+                                                                  {
+                                                                    "tag": "label",
+                                                                    "attributes": {
+                                                                      "class": "CybotCookiebotDialogBodyLevelButtonLabel",
+                                                                      "for": "CybotCookiebotDialogBodyLevelButtonPreferences"
+                                                                    },
+                                                                    "rendered": false
+                                                                  },
+                                                                  {
+                                                                    "tag": "div",
+                                                                    "attributes": {
+                                                                      "class": "CybotCookiebotDialogBodyLevelButtonSliderWrapper"
+                                                                    },
+                                                                    "children": [
+                                                                      {
+                                                                        "tag": "input",
+                                                                        "attributes": {
+                                                                          "type": "checkbox",
+                                                                          "id": "CybotCookiebotDialogBodyLevelButtonPreferences",
+                                                                          "class": "CybotCookiebotDialogBodyLevelButton CybotCookiebotDialogBodyLevelConsentCheckbox",
+                                                                          "data-target": "CybotCookiebotDialogBodyLevelButtonPreferencesInline",
+                                                                          "checked": "checked",
+                                                                          "tabindex": "0",
+                                                                          "role": "switch"
+                                                                        },
+                                                                        "rendered": false
+                                                                      }
+                                                                    ]
+                                                                  }
+                                                                ]
+                                                              },
+                                                              {
+                                                                "tag": "div",
+                                                                "attributes": {
+                                                                  "class": "CybotCookiebotDialogBodyLevelButtonWrapper"
+                                                                },
+                                                                "children": [
+                                                                  {
+                                                                    "tag": "label",
+                                                                    "attributes": {
+                                                                      "class": "CybotCookiebotDialogBodyLevelButtonLabel",
+                                                                      "for": "CybotCookiebotDialogBodyLevelButtonStatistics"
+                                                                    },
+                                                                    "rendered": false
+                                                                  },
+                                                                  {
+                                                                    "tag": "div",
+                                                                    "attributes": {
+                                                                      "class": "CybotCookiebotDialogBodyLevelButtonSliderWrapper"
+                                                                    },
+                                                                    "children": [
+                                                                      {
+                                                                        "tag": "input",
+                                                                        "attributes": {
+                                                                          "type": "checkbox",
+                                                                          "id": "CybotCookiebotDialogBodyLevelButtonStatistics",
+                                                                          "class": "CybotCookiebotDialogBodyLevelButton CybotCookiebotDialogBodyLevelConsentCheckbox",
+                                                                          "data-target": "CybotCookiebotDialogBodyLevelButtonStatisticsInline",
+                                                                          "checked": "checked",
+                                                                          "tabindex": "0",
+                                                                          "role": "switch"
+                                                                        },
+                                                                        "rendered": false
+                                                                      }
+                                                                    ]
+                                                                  }
+                                                                ]
+                                                              },
+                                                              {
+                                                                "tag": "div",
+                                                                "attributes": {
+                                                                  "class": "CybotCookiebotDialogBodyLevelButtonWrapper"
+                                                                },
+                                                                "children": [
+                                                                  {
+                                                                    "tag": "label",
+                                                                    "attributes": {
+                                                                      "class": "CybotCookiebotDialogBodyLevelButtonLabel",
+                                                                      "for": "CybotCookiebotDialogBodyLevelButtonMarketing"
+                                                                    },
+                                                                    "rendered": false
+                                                                  },
+                                                                  {
+                                                                    "tag": "div",
+                                                                    "attributes": {
+                                                                      "class": "CybotCookiebotDialogBodyLevelButtonSliderWrapper"
+                                                                    },
+                                                                    "children": [
+                                                                      {
+                                                                        "tag": "input",
+                                                                        "attributes": {
+                                                                          "type": "checkbox",
+                                                                          "id": "CybotCookiebotDialogBodyLevelButtonMarketing",
+                                                                          "class": "CybotCookiebotDialogBodyLevelButton CybotCookiebotDialogBodyLevelConsentCheckbox",
+                                                                          "data-target": "CybotCookiebotDialogBodyLevelButtonMarketingInline",
+                                                                          "checked": "checked",
+                                                                          "tabindex": "0",
+                                                                          "role": "switch"
+                                                                        },
+                                                                        "rendered": false
+                                                                      }
+                                                                    ]
+                                                                  }
+                                                                ]
+                                                              }
+                                                            ]
+                                                          }
+                                                        ]
+                                                      }
+                                                    ]
+                                                  }
+                                                ]
+                                              }
+                                            ]
+                                          }
+                                        ]
+                                      }
+                                    ]
+                                  },
+                                  {
+                                    "tag": "div",
+                                    "attributes": {
+                                      "id": "CybotCookiebotDialogBodyEdgeMoreDetails"
+                                    },
+                                    "children": [
+                                      {
+                                        "tag": "a",
+                                        "attributes": {
+                                          "id": "CybotCookiebotDialogBodyEdgeMoreDetailsLink",
+                                          "href": "#",
+                                          "class": ""
+                                        },
+                                        "rendered": false
+                                      }
+                                    ]
+                                  }
+                                ]
+                              }
+                            ]
+                          },
+                          {
+                            "tag": "div",
+                            "attributes": {
+                              "class": "CybotCookiebotScrollContainer CybotCookiebotDialogHide"
+                            },
+                            "children": [
+                              {
+                                "tag": "div",
+                                "attributes": {
+                                  "id": "CybotCookiebotDialogTabContentDetails",
+                                  "class": "CybotCookiebotDialogTabPanel CybotCookiebotDialogHide CybotCookiebotScrollArea",
+                                  "role": "tabpanel",
+                                  "aria-labelledby": "CybotCookiebotDialogNavDetails",
+                                  "lang": "en"
+                                },
+                                "children": [
+                                  {
+                                    "tag": "div",
+                                    "attributes": {
+                                      "id": "CybotCookiebotDialogDetailBody"
+                                    },
+                                    "children": [
+                                      {
+                                        "tag": "div",
+                                        "attributes": {
+                                          "id": "CybotCookiebotDialogDetailBodyContent"
+                                        },
+                                        "children": [
+                                          {
+                                            "tag": "div",
+                                            "attributes": {
+                                              "id": "CybotCookiebotDialogDetailBodyContentTextOverview",
+                                              "lang": "en"
+                                            },
+                                            "children": [
+                                              {
+                                                "tag": "div",
+                                                "attributes": {
+                                                  "id": "CybotCookiebotDialogDetailBodyContentCookieContainer"
+                                                },
+                                                "children": [
+                                                  {
+                                                    "tag": "ul",
+                                                    "attributes": {
+                                                      "id": "CybotCookiebotDialogDetailBodyContentCookieContainerTypes"
+                                                    },
+                                                    "children": [
+                                                      {
+                                                        "tag": "li",
+                                                        "attributes": {
+                                                          "class": "CookieCard"
+                                                        },
+                                                        "children": [
+                                                          {
+                                                            "tag": "div",
+                                                            "attributes": {
+                                                              "id": "CybotCookiebotDialogDetailBodyContentCookieContainerNecessaryCard"
+                                                            },
+                                                            "children": [
+                                                              {
+                                                                "tag": "div",
+                                                                "attributes": {
+                                                                  "class": "CybotCookiebotDialogDetailBodyContentCookieContainerHeader"
+                                                                },
+                                                                "children": [
+                                                                  {
+                                                                    "tag": "button",
+                                                                    "attributes": {
+                                                                      "id": "CybotCookiebotDialogDetailBodyContentCookieContainerNecessary",
+                                                                      "class": "CybotCookiebotDialogDetailBodyContentCookieContainerButton CybotCookiebotDialogCollapsed",
+                                                                      "lang": "en",
+                                                                      "data-target": "CybotCookiebotDialogDetailBodyContentCookieTabsNecessary",
+                                                                      "aria-label": null,
+                                                                      "aria-controls": "CybotCookiebotDialogDetailBodyContentCookieTabsNecessary",
+                                                                      "aria-expanded": "false"
+                                                                    },
+                                                                    "rendered": false
+                                                                  },
+                                                                  {
+                                                                    "tag": "div",
+                                                                    "attributes": {
+                                                                      "class": "CybotCookiebotDialogBodyLevelButtonSliderWrapper CybotCookiebotDialogBodyLevelButtonSliderWrapperDisabled"
+                                                                    },
+                                                                    "children": [
+                                                                      {
+                                                                        "tag": "div",
+                                                                        "attributes": {
+                                                                          "role": "group",
+                                                                          "class": "CybotCookiebotDialogBodyLevelButtonSliderWrapperFullWidth"
+                                                                        },
+                                                                        "children": [
+                                                                          {
+                                                                            "tag": "input",
+                                                                            "attributes": {
+                                                                              "type": "checkbox",
+                                                                              "id": "CybotCookiebotDialogBodyLevelButtonNecessaryInline",
+                                                                              "aria-labelledby": "CybotCookiebotDialogBodyLevelButtonNecessaryInlineLabel",
+                                                                              "class": "CybotCookiebotDialogBodyLevelButton CybotCookiebotDialogBodyLevelButtonDisabled",
+                                                                              "disabled": "disabled",
+                                                                              "checked": "checked",
+                                                                              "role": "switch",
+                                                                              "aria-checked": "true"
+                                                                            },
+                                                                            "rendered": false
+                                                                          }
+                                                                        ]
+                                                                      }
+                                                                    ]
+                                                                  }
+                                                                ]
+                                                              },
+                                                              {
+                                                                "tag": "div",
+                                                                "attributes": {
+                                                                  "id": "CybotCookiebotDialogDetailBodyContentCookieTabsNecessary",
+                                                                  "class": "CollapseCard CybotCookiebotDialogHide"
+                                                                },
+                                                                "children": [
+                                                                  {
+                                                                    "tag": "div",
+                                                                    "attributes": {
+                                                                      "class": "CybotCookiebotDialogDetailBodyContentCookieTypeTableContainer"
+                                                                    },
+                                                                    "children": [
+                                                                      {
+                                                                        "tag": "ul",
+                                                                        "attributes": {
+                                                                          "class": "CybotCookiebotDialogDetailBodyContentCookieTabContent"
+                                                                        },
+                                                                        "children": [
+                                                                          {
+                                                                            "tag": "li",
+                                                                            "attributes": {
+                                                                              "class": "CybotCookiebotDialogDetailBodyContentCookieGroup"
+                                                                            },
+                                                                            "children": [
+                                                                              {
+                                                                                "tag": "a",
+                                                                                "attributes": {
+                                                                                  "class": "CybotCookiebotDialogDetailBodyContentCookieProvider CybotCookiebotDialogCollapsed",
+                                                                                  "role": "button",
+                                                                                  "aria-expanded": "false",
+                                                                                  "href": "#"
+                                                                                },
+                                                                                "rendered": false
+                                                                              }
+                                                                            ]
+                                                                          },
+                                                                          {
+                                                                            "tag": "li",
+                                                                            "attributes": {
+                                                                              "class": "CybotCookiebotDialogDetailBodyContentCookieGroup"
+                                                                            },
+                                                                            "children": [
+                                                                              {
+                                                                                "tag": "a",
+                                                                                "attributes": {
+                                                                                  "class": "CybotCookiebotDialogDetailBodyContentCookieProvider CybotCookiebotDialogCollapsed",
+                                                                                  "role": "button",
+                                                                                  "aria-expanded": "false",
+                                                                                  "href": "#"
+                                                                                },
+                                                                                "rendered": false
+                                                                              }
+                                                                            ]
+                                                                          },
+                                                                          {
+                                                                            "tag": "li",
+                                                                            "attributes": {
+                                                                              "class": "CybotCookiebotDialogDetailBodyContentCookieGroup"
+                                                                            },
+                                                                            "children": [
+                                                                              {
+                                                                                "tag": "a",
+                                                                                "attributes": {
+                                                                                  "class": "CybotCookiebotDialogDetailBodyContentCookieProvider CybotCookiebotDialogCollapsed",
+                                                                                  "role": "button",
+                                                                                  "aria-expanded": "false",
+                                                                                  "href": "#"
+                                                                                },
+                                                                                "rendered": false
+                                                                              }
+                                                                            ]
+                                                                          },
+                                                                          {
+                                                                            "tag": "li",
+                                                                            "attributes": {
+                                                                              "class": "CybotCookiebotDialogDetailBodyContentCookieGroup"
+                                                                            },
+                                                                            "children": [
+                                                                              {
+                                                                                "tag": "a",
+                                                                                "attributes": {
+                                                                                  "class": "CybotCookiebotDialogDetailBodyContentCookieProvider CybotCookiebotDialogCollapsed",
+                                                                                  "role": "button",
+                                                                                  "aria-expanded": "false",
+                                                                                  "href": "#"
+                                                                                },
+                                                                                "rendered": false
+                                                                              }
+                                                                            ]
+                                                                          },
+                                                                          {
+                                                                            "tag": "li",
+                                                                            "attributes": {
+                                                                              "class": "CybotCookiebotDialogDetailBodyContentCookieGroup"
+                                                                            },
+                                                                            "children": [
+                                                                              {
+                                                                                "tag": "a",
+                                                                                "attributes": {
+                                                                                  "class": "CybotCookiebotDialogDetailBodyContentCookieProvider CybotCookiebotDialogCollapsed",
+                                                                                  "role": "button",
+                                                                                  "aria-expanded": "false",
+                                                                                  "href": "#"
+                                                                                },
+                                                                                "rendered": false
+                                                                              }
+                                                                            ]
+                                                                          }
+                                                                        ]
+                                                                      }
+                                                                    ]
+                                                                  }
+                                                                ]
+                                                              }
+                                                            ]
+                                                          }
+                                                        ]
+                                                      },
+                                                      {
+                                                        "tag": "li",
+                                                        "attributes": {
+                                                          "class": "CookieCard"
+                                                        },
+                                                        "children": [
+                                                          {
+                                                            "tag": "div",
+                                                            "attributes": {
+                                                              "id": "CybotCookiebotDialogDetailBodyContentCookieContainerPreferenceCard"
+                                                            },
+                                                            "children": [
+                                                              {
+                                                                "tag": "div",
+                                                                "attributes": {
+                                                                  "class": "CybotCookiebotDialogDetailBodyContentCookieContainerHeader"
+                                                                },
+                                                                "children": [
+                                                                  {
+                                                                    "tag": "button",
+                                                                    "attributes": {
+                                                                      "id": "CybotCookiebotDialogDetailBodyContentCookieContainerPreference",
+                                                                      "class": "CybotCookiebotDialogDetailBodyContentCookieContainerButton CybotCookiebotDialogCollapsed",
+                                                                      "lang": "en",
+                                                                      "data-target": "CybotCookiebotDialogDetailBodyContentCookieTabsPreference",
+                                                                      "aria-label": null,
+                                                                      "aria-controls": "CybotCookiebotDialogDetailBodyContentCookieTabsPreference",
+                                                                      "aria-expanded": "false"
+                                                                    },
+                                                                    "rendered": false
+                                                                  },
+                                                                  {
+                                                                    "tag": "div",
+                                                                    "attributes": {
+                                                                      "class": "CybotCookiebotDialogBodyLevelButtonSliderWrapper"
+                                                                    },
+                                                                    "children": [
+                                                                      {
+                                                                        "tag": "div",
+                                                                        "attributes": {
+                                                                          "role": "group",
+                                                                          "class": "CybotCookiebotDialogBodyLevelButtonSliderWrapperFullWidth"
+                                                                        },
+                                                                        "children": [
+                                                                          {
+                                                                            "tag": "input",
+                                                                            "attributes": {
+                                                                              "type": "checkbox",
+                                                                              "id": "CybotCookiebotDialogBodyLevelButtonPreferencesInline",
+                                                                              "aria-labelledby": "CybotCookiebotDialogBodyLevelButtonPreferencesInlineLabel",
+                                                                              "class": "CybotCookiebotDialogBodyLevelButton CybotCookiebotDialogBodyLevelConsentCheckbox",
+                                                                              "data-target": "CybotCookiebotDialogBodyLevelButtonPreferences",
+                                                                              "checked": "checked",
+                                                                              "tabindex": "0",
+                                                                              "role": "switch"
+                                                                            },
+                                                                            "rendered": false
+                                                                          }
+                                                                        ]
+                                                                      }
+                                                                    ]
+                                                                  }
+                                                                ]
+                                                              },
+                                                              {
+                                                                "tag": "div",
+                                                                "attributes": {
+                                                                  "id": "CybotCookiebotDialogDetailBodyContentCookieTabsPreference",
+                                                                  "class": "CollapseCard CybotCookiebotDialogHide"
+                                                                },
+                                                                "children": [
+                                                                  {
+                                                                    "tag": "div",
+                                                                    "attributes": {
+                                                                      "class": "CybotCookiebotDialogDetailBodyContentCookieTypeTableContainer"
+                                                                    },
+                                                                    "children": [
+                                                                      {
+                                                                        "tag": "ul",
+                                                                        "attributes": {
+                                                                          "class": "CybotCookiebotDialogDetailBodyContentCookieTabContent"
+                                                                        },
+                                                                        "children": [
+                                                                          {
+                                                                            "tag": "li",
+                                                                            "attributes": {
+                                                                              "class": "CybotCookiebotDialogDetailBodyContentCookieGroup"
+                                                                            },
+                                                                            "children": [
+                                                                              {
+                                                                                "tag": "a",
+                                                                                "attributes": {
+                                                                                  "class": "CybotCookiebotDialogDetailBodyContentCookieProvider CybotCookiebotDialogCollapsed",
+                                                                                  "role": "button",
+                                                                                  "aria-expanded": "false",
+                                                                                  "href": "#"
+                                                                                },
+                                                                                "rendered": false
+                                                                              }
+                                                                            ]
+                                                                          }
+                                                                        ]
+                                                                      }
+                                                                    ]
+                                                                  }
+                                                                ]
+                                                              }
+                                                            ]
+                                                          }
+                                                        ]
+                                                      },
+                                                      {
+                                                        "tag": "li",
+                                                        "attributes": {
+                                                          "class": "CookieCard"
+                                                        },
+                                                        "children": [
+                                                          {
+                                                            "tag": "div",
+                                                            "attributes": {
+                                                              "id": "CybotCookiebotDialogDetailBodyContentCookieContainerStatisticsCard"
+                                                            },
+                                                            "children": [
+                                                              {
+                                                                "tag": "div",
+                                                                "attributes": {
+                                                                  "class": "CybotCookiebotDialogDetailBodyContentCookieContainerHeader"
+                                                                },
+                                                                "children": [
+                                                                  {
+                                                                    "tag": "button",
+                                                                    "attributes": {
+                                                                      "id": "CybotCookiebotDialogDetailBodyContentCookieContainerStatistics",
+                                                                      "class": "CybotCookiebotDialogDetailBodyContentCookieContainerButton CybotCookiebotDialogCollapsed",
+                                                                      "lang": "en",
+                                                                      "data-target": "CybotCookiebotDialogDetailBodyContentCookieTabsStatistics",
+                                                                      "aria-label": null,
+                                                                      "aria-controls": "CybotCookiebotDialogDetailBodyContentCookieTabsStatistics",
+                                                                      "aria-expanded": "false"
+                                                                    },
+                                                                    "rendered": false
+                                                                  },
+                                                                  {
+                                                                    "tag": "div",
+                                                                    "attributes": {
+                                                                      "class": "CybotCookiebotDialogBodyLevelButtonSliderWrapper"
+                                                                    },
+                                                                    "children": [
+                                                                      {
+                                                                        "tag": "div",
+                                                                        "attributes": {
+                                                                          "role": "group",
+                                                                          "class": "CybotCookiebotDialogBodyLevelButtonSliderWrapperFullWidth"
+                                                                        },
+                                                                        "children": [
+                                                                          {
+                                                                            "tag": "input",
+                                                                            "attributes": {
+                                                                              "type": "checkbox",
+                                                                              "id": "CybotCookiebotDialogBodyLevelButtonStatisticsInline",
+                                                                              "aria-labelledby": "CybotCookiebotDialogBodyLevelButtonStatisticsInlineLabel",
+                                                                              "class": "CybotCookiebotDialogBodyLevelButton CybotCookiebotDialogBodyLevelConsentCheckbox",
+                                                                              "data-target": "CybotCookiebotDialogBodyLevelButtonStatistics",
+                                                                              "checked": "checked",
+                                                                              "tabindex": "0",
+                                                                              "role": "switch"
+                                                                            },
+                                                                            "rendered": false
+                                                                          }
+                                                                        ]
+                                                                      }
+                                                                    ]
+                                                                  }
+                                                                ]
+                                                              },
+                                                              {
+                                                                "tag": "div",
+                                                                "attributes": {
+                                                                  "id": "CybotCookiebotDialogDetailBodyContentCookieTabsStatistics",
+                                                                  "class": "CollapseCard CybotCookiebotDialogHide"
+                                                                },
+                                                                "children": [
+                                                                  {
+                                                                    "tag": "div",
+                                                                    "attributes": {
+                                                                      "class": "CybotCookiebotDialogDetailBodyContentCookieTypeTableContainer"
+                                                                    },
+                                                                    "children": [
+                                                                      {
+                                                                        "tag": "ul",
+                                                                        "attributes": {
+                                                                          "class": "CybotCookiebotDialogDetailBodyContentCookieTabContent"
+                                                                        },
+                                                                        "children": [
+                                                                          {
+                                                                            "tag": "li",
+                                                                            "attributes": {
+                                                                              "class": "CybotCookiebotDialogDetailBodyContentCookieGroup"
+                                                                            },
+                                                                            "children": [
+                                                                              {
+                                                                                "tag": "a",
+                                                                                "attributes": {
+                                                                                  "class": "CybotCookiebotDialogDetailBodyContentCookieProvider CybotCookiebotDialogCollapsed",
+                                                                                  "role": "button",
+                                                                                  "aria-expanded": "false",
+                                                                                  "href": "#"
+                                                                                },
+                                                                                "rendered": false
+                                                                              }
+                                                                            ]
+                                                                          },
+                                                                          {
+                                                                            "tag": "li",
+                                                                            "attributes": {
+                                                                              "class": "CybotCookiebotDialogDetailBodyContentCookieGroup"
+                                                                            },
+                                                                            "children": [
+                                                                              {
+                                                                                "tag": "a",
+                                                                                "attributes": {
+                                                                                  "class": "CybotCookiebotDialogDetailBodyContentCookieProvider CybotCookiebotDialogCollapsed",
+                                                                                  "role": "button",
+                                                                                  "aria-expanded": "false",
+                                                                                  "href": "#"
+                                                                                },
+                                                                                "rendered": false
+                                                                              }
+                                                                            ]
+                                                                          },
+                                                                          {
+                                                                            "tag": "li",
+                                                                            "attributes": {
+                                                                              "class": "CybotCookiebotDialogDetailBodyContentCookieGroup"
+                                                                            },
+                                                                            "children": [
+                                                                              {
+                                                                                "tag": "a",
+                                                                                "attributes": {
+                                                                                  "class": "CybotCookiebotDialogDetailBodyContentCookieProvider CybotCookiebotDialogCollapsed",
+                                                                                  "role": "button",
+                                                                                  "aria-expanded": "false",
+                                                                                  "href": "#"
+                                                                                },
+                                                                                "rendered": false
+                                                                              }
+                                                                            ]
+                                                                          },
+                                                                          {
+                                                                            "tag": "li",
+                                                                            "attributes": {
+                                                                              "class": "CybotCookiebotDialogDetailBodyContentCookieGroup"
+                                                                            },
+                                                                            "children": [
+                                                                              {
+                                                                                "tag": "a",
+                                                                                "attributes": {
+                                                                                  "class": "CybotCookiebotDialogDetailBodyContentCookieProvider CybotCookiebotDialogCollapsed",
+                                                                                  "role": "button",
+                                                                                  "aria-expanded": "false",
+                                                                                  "href": "#"
+                                                                                },
+                                                                                "rendered": false
+                                                                              }
+                                                                            ]
+                                                                          },
+                                                                          {
+                                                                            "tag": "li",
+                                                                            "attributes": {
+                                                                              "class": "CybotCookiebotDialogDetailBodyContentCookieGroup"
+                                                                            },
+                                                                            "children": [
+                                                                              {
+                                                                                "tag": "a",
+                                                                                "attributes": {
+                                                                                  "class": "CybotCookiebotDialogDetailBodyContentCookieProvider CybotCookiebotDialogCollapsed",
+                                                                                  "role": "button",
+                                                                                  "aria-expanded": "false",
+                                                                                  "href": "#"
+                                                                                },
+                                                                                "rendered": false
+                                                                              }
+                                                                            ]
+                                                                          }
+                                                                        ]
+                                                                      }
+                                                                    ]
+                                                                  }
+                                                                ]
+                                                              }
+                                                            ]
+                                                          }
+                                                        ]
+                                                      },
+                                                      {
+                                                        "tag": "li",
+                                                        "attributes": {
+                                                          "class": "CookieCard"
+                                                        },
+                                                        "children": [
+                                                          {
+                                                            "tag": "div",
+                                                            "attributes": {
+                                                              "id": "CybotCookiebotDialogDetailBodyContentCookieContainerAdvertisingCard"
+                                                            },
+                                                            "children": [
+                                                              {
+                                                                "tag": "div",
+                                                                "attributes": {
+                                                                  "class": "CybotCookiebotDialogDetailBodyContentCookieContainerHeader"
+                                                                },
+                                                                "children": [
+                                                                  {
+                                                                    "tag": "button",
+                                                                    "attributes": {
+                                                                      "id": "CybotCookiebotDialogDetailBodyContentCookieContainerAdvertising",
+                                                                      "class": "CybotCookiebotDialogDetailBodyContentCookieContainerButton CybotCookiebotDialogCollapsed",
+                                                                      "lang": "en",
+                                                                      "data-target": "CybotCookiebotDialogDetailBodyContentCookieTabsAdvertising",
+                                                                      "aria-label": null,
+                                                                      "aria-controls": "CybotCookiebotDialogDetailBodyContentCookieTabsAdvertising",
+                                                                      "aria-expanded": "false"
+                                                                    },
+                                                                    "rendered": false
+                                                                  },
+                                                                  {
+                                                                    "tag": "div",
+                                                                    "attributes": {
+                                                                      "class": "CybotCookiebotDialogBodyLevelButtonSliderWrapper"
+                                                                    },
+                                                                    "children": [
+                                                                      {
+                                                                        "tag": "div",
+                                                                        "attributes": {
+                                                                          "role": "group",
+                                                                          "class": "CybotCookiebotDialogBodyLevelButtonSliderWrapperFullWidth"
+                                                                        },
+                                                                        "children": [
+                                                                          {
+                                                                            "tag": "input",
+                                                                            "attributes": {
+                                                                              "type": "checkbox",
+                                                                              "id": "CybotCookiebotDialogBodyLevelButtonMarketingInline",
+                                                                              "aria-labelledby": "CybotCookiebotDialogBodyLevelButtonMarketingInlineLabel",
+                                                                              "class": "CybotCookiebotDialogBodyLevelButton CybotCookiebotDialogBodyLevelConsentCheckbox",
+                                                                              "data-target": "CybotCookiebotDialogBodyLevelButtonMarketing",
+                                                                              "checked": "checked",
+                                                                              "tabindex": "0",
+                                                                              "role": "switch"
+                                                                            },
+                                                                            "rendered": false
+                                                                          }
+                                                                        ]
+                                                                      }
+                                                                    ]
+                                                                  }
+                                                                ]
+                                                              },
+                                                              {
+                                                                "tag": "div",
+                                                                "attributes": {
+                                                                  "id": "CybotCookiebotDialogDetailBodyContentCookieTabsAdvertising",
+                                                                  "class": "CollapseCard CybotCookiebotDialogHide"
+                                                                },
+                                                                "children": [
+                                                                  {
+                                                                    "tag": "div",
+                                                                    "attributes": {
+                                                                      "class": "CybotCookiebotDialogDetailBodyContentCookieTypeTableContainer"
+                                                                    },
+                                                                    "children": [
+                                                                      {
+                                                                        "tag": "ul",
+                                                                        "attributes": {
+                                                                          "class": "CybotCookiebotDialogDetailBodyContentCookieTabContent"
+                                                                        },
+                                                                        "children": [
+                                                                          {
+                                                                            "tag": "li",
+                                                                            "attributes": {
+                                                                              "class": "CybotCookiebotDialogDetailBodyContentCookieGroup"
+                                                                            },
+                                                                            "children": [
+                                                                              {
+                                                                                "tag": "a",
+                                                                                "attributes": {
+                                                                                  "class": "CybotCookiebotDialogDetailBodyContentCookieProvider CybotCookiebotDialogCollapsed",
+                                                                                  "role": "button",
+                                                                                  "aria-expanded": "false",
+                                                                                  "href": "#"
+                                                                                },
+                                                                                "rendered": false
+                                                                              }
+                                                                            ]
+                                                                          },
+                                                                          {
+                                                                            "tag": "li",
+                                                                            "attributes": {
+                                                                              "class": "CybotCookiebotDialogDetailBodyContentCookieGroup"
+                                                                            },
+                                                                            "children": [
+                                                                              {
+                                                                                "tag": "a",
+                                                                                "attributes": {
+                                                                                  "class": "CybotCookiebotDialogDetailBodyContentCookieProvider CybotCookiebotDialogCollapsed",
+                                                                                  "role": "button",
+                                                                                  "aria-expanded": "false",
+                                                                                  "href": "#"
+                                                                                },
+                                                                                "rendered": false
+                                                                              }
+                                                                            ]
+                                                                          },
+                                                                          {
+                                                                            "tag": "li",
+                                                                            "attributes": {
+                                                                              "class": "CybotCookiebotDialogDetailBodyContentCookieGroup"
+                                                                            },
+                                                                            "children": [
+                                                                              {
+                                                                                "tag": "a",
+                                                                                "attributes": {
+                                                                                  "class": "CybotCookiebotDialogDetailBodyContentCookieProvider CybotCookiebotDialogCollapsed",
+                                                                                  "role": "button",
+                                                                                  "aria-expanded": "false",
+                                                                                  "href": "#"
+                                                                                },
+                                                                                "rendered": false
+                                                                              }
+                                                                            ]
+                                                                          },
+                                                                          {
+                                                                            "tag": "li",
+                                                                            "attributes": {
+                                                                              "class": "CybotCookiebotDialogDetailBodyContentCookieGroup"
+                                                                            },
+                                                                            "children": [
+                                                                              {
+                                                                                "tag": "a",
+                                                                                "attributes": {
+                                                                                  "class": "CybotCookiebotDialogDetailBodyContentCookieProvider CybotCookiebotDialogCollapsed",
+                                                                                  "role": "button",
+                                                                                  "aria-expanded": "false",
+                                                                                  "href": "#"
+                                                                                },
+                                                                                "rendered": false
+                                                                              }
+                                                                            ]
+                                                                          }
+                                                                        ]
+                                                                      }
+                                                                    ]
+                                                                  }
+                                                                ]
+                                                              }
+                                                            ]
+                                                          }
+                                                        ]
+                                                      },
+                                                      {
+                                                        "tag": "li",
+                                                        "attributes": {
+                                                          "class": "CookieCard"
+                                                        },
+                                                        "children": [
+                                                          {
+                                                            "tag": "div",
+                                                            "attributes": {
+                                                              "id": "CybotCookiebotDialogDetailBodyContentCookieContainerUnclassifiedCard"
+                                                            },
+                                                            "children": [
+                                                              {
+                                                                "tag": "button",
+                                                                "attributes": {
+                                                                  "id": "CybotCookiebotDialogDetailBodyContentCookieContainerUnclassified",
+                                                                  "class": "CybotCookiebotDialogDetailBodyContentCookieContainerButton CybotCookiebotDialogCollapsed",
+                                                                  "lang": "en",
+                                                                  "data-target": "CybotCookiebotDialogDetailBodyContentCookieTabsUnclassified",
+                                                                  "aria-label": null,
+                                                                  "aria-controls": "CybotCookiebotDialogDetailBodyContentCookieTabsUnclassified",
+                                                                  "aria-expanded": "false"
+                                                                },
+                                                                "rendered": false
+                                                              }
+                                                            ]
+                                                          },
+                                                          {
+                                                            "tag": "div",
+                                                            "attributes": {
+                                                              "id": "CybotCookiebotDialogDetailBodyContentCookieTabsUnclassified",
+                                                              "class": "CollapseCard CybotCookiebotDialogHide"
+                                                            },
+                                                            "children": [
+                                                              {
+                                                                "tag": "div",
+                                                                "attributes": {
+                                                                  "class": "CybotCookiebotDialogDetailBodyContentCookieTypeTableContainer"
+                                                                },
+                                                                "children": [
+                                                                  {
+                                                                    "tag": "ul",
+                                                                    "attributes": {
+                                                                      "class": "CybotCookiebotDialogDetailBodyContentCookieTabContent"
+                                                                    },
+                                                                    "children": [
+                                                                      {
+                                                                        "tag": "li",
+                                                                        "attributes": {
+                                                                          "class": "CybotCookiebotDialogDetailBodyContentCookieGroup"
+                                                                        },
+                                                                        "children": [
+                                                                          {
+                                                                            "tag": "a",
+                                                                            "attributes": {
+                                                                              "class": "CybotCookiebotDialogDetailBodyContentCookieProvider CybotCookiebotDialogCollapsed",
+                                                                              "role": "button",
+                                                                              "aria-expanded": "false",
+                                                                              "href": "#"
+                                                                            },
+                                                                            "rendered": false
+                                                                          }
+                                                                        ]
+                                                                      },
+                                                                      {
+                                                                        "tag": "li",
+                                                                        "attributes": {
+                                                                          "class": "CybotCookiebotDialogDetailBodyContentCookieGroup"
+                                                                        },
+                                                                        "children": [
+                                                                          {
+                                                                            "tag": "a",
+                                                                            "attributes": {
+                                                                              "class": "CybotCookiebotDialogDetailBodyContentCookieProvider CybotCookiebotDialogCollapsed",
+                                                                              "role": "button",
+                                                                              "aria-expanded": "false",
+                                                                              "href": "#"
+                                                                            },
+                                                                            "rendered": false
+                                                                          }
+                                                                        ]
+                                                                      }
+                                                                    ]
+                                                                  }
+                                                                ]
+                                                              }
+                                                            ]
+                                                          }
+                                                        ]
+                                                      }
+                                                    ]
+                                                  }
+                                                ]
+                                              }
+                                            ]
+                                          }
+                                        ]
+                                      },
+                                      {
+                                        "tag": "div",
+                                        "attributes": {
+                                          "id": "CybotCookiebotDialogDetailBulkConsent",
+                                          "lang": "en"
+                                        },
+                                        "children": [
+                                          {
+                                            "tag": "a",
+                                            "attributes": {
+                                              "id": "CybotCookiebotDialogDetailBulkConsentLink",
+                                              "href": "#",
+                                              "class": "CybotExpandLink CybotCookiebotDialogCollapsed",
+                                              "data-target": "CybotCookiebotDialogDetailBulkConsentListWrapper"
+                                            },
+                                            "rendered": false
+                                          }
+                                        ]
+                                      }
+                                    ]
+                                  }
+                                ]
+                              }
+                            ]
+                          },
+                          {
+                            "tag": "div",
+                            "attributes": {
+                              "class": "CybotCookiebotScrollContainer CybotCookiebotDialogHide"
+                            },
+                            "children": [
+                              {
+                                "tag": "div",
+                                "attributes": {
+                                  "id": "CybotCookiebotDialogDetailBodyContentTextIABv2",
+                                  "class": "CybotCookiebotDialogTabPanel CybotCookiebotDialogHide CybotCookiebotScrollArea",
+                                  "role": "tabpanel",
+                                  "aria-labelledby": "CybotCookiebotDialogNavAdSettings",
+                                  "lang": "en"
+                                },
+                                "children": [
+                                  {
+                                    "tag": "div",
+                                    "attributes": {
+                                      "id": "CybotCookiebotDialogDetailBodyContentIABContainer"
+                                    },
+                                    "children": [
+                                      {
+                                        "tag": "div",
+                                        "attributes": {
+                                          "id": "CybotCookiebotDialogDetailBodyContentIABv2Tabs"
+                                        },
+                                        "children": [
+                                          {
+                                            "tag": "div",
+                                            "attributes": {
+                                              "class": "CookieCard",
+                                              "id": "CybotCookiebotDialogDetailBodyContentIABv2PurposesCookieCard"
+                                            },
+                                            "children": [
+                                              {
+                                                "tag": "div",
+                                                "attributes": {
+                                                  "id": "CybotCookiebotDialogDetailBodyContentIABv2PurposesCard"
+                                                },
+                                                "children": [
+                                                  {
+                                                    "tag": "button",
+                                                    "attributes": {
+                                                      "id": "CybotCookiebotDialogDetailBodyContentIABv2Purposes",
+                                                      "class": "CybotCookiebotDialogDetailBodyContentIABv2Tab CybotCookiebotDialogCollapsed",
+                                                      "tabindex": "0",
+                                                      "data-target": "CybotCookiebotDialogDetailBodyContentIABv2PurposesBody",
+                                                      "lang": "en",
+                                                      "aria-label": null,
+                                                      "aria-controls": "CybotCookiebotDialogDetailBodyContentIABv2PurposesBody"
+                                                    },
+                                                    "rendered": false
+                                                  }
+                                                ]
+                                              }
+                                            ]
+                                          },
+                                          {
+                                            "tag": "div",
+                                            "attributes": {
+                                              "class": "CookieCard",
+                                              "id": "CybotCookiebotDialogDetailBodyContentIABv2FeaturesCookieCard"
+                                            },
+                                            "children": [
+                                              {
+                                                "tag": "div",
+                                                "attributes": {
+                                                  "id": "CybotCookiebotDialogDetailBodyContentIABv2FeaturesCard"
+                                                },
+                                                "children": [
+                                                  {
+                                                    "tag": "button",
+                                                    "attributes": {
+                                                      "id": "CybotCookiebotDialogDetailBodyContentIABv2Features",
+                                                      "class": "CybotCookiebotDialogDetailBodyContentIABv2Tab CybotCookiebotDialogCollapsed",
+                                                      "tabindex": "0",
+                                                      "data-target": "CybotCookiebotDialogDetailBodyContentIABv2FeaturesBody",
+                                                      "lang": "en",
+                                                      "aria-label": null,
+                                                      "aria-controls": "CybotCookiebotDialogDetailBodyContentIABv2FeaturesBody"
+                                                    },
+                                                    "rendered": false
+                                                  }
+                                                ]
+                                              }
+                                            ]
+                                          },
+                                          {
+                                            "tag": "div",
+                                            "attributes": {
+                                              "class": "CookieCard"
+                                            },
+                                            "children": [
+                                              {
+                                                "tag": "div",
+                                                "attributes": {
+                                                  "id": "CybotCookiebotDialogDetailBodyContentIABv2PartnersCard"
+                                                },
+                                                "children": [
+                                                  {
+                                                    "tag": "button",
+                                                    "attributes": {
+                                                      "id": "CybotCookiebotDialogDetailBodyContentIABv2Partners",
+                                                      "class": "CybotCookiebotDialogDetailBodyContentIABv2Tab CybotCookiebotDialogCollapsed",
+                                                      "tabindex": "0",
+                                                      "data-target": "CybotCookiebotDialogDetailBodyContentIABv2PartnersBody",
+                                                      "lang": "en",
+                                                      "aria-label": null,
+                                                      "aria-controls": "CybotCookiebotDialogDetailBodyContentIABv2PartnersBody"
+                                                    },
+                                                    "rendered": false
+                                                  }
+                                                ]
+                                              }
+                                            ]
+                                          }
+                                        ]
+                                      }
+                                    ]
+                                  }
+                                ]
+                              }
+                            ]
+                          }
+                        ]
+                      },
+                      {
+                        "tag": "div",
+                        "attributes": {
+                          "id": "CybotCookiebotDialogFooter",
+                          "class": "CybotCookiebotScrollContainer"
+                        },
+                        "children": [
+                          {
+                            "tag": "div",
+                            "attributes": {
+                              "class": "CybotCookiebotScrollArea"
+                            },
+                            "children": [
+                              {
+                                "tag": "div",
+                                "attributes": {
+                                  "id": "CybotCookiebotDialogBodyButtons"
+                                },
+                                "children": [
+                                  {
+                                    "tag": "div",
+                                    "attributes": {
+                                      "class": "CybotCookiebotDialogBodyLevelButtonWrapper CybotCookiebotDialogBodyContentControlsWrapper CybotCookiebotDialogHide CybotCookiebotDialogBodyLevelButtonSliderWrapperFullWidth"
+                                    },
+                                    "children": [
+                                      {
+                                        "tag": "div",
+                                        "attributes": {
+                                          "role": "group",
+                                          "class": "CybotCookiebotDialogBodyLevelButtonSliderWrapper"
+                                        },
+                                        "children": [
+                                          {
+                                            "tag": "input",
+                                            "attributes": {
+                                              "type": "checkbox",
+                                              "id": "CybotCookiebotDialogBodyContentCheckboxPersonalInformation",
+                                              "class": "CybotCookiebotDialogBodyLevelButton",
+                                              "tabindex": "0",
+                                              "role": "switch"
+                                            },
+                                            "rendered": false
+                                          }
+                                        ]
+                                      },
+                                      {
+                                        "tag": "label",
+                                        "attributes": {
+                                          "class": "CybotCookiebotDialogBodyLevelButtonLabel",
+                                          "for": "CybotCookiebotDialogBodyContentCheckboxPersonalInformation"
+                                        },
+                                        "rendered": false
+                                      }
+                                    ]
+                                  },
+                                  {
+                                    "tag": "div",
+                                    "attributes": {
+                                      "id": "CybotCookiebotDialogBodyButtonsWrapper"
+                                    },
+                                    "children": [
+                                      {
+                                        "tag": "button",
+                                        "attributes": {
+                                          "id": "CybotCookiebotDialogBodyButtonDecline",
+                                          "class": "CybotCookiebotDialogBodyButton",
+                                          "tabindex": "0",
+                                          "lang": "en"
+                                        },
+                                        "rendered": true
+                                      },
+                                      {
+                                        "tag": "button",
+                                        "attributes": {
+                                          "id": "CybotCookiebotDialogBodyLevelButtonLevelOptinAllowallSelection",
+                                          "class": "CybotCookiebotDialogBodyButton CybotCookiebotDialogHide",
+                                          "tabindex": "0",
+                                          "lang": "en"
+                                        },
+                                        "rendered": false
+                                      },
+                                      {
+                                        "tag": "button",
+                                        "attributes": {
+                                          "id": "CybotCookiebotDialogBodyLevelButtonCustomize",
+                                          "class": "CybotCookiebotDialogBodyButton",
+                                          "tabindex": "0",
+                                          "lang": "en"
+                                        },
+                                        "rendered": true
+                                      },
+                                      {
+                                        "tag": "button",
+                                        "attributes": {
+                                          "id": "CybotCookiebotDialogBodyLevelButtonLevelOptinAllowAll",
+                                          "class": "CybotCookiebotDialogBodyButton",
+                                          "tabindex": "0",
+                                          "lang": "en"
+                                        },
+                                        "rendered": true
+                                      }
+                                    ]
+                                  }
+                                ]
+                              }
+                            ]
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "tag": "div",
+                "attributes": {
+                  "id": "root"
+                },
+                "children": [
+                  {
+                    "tag": "div",
+                    "attributes": {
+                      "class": "App",
+                      "style": null
+                    },
+                    "children": [
+                      {
+                        "tag": "div",
+                        "attributes": {
+                          "class": "css-1ri9e0k"
+                        },
+                        "children": [
+                          {
+                            "tag": "div",
+                            "attributes": {
+                              "class": "css-1fejcoy"
+                            },
+                            "children": [
+                              {
+                                "tag": "div",
+                                "attributes": {
+                                  "class": "MuiGrid-root MuiGrid-container MuiGrid-wrap-xs-nowrap row undefined css-81efq7"
+                                },
+                                "children": [
+                                  {
+                                    "tag": "div",
+                                    "attributes": {
+                                      "class": "MuiGrid-root MuiGrid-item column css-1wxaqej"
+                                    },
+                                    "children": [
+                                      {
+                                        "tag": "div",
+                                        "attributes": {
+                                          "class": "css-1povu0j"
+                                        },
+                                        "children": [
+                                          {
+                                            "tag": "div",
+                                            "attributes": {
+                                              "class": "css-r77aaa"
+                                            },
+                                            "children": [
+                                              {
+                                                "tag": "a",
+                                                "attributes": {
+                                                  "class": "css-qjxm38"
+                                                },
+                                                "rendered": true
+                                              }
+                                            ]
+                                          }
+                                        ]
+                                      }
+                                    ]
+                                  }
+                                ]
+                              }
+                            ]
+                          }
+                        ]
+                      },
+                      {
+                        "tag": "div",
+                        "attributes": {
+                          "class": "css-1fsgsn9"
+                        },
+                        "children": [
+                          {
+                            "tag": "div",
+                            "attributes": {
+                              "class": "MuiContainer-root MuiContainer-maxWidthXl MuiContainer-disableGutters css-59s5lc",
+                              "id": "AuthLoginStep"
+                            },
+                            "children": [
+                              {
+                                "tag": "div",
+                                "attributes": {
+                                  "class": "MuiGrid-root MuiGrid-container row undefined css-10tpm62"
+                                },
+                                "children": [
+                                  {
+                                    "tag": "div",
+                                    "attributes": {
+                                      "class": "MuiGrid-root MuiGrid-item MuiGrid-grid-xs-12 MuiGrid-grid-md-6 column css-1h3ywr3"
+                                    },
+                                    "children": [
+                                      {
+                                        "tag": "div",
+                                        "attributes": {
+                                          "class": "css-19alwy4"
+                                        },
+                                        "children": [
+                                          {
+                                            "tag": "div",
+                                            "attributes": {
+                                              "class": "MuiGrid-root MuiGrid-container row undefined css-49fr69"
+                                            },
+                                            "children": [
+                                              {
+                                                "tag": "div",
+                                                "attributes": {
+                                                  "class": "MuiGrid-root MuiGrid-item MuiGrid-grid-xs-12 column css-1lvrr3a"
+                                                },
+                                                "children": [
+                                                  {
+                                                    "tag": "div",
+                                                    "attributes": {
+                                                      "class": "MuiGrid-root MuiGrid-container row undefined css-49fr69"
+                                                    },
+                                                    "children": [
+                                                      {
+                                                        "tag": "div",
+                                                        "attributes": {
+                                                          "class": "MuiGrid-root MuiGrid-item MuiGrid-grid-xs-2 column css-lvis11"
+                                                        },
+                                                        "children": [
+                                                          {
+                                                            "tag": "button",
+                                                            "attributes": {
+                                                              "class": "css-1356i8u"
+                                                            },
+                                                            "rendered": true
+                                                          }
+                                                        ]
+                                                      }
+                                                    ]
+                                                  },
+                                                  {
+                                                    "tag": "div",
+                                                    "attributes": {
+                                                      "class": "MuiFormControl-root css-w4aaon"
+                                                    },
+                                                    "children": [
+                                                      {
+                                                        "tag": "div",
+                                                        "attributes": {
+                                                          "data-cy": "user-login",
+                                                          "title": null,
+                                                          "variant": "",
+                                                          "class": "MuiOutlinedInput-root MuiInputBase-root MuiInputBase-colorPrimary MuiInputBase-formControl MuiInputBase-adornedEnd css-n2guuc"
+                                                        },
+                                                        "children": [
+                                                          {
+                                                            "tag": "input",
+                                                            "attributes": {
+                                                              "aria-invalid": "false",
+                                                              "id": "AuthLoginStepUser",
+                                                              "placeholder": null,
+                                                              "type": "text",
+                                                              "class": "MuiOutlinedInput-input MuiInputBase-input MuiInputBase-inputAdornedEnd css-1uvydh2",
+                                                              "value": null
+                                                            },
+                                                            "rendered": true
+                                                          },
+                                                          {
+                                                            "tag": "fieldset",
+                                                            "attributes": {
+                                                              "aria-hidden": "true",
+                                                              "class": "MuiOutlinedInput-notchedOutline css-igs3ac"
+                                                            },
+                                                            "rendered": true
+                                                          }
+                                                        ]
+                                                      }
+                                                    ]
+                                                  }
+                                                ]
+                                              }
+                                            ]
+                                          },
+                                          {
+                                            "tag": "div",
+                                            "attributes": {
+                                              "class": "MuiGrid-root MuiGrid-container row undefined css-49fr69"
+                                            },
+                                            "children": [
+                                              {
+                                                "tag": "div",
+                                                "attributes": {
+                                                  "class": "MuiGrid-root MuiGrid-item MuiGrid-grid-xs-12 column css-1lvrr3a"
+                                                },
+                                                "children": [
+                                                  {
+                                                    "tag": "div",
+                                                    "attributes": {
+                                                      "class": "MuiFormControl-root css-w4aaon"
+                                                    },
+                                                    "children": [
+                                                      {
+                                                        "tag": "div",
+                                                        "attributes": {
+                                                          "data-cy": "password-login",
+                                                          "title": null,
+                                                          "variant": "",
+                                                          "class": "MuiOutlinedInput-root MuiInputBase-root MuiInputBase-colorPrimary MuiInputBase-formControl MuiInputBase-adornedEnd css-n2guuc"
+                                                        },
+                                                        "children": [
+                                                          {
+                                                            "tag": "input",
+                                                            "attributes": {
+                                                              "aria-invalid": "false",
+                                                              "id": "AuthLoginStepPassword",
+                                                              "placeholder": null,
+                                                              "type": "password",
+                                                              "class": "MuiOutlinedInput-input MuiInputBase-input MuiInputBase-inputAdornedEnd css-1uvydh2",
+                                                              "value": null
+                                                            },
+                                                            "rendered": true
+                                                          },
+                                                          {
+                                                            "tag": "div",
+                                                            "attributes": {
+                                                              "class": "MuiInputAdornment-root MuiInputAdornment-positionEnd MuiInputAdornment-outlined MuiInputAdornment-sizeMedium css-1nvf7g0"
+                                                            },
+                                                            "children": [
+                                                              {
+                                                                "tag": "button",
+                                                                "attributes": {
+                                                                  "class": "MuiButtonBase-root MuiIconButton-root MuiIconButton-sizeMedium css-y91xpf",
+                                                                  "tabindex": "0",
+                                                                  "type": "button"
+                                                                },
+                                                                "rendered": true
+                                                              }
+                                                            ]
+                                                          },
+                                                          {
+                                                            "tag": "fieldset",
+                                                            "attributes": {
+                                                              "aria-hidden": "true",
+                                                              "class": "MuiOutlinedInput-notchedOutline css-igs3ac"
+                                                            },
+                                                            "rendered": true
+                                                          }
+                                                        ]
+                                                      }
+                                                    ]
+                                                  }
+                                                ]
+                                              }
+                                            ]
+                                          }
+                                        ]
+                                      }
+                                    ]
+                                  }
+                                ]
+                              },
+                              {
+                                "tag": "div",
+                                "attributes": {
+                                  "class": "MuiGrid-root MuiGrid-container row undefined css-1g0g456"
+                                },
+                                "children": [
+                                  {
+                                    "tag": "div",
+                                    "attributes": {
+                                      "class": "MuiGrid-root MuiGrid-item MuiGrid-grid-xs-12 column css-3wx42u",
+                                      "id": "AuthLoginStepButton"
+                                    },
+                                    "children": [
+                                      {
+                                        "tag": "button",
+                                        "attributes": {
+                                          "type": "principal",
+                                          "disabled": "",
+                                          "class": "button-login css-vcth1f"
+                                        },
+                                        "rendered": true
+                                      }
+                                    ]
+                                  }
+                                ]
+                              },
+                              {
+                                "tag": "div",
+                                "attributes": {
+                                  "class": "MuiGrid-root MuiGrid-container row undefined css-49fr69"
+                                },
+                                "children": [
+                                  {
+                                    "tag": "div",
+                                    "attributes": {
+                                      "class": "MuiGrid-root MuiGrid-item MuiGrid-grid-xs-12 column css-3wx42u",
+                                      "id": "AuthLoginStepLink"
+                                    },
+                                    "children": [
+                                      {
+                                        "tag": "div",
+                                        "attributes": {
+                                          "class": "css-1mzzuk6"
+                                        },
+                                        "children": [
+                                          {
+                                            "tag": "a",
+                                            "attributes": {
+                                              "type": "enlace",
+                                              "class": "css-1kdvims"
+                                            },
+                                            "rendered": true
+                                          }
+                                        ]
+                                      }
+                                    ]
+                                  }
+                                ]
+                              }
+                            ]
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "tag": "iframe",
+                "attributes": {
+                  "class": "CybotCookiebotHiddenIframe",
+                  "name": "__uspapiLocator",
+                  "tabindex": "-1",
+                  "role": "presentation",
+                  "aria-hidden": "true",
+                  "title": null
+                },
+                "rendered": false
+              },
+              {
+                "tag": "iframe",
+                "attributes": {
+                  "class": "CybotCookiebotOffscreenIframe",
+                  "tabindex": "-1",
+                  "role": "presentation",
+                  "aria-hidden": "true",
+                  "title": null,
+                  "src": "https://consentcdn.cookiebot.com/sdk/bc-v4.min.html"
+                },
+                "rendered": true
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "index": 1,
+      "parent": 0,
+      "name": "__uspapiLocator",
+      "sameOriginAsTop": true,
+      "url": "about:blank",
+      "controls": 0,
+      "tree": {
+        "tag": "html",
+        "attributes": {}
+      }
+    },
+    {
+      "index": 2,
+      "parent": 0,
+      "name": null,
+      "url": "https://consentcdn.cookiebot.com",
+      "sameOriginAsTop": false
+    }
+  ]
+}

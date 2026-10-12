@@ -1,0 +1,28 @@
+{
+  "$schema": "../../../types/connection/httpLoginSteps.schema.json",
+  "version": 1,
+  "id": "digi-portugal",
+  "evidence": {
+    "class": "B",
+    "source": "https://mydigi.digi.pt/",
+    "reviewed": "2026-10-12"
+  },
+  "credentialOrigins": [],
+  "loginSteps": [
+    {
+      "kind": "form",
+      "paths": ["/login"],
+      "selectors": {
+        "username": "#AuthLoginStep input#AuthLoginStepUser[type=\"text\"]",
+        "password": "#AuthLoginStep input#AuthLoginStepPassword[type=\"password\"]"
+      }
+    },
+    {
+      "kind": "submit",
+      "submission": "spa",
+      "selectors": {
+        "control": "#AuthLoginStep #AuthLoginStepButton button.button-login"
+      }
+    }
+  ]
+}

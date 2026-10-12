@@ -1,0 +1,1003 @@
+{
+  "schema": "sorng-login-capture/1",
+  "sanitizer": 3,
+  "applicationId": "imt-online",
+  "capturedAt": "2026-10-12",
+  "mode": "hosted",
+  "engine": "Microsoft Edge headless (Edg/146.0.3856.84)",
+  "source": {
+    "kind": "hosted-login",
+    "requestedUrl": "https://servicos.imt-ip.pt/login.aspx",
+    "finalUrl": "https://servicos.imt-ip.pt/login.aspx",
+    "httpStatus": 200
+  },
+  "limits": {
+    "navigations": 1,
+    "scriptsExecuted": true,
+    "loadEvent": true,
+    "settleMs": 12000,
+    "dialogsDismissed": 0,
+    "input": "none",
+    "truncated": false,
+    "redirects": "public-hosts-only"
+  },
+  "network": {
+    "contacted": [
+      "ajax.aspnetcdn.com:443",
+      "ajax.microsoft.com:443",
+      "servicos.imt-ip.pt:443"
+    ],
+    "refused": 1
+  },
+  "observations": ["password-field"],
+  "frames": [
+    {
+      "index": 0,
+      "parent": null,
+      "name": null,
+      "sameOriginAsTop": true,
+      "url": "https://servicos.imt-ip.pt/login.aspx",
+      "controls": 35,
+      "tree": {
+        "tag": "html",
+        "attributes": {
+          "xml:lang": "pt-PT",
+          "lang": "pt-PT",
+          "xmlns": "http://www.w3.org/1999/xhtml"
+        },
+        "children": [
+          {
+            "tag": "body",
+            "attributes": {
+              "id": "Body"
+            },
+            "children": [
+              {
+                "tag": "form",
+                "attributes": {
+                  "name": "Form",
+                  "method": "post",
+                  "action": "/login.aspx",
+                  "id": "Form",
+                  "enctype": "multipart/form-data"
+                },
+                "rendered": true,
+                "children": [
+                  {
+                    "tag": "div",
+                    "attributes": {},
+                    "children": [
+                      {
+                        "tag": "input",
+                        "attributes": {
+                          "type": "hidden",
+                          "name": "__EVENTTARGET",
+                          "id": "__EVENTTARGET",
+                          "value": null
+                        },
+                        "rendered": false
+                      },
+                      {
+                        "tag": "input",
+                        "attributes": {
+                          "type": "hidden",
+                          "name": "__EVENTARGUMENT",
+                          "id": "__EVENTARGUMENT",
+                          "value": null
+                        },
+                        "rendered": false
+                      },
+                      {
+                        "tag": "input",
+                        "attributes": {
+                          "type": "hidden",
+                          "name": "__VIEWSTATE",
+                          "id": "__VIEWSTATE",
+                          "value": null
+                        },
+                        "rendered": false
+                      }
+                    ]
+                  },
+                  {
+                    "tag": "div",
+                    "attributes": {
+                      "class": "template_style"
+                    },
+                    "children": [
+                      {
+                        "tag": "table",
+                        "attributes": {
+                          "class": "tableTop",
+                          "width": "1024"
+                        },
+                        "children": [
+                          {
+                            "tag": "tbody",
+                            "attributes": {},
+                            "children": [
+                              {
+                                "tag": "tr",
+                                "attributes": {},
+                                "children": [
+                                  {
+                                    "tag": "td",
+                                    "attributes": {
+                                      "valign": "top"
+                                    },
+                                    "children": [
+                                      {
+                                        "tag": "a",
+                                        "attributes": {
+                                          "href": "/"
+                                        },
+                                        "rendered": true
+                                      }
+                                    ]
+                                  }
+                                ]
+                              }
+                            ]
+                          }
+                        ]
+                      },
+                      {
+                        "tag": "table",
+                        "attributes": {
+                          "class": "topInfo"
+                        },
+                        "children": [
+                          {
+                            "tag": "tbody",
+                            "attributes": {},
+                            "children": [
+                              {
+                                "tag": "tr",
+                                "attributes": {},
+                                "children": [
+                                  {
+                                    "tag": "td",
+                                    "attributes": {},
+                                    "children": [
+                                      {
+                                        "tag": "span",
+                                        "attributes": {},
+                                        "children": [
+                                          {
+                                            "tag": "span",
+                                            "attributes": {
+                                              "id": "dnn_dnnBREADCRUMB_lblBreadCrumb"
+                                            },
+                                            "children": [
+                                              {
+                                                "tag": "a",
+                                                "attributes": {
+                                                  "href": "/Login.aspx",
+                                                  "class": "Breadcrumb"
+                                                },
+                                                "rendered": true
+                                              }
+                                            ]
+                                          }
+                                        ]
+                                      }
+                                    ]
+                                  }
+                                ]
+                              },
+                              {
+                                "tag": "tr",
+                                "attributes": {},
+                                "children": [
+                                  {
+                                    "tag": "td",
+                                    "attributes": {
+                                      "id": "dnn_TopInformationPane",
+                                      "colspan": "2"
+                                    },
+                                    "children": [
+                                      {
+                                        "tag": "a",
+                                        "attributes": {
+                                          "name": "525"
+                                        },
+                                        "rendered": true
+                                      }
+                                    ]
+                                  }
+                                ]
+                              }
+                            ]
+                          }
+                        ]
+                      },
+                      {
+                        "tag": "div",
+                        "attributes": {
+                          "class": "mainContents"
+                        },
+                        "children": [
+                          {
+                            "tag": "div",
+                            "attributes": {
+                              "class": "center_bg"
+                            },
+                            "children": [
+                              {
+                                "tag": "div",
+                                "attributes": {
+                                  "class": "left_bg"
+                                },
+                                "children": [
+                                  {
+                                    "tag": "div",
+                                    "attributes": {
+                                      "class": "right_bg"
+                                    },
+                                    "children": [
+                                      {
+                                        "tag": "div",
+                                        "attributes": {
+                                          "class": "content_pad"
+                                        },
+                                        "children": [
+                                          {
+                                            "tag": "div",
+                                            "attributes": {
+                                              "class": "content_width"
+                                            },
+                                            "children": [
+                                              {
+                                                "tag": "div",
+                                                "attributes": {
+                                                  "id": "dnn_TopPane",
+                                                  "class": "TopPane"
+                                                },
+                                                "children": [
+                                                  {
+                                                    "tag": "a",
+                                                    "attributes": {
+                                                      "name": "585"
+                                                    },
+                                                    "rendered": true
+                                                  }
+                                                ]
+                                              },
+                                              {
+                                                "tag": "table",
+                                                "attributes": {
+                                                  "width": "99%",
+                                                  "border": "0",
+                                                  "cellspacing": "0",
+                                                  "cellpadding": "0"
+                                                },
+                                                "children": [
+                                                  {
+                                                    "tag": "tbody",
+                                                    "attributes": {},
+                                                    "children": [
+                                                      {
+                                                        "tag": "tr",
+                                                        "attributes": {},
+                                                        "children": [
+                                                          {
+                                                            "tag": "td",
+                                                            "attributes": {
+                                                              "id": "dnn_ContentPane",
+                                                              "valign": "top",
+                                                              "class": "ContentPane"
+                                                            },
+                                                            "children": [
+                                                              {
+                                                                "tag": "a",
+                                                                "attributes": {
+                                                                  "name": "561"
+                                                                },
+                                                                "rendered": true
+                                                              },
+                                                              {
+                                                                "tag": "div",
+                                                                "attributes": {
+                                                                  "id": "dnn_ctr561_ContentPane"
+                                                                },
+                                                                "children": [
+                                                                  {
+                                                                    "tag": "div",
+                                                                    "attributes": {
+                                                                      "id": "dnn_ctr561_ModuleContent",
+                                                                      "class": "ModTrueWindChironLoginC"
+                                                                    },
+                                                                    "children": [
+                                                                      {
+                                                                        "tag": "input",
+                                                                        "attributes": {
+                                                                          "type": "hidden",
+                                                                          "name": "dnn$ctr561$ViewLogin$tokenField",
+                                                                          "id": "dnn_ctr561_ViewLogin_tokenField"
+                                                                        },
+                                                                        "rendered": false
+                                                                      },
+                                                                      {
+                                                                        "tag": "input",
+                                                                        "attributes": {
+                                                                          "type": "hidden",
+                                                                          "name": "dnn$ctr561$ViewLogin$preSelected",
+                                                                          "id": "dnn_ctr561_ViewLogin_preSelected"
+                                                                        },
+                                                                        "rendered": false
+                                                                      },
+                                                                      {
+                                                                        "tag": "input",
+                                                                        "attributes": {
+                                                                          "type": "hidden",
+                                                                          "name": "dnn$ctr561$ViewLogin$Auth",
+                                                                          "id": "dnn_ctr561_ViewLogin_Auth"
+                                                                        },
+                                                                        "rendered": false
+                                                                      },
+                                                                      {
+                                                                        "tag": "input",
+                                                                        "attributes": {
+                                                                          "type": "hidden",
+                                                                          "name": "dnn$ctr561$ViewLogin$Url",
+                                                                          "id": "dnn_ctr561_ViewLogin_Url"
+                                                                        },
+                                                                        "rendered": false
+                                                                      },
+                                                                      {
+                                                                        "tag": "table",
+                                                                        "attributes": {
+                                                                          "style": null,
+                                                                          "border": "0"
+                                                                        },
+                                                                        "children": [
+                                                                          {
+                                                                            "tag": "tbody",
+                                                                            "attributes": {},
+                                                                            "children": [
+                                                                              {
+                                                                                "tag": "tr",
+                                                                                "attributes": {},
+                                                                                "children": [
+                                                                                  {
+                                                                                    "tag": "td",
+                                                                                    "attributes": {
+                                                                                      "align": "left",
+                                                                                      "valign": "top"
+                                                                                    },
+                                                                                    "children": [
+                                                                                      {
+                                                                                        "tag": "table",
+                                                                                        "attributes": {
+                                                                                          "cellpadding": "0",
+                                                                                          "cellspacing": "0",
+                                                                                          "border": "0",
+                                                                                          "width": "450"
+                                                                                        },
+                                                                                        "children": [
+                                                                                          {
+                                                                                            "tag": "tbody",
+                                                                                            "attributes": {},
+                                                                                            "children": [
+                                                                                              {
+                                                                                                "tag": "tr",
+                                                                                                "attributes": {},
+                                                                                                "children": [
+                                                                                                  {
+                                                                                                    "tag": "td",
+                                                                                                    "attributes": {
+                                                                                                      "valign": "top"
+                                                                                                    },
+                                                                                                    "children": [
+                                                                                                      {
+                                                                                                        "tag": "table",
+                                                                                                        "attributes": {
+                                                                                                          "border": "0",
+                                                                                                          "cellpadding": "0",
+                                                                                                          "cellspacing": "0"
+                                                                                                        },
+                                                                                                        "children": [
+                                                                                                          {
+                                                                                                            "tag": "tbody",
+                                                                                                            "attributes": {},
+                                                                                                            "children": [
+                                                                                                              {
+                                                                                                                "tag": "tr",
+                                                                                                                "attributes": {},
+                                                                                                                "children": [
+                                                                                                                  {
+                                                                                                                    "tag": "td",
+                                                                                                                    "attributes": {},
+                                                                                                                    "children": [
+                                                                                                                      {
+                                                                                                                        "tag": "label",
+                                                                                                                        "attributes": {
+                                                                                                                          "class": "GreenText"
+                                                                                                                        },
+                                                                                                                        "rendered": true
+                                                                                                                      }
+                                                                                                                    ]
+                                                                                                                  },
+                                                                                                                  {
+                                                                                                                    "tag": "td",
+                                                                                                                    "attributes": {},
+                                                                                                                    "children": [
+                                                                                                                      {
+                                                                                                                        "tag": "input",
+                                                                                                                        "attributes": {
+                                                                                                                          "type": "button",
+                                                                                                                          "name": "dnn$ctr561$ViewLogin$lbLoginPNif",
+                                                                                                                          "value": null,
+                                                                                                                          "onclick": null,
+                                                                                                                          "id": "dnn_ctr561_ViewLogin_lbLoginPNif",
+                                                                                                                          "class": "button"
+                                                                                                                        },
+                                                                                                                        "rendered": true
+                                                                                                                      }
+                                                                                                                    ]
+                                                                                                                  }
+                                                                                                                ]
+                                                                                                              }
+                                                                                                            ]
+                                                                                                          }
+                                                                                                        ]
+                                                                                                      }
+                                                                                                    ]
+                                                                                                  }
+                                                                                                ]
+                                                                                              }
+                                                                                            ]
+                                                                                          }
+                                                                                        ]
+                                                                                      },
+                                                                                      {
+                                                                                        "tag": "table",
+                                                                                        "attributes": {
+                                                                                          "style": null,
+                                                                                          "border": "0"
+                                                                                        },
+                                                                                        "children": [
+                                                                                          {
+                                                                                            "tag": "tbody",
+                                                                                            "attributes": {},
+                                                                                            "children": [
+                                                                                              {
+                                                                                                "tag": "tr",
+                                                                                                "attributes": {},
+                                                                                                "children": [
+                                                                                                  {
+                                                                                                    "tag": "td",
+                                                                                                    "attributes": {
+                                                                                                      "class": "TitBar"
+                                                                                                    },
+                                                                                                    "children": [
+                                                                                                      {
+                                                                                                        "tag": "a",
+                                                                                                        "attributes": {
+                                                                                                          "target": "_blank",
+                                                                                                          "href": "/ValidarDocumentos.aspx"
+                                                                                                        },
+                                                                                                        "rendered": true
+                                                                                                      }
+                                                                                                    ]
+                                                                                                  }
+                                                                                                ]
+                                                                                              },
+                                                                                              {
+                                                                                                "tag": "tr",
+                                                                                                "attributes": {},
+                                                                                                "children": [
+                                                                                                  {
+                                                                                                    "tag": "td",
+                                                                                                    "attributes": {},
+                                                                                                    "children": [
+                                                                                                      {
+                                                                                                        "tag": "a",
+                                                                                                        "attributes": {
+                                                                                                          "target": "_blank",
+                                                                                                          "href": "/ValidarDocumentos.aspx"
+                                                                                                        },
+                                                                                                        "rendered": true,
+                                                                                                        "children": [
+                                                                                                          {
+                                                                                                            "tag": "input",
+                                                                                                            "attributes": {
+                                                                                                              "type": "button",
+                                                                                                              "class": "button",
+                                                                                                              "value": "Validar",
+                                                                                                              "onclick": null
+                                                                                                            },
+                                                                                                            "rendered": true
+                                                                                                          }
+                                                                                                        ]
+                                                                                                      }
+                                                                                                    ]
+                                                                                                  }
+                                                                                                ]
+                                                                                              }
+                                                                                            ]
+                                                                                          }
+                                                                                        ]
+                                                                                      }
+                                                                                    ]
+                                                                                  },
+                                                                                  {
+                                                                                    "tag": "td",
+                                                                                    "attributes": {
+                                                                                      "align": "left"
+                                                                                    },
+                                                                                    "children": [
+                                                                                      {
+                                                                                        "tag": "table",
+                                                                                        "attributes": {
+                                                                                          "cellpadding": "0",
+                                                                                          "cellspacing": "0",
+                                                                                          "border": "0",
+                                                                                          "width": "90%"
+                                                                                        },
+                                                                                        "children": [
+                                                                                          {
+                                                                                            "tag": "tbody",
+                                                                                            "attributes": {},
+                                                                                            "children": [
+                                                                                              {
+                                                                                                "tag": "tr",
+                                                                                                "attributes": {},
+                                                                                                "children": [
+                                                                                                  {
+                                                                                                    "tag": "td",
+                                                                                                    "attributes": {
+                                                                                                      "valign": "top"
+                                                                                                    },
+                                                                                                    "children": [
+                                                                                                      {
+                                                                                                        "tag": "table",
+                                                                                                        "attributes": {
+                                                                                                          "border": "0",
+                                                                                                          "cellpadding": "0",
+                                                                                                          "cellspacing": "0"
+                                                                                                        },
+                                                                                                        "children": [
+                                                                                                          {
+                                                                                                            "tag": "tbody",
+                                                                                                            "attributes": {},
+                                                                                                            "children": [
+                                                                                                              {
+                                                                                                                "tag": "tr",
+                                                                                                                "attributes": {},
+                                                                                                                "children": [
+                                                                                                                  {
+                                                                                                                    "tag": "td",
+                                                                                                                    "attributes": {},
+                                                                                                                    "children": [
+                                                                                                                      {
+                                                                                                                        "tag": "label",
+                                                                                                                        "attributes": {
+                                                                                                                          "class": "GreenText"
+                                                                                                                        },
+                                                                                                                        "rendered": true
+                                                                                                                      }
+                                                                                                                    ]
+                                                                                                                  },
+                                                                                                                  {
+                                                                                                                    "tag": "td",
+                                                                                                                    "attributes": {},
+                                                                                                                    "children": [
+                                                                                                                      {
+                                                                                                                        "tag": "input",
+                                                                                                                        "attributes": {
+                                                                                                                          "type": "button",
+                                                                                                                          "name": "dnn$ctr561$ViewLogin$lbLoginENif",
+                                                                                                                          "value": null,
+                                                                                                                          "onclick": null,
+                                                                                                                          "id": "dnn_ctr561_ViewLogin_lbLoginENif",
+                                                                                                                          "class": "button"
+                                                                                                                        },
+                                                                                                                        "rendered": true
+                                                                                                                      }
+                                                                                                                    ]
+                                                                                                                  }
+                                                                                                                ]
+                                                                                                              }
+                                                                                                            ]
+                                                                                                          }
+                                                                                                        ]
+                                                                                                      }
+                                                                                                    ]
+                                                                                                  }
+                                                                                                ]
+                                                                                              }
+                                                                                            ]
+                                                                                          }
+                                                                                        ]
+                                                                                      },
+                                                                                      {
+                                                                                        "tag": "table",
+                                                                                        "attributes": {
+                                                                                          "cellpadding": "0",
+                                                                                          "cellspacing": "0",
+                                                                                          "border": "0",
+                                                                                          "width": "90%"
+                                                                                        },
+                                                                                        "children": [
+                                                                                          {
+                                                                                            "tag": "tbody",
+                                                                                            "attributes": {},
+                                                                                            "children": [
+                                                                                              {
+                                                                                                "tag": "tr",
+                                                                                                "attributes": {},
+                                                                                                "children": [
+                                                                                                  {
+                                                                                                    "tag": "td",
+                                                                                                    "attributes": {
+                                                                                                      "valign": "top",
+                                                                                                      "align": "center"
+                                                                                                    },
+                                                                                                    "children": [
+                                                                                                      {
+                                                                                                        "tag": "table",
+                                                                                                        "attributes": {
+                                                                                                          "border": "0",
+                                                                                                          "width": "100%"
+                                                                                                        },
+                                                                                                        "children": [
+                                                                                                          {
+                                                                                                            "tag": "tbody",
+                                                                                                            "attributes": {},
+                                                                                                            "children": [
+                                                                                                              {
+                                                                                                                "tag": "tr",
+                                                                                                                "attributes": {},
+                                                                                                                "children": [
+                                                                                                                  {
+                                                                                                                    "tag": "td",
+                                                                                                                    "attributes": {
+                                                                                                                      "colspan": "2",
+                                                                                                                      "align": "left"
+                                                                                                                    },
+                                                                                                                    "children": [
+                                                                                                                      {
+                                                                                                                        "tag": "label",
+                                                                                                                        "attributes": {
+                                                                                                                          "class": "GreenText"
+                                                                                                                        },
+                                                                                                                        "rendered": true
+                                                                                                                      }
+                                                                                                                    ]
+                                                                                                                  }
+                                                                                                                ]
+                                                                                                              },
+                                                                                                              {
+                                                                                                                "tag": "tr",
+                                                                                                                "attributes": {},
+                                                                                                                "children": [
+                                                                                                                  {
+                                                                                                                    "tag": "td",
+                                                                                                                    "attributes": {
+                                                                                                                      "align": "right",
+                                                                                                                      "style": null
+                                                                                                                    },
+                                                                                                                    "children": [
+                                                                                                                      {
+                                                                                                                        "tag": "label",
+                                                                                                                        "attributes": {
+                                                                                                                          "id": "lblNIF",
+                                                                                                                          "class": "GrayText",
+                                                                                                                          "for": "dnn_ctr561_ViewLogin_txtNif"
+                                                                                                                        },
+                                                                                                                        "rendered": true
+                                                                                                                      }
+                                                                                                                    ]
+                                                                                                                  },
+                                                                                                                  {
+                                                                                                                    "tag": "td",
+                                                                                                                    "attributes": {
+                                                                                                                      "align": "left"
+                                                                                                                    },
+                                                                                                                    "children": [
+                                                                                                                      {
+                                                                                                                        "tag": "input",
+                                                                                                                        "attributes": {
+                                                                                                                          "name": "dnn$ctr561$ViewLogin$txtNif",
+                                                                                                                          "type": "text",
+                                                                                                                          "id": "dnn_ctr561_ViewLogin_txtNif",
+                                                                                                                          "class": "Normal txtNif"
+                                                                                                                        },
+                                                                                                                        "rendered": true
+                                                                                                                      }
+                                                                                                                    ]
+                                                                                                                  }
+                                                                                                                ]
+                                                                                                              },
+                                                                                                              {
+                                                                                                                "tag": "tr",
+                                                                                                                "attributes": {},
+                                                                                                                "children": [
+                                                                                                                  {
+                                                                                                                    "tag": "td",
+                                                                                                                    "attributes": {
+                                                                                                                      "align": "right"
+                                                                                                                    },
+                                                                                                                    "children": [
+                                                                                                                      {
+                                                                                                                        "tag": "label",
+                                                                                                                        "attributes": {
+                                                                                                                          "id": "lblUserName",
+                                                                                                                          "class": "GrayText",
+                                                                                                                          "for": "dnn_ctr561_ViewLogin_txtUserName"
+                                                                                                                        },
+                                                                                                                        "rendered": true
+                                                                                                                      }
+                                                                                                                    ]
+                                                                                                                  },
+                                                                                                                  {
+                                                                                                                    "tag": "td",
+                                                                                                                    "attributes": {
+                                                                                                                      "align": "left"
+                                                                                                                    },
+                                                                                                                    "children": [
+                                                                                                                      {
+                                                                                                                        "tag": "input",
+                                                                                                                        "attributes": {
+                                                                                                                          "name": "dnn$ctr561$ViewLogin$txtUserName",
+                                                                                                                          "type": "text",
+                                                                                                                          "id": "dnn_ctr561_ViewLogin_txtUserName",
+                                                                                                                          "class": "Normal txtUserName"
+                                                                                                                        },
+                                                                                                                        "rendered": true
+                                                                                                                      }
+                                                                                                                    ]
+                                                                                                                  }
+                                                                                                                ]
+                                                                                                              },
+                                                                                                              {
+                                                                                                                "tag": "tr",
+                                                                                                                "attributes": {},
+                                                                                                                "children": [
+                                                                                                                  {
+                                                                                                                    "tag": "td",
+                                                                                                                    "attributes": {
+                                                                                                                      "align": "right"
+                                                                                                                    },
+                                                                                                                    "children": [
+                                                                                                                      {
+                                                                                                                        "tag": "label",
+                                                                                                                        "attributes": {
+                                                                                                                          "id": "lblPassword",
+                                                                                                                          "class": "GrayText",
+                                                                                                                          "for": "dnn_ctr561_ViewLogin_txtPassword"
+                                                                                                                        },
+                                                                                                                        "rendered": true
+                                                                                                                      }
+                                                                                                                    ]
+                                                                                                                  },
+                                                                                                                  {
+                                                                                                                    "tag": "td",
+                                                                                                                    "attributes": {
+                                                                                                                      "align": "left"
+                                                                                                                    },
+                                                                                                                    "children": [
+                                                                                                                      {
+                                                                                                                        "tag": "input",
+                                                                                                                        "attributes": {
+                                                                                                                          "name": "dnn$ctr561$ViewLogin$txtPassword",
+                                                                                                                          "type": "password",
+                                                                                                                          "id": "dnn_ctr561_ViewLogin_txtPassword",
+                                                                                                                          "class": "Normal txtPassword"
+                                                                                                                        },
+                                                                                                                        "rendered": true
+                                                                                                                      }
+                                                                                                                    ]
+                                                                                                                  }
+                                                                                                                ]
+                                                                                                              },
+                                                                                                              {
+                                                                                                                "tag": "tr",
+                                                                                                                "attributes": {},
+                                                                                                                "children": [
+                                                                                                                  {
+                                                                                                                    "tag": "td",
+                                                                                                                    "attributes": {
+                                                                                                                      "colspan": "2",
+                                                                                                                      "align": "center"
+                                                                                                                    },
+                                                                                                                    "children": [
+                                                                                                                      {
+                                                                                                                        "tag": "input",
+                                                                                                                        "attributes": {
+                                                                                                                          "type": "submit",
+                                                                                                                          "name": "dnn$ctr561$ViewLogin$btLoginR",
+                                                                                                                          "value": null,
+                                                                                                                          "id": "dnn_ctr561_ViewLogin_btLoginR",
+                                                                                                                          "class": "button"
+                                                                                                                        },
+                                                                                                                        "rendered": true
+                                                                                                                      }
+                                                                                                                    ]
+                                                                                                                  }
+                                                                                                                ]
+                                                                                                              }
+                                                                                                            ]
+                                                                                                          }
+                                                                                                        ]
+                                                                                                      }
+                                                                                                    ]
+                                                                                                  }
+                                                                                                ]
+                                                                                              }
+                                                                                            ]
+                                                                                          }
+                                                                                        ]
+                                                                                      },
+                                                                                      {
+                                                                                        "tag": "table",
+                                                                                        "attributes": {
+                                                                                          "cellpadding": "0",
+                                                                                          "cellspacing": "0",
+                                                                                          "border": "0",
+                                                                                          "width": "90%"
+                                                                                        },
+                                                                                        "children": [
+                                                                                          {
+                                                                                            "tag": "tbody",
+                                                                                            "attributes": {},
+                                                                                            "children": [
+                                                                                              {
+                                                                                                "tag": "tr",
+                                                                                                "attributes": {},
+                                                                                                "children": [
+                                                                                                  {
+                                                                                                    "tag": "td",
+                                                                                                    "attributes": {
+                                                                                                      "colspan": "3"
+                                                                                                    },
+                                                                                                    "children": [
+                                                                                                      {
+                                                                                                        "tag": "a",
+                                                                                                        "attributes": {
+                                                                                                          "href": "mailto:"
+                                                                                                        },
+                                                                                                        "rendered": true
+                                                                                                      }
+                                                                                                    ]
+                                                                                                  }
+                                                                                                ]
+                                                                                              }
+                                                                                            ]
+                                                                                          }
+                                                                                        ]
+                                                                                      }
+                                                                                    ]
+                                                                                  }
+                                                                                ]
+                                                                              }
+                                                                            ]
+                                                                          }
+                                                                        ]
+                                                                      }
+                                                                    ]
+                                                                  }
+                                                                ]
+                                                              }
+                                                            ]
+                                                          }
+                                                        ]
+                                                      }
+                                                    ]
+                                                  }
+                                                ]
+                                              }
+                                            ]
+                                          }
+                                        ]
+                                      }
+                                    ]
+                                  }
+                                ]
+                              }
+                            ]
+                          }
+                        ]
+                      },
+                      {
+                        "tag": "div",
+                        "attributes": {
+                          "class": "bot_pad"
+                        },
+                        "children": [
+                          {
+                            "tag": "div",
+                            "attributes": {
+                              "id": "terms_style",
+                              "class": "footer"
+                            },
+                            "children": [
+                              {
+                                "tag": "p",
+                                "attributes": {},
+                                "children": [
+                                  {
+                                    "tag": "a",
+                                    "attributes": {
+                                      "class": "footer",
+                                      "rel": "nofollow",
+                                      "href": "https://servicos.imt-ip.pt/privacidade.aspx"
+                                    },
+                                    "rendered": true
+                                  },
+                                  {
+                                    "tag": "a",
+                                    "attributes": {
+                                      "class": "footer",
+                                      "rel": "nofollow",
+                                      "href": "https://servicos.imt-ip.pt/termos.aspx"
+                                    },
+                                    "rendered": true
+                                  }
+                                ]
+                              }
+                            ]
+                          }
+                        ]
+                      }
+                    ]
+                  },
+                  {
+                    "tag": "input",
+                    "attributes": {
+                      "name": "ScrollTop",
+                      "type": "hidden",
+                      "id": "ScrollTop"
+                    },
+                    "rendered": false
+                  },
+                  {
+                    "tag": "input",
+                    "attributes": {
+                      "name": "__dnnVariable",
+                      "type": "hidden",
+                      "id": "__dnnVariable",
+                      "value": null
+                    },
+                    "rendered": false
+                  }
+                ]
+              },
+              {
+                "tag": "div",
+                "attributes": {
+                  "class": "ui-dialog ui-widget ui-widget-content ui-corner-all  ui-draggable",
+                  "tabindex": "-1",
+                  "role": "dialog",
+                  "aria-labelledby": "ui-dialog-title-MaintenanceMsg",
+                  "style": null
+                },
+                "rendered": false,
+                "children": [
+                  {
+                    "tag": "div",
+                    "attributes": {
+                      "class": "ui-dialog-titlebar ui-widget-header ui-corner-all ui-helper-clearfix"
+                    },
+                    "children": [
+                      {
+                        "tag": "a",
+                        "attributes": {
+                          "href": "#",
+                          "class": "ui-dialog-titlebar-close ui-corner-all",
+                          "role": "button"
+                        },
+                        "rendered": false
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    }
+  ]
+}

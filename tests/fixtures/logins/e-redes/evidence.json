@@ -1,0 +1,42 @@
+{
+  "$schema": "../evidence.schema.json",
+  "version": 1,
+  "id": "e-redes",
+  "class": "C",
+  "mechanism": "none",
+  "reviewed": "2026-10-12",
+  "summary": "The customer service application (Balcão Digital). Its sign-in page was not captured, because the operator's terms of use forbid using software or automatic mechanisms to copy the website or its content. Nothing else describes its markup.",
+  "sources": [
+    {
+      "id": "terms",
+      "kind": "vendor-documentation",
+      "title": "E-REDES: terms and conditions of use of the digital channels, last changed 2022-12-31",
+      "url": "https://www.e-redes.pt/pt-pt/politica-e-condicoes/termos-e-condicoes",
+      "retrieved": "2026-10-12",
+      "note": "Clause 8 f): the user «não utilizará software ou outros mecanismos automáticos ou manuais para copiar ou aceder ao controlo do website ou do seu conteúdo». Clause 2 forbids copying or using the content of the website; clause 6 forbids using or copying its material, source code included, without prior written consent. Clause 1 names www.e-redes.pt; the title names the digital channels."
+    },
+    {
+      "id": "portal-review",
+      "kind": "repository",
+      "title": "The in-repository review of the Portuguese portals of 2026-10-06, section E-REDES Balcão Digital",
+      "path": "docs/portugal-portal-profiles.md",
+      "lines": "109-120",
+      "retrieved": "2026-10-12"
+    }
+  ],
+  "selectors": [],
+  "fixtures": [],
+  "staysInteractive": [
+    {
+      "kind": "other",
+      "note": "The whole sign-in, with registration, password recovery and any verification."
+    }
+  ],
+  "lookedFor": [
+    "The operator's terms of use: clause 8 f) forbids using software or other automatic or manual mechanisms to copy the website or its content. An anonymous capture is software that copies the structure of a page, so none was made.",
+    "robots.txt: balcaodigital.e-redes.pt answers that address with its application shell and states no rule; www.e-redes.pt disallows its own /user/login/ for every agent.",
+    "The in-repository review of 2026-10-06: the entry is a script-rendered application in which the user selects Login; no form was read then either.",
+    "No other public description of the sign-in page's markup was looked for."
+  ],
+  "neededFromUser": "The sign-in page saved from your own browser as an HTML file that contains the fields of the form, and the page that asks for the password if that is a separate one. It is read offline, nothing is fetched from the site, and a page you saved yourself can support a reviewed login. Or your decision that one anonymous capture of the public page is acceptable despite the clause. Save any page signed out, with no password typed in, as \"Webpage, Complete\"; keep the \"_files\" folder beside the .html and both outside the repository: they can hold the account name."
+}

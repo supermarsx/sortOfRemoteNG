@@ -1,0 +1,31 @@
+{
+  "$schema": "../evidence.schema.json",
+  "version": 1,
+  "id": "drone-ci",
+  "class": "C",
+  "mechanism": "none",
+  "reviewed": "2026-10-12",
+  "summary": "Drone has no local user name and password form: sign-in is an OAuth hand-off to the Git provider the server is configured with.",
+  "sources": [
+    {
+      "id": "profile",
+      "kind": "repository",
+      "title": "The catalog profile drone-ci: its description",
+      "path": "src/utils/connection/httpApplicationProfiles.ts",
+      "retrieved": "2026-10-12"
+    }
+  ],
+  "selectors": [],
+  "fixtures": [],
+  "staysInteractive": [
+    {
+      "kind": "single-sign-on",
+      "note": "The whole sign-in: OAuth with the configured Git provider, including that provider's own second factor or security key."
+    }
+  ],
+  "lookedFor": [
+    "The catalog profile's own description: interactive sign-in through the configured Git provider's OAuth flow; Drone has no universal local user name and password form; runner and API tokens are not browser credentials.",
+    "No page of the application was read or captured: by that description it has no form of its own to find, and a self-hosted server is never contacted."
+  ],
+  "neededFromUser": "Nothing turns this into a saved-password login. Say which Git provider your Drone server signs in with: a saved password belongs to that provider's own sign-in page."
+}

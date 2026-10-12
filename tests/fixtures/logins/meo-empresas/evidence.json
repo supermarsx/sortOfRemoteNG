@@ -1,0 +1,42 @@
+{
+  "$schema": "../evidence.schema.json",
+  "version": 1,
+  "id": "meo-empresas",
+  "class": "C",
+  "mechanism": "none",
+  "reviewed": "2026-10-12",
+  "summary": "The MEO business customer area, which hands sign-in to the operator's identity service. Its sign-in page was not captured, because the conditions of use of the customer area forbid tools that collect and extract data from it. Nothing else describes its markup.",
+  "sources": [
+    {
+      "id": "conditions",
+      "kind": "vendor-documentation",
+      "title": "MEO: conditions of use of the business customer area, document Mod.C/1003061 of 2025-05",
+      "url": "https://conteudos.meo.pt/empresarial/Documentos/Condicoes-Utilizacao/Condicoes-Utilizacao-ACE.pdf",
+      "retrieved": "2026-10-12",
+      "note": "Section 8: «É expressamente proibida a extração e/ou utilização sistemática de parte ou de todo o conteúdo da Área de Cliente sem a autorização prévia e expressa da MEO. Em particular, é proibida qualquer forma de data mining ou a utilização de outras ferramentas e/ou instrumentos de recolha e extração de dados para reutilização de partes da Área de Cliente». Section 3: the account is an e-mail address as user name and a password chosen at registration."
+    },
+    {
+      "id": "portal-review",
+      "kind": "repository",
+      "title": "The in-repository review of the Portuguese portals of 2026-10-06, section MEO individuals and companies",
+      "path": "docs/portugal-portal-profiles.md",
+      "lines": "122-142",
+      "retrieved": "2026-10-12"
+    }
+  ],
+  "selectors": [],
+  "fixtures": [],
+  "staysInteractive": [
+    {
+      "kind": "single-sign-on",
+      "note": "The whole sign-in. Per the in-repository review the entry redirects to the operator's identity service with an OpenID transaction; that destination was not read."
+    }
+  ],
+  "lookedFor": [
+    "The conditions of use of the business customer area: section 8 forbids data mining and any other tool that collects and extracts data to reuse parts of the customer area without the operator's prior express authorisation. An anonymous capture is such a tool, so none was made.",
+    "robots.txt: cliente-empresas.meo.pt serves none (HTTP 404).",
+    "The in-repository review of 2026-10-06: following the published entry redirected toward the operator's identity host (id.services.telecom.pt); the identity destination could not be read.",
+    "No other public description of the sign-in page's markup was looked for."
+  ],
+  "neededFromUser": "The sign-in page saved from your own browser as an HTML file that contains the fields of the form, and the page that asks for the password if that is a separate one. It is read offline, nothing is fetched from the site, and a page you saved yourself can support a reviewed login. Or the operator's authorisation, or your decision that one anonymous capture of the public page is acceptable despite the clause. Save any page signed out, with no password typed in, as \"Webpage, Complete\"; keep the \"_files\" folder beside the .html and both outside the repository: they can hold the account name."
+}

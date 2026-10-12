@@ -1,0 +1,1912 @@
+{
+  "schema": "sorng-login-capture/1",
+  "sanitizer": 3,
+  "applicationId": "seguranca-social-direta",
+  "capturedAt": "2026-10-12",
+  "mode": "hosted",
+  "engine": "Microsoft Edge headless (Edg/146.0.3856.84)",
+  "source": {
+    "kind": "hosted-login",
+    "requestedUrl": "https://www.seg-social.pt/ptss/",
+    "finalUrl": "https://www.seg-social.pt/ptss/pssd/home",
+    "httpStatus": 200
+  },
+  "limits": {
+    "navigations": 1,
+    "scriptsExecuted": true,
+    "loadEvent": true,
+    "settleMs": 12000,
+    "dialogsDismissed": 0,
+    "input": "none",
+    "truncated": false,
+    "redirects": "public-hosts-only"
+  },
+  "network": {
+    "contacted": [
+      "aws.01.hijiffy.com:443",
+      "i-eu.ci360.marketing:443",
+      "region1.google-analytics.com:443",
+      "s3.eu-west-1.amazonaws.com:443",
+      "service.hijiffy.com:443",
+      "ss.widget.hijiffy.com:443",
+      "widget.hijiffy.com:443",
+      "www.googletagmanager.com:443",
+      "www.seg-social.pt:443"
+    ],
+    "refused": 1
+  },
+  "observations": ["no-password-field"],
+  "frames": [
+    {
+      "index": 0,
+      "parent": null,
+      "name": null,
+      "sameOriginAsTop": true,
+      "url": "https://www.seg-social.pt/ptss/pssd/home",
+      "controls": 46,
+      "tree": {
+        "tag": "html",
+        "attributes": {
+          "lang": "pt-PT",
+          "class": "PTSS PSSD  "
+        },
+        "children": [
+          {
+            "tag": "body",
+            "attributes": {
+              "class": "corpo p-container override fonte-grande fram-mfe-ii-pssd-footer fram-mfe-ii-pssd-header fram-mfe-ii-pssd-microfe"
+            },
+            "children": [
+              {
+                "tag": "a",
+                "attributes": {
+                  "href": "#",
+                  "tabindex": "0",
+                  "class": "apenas-leitor-ecra"
+                },
+                "rendered": true
+              },
+              {
+                "tag": "div",
+                "attributes": {
+                  "id": "page",
+                  "class": "pagina container-fluid",
+                  "aria-busy": "false",
+                  "style": null
+                },
+                "children": [
+                  {
+                    "tag": "header",
+                    "attributes": {},
+                    "children": [
+                      {
+                        "tag": "div",
+                        "attributes": {
+                          "id": "header"
+                        },
+                        "children": [
+                          {
+                            "tag": "div",
+                            "attributes": {
+                              "id": "pssd-header"
+                            },
+                            "children": [
+                              {
+                                "tag": "div",
+                                "attributes": {
+                                  "class": "single-spa-container",
+                                  "data-v-app": ""
+                                },
+                                "children": [
+                                  {
+                                    "tag": "div",
+                                    "attributes": {},
+                                    "children": [
+                                      {
+                                        "tag": "div",
+                                        "attributes": {
+                                          "id": "topbar",
+                                          "class": "cabecalho bg-gray-0 relative mt-0 mb-0 pb-2xs md:pb-xs lg:pb-s pt-2xs md:pt-xs lg:pt-m sm:px-0 md:px-0"
+                                        },
+                                        "children": [
+                                          {
+                                            "tag": "div",
+                                            "attributes": {
+                                              "data-v-de708f61": "",
+                                              "class": "sticky top-0 z-1000 relative"
+                                            },
+                                            "children": [
+                                              {
+                                                "tag": "div",
+                                                "attributes": {
+                                                  "data-v-de708f61": "",
+                                                  "class": "flex flex-row justify-content-between"
+                                                },
+                                                "children": [
+                                                  {
+                                                    "tag": "div",
+                                                    "attributes": {
+                                                      "data-v-de708f61": "",
+                                                      "class": "header-bar utilizador flex gap-3xs ml-auto"
+                                                    },
+                                                    "children": [
+                                                      {
+                                                        "tag": "div",
+                                                        "attributes": {
+                                                          "data-v-de708f61": "",
+                                                          "class": "flex m-0"
+                                                        },
+                                                        "children": [
+                                                          {
+                                                            "tag": "button",
+                                                            "attributes": {
+                                                              "data-v-de708f61": "",
+                                                              "class": "p-button p-component p-button-icon-only p-button-link",
+                                                              "type": "button",
+                                                              "aria-label": null,
+                                                              "id": "pssd-header-menu-list-btn",
+                                                              "data-pc-name": "button",
+                                                              "data-pc-section": "root"
+                                                            },
+                                                            "rendered": true
+                                                          }
+                                                        ]
+                                                      }
+                                                    ]
+                                                  }
+                                                ]
+                                              }
+                                            ]
+                                          }
+                                        ]
+                                      }
+                                    ]
+                                  }
+                                ]
+                              }
+                            ]
+                          }
+                        ]
+                      }
+                    ]
+                  },
+                  {
+                    "tag": "a",
+                    "attributes": {
+                      "id": "topo"
+                    },
+                    "rendered": true
+                  },
+                  {
+                    "tag": "div",
+                    "attributes": {
+                      "id": "container",
+                      "class": "contentor"
+                    },
+                    "children": [
+                      {
+                        "tag": "div",
+                        "attributes": {
+                          "id": "content"
+                        },
+                        "children": [
+                          {
+                            "tag": "div",
+                            "attributes": {
+                              "id": "frawContentWrapperDiv"
+                            },
+                            "children": [
+                              {
+                                "tag": "div",
+                                "attributes": {
+                                  "id": "contentWrapper",
+                                  "class": "relative"
+                                },
+                                "children": [
+                                  {
+                                    "tag": "div",
+                                    "attributes": {
+                                      "id": "maincontent",
+                                      "class": "conteudo sm:mt-0"
+                                    },
+                                    "children": [
+                                      {
+                                        "tag": "div",
+                                        "attributes": {
+                                          "class": "p-container",
+                                          "id": "root",
+                                          "data-fram": "root",
+                                          "data-fram-contextpath": "ptss",
+                                          "data-fram-apipath": "/ptss/feapi"
+                                        },
+                                        "children": [
+                                          {
+                                            "tag": "div",
+                                            "attributes": {
+                                              "id": "content-microfe"
+                                            },
+                                            "children": [
+                                              {
+                                                "tag": "div",
+                                                "attributes": {
+                                                  "class": "single-spa-container",
+                                                  "data-v-app": ""
+                                                },
+                                                "children": [
+                                                  {
+                                                    "tag": "div",
+                                                    "attributes": {},
+                                                    "children": [
+                                                      {
+                                                        "tag": "div",
+                                                        "attributes": {
+                                                          "microapp": null,
+                                                          "appname": null,
+                                                          "location": null,
+                                                          "shellprops": null
+                                                        },
+                                                        "children": [
+                                                          {
+                                                            "tag": "div",
+                                                            "attributes": {},
+                                                            "children": [
+                                                              {
+                                                                "tag": "section",
+                                                                "attributes": {
+                                                                  "id": "pssd-hero",
+                                                                  "class": "hero-full-bleed w-full m-auto block bg-gradient-banner border-radius-xl relative hero-margin-bottom-info sm:mt-xl mt-2xl"
+                                                                },
+                                                                "children": [
+                                                                  {
+                                                                    "tag": "div",
+                                                                    "attributes": {
+                                                                      "class": "hero-wrapper w-full relative z-5"
+                                                                    },
+                                                                    "children": [
+                                                                      {
+                                                                        "tag": "div",
+                                                                        "attributes": {
+                                                                          "class": "informative-content flex flex-column lg:flex-row w-full gap-4"
+                                                                        },
+                                                                        "children": [
+                                                                          {
+                                                                            "tag": "div",
+                                                                            "attributes": {
+                                                                              "class": "custom-left-col w-full p-s md:p-m lg:pl-xl z-1"
+                                                                            },
+                                                                            "children": [
+                                                                              {
+                                                                                "tag": "div",
+                                                                                "attributes": {
+                                                                                  "data-v-85eab375": "",
+                                                                                  "class": "relative z-10 w-full mt-s lg:mt-l"
+                                                                                },
+                                                                                "children": [
+                                                                                  {
+                                                                                    "tag": "div",
+                                                                                    "attributes": {
+                                                                                      "data-v-85eab375": "",
+                                                                                      "class": "search-input-wrapper box-border"
+                                                                                    },
+                                                                                    "children": [
+                                                                                      {
+                                                                                        "tag": "div",
+                                                                                        "attributes": {
+                                                                                          "data-v-0c2f84a9": "",
+                                                                                          "data-v-85eab375": "",
+                                                                                          "class": "custom-search-wrapper custom-border-radius-full shadow-card-custom w-full bg-gray-0 flex items-center py-4xs lg:py-3xs pl-s pr-3xs"
+                                                                                        },
+                                                                                        "children": [
+                                                                                          {
+                                                                                            "tag": "input",
+                                                                                            "attributes": {
+                                                                                              "data-v-0c2f84a9": "",
+                                                                                              "type": "search",
+                                                                                              "placeholder": null,
+                                                                                              "class": "custom-search-input py-0 flex-1 color-gray-900",
+                                                                                              "aria-label": null,
+                                                                                              "maxlength": "60",
+                                                                                              "autocomplete": "off",
+                                                                                              "minlength": "3"
+                                                                                            },
+                                                                                            "rendered": true
+                                                                                          },
+                                                                                          {
+                                                                                            "tag": "button",
+                                                                                            "attributes": {
+                                                                                              "data-v-0c2f84a9": "",
+                                                                                              "class": "p-button p-component p-button-icon-only p-disabled p-button-link",
+                                                                                              "type": "button",
+                                                                                              "aria-label": null,
+                                                                                              "disabled": "",
+                                                                                              "aria-disabled": "true",
+                                                                                              "id": "pssd-search-button",
+                                                                                              "title": null,
+                                                                                              "data-pc-name": "button",
+                                                                                              "data-pc-section": "root"
+                                                                                            },
+                                                                                            "rendered": true
+                                                                                          }
+                                                                                        ]
+                                                                                      }
+                                                                                    ]
+                                                                                  }
+                                                                                ]
+                                                                              }
+                                                                            ]
+                                                                          }
+                                                                        ]
+                                                                      }
+                                                                    ]
+                                                                  }
+                                                                ]
+                                                              },
+                                                              {
+                                                                "tag": "div",
+                                                                "attributes": {
+                                                                  "data-v-3ef2b89f": "",
+                                                                  "class": "relative z-2 mb-l md:mb-xl lg:mb-2xl"
+                                                                },
+                                                                "children": [
+                                                                  {
+                                                                    "tag": "div",
+                                                                    "attributes": {
+                                                                      "data-v-3ef2b89f": "",
+                                                                      "class": "p-carousel p-component p-carousel-horizontal w-full",
+                                                                      "role": "region",
+                                                                      "data-pc-name": "carousel",
+                                                                      "data-pc-section": "root",
+                                                                      "pv_id_3": ""
+                                                                    },
+                                                                    "children": [
+                                                                      {
+                                                                        "tag": "div",
+                                                                        "attributes": {
+                                                                          "class": "p-carousel-content",
+                                                                          "data-pc-section": "content"
+                                                                        },
+                                                                        "children": [
+                                                                          {
+                                                                            "tag": "div",
+                                                                            "attributes": {
+                                                                              "class": "p-carousel-container",
+                                                                              "aria-live": "off",
+                                                                              "data-pc-section": "container"
+                                                                            },
+                                                                            "children": [
+                                                                              {
+                                                                                "tag": "button",
+                                                                                "attributes": {
+                                                                                  "type": "button",
+                                                                                  "class": "p-carousel-prev p-link p-disabled",
+                                                                                  "disabled": "",
+                                                                                  "aria-label": null,
+                                                                                  "data-pc-section": "previousbutton",
+                                                                                  "data-pc-group-section": "navigator"
+                                                                                },
+                                                                                "rendered": false
+                                                                              },
+                                                                              {
+                                                                                "tag": "div",
+                                                                                "attributes": {
+                                                                                  "class": "p-carousel-items-content",
+                                                                                  "data-pc-section": "itemscontent",
+                                                                                  "style": null
+                                                                                },
+                                                                                "children": [
+                                                                                  {
+                                                                                    "tag": "div",
+                                                                                    "attributes": {
+                                                                                      "class": "p-carousel-items-container",
+                                                                                      "data-pc-section": "itemscontainer",
+                                                                                      "style": null
+                                                                                    },
+                                                                                    "children": [
+                                                                                      {
+                                                                                        "tag": "div",
+                                                                                        "attributes": {
+                                                                                          "class": "p-carousel-item",
+                                                                                          "role": "group",
+                                                                                          "aria-label": null,
+                                                                                          "aria-roledescription": null,
+                                                                                          "data-pc-section": "item",
+                                                                                          "data-p-carousel-item-active": "false",
+                                                                                          "data-p-carousel-item-start": "false",
+                                                                                          "data-p-carousel-item-end": "false",
+                                                                                          "aria-hidden": "true"
+                                                                                        },
+                                                                                        "children": [
+                                                                                          {
+                                                                                            "tag": "div",
+                                                                                            "attributes": {
+                                                                                              "data-v-3ef2b89f": "",
+                                                                                              "class": "p-2 h-full w-full flex justify-content-center"
+                                                                                            },
+                                                                                            "children": [
+                                                                                              {
+                                                                                                "tag": "div",
+                                                                                                "attributes": {
+                                                                                                  "data-v-3e874640": "",
+                                                                                                  "data-v-3ef2b89f": "",
+                                                                                                  "class": "w-full h-full card-timeline w-full h-full"
+                                                                                                },
+                                                                                                "children": [
+                                                                                                  {
+                                                                                                    "tag": "a",
+                                                                                                    "attributes": {
+                                                                                                      "id": "pssd-event-card-cmauwaqp401epiu0v9v0fyctl_wrapper",
+                                                                                                      "href": "/ptss/pssd/vida/momento-filhos",
+                                                                                                      "class": "interactive-card",
+                                                                                                      "style": null
+                                                                                                    },
+                                                                                                    "rendered": true
+                                                                                                  }
+                                                                                                ]
+                                                                                              }
+                                                                                            ]
+                                                                                          }
+                                                                                        ]
+                                                                                      }
+                                                                                    ]
+                                                                                  }
+                                                                                ]
+                                                                              },
+                                                                              {
+                                                                                "tag": "button",
+                                                                                "attributes": {
+                                                                                  "type": "button",
+                                                                                  "class": "p-carousel-next p-link",
+                                                                                  "aria-label": null,
+                                                                                  "data-pc-section": "nextbutton",
+                                                                                  "data-pc-group-section": "navigator"
+                                                                                },
+                                                                                "rendered": false
+                                                                              }
+                                                                            ]
+                                                                          },
+                                                                          {
+                                                                            "tag": "ul",
+                                                                            "attributes": {
+                                                                              "class": "p-carousel-indicators p-reset",
+                                                                              "data-pc-section": "indicators"
+                                                                            },
+                                                                            "children": [
+                                                                              {
+                                                                                "tag": "li",
+                                                                                "attributes": {
+                                                                                  "class": "p-carousel-indicator p-highlight",
+                                                                                  "data-pc-section": "indicator",
+                                                                                  "data-p-highlight": "true"
+                                                                                },
+                                                                                "children": [
+                                                                                  {
+                                                                                    "tag": "button",
+                                                                                    "attributes": {
+                                                                                      "class": "p-link",
+                                                                                      "type": "button",
+                                                                                      "tabindex": "0",
+                                                                                      "aria-label": null,
+                                                                                      "aria-current": "page",
+                                                                                      "data-pc-section": "indicatorbutton"
+                                                                                    },
+                                                                                    "rendered": true
+                                                                                  }
+                                                                                ]
+                                                                              },
+                                                                              {
+                                                                                "tag": "li",
+                                                                                "attributes": {
+                                                                                  "class": "p-carousel-indicator",
+                                                                                  "data-pc-section": "indicator",
+                                                                                  "data-p-highlight": "false"
+                                                                                },
+                                                                                "children": [
+                                                                                  {
+                                                                                    "tag": "button",
+                                                                                    "attributes": {
+                                                                                      "class": "p-link",
+                                                                                      "type": "button",
+                                                                                      "tabindex": "-1",
+                                                                                      "aria-label": null,
+                                                                                      "data-pc-section": "indicatorbutton"
+                                                                                    },
+                                                                                    "rendered": true
+                                                                                  }
+                                                                                ]
+                                                                              },
+                                                                              {
+                                                                                "tag": "li",
+                                                                                "attributes": {
+                                                                                  "class": "p-carousel-indicator",
+                                                                                  "data-pc-section": "indicator",
+                                                                                  "data-p-highlight": "false"
+                                                                                },
+                                                                                "children": [
+                                                                                  {
+                                                                                    "tag": "button",
+                                                                                    "attributes": {
+                                                                                      "class": "p-link",
+                                                                                      "type": "button",
+                                                                                      "tabindex": "-1",
+                                                                                      "aria-label": null,
+                                                                                      "data-pc-section": "indicatorbutton"
+                                                                                    },
+                                                                                    "rendered": true
+                                                                                  }
+                                                                                ]
+                                                                              },
+                                                                              {
+                                                                                "tag": "li",
+                                                                                "attributes": {
+                                                                                  "class": "p-carousel-indicator",
+                                                                                  "data-pc-section": "indicator",
+                                                                                  "data-p-highlight": "false"
+                                                                                },
+                                                                                "children": [
+                                                                                  {
+                                                                                    "tag": "button",
+                                                                                    "attributes": {
+                                                                                      "class": "p-link",
+                                                                                      "type": "button",
+                                                                                      "tabindex": "-1",
+                                                                                      "aria-label": null,
+                                                                                      "data-pc-section": "indicatorbutton"
+                                                                                    },
+                                                                                    "rendered": true
+                                                                                  }
+                                                                                ]
+                                                                              }
+                                                                            ]
+                                                                          }
+                                                                        ]
+                                                                      }
+                                                                    ]
+                                                                  }
+                                                                ]
+                                                              },
+                                                              {
+                                                                "tag": "div",
+                                                                "attributes": {
+                                                                  "class": "flex flex-column gap-xl md:gap-2xl"
+                                                                },
+                                                                "children": [
+                                                                  {
+                                                                    "tag": "div",
+                                                                    "attributes": {
+                                                                      "data-v-bcd22e25": "",
+                                                                      "class": "w-full"
+                                                                    },
+                                                                    "children": [
+                                                                      {
+                                                                        "tag": "div",
+                                                                        "attributes": {
+                                                                          "data-v-bcd22e25": "",
+                                                                          "class": "flex flex-column md:flex-row md:align-items-end"
+                                                                        },
+                                                                        "children": [
+                                                                          {
+                                                                            "tag": "a",
+                                                                            "attributes": {
+                                                                              "data-v-bcd22e25": "",
+                                                                              "tabindex": "-1",
+                                                                              "class": "md:ml-auto lg:ml-auto mt-s md:mt-0 lg:mt-0",
+                                                                              "href": "/ptss/pssd/noticias"
+                                                                            },
+                                                                            "children": [
+                                                                              {
+                                                                                "tag": "button",
+                                                                                "attributes": {
+                                                                                  "data-v-bcd22e25": "",
+                                                                                  "class": "p-button p-component p-button-secondary no-underline justify-content-end",
+                                                                                  "type": "button",
+                                                                                  "aria-label": null,
+                                                                                  "id": "pssd-news-btn",
+                                                                                  "data-pc-name": "button",
+                                                                                  "data-pc-section": "root",
+                                                                                  "data-p-severity": "secondary"
+                                                                                },
+                                                                                "rendered": true
+                                                                              }
+                                                                            ]
+                                                                          }
+                                                                        ]
+                                                                      }
+                                                                    ]
+                                                                  },
+                                                                  {
+                                                                    "tag": "div",
+                                                                    "attributes": {
+                                                                      "data-v-2e9debef": "",
+                                                                      "class": "cta-highlight w-full h-full border-radius-full bg-gray-100 p-s md:p-m lg:p-l"
+                                                                    },
+                                                                    "children": [
+                                                                      {
+                                                                        "tag": "div",
+                                                                        "attributes": {
+                                                                          "data-v-2e9debef": "",
+                                                                          "class": "grid flex flex-row-reverse"
+                                                                        },
+                                                                        "children": [
+                                                                          {
+                                                                            "tag": "div",
+                                                                            "attributes": {
+                                                                              "data-v-2e9debef": "",
+                                                                              "class": "col-12 md:col-6 lg:col-6 align-self-center md:py-s lg:py-s pt-xs md:pt-s pb-0"
+                                                                            },
+                                                                            "children": [
+                                                                              {
+                                                                                "tag": "a",
+                                                                                "attributes": {
+                                                                                  "data-v-2e9debef": "",
+                                                                                  "href": "/ptss/pssd/menu/trabalho/remuneracoes-contribuicoes/simplificacao-ciclo-contributivo",
+                                                                                  "target": "",
+                                                                                  "title": null,
+                                                                                  "tabindex": "-1"
+                                                                                },
+                                                                                "children": [
+                                                                                  {
+                                                                                    "tag": "button",
+                                                                                    "attributes": {
+                                                                                      "data-v-2e9debef": "",
+                                                                                      "class": "p-button p-component w-full md:w-auto lg:w-auto mt-s lg:mt-m",
+                                                                                      "type": "button",
+                                                                                      "aria-label": null,
+                                                                                      "id": "pssd-cta-highlight-btn-cmpnz2xqk006jii2yn05liqq9",
+                                                                                      "data-pc-name": "button",
+                                                                                      "data-pc-section": "root"
+                                                                                    },
+                                                                                    "rendered": true
+                                                                                  }
+                                                                                ]
+                                                                              }
+                                                                            ]
+                                                                          }
+                                                                        ]
+                                                                      }
+                                                                    ]
+                                                                  },
+                                                                  {
+                                                                    "tag": "div",
+                                                                    "attributes": {
+                                                                      "data-v-2e9debef": "",
+                                                                      "class": "cta-highlight w-full h-full border-radius-full"
+                                                                    },
+                                                                    "children": [
+                                                                      {
+                                                                        "tag": "div",
+                                                                        "attributes": {
+                                                                          "data-v-2e9debef": "",
+                                                                          "class": "grid flex"
+                                                                        },
+                                                                        "children": [
+                                                                          {
+                                                                            "tag": "div",
+                                                                            "attributes": {
+                                                                              "data-v-2e9debef": "",
+                                                                              "class": "col-12 md:col-6 lg:col-6 align-self-center md:py-s lg:py-s pt-xs md:pt-s pb-0"
+                                                                            },
+                                                                            "children": [
+                                                                              {
+                                                                                "tag": "a",
+                                                                                "attributes": {
+                                                                                  "data-v-2e9debef": "",
+                                                                                  "href": "/ptss/pssd/menu/simuladores/simuladores-prestacoes-sociais",
+                                                                                  "target": "",
+                                                                                  "title": null,
+                                                                                  "tabindex": "-1"
+                                                                                },
+                                                                                "children": [
+                                                                                  {
+                                                                                    "tag": "button",
+                                                                                    "attributes": {
+                                                                                      "data-v-2e9debef": "",
+                                                                                      "class": "p-button p-component w-full md:w-auto lg:w-auto mt-s lg:mt-m",
+                                                                                      "type": "button",
+                                                                                      "aria-label": null,
+                                                                                      "id": "pssd-cta-highlight-btn-cmmnb6awn0002cz2yoox0oee0",
+                                                                                      "data-pc-name": "button",
+                                                                                      "data-pc-section": "root"
+                                                                                    },
+                                                                                    "rendered": true
+                                                                                  }
+                                                                                ]
+                                                                              }
+                                                                            ]
+                                                                          }
+                                                                        ]
+                                                                      }
+                                                                    ]
+                                                                  },
+                                                                  {
+                                                                    "tag": "div",
+                                                                    "attributes": {
+                                                                      "data-v-2e9debef": "",
+                                                                      "class": "cta-highlight w-full h-full border-radius-full bg-gray-100 p-s md:p-m lg:p-l"
+                                                                    },
+                                                                    "children": [
+                                                                      {
+                                                                        "tag": "div",
+                                                                        "attributes": {
+                                                                          "data-v-2e9debef": "",
+                                                                          "class": "grid flex flex-row-reverse"
+                                                                        },
+                                                                        "children": [
+                                                                          {
+                                                                            "tag": "div",
+                                                                            "attributes": {
+                                                                              "data-v-2e9debef": "",
+                                                                              "class": "col-12 md:col-6 lg:col-6 align-self-center md:py-s lg:py-s pt-xs md:pt-s pb-0"
+                                                                            },
+                                                                            "children": [
+                                                                              {
+                                                                                "tag": "a",
+                                                                                "attributes": {
+                                                                                  "data-v-2e9debef": "",
+                                                                                  "href": "/ptss/pssd/menu/declaracoes",
+                                                                                  "target": "",
+                                                                                  "title": null,
+                                                                                  "tabindex": "-1"
+                                                                                },
+                                                                                "children": [
+                                                                                  {
+                                                                                    "tag": "button",
+                                                                                    "attributes": {
+                                                                                      "data-v-2e9debef": "",
+                                                                                      "class": "p-button p-component w-full md:w-auto lg:w-auto mt-s lg:mt-m",
+                                                                                      "type": "button",
+                                                                                      "aria-label": null,
+                                                                                      "id": "pssd-cta-highlight-btn-cmmnb8zz50004en2y3fewfqog",
+                                                                                      "data-pc-name": "button",
+                                                                                      "data-pc-section": "root"
+                                                                                    },
+                                                                                    "rendered": true
+                                                                                  }
+                                                                                ]
+                                                                              }
+                                                                            ]
+                                                                          }
+                                                                        ]
+                                                                      }
+                                                                    ]
+                                                                  },
+                                                                  {
+                                                                    "tag": "div",
+                                                                    "attributes": {
+                                                                      "class": "w-full"
+                                                                    },
+                                                                    "children": [
+                                                                      {
+                                                                        "tag": "div",
+                                                                        "attributes": {
+                                                                          "class": "flex flex-column md:flex-row md:align-items-end"
+                                                                        },
+                                                                        "children": [
+                                                                          {
+                                                                            "tag": "a",
+                                                                            "attributes": {
+                                                                              "tabindex": "-1",
+                                                                              "class": "md:ml-auto lg:ml-auto mt-s md:mt-0 lg:mt-0",
+                                                                              "href": "/ptss/pssd/pagamentos"
+                                                                            },
+                                                                            "children": [
+                                                                              {
+                                                                                "tag": "button",
+                                                                                "attributes": {
+                                                                                  "class": "p-button p-component p-button-secondary no-underline justify-content-end",
+                                                                                  "type": "button",
+                                                                                  "aria-label": null,
+                                                                                  "id": "pssd-payments-btn",
+                                                                                  "data-pc-name": "button",
+                                                                                  "data-pc-section": "root",
+                                                                                  "data-p-severity": "secondary"
+                                                                                },
+                                                                                "rendered": true
+                                                                              }
+                                                                            ]
+                                                                          }
+                                                                        ]
+                                                                      }
+                                                                    ]
+                                                                  },
+                                                                  {
+                                                                    "tag": "div",
+                                                                    "attributes": {
+                                                                      "data-v-8c9902db": "",
+                                                                      "class": "w-full"
+                                                                    },
+                                                                    "children": [
+                                                                      {
+                                                                        "tag": "div",
+                                                                        "attributes": {
+                                                                          "data-v-8c9902db": "",
+                                                                          "class": "mt-l"
+                                                                        },
+                                                                        "children": [
+                                                                          {
+                                                                            "tag": "div",
+                                                                            "attributes": {
+                                                                              "data-v-8c9902db": "",
+                                                                              "class": "p-carousel p-component p-carousel-horizontal w-full",
+                                                                              "role": "region",
+                                                                              "data-pc-name": "carousel",
+                                                                              "data-pc-section": "root",
+                                                                              "pv_id_2": ""
+                                                                            },
+                                                                            "children": [
+                                                                              {
+                                                                                "tag": "div",
+                                                                                "attributes": {
+                                                                                  "class": "p-carousel-content",
+                                                                                  "data-pc-section": "content"
+                                                                                },
+                                                                                "children": [
+                                                                                  {
+                                                                                    "tag": "div",
+                                                                                    "attributes": {
+                                                                                      "class": "p-carousel-container",
+                                                                                      "aria-live": "off",
+                                                                                      "data-pc-section": "container"
+                                                                                    },
+                                                                                    "children": [
+                                                                                      {
+                                                                                        "tag": "button",
+                                                                                        "attributes": {
+                                                                                          "type": "button",
+                                                                                          "class": "p-carousel-prev p-link p-disabled",
+                                                                                          "disabled": "",
+                                                                                          "aria-label": null,
+                                                                                          "data-pc-section": "previousbutton",
+                                                                                          "data-pc-group-section": "navigator"
+                                                                                        },
+                                                                                        "rendered": false
+                                                                                      },
+                                                                                      {
+                                                                                        "tag": "div",
+                                                                                        "attributes": {
+                                                                                          "class": "p-carousel-items-content",
+                                                                                          "data-pc-section": "itemscontent",
+                                                                                          "style": null
+                                                                                        },
+                                                                                        "children": [
+                                                                                          {
+                                                                                            "tag": "div",
+                                                                                            "attributes": {
+                                                                                              "class": "p-carousel-items-container",
+                                                                                              "data-pc-section": "itemscontainer",
+                                                                                              "style": null
+                                                                                            },
+                                                                                            "children": [
+                                                                                              {
+                                                                                                "tag": "div",
+                                                                                                "attributes": {
+                                                                                                  "class": "p-carousel-item p-carousel-item-active p-carousel-item-start p-carousel-item-end",
+                                                                                                  "role": "group",
+                                                                                                  "aria-label": null,
+                                                                                                  "aria-roledescription": null,
+                                                                                                  "data-pc-section": "item",
+                                                                                                  "data-p-carousel-item-active": "true",
+                                                                                                  "data-p-carousel-item-start": "true",
+                                                                                                  "data-p-carousel-item-end": "true"
+                                                                                                },
+                                                                                                "children": [
+                                                                                                  {
+                                                                                                    "tag": "div",
+                                                                                                    "attributes": {
+                                                                                                      "data-v-f56f0ac6": "",
+                                                                                                      "data-v-8c9902db": "",
+                                                                                                      "class": "col-12 py-0 flex justify-content-center"
+                                                                                                    },
+                                                                                                    "children": [
+                                                                                                      {
+                                                                                                        "tag": "div",
+                                                                                                        "attributes": {
+                                                                                                          "data-v-f56f0ac6": "",
+                                                                                                          "class": "card-wrapper relative overflow-hidden flex flex-column justify-content-end p-s lg:p-m"
+                                                                                                        },
+                                                                                                        "children": [
+                                                                                                          {
+                                                                                                            "tag": "div",
+                                                                                                            "attributes": {
+                                                                                                              "data-v-f56f0ac6": "",
+                                                                                                              "class": "card-content card-title relative z-2"
+                                                                                                            },
+                                                                                                            "children": [
+                                                                                                              {
+                                                                                                                "tag": "a",
+                                                                                                                "attributes": {
+                                                                                                                  "data-v-f56f0ac6": "",
+                                                                                                                  "href": "/ptss/pssd/menu/links-uteis/obter-documento",
+                                                                                                                  "target": "",
+                                                                                                                  "title": null,
+                                                                                                                  "rel": "",
+                                                                                                                  "tabindex": "0",
+                                                                                                                  "aria-label": null
+                                                                                                                },
+                                                                                                                "children": [
+                                                                                                                  {
+                                                                                                                    "tag": "button",
+                                                                                                                    "attributes": {
+                                                                                                                      "data-v-f56f0ac6": "",
+                                                                                                                      "class": "p-button p-component p-button-secondary w-full md:w-auto lg:w-auto mt-m lg:mt-l bg-gray-0",
+                                                                                                                      "type": "button",
+                                                                                                                      "aria-label": null,
+                                                                                                                      "tabindex": "-1",
+                                                                                                                      "aria-hidden": "true",
+                                                                                                                      "id": "pssd-card-img-btn-obter-documento",
+                                                                                                                      "data-pc-name": "button",
+                                                                                                                      "data-pc-section": "root",
+                                                                                                                      "data-p-severity": "secondary"
+                                                                                                                    },
+                                                                                                                    "rendered": true
+                                                                                                                  }
+                                                                                                                ]
+                                                                                                              }
+                                                                                                            ]
+                                                                                                          }
+                                                                                                        ]
+                                                                                                      }
+                                                                                                    ]
+                                                                                                  }
+                                                                                                ]
+                                                                                              },
+                                                                                              {
+                                                                                                "tag": "div",
+                                                                                                "attributes": {
+                                                                                                  "class": "p-carousel-item",
+                                                                                                  "role": "group",
+                                                                                                  "aria-label": null,
+                                                                                                  "aria-roledescription": null,
+                                                                                                  "data-pc-section": "item",
+                                                                                                  "data-p-carousel-item-active": "false",
+                                                                                                  "data-p-carousel-item-start": "false",
+                                                                                                  "data-p-carousel-item-end": "false",
+                                                                                                  "aria-hidden": "true"
+                                                                                                },
+                                                                                                "children": [
+                                                                                                  {
+                                                                                                    "tag": "div",
+                                                                                                    "attributes": {
+                                                                                                      "data-v-f56f0ac6": "",
+                                                                                                      "data-v-8c9902db": "",
+                                                                                                      "class": "col-12 py-0 flex justify-content-center"
+                                                                                                    },
+                                                                                                    "children": [
+                                                                                                      {
+                                                                                                        "tag": "div",
+                                                                                                        "attributes": {
+                                                                                                          "data-v-f56f0ac6": "",
+                                                                                                          "class": "card-wrapper relative overflow-hidden flex flex-column justify-content-end p-s lg:p-m"
+                                                                                                        },
+                                                                                                        "children": [
+                                                                                                          {
+                                                                                                            "tag": "div",
+                                                                                                            "attributes": {
+                                                                                                              "data-v-f56f0ac6": "",
+                                                                                                              "class": "card-content card-title relative z-2"
+                                                                                                            },
+                                                                                                            "children": [
+                                                                                                              {
+                                                                                                                "tag": "a",
+                                                                                                                "attributes": {
+                                                                                                                  "data-v-f56f0ac6": "",
+                                                                                                                  "href": "https://www.plataformaservicos.seg-social.pt/",
+                                                                                                                  "target": "_blank",
+                                                                                                                  "title": null,
+                                                                                                                  "rel": "noopener noreferrer",
+                                                                                                                  "tabindex": "0",
+                                                                                                                  "aria-label": null
+                                                                                                                },
+                                                                                                                "children": [
+                                                                                                                  {
+                                                                                                                    "tag": "button",
+                                                                                                                    "attributes": {
+                                                                                                                      "data-v-f56f0ac6": "",
+                                                                                                                      "class": "p-button p-component p-button-secondary w-full md:w-auto lg:w-auto mt-m lg:mt-l bg-gray-0",
+                                                                                                                      "type": "button",
+                                                                                                                      "aria-label": null,
+                                                                                                                      "tabindex": "-1",
+                                                                                                                      "aria-hidden": "true",
+                                                                                                                      "id": "pssd-card-img-btn-plataforma-de-servicos-de-interoperabilidade",
+                                                                                                                      "data-pc-name": "button",
+                                                                                                                      "data-pc-section": "root",
+                                                                                                                      "data-p-severity": "secondary"
+                                                                                                                    },
+                                                                                                                    "rendered": true
+                                                                                                                  }
+                                                                                                                ]
+                                                                                                              }
+                                                                                                            ]
+                                                                                                          }
+                                                                                                        ]
+                                                                                                      }
+                                                                                                    ]
+                                                                                                  }
+                                                                                                ]
+                                                                                              },
+                                                                                              {
+                                                                                                "tag": "div",
+                                                                                                "attributes": {
+                                                                                                  "class": "p-carousel-item",
+                                                                                                  "role": "group",
+                                                                                                  "aria-label": null,
+                                                                                                  "aria-roledescription": null,
+                                                                                                  "data-pc-section": "item",
+                                                                                                  "data-p-carousel-item-active": "false",
+                                                                                                  "data-p-carousel-item-start": "false",
+                                                                                                  "data-p-carousel-item-end": "false",
+                                                                                                  "aria-hidden": "true"
+                                                                                                },
+                                                                                                "children": [
+                                                                                                  {
+                                                                                                    "tag": "div",
+                                                                                                    "attributes": {
+                                                                                                      "data-v-f56f0ac6": "",
+                                                                                                      "data-v-8c9902db": "",
+                                                                                                      "class": "col-12 py-0 flex justify-content-center"
+                                                                                                    },
+                                                                                                    "children": [
+                                                                                                      {
+                                                                                                        "tag": "div",
+                                                                                                        "attributes": {
+                                                                                                          "data-v-f56f0ac6": "",
+                                                                                                          "class": "card-wrapper relative overflow-hidden flex flex-column justify-content-end p-s lg:p-m"
+                                                                                                        },
+                                                                                                        "children": [
+                                                                                                          {
+                                                                                                            "tag": "div",
+                                                                                                            "attributes": {
+                                                                                                              "data-v-f56f0ac6": "",
+                                                                                                              "class": "card-content card-title relative z-2"
+                                                                                                            },
+                                                                                                            "children": [
+                                                                                                              {
+                                                                                                                "tag": "a",
+                                                                                                                "attributes": {
+                                                                                                                  "data-v-f56f0ac6": "",
+                                                                                                                  "href": "https://siga.marcacaodeatendimento.pt/",
+                                                                                                                  "target": "_blank",
+                                                                                                                  "title": null,
+                                                                                                                  "rel": "noopener noreferrer",
+                                                                                                                  "tabindex": "0",
+                                                                                                                  "aria-label": null
+                                                                                                                },
+                                                                                                                "children": [
+                                                                                                                  {
+                                                                                                                    "tag": "button",
+                                                                                                                    "attributes": {
+                                                                                                                      "data-v-f56f0ac6": "",
+                                                                                                                      "class": "p-button p-component p-button-secondary w-full md:w-auto lg:w-auto mt-m lg:mt-l bg-gray-0",
+                                                                                                                      "type": "button",
+                                                                                                                      "aria-label": null,
+                                                                                                                      "tabindex": "-1",
+                                                                                                                      "aria-hidden": "true",
+                                                                                                                      "id": "pssd-card-img-btn-siga",
+                                                                                                                      "data-pc-name": "button",
+                                                                                                                      "data-pc-section": "root",
+                                                                                                                      "data-p-severity": "secondary"
+                                                                                                                    },
+                                                                                                                    "rendered": true
+                                                                                                                  }
+                                                                                                                ]
+                                                                                                              }
+                                                                                                            ]
+                                                                                                          }
+                                                                                                        ]
+                                                                                                      }
+                                                                                                    ]
+                                                                                                  }
+                                                                                                ]
+                                                                                              }
+                                                                                            ]
+                                                                                          }
+                                                                                        ]
+                                                                                      },
+                                                                                      {
+                                                                                        "tag": "button",
+                                                                                        "attributes": {
+                                                                                          "type": "button",
+                                                                                          "class": "p-carousel-next p-link",
+                                                                                          "aria-label": null,
+                                                                                          "data-pc-section": "nextbutton",
+                                                                                          "data-pc-group-section": "navigator"
+                                                                                        },
+                                                                                        "rendered": false
+                                                                                      }
+                                                                                    ]
+                                                                                  },
+                                                                                  {
+                                                                                    "tag": "ul",
+                                                                                    "attributes": {
+                                                                                      "class": "p-carousel-indicators p-reset",
+                                                                                      "data-pc-section": "indicators"
+                                                                                    },
+                                                                                    "children": [
+                                                                                      {
+                                                                                        "tag": "li",
+                                                                                        "attributes": {
+                                                                                          "class": "p-carousel-indicator p-highlight",
+                                                                                          "data-pc-section": "indicator",
+                                                                                          "data-p-highlight": "true"
+                                                                                        },
+                                                                                        "children": [
+                                                                                          {
+                                                                                            "tag": "button",
+                                                                                            "attributes": {
+                                                                                              "class": "p-link",
+                                                                                              "type": "button",
+                                                                                              "tabindex": "0",
+                                                                                              "aria-label": null,
+                                                                                              "aria-current": "page",
+                                                                                              "data-pc-section": "indicatorbutton"
+                                                                                            },
+                                                                                            "rendered": true
+                                                                                          }
+                                                                                        ]
+                                                                                      },
+                                                                                      {
+                                                                                        "tag": "li",
+                                                                                        "attributes": {
+                                                                                          "class": "p-carousel-indicator",
+                                                                                          "data-pc-section": "indicator",
+                                                                                          "data-p-highlight": "false"
+                                                                                        },
+                                                                                        "children": [
+                                                                                          {
+                                                                                            "tag": "button",
+                                                                                            "attributes": {
+                                                                                              "class": "p-link",
+                                                                                              "type": "button",
+                                                                                              "tabindex": "-1",
+                                                                                              "aria-label": null,
+                                                                                              "data-pc-section": "indicatorbutton"
+                                                                                            },
+                                                                                            "rendered": true
+                                                                                          }
+                                                                                        ]
+                                                                                      },
+                                                                                      {
+                                                                                        "tag": "li",
+                                                                                        "attributes": {
+                                                                                          "class": "p-carousel-indicator",
+                                                                                          "data-pc-section": "indicator",
+                                                                                          "data-p-highlight": "false"
+                                                                                        },
+                                                                                        "children": [
+                                                                                          {
+                                                                                            "tag": "button",
+                                                                                            "attributes": {
+                                                                                              "class": "p-link",
+                                                                                              "type": "button",
+                                                                                              "tabindex": "-1",
+                                                                                              "aria-label": null,
+                                                                                              "data-pc-section": "indicatorbutton"
+                                                                                            },
+                                                                                            "rendered": true
+                                                                                          }
+                                                                                        ]
+                                                                                      }
+                                                                                    ]
+                                                                                  }
+                                                                                ]
+                                                                              }
+                                                                            ]
+                                                                          }
+                                                                        ]
+                                                                      }
+                                                                    ]
+                                                                  },
+                                                                  {
+                                                                    "tag": "div",
+                                                                    "attributes": {
+                                                                      "data-v-1e18f51d": "",
+                                                                      "class": "w-full relative"
+                                                                    },
+                                                                    "children": [
+                                                                      {
+                                                                        "tag": "div",
+                                                                        "attributes": {
+                                                                          "data-v-1e18f51d": "",
+                                                                          "class": "grid flex relative align-items-start z-1"
+                                                                        },
+                                                                        "children": [
+                                                                          {
+                                                                            "tag": "div",
+                                                                            "attributes": {
+                                                                              "data-v-1e18f51d": "",
+                                                                              "class": "col-12 md:col-7 lg:col-7 py-0"
+                                                                            },
+                                                                            "children": [
+                                                                              {
+                                                                                "tag": "a",
+                                                                                "attributes": {
+                                                                                  "data-v-1e18f51d": "",
+                                                                                  "href": "/ptss/pssd/menu/quem-somos/estatisticas"
+                                                                                },
+                                                                                "children": [
+                                                                                  {
+                                                                                    "tag": "button",
+                                                                                    "attributes": {
+                                                                                      "data-v-1e18f51d": "",
+                                                                                      "class": "p-button p-component p-button-secondary no-underline",
+                                                                                      "type": "button",
+                                                                                      "aria-label": null,
+                                                                                      "id": "pssd-stats-btn",
+                                                                                      "data-pc-name": "button",
+                                                                                      "data-pc-section": "root",
+                                                                                      "data-p-severity": "secondary"
+                                                                                    },
+                                                                                    "rendered": true
+                                                                                  }
+                                                                                ]
+                                                                              }
+                                                                            ]
+                                                                          }
+                                                                        ]
+                                                                      }
+                                                                    ]
+                                                                  }
+                                                                ]
+                                                              }
+                                                            ]
+                                                          }
+                                                        ]
+                                                      }
+                                                    ]
+                                                  }
+                                                ]
+                                              }
+                                            ]
+                                          }
+                                        ]
+                                      }
+                                    ]
+                                  },
+                                  {
+                                    "tag": "a",
+                                    "attributes": {
+                                      "id": "backToTop",
+                                      "href": "#",
+                                      "class": "voltar-topo flex justify-content-center align-items-center no-underline color-gray-900 ui-animation-fade ui-helper-hidden",
+                                      "title": null,
+                                      "onclick": null
+                                    },
+                                    "rendered": false
+                                  }
+                                ]
+                              }
+                            ]
+                          }
+                        ]
+                      }
+                    ]
+                  },
+                  {
+                    "tag": "div",
+                    "attributes": {
+                      "id": "footer"
+                    },
+                    "children": [
+                      {
+                        "tag": "div",
+                        "attributes": {
+                          "id": "pssd-footer"
+                        },
+                        "children": [
+                          {
+                            "tag": "div",
+                            "attributes": {
+                              "class": "single-spa-container",
+                              "data-v-app": ""
+                            },
+                            "children": [
+                              {
+                                "tag": "div",
+                                "attributes": {},
+                                "children": [
+                                  {
+                                    "tag": "div",
+                                    "attributes": {
+                                      "data-v-102a126a": "",
+                                      "class": "footer-container",
+                                      "microapp": null,
+                                      "appname": null,
+                                      "location": null,
+                                      "shellprops": null
+                                    },
+                                    "children": [
+                                      {
+                                        "tag": "section",
+                                        "attributes": {
+                                          "data-v-e1e66022": "",
+                                          "class": "bg-gray-200"
+                                        },
+                                        "children": [
+                                          {
+                                            "tag": "div",
+                                            "attributes": {
+                                              "data-v-e1e66022": "",
+                                              "class": "container"
+                                            },
+                                            "children": [
+                                              {
+                                                "tag": "div",
+                                                "attributes": {
+                                                  "data-v-e1e66022": "",
+                                                  "class": "grid align-items-center p-l m-0"
+                                                },
+                                                "children": [
+                                                  {
+                                                    "tag": "div",
+                                                    "attributes": {
+                                                      "data-v-e1e66022": "",
+                                                      "class": "col-12 lg:col-3 flex justify-content-center lg:justify-content-end mt-m lg:mt-0"
+                                                    },
+                                                    "children": [
+                                                      {
+                                                        "tag": "button",
+                                                        "attributes": {
+                                                          "data-v-e1e66022": "",
+                                                          "class": "p-button p-component p-button-secondary",
+                                                          "type": "button",
+                                                          "aria-label": null,
+                                                          "id": "pssd-feedback-btn",
+                                                          "data-pc-name": "button",
+                                                          "data-pc-section": "root",
+                                                          "data-p-severity": "secondary"
+                                                        },
+                                                        "rendered": true
+                                                      }
+                                                    ]
+                                                  }
+                                                ]
+                                              }
+                                            ]
+                                          }
+                                        ]
+                                      },
+                                      {
+                                        "tag": "div",
+                                        "attributes": {
+                                          "data-v-102a126a": "",
+                                          "class": "flex justify-content-center bg-gray-100"
+                                        },
+                                        "children": [
+                                          {
+                                            "tag": "div",
+                                            "attributes": {
+                                              "data-v-102a126a": "",
+                                              "class": "flex flex-column justify-content-center w-full bottom-grid pt-2xl"
+                                            },
+                                            "children": [
+                                              {
+                                                "tag": "div",
+                                                "attributes": {
+                                                  "data-v-20ecf9b4": "",
+                                                  "class": "flex flex-column align-items-center mr-s ml-s md:mr-m md:ml-m"
+                                                },
+                                                "children": [
+                                                  {
+                                                    "tag": "div",
+                                                    "attributes": {
+                                                      "data-v-20ecf9b4": "",
+                                                      "class": "grid w-full"
+                                                    },
+                                                    "children": [
+                                                      {
+                                                        "tag": "div",
+                                                        "attributes": {
+                                                          "data-v-20ecf9b4": "",
+                                                          "class": "w-full",
+                                                          "multiple": "false"
+                                                        },
+                                                        "children": [
+                                                          {
+                                                            "tag": "div",
+                                                            "attributes": {
+                                                              "class": "p-accordion p-component",
+                                                              "data-pc-name": "accordion",
+                                                              "data-pc-section": "root"
+                                                            },
+                                                            "children": [
+                                                              {
+                                                                "tag": "div",
+                                                                "attributes": {
+                                                                  "class": "p-accordion-tab",
+                                                                  "data-pc-section": "root",
+                                                                  "data-pc-name": "accordiontab",
+                                                                  "data-pc-index": "0",
+                                                                  "data-p-active": "false"
+                                                                },
+                                                                "children": [
+                                                                  {
+                                                                    "tag": "div",
+                                                                    "attributes": {
+                                                                      "class": "p-accordion-header",
+                                                                      "data-pc-section": "header",
+                                                                      "data-p-highlight": "false"
+                                                                    },
+                                                                    "children": [
+                                                                      {
+                                                                        "tag": "a",
+                                                                        "attributes": {
+                                                                          "id": "pv_id_1_0_header_action",
+                                                                          "class": "p-accordion-header-link p-accordion-header-action",
+                                                                          "tabindex": "0",
+                                                                          "role": "button",
+                                                                          "aria-expanded": "false",
+                                                                          "aria-controls": "pv_id_1_0_content",
+                                                                          "data-pc-section": "headeraction"
+                                                                        },
+                                                                        "rendered": true
+                                                                      }
+                                                                    ]
+                                                                  }
+                                                                ]
+                                                              },
+                                                              {
+                                                                "tag": "div",
+                                                                "attributes": {
+                                                                  "class": "p-accordion-tab",
+                                                                  "data-pc-section": "root",
+                                                                  "data-pc-name": "accordiontab",
+                                                                  "data-pc-index": "1",
+                                                                  "data-p-active": "false"
+                                                                },
+                                                                "children": [
+                                                                  {
+                                                                    "tag": "div",
+                                                                    "attributes": {
+                                                                      "class": "p-accordion-header",
+                                                                      "data-pc-section": "header",
+                                                                      "data-p-highlight": "false"
+                                                                    },
+                                                                    "children": [
+                                                                      {
+                                                                        "tag": "a",
+                                                                        "attributes": {
+                                                                          "id": "pv_id_1_1_header_action",
+                                                                          "class": "p-accordion-header-link p-accordion-header-action",
+                                                                          "tabindex": "0",
+                                                                          "role": "button",
+                                                                          "aria-expanded": "false",
+                                                                          "aria-controls": "pv_id_1_1_content",
+                                                                          "data-pc-section": "headeraction"
+                                                                        },
+                                                                        "rendered": true
+                                                                      }
+                                                                    ]
+                                                                  },
+                                                                  {
+                                                                    "tag": "div",
+                                                                    "attributes": {
+                                                                      "id": "pv_id_1_1_content",
+                                                                      "class": "p-toggleable-content",
+                                                                      "role": "region",
+                                                                      "aria-labelledby": "pv_id_1_1_header_action",
+                                                                      "data-pc-section": "accordiontab.transition",
+                                                                      "style": null
+                                                                    },
+                                                                    "children": [
+                                                                      {
+                                                                        "tag": "div",
+                                                                        "attributes": {
+                                                                          "class": "p-accordion-content",
+                                                                          "data-pc-section": "content"
+                                                                        },
+                                                                        "children": [
+                                                                          {
+                                                                            "tag": "ul",
+                                                                            "attributes": {
+                                                                              "data-v-20ecf9b4": "",
+                                                                              "class": "list-none m-0 p-0"
+                                                                            },
+                                                                            "children": [
+                                                                              {
+                                                                                "tag": "li",
+                                                                                "attributes": {
+                                                                                  "data-v-20ecf9b4": "",
+                                                                                  "class": "p-0 m-0"
+                                                                                },
+                                                                                "children": [
+                                                                                  {
+                                                                                    "tag": "a",
+                                                                                    "attributes": {
+                                                                                      "data-v-20ecf9b4": "",
+                                                                                      "href": "/ptss/pssd/menu/simuladores"
+                                                                                    },
+                                                                                    "children": [
+                                                                                      {
+                                                                                        "tag": "button",
+                                                                                        "attributes": {
+                                                                                          "data-v-20ecf9b4": "",
+                                                                                          "class": "p-button p-component p-button-link",
+                                                                                          "type": "button",
+                                                                                          "aria-label": null,
+                                                                                          "data-pc-name": "button",
+                                                                                          "data-pc-section": "root"
+                                                                                        },
+                                                                                        "rendered": false
+                                                                                      }
+                                                                                    ]
+                                                                                  }
+                                                                                ]
+                                                                              }
+                                                                            ]
+                                                                          }
+                                                                        ]
+                                                                      }
+                                                                    ]
+                                                                  }
+                                                                ]
+                                                              },
+                                                              {
+                                                                "tag": "div",
+                                                                "attributes": {
+                                                                  "class": "p-accordion-tab",
+                                                                  "data-pc-section": "root",
+                                                                  "data-pc-name": "accordiontab",
+                                                                  "data-pc-index": "2",
+                                                                  "data-p-active": "false"
+                                                                },
+                                                                "children": [
+                                                                  {
+                                                                    "tag": "div",
+                                                                    "attributes": {
+                                                                      "class": "p-accordion-header",
+                                                                      "data-pc-section": "header",
+                                                                      "data-p-highlight": "false"
+                                                                    },
+                                                                    "children": [
+                                                                      {
+                                                                        "tag": "a",
+                                                                        "attributes": {
+                                                                          "id": "pv_id_1_2_header_action",
+                                                                          "class": "p-accordion-header-link p-accordion-header-action",
+                                                                          "tabindex": "0",
+                                                                          "role": "button",
+                                                                          "aria-expanded": "false",
+                                                                          "aria-controls": "pv_id_1_2_content",
+                                                                          "data-pc-section": "headeraction"
+                                                                        },
+                                                                        "rendered": true
+                                                                      }
+                                                                    ]
+                                                                  }
+                                                                ]
+                                                              },
+                                                              {
+                                                                "tag": "div",
+                                                                "attributes": {
+                                                                  "class": "p-accordion-tab",
+                                                                  "data-pc-section": "root",
+                                                                  "data-pc-name": "accordiontab",
+                                                                  "data-pc-index": "3",
+                                                                  "data-p-active": "false"
+                                                                },
+                                                                "children": [
+                                                                  {
+                                                                    "tag": "div",
+                                                                    "attributes": {
+                                                                      "class": "p-accordion-header",
+                                                                      "data-pc-section": "header",
+                                                                      "data-p-highlight": "false"
+                                                                    },
+                                                                    "children": [
+                                                                      {
+                                                                        "tag": "a",
+                                                                        "attributes": {
+                                                                          "id": "pv_id_1_3_header_action",
+                                                                          "class": "p-accordion-header-link p-accordion-header-action",
+                                                                          "tabindex": "0",
+                                                                          "role": "button",
+                                                                          "aria-expanded": "false",
+                                                                          "aria-controls": "pv_id_1_3_content",
+                                                                          "data-pc-section": "headeraction"
+                                                                        },
+                                                                        "rendered": true
+                                                                      }
+                                                                    ]
+                                                                  }
+                                                                ]
+                                                              }
+                                                            ]
+                                                          }
+                                                        ]
+                                                      }
+                                                    ]
+                                                  },
+                                                  {
+                                                    "tag": "div",
+                                                    "attributes": {
+                                                      "data-v-20ecf9b4": "",
+                                                      "class": "flex gap-3xs justify-content-center mt-m"
+                                                    },
+                                                    "children": [
+                                                      {
+                                                        "tag": "a",
+                                                        "attributes": {
+                                                          "data-v-433e76b2": "",
+                                                          "target": "_blank",
+                                                          "rel": "noopener",
+                                                          "tabindex": "-1",
+                                                          "href": "https://www.instagram.com/segurancasocial.pt"
+                                                        },
+                                                        "children": [
+                                                          {
+                                                            "tag": "button",
+                                                            "attributes": {
+                                                              "data-v-433e76b2": "",
+                                                              "class": "p-button p-component p-button-icon-only p-button-link m-0",
+                                                              "type": "button",
+                                                              "id": "pssd-share-instagram-btn",
+                                                              "title": null,
+                                                              "data-pc-name": "button",
+                                                              "data-pc-section": "root"
+                                                            },
+                                                            "rendered": true
+                                                          }
+                                                        ]
+                                                      },
+                                                      {
+                                                        "tag": "a",
+                                                        "attributes": {
+                                                          "data-v-433e76b2": "",
+                                                          "target": "_blank",
+                                                          "rel": "noopener",
+                                                          "tabindex": "-1",
+                                                          "href": "https://www.facebook.com/segurancasocial.pt"
+                                                        },
+                                                        "children": [
+                                                          {
+                                                            "tag": "button",
+                                                            "attributes": {
+                                                              "data-v-433e76b2": "",
+                                                              "class": "p-button p-component p-button-icon-only p-button-link m-0",
+                                                              "type": "button",
+                                                              "id": "pssd-share-facebook-btn",
+                                                              "title": null,
+                                                              "data-pc-name": "button",
+                                                              "data-pc-section": "root"
+                                                            },
+                                                            "rendered": true
+                                                          }
+                                                        ]
+                                                      },
+                                                      {
+                                                        "tag": "a",
+                                                        "attributes": {
+                                                          "data-v-433e76b2": "",
+                                                          "target": "_blank",
+                                                          "rel": "noopener",
+                                                          "tabindex": "-1",
+                                                          "href": "https://www.youtube.com/@segurancasocial-pt"
+                                                        },
+                                                        "children": [
+                                                          {
+                                                            "tag": "button",
+                                                            "attributes": {
+                                                              "data-v-433e76b2": "",
+                                                              "class": "p-button p-component p-button-icon-only p-button-link m-0",
+                                                              "type": "button",
+                                                              "id": "pssd-share-youtube-btn",
+                                                              "title": null,
+                                                              "data-pc-name": "button",
+                                                              "data-pc-section": "root"
+                                                            },
+                                                            "rendered": true
+                                                          }
+                                                        ]
+                                                      }
+                                                    ]
+                                                  }
+                                                ]
+                                              }
+                                            ]
+                                          }
+                                        ]
+                                      }
+                                    ]
+                                  }
+                                ]
+                              }
+                            ]
+                          }
+                        ]
+                      }
+                    ]
+                  },
+                  {
+                    "tag": "span",
+                    "attributes": {
+                      "id": "bannerCookie",
+                      "class": "cookie-banner pt-0 pb-0"
+                    },
+                    "children": [
+                      {
+                        "tag": "div",
+                        "attributes": {
+                          "class": "container flex sm:flex-column md:flex-row"
+                        },
+                        "children": [
+                          {
+                            "tag": "div",
+                            "attributes": {
+                              "class": "col-12 md:col-11 flex flex-column lg:flex-row lg:pl-0"
+                            },
+                            "children": [
+                              {
+                                "tag": "form",
+                                "attributes": {
+                                  "id": "cookieForm",
+                                  "name": "cookieForm",
+                                  "method": "post",
+                                  "action": "/ptss/pssd/home",
+                                  "class": "col-12 lg:col-4 flex flex-column md:flex-row gap-3xs justify-content-start lg:justify-content-end",
+                                  "enctype": "application/x-www-form-urlencoded"
+                                },
+                                "rendered": true,
+                                "children": [
+                                  {
+                                    "tag": "input",
+                                    "attributes": {
+                                      "type": "hidden",
+                                      "name": "cookieForm",
+                                      "value": null
+                                    },
+                                    "rendered": false
+                                  },
+                                  {
+                                    "tag": "a",
+                                    "attributes": {
+                                      "href": "/ptss/pssd/menu/links-uteis/termos-condicoes-uso/politica-cookies",
+                                      "class": "p-button p-component p-button-secondary justify-content-center"
+                                    },
+                                    "rendered": true
+                                  },
+                                  {
+                                    "tag": "button",
+                                    "attributes": {
+                                      "id": "cookieForm:ackCookieLaw",
+                                      "name": "cookieForm:ackCookieLaw",
+                                      "class": "ui-button ui-widget ui-state-default ui-corner-all ui-button-text-only p-button p-component justify-content-center",
+                                      "onclick": null,
+                                      "type": "submit",
+                                      "role": "button",
+                                      "aria-disabled": "false"
+                                    },
+                                    "rendered": true
+                                  },
+                                  {
+                                    "tag": "input",
+                                    "attributes": {
+                                      "type": "hidden",
+                                      "name": "javax.faces.ViewState",
+                                      "value": null,
+                                      "autocomplete": "off"
+                                    },
+                                    "rendered": false
+                                  },
+                                  {
+                                    "tag": "input",
+                                    "attributes": {
+                                      "type": "hidden",
+                                      "name": "CTKN_DYN",
+                                      "value": null
+                                    },
+                                    "rendered": false
+                                  },
+                                  {
+                                    "tag": "input",
+                                    "attributes": {
+                                      "type": "hidden",
+                                      "name": "x-lsu",
+                                      "value": null
+                                    },
+                                    "rendered": false
+                                  },
+                                  {
+                                    "tag": "input",
+                                    "attributes": {
+                                      "type": "hidden",
+                                      "name": "x-lbu",
+                                      "value": null
+                                    },
+                                    "rendered": false
+                                  }
+                                ]
+                              }
+                            ]
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "tag": "div",
+                "attributes": {
+                  "class": "",
+                  "style": null
+                },
+                "children": [
+                  {
+                    "tag": "div",
+                    "attributes": {
+                      "class": "hi-widget-container",
+                      "style": null
+                    },
+                    "children": [
+                      {
+                        "tag": "div",
+                        "attributes": {
+                          "class": "hi-launcher-container standard"
+                        },
+                        "children": [
+                          {
+                            "tag": "iframe",
+                            "attributes": {
+                              "name": "launcher",
+                              "title": null,
+                              "id": ""
+                            },
+                            "rendered": false
+                          }
+                        ]
+                      },
+                      {
+                        "tag": "div",
+                        "attributes": {
+                          "class": "hi-home-container bottomAlign",
+                          "style": null
+                        },
+                        "children": [
+                          {
+                            "tag": "iframe",
+                            "attributes": {
+                              "name": "greeting",
+                              "title": null,
+                              "id": "hijiffy-welcome",
+                              "height": "68",
+                              "width": "186",
+                              "style": null
+                            },
+                            "rendered": false
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "index": 1,
+      "parent": 0,
+      "name": "launcher",
+      "sameOriginAsTop": true,
+      "url": "about:blank",
+      "controls": 0,
+      "tree": {
+        "tag": "html",
+        "attributes": {}
+      }
+    },
+    {
+      "index": 2,
+      "parent": 0,
+      "name": "greeting",
+      "sameOriginAsTop": true,
+      "url": "about:blank",
+      "controls": 0,
+      "tree": {
+        "tag": "html",
+        "attributes": {}
+      }
+    }
+  ]
+}

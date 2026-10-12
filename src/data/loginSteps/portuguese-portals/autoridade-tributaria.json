@@ -1,0 +1,34 @@
+{
+  "$schema": "../../../types/connection/httpLoginSteps.schema.json",
+  "version": 1,
+  "id": "autoridade-tributaria",
+  "evidence": {
+    "class": "B",
+    "source": "https://github.com/supermarsx/cdp-auth/blob/2b1d1b428c9c78e84ad851f37760ce7df6b8ca56/source/auth-automation.ts",
+    "reviewed": "2026-10-12"
+  },
+  "credentialOrigins": ["https://www.acesso.gov.pt"],
+  "loginSteps": [
+    {
+      "kind": "click",
+      "origin": "https://www.acesso.gov.pt",
+      "paths": ["/v2/loginForm"],
+      "selectors": {
+        "control": "[role=\"tab\"][id$=\"-trigger-N\"]"
+      }
+    },
+    {
+      "kind": "form",
+      "origin": "https://www.acesso.gov.pt",
+      "paths": ["/v2/loginForm"],
+      "selectors": {
+        "username": "input[name=\"username\"]",
+        "password": "input[name=\"password\"][type=\"password\"]"
+      }
+    },
+    {
+      "kind": "submit",
+      "submission": "enter"
+    }
+  ]
+}
