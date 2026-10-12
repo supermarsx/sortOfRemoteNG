@@ -1,0 +1,47 @@
+{
+  "$schema": "../evidence.schema.json",
+  "version": 1,
+  "id": "microsoft-account",
+  "class": "C",
+  "mechanism": "none",
+  "reviewed": "2026-10-12",
+  "summary": "Not established. The one anonymous capture of the personal account entry failed before anything was read, so there is no evidence of the page a personal account signs in on, or of its origin. The profile stays manual.",
+  "sources": [
+    {
+      "id": "portals-doc",
+      "kind": "repository",
+      "title": "International portal profiles: what an earlier read of the Microsoft account entry returned",
+      "path": "docs/international-portal-profiles.md",
+      "lines": "121-126",
+      "retrieved": "2026-10-12"
+    },
+    {
+      "id": "msal-constants",
+      "kind": "secondary",
+      "title": "Microsoft Authentication Library for JavaScript: selectors of its end-to-end test utilities",
+      "url": "https://github.com/AzureAD/microsoft-authentication-library-for-js/blob/5e6367b9737902cae3411f5c98b2e36c01e0037f/samples/e2eTestUtils/src/Constants.ts",
+      "commit": "5e6367b9737902cae3411f5c98b2e36c01e0037f",
+      "lines": "107-129",
+      "retrieved": "2026-10-12",
+      "note": "Microsoft's own test code that drives its sign-in pages; not the pages' source. It names ids, not hosts or paths."
+    }
+  ],
+  "selectors": [],
+  "fixtures": [],
+  "staysInteractive": [
+    { "kind": "other", "note": "The whole sign-in." },
+    {
+      "kind": "account-chooser",
+      "note": "The repository's profile notes say account choices and verification remain manual."
+    }
+  ],
+  "lookedFor": [
+    "One anonymous capture of https://account.microsoft.com/, between 20:12:55 and 20:14:47 local time (UTC+1) on 2026-10-12. The tool printed: Capture failed: the page did not load: net::ERR_HTTP2_PROTOCOL_ERROR. It wrote no capture and left no browser profile behind. It was a real load that the site ended, so it was not retried. Plain requests to the same host were reset as well unless they carried a browser-style user agent.",
+    "docs/international-portal-profiles.md item 5: an earlier read of the entry produced an account landing redirect; no sign-in markup was recorded.",
+    "Microsoft's published test utilities for its authentication library list ids its sign-in pages use: i0116 or usernameEntry for the account, i0118 or passwordEntry for the password, idSIButton9 for the submit. They do not say which host or path serves a personal account, nor which of the two layouts it gets.",
+    "The capture made for outlook-online shows the work and school sign-in on login.microsoftonline.com. Its only reference to login.live.com is the target of the create-account link, which is not evidence of where a personal account types its password.",
+    "Terms and robots: the Microsoft Services Agreement and the site's terms of use were read and do not bar a single anonymous page load, and robots.txt of account.microsoft.com disallows nothing. They were not the reason."
+  ],
+  "neededFromUser": "The sign-in page reached from https://account.microsoft.com/, saved from the user's own browser as \"Webpage, Complete\" together with its address, and the password page that follows it. The address is what lets the credential origin be listed exactly. Save any page signed out and with no password typed in; keep the \"_files\" folder beside the .html and both outside the repository: they can hold the account name.",
+  "notes": "No steps file: without the entry capture nothing shows the origin on which a personal account types its credentials, and a credential origin is never a guess. The coordinator ruled out a second capture attempt, which would be a second load; a page saved by the user is the way forward."
+}

@@ -1,0 +1,56 @@
+{
+  "$schema": "../evidence.schema.json",
+  "version": 1,
+  "id": "canva",
+  "class": "C",
+  "mechanism": "none",
+  "reviewed": "2026-10-12",
+  "summary": "Nothing to build from. Canva's robots.txt shuts its login page to the kind of agent that carried out this review, so the page was not captured, and no other source shows its markup. What was found describes an email-and-code sign-in, not a saved-password form. The profile keeps its present generic form assistance.",
+  "sources": [
+    {
+      "id": "canva-robots",
+      "kind": "vendor-documentation",
+      "title": "robots.txt of www.canva.com",
+      "url": "https://www.canva.com/robots.txt",
+      "retrieved": "2026-10-12"
+    },
+    {
+      "id": "dashboards-doc",
+      "kind": "repository",
+      "title": "Hosted dashboard profiles: the Canva preset and its evidence boundary",
+      "path": "docs/hosted-dashboard-profiles.md",
+      "lines": "200-231",
+      "retrieved": "2026-10-12"
+    },
+    {
+      "id": "canva-profile",
+      "kind": "repository",
+      "title": "The Canva catalog profile",
+      "path": "src/utils/connection/canvaProfile.ts",
+      "lines": "5-16",
+      "retrieved": "2026-10-12"
+    }
+  ],
+  "selectors": [],
+  "fixtures": [],
+  "staysInteractive": [
+    {
+      "kind": "other",
+      "note": "The whole sign-in beyond what the generic heuristic finds on a visible email and password form."
+    },
+    {
+      "kind": "email-code",
+      "note": "A verification code sent by email, according to a search engine's summary of Canva's help article; not read directly."
+    },
+    { "kind": "single-sign-on" }
+  ],
+  "lookedFor": [
+    "robots.txt of www.canva.com. Its group for ClaudeBot, anthropic-ai and Claude-Web (with GPTBot, CCBot and Applebot-Extended) is Disallow: / with Allow lines for /create/, /help/, /design-school/, /ai-connector/, /developers/ and a few localized learning paths. /login/ is not among them. This review was carried out by such an agent, so https://www.canva.com/login/ was not captured.",
+    "docs/hosted-dashboard-profiles.md line 212: an earlier static read of the login page was blocked with HTTP 403, and no Canva-specific selector or staged flow was verified.",
+    "src/utils/connection/canvaProfile.ts: the profile is on the generic email and password heuristic, and its text says the staged email, code and SSO flow is not verified.",
+    "Canva's help article on creating an account and logging in (under /help/, which robots.txt allows) answered HTTP 403 to a direct read. A search engine's summary of it says: choose Continue with email, enter the email, then the verification code sent to it, with Try another way as the alternative. No markup, and no password form is described.",
+    "This repository: canvaHostedRoutes.json approves www.canva.com and static.canva.com for routing; nothing names a Canva sign-in control."
+  ],
+  "neededFromUser": "The Canva login page saved from the user's own browser as \"Webpage, Complete\" after choosing to continue with email, and the page that follows the email. They show whether a password can be typed at all and with which controls. Save any page signed out and with no password typed in; keep the \"_files\" folder beside the .html and both outside the repository: they can hold the account name.",
+  "notes": "Canva keeps catalog capability generic-form: the existing heuristic may still fill a visible email and password form, exactly as today. No steps file is written. The coverage document lists Canva as class B; the evidence supports C only."
+}

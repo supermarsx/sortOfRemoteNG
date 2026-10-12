@@ -1,0 +1,132 @@
+{
+  "$schema": "../evidence.schema.json",
+  "version": 1,
+  "id": "outlook-online",
+  "class": "B",
+  "mechanism": "form",
+  "source": "https://outlook.office.com/mail/",
+  "reviewed": "2026-10-12",
+  "summary": "Outlook on the web sends a signed-out visitor to the Microsoft Entra sign-in page on login.microsoftonline.com: the account name and a Next button first, then the password in the same form. The account stage was captured anonymously; the password stage is inferred from that capture and from Microsoft's published test utilities.",
+  "sources": [
+    {
+      "id": "page",
+      "kind": "anonymous-capture",
+      "title": "The public entry page, rendered once without an account",
+      "url": "https://outlook.office.com/mail/",
+      "capture": "capture.json",
+      "captureSha256": "b7a72ebffe58c1a2ffad097ddab9fc8756fdae064e89cdf69b31a8dc52aaef68",
+      "retrieved": "2026-10-12",
+      "note": "Redirected to https://login.microsoftonline.com/common/oauth2/v2.0/authorize, HTTP 200. One top document, no frames, no challenge widget."
+    },
+    {
+      "id": "msal-constants",
+      "kind": "secondary",
+      "title": "Microsoft Authentication Library for JavaScript: selectors of its end-to-end test utilities",
+      "url": "https://github.com/AzureAD/microsoft-authentication-library-for-js/blob/5e6367b9737902cae3411f5c98b2e36c01e0037f/samples/e2eTestUtils/src/Constants.ts",
+      "commit": "5e6367b9737902cae3411f5c98b2e36c01e0037f",
+      "lines": "107-141",
+      "retrieved": "2026-10-12",
+      "note": "Microsoft's own test code that drives its sign-in pages; not the pages' source. Lists the ids i0116 (account), i0118 (password) and idSIButton9 (submit), and a second set, usernameEntry and passwordEntry."
+    },
+    {
+      "id": "msal-utils",
+      "kind": "secondary",
+      "title": "Microsoft Authentication Library for JavaScript: the sign-in routine of its end-to-end test utilities",
+      "url": "https://github.com/AzureAD/microsoft-authentication-library-for-js/blob/5e6367b9737902cae3411f5c98b2e36c01e0037f/samples/e2eTestUtils/src/TestUtils.ts",
+      "commit": "5e6367b9737902cae3411f5c98b2e36c01e0037f",
+      "lines": "235-411",
+      "retrieved": "2026-10-12",
+      "note": "enterCredentials (lines 277-346): fill the account, press the submit button, optionally pick an account-type tile, fill the password, press the submit button again, then a keep-me-signed-in page. enterCredentialsADFS (lines 399-411) is the separate federated path."
+    },
+    {
+      "id": "dashboards-doc",
+      "kind": "repository",
+      "title": "Hosted dashboard profiles: the Outlook Online entry and its limits",
+      "path": "docs/hosted-dashboard-profiles.md",
+      "lines": "74",
+      "retrieved": "2026-10-12"
+    }
+  ],
+  "selectors": [
+    {
+      "selector": "form#i0281[name=\"f1\"] input#i0116[name=\"loginfmt\"][type=\"email\"]",
+      "role": "username",
+      "source": "page",
+      "basis": "observed",
+      "locator": "frames[0], form#i0281, input#i0116",
+      "fixture": "fixture.html"
+    },
+    {
+      "selector": "form#i0281[name=\"f1\"] input#idSIButton9[type=\"submit\"]",
+      "role": "control",
+      "source": "page",
+      "basis": "observed",
+      "locator": "frames[0], form#i0281, input#idSIButton9",
+      "note": "Seen at the account stage. That the password stage is submitted by the same control is taken from the test utilities (TestUtils.ts lines 303-304), not seen."
+    },
+    {
+      "selector": "form#i0281[name=\"f1\"] input#i0118[name=\"passwd\"][type=\"password\"]:not(.moveOffScreen):not([aria-hidden=\"true\"])",
+      "role": "password",
+      "source": "msal-constants",
+      "basis": "inferred",
+      "fixture": "fixture.password.html",
+      "note": "The capture shows input#i0118 in the account stage, moved off screen (class moveOffScreen, tabindex -1, aria-hidden). The test utilities fill #i0118 as the password (Constants.ts line 127). That the displayed field is this element without the off-screen class and aria-hidden is inferred; the two negations keep the step from typing into the off-screen placeholder."
+    },
+    {
+      "selector": "form#i0281[name=\"f1\"] input#i0118.moveOffScreen[name=\"passwd\"][aria-hidden=\"true\"]",
+      "role": "other",
+      "source": "page",
+      "basis": "observed",
+      "locator": "frames[0], form#i0281, input#i0118",
+      "fixture": "fixture.html",
+      "note": "Not used by the steps: the off-screen password input of the account stage, which the password selector excludes."
+    }
+  ],
+  "fixtures": [
+    {
+      "file": "fixture.html",
+      "origin": "https://login.microsoftonline.com",
+      "path": "/common/oauth2/v2.0/authorize",
+      "derivedFrom": ["page"],
+      "note": "The account stage as captured: the form and its three controls."
+    },
+    {
+      "file": "fixture.password.html",
+      "origin": "https://login.microsoftonline.com",
+      "path": "/common/oauth2/v2.0/authorize",
+      "derivedFrom": ["page", "msal-constants", "msal-utils"],
+      "note": "The inferred password stage: the same form with the password input displayed. Nothing of it was seen."
+    }
+  ],
+  "staysInteractive": [
+    {
+      "kind": "device-approval",
+      "note": "Multi-factor authentication set by the tenant, of any kind: an approval in an authenticator app or a code."
+    },
+    {
+      "kind": "single-sign-on",
+      "note": "A federated tenant sends the user to its own identity provider after the account name; nothing is typed there."
+    },
+    {
+      "kind": "passkey",
+      "note": "The account field advertises passkeys (autocomplete username webauthn)."
+    },
+    {
+      "kind": "account-chooser",
+      "note": "The work-or-personal account tile shown for a name that is both, and the picker shown when accounts are already signed in."
+    },
+    {
+      "kind": "other",
+      "note": "The stay-signed-in prompt after the password."
+    }
+  ],
+  "unverified": [
+    "The password stage: it appears only after an existing account name is accepted. Its field is inferred, and its submit control is assumed to be the one seen at the account stage.",
+    "Whether the password stage keeps the pathname /common/oauth2/v2.0/authorize. The password step is gated to it, so on another pathname the login stops with only the account name sent.",
+    "Whether the click submission fits: the form is a POST form by its markup, but the page's script handles the Next press.",
+    "Other entry paths and hosts: tenant-specific paths, /common/login after a rejected password, and the national clouds are not covered. Only login.microsoftonline.com was observed.",
+    "A second layout: the test utilities also list the ids usernameEntry and passwordEntry. Which visitors, tenants or experiments get it is not known, and it is not covered."
+  ],
+  "neededFromUser": "One sign-in with this layout, or the password page saved from the user's own browser as \"Webpage, Complete\" together with its address. Save any page signed out and with no password typed in; keep the \"_files\" folder beside the .html and both outside the repository: they can hold the account name.",
+  "notes": "Hosts: the capture was requested on outlook.office.com, the catalog address, and ended on login.microsoftonline.com, where every control cited here was seen. Checks for that final host, made afterwards without loading the page again: it serves no robots.txt (HTTP 404), and the sign-in page's own footer links the Microsoft Services Agreement as its terms, which was read in full and does not bar a single anonymous page load. outlook.office.com serves no robots file either; its robots.txt redirects into the application."
+}

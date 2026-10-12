@@ -1,0 +1,46 @@
+{
+  "$schema": "../evidence.schema.json",
+  "version": 1,
+  "id": "notion",
+  "class": "C",
+  "mechanism": "none",
+  "reviewed": "2026-10-12",
+  "summary": "Not established. Notion's terms appear to bar automated processes that extract data from the service, so no capture was made, and nothing in this repository shows the sign-in markup. The profile stays manual.",
+  "sources": [
+    {
+      "id": "portals-doc",
+      "kind": "repository",
+      "title": "International portal profiles: the Notion entry and the sign-in methods its help describes",
+      "path": "docs/international-portal-profiles.md",
+      "lines": "143-149",
+      "retrieved": "2026-10-12"
+    }
+  ],
+  "selectors": [],
+  "fixtures": [],
+  "staysInteractive": [
+    {
+      "kind": "other",
+      "note": "The whole sign-in."
+    },
+    {
+      "kind": "email-code",
+      "note": "Email verification, named by the repository's notes on Notion's sign-in help."
+    },
+    {
+      "kind": "passkey"
+    },
+    {
+      "kind": "single-sign-on",
+      "note": "SAML and linked providers such as a Google account."
+    }
+  ],
+  "lookedFor": [
+    "Notion's Personal Use Terms of Service, restrictions on use. A search engine's summary of the page on notion.so says they bar using any robot, spider, crawler or other automated process to scrape or extract data from the Service. The terms page reached from https://www.notion.com/terms is a script shell and could not be read at the source. The capture tool gathers a page's form structure automatically, so no capture was made; the coordinator confirmed that decision.",
+    "robots.txt of app.notion.com allows /login for all agents, with a few named crawlers shut out of the whole site; the capture tool is none of them.",
+    "docs/international-portal-profiles.md item 8: the documented login route redirects to https://app.notion.com/login, and Notion's sign-in help describes email verification, passwords, SAML, linked providers and passkeys. No markup is recorded and none of those branches is automated.",
+    "This repository: no fixture, adapter, test or route catalog names a Notion sign-in control."
+  ],
+  "neededFromUser": "The login page saved from the user's own browser as \"Webpage, Complete\", and the page that follows the email when the account signs in with a password. A saved page needs no automated access to the site. Save any page signed out and with no password typed in; keep the \"_files\" folder beside the .html and both outside the repository: they can hold the account name.",
+  "notes": "Should the user themselves allow a capture, one anonymous load of https://app.notion.com/login gives the first stage and this becomes class B. Whether an account has a password at all depends on how it was set up."
+}

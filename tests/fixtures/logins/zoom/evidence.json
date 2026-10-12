@@ -1,0 +1,124 @@
+{
+  "$schema": "../evidence.schema.json",
+  "version": 1,
+  "id": "zoom",
+  "class": "B",
+  "mechanism": "form",
+  "source": "https://zoom.us/signin",
+  "reviewed": "2026-10-12",
+  "summary": "Identifier first on zoom.us/signin: an email or phone field and a Next button in a script-driven page, then a password stage on the same site. The first stage was captured anonymously; the password stage is known only from two third-party automation scripts.",
+  "sources": [
+    {
+      "id": "page",
+      "kind": "anonymous-capture",
+      "title": "The public sign-in page, rendered once without an account",
+      "url": "https://zoom.us/signin",
+      "capture": "capture.json",
+      "captureSha256": "ffd4e6b5d61e663680dea76afae57ec0f60f61784897fc8a25b34de6834d59e5",
+      "retrieved": "2026-10-12",
+      "note": "Stayed on https://zoom.us/signin, HTTP 200. One top document with the form; a reCAPTCHA Enterprise frame from www.google.com is present and not displayed."
+    },
+    {
+      "id": "recorder",
+      "kind": "secondary",
+      "title": "WebMeetRecorder, a third-party recorder: its Zoom sign-in routine",
+      "url": "https://github.com/AlphaQuantKit/WebMeetRecorder/blob/c4ae6d518ff2fb48122f050c4a3c0be64c41cc0e/app/recorder.py",
+      "commit": "c4ae6d518ff2fb48122f050c4a3c0be64c41cc0e",
+      "lines": "1217-1404",
+      "retrieved": "2026-10-12",
+      "note": "Not Zoom's code. Its account-stage selectors (lines 1217-1221, 1345-1346) are the ones the capture shows, which is the only check on its password-stage selectors (lines 1222-1226, 1381-1382). Lines 1397-1404 treat verification-code and two-factor pages as manual."
+    },
+    {
+      "id": "joiner-notes",
+      "kind": "secondary",
+      "title": "zoom-auto-joiner, a third-party tool: its note on the sign-in flow",
+      "url": "https://github.com/ViralOne/zoom-auto-joiner/blob/5723ee400bcb342fee23ba52a20409727418ef94/SIGNIN_FLOW.md",
+      "commit": "5723ee400bcb342fee23ba52a20409727418ef94",
+      "lines": "9-26",
+      "retrieved": "2026-10-12",
+      "note": "Not Zoom's code. Names the ids email, signin_btn_next, password and js_btn_login in that order, independently of the recorder."
+    }
+  ],
+  "selectors": [
+    {
+      "selector": "[data-testid=\"signin-account-page\"] form.zoom-form input#email[name=\"account\"]",
+      "role": "username",
+      "source": "page",
+      "basis": "observed",
+      "locator": "frames[0], form.zoom-form, input#email",
+      "fixture": "fixture.html"
+    },
+    {
+      "selector": "[data-testid=\"signin-account-page\"] button#signin_btn_next[data-testid=\"account-next-btn\"]",
+      "role": "control",
+      "source": "page",
+      "basis": "observed",
+      "locator": "frames[0], button#signin_btn_next",
+      "fixture": "fixture.html",
+      "note": "A button of type button outside the form: the page's script handles it."
+    },
+    {
+      "selector": "input#password",
+      "role": "password",
+      "source": "recorder",
+      "basis": "observed",
+      "locator": "line 1224",
+      "fixture": "fixture.password.html",
+      "note": "Also SIGNIN_FLOW.md line 21. The account stage has no element with this id, so the selector cannot match before the password stage."
+    },
+    {
+      "selector": "button#js_btn_login",
+      "role": "control",
+      "source": "recorder",
+      "basis": "observed",
+      "locator": "line 1382",
+      "fixture": "fixture.password.html",
+      "note": "Also SIGNIN_FLOW.md line 25."
+    },
+    {
+      "selector": "form.zoom-form div[aria-hidden=\"true\"] input[name=\"password\"][type=\"password\"]",
+      "role": "other",
+      "source": "page",
+      "basis": "observed",
+      "locator": "frames[0], form.zoom-form, the input after input#email",
+      "fixture": "fixture.html",
+      "note": "Not used by the steps. A password input without an id, not displayed, with tabindex -1 inside an aria-hidden wrapper, already in the account stage. The recorder excludes aria-hidden password inputs (line 1225)."
+    }
+  ],
+  "fixtures": [
+    {
+      "file": "fixture.html",
+      "path": "/signin",
+      "derivedFrom": ["page"],
+      "note": "The account stage: the form, the two inputs and the Next button with the ancestors the selectors name."
+    },
+    {
+      "file": "fixture.password.html",
+      "path": "/signin",
+      "derivedFrom": ["recorder", "joiner-notes"],
+      "note": "Only the two ids are from the sources. The surrounding form, the control types and the pathname are not known."
+    }
+  ],
+  "staysInteractive": [
+    {
+      "kind": "captcha",
+      "note": "A reCAPTCHA Enterprise frame is part of the page and not displayed at load; a challenge is the user's."
+    },
+    {
+      "kind": "single-sign-on",
+      "note": "The page offers five other sign-in methods as buttons; organization SSO leaves this form."
+    },
+    {
+      "kind": "other",
+      "note": "A verification code, one-time passcode or two-factor prompt after the password."
+    }
+  ],
+  "unverified": [
+    "The password stage: it appears only after an existing account name is accepted. The ids password and js_btn_login come from two third-party scripts, not from Zoom or from a capture.",
+    "Whether the password stage stays on the pathname /signin. The password step is gated to it, so on another pathname the login stops with only the account name sent.",
+    "What the hidden password input of the account stage is for; the steps never type into it.",
+    "Other layouts: the page loads an experiment script (cdn3.optimizely.com was contacted), so regions, accounts and experiments may be served a different form. Only zoom.us was captured; other Zoom hosts are not covered."
+  ],
+  "neededFromUser": "One sign-in with this layout, or the password stage saved from the user's own browser as \"Webpage, Complete\" together with its address. Save any page signed out and with no password typed in; keep the \"_files\" folder beside the .html and both outside the repository: they can hold the account name.",
+  "notes": "Hosts: the capture was requested on zoom.us and ended on the same host and path. robots.txt of zoom.us does not disallow /signin. Zoom's Terms of Service were read in full and its Acceptable Use Guidelines through a summarising fetch; neither bars a single anonymous page load."
+}

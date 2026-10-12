@@ -1,0 +1,79 @@
+{
+  "$schema": "../evidence.schema.json",
+  "version": 1,
+  "id": "hpe-greenlake",
+  "class": "B",
+  "mechanism": "form",
+  "source": "https://common.cloud.hpe.com/",
+  "reviewed": "2026-10-12",
+  "summary": "Identifier first on HPE GreenLake's own origin: the entry page moves to /sso/continue and shows one script-driven form with an email field and a submit button, and no password field. Only that first stage was captured; where the password is asked is not established, so the steps send the email and stop.",
+  "sources": [
+    {
+      "id": "page",
+      "kind": "anonymous-capture",
+      "title": "The public entry page, rendered once without an account",
+      "url": "https://common.cloud.hpe.com/",
+      "capture": "capture.json",
+      "captureSha256": "6dee656377b192cddf49bc228e180803547512f0ff5562ad13f2d9476c434d6c",
+      "retrieved": "2026-10-12",
+      "note": "Ended on https://common.cloud.hpe.com/sso/continue, HTTP 200. One top document, no frames, no password field, no challenge widget. The browser also contacted auth.hpe.com and sso.common.cloud.hpe.com."
+    },
+    {
+      "id": "dashboards-doc",
+      "kind": "repository",
+      "title": "Hosted dashboard profiles: the HPE GreenLake entry",
+      "path": "docs/hosted-dashboard-profiles.md",
+      "lines": "63",
+      "retrieved": "2026-10-12"
+    }
+  ],
+  "selectors": [
+    {
+      "selector": "div#root form input[name=\"username\"][data-testid=\"sign-up-email-input\"]",
+      "role": "username",
+      "source": "page",
+      "basis": "observed",
+      "locator": "frames[0], div#root, form, input[name=username]",
+      "note": "The input has no id and no type attribute; the label beside it points at the id username."
+    },
+    {
+      "selector": "div#root form button[type=\"submit\"]",
+      "role": "control",
+      "source": "page",
+      "basis": "observed",
+      "locator": "frames[0], div#root, form, button",
+      "note": "The only button of the only form. The form has no method and no action: the page's script handles it."
+    }
+  ],
+  "fixtures": [
+    {
+      "file": "fixture.html",
+      "path": "/sso/continue",
+      "derivedFrom": ["page"],
+      "note": "The form with its email field, its checkbox and its submit button."
+    }
+  ],
+  "staysInteractive": [
+    {
+      "kind": "other",
+      "note": "Everything after the email. The password page was not captured and its origin is not established, so the user types the password and completes any verification."
+    },
+    {
+      "kind": "single-sign-on",
+      "note": "Not observed. The page is served at /sso/continue and asks for the email alone, so an organization's own sign-on may follow for some accounts."
+    },
+    {
+      "kind": "consent",
+      "note": "A cookie consent bar is displayed over the page at load; the steps do not touch it."
+    }
+  ],
+  "unverified": [
+    "The password stage: its page, its origin and its controls. Nothing after the email was seen, so the steps hold no password step and list no other origin.",
+    "What the checkbox in the form does; the capture keeps no text. The steps leave it alone.",
+    "The value attribute on the email field, whose content the capture withholds: whether the field can be prefilled is not known.",
+    "Other layouts: the page reads feature flags (app.launchdarkly.com was contacted), so regions, accounts and experiments may be served a different form.",
+    "HPE's terms on automated access: known only from a search engine's summary, never read at the source."
+  ],
+  "neededFromUser": "The page shown after the email is accepted, saved from the user's own browser as \"Webpage, Complete\" together with its address, or one sign-in with this layout. Save any page signed out and with no password typed in; keep the \"_files\" folder beside the .html and both outside the repository: they can hold the account name.",
+  "notes": "Hosts: requested on common.cloud.hpe.com and ended on the same host, at /sso/continue; its robots.txt holds no rule. The governing terms were NOT read at the source: www.hpe.com reset every connection. The only wording available is a search engine's summary of HPE's acceptable use policy (it bars any high volume automated means of access). The capture predates the rule that terms must be read at the source and be clean; under that rule it would not be made today. The coordinator kept it and tells the user. Nothing more may be loaded on this host."
+}

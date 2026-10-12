@@ -1,0 +1,94 @@
+{
+  "$schema": "../evidence.schema.json",
+  "version": 1,
+  "id": "exchange",
+  "class": "A",
+  "mechanism": "form",
+  "source": "src/utils/connection/exchangeOwaProfile.ts",
+  "reviewed": "2026-10-12",
+  "summary": "When the page is on-premises Outlook Web Access with forms-based authentication, the sign-in is the one logonForm at /owa/auth/logon.aspx on the server's own origin, already reviewed in this repository for the exchange-owa profile. No steps file: the format cannot express what that login needs, so the existing adapter stays the login.",
+  "sources": [
+    {
+      "id": "owa-profile",
+      "kind": "repository",
+      "title": "The reviewed selectors of the exchange-owa profile",
+      "path": "src/utils/connection/exchangeOwaProfile.ts",
+      "lines": "72-79",
+      "retrieved": "2026-10-12"
+    },
+    {
+      "id": "fba-adapter",
+      "kind": "repository",
+      "title": "The shared Exchange forms-based authentication adapter",
+      "path": "src-tauri/crates/sorng-protocols/src/autologin/apps/exchange_ecp.js",
+      "lines": "11-200",
+      "retrieved": "2026-10-12",
+      "note": "Line 127 accepts the page on the lower-cased pathname /owa/auth/logon.aspx. Lines 71-119 require a same-origin POST to /owa/auth.owa and one hidden destination field under /owa. Lines 136-154 require the sign-in control to be the page's own clkLgn() handler."
+    },
+    {
+      "id": "owa-test",
+      "kind": "repository",
+      "title": "The synthetic logon form the adapter is tested against",
+      "path": "tests/protocol/exchangeOwaLoginClient.test.ts",
+      "lines": "25-34",
+      "retrieved": "2026-10-12",
+      "note": "Lines 272-294 drive the same form on /OWA/Auth/Logon.aspx, so the path is matched without regard to letter case."
+    },
+    {
+      "id": "owa-doc",
+      "kind": "repository",
+      "title": "On-premises Exchange OWA login: supported form and interactive cases",
+      "path": "docs/exchange-owa-login.md",
+      "lines": "53-116",
+      "retrieved": "2026-10-12"
+    }
+  ],
+  "selectors": [
+    {
+      "selector": "form[name=\"logonForm\"][method=\"post\" i] input#username[name=\"username\"]",
+      "role": "username",
+      "source": "owa-profile",
+      "basis": "observed",
+      "locator": "lines 73-74"
+    },
+    {
+      "selector": "form[name=\"logonForm\"][method=\"post\" i] input#password[name=\"password\"][type=\"password\"]",
+      "role": "password",
+      "source": "owa-profile",
+      "basis": "observed",
+      "locator": "lines 75-76"
+    },
+    {
+      "selector": "form[name=\"logonForm\"][method=\"post\" i] .signinbutton[role=\"button\"]",
+      "role": "control",
+      "source": "owa-profile",
+      "basis": "observed",
+      "locator": "lines 77-78",
+      "note": "A div with role button, not a submit control. The adapter clicks it only while it carries the page's clkLgn() handler; a fixture may not hold an inline handler, so the fixture has the element without it."
+    }
+  ],
+  "fixtures": [
+    {
+      "file": "fixture.html",
+      "path": "/owa/auth/logon.aspx",
+      "derivedFrom": ["owa-test", "fba-adapter"],
+      "note": "The form, its POST action /owa/auth.owa, the hidden destination field and the two fields of the test's synthetic page."
+    }
+  ],
+  "staysInteractive": [
+    {
+      "kind": "single-sign-on",
+      "note": "AD FS or another federation, and Windows authentication (NTLM or Kerberos): the forms page is not shown."
+    },
+    { "kind": "captcha" },
+    {
+      "kind": "other",
+      "note": "Multi-factor prompts, password changes, the page shown after a rejected login, and customized sign-in forms. A sign-in page that is not Outlook Web Access forms-based authentication is not covered at all."
+    }
+  ],
+  "schemaGaps": [
+    "Case-insensitive path. The adapter compares the lower-cased pathname with /owa/auth/logon.aspx and its test signs in on /OWA/Auth/Logon.aspx. Step paths are compared case-sensitively, so a steps file would refuse servers that answer in another letter case.",
+    "Conditions on the form that a step cannot state: no reason query parameter other than 0, a same-origin POST to /owa/auth.owa, exactly one hidden destination field that stays under /owa and outside /owa/auth, and a sign-in control bound to the page's clkLgn() function."
+  ],
+  "notes": "The exchange profile has capability manual and neither a login path nor selectors in the catalog; it becomes automatic only by pointing it at the exchange-owa adapter, which is catalog work outside this directory. That adapter is tested against synthetic forms only: docs/exchange-owa-login.md lines 110-116 say that sign-in on a real server has not been established."
+}

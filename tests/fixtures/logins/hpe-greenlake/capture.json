@@ -1,0 +1,352 @@
+{
+  "schema": "sorng-login-capture/1",
+  "sanitizer": 3,
+  "applicationId": "hpe-greenlake",
+  "capturedAt": "2026-10-12",
+  "mode": "hosted",
+  "engine": "Microsoft Edge headless (Edg/146.0.3856.84)",
+  "source": {
+    "kind": "hosted-login",
+    "requestedUrl": "https://common.cloud.hpe.com/",
+    "finalUrl": "https://common.cloud.hpe.com/sso/continue",
+    "httpStatus": 200
+  },
+  "limits": {
+    "navigations": 1,
+    "scriptsExecuted": true,
+    "loadEvent": true,
+    "settleMs": 6000,
+    "dialogsDismissed": 0,
+    "input": "none",
+    "truncated": false,
+    "redirects": "public-hosts-only"
+  },
+  "network": {
+    "contacted": [
+      "app.launchdarkly.com:443",
+      "auth.hpe.com:443",
+      "bam.nr-data.net:443",
+      "clientstream.launchdarkly.com:443",
+      "common.cloud.hpe.com:443",
+      "consent.trustarc.com:443",
+      "events.launchdarkly.com:443",
+      "sso.common.cloud.hpe.com:443",
+      "www.hpe.com:443"
+    ],
+    "refused": 1
+  },
+  "observations": ["no-password-field"],
+  "frames": [
+    {
+      "index": 0,
+      "parent": null,
+      "name": null,
+      "sameOriginAsTop": true,
+      "url": "https://common.cloud.hpe.com/sso/continue",
+      "controls": 13,
+      "tree": {
+        "tag": "html",
+        "attributes": {
+          "lang": "en-US",
+          "data-mode": "light",
+          "data-theme": "light",
+          "style": null
+        },
+        "children": [
+          {
+            "tag": "body",
+            "attributes": {
+              "style": null
+            },
+            "children": [
+              {
+                "tag": "div",
+                "attributes": {
+                  "id": "consent_blackbar",
+                  "lang": "en-US",
+                  "style": null
+                },
+                "children": [
+                  {
+                    "tag": "div",
+                    "attributes": {
+                      "id": "truste-consent-track",
+                      "style": null,
+                      "class": "ta-show ta-display-block"
+                    },
+                    "children": [
+                      {
+                        "tag": "div",
+                        "attributes": {
+                          "id": "truste-consent-content",
+                          "style": null
+                        },
+                        "children": [
+                          {
+                            "tag": "div",
+                            "attributes": {
+                              "id": "truste-consent-text",
+                              "class": "truste-messageColumn",
+                              "style": null
+                            },
+                            "children": [
+                              {
+                                "tag": "a",
+                                "attributes": {
+                                  "href": "https://www.hpe.com/us/en/legal/privacy.html",
+                                  "target": "_blank",
+                                  "id": "truste-privacy-button",
+                                  "style": null,
+                                  "class": "truste-cookie-link"
+                                },
+                                "rendered": true
+                              },
+                              {
+                                "tag": "a",
+                                "attributes": {
+                                  "id": "truste-consent-button"
+                                },
+                                "rendered": true
+                              },
+                              {
+                                "tag": "a",
+                                "attributes": {
+                                  "id": "truste-consent-required"
+                                },
+                                "rendered": true
+                              },
+                              {
+                                "tag": "a",
+                                "attributes": {
+                                  "id": "truste-show-consent",
+                                  "aria-haspopup": "dialog"
+                                },
+                                "rendered": true
+                              }
+                            ]
+                          },
+                          {
+                            "tag": "button",
+                            "attributes": {
+                              "id": "truste-consent-close",
+                              "type": "button",
+                              "role": "button",
+                              "tabindex": "0",
+                              "aria-label": null
+                            },
+                            "rendered": true
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "tag": "div",
+                "attributes": {
+                  "type": "module",
+                  "id": "root"
+                },
+                "children": [
+                  {
+                    "tag": "div",
+                    "attributes": {
+                      "data-testid": "theme",
+                      "class": "StyledGrommet-sc-19lkkz7-0 igKpFC",
+                      "style": null
+                    },
+                    "children": [
+                      {
+                        "tag": "div",
+                        "attributes": {
+                          "class": "StyledBox-sc-13pk1d4-0 gpkDJv"
+                        },
+                        "children": [
+                          {
+                            "tag": "div",
+                            "attributes": {
+                              "class": "StyledBox-sc-13pk1d4-0 iHFRfp sc-jwTyAe bZpIQn"
+                            },
+                            "children": [
+                              {
+                                "tag": "header",
+                                "attributes": {
+                                  "class": "StyledBox-sc-13pk1d4-0 hVMaMi"
+                                },
+                                "children": [
+                                  {
+                                    "tag": "button",
+                                    "attributes": {
+                                      "elevation": "large",
+                                      "aria-label": null,
+                                      "type": "button",
+                                      "class": "StyledButtonKind-sc-1vhfpnt-0 hRPVmp"
+                                    },
+                                    "rendered": true
+                                  }
+                                ]
+                              },
+                              {
+                                "tag": "div",
+                                "attributes": {
+                                  "class": "StyledBox-sc-13pk1d4-0 kWIsjD"
+                                },
+                                "children": [
+                                  {
+                                    "tag": "div",
+                                    "attributes": {
+                                      "class": "StyledBox-sc-13pk1d4-0 hrbQpJ"
+                                    },
+                                    "children": [
+                                      {
+                                        "tag": "form",
+                                        "attributes": {
+                                          "autocomplete": "on"
+                                        },
+                                        "rendered": true,
+                                        "children": [
+                                          {
+                                            "tag": "div",
+                                            "attributes": {
+                                              "class": "StyledBox-sc-13pk1d4-0 kDxMbi"
+                                            },
+                                            "children": [
+                                              {
+                                                "tag": "div",
+                                                "attributes": {
+                                                  "class": "StyledBox-sc-13pk1d4-0 hlijMK"
+                                                },
+                                                "children": [
+                                                  {
+                                                    "tag": "span",
+                                                    "attributes": {
+                                                      "class": "StyledText-sc-1sadyjn-0 nUrwi"
+                                                    },
+                                                    "children": [
+                                                      {
+                                                        "tag": "label",
+                                                        "attributes": {
+                                                          "for": "username"
+                                                        },
+                                                        "rendered": true
+                                                      }
+                                                    ]
+                                                  }
+                                                ]
+                                              },
+                                              {
+                                                "tag": "div",
+                                                "attributes": {
+                                                  "class": "StyledTextInput__StyledTextInputContainer-sc-1x30a0s-1 lhEKDH"
+                                                },
+                                                "children": [
+                                                  {
+                                                    "tag": "input",
+                                                    "attributes": {
+                                                      "name": "username",
+                                                      "data-testid": "sign-up-email-input",
+                                                      "class": "StyledTextInput-sc-1x30a0s-0 klSBRZ sc-hwkwBN kDbZHf",
+                                                      "value": null
+                                                    },
+                                                    "rendered": true
+                                                  }
+                                                ]
+                                              }
+                                            ]
+                                          },
+                                          {
+                                            "tag": "div",
+                                            "attributes": {
+                                              "class": "StyledBox-sc-13pk1d4-0 dmHFFQ"
+                                            },
+                                            "children": [
+                                              {
+                                                "tag": "label",
+                                                "attributes": {
+                                                  "class": "StyledCheckBox__StyledCheckBoxContainer-sc-1dbk5ju-1 fFHqjH"
+                                                },
+                                                "rendered": true,
+                                                "children": [
+                                                  {
+                                                    "tag": "div",
+                                                    "attributes": {
+                                                      "class": "StyledBox-sc-13pk1d4-0 lgiGMB StyledCheckBox-sc-1dbk5ju-6 gAgPcH"
+                                                    },
+                                                    "children": [
+                                                      {
+                                                        "tag": "input",
+                                                        "attributes": {
+                                                          "type": "checkbox",
+                                                          "class": "StyledCheckBox__StyledCheckBoxInput-sc-1dbk5ju-2 VwAtE"
+                                                        },
+                                                        "rendered": true
+                                                      }
+                                                    ]
+                                                  }
+                                                ]
+                                              }
+                                            ]
+                                          },
+                                          {
+                                            "tag": "button",
+                                            "attributes": {
+                                              "aria-busy": "false",
+                                              "type": "submit",
+                                              "class": "StyledButtonKind-sc-1vhfpnt-0 kDUQtq"
+                                            },
+                                            "rendered": true
+                                          }
+                                        ]
+                                      }
+                                    ]
+                                  }
+                                ]
+                              },
+                              {
+                                "tag": "footer",
+                                "attributes": {
+                                  "class": "StyledBox-sc-13pk1d4-0 cpCCCY"
+                                },
+                                "children": [
+                                  {
+                                    "tag": "div",
+                                    "attributes": {
+                                      "id": "hpehf_legal",
+                                      "class": "StyledBox-sc-13pk1d4-0 fGvKmk"
+                                    },
+                                    "children": [
+                                      {
+                                        "tag": "div",
+                                        "attributes": {
+                                          "class": "StyledBox-sc-13pk1d4-0 gxxjbc"
+                                        },
+                                        "children": [
+                                          {
+                                            "tag": "a",
+                                            "attributes": {
+                                              "class": "StyledAnchor-sc-1rp7lwl-0 kuLgoQ sc-fhHczv irRzft"
+                                            },
+                                            "rendered": true
+                                          }
+                                        ]
+                                      }
+                                    ]
+                                  }
+                                ]
+                              }
+                            ]
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    }
+  ]
+}

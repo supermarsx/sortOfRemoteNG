@@ -1,0 +1,49 @@
+{
+  "$schema": "../evidence.schema.json",
+  "version": 1,
+  "id": "apple-developer",
+  "class": "C",
+  "mechanism": "none",
+  "reviewed": "2026-10-12",
+  "summary": "Not established. Apple's website terms bar automatic programs from accessing its sites, so the page was not captured. The repository records only that the developer account entry redirects to idmsa.apple.com; it does not show the sign-in markup or whether the fields sit in a frame. The profile stays manual.",
+  "sources": [
+    {
+      "id": "apple-terms",
+      "kind": "vendor-documentation",
+      "title": "Apple Website Terms of Use, section Your Use of the Site",
+      "url": "https://www.apple.com/legal/internet-services/terms/site.html",
+      "retrieved": "2026-10-12"
+    },
+    {
+      "id": "portals-doc",
+      "kind": "repository",
+      "title": "International portal profiles: what an earlier read of the Apple entries returned",
+      "path": "docs/international-portal-profiles.md",
+      "lines": "93-105",
+      "retrieved": "2026-10-12"
+    }
+  ],
+  "selectors": [],
+  "fixtures": [],
+  "staysInteractive": [
+    { "kind": "other", "note": "The whole sign-in." },
+    {
+      "kind": "device-approval",
+      "note": "Apple's identity verification on a trusted device; named by the repository's profile text for Apple sign-in, never exercised."
+    },
+    {
+      "kind": "account-chooser",
+      "note": "The choice of developer team after sign-in: the profile text says access depends on the selected account, team and role."
+    }
+  ],
+  "lookedFor": [
+    "Apple Website Terms of Use, read in full. They cover www.apple.com and all associated sites linked to it by Apple, and state: You may not use any deep-link, page-scrape, robot, spider or other automatic device, program, algorithm or methodology to access, acquire, copy or monitor any portion of the Site. The capture tool is such a program, so https://developer.apple.com/account/ was not captured.",
+    "robots.txt of developer.apple.com: it does not disallow /account/. It was not the reason for skipping the capture.",
+    "docs/international-portal-profiles.md item 2: an earlier read of https://developer.apple.com/account/ was redirected to idmsa.apple.com, which that tool could not retrieve. That is a top-level redirect to another origin. Whether the page it reaches holds the fields itself or frames them is not known.",
+    "This repository: no fixture, adapter, test or route catalog names an Apple sign-in control or frame, and the profile deliberately does not authorize the idmsa.apple.com origin.",
+    "The frame question. The plan records as recollection, not as a finding, that the sign-in fields sit in a frame served from another origin. Nothing read here confirms or refutes it.",
+    "Apple's help and developer pages were not read: they belong to the sites the terms cover, and help pages show screenshots, not markup."
+  ],
+  "neededFromUser": "The sign-in page saved from the user's own browser as \"Webpage, Complete\" together with its address, read with --from-file. Its top document shows whether the fields are in the page or in a frame and names the frame's address. If they are in a frame, that frame's own document saved the same way is needed as well. Save any page signed out and with no password typed in; keep the \"_files\" folder beside the .html and both outside the repository: they can hold the account name.",
+  "notes": "If the sign-in is a top-level page on idmsa.apple.com, steps on that listed origin could express it. If the fields are in a frame on another origin than the page, the format cannot: a step's frame is same-origin only, and releasing a credential into a cross-origin frame is question Q8, not approved."
+}

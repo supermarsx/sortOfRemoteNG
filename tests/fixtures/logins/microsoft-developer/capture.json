@@ -1,0 +1,2481 @@
+{
+  "schema": "sorng-login-capture/1",
+  "sanitizer": 3,
+  "applicationId": "microsoft-developer",
+  "capturedAt": "2026-10-12",
+  "mode": "hosted",
+  "engine": "Microsoft Edge headless (Edg/146.0.3856.84)",
+  "source": {
+    "kind": "hosted-login",
+    "requestedUrl": "https://developer.microsoft.com/en-us/",
+    "finalUrl": "https://developer.microsoft.com/en-us/",
+    "httpStatus": 200
+  },
+  "limits": {
+    "navigations": 1,
+    "scriptsExecuted": true,
+    "loadEvent": true,
+    "settleMs": 6000,
+    "dialogsDismissed": 0,
+    "input": "none",
+    "truncated": false,
+    "redirects": "public-hosts-only"
+  },
+  "network": {
+    "contacted": [
+      "browser.events.data.microsoft.com:443",
+      "dc.services.visualstudio.com:443",
+      "developer.microsoft.com:443",
+      "fonts.googleapis.com:443",
+      "js.monitor.azure.com:443",
+      "uhf-exp-fd-gbcrdgggfbggh0g3.b02.azurefd.net:443",
+      "uhf.microsoft.com:443",
+      "wcpstatic.microsoft.com:443",
+      "www.microsoft.com:443"
+    ],
+    "refused": 1
+  },
+  "observations": ["no-password-field", "shadow-dom"],
+  "frames": [
+    {
+      "index": 0,
+      "parent": null,
+      "name": null,
+      "sameOriginAsTop": true,
+      "url": "https://developer.microsoft.com/en-us/",
+      "controls": 114,
+      "tree": {
+        "tag": "html",
+        "attributes": {
+          "lang": "en-US",
+          "data-theme": "dark",
+          "theme": "dark",
+          "class": " theme-night",
+          "style": null
+        },
+        "children": [
+          {
+            "tag": "body",
+            "attributes": {
+              "data_mount": "ocr-scrollspy",
+              "data-target": "#sticky-nav",
+              "data-active-class": "selected"
+            },
+            "children": [
+              {
+                "tag": "uhf-header",
+                "attributes": {
+                  "locale": "en-us",
+                  "partnerid": "MSDev-Community",
+                  "headerid": "MSDev-DEVCOM-Community-Header",
+                  "theme": "dark"
+                },
+                "children": [
+                  {
+                    "tag": "a",
+                    "attributes": {
+                      "slot": "skip-link",
+                      "class": "uhf-skip-link",
+                      "href": "#",
+                      "data-m": null
+                    },
+                    "rendered": true
+                  },
+                  {
+                    "tag": "uhf-cookie-banner",
+                    "attributes": {},
+                    "children": [
+                      {
+                        "tag": "div",
+                        "attributes": {
+                          "id": "msccBannerV2"
+                        },
+                        "children": [
+                          {
+                            "tag": "div",
+                            "attributes": {
+                              "id": "wcpConsentBannerCtrl",
+                              "class": "_23tra1HsiiP6cT-Cka-ycB",
+                              "dir": "ltr",
+                              "role": "alert"
+                            },
+                            "children": [
+                              {
+                                "tag": "div",
+                                "attributes": {
+                                  "class": "_2j0fmugLb1FgYz6KPuB91w"
+                                },
+                                "children": [
+                                  {
+                                    "tag": "button",
+                                    "attributes": {
+                                      "type": "button",
+                                      "class": "_1XuCi2WhiqeWRUVp3pnFG3 erL690_8JwUW-R4bJRcfl"
+                                    },
+                                    "rendered": true
+                                  },
+                                  {
+                                    "tag": "button",
+                                    "attributes": {
+                                      "type": "button",
+                                      "class": "_1XuCi2WhiqeWRUVp3pnFG3 erL690_8JwUW-R4bJRcfl"
+                                    },
+                                    "rendered": true
+                                  },
+                                  {
+                                    "tag": "button",
+                                    "attributes": {
+                                      "type": "button",
+                                      "class": "_1XuCi2WhiqeWRUVp3pnFG3 erL690_8JwUW-R4bJRcfl"
+                                    },
+                                    "rendered": true
+                                  }
+                                ]
+                              }
+                            ]
+                          }
+                        ]
+                      }
+                    ]
+                  },
+                  {
+                    "tag": "header",
+                    "attributes": {
+                      "itemscope": "",
+                      "itemtype": "https://schema.org/WPHeader",
+                      "class": "uhf-header uhf-breakpoint--mobile uhf-theme--dark"
+                    },
+                    "children": [
+                      {
+                        "tag": "div",
+                        "attributes": {
+                          "class": "uhf-header-l0"
+                        },
+                        "children": [
+                          {
+                            "tag": "div",
+                            "attributes": {
+                              "class": "uhf-header-l0__actions"
+                            },
+                            "children": [
+                              {
+                                "tag": "uhf-global-nav",
+                                "attributes": {
+                                  "slot": "global-nav",
+                                  "text": null,
+                                  "data-m": null,
+                                  "data-nav-label": null
+                                },
+                                "children": [
+                                  {
+                                    "tag": "uhf-global-nav-mobile",
+                                    "attributes": {
+                                      "data-m": null,
+                                      "data-nav-label": null
+                                    },
+                                    "children": [
+                                      {
+                                        "tag": "button",
+                                        "attributes": {
+                                          "class": "uhf-nav-item uhf-nav-button",
+                                          "aria-label": null,
+                                          "data-m": null
+                                        },
+                                        "rendered": true
+                                      },
+                                      {
+                                        "tag": "uhf-popout",
+                                        "attributes": {
+                                          "class": "uhf-global-nav-popout hidden",
+                                          "targetselector": "button.uhf-nav-button",
+                                          "positions": "bottom",
+                                          "itemscope": "",
+                                          "itemtype": "https://schema.org/SiteNavigationElement"
+                                        },
+                                        "children": [
+                                          {
+                                            "tag": "ul",
+                                            "attributes": {},
+                                            "children": [
+                                              {
+                                                "tag": "li",
+                                                "attributes": {},
+                                                "children": [
+                                                  {
+                                                    "tag": "uhf-dropdown-column",
+                                                    "attributes": {
+                                                      "title": null,
+                                                      "show-tooltip": "false",
+                                                      "data-m": null,
+                                                      "class": "uhf-breakpoint--mobile"
+                                                    },
+                                                    "children": [
+                                                      {
+                                                        "tag": "uhf-dropdown-mobile",
+                                                        "attributes": {
+                                                          "text": null
+                                                        },
+                                                        "children": [
+                                                          {
+                                                            "tag": "button",
+                                                            "attributes": {
+                                                              "class": "uhf-dropdown-trigger-mobile "
+                                                            },
+                                                            "rendered": false
+                                                          }
+                                                        ]
+                                                      }
+                                                    ]
+                                                  }
+                                                ]
+                                              },
+                                              {
+                                                "tag": "li",
+                                                "attributes": {},
+                                                "children": [
+                                                  {
+                                                    "tag": "uhf-dropdown-column",
+                                                    "attributes": {
+                                                      "title": null,
+                                                      "show-tooltip": "false",
+                                                      "data-m": null,
+                                                      "class": "uhf-breakpoint--mobile"
+                                                    },
+                                                    "children": [
+                                                      {
+                                                        "tag": "uhf-dropdown-mobile",
+                                                        "attributes": {
+                                                          "text": "Industries"
+                                                        },
+                                                        "children": [
+                                                          {
+                                                            "tag": "button",
+                                                            "attributes": {
+                                                              "class": "uhf-dropdown-trigger-mobile "
+                                                            },
+                                                            "rendered": false
+                                                          }
+                                                        ]
+                                                      }
+                                                    ]
+                                                  }
+                                                ]
+                                              },
+                                              {
+                                                "tag": "li",
+                                                "attributes": {},
+                                                "children": [
+                                                  {
+                                                    "tag": "uhf-dropdown-column",
+                                                    "attributes": {
+                                                      "title": null,
+                                                      "show-tooltip": "false",
+                                                      "data-m": null,
+                                                      "class": "uhf-breakpoint--mobile"
+                                                    },
+                                                    "children": [
+                                                      {
+                                                        "tag": "uhf-dropdown-mobile",
+                                                        "attributes": {
+                                                          "text": "Partners"
+                                                        },
+                                                        "children": [
+                                                          {
+                                                            "tag": "button",
+                                                            "attributes": {
+                                                              "class": "uhf-dropdown-trigger-mobile "
+                                                            },
+                                                            "rendered": false
+                                                          }
+                                                        ]
+                                                      }
+                                                    ]
+                                                  }
+                                                ]
+                                              },
+                                              {
+                                                "tag": "li",
+                                                "attributes": {},
+                                                "children": [
+                                                  {
+                                                    "tag": "uhf-dropdown-column",
+                                                    "attributes": {
+                                                      "title": null,
+                                                      "show-tooltip": "false",
+                                                      "data-m": null,
+                                                      "class": "uhf-breakpoint--mobile"
+                                                    },
+                                                    "children": [
+                                                      {
+                                                        "tag": "uhf-dropdown-mobile",
+                                                        "attributes": {
+                                                          "text": "Resources"
+                                                        },
+                                                        "children": [
+                                                          {
+                                                            "tag": "button",
+                                                            "attributes": {
+                                                              "class": "uhf-dropdown-trigger-mobile "
+                                                            },
+                                                            "rendered": false
+                                                          }
+                                                        ]
+                                                      }
+                                                    ]
+                                                  }
+                                                ]
+                                              }
+                                            ]
+                                          }
+                                        ]
+                                      }
+                                    ]
+                                  }
+                                ]
+                              },
+                              {
+                                "tag": "uhf-search",
+                                "attributes": {
+                                  "slot": "search",
+                                  "placeholder": null,
+                                  "search-label": "Search",
+                                  "cancel-label": "Cancel",
+                                  "suggestions-available-text": null,
+                                  "searchurl": "https://www.microsoft.com/en-us/search/explore",
+                                  "autosuggesturl": "https://www.microsoft.com/msstoreapiprod/api/autosuggest",
+                                  "queryparametername": "q",
+                                  "clientid": null,
+                                  "productcount": null,
+                                  "source": null
+                                },
+                                "children": [
+                                  {
+                                    "tag": "div",
+                                    "attributes": {
+                                      "class": "uhf-search-container hidden"
+                                    },
+                                    "children": [
+                                      {
+                                        "tag": "button",
+                                        "attributes": {
+                                          "aria-label": null,
+                                          "data-m": null,
+                                          "class": "uhf-search-cancel uhf-breakpoint--mobile"
+                                        },
+                                        "rendered": false
+                                      },
+                                      {
+                                        "tag": "form",
+                                        "attributes": {
+                                          "class": "uhf-search-form",
+                                          "itemscope": "",
+                                          "itemtype": "https://schema.org/SearchAction"
+                                        },
+                                        "rendered": false,
+                                        "children": [
+                                          {
+                                            "tag": "input",
+                                            "attributes": {
+                                              "type": "search",
+                                              "autocomplete": "off",
+                                              "role": "combobox",
+                                              "tabindex": "0",
+                                              "aria-controls": "uhf-autosuggest-popout",
+                                              "itemprop": "query-input",
+                                              "data-m": null,
+                                              "name": "q",
+                                              "class": "uhf-search-input uhf-breakpoint--mobile",
+                                              "placeholder": null,
+                                              "title": null,
+                                              "aria-expanded": "false",
+                                              "data-bi-srchq": ""
+                                            },
+                                            "rendered": false
+                                          },
+                                          {
+                                            "tag": "button",
+                                            "attributes": {
+                                              "type": "submit",
+                                              "class": "uhf-search-submit-button",
+                                              "aria-label": null,
+                                              "title": null,
+                                              "data-bi-srchq": "",
+                                              "data-m": null
+                                            },
+                                            "rendered": false
+                                          }
+                                        ]
+                                      }
+                                    ]
+                                  },
+                                  {
+                                    "tag": "button",
+                                    "attributes": {
+                                      "class": "uhf-nav-item uhf-nav-button uhf-search-button",
+                                      "data-m": null,
+                                      "aria-label": null,
+                                      "title": null
+                                    },
+                                    "rendered": true
+                                  }
+                                ]
+                              }
+                            ]
+                          }
+                        ]
+                      },
+                      {
+                        "tag": "div",
+                        "attributes": {
+                          "class": "uhf-header-l1"
+                        },
+                        "children": [
+                          {
+                            "tag": "uhf-contextual-nav",
+                            "attributes": {
+                              "slot": "contextual-nav",
+                              "overflowtext": "More",
+                              "brand": "Developer",
+                              "homeurl": "https://developer.microsoft.com/en-us/",
+                              "hometext": "Home",
+                              "data-nav-label": null
+                            },
+                            "children": [
+                              {
+                                "tag": "uhf-contextual-nav-mobile",
+                                "attributes": {
+                                  "brand": "Developer",
+                                  "homeurl": "https://developer.microsoft.com/en-us/",
+                                  "hometext": "Home",
+                                  "logoimageurl": "",
+                                  "logoalt": "",
+                                  "data-nav-label": null
+                                },
+                                "children": [
+                                  {
+                                    "tag": "button",
+                                    "attributes": {
+                                      "class": "uhf-contextual-nav-trigger"
+                                    },
+                                    "rendered": true
+                                  },
+                                  {
+                                    "tag": "nav",
+                                    "attributes": {
+                                      "role": "navigation",
+                                      "itemscope": "",
+                                      "itemtype": "https://schema.org/SiteNavigationElement",
+                                      "class": "uhf-contextual-nav uhf-breakpoint--mobile",
+                                      "aria-label": null
+                                    },
+                                    "children": [
+                                      {
+                                        "tag": "uhf-popout",
+                                        "attributes": {
+                                          "targetselector": "button.uhf-contextual-nav-trigger",
+                                          "positions": "bottom",
+                                          "margin": "0",
+                                          "class": "uhf-contextual-nav-popout hidden"
+                                        },
+                                        "children": [
+                                          {
+                                            "tag": "ul",
+                                            "attributes": {},
+                                            "children": [
+                                              {
+                                                "tag": "li",
+                                                "attributes": {},
+                                                "children": [
+                                                  {
+                                                    "tag": "uhf-dropdown",
+                                                    "attributes": {
+                                                      "text": "Products",
+                                                      "id": "",
+                                                      "data-m": null
+                                                    },
+                                                    "children": [
+                                                      {
+                                                        "tag": "uhf-dropdown-mobile",
+                                                        "attributes": {
+                                                          "text": "Products",
+                                                          "data-m": null
+                                                        },
+                                                        "children": [
+                                                          {
+                                                            "tag": "button",
+                                                            "attributes": {
+                                                              "class": "uhf-dropdown-trigger-mobile "
+                                                            },
+                                                            "rendered": false
+                                                          }
+                                                        ]
+                                                      }
+                                                    ]
+                                                  }
+                                                ]
+                                              },
+                                              {
+                                                "tag": "li",
+                                                "attributes": {},
+                                                "children": [
+                                                  {
+                                                    "tag": "uhf-dropdown",
+                                                    "attributes": {
+                                                      "text": "Languages",
+                                                      "id": "",
+                                                      "data-m": null
+                                                    },
+                                                    "children": [
+                                                      {
+                                                        "tag": "uhf-dropdown-mobile",
+                                                        "attributes": {
+                                                          "text": "Languages",
+                                                          "data-m": null
+                                                        },
+                                                        "children": [
+                                                          {
+                                                            "tag": "button",
+                                                            "attributes": {
+                                                              "class": "uhf-dropdown-trigger-mobile "
+                                                            },
+                                                            "rendered": false
+                                                          }
+                                                        ]
+                                                      }
+                                                    ]
+                                                  }
+                                                ]
+                                              },
+                                              {
+                                                "tag": "li",
+                                                "attributes": {},
+                                                "children": [
+                                                  {
+                                                    "tag": "uhf-dropdown",
+                                                    "attributes": {
+                                                      "text": "Hubs",
+                                                      "id": "",
+                                                      "data-m": null
+                                                    },
+                                                    "children": [
+                                                      {
+                                                        "tag": "uhf-dropdown-mobile",
+                                                        "attributes": {
+                                                          "text": "Hubs",
+                                                          "data-m": null
+                                                        },
+                                                        "children": [
+                                                          {
+                                                            "tag": "button",
+                                                            "attributes": {
+                                                              "class": "uhf-dropdown-trigger-mobile "
+                                                            },
+                                                            "rendered": false
+                                                          }
+                                                        ]
+                                                      }
+                                                    ]
+                                                  }
+                                                ]
+                                              }
+                                            ]
+                                          }
+                                        ]
+                                      }
+                                    ]
+                                  }
+                                ]
+                              }
+                            ]
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "tag": "div",
+                "attributes": {
+                  "class": "site-banners"
+                },
+                "children": [
+                  {
+                    "tag": "section",
+                    "attributes": {
+                      "class": "announcement-banner alert-dismissable-show",
+                      "data-mount": "ocr-alert-dismissible",
+                      "data-identifier": "windows-hybrid-intelligence"
+                    },
+                    "children": [
+                      {
+                        "tag": "div",
+                        "attributes": {
+                          "class": "container"
+                        },
+                        "children": [
+                          {
+                            "tag": "div",
+                            "attributes": {
+                              "class": "row"
+                            },
+                            "children": [
+                              {
+                                "tag": "div",
+                                "attributes": {
+                                  "class": "col-auto d-flex"
+                                },
+                                "children": [
+                                  {
+                                    "tag": "div",
+                                    "attributes": {
+                                      "class": "announcement-banner__dismiss"
+                                    },
+                                    "children": [
+                                      {
+                                        "tag": "button",
+                                        "attributes": {
+                                          "id": "fake-button",
+                                          "type": "button",
+                                          "class": "d-none",
+                                          "aria-label": null,
+                                          "data-dismiss": "alert"
+                                        },
+                                        "rendered": false
+                                      },
+                                      {
+                                        "tag": "button",
+                                        "attributes": {
+                                          "type": "button",
+                                          "class": "alert-dismiss btn btn--ghost glyph-append glyph-append-cancel",
+                                          "aria-label": null
+                                        },
+                                        "rendered": true
+                                      }
+                                    ]
+                                  }
+                                ]
+                              }
+                            ]
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "tag": "div",
+                "attributes": {
+                  "id": "mainContent",
+                  "role": "main"
+                },
+                "children": [
+                  {
+                    "tag": "div",
+                    "attributes": {
+                      "id": "homepagev3"
+                    },
+                    "children": [
+                      {
+                        "tag": "div",
+                        "attributes": {
+                          "class": "secondary-sticky-nav"
+                        },
+                        "children": [
+                          {
+                            "tag": "div",
+                            "attributes": {
+                              "class": "sticky sticky-direction-top dropdown",
+                              "data-mount": "sticky",
+                              "data-direction": "top",
+                              "data-observer-behavior": "always",
+                              "style": null
+                            },
+                            "children": [
+                              {
+                                "tag": "div",
+                                "attributes": {
+                                  "class": "secondary-nav"
+                                },
+                                "children": [
+                                  {
+                                    "tag": "nav",
+                                    "attributes": {
+                                      "id": "sticky-nav",
+                                      "class": "container d-flex flex-grow-1",
+                                      "aria-label": null
+                                    },
+                                    "children": [
+                                      {
+                                        "tag": "div",
+                                        "attributes": {
+                                          "class": "dropdown"
+                                        },
+                                        "children": [
+                                          {
+                                            "tag": "a",
+                                            "attributes": {
+                                              "class": "w-100 dropdown__link",
+                                              "id": "menu-list-label-default",
+                                              "data-mount": "m365-dropdown",
+                                              "aria-expanded": "false",
+                                              "aria-controls": "secondary-sticky-nav-menu-list",
+                                              "type": "button",
+                                              "role": "button",
+                                              "tabindex": "0",
+                                              "aria-labelledby": "secondary-sticky-nav-label"
+                                            },
+                                            "rendered": true
+                                          },
+                                          {
+                                            "tag": "ul",
+                                            "attributes": {
+                                              "class": "dropdown-menu menu-list p-0 rounded-scrollbar overflow-auto",
+                                              "id": "secondary-sticky-nav-menu-list",
+                                              "aria-labelledby": "menu-list-label-default",
+                                              "tabindex": "-1"
+                                            },
+                                            "rendered": false,
+                                            "children": [
+                                              {
+                                                "tag": "li",
+                                                "attributes": {
+                                                  "class": "menu-list__list-item"
+                                                },
+                                                "children": [
+                                                  {
+                                                    "tag": "a",
+                                                    "attributes": {
+                                                      "class": "menu-list__item-link selected",
+                                                      "href": "#",
+                                                      "data-bi-an": "secondary-sticky-nav",
+                                                      "data-bi-id": "featured-products",
+                                                      "data-bi-ct": "nav",
+                                                      "aria-current": "true"
+                                                    },
+                                                    "rendered": false
+                                                  }
+                                                ]
+                                              },
+                                              {
+                                                "tag": "li",
+                                                "attributes": {
+                                                  "class": "menu-list__list-item"
+                                                },
+                                                "children": [
+                                                  {
+                                                    "tag": "a",
+                                                    "attributes": {
+                                                      "class": "menu-list__item-link",
+                                                      "href": "#",
+                                                      "data-bi-an": "secondary-sticky-nav",
+                                                      "data-bi-id": "news-and-updates",
+                                                      "data-bi-ct": "nav"
+                                                    },
+                                                    "rendered": false
+                                                  }
+                                                ]
+                                              },
+                                              {
+                                                "tag": "li",
+                                                "attributes": {
+                                                  "class": "menu-list__list-item"
+                                                },
+                                                "children": [
+                                                  {
+                                                    "tag": "a",
+                                                    "attributes": {
+                                                      "class": "menu-list__item-link",
+                                                      "href": "#",
+                                                      "data-bi-an": "secondary-sticky-nav",
+                                                      "data-bi-id": "languages",
+                                                      "data-bi-ct": "nav"
+                                                    },
+                                                    "rendered": false
+                                                  }
+                                                ]
+                                              },
+                                              {
+                                                "tag": "li",
+                                                "attributes": {
+                                                  "class": "menu-list__list-item"
+                                                },
+                                                "children": [
+                                                  {
+                                                    "tag": "a",
+                                                    "attributes": {
+                                                      "class": "menu-list__item-link",
+                                                      "href": "#",
+                                                      "data-bi-an": "secondary-sticky-nav",
+                                                      "data-bi-id": "community",
+                                                      "data-bi-ct": "nav"
+                                                    },
+                                                    "rendered": false
+                                                  }
+                                                ]
+                                              },
+                                              {
+                                                "tag": "li",
+                                                "attributes": {
+                                                  "class": "menu-list__list-item"
+                                                },
+                                                "children": [
+                                                  {
+                                                    "tag": "a",
+                                                    "attributes": {
+                                                      "class": "menu-list__item-link",
+                                                      "href": "#",
+                                                      "data-bi-an": "secondary-sticky-nav",
+                                                      "data-bi-id": "hubs",
+                                                      "data-bi-ct": "nav"
+                                                    },
+                                                    "rendered": false
+                                                  }
+                                                ]
+                                              },
+                                              {
+                                                "tag": "li",
+                                                "attributes": {
+                                                  "class": "menu-list__list-item"
+                                                },
+                                                "children": [
+                                                  {
+                                                    "tag": "a",
+                                                    "attributes": {
+                                                      "class": "menu-list__item-link",
+                                                      "href": "#",
+                                                      "data-bi-an": "secondary-sticky-nav",
+                                                      "data-bi-id": "developer-story",
+                                                      "data-bi-ct": "nav"
+                                                    },
+                                                    "rendered": false
+                                                  }
+                                                ]
+                                              },
+                                              {
+                                                "tag": "li",
+                                                "attributes": {
+                                                  "class": "menu-list__list-item"
+                                                },
+                                                "children": [
+                                                  {
+                                                    "tag": "a",
+                                                    "attributes": {
+                                                      "class": "menu-list__item-link",
+                                                      "href": "#",
+                                                      "data-bi-an": "secondary-sticky-nav",
+                                                      "data-bi-id": "blogs",
+                                                      "data-bi-ct": "nav"
+                                                    },
+                                                    "rendered": false
+                                                  }
+                                                ]
+                                              },
+                                              {
+                                                "tag": "li",
+                                                "attributes": {
+                                                  "class": "menu-list__list-item"
+                                                },
+                                                "children": [
+                                                  {
+                                                    "tag": "a",
+                                                    "attributes": {
+                                                      "class": "menu-list__item-link",
+                                                      "href": "#",
+                                                      "data-bi-an": "secondary-sticky-nav",
+                                                      "data-bi-id": "events",
+                                                      "data-bi-ct": "nav"
+                                                    },
+                                                    "rendered": false
+                                                  }
+                                                ]
+                                              },
+                                              {
+                                                "tag": "li",
+                                                "attributes": {
+                                                  "class": "menu-list__list-item"
+                                                },
+                                                "children": [
+                                                  {
+                                                    "tag": "a",
+                                                    "attributes": {
+                                                      "class": "menu-list__item-link",
+                                                      "href": "#",
+                                                      "data-bi-an": "secondary-sticky-nav",
+                                                      "data-bi-id": "learn",
+                                                      "data-bi-ct": "nav"
+                                                    },
+                                                    "rendered": false
+                                                  }
+                                                ]
+                                              }
+                                            ]
+                                          }
+                                        ]
+                                      }
+                                    ]
+                                  }
+                                ]
+                              }
+                            ]
+                          },
+                          {
+                            "tag": "div",
+                            "attributes": {
+                              "class": "scrollspy-container"
+                            },
+                            "children": [
+                              {
+                                "tag": "section",
+                                "attributes": {
+                                  "id": "featured-products",
+                                  "tabindex": "-1"
+                                },
+                                "rendered": true,
+                                "children": [
+                                  {
+                                    "tag": "div",
+                                    "attributes": {
+                                      "class": "section-master bg--base-fade section-master--breadth-comfortable section-master--layout-slot-horizontal-alignment-right section-master--layout-slot-vertical-alignment-bottom section-master--blade-card-carousel"
+                                    },
+                                    "children": [
+                                      {
+                                        "tag": "div",
+                                        "attributes": {
+                                          "class": "container"
+                                        },
+                                        "children": [
+                                          {
+                                            "tag": "div",
+                                            "attributes": {
+                                              "class": "row section-master__slot"
+                                            },
+                                            "children": [
+                                              {
+                                                "tag": "div",
+                                                "attributes": {
+                                                  "class": "col"
+                                                },
+                                                "children": [
+                                                  {
+                                                    "tag": "div",
+                                                    "attributes": {
+                                                      "class": "pill-bar no-gutters pl-0 ml-0"
+                                                    },
+                                                    "children": [
+                                                      {
+                                                        "tag": "div",
+                                                        "attributes": {
+                                                          "data-mount": "tab-slider",
+                                                          "class": "col"
+                                                        },
+                                                        "children": [
+                                                          {
+                                                            "tag": "div",
+                                                            "attributes": {
+                                                              "class": "tab-overflow"
+                                                            },
+                                                            "children": [
+                                                              {
+                                                                "tag": "div",
+                                                                "attributes": {
+                                                                  "class": "tab-window"
+                                                                },
+                                                                "children": [
+                                                                  {
+                                                                    "tag": "div",
+                                                                    "attributes": {
+                                                                      "class": "tab-group",
+                                                                      "role": "tablist",
+                                                                      "aria-label": null
+                                                                    },
+                                                                    "rendered": true,
+                                                                    "children": [
+                                                                      {
+                                                                        "tag": "button",
+                                                                        "attributes": {
+                                                                          "id": "features-products-azure-pill-bar",
+                                                                          "class": "pill-bar__item active",
+                                                                          "href": "#",
+                                                                          "role": "tab",
+                                                                          "data-mount": "tab",
+                                                                          "aria-controls": "features-products-azure",
+                                                                          "aria-selected": "true",
+                                                                          "aria-disabled": "",
+                                                                          "tabindex": "0",
+                                                                          "data-bi-an": "featured-products",
+                                                                          "data-bi-id": "pill-azure",
+                                                                          "data-bi-ct": "button"
+                                                                        },
+                                                                        "rendered": true
+                                                                      },
+                                                                      {
+                                                                        "tag": "button",
+                                                                        "attributes": {
+                                                                          "id": "features-products-github-pill-bar",
+                                                                          "class": "pill-bar__item",
+                                                                          "href": "#",
+                                                                          "role": "tab",
+                                                                          "data-mount": "tab",
+                                                                          "aria-controls": "features-products-github",
+                                                                          "aria-selected": "false",
+                                                                          "aria-disabled": "",
+                                                                          "tabindex": "-1",
+                                                                          "data-bi-an": "featured-products",
+                                                                          "data-bi-id": "pill-github",
+                                                                          "data-bi-ct": "button"
+                                                                        },
+                                                                        "rendered": true
+                                                                      },
+                                                                      {
+                                                                        "tag": "button",
+                                                                        "attributes": {
+                                                                          "id": "features-products-m365-pill-bar",
+                                                                          "class": "pill-bar__item",
+                                                                          "href": "#",
+                                                                          "role": "tab",
+                                                                          "data-mount": "tab",
+                                                                          "aria-controls": "features-products-m365",
+                                                                          "aria-selected": "false",
+                                                                          "aria-disabled": "",
+                                                                          "tabindex": "-1",
+                                                                          "data-bi-an": "featured-products",
+                                                                          "data-bi-id": "pill-m365",
+                                                                          "data-bi-ct": "button"
+                                                                        },
+                                                                        "rendered": true
+                                                                      },
+                                                                      {
+                                                                        "tag": "button",
+                                                                        "attributes": {
+                                                                          "id": "features-products-visualstudio-pill-bar",
+                                                                          "class": "pill-bar__item",
+                                                                          "href": "#",
+                                                                          "role": "tab",
+                                                                          "data-mount": "tab",
+                                                                          "aria-controls": "features-products-visualstudio",
+                                                                          "aria-selected": "false",
+                                                                          "aria-disabled": "",
+                                                                          "tabindex": "-1",
+                                                                          "data-bi-an": "featured-products",
+                                                                          "data-bi-id": "pill-visualstudio",
+                                                                          "data-bi-ct": "button"
+                                                                        },
+                                                                        "rendered": true
+                                                                      },
+                                                                      {
+                                                                        "tag": "button",
+                                                                        "attributes": {
+                                                                          "id": "features-products-windows-pill-bar",
+                                                                          "class": "pill-bar__item",
+                                                                          "href": "#",
+                                                                          "role": "tab",
+                                                                          "data-mount": "tab",
+                                                                          "aria-controls": "features-products-windows",
+                                                                          "aria-selected": "false",
+                                                                          "aria-disabled": "",
+                                                                          "tabindex": "-1",
+                                                                          "data-bi-an": "featured-products",
+                                                                          "data-bi-id": "pill-windows",
+                                                                          "data-bi-ct": "button"
+                                                                        },
+                                                                        "rendered": true
+                                                                      }
+                                                                    ]
+                                                                  }
+                                                                ]
+                                                              }
+                                                            ]
+                                                          },
+                                                          {
+                                                            "tag": "div",
+                                                            "attributes": {
+                                                              "class": "tab-arrows"
+                                                            },
+                                                            "children": [
+                                                              {
+                                                                "tag": "button",
+                                                                "attributes": {
+                                                                  "type": "button",
+                                                                  "class": "arrow-prev",
+                                                                  "tabindex": "-1",
+                                                                  "aria-hidden": "true",
+                                                                  "data-width": "40"
+                                                                },
+                                                                "rendered": false
+                                                              },
+                                                              {
+                                                                "tag": "button",
+                                                                "attributes": {
+                                                                  "type": "button",
+                                                                  "class": "arrow-next",
+                                                                  "tabindex": "-1",
+                                                                  "aria-hidden": "true",
+                                                                  "data-width": "40"
+                                                                },
+                                                                "rendered": false
+                                                              }
+                                                            ]
+                                                          }
+                                                        ]
+                                                      }
+                                                    ]
+                                                  },
+                                                  {
+                                                    "tag": "div",
+                                                    "attributes": {
+                                                      "class": "row pb-xl"
+                                                    },
+                                                    "children": [
+                                                      {
+                                                        "tag": "div",
+                                                        "attributes": {
+                                                          "class": "col"
+                                                        },
+                                                        "children": [
+                                                          {
+                                                            "tag": "div",
+                                                            "attributes": {
+                                                              "class": "tab-panel-group"
+                                                            },
+                                                            "children": [
+                                                              {
+                                                                "tag": "div",
+                                                                "attributes": {
+                                                                  "id": "features-products-azure",
+                                                                  "class": "tab-panel fade active show",
+                                                                  "role": "tabpanel",
+                                                                  "aria-labelledby": "features-products-azure-pill-bar",
+                                                                  "tabindex": "0"
+                                                                },
+                                                                "rendered": true
+                                                              },
+                                                              {
+                                                                "tag": "div",
+                                                                "attributes": {
+                                                                  "id": "features-products-github",
+                                                                  "class": "tab-panel fade",
+                                                                  "role": "tabpanel",
+                                                                  "aria-labelledby": "features-products-github-pill-bar",
+                                                                  "tabindex": "0"
+                                                                },
+                                                                "rendered": false
+                                                              },
+                                                              {
+                                                                "tag": "div",
+                                                                "attributes": {
+                                                                  "id": "features-products-m365",
+                                                                  "class": "tab-panel fade",
+                                                                  "role": "tabpanel",
+                                                                  "aria-labelledby": "features-products-m365-pill-bar",
+                                                                  "tabindex": "0"
+                                                                },
+                                                                "rendered": false
+                                                              },
+                                                              {
+                                                                "tag": "div",
+                                                                "attributes": {
+                                                                  "id": "features-products-visualstudio",
+                                                                  "class": "tab-panel fade",
+                                                                  "role": "tabpanel",
+                                                                  "aria-labelledby": "features-products-visualstudio-pill-bar",
+                                                                  "tabindex": "0"
+                                                                },
+                                                                "rendered": false
+                                                              },
+                                                              {
+                                                                "tag": "div",
+                                                                "attributes": {
+                                                                  "id": "features-products-windows",
+                                                                  "class": "tab-panel fade",
+                                                                  "role": "tabpanel",
+                                                                  "aria-labelledby": "features-products-windows-pill-bar",
+                                                                  "tabindex": "0"
+                                                                },
+                                                                "rendered": false
+                                                              }
+                                                            ]
+                                                          }
+                                                        ]
+                                                      }
+                                                    ]
+                                                  }
+                                                ]
+                                              }
+                                            ]
+                                          }
+                                        ]
+                                      }
+                                    ]
+                                  }
+                                ]
+                              },
+                              {
+                                "tag": "section",
+                                "attributes": {
+                                  "id": "banners",
+                                  "class": "bg--base-fade"
+                                },
+                                "children": [
+                                  {
+                                    "tag": "div",
+                                    "attributes": {
+                                      "class": "container"
+                                    },
+                                    "children": [
+                                      {
+                                        "tag": "div",
+                                        "attributes": {
+                                          "id": "banner-carousel",
+                                          "class": "carousel carousel--type-promo scroll-snap-mandatory"
+                                        },
+                                        "children": [
+                                          {
+                                            "tag": "section",
+                                            "attributes": {
+                                              "class": "carousel__section pointer-event",
+                                              "aria-label": null,
+                                              "aria-roledescription": null,
+                                              "data-mount": "ocr-carousel"
+                                            },
+                                            "children": [
+                                              {
+                                                "tag": "a",
+                                                "attributes": {
+                                                  "href": "#",
+                                                  "class": "sr-only-focusable w-100 position-absolute"
+                                                },
+                                                "rendered": true
+                                              },
+                                              {
+                                                "tag": "div",
+                                                "attributes": {
+                                                  "id": "banner-carousel-controls",
+                                                  "class": "carousel__controls carousel__container"
+                                                },
+                                                "children": [
+                                                  {
+                                                    "tag": "button",
+                                                    "attributes": {
+                                                      "type": "button",
+                                                      "class": "carousel__arrow-prev",
+                                                      "title": null,
+                                                      "data-slide": "prev",
+                                                      "aria-labelledby": "carousel-control-prev-banner-carousel",
+                                                      "disabled": ""
+                                                    },
+                                                    "rendered": true
+                                                  },
+                                                  {
+                                                    "tag": "button",
+                                                    "attributes": {
+                                                      "type": "button",
+                                                      "class": "carousel__arrow-next",
+                                                      "title": null,
+                                                      "data-slide": "next",
+                                                      "aria-labelledby": "carousel-control-next-banner-carousel"
+                                                    },
+                                                    "rendered": true
+                                                  }
+                                                ]
+                                              },
+                                              {
+                                                "tag": "div",
+                                                "attributes": {
+                                                  "class": "carousel__window hide-scrollbar"
+                                                },
+                                                "children": [
+                                                  {
+                                                    "tag": "div",
+                                                    "attributes": {
+                                                      "class": "carousel__container layout layout--overflow  layout--cols-1",
+                                                      "aria-label": null
+                                                    },
+                                                    "children": [
+                                                      {
+                                                        "tag": "section",
+                                                        "attributes": {
+                                                          "id": "banner-carousel-1",
+                                                          "class": "carousel__slide layout__col",
+                                                          "tabindex": "0",
+                                                          "aria-label": null
+                                                        },
+                                                        "rendered": true
+                                                      },
+                                                      {
+                                                        "tag": "section",
+                                                        "attributes": {
+                                                          "id": "banner-carousel-2",
+                                                          "class": "carousel__slide layout__col",
+                                                          "tabindex": "-1",
+                                                          "aria-label": null,
+                                                          "aria-hidden": "true"
+                                                        },
+                                                        "rendered": true
+                                                      },
+                                                      {
+                                                        "tag": "section",
+                                                        "attributes": {
+                                                          "id": "banner-carousel-3",
+                                                          "class": "carousel__slide layout__col",
+                                                          "tabindex": "-1",
+                                                          "aria-label": null,
+                                                          "aria-hidden": "true"
+                                                        },
+                                                        "rendered": true
+                                                      },
+                                                      {
+                                                        "tag": "section",
+                                                        "attributes": {
+                                                          "id": "banner-carousel-4",
+                                                          "class": "carousel__slide layout__col",
+                                                          "tabindex": "-1",
+                                                          "aria-label": null,
+                                                          "aria-hidden": "true"
+                                                        },
+                                                        "rendered": true
+                                                      },
+                                                      {
+                                                        "tag": "section",
+                                                        "attributes": {
+                                                          "id": "banner-carousel-5",
+                                                          "class": "carousel__slide layout__col",
+                                                          "tabindex": "-1",
+                                                          "aria-label": null,
+                                                          "aria-hidden": "true"
+                                                        },
+                                                        "rendered": true
+                                                      }
+                                                    ]
+                                                  }
+                                                ]
+                                              },
+                                              {
+                                                "tag": "a",
+                                                "attributes": {
+                                                  "href": "#",
+                                                  "class": "sr-only-focusable w-100 position-absolute"
+                                                },
+                                                "rendered": true
+                                              },
+                                              {
+                                                "tag": "a",
+                                                "attributes": {
+                                                  "id": "banner-carousel",
+                                                  "class": "sr-only-focusable",
+                                                  "tabindex": "-1"
+                                                },
+                                                "rendered": true
+                                              }
+                                            ]
+                                          }
+                                        ]
+                                      }
+                                    ]
+                                  }
+                                ]
+                              },
+                              {
+                                "tag": "section",
+                                "attributes": {
+                                  "id": "news-and-updates",
+                                  "class": "pb-xl bg--base-fade",
+                                  "tabindex": "-1"
+                                },
+                                "rendered": true,
+                                "children": [
+                                  {
+                                    "tag": "div",
+                                    "attributes": {
+                                      "class": "carousel carousel--type-regular scroll-snap-mandatory"
+                                    },
+                                    "children": [
+                                      {
+                                        "tag": "section",
+                                        "attributes": {
+                                          "class": "carousel__section pointer-event",
+                                          "aria-label": null,
+                                          "aria-roledescription": null,
+                                          "data-mount": "ocr-carousel"
+                                        },
+                                        "children": [
+                                          {
+                                            "tag": "a",
+                                            "attributes": {
+                                              "href": "#",
+                                              "class": "sr-only-focusable w-100 position-absolute"
+                                            },
+                                            "rendered": true
+                                          },
+                                          {
+                                            "tag": "div",
+                                            "attributes": {
+                                              "id": "discover-whats-new-carousel-controls",
+                                              "class": "carousel__controls carousel__container"
+                                            },
+                                            "children": [
+                                              {
+                                                "tag": "button",
+                                                "attributes": {
+                                                  "type": "button",
+                                                  "class": "carousel__arrow-prev",
+                                                  "title": null,
+                                                  "data-slide": "prev",
+                                                  "aria-labelledby": "carousel-control-prev-discover-whats-new-carousel",
+                                                  "disabled": ""
+                                                },
+                                                "rendered": true
+                                              },
+                                              {
+                                                "tag": "button",
+                                                "attributes": {
+                                                  "type": "button",
+                                                  "class": "carousel__arrow-next",
+                                                  "title": null,
+                                                  "data-slide": "next",
+                                                  "aria-labelledby": "carousel-control-next-discover-whats-new-carousel"
+                                                },
+                                                "rendered": true
+                                              }
+                                            ]
+                                          },
+                                          {
+                                            "tag": "div",
+                                            "attributes": {
+                                              "class": "carousel__window hide-scrollbar",
+                                              "style": null
+                                            },
+                                            "children": [
+                                              {
+                                                "tag": "div",
+                                                "attributes": {
+                                                  "class": "carousel__container layout layout--overflow  layout--cols-3",
+                                                  "aria-label": null
+                                                },
+                                                "children": [
+                                                  {
+                                                    "tag": "section",
+                                                    "attributes": {
+                                                      "id": "discover-whats-new-carousel-0",
+                                                      "class": "carousel__slide layout__col",
+                                                      "tabindex": "0",
+                                                      "aria-label": null
+                                                    },
+                                                    "rendered": true
+                                                  },
+                                                  {
+                                                    "tag": "section",
+                                                    "attributes": {
+                                                      "id": "discover-whats-new-carousel-1",
+                                                      "class": "carousel__slide layout__col",
+                                                      "tabindex": "0",
+                                                      "aria-label": null
+                                                    },
+                                                    "rendered": true
+                                                  },
+                                                  {
+                                                    "tag": "section",
+                                                    "attributes": {
+                                                      "id": "discover-whats-new-carousel-2",
+                                                      "class": "carousel__slide layout__col",
+                                                      "tabindex": "-1",
+                                                      "aria-label": null,
+                                                      "aria-hidden": "true"
+                                                    },
+                                                    "rendered": true
+                                                  }
+                                                ]
+                                              }
+                                            ]
+                                          },
+                                          {
+                                            "tag": "a",
+                                            "attributes": {
+                                              "href": "#",
+                                              "class": "sr-only-focusable w-100 position-absolute"
+                                            },
+                                            "rendered": true
+                                          },
+                                          {
+                                            "tag": "a",
+                                            "attributes": {
+                                              "id": "discover-whats-new-carousel",
+                                              "class": "sr-only-focusable",
+                                              "tabindex": "-1"
+                                            },
+                                            "rendered": true
+                                          }
+                                        ]
+                                      }
+                                    ]
+                                  }
+                                ]
+                              },
+                              {
+                                "tag": "section",
+                                "attributes": {
+                                  "id": "languages",
+                                  "class": "bg--base-fade",
+                                  "tabindex": "-1"
+                                },
+                                "rendered": true
+                              },
+                              {
+                                "tag": "section",
+                                "attributes": {
+                                  "id": "communities",
+                                  "class": "bg--base-fade",
+                                  "tabindex": "-1"
+                                },
+                                "rendered": true,
+                                "children": [
+                                  {
+                                    "tag": "div",
+                                    "attributes": {
+                                      "class": "carousel carousel--type-regular scroll-snap-mandatory"
+                                    },
+                                    "children": [
+                                      {
+                                        "tag": "section",
+                                        "attributes": {
+                                          "class": "carousel__section pointer-event",
+                                          "aria-label": null,
+                                          "aria-roledescription": null,
+                                          "data-mount": "ocr-carousel"
+                                        },
+                                        "children": [
+                                          {
+                                            "tag": "a",
+                                            "attributes": {
+                                              "href": "#",
+                                              "class": "sr-only-focusable w-100 position-absolute"
+                                            },
+                                            "rendered": true
+                                          },
+                                          {
+                                            "tag": "div",
+                                            "attributes": {
+                                              "id": "communities-carousel-controls",
+                                              "class": "carousel__controls carousel__container"
+                                            },
+                                            "children": [
+                                              {
+                                                "tag": "button",
+                                                "attributes": {
+                                                  "type": "button",
+                                                  "class": "carousel__arrow-prev",
+                                                  "title": null,
+                                                  "data-slide": "prev",
+                                                  "aria-labelledby": "carousel-control-prev-communities-carousel",
+                                                  "disabled": ""
+                                                },
+                                                "rendered": true
+                                              },
+                                              {
+                                                "tag": "button",
+                                                "attributes": {
+                                                  "type": "button",
+                                                  "class": "carousel__arrow-next",
+                                                  "title": null,
+                                                  "data-slide": "next",
+                                                  "aria-labelledby": "carousel-control-next-communities-carousel"
+                                                },
+                                                "rendered": true
+                                              }
+                                            ]
+                                          },
+                                          {
+                                            "tag": "div",
+                                            "attributes": {
+                                              "class": "carousel__window hide-scrollbar",
+                                              "style": null
+                                            },
+                                            "children": [
+                                              {
+                                                "tag": "div",
+                                                "attributes": {
+                                                  "class": "carousel__container layout layout--overflow  layout--cols-5",
+                                                  "aria-label": null
+                                                },
+                                                "children": [
+                                                  {
+                                                    "tag": "section",
+                                                    "attributes": {
+                                                      "id": "communities-carousel-0",
+                                                      "class": "carousel__slide layout__col",
+                                                      "tabindex": "0",
+                                                      "aria-label": null
+                                                    },
+                                                    "rendered": true
+                                                  },
+                                                  {
+                                                    "tag": "section",
+                                                    "attributes": {
+                                                      "id": "communities-carousel-1",
+                                                      "class": "carousel__slide layout__col",
+                                                      "tabindex": "0",
+                                                      "aria-label": null
+                                                    },
+                                                    "rendered": true
+                                                  },
+                                                  {
+                                                    "tag": "section",
+                                                    "attributes": {
+                                                      "id": "communities-carousel-2",
+                                                      "class": "carousel__slide layout__col",
+                                                      "tabindex": "-1",
+                                                      "aria-label": null,
+                                                      "aria-hidden": "true"
+                                                    },
+                                                    "rendered": true
+                                                  },
+                                                  {
+                                                    "tag": "section",
+                                                    "attributes": {
+                                                      "id": "communities-carousel-3",
+                                                      "class": "carousel__slide layout__col",
+                                                      "tabindex": "-1",
+                                                      "aria-label": null,
+                                                      "aria-hidden": "true"
+                                                    },
+                                                    "rendered": true
+                                                  },
+                                                  {
+                                                    "tag": "section",
+                                                    "attributes": {
+                                                      "id": "communities-carousel-4",
+                                                      "class": "carousel__slide layout__col",
+                                                      "tabindex": "-1",
+                                                      "aria-label": null,
+                                                      "aria-hidden": "true"
+                                                    },
+                                                    "rendered": true
+                                                  },
+                                                  {
+                                                    "tag": "section",
+                                                    "attributes": {
+                                                      "id": "communities-carousel-5",
+                                                      "class": "carousel__slide layout__col",
+                                                      "tabindex": "-1",
+                                                      "aria-label": null,
+                                                      "aria-hidden": "true"
+                                                    },
+                                                    "rendered": true
+                                                  },
+                                                  {
+                                                    "tag": "section",
+                                                    "attributes": {
+                                                      "id": "communities-carousel-6",
+                                                      "class": "carousel__slide layout__col",
+                                                      "tabindex": "-1",
+                                                      "aria-label": null,
+                                                      "aria-hidden": "true"
+                                                    },
+                                                    "rendered": true
+                                                  },
+                                                  {
+                                                    "tag": "section",
+                                                    "attributes": {
+                                                      "id": "communities-carousel-7",
+                                                      "class": "carousel__slide layout__col",
+                                                      "tabindex": "-1",
+                                                      "aria-label": null,
+                                                      "aria-hidden": "true"
+                                                    },
+                                                    "rendered": true
+                                                  }
+                                                ]
+                                              }
+                                            ]
+                                          },
+                                          {
+                                            "tag": "a",
+                                            "attributes": {
+                                              "href": "#",
+                                              "class": "sr-only-focusable w-100 position-absolute"
+                                            },
+                                            "rendered": true
+                                          },
+                                          {
+                                            "tag": "a",
+                                            "attributes": {
+                                              "id": "communities-carousel",
+                                              "class": "sr-only-focusable",
+                                              "tabindex": "-1"
+                                            },
+                                            "rendered": true
+                                          }
+                                        ]
+                                      }
+                                    ]
+                                  }
+                                ]
+                              },
+                              {
+                                "tag": "section",
+                                "attributes": {
+                                  "id": "hubs",
+                                  "tabindex": "-1"
+                                },
+                                "rendered": true
+                              },
+                              {
+                                "tag": "section",
+                                "attributes": {
+                                  "id": "developer-story",
+                                  "tabindex": "-1"
+                                },
+                                "rendered": true,
+                                "children": [
+                                  {
+                                    "tag": "div",
+                                    "attributes": {
+                                      "class": "section-master section-master--breadth-comfortable section-master--layout-slot-horizontal-alignment-right section-master--layout-slot-vertical-alignment-bottom section-master--blade-card-carousel"
+                                    },
+                                    "children": [
+                                      {
+                                        "tag": "div",
+                                        "attributes": {
+                                          "class": "container"
+                                        },
+                                        "children": [
+                                          {
+                                            "tag": "div",
+                                            "attributes": {
+                                              "class": "layout section-master__layout"
+                                            },
+                                            "children": [
+                                              {
+                                                "tag": "div",
+                                                "attributes": {
+                                                  "class": "layout__col"
+                                                },
+                                                "children": [
+                                                  {
+                                                    "tag": "div",
+                                                    "attributes": {
+                                                      "class": "section-master__layout-header"
+                                                    },
+                                                    "children": [
+                                                      {
+                                                        "tag": "div",
+                                                        "attributes": {
+                                                          "class": "block-heading block-heading--alignment-centered block-heading--size-m w-100"
+                                                        },
+                                                        "children": [
+                                                          {
+                                                            "tag": "div",
+                                                            "attributes": {
+                                                              "id": "developerStoryVideoWrapper",
+                                                              "class": "mt-xl"
+                                                            },
+                                                            "children": [
+                                                              {
+                                                                "tag": "div",
+                                                                "attributes": {
+                                                                  "class": "media w-100 media--ratio-16-9 media--highlight media--highlight-glass depth-4 media--pos-middle-middle"
+                                                                },
+                                                                "children": [
+                                                                  {
+                                                                    "tag": "div",
+                                                                    "attributes": {
+                                                                      "class": "w-100 ocr-img media__asset"
+                                                                    },
+                                                                    "children": [
+                                                                      {
+                                                                        "tag": "universal-media-player",
+                                                                        "attributes": {
+                                                                          "id": "developerStoryVideoUMP",
+                                                                          "options": null,
+                                                                          "role": "group",
+                                                                          "umpid": "ump-0f067096-d1cc-4c90-a43b-c9ad350d7da1",
+                                                                          "dir": "ltr",
+                                                                          "aria-label": null,
+                                                                          "style": null
+                                                                        },
+                                                                        "shadow": [
+                                                                          {
+                                                                            "tag": "ump-controls",
+                                                                            "attributes": {
+                                                                              "class": "fill-parent"
+                                                                            },
+                                                                            "shadow": [
+                                                                              {
+                                                                                "tag": "div",
+                                                                                "attributes": {
+                                                                                  "class": "controls-wrapper",
+                                                                                  "data-testid": "controls-wrapper",
+                                                                                  "tabindex": "",
+                                                                                  "aria-hidden": "false"
+                                                                                },
+                                                                                "children": [
+                                                                                  {
+                                                                                    "tag": "div",
+                                                                                    "attributes": {
+                                                                                      "data-testid": "controls",
+                                                                                      "class": " controls "
+                                                                                    },
+                                                                                    "children": [
+                                                                                      {
+                                                                                        "tag": "ump-big-play-button",
+                                                                                        "attributes": {},
+                                                                                        "shadow": [
+                                                                                          {
+                                                                                            "tag": "button",
+                                                                                            "attributes": {
+                                                                                              "type": "button",
+                                                                                              "data-testid": "big-play-button",
+                                                                                              "class": " btn btn-xl btn-circle big-play-button big-play-button-light focus-default tooltip ",
+                                                                                              "aria-label": null,
+                                                                                              "data-tooltip": "Play"
+                                                                                            },
+                                                                                            "rendered": true
+                                                                                          }
+                                                                                        ]
+                                                                                      }
+                                                                                    ]
+                                                                                  }
+                                                                                ]
+                                                                              }
+                                                                            ]
+                                                                          }
+                                                                        ]
+                                                                      }
+                                                                    ]
+                                                                  }
+                                                                ]
+                                                              }
+                                                            ]
+                                                          }
+                                                        ]
+                                                      }
+                                                    ]
+                                                  }
+                                                ]
+                                              }
+                                            ]
+                                          }
+                                        ]
+                                      }
+                                    ]
+                                  }
+                                ]
+                              },
+                              {
+                                "tag": "section",
+                                "attributes": {
+                                  "id": "blogs",
+                                  "tabindex": "-1"
+                                },
+                                "rendered": true
+                              },
+                              {
+                                "tag": "section",
+                                "attributes": {
+                                  "id": "events",
+                                  "class": "bg--base-fade section-master section-master--breadth-comfortable",
+                                  "tabindex": "-1"
+                                },
+                                "rendered": true,
+                                "children": [
+                                  {
+                                    "tag": "div",
+                                    "attributes": {
+                                      "class": "carousel carousel--type-regular bg--base-fade scroll-snap-mandatory"
+                                    },
+                                    "children": [
+                                      {
+                                        "tag": "section",
+                                        "attributes": {
+                                          "class": "carousel__section pointer-event",
+                                          "aria-label": null,
+                                          "aria-roledescription": null,
+                                          "data-mount": "ocr-carousel"
+                                        },
+                                        "children": [
+                                          {
+                                            "tag": "a",
+                                            "attributes": {
+                                              "href": "#",
+                                              "class": "sr-only-focusable w-100 position-absolute"
+                                            },
+                                            "rendered": true
+                                          },
+                                          {
+                                            "tag": "div",
+                                            "attributes": {
+                                              "id": "events-carousel-controls",
+                                              "class": "carousel__controls carousel__container"
+                                            },
+                                            "children": [
+                                              {
+                                                "tag": "button",
+                                                "attributes": {
+                                                  "type": "button",
+                                                  "class": "carousel__arrow-prev",
+                                                  "title": null,
+                                                  "data-slide": "prev",
+                                                  "aria-labelledby": "carousel-control-prev-events-carousel",
+                                                  "disabled": ""
+                                                },
+                                                "rendered": true
+                                              },
+                                              {
+                                                "tag": "button",
+                                                "attributes": {
+                                                  "type": "button",
+                                                  "class": "carousel__arrow-next",
+                                                  "title": null,
+                                                  "data-slide": "next",
+                                                  "aria-labelledby": "carousel-control-next-events-carousel"
+                                                },
+                                                "rendered": true
+                                              }
+                                            ]
+                                          },
+                                          {
+                                            "tag": "div",
+                                            "attributes": {
+                                              "class": "carousel__window hide-scrollbar",
+                                              "style": null
+                                            },
+                                            "children": [
+                                              {
+                                                "tag": "div",
+                                                "attributes": {
+                                                  "class": "carousel__container layout layout--overflow  layout--cols-3",
+                                                  "aria-label": null
+                                                },
+                                                "children": [
+                                                  {
+                                                    "tag": "section",
+                                                    "attributes": {
+                                                      "id": "events-carousel-0",
+                                                      "class": "carousel__slide layout__col",
+                                                      "tabindex": "0",
+                                                      "aria-label": null
+                                                    },
+                                                    "rendered": true
+                                                  },
+                                                  {
+                                                    "tag": "section",
+                                                    "attributes": {
+                                                      "id": "events-carousel-1",
+                                                      "class": "carousel__slide layout__col",
+                                                      "tabindex": "0",
+                                                      "aria-label": null
+                                                    },
+                                                    "rendered": true
+                                                  },
+                                                  {
+                                                    "tag": "section",
+                                                    "attributes": {
+                                                      "id": "events-carousel-2",
+                                                      "class": "carousel__slide layout__col",
+                                                      "tabindex": "-1",
+                                                      "aria-label": null,
+                                                      "aria-hidden": "true"
+                                                    },
+                                                    "rendered": true
+                                                  },
+                                                  {
+                                                    "tag": "section",
+                                                    "attributes": {
+                                                      "id": "events-carousel-3",
+                                                      "class": "carousel__slide layout__col",
+                                                      "tabindex": "-1",
+                                                      "aria-label": null,
+                                                      "aria-hidden": "true"
+                                                    },
+                                                    "rendered": true
+                                                  },
+                                                  {
+                                                    "tag": "section",
+                                                    "attributes": {
+                                                      "id": "events-carousel-4",
+                                                      "class": "carousel__slide layout__col",
+                                                      "tabindex": "-1",
+                                                      "aria-label": null,
+                                                      "aria-hidden": "true"
+                                                    },
+                                                    "rendered": true
+                                                  }
+                                                ]
+                                              }
+                                            ]
+                                          },
+                                          {
+                                            "tag": "a",
+                                            "attributes": {
+                                              "href": "#",
+                                              "class": "sr-only-focusable w-100 position-absolute"
+                                            },
+                                            "rendered": true
+                                          },
+                                          {
+                                            "tag": "a",
+                                            "attributes": {
+                                              "id": "events-carousel",
+                                              "class": "sr-only-focusable",
+                                              "tabindex": "-1"
+                                            },
+                                            "rendered": true
+                                          }
+                                        ]
+                                      }
+                                    ]
+                                  }
+                                ]
+                              },
+                              {
+                                "tag": "section",
+                                "attributes": {
+                                  "id": "learn",
+                                  "tabindex": "-1"
+                                },
+                                "rendered": true,
+                                "children": [
+                                  {
+                                    "tag": "div",
+                                    "attributes": {
+                                      "class": "section-master bg--base-fade section-master--breadth-comfortable section-master--layout-slot-horizontal-alignment-right section-master--layout-slot-vertical-alignment-bottom section-master--blade-card-carousel"
+                                    },
+                                    "children": [
+                                      {
+                                        "tag": "div",
+                                        "attributes": {
+                                          "class": "container"
+                                        },
+                                        "children": [
+                                          {
+                                            "tag": "div",
+                                            "attributes": {
+                                              "class": "row section-master__slot"
+                                            },
+                                            "children": [
+                                              {
+                                                "tag": "div",
+                                                "attributes": {
+                                                  "class": "col"
+                                                },
+                                                "children": [
+                                                  {
+                                                    "tag": "div",
+                                                    "attributes": {
+                                                      "class": "pill-bar no-gutters pl-0 ml-0"
+                                                    },
+                                                    "children": [
+                                                      {
+                                                        "tag": "div",
+                                                        "attributes": {
+                                                          "data-mount": "tab-slider",
+                                                          "class": "col"
+                                                        },
+                                                        "children": [
+                                                          {
+                                                            "tag": "div",
+                                                            "attributes": {
+                                                              "class": "tab-overflow"
+                                                            },
+                                                            "children": [
+                                                              {
+                                                                "tag": "div",
+                                                                "attributes": {
+                                                                  "class": "tab-window"
+                                                                },
+                                                                "children": [
+                                                                  {
+                                                                    "tag": "div",
+                                                                    "attributes": {
+                                                                      "class": "tab-group",
+                                                                      "role": "tablist",
+                                                                      "aria-label": null
+                                                                    },
+                                                                    "rendered": true,
+                                                                    "children": [
+                                                                      {
+                                                                        "tag": "button",
+                                                                        "attributes": {
+                                                                          "id": "learn-1-pill-bar",
+                                                                          "class": "pill-bar__item active",
+                                                                          "href": "#",
+                                                                          "role": "tab",
+                                                                          "data-mount": "tab",
+                                                                          "aria-controls": "learn-1",
+                                                                          "aria-selected": "true",
+                                                                          "aria-disabled": "",
+                                                                          "tabindex": "0"
+                                                                        },
+                                                                        "rendered": true
+                                                                      },
+                                                                      {
+                                                                        "tag": "button",
+                                                                        "attributes": {
+                                                                          "id": "learn-2-pill-bar",
+                                                                          "class": "pill-bar__item",
+                                                                          "href": "#",
+                                                                          "role": "tab",
+                                                                          "data-mount": "tab",
+                                                                          "aria-controls": "learn-2",
+                                                                          "aria-selected": "false",
+                                                                          "aria-disabled": "",
+                                                                          "tabindex": "-1"
+                                                                        },
+                                                                        "rendered": true
+                                                                      },
+                                                                      {
+                                                                        "tag": "button",
+                                                                        "attributes": {
+                                                                          "id": "learn-3-pill-bar",
+                                                                          "class": "pill-bar__item",
+                                                                          "href": "#",
+                                                                          "role": "tab",
+                                                                          "data-mount": "tab",
+                                                                          "aria-controls": "learn-3",
+                                                                          "aria-selected": "false",
+                                                                          "aria-disabled": "",
+                                                                          "tabindex": "-1"
+                                                                        },
+                                                                        "rendered": true
+                                                                      },
+                                                                      {
+                                                                        "tag": "button",
+                                                                        "attributes": {
+                                                                          "id": "learn-4-pill-bar",
+                                                                          "class": "pill-bar__item",
+                                                                          "href": "#",
+                                                                          "role": "tab",
+                                                                          "data-mount": "tab",
+                                                                          "aria-controls": "learn-4",
+                                                                          "aria-selected": "false",
+                                                                          "aria-disabled": "",
+                                                                          "tabindex": "-1"
+                                                                        },
+                                                                        "rendered": true
+                                                                      },
+                                                                      {
+                                                                        "tag": "button",
+                                                                        "attributes": {
+                                                                          "id": "learn-5-pill-bar",
+                                                                          "class": "pill-bar__item",
+                                                                          "href": "#",
+                                                                          "role": "tab",
+                                                                          "data-mount": "tab",
+                                                                          "aria-controls": "learn-5",
+                                                                          "aria-selected": "false",
+                                                                          "aria-disabled": "",
+                                                                          "tabindex": "-1"
+                                                                        },
+                                                                        "rendered": true
+                                                                      }
+                                                                    ]
+                                                                  }
+                                                                ]
+                                                              }
+                                                            ]
+                                                          },
+                                                          {
+                                                            "tag": "div",
+                                                            "attributes": {
+                                                              "class": "tab-arrows"
+                                                            },
+                                                            "children": [
+                                                              {
+                                                                "tag": "button",
+                                                                "attributes": {
+                                                                  "type": "button",
+                                                                  "class": "arrow-prev",
+                                                                  "tabindex": "-1",
+                                                                  "aria-hidden": "true",
+                                                                  "data-width": "40"
+                                                                },
+                                                                "rendered": false
+                                                              },
+                                                              {
+                                                                "tag": "button",
+                                                                "attributes": {
+                                                                  "type": "button",
+                                                                  "class": "arrow-next",
+                                                                  "tabindex": "-1",
+                                                                  "aria-hidden": "true",
+                                                                  "data-width": "40"
+                                                                },
+                                                                "rendered": false
+                                                              }
+                                                            ]
+                                                          }
+                                                        ]
+                                                      }
+                                                    ]
+                                                  },
+                                                  {
+                                                    "tag": "div",
+                                                    "attributes": {
+                                                      "class": "row"
+                                                    },
+                                                    "children": [
+                                                      {
+                                                        "tag": "div",
+                                                        "attributes": {
+                                                          "class": "col"
+                                                        },
+                                                        "children": [
+                                                          {
+                                                            "tag": "div",
+                                                            "attributes": {
+                                                              "class": "tab-panel-group"
+                                                            },
+                                                            "children": [
+                                                              {
+                                                                "tag": "div",
+                                                                "attributes": {
+                                                                  "id": "learn-1",
+                                                                  "class": "tab-panel fade active show",
+                                                                  "role": "tabpanel",
+                                                                  "aria-labelledby": "learn-1-pill-bar",
+                                                                  "tabindex": "0"
+                                                                },
+                                                                "rendered": true
+                                                              },
+                                                              {
+                                                                "tag": "div",
+                                                                "attributes": {
+                                                                  "id": "learn-2",
+                                                                  "class": "tab-panel fade",
+                                                                  "role": "tabpanel",
+                                                                  "aria-labelledby": "learn-2-pill-bar",
+                                                                  "tabindex": "0"
+                                                                },
+                                                                "rendered": false
+                                                              },
+                                                              {
+                                                                "tag": "div",
+                                                                "attributes": {
+                                                                  "id": "learn-3",
+                                                                  "class": "tab-panel fade",
+                                                                  "role": "tabpanel",
+                                                                  "aria-labelledby": "learn-3-pill-bar",
+                                                                  "tabindex": "0"
+                                                                },
+                                                                "rendered": false
+                                                              },
+                                                              {
+                                                                "tag": "div",
+                                                                "attributes": {
+                                                                  "id": "learn-4",
+                                                                  "class": "tab-panel fade",
+                                                                  "role": "tabpanel",
+                                                                  "aria-labelledby": "learn-4-pill-bar",
+                                                                  "tabindex": "0"
+                                                                },
+                                                                "rendered": false
+                                                              },
+                                                              {
+                                                                "tag": "div",
+                                                                "attributes": {
+                                                                  "id": "learn-5",
+                                                                  "class": "tab-panel fade",
+                                                                  "role": "tabpanel",
+                                                                  "aria-labelledby": "learn-5-pill-bar",
+                                                                  "tabindex": "0"
+                                                                },
+                                                                "rendered": false
+                                                              }
+                                                            ]
+                                                          }
+                                                        ]
+                                                      }
+                                                    ]
+                                                  }
+                                                ]
+                                              }
+                                            ]
+                                          }
+                                        ]
+                                      }
+                                    ]
+                                  }
+                                ]
+                              }
+                            ]
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "tag": "div",
+                "attributes": {
+                  "class": "mx-0 px-0 overflow-hidden uhf-footer-wrapper"
+                },
+                "children": [
+                  {
+                    "tag": "div",
+                    "attributes": {
+                      "class": "uhf11-footer-container"
+                    },
+                    "children": [
+                      {
+                        "tag": "button",
+                        "attributes": {
+                          "type": "button",
+                          "class": "uhf11-btn-theme",
+                          "id": "theme-toggle",
+                          "aria-label": null,
+                          "aria-pressed": "true",
+                          "data-bi-an": "uhf-footer",
+                          "data-bi-id": "theme-toggle",
+                          "data-bi-ct": "button"
+                        },
+                        "rendered": true
+                      },
+                      {
+                        "tag": "uhf-footer",
+                        "attributes": {
+                          "locale": "en-us",
+                          "partnerid": "MSDev-Community",
+                          "footerid": "MSDev-DEVCOM-Community-Footer",
+                          "theme": "dark"
+                        },
+                        "children": [
+                          {
+                            "tag": "footer",
+                            "attributes": {
+                              "id": "uhf-footer",
+                              "itemscope": "",
+                              "itemtype": "https://schema.org/WPFooter",
+                              "class": "uhf-footer c-uhff uhf-theme--dark"
+                            },
+                            "children": [
+                              {
+                                "tag": "div",
+                                "attributes": {
+                                  "class": "uhf-footer-base"
+                                },
+                                "children": [
+                                  {
+                                    "tag": "uhf-footer-menu",
+                                    "attributes": {
+                                      "slot": "uhf-footer-menu",
+                                      "data-nav-label": null
+                                    },
+                                    "children": [
+                                      {
+                                        "tag": "nav",
+                                        "attributes": {
+                                          "class": "uhf-footer-menu",
+                                          "itemscope": "",
+                                          "itemtype": "https://schema.org/SiteNavigationElement",
+                                          "aria-label": null
+                                        },
+                                        "children": [
+                                          {
+                                            "tag": "ul",
+                                            "attributes": {},
+                                            "children": [
+                                              {
+                                                "tag": "li",
+                                                "attributes": {},
+                                                "children": [
+                                                  {
+                                                    "tag": "a",
+                                                    "attributes": {
+                                                      "class": "uhf-footer-link",
+                                                      "href": "https://support.microsoft.com/contactus/",
+                                                      "id": null,
+                                                      "data-m": null
+                                                    },
+                                                    "rendered": true
+                                                  }
+                                                ]
+                                              },
+                                              {
+                                                "tag": "li",
+                                                "attributes": {},
+                                                "children": [
+                                                  {
+                                                    "tag": "a",
+                                                    "attributes": {
+                                                      "class": "uhf-footer-link",
+                                                      "href": "https://go.microsoft.com/fwlink/",
+                                                      "id": null,
+                                                      "data-m": null
+                                                    },
+                                                    "rendered": true
+                                                  }
+                                                ]
+                                              },
+                                              {
+                                                "tag": "li",
+                                                "attributes": {},
+                                                "children": [
+                                                  {
+                                                    "tag": "a",
+                                                    "attributes": {
+                                                      "class": "uhf-footer-link",
+                                                      "href": "#",
+                                                      "id": null,
+                                                      "data-m": null
+                                                    },
+                                                    "rendered": true
+                                                  }
+                                                ]
+                                              },
+                                              {
+                                                "tag": "li",
+                                                "attributes": {},
+                                                "children": [
+                                                  {
+                                                    "tag": "a",
+                                                    "attributes": {
+                                                      "class": "uhf-footer-link",
+                                                      "href": "https://go.microsoft.com/fwlink/",
+                                                      "id": null,
+                                                      "data-m": null
+                                                    },
+                                                    "rendered": true
+                                                  }
+                                                ]
+                                              },
+                                              {
+                                                "tag": "li",
+                                                "attributes": {},
+                                                "children": [
+                                                  {
+                                                    "tag": "a",
+                                                    "attributes": {
+                                                      "class": "uhf-footer-link",
+                                                      "href": "https://www.microsoft.com/trademarks",
+                                                      "id": "uhf-Trademarks",
+                                                      "data-m": null
+                                                    },
+                                                    "rendered": true
+                                                  }
+                                                ]
+                                              }
+                                            ]
+                                          }
+                                        ]
+                                      }
+                                    ]
+                                  }
+                                ]
+                              }
+                            ]
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    }
+  ]
+}

@@ -1,0 +1,48 @@
+{
+  "$schema": "../evidence.schema.json",
+  "version": 1,
+  "id": "autodesk",
+  "class": "C",
+  "mechanism": "none",
+  "reviewed": "2026-10-12",
+  "summary": "Not established. Autodesk's terms appear to bar collecting information from its sites by automated means, so no capture was made, and nothing in this repository shows the sign-in markup or the origin it is served from. The profile stays manual.",
+  "sources": [
+    {
+      "id": "portals-doc",
+      "kind": "repository",
+      "title": "International portal profiles: what an earlier read of the Autodesk account portal returned",
+      "path": "docs/international-portal-profiles.md",
+      "lines": "187-192",
+      "retrieved": "2026-10-12"
+    },
+    {
+      "id": "resource-defaults",
+      "kind": "repository",
+      "title": "The reviewed Autodesk bootstrap resource grant",
+      "path": "src-tauri/src/origin_browser_autodesk_defaults.rs",
+      "lines": "1-11",
+      "retrieved": "2026-10-12",
+      "note": "A script grant for manage.autodesk.com only. Its header says other auth, telemetry, profile and challenge routes are not implied."
+    }
+  ],
+  "selectors": [],
+  "fixtures": [],
+  "staysInteractive": [
+    {
+      "kind": "other",
+      "note": "The whole sign-in."
+    },
+    {
+      "kind": "single-sign-on",
+      "note": "Organization sign-on and sign-in confirmation follow the account's policy, according to the repository's profile text."
+    }
+  ],
+  "lookedFor": [
+    "Autodesk's Terms of Use, acceptable use section. A search engine's summary of it says it bars collecting Autodesk or third-party content or information from an Offering by automated means, such as robots, spiders, or scraping or data-mining tools, unless documentation or special terms expressly allow it. Autodesk's servers answered HTTP 403 to direct reads of its legal pages, so the wording was not read at the source. The capture tool gathers a page's form structure automatically, so no capture was made; the coordinator confirmed that decision.",
+    "manage.autodesk.com serves no robots.txt (HTTP 404).",
+    "docs/international-portal-profiles.md item 13: an earlier read of https://manage.autodesk.com/ hit a redirect loop; no markup was recorded.",
+    "src-tauri/src/origin_browser_autodesk_defaults.rs and its test: one reviewed script origin for the portal's start-up. The test names auth.autodesk.com, idp.auth.autodesk.com and signin.autodesk.com only as origins that receive no grant; nothing shows which of them, if any, holds the sign-in form."
+  ],
+  "neededFromUser": "The sign-in page saved from the user's own browser as \"Webpage, Complete\" together with its address, and the page that follows the account name. A saved page needs no automated access to the site. Save any page signed out and with no password typed in; keep the \"_files\" folder beside the .html and both outside the repository: they can hold the account name.",
+  "notes": "Should the user themselves allow a capture, one anonymous load of https://manage.autodesk.com/ gives the first stage and this becomes class B. The host that page ends on would need the same robots and terms check first."
+}

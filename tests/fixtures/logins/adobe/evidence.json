@@ -1,0 +1,133 @@
+{
+  "$schema": "../evidence.schema.json",
+  "version": 1,
+  "id": "adobe",
+  "class": "B",
+  "mechanism": "form",
+  "source": "src-tauri/crates/sorng-protocols/src/adobe_autologin_client.js",
+  "reviewed": "2026-10-12",
+  "summary": "Adobe's identity page asks for the email, then for the password, in one single-page document on auth.services.adobe.com. This repository already has a reviewed adapter for that document, written for the adobe-admin-console profile. No steps file: the two stages differ only by URL fragment, which the format cannot gate on.",
+  "sources": [
+    {
+      "id": "adobe-client",
+      "kind": "repository",
+      "title": "The reviewed Adobe staged sign-in adapter",
+      "path": "src-tauri/crates/sorng-protocols/src/adobe_autologin_client.js",
+      "lines": "71-153",
+      "retrieved": "2026-10-12",
+      "note": "Lines 71-80: only /en_US/index.html with the fragment #/ (email) or #/password is accepted. Lines 137-150: the two forms, their fields and buttons. Lines 151-153 and 164-170: the password stage must carry a hidden read-only username field equal to the email just typed."
+    },
+    {
+      "id": "adobe-test",
+      "kind": "repository",
+      "title": "The synthetic email and password forms the adapter is tested against",
+      "path": "tests/protocol/adobeAutologinClient.test.ts",
+      "lines": "14-20",
+      "retrieved": "2026-10-12",
+      "note": "Lines 170-184 show the adapter refusing other documents and fragments: /fr_FR/index.html, #/signup, #/identities, #/challenge, #/federated-wait, #/login/code, #/welcome-back."
+    },
+    {
+      "id": "adobe-routes",
+      "kind": "repository",
+      "title": "Adobe route catalog: the login origins approved for adobe-admin-console",
+      "path": "src/utils/protocol/adobeHostedRoutes.json",
+      "lines": "2-8",
+      "retrieved": "2026-10-12",
+      "note": "Lists adobe-admin-console only; account.adobe.com is not in it."
+    },
+    {
+      "id": "dashboards-doc",
+      "kind": "repository",
+      "title": "Hosted dashboard profiles: the reviewed Adobe flow and its limits",
+      "path": "docs/hosted-dashboard-profiles.md",
+      "lines": "200-231",
+      "retrieved": "2026-10-12",
+      "note": "Line 210: reviewed English email-then-password flow at auth.services.adobe.com/en_US/index.html from #/ to #/password, and the Adobe Account (adobe) preset remains manual-only."
+    }
+  ],
+  "selectors": [
+    {
+      "selector": "form#EmailForm input#EmailPage-EmailField[name=\"username\"][type=\"email\"]",
+      "role": "username",
+      "source": "adobe-client",
+      "basis": "observed",
+      "locator": "lines 137 and 142",
+      "fixture": "fixture.html"
+    },
+    {
+      "selector": "form#EmailForm button[data-id=\"EmailPage-ContinueButton\"][type=\"submit\"]",
+      "role": "control",
+      "source": "adobe-client",
+      "basis": "observed",
+      "locator": "lines 137 and 148",
+      "fixture": "fixture.html"
+    },
+    {
+      "selector": "form#PasswordForm input#PasswordPage-PasswordField[name=\"password\"][type=\"password\"]",
+      "role": "password",
+      "source": "adobe-client",
+      "basis": "observed",
+      "locator": "lines 137 and 143",
+      "fixture": "fixture.password.html"
+    },
+    {
+      "selector": "form#PasswordForm button[data-id=\"PasswordPage-ContinueButton\"][type=\"submit\"]",
+      "role": "control",
+      "source": "adobe-client",
+      "basis": "observed",
+      "locator": "lines 137 and 149",
+      "fixture": "fixture.password.html"
+    },
+    {
+      "selector": "form#PasswordForm input[name=\"username\"][autocomplete=\"username\"]",
+      "role": "other",
+      "source": "adobe-client",
+      "basis": "observed",
+      "locator": "lines 151-153",
+      "fixture": "fixture.password.html",
+      "note": "The hidden read-only field that repeats the account. The adapter types the password only while its value equals the email it typed."
+    }
+  ],
+  "fixtures": [
+    {
+      "file": "fixture.html",
+      "origin": "https://auth.services.adobe.com",
+      "path": "/en_US/index.html",
+      "derivedFrom": ["adobe-client", "adobe-test"],
+      "note": "The email stage, shown with the fragment #/."
+    },
+    {
+      "file": "fixture.password.html",
+      "origin": "https://auth.services.adobe.com",
+      "path": "/en_US/index.html",
+      "derivedFrom": ["adobe-client", "adobe-test"],
+      "note": "The password stage of the same document, shown with the fragment #/password."
+    }
+  ],
+  "staysInteractive": [
+    {
+      "kind": "single-sign-on",
+      "note": "Federated and enterprise identities leave the reviewed document."
+    },
+    {
+      "kind": "account-chooser",
+      "note": "The account or profile choice (#/identities)."
+    },
+    { "kind": "captcha" },
+    {
+      "kind": "other",
+      "note": "One-time codes and other verification (#/challenge, #/login/code), sign-up and recovery routes, and every locale other than en_US: the adapter stops on all of them."
+    }
+  ],
+  "unverified": [
+    "That https://account.adobe.com/ sends a signed-out visitor to https://auth.services.adobe.com/en_US/index.html. The repository reviewed that document for adobe-admin-console; nothing read here shows where Adobe Account lands, and no capture of account.adobe.com was made.",
+    "The live page as served today: the adapter's tests use synthetic forms, and docs/hosted-dashboard-profiles.md line 206 says no authenticated sign-in has been completed.",
+    "Other locales, regions and experiments; the adapter accepts the en_US document only."
+  ],
+  "neededFromUser": "The address the browser shows after opening https://account.adobe.com/ signed out, or that page saved as \"Webpage, Complete\". It settles whether Adobe Account uses the reviewed document; one sign-in settles the rest. Save any page signed out and with no password typed in; keep the \"_files\" folder beside the .html and both outside the repository: they can hold the account name.",
+  "schemaGaps": [
+    "URL fragment gates. The email and password stages are the same document, /en_US/index.html, told apart only by the fragment (#/ and #/password), and the adapter refuses every other fragment such as #/signup, #/identities and #/challenge. A step's path gate sees the pathname only.",
+    "The password stage is bound to the account: the adapter types the password only when the hidden read-only username field holds the email it typed. A step cannot state that."
+  ],
+  "notes": "No steps file: Adobe keeps its dedicated adapter (catalog loginFlow adobe). The catalog gives this profile no loginFlow and adobeHostedRoutes.json lists adobe-admin-console only, so reusing the adapter for account.adobe.com is catalog and route work; mechanism is form because the corpus check accepts adapter only for a profile that has a loginFlow. No capture: Adobe's General Terms of Use, section 6.18, bar data gathering and extraction methods, and the coordinator decided against one."
+}

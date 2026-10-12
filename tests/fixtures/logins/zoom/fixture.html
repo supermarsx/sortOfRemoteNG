@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Synthetic fixture: Zoom web sign-in, account stage</title>
+  </head>
+  <body>
+    <div data-testid="signin-account-page">
+      <form class="zoom-form">
+        <div data-testid="account-ipt">
+          <input id="email" type="text" name="account" autocomplete="off" />
+        </div>
+        <div aria-hidden="true">
+          <input
+            tabindex="-1"
+            type="password"
+            name="password"
+            autocomplete="off"
+          />
+        </div>
+      </form>
+      <button type="button" id="signin_btn_next" data-testid="account-next-btn">
+        Next
+      </button>
+    </div>
+  </body>
+</html>

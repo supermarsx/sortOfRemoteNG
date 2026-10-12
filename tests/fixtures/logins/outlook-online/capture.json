@@ -1,0 +1,719 @@
+{
+  "schema": "sorng-login-capture/1",
+  "sanitizer": 3,
+  "applicationId": "outlook-online",
+  "capturedAt": "2026-10-12",
+  "mode": "hosted",
+  "engine": "Microsoft Edge headless (Edg/146.0.3856.84)",
+  "source": {
+    "kind": "hosted-login",
+    "requestedUrl": "https://outlook.office.com/mail/",
+    "finalUrl": "https://login.microsoftonline.com/common/oauth2/v2.0/authorize",
+    "httpStatus": 200
+  },
+  "limits": {
+    "navigations": 1,
+    "scriptsExecuted": true,
+    "loadEvent": true,
+    "settleMs": 6000,
+    "dialogsDismissed": 0,
+    "input": "none",
+    "truncated": false,
+    "redirects": "public-hosts-only"
+  },
+  "network": {
+    "contacted": [
+      "aadcdn.msftauth.net:443",
+      "browser.events.data.microsoft.com:443",
+      "eu-mobile.events.data.microsoft.com:443",
+      "login.live.com:443",
+      "login.microsoft.com:443",
+      "login.microsoftonline.com:443",
+      "outlook.office.com:443",
+      "res.public.onecdn.static.microsoft:443"
+    ],
+    "refused": 1
+  },
+  "observations": ["password-field"],
+  "frames": [
+    {
+      "index": 0,
+      "parent": null,
+      "name": null,
+      "sameOriginAsTop": true,
+      "url": "https://login.microsoftonline.com/common/oauth2/v2.0/authorize",
+      "controls": 30,
+      "tree": {
+        "tag": "html",
+        "attributes": {
+          "dir": "ltr",
+          "class": "",
+          "lang": "en"
+        },
+        "children": [
+          {
+            "tag": "body",
+            "attributes": {
+              "data-bind": null,
+              "class": "cb",
+              "style": null
+            },
+            "children": [
+              {
+                "tag": "div",
+                "attributes": {},
+                "children": [
+                  {
+                    "tag": "form",
+                    "attributes": {
+                      "name": "f1",
+                      "id": "i0281",
+                      "novalidate": "novalidate",
+                      "spellcheck": "false",
+                      "method": "post",
+                      "target": "_top",
+                      "autocomplete": "off",
+                      "data-bind": null,
+                      "action": "https://login.microsoftonline.com/common/login",
+                      "class": "provide-min-height"
+                    },
+                    "rendered": true,
+                    "children": [
+                      {
+                        "tag": "div",
+                        "attributes": {
+                          "class": "login-paginated-page",
+                          "data-bind": null
+                        },
+                        "children": [
+                          {
+                            "tag": "div",
+                            "attributes": {
+                              "id": "lightboxTemplateContainer",
+                              "data-bind": null,
+                              "class": "provide-min-height"
+                            },
+                            "children": [
+                              {
+                                "tag": "div",
+                                "attributes": {
+                                  "class": "outer",
+                                  "data-bind": null
+                                },
+                                "children": [
+                                  {
+                                    "tag": "div",
+                                    "attributes": {
+                                      "class": "template-section main-section"
+                                    },
+                                    "children": [
+                                      {
+                                        "tag": "div",
+                                        "attributes": {
+                                          "data-bind": null,
+                                          "class": "middle ext-middle"
+                                        },
+                                        "children": [
+                                          {
+                                            "tag": "div",
+                                            "attributes": {
+                                              "class": "full-height",
+                                              "data-bind": null
+                                            },
+                                            "children": [
+                                              {
+                                                "tag": "div",
+                                                "attributes": {
+                                                  "class": "flex-column"
+                                                },
+                                                "children": [
+                                                  {
+                                                    "tag": "div",
+                                                    "attributes": {
+                                                      "class": "win-scroll"
+                                                    },
+                                                    "children": [
+                                                      {
+                                                        "tag": "div",
+                                                        "attributes": {
+                                                          "id": "lightbox",
+                                                          "data-bind": null,
+                                                          "class": "sign-in-box ext-sign-in-box fade-in-lightbox has-popup"
+                                                        },
+                                                        "children": [
+                                                          {
+                                                            "tag": "div",
+                                                            "attributes": {
+                                                              "role": "main",
+                                                              "data-bind": null
+                                                            },
+                                                            "children": [
+                                                              {
+                                                                "tag": "div",
+                                                                "attributes": {
+                                                                  "data-bind": null,
+                                                                  "class": ""
+                                                                },
+                                                                "children": [
+                                                                  {
+                                                                    "tag": "div",
+                                                                    "attributes": {
+                                                                      "class": "pagination-view animate slide-in-next",
+                                                                      "data-bind": null
+                                                                    },
+                                                                    "children": [
+                                                                      {
+                                                                        "tag": "div",
+                                                                        "attributes": {
+                                                                          "data-viewid": "1",
+                                                                          "data-showfedcredbutton": "true",
+                                                                          "data-bind": null
+                                                                        },
+                                                                        "children": [
+                                                                          {
+                                                                            "tag": "div",
+                                                                            "attributes": {
+                                                                              "class": "row"
+                                                                            },
+                                                                            "children": [
+                                                                              {
+                                                                                "tag": "div",
+                                                                                "attributes": {
+                                                                                  "class": "form-group col-md-24"
+                                                                                },
+                                                                                "children": [
+                                                                                  {
+                                                                                    "tag": "div",
+                                                                                    "attributes": {
+                                                                                      "class": "placeholderContainer",
+                                                                                      "data-bind": null
+                                                                                    },
+                                                                                    "children": [
+                                                                                      {
+                                                                                        "tag": "input",
+                                                                                        "attributes": {
+                                                                                          "type": "email",
+                                                                                          "name": "loginfmt",
+                                                                                          "id": "i0116",
+                                                                                          "maxlength": "113",
+                                                                                          "class": "form-control ltr_override input ext-input text-box ext-text-box",
+                                                                                          "aria-required": "true",
+                                                                                          "data-report-event": "Signin_Email_Phone_Skype",
+                                                                                          "data-report-trigger": "click",
+                                                                                          "data-report-value": "Email_Phone_Skype_Entry",
+                                                                                          "data-bind": null,
+                                                                                          "autocomplete": "username webauthn",
+                                                                                          "aria-label": null,
+                                                                                          "aria-describedby": "usernameError winBodyHeader winBodySubHeader loginHeader",
+                                                                                          "placeholder": null,
+                                                                                          "data-report-attached": "1"
+                                                                                        },
+                                                                                        "rendered": true
+                                                                                      },
+                                                                                      {
+                                                                                        "tag": "input",
+                                                                                        "attributes": {
+                                                                                          "name": "passwd",
+                                                                                          "type": "password",
+                                                                                          "id": "i0118",
+                                                                                          "data-bind": null,
+                                                                                          "class": "moveOffScreen",
+                                                                                          "tabindex": "-1",
+                                                                                          "aria-hidden": "true"
+                                                                                        },
+                                                                                        "rendered": true
+                                                                                      }
+                                                                                    ]
+                                                                                  }
+                                                                                ]
+                                                                              }
+                                                                            ]
+                                                                          },
+                                                                          {
+                                                                            "tag": "div",
+                                                                            "attributes": {
+                                                                              "data-bind": null,
+                                                                              "class": "position-buttons password-reset-links-container ext-password-reset-links-container"
+                                                                            },
+                                                                            "children": [
+                                                                              {
+                                                                                "tag": "div",
+                                                                                "attributes": {
+                                                                                  "class": "row"
+                                                                                },
+                                                                                "children": [
+                                                                                  {
+                                                                                    "tag": "div",
+                                                                                    "attributes": {
+                                                                                      "class": "col-md-24"
+                                                                                    },
+                                                                                    "children": [
+                                                                                      {
+                                                                                        "tag": "div",
+                                                                                        "attributes": {
+                                                                                          "class": "text-13"
+                                                                                        },
+                                                                                        "children": [
+                                                                                          {
+                                                                                            "tag": "div",
+                                                                                            "attributes": {
+                                                                                              "class": "form-group",
+                                                                                              "data-bind": null
+                                                                                            },
+                                                                                            "children": [
+                                                                                              {
+                                                                                                "tag": "a",
+                                                                                                "attributes": {
+                                                                                                  "href": "https://login.live.com/oauth20_authorize.srf",
+                                                                                                  "id": "signup",
+                                                                                                  "aria-label": null
+                                                                                                },
+                                                                                                "rendered": true
+                                                                                              }
+                                                                                            ]
+                                                                                          },
+                                                                                          {
+                                                                                            "tag": "div",
+                                                                                            "attributes": {
+                                                                                              "class": "form-group"
+                                                                                            },
+                                                                                            "children": [
+                                                                                              {
+                                                                                                "tag": "a",
+                                                                                                "attributes": {
+                                                                                                  "id": "cantAccessAccount",
+                                                                                                  "name": "cannotAccessAccount",
+                                                                                                  "data-bind": null,
+                                                                                                  "href": "#"
+                                                                                                },
+                                                                                                "rendered": true
+                                                                                              }
+                                                                                            ]
+                                                                                          }
+                                                                                        ]
+                                                                                      }
+                                                                                    ]
+                                                                                  }
+                                                                                ]
+                                                                              }
+                                                                            ]
+                                                                          },
+                                                                          {
+                                                                            "tag": "div",
+                                                                            "attributes": {
+                                                                              "class": "win-button-pin-bottom",
+                                                                              "data-bind": null
+                                                                            },
+                                                                            "children": [
+                                                                              {
+                                                                                "tag": "div",
+                                                                                "attributes": {
+                                                                                  "class": "row",
+                                                                                  "data-bind": null
+                                                                                },
+                                                                                "children": [
+                                                                                  {
+                                                                                    "tag": "div",
+                                                                                    "attributes": {
+                                                                                      "data-bind": null
+                                                                                    },
+                                                                                    "children": [
+                                                                                      {
+                                                                                        "tag": "div",
+                                                                                        "attributes": {
+                                                                                          "class": "col-xs-24 no-padding-left-right button-container button-field-container ext-button-field-container",
+                                                                                          "data-bind": null
+                                                                                        },
+                                                                                        "children": [
+                                                                                          {
+                                                                                            "tag": "div",
+                                                                                            "attributes": {
+                                                                                              "data-bind": null,
+                                                                                              "class": "inline-block button-item ext-button-item"
+                                                                                            },
+                                                                                            "children": [
+                                                                                              {
+                                                                                                "tag": "input",
+                                                                                                "attributes": {
+                                                                                                  "type": "submit",
+                                                                                                  "id": "idSIButton9",
+                                                                                                  "class": "win-button button_primary high-contrast-overrides button ext-button primary ext-primary",
+                                                                                                  "data-report-event": "Signin_Submit",
+                                                                                                  "data-report-trigger": "click",
+                                                                                                  "data-report-value": "Submit",
+                                                                                                  "data-bind": null,
+                                                                                                  "value": "Next",
+                                                                                                  "data-report-attached": "1"
+                                                                                                },
+                                                                                                "rendered": true
+                                                                                              }
+                                                                                            ]
+                                                                                          }
+                                                                                        ]
+                                                                                      }
+                                                                                    ]
+                                                                                  }
+                                                                                ]
+                                                                              }
+                                                                            ]
+                                                                          }
+                                                                        ]
+                                                                      }
+                                                                    ]
+                                                                  }
+                                                                ]
+                                                              }
+                                                            ]
+                                                          },
+                                                          {
+                                                            "tag": "input",
+                                                            "attributes": {
+                                                              "type": "hidden",
+                                                              "name": "ps",
+                                                              "data-bind": null,
+                                                              "value": null
+                                                            },
+                                                            "rendered": false
+                                                          },
+                                                          {
+                                                            "tag": "input",
+                                                            "attributes": {
+                                                              "type": "hidden",
+                                                              "name": "psRNGCDefaultType",
+                                                              "data-bind": null,
+                                                              "value": null
+                                                            },
+                                                            "rendered": false
+                                                          },
+                                                          {
+                                                            "tag": "input",
+                                                            "attributes": {
+                                                              "type": "hidden",
+                                                              "name": "psRNGCEntropy",
+                                                              "data-bind": null,
+                                                              "value": null
+                                                            },
+                                                            "rendered": false
+                                                          },
+                                                          {
+                                                            "tag": "input",
+                                                            "attributes": {
+                                                              "type": "hidden",
+                                                              "name": "psRNGCSLK",
+                                                              "data-bind": null,
+                                                              "value": null
+                                                            },
+                                                            "rendered": false
+                                                          },
+                                                          {
+                                                            "tag": "input",
+                                                            "attributes": {
+                                                              "type": "hidden",
+                                                              "data-bind": null,
+                                                              "name": "canary",
+                                                              "value": null
+                                                            },
+                                                            "rendered": false
+                                                          },
+                                                          {
+                                                            "tag": "input",
+                                                            "attributes": {
+                                                              "type": "hidden",
+                                                              "name": "ctx",
+                                                              "data-bind": null,
+                                                              "value": null
+                                                            },
+                                                            "rendered": false
+                                                          },
+                                                          {
+                                                            "tag": "input",
+                                                            "attributes": {
+                                                              "type": "hidden",
+                                                              "name": "hpgrequestid",
+                                                              "data-bind": null,
+                                                              "value": null
+                                                            },
+                                                            "rendered": false
+                                                          },
+                                                          {
+                                                            "tag": "input",
+                                                            "attributes": {
+                                                              "type": "hidden",
+                                                              "id": "i0327",
+                                                              "data-bind": null,
+                                                              "name": "flowToken",
+                                                              "value": null
+                                                            },
+                                                            "rendered": false
+                                                          },
+                                                          {
+                                                            "tag": "input",
+                                                            "attributes": {
+                                                              "type": "hidden",
+                                                              "name": "PPSX",
+                                                              "data-bind": null,
+                                                              "value": null
+                                                            },
+                                                            "rendered": false
+                                                          },
+                                                          {
+                                                            "tag": "input",
+                                                            "attributes": {
+                                                              "type": "hidden",
+                                                              "name": "NewUser",
+                                                              "value": null
+                                                            },
+                                                            "rendered": false
+                                                          },
+                                                          {
+                                                            "tag": "input",
+                                                            "attributes": {
+                                                              "type": "hidden",
+                                                              "name": "FoundMSAs",
+                                                              "data-bind": null,
+                                                              "value": null
+                                                            },
+                                                            "rendered": false
+                                                          },
+                                                          {
+                                                            "tag": "input",
+                                                            "attributes": {
+                                                              "type": "hidden",
+                                                              "name": "fspost",
+                                                              "data-bind": null,
+                                                              "value": null
+                                                            },
+                                                            "rendered": false
+                                                          },
+                                                          {
+                                                            "tag": "input",
+                                                            "attributes": {
+                                                              "type": "hidden",
+                                                              "name": "i21",
+                                                              "data-bind": null,
+                                                              "value": null
+                                                            },
+                                                            "rendered": false
+                                                          },
+                                                          {
+                                                            "tag": "input",
+                                                            "attributes": {
+                                                              "type": "hidden",
+                                                              "name": "CookieDisclosure",
+                                                              "data-bind": null,
+                                                              "value": null
+                                                            },
+                                                            "rendered": false
+                                                          },
+                                                          {
+                                                            "tag": "input",
+                                                            "attributes": {
+                                                              "type": "hidden",
+                                                              "name": "IsFidoSupported",
+                                                              "data-bind": null,
+                                                              "value": null
+                                                            },
+                                                            "rendered": false
+                                                          },
+                                                          {
+                                                            "tag": "input",
+                                                            "attributes": {
+                                                              "type": "hidden",
+                                                              "name": "IsConditionalCreateAvailable",
+                                                              "data-bind": null,
+                                                              "value": null
+                                                            },
+                                                            "rendered": false
+                                                          },
+                                                          {
+                                                            "tag": "input",
+                                                            "attributes": {
+                                                              "type": "hidden",
+                                                              "name": "isSignupPost",
+                                                              "data-bind": null,
+                                                              "value": null
+                                                            },
+                                                            "rendered": false
+                                                          },
+                                                          {
+                                                            "tag": "input",
+                                                            "attributes": {
+                                                              "type": "hidden",
+                                                              "name": "DfpArtifact",
+                                                              "data-bind": null,
+                                                              "value": null
+                                                            },
+                                                            "rendered": false
+                                                          },
+                                                          {
+                                                            "tag": "div",
+                                                            "attributes": {
+                                                              "data-bind": null
+                                                            },
+                                                            "children": [
+                                                              {
+                                                                "tag": "input",
+                                                                "attributes": {
+                                                                  "type": "hidden",
+                                                                  "name": "i19",
+                                                                  "data-bind": null,
+                                                                  "value": null
+                                                                },
+                                                                "rendered": false
+                                                              }
+                                                            ]
+                                                          }
+                                                        ]
+                                                      },
+                                                      {
+                                                        "tag": "div",
+                                                        "attributes": {
+                                                          "data-bind": null
+                                                        },
+                                                        "children": [
+                                                          {
+                                                            "tag": "div",
+                                                            "attributes": {
+                                                              "data-bind": null
+                                                            },
+                                                            "children": [
+                                                              {
+                                                                "tag": "div",
+                                                                "attributes": {
+                                                                  "class": "promoted-fed-cred-content promoted-fed-cred-box ext-promoted-fed-cred-box",
+                                                                  "data-bind": null
+                                                                },
+                                                                "children": [
+                                                                  {
+                                                                    "tag": "div",
+                                                                    "attributes": {
+                                                                      "class": "tile-container",
+                                                                      "data-bind": null
+                                                                    },
+                                                                    "children": [
+                                                                      {
+                                                                        "tag": "div",
+                                                                        "attributes": {
+                                                                          "class": "row tile"
+                                                                        },
+                                                                        "children": [
+                                                                          {
+                                                                            "tag": "div",
+                                                                            "attributes": {
+                                                                              "class": "table",
+                                                                              "role": "button",
+                                                                              "tabindex": "0",
+                                                                              "data-bind": null,
+                                                                              "aria-label": null
+                                                                            },
+                                                                            "rendered": true
+                                                                          }
+                                                                        ]
+                                                                      }
+                                                                    ]
+                                                                  }
+                                                                ]
+                                                              }
+                                                            ]
+                                                          }
+                                                        ]
+                                                      }
+                                                    ]
+                                                  }
+                                                ]
+                                              }
+                                            ]
+                                          }
+                                        ]
+                                      }
+                                    ]
+                                  },
+                                  {
+                                    "tag": "div",
+                                    "attributes": {
+                                      "id": "footer",
+                                      "role": "contentinfo",
+                                      "data-bind": null,
+                                      "class": "footer ext-footer"
+                                    },
+                                    "children": [
+                                      {
+                                        "tag": "div",
+                                        "attributes": {
+                                          "data-bind": null
+                                        },
+                                        "children": [
+                                          {
+                                            "tag": "div",
+                                            "attributes": {
+                                              "id": "footerLinks",
+                                              "class": "footerNode text-secondary footer-links ext-footer-links",
+                                              "data-bind": null
+                                            },
+                                            "children": [
+                                              {
+                                                "tag": "a",
+                                                "attributes": {
+                                                  "id": "ftrTerms",
+                                                  "data-bind": null,
+                                                  "href": "https://www.microsoft.com/en-US/servicesagreement/",
+                                                  "class": "footer-content ext-footer-content footer-item ext-footer-item"
+                                                },
+                                                "rendered": true
+                                              },
+                                              {
+                                                "tag": "a",
+                                                "attributes": {
+                                                  "id": "ftrPrivacy",
+                                                  "data-bind": null,
+                                                  "href": "https://privacy.microsoft.com/en-US/privacystatement",
+                                                  "class": "footer-content ext-footer-content footer-item ext-footer-item"
+                                                },
+                                                "rendered": true
+                                              },
+                                              {
+                                                "tag": "a",
+                                                "attributes": {
+                                                  "id": "moreOptions",
+                                                  "href": "#",
+                                                  "role": "button",
+                                                  "data-bind": null,
+                                                  "aria-label": null,
+                                                  "aria-expanded": "false",
+                                                  "class": "footer-content ext-footer-content footer-item ext-footer-item debug-item ext-debug-item"
+                                                },
+                                                "rendered": true
+                                              }
+                                            ]
+                                          }
+                                        ]
+                                      }
+                                    ]
+                                  }
+                                ]
+                              }
+                            ]
+                          }
+                        ]
+                      }
+                    ]
+                  },
+                  {
+                    "tag": "form",
+                    "attributes": {
+                      "data-bind": null,
+                      "method": "POST",
+                      "aria-hidden": "true",
+                      "target": "_top"
+                    },
+                    "rendered": true
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    }
+  ]
+}

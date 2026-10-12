@@ -1,0 +1,25 @@
+{
+  "$schema": "../../../types/connection/httpLoginSteps.schema.json",
+  "version": 1,
+  "id": "hpe-greenlake",
+  "evidence": {
+    "class": "B",
+    "source": "https://common.cloud.hpe.com/",
+    "reviewed": "2026-10-12"
+  },
+  "credentialOrigins": [],
+  "loginSteps": [
+    {
+      "kind": "identifier",
+      "paths": ["/sso/continue"],
+      "selectors": {
+        "username": "div#root form input[name=\"username\"][data-testid=\"sign-up-email-input\"]"
+      }
+    },
+    {
+      "kind": "submit",
+      "submission": "spa",
+      "selectors": { "control": "div#root form button[type=\"submit\"]" }
+    }
+  ]
+}

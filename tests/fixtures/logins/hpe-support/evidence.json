@@ -1,0 +1,45 @@
+{
+  "$schema": "../evidence.schema.json",
+  "version": 1,
+  "id": "hpe-support",
+  "class": "C",
+  "mechanism": "none",
+  "reviewed": "2026-10-12",
+  "summary": "Not established. No capture was made: the first run was refused before any load because the host name did not resolve, and the approved repeat was not run because HPE's terms could not be read at the source. The repository records only that the page shows account-choice controls. The profile stays manual.",
+  "sources": [
+    {
+      "id": "portals-doc",
+      "kind": "repository",
+      "title": "International portal profiles: what an earlier read of the HPE Support Center login returned",
+      "path": "docs/international-portal-profiles.md",
+      "lines": "136-141",
+      "retrieved": "2026-10-12"
+    }
+  ],
+  "selectors": [],
+  "fixtures": [],
+  "staysInteractive": [
+    {
+      "kind": "other",
+      "note": "The whole sign-in."
+    },
+    {
+      "kind": "account-chooser",
+      "note": "The page offers a choice of account type before any field, according to the repository's notes."
+    },
+    {
+      "kind": "single-sign-on",
+      "note": "Federated sign-in is named by the repository's notes and has not been exercised."
+    }
+  ],
+  "lookedFor": [
+    "The capture tool, once: it refused at its pre-flight because support.hpe.com did not resolve on the local resolver, between 20:14 and 20:18 local time (UTC+1); no browser was started and nothing was loaded. The resolver recovered within about a minute.",
+    "docs/international-portal-profiles.md item 7: an earlier read of https://support.hpe.com/connect/login returned the HPE Support Center title and account-choice controls; no field markup was recorded, and the landing page is a separate script-rendered destination.",
+    "robots.txt of support.hpe.com does not disallow /connect/login.",
+    "A header-only request to https://support.hpe.com/connect/login answered HTTP 200 without a redirect, so the page is expected to stay on support.hpe.com; a redirect made by script cannot be told in advance.",
+    "HPE's acceptable use policy and website terms could not be read at the source: www.hpe.com reset every connection, its robots.txt included, and a fetch service timed out. A search engine's summary of the policy says it bars high volume automated means of access, which a single page load is not. The rule for a capture is that robots rules and terms are both read and both clean, so the repeat the coordinator approved was not run.",
+    "The capture made for hpe-greenlake shows HPE's cloud sign-in on common.cloud.hpe.com. Nothing read here shows that the Support Center uses the same form or the same origin."
+  ],
+  "neededFromUser": "The sign-in page saved from the user's own browser as \"Webpage, Complete\" together with its address, after choosing the account type, and the page that follows the account name. Save any page signed out and with no password typed in; keep the \"_files\" folder beside the .html and both outside the repository: they can hold the account name.",
+  "notes": "The page has never been loaded by the capture tool, and the coordinator ruled that it stays so: terms that cannot be read at the source are not clean terms, and a search summary does not justify a capture. A page saved by the user needs no access to the site by a tool."
+}

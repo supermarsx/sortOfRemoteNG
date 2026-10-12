@@ -1,0 +1,37 @@
+{
+  "$schema": "../../../types/connection/httpLoginSteps.schema.json",
+  "version": 1,
+  "id": "zoom",
+  "evidence": {
+    "class": "B",
+    "source": "https://zoom.us/signin",
+    "reviewed": "2026-10-12"
+  },
+  "credentialOrigins": [],
+  "loginSteps": [
+    {
+      "kind": "identifier",
+      "paths": ["/signin"],
+      "selectors": {
+        "username": "[data-testid=\"signin-account-page\"] form.zoom-form input#email[name=\"account\"]"
+      }
+    },
+    {
+      "kind": "submit",
+      "submission": "spa",
+      "selectors": {
+        "control": "[data-testid=\"signin-account-page\"] button#signin_btn_next[data-testid=\"account-next-btn\"]"
+      }
+    },
+    {
+      "kind": "password",
+      "paths": ["/signin"],
+      "selectors": { "password": "input#password" }
+    },
+    {
+      "kind": "submit",
+      "submission": "spa",
+      "selectors": { "control": "button#js_btn_login" }
+    }
+  ]
+}

@@ -1,0 +1,46 @@
+{
+  "$schema": "../evidence.schema.json",
+  "version": 1,
+  "id": "microsoft-developer",
+  "class": "C",
+  "mechanism": "none",
+  "reviewed": "2026-10-12",
+  "summary": "Nothing to build from. The catalog entry is Microsoft's public developer hub, a content page: the capture shows one search form and navigation controls, no sign-in form, no password field and no frame. Where a visitor signs in depends on the program chosen there. The profile stays manual.",
+  "sources": [
+    {
+      "id": "page",
+      "kind": "anonymous-capture",
+      "title": "The public developer hub, rendered once without an account",
+      "url": "https://developer.microsoft.com/en-us/",
+      "capture": "capture.json",
+      "captureSha256": "da1025d03c88021ee4bd6f492c1ffb93e5d304fd7804193ceff2d6d6be63dfef",
+      "retrieved": "2026-10-12",
+      "note": "Requested on developer.microsoft.com and ended on the same host and path, HTTP 200. One top document, 114 controls: a search form that is not displayed, navigation and carousel buttons, and a media player in shadow roots."
+    },
+    {
+      "id": "portals-doc",
+      "kind": "repository",
+      "title": "International portal profiles: what the Microsoft Developer entry is",
+      "path": "docs/international-portal-profiles.md",
+      "lines": "128-134",
+      "retrieved": "2026-10-12"
+    }
+  ],
+  "selectors": [],
+  "fixtures": [],
+  "staysInteractive": [
+    {
+      "kind": "other",
+      "note": "Choosing a developer program on the hub and the whole sign-in that follows."
+    }
+  ],
+  "lookedFor": [
+    "One anonymous capture of https://developer.microsoft.com/en-us/. The only form is the site search (one input of type search, not displayed). There is no password field, no field for an account name and no frame. No control can be identified as a sign-in control: the capture keeps no text or labels, and no link or button carries a sign-in address.",
+    "The first run of the capture tool was refused at its pre-flight because developer.microsoft.com did not resolve on the local resolver, between 20:14 and 20:18 local time (UTC+1); no browser was started. With the coordinator's approval it was run once more at 20:35 after the name resolved, and that is the one load.",
+    "docs/international-portal-profiles.md item 6: the entry is the public developer hub with tools, documentation and links to several developer programs. The profile selects no program and invents no shared developer sign-in address.",
+    "Before the capture: robots.txt of developer.microsoft.com does not disallow /en-us/; the Microsoft site terms of use, which the page's footer links, were read in full and do not bar a single anonymous page load; a header-only request to the catalog address answered HTTP 200 without a redirect.",
+    "The capture made for outlook-online shows the Microsoft Entra sign-in on login.microsoftonline.com. Nothing read here shows that the developer hub sends its visitors to that page or to that path."
+  ],
+  "neededFromUser": "The address of the sign-in page the user reaches from the hub for the program they use, and that page saved as \"Webpage, Complete\". If it is the Microsoft Entra page on login.microsoftonline.com, the steps written for outlook-online describe it and only the entry path has to be confirmed. Save any page signed out and with no password typed in; keep the \"_files\" folder beside the .html and both outside the repository: they can hold the account name.",
+  "notes": "A login for this profile would be a pre-step click on a sign-in link followed by steps on a listed identity origin. Neither the link nor the origin is in the evidence, so no steps file is written."
+}

@@ -1,0 +1,45 @@
+{
+  "$schema": "../evidence.schema.json",
+  "version": 1,
+  "id": "apple-account",
+  "class": "C",
+  "mechanism": "none",
+  "reviewed": "2026-10-12",
+  "summary": "Not established. Apple's website terms bar automatic programs from accessing its sites, so the page was not captured, and nothing in this repository shows the sign-in markup or whether it sits in a frame on another origin. The profile stays manual.",
+  "sources": [
+    {
+      "id": "apple-terms",
+      "kind": "vendor-documentation",
+      "title": "Apple Website Terms of Use, section Your Use of the Site",
+      "url": "https://www.apple.com/legal/internet-services/terms/site.html",
+      "retrieved": "2026-10-12"
+    },
+    {
+      "id": "portals-doc",
+      "kind": "repository",
+      "title": "International portal profiles: what an earlier read of the Apple entries returned",
+      "path": "docs/international-portal-profiles.md",
+      "lines": "93-105",
+      "retrieved": "2026-10-12"
+    }
+  ],
+  "selectors": [],
+  "fixtures": [],
+  "staysInteractive": [
+    { "kind": "other", "note": "The whole sign-in." },
+    {
+      "kind": "device-approval",
+      "note": "Apple's identity verification on a trusted device; named by the repository's profile text, never exercised."
+    }
+  ],
+  "lookedFor": [
+    "Apple Website Terms of Use, read in full. They cover www.apple.com and all associated sites linked to it by Apple, and state: You may not use any deep-link, page-scrape, robot, spider or other automatic device, program, algorithm or methodology to access, acquire, copy or monitor any portion of the Site. The capture tool is such a program, so https://account.apple.com/ was not captured.",
+    "robots.txt of account.apple.com: it allows the root path and disallows /account/, /settings/ and /auth/, and it answers HTTP 403 to a client without a browser-style user agent. It was not the reason for skipping the capture.",
+    "docs/international-portal-profiles.md item 1: an earlier static read of account.apple.com returned the page title and no application body, so the sign-in is drawn by script.",
+    "This repository: no fixture, adapter, test or route catalog names an Apple sign-in control, a frame or an identity origin. The only identity host named anywhere is idmsa.apple.com, as the redirect target of the developer account entry (the same document, item 2).",
+    "The frame question. The plan records as recollection, not as a finding, that the sign-in fields sit in a frame served from another origin. Nothing read here confirms or refutes it.",
+    "Apple's help and developer pages were not read: they belong to the sites the terms cover, and help pages show screenshots, not markup."
+  ],
+  "neededFromUser": "The sign-in page saved from the user's own browser as \"Webpage, Complete\", read with --from-file. Its top document shows whether the fields are in the page or in a frame and names the frame's address. If they are in a frame, that frame's own document saved the same way is needed as well. Save any page signed out and with no password typed in; keep the \"_files\" folder beside the .html and both outside the repository: they can hold the account name.",
+  "notes": "If the fields prove to be in a frame on another origin, the steps format cannot express the login: a step's frame is same-origin only, and releasing a credential into a cross-origin frame is question Q8, not approved. Until then no steps file is written under any evidence."
+}

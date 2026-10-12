@@ -1,0 +1,2089 @@
+{
+  "schema": "sorng-login-capture/1",
+  "sanitizer": 3,
+  "applicationId": "zoom",
+  "capturedAt": "2026-10-12",
+  "mode": "hosted",
+  "engine": "Microsoft Edge headless (Edg/146.0.3856.84)",
+  "source": {
+    "kind": "hosted-login",
+    "requestedUrl": "https://zoom.us/signin",
+    "finalUrl": "https://zoom.us/signin",
+    "httpStatus": 200
+  },
+  "limits": {
+    "navigations": 1,
+    "scriptsExecuted": true,
+    "loadEvent": true,
+    "settleMs": 6000,
+    "dialogsDismissed": 0,
+    "input": "none",
+    "truncated": false,
+    "redirects": "public-hosts-only"
+  },
+  "network": {
+    "contacted": [
+      "cdn.cookielaw.org:443",
+      "cdn3.optimizely.com:443",
+      "file-paa.zoom.us:443",
+      "fonts.gstatic.com:443",
+      "geolocation.onetrust.com:443",
+      "st1.zoom.us:443",
+      "us01campaign.zoom.us:443",
+      "us01ccistatic.zoom.us:443",
+      "www.google.com:443",
+      "www.googletagmanager.com:443",
+      "www.gstatic.com:443",
+      "zoom.us:443"
+    ],
+    "refused": 1
+  },
+  "observations": ["captcha", "cross-origin-frame", "password-field"],
+  "frames": [
+    {
+      "index": 0,
+      "parent": null,
+      "name": null,
+      "sameOriginAsTop": true,
+      "url": "https://zoom.us/signin",
+      "controls": 115,
+      "tree": {
+        "tag": "html",
+        "attributes": {
+          "xmlns:fb": "http://ogp.me/ns/fb#",
+          "lang": "en-US"
+        },
+        "children": [
+          {
+            "tag": "body",
+            "attributes": {
+              "class": "zmua-media-until-md",
+              "data-cd": "zoom.us"
+            },
+            "children": [
+              {
+                "tag": "div",
+                "attributes": {
+                  "class": "total-main-content"
+                },
+                "children": [
+                  {
+                    "tag": "div",
+                    "attributes": {
+                      "id": "skiptocontent"
+                    },
+                    "children": [
+                      {
+                        "tag": "a",
+                        "attributes": {
+                          "aria-label": null,
+                          "href": "#"
+                        },
+                        "rendered": false
+                      }
+                    ]
+                  },
+                  {
+                    "tag": "div",
+                    "attributes": {
+                      "id": "nested",
+                      "class": "zoom-newpd"
+                    },
+                    "children": [
+                      {
+                        "tag": "div",
+                        "attributes": {
+                          "class": "mini-layout",
+                          "role": "main",
+                          "aria-label": null
+                        },
+                        "children": [
+                          {
+                            "tag": "div",
+                            "attributes": {
+                              "class": "HiddenText"
+                            },
+                            "children": [
+                              {
+                                "tag": "a",
+                                "attributes": {
+                                  "id": "the-main-content",
+                                  "tabindex": "-1"
+                                },
+                                "rendered": true
+                              }
+                            ]
+                          },
+                          {
+                            "tag": "div",
+                            "attributes": {
+                              "id": "app",
+                              "data-zm-app-build-version": "7.0.3070",
+                              "data-v-app": ""
+                            },
+                            "children": [
+                              {
+                                "tag": "div",
+                                "attributes": {
+                                  "class": "zmua-app-root login-page zmua-app-scope",
+                                  "data-zmua-version": "v3"
+                                },
+                                "children": [
+                                  {
+                                    "tag": "header",
+                                    "attributes": {
+                                      "class": "layout-header",
+                                      "data-testid": "app-header"
+                                    },
+                                    "children": [
+                                      {
+                                        "tag": "div",
+                                        "attributes": {
+                                          "class": "header-links"
+                                        },
+                                        "children": [
+                                          {
+                                            "tag": "button",
+                                            "attributes": {
+                                              "type": "button",
+                                              "class": "zoom-button zoom-button--md is-pure-text zoom-button--text mgl-xs zmua-align-middle",
+                                              "aria-disabled": "false"
+                                            },
+                                            "rendered": true
+                                          },
+                                          {
+                                            "tag": "span",
+                                            "attributes": {
+                                              "class": "zoom-dropdown"
+                                            },
+                                            "children": [
+                                              {
+                                                "tag": "button",
+                                                "attributes": {
+                                                  "type": "button",
+                                                  "class": "zoom-button zoom-button--md zoom-button--tertiary header-language zoom-dropdown__trigger",
+                                                  "aria-label": null,
+                                                  "aria-disabled": "false",
+                                                  "aria-expanded": "false",
+                                                  "aria-haspopup": "true",
+                                                  "aria-controls": "zoom-id-6288-2"
+                                                },
+                                                "rendered": true
+                                              }
+                                            ]
+                                          }
+                                        ]
+                                      }
+                                    ]
+                                  },
+                                  {
+                                    "tag": "div",
+                                    "attributes": {
+                                      "class": "layout-body zmua-pageLayout zmua-signinLayout zmua-layout-page",
+                                      "data-lang": "en-US"
+                                    },
+                                    "children": [
+                                      {
+                                        "tag": "div",
+                                        "attributes": {
+                                          "class": "layout-main"
+                                        },
+                                        "children": [
+                                          {
+                                            "tag": "div",
+                                            "attributes": {
+                                              "class": "layout-main-slot zmua-pageLayoutContainer"
+                                            },
+                                            "children": [
+                                              {
+                                                "tag": "div",
+                                                "attributes": {
+                                                  "class": "zmua-pageLayoutMain"
+                                                },
+                                                "children": [
+                                                  {
+                                                    "tag": "div",
+                                                    "attributes": {
+                                                      "data-testid": "signin-account-page"
+                                                    },
+                                                    "children": [
+                                                      {
+                                                        "tag": "div",
+                                                        "attributes": {
+                                                          "class": "zmua-layout-main-width"
+                                                        },
+                                                        "children": [
+                                                          {
+                                                            "tag": "form",
+                                                            "attributes": {
+                                                              "class": "zoom-form"
+                                                            },
+                                                            "rendered": true,
+                                                            "children": [
+                                                              {
+                                                                "tag": "div",
+                                                                "attributes": {
+                                                                  "class": "zoom-form-item mgb-0",
+                                                                  "role": "group",
+                                                                  "aria-labelledby": "zoom-id-6288-6",
+                                                                  "aria-required": "false"
+                                                                },
+                                                                "children": [
+                                                                  {
+                                                                    "tag": "div",
+                                                                    "attributes": {
+                                                                      "class": "zoom-form-item__row"
+                                                                    },
+                                                                    "children": [
+                                                                      {
+                                                                        "tag": "div",
+                                                                        "attributes": {
+                                                                          "class": "zoom-form-item__widgets"
+                                                                        },
+                                                                        "children": [
+                                                                          {
+                                                                            "tag": "div",
+                                                                            "attributes": {
+                                                                              "class": "zmua-enhancedInput"
+                                                                            },
+                                                                            "children": [
+                                                                              {
+                                                                                "tag": "div",
+                                                                                "attributes": {
+                                                                                  "class": "zoom-input zoom-input--lg zmua-enhancedInput-input zmp-input zmp-is-inline-label",
+                                                                                  "modelmodifiers": null,
+                                                                                  "data-testid": "account-ipt",
+                                                                                  "style": null
+                                                                                },
+                                                                                "children": [
+                                                                                  {
+                                                                                    "tag": "input",
+                                                                                    "attributes": {
+                                                                                      "id": "email",
+                                                                                      "tabindex": "0",
+                                                                                      "class": "zoom-input__inner",
+                                                                                      "type": "text",
+                                                                                      "aria-disabled": "false",
+                                                                                      "aria-label": null,
+                                                                                      "aria-required": "true",
+                                                                                      "name": "account",
+                                                                                      "maxlength": "128",
+                                                                                      "minlength": "-Infinity",
+                                                                                      "placeholder": null,
+                                                                                      "autocomplete": "off",
+                                                                                      "a11y-ignore": "false"
+                                                                                    },
+                                                                                    "rendered": true
+                                                                                  }
+                                                                                ]
+                                                                              }
+                                                                            ]
+                                                                          },
+                                                                          {
+                                                                            "tag": "div",
+                                                                            "attributes": {
+                                                                              "class": "zoom-input zoom-input--md",
+                                                                              "aria-hidden": "true",
+                                                                              "style": null
+                                                                            },
+                                                                            "children": [
+                                                                              {
+                                                                                "tag": "input",
+                                                                                "attributes": {
+                                                                                  "tabindex": "-1",
+                                                                                  "class": "zoom-input__inner is-trailed",
+                                                                                  "type": "password",
+                                                                                  "aria-disabled": "false",
+                                                                                  "aria-required": "false",
+                                                                                  "name": "password",
+                                                                                  "minlength": "-Infinity",
+                                                                                  "autocomplete": "off",
+                                                                                  "a11y-ignore": "false"
+                                                                                },
+                                                                                "rendered": false
+                                                                              },
+                                                                              {
+                                                                                "tag": "span",
+                                                                                "attributes": {
+                                                                                  "class": "zoom-input__trailing"
+                                                                                },
+                                                                                "children": [
+                                                                                  {
+                                                                                    "tag": "button",
+                                                                                    "attributes": {
+                                                                                      "type": "button",
+                                                                                      "class": "zoom-inline-icon-button zoom-input__password",
+                                                                                      "aria-disabled": "false",
+                                                                                      "aria-label": null,
+                                                                                      "style": null
+                                                                                    },
+                                                                                    "rendered": false
+                                                                                  }
+                                                                                ]
+                                                                              }
+                                                                            ]
+                                                                          }
+                                                                        ]
+                                                                      }
+                                                                    ]
+                                                                  }
+                                                                ]
+                                                              }
+                                                            ]
+                                                          },
+                                                          {
+                                                            "tag": "div",
+                                                            "attributes": {
+                                                              "class": "mgt-md"
+                                                            },
+                                                            "children": [
+                                                              {
+                                                                "tag": "button",
+                                                                "attributes": {
+                                                                  "type": "button",
+                                                                  "class": "zoom-button zoom-button--lg zoom-button--primary is-full",
+                                                                  "aria-disabled": "false",
+                                                                  "data-testid": "account-next-btn",
+                                                                  "id": "signin_btn_next"
+                                                                },
+                                                                "rendered": true
+                                                              }
+                                                            ]
+                                                          }
+                                                        ]
+                                                      },
+                                                      {
+                                                        "tag": "div",
+                                                        "attributes": {
+                                                          "class": "zmua-layout-main-width zmua-is-wide"
+                                                        },
+                                                        "children": [
+                                                          {
+                                                            "tag": "div",
+                                                            "attributes": {
+                                                              "class": "zm-login-methods form-width"
+                                                            },
+                                                            "children": [
+                                                              {
+                                                                "tag": "div",
+                                                                "attributes": {
+                                                                  "class": "zm-login-methods__list zmua-flex zmua-justify-between -zmua-mx-3"
+                                                                },
+                                                                "children": [
+                                                                  {
+                                                                    "tag": "button",
+                                                                    "attributes": {
+                                                                      "type": "button",
+                                                                      "class": "zm-login-methods__item",
+                                                                      "aria-label": null
+                                                                    },
+                                                                    "rendered": true
+                                                                  },
+                                                                  {
+                                                                    "tag": "button",
+                                                                    "attributes": {
+                                                                      "type": "button",
+                                                                      "class": "zm-login-methods__item",
+                                                                      "aria-label": null
+                                                                    },
+                                                                    "rendered": true
+                                                                  },
+                                                                  {
+                                                                    "tag": "button",
+                                                                    "attributes": {
+                                                                      "type": "button",
+                                                                      "class": "zm-login-methods__item",
+                                                                      "aria-label": null
+                                                                    },
+                                                                    "rendered": true
+                                                                  },
+                                                                  {
+                                                                    "tag": "button",
+                                                                    "attributes": {
+                                                                      "type": "button",
+                                                                      "class": "zm-login-methods__item",
+                                                                      "aria-label": null
+                                                                    },
+                                                                    "rendered": true
+                                                                  },
+                                                                  {
+                                                                    "tag": "button",
+                                                                    "attributes": {
+                                                                      "type": "button",
+                                                                      "class": "zm-login-methods__item",
+                                                                      "aria-label": null
+                                                                    },
+                                                                    "rendered": true
+                                                                  }
+                                                                ]
+                                                              }
+                                                            ]
+                                                          }
+                                                        ]
+                                                      }
+                                                    ]
+                                                  }
+                                                ]
+                                              },
+                                              {
+                                                "tag": "div",
+                                                "attributes": {
+                                                  "class": "zmua-pageLayoutFooter"
+                                                },
+                                                "children": [
+                                                  {
+                                                    "tag": "div",
+                                                    "attributes": {
+                                                      "class": "mgt-xl zmua-layout-main-width zmua-text-center"
+                                                    },
+                                                    "children": [
+                                                      {
+                                                        "tag": "button",
+                                                        "attributes": {
+                                                          "type": "button",
+                                                          "class": "zoom-button zoom-button--md is-pure-text zoom-button--text",
+                                                          "aria-disabled": "false",
+                                                          "data-testid": "forgot-email-btn"
+                                                        },
+                                                        "rendered": true
+                                                      }
+                                                    ]
+                                                  },
+                                                  {
+                                                    "tag": "div",
+                                                    "attributes": {
+                                                      "class": "mgt-xl"
+                                                    },
+                                                    "children": [
+                                                      {
+                                                        "tag": "div",
+                                                        "attributes": {
+                                                          "class": "zmua-text-center zmua-layout-main-width"
+                                                        },
+                                                        "children": [
+                                                          {
+                                                            "tag": "button",
+                                                            "attributes": {
+                                                              "type": "button",
+                                                              "class": "zoom-button zoom-button--md is-pure-text zoom-button--text zmua-footerLinksItem",
+                                                              "aria-label": null,
+                                                              "aria-disabled": "false"
+                                                            },
+                                                            "rendered": true
+                                                          }
+                                                        ]
+                                                      },
+                                                      {
+                                                        "tag": "div",
+                                                        "attributes": {
+                                                          "class": "zmua-layout-main-width"
+                                                        },
+                                                        "children": [
+                                                          {
+                                                            "tag": "div",
+                                                            "attributes": {
+                                                              "class": "mgt-md zmua-text-center"
+                                                            },
+                                                            "children": [
+                                                              {
+                                                                "tag": "div",
+                                                                "attributes": {
+                                                                  "class": "zoom-captcha"
+                                                                },
+                                                                "children": [
+                                                                  {
+                                                                    "tag": "div",
+                                                                    "attributes": {},
+                                                                    "children": [
+                                                                      {
+                                                                        "tag": "div",
+                                                                        "attributes": {
+                                                                          "class": "zoom-captcha__invisible"
+                                                                        },
+                                                                        "children": [
+                                                                          {
+                                                                            "tag": "div",
+                                                                            "attributes": {},
+                                                                            "children": [
+                                                                              {
+                                                                                "tag": "div",
+                                                                                "attributes": {
+                                                                                  "class": "grecaptcha-badge",
+                                                                                  "data-style": "bottomright",
+                                                                                  "style": null
+                                                                                },
+                                                                                "children": [
+                                                                                  {
+                                                                                    "tag": "div",
+                                                                                    "attributes": {
+                                                                                      "class": "grecaptcha-logo"
+                                                                                    },
+                                                                                    "children": [
+                                                                                      {
+                                                                                        "tag": "iframe",
+                                                                                        "attributes": {
+                                                                                          "title": null,
+                                                                                          "width": "256",
+                                                                                          "height": "60",
+                                                                                          "role": "presentation",
+                                                                                          "name": null,
+                                                                                          "frameborder": "0",
+                                                                                          "scrolling": "no",
+                                                                                          "sandbox": "allow-forms allow-popups allow-same-origin allow-scripts allow-top-navigation allow-modals allow-popups-to-escape-sandbox allow-storage-access-by-user-activation",
+                                                                                          "src": "https://www.google.com/recaptcha/enterprise/anchor"
+                                                                                        },
+                                                                                        "rendered": false
+                                                                                      }
+                                                                                    ]
+                                                                                  },
+                                                                                  {
+                                                                                    "tag": "textarea",
+                                                                                    "attributes": {
+                                                                                      "id": "g-recaptcha-response",
+                                                                                      "name": "g-recaptcha-response",
+                                                                                      "class": "g-recaptcha-response",
+                                                                                      "style": null
+                                                                                    },
+                                                                                    "rendered": false
+                                                                                  }
+                                                                                ]
+                                                                              },
+                                                                              {
+                                                                                "tag": "iframe",
+                                                                                "attributes": {
+                                                                                  "style": null
+                                                                                },
+                                                                                "rendered": false
+                                                                              }
+                                                                            ]
+                                                                          }
+                                                                        ]
+                                                                      }
+                                                                    ]
+                                                                  }
+                                                                ]
+                                                              }
+                                                            ]
+                                                          }
+                                                        ]
+                                                      }
+                                                    ]
+                                                  }
+                                                ]
+                                              }
+                                            ]
+                                          }
+                                        ]
+                                      }
+                                    ]
+                                  }
+                                ]
+                              }
+                            ]
+                          }
+                        ]
+                      },
+                      {
+                        "tag": "input",
+                        "attributes": {
+                          "type": "hidden",
+                          "id": "gtm_pageName",
+                          "value": null
+                        },
+                        "rendered": false
+                      },
+                      {
+                        "tag": "input",
+                        "attributes": {
+                          "type": "hidden",
+                          "id": "gtm_pageLanguage",
+                          "value": null
+                        },
+                        "rendered": false
+                      },
+                      {
+                        "tag": "input",
+                        "attributes": {
+                          "type": "hidden",
+                          "id": "gtm_userCountry",
+                          "value": null
+                        },
+                        "rendered": false
+                      },
+                      {
+                        "tag": "input",
+                        "attributes": {
+                          "type": "hidden",
+                          "id": "gtm_userStatus",
+                          "value": null
+                        },
+                        "rendered": false
+                      },
+                      {
+                        "tag": "input",
+                        "attributes": {
+                          "type": "hidden",
+                          "id": "gtm_productUserType",
+                          "value": null
+                        },
+                        "rendered": false
+                      },
+                      {
+                        "tag": "input",
+                        "attributes": {
+                          "type": "hidden",
+                          "id": "gtm_userRole",
+                          "value": null
+                        },
+                        "rendered": false
+                      },
+                      {
+                        "tag": "input",
+                        "attributes": {
+                          "type": "hidden",
+                          "id": "gtm_accountType",
+                          "value": null
+                        },
+                        "rendered": false
+                      },
+                      {
+                        "tag": "input",
+                        "attributes": {
+                          "type": "hidden",
+                          "id": "gtm_accountPlanType",
+                          "value": null
+                        },
+                        "rendered": false
+                      },
+                      {
+                        "tag": "input",
+                        "attributes": {
+                          "type": "hidden",
+                          "id": "gtm_accountChannel",
+                          "value": null
+                        },
+                        "rendered": false
+                      },
+                      {
+                        "tag": "input",
+                        "attributes": {
+                          "type": "hidden",
+                          "id": "gtm_domainType",
+                          "value": null
+                        },
+                        "rendered": false
+                      },
+                      {
+                        "tag": "input",
+                        "attributes": {
+                          "type": "hidden",
+                          "id": "gtm_billingCycle",
+                          "value": null
+                        },
+                        "rendered": false
+                      },
+                      {
+                        "tag": "input",
+                        "attributes": {
+                          "type": "hidden",
+                          "id": "gtm_expirationDate",
+                          "value": null
+                        },
+                        "rendered": false
+                      },
+                      {
+                        "tag": "input",
+                        "attributes": {
+                          "type": "hidden",
+                          "id": "gtm_autoRenew",
+                          "value": null
+                        },
+                        "rendered": false
+                      },
+                      {
+                        "tag": "input",
+                        "attributes": {
+                          "type": "hidden",
+                          "id": "gtm_rateMrr",
+                          "value": null
+                        },
+                        "rendered": false
+                      },
+                      {
+                        "tag": "input",
+                        "attributes": {
+                          "type": "hidden",
+                          "id": "gtm_chargeType",
+                          "value": null
+                        },
+                        "rendered": false
+                      },
+                      {
+                        "tag": "input",
+                        "attributes": {
+                          "type": "hidden",
+                          "id": "gtm_licenseCount",
+                          "value": null
+                        },
+                        "rendered": false
+                      },
+                      {
+                        "tag": "input",
+                        "attributes": {
+                          "type": "hidden",
+                          "id": "gtm_paidStartDate",
+                          "value": null
+                        },
+                        "rendered": false
+                      },
+                      {
+                        "tag": "input",
+                        "attributes": {
+                          "type": "hidden",
+                          "id": "gtm_licenseDiscount",
+                          "value": null
+                        },
+                        "rendered": false
+                      },
+                      {
+                        "tag": "input",
+                        "attributes": {
+                          "type": "hidden",
+                          "id": "gtm_addOns",
+                          "value": null
+                        },
+                        "rendered": false
+                      },
+                      {
+                        "tag": "input",
+                        "attributes": {
+                          "type": "hidden",
+                          "id": "gtm_trackingGuid",
+                          "value": null
+                        },
+                        "rendered": false
+                      },
+                      {
+                        "tag": "input",
+                        "attributes": {
+                          "type": "hidden",
+                          "id": "gtm_visitorGuid",
+                          "value": null
+                        },
+                        "rendered": false
+                      },
+                      {
+                        "tag": "input",
+                        "attributes": {
+                          "type": "hidden",
+                          "id": "gtm_salesChannel",
+                          "value": null
+                        },
+                        "rendered": false
+                      },
+                      {
+                        "tag": "input",
+                        "attributes": {
+                          "type": "hidden",
+                          "id": "gtm_verticalSegment",
+                          "value": null
+                        },
+                        "rendered": false
+                      },
+                      {
+                        "tag": "input",
+                        "attributes": {
+                          "type": "hidden",
+                          "id": "gtm_salesSegment",
+                          "value": null
+                        },
+                        "rendered": false
+                      },
+                      {
+                        "tag": "input",
+                        "attributes": {
+                          "type": "hidden",
+                          "id": "gtm_salesDivision",
+                          "value": null
+                        },
+                        "rendered": false
+                      },
+                      {
+                        "tag": "input",
+                        "attributes": {
+                          "type": "hidden",
+                          "id": "gtm_billingCountry",
+                          "value": null
+                        },
+                        "rendered": false
+                      },
+                      {
+                        "tag": "input",
+                        "attributes": {
+                          "type": "hidden",
+                          "id": "gtm_employeeCount",
+                          "value": null
+                        },
+                        "rendered": false
+                      },
+                      {
+                        "tag": "input",
+                        "attributes": {
+                          "type": "hidden",
+                          "id": "gtm_webClusterId",
+                          "value": null
+                        },
+                        "rendered": false
+                      },
+                      {
+                        "tag": "input",
+                        "attributes": {
+                          "type": "hidden",
+                          "id": "gtm_segmentValue",
+                          "value": null
+                        },
+                        "rendered": false
+                      },
+                      {
+                        "tag": "input",
+                        "attributes": {
+                          "type": "hidden",
+                          "id": "gtm_couponType",
+                          "value": null
+                        },
+                        "rendered": false
+                      },
+                      {
+                        "tag": "input",
+                        "attributes": {
+                          "type": "hidden",
+                          "id": "gtm_discountType",
+                          "value": null
+                        },
+                        "rendered": false
+                      },
+                      {
+                        "tag": "input",
+                        "attributes": {
+                          "type": "hidden",
+                          "id": "gtm_pageType",
+                          "value": null
+                        },
+                        "rendered": false
+                      },
+                      {
+                        "tag": "input",
+                        "attributes": {
+                          "type": "hidden",
+                          "id": "gtm_pageVersion",
+                          "value": null
+                        },
+                        "rendered": false
+                      },
+                      {
+                        "tag": "input",
+                        "attributes": {
+                          "type": "hidden",
+                          "id": "gtm_accountHealthScore",
+                          "value": null
+                        },
+                        "rendered": false
+                      },
+                      {
+                        "tag": "input",
+                        "attributes": {
+                          "type": "hidden",
+                          "id": "gtm_phonePropensityScore",
+                          "value": null
+                        },
+                        "rendered": false
+                      },
+                      {
+                        "tag": "input",
+                        "attributes": {
+                          "type": "hidden",
+                          "id": "gtm_winbackPropensityScore",
+                          "value": null
+                        },
+                        "rendered": false
+                      },
+                      {
+                        "tag": "input",
+                        "attributes": {
+                          "type": "hidden",
+                          "id": "gtm_meetingsUpsellScore",
+                          "value": null
+                        },
+                        "rendered": false
+                      },
+                      {
+                        "tag": "input",
+                        "attributes": {
+                          "type": "hidden",
+                          "id": "gtm_meetingsUpsellProduct",
+                          "value": null
+                        },
+                        "rendered": false
+                      },
+                      {
+                        "tag": "input",
+                        "attributes": {
+                          "type": "hidden",
+                          "id": "gtm_meetingsUpsellChannel",
+                          "value": null
+                        },
+                        "rendered": false
+                      },
+                      {
+                        "tag": "input",
+                        "attributes": {
+                          "type": "hidden",
+                          "id": "gtm_proToBizPropensityScore",
+                          "value": null
+                        },
+                        "rendered": false
+                      },
+                      {
+                        "tag": "input",
+                        "attributes": {
+                          "type": "hidden",
+                          "id": "gtm_webinarPropensityScore",
+                          "value": null
+                        },
+                        "rendered": false
+                      },
+                      {
+                        "tag": "input",
+                        "attributes": {
+                          "type": "hidden",
+                          "id": "gtm_largeMeetingPropensityScore",
+                          "value": null
+                        },
+                        "rendered": false
+                      },
+                      {
+                        "tag": "input",
+                        "attributes": {
+                          "type": "hidden",
+                          "id": "gtm_webinarChurnRiskFlag",
+                          "value": null
+                        },
+                        "rendered": false
+                      },
+                      {
+                        "tag": "input",
+                        "attributes": {
+                          "type": "hidden",
+                          "id": "gtm_isSensitiveReferrer",
+                          "value": null
+                        },
+                        "rendered": false
+                      },
+                      {
+                        "tag": "input",
+                        "attributes": {
+                          "type": "hidden",
+                          "id": "gtm_fromOP",
+                          "value": null
+                        },
+                        "rendered": false
+                      },
+                      {
+                        "tag": "input",
+                        "attributes": {
+                          "type": "hidden",
+                          "id": "gtm_billingIsIncreasePriceForPHPABVariant",
+                          "value": null
+                        },
+                        "rendered": false
+                      },
+                      {
+                        "tag": "input",
+                        "attributes": {
+                          "type": "hidden",
+                          "id": "gtm_vertical",
+                          "value": null
+                        },
+                        "rendered": false
+                      },
+                      {
+                        "tag": "input",
+                        "attributes": {
+                          "type": "hidden",
+                          "id": "gtm_experimentDecisions",
+                          "value": null
+                        },
+                        "rendered": false
+                      }
+                    ]
+                  },
+                  {
+                    "tag": "div",
+                    "attributes": {
+                      "id": "video_dialog",
+                      "role": "alertdialog",
+                      "class": "noheaderfooterdialog modaldialog hideme"
+                    },
+                    "children": [
+                      {
+                        "tag": "div",
+                        "attributes": {
+                          "class": "modal-dialog"
+                        },
+                        "children": [
+                          {
+                            "tag": "div",
+                            "attributes": {
+                              "class": "modal-content"
+                            },
+                            "children": [
+                              {
+                                "tag": "div",
+                                "attributes": {
+                                  "class": "modal-header clearfix"
+                                },
+                                "children": [
+                                  {
+                                    "tag": "button",
+                                    "attributes": {
+                                      "class": "close simplemodal-close",
+                                      "aria-label": null
+                                    },
+                                    "rendered": false
+                                  }
+                                ]
+                              }
+                            ]
+                          }
+                        ]
+                      }
+                    ]
+                  },
+                  {
+                    "tag": "input",
+                    "attributes": {
+                      "type": "hidden",
+                      "id": "__platformCheck",
+                      "value": null
+                    },
+                    "rendered": false
+                  },
+                  {
+                    "tag": "div",
+                    "attributes": {
+                      "id": "upcomingMeetingDialog",
+                      "class": "modaldialog hideme upcomingMeeting-feature-dialog"
+                    },
+                    "children": [
+                      {
+                        "tag": "input",
+                        "attributes": {
+                          "type": "hidden",
+                          "name": "mtg_length",
+                          "id": "mtg_length"
+                        },
+                        "rendered": false
+                      },
+                      {
+                        "tag": "input",
+                        "attributes": {
+                          "type": "hidden",
+                          "name": "mtg_length1",
+                          "id": "mtg_length1"
+                        },
+                        "rendered": false
+                      },
+                      {
+                        "tag": "input",
+                        "attributes": {
+                          "type": "hidden",
+                          "name": "start_url",
+                          "id": "start_url"
+                        },
+                        "rendered": false
+                      },
+                      {
+                        "tag": "div",
+                        "attributes": {
+                          "class": "modal-dialog"
+                        },
+                        "children": [
+                          {
+                            "tag": "div",
+                            "attributes": {
+                              "class": "modal-content"
+                            },
+                            "children": [
+                              {
+                                "tag": "div",
+                                "attributes": {
+                                  "class": "modal-header clearfix"
+                                },
+                                "children": [
+                                  {
+                                    "tag": "button",
+                                    "attributes": {
+                                      "class": "close simplemodal-close",
+                                      "aria-label": null
+                                    },
+                                    "rendered": false
+                                  },
+                                  {
+                                    "tag": "h4",
+                                    "attributes": {
+                                      "tabindex": "-1",
+                                      "id": "upcoming-meeting-title",
+                                      "class": "meeting-delete-header-font",
+                                      "style": null
+                                    },
+                                    "rendered": false
+                                  }
+                                ]
+                              },
+                              {
+                                "tag": "div",
+                                "attributes": {
+                                  "class": "modal-footer"
+                                },
+                                "children": [
+                                  {
+                                    "tag": "button",
+                                    "attributes": {
+                                      "class": "btn btn-primary submit",
+                                      "id": "scheduleMtg",
+                                      "style": null
+                                    },
+                                    "rendered": false
+                                  }
+                                ]
+                              }
+                            ]
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "tag": "div",
+                "attributes": {
+                  "id": "livesdk__campaign",
+                  "style": null
+                },
+                "children": [
+                  {
+                    "tag": "div",
+                    "attributes": {
+                      "class": "livesdk__campaign"
+                    },
+                    "children": [
+                      {
+                        "tag": "div",
+                        "attributes": {
+                          "data-testid": "campaign-id-lazyLoadCampaign",
+                          "class": "livesdk__placement",
+                          "style": null
+                        },
+                        "children": [
+                          {
+                            "tag": "div",
+                            "attributes": {
+                              "class": "livesdk__placement-inner bottom-right",
+                              "style": null
+                            },
+                            "children": [
+                              {
+                                "tag": "div",
+                                "attributes": {
+                                  "class": "livesdk__Draggable bottom-right react-draggable",
+                                  "style": null
+                                },
+                                "children": [
+                                  {
+                                    "tag": "div",
+                                    "attributes": {
+                                      "style": null
+                                    },
+                                    "children": [
+                                      {
+                                        "tag": "div",
+                                        "attributes": {
+                                          "dir": "ltr"
+                                        },
+                                        "children": [
+                                          {
+                                            "tag": "div",
+                                            "attributes": {
+                                              "class": "livesdk__invitation",
+                                              "aria-label": null,
+                                              "role": "button",
+                                              "tabindex": "0",
+                                              "style": null
+                                            },
+                                            "rendered": false
+                                          }
+                                        ]
+                                      }
+                                    ]
+                                  }
+                                ]
+                              }
+                            ]
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "tag": "div",
+                "attributes": {
+                  "id": "onetrust-consent-sdk"
+                },
+                "children": [
+                  {
+                    "tag": "div",
+                    "attributes": {
+                      "id": "onetrust-pc-sdk",
+                      "class": "otPcCenter ot-hide ot-fade-in",
+                      "aria-modal": "true",
+                      "role": "alertdialog",
+                      "lang": "en",
+                      "aria-label": null
+                    },
+                    "children": [
+                      {
+                        "tag": "div",
+                        "attributes": {
+                          "class": "ot-pc-header"
+                        },
+                        "children": [
+                          {
+                            "tag": "button",
+                            "attributes": {
+                              "id": "close-pc-btn-handler",
+                              "class": "ot-close-icon",
+                              "aria-label": null
+                            },
+                            "rendered": false
+                          }
+                        ]
+                      },
+                      {
+                        "tag": "div",
+                        "attributes": {
+                          "id": "ot-pc-content",
+                          "class": "ot-pc-scrollbar"
+                        },
+                        "children": [
+                          {
+                            "tag": "button",
+                            "attributes": {
+                              "id": "accept-recommended-btn-handler"
+                            },
+                            "rendered": false
+                          },
+                          {
+                            "tag": "section",
+                            "attributes": {
+                              "class": "ot-sdk-row ot-cat-grp"
+                            },
+                            "children": [
+                              {
+                                "tag": "div",
+                                "attributes": {
+                                  "class": "ot-accordion-layout ot-cat-item",
+                                  "data-optanongroupid": "C0004"
+                                },
+                                "children": [
+                                  {
+                                    "tag": "button",
+                                    "attributes": {
+                                      "aria-expanded": "false",
+                                      "ot-accordion": "true",
+                                      "aria-controls": "ot-desc-id-C0004",
+                                      "aria-labelledby": "ot-header-id-C0004"
+                                    },
+                                    "rendered": false
+                                  },
+                                  {
+                                    "tag": "div",
+                                    "attributes": {
+                                      "class": "ot-acc-hdr"
+                                    },
+                                    "children": [
+                                      {
+                                        "tag": "div",
+                                        "attributes": {
+                                          "class": "ot-tgl"
+                                        },
+                                        "children": [
+                                          {
+                                            "tag": "input",
+                                            "attributes": {
+                                              "type": "checkbox",
+                                              "name": "ot-group-id-C0004",
+                                              "id": "ot-group-id-C0004",
+                                              "aria-checked": "false",
+                                              "role": "switch",
+                                              "class": "category-switch-handler",
+                                              "data-optanongroupid": "C0004",
+                                              "aria-labelledby": "ot-header-id-C0004"
+                                            },
+                                            "rendered": false
+                                          },
+                                          {
+                                            "tag": "label",
+                                            "attributes": {
+                                              "class": "ot-switch",
+                                              "for": "ot-group-id-C0004"
+                                            },
+                                            "rendered": false
+                                          }
+                                        ]
+                                      }
+                                    ]
+                                  },
+                                  {
+                                    "tag": "div",
+                                    "attributes": {
+                                      "class": "ot-acc-grpcntr ot-acc-txt"
+                                    },
+                                    "children": [
+                                      {
+                                        "tag": "div",
+                                        "attributes": {
+                                          "class": "ot-hlst-cntr"
+                                        },
+                                        "children": [
+                                          {
+                                            "tag": "button",
+                                            "attributes": {
+                                              "class": "ot-link-btn category-host-list-handler",
+                                              "aria-label": null,
+                                              "data-parent-id": "C0004"
+                                            },
+                                            "rendered": false
+                                          }
+                                        ]
+                                      }
+                                    ]
+                                  }
+                                ]
+                              },
+                              {
+                                "tag": "div",
+                                "attributes": {
+                                  "class": "ot-accordion-layout ot-cat-item",
+                                  "data-optanongroupid": "C0003"
+                                },
+                                "children": [
+                                  {
+                                    "tag": "button",
+                                    "attributes": {
+                                      "aria-expanded": "false",
+                                      "ot-accordion": "true",
+                                      "aria-controls": "ot-desc-id-C0003",
+                                      "aria-labelledby": "ot-header-id-C0003"
+                                    },
+                                    "rendered": false
+                                  },
+                                  {
+                                    "tag": "div",
+                                    "attributes": {
+                                      "class": "ot-acc-hdr"
+                                    },
+                                    "children": [
+                                      {
+                                        "tag": "div",
+                                        "attributes": {
+                                          "class": "ot-tgl"
+                                        },
+                                        "children": [
+                                          {
+                                            "tag": "input",
+                                            "attributes": {
+                                              "type": "checkbox",
+                                              "name": "ot-group-id-C0003",
+                                              "id": "ot-group-id-C0003",
+                                              "aria-checked": "false",
+                                              "role": "switch",
+                                              "class": "category-switch-handler",
+                                              "data-optanongroupid": "C0003",
+                                              "aria-labelledby": "ot-header-id-C0003"
+                                            },
+                                            "rendered": false
+                                          },
+                                          {
+                                            "tag": "label",
+                                            "attributes": {
+                                              "class": "ot-switch",
+                                              "for": "ot-group-id-C0003"
+                                            },
+                                            "rendered": false
+                                          }
+                                        ]
+                                      }
+                                    ]
+                                  },
+                                  {
+                                    "tag": "div",
+                                    "attributes": {
+                                      "class": "ot-acc-grpcntr ot-acc-txt"
+                                    },
+                                    "children": [
+                                      {
+                                        "tag": "div",
+                                        "attributes": {
+                                          "class": "ot-hlst-cntr"
+                                        },
+                                        "children": [
+                                          {
+                                            "tag": "button",
+                                            "attributes": {
+                                              "class": "ot-link-btn category-host-list-handler",
+                                              "aria-label": null,
+                                              "data-parent-id": "C0003"
+                                            },
+                                            "rendered": false
+                                          }
+                                        ]
+                                      }
+                                    ]
+                                  }
+                                ]
+                              },
+                              {
+                                "tag": "div",
+                                "attributes": {
+                                  "class": "ot-accordion-layout ot-cat-item",
+                                  "data-optanongroupid": "C0002"
+                                },
+                                "children": [
+                                  {
+                                    "tag": "button",
+                                    "attributes": {
+                                      "aria-expanded": "false",
+                                      "ot-accordion": "true",
+                                      "aria-controls": "ot-desc-id-C0002",
+                                      "aria-labelledby": "ot-header-id-C0002"
+                                    },
+                                    "rendered": false
+                                  },
+                                  {
+                                    "tag": "div",
+                                    "attributes": {
+                                      "class": "ot-acc-hdr"
+                                    },
+                                    "children": [
+                                      {
+                                        "tag": "div",
+                                        "attributes": {
+                                          "class": "ot-tgl"
+                                        },
+                                        "children": [
+                                          {
+                                            "tag": "input",
+                                            "attributes": {
+                                              "type": "checkbox",
+                                              "name": "ot-group-id-C0002",
+                                              "id": "ot-group-id-C0002",
+                                              "aria-checked": "false",
+                                              "role": "switch",
+                                              "class": "category-switch-handler",
+                                              "data-optanongroupid": "C0002",
+                                              "aria-labelledby": "ot-header-id-C0002"
+                                            },
+                                            "rendered": false
+                                          },
+                                          {
+                                            "tag": "label",
+                                            "attributes": {
+                                              "class": "ot-switch",
+                                              "for": "ot-group-id-C0002"
+                                            },
+                                            "rendered": false
+                                          }
+                                        ]
+                                      }
+                                    ]
+                                  },
+                                  {
+                                    "tag": "div",
+                                    "attributes": {
+                                      "class": "ot-acc-grpcntr ot-acc-txt"
+                                    },
+                                    "children": [
+                                      {
+                                        "tag": "div",
+                                        "attributes": {
+                                          "class": "ot-hlst-cntr"
+                                        },
+                                        "children": [
+                                          {
+                                            "tag": "button",
+                                            "attributes": {
+                                              "class": "ot-link-btn category-host-list-handler",
+                                              "aria-label": null,
+                                              "data-parent-id": "C0002"
+                                            },
+                                            "rendered": false
+                                          }
+                                        ]
+                                      }
+                                    ]
+                                  }
+                                ]
+                              },
+                              {
+                                "tag": "div",
+                                "attributes": {
+                                  "class": "ot-accordion-layout ot-cat-item",
+                                  "data-optanongroupid": "C0001"
+                                },
+                                "children": [
+                                  {
+                                    "tag": "button",
+                                    "attributes": {
+                                      "aria-expanded": "false",
+                                      "ot-accordion": "true",
+                                      "aria-controls": "ot-desc-id-C0001",
+                                      "aria-labelledby": "ot-header-id-C0001"
+                                    },
+                                    "rendered": false
+                                  },
+                                  {
+                                    "tag": "div",
+                                    "attributes": {
+                                      "class": "ot-acc-grpcntr ot-acc-txt"
+                                    },
+                                    "children": [
+                                      {
+                                        "tag": "div",
+                                        "attributes": {
+                                          "class": "ot-hlst-cntr"
+                                        },
+                                        "children": [
+                                          {
+                                            "tag": "button",
+                                            "attributes": {
+                                              "class": "ot-link-btn category-host-list-handler",
+                                              "aria-label": null,
+                                              "data-parent-id": "C0001"
+                                            },
+                                            "rendered": false
+                                          }
+                                        ]
+                                      }
+                                    ]
+                                  }
+                                ]
+                              }
+                            ]
+                          }
+                        ]
+                      },
+                      {
+                        "tag": "section",
+                        "attributes": {
+                          "id": "ot-pc-lst",
+                          "class": "ot-hide ot-hosts-ui ot-pc-scrollbar"
+                        },
+                        "children": [
+                          {
+                            "tag": "div",
+                            "attributes": {
+                              "id": "ot-pc-hdr"
+                            },
+                            "children": [
+                              {
+                                "tag": "h3",
+                                "attributes": {
+                                  "id": "ot-lst-title"
+                                },
+                                "children": [
+                                  {
+                                    "tag": "button",
+                                    "attributes": {
+                                      "class": "ot-link-btn back-btn-handler",
+                                      "aria-label": null
+                                    },
+                                    "rendered": false
+                                  }
+                                ]
+                              },
+                              {
+                                "tag": "div",
+                                "attributes": {
+                                  "class": "ot-lst-subhdr"
+                                },
+                                "children": [
+                                  {
+                                    "tag": "div",
+                                    "attributes": {
+                                      "class": "ot-search-cntr"
+                                    },
+                                    "children": [
+                                      {
+                                        "tag": "label",
+                                        "attributes": {
+                                          "for": "vendor-search-handler",
+                                          "class": "ot-scrn-rdr"
+                                        },
+                                        "rendered": false
+                                      },
+                                      {
+                                        "tag": "input",
+                                        "attributes": {
+                                          "id": "vendor-search-handler",
+                                          "type": "text",
+                                          "placeholder": null,
+                                          "name": "vendor-search-handler"
+                                        },
+                                        "rendered": false
+                                      }
+                                    ]
+                                  },
+                                  {
+                                    "tag": "div",
+                                    "attributes": {
+                                      "class": "ot-fltr-cntr"
+                                    },
+                                    "children": [
+                                      {
+                                        "tag": "button",
+                                        "attributes": {
+                                          "id": "filter-btn-handler",
+                                          "aria-label": null,
+                                          "aria-haspopup": "true"
+                                        },
+                                        "rendered": false
+                                      }
+                                    ]
+                                  },
+                                  {
+                                    "tag": "section",
+                                    "attributes": {
+                                      "id": "ot-fltr-modal"
+                                    },
+                                    "children": [
+                                      {
+                                        "tag": "div",
+                                        "attributes": {
+                                          "id": "ot-fltr-cnt"
+                                        },
+                                        "children": [
+                                          {
+                                            "tag": "button",
+                                            "attributes": {
+                                              "id": "clear-filters-handler"
+                                            },
+                                            "rendered": false
+                                          },
+                                          {
+                                            "tag": "div",
+                                            "attributes": {
+                                              "class": "ot-fltr-scrlcnt ot-pc-scrollbar"
+                                            },
+                                            "children": [
+                                              {
+                                                "tag": "div",
+                                                "attributes": {
+                                                  "class": "ot-fltr-opts"
+                                                },
+                                                "children": [
+                                                  {
+                                                    "tag": "div",
+                                                    "attributes": {
+                                                      "class": "ot-fltr-opt"
+                                                    },
+                                                    "children": [
+                                                      {
+                                                        "tag": "div",
+                                                        "attributes": {
+                                                          "class": "ot-chkbox"
+                                                        },
+                                                        "children": [
+                                                          {
+                                                            "tag": "input",
+                                                            "attributes": {
+                                                              "id": "chkbox-id",
+                                                              "type": "checkbox",
+                                                              "aria-checked": "false",
+                                                              "class": "category-filter-handler"
+                                                            },
+                                                            "rendered": false
+                                                          },
+                                                          {
+                                                            "tag": "label",
+                                                            "attributes": {
+                                                              "for": "chkbox-id"
+                                                            },
+                                                            "rendered": false
+                                                          }
+                                                        ]
+                                                      }
+                                                    ]
+                                                  }
+                                                ]
+                                              },
+                                              {
+                                                "tag": "div",
+                                                "attributes": {
+                                                  "class": "ot-fltr-btns"
+                                                },
+                                                "children": [
+                                                  {
+                                                    "tag": "button",
+                                                    "attributes": {
+                                                      "id": "filter-apply-handler"
+                                                    },
+                                                    "rendered": false
+                                                  },
+                                                  {
+                                                    "tag": "button",
+                                                    "attributes": {
+                                                      "id": "filter-cancel-handler"
+                                                    },
+                                                    "rendered": false
+                                                  }
+                                                ]
+                                              }
+                                            ]
+                                          }
+                                        ]
+                                      }
+                                    ]
+                                  }
+                                ]
+                              }
+                            ]
+                          },
+                          {
+                            "tag": "section",
+                            "attributes": {
+                              "id": "ot-lst-cnt",
+                              "class": "ot-host-cnt ot-pc-scrollbar"
+                            },
+                            "children": [
+                              {
+                                "tag": "div",
+                                "attributes": {
+                                  "id": "ot-sel-blk"
+                                },
+                                "children": [
+                                  {
+                                    "tag": "div",
+                                    "attributes": {
+                                      "class": "ot-sel-all"
+                                    },
+                                    "children": [
+                                      {
+                                        "tag": "div",
+                                        "attributes": {
+                                          "class": "ot-sel-all-chkbox"
+                                        },
+                                        "children": [
+                                          {
+                                            "tag": "div",
+                                            "attributes": {
+                                              "class": "ot-chkbox",
+                                              "id": "ot-selall-hostcntr"
+                                            },
+                                            "children": [
+                                              {
+                                                "tag": "input",
+                                                "attributes": {
+                                                  "id": "select-all-hosts-groups-handler",
+                                                  "type": "checkbox",
+                                                  "aria-checked": "false"
+                                                },
+                                                "rendered": false
+                                              },
+                                              {
+                                                "tag": "label",
+                                                "attributes": {
+                                                  "for": "select-all-hosts-groups-handler"
+                                                },
+                                                "rendered": false
+                                              }
+                                            ]
+                                          },
+                                          {
+                                            "tag": "div",
+                                            "attributes": {
+                                              "class": "ot-chkbox",
+                                              "id": "ot-selall-vencntr"
+                                            },
+                                            "children": [
+                                              {
+                                                "tag": "input",
+                                                "attributes": {
+                                                  "id": "select-all-vendor-groups-handler",
+                                                  "type": "checkbox",
+                                                  "aria-checked": "false"
+                                                },
+                                                "rendered": false
+                                              },
+                                              {
+                                                "tag": "label",
+                                                "attributes": {
+                                                  "for": "select-all-vendor-groups-handler"
+                                                },
+                                                "rendered": false
+                                              }
+                                            ]
+                                          },
+                                          {
+                                            "tag": "div",
+                                            "attributes": {
+                                              "class": "ot-chkbox",
+                                              "id": "ot-selall-licntr"
+                                            },
+                                            "children": [
+                                              {
+                                                "tag": "input",
+                                                "attributes": {
+                                                  "id": "select-all-vendor-leg-handler",
+                                                  "type": "checkbox",
+                                                  "aria-checked": "false"
+                                                },
+                                                "rendered": false
+                                              },
+                                              {
+                                                "tag": "label",
+                                                "attributes": {
+                                                  "for": "select-all-vendor-leg-handler"
+                                                },
+                                                "rendered": false
+                                              }
+                                            ]
+                                          }
+                                        ]
+                                      }
+                                    ]
+                                  }
+                                ]
+                              },
+                              {
+                                "tag": "div",
+                                "attributes": {
+                                  "class": "ot-sdk-row"
+                                },
+                                "children": [
+                                  {
+                                    "tag": "div",
+                                    "attributes": {
+                                      "class": "ot-sdk-column"
+                                    },
+                                    "children": [
+                                      {
+                                        "tag": "ul",
+                                        "attributes": {
+                                          "id": "ot-host-lst"
+                                        },
+                                        "children": [
+                                          {
+                                            "tag": "li",
+                                            "attributes": {
+                                              "class": "ot-host-item"
+                                            },
+                                            "children": [
+                                              {
+                                                "tag": "button",
+                                                "attributes": {
+                                                  "class": "ot-host-box",
+                                                  "aria-expanded": "false"
+                                                },
+                                                "rendered": false
+                                              }
+                                            ]
+                                          }
+                                        ]
+                                      }
+                                    ]
+                                  }
+                                ]
+                              }
+                            ]
+                          }
+                        ]
+                      },
+                      {
+                        "tag": "div",
+                        "attributes": {
+                          "class": "ot-pc-footer"
+                        },
+                        "children": [
+                          {
+                            "tag": "div",
+                            "attributes": {
+                              "class": "ot-btn-container"
+                            },
+                            "children": [
+                              {
+                                "tag": "button",
+                                "attributes": {
+                                  "class": "save-preference-btn-handler onetrust-close-btn-handler"
+                                },
+                                "rendered": false
+                              }
+                            ]
+                          }
+                        ]
+                      },
+                      {
+                        "tag": "iframe",
+                        "attributes": {
+                          "class": "ot-text-resize",
+                          "title": null,
+                          "style": null,
+                          "aria-hidden": "true"
+                        },
+                        "rendered": false
+                      }
+                    ]
+                  },
+                  {
+                    "tag": "div",
+                    "attributes": {
+                      "id": "onetrust-banner-sdk",
+                      "class": "otCenterRounded default ot-wo-title vertical-align-content ot-buttons-fw",
+                      "tabindex": "0"
+                    },
+                    "rendered": true,
+                    "children": [
+                      {
+                        "tag": "div",
+                        "attributes": {
+                          "class": "ot-sdk-container",
+                          "role": "alertdialog",
+                          "aria-describedby": "onetrust-policy-text",
+                          "aria-label": null
+                        },
+                        "children": [
+                          {
+                            "tag": "div",
+                            "attributes": {
+                              "class": "ot-sdk-row"
+                            },
+                            "children": [
+                              {
+                                "tag": "div",
+                                "attributes": {
+                                  "id": "onetrust-button-group-parent",
+                                  "class": "ot-sdk-twelve ot-sdk-columns has-reject-all-button"
+                                },
+                                "children": [
+                                  {
+                                    "tag": "div",
+                                    "attributes": {
+                                      "id": "onetrust-button-group"
+                                    },
+                                    "children": [
+                                      {
+                                        "tag": "div",
+                                        "attributes": {
+                                          "class": "banner-actions-container"
+                                        },
+                                        "children": [
+                                          {
+                                            "tag": "button",
+                                            "attributes": {
+                                              "id": "onetrust-reject-all-handler"
+                                            },
+                                            "rendered": true
+                                          },
+                                          {
+                                            "tag": "button",
+                                            "attributes": {
+                                              "id": "onetrust-accept-btn-handler"
+                                            },
+                                            "rendered": true
+                                          }
+                                        ]
+                                      },
+                                      {
+                                        "tag": "button",
+                                        "attributes": {
+                                          "id": "onetrust-pc-btn-handler",
+                                          "class": "cookie-setting-link"
+                                        },
+                                        "rendered": true
+                                      }
+                                    ]
+                                  }
+                                ]
+                              },
+                              {
+                                "tag": "div",
+                                "attributes": {
+                                  "id": "onetrust-close-btn-container"
+                                },
+                                "children": [
+                                  {
+                                    "tag": "button",
+                                    "attributes": {
+                                      "class": "onetrust-close-btn-handler onetrust-close-btn-ui banner-close-button ot-close-icon",
+                                      "aria-label": null
+                                    },
+                                    "rendered": true
+                                  }
+                                ]
+                              }
+                            ]
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "index": 1,
+      "parent": 0,
+      "name": null,
+      "sameOriginAsTop": true,
+      "url": "about:blank",
+      "controls": 0,
+      "tree": {
+        "tag": "html",
+        "attributes": {}
+      }
+    },
+    {
+      "index": 2,
+      "parent": 0,
+      "name": null,
+      "sameOriginAsTop": true,
+      "url": "about:blank",
+      "controls": 0,
+      "tree": {
+        "tag": "html",
+        "attributes": {}
+      }
+    },
+    {
+      "index": 3,
+      "parent": 0,
+      "name": null,
+      "nameWithheld": true,
+      "url": "https://www.google.com",
+      "sameOriginAsTop": false
+    },
+    {
+      "index": 4,
+      "parent": 3,
+      "name": null,
+      "url": "about:blank",
+      "sameOriginAsTop": false
+    }
+  ]
+}

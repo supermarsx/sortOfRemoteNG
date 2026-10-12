@@ -1,0 +1,43 @@
+{
+  "$schema": "../../../types/connection/httpLoginSteps.schema.json",
+  "version": 1,
+  "id": "outlook-online",
+  "evidence": {
+    "class": "B",
+    "source": "https://outlook.office.com/mail/",
+    "reviewed": "2026-10-12"
+  },
+  "credentialOrigins": ["https://login.microsoftonline.com"],
+  "loginSteps": [
+    {
+      "kind": "identifier",
+      "origin": "https://login.microsoftonline.com",
+      "paths": ["/common/oauth2/v2.0/authorize"],
+      "selectors": {
+        "username": "form#i0281[name=\"f1\"] input#i0116[name=\"loginfmt\"][type=\"email\"]"
+      }
+    },
+    {
+      "kind": "submit",
+      "submission": "click",
+      "selectors": {
+        "control": "form#i0281[name=\"f1\"] input#idSIButton9[type=\"submit\"]"
+      }
+    },
+    {
+      "kind": "password",
+      "origin": "https://login.microsoftonline.com",
+      "paths": ["/common/oauth2/v2.0/authorize"],
+      "selectors": {
+        "password": "form#i0281[name=\"f1\"] input#i0118[name=\"passwd\"][type=\"password\"]:not(.moveOffScreen):not([aria-hidden=\"true\"])"
+      }
+    },
+    {
+      "kind": "submit",
+      "submission": "click",
+      "selectors": {
+        "control": "form#i0281[name=\"f1\"] input#idSIButton9[type=\"submit\"]"
+      }
+    }
+  ]
+}

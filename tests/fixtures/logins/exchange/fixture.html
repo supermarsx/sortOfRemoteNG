@@ -1,0 +1,20 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>
+      Synthetic fixture: Exchange Outlook Web Access forms-based sign-in
+    </title>
+  </head>
+  <body>
+    <form name="logonForm" method="post" action="/owa/auth.owa">
+      <input name="destination" type="hidden" value="/owa/" />
+      <input name="flags" type="hidden" value="4" />
+      <input name="forcedownlevel" type="hidden" value="0" />
+      <input id="username" name="username" type="text" />
+      <input id="password" name="password" type="password" />
+      <div class="signInError"></div>
+      <div class="signinbutton" role="button">Sign in</div>
+    </form>
+  </body>
+</html>
