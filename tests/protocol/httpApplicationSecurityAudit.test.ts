@@ -409,6 +409,217 @@ describe("independent HTTP application security audit", () => {
     },
   );
 
+  it.each(["json", "xml", "csv"] as const)(
+    "round-trips the Custom application's frame, password-only and pre-step options in %s without a secret",
+    async (format) => {
+      const httpApplication: HttpApplicationSettings = {
+        version: 1,
+        id: "custom",
+        loginMode: "form",
+        customLogin: {
+          frame: "appFrame",
+          passwordOnly: true,
+          preStepSelector: 'a[href="#login"], #tab2',
+          submission: "spa",
+        },
+      };
+      const source = prepareConnectionForExport(
+        base({
+          httpApplication,
+          httpAutoLoginSelectors: {
+            passwordSelector: "#pin",
+            submitSelector: "#go",
+          },
+        }),
+        false,
+      );
+      expect(source.httpApplication).toEqual(httpApplication);
+      const text =
+        format === "json"
+          ? JSON.stringify({ connections: [source] })
+          : format === "xml"
+            ? serializeConnectionsToNativeXml([source])
+            : serializeDatasetsToNativeCsv([
+                {
+                  databaseId: "fixture-db",
+                  databaseName: "Fixture",
+                  connections: [source],
+                },
+              ]);
+      expect(text).not.toMatch(/fixture-(?:website|generic)-secret/);
+      const [imported] = await (format === "json"
+        ? importFromJSON(text)
+        : format === "xml"
+          ? importFromXML(text)
+          : importFromCSV(text));
+      expect(imported.httpApplication).toEqual(httpApplication);
+      expect(imported.httpAutoLoginSelectors).toEqual({
+        passwordSelector: "#pin",
+        submitSelector: "#go",
+      });
+    },
+  );
+
+  it("keeps custom login options to the Custom profile and to their four non-secret fields", () => {
+    const customLogin = { frame: "appFrame", preStepSelector: "#tab2" };
+    // Another profile cannot borrow them, and an import that tries is blocked.
+    for (const id of ["portainer", "generic-form", "zulip", "synology-dsm"]) {
+      const imported = normalizeHttpApplicationSettings({
+        version: 1,
+        id,
+        loginMode: "manual",
+        customLogin,
+      });
+      expect(imported).toEqual({
+        version: 1,
+        id,
+        loginMode: "manual",
+        invalid: true,
+      });
+    }
+    const columns = serializeNativeAdvancedProtocolSettings(
+      importedProfile({
+        version: 1,
+        id: "custom",
+        loginMode: "form",
+        customLogin,
+        password: "profile-secret",
+        authToken: "profile-token",
+      }),
+    );
+    expect(JSON.parse(columns.HttpApplication!)).toEqual({
+      version: 1,
+      id: "custom",
+      loginMode: "form",
+      customLogin,
+    });
+    expect(JSON.stringify(columns)).not.toMatch(/profile-secret|profile-token/);
+    // A secret inside the options is not dropped quietly: the whole profile
+    // fails closed and the secret is not exported.
+    const hostile = serializeNativeAdvancedProtocolSettings(
+      importedProfile({
+        version: 1,
+        id: "custom",
+        loginMode: "form",
+        customLogin: { ...customLogin, value: "typed-secret" },
+      }),
+    );
+    expect(JSON.parse(hostile.HttpApplication!)).toEqual({
+      version: 1,
+      id: "custom",
+      loginMode: "form",
+      invalid: true,
+    });
+    expect(JSON.stringify(hostile)).not.toContain("typed-secret");
+  });
+
+  it("leaves every existing saved profile byte-for-byte: the custom login field is absent unless set", () => {
+    // Each right-hand side was produced by the sources before the field
+    // existed. Key order is part of the saved bytes.
+    const pinned: [unknown, string][] = [
+      [
+        { version: 1, id: "portainer", loginMode: "form" },
+        '{"version":1,"id":"portainer","loginMode":"form"}',
+      ],
+      [
+        { version: 1, id: "custom", loginMode: "form" },
+        '{"version":1,"id":"custom","loginMode":"form"}',
+      ],
+      [
+        { version: 1, id: "custom" },
+        '{"version":1,"id":"custom","loginMode":"manual"}',
+      ],
+      [
+        { version: 1, id: "proxmox", loginMode: "form", realm: "pve" },
+        '{"version":1,"id":"proxmox","loginMode":"form","realm":"pve"}',
+      ],
+      [
+        {
+          version: 1,
+          id: "joomla",
+          loginMode: "form",
+          loginPath: "/administrator/",
+          joomlaVersion: "5",
+        },
+        '{"version":1,"id":"joomla","loginMode":"form","loginPath":"/administrator/","joomlaVersion":"5"}',
+      ],
+      [
+        {
+          version: 1,
+          id: "tacticalrmm",
+          loginMode: "form",
+          apiOrigin: "https://api.example.com",
+          meshOrigin: "https://mesh.example.com:8443",
+        },
+        '{"version":1,"id":"tacticalrmm","loginMode":"form","apiOrigin":"https://api.example.com","meshOrigin":"https://mesh.example.com:8443"}',
+      ],
+      [
+        {
+          version: 1,
+          id: "exchange-owa",
+          loginMode: "form",
+          exchangeOwaMailbox: "shared@example.com",
+        },
+        '{"version":1,"id":"exchange-owa","loginMode":"form","exchangeOwaMailbox":"shared@example.com"}',
+      ],
+      [
+        { version: 1, id: "amazon-shopping", amazonMarketplace: "DE" },
+        '{"version":1,"id":"amazon-shopping","loginMode":"manual","amazonMarketplace":"DE"}',
+      ],
+      [
+        { version: 1, id: "zulip" },
+        '{"version":1,"id":"zulip","loginMode":"manual"}',
+      ],
+      [
+        { version: 1, id: "ilo", loginMode: "form" },
+        '{"version":1,"id":"ilo","loginMode":"form"}',
+      ],
+      [
+        { version: 1, id: "unknown" },
+        '{"version":1,"id":"unknown","loginMode":"manual","invalid":true}',
+      ],
+    ];
+    for (const [saved, bytes] of pinned)
+      expect(JSON.stringify(normalizeHttpApplicationSettings(saved))).toBe(
+        bytes,
+      );
+    const custom: Connection = {
+      id: "c",
+      name: "C",
+      protocol: "https",
+      hostname: "custom.example.com",
+      port: 443,
+      isGroup: false,
+      createdAt: "2026-09-09T00:00:00.000Z",
+      updatedAt: "2026-09-09T00:00:00.000Z",
+      httpApplication: { version: 1, id: "custom", loginMode: "form" },
+      httpAutoLoginSelectors: {
+        usernameSelector: "#u",
+        passwordSelector: "#p",
+        submitSelector: "#s",
+      },
+    };
+    const row =
+      '{"id":"c","name":"C","protocol":"https","hostname":"custom.example.com","port":443,"isGroup":false,"createdAt":"2026-09-09T00:00:00.000Z","updatedAt":"2026-09-09T00:00:00.000Z","httpApplication":{"version":1,"id":"custom","loginMode":"form"},"httpAutoLoginSelectors":{"usernameSelector":"#u","passwordSelector":"#p","submitSelector":"#s"}}';
+    expect(JSON.stringify(prepareConnectionForExport(custom, false))).toBe(row);
+    expect(
+      JSON.stringify(normalizeImportedAdvancedProtocolConnection(custom)),
+    ).toBe(row);
+    expect(
+      serializeNativeAdvancedProtocolSettings(custom).HttpApplication,
+    ).toBe('{"version":1,"id":"custom","loginMode":"form"}');
+    // No profile and no mode ever gains the key by itself.
+    for (const profile of HTTP_APPLICATION_PROFILES)
+      for (const loginMode of ["manual", "form", "basic", "digest"] as const)
+        expect(
+          normalizeHttpApplicationSettings({
+            version: 1,
+            id: profile.id,
+            loginMode,
+          }),
+        ).not.toHaveProperty("customLogin");
+  });
+
   it("keeps old native records absent but malformed present profile/selector columns fail-closed", () => {
     expect(
       parseNativeAdvancedProtocolSettings({ Name: "old" }),

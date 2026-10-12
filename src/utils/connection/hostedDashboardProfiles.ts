@@ -6,7 +6,8 @@ import { CHATGPT_PROFILE } from "./chatgptProfile";
 import { CLAUDE_PROFILE } from "./claudeProfile";
 import { EXCHANGE_OWA_PROFILE } from "./exchangeOwaProfile";
 
-const interactive =
+/** Replaced by the catalog while an application's login steps are active. */
+export const HOSTED_DASHBOARD_INTERACTIVE_SIGN_IN =
   "Interactive sign-in only; saved credentials, API keys and automatic 2FA are not supplied. Use Open original sign-in for SSO, passkeys, security keys, CAPTCHA or unsupported embedded-browser sign-in. The system browser has separate cookies and uses the operating system network route.";
 const hosted = (
   id: string,
@@ -22,7 +23,7 @@ const hosted = (
   requiresHttps: true,
   loginModes: ["manual"],
   hostedLoginUrl,
-  description: `${detail} ${interactive}`,
+  description: `${detail} ${HOSTED_DASHBOARD_INTERACTIVE_SIGN_IN}`,
 });
 
 const GOOGLE_TOTP_CHALLENGE = {

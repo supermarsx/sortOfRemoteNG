@@ -2,6 +2,13 @@ import type {
   Connection,
   HttpAutoLoginSelectors,
 } from "../../types/connection/connection";
+import type {
+  HttpLoginSteps,
+  HttpLoginStepsConnection,
+  HttpLoginStepsResult,
+  HttpLoginUserSteps,
+  ResolvedHttpLoginSteps,
+} from "../../types/connection/httpLoginSteps";
 import {
   getHttpApplicationProfile,
   getJoomlaLoginSelectors,
@@ -16,6 +23,19 @@ import {
   detectAmazonShoppingMarket,
   getAmazonShoppingMarket,
 } from "../connection/amazonProfiles";
+import {
+  DECLARATIVE_LOGIN_LEGACY_SUPPORTED,
+  DECLARATIVE_LOGIN_SUPPORTED,
+} from "../connection/declarativeLoginSupport";
+import {
+  buildHttpCustomLoginSteps,
+  requiredHttpCustomLoginSelectors,
+} from "../connection/httpCustomLogin";
+import type { HttpLoginStepsMode } from "../connection/httpApplicationLoginSteps";
+import {
+  resolveHttpLoginSteps,
+  resolveUserHttpLoginSteps,
+} from "../connection/httpLoginSteps";
 
 export { YEALINK_SERVLET_UPSTREAM_SUPPORTED };
 
@@ -167,6 +187,30 @@ export function validateHttpApplicationTarget(
   validateTacticalRmmMeshTarget(connection, targetUrl);
 }
 
+/**
+ * A login described as steps instead of one form: an application's reviewed
+ * steps file, or the Custom application's selectors with its frame,
+ * password-only, pre-step or submit options. Holds no credential.
+ *
+ * `mode` is binding on the engine:
+ * - `exclusive`: only the steps may type. Nothing falls back to form
+ *   detection, and the login carries no `selectors` to detect with.
+ * - `additive`: the rest of the login is exactly what this connection
+ *   resolved to before steps existed, and it stays in force. The engine tries
+ *   the steps first; on a document where no step applies, or where a selector
+ *   of an applicable step is missing before anything was typed or clicked,
+ *   it does what it did before. Once a step has typed or clicked, form
+ *   detection must not run in that attempt: one credential release per origin
+ *   and stage, shared by both paths.
+ *
+ * In either mode a step acts only on a displayed, enabled control. A
+ * selector that matches a hidden field (several providers keep a hidden
+ * password input on their first page) is not a match.
+ */
+export type HttpApplicationDeclarativeLogin =
+  | { source: "catalog"; steps: HttpLoginSteps; mode: HttpLoginStepsMode }
+  | { source: "custom"; steps: HttpLoginUserSteps; mode: "exclusive" };
+
 export interface HttpApplicationLogin {
   credentials: { username: string; password: string } | null;
   upstreamAuthMode?:
@@ -193,7 +237,36 @@ export interface HttpApplicationLogin {
     | "claude";
   autoLogin: boolean;
   selectors?: HttpAutoLoginSelectors;
+  /**
+   * Present only when the engine may run these steps; see
+   * `HttpApplicationDeclarativeLogin` for what `mode` obliges it to do.
+   * Resolve it with `resolveHttpApplicationLoginSteps`.
+   */
+  declarativeLogin?: HttpApplicationDeclarativeLogin;
 }
+
+/**
+ * What runs where for one connection: every step with its exact origin, and
+ * `crossOrigin` when a step leaves the connection's own origin (native engine
+ * only). `connection` comes from the saved connection, never from a page.
+ * `undefined` when the login has no steps.
+ */
+export function resolveHttpApplicationLoginSteps(
+  login: Pick<HttpApplicationLogin, "declarativeLogin"> | null | undefined,
+  connection: HttpLoginStepsConnection,
+): HttpLoginStepsResult<ResolvedHttpLoginSteps> | undefined {
+  const declarative = login?.declarativeLogin;
+  if (!declarative) return undefined;
+  return declarative.source === "catalog"
+    ? resolveHttpLoginSteps(declarative.steps, connection)
+    : resolveUserHttpLoginSteps(declarative.steps, connection);
+}
+
+/** The legacy engine cannot run steps yet: say so instead of guessing a form. */
+const nativeEngineOnly = (label: string) =>
+  new Error(
+    `Automatic login for ${label} needs the native browser engine in this build. Review the browser engine in Settings → Web Browser, or use manual login.`,
+  );
 
 /** Each reviewed staged flow owns one closed upstream mode; no mode is shared. */
 const STAGED_LOGIN_UPSTREAM_MODES: Record<
@@ -231,6 +304,9 @@ export function sameHttpApplicationLogin(
       left.upstreamAuthMode === right.upstreamAuthMode &&
       left.autoLogin === right.autoLogin &&
       left.loginFlow === right.loginFlow &&
+      // Steps are selectors and origins only; no credential is serialized.
+      JSON.stringify(left.declarativeLogin) ===
+        JSON.stringify(right.declarativeLogin) &&
       left.credentials?.username === right.credentials?.username &&
       left.credentials?.password === right.credentials?.password &&
       left.selectors?.usernameSelector === right.selectors?.usernameSelector &&
@@ -398,8 +474,63 @@ export function resolveHttpApplicationLogin(
       upstreamAuthMode: settings.loginMode,
       autoLogin: false,
     };
+  // Form mode from here on. Steps never replace a saved selector override:
+  // an override keeps the single-form login it always meant, and a profile
+  // that never had one refuses the override instead of guessing a form.
+  let declarativeLogin: HttpApplicationDeclarativeLogin | undefined;
+  if (profile.declarativeLogin) {
+    const mode = profile.declarativeLoginMode ?? "exclusive";
+    const overridden =
+      Object.keys(
+        normalizeHttpApplicationSelectors(connection.httpAutoLoginSelectors) ??
+          {},
+      ).length > 0;
+    if (mode === "exclusive") {
+      if (overridden)
+        throw new Error(
+          `The login steps for ${profile.label} do not accept selector overrides. Clear Advanced selectors, or choose Custom application to use your own selectors.`,
+        );
+      if (!DECLARATIVE_LOGIN_LEGACY_SUPPORTED)
+        throw nativeEngineOnly(profile.label);
+    }
+    if (!overridden && DECLARATIVE_LOGIN_LEGACY_SUPPORTED)
+      declarativeLogin = {
+        source: "catalog",
+        steps: profile.declarativeLogin,
+        mode,
+      };
+  }
+  const customLogin =
+    profile.capability === "custom-form" ? settings.customLogin : undefined;
+  if (customLogin) {
+    // Running the three selectors without their options would type into
+    // another document, so a build that cannot run them refuses.
+    if (!DECLARATIVE_LOGIN_SUPPORTED)
+      throw new Error(
+        "This custom login uses a login frame, password-only, pre-step or submit option that this build cannot run. Clear those options in Application settings or use manual login.",
+      );
+    if (!DECLARATIVE_LOGIN_LEGACY_SUPPORTED)
+      throw nativeEngineOnly(profile.label);
+  }
+  const passwordOnly =
+    declarativeLogin?.steps.passwordOnly === true ||
+    customLogin?.passwordOnly === true;
+  if (!deferred && passwordOnly && !credentials?.password)
+    throw new Error(
+      "Automatic login for this device requires the website password.",
+    );
+  // Form detection needs a username. Without one there is no earlier login
+  // to fall back to, so password-only steps are then all that may type.
+  if (
+    declarativeLogin?.source === "catalog" &&
+    passwordOnly &&
+    !deferred &&
+    !credentials?.username
+  )
+    declarativeLogin = { ...declarativeLogin, mode: "exclusive" };
   if (
     !deferred &&
+    !passwordOnly &&
     (!credentials?.username || (!profile.emailOnly && !credentials.password))
   )
     throw new Error(
@@ -428,6 +559,14 @@ export function resolveHttpApplicationLogin(
       ...(profile.selectors ? { selectors: { ...profile.selectors } } : {}),
     };
   }
+  if (declarativeLogin?.mode === "exclusive")
+    return {
+      credentials,
+      upstreamAuthMode: "none",
+      autoLogin: true,
+      declarativeLogin,
+    };
+  // Additive steps ride on the login this connection always resolved to.
   const selectors = {
     ...(settings.id === "joomla"
       ? getJoomlaLoginSelectors(settings.joomlaVersion)
@@ -436,13 +575,27 @@ export function resolveHttpApplicationLogin(
   };
   if (
     profile.capability === "custom-form" &&
-    (!selectors.usernameSelector?.trim() ||
-      !selectors.passwordSelector?.trim() ||
-      !selectors.submitSelector?.trim())
+    requiredHttpCustomLoginSelectors(customLogin).some(
+      (key) => !selectors[key]?.trim(),
+    )
   ) {
     throw new Error(
-      "Custom application form login requires explicit username, password, and submit selectors. Review Application settings.",
+      customLogin
+        ? "Custom application form login requires explicit selectors for every field its options use. Review Application settings."
+        : "Custom application form login requires explicit username, password, and submit selectors. Review Application settings.",
     );
+  }
+  if (customLogin) {
+    const steps = buildHttpCustomLoginSteps(selectors, customLogin);
+    if (!steps.ok)
+      throw new Error(
+        "Invalid application login selector. Review Application settings.",
+      );
+    declarativeLogin = {
+      source: "custom",
+      steps: steps.value,
+      mode: "exclusive",
+    };
   }
   const username =
     settings.id === "proxmox" &&
@@ -455,5 +608,6 @@ export function resolveHttpApplicationLogin(
     upstreamAuthMode: "none",
     autoLogin: true,
     ...(Object.keys(selectors).length ? { selectors } : {}),
+    ...(declarativeLogin ? { declarativeLogin } : {}),
   };
 }

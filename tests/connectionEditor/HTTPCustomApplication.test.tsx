@@ -219,4 +219,73 @@ describe("Custom HTTP application", () => {
     expect(exported.httpAutoLoginSelectors).toEqual(selectors);
     expect(JSON.stringify(exported)).not.toContain(initial.password);
   });
+  it("round-trips frame, password-only and pre-step options with the profile, and nothing else rides along", () => {
+    const customLogin = {
+      frame: "appFrame",
+      passwordOnly: true,
+      preStepSelector: "#tab2",
+      submission: "enter",
+    } as const;
+    const connection: Connection = {
+      ...custom({ passwordSelector: "#pin" }),
+      httpApplication: {
+        version: 1,
+        id: "custom",
+        loginMode: "form",
+        customLogin,
+      },
+    };
+    const normalized = normalizeImportedAdvancedProtocolConnection(
+      JSON.parse(JSON.stringify(connection)),
+    );
+    expect(normalized.httpApplication).toEqual(connection.httpApplication);
+    expect(normalized.httpAutoLoginSelectors).toEqual({
+      passwordSelector: "#pin",
+    });
+    expect(
+      normalizeHttpApplicationSettings(normalized.httpApplication),
+    ).toEqual(connection.httpApplication);
+    const exported = prepareConnectionForExport(connection, false);
+    expect(exported.httpApplication).toEqual(connection.httpApplication);
+    expect(JSON.stringify(exported)).not.toContain(initial.password);
+    // Each option round-trips on its own, and a default is not stored.
+    for (const [key, option] of Object.entries(customLogin))
+      expect(
+        normalizeHttpApplicationSettings({
+          version: 1,
+          id: "custom",
+          loginMode: "form",
+          customLogin: { [key]: option, passwordOnly: key === "passwordOnly" },
+        })?.customLogin,
+      ).toEqual({ [key]: option });
+    // The options hold no value to type and no origin: anything else is
+    // refused whole, and the connection stays blocked rather than half-read.
+    for (const injected of [
+      { ...customLogin, password: "fixture-secret" },
+      { ...customLogin, origin: "https://elsewhere.example.test" },
+      { ...customLogin, fields: [{ selector: "#otp", value: "123456" }] },
+    ]) {
+      const refused = normalizeHttpApplicationSettings({
+        version: 1,
+        id: "custom",
+        loginMode: "form",
+        customLogin: injected,
+      });
+      expect(refused).toEqual({
+        version: 1,
+        id: "custom",
+        loginMode: "form",
+        invalid: true,
+      });
+      expect(() =>
+        resolveHttpApplicationLogin({
+          ...connection,
+          httpApplication: {
+            ...connection.httpApplication!,
+            customLogin: injected,
+          },
+        }),
+      ).toThrow(/invalid or unavailable/);
+    }
+  });
 });

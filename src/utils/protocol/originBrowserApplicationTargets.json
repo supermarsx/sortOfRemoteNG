@@ -378,6 +378,7 @@
     "vmware": {},
     "cpanel": {},
     "draytek": {},
+    "tplink-switch": {},
     "grafana": {},
     "budibase": {},
     "jira": {},

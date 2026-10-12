@@ -4,6 +4,7 @@ import { Checkbox } from "../../ui/forms";
 import { InfoTooltip } from "../../ui/InfoTooltip";
 import type { HttpAutoLoginSelectors } from "../../../types/connection/connection";
 import HttpCredentialWarning from "../../security/HttpCredentialWarning";
+import { DECLARATIVE_LOGIN_SUPPORTED } from "../../../utils/connection/declarativeLoginSupport";
 
 /**
  * t20: per-connection opt-in for proxy-side web auto-login. When
@@ -55,6 +56,12 @@ const AutoLoginSection: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
         Submits this connection's saved credentials into the device's login form
         on connect. Multi-factor / CAPTCHA prompts are left to you.
       </p>
+      {DECLARATIVE_LOGIN_SUPPORTED && (
+        <p className="text-xs text-[var(--color-textMuted)] mt-1">
+          For a login form inside a frame, a password-only device or a control
+          to click first, choose Custom application in the Application tab.
+        </p>
+      )}
 
       {enabled && (
         <div className="mt-3 space-y-3 pl-1">

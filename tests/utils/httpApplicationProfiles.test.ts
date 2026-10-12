@@ -2,8 +2,13 @@ import { describe, expect, it } from "vitest";
 import {
   HTTP_APPLICATION_PROFILES,
   HTTP_APPLICATION_CATEGORIES,
+  getHttpApplicationLoginModes,
   normalizeHttpApplicationSettings,
 } from "../../src/utils/connection/httpApplicationProfiles";
+import {
+  DECLARATIVE_LOGIN_LEGACY_SUPPORTED,
+  DECLARATIVE_LOGIN_SUPPORTED,
+} from "../../src/utils/connection/declarativeLoginSupport";
 import {
   resolveHttpApplicationLogin,
   getReviewedApplicationProfile,
@@ -13,6 +18,7 @@ import type {
   Connection,
   HttpApplicationSettings,
 } from "../../src/types/connection/connection";
+import applicationTargets from "../../src/utils/protocol/originBrowserApplicationTargets.json";
 import { buildPortainerWebUiConnection } from "../../src/components/integrations/portainer/webUiLaunch";
 import { buildNpmWebUiConnection } from "../../src/components/integrations/nginxProxyMgr/webUiLaunch";
 import { buildProxmoxWebUiConnection } from "../../src/components/integrations/proxmox/webUiLaunch";
@@ -31,11 +37,12 @@ const connection = (
 
 describe("HTTP application profile policy", () => {
   it("categorizes the existing applications plus Custom, Webmin, and Cloudflare, with non-web integrations separate", () => {
-    // 149 existing profiles plus Vodafone Smart Router 3 and YouTube Studio.
-    expect(HTTP_APPLICATION_PROFILES).toHaveLength(151);
+    // 149 existing profiles plus Vodafone Smart Router 3, YouTube Studio and
+    // the TP-Link managed switch.
+    expect(HTTP_APPLICATION_PROFILES).toHaveLength(152);
     expect(
       new Set(HTTP_APPLICATION_PROFILES.map((profile) => profile.id)).size,
-    ).toBe(151);
+    ).toBe(152);
     for (const profile of HTTP_APPLICATION_PROFILES) {
       expect(HTTP_APPLICATION_CATEGORIES[profile.category]).toBeTruthy();
       expect(profile.category === "native").toBe(profile.capability === "none");
@@ -106,6 +113,84 @@ describe("HTTP application profile policy", () => {
       "cpanel",
       "gdrive",
     ]);
+  });
+  it("ships declarative login switched off: steps files change no profile until the engines land", () => {
+    // t102-e13 turns the native flag on, and the legacy flag follows once the
+    // legacy engine runs steps. Until then every profile is what it was.
+    expect(DECLARATIVE_LOGIN_SUPPORTED).toBe(false);
+    expect(DECLARATIVE_LOGIN_LEGACY_SUPPORTED).toBe(false);
+    for (const profile of HTTP_APPLICATION_PROFILES)
+      expect(profile).not.toHaveProperty("declarativeLogin");
+    const offering = (...modes: string[]) =>
+      HTTP_APPLICATION_PROFILES.filter(
+        (profile) =>
+          getHttpApplicationLoginModes(profile).join() === modes.join(),
+      ).length;
+    // Manual only; native-only; and every profile that offers form login today.
+    expect(offering("manual")).toBe(61);
+    expect(offering()).toBe(8);
+    expect(
+      HTTP_APPLICATION_PROFILES.filter((profile) =>
+        getHttpApplicationLoginModes(profile).includes("form"),
+      ),
+    ).toHaveLength(76);
+  });
+  it("keeps the browser application targets mirror equal to the catalog: same ids in the same order, same entry points", () => {
+    // src/utils/protocol/originBrowserApplicationTargets.json is kept by hand
+    // and read by the native authority, the capture tool and the corpus check.
+    expect(applicationTargets.version).toBe(1);
+    expect(Object.keys(applicationTargets.profiles)).toEqual(
+      HTTP_APPLICATION_PROFILES.map(({ id }) => id),
+    );
+    const targets: Record<string, unknown> = applicationTargets.profiles;
+    for (const profile of HTTP_APPLICATION_PROFILES)
+      expect(targets[profile.id], profile.id).toEqual(
+        JSON.parse(
+          JSON.stringify({
+            hostedLoginUrl: profile.hostedLoginUrl,
+            loginPath: profile.loginPath,
+            loginFlow: profile.loginFlow,
+          }),
+        ),
+      );
+  });
+  it("offers the TP-Link managed switch as a named application on generic detection", () => {
+    const profile = HTTP_APPLICATION_PROFILES.find(
+      ({ id }) => id === "tplink-switch",
+    )!;
+    expect(profile).toMatchObject({
+      label: "TP-Link managed switch",
+      category: "networking",
+      capability: "generic-form",
+    });
+    expect(profile.description).toContain("TP-Link managed switch");
+    // A device on the user's own network: no hosted address, no HTTPS pin.
+    expect(profile.hostedLoginUrl).toBeUndefined();
+    expect(profile.requiresHttps).toBeUndefined();
+    expect(profile.selectors).toBeUndefined();
+    expect(getHttpApplicationLoginModes(profile)).toEqual([
+      "manual",
+      "form",
+      "basic",
+      "digest",
+    ]);
+    expect(
+      normalizeHttpApplicationSettings({ version: 1, id: "tplink-switch" }),
+    ).toEqual({ version: 1, id: "tplink-switch", loginMode: "manual" });
+    expect(
+      resolveHttpApplicationLogin({
+        ...connection("manual"),
+        httpApplication: {
+          version: 1,
+          id: "tplink-switch",
+          loginMode: "manual",
+        },
+      }),
+    ).toEqual({
+      credentials: null,
+      upstreamAuthMode: "none",
+      autoLogin: false,
+    });
   });
   it("keeps Cloudflare manual mode credential-free and rejects imported transport auth", () => {
     const selected = {

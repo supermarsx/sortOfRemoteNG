@@ -1,10 +1,11 @@
 import React, { useState } from "react";
-import { Select, PasswordInput } from "../../ui/forms";
+import { Checkbox, Select, PasswordInput } from "../../ui/forms";
 import { InfoTooltip } from "../../ui/InfoTooltip";
 import type {
   HttpApplicationSettings,
   HttpAutoLoginSelectors,
 } from "../../../types/connection/connection";
+import type { HttpCustomLoginOptions } from "../../../types/connection/httpCustomLogin";
 import {
   HTTP_APPLICATION_CATEGORIES,
   HTTP_APPLICATION_PROFILES,
@@ -12,6 +13,7 @@ import {
   getHttpApplicationProfile,
   getFirstPartyGoogleHostedApplicationUrl,
   getHttpApplicationLoginModes,
+  getHttpLoginStepsEntryPage,
   normalizeHttpApplicationSettings,
   normalizeTacticalRmmApiOrigin,
   normalizeTacticalRmmMeshOrigin,
@@ -29,6 +31,8 @@ import CredentialSourceSection from "../CredentialSourceSection";
 import AmazonMarketplaceFields from "./AmazonMarketplaceFields";
 import { resolveHttpApplicationEmail } from "../../../utils/auth/httpApplicationLogin";
 import HttpCredentialWarning from "../../security/HttpCredentialWarning";
+import { DECLARATIVE_LOGIN_SUPPORTED } from "../../../utils/connection/declarativeLoginSupport";
+import { isUnverifiedHttpLoginSteps } from "../../../utils/connection/httpLoginSteps";
 
 const MODE_LABELS = {
   manual: "Manual browsing — no saved credentials sent",
@@ -41,6 +45,11 @@ const SELECTOR_EXAMPLES = {
   passwordSelector: 'input[type="password"]',
   submitSelector: 'button[type="submit"]',
 } as const;
+const CUSTOM_SUBMISSIONS = [
+  { value: "click", label: "Click on the submit button" },
+  { value: "spa", label: "Click on the button of a script-driven form" },
+  { value: "enter", label: "Enter key in the password field" },
+] as const;
 
 export default function ApplicationSection({ mgr }: { mgr: Mgr }) {
   const [category, setCategory] = useState("all");
@@ -82,6 +91,20 @@ export default function ApplicationSection({ mgr }: { mgr: Mgr }) {
       : profile?.selectors;
   const fileApi = isSynologyFileConnection(mgr.formData);
   const boundedAiFlow = profile?.id === "chatgpt" || profile?.id === "claude";
+  // Present only while the engine that runs login steps is supported.
+  const declarativeLogin = profile?.declarativeLogin;
+  const customProfile = profile?.capability === "custom-form";
+  const customLogin = customProfile ? settings?.customLogin : undefined;
+  const customOptions = DECLARATIVE_LOGIN_SUPPORTED && customProfile;
+  // Additive steps leave the profile's own form detection in force, which
+  // still needs the username even when the steps type a password only.
+  const additiveSteps = profile?.declarativeLoginMode === "additive";
+  const stepsEntryPage = profile
+    ? getHttpLoginStepsEntryPage(profile)
+    : undefined;
+  const passwordOnly =
+    (declarativeLogin?.passwordOnly === true && !additiveSteps) ||
+    (customOptions && customLogin?.passwordOnly === true);
   const credentials = profile?.emailOnly
     ? { username: resolveHttpApplicationEmail(mgr.formData), password: "" }
     : resolveHttpBasicCredentials({
@@ -164,6 +187,23 @@ export default function ApplicationSection({ mgr }: { mgr: Mgr }) {
       basicAuthPassword: next.password,
     }));
   };
+  /** Stores only what differs from the defaults; an empty object is dropped. */
+  const updateCustomLogin = (change: Partial<HttpCustomLoginOptions>) =>
+    mgr.setFormData((previous) => {
+      if (previous.httpApplication?.id !== "custom") return previous;
+      const { customLogin: saved, ...application } = previous.httpApplication;
+      const next = Object.fromEntries(
+        Object.entries({ ...saved, ...change }).filter(
+          ([, value]) => value !== undefined && value !== "",
+        ),
+      );
+      return {
+        ...previous,
+        httpApplication: Object.keys(next).length
+          ? { ...application, customLogin: next }
+          : application,
+      };
+    });
   const updateSelector = (key: keyof HttpAutoLoginSelectors, value: string) =>
     mgr.setFormData((previous) => ({
       ...previous,
@@ -553,6 +593,66 @@ export default function ApplicationSection({ mgr }: { mgr: Mgr }) {
                 disabled={settings?.invalid}
                 variant="form"
               />
+              {declarativeLogin && (
+                <p
+                  role="note"
+                  data-testid="login-steps-evidence"
+                  className="mt-2 text-xs text-[var(--color-textSecondary)]"
+                >
+                  {isUnverifiedHttpLoginSteps(declarativeLogin) ? (
+                    <>
+                      <strong>Unverified layout.</strong> The login steps for{" "}
+                      {profile.label} are an informed guess from public
+                      material, recorded on {declarativeLogin.evidence.reviewed}
+                      ; nobody has confirmed them with a real sign-in.
+                    </>
+                  ) : (
+                    <>
+                      <strong>Reviewed layout.</strong> Every control in the
+                      login steps for {profile.label} was taken from a cited
+                      source, reviewed on {declarativeLogin.evidence.reviewed}.
+                    </>
+                  )}{" "}
+                  {additiveSteps
+                    ? `They only add to what ${profile.label} already does: where they find nothing to act on, generic form detection signs in as before.`
+                    : "If the page differs, nothing is typed and you sign in by hand."}
+                </p>
+              )}
+              {stepsEntryPage && (
+                <p
+                  data-testid="login-steps-entry"
+                  className="mt-2 text-xs text-[var(--color-textSecondary)]"
+                >
+                  Automatic sign-in starts on the sign-in page (
+                  <span className="font-mono break-all">{stepsEntryPage}</span>
+                  ), not on the page this connection opens. If the site does not
+                  take you there by itself, follow its own sign-in link; the
+                  login then fills.
+                </p>
+              )}
+            </div>
+          )}
+          {customLogin && !customOptions && (
+            <div className="max-w-2xl space-y-2">
+              <p role="alert" className="text-sm text-error">
+                This custom login was saved with a login frame, password-only,
+                pre-step or submit option that this build cannot run. Automatic
+                login is blocked until the options are removed.
+              </p>
+              <button
+                type="button"
+                className="sor-btn sor-btn-secondary"
+                onClick={() =>
+                  updateCustomLogin({
+                    frame: undefined,
+                    passwordOnly: undefined,
+                    preStepSelector: undefined,
+                    submission: undefined,
+                  })
+                }
+              >
+                Remove unsupported login options
+              </button>
             </div>
           )}
           {settings?.loginMode !== "manual" && !settings?.invalid && (
@@ -590,29 +690,32 @@ export default function ApplicationSection({ mgr }: { mgr: Mgr }) {
                 </p>
               )}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4 max-w-2xl">
-                <div>
-                  <label
-                    htmlFor="http-application-user"
-                    className="block text-sm mb-2"
-                  >
-                    Website {profile.usernameLabel?.toLowerCase() ?? "username"}
-                  </label>
-                  <input
-                    id="http-application-user"
-                    className="sor-form-input"
-                    autoComplete="off"
-                    disabled={vaultCredentials}
-                    placeholder={
-                      vaultCredentials
-                        ? "Stored in selected database vault"
-                        : undefined
-                    }
-                    value={credentials?.username ?? ""}
-                    onChange={(event) =>
-                      updateCredential("username", event.target.value)
-                    }
-                  />
-                </div>
+                {!passwordOnly && (
+                  <div>
+                    <label
+                      htmlFor="http-application-user"
+                      className="block text-sm mb-2"
+                    >
+                      Website{" "}
+                      {profile.usernameLabel?.toLowerCase() ?? "username"}
+                    </label>
+                    <input
+                      id="http-application-user"
+                      className="sor-form-input"
+                      autoComplete="off"
+                      disabled={vaultCredentials}
+                      placeholder={
+                        vaultCredentials
+                          ? "Stored in selected database vault"
+                          : undefined
+                      }
+                      value={credentials?.username ?? ""}
+                      onChange={(event) =>
+                        updateCredential("username", event.target.value)
+                      }
+                    />
+                  </div>
+                )}
                 {!profile.emailOnly && (
                   <div>
                     <label
@@ -677,6 +780,26 @@ export default function ApplicationSection({ mgr }: { mgr: Mgr }) {
                   "Staged email and password sign-in uses the reviewed Adobe flow without HTTP Basic authentication. SSO, MFA, CAPTCHA and account/profile choice remain interactive. Selector overrides are not supported."
                 ) : profile.id === "linkedin" ? (
                   "One submission on the recognized LinkedIn login page. Existing field values are preserved. Unknown layouts, MFA, CAPTCHA, passkeys and SSO remain interactive. Selector overrides are not supported."
+                ) : additiveSteps ? (
+                  <>
+                    Automatic sign-in first tries the login steps recorded for{" "}
+                    {profile.label}; where they find nothing to act on, generic
+                    form detection runs as before. One automatic submission per
+                    session. Authenticator codes require the separate explicit
+                    setting below. CAPTCHA, external SSO, and a rejected login
+                    remain manual.
+                  </>
+                ) : declarativeLogin ? (
+                  <>
+                    Automatic sign-in follows the login steps recorded for{" "}
+                    {profile.label}: each step types only on the page and origin
+                    it names, once.{" "}
+                    {passwordOnly &&
+                      "This device signs in with a password only; no username is typed. "}
+                    Authenticator codes require the separate explicit setting
+                    below. CAPTCHA, device approval, passkeys, security keys and
+                    a rejected login remain manual.
+                  </>
                 ) : (
                   <>
                     One automatic submission per proxy session. No preemptive
@@ -688,6 +811,8 @@ export default function ApplicationSection({ mgr }: { mgr: Mgr }) {
               </p>
               {profile.id !== "adobe-admin-console" &&
                 profile.id !== "linkedin" &&
+                // A former manual profile has steps and no single form.
+                profile.declarativeLoginMode !== "exclusive" &&
                 !boundedAiFlow && (
                   <details
                     key={profile.id}
@@ -703,13 +828,19 @@ export default function ApplicationSection({ mgr }: { mgr: Mgr }) {
                     </summary>
                     <p className="text-xs text-[var(--color-textMuted)] my-3">
                       {profile.capability === "custom-form" ? (
-                        "Provide all three CSS selectors for visible controls in the same login form. Missing or unmatched selectors block filling; no heuristic fallback is used."
+                        customLogin && customOptions ? (
+                          "Provide a CSS selector for every field shown below; each must be a visible control of the same login form. Missing or unmatched selectors block filling; no heuristic fallback is used."
+                        ) : (
+                          "Provide all three CSS selectors for visible controls in the same login form. Missing or unmatched selectors block filling; no heuristic fallback is used."
+                        )
                       ) : (
                         <>
                           Leave blank for{" "}
-                          {reviewedSelectors
-                            ? "the reviewed application selectors"
-                            : "generic detection"}
+                          {additiveSteps
+                            ? `the login steps recorded for ${profile.label}, with generic detection as the fallback. Any override skips those steps and uses single-form detection with your selectors`
+                            : reviewedSelectors
+                              ? "the reviewed application selectors"
+                              : "generic detection"}
                           . An unmatched override never falls back to a
                           different field.
                         </>
@@ -722,33 +853,152 @@ export default function ApplicationSection({ mgr }: { mgr: Mgr }) {
                           ["passwordSelector", "Password field selector"],
                           ["submitSelector", "Submit button selector"],
                         ] as const
-                      ).map(([key, label]) => (
-                        <div key={key}>
-                          <label
-                            htmlFor={`http-app-${key}`}
-                            className="block text-xs mb-1"
-                          >
-                            {label}
+                      )
+                        .filter(
+                          ([key]) =>
+                            !customOptions ||
+                            (key === "usernameSelector"
+                              ? !customLogin?.passwordOnly
+                              : key !== "submitSelector" ||
+                                customLogin?.submission !== "enter"),
+                        )
+                        .map(([key, label]) => (
+                          <div key={key}>
+                            <label
+                              htmlFor={`http-app-${key}`}
+                              className="block text-xs mb-1"
+                            >
+                              {label}
+                            </label>
+                            <input
+                              id={`http-app-${key}`}
+                              className="sor-form-input"
+                              maxLength={512}
+                              required={profile.capability === "custom-form"}
+                              value={
+                                mgr.formData.httpAutoLoginSelectors?.[key] ?? ""
+                              }
+                              placeholder={
+                                profile.capability === "custom-form"
+                                  ? SELECTOR_EXAMPLES[key]
+                                  : (reviewedSelectors?.[key] ?? "Auto-detect")
+                              }
+                              onChange={(event) =>
+                                updateSelector(key, event.target.value)
+                              }
+                            />
+                          </div>
+                        ))}
+                      {customOptions && (
+                        <>
+                          <label className="flex items-center space-x-2 text-xs">
+                            <Checkbox
+                              checked={customLogin?.passwordOnly === true}
+                              onChange={(checked) =>
+                                updateCustomLogin({
+                                  passwordOnly: checked || undefined,
+                                })
+                              }
+                              variant="form"
+                            />
+                            <span>
+                              Password-only device (no username field)
+                            </span>
                           </label>
-                          <input
-                            id={`http-app-${key}`}
-                            className="sor-form-input"
-                            maxLength={512}
-                            required={profile.capability === "custom-form"}
-                            value={
-                              mgr.formData.httpAutoLoginSelectors?.[key] ?? ""
-                            }
-                            placeholder={
-                              profile.capability === "custom-form"
-                                ? SELECTOR_EXAMPLES[key]
-                                : (reviewedSelectors?.[key] ?? "Auto-detect")
-                            }
-                            onChange={(event) =>
-                              updateSelector(key, event.target.value)
-                            }
-                          />
-                        </div>
-                      ))}
+                          <div>
+                            <label
+                              htmlFor="http-app-custom-frame"
+                              className="block text-xs mb-1"
+                            >
+                              Login frame id or name (optional)
+                            </label>
+                            <input
+                              id="http-app-custom-frame"
+                              className="sor-form-input"
+                              maxLength={128}
+                              autoComplete="off"
+                              spellCheck={false}
+                              placeholder="appFrame"
+                              value={
+                                mgr.formData.httpApplication?.customLogin
+                                  ?.frame ?? ""
+                              }
+                              onChange={(event) =>
+                                updateCustomLogin({
+                                  frame:
+                                    event.target.value
+                                      .replace(/[^A-Za-z0-9_-]/g, "")
+                                      .slice(0, 128) || undefined,
+                                })
+                              }
+                            />
+                            <p className="mt-1 text-xs text-[var(--color-textMuted)]">
+                              The id or name of an iframe directly in the page,
+                              served from this connection&apos;s own address.
+                              Blank means the page itself. The selectors then
+                              apply inside that frame only.
+                            </p>
+                          </div>
+                          <div>
+                            <label
+                              htmlFor="http-app-custom-pre-step"
+                              className="block text-xs mb-1"
+                            >
+                              Click before filling (optional)
+                            </label>
+                            <input
+                              id="http-app-custom-pre-step"
+                              className="sor-form-input"
+                              maxLength={512}
+                              autoComplete="off"
+                              spellCheck={false}
+                              placeholder="#login-tab"
+                              value={
+                                mgr.formData.httpApplication?.customLogin
+                                  ?.preStepSelector ?? ""
+                              }
+                              onChange={(event) =>
+                                updateCustomLogin({
+                                  preStepSelector: event.target.value.trim()
+                                    ? event.target.value
+                                    : undefined,
+                                })
+                              }
+                            />
+                            <p className="mt-1 text-xs text-[var(--color-textMuted)]">
+                              A CSS selector for one control that reveals the
+                              form, such as a tab or a sign-in button. It is
+                              clicked once, in the same document as the fields.
+                            </p>
+                          </div>
+                          <div>
+                            <label
+                              htmlFor="http-app-custom-submission"
+                              className="block text-xs mb-1"
+                            >
+                              Submit with
+                            </label>
+                            <Select
+                              id="http-app-custom-submission"
+                              value={customLogin?.submission ?? "click"}
+                              options={[...CUSTOM_SUBMISSIONS]}
+                              variant="form"
+                              onChange={(value) => {
+                                const selected = CUSTOM_SUBMISSIONS.find(
+                                  (option) => option.value === value,
+                                );
+                                if (!selected) return;
+                                updateCustomLogin({
+                                  submission:
+                                    selected.value === "click"
+                                      ? undefined
+                                      : selected.value,
+                                });
+                              }}
+                            />
+                          </div>
+                        </>
+                      )}
                     </div>
                   </details>
                 )}

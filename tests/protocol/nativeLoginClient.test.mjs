@@ -64,12 +64,54 @@ test("native profile snapshot exactly matches all reviewed legacy defaults", asy
       ]),
     ),
   };
-  assert.deepEqual(
-    JSON.parse(
-      readFileSync(resolve(base, "native_login_catalog.json"), "utf8"),
-    ),
-    JSON.parse(JSON.stringify(expected)),
+  const catalog = JSON.parse(
+    readFileSync(resolve(base, "native_login_catalog.json"), "utf8"),
   );
+  // Login steps are checked on their own below. The five reviewed fields are
+  // compared exactly as before, on a copy without the two steps keys.
+  const reviewed = structuredClone(catalog);
+  delete reviewed.declarativeLoginSupported;
+  for (const profile of Object.values(reviewed.profiles))
+    delete profile.declarativeLogin;
+  assert.deepEqual(reviewed, JSON.parse(JSON.stringify(expected)));
+
+  // Steps reach the catalog only once declarative login is switched on. From
+  // then on every steps file is there as it was written, and no other profile
+  // carries the key; until then no profile does. A profile that already signs
+  // in by form detection gets its steps as an addition, never a replacement.
+  const supported = module.exports.DECLARATIVE_LOGIN_SUPPORTED === true;
+  const { existsSync, readdirSync } = await import("node:fs");
+  const stepsRoot = resolve("src/data/loginSteps");
+  const declared = {};
+  if (supported && existsSync(stepsRoot))
+    for (const family of readdirSync(stepsRoot, { withFileTypes: true })) {
+      if (!family.isDirectory()) continue;
+      for (const name of readdirSync(resolve(stepsRoot, family.name))) {
+        if (!name.endsWith(".json")) continue;
+        const file = JSON.parse(
+          readFileSync(resolve(stepsRoot, family.name, name), "utf8"),
+        );
+        const id = name.slice(0, -".json".length);
+        declared[id] = {
+          mode:
+            expected.profiles[id]?.capability === "manual"
+              ? "exclusive"
+              : "additive",
+          credentialOrigins: file.credentialOrigins,
+          passwordOnly: file.passwordOnly === true,
+          loginSteps: file.loginSteps,
+        };
+      }
+    }
+  assert.deepEqual(
+    Object.fromEntries(
+      Object.entries(catalog.profiles)
+        .filter(([, profile]) => "declarativeLogin" in profile)
+        .map(([id, profile]) => [id, profile.declarativeLogin]),
+    ),
+    declared,
+  );
+  assert.equal(catalog.declarativeLoginSupported, supported ? true : undefined);
 });
 function fixture(t, configuration = { selectors }, url = "https://device.test/login") {
   const dom = new JSDOM(

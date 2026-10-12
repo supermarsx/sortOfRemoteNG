@@ -594,6 +594,9 @@
     "draytek": {
       "capability": "generic-form"
     },
+    "tplink-switch": {
+      "capability": "generic-form"
+    },
     "grafana": {
       "capability": "generic-form"
     },

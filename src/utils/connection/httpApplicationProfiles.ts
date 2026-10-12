@@ -2,6 +2,7 @@ import type {
   HttpApplicationSettings,
   HttpAutoLoginSelectors,
 } from "../../types/connection/connection";
+import type { HttpLoginSteps } from "../../types/connection/httpLoginSteps";
 import { PORTAINER_AUTO_LOGIN_SELECTORS } from "../../components/integrations/portainer/webUiLaunch";
 import { NPM_AUTO_LOGIN_SELECTORS } from "../../components/integrations/nginxProxyMgr/webUiLaunch";
 import { PROXMOX_AUTO_LOGIN_SELECTORS } from "../../components/integrations/proxmox/webUiLaunch";
@@ -30,6 +31,25 @@ import { INTERNATIONAL_PORTAL_PROFILES } from "./internationalPortalProfiles";
 import { RD_WEB_PROFILE } from "./rdWebProfile";
 import { OPNSENSE_PROFILE } from "./opnsenseProfile";
 import { VODAFONE_SMART_ROUTER_PROFILE } from "./vodafoneSmartRouterProfile";
+import { DECLARATIVE_LOGIN_SUPPORTED } from "./declarativeLoginSupport";
+import {
+  GENERIC_FORM_DETECTION_NOTE,
+  type HttpLoginStepsMode,
+  acceptsHttpLoginSteps,
+  getHttpLoginStepsEntryPage,
+  getHttpLoginStepsMode,
+  readHttpApplicationLoginSteps,
+  withDeclarativeLogin,
+} from "./httpApplicationLoginSteps";
+import { normalizeHttpCustomLoginOptions } from "./httpCustomLogin";
+
+export {
+  DECLARATIVE_LOGIN_SUPPORTED,
+  acceptsHttpLoginSteps,
+  getHttpLoginStepsEntryPage,
+  getHttpLoginStepsMode,
+};
+export type { HttpLoginStepsMode };
 
 export interface HttpApplicationProfile {
   id: string;
@@ -68,6 +88,18 @@ export interface HttpApplicationProfile {
     | "adobe"
     | "chatgpt"
     | "claude";
+  /**
+   * The application's login steps file, present only while
+   * `DECLARATIVE_LOGIN_SUPPORTED` is on: then `form` mode runs these steps.
+   * `capability` keeps describing the single-form login the profile had.
+   */
+  declarativeLogin?: HttpLoginSteps;
+  /**
+   * Set together with `declarativeLogin`. `additive`: the profile already
+   * signs in by generic form detection, which stays the fallback wherever the
+   * steps find nothing to act on. `exclusive`: only the steps may type.
+   */
+  declarativeLoginMode?: HttpLoginStepsMode;
 }
 
 /** Reviewed challenge DOM only. This metadata contains no authenticator secret. */
@@ -152,7 +184,7 @@ const generic = (
   id: string,
   label: string,
   category: HttpApplicationCategory,
-  description = "Optional generic login-form detection; no application-specific browser sign-in has been verified.",
+  description = GENERIC_FORM_DETECTION_NOTE,
 ): HttpApplicationProfile => ({
   id,
   label,
@@ -173,7 +205,7 @@ const unavailable = (
 });
 
 /** Browser capabilities, not a claim that every native API credential logs into a website. */
-export const HTTP_APPLICATION_PROFILES: readonly HttpApplicationProfile[] = [
+const BASE_HTTP_APPLICATION_PROFILES: readonly HttpApplicationProfile[] = [
   ...AMAZON_SHOPPING_PROFILES,
   ...AWS_CONSOLE_PROFILES,
   ...GOOGLE_SERVICE_PROFILES,
@@ -599,6 +631,12 @@ export const HTTP_APPLICATION_PROFILES: readonly HttpApplicationProfile[] = [
       "Reviewed cPanel, WHM and Webmail login form. Automatic sign-in waits for the complete page and a stable enabled login form before submitting. Use the website account and the saved connection's cPanel/WHM port; API tokens are not browser credentials.",
   },
   generic("draytek", "DrayTek", "networking"),
+  generic(
+    "tplink-switch",
+    "TP-Link managed switch",
+    "networking",
+    `Web administration of a TP-Link managed switch at its own address. ${GENERIC_FORM_DETECTION_NOTE}`,
+  ),
   generic("grafana", "Grafana", "monitoring"),
   generic("budibase", "Budibase", "business"),
   generic("jira", "Jira", "business"),
@@ -681,6 +719,32 @@ export const HTTP_APPLICATION_PROFILES: readonly HttpApplicationProfile[] = [
   ),
 ];
 
+const LOGIN_STEPS = readHttpApplicationLoginSteps(
+  BASE_HTTP_APPLICATION_PROFILES,
+);
+
+/** Every usable login steps file the generated registry lists, by application
+ * id. The registry is empty until the catalog generator emits the steps files
+ * at switch-on, so this is too. */
+export const HTTP_APPLICATION_LOGIN_STEPS = LOGIN_STEPS.steps;
+
+/** Steps files the catalog refuses to use. Empty in a healthy tree; the
+ * catalog generator and the tests fail on any entry. */
+export const HTTP_APPLICATION_LOGIN_STEPS_PROBLEMS = LOGIN_STEPS.problems;
+
+/**
+ * The application catalog. While `DECLARATIVE_LOGIN_SUPPORTED` is off this is
+ * the list above, object for object: a steps file changes nothing. Once it is
+ * on, a profile with a steps file gains the `form` mode and says so.
+ */
+export const HTTP_APPLICATION_PROFILES: readonly HttpApplicationProfile[] =
+  DECLARATIVE_LOGIN_SUPPORTED
+    ? BASE_HTTP_APPLICATION_PROFILES.map((profile) => {
+        const steps = LOGIN_STEPS.steps.get(profile.id);
+        return steps ? withDeclarativeLogin(profile, steps) : profile;
+      })
+    : BASE_HTTP_APPLICATION_PROFILES;
+
 export function getHttpApplicationProfile(
   id: string,
 ): HttpApplicationProfile | undefined {
@@ -712,7 +776,8 @@ export function getHttpApplicationLoginModes(
   profile: HttpApplicationProfile,
 ): HttpApplicationSettings["loginMode"][] {
   if (profile.capability === "none") return [];
-  if (profile.capability === "manual") return ["manual"];
+  if (profile.capability === "manual")
+    return profile.declarativeLogin ? ["manual", "form"] : ["manual"];
   if (profile.loginModes) return [...profile.loginModes];
   return profile.capability === "http-auth"
     ? ["manual", "basic", "digest"]
@@ -855,6 +920,13 @@ export function normalizeHttpApplicationSettings(
       : undefined;
   const exchangeOwaMailboxValid =
     raw.exchangeOwaMailbox === undefined || exchangeOwaMailbox !== undefined;
+  // Only the Custom application has selectors of its own to scope.
+  const customLogin =
+    id === "custom"
+      ? normalizeHttpCustomLoginOptions(raw.customLogin)
+      : raw.customLogin === undefined
+        ? undefined
+        : null;
   const valid =
     raw.version === 1 &&
     !!profile &&
@@ -866,6 +938,7 @@ export function normalizeHttpApplicationSettings(
     apiOriginValid &&
     meshOriginValid &&
     exchangeOwaMailboxValid &&
+    customLogin !== null &&
     amazonMarketplaceValid &&
     raw.invalid !== true;
   return {
@@ -875,6 +948,7 @@ export function normalizeHttpApplicationSettings(
     ...(apiOrigin ? { apiOrigin } : {}),
     ...(meshOrigin ? { meshOrigin } : {}),
     ...(exchangeOwaMailbox ? { exchangeOwaMailbox } : {}),
+    ...(customLogin ? { customLogin } : {}),
     ...(amazonMarketplaceValid && typeof amazonMarketplace === "string"
       ? { amazonMarketplace }
       : {}),

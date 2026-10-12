@@ -1,6 +1,7 @@
 import type { HttpApplicationProfile } from "./httpApplicationProfiles";
 
-const manualSignIn =
+/** Replaced by the catalog while an application's login steps are active. */
+export const PORTUGAL_PORTAL_MANUAL_SIGN_IN =
   "Início de sessão apenas manual. As credenciais guardadas e os códigos 2FA não são preenchidos automaticamente; autenticação federada, Chave Móvel Digital, Cartão de Cidadão e outros desafios, quando pedidos, ficam a cargo do utilizador.";
 
 const portal = (
@@ -16,7 +17,7 @@ const portal = (
   requiresHttps: true,
   loginModes: ["manual"],
   hostedLoginUrl,
-  description: `${description} ${manualSignIn}`,
+  description: `${description} ${PORTUGAL_PORTAL_MANUAL_SIGN_IN}`,
 });
 
 /**

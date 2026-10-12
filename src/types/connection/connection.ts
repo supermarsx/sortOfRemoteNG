@@ -24,6 +24,7 @@ import type { ConnectionTypeCategory } from "../integrations/registry";
 import type { VoipPhoneSettings } from "../voipPhone";
 import type { HttpProxyPolicy } from "./httpProxyPolicy";
 import type { HttpFormAutomation } from "./httpFormAutomation";
+import type { HttpCustomLoginOptions } from "./httpCustomLogin";
 import type { BrowserSessionOverrides } from "../settings/browserSession";
 import type { ConnectionCredentialSource } from "../security/databaseCredentialVault";
 import type { ConnectionMachineAssignment } from "./machineAssignment";
@@ -95,6 +96,9 @@ export interface HttpApplicationSettings {
   exchangeOwaMailbox?: string;
   /** Amazon Shopping: auto (default) or a reviewed uppercase marketplace code. */
   amazonMarketplace?: string;
+  /** Custom application only: frame, password-only, pre-step and submit
+   * options for its own selectors. Decides where a credential is typed. */
+  customLogin?: HttpCustomLoginOptions;
   /** Preserves fail-closed status when imported profile metadata is malformed. */
   invalid?: true;
 }

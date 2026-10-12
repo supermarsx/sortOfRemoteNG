@@ -1,6 +1,7 @@
 import type { HttpApplicationProfile } from "./httpApplicationProfiles";
 
-const manualSignIn =
+/** Replaced by the catalog while an application's login steps are active. */
+export const INTERNATIONAL_PORTAL_MANUAL_SIGN_IN =
   "Manual sign-in only; saved credentials, API keys and automatic 2FA are not supplied. Complete identity-provider redirects, verification, passkeys and CAPTCHA interactively. Successful account sign-in has not been live-verified.";
 
 const hosted = (
@@ -17,7 +18,7 @@ const hosted = (
   requiresHttps: true,
   loginModes: ["manual"],
   hostedLoginUrl,
-  description: `${detail} ${manualSignIn}`,
+  description: `${detail} ${INTERNATIONAL_PORTAL_MANUAL_SIGN_IN}`,
 });
 
 /**
@@ -108,7 +109,7 @@ export const INTERNATIONAL_PORTAL_PROFILES: readonly HttpApplicationProfile[] =
       loginPath: "/login/",
       description:
         "Configure your exact Zulip organization hostname and HTTPS port, supplied by its administrator or invitation. Opens /login/ on that saved host. Cloud tenants and self-hosted organizations choose their own authentication methods; there is no central account login preset. " +
-        manualSignIn,
+        INTERNATIONAL_PORTAL_MANUAL_SIGN_IN,
     },
     // https://kb.arlo.com/000063143/
     // https://kb.arlo.com/000062596/How-to-add-a-trusted-browser-to-your-Arlo-account
@@ -131,7 +132,7 @@ export const INTERNATIONAL_PORTAL_PROFILES: readonly HttpApplicationProfile[] =
       loginPath: "/dashboard",
       description:
         "Configure your own Uptime Kuma HTTPS hostname and port. Opens the /dashboard management route, not a public status page or demo. Use a dedicated host with WebSocket support at its reverse proxy; this preset does not verify a deployment's authentication or monitoring runtime. " +
-        manualSignIn,
+        INTERNATIONAL_PORTAL_MANUAL_SIGN_IN,
     },
     // https://help.steampowered.com/en/faqs/view/1DED-79C6-0568-A72C
     // https://store.steampowered.com/login/
@@ -231,7 +232,7 @@ export const INTERNATIONAL_PORTAL_PROFILES: readonly HttpApplicationProfile[] =
       loginPath: "/",
       description:
         "Configure your own Wazuh dashboard HTTPS hostname and port. The documented web entry is the dashboard host root; use your administrator's full URL for a customized deployment. Dashboard sign-in is separate from Wazuh server API access and agent enrollment; certificate trust and SSO remain subject to existing review. " +
-        manualSignIn,
+        INTERNATIONAL_PORTAL_MANUAL_SIGN_IN,
     },
     // https://www.zabbix.com/documentation/current/en/manual/quickstart/login
     // The documented Apache /zabbix and Nginx / entries differ. Leave the path
@@ -245,6 +246,6 @@ export const INTERNATIONAL_PORTAL_PROFILES: readonly HttpApplicationProfile[] =
       loginModes: ["manual"],
       description:
         "Configure your own Zabbix HTTPS hostname, port and complete frontend URL. Official installations use /zabbix for Apache or / for Nginx; save the actual deployment path instead of assuming a universal login route. Internal, LDAP, HTTP or SAML authentication is deployment-specific; API tokens are not website credentials. " +
-        manualSignIn,
+        INTERNATIONAL_PORTAL_MANUAL_SIGN_IN,
     },
   ];
