@@ -1,0 +1,139 @@
+{
+  "schema": "sorng-login-capture/1",
+  "sanitizer": 3,
+  "applicationId": "network-solutions",
+  "capturedAt": "2026-10-12",
+  "mode": "hosted",
+  "engine": "Microsoft Edge headless (Edg/146.0.3856.84)",
+  "source": {
+    "kind": "hosted-login",
+    "requestedUrl": "https://www.networksolutions.com/my-account/login",
+    "finalUrl": "https://www.networksolutions.com/my-account/login",
+    "httpStatus": 403
+  },
+  "limits": {
+    "navigations": 1,
+    "scriptsExecuted": true,
+    "loadEvent": true,
+    "settleMs": 6000,
+    "dialogsDismissed": 0,
+    "input": "none",
+    "truncated": false,
+    "redirects": "public-hosts-only"
+  },
+  "network": {
+    "contacted": [
+      "challenges.cloudflare.com:443",
+      "www.networksolutions.com:443"
+    ],
+    "refused": 3
+  },
+  "observations": [
+    "captcha",
+    "cross-origin-frame",
+    "error-status",
+    "no-password-field"
+  ],
+  "frames": [
+    {
+      "index": 0,
+      "parent": null,
+      "name": null,
+      "sameOriginAsTop": true,
+      "url": "https://www.networksolutions.com/my-account/login",
+      "controls": 1,
+      "tree": {
+        "tag": "html",
+        "attributes": {
+          "lang": "en-us",
+          "dir": "ltr"
+        },
+        "children": [
+          {
+            "tag": "body",
+            "attributes": {},
+            "children": [
+              {
+                "tag": "main",
+                "attributes": {},
+                "children": [
+                  {
+                    "tag": "section",
+                    "attributes": {
+                      "class": "challenge-card",
+                      "aria-labelledby": "challenge-heading"
+                    },
+                    "children": [
+                      {
+                        "tag": "div",
+                        "attributes": {
+                          "class": "challenge-widget"
+                        },
+                        "children": [
+                          {
+                            "tag": "div",
+                            "attributes": {
+                              "class": "main-wrapper",
+                              "role": "main"
+                            },
+                            "children": [
+                              {
+                                "tag": "div",
+                                "attributes": {
+                                  "class": "main-content"
+                                },
+                                "children": [
+                                  {
+                                    "tag": "div",
+                                    "attributes": {
+                                      "id": "bstyI3",
+                                      "style": null
+                                    },
+                                    "children": [
+                                      {
+                                        "tag": "div",
+                                        "attributes": {},
+                                        "children": [
+                                          {
+                                            "tag": "div",
+                                            "attributes": {},
+                                            "children": [
+                                              {
+                                                "tag": "input",
+                                                "attributes": {
+                                                  "type": "hidden",
+                                                  "name": "cf-turnstile-response",
+                                                  "id": "cf-chl-widget-gkgf4_response"
+                                                },
+                                                "rendered": false
+                                              }
+                                            ]
+                                          }
+                                        ]
+                                      }
+                                    ]
+                                  }
+                                ]
+                              }
+                            ]
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "index": 1,
+      "parent": 0,
+      "name": null,
+      "url": "https://challenges.cloudflare.com",
+      "sameOriginAsTop": false
+    }
+  ]
+}

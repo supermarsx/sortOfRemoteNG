@@ -1,0 +1,39 @@
+{
+  "$schema": "../evidence.schema.json",
+  "version": 1,
+  "id": "network-solutions",
+  "class": "C",
+  "mechanism": "none",
+  "reviewed": "2026-10-12",
+  "summary": "The host refuses automated reads: robots.txt and the sign-in page both answer HTTP 403 with a security check instead of their content, and no other public source shows the sign-in form.",
+  "sources": [
+    {
+      "id": "page",
+      "kind": "anonymous-capture",
+      "title": "The catalog sign-in address, rendered once without an account: a challenge page, not the sign-in form",
+      "url": "https://www.networksolutions.com/my-account/login",
+      "capture": "capture.json",
+      "captureSha256": "56db4446e501002c23720cc41f5500c47888ac7d4506233e008ae94226f7eeb2",
+      "retrieved": "2026-10-12",
+      "note": "Made before the capture standard was settled. Under that standard it would not have been made, because robots.txt on this host is refused. It is kept as a record of the refusal, supports no selector and does not raise the class."
+    }
+  ],
+  "selectors": [],
+  "fixtures": [],
+  "staysInteractive": [
+    {
+      "kind": "captcha",
+      "note": "A challenge page with a Cloudflare Turnstile widget stood in front of the sign-in page in the capture. Whether an ordinary visible browser is challenged too was not determined."
+    },
+    { "kind": "other", "note": "The whole sign-in." }
+  ],
+  "lookedFor": [
+    "robots.txt of www.networksolutions.com, read on the review date with a plain HTTP client: HTTP 403 and a page titled Security check | Network Solutions, which asks to complete the security check and says it protects the website from automated traffic. A refused robots.txt means the check did not come back clean.",
+    "The legal page on the same host: the same HTTP 403 security check, to a plain HTTP client and to a second automated reader. The help pages on that host were not attempted.",
+    "The Master Services Agreement (last updated January 22, 2026) and the Acceptable Use Policy (updated March 4, 2026) on legal.newfold.com: readable; neither restricts automated access to the website and neither describes the sign-in page.",
+    "The catalog address had already been rendered once, anonymously, in headless Edge (capture.json): HTTP 403 on the catalog host itself, with no hand-off to another host. It shows a challenge card with a Cloudflare Turnstile frame from challenges.cloudflare.com and one hidden response field; no form, no username field and no credential field. Nothing was typed or clicked and the page was not loaded again.",
+    "A code search on GitHub for the sign-in address: DNS setup guides and this repository's own catalog; nothing that reproduces the form."
+  ],
+  "neededFromUser": "The sign-in page saved from the user's own browser as \"Webpage, Complete\" and read with the capture tool's --from-file mode, plus the page that follows the first step if the sign-in has two. That would make this class A. Save any page signed out and with no password typed in; keep the \"_files\" folder beside the .html and both outside the repository: they can hold the account name.",
+  "notes": "The capture was requested on www.networksolutions.com and ended on the same host and path. Whether the capture file stays in the corpus is the lead's decision; if it is removed, the source entry here and the one in register-com go with it."
+}

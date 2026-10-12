@@ -1,0 +1,28 @@
+{
+  "$schema": "../../../types/connection/httpLoginSteps.schema.json",
+  "version": 1,
+  "id": "no-ip",
+  "evidence": {
+    "class": "B",
+    "source": "https://www.noip.com/login",
+    "reviewed": "2026-10-12"
+  },
+  "credentialOrigins": [],
+  "loginSteps": [
+    {
+      "kind": "form",
+      "paths": ["/login"],
+      "selectors": {
+        "username": "form#clogs input#username[name=\"username\"]",
+        "password": "form#clogs input#password[name=\"password\"][type=\"password\"]"
+      }
+    },
+    {
+      "kind": "submit",
+      "submission": "click",
+      "selectors": {
+        "control": "form#clogs button#clogs-captcha-button[type=\"submit\"]"
+      }
+    }
+  ]
+}

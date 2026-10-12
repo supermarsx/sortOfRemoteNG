@@ -1,0 +1,19 @@
+{
+  "$schema": "../evidence.schema.json",
+  "version": 1,
+  "id": "time4vps",
+  "class": "C",
+  "mechanism": "none",
+  "reviewed": "2026-10-12",
+  "summary": "Not captured: the billing host and the provider's website refuse automated reads, so neither the robots rules nor the terms could be read and the check before a capture did not come back clean. No other public source shows the sign-in form. The sign-in page was not loaded.",
+  "sources": [],
+  "selectors": [],
+  "fixtures": [],
+  "staysInteractive": [{ "kind": "other", "note": "The whole sign-in." }],
+  "lookedFor": [
+    "robots.txt of billing.time4vps.com, the catalog host, read on the review date with a plain HTTP client: HTTP 403 and a page titled Just a moment... that asks to enable JavaScript and cookies. No rule could be read.",
+    "The terms of service page on www.time4vps.com, read on the review date: the same HTTP 403 page to a plain HTTP client, and HTTP 403 to a second automated reader. A web search found no other copy of the terms.",
+    "A code search on GitHub for the billing host: the vendor's WHMCS module and API clients, which use the API with an account's own credentials. Nothing that reproduces the sign-in form."
+  ],
+  "neededFromUser": "The sign-in page saved from the user's own browser as \"Webpage, Complete\" and read with the capture tool's --from-file mode, plus the page that follows the first step if the sign-in has two. That would make this class A. Save any page signed out and with no password typed in; keep the \"_files\" folder beside the .html and both outside the repository: they can hold the account name."
+}

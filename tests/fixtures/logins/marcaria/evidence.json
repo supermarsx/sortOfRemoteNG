@@ -1,0 +1,23 @@
+{
+  "$schema": "../evidence.schema.json",
+  "version": 1,
+  "id": "marcaria",
+  "class": "C",
+  "mechanism": "none",
+  "reviewed": "2026-10-12",
+  "summary": "The site's robots.txt disallows the directory that holds the account sign-in page, so the page was not captured, and no other public source shows the form.",
+  "sources": [],
+  "selectors": [],
+  "fixtures": [],
+  "staysInteractive": [
+    {
+      "kind": "other",
+      "note": "The whole sign-in."
+    }
+  ],
+  "lookedFor": [
+    "robots.txt of www.marcaria.com: for every agent it has Disallow: /register/, and none of its Allow lines covers /register/user/login.asp, the catalog sign-in address. The capture tool was therefore not run and the page was not read in any other way.",
+    "A code search on GitHub for the sign-in address: this repository's own catalog, and one invoice collector that only names the site as planned and has no selector."
+  ],
+  "neededFromUser": "The sign-in page saved from the user's own browser as \"Webpage, Complete\" and read with the capture tool's --from-file mode. That would make this class A. Save any page signed out and with no password typed in; keep the \"_files\" folder beside the .html and both outside the repository: they can hold the account name."
+}

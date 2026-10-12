@@ -1,0 +1,37 @@
+{
+  "$schema": "../evidence.schema.json",
+  "version": 1,
+  "id": "ovhcloud",
+  "class": "C",
+  "mechanism": "none",
+  "reviewed": "2026-10-12",
+  "summary": "The catalog address is on manager.eu.ovhcloud.com, but the sign-in form is on another host: the control panel sends a visitor who is not signed in to www.ovh.com. That host's robots.txt disallows the address the panel redirects to, so the page was not captured, and no public source shows the form.",
+  "sources": [
+    {
+      "id": "manager-sso",
+      "kind": "public-source",
+      "title": "OVHcloud control panel source, single sign-on module: where the panel sends a visitor who is not signed in",
+      "url": "https://github.com/ovh/manager/blob/fd5e91b28761bded1e329884fcf8f741002d2778/packages/manager/core/sso/src/index.ts",
+      "commit": "fd5e91b28761bded1e329884fcf8f741002d2778",
+      "retrieved": "2026-10-12",
+      "note": "With constants.ts beside it: for a host whose second label is eu the sign-in address is the /auth/ path of www.ovh.com, with an onsuccess query that carries the panel address. It holds no markup of the sign-in page."
+    }
+  ],
+  "selectors": [],
+  "fixtures": [],
+  "staysInteractive": [
+    {
+      "kind": "other",
+      "note": "The whole sign-in."
+    }
+  ],
+  "lookedFor": [
+    "robots.txt of manager.eu.ovhcloud.com, the catalog host, read on the review date: HTTP 404, so that host has no robots file.",
+    "The control panel's public source at the cited commit: the panel is a script application that redirects to the /auth/ path of www.ovh.com with an onsuccess query. An older module in the same repository names the same sign-in address.",
+    "robots.txt of www.ovh.com, the host the page would end on, read on the review date: HTTP 200. For every agent it has Disallow: /*? and Disallow: /? (any address with a query), and Disallow: / for several named AI agents. The redirect target has a query, so the capture tool, which follows the page wherever it goes, was not run.",
+    "Markup in that public source: a code search of the repository lists 45 files with a field of type password. By their paths all of them belong to features inside the panel (hosting, email, telephony and similar); they were not opened one by one. None is the account sign-in page, which is not part of the repository.",
+    "A code search on GitHub for the sign-in address: the first results are OVHcloud's own API guides, and one public invoice collector uses the API instead of the sign-in page. Nothing found reproduces the form."
+  ],
+  "neededFromUser": "The www.ovh.com sign-in page saved from the user's own browser as \"Webpage, Complete\" and read with the capture tool's --from-file mode, plus the page that follows if the sign-in has a second step. That would make this class A. Save any page signed out and with no password typed in; keep the \"_files\" folder beside the .html and both outside the repository: they can hold the account name.",
+  "notes": "For whoever writes the steps later: the form is not on the connection's origin. The cited source places it on https://www.ovh.com under /auth/, so that exact origin would have to be listed in credentialOrigins, which makes this a native-only login. Other regions use other sign-in hosts and are not covered by this entry."
+}

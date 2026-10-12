@@ -1,0 +1,90 @@
+{
+  "$schema": "../evidence.schema.json",
+  "version": 1,
+  "id": "freedns",
+  "class": "B",
+  "mechanism": "form",
+  "source": "https://github.com/acmesh-official/acme.sh/blob/807da6498377ee5e0cf43a78091f46f12dc59a89/dnsapi/dns_freedns.sh",
+  "reviewed": "2026-10-12",
+  "summary": "A member sign-in form that posts a username and a password to /zc.php on the connection's own origin. The sign-in page was not observed: every selector is inferred from the POST parameters of a third-party client, acme.sh 3.1.6 at commit 807da649. The catalog address is the home page, which has no sign-in form, and /zc.php is disallowed by the site's robots.txt, so it was deliberately not loaded.",
+  "sources": [
+    {
+      "id": "script",
+      "kind": "secondary",
+      "title": "acme.sh 3.1.6, FreeDNS client: the function that signs in by POST",
+      "url": "https://github.com/acmesh-official/acme.sh/blob/807da6498377ee5e0cf43a78091f46f12dc59a89/dnsapi/dns_freedns.sh",
+      "path": "dnsapi/dns_freedns.sh",
+      "lines": "147-171",
+      "commit": "807da6498377ee5e0cf43a78091f46f12dc59a89",
+      "version": "3.1.6",
+      "retrieved": "2026-10-12",
+      "note": "A third-party shell client. It signs in with one POST to /zc.php with the query step=2, sending four fields named username, password, submit and action. It shows request fields, not markup."
+    },
+    {
+      "id": "faq",
+      "kind": "vendor-documentation",
+      "title": "FreeDNS FAQ, item 17, which links to that script as the way to update records automatically",
+      "url": "https://freedns.afraid.org/faq/",
+      "retrieved": "2026-10-12"
+    },
+    {
+      "id": "home",
+      "kind": "anonymous-capture",
+      "title": "The catalog address (the public home page), rendered once without an account: it has a DNS trace form and no sign-in form",
+      "url": "https://freedns.afraid.org/",
+      "capture": "capture.json",
+      "captureSha256": "f3abd93f6b48d8c4114ed604e2783525274512af359afea94b791dc98eadc360",
+      "retrieved": "2026-10-12"
+    }
+  ],
+  "selectors": [
+    {
+      "selector": "form[action*=\"zc.php\"]:has(input[type=\"hidden\"][name=\"action\"][value=\"auth\"]) input[name=\"username\"]",
+      "role": "username",
+      "source": "script",
+      "basis": "inferred",
+      "fixture": "fixture.html",
+      "note": "Line 155 of the cited script posts a parameter named username to zc.php. That it is an input of a form whose action names zc.php is inferred."
+    },
+    {
+      "selector": "form[action*=\"zc.php\"]:has(input[type=\"hidden\"][name=\"action\"][value=\"auth\"]) input[name=\"password\"][type=\"password\"]",
+      "role": "password",
+      "source": "script",
+      "basis": "inferred",
+      "fixture": "fixture.html",
+      "note": "Line 155 of the cited script posts a parameter named password to zc.php. Its input type is inferred."
+    },
+    {
+      "selector": "form[action*=\"zc.php\"] input[type=\"hidden\"][name=\"action\"][value=\"auth\"]",
+      "role": "other",
+      "source": "script",
+      "basis": "inferred",
+      "fixture": "fixture.html",
+      "note": "Line 155 of the cited script also posts a parameter named action with the value auth. That the form sends it from a hidden input is inferred. Both field selectors require this input, so that only the sign-in form can match."
+    }
+  ],
+  "fixtures": [
+    {
+      "file": "fixture.html",
+      "path": "/zc.php",
+      "derivedFrom": ["script"],
+      "note": "Built from the four posted parameter names. The second form is the sign-in form; its hidden field named action shadows the form's action property, which a client must not read through the element. The first form is a synthetic counter-example with the same address and field names but without that hidden field, which the selectors must not match."
+    }
+  ],
+  "staysInteractive": [
+    {
+      "kind": "other",
+      "note": "Opening the member sign-in page. The catalog address is the home page and the capture shows no sign-in form on it, so nothing is filled until the user has gone to the sign-in page."
+    }
+  ],
+  "unverified": [
+    "The sign-in form's markup: no source shows it. Element types, the spelling of the form's action attribute and the page it is displayed on are inferred from the request the script sends.",
+    "That /zc.php is the path the form is displayed on; it is the path the script posts to.",
+    "That the sign-in form carries a hidden input named action with the value auth. The selectors were narrowed to require it deliberately, so that another form at that address with the same two field names cannot match; if the real form differs, nothing is filled and the user signs in by hand.",
+    "That pressing Enter in the last field sends what the server expects. The script also sends a submit parameter, which a browser adds only if the form has such a button.",
+    "Nothing after sign-in was observed, and whether the site ever asks for more than the two fields is unknown.",
+    "The page can change at any time and may differ by region or language."
+  ],
+  "neededFromUser": "The member sign-in page saved as \"Webpage, Complete\", or one sign-in with this layout. Save any page signed out and with no password typed in; keep the \"_files\" folder beside the .html and both outside the repository: they can hold the account name.",
+  "notes": "Checked on the review date, before the capture: robots.txt of freedns.afraid.org is readable, allows the home page and disallows /zc.php for every agent, so the sign-in page was not loaded. The terms (AUP/TOS) are readable and have no clause on automated access or extraction. The capture was requested on freedns.afraid.org and ended on the same host. For automatic sign-in to start by itself the catalog address would have to be the sign-in page; that address is not established here."
+}

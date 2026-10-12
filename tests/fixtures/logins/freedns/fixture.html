@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Synthetic fixture: freedns member sign-in (inferred)</title>
+  </head>
+  <body>
+    <!-- Counter-example: same address and field names, no hidden action field. -->
+    <form action="/zc.php?step=2" method="post">
+      <input type="text" name="username" />
+      <input type="password" name="password" />
+      <input type="submit" name="submit" />
+    </form>
+    <!-- The sign-in form as inferred from the client's POST. -->
+    <form action="/zc.php?step=2" method="post">
+      <input type="hidden" name="action" value="auth" />
+      <input type="text" name="username" />
+      <input type="password" name="password" />
+      <input type="submit" name="submit" value="Login" />
+    </form>
+  </body>
+</html>

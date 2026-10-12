@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Synthetic fixture: contabo sign-in</title>
+  </head>
+  <body>
+    <form
+      action="/account/login"
+      id="AccountLoginForm"
+      method="post"
+      accept-charset="utf-8"
+    >
+      <input type="hidden" name="_method" />
+      <input type="hidden" name="data[_Token][key]" autocomplete="off" />
+      <input
+        name="data[Account][username]"
+        required
+        type="email"
+        id="AccountUsername"
+      />
+      <input
+        name="data[Account][password]"
+        type="password"
+        id="AccountPassword"
+        required
+      />
+      <input type="image" width="80" height="25" />
+      <input type="hidden" name="data[_Token][fields]" autocomplete="off" />
+      <input type="hidden" name="data[_Token][unlocked]" autocomplete="off" />
+    </form>
+    <div role="dialog" tabindex="-1" hidden>
+      <div id="otp_login_dlg">
+        <form
+          action="/account/login_otp"
+          id="otp_login_form"
+          method="post"
+          accept-charset="utf-8"
+        >
+          <input type="hidden" name="_method" />
+          <input type="hidden" name="data[_Token][key]" autocomplete="off" />
+          <input
+            name="data[otp_password]"
+            maxlength="100"
+            type="text"
+            id="otp_password"
+          />
+        </form>
+      </div>
+      <button type="button" id="otp_login_button"></button>
+    </div>
+  </body>
+</html>

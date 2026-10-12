@@ -1,0 +1,571 @@
+{
+  "schema": "sorng-login-capture/1",
+  "sanitizer": 3,
+  "applicationId": "contabo",
+  "capturedAt": "2026-10-12",
+  "mode": "hosted",
+  "engine": "Microsoft Edge headless (Edg/146.0.3856.84)",
+  "source": {
+    "kind": "hosted-login",
+    "requestedUrl": "https://my.contabo.com/account/login",
+    "finalUrl": "https://my.contabo.com/account/login",
+    "httpStatus": 200
+  },
+  "limits": {
+    "navigations": 1,
+    "scriptsExecuted": true,
+    "loadEvent": true,
+    "settleMs": 6000,
+    "dialogsDismissed": 0,
+    "input": "none",
+    "truncated": false,
+    "redirects": "public-hosts-only"
+  },
+  "network": {
+    "contacted": [
+      "euc-widget.freshworks.com:443",
+      "my.contabo.com:443",
+      "region1.analytics.google.com:443",
+      "static.cloudflareinsights.com:443",
+      "stats.g.doubleclick.net:443",
+      "www.google-analytics.com:443",
+      "www.google.[country]:443",
+      "www.google.com:443",
+      "www.googletagmanager.com:443"
+    ],
+    "refused": 2
+  },
+  "observations": ["password-field"],
+  "frames": [
+    {
+      "index": 0,
+      "parent": null,
+      "name": null,
+      "sameOriginAsTop": true,
+      "url": "https://my.contabo.com/account/login",
+      "controls": 24,
+      "tree": {
+        "tag": "html",
+        "attributes": {
+          "xmlns": "http://www.w3.org/1999/xhtml"
+        },
+        "children": [
+          {
+            "tag": "body",
+            "attributes": {
+              "style": null
+            },
+            "children": [
+              {
+                "tag": "div",
+                "attributes": {
+                  "style": null
+                },
+                "children": [
+                  {
+                    "tag": "div",
+                    "attributes": {
+                      "id": "cookiehinweis",
+                      "class": "cookiehinweis",
+                      "style": null
+                    },
+                    "children": [
+                      {
+                        "tag": "div",
+                        "attributes": {
+                          "id": "cookiehinweis_text"
+                        },
+                        "children": [
+                          {
+                            "tag": "a",
+                            "attributes": {
+                              "href": "javascript:"
+                            },
+                            "rendered": true
+                          }
+                        ]
+                      }
+                    ]
+                  },
+                  {
+                    "tag": "div",
+                    "attributes": {
+                      "style": null
+                    },
+                    "children": [
+                      {
+                        "tag": "div",
+                        "attributes": {
+                          "style": null
+                        },
+                        "children": [
+                          {
+                            "tag": "div",
+                            "attributes": {
+                              "style": null
+                            },
+                            "children": [
+                              {
+                                "tag": "form",
+                                "attributes": {
+                                  "action": "/account/login",
+                                  "id": "AccountLoginForm",
+                                  "method": "post",
+                                  "accept-charset": "utf-8"
+                                },
+                                "rendered": true,
+                                "children": [
+                                  {
+                                    "tag": "div",
+                                    "attributes": {
+                                      "style": null
+                                    },
+                                    "children": [
+                                      {
+                                        "tag": "input",
+                                        "attributes": {
+                                          "type": "hidden",
+                                          "name": "_method",
+                                          "value": null
+                                        },
+                                        "rendered": false
+                                      },
+                                      {
+                                        "tag": "input",
+                                        "attributes": {
+                                          "type": "hidden",
+                                          "name": "data[_Token][key]",
+                                          "value": null,
+                                          "id": "Token119121064",
+                                          "autocomplete": "off"
+                                        },
+                                        "rendered": false
+                                      }
+                                    ]
+                                  },
+                                  {
+                                    "tag": "table",
+                                    "attributes": {
+                                      "width": "258",
+                                      "border": "0",
+                                      "cellspacing": "6",
+                                      "align": "center"
+                                    },
+                                    "children": [
+                                      {
+                                        "tag": "tbody",
+                                        "attributes": {},
+                                        "children": [
+                                          {
+                                            "tag": "tr",
+                                            "attributes": {},
+                                            "children": [
+                                              {
+                                                "tag": "td",
+                                                "attributes": {
+                                                  "height": "25",
+                                                  "width": "212",
+                                                  "align": "left"
+                                                },
+                                                "children": [
+                                                  {
+                                                    "tag": "input",
+                                                    "attributes": {
+                                                      "name": "data[Account][username]",
+                                                      "class": "normal_black",
+                                                      "style": null,
+                                                      "required": "required",
+                                                      "type": "email",
+                                                      "id": "AccountUsername"
+                                                    },
+                                                    "rendered": true
+                                                  }
+                                                ]
+                                              }
+                                            ]
+                                          },
+                                          {
+                                            "tag": "tr",
+                                            "attributes": {},
+                                            "children": [
+                                              {
+                                                "tag": "td",
+                                                "attributes": {
+                                                  "height": "25",
+                                                  "align": "left"
+                                                },
+                                                "children": [
+                                                  {
+                                                    "tag": "input",
+                                                    "attributes": {
+                                                      "name": "data[Account][password]",
+                                                      "class": "normal_black",
+                                                      "style": null,
+                                                      "type": "password",
+                                                      "id": "AccountPassword",
+                                                      "required": "required"
+                                                    },
+                                                    "rendered": true
+                                                  }
+                                                ]
+                                              }
+                                            ]
+                                          }
+                                        ]
+                                      }
+                                    ]
+                                  },
+                                  {
+                                    "tag": "input",
+                                    "attributes": {
+                                      "type": "image",
+                                      "src": "/img/s_blank.gif",
+                                      "width": "80",
+                                      "height": "25",
+                                      "style": null
+                                    },
+                                    "rendered": true
+                                  },
+                                  {
+                                    "tag": "div",
+                                    "attributes": {
+                                      "style": null
+                                    },
+                                    "children": [
+                                      {
+                                        "tag": "input",
+                                        "attributes": {
+                                          "type": "hidden",
+                                          "name": "data[_Token][fields]",
+                                          "value": null,
+                                          "id": "TokenFields426247267",
+                                          "autocomplete": "off"
+                                        },
+                                        "rendered": false
+                                      },
+                                      {
+                                        "tag": "input",
+                                        "attributes": {
+                                          "type": "hidden",
+                                          "name": "data[_Token][unlocked]",
+                                          "value": null,
+                                          "id": "TokenUnlocked1899050416",
+                                          "autocomplete": "off"
+                                        },
+                                        "rendered": false
+                                      }
+                                    ]
+                                  }
+                                ]
+                              }
+                            ]
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "tag": "div",
+                "attributes": {
+                  "class": "ui-dialog ui-widget ui-widget-content ui-corner-all ui-dialog-buttons",
+                  "tabindex": "-1",
+                  "role": "dialog",
+                  "aria-labelledby": "ui-id-1",
+                  "style": null
+                },
+                "rendered": false,
+                "children": [
+                  {
+                    "tag": "div",
+                    "attributes": {
+                      "class": "ui-dialog-titlebar ui-widget-header ui-corner-all ui-helper-clearfix"
+                    },
+                    "children": [
+                      {
+                        "tag": "a",
+                        "attributes": {
+                          "href": "#",
+                          "class": "ui-dialog-titlebar-close ui-corner-all",
+                          "role": "button"
+                        },
+                        "rendered": false
+                      }
+                    ]
+                  },
+                  {
+                    "tag": "div",
+                    "attributes": {
+                      "id": "otp_login_dlg",
+                      "style": null,
+                      "class": "ui-dialog-content ui-widget-content"
+                    },
+                    "children": [
+                      {
+                        "tag": "form",
+                        "attributes": {
+                          "action": "/account/login_otp",
+                          "id": "otp_login_form",
+                          "method": "post",
+                          "accept-charset": "utf-8"
+                        },
+                        "rendered": false,
+                        "children": [
+                          {
+                            "tag": "div",
+                            "attributes": {
+                              "style": null
+                            },
+                            "children": [
+                              {
+                                "tag": "input",
+                                "attributes": {
+                                  "type": "hidden",
+                                  "name": "_method",
+                                  "value": null
+                                },
+                                "rendered": false
+                              },
+                              {
+                                "tag": "input",
+                                "attributes": {
+                                  "type": "hidden",
+                                  "name": "data[_Token][key]",
+                                  "value": null,
+                                  "id": "Token1424890764",
+                                  "autocomplete": "off"
+                                },
+                                "rendered": false
+                              }
+                            ]
+                          },
+                          {
+                            "tag": "div",
+                            "attributes": {
+                              "class": "input text"
+                            },
+                            "children": [
+                              {
+                                "tag": "input",
+                                "attributes": {
+                                  "name": "data[otp_password]",
+                                  "class": "stammdaten_input",
+                                  "maxlength": "100",
+                                  "style": null,
+                                  "value": null,
+                                  "type": "text",
+                                  "id": "otp_password"
+                                },
+                                "rendered": false
+                              }
+                            ]
+                          },
+                          {
+                            "tag": "div",
+                            "attributes": {
+                              "style": null
+                            },
+                            "children": [
+                              {
+                                "tag": "input",
+                                "attributes": {
+                                  "type": "hidden",
+                                  "name": "data[_Token][fields]",
+                                  "value": null,
+                                  "id": "TokenFields1746660710",
+                                  "autocomplete": "off"
+                                },
+                                "rendered": false
+                              },
+                              {
+                                "tag": "input",
+                                "attributes": {
+                                  "type": "hidden",
+                                  "name": "data[_Token][unlocked]",
+                                  "value": null,
+                                  "id": "TokenUnlocked1387309886",
+                                  "autocomplete": "off"
+                                },
+                                "rendered": false
+                              }
+                            ]
+                          }
+                        ]
+                      }
+                    ]
+                  },
+                  {
+                    "tag": "div",
+                    "attributes": {
+                      "class": "ui-dialog-buttonpane ui-widget-content ui-helper-clearfix"
+                    },
+                    "children": [
+                      {
+                        "tag": "div",
+                        "attributes": {
+                          "class": "ui-dialog-buttonset"
+                        },
+                        "children": [
+                          {
+                            "tag": "button",
+                            "attributes": {
+                              "type": "button",
+                              "id": "otp_login_button",
+                              "class": "ui-button ui-widget ui-state-default ui-corner-all ui-button-text-only",
+                              "role": "button",
+                              "aria-disabled": "false"
+                            },
+                            "rendered": false
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "tag": "div",
+                "attributes": {
+                  "class": "ui-dialog ui-widget ui-widget-content ui-corner-all",
+                  "tabindex": "-1",
+                  "role": "dialog",
+                  "aria-labelledby": "ui-id-2",
+                  "style": null
+                },
+                "rendered": false,
+                "children": [
+                  {
+                    "tag": "div",
+                    "attributes": {
+                      "class": "ui-dialog-titlebar ui-widget-header ui-corner-all ui-helper-clearfix"
+                    },
+                    "children": [
+                      {
+                        "tag": "a",
+                        "attributes": {
+                          "href": "#",
+                          "class": "ui-dialog-titlebar-close ui-corner-all",
+                          "role": "button"
+                        },
+                        "rendered": false
+                      }
+                    ]
+                  },
+                  {
+                    "tag": "div",
+                    "attributes": {
+                      "id": "otp_no_login_dlg",
+                      "style": null,
+                      "class": "ui-dialog-content ui-widget-content"
+                    },
+                    "children": [
+                      {
+                        "tag": "p",
+                        "attributes": {},
+                        "children": [
+                          {
+                            "tag": "a",
+                            "attributes": {
+                              "href": "mailto:"
+                            },
+                            "rendered": false
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "tag": "div",
+                "attributes": {
+                  "id": "freshworks-container",
+                  "data-html2canvas-ignore": "true",
+                  "style": null
+                },
+                "children": [
+                  {
+                    "tag": "div",
+                    "attributes": {
+                      "aria-live": "polite"
+                    },
+                    "children": [
+                      {
+                        "tag": "iframe",
+                        "attributes": {
+                          "allowfullscreen": "",
+                          "id": "launcher-frame",
+                          "title": null,
+                          "data-testid": "launcher-frame",
+                          "style": null
+                        },
+                        "rendered": true
+                      },
+                      {
+                        "tag": "iframe",
+                        "attributes": {
+                          "allowfullscreen": "",
+                          "id": "lightbox-frame",
+                          "data-testid": "lightbox-frame",
+                          "style": null
+                        },
+                        "rendered": false
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "tag": "iframe",
+                "attributes": {
+                  "title": null,
+                  "id": "freshworks-frame",
+                  "data-html2canvas-ignore": "true",
+                  "style": null
+                },
+                "rendered": false
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "index": 1,
+      "parent": 0,
+      "name": "freshworks-frame",
+      "sameOriginAsTop": true,
+      "url": "https://my.contabo.com/account/login",
+      "controls": 0,
+      "tree": {
+        "tag": "html",
+        "attributes": {}
+      }
+    },
+    {
+      "index": 2,
+      "parent": 0,
+      "name": "lightbox-frame",
+      "sameOriginAsTop": true,
+      "url": "https://my.contabo.com/account/login",
+      "controls": 0,
+      "tree": {
+        "tag": "html",
+        "attributes": {}
+      }
+    },
+    {
+      "index": 3,
+      "parent": 0,
+      "name": "launcher-frame",
+      "sameOriginAsTop": true,
+      "url": "https://my.contabo.com/account/login",
+      "controls": 0,
+      "tree": {
+        "tag": "html",
+        "attributes": {}
+      }
+    }
+  ]
+}

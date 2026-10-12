@@ -1,0 +1,94 @@
+{
+  "$schema": "../evidence.schema.json",
+  "version": 1,
+  "id": "no-ip",
+  "class": "B",
+  "mechanism": "form",
+  "source": "https://www.noip.com/login",
+  "reviewed": "2026-10-12",
+  "summary": "One POST form with a username or email address and a password at /login, on the connection's own origin. The login fills the two fields and presses the form's own submit button; the site's reCAPTCHA then decides, and the vendor asks for an emailed code or an authenticator code afterwards.",
+  "sources": [
+    {
+      "id": "page",
+      "kind": "anonymous-capture",
+      "title": "The public account sign-in page, rendered once without an account",
+      "url": "https://www.noip.com/login",
+      "capture": "capture.json",
+      "captureSha256": "ff7c9703517accd9fb7643e354cf1606bb8775bf3e2e2e015374d5689ddf55eb",
+      "retrieved": "2026-10-12"
+    },
+    {
+      "id": "kb-email-code",
+      "kind": "vendor-documentation",
+      "title": "No-IP knowledge base: Email Verification for Account Login",
+      "url": "https://www.noip.com/support/knowledgebase/email-verification",
+      "retrieved": "2026-10-12",
+      "note": "States that a 6 digit code is sent to the account's email address when the device is not recognised, that a device can be trusted for 30 days, and that only 2-factor authentication turns this off. Text only, no markup."
+    },
+    {
+      "id": "kb-2fa",
+      "kind": "vendor-documentation",
+      "title": "No-IP knowledge base: Two-Factor Authentication",
+      "url": "https://www.noip.com/support/knowledgebase/two-factor-authentication",
+      "retrieved": "2026-10-12",
+      "note": "States that with 2FA enabled the website login requires an additional time-based one-time code from an authenticator app. Text only, no markup."
+    }
+  ],
+  "selectors": [
+    {
+      "selector": "form#clogs input#username[name=\"username\"]",
+      "role": "username",
+      "source": "page",
+      "basis": "observed",
+      "locator": "frames[0], form#clogs, input#username (type text, rendered)"
+    },
+    {
+      "selector": "form#clogs input#password[name=\"password\"][type=\"password\"]",
+      "role": "password",
+      "source": "page",
+      "basis": "observed",
+      "locator": "frames[0], form#clogs, input#password (rendered)"
+    },
+    {
+      "selector": "form#clogs button#clogs-captcha-button[type=\"submit\"]",
+      "role": "control",
+      "source": "page",
+      "basis": "observed",
+      "locator": "frames[0], form#clogs, button#clogs-captcha-button (rendered, has a click handler)",
+      "note": "The form's own submit button, a button of type submit inside form#clogs. The capture holds no separate captcha widget element or frame; this button's id and click handler tie it to the hidden reCAPTCHA token field. The steps press this button and touch nothing else."
+    }
+  ],
+  "fixtures": [
+    {
+      "file": "fixture.html",
+      "path": "/login",
+      "derivedFrom": ["page"]
+    }
+  ],
+  "staysInteractive": [
+    {
+      "kind": "captcha",
+      "note": "After the fields are filled and the form's own submit button is pressed, the site's reCAPTCHA decides: the form has a hidden g-recaptcha-response field that the page fills. No captcha widget was present in the capture and no step touches one. If a challenge appears, the user answers it."
+    },
+    {
+      "kind": "email-code",
+      "note": "Per the vendor: a 6 digit code sent by email when the device is not recognised, valid for 10 minutes. The page that asks for it was not observed."
+    },
+    {
+      "kind": "totp",
+      "note": "Per the vendor: an authenticator code when 2-factor authentication is on. The page that asks for it was not observed, so no authenticator challenge is listed in the steps file."
+    },
+    {
+      "kind": "single-sign-on",
+      "note": "The page also offers Google and Microsoft sign-in links; those are not automated."
+    }
+  ],
+  "unverified": [
+    "The page can change at any time and may differ by region or language. This is one anonymous render on the review date.",
+    "Nothing after the submit was observed, because no account was used: the reCAPTCHA outcome, the email-code page and the authenticator-code page.",
+    "That a click on the submit button by the application yields a reCAPTCHA token the site accepts.",
+    "The localised sign-in paths the site has (its robots.txt names pt-BR and it-IT sections) were not captured; the steps cover /login only."
+  ],
+  "neededFromUser": "One sign-in with this layout, or the sign-in page and the code page that follows it saved as \"Webpage, Complete\". Save any page signed out and with no password typed in; keep the \"_files\" folder beside the .html and both outside the repository: they can hold the account name.",
+  "notes": "Checked on the review date, before the capture: robots.txt of www.noip.com is readable and allows /login; the terms of service are readable and have no clause on automated access or extraction. The capture was requested on www.noip.com and ended on the same host and path. It loaded the page once and sent no input."
+}

@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Synthetic fixture: no-ip sign-in</title>
+  </head>
+  <body>
+    <form method="post" action="https://www.noip.com/login" id="clogs">
+      <input type="hidden" name="_token" autocomplete="off" />
+      <input name="username" id="username" type="text" maxlength="50" />
+      <label for="password"></label>
+      <input id="password" name="password" type="password" autocomplete="off" />
+      <button id="toggle-password" type="button"></button>
+      <input type="hidden" name="submit_login_page" />
+      <input type="hidden" id="hash-input" name="intended_hash" />
+      <input
+        id="clogs-captcha-token"
+        name="g-recaptcha-response"
+        type="hidden"
+      />
+      <button type="submit" id="clogs-captcha-button"></button>
+      <input type="hidden" name="should_show_questionnaire" />
+    </form>
+  </body>
+</html>

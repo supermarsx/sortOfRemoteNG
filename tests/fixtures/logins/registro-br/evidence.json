@@ -1,0 +1,19 @@
+{
+  "$schema": "../evidence.schema.json",
+  "version": 1,
+  "id": "registro-br",
+  "class": "C",
+  "mechanism": "none",
+  "reviewed": "2026-10-12",
+  "summary": "Not captured: the robots rules allow the sign-in address, but no terms document could be found or read, so the check before a capture did not come back clean. No other public source shows the sign-in form. The sign-in page was not loaded.",
+  "sources": [],
+  "selectors": [],
+  "fixtures": [],
+  "staysInteractive": [{ "kind": "other", "note": "The whole sign-in." }],
+  "lookedFor": [
+    "robots.txt of registro.br, read on the review date: HTTP 200, and none of its rules covers /login/, the catalog sign-in address. It does disallow /2/, /cgi-bin/ and /painel/ among others.",
+    "The site's terms: the home page's static HTML is an empty script-application shell without legal links, a static read of /dominio/contrato/ returned no text, and a web search found no terms document on the site. Whether the terms restrict automated access is therefore not established.",
+    "A code search on GitHub for the sign-in address: this repository's own catalog, one lookup-tool definition that names the address without any markup, and two documentation files of unrelated projects that were not opened. Nothing found reproduces the form."
+  ],
+  "neededFromUser": "The sign-in page saved from the user's own browser as \"Webpage, Complete\" and read with the capture tool's --from-file mode, plus the page that follows the first step if the sign-in has two. The site is script-rendered, so the saved file must hold the rendered page, not the empty shell. That would make this class A. Save any page signed out and with no password typed in; keep the \"_files\" folder beside the .html and both outside the repository: they can hold the account name."
+}

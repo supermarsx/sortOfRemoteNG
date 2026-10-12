@@ -1,0 +1,260 @@
+{
+  "schema": "sorng-login-capture/1",
+  "sanitizer": 3,
+  "applicationId": "freedns",
+  "capturedAt": "2026-10-12",
+  "mode": "hosted",
+  "engine": "Microsoft Edge headless (Edg/146.0.3856.84)",
+  "source": {
+    "kind": "hosted-login",
+    "requestedUrl": "https://freedns.afraid.org/",
+    "finalUrl": "https://freedns.afraid.org/",
+    "httpStatus": 200
+  },
+  "limits": {
+    "navigations": 1,
+    "scriptsExecuted": true,
+    "loadEvent": true,
+    "settleMs": 6000,
+    "dialogsDismissed": 0,
+    "input": "none",
+    "truncated": false,
+    "redirects": "public-hosts-only"
+  },
+  "network": {
+    "contacted": ["freedns.afraid.org:443"],
+    "refused": 1
+  },
+  "observations": ["no-password-field"],
+  "frames": [
+    {
+      "index": 0,
+      "parent": null,
+      "name": null,
+      "sameOriginAsTop": true,
+      "url": "https://freedns.afraid.org/",
+      "controls": 5,
+      "tree": {
+        "tag": "html",
+        "attributes": {
+          "lang": "EN"
+        },
+        "children": [
+          {
+            "tag": "body",
+            "attributes": {
+              "text": "#000000",
+              "bgcolor": "cornflowerblue",
+              "link": "#000000",
+              "vlink": "#808080",
+              "alink": "#000000"
+            },
+            "children": [
+              {
+                "tag": "table",
+                "attributes": {
+                  "border": "0",
+                  "width": "100%",
+                  "cellspacing": "5",
+                  "height": "100%"
+                },
+                "children": [
+                  {
+                    "tag": "tbody",
+                    "attributes": {},
+                    "children": [
+                      {
+                        "tag": "tr",
+                        "attributes": {},
+                        "children": [
+                          {
+                            "tag": "td",
+                            "attributes": {
+                              "bgcolor": "white"
+                            },
+                            "children": [
+                              {
+                                "tag": "center",
+                                "attributes": {},
+                                "children": [
+                                  {
+                                    "tag": "center",
+                                    "attributes": {},
+                                    "children": [
+                                      {
+                                        "tag": "table",
+                                        "attributes": {
+                                          "width": "80%"
+                                        },
+                                        "children": [
+                                          {
+                                            "tag": "tbody",
+                                            "attributes": {},
+                                            "children": [
+                                              {
+                                                "tag": "tr",
+                                                "attributes": {},
+                                                "children": [
+                                                  {
+                                                    "tag": "td",
+                                                    "attributes": {},
+                                                    "children": [
+                                                      {
+                                                        "tag": "center",
+                                                        "attributes": {},
+                                                        "children": [
+                                                          {
+                                                            "tag": "div",
+                                                            "attributes": {
+                                                              "class": "btn-group"
+                                                            },
+                                                            "children": [
+                                                              {
+                                                                "tag": "a",
+                                                                "attributes": {
+                                                                  "href": "/signup/"
+                                                                },
+                                                                "children": [
+                                                                  {
+                                                                    "tag": "button",
+                                                                    "attributes": {
+                                                                      "class": "button"
+                                                                    },
+                                                                    "rendered": true
+                                                                  }
+                                                                ]
+                                                              },
+                                                              {
+                                                                "tag": "a",
+                                                                "attributes": {
+                                                                  "href": "/pricing/"
+                                                                },
+                                                                "children": [
+                                                                  {
+                                                                    "tag": "button",
+                                                                    "attributes": {
+                                                                      "class": "button"
+                                                                    },
+                                                                    "rendered": true
+                                                                  }
+                                                                ]
+                                                              }
+                                                            ]
+                                                          }
+                                                        ]
+                                                      }
+                                                    ]
+                                                  }
+                                                ]
+                                              }
+                                            ]
+                                          }
+                                        ]
+                                      }
+                                    ]
+                                  }
+                                ]
+                              }
+                            ]
+                          },
+                          {
+                            "tag": "td",
+                            "attributes": {
+                              "valign": "top",
+                              "bgcolor": "white",
+                              "width": "15%"
+                            },
+                            "children": [
+                              {
+                                "tag": "center",
+                                "attributes": {},
+                                "children": [
+                                  {
+                                    "tag": "form",
+                                    "attributes": {
+                                      "action": "/domain/dnstrace.php"
+                                    },
+                                    "rendered": true,
+                                    "children": [
+                                      {
+                                        "tag": "table",
+                                        "attributes": {},
+                                        "children": [
+                                          {
+                                            "tag": "tbody",
+                                            "attributes": {},
+                                            "children": [
+                                              {
+                                                "tag": "tr",
+                                                "attributes": {},
+                                                "children": [
+                                                  {
+                                                    "tag": "td",
+                                                    "attributes": {
+                                                      "bgcolor": "#eeeeee",
+                                                      "align": "center"
+                                                    },
+                                                    "children": [
+                                                      {
+                                                        "tag": "input",
+                                                        "attributes": {
+                                                          "onfocus": null,
+                                                          "style": null,
+                                                          "type": "text",
+                                                          "name": "domain",
+                                                          "value": null
+                                                        },
+                                                        "rendered": true
+                                                      }
+                                                    ]
+                                                  }
+                                                ]
+                                              },
+                                              {
+                                                "tag": "tr",
+                                                "attributes": {},
+                                                "children": [
+                                                  {
+                                                    "tag": "td",
+                                                    "attributes": {
+                                                      "align": "right",
+                                                      "bgcolor": "cornflowerblue",
+                                                      "colspan": "2"
+                                                    },
+                                                    "children": [
+                                                      {
+                                                        "tag": "input",
+                                                        "attributes": {
+                                                          "type": "submit",
+                                                          "name": "submit",
+                                                          "value": "Trace"
+                                                        },
+                                                        "rendered": true
+                                                      }
+                                                    ]
+                                                  }
+                                                ]
+                                              }
+                                            ]
+                                          }
+                                        ]
+                                      }
+                                    ]
+                                  }
+                                ]
+                              }
+                            ]
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    }
+  ]
+}

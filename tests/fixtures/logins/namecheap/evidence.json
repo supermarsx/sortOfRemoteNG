@@ -1,0 +1,20 @@
+{
+  "$schema": "../evidence.schema.json",
+  "version": 1,
+  "id": "namecheap",
+  "class": "C",
+  "mechanism": "none",
+  "reviewed": "2026-10-12",
+  "summary": "Not captured: the provider's legal pages refuse automated reads, so its terms could not be read and the check before a capture did not come back clean. No other public source shows the sign-in form. The sign-in page was not loaded.",
+  "sources": [],
+  "selectors": [],
+  "fixtures": [],
+  "staysInteractive": [{ "kind": "other", "note": "The whole sign-in." }],
+  "lookedFor": [
+    "robots.txt of www.namecheap.com, read on the review date: HTTP 200, and none of its rules covers /myaccount/login/, the catalog sign-in address.",
+    "The Universal Terms of Service page under /legal/ on www.namecheap.com, read on the review date: HTTP 403 and a page titled Just a moment... that asks to enable JavaScript and cookies, to a plain HTTP client; a second automated reader also got HTTP 403. The terms were therefore not read.",
+    "Search-engine excerpts of that document's section 7 mention reaching the site only through the site itself and show no robots clause. They were not checked against the document and decide nothing.",
+    "A code search on GitHub for the sign-in address: DNS setup guides and two invoice collectors, one a placeholder without selectors and one that opens the page and waits for the user to sign in. Nothing that reproduces the form."
+  ],
+  "neededFromUser": "The sign-in page saved from the user's own browser as \"Webpage, Complete\" and read with the capture tool's --from-file mode, plus the page that follows the first step if the sign-in has two. That would make this class A. Save any page signed out and with no password typed in; keep the \"_files\" folder beside the .html and both outside the repository: they can hold the account name."
+}

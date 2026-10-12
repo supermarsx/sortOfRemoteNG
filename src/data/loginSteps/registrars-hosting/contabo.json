@@ -1,0 +1,36 @@
+{
+  "$schema": "../../../types/connection/httpLoginSteps.schema.json",
+  "version": 1,
+  "id": "contabo",
+  "evidence": {
+    "class": "B",
+    "source": "https://my.contabo.com/account/login",
+    "reviewed": "2026-10-12"
+  },
+  "credentialOrigins": [],
+  "loginSteps": [
+    {
+      "kind": "form",
+      "paths": ["/account/login"],
+      "selectors": {
+        "username": "form#AccountLoginForm input#AccountUsername[name=\"data[Account][username]\"]",
+        "password": "form#AccountLoginForm input#AccountPassword[name=\"data[Account][password]\"][type=\"password\"]"
+      }
+    },
+    {
+      "kind": "submit",
+      "submission": "click",
+      "selectors": { "control": "form#AccountLoginForm input[type=\"image\"]" }
+    }
+  ],
+  "totpChallenges": [
+    {
+      "id": "contabo-otp",
+      "label": "Contabo one-time password",
+      "codeSelector": "form#otp_login_form input#otp_password[name=\"data[otp_password]\"]",
+      "submitSelector": "button#otp_login_button[type=\"button\"]",
+      "paths": ["/account/login"],
+      "submission": "spa"
+    }
+  ]
+}
