@@ -23,7 +23,10 @@ export const NODE_TEST_SUITE_EXCLUDES = [
   "tests/release/**/*.mjs",
   "tests/versioning/**/*.mjs",
   "tests/protocol/nativeAppearanceClient.test.mjs",
+  "tests/protocol/nativeGoogleAppearance.test.mjs",
   "tests/protocol/nativeLoginClient.test.mjs",
+  "tests/protocol/nativeLoginDigest.test.mjs",
+  "tests/protocol/nativeLoginFrames.test.mjs",
   "tests/protocol/nativeLoginKeyboard.test.mjs",
   "tests/protocol/nativeTotpClient.test.mjs",
 ] as const;

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { availableParallelism } from "node:os";
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import vitestConfig, {
   NODE_TEST_SUITE_EXCLUDES,
   resolveTestWorkerCount,
@@ -14,7 +14,9 @@ describe("ordinary Vitest discovery", () => {
     expect(config.test?.exclude).toContain(".artifacts/**");
     const typescript = JSON.parse(readFileSync("tsconfig.json", "utf8"));
     expect(typescript.exclude).toContain(".artifacts");
-    expect(typescript.include).toEqual(expect.arrayContaining(["**/*.ts", "**/*.tsx"]));
+    expect(typescript.include).toEqual(
+      expect.arrayContaining(["**/*.ts", "**/*.tsx"]),
+    );
   });
   it.each([
     [1, 1],
@@ -56,13 +58,36 @@ describe("ordinary Vitest discovery", () => {
       "tests/release/**/*.mjs",
       "tests/versioning/**/*.mjs",
       "tests/protocol/nativeAppearanceClient.test.mjs",
+      "tests/protocol/nativeGoogleAppearance.test.mjs",
       "tests/protocol/nativeLoginClient.test.mjs",
+      "tests/protocol/nativeLoginDigest.test.mjs",
+      "tests/protocol/nativeLoginFrames.test.mjs",
       "tests/protocol/nativeLoginKeyboard.test.mjs",
       "tests/protocol/nativeTotpClient.test.mjs",
     ]);
     expect(config.test?.exclude).toEqual(
       expect.arrayContaining([...NODE_TEST_SUITE_EXCLUDES]),
     );
+  });
+  it("excludes every node:test module under tests/ that Vitest would otherwise discover", () => {
+    const excluded = (file: string) =>
+      NODE_TEST_SUITE_EXCLUDES.some((pattern) =>
+        pattern.endsWith("/**/*.mjs")
+          ? file.startsWith(pattern.slice(0, -"**/*.mjs".length)) &&
+            file.endsWith(".mjs")
+          : file === pattern,
+      );
+    const discovered = (readdirSync("tests", { recursive: true }) as string[])
+      .map((file) => `tests/${file.replace(/\\/g, "/")}`)
+      // Vitest's default include; *.node-test.mjs is deliberately outside it.
+      .filter((file) => /\.(test|spec)\.[cm]?[jt]sx?$/.test(file))
+      .filter((file) =>
+        /^import\s[^;]*\sfrom\s+["']node:test["']/m.test(
+          readFileSync(file, "utf8"),
+        ),
+      )
+      .filter((file) => !excluded(file));
+    expect(discovered).toEqual([]);
   });
   it("executes every excluded native browser suite with Node in the transport matrix", () => {
     const workflow = readFileSync(".github/workflows/ci.yml", "utf8").replace(
@@ -91,8 +116,9 @@ describe("ordinary Vitest discovery", () => {
     const testJob = workflow
       .split("\n  browser-transport-contracts:\n")[1]
       ?.split(/\n {2}[a-z][\w-]*:\n/)[0];
-    const stepName = "      - name: Native browser std-only contracts (Node + rustc)\n";
-    const toolingStep = testJob?.split(stepName)[1]?.split(/\n      - /)[0];
+    const stepName =
+      "      - name: Native browser std-only contracts (Node + rustc)\n";
+    const toolingStep = testJob?.split(stepName)[1]?.split(/\n {6}- /)[0];
     const command = toolingStep
       ?.split("\n")
       .find((line) => line.trim().startsWith("run:"));
@@ -116,10 +142,11 @@ describe("ordinary Vitest discovery", () => {
       step.startsWith("uses: dtolnay/rust-toolchain@"),
     );
     expect(rustSetup).toBeGreaterThanOrEqual(0);
-    expect(steps[rustSetup + 1]?.startsWith(stepName.trim().slice(2))).toBe(true);
+    expect(steps[rustSetup + 1]?.startsWith(stepName.trim().slice(2))).toBe(
+      true,
+    );
     for (const file of suites) {
       expect(readFileSync(file, "utf8")).toContain('from "node:test"');
     }
   });
-
 });
