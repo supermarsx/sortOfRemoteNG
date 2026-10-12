@@ -302,6 +302,51 @@ describe("login steps: accepted files", () => {
     ]);
   });
 
+  it("never throws, even for a value whose property reads throw", () => {
+    const boom = () => {
+      throw new Error("accessor");
+    };
+    const topLevel = Object.defineProperty(singleForm(), "id", {
+      enumerable: true,
+      get: boom,
+    });
+    const nested = singleForm();
+    Object.defineProperty(steps(nested)[0].selectors as Step, "username", {
+      enumerable: true,
+      get: boom,
+    });
+    const list = singleForm();
+    list.loginSteps = new Proxy(steps(list), { get: boom });
+    const revocable = Proxy.revocable(singleForm(), {});
+    revocable.revoke();
+    const hostile: unknown[] = [
+      topLevel,
+      nested,
+      list,
+      new Proxy(singleForm(), { get: boom }),
+      new Proxy(singleForm(), { ownKeys: boom }),
+      new Proxy(singleForm(), { getPrototypeOf: boom }),
+      revocable.proxy,
+    ];
+    for (const [index, value] of hostile.entries()) {
+      // Not JSON data: refused as a whole, with no partial reading.
+      expect(validateHttpLoginSteps(value), `value ${index}`).toEqual({
+        ok: false,
+        issues: [expect.objectContaining({ code: "not-an-object", path: "" })],
+      });
+      expect(validateUserHttpLoginSteps(value), `value ${index}`).toEqual({
+        ok: false,
+        issues: [expect.objectContaining({ code: "not-an-object", path: "" })],
+      });
+      expect(
+        resolveHttpLoginSteps(value, {
+          connectionOrigin: "https://app.example.com",
+        }).ok,
+        `value ${index}`,
+      ).toBe(false);
+    }
+  });
+
   it("reads each field once, so what it checked is what it returns", () => {
     const doc = singleForm();
     const selectors = steps(doc)[1].selectors as Step;
@@ -1541,8 +1586,125 @@ describe("login steps: resolution for one connection", () => {
         "https://app.example.com",
         "https://auth.example.net",
       ],
+      totpOrigins: ["https://auth.example.net"],
+      totpChallenges: [
+        {
+          id: "example-idp-totp",
+          label: "Example authenticator code",
+          codeSelector: 'form input[autocomplete="one-time-code"]',
+          submitSelector: 'form button[type="submit"]',
+          paths: ["/log-in/mfa"],
+          submission: "post",
+          origins: ["https://auth.example.net"],
+        },
+      ],
       crossOrigin: true,
       steps: undefined,
+    });
+  });
+
+  /** One listed origin that only a challenge uses, and one challenge that
+   * names no origin and so belongs to the connection's own. */
+  const withCodeOnlyOrigin = (): Doc =>
+    edit(singleForm, (file) => {
+      file.credentialOrigins = ["https://mfa.example.net"];
+      file.totpChallenges = [
+        {
+          id: "example-mfa",
+          label: "Example authenticator code",
+          codeSelector: "#code",
+          submitSelector: "#verify",
+          paths: ["/mfa"],
+          submission: "post",
+          origins: ["https://mfa.example.net"],
+        },
+        {
+          id: "example-device-code",
+          label: "Example device code",
+          codeSelector: "#otp",
+          submitSelector: "#ok",
+          paths: ["/login/otp"],
+          submission: "spa",
+        },
+      ];
+    });
+
+  it("lists code origins separately from username and password origins", () => {
+    const doc = withCodeOnlyOrigin();
+    expect(issues(doc)).toEqual([]);
+    const result = resolveHttpLoginSteps(doc, {
+      connectionOrigin: "https://app.example.com",
+    });
+    if (!result.ok) throw new Error("expected a resolvable file");
+    const { credentialOrigins, totpOrigins, totpChallenges } = result.value;
+    // The password allowlist does not grow by an origin that only takes a code.
+    expect(credentialOrigins).toEqual(["https://app.example.com"]);
+    expect(totpOrigins).toEqual([
+      "https://mfa.example.net",
+      "https://app.example.com",
+    ]);
+    expect(totpChallenges.map(({ id, origins }) => [id, origins])).toEqual([
+      ["example-mfa", ["https://mfa.example.net"]],
+      ["example-device-code", ["https://app.example.com"]],
+    ]);
+    // Steps decide whether a login is native-only; a challenge does not.
+    expect(result.value.crossOrigin).toBe(false);
+    // Nothing the file lists is missing from what the engine is told.
+    for (const listed of doc.credentialOrigins as string[])
+      expect([...credentialOrigins, ...totpOrigins]).toContain(listed);
+  });
+
+  it("accounts for every origin anything is typed on, in every example", () => {
+    for (const make of Object.values(EXAMPLES)) {
+      const doc = make();
+      const result = resolveHttpLoginSteps(doc, {
+        connectionOrigin: "https://app.example.com",
+      });
+      if (!result.ok) throw new Error("expected a resolvable example");
+      const { credentialOrigins, totpOrigins, steps: resolved } = result.value;
+      expect(new Set(resolved.map((step) => step.origin))).toEqual(
+        new Set(credentialOrigins),
+      );
+      expect(
+        new Set(result.value.totpChallenges.flatMap(({ origins }) => origins)),
+      ).toEqual(new Set(totpOrigins));
+      for (const listed of doc.credentialOrigins as string[])
+        expect([...credentialOrigins, ...totpOrigins]).toContain(listed);
+      if (!doc.totpChallenges) {
+        expect(totpOrigins).toEqual([]);
+        expect(result.value.totpChallenges).toEqual([]);
+      }
+    }
+  });
+
+  it("never offers a code origin over HTTP", () => {
+    const result = resolveHttpLoginSteps(withCodeOnlyOrigin(), {
+      connectionOrigin: "http://192.168.1.1",
+      configuredHttpOrigin: "http://192.168.1.1",
+    });
+    if (!result.ok) throw new Error("expected a resolvable file");
+    // The password login still resolves; the device's own challenge has no
+    // origin left to run on, and the HTTPS one is untouched.
+    expect(result.value.credentialOrigins).toEqual(["http://192.168.1.1"]);
+    expect(result.value.totpOrigins).toEqual(["https://mfa.example.net"]);
+    expect(
+      result.value.totpChallenges.map(({ id, origins }) => [id, origins]),
+    ).toEqual([
+      ["example-mfa", ["https://mfa.example.net"]],
+      ["example-device-code", []],
+    ]);
+  });
+
+  it("never throws for a connection whose property reads throw", () => {
+    const connection = Object.defineProperty({}, "connectionOrigin", {
+      enumerable: true,
+      get: () => {
+        throw new Error("accessor");
+      },
+    }) as { connectionOrigin: string };
+    expect(resolveHttpLoginSteps(singleForm(), connection)).toMatchObject({
+      ok: false,
+      issues: [{ code: "invalid-connection-origin" }],
     });
   });
 
@@ -1735,6 +1897,9 @@ describe("login steps: a user-configured profile", () => {
     expect(result.value.credentialOrigins).toEqual([
       "https://intranet.example.internal",
     ]);
+    // A user-configured profile has no challenge catalog.
+    expect(result.value.totpOrigins).toEqual([]);
+    expect(result.value.totpChallenges).toEqual([]);
     expect(
       result.value.steps.map((step) => [step.kind, step.origin, step.frame]),
     ).toEqual([
@@ -2321,6 +2486,92 @@ describe("login steps: the published JSON schema agrees with the validator", () 
         schemaAccepts(definitions.origin, `https://${suffix}.example.com`),
       ).toBe(true);
     }
+  });
+
+  it("pins every documented place where the schema is weaker than the validator", () => {
+    // JSON Schema counts characters; the validator counts UTF-16 units, as
+    // the engines do. One astral character is two units.
+    const astral = (count: number) => "\u{1F512}".repeat(count);
+    const totp = (doc: Doc) => (doc.totpChallenges as Step[])[0];
+    const weaker: [string, Doc, HttpLoginStepsIssueCode, string][] = [
+      [
+        "selector length",
+        edit(singleForm, (d) => {
+          (steps(d)[0].selectors as Step).username = astral(257);
+        }),
+        "invalid-selector",
+        "loginSteps[0].selectors.username",
+      ],
+      [
+        "waitFor length",
+        edit(singleForm, (d) => {
+          steps(d)[0].waitFor = astral(257);
+        }),
+        "invalid-selector",
+        "loginSteps[0].waitFor",
+      ],
+      [
+        "challenge selector length",
+        edit(crossOrigin, (d) => {
+          totp(d).codeSelector = astral(257);
+        }),
+        "invalid-selector",
+        "totpChallenges[0].codeSelector",
+      ],
+      [
+        "evidence.source length",
+        edit(singleForm, (d) => {
+          (d.evidence as Step).source = astral(257);
+        }),
+        "invalid-evidence",
+        "evidence.source",
+      ],
+      [
+        "challenge label length",
+        edit(crossOrigin, (d) => {
+          totp(d).label = astral(61);
+        }),
+        "invalid-label",
+        "totpChallenges[0].label",
+      ],
+      [
+        "malformed punycode in an origin",
+        listedAt("https://xn--a.com"),
+        "invalid-origin",
+        "credentialOrigins[0]",
+      ],
+    ];
+    for (const [name, doc, code, path] of weaker) {
+      expect(schemaAccepts(root, doc), name).toBe(true);
+      expect(codes(doc), name).toEqual([code]);
+      expect(
+        issues(doc).map((issue) => issue.path),
+        name,
+      ).toContain(path);
+    }
+    // At the bound itself the two agree: 512 and 120 UTF-16 units.
+    for (const doc of [
+      edit(singleForm, (d) => {
+        (steps(d)[0].selectors as Step).username = astral(256);
+        (d.evidence as Step).source = astral(256);
+      }),
+      edit(crossOrigin, (d) => {
+        totp(d).label = astral(60);
+      }),
+    ]) {
+      expect(schemaAccepts(root, doc)).toBe(true);
+      expect(issues(doc)).toEqual([]);
+    }
+    // The schema says so itself, for each of them.
+    for (const phrase of [
+      "UTF-16",
+      "selector",
+      "waitFor",
+      "evidence.source",
+      "label",
+      "punycode",
+    ])
+      expect(root.description, phrase).toEqual(expect.stringContaining(phrase));
   });
 
   it("names the cross-field rules the schema cannot express", () => {

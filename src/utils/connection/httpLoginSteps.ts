@@ -15,6 +15,7 @@ import type {
   HttpLoginTotpSubmission,
   ResolvedHttpLoginStep,
   ResolvedHttpLoginSteps,
+  ResolvedHttpLoginTotpChallenge,
 } from "../../types/connection/httpLoginSteps";
 
 /**
@@ -807,16 +808,41 @@ function checkPlan(
 }
 
 /**
- * Checks one steps file. Never throws. `options.id` is the id the file name
- * promises. On success `value` is a normalized copy (`passwordOnly` filled
- * in, `$schema` dropped); the input is not modified.
+ * Runs the reading phase, the only place where code belonging to the input
+ * could run (a property accessor, a proxy trap). A read that throws means the
+ * value is not JSON data: it is refused as a whole, as `not-an-object`, and
+ * nothing read up to that point is used.
+ */
+function readGuarded<T>(read: (report: Report) => T | null): {
+  issues: HttpLoginStepsIssue[];
+  report: Report;
+  value: T | null;
+} {
+  const reading = collector();
+  try {
+    return { ...reading, value: read(reading.report) };
+  } catch {
+    const refused = collector();
+    refused.report("not-an-object", "");
+    return { ...refused, value: null };
+  }
+}
+
+/**
+ * Checks one steps file. Never throws, whatever the input: even a value whose
+ * property reads throw is returned as `not-an-object`. `options.id` is the id
+ * the file name promises. On success `value` is a normalized copy
+ * (`passwordOnly` filled in, `$schema` dropped); the input is not modified.
  */
 export function validateHttpLoginSteps(
   value: unknown,
   options: { id?: string } = {},
 ): HttpLoginStepsResult<HttpLoginSteps> {
-  const { issues, report } = collector();
-  const file = readFile(value, report);
+  const {
+    issues,
+    report,
+    value: file,
+  } = readGuarded((note) => readFile(value, note));
   if (file && issues.length === 0) {
     if (options.id !== undefined && file.id !== options.id)
       report("id-mismatch", "id");
@@ -836,24 +862,30 @@ export function validateHttpLoginSteps(
  * profile). The step rules are the same; the envelope is only
  * `{ passwordOnly?, loginSteps }`, because there is no evidence to cite and
  * no other origin to list: a step that names an `origin` is refused, so
- * these steps can only ever run on the connection's own origin.
+ * these steps can only ever run on the connection's own origin. Never
+ * throws, like `validateHttpLoginSteps`.
  */
 export function validateUserHttpLoginSteps(
   value: unknown,
 ): HttpLoginStepsResult<HttpLoginUserSteps> {
-  const { issues, report } = collector();
-  const record = plainObject(value);
-  if (!record) {
-    report("not-an-object", "");
-    return { ok: false, issues };
-  }
-  rejectUnknownFields(record, ["passwordOnly", "loginSteps"], "", report);
-  const passwordOnly = readPasswordOnly(record, report);
-  const loginSteps = readSteps(record, passwordOnly, report);
-  if (issues.length === 0)
-    checkPlan({ credentialOrigins: [], passwordOnly, loginSteps }, report);
-  return issues.length === 0
-    ? { ok: true, value: { passwordOnly, loginSteps } }
+  const {
+    issues,
+    report,
+    value: user,
+  } = readGuarded((note): HttpLoginUserSteps | null => {
+    const record = plainObject(value);
+    if (!record) {
+      note("not-an-object", "");
+      return null;
+    }
+    rejectUnknownFields(record, ["passwordOnly", "loginSteps"], "", note);
+    const passwordOnly = readPasswordOnly(record, note);
+    return { passwordOnly, loginSteps: readSteps(record, passwordOnly, note) };
+  });
+  if (user && issues.length === 0)
+    checkPlan({ ...user, credentialOrigins: [] }, report);
+  return user && issues.length === 0
+    ? { ok: true, value: user }
     : { ok: false, issues };
 }
 
@@ -923,6 +955,11 @@ function isConnectionOrigin(value: unknown): value is string {
  * `connection` must come from the saved connection, never from a page. An
  * HTTP connection origin is accepted only when it is exactly the configured
  * HTTP origin; the per-origin rules are re-checked with the real origin.
+ *
+ * The result names every origin anything is typed on, in two lists that are
+ * kept apart on purpose: `credentialOrigins` for the username and password
+ * (exactly the origins of `steps`) and `totpOrigins` for one-time codes
+ * (exactly the origins of `totpChallenges`). Never throws.
  */
 export function resolveHttpLoginSteps(
   value: unknown,
@@ -946,19 +983,27 @@ export function resolveUserHttpLoginSteps(
 function resolvePlan(
   file: Pick<
     HttpLoginSteps,
-    "credentialOrigins" | "passwordOnly" | "loginSteps"
+    "credentialOrigins" | "passwordOnly" | "loginSteps" | "totpChallenges"
   >,
   connection: HttpLoginStepsConnection,
 ): HttpLoginStepsResult<ResolvedHttpLoginSteps> {
   const { issues, report } = collector();
-  const connectionOrigin: unknown = connection?.connectionOrigin;
+  // Each connection fact is read once; a missing or throwing one is refused.
+  let connectionOrigin: unknown;
+  let configuredHttpOrigin: unknown;
+  try {
+    connectionOrigin = connection.connectionOrigin;
+    configuredHttpOrigin = connection.configuredHttpOrigin;
+  } catch {
+    connectionOrigin = undefined;
+  }
   if (!isConnectionOrigin(connectionOrigin)) {
     report("invalid-connection-origin", "connectionOrigin");
     return { ok: false, issues };
   }
   if (
     connectionOrigin.startsWith("http:") &&
-    connectionOrigin !== connection.configuredHttpOrigin
+    connectionOrigin !== configuredHttpOrigin
   ) {
     report("insecure-connection-origin", "connectionOrigin");
     return { ok: false, issues };
@@ -994,16 +1039,42 @@ function resolvePlan(
   checkSequence(steps, file.passwordOnly, report);
   if (issues.length) return { ok: false, issues };
 
+  // A one-time code is never typed over HTTP. A challenge that names no
+  // origin belongs to the connection's own, so over HTTP it has none.
+  const ownCodeOrigins = connectionOrigin.startsWith("https:")
+    ? [connectionOrigin]
+    : [];
+  const totpOrigins: string[] = [];
+  const totpChallenges: ResolvedHttpLoginTotpChallenge[] = (
+    file.totpChallenges ?? []
+  ).map((challenge) => {
+    const challengeOrigins = [...(challenge.origins ?? ownCodeOrigins)];
+    for (const origin of challengeOrigins)
+      if (!totpOrigins.includes(origin)) totpOrigins.push(origin);
+    return {
+      id: challenge.id,
+      label: challenge.label,
+      codeSelector: challenge.codeSelector,
+      submitSelector: challenge.submitSelector,
+      paths: [...challenge.paths],
+      submission: challenge.submission,
+      origins: challengeOrigins,
+    };
+  });
+
   const origins = new Set(steps.map((step) => step.origin));
   return {
     ok: true,
     value: {
       passwordOnly: file.passwordOnly,
       connectionOrigin,
+      // Username and password only: exactly the origins the steps run on.
       credentialOrigins: [connectionOrigin, ...file.credentialOrigins].filter(
         (origin, index, all) =>
           origins.has(origin) && all.indexOf(origin) === index,
       ),
+      totpOrigins,
+      totpChallenges,
       crossOrigin: steps.some((step) => step.origin !== connectionOrigin),
       steps,
     },

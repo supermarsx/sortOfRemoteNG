@@ -33,6 +33,25 @@
  *    mismatch: the login stops with nothing further typed. Steps are never
  *    retried, skipped or reordered.
  *
+ * What the validator CANNOT check, and every engine therefore must:
+ * 6. Act only on an element that is displayed. Real sign-in pages keep a
+ *    hidden password-type input on the first page (Amazon, Zoom, Microsoft),
+ *    so a selector can match long before its control is shown: wait for the
+ *    element to be displayed and refuse a hidden target. Matching is not
+ *    enough.
+ * 7. Treat every selector as untrusted data. The validator bounds its length
+ *    and characters and does not parse it: `*` and `#a, #b` are valid here,
+ *    and so are quotes, backslashes, U+2028/U+2029 and bidirectional
+ *    controls. So: catch the error of a selector the browser cannot parse and
+ *    treat it as a layout mismatch; check the matched element's own type
+ *    before typing (a text-entry control for the username, a password input
+ *    for the password, one enabled control for a click or submit); and pass
+ *    selectors as values, never by building script or markup from them.
+ * 8. Do not assume the steps end signed in. A file may stop early (an
+ *    identifier-only file is valid, and anything interactive such as a
+ *    CAPTCHA or an approval prompt is left to the user): finishing the last
+ *    step means the steps ran, not that the login completed.
+ *
  * No file field holds a secret, a value to type, script, or a URL to open.
  *
  * Not expressible, on purpose:
@@ -309,15 +328,51 @@ export interface HttpLoginStepsConnection {
   configuredHttpOrigin?: string | null;
 }
 
-/** What runs where for one connection. File metadata (id, evidence) is not
- * repeated here: it stays with the validated file. */
+/** A challenge with its origins made concrete for one connection. */
+export interface ResolvedHttpLoginTotpChallenge extends Omit<
+  HttpLoginTotpChallenge,
+  "origins"
+> {
+  /**
+   * The exact HTTPS origins on which this code may be typed: the challenge's
+   * own `origins`, or the connection's origin when it names none. Empty means
+   * the challenge cannot run for this connection, which is the case for a
+   * challenge on the connection's own origin when that origin is HTTP: a
+   * one-time code is never typed over HTTP.
+   */
+  origins: string[];
+}
+
+/**
+ * What runs where for one connection. File metadata (id, evidence) is not
+ * repeated here: it stays with the validated file.
+ *
+ * Guarantee for the engines and the credential authority (t102-e9, e10,
+ * e12): `credentialOrigins` and `totpOrigins` together are every origin on
+ * which anything is typed, and every origin the file lists is in at least one
+ * of them. They are two lists on purpose, so that the password allowlist
+ * never grows by an origin that only takes a one-time code:
+ * - the username and the password are typed only on `credentialOrigins`;
+ * - a one-time code is typed only on `totpOrigins`;
+ * - an origin in neither list receives nothing, and one in both is used by
+ *   both a step and a challenge.
+ * Build each grant from its own list; do not merge them.
+ */
 export interface ResolvedHttpLoginSteps {
   passwordOnly: boolean;
   connectionOrigin: string;
-  /** The complete allowlist: every origin a step runs on, and nothing else. */
+  /** Username and password: exactly the origins of `steps`, nothing else. */
   credentialOrigins: string[];
-  /** True when a step runs on an origin other than the connection's own;
-   * such a login is native-only and the legacy engine must refuse it. */
+  /** One-time codes: exactly the origins of `totpChallenges`, HTTPS only. */
+  totpOrigins: string[];
+  /** Every challenge of the file, in file order; empty when it has none. */
+  totpChallenges: ResolvedHttpLoginTotpChallenge[];
+  /**
+   * True when a STEP runs on an origin other than the connection's own; such
+   * a login is native-only and the legacy engine must refuse it. Challenges
+   * do not count: a legacy login may still fill the password and leave a
+   * code on another origin to the user (see each challenge's `origins`).
+   */
   crossOrigin: boolean;
   steps: ResolvedHttpLoginStep[];
 }
