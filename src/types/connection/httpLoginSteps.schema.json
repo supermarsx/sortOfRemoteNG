@@ -1,0 +1,281 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:sortofremoteng:http-login-steps:1",
+  "title": "Declarative login steps for one application",
+  "description": "One reviewed sign-in description per application, stored at src/data/loginSteps/<family>/<id>.json (t102 contract L1). It decides where a saved credential may be typed, so every object is closed: an unknown kind or field rejects the file. This schema covers structure and bounds only. The validator in src/utils/connection/httpLoginSteps.ts is authoritative and additionally requires: id equal to the file name; a real calendar date; every step and challenge origin listed in credentialOrigins, and every listed origin used; at least one credential step; a password step only after an identifier or form step unless passwordOnly; each credential typed at most once per origin; a click only before a credential step on its origin; a submit directly after the step it submits; at most one submit per origin and credential stage; unique challenge ids. A selector is limited to 512 UTF-16 units by the validator; maxLength here counts characters.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["version", "id", "evidence", "credentialOrigins", "loginSteps"],
+  "properties": {
+    "$schema": {
+      "const": "../../../types/connection/httpLoginSteps.schema.json"
+    },
+    "version": { "const": 1 },
+    "id": {
+      "type": "string",
+      "maxLength": 80,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9-]*$",
+      "description": "Application profile id; equal to the file's base name."
+    },
+    "evidence": { "$ref": "#/$defs/evidence" },
+    "credentialOrigins": {
+      "type": "array",
+      "maxItems": 8,
+      "uniqueItems": true,
+      "items": { "$ref": "#/$defs/origin" },
+      "description": "Every origin other than the connection's own on which a step may run. Required even when empty: [] states that credentials go only to the connection's own origin."
+    },
+    "passwordOnly": {
+      "type": "boolean",
+      "description": "A device with no username. Only click, password and submit steps are allowed. Defaults to false."
+    },
+    "loginSteps": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 16,
+      "items": { "$ref": "#/$defs/step" }
+    },
+    "totpChallenges": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 8,
+      "items": { "$ref": "#/$defs/totpChallenge" }
+    }
+  },
+  "if": {
+    "required": ["passwordOnly"],
+    "properties": { "passwordOnly": { "const": true } }
+  },
+  "then": {
+    "properties": {
+      "loginSteps": {
+        "items": {
+          "properties": { "kind": { "enum": ["click", "password", "submit"] } }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "selector": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 512,
+      "pattern": "^[^\\u0000-\\u0020\\u007f-\\u009f](?:[^\\u0000-\\u001f\\u007f-\\u009f]*[^\\u0000-\\u0020\\u007f-\\u009f])?$",
+      "description": "A CSS selector: no control characters, no leading or trailing space."
+    },
+    "origin": {
+      "type": "string",
+      "maxLength": 512,
+      "pattern": "^https://(?![a-z0-9.-]*\\.(?:localhost|local|test|invalid|example|onion|alt|internal|arpa|localdomain|lan|home|corp|mail|intranet|private)(?::|$))(?=[a-z0-9.-]{1,253}(?::|$))(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\\.)+[a-z](?:[a-z0-9-]{0,61}[a-z0-9])?(?::(?!443$)(?:[1-9][0-9]{0,3}|[1-5][0-9]{4}|6[0-4][0-9]{3}|65[0-4][0-9]{2}|655[0-2][0-9]|6553[0-5]))?$",
+      "description": "An exact HTTPS origin of a public DNS name: lower case, no path, no trailing slash, no default port, no IP literal, no single-label host, and no name whose last label is a special-use or private-use suffix (localhost, local, test, invalid, example, onion, alt, internal, arpa, localdomain, lan, home, corp, mail, intranet, private). Such a host can only be the connection's own origin, which a step reaches by omitting origin."
+    },
+    "path": {
+      "type": "string",
+      "maxLength": 512,
+      "pattern": "^(?!.*/\\.{1,2}(?:/|$))/(?:[A-Za-z0-9._~-]+/)*[A-Za-z0-9._~-]*$",
+      "description": "An exact pathname, compared case-sensitively with location.pathname."
+    },
+    "pathPrefix": {
+      "type": "string",
+      "maxLength": 512,
+      "pattern": "^(?!.*/\\.{1,2}(?:/|$))/(?:[A-Za-z0-9._~-]+/)+$",
+      "description": "A directory ending in a slash; matches that path and everything below it. The root is not a prefix: omit the gate instead."
+    },
+    "paths": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 16,
+      "uniqueItems": true,
+      "items": { "$ref": "#/$defs/path" }
+    },
+    "pathPrefixes": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 16,
+      "uniqueItems": true,
+      "items": { "$ref": "#/$defs/pathPrefix" }
+    },
+    "frame": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_-]{1,128}$",
+      "description": "id or name of a direct child iframe of the top document, same origin as the top document."
+    },
+    "evidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["class", "source", "reviewed"],
+      "properties": {
+        "class": {
+          "enum": ["A", "B"],
+          "description": "A: from an authoritative cited source. B: unverified, an informed guess nobody has confirmed against the live page."
+        },
+        "source": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512,
+          "pattern": "^[^\\u0000-\\u0020\\u007f-\\u009f]+$",
+          "description": "The primary citation of tests/fixtures/logins/<id>/evidence.json, repeated exactly: a URL, a repository path or a capture name, without spaces."
+        },
+        "reviewed": {
+          "type": "string",
+          "pattern": "^[0-9]{4}-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12][0-9]|3[01])$",
+          "description": "The review date of that evidence.json, repeated exactly."
+        }
+      }
+    },
+    "step": {
+      "oneOf": [
+        { "$ref": "#/$defs/clickStep" },
+        { "$ref": "#/$defs/identifierStep" },
+        { "$ref": "#/$defs/passwordStep" },
+        { "$ref": "#/$defs/formStep" },
+        { "$ref": "#/$defs/submitControlStep" },
+        { "$ref": "#/$defs/submitEnterStep" }
+      ]
+    },
+    "clickStep": {
+      "description": "A pre-step: clicks one control before a credential step on the same origin.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "selectors"],
+      "properties": {
+        "kind": { "const": "click" },
+        "origin": { "$ref": "#/$defs/origin" },
+        "paths": { "$ref": "#/$defs/paths" },
+        "pathPrefixes": { "$ref": "#/$defs/pathPrefixes" },
+        "frame": { "$ref": "#/$defs/frame" },
+        "waitFor": { "$ref": "#/$defs/selector" },
+        "selectors": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["control"],
+          "properties": { "control": { "$ref": "#/$defs/selector" } }
+        }
+      }
+    },
+    "identifierStep": {
+      "description": "Types the username only.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "selectors"],
+      "properties": {
+        "kind": { "const": "identifier" },
+        "origin": { "$ref": "#/$defs/origin" },
+        "paths": { "$ref": "#/$defs/paths" },
+        "pathPrefixes": { "$ref": "#/$defs/pathPrefixes" },
+        "frame": { "$ref": "#/$defs/frame" },
+        "waitFor": { "$ref": "#/$defs/selector" },
+        "selectors": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["username"],
+          "properties": { "username": { "$ref": "#/$defs/selector" } }
+        }
+      }
+    },
+    "passwordStep": {
+      "description": "Types the password only.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "selectors"],
+      "properties": {
+        "kind": { "const": "password" },
+        "origin": { "$ref": "#/$defs/origin" },
+        "paths": { "$ref": "#/$defs/paths" },
+        "pathPrefixes": { "$ref": "#/$defs/pathPrefixes" },
+        "frame": { "$ref": "#/$defs/frame" },
+        "waitFor": { "$ref": "#/$defs/selector" },
+        "selectors": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["password"],
+          "properties": { "password": { "$ref": "#/$defs/selector" } }
+        }
+      }
+    },
+    "formStep": {
+      "description": "Types the username and the password into one form.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "selectors"],
+      "properties": {
+        "kind": { "const": "form" },
+        "origin": { "$ref": "#/$defs/origin" },
+        "paths": { "$ref": "#/$defs/paths" },
+        "pathPrefixes": { "$ref": "#/$defs/pathPrefixes" },
+        "frame": { "$ref": "#/$defs/frame" },
+        "waitFor": { "$ref": "#/$defs/selector" },
+        "selectors": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["username", "password"],
+          "properties": {
+            "username": { "$ref": "#/$defs/selector" },
+            "password": { "$ref": "#/$defs/selector" }
+          }
+        }
+      }
+    },
+    "submitControlStep": {
+      "description": "Submits the credential step directly before it by clicking a reviewed control, in that step's document. click: an ordinary POST form. spa: a single-page form with no POST action.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "submission", "selectors"],
+      "properties": {
+        "kind": { "const": "submit" },
+        "submission": { "enum": ["click", "spa"] },
+        "waitFor": { "$ref": "#/$defs/selector" },
+        "selectors": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["control"],
+          "properties": { "control": { "$ref": "#/$defs/selector" } }
+        }
+      }
+    },
+    "submitEnterStep": {
+      "description": "Submits the credential step directly before it by pressing Enter in the field that step typed. It names no control.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "submission"],
+      "properties": {
+        "kind": { "const": "submit" },
+        "submission": { "const": "enter" },
+        "waitFor": { "$ref": "#/$defs/selector" }
+      }
+    },
+    "totpChallenge": {
+      "description": "A reviewed authenticator-code challenge in the catalog's existing shape. paths are exact.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "label",
+        "codeSelector",
+        "submitSelector",
+        "paths",
+        "submission"
+      ],
+      "properties": {
+        "id": { "type": "string", "pattern": "^[a-z0-9-]{1,128}$" },
+        "label": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 120,
+          "pattern": "^[^\\u0000-\\u0020\\u007f-\\u009f](?:[^\\u0000-\\u001f\\u007f-\\u009f]*[^\\u0000-\\u0020\\u007f-\\u009f])?$"
+        },
+        "codeSelector": { "$ref": "#/$defs/selector" },
+        "submitSelector": { "$ref": "#/$defs/selector" },
+        "paths": { "$ref": "#/$defs/paths" },
+        "submission": { "enum": ["post", "spa"] },
+        "origins": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 8,
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/origin" }
+        }
+      }
+    }
+  }
+}
