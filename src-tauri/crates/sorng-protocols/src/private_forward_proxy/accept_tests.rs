@@ -1022,3 +1022,33 @@ async fn at_most_32_over_capacity_refusals_are_pending_and_the_rest_are_dropped(
     .expect("finished refusals never made room for another");
     fixture.proxy.stop().await.unwrap();
 }
+
+#[tokio::test]
+async fn default_limits_admit_the_52_connections_a_real_page_was_measured_to_hold() {
+    // Measured with the real engine: one page held 40 WebSockets and 12
+    // ordinary requests through its relay at once. With a cap of 32 the relay
+    // refused 20 of them and the page saw 20 failed WebSockets.
+    const HELD: usize = 52;
+    let mut fixture = Fixture::new().await;
+    let auth = fixture.credentials();
+    let request = format!(
+        "CONNECT {DESTINATION} HTTP/1.1\r\nHost: {DESTINATION}\r\nProxy-Authorization: Basic {auth}\r\n\r\n"
+    );
+    let mut tunnels = Vec::new();
+    let mut refused = 0;
+    for _ in 0..HELD {
+        let mut client = TcpStream::connect(fixture.proxy.local_addr())
+            .await
+            .unwrap();
+        client.write_all(request.as_bytes()).await.unwrap();
+        if head(&mut client).await.starts_with("HTTP/1.1 200 ") {
+            tunnels.push(client);
+        } else {
+            refused += 1;
+        }
+    }
+    assert_eq!((tunnels.len(), refused), (HELD, 0));
+    assert_eq!(fixture.proxy.diagnostics().capacity_refusals, 0);
+    assert_eq!(fixture.dials.load(Ordering::SeqCst), HELD);
+    fixture.proxy.stop().await.unwrap();
+}

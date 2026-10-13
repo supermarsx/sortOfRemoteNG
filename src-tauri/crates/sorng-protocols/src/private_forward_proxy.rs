@@ -162,10 +162,23 @@ pub struct ProxyLimits {
     pub http_idle_timeout: Duration,
 }
 
+// How many sockets the browser engine opens through one proxy at the same time,
+// for ordinary requests and for WebSockets: `g_max_sockets_per_proxy_chain` in
+// net/socket/client_socket_pool_manager.cc of the pinned Chromium 154.0.8037.58
+// (kNormal 128, kWebSocket 128). These must follow the engine when it changes.
+const ENGINE_REQUEST_SOCKETS_PER_PROXY: usize = 128;
+const ENGINE_WEBSOCKET_SOCKETS_PER_PROXY: usize = 128;
+
 impl Default for ProxyLimits {
     fn default() -> Self {
         Self {
-            max_clients: 32,
+            // One relay serves one browser context. Below the engine's own sum
+            // the relay refuses connections the engine has already admitted;
+            // a refused tunnel is ERR_TUNNEL_CONNECTION_FAILED with no retry,
+            // which the page and the user see as a proxy failure. The cap still
+            // bounds one relay to this many sockets, dials and relay buffers,
+            // whoever connects to its port.
+            max_clients: ENGINE_REQUEST_SOCKETS_PER_PROXY + ENGINE_WEBSOCKET_SOCKETS_PER_PROXY,
             max_header_bytes: 8 * 1024,
             header_timeout: Duration::from_secs(10),
             dial_timeout: Duration::from_secs(25),

@@ -848,6 +848,18 @@ async fn concurrent_tunnels_do_not_mix_payloads_or_authentication() {
     proxy.stop().await.unwrap();
 }
 
+#[test]
+fn default_client_cap_covers_both_of_the_engines_per_proxy_socket_pools() {
+    // One relay serves one browser context. The pinned engine (Chromium
+    // 154.0.8037.58) opens up to 128 sockets through a proxy for ordinary
+    // requests and up to 128 more for WebSockets. Any lower default refuses
+    // connections the engine has already admitted, and the page sees them fail.
+    assert_eq!(ENGINE_REQUEST_SOCKETS_PER_PROXY, 128);
+    assert_eq!(ENGINE_WEBSOCKET_SOCKETS_PER_PROXY, 128);
+    assert_eq!(ProxyLimits::default().max_clients, 256);
+    assert!(ProxyLimits::default().validate().is_ok());
+}
+
 #[tokio::test]
 async fn invalid_limits_fail_before_listener_start() {
     for limits in [
