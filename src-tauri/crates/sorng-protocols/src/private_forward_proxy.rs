@@ -281,9 +281,13 @@ impl PrivateForwardProxy {
 
     /// Native readiness snapshot. Check before Ready/status/authorization; a
     /// finished supervisor (including unexpected failure) is never usable even
-    /// if no caller explicitly revoked it. This is not a future liveness lease.
+    /// if no caller explicitly revoked it, and neither is one that has given up
+    /// its listener and is still tearing its clients down. This is not a future
+    /// liveness lease.
     pub fn is_running(&self) -> bool {
-        !*self.stopped.borrow() && self.task.as_ref().is_some_and(|task| !task.is_finished())
+        !*self.stopped.borrow()
+            && !self.observations.failed()
+            && self.task.as_ref().is_some_and(|task| !task.is_finished())
     }
 
     /// Secret-free observation only; does not start, probe, or authorize a route.
@@ -401,15 +405,16 @@ async fn serve<S: ListenerSource>(
                                 continue;
                             }
                             // This listener is finished, but the browser context can
-                            // only ever reach this endpoint: release the port and bind
-                            // it again. Kind only; the error text never leaves here.
+                            // only ever reach this endpoint: replace it on the same
+                            // port. It stays bound until the instant of the swap. Kind
+                            // only; the error text never leaves here.
                             let kind = error.kind();
                             log::warn!(
-                                "Private proxy listener accept failed ({kind:?}); rebinding its endpoint"
+                                "Private proxy listener accept failed ({kind:?}); replacing its listener"
                             );
-                            drop(listener);
                             match rebind(
                                 &mut source,
+                                listener,
                                 address,
                                 kind,
                                 &mut rebinds,
@@ -426,7 +431,10 @@ async fn serve<S: ListenerSource>(
                                     continue;
                                 }
                                 Rebound::Revoked => break Ok(()),
-                                Rebound::Exhausted => {
+                                Rebound::Ended => {
+                                    // Recorded before any cleanup is awaited: from
+                                    // here on the relay is not running and releases
+                                    // no credentials.
                                     observations.listener_failed();
                                     break Err(io::Error::other("Private proxy listener failed"));
                                 }

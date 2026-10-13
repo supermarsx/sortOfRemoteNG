@@ -1,7 +1,25 @@
 //! Bounded listener recovery. Transient accept errors retry on the existing
-//! listener. A terminal accept failure rebinds the SAME loopback endpoint,
-//! because the browser context's proxy endpoint is fixed for its lifetime.
-//! Never a different port, route, credential or grant, and never unbounded.
+//! listener. A terminal accept failure replaces the listener on the SAME
+//! loopback endpoint, because the browser context's proxy endpoint is fixed for
+//! its lifetime. Never a different port, route, credential or grant, and never
+//! unbounded.
+//!
+//! The relay authenticates the browser, not the other way round, and the engine
+//! sends the proxy credentials unasked once it has answered one challenge
+//! (Chromium 154.0.8037.58, net/http/http_auth_controller.cc,
+//! `SelectPreemptiveAuth`; the host releases them in `complete_auth`,
+//! sorng-browser-host/src/cef_requests.rs, through
+//! `OriginBrowserSession::answer_proxy_challenge`). Whoever listens on this
+//! port therefore receives them with the browser's next request. So the port
+//! is given up only for the two system calls of a swap, and a swap that does
+//! not get the port back ends the relay: it never returns, with the same
+//! credentials, to a port that another socket may have held.
+//!
+//! That narrows the accidental case, the operating system handing the port to
+//! an unrelated socket. It does NOT stop a local process that is waiting for
+//! the port from binding it in that instant, nor the browser from sending such
+//! a process its credentials and plain-HTTP requests before the end of the
+//! relay is noticed.
 use super::revoked;
 use std::{
     future::Future,
@@ -63,10 +81,13 @@ pub(super) const BIND_DELAYS: [Duration; 3] = [
     Duration::from_millis(200),
 ];
 
-// Rebinding after a terminal accept failure: three attempts, waiting
-// 100/300/900 ms before each, 1.3 s in total before the relay ends.
+// Replacing a listener after a terminal accept failure: at most three
+// replacements between two accepted connections. The first is immediate. A
+// replacement that fails again before it accepts anything is itself replaced
+// after 300 ms, and that one after 900 ms; the failed listener keeps the port
+// for the whole of such a wait.
 pub(super) const REBIND_DELAYS: [Duration; 3] = [
-    Duration::from_millis(100),
+    Duration::ZERO,
     Duration::from_millis(300),
     Duration::from_millis(900),
 ];
@@ -161,8 +182,9 @@ impl AcceptBackoff {
     }
 }
 
-/// Rebind attempts spent since a connection was last accepted. A listener that
-/// rebinds but never accepts again therefore cannot rebind without bound.
+/// Replacements spent since a connection was last accepted. A listener that
+/// is replaced but never accepts again therefore cannot be replaced without
+/// bound.
 #[derive(Default)]
 pub(super) struct RebindBudget {
     attempts: usize,
@@ -179,15 +201,24 @@ impl RebindBudget {
 pub(super) enum Rebound<L> {
     Listener(L),
     Revoked,
-    Exhausted,
+    /// The relay holds no usable listener and must end.
+    Ended,
 }
 
-/// Replaces a listener whose accept failed terminally. The caller has already
-/// dropped that listener, so the port is free. Credentials, grants, the dialer
-/// and established tunnels are untouched; revocation and reaping stay live
-/// through every wait and every bind.
+/// Replaces a listener whose accept failed terminally. Credentials, grants,
+/// the dialer and established tunnels are untouched; revocation and reaping
+/// stay live through the wait and the bind.
+///
+/// The failed listener is passed in still bound and keeps the port through any
+/// wait. It is dropped immediately before the bind, so the port is in nobody's
+/// hands only for that swap. If the bind then fails, for whatever reason, the
+/// relay has no socket left and ends: `AddrInUse` means another socket holds
+/// the endpoint now, and waiting to try again would leave the port open to
+/// anyone while the relay still answers for it.
+#[allow(clippy::too_many_arguments)]
 pub(super) async fn rebind<S: ListenerSource>(
     source: &mut S,
+    failed: S::Listener,
     address: SocketAddr,
     failure: io::ErrorKind,
     budget: &mut RebindBudget,
@@ -196,46 +227,44 @@ pub(super) async fn rebind<S: ListenerSource>(
     refusals: &mut JoinSet<()>,
 ) -> Rebound<S::Listener> {
     let attempts = REBIND_DELAYS.len();
-    let mut kind = failure;
-    while let Some(delay) = budget.next_delay() {
-        {
-            // One wait per attempt: client completions must not restart it.
-            let pause = source.pause(delay);
-            tokio::pin!(pause);
-            loop {
-                tokio::select! {
-                    biased;
-                    _ = revoked(stop.clone()) => return Rebound::Revoked,
-                    Some(_) = clients.join_next(), if !clients.is_empty() => {},
-                    Some(_) = refusals.join_next(), if !refusals.is_empty() => {},
-                    _ = &mut pause => break,
-                }
+    let Some(delay) = budget.next_delay() else {
+        log::error!("Private proxy listener failed ({failure:?}); replacements exhausted");
+        return Rebound::Ended;
+    };
+    if !delay.is_zero() {
+        // One wait per replacement: client completions must not restart it.
+        let pause = source.pause(delay);
+        tokio::pin!(pause);
+        loop {
+            tokio::select! {
+                biased;
+                _ = revoked(stop.clone()) => return Rebound::Revoked,
+                Some(_) = clients.join_next(), if !clients.is_empty() => {},
+                Some(_) = refusals.join_next(), if !refusals.is_empty() => {},
+                _ = &mut pause => break,
             }
         }
-        let bound = tokio::select! {
-            biased;
-            _ = revoked(stop.clone()) => return Rebound::Revoked,
-            bound = source.bind(address.port()) => bound,
-        };
-        match bound {
-            Ok((listener, bound_address)) if bound_address == address => {
-                log::info!(
-                    "Private proxy listener rebound on attempt {} of {attempts}",
-                    budget.attempts
-                );
-                return Rebound::Listener(listener);
-            }
-            // Never serve from an endpoint the browser context does not hold.
-            Ok(_) => kind = io::ErrorKind::AddrNotAvailable,
-            Err(error) => kind = error.kind(),
-        }
-        log::warn!(
-            "Private proxy listener rebind failed ({kind:?}); attempt {} of {attempts}",
-            budget.attempts
-        );
     }
-    log::error!("Private proxy listener failed ({kind:?}); rebind attempts exhausted");
-    Rebound::Exhausted
+    drop(failed);
+    let bound = tokio::select! {
+        biased;
+        _ = revoked(stop.clone()) => return Rebound::Revoked,
+        bound = source.bind(address.port()) => bound,
+    };
+    let kind = match bound {
+        Ok((listener, bound_address)) if bound_address == address => {
+            log::info!(
+                "Private proxy listener replaced on attempt {} of {attempts}",
+                budget.attempts
+            );
+            return Rebound::Listener(listener);
+        }
+        // Never serve from an endpoint the browser context does not hold.
+        Ok(_) => io::ErrorKind::AddrNotAvailable,
+        Err(error) => error.kind(),
+    };
+    log::error!("Private proxy listener failed ({kind:?}); its port could not be bound again");
+    Rebound::Ended
 }
 
 #[cfg(test)]
@@ -285,7 +314,9 @@ mod tests {
     #[test]
     fn bind_and_rebind_schedules_are_the_bounded_relay_contract() {
         assert_eq!(BIND_DELAYS, [0, 50, 200].map(Duration::from_millis));
-        assert_eq!(REBIND_DELAYS, [100, 300, 900].map(Duration::from_millis));
+        // The first replacement is immediate: the port is never given up for
+        // longer than the swap itself.
+        assert_eq!(REBIND_DELAYS, [0, 300, 900].map(Duration::from_millis));
         let mut budget = RebindBudget::default();
         for delay in REBIND_DELAYS {
             assert_eq!(budget.next_delay(), Some(delay));

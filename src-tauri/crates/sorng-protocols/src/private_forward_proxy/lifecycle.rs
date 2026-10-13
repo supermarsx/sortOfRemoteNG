@@ -60,6 +60,11 @@ impl Observations {
             .compare_exchange(0, 2, Ordering::Relaxed, Ordering::Relaxed);
     }
 
+    /// True from the moment the supervisor gives up, before its cleanup ends.
+    pub fn failed(&self) -> bool {
+        self.failure.load(Ordering::Relaxed) != 0
+    }
+
     pub fn snapshot(&self, revoked: bool, finished: bool) -> PrivateProxyDiagnostics {
         let state = match self.failure.load(Ordering::Relaxed) {
             1 => PrivateProxyState::ListenerFailed,

@@ -718,6 +718,38 @@ async fn completed_supervisor_results_and_explicit_revocation_are_not_running() 
 }
 
 #[tokio::test]
+async fn a_relay_that_has_given_up_is_not_running_while_its_cleanup_is_still_pending() {
+    // The supervisor records the listener failure the moment it gives up and
+    // only then tears its clients down. From that moment the relay must not
+    // report itself as running or hand out its credentials, although its task
+    // is still alive.
+    let (stopped, _receiver) = watch::channel(false);
+    let (finish, finished) = tokio::sync::oneshot::channel::<()>();
+    let task = tokio::spawn(async move {
+        let _ = finished.await;
+        Err(io::Error::other("Private proxy listener failed"))
+    });
+    let mut proxy = PrivateForwardProxy {
+        address: "127.0.0.1:1".parse().unwrap(),
+        password: Zeroizing::new("synthetic-not-a-live-credential".into()),
+        stopped,
+        task: Some(task),
+        observations: Arc::default(),
+    };
+    assert!(proxy.is_running());
+    assert!(proxy.with_credentials(|_, _| ()).is_some());
+    proxy.observations.listener_failed();
+    assert!(!proxy.task.as_ref().unwrap().is_finished());
+    assert!(!proxy.is_running());
+    assert!(proxy
+        .with_credentials(|_, _| panic!("credentials exposed after the relay gave up"))
+        .is_none());
+    assert_eq!(proxy.diagnostics().state, PrivateProxyState::ListenerFailed);
+    finish.send(()).unwrap();
+    assert!(timeout(TEST_DEADLINE, proxy.stop()).await.unwrap().is_err());
+}
+
+#[tokio::test]
 async fn stop_closes_active_and_unauthenticated_streams_and_drop_also_revokes() {
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let mut proxy = PrivateForwardProxy::start(

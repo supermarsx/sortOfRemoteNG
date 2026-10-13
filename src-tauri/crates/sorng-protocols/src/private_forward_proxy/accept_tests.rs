@@ -204,6 +204,7 @@ impl ListenerSource for FaultSource {
 struct Probe {
     script: Arc<Script>,
     gate: Arc<Semaphore>,
+    parked: Weak<Parked>,
     failed: mpsc::UnboundedReceiver<Instant>,
     binds: mpsc::UnboundedReceiver<BindAttempt>,
     pauses: mpsc::UnboundedReceiver<Duration>,
@@ -215,20 +216,22 @@ fn rig(hold_clock: bool) -> (FaultSource, Probe) {
     let (failed_tx, failed) = mpsc::unbounded_channel();
     let (binds_tx, binds) = mpsc::unbounded_channel();
     let (pauses_tx, pauses) = mpsc::unbounded_channel();
-    let source = FaultSource {
-        script: script.clone(),
-        held: hold_clock.then(|| gate.clone()),
-        parked: Some(Arc::default()),
-        failed: failed_tx,
-        binds: binds_tx,
-        pauses: pauses_tx,
-    };
+    let parked = Arc::<Parked>::default();
     let probe = Probe {
-        script,
-        gate,
+        script: script.clone(),
+        gate: gate.clone(),
+        parked: Arc::downgrade(&parked),
         failed,
         binds,
         pauses,
+    };
+    let source = FaultSource {
+        script,
+        held: hold_clock.then_some(gate),
+        parked: Some(parked),
+        failed: failed_tx,
+        binds: binds_tx,
+        pauses: pauses_tx,
     };
     (source, probe)
 }
@@ -253,6 +256,14 @@ impl Probe {
     fn hand_over(&self, clients: impl IntoIterator<Item = TcpStream>) {
         self.script.handed_over.lock().unwrap().extend(clients);
         self.script.wake.notify_one();
+    }
+
+    /// Whether the relay has released a listener that its source has not yet
+    /// bound again.
+    fn holds_released_listener(&self) -> bool {
+        self.parked
+            .upgrade()
+            .is_some_and(|parked| parked.lock().unwrap().is_some())
     }
 
     /// Lets exactly one held wait elapse.
@@ -545,8 +556,9 @@ async fn recovered_listener_still_enforces_authentication_and_destination_grants
 #[tokio::test]
 async fn exhausting_accept_retries_is_terminal_and_has_only_fixed_diagnostics() {
     let mut fixture = Fixture::new().await;
-    // The sixth consecutive transient error goes to a rebind; here none succeeds.
-    fixture.probe.fail_binds([io::ErrorKind::AddrInUse; 3]);
+    // The sixth consecutive transient error replaces the listener; here the
+    // port cannot be bound again.
+    fixture.probe.fail_binds([io::ErrorKind::AddrInUse]);
     fixture.inject(io::ErrorKind::WouldBlock, 7);
     let mut previous = fixture.next_error().await;
     for minimum_ms in [25, 50, 100, 200, 400] {
@@ -744,8 +756,8 @@ async fn terminal_accept_failure_rebinds_the_same_port_and_keeps_serving() {
         for _ in 0..count {
             fixture.next_error().await;
         }
-        // Each accepted connection since the last failure refilled the budget.
-        assert_eq!(fixture.probe.next_pause().await, Duration::from_millis(100));
+        // Each accepted connection since the last failure refilled the budget,
+        // so the listener is replaced at once.
         assert_eq!(
             fixture.probe.next_bind().await,
             (endpoint.port(), Ok(endpoint))
@@ -772,6 +784,7 @@ async fn terminal_accept_failure_rebinds_the_same_port_and_keeps_serving() {
         );
     }
     assert_eq!(fixture.dials.load(Ordering::SeqCst), 3);
+    // Neither replacement waited for anything.
     assert!(fixture.probe.settled());
     assert_eq!(captured::count(log::Level::Warn, "PermissionDenied"), 1);
     assert_eq!(captured::count(log::Level::Error, ""), 0);
@@ -780,16 +793,60 @@ async fn terminal_accept_failure_rebinds_the_same_port_and_keeps_serving() {
 }
 
 #[tokio::test]
-async fn a_released_port_stays_reserved_until_the_relay_binds_it_again() {
-    // What keeps the rebind tests independent of every other socket: for as
-    // long as the relay is between its release and its rebind, nobody else
-    // can bind the port.
+async fn the_first_replacement_does_not_wait_for_the_clock() {
+    // This clock is held and never released: a wait before the first
+    // replacement would never end.
     let mut fixture = Fixture::with_held_clock().await;
     let endpoint = fixture.proxy.local_addr();
     assert_eq!(fixture.probe.next_bind().await, (0, Ok(endpoint)));
     fixture.inject(io::ErrorKind::PermissionDenied, 1);
     fixture.next_error().await;
-    assert_eq!(fixture.probe.next_pause().await, Duration::from_millis(100));
+    assert_eq!(
+        fixture.probe.next_bind().await,
+        (endpoint.port(), Ok(endpoint))
+    );
+    assert!(fixture.probe.settled());
+    let (mut client, mut peer) = fixture.connect().await;
+    roundtrip(&mut client, &mut peer).await;
+    fixture.proxy.stop().await.unwrap();
+}
+
+#[tokio::test]
+async fn a_listener_released_to_its_source_stays_bound_until_that_port_is_bound_again() {
+    // What keeps the replacement tests independent of every other socket and
+    // of how readily the operating system gives a closed port back.
+    let (mut source, probe) = rig(false);
+    let (listener, address) = source.bind(0).await.unwrap();
+    assert!(!probe.holds_released_listener());
+    drop(listener);
+    assert!(probe.holds_released_listener());
+    assert!(TcpListener::bind(address).await.is_err());
+    let (_listener, again) = source.bind(address.port()).await.unwrap();
+    assert_eq!(again, address);
+    assert!(!probe.holds_released_listener());
+}
+
+#[tokio::test]
+async fn a_failed_listener_keeps_its_port_while_the_relay_waits_to_replace_it() {
+    let mut fixture = Fixture::with_held_clock().await;
+    let endpoint = fixture.proxy.local_addr();
+    assert_eq!(fixture.probe.next_bind().await, (0, Ok(endpoint)));
+    // The first replacement is immediate, and its listener fails before it
+    // accepts anything, so the next replacement has to wait.
+    fixture.inject(io::ErrorKind::PermissionDenied, 1);
+    fixture.next_error().await;
+    assert_eq!(
+        fixture.probe.next_bind().await,
+        (endpoint.port(), Ok(endpoint))
+    );
+    fixture.inject(io::ErrorKind::PermissionDenied, 1);
+    fixture.next_error().await;
+    assert_eq!(fixture.probe.next_pause().await, Duration::from_millis(300));
+    // The relay is waiting and still reports itself as running. It has not
+    // released the listener that failed: the port is its own for the whole
+    // wait and nobody else can bind it.
+    assert!(fixture.proxy.is_running());
+    assert!(!fixture.probe.holds_released_listener());
     assert!(TcpListener::bind(endpoint).await.is_err());
     fixture.probe.release_clock();
     assert_eq!(
@@ -806,9 +863,8 @@ async fn a_really_closed_port_is_rebound_by_the_production_bind_under_a_live_tun
     // Every other test keeps its released port reserved. Here the operating
     // system decides: the listener is really closed while a tunnel it accepted
     // stays open, and the production bind must then get the same port back.
-    // When ephemeral ports are scarce the OS refuses that with AddrInUse,
-    // which is not the relay's doing: then, and only then, the scenario
-    // starts over on a fresh port.
+    // When ephemeral ports are scarce the OS refuses that with AddrInUse. The
+    // relay then ends, as it must, and the scenario starts over on a fresh one.
     for _ in 0..5 {
         let (source, probe) = rig(false);
         let source = source.closing_released_ports();
@@ -818,7 +874,6 @@ async fn a_really_closed_port_is_rebound_by_the_production_bind_under_a_live_tun
         let (mut client, mut peer) = fixture.connect().await;
         fixture.inject(io::ErrorKind::PermissionDenied, 1);
         fixture.next_error().await;
-        assert_eq!(fixture.probe.next_pause().await, Duration::from_millis(100));
         match fixture.probe.next_bind().await {
             (port, Ok(address)) => {
                 assert_eq!((port, address), (endpoint.port(), endpoint));
@@ -828,11 +883,17 @@ async fn a_really_closed_port_is_rebound_by_the_production_bind_under_a_live_tun
                 let (mut next_client, mut next_peer) = fixture.connect().await;
                 roundtrip(&mut next_client, &mut next_peer).await;
                 assert_eq!(fixture.dials.load(Ordering::SeqCst), 2);
+                assert!(fixture.probe.settled());
                 fixture.proxy.stop().await.unwrap();
                 return;
             }
             (port, Err(kind)) => {
                 assert_eq!((port, kind), (endpoint.port(), io::ErrorKind::AddrInUse));
+                fixture.wait_ended().await;
+                assert_eq!(
+                    fixture.proxy.diagnostics().state,
+                    PrivateProxyState::ListenerFailed
+                );
             }
         }
     }
@@ -844,11 +905,14 @@ async fn rebind_budget_is_not_refilled_by_a_listener_that_never_accepts() {
     let mut fixture = Fixture::new().await;
     let endpoint = fixture.proxy.local_addr();
     assert_eq!(fixture.probe.next_bind().await, (0, Ok(endpoint)));
-    // Every rebind succeeds, but each fresh listener fails before it accepts.
-    for delay in [100, 300, 900].map(Duration::from_millis) {
+    // Every replacement succeeds, but each fresh listener fails before it
+    // accepts. The first replacement is immediate, the next two wait.
+    for delay in [0, 300, 900].map(Duration::from_millis) {
         fixture.inject(io::ErrorKind::PermissionDenied, 1);
         fixture.next_error().await;
-        assert_eq!(fixture.probe.next_pause().await, delay);
+        if !delay.is_zero() {
+            assert_eq!(fixture.probe.next_pause().await, delay);
+        }
         assert_eq!(
             fixture.probe.next_bind().await,
             (endpoint.port(), Ok(endpoint))
@@ -870,9 +934,11 @@ async fn rebind_budget_is_not_refilled_by_a_listener_that_never_accepts() {
 }
 
 #[tokio::test]
-async fn rebind_exhaustion_ends_the_relay_as_before_and_logs_only_the_kind() {
+async fn a_port_held_by_another_socket_ends_the_relay_at_once_and_logs_only_the_kind() {
     captured::start();
-    let mut fixture = Fixture::new().await;
+    // The clock is held and never released: any wait for another attempt
+    // would keep this relay from ever ending.
+    let mut fixture = Fixture::with_held_clock().await;
     let mut independent = Fixture::new().await;
     let endpoint = fixture.proxy.local_addr();
     assert_eq!(fixture.probe.next_bind().await, (0, Ok(endpoint)));
@@ -882,25 +948,15 @@ async fn rebind_exhaustion_ends_the_relay_as_before_and_logs_only_the_kind() {
         endpoint.port().to_string(),
     ];
     let (mut client, mut peer) = fixture.connect().await;
-    let rebinds = [
-        (100, io::ErrorKind::AddrInUse),
-        (300, io::ErrorKind::AddrInUse),
-        (900, io::ErrorKind::AddrNotAvailable),
-    ];
-    fixture.probe.fail_binds(rebinds.map(|(_, kind)| kind));
+    fixture.probe.fail_binds([io::ErrorKind::AddrInUse]);
     fixture.inject(io::ErrorKind::PermissionDenied, 1);
     fixture.next_error().await;
-    for (delay, kind) in rebinds {
-        assert_eq!(
-            fixture.probe.next_pause().await,
-            Duration::from_millis(delay)
-        );
-        assert_eq!(
-            fixture.probe.next_bind().await,
-            (endpoint.port(), Err(kind))
-        );
-    }
+    assert_eq!(
+        fixture.probe.next_bind().await,
+        (endpoint.port(), Err(io::ErrorKind::AddrInUse))
+    );
     fixture.wait_ended().await;
+    // One attempt, no wait before it and nothing after it.
     assert!(fixture.probe.settled());
     closed(&mut client).await;
     closed(&mut peer).await;
@@ -919,11 +975,11 @@ async fn rebind_exhaustion_ends_the_relay_as_before_and_logs_only_the_kind() {
         .await
         .unwrap()
         .is_err());
-    // The accept failure, each failed rebind and the end of the relay.
+    // The accept failure and the end of the relay, each with its kind only.
     assert_eq!(captured::count(log::Level::Warn, "PermissionDenied"), 1);
-    assert_eq!(captured::count(log::Level::Warn, "AddrInUse"), 2);
-    assert_eq!(captured::count(log::Level::Warn, "AddrNotAvailable"), 1);
-    assert_eq!(captured::count(log::Level::Error, "AddrNotAvailable"), 1);
+    assert_eq!(captured::count(log::Level::Warn, "AddrInUse"), 0);
+    assert_eq!(captured::count(log::Level::Error, "AddrInUse"), 1);
+    assert_eq!(captured::count(log::Level::Error, ""), 1);
     assert_logs_only_kinds(&forbidden);
     let (mut other_client, mut other_peer) = independent.connect().await;
     roundtrip(&mut other_client, &mut other_peer).await;
@@ -931,26 +987,107 @@ async fn rebind_exhaustion_ends_the_relay_as_before_and_logs_only_the_kind() {
 }
 
 #[tokio::test]
-async fn revocation_interrupts_every_rebind_backoff() {
-    let delays = [100, 300, 900].map(Duration::from_millis);
+async fn a_port_lost_on_a_later_replacement_ends_the_relay_without_another_attempt() {
+    let mut fixture = Fixture::with_held_clock().await;
+    let endpoint = fixture.proxy.local_addr();
+    assert_eq!(fixture.probe.next_bind().await, (0, Ok(endpoint)));
+    fixture.inject(io::ErrorKind::PermissionDenied, 1);
+    fixture.next_error().await;
+    assert_eq!(
+        fixture.probe.next_bind().await,
+        (endpoint.port(), Ok(endpoint))
+    );
+    fixture.probe.fail_binds([io::ErrorKind::AddrInUse]);
+    fixture.inject(io::ErrorKind::PermissionDenied, 1);
+    fixture.next_error().await;
+    assert_eq!(fixture.probe.next_pause().await, Duration::from_millis(300));
+    fixture.probe.release_clock();
+    assert_eq!(
+        fixture.probe.next_bind().await,
+        (endpoint.port(), Err(io::ErrorKind::AddrInUse))
+    );
+    fixture.wait_ended().await;
+    // No 900 ms wait and no third attempt.
+    assert!(fixture.probe.settled());
+    assert!(!fixture.proxy.is_running());
+    assert_eq!(
+        fixture.proxy.diagnostics().state,
+        PrivateProxyState::ListenerFailed
+    );
+    assert_eq!(
+        fixture.proxy.stop().await.unwrap_err().to_string(),
+        "Private proxy listener failed"
+    );
+}
+
+#[tokio::test]
+async fn a_replacement_that_cannot_bind_for_any_reason_ends_the_relay() {
+    // Once the failed listener is gone and its replacement could not be bound,
+    // the relay holds no socket. Whatever the reason, it ends instead of
+    // waiting with its port in nobody's hands.
+    for kind in [
+        io::ErrorKind::PermissionDenied,
+        io::ErrorKind::AddrNotAvailable,
+        io::ErrorKind::OutOfMemory,
+        io::ErrorKind::Other,
+    ] {
+        captured::start();
+        let mut fixture = Fixture::with_held_clock().await;
+        let endpoint = fixture.proxy.local_addr();
+        assert_eq!(fixture.probe.next_bind().await, (0, Ok(endpoint)));
+        fixture.probe.fail_binds([kind]);
+        fixture.inject(io::ErrorKind::BrokenPipe, 1);
+        fixture.next_error().await;
+        assert_eq!(
+            fixture.probe.next_bind().await,
+            (endpoint.port(), Err(kind))
+        );
+        fixture.wait_ended().await;
+        assert!(fixture.probe.settled());
+        assert!(!fixture.proxy.is_running());
+        assert_eq!(
+            fixture.proxy.diagnostics().state,
+            PrivateProxyState::ListenerFailed
+        );
+        assert_eq!(captured::count(log::Level::Warn, "BrokenPipe"), 1);
+        assert_eq!(captured::count(log::Level::Error, &format!("{kind:?}")), 1);
+        assert_eq!(captured::count(log::Level::Error, ""), 1);
+        assert_logs_only_kinds(&[endpoint.port().to_string()]);
+        assert_eq!(
+            fixture.proxy.stop().await.unwrap_err().to_string(),
+            "Private proxy listener failed"
+        );
+    }
+}
+
+#[tokio::test]
+async fn revocation_interrupts_every_wait_before_a_replacement() {
+    let delays = [300, 900].map(Duration::from_millis);
     for held in 0..delays.len() {
         let mut fixture = Fixture::with_held_clock().await;
         let endpoint = fixture.proxy.local_addr();
         assert_eq!(fixture.probe.next_bind().await, (0, Ok(endpoint)));
         let (mut client, mut peer) = fixture.connect().await;
-        fixture
-            .probe
-            .fail_binds(vec![io::ErrorKind::AddrInUse; held]);
+        // The first replacement is immediate. Every later one waits first,
+        // because no listener in between accepts anything.
         fixture.inject(io::ErrorKind::PermissionDenied, 1);
         fixture.next_error().await;
+        assert_eq!(
+            fixture.probe.next_bind().await,
+            (endpoint.port(), Ok(endpoint))
+        );
         for delay in &delays[..held] {
+            fixture.inject(io::ErrorKind::PermissionDenied, 1);
+            fixture.next_error().await;
             assert_eq!(fixture.probe.next_pause().await, *delay);
             fixture.probe.release_clock();
             assert_eq!(
                 fixture.probe.next_bind().await,
-                (endpoint.port(), Err(io::ErrorKind::AddrInUse))
+                (endpoint.port(), Ok(endpoint))
             );
         }
+        fixture.inject(io::ErrorKind::PermissionDenied, 1);
+        fixture.next_error().await;
         assert_eq!(fixture.probe.next_pause().await, delays[held]);
         // The scripted clock never lets this wait elapse, so only revocation
         // can end it. Established tunnels keep relaying in the meantime.
@@ -961,8 +1098,7 @@ async fn revocation_interrupts_every_rebind_backoff() {
             .await
             .unwrap()
             .unwrap();
-        // The failed listener was released before the wait began, and no bind
-        // followed the revocation: nothing listens on the endpoint any more.
+        // No bind followed the revocation.
         assert!(fixture.probe.settled());
         assert_eq!(
             fixture.proxy.diagnostics().state,
