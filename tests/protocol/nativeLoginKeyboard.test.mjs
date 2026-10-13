@@ -6,136 +6,282 @@ import { webcrypto } from "node:crypto";
 import { JSDOM } from "jsdom";
 
 const base = resolve("src-tauri/crates/sorng-browser-host/src");
-const manifest = readFileSync(resolve(base,"native_login_profiles.rs"),"utf8");
-const modules = [...manifest.split(");")[0].matchAll(/include_str!\("([^"]+)"\)/g)]
-  .map(([,path]) => readFileSync(resolve(base,path),"utf8")).join("");
-const source = readFileSync(resolve(base,"native_login_client.js"),"utf8")
+const manifest = readFileSync(
+  resolve(base, "native_login_profiles.rs"),
+  "utf8",
+);
+const modules = [
+  ...manifest.split(");")[0].matchAll(/include_str!\("([^"]+)"\)/g),
+]
+  .map(([, path]) => readFileSync(resolve(base, path), "utf8"))
+  .join("");
+const source = readFileSync(resolve(base, "native_login_client.js"), "utf8")
   .replace("/* REVIEWED_FORM_MODULES */", () => modules)
-  .replace("/* NATIVE_KEYBOARD_CLIENT */", () => readFileSync(resolve(base,"native_login_typing.js"),"utf8"));
-const delay = ms => new Promise(resolve => setTimeout(resolve,ms));
+  .replace("/* NATIVE_KEYBOARD_CLIENT */", () =>
+    readFileSync(resolve(base, "native_login_typing.js"), "utf8"),
+  );
+const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
-function fixture(t, manual = false, google = false, visibilityToggle = false, waitForInput = false, background = null, url = "https://device.test/login") {
-  const dom = new JSDOM(google
-    ? '<form method="POST"><input id="identifierId" name="identifier" type="text" autocomplete="username"><input name="hiddenPassword" type="password" aria-hidden="true" tabindex="-1"><button name="action" id="identifierNext">Next</button></form>'
-    : '<form method="post" action="/login"><input id="username"><input id="password" type="password"><button id="login" type="submit">Login</button></form>',{
-    url:google ? "https://accounts.google.com/v3/signin/identifier" : url,runScripts:"outside-only",
-  });
-  const win = dom.window, doc = win.document;
+function fixture(
+  t,
+  manual = false,
+  google = false,
+  visibilityToggle = false,
+  waitForInput = false,
+  background = null,
+  url = "https://device.test/login",
+) {
+  const dom = new JSDOM(
+    google
+      ? '<form method="POST"><input id="identifierId" name="identifier" type="text" autocomplete="username"><input name="hiddenPassword" type="password" aria-hidden="true" tabindex="-1"><button name="action" id="identifierNext">Next</button></form>'
+      : '<form method="post" action="/login"><input id="username"><input id="password" type="password"><button id="login" type="submit">Login</button></form>',
+    {
+      url: google ? "https://accounts.google.com/v3/signin/identifier" : url,
+      runScripts: "outside-only",
+    },
+  );
+  const win = dom.window,
+    doc = win.document;
   const errors = [];
-  win.addEventListener("error", event => { errors.push(event.error); event.preventDefault(); });
+  win.addEventListener("error", (event) => {
+    errors.push(event.error);
+    event.preventDefault();
+  });
   if (background) {
     Object.defineProperty(doc, "visibilityState", { get: () => "hidden" });
     Object.defineProperty(doc, "hidden", { get: () => true });
     doc.hasFocus = () => false;
     win.focus = () => assert.fail("automatic login must not activate a window");
   }
-  t.after(() => { win.dispatchEvent(new win.Event("pagehide")); win.close(); });
-  Object.defineProperty(win.HTMLElement.prototype,"offsetParent",{get(){ return this.parentElement; }});
-  win.HTMLElement.prototype.getClientRects = function(){ return this.isConnected ? [{width:100,height:20}] : []; };
-  if (win.location.protocol === "https:") Object.defineProperty(win.crypto,"subtle",{value:webcrypto.subtle});
+  t.after(() => {
+    win.dispatchEvent(new win.Event("pagehide"));
+    win.close();
+  });
+  Object.defineProperty(win.HTMLElement.prototype, "offsetParent", {
+    get() {
+      return this.parentElement;
+    },
+  });
+  win.HTMLElement.prototype.getClientRects = function () {
+    return this.isConnected ? [{ width: 100, height: 20 }] : [];
+  };
+  if (win.location.protocol === "https:")
+    Object.defineProperty(win.crypto, "subtle", { value: webcrypto.subtle });
   win.TextEncoder = TextEncoder;
-  const listeners = new Map(), original = doc.addEventListener.bind(doc);
+  const listeners = new Map(),
+    original = doc.addEventListener.bind(doc);
   doc.addEventListener = (type, callback, ...args) => {
-    if (["keydown","beforeinput","input"].includes(type)) {
-      if (!listeners.has(type)) listeners.set(type,[]);
+    if (["keydown", "beforeinput", "input"].includes(type)) {
+      if (!listeners.has(type)) listeners.set(type, []);
       listeners.get(type).push(callback);
     }
-    return original(type,callback,...args);
+    return original(type, callback, ...args);
   };
-  const values = background || { username:google ? "operator@example.test" : "operator", password:"pA55@word" };
-  const signals = [], keys = [];
-  let delivered, submits = 0;
-  const until = Date.now()+15000;
+  const values = background || {
+    username: google ? "operator@example.test" : "operator",
+    password: "pA55@word",
+  };
+  const signals = [],
+    keys = [];
+  let delivered,
+    submits = 0;
+  const until = Date.now() + 15000;
   let expired = false;
-  win.Date.now = () => expired ? until + 1 : Date.now();
-  const options = {version:1,fillDelayMs:30,submitDelayMs:50,detectionTimeoutMs:8000,submit:true,fields:[]};
+  win.Date.now = () => (expired ? until + 1 : Date.now());
+  const options = {
+    version: 1,
+    fillDelayMs: 30,
+    submitDelayMs: 50,
+    detectionTimeoutMs: 8000,
+    submit: true,
+    fields: [],
+  };
   let identifierValue;
-  doc.addEventListener("submit",event=>{event.preventDefault();submits++;});
+  doc.addEventListener("submit", (event) => {
+    event.preventDefault();
+    submits++;
+  });
   if (google && waitForInput) {
     doc.querySelector("button").disabled = true;
-    doc.addEventListener("input", event => {
-      const expected = event.target.name === "identifier" ? values.username : values.password;
-      doc.querySelector("button").disabled = event.target.value !== expected;
-    }, true);
+    doc.addEventListener(
+      "input",
+      (event) => {
+        const expected =
+          event.target.name === "identifier"
+            ? values.username
+            : values.password;
+        doc.querySelector("button").disabled = event.target.value !== expected;
+      },
+      true,
+    );
   }
-  if (google) doc.querySelector("button").onclick = event => {
-    event.preventDefault();
-    identifierValue = doc.getElementById("identifierId").value;
-    assert.equal(doc.querySelector('[name="hiddenPassword"]').value, "");
-    win.history.replaceState(null, "", "/v3/signin/challenge/pwd");
-    doc.body.innerHTML = '<form method="POST"><input id="password" name="Passwd" type="password">' +
-      (visibilityToggle ? '<input type="checkbox" id="show-password" aria-labelledby="show-password-label"><label id="show-password-label" for="show-password">Show password</label>' : '') +
-      '<button id="passwordNext">Next</button></form>';
-    if (waitForInput) doc.querySelector("button").disabled = true;
-  };
+  if (google)
+    doc.querySelector("button").onclick = (event) => {
+      event.preventDefault();
+      identifierValue = doc.getElementById("identifierId").value;
+      assert.equal(doc.querySelector('[name="hiddenPassword"]').value, "");
+      win.history.replaceState(null, "", "/v3/signin/challenge/pwd");
+      doc.body.innerHTML =
+        '<form method="POST"><input id="password" name="Passwd" type="password">' +
+        (visibilityToggle
+          ? '<input type="checkbox" id="show-password" aria-labelledby="show-password-label"><label id="show-password-label" for="show-password">Show password</label>'
+          : "") +
+        '<button id="passwordNext">Next</button></form>';
+      if (waitForInput) doc.querySelector("button").disabled = true;
+    };
   function key(field, index) {
-    const input = doc.getElementById(google && field === "username" ? "identifierId" : field), unit = values[field][index];
-    const event = {target:input,isTrusted:true,key:unit,data:unit,inputType:"insertText",preventDefault(){this.prevented=true;}};
-    for (const type of ["keydown","beforeinput"]) for(const fn of listeners.get(type)||[]) fn(event);
+    const input = doc.getElementById(
+        google && field === "username" ? "identifierId" : field,
+      ),
+      unit = values[field][index];
+    const event = {
+      target: input,
+      isTrusted: true,
+      key: unit,
+      data: unit,
+      inputType: "insertText",
+      preventDefault() {
+        this.prevented = true;
+      },
+    };
+    for (const type of ["keydown", "beforeinput"])
+      for (const fn of listeners.get(type) || []) fn(event);
     if (event.prevented) return;
     // Only the model driver writes; the production path calls send_key_event.
     input.value += unit;
-    input.setSelectionRange(input.value.length,input.value.length);
-    for(const fn of listeners.get("input")||[]) fn(event);
-    keys.push([field,index]);
+    input.setSelectionRange(input.value.length, input.value.length);
+    for (const fn of listeners.get("input") || []) fn(event);
+    keys.push([field, index]);
   }
-  const notify = event => {
+  const notify = (event) => {
     signals.push(event);
-    setTimeout(()=>{
-      if(event.startsWith("type|")) {
-        if(manual) return;
-        const [,action,stage,field,n] = event.split("|"), index=Number(n), role=`type|${stage}|${field}`;
-        if(action === "start") delivered.nativeTyping("probe",0,until,false,role);
-        if(action === "key") { key(field,index); delivered.nativeTyping("probe",index+1,until,false,role); }
-      } else if(google && ["identifier","password"].includes(event)) {
-        delivered("https://accounts.google.com",event==="identifier"?values.username:"",event==="password"?values.password:"",true,until,event);
-      } else if(["form-prepare","form","form-submit"].includes(event)) {
-        delivered(new URL(url).origin,event==="form"?values.username:"",event==="form"?values.password:"",true,until,{...options,fields:[]},event);
+    setTimeout(() => {
+      if (event.startsWith("type|")) {
+        if (manual) return;
+        const [, action, stage, field, n] = event.split("|"),
+          index = Number(n),
+          role = `type|${stage}|${field}`;
+        if (action === "start")
+          delivered.nativeTyping("probe", 0, until, false, role);
+        if (action === "key") {
+          key(field, index);
+          delivered.nativeTyping("probe", index + 1, until, false, role);
+        }
+      } else if (google && ["identifier", "password"].includes(event)) {
+        delivered(
+          "https://accounts.google.com",
+          event === "identifier" ? values.username : "",
+          event === "password" ? values.password : "",
+          true,
+          until,
+          event,
+        );
+      } else if (["form-prepare", "form", "form-submit"].includes(event)) {
+        delivered(
+          new URL(url).origin,
+          event === "form" ? values.username : "",
+          event === "form" ? values.password : "",
+          true,
+          until,
+          { ...options, fields: [] },
+          event,
+        );
       }
-    },0);
+    }, 0);
   };
-  delivered = win.eval(source)(notify,google ? {provider:"google-account"} : {selectors:{username:"#username",password:"#password",submit:"#login"}},google ? "google-account" : "modular-form",true);
-  return {doc,win,signals,keys,values,until,delivered,errors,expire:()=>{expired=true;},submits:()=>submits,identifierValue:()=>identifierValue};
+  delivered = win.eval(source)(
+    notify,
+    google
+      ? { provider: "google-account" }
+      : {
+          selectors: {
+            username: "#username",
+            password: "#password",
+            submit: "#login",
+          },
+        },
+    google ? "google-account" : "modular-form",
+    true,
+  );
+  return {
+    doc,
+    win,
+    signals,
+    keys,
+    values,
+    until,
+    delivered,
+    errors,
+    expire: () => {
+      expired = true;
+    },
+    submits: () => submits,
+    identifierValue: () => identifierValue,
+  };
 }
 
 for (const visibilityToggle of [false, true]) {
-test(`Google implicit Next buttons work with production native-keyboard mode across SPA stages (visibility toggle: ${visibilityToggle})`, async t => {
-  const f=fixture(t,false,true,visibilityToggle);
-  for(let i=0;i<160&&f.submits()===0;i++) await delay(50);
-  assert.equal(f.submits(),1,JSON.stringify(f.signals));
-  assert.equal(f.identifierValue(),f.values.username);
-  assert.equal(f.doc.getElementById("password").value,f.values.password);
-  assert.equal(f.keys.length,f.values.username.length+f.values.password.length);
-  assert.equal(f.signals.filter(s=>s==="identifier").length,1);
-  assert.equal(f.signals.filter(s=>s==="password").length,1);
-  assert.equal(f.signals.at(-1),"form-completed");
-  assert.equal(f.signals.some(s=>s.includes(f.values.password)),false);
-  if (visibilityToggle) assert.equal(f.doc.getElementById("show-password").checked, false);
-});
+  test(`Google implicit Next buttons work with production native-keyboard mode across SPA stages (visibility toggle: ${visibilityToggle})`, async (t) => {
+    const f = fixture(t, false, true, visibilityToggle);
+    for (let i = 0; i < 160 && f.submits() === 0; i++) await delay(50);
+    assert.equal(f.submits(), 1, JSON.stringify(f.signals));
+    assert.equal(f.identifierValue(), f.values.username);
+    assert.equal(f.doc.getElementById("password").value, f.values.password);
+    assert.equal(
+      f.keys.length,
+      f.values.username.length + f.values.password.length,
+    );
+    assert.equal(f.signals.filter((s) => s === "identifier").length, 1);
+    assert.equal(f.signals.filter((s) => s === "password").length, 1);
+    assert.equal(f.signals.at(-1), "form-completed");
+    assert.equal(
+      f.signals.some((s) => s.includes(f.values.password)),
+      false,
+    );
+    if (visibilityToggle)
+      assert.equal(f.doc.getElementById("show-password").checked, false);
+  });
 }
 
-test("Google native keyboard can fill both stages while Next waits for complete input", async t => {
+test("Google native keyboard can fill both stages while Next waits for complete input", async (t) => {
   const f = fixture(t, false, true, true, true);
   for (let i = 0; i < 160 && f.submits() === 0; i++) await delay(50);
   assert.equal(f.submits(), 1, JSON.stringify(f.signals));
   assert.equal(f.identifierValue(), f.values.username);
   assert.equal(f.doc.getElementById("password").value, f.values.password);
-  assert.equal(f.keys.length, f.values.username.length + f.values.password.length);
-  assert.equal(f.signals.filter(s => s === "identifier").length, 1);
-  assert.equal(f.signals.filter(s => s === "password").length, 1);
+  assert.equal(
+    f.keys.length,
+    f.values.username.length + f.values.password.length,
+  );
+  assert.equal(f.signals.filter((s) => s === "identifier").length, 1);
+  assert.equal(f.signals.filter((s) => s === "password").length, 1);
   assert.equal(f.signals.at(-1), "form-completed");
   assert.equal(f.doc.getElementById("show-password").checked, false);
 });
 
-test("Google disabled Next support still cancels native typing when focus moves away", async t => {
+test("Google disabled Next support still cancels native typing when focus moves away", async (t) => {
   const f = fixture(t, true, true, false, true);
-  for (let i = 0; i < 40 && !f.signals.includes("type|start|identifier|username|0"); i++) await delay(50);
+  for (
+    let i = 0;
+    i < 40 && !f.signals.includes("type|start|identifier|username|0");
+    i++
+  )
+    await delay(50);
   assert.ok(f.signals.includes("type|start|identifier|username|0"));
   const help = f.doc.createElement("a");
   help.href = "#help";
   f.doc.body.appendChild(help);
   help.focus();
-  assert.equal(f.delivered.nativeTyping("probe", 0, f.until, false, "type|identifier|username"), false);
+  assert.equal(
+    f.delivered.nativeTyping(
+      "probe",
+      0,
+      f.until,
+      false,
+      "type|identifier|username",
+    ),
+    false,
+  );
   await delay(100);
   assert.equal(f.doc.activeElement, help);
   assert.equal(f.doc.getElementById("identifierId").value, "");
@@ -144,102 +290,193 @@ test("Google disabled Next support still cancels native typing when focus moves 
   assert.equal(f.signals.at(-1), "form-rejected");
 });
 
-test("native production form uses paced keyboard receipts for both username and password", async t => {
-  const f=fixture(t);
-  for(let i=0;i<100&&f.submits()===0;i++) await delay(50);
-  assert.equal(f.submits(),1,JSON.stringify(f.signals));
-  assert.equal(f.doc.getElementById("username").value,f.values.username);
-  assert.equal(f.doc.getElementById("password").value,f.values.password);
-  assert.equal(f.keys.length,f.values.username.length+f.values.password.length);
+test("native production form uses paced keyboard receipts for both username and password", async (t) => {
+  const f = fixture(t);
+  for (let i = 0; i < 100 && f.submits() === 0; i++) await delay(50);
+  assert.equal(f.submits(), 1, JSON.stringify(f.signals));
+  assert.equal(f.doc.getElementById("username").value, f.values.username);
+  assert.equal(f.doc.getElementById("password").value, f.values.password);
+  assert.equal(
+    f.keys.length,
+    f.values.username.length + f.values.password.length,
+  );
   assert.ok(f.signals.includes("form-submit"));
-  assert.equal(f.signals.some(s=>s.includes(f.values.password)),false);
+  assert.equal(
+    f.signals.some((s) => s.includes(f.values.password)),
+    false,
+  );
 });
 
-test("native credential typing cannot overwrite manual edits while awaiting keyboard grant", async t => {
-  const f=fixture(t,true);
-  for(let i=0;i<40&&!f.signals.some(s=>s.startsWith("type|start"));i++) await delay(50);
-  const input=f.doc.getElementById("username");
-  input.value="manual-user";
-  f.delivered.nativeTyping("probe",0,f.until,false,"type|form|username");
+test("native credential typing cannot overwrite manual edits while awaiting keyboard grant", async (t) => {
+  const f = fixture(t, true);
+  for (
+    let i = 0;
+    i < 40 && !f.signals.some((s) => s.startsWith("type|start"));
+    i++
+  )
+    await delay(50);
+  const input = f.doc.getElementById("username");
+  input.value = "manual-user";
+  f.delivered.nativeTyping("probe", 0, f.until, false, "type|form|username");
   await delay(100);
-  assert.equal(f.doc.getElementById("username").value,"manual-user");
-  assert.equal(f.doc.getElementById("password").value,"");
-  assert.equal(f.submits(),0);
-  assert.equal(f.signals.some(s=>s.startsWith("type|key")),false);
+  assert.equal(f.doc.getElementById("username").value, "manual-user");
+  assert.equal(f.doc.getElementById("password").value, "");
+  assert.equal(f.submits(), 0);
+  assert.equal(
+    f.signals.some((s) => s.startsWith("type|key")),
+    false,
+  );
 });
 
-test("HTTP custom-port production typing completes with private receipts and no SubtleCrypto", async t => {
-  const f = fixture(t, false, false, false, false, null, "http://device.test:8080/login");
+test("HTTP custom-port production typing completes with private receipts and no SubtleCrypto", async (t) => {
+  const f = fixture(
+    t,
+    false,
+    false,
+    false,
+    false,
+    null,
+    "http://device.test:8080/login",
+  );
   assert.equal(f.win.crypto.subtle, undefined);
   for (let i = 0; i < 100 && f.submits() === 0; i++) await delay(50);
   assert.equal(f.submits(), 1, JSON.stringify(f.signals));
   assert.equal(f.doc.getElementById("username").value, f.values.username);
   assert.equal(f.doc.getElementById("password").value, f.values.password);
-  assert.equal(f.keys.length, f.values.username.length + f.values.password.length);
+  assert.equal(
+    f.keys.length,
+    f.values.username.length + f.values.password.length,
+  );
   assert.equal(f.signals.at(-1), "form-completed");
   assert.deepEqual(f.errors, []);
 });
 
-for (const change of ["manual-edit", "wrong-receipt", "expired-grant", "action-scheme", "action-port"]) {
-  test(`HTTP typing rejects ${change} before sending keys without SubtleCrypto`, async t => {
-    const f = fixture(t, true, false, false, false, null, "http://device.test:8080/login");
+for (const change of [
+  "manual-edit",
+  "wrong-receipt",
+  "expired-grant",
+  "action-scheme",
+  "action-port",
+]) {
+  test(`HTTP typing rejects ${change} before sending keys without SubtleCrypto`, async (t) => {
+    const f = fixture(
+      t,
+      true,
+      false,
+      false,
+      false,
+      null,
+      "http://device.test:8080/login",
+    );
     assert.equal(f.win.crypto.subtle, undefined);
-    for (let i = 0; i < 40 && !f.signals.includes("type|start|form|username|0"); i++) await delay(50);
+    for (
+      let i = 0;
+      i < 40 && !f.signals.includes("type|start|form|username|0");
+      i++
+    )
+      await delay(50);
     assert.ok(f.signals.includes("type|start|form|username|0"));
-    if (change === "manual-edit") f.doc.getElementById("username").value = "manual-user";
-    if (change === "action-scheme") f.doc.querySelector("form").action = "https://device.test:8080/login";
-    if (change === "action-port") f.doc.querySelector("form").action = "http://device.test:8081/login";
+    if (change === "manual-edit")
+      f.doc.getElementById("username").value = "manual-user";
+    if (change === "action-scheme")
+      f.doc.querySelector("form").action = "https://device.test:8080/login";
+    if (change === "action-port")
+      f.doc.querySelector("form").action = "http://device.test:8081/login";
     if (change === "expired-grant") f.expire();
     // A true result only queues the probe; authorization is its later key receipt.
-    assert.equal(f.delivered.nativeTyping("probe", 0, f.until, false,
-      change === "wrong-receipt" ? "type|form|password" : "type|form|username"), change !== "wrong-receipt");
+    assert.equal(
+      f.delivered.nativeTyping(
+        "probe",
+        0,
+        f.until,
+        false,
+        change === "wrong-receipt"
+          ? "type|form|password"
+          : "type|form|username",
+      ),
+      change !== "wrong-receipt",
+    );
     await delay(100);
     assert.equal(f.doc.getElementById("password").value, "");
     assert.equal(f.keys.length, 0);
-    assert.equal(f.signals.some(signal => signal.startsWith("type|key")), false);
+    assert.equal(
+      f.signals.some((signal) => signal.startsWith("type|key")),
+      false,
+    );
     assert.equal(f.submits(), 0);
-    if (change !== "wrong-receipt") assert.equal(f.signals.at(-1), "form-rejected");
+    if (change !== "wrong-receipt")
+      assert.equal(f.signals.at(-1), "form-rejected");
     assert.deepEqual(f.errors, []);
-    if (change === "manual-edit") assert.equal(f.doc.getElementById("username").value, "manual-user");
+    if (change === "manual-edit")
+      assert.equal(f.doc.getElementById("username").value, "manual-user");
   });
 }
 
-test("concurrent background form and Google tabs complete their own login without activation", async t => {
+test("concurrent background form and Google tabs complete their own login without activation", async (t) => {
   // CEF input is modelled here; the production bridge's native gates are covered
   // separately. Each document remains hidden and unfocused throughout delivery.
-  const tabs = Array.from({ length: 8 }, (_, index) => fixture(
-    t, false, index % 2 === 1, false, false,
-    { username: `operator${index}@example.test`, password: `secret-${index}` },
-  ));
-  for (let i = 0; i < 160 && tabs.some(f => f.submits() === 0); i++) await delay(50);
+  const tabs = Array.from({ length: 8 }, (_, index) =>
+    fixture(t, false, index % 2 === 1, false, false, {
+      username: `operator${index}@example.test`,
+      password: `secret-${index}`,
+    }),
+  );
+  for (let i = 0; i < 160 && tabs.some((f) => f.submits() === 0); i++)
+    await delay(50);
   for (const f of tabs) {
     assert.equal(f.doc.hidden, true);
     assert.equal(f.doc.hasFocus(), false);
     assert.equal(f.submits(), 1, JSON.stringify(f.signals));
-    assert.equal(f.doc.getElementById("username")?.value ?? f.identifierValue(), f.values.username);
+    assert.equal(
+      f.doc.getElementById("username")?.value ?? f.identifierValue(),
+      f.values.username,
+    );
     assert.equal(f.doc.getElementById("password").value, f.values.password);
-    assert.equal(f.keys.length, f.values.username.length + f.values.password.length);
+    assert.equal(
+      f.keys.length,
+      f.values.username.length + f.values.password.length,
+    );
     assert.equal(f.signals.at(-1), "form-completed");
     assert.deepEqual(f.errors, []);
   }
 });
 
-for (const change of ["field-focus", "navigation", "form-action", "manual-edit", "pagehide"]) {
-  test(`background automatic typing cancels on ${change} before disclosing a character`, async t => {
-    const f = fixture(t, true, false, false, false, { username: "operator", password: "secret" });
-    for (let i = 0; i < 40 && !f.signals.includes("type|start|form|username|0"); i++) await delay(50);
+for (const change of [
+  "field-focus",
+  "navigation",
+  "form-action",
+  "manual-edit",
+  "pagehide",
+]) {
+  test(`background automatic typing cancels on ${change} before disclosing a character`, async (t) => {
+    const f = fixture(t, true, false, false, false, {
+      username: "operator",
+      password: "secret",
+    });
+    for (
+      let i = 0;
+      i < 40 && !f.signals.includes("type|start|form|username|0");
+      i++
+    )
+      await delay(50);
     assert.ok(f.signals.includes("type|start|form|username|0"));
     if (change === "field-focus") f.doc.getElementById("password").focus();
     if (change === "navigation") f.win.history.replaceState(null, "", "/other");
-    if (change === "form-action") f.doc.querySelector("form").action = "https://other.test/collect";
-    if (change === "manual-edit") f.doc.getElementById("username").value = "manual";
+    if (change === "form-action")
+      f.doc.querySelector("form").action = "https://other.test/collect";
+    if (change === "manual-edit")
+      f.doc.getElementById("username").value = "manual";
     if (change === "pagehide") f.win.dispatchEvent(new f.win.Event("pagehide"));
     f.delivered.nativeTyping("probe", 0, f.until, false, "type|form|username");
     await delay(100);
-    assert.equal(f.signals.some(s => s.startsWith("type|key")), false);
+    assert.equal(
+      f.signals.some((s) => s.startsWith("type|key")),
+      false,
+    );
     assert.equal(f.doc.getElementById("password").value, "");
     assert.equal(f.submits(), 0);
     assert.deepEqual(f.errors, []);
-    if (change === "manual-edit") assert.equal(f.doc.getElementById("username").value, "manual");
+    if (change === "manual-edit")
+      assert.equal(f.doc.getElementById("username").value, "manual");
   });
 }
