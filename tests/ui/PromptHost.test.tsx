@@ -21,6 +21,7 @@ import {
   type PromptDecision,
   type PromptRequest,
 } from "../../src/utils/prompts/promptQueue";
+import { trustedClick } from "../helpers/trustedClick";
 
 const dialogFailure = vi.hoisted(() => ({ title: null as string | null }));
 
@@ -682,6 +683,166 @@ describe("PromptHost", () => {
       } finally {
         window.removeEventListener("ssh-output", onOutput);
       }
+    });
+  });
+
+  describe("a group of choices", () => {
+    const TITLE = 'Run "Disk usage" on web-01?';
+    const choices: PromptRequest["choices"] = {
+      label: "Next time this script is run",
+      options: [
+        { id: "ask", label: "Ask every time" },
+        {
+          id: "connection",
+          label: "Always run it without asking on this connection",
+        },
+        {
+          id: "everywhere",
+          label: "Always run it without asking on every connection",
+        },
+      ],
+      note: "A lasting choice covers this exact script.",
+    };
+    const radio = (id: string) =>
+      (screen.getAllByTestId("app-prompt-choice") as HTMLInputElement[]).find(
+        (input) => input.value === id,
+      )!;
+    const selected = () =>
+      (screen.getAllByTestId("app-prompt-choice") as HTMLInputElement[])
+        .filter((input) => input.checked)
+        .map((input) => input.value);
+    let now = 50_000;
+    beforeEach(() => {
+      now = 50_000;
+      vi.spyOn(performance, "now").mockImplementation(() => now);
+    });
+    /** A lasting answer chosen by a pointer, then the prompt left long enough to be read. */
+    const chooseEverywhere = () => {
+      now += 10;
+      trustedClick(radio("everywhere"), 1);
+      expect(selected()).toEqual(["everywhere"]);
+      now += 1_000;
+    };
+
+    it("passes the choice on with a trusted confirm", async () => {
+      render(<PromptHost />);
+      const outcome = ask({ choices });
+      chooseEverywhere();
+      trustedClick(confirmButton(), 1);
+      await expect(outcome).resolves.toStrictEqual({
+        confirmed: true,
+        remember: false,
+        choice: "everywhere",
+      });
+    });
+
+    it("confirms a script-dispatched click without a choice", async () => {
+      render(<PromptHost />);
+      const outcome = ask({ choices });
+      chooseEverywhere();
+      fireEvent.click(confirmButton());
+      await expect(outcome).resolves.toStrictEqual(CONFIRMED);
+    });
+
+    it("answers Escape, an abort, a host that goes away and a draw failure with not confirmed", async () => {
+      const host = render(<PromptHost />);
+      const escaped = ask({ choices });
+      chooseEverywhere();
+      fireEvent.keyDown(radio("everywhere"), { key: "Escape" });
+      await expect(escaped).resolves.toStrictEqual(CANCELLED);
+
+      const controller = new AbortController();
+      const aborted = ask({ choices }, { signal: controller.signal });
+      chooseEverywhere();
+      act(() => controller.abort());
+      await expect(aborted).resolves.toStrictEqual(CANCELLED);
+
+      const closing = ask({ choices });
+      chooseEverywhere();
+      act(() => {
+        window.dispatchEvent(new Event("pagehide"));
+      });
+      await expect(closing).resolves.toStrictEqual(CANCELLED);
+
+      const orphaned = ask({ choices });
+      chooseEverywhere();
+      host.unmount();
+      await expect(orphaned).resolves.toStrictEqual(CANCELLED);
+
+      vi.spyOn(console, "error").mockImplementation(() => {});
+      render(<PromptHost />);
+      dialogFailure.title = "broken";
+      const broken = ask({ title: "broken", choices });
+      await expect(broken).resolves.toStrictEqual(CANCELLED);
+    });
+
+    it("starts each prompt on the first answer", async () => {
+      render(<PromptHost />);
+      const first = ask({ title: "first", choices });
+      const second = ask({ title: "second", choices });
+      chooseEverywhere();
+      trustedClick(confirmButton(), 1);
+      await expect(first).resolves.toStrictEqual({
+        ...CONFIRMED,
+        choice: "everywhere",
+      });
+      expect(promptDialog("second")).toBeInTheDocument();
+      expect(selected()).toEqual(["ask"]);
+      now += 1_000;
+      trustedClick(confirmButton(), 1);
+      await expect(second).resolves.toStrictEqual({
+        ...CONFIRMED,
+        choice: "ask",
+      });
+    });
+
+    it("Enter on a radio confirms neither the prompt nor a dialog underneath", async () => {
+      const closeTab = vi.fn();
+      const keepTab = vi.fn();
+      render(
+        <>
+          <ConfirmDialog
+            isOpen
+            title="Close tab?"
+            message="Disconnect the session?"
+            onConfirm={closeTab}
+            onCancel={keepTab}
+          />
+          <PromptHost />
+        </>,
+      );
+      const outcome = ask({ choices });
+      await waitFor(() => expect(confirmButton()).toHaveFocus());
+      chooseEverywhere();
+      const seen = vi.fn();
+      const types = ["keydown", "keypress", "keyup"] as const;
+      for (const type of types) document.addEventListener(type, seen);
+      try {
+        for (const target of [radio("everywhere"), radio("ask")]) {
+          target.focus();
+          for (const key of ["Enter", " "])
+            for (const type of types)
+              fireEvent(
+                target,
+                new KeyboardEvent(type, {
+                  key,
+                  bubbles: true,
+                  cancelable: true,
+                }),
+              );
+        }
+        expect(seen).not.toHaveBeenCalled();
+      } finally {
+        for (const type of types) document.removeEventListener(type, seen);
+      }
+      expect(closeTab).not.toHaveBeenCalled();
+      expect(keepTab).not.toHaveBeenCalled();
+      expect(await stateOf(outcome)).toBe("pending");
+      expect(promptDialog(TITLE)).toBeInTheDocument();
+      expect(
+        screen.getByRole("dialog", { name: "Close tab?" }),
+      ).toBeInTheDocument();
+      expect(selected()).toEqual(["everywhere"]);
     });
   });
 });

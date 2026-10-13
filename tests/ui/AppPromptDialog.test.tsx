@@ -16,6 +16,7 @@ import {
   remoteDeletePrompt,
   sshScriptRunPrompt,
 } from "../../src/utils/prompts/runPromptRequests";
+import { trustedClick } from "../helpers/trustedClick";
 
 const TSX_PATH = "src/components/ui/dialogs/AppPromptDialog.tsx";
 const CSS_PATH = "src/components/ui/dialogs/AppPromptDialog.module.css";
@@ -900,6 +901,370 @@ describe("AppPromptDialog", () => {
       expect(tsx).not.toContain("innerHTML");
       expect(tsx).not.toMatch(/console\./);
       expect(tsx).not.toMatch(/localStorage|sessionStorage/);
+    });
+  });
+
+  describe("a group of choices", () => {
+    const LEGEND = "Next time this script is run";
+    const NOTE =
+      "A lasting choice covers this exact script. You are asked again when it changes.";
+    const group = (
+      overrides: Partial<NonNullable<PromptRequest["choices"]>> = {},
+    ): NonNullable<PromptRequest["choices"]> => ({
+      label: LEGEND,
+      options: [
+        { id: "ask", label: "Ask every time" },
+        {
+          id: "session",
+          label: "Don't ask again in this session",
+          hint: "Until the session ends or the script changes.",
+        },
+        {
+          id: "connection",
+          label: "Always run it without asking on this connection",
+          hint: "Only this exact script, only on this saved connection.",
+        },
+        {
+          id: "everywhere",
+          label: "Always run it without asking on every connection",
+          hint: "Only this exact script, in any SSH session.",
+        },
+      ],
+      note: NOTE,
+      ...overrides,
+    });
+    const openGroup = (overrides: Partial<PromptRequest> = {}) =>
+      open({ choices: group(), ...overrides });
+    const radios = () =>
+      screen.getAllByTestId("app-prompt-choice") as HTMLInputElement[];
+    const radio = (id: string) => radios().find((input) => input.value === id)!;
+    const checked = () =>
+      radios()
+        .filter((input) => input.checked)
+        .map((input) => input.value);
+    const decisionOf = (onDecision: ReturnType<typeof vi.fn>) => {
+      expect(onDecision).toHaveBeenCalledTimes(1);
+      return onDecision.mock.calls[0][0];
+    };
+
+    it("is a group named by its legend, with one native radio per answer and its hint", () => {
+      openGroup();
+      const fieldset = screen.getByTestId("app-prompt-choices");
+      expect(fieldset.tagName).toBe("FIELDSET");
+      expect(screen.getByRole("group", { name: LEGEND })).toBe(fieldset);
+      expect(fieldset.querySelector("legend")).toHaveTextContent(LEGEND);
+
+      const inputs = radios();
+      expect(inputs.map((input) => input.value)).toEqual([
+        "ask",
+        "session",
+        "connection",
+        "everywhere",
+      ]);
+      const names = new Set(inputs.map((input) => input.name));
+      expect(names.size).toBe(1);
+      expect([...names][0]).toBeTruthy();
+      for (const input of inputs) {
+        expect(input.tagName).toBe("INPUT");
+        expect(input.type).toBe("radio");
+        expect(input.closest("label")).not.toBeNull();
+        expect(fieldset).toContainElement(input);
+      }
+      expect(
+        screen.getByRole("radio", { name: "Ask every time" }),
+      ).not.toHaveAttribute("aria-describedby");
+      expect(
+        screen.getByRole("radio", {
+          name: "Always run it without asking on this connection",
+        }),
+      ).toHaveAccessibleDescription(
+        "Only this exact script, only on this saved connection.",
+      );
+      expect(
+        screen.getByRole("radio", {
+          name: "Always run it without asking on every connection",
+        }),
+      ).toHaveAccessibleDescription(
+        "Only this exact script, in any SSH session.",
+      );
+      const note = screen.getByTestId("app-prompt-choices-note");
+      expect(note).toHaveTextContent(NOTE);
+      expect(fieldset).toHaveAccessibleDescription(NOTE);
+      expect(fieldset).toContainElement(note);
+    });
+
+    it("sits between the facts and the hint, and leaves the dialog's description alone", () => {
+      openGroup({ facts: ["bash"], hint: "Settings, Macros" });
+      const order = Array.from(
+        document.querySelectorAll(
+          "[data-testid='app-prompt-facts'], [data-testid='app-prompt-choices'], [data-testid='app-prompt-hint']",
+        ),
+        (element) => element.getAttribute("data-testid"),
+      );
+      expect(order).toEqual([
+        "app-prompt-facts",
+        "app-prompt-choices",
+        "app-prompt-hint",
+      ]);
+      expect(screen.getByRole("dialog")).toHaveAccessibleDescription(MESSAGE);
+    });
+
+    it("G1: opens with the first answer selected, and only that one", () => {
+      openGroup();
+      expect(checked()).toEqual(["ask"]);
+      cleanup();
+      // Whatever the first answer is.
+      openGroup({
+        choices: group({ options: [...group().options].reverse() }),
+      });
+      expect(checked()).toEqual(["everywhere"]);
+    });
+
+    it("G2: a pointer click selects at once", () => {
+      openGroup();
+      now = 10_001;
+      trustedClick(radio("connection"), 1);
+      expect(checked()).toEqual(["connection"]);
+      trustedClick(radio("session"), 1);
+      expect(checked()).toEqual(["session"]);
+    });
+
+    it("G2: a click a script dispatches selects nothing, armed or not", () => {
+      openGroup();
+      fireEvent.click(radio("everywhere"));
+      expect(checked()).toEqual(["ask"]);
+      now = 20_000;
+      fireEvent.click(radio("connection"));
+      fireEvent.click(radio("everywhere"), { detail: 1 });
+      expect(checked()).toEqual(["ask"]);
+    });
+
+    it("G2: a selection made from the keyboard waits until the prompt can be read", () => {
+      openGroup();
+      // Space or an arrow key makes the browser click the radio, with no pointer.
+      now = 10_100;
+      trustedClick(radio("everywhere"), 0);
+      now = 10_299;
+      trustedClick(radio("connection"), 0);
+      expect(checked()).toEqual(["ask"]);
+      now = 10_300;
+      trustedClick(radio("connection"), 0);
+      expect(checked()).toEqual(["connection"]);
+    });
+
+    it("G2: refuses the keys that select before the prompt can be read, and on repeat", () => {
+      openGroup();
+      const keys = ["ArrowDown", "ArrowUp", "ArrowLeft", "ArrowRight", " "];
+      for (const key of keys) {
+        now = 10_100;
+        expect(fireEvent.keyDown(radio("ask"), { key })).toBe(false);
+        now = 10_299;
+        expect(fireEvent.keyDown(radio("ask"), { key })).toBe(false);
+        now = 10_300;
+        expect(fireEvent.keyDown(radio("ask"), { key })).toBe(true);
+        expect(fireEvent.keyDown(radio("ask"), { key, repeat: true })).toBe(
+          false,
+        );
+      }
+      // Moving on with Tab, and any other key, is never refused.
+      now = 10_000;
+      expect(fireEvent.keyDown(radio("ask"), { key: "Tab" })).toBe(true);
+      expect(fireEvent.keyDown(radio("ask"), { key: "a", repeat: true })).toBe(
+        true,
+      );
+      expect(checked()).toEqual(["ask"]);
+    });
+
+    it("G2: the second click of a double click changes nothing", () => {
+      openGroup();
+      now = 20_000;
+      trustedClick(radio("everywhere"), 2);
+      fireEvent.click(radio("everywhere"), { detail: 2 });
+      expect(checked()).toEqual(["ask"]);
+      trustedClick(radio("connection"), 1);
+      trustedClick(radio("everywhere"), 2);
+      expect(checked()).toEqual(["connection"]);
+    });
+
+    it("G3: a trusted click on the action, once the prompt can be read, reports the choice", () => {
+      const { onDecision } = openGroup();
+      now = 10_050;
+      trustedClick(radio("connection"), 1);
+      now = 10_300;
+      trustedClick(confirmButton(), 1);
+      expect(decisionOf(onDecision)).toStrictEqual({
+        confirmed: true,
+        remember: false,
+        choice: "connection",
+      });
+    });
+
+    it("G3: reports the first answer when nothing else was chosen", () => {
+      const { onDecision } = openGroup();
+      now = 10_300;
+      trustedClick(confirmButton(), 1);
+      expect(decisionOf(onDecision)).toStrictEqual({
+        confirmed: true,
+        remember: false,
+        choice: "ask",
+      });
+    });
+
+    it("G3: a click a script dispatches still confirms, but carries no choice", () => {
+      const { onDecision } = openGroup();
+      now = 10_050;
+      trustedClick(radio("everywhere"), 1);
+      now = 20_000;
+      fireEvent.click(confirmButton());
+      expect(decisionOf(onDecision)).toStrictEqual({
+        confirmed: true,
+        remember: false,
+      });
+    });
+
+    it("G3: a confirm before the prompt can be read carries no choice", () => {
+      const { onDecision } = openGroup();
+      now = 10_050;
+      trustedClick(radio("everywhere"), 1);
+      now = 10_299;
+      trustedClick(confirmButton(), 1);
+      expect(decisionOf(onDecision)).toStrictEqual({
+        confirmed: true,
+        remember: false,
+      });
+    });
+
+    it("G3: a confirm from the keyboard, once readable, reports the choice", () => {
+      const { onDecision } = openGroup();
+      now = 10_300;
+      trustedClick(radio("everywhere"), 0);
+      trustedClick(confirmButton(), 0);
+      expect(decisionOf(onDecision)).toStrictEqual({
+        confirmed: true,
+        remember: false,
+        choice: "everywhere",
+      });
+    });
+
+    it.each([
+      ["Cancel", () => trustedClick(cancelButton(), 1)],
+      [
+        "the close button",
+        () => trustedClick(screen.getByRole("button", { name: "Close" }), 1),
+      ],
+      ["the backdrop", () => fireEvent.click(backdrop())],
+      ["a script-dispatched Cancel", () => fireEvent.click(cancelButton())],
+    ])(
+      "G4: %s answers not confirmed, whatever is selected",
+      (_what, dismiss) => {
+        const { onDecision } = openGroup();
+        now = 10_050;
+        trustedClick(radio("everywhere"), 1);
+        now = 20_000;
+        dismiss();
+        expect(decisionOf(onDecision)).toStrictEqual({
+          confirmed: false,
+          remember: false,
+        });
+      },
+    );
+
+    it("G5: Enter on a radio answers nothing", async () => {
+      const { onDecision } = openGroup();
+      await waitFor(() => expect(confirmButton()).toHaveFocus());
+      now = 20_000;
+      trustedClick(radio("connection"), 1);
+      radio("connection").focus();
+      for (const target of [radio("connection"), radio("ask")]) {
+        fireEvent.keyDown(target, { key: "Enter" });
+        fireEvent.keyPress(target, { key: "Enter", charCode: 13 });
+        fireEvent.keyUp(target, { key: "Enter" });
+      }
+      expect(onDecision).not.toHaveBeenCalled();
+      expect(checked()).toEqual(["connection"]);
+      expect(screen.getByRole("dialog")).toBeInTheDocument();
+    });
+
+    it("G5: the focus still opens on the button the request names, and Tab reaches the group", async () => {
+      const first = openGroup();
+      await waitFor(() => expect(confirmButton()).toHaveFocus());
+      for (const input of radios()) {
+        expect(input.tabIndex).toBe(0);
+        expect(input).not.toBeDisabled();
+      }
+      first.unmount();
+      openGroup({ tone: "danger" });
+      await waitFor(() => expect(cancelButton()).toHaveFocus());
+    });
+
+    it("marks a danger note with the warning icon and the error colour, never colour alone", () => {
+      const quiet = openGroup();
+      const plain = screen.getByTestId("app-prompt-choices-note");
+      expect(plain.querySelector("svg")).toBeNull();
+      expect(plain).not.toHaveClass("text-error");
+      quiet.unmount();
+
+      openGroup({ choices: group({ noteTone: "danger" }) });
+      const danger = screen.getByTestId("app-prompt-choices-note");
+      const icon = danger.querySelector("svg");
+      expect(icon).not.toBeNull();
+      expect(icon).toHaveAttribute("aria-hidden", "true");
+      expect(danger).toHaveClass("text-error");
+      expect(danger).toHaveTextContent(NOTE);
+      expect(
+        screen.getByTestId("app-prompt-choices"),
+      ).toHaveAccessibleDescription(NOTE);
+    });
+
+    it("adds no note when there is none", () => {
+      openGroup({ choices: group({ note: undefined }) });
+      expect(screen.queryByTestId("app-prompt-choices-note")).toBeNull();
+      expect(screen.getByTestId("app-prompt-choices")).not.toHaveAttribute(
+        "aria-describedby",
+      );
+    });
+
+    it("shows untrusted text in the group as text, on one line and bounded", () => {
+      const markup = '<img src=x onerror="alert(1)"><b>bold</b>';
+      const long = `evil\u{202E}txt\r\n${"x".repeat(900)}`;
+      const { baseElement } = openGroup({
+        choices: {
+          label: `${markup}${long}`,
+          options: [
+            { id: "ask", label: `${markup}${long}`, hint: `${markup}${long}` },
+            { id: "b", label: markup },
+          ],
+          note: `${markup}${long}`,
+        },
+      });
+      expect(baseElement.querySelector("img")).toBeNull();
+      expect(baseElement.querySelector("b")).toBeNull();
+      const fieldset = screen.getByTestId("app-prompt-choices");
+      expect(fieldset.textContent).not.toMatch(/[\u{202A}-\u{202E}\r\n]/u);
+      expect(
+        fieldset.querySelector("legend")!.textContent!.length,
+      ).toBeLessThanOrEqual(121);
+      expect(radio("b").closest("label")).toHaveTextContent(markup);
+      expect(fieldset.textContent!.length).toBeLessThan(121 * 3 + 601 * 2 + 60);
+    });
+
+    it("S15: a request without a group renders nothing of it and answers as before", () => {
+      const { onDecision, baseElement } = open({
+        remember: { label: "Don't ask again" },
+        facts: ["bash"],
+        hint: "Settings, Macros",
+      });
+      expect(
+        baseElement.querySelectorAll(
+          "fieldset, legend, input[type='radio'], [data-testid^='app-prompt-choice']",
+        ),
+      ).toHaveLength(0);
+      now = 20_000;
+      trustedClick(confirmButton(), 1);
+      expect(decisionOf(onDecision)).toStrictEqual({
+        confirmed: true,
+        remember: false,
+      });
     });
   });
 });

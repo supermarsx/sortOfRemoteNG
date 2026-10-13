@@ -10,7 +10,11 @@
  * that is what will be sent; it puts a name into a title only on one line,
  * without control or direction characters, and bounded.
  */
-import type { PromptRequest, PromptTarget } from "./promptQueue";
+import type {
+  PromptChoiceOption,
+  PromptRequest,
+  PromptTarget,
+} from "./promptQueue";
 
 // ─── Bounds ─────────────────────────────────────────────────────
 
@@ -31,6 +35,10 @@ export const PROMPT_LIMITS = {
   facts: 8,
   /** A remote path is shown whole up to this length, then without its middle. */
   path: 600,
+  /** The most answers in a group of choices; the queue drops a larger group. */
+  choices: 6,
+  /** A group's legend, or one answer's label. Hints and the note use `message`. */
+  choiceLabel: 120,
 } as const;
 
 const ELLIPSIS = "…";
@@ -338,17 +346,141 @@ const sessionTargets = (
 const REMEMBER_HINT = (what: string) =>
   `You are asked again if the ${what} changes or the session ends.`;
 
+// --- Lasting choices (trusted scripts) ---
+
+/** The ids of the answers a run prompt offers in its group of choices. */
+export const RUN_TRUST_CHOICE = {
+  ask: "ask",
+  session: "session",
+  connection: "connection",
+  everywhere: "everywhere",
+} as const;
+
+export type RunTrustChoice =
+  (typeof RUN_TRUST_CHOICE)[keyof typeof RUN_TRUST_CHOICE];
+
+/**
+ * Which lasting answers a call site can act on: `connection` when the session
+ * is bound to a saved connection and the record can be written, `everywhere`
+ * when the record can be written. `destructive` adds the warning to the note.
+ * With neither lasting answer the request is exactly what it is without
+ * `trust`, the "Don't ask again" checkbox included.
+ */
+export interface RunTrustOffer {
+  connection: boolean;
+  everywhere: boolean;
+  destructive?: boolean;
+}
+
+/** A lasting choice was granted but the record could not be written. */
+export const RUN_TRUST_NOT_SAVED_NOTICE =
+  "The choice to stop asking could not be saved. You will be asked again.";
+
+/** A lasting choice was granted but the record holds the most entries it may. */
+export const RUN_TRUST_LIST_FULL_NOTICE =
+  "The list of trusted scripts is full, so the choice to stop asking was not saved. Take some back in Settings, Macros, Trusted scripts. You will be asked again.";
+
+/** Shown when a trusted bulk script is sent without the prompt that lists the sessions. */
+export const bulkTrustedSendNotice = (name: string, sessions: number) =>
+  `${quoted(name)} is trusted, so it is sent to ${plural(sessions, "session", "sessions")} without asking.`;
+
+// A new object per request: a caller may change what it was given.
+const askEveryTime = (): PromptChoiceOption => ({
+  id: RUN_TRUST_CHOICE.ask,
+  label: "Ask every time",
+});
+
+const lastingNote = (what: string, revoke: string) =>
+  `A lasting choice covers this exact ${what}. You are asked again when it changes. Take it back in ${revoke}.`;
+
+const TRUSTED_SCRIPTS_SETTING = "Settings, Macros, Trusted scripts";
+
+const withWarning = (
+  note: string,
+  destructive: boolean | undefined,
+  warning: string,
+): Pick<NonNullable<PromptRequest["choices"]>, "note" | "noteTone"> =>
+  destructive ? { note: `${warning} ${note}`, noteTone: "danger" } : { note };
+
+/**
+ * The group that replaces the "Don't ask again" checkbox in a terminal run
+ * prompt, or `undefined` when no lasting answer can be offered.
+ */
+const terminalTrustChoices = (
+  what: "script" | "macro",
+  trust: RunTrustOffer | undefined,
+  offerSession: boolean,
+): PromptRequest["choices"] => {
+  if (!trust || (!trust.connection && !trust.everywhere)) return undefined;
+  const verb = what === "script" ? "run" : "replay";
+  const options: PromptChoiceOption[] = [askEveryTime()];
+  if (offerSession)
+    options.push({
+      id: RUN_TRUST_CHOICE.session,
+      label: "Don't ask again in this session",
+      hint: `Until the session ends or the ${what} changes.`,
+    });
+  if (trust.connection)
+    options.push({
+      id: RUN_TRUST_CHOICE.connection,
+      label: `Always ${verb} it without asking on this connection`,
+      hint: `Only this exact ${what}, only on this saved connection.`,
+    });
+  if (trust.everywhere)
+    options.push({
+      id: RUN_TRUST_CHOICE.everywhere,
+      label: `Always ${verb} it without asking on every connection`,
+      hint: `Only this exact ${what}, in any SSH session.`,
+    });
+  return {
+    label:
+      what === "script"
+        ? "Next time this script is run"
+        : "Next time this macro is replayed",
+    options,
+    ...withWarning(
+      lastingNote(what, TRUSTED_SCRIPTS_SETTING),
+      trust.destructive,
+      `This ${what} may make destructive changes. With a lasting choice it runs at once, without this question.`,
+    ),
+  };
+};
+
+/** The checkbox, or the group that replaces it: never both. */
+const terminalRunAnswers = (
+  what: "script" | "macro",
+  offerRemember: boolean | undefined,
+  trust: RunTrustOffer | undefined,
+): Pick<PromptRequest, "remember" | "choices"> => {
+  const choices = terminalTrustChoices(what, trust, offerRemember === true);
+  if (choices) return { choices };
+  return offerRemember
+    ? {
+        remember: {
+          label: `Don't ask again for this ${what} in this session`,
+          hint: REMEMBER_HINT(what),
+        },
+      }
+    : {};
+};
+
 /**
  * Run a saved script in an SSH terminal. `command` is the text that will be
  * sent (the shebang line already removed) and is previewed unchanged.
  * `offerRemember` adds the "Don't ask again" checkbox: pass it only where the
  * answer's `remember` is acted on (see `createPromptMemory`).
+ *
+ * `trust` replaces the checkbox with a group of choices when a lasting answer
+ * can be offered: "Ask every time" (the default), the session answer (only
+ * with `offerRemember`), this connection, every connection. The decision's
+ * `choice` is one of `RUN_TRUST_CHOICE`; act on it only with a confirm.
  */
 export function sshScriptRunPrompt(input: {
   script: { name: string; language?: string | null };
   command: string;
   session: PromptSessionRef;
   offerRemember?: boolean;
+  trust?: RunTrustOffer;
 }): PromptRequest {
   const { script, command, session } = input;
   const facts = [plural(countTextLines(command), "line", "lines")];
@@ -361,21 +493,14 @@ export function sshScriptRunPrompt(input: {
     preview: { label: "Commands to run", text: command },
     facts,
     hint: "Settings, Macros: Confirm before running SSH scripts",
-    ...(input.offerRemember
-      ? {
-          remember: {
-            label: "Don't ask again for this script in this session",
-            hint: REMEMBER_HINT("script"),
-          },
-        }
-      : {}),
+    ...terminalRunAnswers("script", input.offerRemember, input.trust),
   };
 }
 
 /**
  * Replay a terminal macro. The preview lists one numbered line per step, with
- * the pause that follows it and whether Enter is sent. `offerRemember` as for
- * `sshScriptRunPrompt`.
+ * the pause that follows it and whether Enter is sent. `offerRemember` and
+ * `trust` as for `sshScriptRunPrompt`.
  */
 export function sshMacroReplayPrompt(input: {
   macro: {
@@ -388,6 +513,7 @@ export function sshMacroReplayPrompt(input: {
   };
   session: PromptSessionRef;
   offerRemember?: boolean;
+  trust?: RunTrustOffer;
 }): PromptRequest {
   const { macro, session } = input;
   const steps = macro.steps.map((step, index) => {
@@ -409,14 +535,7 @@ export function sshMacroReplayPrompt(input: {
     preview: { label: "Steps", text: steps.join("\n") },
     facts: [plural(macro.steps.length, "step", "steps")],
     hint: "Settings, Macros: Confirm before replay",
-    ...(input.offerRemember
-      ? {
-          remember: {
-            label: "Don't ask again for this macro in this session",
-            hint: REMEMBER_HINT("macro"),
-          },
-        }
-      : {}),
+    ...terminalRunAnswers("macro", input.offerRemember, input.trust),
   };
 }
 
@@ -468,6 +587,11 @@ const BULK_RUN_POLICY_LABEL = {
  * and host. A destructive command is marked as such and opens with the focus
  * on Cancel. `scriptName` names the saved script while the editor still holds
  * it; `policy` is the script library's "Confirm run" setting.
+ *
+ * `trust` is for a saved script loaded unmodified: it adds a group of two
+ * choices, "Ask every time" (the default) and "Always send it without asking"
+ * (`RUN_TRUST_CHOICE.everywhere`). `trust.destructive`, or a destructive
+ * command, adds the warning that a lasting choice sends it at once.
  */
 export function bulkCommandRunPrompt(input: {
   command: string;
@@ -479,6 +603,7 @@ export function bulkCommandRunPrompt(input: {
   destructive: boolean;
   scriptName?: string | null;
   policy?: keyof typeof BULK_RUN_POLICY_LABEL;
+  trust?: { destructive?: boolean };
 }): PromptRequest {
   const { command, sessions, destructive } = input;
   const total = sessions.length;
@@ -510,6 +635,29 @@ export function bulkCommandRunPrompt(input: {
     ...(input.policy
       ? {
           hint: `Script library, Confirm run: ${BULK_RUN_POLICY_LABEL[input.policy]}`,
+        }
+      : {}),
+    ...(input.trust
+      ? {
+          choices: {
+            label: "Next time this script is sent",
+            options: [
+              askEveryTime(),
+              {
+                id: RUN_TRUST_CHOICE.everywhere,
+                label: "Always send it without asking",
+                hint: "Only this exact script. The sessions it goes to are not shown first.",
+              },
+            ],
+            ...withWarning(
+              lastingNote(
+                "script",
+                `the script library or in ${TRUSTED_SCRIPTS_SETTING}`,
+              ),
+              input.trust.destructive ?? destructive,
+              "This command may make destructive changes. With a lasting choice it is sent at once to every selected session, without this question.",
+            ),
+          },
         }
       : {}),
   };

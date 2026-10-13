@@ -28,6 +28,14 @@ export interface PromptTarget {
   detail?: string;
 }
 
+/** One answer of a group of choices. */
+export interface PromptChoiceOption {
+  /** What the decision reports as `choice`. Distinct within the group. */
+  id: string;
+  label: string;
+  hint?: string;
+}
+
 export interface PromptRequest {
   /** The question, naming the action and where it runs. */
   title: string;
@@ -48,6 +56,20 @@ export interface PromptRequest {
   facts?: string[];
   /** An optional checkbox; its state comes back as `remember` with a confirm. */
   remember?: { label: string; hint?: string };
+  /**
+   * One question with several answers, as a radio group. The first option is
+   * the default and the only one ever selected when the prompt opens. Two to
+   * six options with distinct ids; any other group is dropped when the
+   * request is queued, and the prompt is shown without it.
+   */
+  choices?: {
+    /** The group's legend. */
+    label: string;
+    options: readonly PromptChoiceOption[];
+    /** One or two sentences under the group. */
+    note?: string;
+    noteTone?: "default" | "danger";
+  };
   /** Where to change the policy that raised this prompt. */
   hint?: string;
   /**
@@ -64,6 +86,14 @@ export interface PromptDecision {
   confirmed: boolean;
   /** True only with a confirm, and only when the request offered the checkbox and it was ticked. */
   remember: boolean;
+  /**
+   * The id of the selected answer of `choices`. Only with a confirm, only an
+   * id the request offered, and never the key when there is nothing to
+   * report: a request without `choices` gets exactly `{ confirmed, remember }`.
+   * The dialog reports it only for a deliberate confirm (see `AppPromptDialog`),
+   * so a missing `choice` means "the first answer".
+   */
+  choice?: string;
 }
 
 export interface PromptOptions {
@@ -119,6 +149,54 @@ const publish = () => {
   }
 };
 
+/** The most answers a group of choices may offer (`PROMPT_LIMITS.choices`). */
+const MAX_CHOICES = 6;
+
+type PromptChoices = NonNullable<PromptRequest["choices"]>;
+
+const isOptionalString = (value: unknown) =>
+  value === undefined || typeof value === "string";
+
+/**
+ * A frozen copy of a well-formed group, or `undefined`. Only the known fields
+ * are copied, so nothing a caller adds can preselect an answer; a group that
+ * is not two to six options with distinct, non-empty ids is dropped whole.
+ */
+const copyChoices = (choices: unknown): PromptChoices | undefined => {
+  if (typeof choices !== "object" || choices === null) return undefined;
+  const { label, options, note, noteTone } = choices as PromptChoices;
+  if (typeof label !== "string" || !isOptionalString(note)) return undefined;
+  if (noteTone !== undefined && noteTone !== "default" && noteTone !== "danger")
+    return undefined;
+  if (
+    !Array.isArray(options) ||
+    options.length < 2 ||
+    options.length > MAX_CHOICES
+  )
+    return undefined;
+  const ids = new Set<string>();
+  const copied: PromptChoiceOption[] = [];
+  for (const option of options as unknown[]) {
+    if (typeof option !== "object" || option === null) return undefined;
+    const { id, label: optionLabel, hint } = option as PromptChoiceOption;
+    if (typeof id !== "string" || id === "" || ids.has(id)) return undefined;
+    if (typeof optionLabel !== "string" || !isOptionalString(hint))
+      return undefined;
+    ids.add(id);
+    copied.push(
+      Object.freeze(
+        hint === undefined
+          ? { id, label: optionLabel }
+          : { id, label: optionLabel, hint },
+      ),
+    );
+  }
+  const copy: PromptChoices = { label, options: Object.freeze(copied) };
+  if (note !== undefined) copy.note = note;
+  if (noteTone !== undefined) copy.noteTone = noteTone;
+  return Object.freeze(copy);
+};
+
 /** A private copy: what the caller does to its objects afterwards cannot change what is shown. */
 const copyRequest = (request: PromptRequest): PromptRequest => {
   const copy: PromptRequest = {
@@ -158,6 +236,10 @@ const copyRequest = (request: PromptRequest): PromptRequest => {
         ? { label: request.remember.label }
         : { label: request.remember.label, hint: request.remember.hint },
     );
+  if (request.choices !== undefined) {
+    const choices = copyChoices(request.choices);
+    if (choices) copy.choices = choices;
+  }
   return Object.freeze(copy);
 };
 
@@ -191,7 +273,16 @@ const sameRequest = (a: PromptRequest, b: PromptRequest) =>
   ) &&
   sameList(a.facts, b.facts, (x, y) => x === y) &&
   a.remember?.label === b.remember?.label &&
-  a.remember?.hint === b.remember?.hint;
+  a.remember?.hint === b.remember?.hint &&
+  (a.choices === undefined) === (b.choices === undefined) &&
+  a.choices?.label === b.choices?.label &&
+  a.choices?.note === b.choices?.note &&
+  a.choices?.noteTone === b.choices?.noteTone &&
+  sameList(
+    a.choices?.options,
+    b.choices?.options,
+    (x, y) => x.id === y.id && x.label === y.label && x.hint === y.hint,
+  );
 
 const settleEntry = (entry: Entry, decision: PromptDecision) => {
   const waiters = Array.from(entry.waiters);
@@ -281,6 +372,13 @@ export function settlePrompt(id: number, decision: PromptDecision): void {
           decision.remember === true,
       }
     : NOT_CONFIRMED;
+  // A choice only with a confirm, and only one of the answers offered.
+  const choice = confirmed ? decision.choice : undefined;
+  if (
+    typeof choice === "string" &&
+    head.prompt.request.choices?.options.some((option) => option.id === choice)
+  )
+    answer.choice = choice;
   entries = entries.slice(1);
   settleEntry(head, answer);
   publish();

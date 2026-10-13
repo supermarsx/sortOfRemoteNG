@@ -68,6 +68,16 @@ const TONES = {
 const SECTION_LABEL =
   "mb-1 text-xs font-semibold uppercase tracking-wider text-[var(--color-textMuted)]";
 
+// The keys with which a radio group selects: the arrows move the selection,
+// Space selects the focused answer. Enter selects nothing.
+const CHOICE_SELECTION_KEYS = new Set([
+  "ArrowDown",
+  "ArrowUp",
+  "ArrowLeft",
+  "ArrowRight",
+  " ",
+]);
+
 /**
  * The app's themed prompt: what will run, where, and two buttons. Purely
  * presentational; `<PromptHost />` shows one for the head of the prompt queue
@@ -76,6 +86,14 @@ const SECTION_LABEL =
  * Everything in the request is untrusted text and is rendered as text. Names
  * are kept on one line and bounded; the preview is capped, with the rest
  * counted, and its hidden characters are made visible.
+ *
+ * A group of choices may grant something lasting, so only a deliberate act
+ * changes or reports it: the first answer is selected on open; a selection
+ * changes only on a trusted event, from the keyboard only once the prompt can
+ * be read and never on key repeat or the second click of a double click; and
+ * a confirm reports the choice only when its own click is trusted and the
+ * prompt can be read. A click a script dispatches still confirms, with no
+ * choice; every other way out answers not confirmed.
  */
 export const AppPromptDialog: React.FC<AppPromptDialogProps> = ({
   request,
@@ -97,17 +115,29 @@ export const AppPromptDialog: React.FC<AppPromptDialogProps> = ({
 
   const tone = TONES[request.tone ?? "default"] ?? TONES.default;
   const rememberOffered = request.remember !== undefined;
+  const choices = request.choices;
+  const choiceOptions = choices?.options ?? [];
+  const firstChoice = choiceOptions[0]?.id;
+  const [choice, setChoice] = useState(firstChoice);
+  const selectedChoice = choiceOptions.some((option) => option.id === choice)
+    ? choice
+    : firstChoice;
 
+  // `deliberate`: the confirm was a trusted click once the prompt could be
+  // read. Only then does it carry the choice.
   const decide = useCallback(
-    (confirmed: boolean) => {
+    (confirmed: boolean, deliberate = false) => {
       if (decided.current) return;
       decided.current = true;
-      onDecision({
+      const decision: PromptDecision = {
         confirmed,
         remember: confirmed && rememberOffered && remember,
-      });
+      };
+      if (confirmed && deliberate && selectedChoice !== undefined)
+        decision.choice = selectedChoice;
+      onDecision(decision);
     },
-    [onDecision, remember, rememberOffered],
+    [onDecision, remember, rememberOffered, selectedChoice],
   );
 
   useEffect(() => {
@@ -153,8 +183,28 @@ export const AppPromptDialog: React.FC<AppPromptDialogProps> = ({
       // or an assistive action: it waits like the key itself. Only a trusted
       // click is held, so one that a script dispatches still answers at once.
       if (event.detail === 0 && event.isTrusted && !isArmed()) return;
-      decide(confirmed);
+      decide(confirmed, event.isTrusted && isArmed());
     };
+
+  // The browser selects a radio with a click: a pointer's, or one it makes
+  // from Space or an arrow key. Anything else leaves the selection as it was,
+  // and React puts the radios back to the state.
+  const selectChoice =
+    (optionId: string) => (event: React.ChangeEvent<HTMLInputElement>) => {
+      const click = event.nativeEvent as Partial<MouseEvent>;
+      if (click.isTrusted !== true) return;
+      const detail = typeof click.detail === "number" ? click.detail : 0;
+      if (detail > 1) return;
+      if (detail === 0 && !isArmed()) return;
+      setChoice(optionId);
+    };
+
+  // A selection key held since before the prompt, or typed ahead, must not
+  // move the selection: refusing the key stops the browser's click.
+  const guardChoiceKeys = (event: React.KeyboardEvent<HTMLInputElement>) => {
+    if (!CHOICE_SELECTION_KEYS.has(event.key)) return;
+    if (event.repeat || !isArmed()) event.preventDefault();
+  };
 
   // Enter and Space activate the focused button natively and nothing else
   // listens for them. Refusing the key here stops that native click.
@@ -224,6 +274,12 @@ export const AppPromptDialog: React.FC<AppPromptDialogProps> = ({
   const previewLabelId = `${id}-preview`;
   const targetsLabelId = `${id}-targets`;
   const rememberHintId = `${id}-remember`;
+  const choiceName = `${id}-choice`;
+  const choicesNoteId = `${id}-choices-note`;
+  const choicesNote = choices?.note
+    ? toSingleLine(choices.note, PROMPT_LIMITS.message)
+    : "";
+  const choicesDanger = choices?.noteTone === "danger";
   const describedBy =
     [message && messageId, queued > 0 && queueId].filter(Boolean).join(" ") ||
     undefined;
@@ -375,6 +431,80 @@ export const AppPromptDialog: React.FC<AppPromptDialogProps> = ({
               </li>
             ))}
           </ul>
+        )}
+
+        {choices && choiceOptions.length > 0 && (
+          <fieldset
+            className={styles.choices}
+            aria-describedby={choicesNote ? choicesNoteId : undefined}
+            data-testid="app-prompt-choices"
+          >
+            <legend
+              className={cx(
+                "mb-1.5 text-sm font-medium text-[var(--color-text)]",
+                styles.wrap,
+              )}
+            >
+              {toSingleLine(choices.label, PROMPT_LIMITS.choiceLabel)}
+            </legend>
+            <div className="space-y-1.5">
+              {choiceOptions.map((option, index) => {
+                const hintId = `${id}-choice-${index}`;
+                return (
+                  <div key={option.id}>
+                    <label className="flex items-start gap-2 text-sm text-[var(--color-text)]">
+                      <input
+                        type="radio"
+                        className="mt-0.5"
+                        name={choiceName}
+                        value={option.id}
+                        checked={option.id === selectedChoice}
+                        onChange={selectChoice(option.id)}
+                        onKeyDown={guardChoiceKeys}
+                        aria-describedby={option.hint ? hintId : undefined}
+                        data-testid="app-prompt-choice"
+                      />
+                      <span className={styles.wrap}>
+                        {toSingleLine(option.label, PROMPT_LIMITS.choiceLabel)}
+                      </span>
+                    </label>
+                    {option.hint && (
+                      <p
+                        id={hintId}
+                        className={cx(
+                          "ml-6 mt-0.5 text-xs text-[var(--color-textMuted)]",
+                          styles.wrap,
+                        )}
+                      >
+                        {toSingleLine(option.hint, PROMPT_LIMITS.message)}
+                      </p>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+            {choicesNote && (
+              <p
+                id={choicesNoteId}
+                className={cx(
+                  "mt-2 flex items-start gap-1.5 text-xs",
+                  choicesDanger
+                    ? "text-error"
+                    : "text-[var(--color-textMuted)]",
+                )}
+                data-testid="app-prompt-choices-note"
+              >
+                {/* The tone is said by the icon and the words, never by colour alone. */}
+                {choicesDanger && (
+                  <AlertTriangle
+                    aria-hidden="true"
+                    className="mt-0.5 h-3.5 w-3.5 shrink-0"
+                  />
+                )}
+                <span className={styles.wrap}>{choicesNote}</span>
+              </p>
+            )}
+          </fieldset>
         )}
 
         {request.remember && (

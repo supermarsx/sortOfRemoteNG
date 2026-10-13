@@ -9,6 +9,7 @@ import {
   resetPromptQueueForTests,
   settlePrompt,
   subscribePrompts,
+  type PromptChoiceOption,
   type PromptDecision,
   type PromptRequest,
 } from "../../src/utils/prompts/promptQueue";
@@ -484,6 +485,391 @@ describe("prompt queue", () => {
     await expect(requestPrompt(request())).rejects.toBeInstanceOf(
       PromptHostUnavailableError,
     );
+  });
+
+  describe("a group of choices", () => {
+    // Fresh, mutable objects each time, so a case can change them afterwards.
+    const group = (): NonNullable<PromptRequest["choices"]> => ({
+      label: "Next time this script is run",
+      options: [
+        { id: "ask", label: "Ask every time" },
+        {
+          id: "session",
+          label: "Don't ask again in this session",
+          hint: "Until the session ends or the script changes.",
+        },
+        {
+          id: "connection",
+          label: "Always run it without asking on this connection",
+          hint: "Only this exact script, only on this saved connection.",
+        },
+        {
+          id: "everywhere",
+          label: "Always run it without asking on every connection",
+          hint: "Only this exact script, in any SSH session.",
+        },
+      ],
+      note: "A lasting choice covers this exact script.",
+    });
+    const shownChoices = () => getPromptSnapshot()[0]?.request.choices;
+
+    beforeEach(() => {
+      registerPromptHost();
+    });
+
+    it("is copied and frozen, so the caller cannot change what is shown", () => {
+      const choices = group();
+      const options = choices.options as PromptChoiceOption[];
+      void requestPrompt(
+        request({ choices: { ...choices, noteTone: "danger" } }),
+      );
+      choices.label = "changed";
+      options[0].label = "Always, everywhere";
+      options[1].hint = "changed";
+      options.reverse();
+      options.push({ id: "extra", label: "extra" });
+
+      const shown = shownChoices();
+      expect(shown).toEqual({ ...group(), noteTone: "danger" });
+      expect(Object.isFrozen(shown)).toBe(true);
+      expect(Object.isFrozen(shown?.options)).toBe(true);
+      for (const option of shown!.options)
+        expect(Object.isFrozen(option)).toBe(true);
+    });
+
+    it("keeps only the fields it knows, so no request can preselect an answer", () => {
+      const choices = group();
+      void requestPrompt(
+        request({
+          choices: {
+            ...choices,
+            selected: "everywhere",
+            defaultValue: "everywhere",
+            options: choices.options.map((option, index) => ({
+              ...option,
+              ...(index === 3
+                ? { checked: true, selected: true, default: true }
+                : {}),
+            })),
+          } as PromptRequest["choices"],
+        }),
+      );
+      expect(shownChoices()).toStrictEqual(group());
+      expect(Object.keys(shownChoices()!.options[0])).toEqual(["id", "label"]);
+      expect(Object.keys(shownChoices()!.options[3])).toEqual([
+        "id",
+        "label",
+        "hint",
+      ]);
+    });
+
+    it("keeps two to six answers", () => {
+      const options = Array.from({ length: 6 }, (_, index) => ({
+        id: `o${index}`,
+        label: `Option ${index}`,
+      }));
+      void requestPrompt(
+        request({
+          title: "two",
+          choices: { label: "l", options: options.slice(0, 2) },
+        }),
+      );
+      void requestPrompt(
+        request({ title: "six", choices: { label: "l", options } }),
+      );
+      const [two, six] = getPromptSnapshot();
+      expect(two.request.choices?.options).toHaveLength(2);
+      expect(six.request.choices?.options).toHaveLength(6);
+    });
+
+    it.each([
+      ["no answers", { label: "l", options: [] }],
+      ["one answer", { label: "l", options: [{ id: "a", label: "A" }] }],
+      [
+        "seven answers",
+        {
+          label: "l",
+          options: Array.from({ length: 7 }, (_, index) => ({
+            id: `o${index}`,
+            label: `Option ${index}`,
+          })),
+        },
+      ],
+      [
+        "a repeated id",
+        {
+          label: "l",
+          options: [
+            { id: "ask", label: "Ask every time" },
+            { id: "ask", label: "Always" },
+          ],
+        },
+      ],
+      [
+        "an empty id",
+        {
+          label: "l",
+          options: [
+            { id: "ask", label: "A" },
+            { id: "", label: "B" },
+          ],
+        },
+      ],
+      [
+        "an id that is not a string",
+        {
+          label: "l",
+          options: [
+            { id: "ask", label: "A" },
+            { id: 7, label: "B" },
+          ],
+        },
+      ],
+      [
+        "a label that is not a string",
+        {
+          label: "l",
+          options: [
+            { id: "ask", label: "A" },
+            { id: "b", label: null },
+          ],
+        },
+      ],
+      [
+        "a hint that is not a string",
+        {
+          label: "l",
+          options: [
+            { id: "ask", label: "A" },
+            { id: "b", label: "B", hint: 3 },
+          ],
+        },
+      ],
+      [
+        "an answer that is not an object",
+        { label: "l", options: [{ id: "ask", label: "A" }, "b"] },
+      ],
+      ["answers that are not a list", { label: "l", options: "ask,b" }],
+      [
+        "a legend that is not a string",
+        {
+          label: 1,
+          options: [
+            { id: "a", label: "A" },
+            { id: "b", label: "B" },
+          ],
+        },
+      ],
+      [
+        "a note that is not a string",
+        {
+          label: "l",
+          note: {},
+          options: [
+            { id: "a", label: "A" },
+            { id: "b", label: "B" },
+          ],
+        },
+      ],
+      [
+        "an unknown tone",
+        {
+          label: "l",
+          noteTone: "red",
+          options: [
+            { id: "a", label: "A" },
+            { id: "b", label: "B" },
+          ],
+        },
+      ],
+      ["null", null],
+      ["a string", "ask"],
+    ])(
+      "drops a group with %s and keeps the prompt usable",
+      async (_what, choices) => {
+        const outcome = requestPrompt(
+          request({
+            message: "kept",
+            choices: choices as unknown as PromptRequest["choices"],
+          }),
+        );
+        const shown = getPromptSnapshot()[0].request;
+        expect(shown.message).toBe("kept");
+        expect("choices" in shown).toBe(false);
+        settlePrompt(headId()!, {
+          confirmed: true,
+          remember: false,
+          choice: "b",
+        });
+        await expect(outcome).resolves.toStrictEqual(CONFIRMED);
+      },
+    );
+
+    it("is never joined with a request whose group differs, whatever the key", async () => {
+      const options = group().options;
+      const variants: Array<PromptRequest["choices"]> = [
+        { ...group(), label: "Next time this macro is replayed" },
+        { ...group(), note: "Another note." },
+        { ...group(), noteTone: "danger" },
+        { ...group(), note: undefined },
+        { ...group(), options: options.slice(0, 3) },
+        { ...group(), options: [...options].reverse() },
+        {
+          ...group(),
+          options: options.map((option, index) =>
+            index === 2 ? { ...option, id: "connection-2" } : option,
+          ),
+        },
+        {
+          ...group(),
+          options: options.map((option, index) =>
+            index === 2 ? { ...option, label: "Always" } : option,
+          ),
+        },
+        {
+          ...group(),
+          options: options.map((option, index) =>
+            index === 2 ? { ...option, hint: "Anywhere." } : option,
+          ),
+        },
+        {
+          ...group(),
+          options: options.map((option, index) =>
+            index === 1 ? { id: option.id, label: option.label } : option,
+          ),
+        },
+        undefined,
+      ];
+      const reviewed = requestPrompt(
+        request({ dedupeKey: "script:1:s1", choices: group() }),
+      );
+      for (const choices of variants)
+        void requestPrompt(request({ dedupeKey: "script:1:s1", choices }));
+      expect(getPromptSnapshot()).toHaveLength(1 + variants.length);
+
+      settlePrompt(headId()!, {
+        confirmed: true,
+        remember: false,
+        choice: "everywhere",
+      });
+      await expect(reviewed).resolves.toStrictEqual({
+        ...CONFIRMED,
+        choice: "everywhere",
+      });
+      expect(getPromptSnapshot()).toHaveLength(variants.length);
+    });
+
+    it("joins an identical request, and both callers receive the same choice", async () => {
+      const first = requestPrompt(
+        request({ dedupeKey: "script:1:s1", choices: group() }),
+      );
+      const second = requestPrompt(
+        request({ dedupeKey: "script:1:s1", choices: group() }),
+      );
+      expect(getPromptSnapshot()).toHaveLength(1);
+      settlePrompt(headId()!, {
+        confirmed: true,
+        remember: false,
+        choice: "connection",
+      });
+      const answer = { ...CONFIRMED, choice: "connection" };
+      await expect(first).resolves.toStrictEqual(answer);
+      await expect(second).resolves.toStrictEqual(answer);
+    });
+
+    it("passes a choice on only with a confirm and only when the request offered it", async () => {
+      const answerFor = async (decision: unknown) => {
+        const outcome = requestPrompt(request({ choices: group() }));
+        settlePrompt(headId()!, decision as PromptDecision);
+        return outcome;
+      };
+      for (const id of ["ask", "session", "connection", "everywhere"])
+        expect(
+          await answerFor({ confirmed: true, remember: false, choice: id }),
+        ).toStrictEqual({ ...CONFIRMED, choice: id });
+      for (const choice of [
+        "always",
+        "Everywhere",
+        "",
+        "toString",
+        "__proto__",
+        1,
+        null,
+        {},
+        ["everywhere"],
+        undefined,
+      ])
+        expect(
+          await answerFor({ confirmed: true, remember: false, choice }),
+        ).toStrictEqual(CONFIRMED);
+      expect(
+        await answerFor({ confirmed: true, remember: false }),
+      ).toStrictEqual(CONFIRMED);
+      // The checkbox is still reported only when it was offered.
+      expect(
+        await answerFor({
+          confirmed: true,
+          remember: true,
+          choice: "everywhere",
+        }),
+      ).toStrictEqual({ ...CONFIRMED, choice: "everywhere" });
+    });
+
+    it("answers a cancel with exactly what it always did, whatever was chosen", async () => {
+      for (const decision of [
+        { confirmed: false, remember: false, choice: "everywhere" },
+        { confirmed: false, remember: true, choice: "connection" },
+        { confirmed: "yes", remember: false, choice: "everywhere" },
+        null,
+      ]) {
+        const outcome = requestPrompt(request({ choices: group() }));
+        settlePrompt(headId()!, decision as unknown as PromptDecision);
+        await expect(outcome).resolves.toStrictEqual(CANCELLED);
+      }
+
+      const controller = new AbortController();
+      const aborted = requestPrompt(request({ choices: group() }), {
+        signal: controller.signal,
+      });
+      controller.abort();
+      await expect(aborted).resolves.toStrictEqual(CANCELLED);
+
+      const closing = requestPrompt(request({ choices: group() }));
+      cancelAllPrompts();
+      await expect(closing).resolves.toStrictEqual(CANCELLED);
+    });
+
+    it("adds no key to a request or a decision that has no group", async () => {
+      void requestPrompt(request({ remember: { label: "Don't ask again" } }));
+      expect("choices" in getPromptSnapshot()[0].request).toBe(false);
+      const decisions: PromptDecision[] = [];
+      const ask = () => {
+        const outcome = requestPrompt(request());
+        void outcome.then((decision) => decisions.push(decision));
+        return outcome;
+      };
+      settlePrompt(headId()!, {
+        confirmed: true,
+        remember: true,
+        choice: "ask",
+      });
+      const confirmed = ask();
+      settlePrompt(headId()!, {
+        confirmed: true,
+        remember: false,
+        choice: "everywhere",
+      });
+      await expect(confirmed).resolves.toStrictEqual(CONFIRMED);
+      const cancelled = ask();
+      settlePrompt(headId()!, {
+        confirmed: false,
+        remember: false,
+        choice: "everywhere",
+      });
+      await expect(cancelled).resolves.toStrictEqual(CANCELLED);
+      for (const decision of decisions)
+        expect(Object.keys(decision)).toEqual(["confirmed", "remember"]);
+    });
   });
 });
 

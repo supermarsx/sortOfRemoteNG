@@ -3,7 +3,11 @@ import {
   PROMPT_CANCEL_LABEL,
   PROMPT_HIDDEN_CHARACTERS_NOTICE,
   PROMPT_LIMITS,
+  RUN_TRUST_CHOICE,
+  RUN_TRUST_LIST_FULL_NOTICE,
+  RUN_TRUST_NOT_SAVED_NOTICE,
   bulkCommandRunPrompt,
+  bulkTrustedSendNotice,
   bulkScriptDeletePrompt,
   bulkScriptTrashEmptyPrompt,
   countTextLines,
@@ -20,6 +24,7 @@ import {
   targetsOmittedNotice,
   terminalPastePrompt,
   toSingleLine,
+  type RunTrustOffer,
 } from "../../src/utils/prompts/runPromptRequests";
 
 const session = { name: "web-01", hostname: "10.0.0.1" };
@@ -1157,6 +1162,456 @@ describe("what the dialog may show of untrusted text", () => {
     it("copes with values that are not strings", () => {
       expect(toSingleLine(undefined as unknown as string, 10)).toBe("");
       expect(toSingleLine(42 as unknown as string, 10)).toBe("42");
+    });
+  });
+});
+
+describe("lasting choices (trusted scripts)", () => {
+  const script = { name: "Disk usage", language: "bash" };
+  const command = "df -h\nuptime";
+  const macro = {
+    name: "Follow log",
+    steps: [
+      { command: "sudo -i", delayMs: 500, sendNewline: true },
+      { command: "q", delayMs: 0, sendNewline: false },
+    ],
+  };
+  const sessions = [
+    { id: "s1", name: "web-01", hostname: "10.0.0.1" },
+    { id: "s2", name: "db-01", hostname: "10.0.0.2" },
+  ];
+  const ALL: RunTrustOffer = { connection: true, everywhere: true };
+  const NONE: RunTrustOffer = { connection: false, everywhere: false };
+
+  const SCRIPT_NOTE =
+    "A lasting choice covers this exact script. You are asked again when it changes. Take it back in Settings, Macros, Trusted scripts.";
+  const MACRO_NOTE =
+    "A lasting choice covers this exact macro. You are asked again when it changes. Take it back in Settings, Macros, Trusted scripts.";
+  const BULK_NOTE =
+    "A lasting choice covers this exact script. You are asked again when it changes. Take it back in the script library or in Settings, Macros, Trusted scripts.";
+
+  it("names the four answers", () => {
+    expect(RUN_TRUST_CHOICE).toEqual({
+      ask: "ask",
+      session: "session",
+      connection: "connection",
+      everywhere: "everywhere",
+    });
+  });
+
+  it("bounds the group the dialog shows", () => {
+    expect(PROMPT_LIMITS.choices).toBe(6);
+    expect(PROMPT_LIMITS.choiceLabel).toBe(120);
+  });
+
+  describe("without them, every request is exactly what it was", () => {
+    it("for a script, with and without the checkbox", () => {
+      const plain = {
+        title: 'Run "Disk usage" on web-01?',
+        message: "This runs the commands below in this SSH session.",
+        confirmLabel: "Run script",
+        targets: {
+          label: "Session",
+          items: [{ id: "session", name: "web-01", detail: "10.0.0.1" }],
+        },
+        preview: { label: "Commands to run", text: command },
+        facts: ["bash", "2 lines"],
+        hint: "Settings, Macros: Confirm before running SSH scripts",
+      };
+      const remember = {
+        label: "Don't ask again for this script in this session",
+        hint: "You are asked again if the script changes or the session ends.",
+      };
+      const base = { script, command, session };
+      expect(sshScriptRunPrompt(base)).toStrictEqual(plain);
+      expect(sshScriptRunPrompt({ ...base, trust: undefined })).toStrictEqual(
+        plain,
+      );
+      expect(sshScriptRunPrompt({ ...base, offerRemember: true })).toEqual({
+        ...plain,
+        remember,
+      });
+      expect(
+        sshScriptRunPrompt({ ...base, offerRemember: true, trust: undefined }),
+      ).toEqual({ ...plain, remember });
+    });
+
+    it("for a macro, with and without the checkbox", () => {
+      const plain = {
+        title: 'Replay "Follow log" on web-01?',
+        message: "This types 2 steps into this SSH session.",
+        confirmLabel: "Replay macro",
+        targets: {
+          label: "Session",
+          items: [{ id: "session", name: "web-01", detail: "10.0.0.1" }],
+        },
+        preview: {
+          label: "Steps",
+          text: "1. sudo -i  [then wait 500 ms]\n2. q  [no Enter]",
+        },
+        facts: ["2 steps"],
+        hint: "Settings, Macros: Confirm before replay",
+      };
+      expect(sshMacroReplayPrompt({ macro, session })).toStrictEqual(plain);
+      expect(
+        sshMacroReplayPrompt({ macro, session, offerRemember: true }),
+      ).toEqual({
+        ...plain,
+        remember: {
+          label: "Don't ask again for this macro in this session",
+          hint: "You are asked again if the macro changes or the session ends.",
+        },
+      });
+    });
+
+    it("for a bulk send, standard and destructive", () => {
+      const targets = {
+        label: "Runs on",
+        items: [
+          { id: "s1", name: "web-01", detail: "10.0.0.1" },
+          { id: "s2", name: "db-01", detail: "10.0.0.2" },
+        ],
+      };
+      expect(
+        bulkCommandRunPrompt({
+          command: "uptime",
+          sessions,
+          destructive: false,
+          policy: "always",
+          scriptName: "Uptime",
+        }),
+      ).toStrictEqual({
+        title: "Send this command to 2 SSH sessions?",
+        confirmLabel: "Send to 2 sessions",
+        preview: { label: "Command", text: "uptime" },
+        targets,
+        facts: ['Script "Uptime"'],
+        hint: "Script library, Confirm run: Always",
+      });
+      expect(
+        bulkCommandRunPrompt({
+          command: "reboot",
+          sessions,
+          destructive: true,
+        }),
+      ).toStrictEqual({
+        title: "Send a destructive command to 2 SSH sessions?",
+        message:
+          "This command may make destructive changes on every selected session.",
+        tone: "danger",
+        defaultAction: "cancel",
+        confirmLabel: "Send to 2 sessions",
+        preview: { label: "Command", text: "reboot" },
+        targets,
+      });
+    });
+
+    it("when no lasting answer can be offered", () => {
+      const base = { script, command, session };
+      expect(sshScriptRunPrompt({ ...base, trust: NONE })).toStrictEqual(
+        sshScriptRunPrompt(base),
+      );
+      expect(
+        sshScriptRunPrompt({ ...base, trust: { ...NONE, destructive: true } }),
+      ).toStrictEqual(sshScriptRunPrompt(base));
+      // The session answer alone is the checkbox, as before.
+      expect(
+        sshScriptRunPrompt({ ...base, offerRemember: true, trust: NONE }),
+      ).toStrictEqual(sshScriptRunPrompt({ ...base, offerRemember: true }));
+      expect(
+        sshMacroReplayPrompt({ macro, session, trust: NONE }),
+      ).toStrictEqual(sshMacroReplayPrompt({ macro, session }));
+      expect(
+        sshMacroReplayPrompt({
+          macro,
+          session,
+          offerRemember: true,
+          trust: NONE,
+        }),
+      ).toStrictEqual(
+        sshMacroReplayPrompt({ macro, session, offerRemember: true }),
+      );
+    });
+  });
+
+  describe("a script", () => {
+    const base = { script, command, session };
+
+    it("offers every answer, asking every time first", () => {
+      expect(
+        sshScriptRunPrompt({ ...base, offerRemember: true, trust: ALL })
+          .choices,
+      ).toStrictEqual({
+        label: "Next time this script is run",
+        options: [
+          { id: "ask", label: "Ask every time" },
+          {
+            id: "session",
+            label: "Don't ask again in this session",
+            hint: "Until the session ends or the script changes.",
+          },
+          {
+            id: "connection",
+            label: "Always run it without asking on this connection",
+            hint: "Only this exact script, only on this saved connection.",
+          },
+          {
+            id: "everywhere",
+            label: "Always run it without asking on every connection",
+            hint: "Only this exact script, in any SSH session.",
+          },
+        ],
+        note: SCRIPT_NOTE,
+      });
+    });
+
+    it("offers the session answer only where the call site acts on it", () => {
+      const ids = (offerRemember?: boolean) =>
+        sshScriptRunPrompt({
+          ...base,
+          offerRemember,
+          trust: ALL,
+        }).choices?.options.map((option) => option.id);
+      expect(ids()).toEqual(["ask", "connection", "everywhere"]);
+      expect(ids(false)).toEqual(["ask", "connection", "everywhere"]);
+      expect(ids(true)).toEqual(["ask", "session", "connection", "everywhere"]);
+    });
+
+    it("offers this connection only when it can be bound, and every connection only when allowed", () => {
+      const ids = (trust: RunTrustOffer) =>
+        sshScriptRunPrompt({
+          ...base,
+          offerRemember: true,
+          trust,
+        }).choices?.options.map((option) => option.id);
+      expect(ids({ connection: false, everywhere: true })).toEqual([
+        "ask",
+        "session",
+        "everywhere",
+      ]);
+      expect(ids({ connection: true, everywhere: false })).toEqual([
+        "ask",
+        "session",
+        "connection",
+      ]);
+      expect(
+        sshScriptRunPrompt({
+          ...base,
+          trust: { connection: false, everywhere: true },
+        }).choices?.options.map((option) => option.id),
+      ).toEqual(["ask", "everywhere"]);
+    });
+
+    it("replaces the checkbox, never adds to it, and changes nothing else", () => {
+      const withTrust = sshScriptRunPrompt({
+        ...base,
+        offerRemember: true,
+        trust: ALL,
+      });
+      expect("remember" in withTrust).toBe(false);
+      const { choices, ...rest } = withTrust;
+      expect(choices).toBeDefined();
+      expect(rest).toStrictEqual(sshScriptRunPrompt(base));
+    });
+
+    it("warns that a destructive script would then run at once", () => {
+      const choices = sshScriptRunPrompt({
+        ...base,
+        trust: { ...ALL, destructive: true },
+      }).choices;
+      expect(choices?.note).toBe(
+        `This script may make destructive changes. With a lasting choice it runs at once, without this question. ${SCRIPT_NOTE}`,
+      );
+      expect(choices?.noteTone).toBe("danger");
+      expect(
+        "noteTone" in
+          sshScriptRunPrompt({ ...base, trust: { ...ALL, destructive: false } })
+            .choices!,
+      ).toBe(false);
+      // The prompt's own tone and focus stay as they were.
+      const request = sshScriptRunPrompt({
+        ...base,
+        trust: { ...ALL, destructive: true },
+      });
+      expect(request.tone).toBeUndefined();
+      expect(request.defaultAction).toBeUndefined();
+    });
+  });
+
+  describe("a macro", () => {
+    it("offers every answer, asking every time first", () => {
+      expect(
+        sshMacroReplayPrompt({
+          macro,
+          session,
+          offerRemember: true,
+          trust: ALL,
+        }).choices,
+      ).toStrictEqual({
+        label: "Next time this macro is replayed",
+        options: [
+          { id: "ask", label: "Ask every time" },
+          {
+            id: "session",
+            label: "Don't ask again in this session",
+            hint: "Until the session ends or the macro changes.",
+          },
+          {
+            id: "connection",
+            label: "Always replay it without asking on this connection",
+            hint: "Only this exact macro, only on this saved connection.",
+          },
+          {
+            id: "everywhere",
+            label: "Always replay it without asking on every connection",
+            hint: "Only this exact macro, in any SSH session.",
+          },
+        ],
+        note: MACRO_NOTE,
+      });
+    });
+
+    it("follows the same offers as a script", () => {
+      const ids = (trust: RunTrustOffer, offerRemember?: boolean) =>
+        sshMacroReplayPrompt({
+          macro,
+          session,
+          offerRemember,
+          trust,
+        }).choices?.options.map((option) => option.id);
+      expect(ids(ALL)).toEqual(["ask", "connection", "everywhere"]);
+      expect(ids({ connection: true, everywhere: false }, true)).toEqual([
+        "ask",
+        "session",
+        "connection",
+      ]);
+      expect(ids({ connection: false, everywhere: true })).toEqual([
+        "ask",
+        "everywhere",
+      ]);
+    });
+
+    it("replaces the checkbox, never adds to it, and changes nothing else", () => {
+      const withTrust = sshMacroReplayPrompt({
+        macro,
+        session,
+        offerRemember: true,
+        trust: ALL,
+      });
+      expect("remember" in withTrust).toBe(false);
+      const { choices, ...rest } = withTrust;
+      expect(choices).toBeDefined();
+      expect(rest).toStrictEqual(sshMacroReplayPrompt({ macro, session }));
+    });
+
+    it("warns that a destructive macro would then run at once", () => {
+      const choices = sshMacroReplayPrompt({
+        macro,
+        session,
+        trust: { ...ALL, destructive: true },
+      }).choices;
+      expect(choices?.note).toBe(
+        `This macro may make destructive changes. With a lasting choice it runs at once, without this question. ${MACRO_NOTE}`,
+      );
+      expect(choices?.noteTone).toBe("danger");
+    });
+  });
+
+  describe("a bulk send", () => {
+    const base = {
+      command: "uptime",
+      sessions,
+      destructive: false,
+      policy: "always" as const,
+      scriptName: "Uptime",
+    };
+
+    it("offers asking every time and sending without asking, and nothing else", () => {
+      expect(
+        bulkCommandRunPrompt({ ...base, trust: {} }).choices,
+      ).toStrictEqual({
+        label: "Next time this script is sent",
+        options: [
+          { id: "ask", label: "Ask every time" },
+          {
+            id: "everywhere",
+            label: "Always send it without asking",
+            hint: "Only this exact script. The sessions it goes to are not shown first.",
+          },
+        ],
+        note: BULK_NOTE,
+      });
+    });
+
+    it("changes nothing else of the request", () => {
+      const { choices, ...rest } = bulkCommandRunPrompt({
+        ...base,
+        trust: {},
+      });
+      expect(choices).toBeDefined();
+      expect(rest).toStrictEqual(bulkCommandRunPrompt(base));
+      const destructive = { ...base, command: "reboot", destructive: true };
+      const { choices: dangerChoices, ...dangerRest } = bulkCommandRunPrompt({
+        ...destructive,
+        trust: { destructive: true },
+      });
+      expect(dangerChoices).toBeDefined();
+      expect(dangerRest).toStrictEqual(bulkCommandRunPrompt(destructive));
+    });
+
+    it("warns that a destructive command would then go to every session at once", () => {
+      const note = `This command may make destructive changes. With a lasting choice it is sent at once to every selected session, without this question. ${BULK_NOTE}`;
+      const choices = bulkCommandRunPrompt({
+        ...base,
+        trust: { destructive: true },
+      }).choices;
+      expect(choices?.note).toBe(note);
+      expect(choices?.noteTone).toBe("danger");
+      // A command the prompt already calls destructive gets the warning too.
+      expect(
+        bulkCommandRunPrompt({
+          ...base,
+          command: "reboot",
+          destructive: true,
+          trust: {},
+        }).choices,
+      ).toMatchObject({ note, noteTone: "danger" });
+      expect(
+        "noteTone" in bulkCommandRunPrompt({ ...base, trust: {} }).choices!,
+      ).toBe(false);
+    });
+  });
+
+  describe("notices for the call sites", () => {
+    it("says when the choice could not be saved", () => {
+      expect(RUN_TRUST_NOT_SAVED_NOTICE).toBe(
+        "The choice to stop asking could not be saved. You will be asked again.",
+      );
+    });
+
+    it("says when the list of trusted scripts is full", () => {
+      expect(RUN_TRUST_LIST_FULL_NOTICE).toBe(
+        "The list of trusted scripts is full, so the choice to stop asking was not saved. Take some back in Settings, Macros, Trusted scripts. You will be asked again.",
+      );
+    });
+
+    it("says why a bulk script went without a list of sessions", () => {
+      expect(bulkTrustedSendNotice("Disk usage", 3)).toBe(
+        '"Disk usage" is trusted, so it is sent to 3 sessions without asking.',
+      );
+      expect(bulkTrustedSendNotice("Disk usage", 1)).toBe(
+        '"Disk usage" is trusted, so it is sent to 1 session without asking.',
+      );
+      expect(bulkTrustedSendNotice("Disk usage", 1234)).toBe(
+        `"Disk usage" is trusted, so it is sent to ${count(1234)} sessions without asking.`,
+      );
+      const notice = bulkTrustedSendNotice(
+        `evil\u{202E}txt.exe\r\n${"x".repeat(200)}`,
+        2,
+      );
+      expect(notice).not.toMatch(/[\u{202A}-\u{202E}\r\n]/u);
+      expect(notice.startsWith('"evil')).toBe(true);
+      expect(notice).toContain("\u{2026}");
     });
   });
 });

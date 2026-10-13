@@ -57,6 +57,18 @@
   max-height: 12rem;
 }
 
+/* A group of choices reads as part of the body: no frame of its own. */
+.choices {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  min-inline-size: 0;
+}
+
+.choices legend {
+  padding: 0;
+}
+
 /* The focused button is the one Enter activates, so it is always marked,
  * whether the prompt was opened with the keyboard or the mouse. */
 .action:focus {
