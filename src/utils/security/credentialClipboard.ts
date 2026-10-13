@@ -8,11 +8,19 @@ import {
   type CredentialOutcome,
 } from "./credentialFailure";
 
-/** What is being copied. It selects the native auto-clear policy and history
- * label, never where the value goes. `recoveryCode` covers backup codes;
- * `secret` covers anything else secret, such as an authenticator seed. */
+/** What is being copied. It selects the auto-clear time and history label,
+ * never where the value goes. `recoveryCode` covers backup codes; `export`
+ * covers a whole export (for example every authenticator seed, or saved
+ * provider credentials) that is pasted somewhere else; `secret` covers
+ * anything else secret, such as one authenticator seed. */
 export type CredentialClipboardKind =
-  "username" | "password" | "totpCode" | "apiKey" | "recoveryCode" | "secret";
+  | "username"
+  | "password"
+  | "totpCode"
+  | "apiKey"
+  | "recoveryCode"
+  | "secret"
+  | "export";
 export type CredentialClipboardWriter = (
   value: string,
   kind: CredentialClipboardKind,
@@ -41,7 +49,33 @@ const wire: Record<CredentialClipboardKind, { kind: string; field: string }> = {
   apiKey: { kind: "apiKey", field: "apiKey" },
   recoveryCode: { kind: "genericSecret", field: "recoveryCode" },
   secret: { kind: "genericSecret", field: "secret" },
+  export: { kind: "genericSecret", field: "export" },
 };
+
+/**
+ * Seconds the secure clipboard keeps each kind before clearing it. Every copy
+ * asks for its time, so the engine's single default (12 s) applies to none of
+ * them. A one-time code with an expiry leaves earlier, with its time step: an
+ * expiry may shorten a copy, never lengthen it. The engine accepts 1..300 s
+ * from a request.
+ */
+export const CLIPBOARD_CLEAR_SECS: Readonly<
+  Record<CredentialClipboardKind, number>
+> = Object.freeze({
+  username: 12,
+  password: 12,
+  totpCode: 30,
+  apiKey: 30,
+  recoveryCode: 30,
+  secret: 30,
+  export: 60,
+});
+
+function clearAfterSecs(kind: CredentialClipboardKind, expires?: number) {
+  const limit = CLIPBOARD_CLEAR_SECS[kind];
+  if (expires === undefined) return limit;
+  return Math.max(1, Math.min(limit, Math.ceil((expires - Date.now()) / 1000)));
+}
 
 /** The fixed codes `secure_clip_copy` rejects with (contract K7). */
 const nativeFailures = new Map<unknown, CredentialClipboardFailure>([
@@ -114,16 +148,7 @@ export async function prepareCredentialClipboard(): Promise<CredentialClipboardW
               field: wire[kind].field,
               connectionId: options.connectionId ?? null,
               label: null,
-              clearAfterSecs:
-                options.expires === undefined
-                  ? null
-                  : Math.max(
-                      1,
-                      Math.min(
-                        30,
-                        Math.ceil((options.expires - Date.now()) / 1000),
-                      ),
-                    ),
+              clearAfterSecs: clearAfterSecs(kind, options.expires),
               maxPastes: null,
               oneTime: false,
             },
@@ -162,9 +187,9 @@ export async function prepareCredentialClipboard(): Promise<CredentialClipboardW
  * it never falls back to the web clipboard. Show "copied" only when `ok` is
  * true; otherwise show `message`, which names the cause and holds no secret.
  *
- * Leave the auto-clear time to the native policy. Pass `expires` (Unix
- * milliseconds) only for a one-time code, so it leaves the clipboard with its
- * time step. A copy that must be tied to an open database or vault uses
+ * The auto-clear time comes from `CLIPBOARD_CLEAR_SECS` for `kind`. Pass
+ * `expires` (Unix milliseconds) only for a one-time code, so it leaves the
+ * clipboard with its time step. A copy that must be tied to an open database or vault uses
  * `prepareCredentialClipboard` and its `assertCurrent` gate instead.
  */
 export async function copySecretToClipboard(

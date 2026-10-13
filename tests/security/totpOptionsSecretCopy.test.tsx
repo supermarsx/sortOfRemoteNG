@@ -265,7 +265,7 @@ describe("connection editor 2FA section: secret copies", () => {
     expect(hasTick(copyAllButton())).toBe(false);
   });
 
-  it("copies the export, which holds every seed, as a secret and ticks only after the write", async () => {
+  it("copies the export, which holds every seed, as an export kept 60 s and ticks only after the write", async () => {
     await open(10_000);
     const write = clipboard.hold();
     fireEvent.click(exportButton());
@@ -273,7 +273,8 @@ describe("connection editor 2FA section: secret copies", () => {
     clipboard.expectOnlyCopy({
       value: JSON.stringify([ALPHA, BRAVO], null, 2),
       kind: "genericSecret",
-      field: "secret",
+      field: "export",
+      clearAfterSecs: 60,
     });
     expect(hasTick(exportButton())).toBe(false);
     write.release();

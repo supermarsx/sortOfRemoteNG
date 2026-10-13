@@ -21,6 +21,19 @@ export const expiredSentence =
   "The code expired before it could be used. Try again for a fresh code.";
 export const emptySentence = "There is nothing to copy.";
 
+/** Seconds a copy asks the secure clipboard to keep each `field`, when no
+ * one-time code expiry shortens it. Written out here on purpose, not imported:
+ * the suites pin the decided table, not whatever the source says. */
+export const clearSecondsByField: Record<string, number> = {
+  username: 12,
+  password: 12,
+  totpCode: 30,
+  apiKey: 30,
+  recoveryCode: 30,
+  secret: 30,
+  export: 60,
+};
+
 /**
  * The desktop clipboard as a fake. Pass the mocked `getInvoke` of
  * `src/utils/tauri/invoke`: `secure_clip_copy` is recorded by `secureCopy`,
@@ -51,7 +64,8 @@ export function installSecureClipboard(getInvoke: Mock) {
   });
   return {
     secureCopy,
-    /** The one request made, with the policy fields a copy never sets. */
+    /** The one request made, with the policy fields a copy never sets. The
+     * clear time defaults to the field's entry in `clearSecondsByField`. */
     expectOnlyCopy(request: {
       value: string;
       kind: string;
@@ -59,8 +73,9 @@ export function installSecureClipboard(getInvoke: Mock) {
       clearAfterSecs?: number | null;
       connectionId?: string | null;
     }) {
+      expect(clearSecondsByField).toHaveProperty(request.field);
       expect(secureCopy).toHaveBeenCalledExactlyOnceWith({
-        clearAfterSecs: null,
+        clearAfterSecs: clearSecondsByField[request.field],
         connectionId: null,
         ...request,
         label: null,

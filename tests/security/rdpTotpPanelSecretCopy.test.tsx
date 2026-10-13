@@ -256,7 +256,7 @@ describe("RDP 2FA panel: secret copies", () => {
     );
   });
 
-  it("copies the export, which holds every seed, as a secret and says Copied! only after the write", async () => {
+  it("copies the export, which holds every seed, as an export kept 60 s and says Copied! only after the write", async () => {
     await open(10_000);
     const write = clipboard.hold();
     fireEvent.click(exportButton());
@@ -264,7 +264,8 @@ describe("RDP 2FA panel: secret copies", () => {
     clipboard.expectOnlyCopy({
       value: JSON.stringify([ALPHA, BRAVO], null, 2),
       kind: "genericSecret",
-      field: "secret",
+      field: "export",
+      clearAfterSecs: 60,
     });
     expect(screen.queryByText("Copied!")).not.toBeInTheDocument();
     write.release();

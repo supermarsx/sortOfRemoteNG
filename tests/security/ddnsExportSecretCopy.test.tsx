@@ -127,7 +127,7 @@ describe("DDNS manager: profile export", () => {
     }
   });
 
-  it("copies the export, which holds provider credentials in clear, as a secret", async () => {
+  it("copies the export, which holds provider credentials in clear, as an export kept 60 s", async () => {
     open();
     fireEvent.click(exportButton());
     await settle();
@@ -136,7 +136,8 @@ describe("DDNS manager: profile export", () => {
     clipboard.expectOnlyCopy({
       value: copied,
       kind: "genericSecret",
-      field: "secret",
+      field: "export",
+      clearAfterSecs: 60,
     });
     expect(screen.queryByText(lockedSentence)).not.toBeInTheDocument();
   });

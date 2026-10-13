@@ -286,7 +286,7 @@ export function useTOTPOptions(
 
   const handleExport = useCallback(() => {
     // The export holds every authenticator secret.
-    void copyOrReport("export", JSON.stringify(configs, null, 2), "secret");
+    void copyOrReport("export", JSON.stringify(configs, null, 2), "export");
   }, [configs, copyOrReport]);
 
   const handleImport = useCallback(() => {

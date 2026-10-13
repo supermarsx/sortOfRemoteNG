@@ -235,7 +235,7 @@ export function useRDPTotpPanel(
 
   const handleExport = useCallback(() => {
     // The export holds every authenticator secret.
-    void copy("export", JSON.stringify(configs, null, 2), "secret");
+    void copy("export", JSON.stringify(configs, null, 2), "export");
   }, [configs, copy]);
 
   const handleImport = useCallback(

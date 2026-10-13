@@ -1131,7 +1131,7 @@ export const DdnsManager: React.FC<DdnsManagerProps> = ({
       if (!data) return;
       const copied = await copySecretToClipboard(
         JSON.stringify(data, null, 2),
-        "secret",
+        "export",
       );
       if (!copied.ok) setExportError(copied.message);
     } finally {

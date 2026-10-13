@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
+  CLIPBOARD_CLEAR_SECS,
   copySecretToClipboard,
   CredentialClipboardError,
   prepareCredentialClipboard,
@@ -21,9 +22,13 @@ beforeEach(() => {
 afterEach(() => vi.unstubAllGlobals());
 
 describe("credential clipboard transport", () => {
-  it.each(["username", "password", "totpCode"] as const)(
+  it.each([
+    ["username", 12],
+    ["password", 12],
+    ["totpCode", 30],
+  ] as const)(
     "uses the native clipboard for %s even when web clipboard access fails",
-    async (kind) => {
+    async (kind, clearAfterSecs) => {
       const invoke = vi.fn().mockResolvedValue({});
       transport.getInvoke.mockResolvedValue(invoke);
       webWrite.mockRejectedValue(
@@ -40,7 +45,7 @@ describe("credential clipboard transport", () => {
           field: kind,
           connectionId: "connection",
           label: null,
-          clearAfterSecs: null,
+          clearAfterSecs,
           maxPastes: null,
           oneTime: false,
         },
@@ -247,16 +252,19 @@ describe("typed clipboard outcomes", () => {
 });
 
 describe("one-call secret copy", () => {
+  // The decided clear-time table (coordinator, 2026-10-13 ~16:05). A one-time
+  // code with an expiry leaves earlier, with its time step.
   it.each([
-    ["password", "password", "password"],
-    ["username", "username", "username"],
-    ["totpCode", "totpCode", "totpCode"],
-    ["apiKey", "apiKey", "apiKey"],
-    ["recoveryCode", "genericSecret", "recoveryCode"],
-    ["secret", "genericSecret", "secret"],
+    ["password", "password", "password", 12],
+    ["username", "username", "username", 12],
+    ["totpCode", "totpCode", "totpCode", 30],
+    ["apiKey", "apiKey", "apiKey", 30],
+    ["recoveryCode", "genericSecret", "recoveryCode", 30],
+    ["secret", "genericSecret", "secret", 30],
+    ["export", "genericSecret", "export", 60],
   ] as const)(
-    "copies a %s through the native clipboard as %s",
-    async (kind, wireKind, field) => {
+    "copies a %s through the native clipboard as %s/%s, cleared after %i s",
+    async (kind, wireKind, field, clearAfterSecs) => {
       const invoke = vi.fn().mockResolvedValue({});
       transport.getInvoke.mockResolvedValue(invoke);
       await expect(
@@ -269,7 +277,7 @@ describe("one-call secret copy", () => {
           field,
           connectionId: "c",
           label: null,
-          clearAfterSecs: null,
+          clearAfterSecs,
           maxPastes: null,
           oneTime: false,
         },
@@ -298,6 +306,45 @@ describe("one-call secret copy", () => {
       });
     } finally {
       clock.mockRestore();
+    }
+  });
+  it("lets an expiry shorten a copy's clear time but never lengthen it", async () => {
+    const now = 100_000;
+    const clock = vi.spyOn(Date, "now").mockReturnValue(now);
+    try {
+      const invoke = vi.fn().mockResolvedValue({});
+      transport.getInvoke.mockResolvedValue(invoke);
+      const cases = [
+        ["export", 45_000, 45],
+        ["export", 90_000, 60],
+        ["password", 45_000, 12],
+        ["password", 4_100, 5],
+        ["apiKey", 45_000, 30],
+      ] as const;
+      for (const [kind, left, clearAfterSecs] of cases) {
+        await copySecretToClipboard("SYNTHETIC", kind, { expires: now + left });
+        expect(invoke).toHaveBeenLastCalledWith("secure_clip_copy", {
+          request: expect.objectContaining({ clearAfterSecs }),
+        });
+      }
+    } finally {
+      clock.mockRestore();
+    }
+  });
+  it("asks only for clear times the engine accepts from a request (1..300 s)", () => {
+    expect(CLIPBOARD_CLEAR_SECS).toEqual({
+      username: 12,
+      password: 12,
+      totpCode: 30,
+      apiKey: 30,
+      recoveryCode: 30,
+      secret: 30,
+      export: 60,
+    });
+    for (const seconds of Object.values(CLIPBOARD_CLEAR_SECS)) {
+      expect(Number.isInteger(seconds)).toBe(true);
+      expect(seconds).toBeGreaterThanOrEqual(1);
+      expect(seconds).toBeLessThanOrEqual(300);
     }
   });
   it("reports a refusal as an outcome and never rejects or falls back", async () => {
