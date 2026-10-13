@@ -44,9 +44,9 @@ export const BulkSSHCommander: React.FC<BulkSSHCommanderProps> = ({
             <SSHCommandHistoryPanel
               mgr={mgr.historyMgr}
               t={t}
-              onSelectCommand={(cmd) => mgr.setCommand(cmd)}
+              onSelectCommand={(cmd) => mgr.replaceCommand(cmd)}
               onReExecute={(cmd) => {
-                mgr.setCommand(cmd);
+                mgr.replaceCommand(cmd);
                 mgr.toggleHistory();
               }}
               compact

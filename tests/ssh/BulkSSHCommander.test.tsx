@@ -1,12 +1,15 @@
 import {
   act,
+  cleanup,
   render,
   screen,
   fireEvent,
   waitFor,
+  within,
 } from "@testing-library/react";
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { afterEach, describe, it, expect, vi, beforeEach } from "vitest";
 import { BulkSSHCommander } from "../../src/components/ssh/BulkSSHCommander";
+import { PromptHost } from "../../src/components/ui/dialogs/PromptHost";
 import { ConnectionProvider } from "../../src/contexts/ConnectionContext";
 import { ToastProvider } from "../../src/contexts/ToastContext";
 import {
@@ -14,7 +17,12 @@ import {
   resetSSHCommandHistoryMemoryForTests,
 } from "../../src/hooks/ssh/useSSHCommandHistory";
 import { invoke } from "@tauri-apps/api/core";
-import { bulkScriptsStore } from "../../src/hooks/ssh/bulkScriptLibrary";
+import {
+  bulkScriptsStore,
+  type BulkScript,
+  type BulkScriptLibrarySnapshot,
+} from "../../src/hooks/ssh/bulkScriptLibrary";
+import { resetPromptQueueForTests } from "../../src/utils/prompts/promptQueue";
 import { IndexedDbService } from "../../src/utils/storage/indexedDbService";
 
 // ── Mocks to prevent OOM from transitive dependency graph ──
@@ -832,4 +840,172 @@ describe("BulkSSHCommander Script Storage", () => {
     },
     SCRIPT_MIGRATION_TEST_TIMEOUT_MS,
   );
+});
+
+describe("BulkSSHCommander history panel over a loaded script", () => {
+  // Flagged destructive by hand: nothing in its text matches a destructive
+  // pattern, so only the flag makes a send of it ask.
+  const flagged: BulkScript = {
+    id: "custom-flagged",
+    name: "Rotate keys",
+    description: "",
+    script: "uname -a",
+    category: "Custom",
+    type: "system",
+    risk: "destructive",
+    createdAt: "2026-01-01T00:00:00.000Z",
+    updatedAt: "2026-01-01T00:00:00.000Z",
+  };
+  const library: BulkScriptLibrarySnapshot = {
+    version: 2,
+    active: [flagged],
+    trash: [],
+    config: {
+      runConfirmation: "destructive-only",
+      deleteConfirmation: "permanent-only",
+    },
+  };
+
+  const sends = () =>
+    invokeCallsFor("send_ssh_input").map(
+      ([, args]) => args as { sessionId: string; data: string },
+    );
+  const editor = () =>
+    screen.getByPlaceholderText(/Enter command/i) as HTMLTextAreaElement;
+  const pressSend = () => fireEvent.click(screen.getByText("Send"));
+  const prompts = () => screen.queryAllByTestId("app-prompt");
+  const toBothSessions = (command: string) => [
+    { sessionId: "backend-1", data: `${command}\n` },
+    { sessionId: "backend-2", data: `${command}\n` },
+  ];
+
+  /** The panel's row for a command: a click on it selects the entry. */
+  const historyRow = (command: string) => {
+    const row = screen
+      .getAllByText(command)
+      .find((element) => element.tagName === "CODE")
+      ?.closest('[role="button"]');
+    if (!(row instanceof HTMLElement))
+      throw new Error(`no history entry for ${command}`);
+    return row;
+  };
+
+  /** Sends a command that nothing asks about, so that the history has it. */
+  const sendForHistory = async (command: string) => {
+    const before = sends().length;
+    fireEvent.change(editor(), { target: { value: command } });
+    pressSend();
+    await waitFor(() => expect(sends()).toHaveLength(before + 2));
+    await waitFor(() => expect(editor()).toHaveValue(""));
+  };
+
+  const loadFlaggedScript = async () => {
+    fireEvent.click(screen.getByText("Scripts"));
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Load Rotate keys" }),
+    );
+    expect(editor()).toHaveValue("uname -a");
+  };
+
+  const openHistory = () => fireEvent.click(screen.getByText("History"));
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.mocked(invoke).mockReset().mockResolvedValue(undefined);
+    Object.defineProperty(window, "__TAURI_INTERNALS__", {
+      configurable: true,
+      value: {},
+    });
+    ensureLocalStorage();
+    if (typeof localStorage?.clear === "function") localStorage.clear();
+    resetSSHCommandHistoryMemoryForTests();
+    resetPromptQueueForTests();
+    vi.spyOn(bulkScriptsStore, "load").mockImplementation(async () => ({
+      value: JSON.parse(JSON.stringify(library)),
+      sanitized: false,
+    }));
+    vi.spyOn(window, "confirm").mockReturnValue(true);
+    render(
+      <ToastProvider>
+        <ConnectionProvider>
+          <BulkSSHCommander isOpen onClose={mockOnClose} />
+          <PromptHost />
+        </ConnectionProvider>
+      </ToastProvider>,
+    );
+  });
+
+  afterEach(() => {
+    const nativeConfirms = vi.mocked(window.confirm).mock.calls.length;
+    cleanup();
+    vi.restoreAllMocks();
+    delete (window as typeof window & { __TAURI_INTERNALS__?: unknown })
+      .__TAURI_INTERNALS__;
+    expect(nativeConfirms).toBe(0);
+  });
+
+  it("lets go of the script's flag when an entry is selected over it", async () => {
+    await sendForHistory("uptime");
+    await loadFlaggedScript();
+    openHistory();
+
+    fireEvent.click(historyRow("uptime"));
+    expect(editor()).toHaveValue("uptime");
+    const before = sends().length;
+    pressSend();
+
+    // A harmless entry: sent at once, with no destructive prompt in the way.
+    expect(prompts()).toHaveLength(0);
+    await waitFor(() =>
+      expect(sends().slice(before)).toEqual(toBothSessions("uptime")),
+    );
+    expect(prompts()).toHaveLength(0);
+  });
+
+  it("lets go of it when an entry is re-executed over it, too", async () => {
+    await sendForHistory("uptime");
+    await loadFlaggedScript();
+    openHistory();
+
+    fireEvent.click(within(historyRow("uptime")).getByTitle("Re-execute"));
+    expect(editor()).toHaveValue("uptime");
+    const before = sends().length;
+    pressSend();
+
+    expect(prompts()).toHaveLength(0);
+    await waitFor(() =>
+      expect(sends().slice(before)).toEqual(toBothSessions("uptime")),
+    );
+  });
+
+  it("brings the flag back when the entry selected next is the script's own text", async () => {
+    await sendForHistory("uptime");
+    // Typed, not loaded: the same text without the flag, so nothing asked.
+    await sendForHistory("uname -a");
+    await loadFlaggedScript();
+    openHistory();
+
+    fireEvent.click(historyRow("uptime"));
+    expect(editor()).toHaveValue("uptime");
+    fireEvent.click(historyRow("uname -a"));
+    expect(editor()).toHaveValue("uname -a");
+    const before = sends().length;
+    pressSend();
+
+    expect(prompts()).toHaveLength(1);
+    expect(
+      screen.getByRole("dialog", {
+        name: "Send a destructive command to 2 SSH sessions?",
+      }),
+    ).toBeInTheDocument();
+    expect(screen.getByTestId("app-prompt-facts")).toHaveTextContent(
+      'Script "Rotate keys"',
+    );
+    await waitFor(() =>
+      expect(screen.getByTestId("app-prompt-cancel")).toHaveFocus(),
+    );
+    fireEvent.click(screen.getByTestId("app-prompt-cancel"), { detail: 1 });
+    expect(prompts()).toHaveLength(0);
+    expect(sends()).toHaveLength(before);
+  });
 });

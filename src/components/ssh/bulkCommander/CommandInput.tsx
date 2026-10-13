@@ -10,6 +10,7 @@ function CommandInput({ mgr, t }: { mgr: Mgr; t: TFunc }) {
           <Textarea
             ref={mgr.commandInputRef}
             value={mgr.command}
+            onInput={mgr.noteEditorInput}
             onChange={(v) => mgr.setCommand(v)}
             onKeyDown={mgr.handleKeyDown}
             placeholder={t(
