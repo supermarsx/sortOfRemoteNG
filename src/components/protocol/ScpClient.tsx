@@ -14,13 +14,15 @@ import {
   Trash2,
   Upload,
 } from "lucide-react";
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
   joinScpRemotePath,
   useScpClient,
 } from "../../hooks/protocol/useScpClient";
 import type { ConnectionSession } from "../../types/connection/connection";
 import type { ScpRemoteDirEntry } from "../../types/scp";
+import { requestPrompt } from "../../utils/prompts/promptQueue";
+import { remoteDeletePrompt } from "../../utils/prompts/runPromptRequests";
 
 const formatFileSize = (bytes: number): string => {
   if (bytes <= 0) return "0 B";
@@ -46,6 +48,28 @@ const joinLocalPath = (directory: string, name: string): string => {
 const asSinglePath = (selection: string | string[] | null): string | null =>
   Array.isArray(selection) ? (selection[0] ?? null) : selection;
 
+/** A delete the user is being asked about: one entry of one backend session. */
+interface DeleteReview {
+  entry: ScpRemoteDirEntry;
+  backendSessionId: string | null;
+  abort: AbortController;
+}
+
+/** True while the reviewed entry is still the selected entry of the same connected session. */
+const isStillUnderReview = (
+  review: DeleteReview,
+  live: {
+    status: string;
+    backendSessionId: string | null;
+    selectedEntry: ScpRemoteDirEntry | null;
+  },
+): boolean =>
+  live.status === "connected" &&
+  live.backendSessionId === review.backendSessionId &&
+  live.selectedEntry !== null &&
+  live.selectedEntry.path === review.entry.path &&
+  live.selectedEntry.isDir === review.entry.isDir;
+
 export interface ScpClientProps {
   session: ConnectionSession;
 }
@@ -63,6 +87,14 @@ export const ScpClient: React.FC<ScpClientProps> = ({ session }) => {
     [model.entries, selectedPath],
   );
 
+  // The delete prompt does not block the window, so the session and the
+  // listing can change while it is open. The open review is kept here to
+  // refuse a second Delete, and the latest state to check the review against
+  // once the answer arrives.
+  const deleteReviewRef = useRef<DeleteReview | null>(null);
+  const liveRef = useRef({ model, selectedEntry });
+  liveRef.current = { model, selectedEntry };
+
   useEffect(() => setPathDraft(model.currentPath), [model.currentPath]);
   useEffect(() => {
     if (
@@ -72,6 +104,23 @@ export const ScpClient: React.FC<ScpClientProps> = ({ session }) => {
       setSelectedPath(null);
     }
   }, [model.entries, selectedPath]);
+
+  // A prompt about an entry that is no longer the selected one, or about a
+  // session that is no longer the connected one, closes and deletes nothing.
+  useEffect(() => {
+    const review = deleteReviewRef.current;
+    if (
+      review &&
+      !isStillUnderReview(review, {
+        status: model.status,
+        backendSessionId: model.backendSessionId,
+        selectedEntry,
+      })
+    ) {
+      review.abort.abort();
+    }
+  }, [model.status, model.backendSessionId, selectedEntry]);
+  useEffect(() => () => deleteReviewRef.current?.abort.abort(), []);
 
   const perform = async (operation: () => Promise<void>) => {
     setActionError(null);
@@ -168,19 +217,47 @@ export const ScpClient: React.FC<ScpClientProps> = ({ session }) => {
       setActionMessage(`Created ${name}.`);
     });
 
-  const deleteSelected = () =>
-    perform(async () => {
+  const deleteSelected = async () => {
+    // One delete under review at a time: a second click gets no answer of its own.
+    if (deleteReviewRef.current) return;
+    await perform(async () => {
       if (!selectedEntry) return;
-      const confirmed = window.confirm(
-        `Permanently delete ${selectedEntry.name}${
-          selectedEntry.isDir ? " and everything inside it" : ""
-        }?`,
-      );
-      if (!confirmed) return;
-      await model.deleteEntry(selectedEntry);
-      setSelectedPath(null);
-      setActionMessage(`Deleted ${selectedEntry.name}.`);
+      const review: DeleteReview = {
+        entry: selectedEntry,
+        backendSessionId: model.backendSessionId,
+        abort: new AbortController(),
+      };
+      deleteReviewRef.current = review;
+      try {
+        const decision = await requestPrompt(
+          remoteDeletePrompt({
+            name: review.entry.name,
+            isFolder: review.entry.isDir,
+            path: review.entry.path,
+            session: { name: session.name, hostname: session.hostname },
+          }),
+          { signal: review.abort.signal },
+        );
+        if (!decision.confirmed) return;
+        // The reviewed entry, on the session it was reviewed on, or nothing.
+        const live = liveRef.current;
+        if (
+          !isStillUnderReview(review, {
+            status: live.model.status,
+            backendSessionId: live.model.backendSessionId,
+            selectedEntry: live.selectedEntry,
+          })
+        ) {
+          return;
+        }
+        await live.model.deleteEntry(review.entry);
+        setSelectedPath(null);
+        setActionMessage(`Deleted ${review.entry.name}.`);
+      } finally {
+        deleteReviewRef.current = null;
+      }
     });
+  };
 
   const checksumSelected = () =>
     perform(async () => {

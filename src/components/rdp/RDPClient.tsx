@@ -5,6 +5,8 @@ import { invoke } from "@tauri-apps/api/core";
 import { writeFile, mkdir, exists } from "@tauri-apps/plugin-fs";
 import { appDataDir, join } from "@tauri-apps/api/path";
 import { formatBytes } from "../../utils/core/formatters";
+import { requestPrompt } from "../../utils/prompts/promptQueue";
+import { fileTransferPrompt } from "../../utils/prompts/runPromptRequests";
 import RDPErrorScreen from "./RDPErrorScreen";
 import { ConnectingSpinner } from "../ui/display";
 import { TrustWarningDialog } from "../security/TrustWarningDialog";
@@ -139,6 +141,9 @@ const DisconnectedOverlay: React.FC = () => (
   </div>
 );
 
+/** A dropped set between its drop and its answer: being counted, then asked about. */
+type DropReview = { abort: AbortController; asking: boolean };
+
 const CanvasArea: React.FC<{
   mgr: RDPClientMgr;
   session: ConnectionSession;
@@ -230,28 +235,53 @@ const CanvasArea: React.FC<{
 
   const handleDragLeave = React.useCallback(() => setDragOver(false), []);
 
-  const handleDrop = React.useCallback(
-    async (e: React.DragEvent) => {
-      e.preventDefault();
-      setDragOver(false);
-      if (!mgr.isConnected || !mgr.rdpSessionId) return;
+  // One dropped set is under review at a time: the walk that counts it and
+  // the prompt that asks about it. Neither blocks the window, so the session
+  // is checked again after the answer.
+  const dropReviewRef = React.useRef<DropReview | null>(null);
+  const liveSessionIdRef = React.useRef<string | null>(null);
+  liveSessionIdRef.current = mgr.isConnected ? mgr.rdpSessionId : null;
 
-      if (!fileDragDropEnabled) {
-        setDropStatus({
-          message:
-            "File drag & drop is disabled — enable it in the status bar or connection settings",
-          type: "error",
-        });
-        if (dropDismissRef.current) clearTimeout(dropDismissRef.current);
-        dropDismissRef.current = setTimeout(() => setDropStatus(null), 5000);
-        return;
-      }
+  // A review belongs to one connected session and to this view. When either
+  // goes, its walk stops, its prompt closes and nothing is sent.
+  React.useEffect(
+    () => () => dropReviewRef.current?.abort.abort(),
+    [mgr.isConnected, mgr.rdpSessionId],
+  );
+
+  /**
+   * Counts a dropped set, asks about it, and on a confirm stages and sends
+   * exactly what was counted. It is given what `handleDrop` captured from the
+   * drop event and never the event itself, which is spent by then.
+   */
+  const reviewAndSendDrop = React.useCallback(
+    async (
+      sessionId: string,
+      topEntries: FileSystemEntry[],
+      fallbackFiles: File[],
+    ) => {
+      const review: DropReview = {
+        abort: new AbortController(),
+        asking: false,
+      };
+      dropReviewRef.current = review;
+      const stopped = () => review.abort.signal.aborted;
+      // False once a newer drop has taken this one's place: the status line
+      // is then no longer this drop's to write.
+      const current = () => dropReviewRef.current === review;
 
       type DropEntry = {
         name: string;
         size: number;
         path: string;
         isDirectory: boolean;
+      };
+      /** One item of the reviewed set, in clipboard order; `file` is null for a folder. */
+      type PlannedItem = {
+        name: string;
+        relDir: string;
+        relPath: string;
+        file: File | null;
       };
 
       // Live scan progress counters (mutated during walk, read by status updates)
@@ -282,21 +312,50 @@ const CanvasArea: React.FC<{
         return `Scanning: ${parts || "..."}${scan.bytes > 0 ? ` (${formatBytes(scan.bytes)})` : ""}${scan.current ? ` — ${scan.current}` : ""}`;
       };
 
-      /** Recursively walk a FileSystemEntry tree and stage files to disk. */
+      // Only a folder takes long enough to count to be worth a progress line.
+      const hasFolder = topEntries.some((entry) => entry.isDirectory);
+      const showScan = (message: string) => {
+        if (hasFolder && current() && !stopped()) {
+          setDropStatus({ message, type: "info", spinning: true });
+        }
+      };
+      const hideScan = () => {
+        if (hasFolder && current()) setDropStatus(null);
+      };
+      // Stopped by a disconnect, an unmount or a newer drop: the progress
+      // line goes at once, whatever the file system is still doing.
+      review.abort.signal.addEventListener("abort", hideScan, { once: true });
+
+      const showFailure = (err: unknown) => {
+        setDropStatus({
+          message: `File transfer failed: ${err instanceof Error ? err.message : String(err)}`,
+          type: "error",
+        });
+      };
+      const dismissLater = () => {
+        if (dropDismissRef.current) clearTimeout(dropDismissRef.current);
+        dropDismissRef.current = setTimeout(() => setDropStatus(null), 8000);
+      };
+
+      /**
+       * Recursively walk a FileSystemEntry tree. It reads names and sizes
+       * only: nothing is staged, and no file's contents are read, before the
+       * answer.
+       */
       async function walkEntry(
         entry: FileSystemEntry,
         prefix: string,
-        transferDir: string,
-      ): Promise<DropEntry[]> {
-        const out: DropEntry[] = [];
+      ): Promise<PlannedItem[]> {
+        const out: PlannedItem[] = [];
+        if (stopped()) return out;
         const clipName = prefix ? `${prefix}\\${entry.name}` : entry.name;
 
         if (entry.isDirectory) {
           scan.dirs++;
           scan.current = entry.name;
-          setDropStatus({ message: scanMsg(), type: "info", spinning: true });
+          showScan(scanMsg());
           await yieldToBrowser();
-          out.push({ name: clipName, size: 0, path: "", isDirectory: true });
+          out.push({ name: clipName, relDir: "", relPath: "", file: null });
 
           const dirReader = (entry as FileSystemDirectoryEntry).createReader();
           const children = await new Promise<FileSystemEntry[]>(
@@ -304,7 +363,7 @@ const CanvasArea: React.FC<{
               const all: FileSystemEntry[] = [];
               const readBatch = () => {
                 dirReader.readEntries((batch) => {
-                  if (batch.length === 0) {
+                  if (batch.length === 0 || stopped()) {
                     resolve(all);
                     return;
                   }
@@ -317,32 +376,171 @@ const CanvasArea: React.FC<{
           );
 
           for (const child of children) {
-            out.push(...(await walkEntry(child, clipName, transferDir)));
+            out.push(...(await walkEntry(child, clipName)));
           }
         } else {
           const file = await new Promise<File>((resolve, reject) => {
             (entry as FileSystemFileEntry).file(resolve, reject);
           });
-          const relDir = prefix.replace(/\\/g, "/");
-          if (relDir) {
-            const sub = await join(transferDir, relDir);
-            if (!(await exists(sub))) await mkdir(sub, { recursive: true });
-          }
-          const dest = await join(transferDir, clipName.replace(/\\/g, "/"));
-          await writeFile(dest, new Uint8Array(await file.arrayBuffer()));
           scan.files++;
           scan.bytes += file.size;
           scan.current = file.name;
-          setDropStatus({ message: scanMsg(), type: "info", spinning: true });
+          showScan(scanMsg());
           await yieldToBrowser();
           out.push({
             name: clipName,
-            size: file.size,
+            relDir: prefix.replace(/\\/g, "/"),
+            relPath: clipName.replace(/\\/g, "/"),
+            file,
+          });
+        }
+        return out;
+      }
+
+      const plan: PlannedItem[] = [];
+      let confirmed = false;
+      try {
+        showScan("Scanning dropped items...");
+        await yieldToBrowser();
+
+        if (topEntries.length > 0) {
+          for (const entry of topEntries) {
+            plan.push(...(await walkEntry(entry, "")));
+          }
+        } else {
+          // Fallback: plain File objects (no directory support)
+          for (const file of fallbackFiles) {
+            scan.files++;
+            scan.bytes += file.size;
+            plan.push({
+              name: file.name,
+              relDir: "",
+              relPath: file.name,
+              file,
+            });
+          }
+        }
+        hideScan();
+
+        // Confirm transfer with user before proceeding. The count and the
+        // size are those of `plan`, which is what a confirm sends.
+        if (!stopped() && plan.length > 0) {
+          review.asking = true;
+          const decision = await requestPrompt(
+            fileTransferPrompt({
+              count: scan.files,
+              size: formatBytes(scan.bytes),
+              session,
+              folders: scan.dirs,
+            }),
+            { signal: review.abort.signal },
+          );
+          confirmed = decision.confirmed;
+        }
+      } catch (err) {
+        // An entry that cannot be read, or a window that cannot ask: nothing
+        // is sent, and a part of the set is never offered as the whole.
+        if (current() && !stopped()) {
+          showFailure(err);
+          dismissLater();
+        }
+      } finally {
+        if (current()) dropReviewRef.current = null;
+      }
+
+      // Only to the session the set was reviewed for, while it is connected.
+      if (!confirmed || liveSessionIdRef.current !== sessionId) return;
+
+      try {
+        const countStr = [
+          scan.files > 0
+            ? `${scan.files} file${scan.files > 1 ? "s" : ""}`
+            : "",
+          scan.dirs > 0 ? `${scan.dirs} folder${scan.dirs > 1 ? "s" : ""}` : "",
+        ]
+          .filter(Boolean)
+          .join(", ");
+        const sizeStr = formatBytes(scan.bytes);
+
+        setDropStatus({
+          message: `Sending ${countStr} (${sizeStr})...`,
+          type: "info",
+          spinning: true,
+        });
+        await yieldToBrowser();
+
+        const base = await appDataDir();
+        const transferDir = await join(base, "rdp-transfers");
+        if (!(await exists(transferDir))) {
+          await mkdir(transferDir, { recursive: true });
+        }
+
+        // Stage the reviewed items, in the order they were counted.
+        const allEntries: DropEntry[] = [];
+        for (const item of plan) {
+          if (!item.file) {
+            allEntries.push({
+              name: item.name,
+              size: 0,
+              path: "",
+              isDirectory: true,
+            });
+            continue;
+          }
+          if (item.relDir) {
+            const sub = await join(transferDir, item.relDir);
+            if (!(await exists(sub))) await mkdir(sub, { recursive: true });
+          }
+          const dest = await join(transferDir, item.relPath);
+          await writeFile(dest, new Uint8Array(await item.file.arrayBuffer()));
+          await yieldToBrowser();
+          allEntries.push({
+            name: item.name,
+            size: item.file.size,
             path: dest,
             isDirectory: false,
           });
         }
-        return out;
+
+        await invoke("rdp_clipboard_copy_files", {
+          sessionId,
+          files: allEntries,
+        });
+
+        setDropStatus({
+          message: `${countStr} (${sizeStr}) sent to remote clipboard — use Ctrl+V on remote to paste`,
+          type: "info",
+        });
+      } catch (err) {
+        showFailure(err);
+      }
+
+      dismissLater();
+    },
+    [session],
+  );
+
+  const handleDrop = React.useCallback(
+    (e: React.DragEvent) => {
+      e.preventDefault();
+      setDragOver(false);
+      if (!mgr.isConnected || !mgr.rdpSessionId) return;
+      const sessionId = mgr.rdpSessionId;
+
+      // The prompt for an earlier drop is open: it stays the only question,
+      // and this drop does not ride on its answer.
+      const earlier = dropReviewRef.current;
+      if (earlier?.asking) return;
+
+      if (!fileDragDropEnabled) {
+        setDropStatus({
+          message:
+            "File drag & drop is disabled — enable it in the status bar or connection settings",
+          type: "error",
+        });
+        if (dropDismissRef.current) clearTimeout(dropDismissRef.current);
+        dropDismissRef.current = setTimeout(() => setDropStatus(null), 5000);
+        return;
       }
 
       // Capture entries synchronously — browser clears DataTransfer after the event handler returns
@@ -364,6 +562,14 @@ const CanvasArea: React.FC<{
       const MAX_DROP_SIZE = 100 * 1024 * 1024;
       const allFiles = Array.from(e.dataTransfer.files);
       const totalSize = allFiles.reduce((sum, f) => sum + f.size, 0);
+
+      // A newer drop replaces one that is still being counted: that walk
+      // stops, asks nothing and sends nothing.
+      if (earlier) {
+        earlier.abort.abort();
+        dropReviewRef.current = null;
+      }
+
       if (totalSize > MAX_DROP_SIZE) {
         setDropStatus({
           message: `Total file size (${formatBytes(totalSize)}) exceeds the 100 MB limit`,
@@ -374,92 +580,11 @@ const CanvasArea: React.FC<{
         return;
       }
 
-      // Confirm transfer with user before proceeding
-      const fileCount = allFiles.length;
-      if (
-        !window.confirm(
-          `Transfer ${fileCount} file${fileCount > 1 ? "s" : ""} (${formatBytes(totalSize)}) to remote session?`,
-        )
-      ) {
-        return;
-      }
-
-      try {
-        setDropStatus({
-          message: "Scanning dropped items...",
-          type: "info",
-          spinning: true,
-        });
-        await yieldToBrowser();
-
-        const base = await appDataDir();
-        const transferDir = await join(base, "rdp-transfers");
-        if (!(await exists(transferDir))) {
-          await mkdir(transferDir, { recursive: true });
-        }
-
-        const allEntries: DropEntry[] = [];
-
-        if (topEntries.length > 0) {
-          for (const entry of topEntries) {
-            allEntries.push(...(await walkEntry(entry, "", transferDir)));
-          }
-        } else {
-          // Fallback: plain File objects (no directory support)
-          for (const file of fallbackFiles) {
-            const dest = await join(transferDir, file.name);
-            await writeFile(dest, new Uint8Array(await file.arrayBuffer()));
-            scan.files++;
-            scan.bytes += file.size;
-            setDropStatus({ message: scanMsg(), type: "info", spinning: true });
-            await yieldToBrowser();
-            allEntries.push({
-              name: file.name,
-              size: file.size,
-              path: dest,
-              isDirectory: false,
-            });
-          }
-        }
-
-        if (allEntries.length === 0) return;
-
-        const countStr = [
-          scan.files > 0
-            ? `${scan.files} file${scan.files > 1 ? "s" : ""}`
-            : "",
-          scan.dirs > 0 ? `${scan.dirs} folder${scan.dirs > 1 ? "s" : ""}` : "",
-        ]
-          .filter(Boolean)
-          .join(", ");
-        const sizeStr = formatBytes(scan.bytes);
-
-        setDropStatus({
-          message: `Sending ${countStr} (${sizeStr})...`,
-          type: "info",
-          spinning: true,
-        });
-
-        await invoke("rdp_clipboard_copy_files", {
-          sessionId: mgr.rdpSessionId,
-          files: allEntries,
-        });
-
-        setDropStatus({
-          message: `${countStr} (${sizeStr}) sent to remote clipboard — use Ctrl+V on remote to paste`,
-          type: "info",
-        });
-      } catch (err) {
-        setDropStatus({
-          message: `File transfer failed: ${err instanceof Error ? err.message : String(err)}`,
-          type: "error",
-        });
-      }
-
-      if (dropDismissRef.current) clearTimeout(dropDismissRef.current);
-      dropDismissRef.current = setTimeout(() => setDropStatus(null), 8000);
+      // The event is spent once this handler returns: the review is handed
+      // what was captured from it, never the event.
+      void reviewAndSendDrop(sessionId, topEntries, fallbackFiles);
     },
-    [fileDragDropEnabled, mgr.isConnected, mgr.rdpSessionId],
+    [fileDragDropEnabled, mgr.isConnected, mgr.rdpSessionId, reviewAndSendDrop],
   );
 
   return (
