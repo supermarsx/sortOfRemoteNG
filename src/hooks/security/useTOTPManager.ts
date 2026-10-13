@@ -1,6 +1,9 @@
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback, useContext, useRef } from "react";
 import { totpApi } from "../totp/useTOTP";
 import type { TotpEntry } from "../../types/totp";
+import { ToastContext } from "../../contexts/ToastContext";
+import { totpWindow } from "../../utils/security/totpCode";
+import { useSecretCopy } from "./useSecretCopy";
 
 /**
  * Form shape for new TOTP entries. Mirrors the legacy UI fields but
@@ -24,25 +27,39 @@ const DEFAULT_NEW_CONFIG: NewTOTPForm = {
 
 export function useTOTPManager(isOpen: boolean, _connectionId?: string) {
   void _connectionId;
+  // Absent only where the dialog is rendered without the app's providers.
+  const toast = useContext(ToastContext)?.toast;
+  const { copy } = useSecretCopy();
   const [totpConfigs, setTotpConfigs] = useState<TotpEntry[]>([]);
   const [showAddForm, setShowAddForm] = useState(false);
   const [newConfig, setNewConfig] = useState<NewTOTPForm>(DEFAULT_NEW_CONFIG);
   const [qrCodeUrl, setQrCodeUrl] = useState<string>("");
   const [currentCodes, setCurrentCodes] = useState<Record<string, string>>({});
+  // When the time step of each shown code ends, in Unix milliseconds. A
+  // counter-based code has no entry.
+  const [codeExpiry, setCodeExpiry] = useState<Record<string, number>>({});
   const [timeRemaining, setTimeRemaining] = useState<number>(30);
 
   const totpConfigsRef = useRef<TotpEntry[]>([]);
 
   const updateCurrentCodes = useCallback(async () => {
     try {
+      // Read before the codes are asked for: a code generated across a step
+      // change then counts as the older one and is refused at copy.
+      const started = Date.now();
       const generated = await totpApi.generateAllCodes();
       const codes: Record<string, string> = {};
+      const expiry: Record<string, number> = {};
       let remaining = 30;
       for (const g of generated) {
         codes[g.entry_id] = g.code;
+        // `period` is 0 for a counter-based code, which has no time step.
+        if (g.period > 0)
+          expiry[g.entry_id] = totpWindow(g.period, started).expires;
         remaining = g.remaining_seconds;
       }
       setCurrentCodes(codes);
+      setCodeExpiry(expiry);
       setTimeRemaining(remaining);
     } catch (err) {
       console.error("Failed to generate TOTP codes:", err);
@@ -114,9 +131,36 @@ export function useTOTPManager(isOpen: boolean, _connectionId?: string) {
     }
   }, []);
 
-  const copyToClipboard = useCallback((text: string) => {
-    navigator.clipboard.writeText(text);
-  }, []);
+  const copyOrReport = useCallback(
+    async (...request: Parameters<typeof copy>) => {
+      const outcome = await copy(...request);
+      // The toast outlives this dialog, so a failure is still reported when
+      // the dialog was closed while the write was pending.
+      if (outcome && !outcome.ok) toast?.error(outcome.message);
+    },
+    [copy, toast],
+  );
+
+  const copyCode = useCallback(
+    (entryId: string) =>
+      copyOrReport(
+        entryId,
+        currentCodes[entryId] ?? "",
+        "totpCode",
+        codeExpiry[entryId],
+      ),
+    [copyOrReport, currentCodes, codeExpiry],
+  );
+
+  const copySecret = useCallback(
+    (entryId: string) =>
+      copyOrReport(
+        entryId,
+        totpConfigs.find((entry) => entry.id === entryId)?.secret ?? "",
+        "secret",
+      ),
+    [copyOrReport, totpConfigs],
+  );
 
   const getTimeRemaining = useCallback(() => timeRemaining, [timeRemaining]);
 
@@ -132,7 +176,8 @@ export function useTOTPManager(isOpen: boolean, _connectionId?: string) {
     currentCodes,
     handleAddConfig,
     handleDeleteConfig,
-    copyToClipboard,
+    copyCode,
+    copySecret,
     getTimeRemaining,
     clearQrCode,
   };

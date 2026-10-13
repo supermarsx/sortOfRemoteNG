@@ -108,9 +108,11 @@ function QRDisplay({
 
 function BackupCodesDisplay({
   codes,
+  copied,
   onCopyAll,
 }: {
   codes: string[];
+  copied: boolean;
   onCopyAll: () => void;
 }) {
   return (
@@ -123,6 +125,7 @@ function BackupCodesDisplay({
         >
           <Copy size={10} />
           <span>Copy all</span>
+          {copied && <Check size={10} className="text-success" />}
         </button>
       </div>
       <div className="grid grid-cols-2 gap-1">
@@ -536,6 +539,7 @@ const TotpEntryRow: React.FC<{
       {showingBackup && (
         <BackupCodesDisplay
           codes={cfg.backupCodes!}
+          copied={mgr.copiedSecret === "backup"}
           onCopyAll={() => mgr.copyAllBackup(cfg.backupCodes!)}
         />
       )}
@@ -607,6 +611,14 @@ export default function RDPTotpPanel({
         onClose={onClose}
         title={credentialActions ? "Credentials & 2FA" : "2FA Codes"}
       />
+      {mgr.copyError && (
+        <div
+          role="alert"
+          className="px-3 py-1.5 border-b border-[var(--color-border)] text-[10px] text-error"
+        >
+          {mgr.copyError}
+        </div>
+      )}
       {credentialActions}
 
       {mgr.showImport && (

@@ -510,8 +510,10 @@ export interface SettingsApiKeyFieldProps {
   value: string;
   /** Called when the user clicks the Copy button. The primitive
    *  handles the 2-second "copied" feedback flash internally — your
-   *  handler just needs to put the value on the clipboard. */
-  onCopy: () => void | Promise<void>;
+   *  handler just needs to put the value on the clipboard. Return
+   *  `false`, now or from a promise, when nothing was copied: the
+   *  flash is then skipped. A click while a copy is pending is ignored. */
+  onCopy: () => void | boolean | Promise<void | boolean>;
   /** Called when the user clicks the Regenerate button. */
   onRegenerate: () => void | Promise<void>;
   /** When `true`, the Regenerate button shows a spinner instead. */
@@ -551,11 +553,19 @@ export const SettingsApiKeyField: React.FC<SettingsApiKeyFieldProps> = ({
     [],
   );
 
+  const copying = useRef(false);
+
   const handleCopy = async () => {
-    await onCopy();
-    setCopiedFlash(true);
-    if (flashTimer.current) clearTimeout(flashTimer.current);
-    flashTimer.current = setTimeout(() => setCopiedFlash(false), 2000);
+    if (copying.current) return;
+    copying.current = true;
+    try {
+      if ((await onCopy()) === false) return;
+      setCopiedFlash(true);
+      if (flashTimer.current) clearTimeout(flashTimer.current);
+      flashTimer.current = setTimeout(() => setCopiedFlash(false), 2000);
+    } finally {
+      copying.current = false;
+    }
   };
 
   return (

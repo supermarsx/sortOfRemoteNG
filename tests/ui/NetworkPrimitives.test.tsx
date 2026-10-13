@@ -97,6 +97,123 @@ describe("SettingsApiKeyField", () => {
     vi.useRealTimers();
   });
 
+  // The tick is the check icon that replaces the copy icon in the button.
+  const ticked = () =>
+    screen.getByLabelText("Copy key").querySelector("svg.lucide-check") !==
+    null;
+  const settled = () => act(async () => {});
+  const renderField = (
+    onCopy: () => void | boolean | Promise<void | boolean>,
+  ) =>
+    render(
+      <SettingsApiKeyField
+        value="key"
+        onCopy={onCopy}
+        onRegenerate={vi.fn()}
+      />,
+    );
+
+  it.each([
+    ["nothing", () => undefined],
+    ["a promise of nothing", () => Promise.resolve()],
+    ["true", () => true],
+    ["a promise of true", () => Promise.resolve(true)],
+  ])("ticks when onCopy returns %s", async (_returns, onCopy) => {
+    renderField(onCopy);
+    fireEvent.click(screen.getByLabelText("Copy key"));
+    await settled();
+    expect(ticked()).toBe(true);
+  });
+
+  it.each([
+    ["false", () => false],
+    ["a promise of false", () => Promise.resolve(false)],
+  ])(
+    "does not tick when onCopy returns %s: nothing was copied",
+    async (_returns, onCopy) => {
+      renderField(onCopy);
+      fireEvent.click(screen.getByLabelText("Copy key"));
+      await settled();
+      expect(ticked()).toBe(false);
+    },
+  );
+
+  it("ticks only once a pending onCopy has resolved", async () => {
+    let finish!: () => void;
+    renderField(
+      () =>
+        new Promise<void>((resolve) => {
+          finish = resolve;
+        }),
+    );
+    fireEvent.click(screen.getByLabelText("Copy key"));
+    await settled();
+    expect(ticked()).toBe(false);
+    await act(async () => finish());
+    expect(ticked()).toBe(true);
+  });
+
+  it("ignores clicks while onCopy is pending and accepts the next one afterwards", async () => {
+    let finish!: (copied: boolean) => void;
+    const onCopy = vi.fn(
+      () =>
+        new Promise<boolean>((resolve) => {
+          finish = resolve;
+        }),
+    );
+    renderField(onCopy);
+    const copyButton = screen.getByLabelText("Copy key");
+    fireEvent.click(copyButton);
+    fireEvent.click(copyButton);
+    await settled();
+    fireEvent.click(copyButton);
+    await settled();
+    expect(onCopy).toHaveBeenCalledOnce();
+    expect(ticked()).toBe(false);
+    await act(async () => finish(false));
+    expect(ticked()).toBe(false);
+
+    fireEvent.click(copyButton);
+    await settled();
+    expect(onCopy).toHaveBeenCalledTimes(2);
+    await act(async () => finish(true));
+    expect(ticked()).toBe(true);
+  });
+
+  it("does not tick when onCopy rejects, and accepts the next click", async () => {
+    // React drops the click handler's promise, so a rejecting onCopy is an
+    // unhandled rejection, as it was before. Vitest's own listener would
+    // fail the run on it, so this test listens in its place.
+    const vitestListeners = process.listeners("unhandledRejection");
+    process.removeAllListeners("unhandledRejection");
+    const unhandled = vi.fn();
+    process.on("unhandledRejection", unhandled);
+    try {
+      const onCopy = vi
+        .fn<() => Promise<void>>()
+        .mockRejectedValueOnce(new Error("copy failed"))
+        .mockResolvedValue(undefined);
+      renderField(onCopy);
+      const copyButton = screen.getByLabelText("Copy key");
+      fireEvent.click(copyButton);
+      await settled();
+      await waitFor(() => expect(unhandled).toHaveBeenCalledOnce());
+      expect(unhandled.mock.calls[0][0]).toMatchObject({
+        message: "copy failed",
+      });
+      expect(ticked()).toBe(false);
+
+      fireEvent.click(copyButton);
+      await settled();
+      expect(onCopy).toHaveBeenCalledTimes(2);
+      expect(ticked()).toBe(true);
+    } finally {
+      process.removeListener("unhandledRejection", unhandled);
+      for (const listener of vitestListeners)
+        process.on("unhandledRejection", listener);
+    }
+  });
+
   it("does not render the Copy button when value is empty", () => {
     render(
       <SettingsApiKeyField value="" onCopy={vi.fn()} onRegenerate={vi.fn()} />,

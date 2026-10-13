@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import type { TFunction } from "i18next";
 import {
   Globe,
@@ -41,6 +41,7 @@ import { EmptyState, StatusBadge, ErrorBanner } from "../ui/display";
 import { PasswordInput, Select } from "../ui/forms";
 import { useDdnsManager } from "../../hooks/ddns/useDdnsManager";
 import { useToastContext } from "../../contexts/ToastContext";
+import { copySecretToClipboard } from "../../utils/security/credentialClipboard";
 import type {
   DdnsProfile,
   DdnsProvider,
@@ -1115,6 +1116,28 @@ export const DdnsManager: React.FC<DdnsManagerProps> = ({
   const { t } = useTranslation();
   const mgr = useDdnsManager();
   const [activeTab, setActiveTab] = useState<DdnsTab>("profiles");
+  const [exportError, setExportError] = useState<string | null>(null);
+  const exporting = useRef(false);
+
+  // The export holds every profile's provider credentials in clear, so it goes
+  // through the secure clipboard. One export at a time: a click made while one
+  // is running is ignored.
+  const handleExport = async () => {
+    if (exporting.current) return;
+    exporting.current = true;
+    try {
+      setExportError(null);
+      const data = await mgr.exportProfiles();
+      if (!data) return;
+      const copied = await copySecretToClipboard(
+        JSON.stringify(data, null, 2),
+        "secret",
+      );
+      if (!copied.ok) setExportError(copied.message);
+    } finally {
+      exporting.current = false;
+    }
+  };
 
   const renderTab = () => {
     switch (activeTab) {
@@ -1141,7 +1164,10 @@ export const DdnsManager: React.FC<DdnsManagerProps> = ({
     <Modal isOpen={isOpen} onClose={onClose} dataTestId="ddns-panel">
       <ModalHeader title={t("ddns.title", "DDNS Manager")} />
       <ModalBody>
-        <ErrorBanner error={mgr.error} onClear={() => {}} />
+        <ErrorBanner
+          error={mgr.error ?? exportError}
+          onClear={() => setExportError(null)}
+        />
         <TabBar active={activeTab} onSelect={setActiveTab} t={t} />
         {renderTab()}
       </ModalBody>
@@ -1157,11 +1183,7 @@ export const DdnsManager: React.FC<DdnsManagerProps> = ({
               {t("ddns.updateAll", "Update all")}
             </button>
             <button
-              onClick={async () => {
-                const data = await mgr.exportProfiles();
-                if (data)
-                  navigator.clipboard.writeText(JSON.stringify(data, null, 2));
-              }}
+              onClick={handleExport}
               className="px-3 py-1.5 rounded bg-surfaceHover hover:bg-surfaceHover text-xs"
             >
               <Download size={12} className="inline mr-1" />

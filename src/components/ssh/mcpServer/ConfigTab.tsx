@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useState } from "react";
 import { useTranslation } from "react-i18next";
 import {
   Key,
@@ -44,6 +44,7 @@ import {
   SettingsRemoteAccessRow,
 } from "../../ui/settings/NetworkPrimitives";
 import { InfoTooltip } from "../../ui/InfoTooltip";
+import { copySecretToClipboard } from "../../../utils/security/credentialClipboard";
 
 export const ConfigTab: React.FC<McpTabProps> = ({ mgr }) => {
   const { t } = useTranslation();
@@ -54,8 +55,14 @@ export const ConfigTab: React.FC<McpTabProps> = ({ mgr }) => {
     await mgr.generateApiKey();
   };
 
-  const handleCopyKey = () => {
-    navigator.clipboard.writeText(draft.api_key);
+  const [copyError, setCopyError] = useState<string | null>(null);
+
+  /** Resolves to whether the key reached the clipboard, so the row ticks
+   *  only then; the row itself ignores clicks while this is pending. */
+  const handleCopyKey = async () => {
+    const copied = await copySecretToClipboard(draft.api_key, "apiKey");
+    setCopyError(copied.ok ? null : copied.message);
+    return copied.ok;
   };
 
   const update = <K extends keyof McpServerConfig>(
@@ -251,6 +258,11 @@ export const ConfigTab: React.FC<McpTabProps> = ({ mgr }) => {
             infoTooltip="Secret key clients must include as a Bearer token to authenticate MCP requests."
             disabled={!draft.require_auth}
           />
+          {copyError && (
+            <p role="alert" className="px-4 pb-3 text-xs text-error">
+              {copyError}
+            </p>
+          )}
 
           <SettingsRemoteAccessRow
             icon={<Globe size={16} />}

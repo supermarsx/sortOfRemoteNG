@@ -3,6 +3,7 @@ import {
   Plus,
   Trash2,
   Copy,
+  Check,
   Fingerprint,
   Clock,
   Eye,
@@ -15,6 +16,8 @@ import { EmptyState } from "../../ui/display";
 import { PasswordInput, Select } from "../../ui/forms";
 import { DangerConfirm } from "./helpers";
 import type { Mgr } from "./types";
+import type { OathCode } from "../../../types/security/yubikey";
+import { useSecretCopy } from "../../../hooks/security/useSecretCopy";
 
 export const OathTab: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
   const { t } = useTranslation();
@@ -31,6 +34,15 @@ export const OathTab: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
     period: 30,
     touch: false,
   });
+  const { copied, error: copyError, copy } = useSecretCopy();
+  // `valid_to` is in Unix seconds, and 0 for a counter-based code.
+  const copyCode = (credentialId: string, code: OathCode) =>
+    void copy(
+      credentialId,
+      code.code,
+      "totpCode",
+      code.valid_to ? code.valid_to * 1000 : undefined,
+    );
 
   return (
     <div className="sor-yk-oath space-y-6">
@@ -62,6 +74,12 @@ export const OathTab: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
           </button>
         </div>
       </div>
+
+      {copyError && (
+        <p role="alert" className="text-xs text-error">
+          {copyError}
+        </p>
+      )}
 
       {/* Account List */}
       {mgr.oathAccounts.length === 0 ? (
@@ -159,10 +177,16 @@ export const OathTab: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
                       </span>
                     )}
                     <button
-                      onClick={() => navigator.clipboard.writeText(code.code)}
+                      onClick={() => copyCode(acct.credential_id, code)}
                       className="sor-btn sor-btn-secondary p-0.5"
+                      aria-label={t("yubikey.oath.copyCode", "Copy code")}
+                      title={t("yubikey.oath.copyCode", "Copy code")}
                     >
-                      <Copy className="w-3 h-3" />
+                      {copied === acct.credential_id ? (
+                        <Check className="w-3 h-3 text-success" />
+                      ) : (
+                        <Copy className="w-3 h-3" />
+                      )}
                     </button>
                   </div>
                 )}

@@ -2,6 +2,8 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import { TOTPConfig } from "../../types/settings/settings";
 import { totpApi } from "../../hooks/totp/useTOTP";
 import type { TotpAlgorithm } from "../../types/totp";
+import { totpWindow } from "../../utils/security/totpCode";
+import { useSecretCopy } from "../security/useSecretCopy";
 
 // `TOTPConfig.algorithm` is lowercase (`sha1`); the Rust backend accepts
 // either case but the wire type is uppercase.
@@ -32,7 +34,9 @@ export function useRDPTotpPanel(
 
   // ── Display state ──────────────────────────────────────────────
   const [codes, setCodes] = useState<Record<string, string>>({});
-  const [copiedSecret, setCopiedSecret] = useState<string | null>(null);
+  // When the time step of each shown code ends, in Unix milliseconds.
+  const [codeExpiry, setCodeExpiry] = useState<Record<string, number>>({});
+  const { copied: copiedSecret, error: copyError, copy } = useSecretCopy();
   const [revealedSecrets, setRevealedSecrets] = useState<Set<string>>(
     new Set(),
   );
@@ -53,7 +57,14 @@ export function useRDPTotpPanel(
       const current = configsRef.current;
       const results = await Promise.all(
         current.map(async (cfg) => {
-          if (!cfg.secret) return [cfg.secret, ""] as const;
+          if (!cfg.secret) return [cfg.secret, "", 0] as const;
+          // Read before the code is asked for, with the generator's own
+          // period rule: a code computed across a step change then counts
+          // as the older one and is refused at copy.
+          const { expires } = totpWindow(
+            Math.max(1, cfg.period ?? 30),
+            Date.now(),
+          );
           try {
             const code = await totpApi.computeCode(
               cfg.secret,
@@ -61,18 +72,22 @@ export function useRDPTotpPanel(
               cfg.digits ?? 6,
               cfg.period ?? 30,
             );
-            return [cfg.secret, code] as const;
+            return [cfg.secret, code, expires] as const;
           } catch {
-            return [cfg.secret, ""] as const;
+            return [cfg.secret, "", expires] as const;
           }
         }),
       );
       if (cancelledRef.current) return;
       const next: Record<string, string> = {};
-      for (const [secret, code] of results) {
-        if (secret) next[secret] = code;
+      const nextExpiry: Record<string, number> = {};
+      for (const [secret, code, expires] of results) {
+        if (!secret) continue;
+        next[secret] = code;
+        nextExpiry[secret] = expires;
       }
       setCodes(next);
+      setCodeExpiry(nextExpiry);
     },
     [],
   );
@@ -152,13 +167,9 @@ export function useRDPTotpPanel(
   const copyCode = useCallback(
     (secret: string) => {
       const code = codes[secret];
-      if (code) {
-        navigator.clipboard.writeText(code);
-        setCopiedSecret(secret);
-        setTimeout(() => setCopiedSecret(null), 1500);
-      }
+      if (code) void copy(secret, code, "totpCode", codeExpiry[secret]);
     },
-    [codes],
+    [codes, codeExpiry, copy],
   );
 
   // ── Secret reveal ──────────────────────────────────────────────
@@ -214,20 +225,18 @@ export function useRDPTotpPanel(
     [configs, onUpdate],
   );
 
-  const copyAllBackup = useCallback((backupCodes: string[]) => {
-    navigator.clipboard.writeText(backupCodes.join("\n"));
-    setCopiedSecret("backup");
-    setTimeout(() => setCopiedSecret(null), 1500);
-  }, []);
+  const copyAllBackup = useCallback(
+    (backupCodes: string[]) =>
+      void copy("backup", backupCodes.join("\n"), "recoveryCode"),
+    [copy],
+  );
 
   // ── Export / Import ────────────────────────────────────────────
 
   const handleExport = useCallback(() => {
-    const json = JSON.stringify(configs, null, 2);
-    navigator.clipboard.writeText(json);
-    setCopiedSecret("export");
-    setTimeout(() => setCopiedSecret(null), 1500);
-  }, [configs]);
+    // The export holds every authenticator secret.
+    void copy("export", JSON.stringify(configs, null, 2), "secret");
+  }, [configs, copy]);
 
   const handleImport = useCallback(
     (json: string) => {
@@ -279,6 +288,7 @@ export function useRDPTotpPanel(
     // Display
     codes,
     copiedSecret,
+    copyError,
     revealedSecrets,
     showBackup,
     setShowBackup,

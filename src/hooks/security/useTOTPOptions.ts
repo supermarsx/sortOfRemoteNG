@@ -1,10 +1,20 @@
-import { useState, useEffect, useCallback, useMemo, useRef } from "react";
+import {
+  useState,
+  useEffect,
+  useCallback,
+  useContext,
+  useMemo,
+  useRef,
+} from "react";
 import { Connection } from "../../types/connection/connection";
 import { TOTPConfig } from "../../types/settings/settings";
 import { totpApi } from "../../hooks/totp/useTOTP";
 import type { TotpAlgorithm } from "../../types/totp";
 import { useSettings } from "../../contexts/SettingsContext";
+import { ToastContext } from "../../contexts/ToastContext";
 import { useConnections } from "../../contexts/useConnections";
+import { totpWindow } from "../../utils/security/totpCode";
+import { useSecretCopy } from "./useSecretCopy";
 
 // `TOTPConfig.algorithm` stores lowercase `sha1`/`sha256`/`sha512`; the
 // Rust backend accepts both cases, but we normalise to uppercase so the
@@ -22,6 +32,8 @@ export function useTOTPOptions(
 ) {
   const { settings } = useSettings();
   const { state: connState, dispatch: connDispatch } = useConnections();
+  // Absent only where the editor is rendered without the app's providers.
+  const toast = useContext(ToastContext)?.toast;
 
   // ── Panel state ────────────────────────────────────────────────
   const [expanded, setExpanded] = useState(false);
@@ -42,7 +54,9 @@ export function useTOTPOptions(
 
   // ── Codes + misc UI ───────────────────────────────────────────
   const [codes, setCodes] = useState<Record<string, string>>({});
-  const [copiedSecret, setCopiedSecret] = useState<string | null>(null);
+  // When the time step of each shown code ends, in Unix milliseconds.
+  const [codeExpiry, setCodeExpiry] = useState<Record<string, number>>({});
+  const { copied: copiedSecret, copy } = useSecretCopy();
   const [revealedSecrets, setRevealedSecrets] = useState<Set<string>>(
     new Set(),
   );
@@ -86,7 +100,14 @@ export function useTOTPOptions(
       const current = configsRef.current;
       const results = await Promise.all(
         current.map(async (cfg) => {
-          if (!cfg.secret) return [cfg.secret, ""] as const;
+          if (!cfg.secret) return [cfg.secret, "", 0] as const;
+          // Read before the code is asked for, with the generator's own
+          // period rule: a code computed across a step change then counts
+          // as the older one and is refused at copy.
+          const { expires } = totpWindow(
+            Math.max(1, cfg.period ?? 30),
+            Date.now(),
+          );
           try {
             const code = await totpApi.computeCode(
               cfg.secret,
@@ -94,18 +115,22 @@ export function useTOTPOptions(
               cfg.digits ?? 6,
               cfg.period ?? 30,
             );
-            return [cfg.secret, code] as const;
+            return [cfg.secret, code, expires] as const;
           } catch {
-            return [cfg.secret, ""] as const;
+            return [cfg.secret, "", expires] as const;
           }
         }),
       );
       if (cancelledRef.current) return;
       const next: Record<string, string> = {};
-      for (const [secret, code] of results) {
-        if (secret) next[secret] = code;
+      const nextExpiry: Record<string, number> = {};
+      for (const [secret, code, expires] of results) {
+        if (!secret) continue;
+        next[secret] = code;
+        nextExpiry[secret] = expires;
       }
       setCodes(next);
+      setCodeExpiry(nextExpiry);
     },
     [],
   );
@@ -188,16 +213,22 @@ export function useTOTPOptions(
     [configs, updateConfigs],
   );
 
+  const copyOrReport = useCallback(
+    async (...request: Parameters<typeof copy>) => {
+      const outcome = await copy(...request);
+      // The toast outlives this section, so a failure is still reported when
+      // the section was closed while the write was pending.
+      if (outcome && !outcome.ok) toast?.error(outcome.message);
+    },
+    [copy, toast],
+  );
+
   const copyCode = useCallback(
     (secret: string) => {
       const code = codes[secret];
-      if (code) {
-        navigator.clipboard.writeText(code);
-        setCopiedSecret(secret);
-        setTimeout(() => setCopiedSecret(null), 1500);
-      }
+      if (code) void copyOrReport(secret, code, "totpCode", codeExpiry[secret]);
     },
-    [codes],
+    [codes, codeExpiry, copyOrReport],
   );
 
   const toggleReveal = useCallback((secret: string) => {
@@ -247,18 +278,16 @@ export function useTOTPOptions(
     [configs, updateConfigs],
   );
 
-  const copyAllBackup = useCallback((backupCodes: string[]) => {
-    navigator.clipboard.writeText(backupCodes.join("\n"));
-    setCopiedSecret("backup");
-    setTimeout(() => setCopiedSecret(null), 1500);
-  }, []);
+  const copyAllBackup = useCallback(
+    (backupCodes: string[]) =>
+      void copyOrReport("backup", backupCodes.join("\n"), "recoveryCode"),
+    [copyOrReport],
+  );
 
   const handleExport = useCallback(() => {
-    const json = JSON.stringify(configs, null, 2);
-    navigator.clipboard.writeText(json);
-    setCopiedSecret("export");
-    setTimeout(() => setCopiedSecret(null), 1500);
-  }, [configs]);
+    // The export holds every authenticator secret.
+    void copyOrReport("export", JSON.stringify(configs, null, 2), "secret");
+  }, [configs, copyOrReport]);
 
   const handleImport = useCallback(() => {
     try {

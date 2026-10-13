@@ -11,6 +11,11 @@ import type { TotpEntry, TotpGeneratedCode } from "../../src/types/totp";
 
 const mocks = vi.hoisted(() => ({
   invoke: vi.fn(),
+  copySecretToClipboard: vi.fn(),
+}));
+
+vi.mock("../../src/utils/security/credentialClipboard", () => ({
+  copySecretToClipboard: mocks.copySecretToClipboard,
 }));
 
 vi.mock("@tauri-apps/api/core", () => ({
@@ -86,6 +91,7 @@ describe("TOTPManager", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     setupInvoke();
+    mocks.copySecretToClipboard.mockResolvedValue({ ok: true });
 
     vi.stubGlobal(
       "confirm",
@@ -101,6 +107,7 @@ describe("TOTPManager", () => {
   afterEach(() => {
     cleanup();
     vi.unstubAllGlobals();
+    vi.useRealTimers();
   });
 
   it("does not render when closed", () => {
@@ -153,6 +160,41 @@ describe("TOTPManager", () => {
         id: "entry-1",
       });
     });
+  });
+
+  it("copies the shown code as a one-time code that expires with its time step", async () => {
+    // Ten seconds into a 30 s step, so the code is far from changing.
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-01-01T00:00:10Z"));
+    render(<TOTPManager isOpen onClose={() => {}} />);
+    await screen.findByText("123456");
+
+    fireEvent.click(screen.getByTitle("Copy code"));
+
+    await waitFor(() => {
+      expect(mocks.copySecretToClipboard).toHaveBeenCalledExactlyOnceWith(
+        "123456",
+        "totpCode",
+        { expires: Date.parse("2026-01-01T00:00:30Z") },
+      );
+    });
+    expect(navigator.clipboard.writeText).not.toHaveBeenCalled();
+  });
+
+  it("copies the authenticator secret as a secret, with no expiry", async () => {
+    render(<TOTPManager isOpen onClose={() => {}} />);
+    await screen.findByText("123456");
+
+    fireEvent.click(screen.getByTitle("Copy secret"));
+
+    await waitFor(() => {
+      expect(mocks.copySecretToClipboard).toHaveBeenCalledExactlyOnceWith(
+        "SECRET_1",
+        "secret",
+        { expires: undefined },
+      );
+    });
+    expect(navigator.clipboard.writeText).not.toHaveBeenCalled();
   });
 
   it("closes on backdrop click", async () => {

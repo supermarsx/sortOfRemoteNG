@@ -6,6 +6,7 @@ import {
   countDisabledCapabilities,
   isCapabilityEnabled,
 } from "../../types/api/capabilities";
+import { copySecretToClipboard } from "../../utils/security/credentialClipboard";
 
 /**
  * Resolve Tauri's `invoke` at runtime so non-Tauri environments (vitest
@@ -314,19 +315,25 @@ export function useApiSettings(
     }
   }, []);
 
+  /** Resolves to whether the key reached the clipboard, so the row ticks
+   *  only then; the row itself ignores clicks while this is pending. */
   const copyApiKey = useCallback(async () => {
     setApiSecretError(null);
+    let key: string;
     try {
-      const key = await tauriInvoke<string>("api_reveal_key");
+      key = await tauriInvoke<string>("api_reveal_key");
       if (!key) throw new Error("The secure API key was empty.");
-      await navigator.clipboard.writeText(key);
     } catch (err) {
       setApiSecretError(
         err instanceof Error
           ? err.message
           : "Biometric API-key reveal was not available.",
       );
+      return false;
     }
+    const copied = await copySecretToClipboard(key, "apiKey");
+    if (!copied.ok) setApiSecretError(copied.message);
+    return copied.ok;
   }, []);
 
   const generateRandomPort = useCallback(() => {

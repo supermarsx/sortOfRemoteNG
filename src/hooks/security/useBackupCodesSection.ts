@@ -1,14 +1,18 @@
-import { useState, useCallback, useMemo } from "react";
+import { useState, useCallback, useContext, useMemo } from "react";
 import { Connection } from "../../types/connection/connection";
 import { TOTPConfig } from "../../types/settings/settings";
 import { totpApi } from "../../hooks/totp/useTOTP";
+import { ToastContext } from "../../contexts/ToastContext";
+import { useSecretCopy } from "./useSecretCopy";
 
 export function useBackupCodesSection(
   formData: Partial<Connection>,
   setFormData: React.Dispatch<React.SetStateAction<Partial<Connection>>>,
 ) {
+  // Absent only where the editor is rendered without the app's providers.
+  const toast = useContext(ToastContext)?.toast;
   const [expanded, setExpanded] = useState(false);
-  const [copiedKey, setCopiedKey] = useState<string | null>(null);
+  const { copied: copiedKey, copy } = useSecretCopy();
   const [pasteTarget, setPasteTarget] = useState<string | null>(null);
   const [pasteText, setPasteText] = useState("");
   const [addSingleTarget, setAddSingleTarget] = useState<string | null>(null);
@@ -117,11 +121,15 @@ export function useBackupCodesSection(
     [configs, updateConfigs],
   );
 
-  const copyAll = useCallback((codes: string[], key: string) => {
-    navigator.clipboard.writeText(codes.join("\n"));
-    setCopiedKey(key);
-    setTimeout(() => setCopiedKey(null), 1500);
-  }, []);
+  const copyAll = useCallback(
+    async (codes: string[], key: string) => {
+      const outcome = await copy(key, codes.join("\n"), "recoveryCode");
+      // The toast outlives this section, so a failure is still reported when
+      // the section was closed while the write was pending.
+      if (outcome && !outcome.ok) toast?.error(outcome.message);
+    },
+    [copy, toast],
+  );
 
   const togglePasteTarget = useCallback(
     (secret: string) => {

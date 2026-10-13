@@ -156,7 +156,7 @@ const TOTPConfigRow: React.FC<{
 
     <div className="flex items-center space-x-2">
       <button
-        onClick={() => mgr.copyToClipboard(mgr.currentCodes[config.id] || "")}
+        onClick={() => mgr.copyCode(config.id)}
         className="sor-icon-btn-sm"
         title="Copy code"
       >
@@ -164,7 +164,7 @@ const TOTPConfigRow: React.FC<{
       </button>
 
       <button
-        onClick={() => mgr.copyToClipboard(config.secret)}
+        onClick={() => mgr.copySecret(config.id)}
         className="sor-icon-btn-sm"
         title="Copy secret"
       >
