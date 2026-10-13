@@ -9,6 +9,7 @@ import {
   SessionFullscreenContext,
   type SessionFullscreenLifecycle,
 } from "./SessionFullscreenContext";
+import { getPromptSnapshot } from "../utils/prompts/promptQueue";
 
 type NativeWindow = ReturnType<
   (typeof import("@tauri-apps/api/window"))["getCurrentWindow"]
@@ -214,6 +215,9 @@ export const SessionFullscreenProvider: React.FC<React.PropsWithChildren> = ({
 
     const handleEscape = (event: KeyboardEvent) => {
       if (event.key !== "Escape") return;
+      // A pending prompt owns Escape: its host cancels it, whichever of the
+      // two listeners was added to the window first.
+      if (getPromptSnapshot().length > 0) return;
       event.preventDefault();
       event.stopPropagation();
       exitFullscreen(activeSessionId);

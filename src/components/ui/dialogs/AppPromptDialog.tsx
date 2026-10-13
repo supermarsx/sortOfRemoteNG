@@ -140,10 +140,19 @@ export const AppPromptDialog: React.FC<AppPromptDialogProps> = ({
     };
   }, [decide]);
 
+  const isArmed = () => {
+    const shown = shownAt.current;
+    return shown !== null && performance.now() - shown >= KEYBOARD_ARM_DELAY_MS;
+  };
+
   const activate =
     (confirmed: boolean) => (event: React.MouseEvent<HTMLButtonElement>) => {
       // The second click of a double click belongs to whatever opened this.
       if (event.detail > 1) return;
+      // A click with no pointer behind it is one the browser made from a key
+      // or an assistive action: it waits like the key itself. Only a trusted
+      // click is held, so one that a script dispatches still answers at once.
+      if (event.detail === 0 && event.isTrusted && !isArmed()) return;
       decide(confirmed);
     };
 
@@ -153,14 +162,13 @@ export const AppPromptDialog: React.FC<AppPromptDialogProps> = ({
     event: React.KeyboardEvent<HTMLButtonElement>,
   ) => {
     if (event.key !== "Enter" && event.key !== " ") return;
-    const shown = shownAt.current;
-    if (
-      event.repeat ||
-      shown === null ||
-      performance.now() - shown < KEYBOARD_ARM_DELAY_MS
-    )
-      event.preventDefault();
+    if (event.repeat || !isArmed()) event.preventDefault();
   };
+
+  // Enter answers with the focused button, so a destructive request opens on
+  // Cancel unless it asks for the action.
+  const defaultAction =
+    request.defaultAction ?? (request.tone === "danger" ? "cancel" : "confirm");
 
   const title = toSingleLine(request.title, PROMPT_LIMITS.title);
   const message = request.message
@@ -180,8 +188,13 @@ export const AppPromptDialog: React.FC<AppPromptDialogProps> = ({
     const excerpt = excerptPreview(String(previewText));
     const text = revealHiddenCharacters(excerpt.text);
     return {
-      text,
-      // A Windows line end shown as one line break is not a symbol.
+      // The end of an excerpt is not the end of the text.
+      text:
+        excerpt.omittedCharacters > 0
+          ? text
+          : revealHiddenCharacters(excerpt.text, { markFinalLineFeed: true }),
+      // A Windows line end shown as one line break is not a symbol, and the
+      // mark for a final line feed needs no note.
       revealed: text !== excerpt.text.replace(/\r\n/g, "\n"),
       omitted:
         excerpt.omittedCharacters > 0
@@ -225,9 +238,7 @@ export const AppPromptDialog: React.FC<AppPromptDialogProps> = ({
       dataTestId="app-prompt"
       ariaLabel={title}
       ariaDescribedBy={describedBy}
-      initialFocusRef={
-        request.defaultAction === "cancel" ? cancelRef : actionRef
-      }
+      initialFocusRef={defaultAction === "cancel" ? cancelRef : actionRef}
     >
       <DialogHeader
         icon={tone.icon}
@@ -316,7 +327,9 @@ export const AppPromptDialog: React.FC<AppPromptDialogProps> = ({
             <div id={previewLabelId} className={SECTION_LABEL}>
               {toSingleLine(request.preview.label, PROMPT_LIMITS.name)}
             </div>
+            {/* Commands and paths read left to right in every layout direction. */}
             <pre
+              dir="ltr"
               role="region"
               aria-labelledby={previewLabelId}
               tabIndex={0}

@@ -1,8 +1,21 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { useState } from "react";
+import {
+  act,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { SessionFullscreenExitControl } from "../../src/components/session/SessionFullscreenExitControl";
+import { PromptHost } from "../../src/components/ui/dialogs/PromptHost";
 import { SessionFullscreenProvider } from "../../src/contexts/SessionFullscreenProvider";
 import { useSessionFullscreen } from "../../src/hooks/session/useSessionFullscreen";
+import {
+  requestPrompt,
+  resetPromptQueueForTests,
+  type PromptDecision,
+} from "../../src/utils/prompts/promptQueue";
 import capability from "../../src-tauri/capabilities/default.json";
 
 const nativeWindow = vi.hoisted(() => {
@@ -142,6 +155,77 @@ describe("session no-distraction fullscreen", () => {
     );
     expect(onExit).toHaveBeenCalledTimes(1);
   });
+
+  it.each([
+    ["before the session entered fullscreen", true],
+    ["after it, so that the fullscreen listener is first on the window", false],
+  ])(
+    "leaves Escape to a pending prompt when the prompt host mounted %s",
+    async (_order, hostFirst) => {
+      resetPromptQueueForTests();
+      const onExit = vi.fn();
+      function Host() {
+        const [mounted, setMounted] = useState(hostFirst);
+        return (
+          <>
+            <button type="button" onClick={() => setMounted(true)}>
+              Mount prompt host
+            </button>
+            {mounted && <PromptHost />}
+          </>
+        );
+      }
+      render(
+        <SessionFullscreenProvider>
+          <SessionHarness
+            sessionId="ssh-esc"
+            label="Terminal"
+            onExit={onExit}
+          />
+          <Host />
+        </SessionFullscreenProvider>,
+      );
+      const trigger = screen.getByRole("button", { name: "Toggle Terminal" });
+      fireEvent.click(trigger);
+      await waitFor(() =>
+        expect(nativeWindow.setFullscreen).toHaveBeenCalledWith(true),
+      );
+      fireEvent.click(screen.getByText("Mount prompt host"));
+
+      let outcome!: Promise<PromptDecision>;
+      act(() => {
+        outcome = requestPrompt({
+          title: "Paste into Terminal?",
+          confirmLabel: "Paste",
+        });
+      });
+      expect(
+        screen.getByRole("dialog", { name: "Paste into Terminal?" }),
+      ).toBeInTheDocument();
+
+      fireEvent.keyDown(window, { key: "Escape" });
+
+      // Only the prompt closed: the session is still fullscreen.
+      await expect(outcome).resolves.toEqual({
+        confirmed: false,
+        remember: false,
+      });
+      expect(
+        screen.queryByRole("dialog", { name: "Paste into Terminal?" }),
+      ).not.toBeInTheDocument();
+      expect(onExit).not.toHaveBeenCalled();
+      expect(trigger).toHaveAttribute("aria-pressed", "true");
+      expect(nativeWindow.setFullscreen).not.toHaveBeenCalledWith(false);
+
+      // With no prompt pending, Escape leaves fullscreen as it always did.
+      expect(fireEvent.keyDown(window, { key: "Escape" })).toBe(false);
+      expect(onExit).toHaveBeenCalledTimes(1);
+      await waitFor(() =>
+        expect(trigger).toHaveAttribute("aria-pressed", "false"),
+      );
+      resetPromptQueueForTests();
+    },
+  );
 
   it("keeps one owner and restores the old owner before entering the next", async () => {
     const vncEnter = vi.fn();

@@ -2,12 +2,15 @@ import React, { Profiler, StrictMode } from "react";
 import { renderToString } from "react-dom/server";
 import {
   act,
+  cleanup,
   fireEvent,
   render,
   screen,
   waitFor,
+  within,
 } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { ConfirmDialog } from "../../src/components/ui/dialogs/ConfirmDialog";
 import { PromptHost } from "../../src/components/ui/dialogs/PromptHost";
 import { Modal } from "../../src/components/ui/overlays/Modal";
 import {
@@ -81,11 +84,20 @@ describe("PromptHost", () => {
     vi.spyOn(window, "prompt").mockReturnValue("yes");
   });
   afterEach(() => {
-    expect(window.confirm).not.toHaveBeenCalled();
-    expect(window.alert).not.toHaveBeenCalled();
-    expect(window.prompt).not.toHaveBeenCalled();
-    vi.restoreAllMocks();
-    vi.useRealTimers();
+    // The cleanup runs whatever the checks say, so one failing case cannot
+    // leave its spies, timers, prompts or rendered dialog to fail the cases
+    // after it. (A hook that throws keeps the library's own unmount, which is
+    // registered outside this suite, from running.)
+    try {
+      expect(window.confirm).not.toHaveBeenCalled();
+      expect(window.alert).not.toHaveBeenCalled();
+      expect(window.prompt).not.toHaveBeenCalled();
+    } finally {
+      cleanup();
+      vi.restoreAllMocks();
+      vi.useRealTimers();
+      resetPromptQueueForTests();
+    }
   });
 
   describe("as the window's host", () => {
@@ -389,12 +401,201 @@ describe("PromptHost", () => {
       document.addEventListener("keydown", seen);
       try {
         void ask();
-        for (const key of ["Enter", " ", "Tab", "a"])
-          expect(fireEvent.keyDown(document, { key })).toBe(true);
-        expect(seen).toHaveBeenCalledTimes(4);
+        for (const key of ["Tab", "a", "ArrowDown", "Shift"])
+          for (const target of [
+            document,
+            screen.getByTestId("app-prompt-preview"),
+          ])
+            expect(fireEvent.keyDown(target, { key })).toBe(true);
+        expect(seen).toHaveBeenCalledTimes(8);
         expect(dialogs()).toHaveLength(1);
       } finally {
         document.removeEventListener("keydown", seen);
+      }
+    });
+  });
+
+  describe("Enter and Space", () => {
+    const KEYS = ["Enter", " "];
+    const TYPES = ["keydown", "keypress", "keyup"] as const;
+    const press = (target: Element | Document, key: string) =>
+      TYPES.map((type) =>
+        fireEvent(
+          target,
+          new KeyboardEvent(type, { key, bubbles: true, cancelable: true }),
+        ),
+      );
+
+    /** Counts what gets out of the prompt to listeners on the document. */
+    const listenOutside = () => {
+      const seen = vi.fn();
+      for (const type of TYPES) document.addEventListener(type, seen);
+      return {
+        seen,
+        stop: () => {
+          for (const type of TYPES) document.removeEventListener(type, seen);
+        },
+      };
+    };
+
+    it("on the preview confirm neither the prompt nor a dialog underneath", async () => {
+      const closeTab = vi.fn();
+      const keepTab = vi.fn();
+      render(
+        <>
+          <ConfirmDialog
+            isOpen
+            title="Close tab?"
+            message="Disconnect the session?"
+            onConfirm={closeTab}
+            onCancel={keepTab}
+          />
+          <PromptHost />
+        </>,
+      );
+      // The dialog underneath does confirm on Enter while it is alone.
+      fireEvent.keyDown(document.body, { key: "Enter" });
+      expect(closeTab).toHaveBeenCalledTimes(1);
+      closeTab.mockClear();
+
+      const outcome = ask({ remember: { label: "Don't ask again" } });
+      await waitFor(() => expect(confirmButton()).toHaveFocus());
+      const region = screen.getByTestId("app-prompt-preview");
+      region.focus();
+      for (const key of KEYS)
+        for (const target of [
+          region,
+          promptDialog('Run "Disk usage" on web-01?'),
+          screen.getByText("This runs the commands below in this SSH session."),
+          screen.getByTestId("app-prompt-remember"),
+          document.body,
+          document.documentElement,
+          document,
+        ])
+          press(target, key);
+
+      expect(closeTab).not.toHaveBeenCalled();
+      expect(keepTab).not.toHaveBeenCalled();
+      expect(await stateOf(outcome)).toBe("pending");
+      expect(dialogs()).toHaveLength(1);
+      expect(
+        screen.getByRole("dialog", { name: "Close tab?" }),
+      ).toBeInTheDocument();
+    });
+
+    it("from inside the prompt reach nothing outside it, and keep their own effect", () => {
+      render(<PromptHost />);
+      void ask({
+        remember: { label: "Don't ask again" },
+        targets: {
+          label: "Runs on",
+          items: [{ id: "s1", name: "web-01", detail: "10.0.0.1" }],
+        },
+      });
+      const outside = listenOutside();
+      try {
+        const checkbox = screen.getByTestId("app-prompt-remember");
+        for (const key of KEYS)
+          for (const target of [
+            screen.getByTestId("app-prompt-preview"),
+            screen.getByTestId("app-prompt-targets"),
+            checkbox,
+          ])
+            // Not cancelled: Space still ticks the box and scrolls a region.
+            expect(press(target, key)).toEqual([true, true, true]);
+        expect(outside.seen).not.toHaveBeenCalled();
+        fireEvent.click(checkbox);
+        expect(checkbox).toBeChecked();
+      } finally {
+        outside.stop();
+      }
+    });
+
+    it("with nothing focused are taken by the prompt and do nothing", () => {
+      render(<PromptHost />);
+      void ask();
+      const outside = listenOutside();
+      try {
+        for (const key of KEYS)
+          for (const target of [
+            document.body,
+            document.documentElement,
+            document,
+          ])
+            expect(press(target, key)).toEqual([false, false, false]);
+        expect(outside.seen).not.toHaveBeenCalled();
+        expect(dialogs()).toHaveLength(1);
+      } finally {
+        outside.stop();
+      }
+    });
+
+    it("on the prompt's own buttons are left to those buttons", async () => {
+      const closeTab = vi.fn();
+      render(
+        <>
+          <ConfirmDialog
+            isOpen
+            message="Disconnect the session?"
+            onConfirm={closeTab}
+            onCancel={() => {}}
+          />
+          <PromptHost />
+        </>,
+      );
+      const outcome = ask();
+      const outside = listenOutside();
+      try {
+        const buttons = [
+          confirmButton(),
+          cancelButton(),
+          within(promptDialog('Run "Disk usage" on web-01?')).getByRole(
+            "button",
+            { name: "Close" },
+          ),
+        ];
+        for (const key of KEYS)
+          for (const button of buttons) press(button, key);
+        // They pass: the button's own handling, and the browser's click, need them.
+        expect(outside.seen).toHaveBeenCalledTimes(
+          KEYS.length * buttons.length * TYPES.length,
+        );
+        // The dialog underneath ignores keys that come from a button.
+        expect(closeTab).not.toHaveBeenCalled();
+        expect(await stateOf(outcome)).toBe("pending");
+      } finally {
+        outside.stop();
+      }
+    });
+
+    it("in a control outside the prompt, such as the unlock screen above it, are not touched", () => {
+      render(
+        <>
+          <input aria-label="Master password" />
+          <PromptHost />
+        </>,
+      );
+      void ask();
+      const outside = listenOutside();
+      try {
+        const password = screen.getByLabelText("Master password");
+        for (const key of KEYS)
+          expect(press(password, key)).toEqual([true, true, true]);
+        expect(outside.seen).toHaveBeenCalledTimes(KEYS.length * TYPES.length);
+      } finally {
+        outside.stop();
+      }
+    });
+
+    it("are not touched at all while no prompt is showing", () => {
+      render(<PromptHost />);
+      const outside = listenOutside();
+      try {
+        for (const key of KEYS)
+          expect(press(document.body, key)).toEqual([true, true, true]);
+        expect(outside.seen).toHaveBeenCalledTimes(KEYS.length * TYPES.length);
+      } finally {
+        outside.stop();
       }
     });
   });

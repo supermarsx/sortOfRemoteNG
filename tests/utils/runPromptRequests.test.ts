@@ -14,6 +14,7 @@ import {
   promptQueueLabel,
   remoteDeletePrompt,
   revealHiddenCharacters,
+  shortenPath,
   sshMacroReplayPrompt,
   sshScriptRunPrompt,
   targetsOmittedNotice,
@@ -50,7 +51,10 @@ describe("run prompt wording", () => {
       expect(prompt.hint).toBe(
         "Settings, Macros: Confirm before running SSH scripts",
       );
-      expect(prompt.targets).toBeUndefined();
+      expect(prompt.targets).toEqual({
+        label: "Session",
+        items: [{ id: "session", name: "web-01", detail: "10.0.0.1" }],
+      });
       expect(prompt.dedupeKey).toBeUndefined();
     });
 
@@ -342,6 +346,90 @@ describe("run prompt wording", () => {
       expect(one.title).toBe("Send 1 file to web-01?");
       expect(one.confirmLabel).toBe("Send file");
     });
+
+    // A session known by its name alone: these requests are exactly what they
+    // were before the host row existed (see "the session's host" below).
+    const named = { name: "web-01" };
+
+    it("is exactly what it was when no folders are given", () => {
+      const expected = {
+        title: "Send 3 files to web-01?",
+        message: "4.2 MB will be copied to the remote session.",
+        confirmLabel: "Send files",
+      };
+      for (const folders of [undefined, 0, -1, Number.NaN])
+        expect(
+          fileTransferPrompt({
+            count: 3,
+            size: "4.2 MB",
+            session: named,
+            folders,
+          }),
+        ).toEqual(expected);
+      expect(
+        fileTransferPrompt({ count: 0, size: "0 B", session: named }),
+      ).toEqual({
+        title: "Send 0 files to web-01?",
+        message: "0 B will be copied to the remote session.",
+        confirmLabel: "Send files",
+      });
+    });
+
+    it("counts the folders the files are in", () => {
+      expect(
+        fileTransferPrompt({
+          count: 3,
+          size: "4.2 MB",
+          session: named,
+          folders: 2,
+        }),
+      ).toEqual({
+        title: "Send 3 files in 2 folders to web-01?",
+        message: "4.2 MB will be copied to the remote session.",
+        confirmLabel: "Send files",
+      });
+      expect(
+        fileTransferPrompt({
+          count: 1,
+          size: "12 KB",
+          session: named,
+          folders: 1,
+        }),
+      ).toEqual({
+        title: "Send 1 file in 1 folder to web-01?",
+        message: "12 KB will be copied to the remote session.",
+        confirmLabel: "Send file",
+      });
+    });
+
+    it("asks about empty folders without a file count or a size", () => {
+      expect(
+        fileTransferPrompt({
+          count: 0,
+          size: "0 B",
+          session: named,
+          folders: 2,
+        }),
+      ).toEqual({
+        title: "Send 2 empty folders to web-01?",
+        message:
+          "Only the folders are created in the remote session; no files are copied.",
+        confirmLabel: "Send folders",
+      });
+      expect(
+        fileTransferPrompt({
+          count: 0,
+          size: "0 B",
+          session: named,
+          folders: 1,
+        }),
+      ).toEqual({
+        title: "Send 1 empty folder to web-01?",
+        message:
+          "Only the folder is created in the remote session; no files are copied.",
+        confirmLabel: "Send folder",
+      });
+    });
   });
 
   describe("remoteDeletePrompt", () => {
@@ -359,6 +447,319 @@ describe("run prompt wording", () => {
       expect(remoteDeletePrompt({ name: "logs", isFolder: true }).message).toBe(
         "This cannot be undone. Everything inside it is deleted too.",
       );
+    });
+
+    it("is exactly what it was when no path is given", () => {
+      const file = {
+        title: 'Permanently delete "notes.txt"?',
+        message: "This cannot be undone.",
+        confirmLabel: "Delete",
+        tone: "danger",
+        defaultAction: "cancel",
+      };
+      expect(remoteDeletePrompt({ name: "notes.txt" })).toEqual(file);
+      expect(remoteDeletePrompt({ name: "notes.txt", path: "" })).toEqual(file);
+      expect(
+        remoteDeletePrompt({ name: "notes.txt", path: undefined }),
+      ).toEqual(file);
+      expect(remoteDeletePrompt({ name: "logs", isFolder: true })).toEqual({
+        ...file,
+        title: 'Permanently delete "logs"?',
+        message: "This cannot be undone. Everything inside it is deleted too.",
+      });
+    });
+
+    it("shows the path of the entry under its name, unchanged", () => {
+      const path = "/srv/www/site one/notes.txt";
+      const prompt = remoteDeletePrompt({ name: "notes.txt", path });
+      expect(prompt.preview).toEqual({ label: "Path", text: path });
+      expect(prompt.title).toBe('Permanently delete "notes.txt"?');
+      expect(prompt.tone).toBe("danger");
+      expect(prompt.defaultAction).toBe("cancel");
+      expect(
+        remoteDeletePrompt({ name: "logs", isFolder: true, path: "/var/logs/" })
+          .preview,
+      ).toEqual({ label: "Path", text: "/var/logs/" });
+    });
+
+    it("hands hidden characters in a path to the preview, which marks them", () => {
+      const path = "/srv/\u{202E}gnp.exe\r/x";
+      expect(remoteDeletePrompt({ name: "x", path }).preview?.text).toBe(path);
+    });
+
+    it("leaves out the middle of a long path and never its final segment", () => {
+      const middle = Array.from({ length: 300 }, (_, i) => `dir${i}`).join("/");
+      const path = `/srv/data/${middle}/2024/final segment.tar.gz`;
+      const prompt = remoteDeletePrompt({ name: "final segment.tar.gz", path });
+      const text = prompt.preview!.text;
+      expect(text.length).toBeLessThanOrEqual(PROMPT_LIMITS.path);
+      expect(text.startsWith("/srv/data/dir0/")).toBe(true);
+      expect(text.endsWith("/2024/final segment.tar.gz")).toBe(true);
+      // Cut at folder boundaries: "…/" stands for the folders left out.
+      const [head, tail] = text.split("…");
+      expect(head.endsWith("/")).toBe(true);
+      expect(tail.startsWith("/")).toBe(true);
+      expect(path.startsWith(head)).toBe(true);
+      expect(path.endsWith(tail)).toBe(true);
+      const omitted = path.length - head.length - tail.length;
+      expect(omitted).toBeGreaterThan(0);
+      expect(prompt.preview!.label).toBe(
+        `Path (${count(omitted)} characters in the middle are not shown)`,
+      );
+    });
+  });
+
+  describe("shortenPath", () => {
+    const limit = 60;
+
+    it("returns a path within the limit untouched", () => {
+      expect(shortenPath("/a/b/c.txt", limit)).toEqual({
+        text: "/a/b/c.txt",
+        omitted: 0,
+      });
+      const exact = `/${"x".repeat(limit - 1)}`;
+      expect(shortenPath(exact, limit)).toEqual({ text: exact, omitted: 0 });
+    });
+
+    it.each([
+      ["a file", "/final.log"],
+      ["a folder with its trailing separator", "/final/"],
+      ["a Windows path", "\\final.log"],
+    ])("keeps the start and the final segment of %s", (_kind, last) => {
+      const separator = last[0];
+      const path = `${separator}root${`${separator}middle`.repeat(40)}${last}`;
+      const { text, omitted } = shortenPath(path, limit);
+      expect(text.length).toBeLessThanOrEqual(limit);
+      const [head, tail] = text.split("…");
+      expect(head.startsWith(`${separator}root${separator}`)).toBe(true);
+      expect(head.endsWith(separator)).toBe(true);
+      // The folders nearest the entry come with it while they fit in half the limit.
+      const nearest = Math.floor((limit / 2 - last.length) / "/middle".length);
+      expect(nearest).toBeGreaterThan(1);
+      expect(tail).toBe(`${`${separator}middle`.repeat(nearest)}${last}`);
+      expect(path.startsWith(head) && path.endsWith(tail)).toBe(true);
+      expect(omitted).toBe(path.length - head.length - tail.length);
+    });
+
+    it("keeps a final segment that is longer than the limit whole", () => {
+      const last = `/${"n".repeat(200)}.bin`;
+      const path = `/srv/backups/2024/daily${last}`;
+      const { text, omitted } = shortenPath(path, limit);
+      expect(text.endsWith(last)).toBe(true);
+      expect(text.startsWith("/srv/")).toBe(true);
+      expect(omitted).toBe(path.length - (text.length - 1));
+      // Nothing to leave out when the long segment is all there is.
+      const only = `/${"n".repeat(200)}`;
+      expect(shortenPath(only, limit)).toEqual({ text: only, omitted: 0 });
+      expect(shortenPath("n".repeat(200), limit).omitted).toBe(0);
+    });
+
+    it("never cuts a character in half", () => {
+      const face = "\u{1F600}";
+      const path = `/${face.repeat(40)}/${"m".repeat(80)}/end`;
+      for (const cap of [58, 59, 60, 61]) {
+        const [head, tail] = shortenPath(path, cap).text.split("…");
+        expect(tail).toBe("/end");
+        expect(head.length).toBeGreaterThan(40);
+        expect(head).toBe(`/${face.repeat((head.length - 1) / 2)}`);
+      }
+    });
+  });
+
+  describe("the session's host", () => {
+    const both = { name: "Production web", hostname: "10.0.0.5" };
+    const macro = {
+      name: "m",
+      steps: [{ command: "q", delayMs: 0, sendNewline: true }],
+    };
+    // Every single-session builder, for one session.
+    const requestsFor = (where: { name?: string; hostname?: string }) => ({
+      script: sshScriptRunPrompt({
+        script: { name: "s" },
+        command: "id",
+        session: where,
+      }),
+      macro: sshMacroReplayPrompt({ macro, session: where }),
+      paste: terminalPastePrompt({
+        text: "a\nb",
+        session: where,
+        multiLine: true,
+      }),
+      transfer: fileTransferPrompt({ count: 2, size: "1 KB", session: where }),
+      emptyFolders: fileTransferPrompt({
+        count: 0,
+        size: "0 B",
+        session: where,
+        folders: 1,
+      }),
+    });
+
+    it("is shown beside the name, in the body, by every builder that knows both", () => {
+      const row = {
+        label: "Session",
+        items: [{ id: "session", name: "Production web", detail: "10.0.0.5" }],
+      };
+      for (const [builder, request] of Object.entries(requestsFor(both)))
+        expect([builder, request.targets]).toEqual([builder, row]);
+      expect(remoteDeletePrompt({ name: "f", session: both }).targets).toEqual(
+        row,
+      );
+    });
+
+    it("changes no title and nothing else of the request", () => {
+      const withHost = requestsFor(both);
+      const nameOnly = requestsFor({ name: "Production web" });
+      expect(withHost.script.title).toBe('Run "s" on Production web?');
+      expect(withHost.macro.title).toBe('Replay "m" on Production web?');
+      expect(withHost.paste.title).toBe("Paste into Production web?");
+      expect(withHost.transfer.title).toBe("Send 2 files to Production web?");
+      for (const builder of Object.keys(withHost) as Array<
+        keyof typeof withHost
+      >) {
+        const { targets, ...rest } = withHost[builder];
+        expect(targets).toBeDefined();
+        expect([builder, rest]).toEqual([builder, nameOnly[builder]]);
+      }
+    });
+
+    it.each([
+      ["only a name", { name: "web-01" }],
+      ["only a host", { hostname: "10.0.0.5" }],
+      ["an empty host", { name: "web-01", hostname: "" }],
+      ["a host that is the name", { name: "10.0.0.5", hostname: "10.0.0.5" }],
+      [
+        "a host that reads as the name",
+        { name: " web-01 ", hostname: "web-01" },
+      ],
+      ["nothing", {}],
+    ])("adds nothing for a session with %s", (_what, where) => {
+      for (const [builder, request] of Object.entries(requestsFor(where)))
+        expect([builder, request.targets]).toEqual([builder, undefined]);
+    });
+
+    it("says where a remote delete happens with whatever is known, and nothing when nothing is", () => {
+      const where = (session: { name?: string; hostname?: string }) =>
+        remoteDeletePrompt({ name: "f", session }).targets;
+      expect(where({ name: "Files" })).toEqual({
+        label: "Session",
+        items: [{ id: "session", name: "Files" }],
+      });
+      expect(where({ hostname: "10.0.0.5" })).toEqual({
+        label: "Session",
+        items: [{ id: "session", name: "10.0.0.5" }],
+      });
+      expect(where({ name: "10.0.0.5", hostname: "10.0.0.5" })).toEqual({
+        label: "Session",
+        items: [{ id: "session", name: "10.0.0.5" }],
+      });
+      expect(where({})).toBeUndefined();
+      // The title never names the session, with or without the field.
+      expect(remoteDeletePrompt({ name: "f", session: both }).title).toBe(
+        'Permanently delete "f"?',
+      );
+      const { targets, ...rest } = remoteDeletePrompt({
+        name: "f",
+        isFolder: true,
+        path: "/srv/f/",
+        session: both,
+      });
+      expect(targets).toBeDefined();
+      expect(rest).toEqual(
+        remoteDeletePrompt({ name: "f", isFolder: true, path: "/srv/f/" }),
+      );
+    });
+
+    it("marks hidden characters in a host, so two hosts cannot look the same", () => {
+      const hidden = String.fromCodePoint(0x200b);
+      const override = String.fromCodePoint(0x202e);
+      const host = `evil${hidden}.example${override}moc.\r`;
+      const shown = "evil⟨U+200B⟩.example⟨U+202E⟩moc.␍\n";
+      expect(
+        sshScriptRunPrompt({
+          script: { name: "s" },
+          command: "id",
+          session: { name: "web", hostname: host },
+        }).targets?.items[0],
+      ).toEqual({ id: "session", name: "web", detail: shown });
+      expect(
+        bulkCommandRunPrompt({
+          command: "id",
+          sessions: [{ id: "s1", name: "web", hostname: host }],
+          destructive: false,
+        }).targets?.items[0],
+      ).toEqual({ id: "s1", name: "web", detail: shown });
+      // An ordinary host is passed on as it is.
+      expect(
+        bulkCommandRunPrompt({
+          command: "id",
+          sessions: [{ id: "s1", name: "web", hostname: "10.0.0.5" }],
+          destructive: false,
+        }).targets?.items[0],
+      ).toEqual({ id: "s1", name: "web", detail: "10.0.0.5" });
+    });
+  });
+
+  describe("destructive requests", () => {
+    const sessions = [{ id: "s1", name: "web-01", hostname: "10.0.0.1" }];
+    const macro = {
+      name: "m",
+      steps: [{ command: "q", delayMs: 0, sendNewline: true }],
+    };
+    const every = {
+      script: sshScriptRunPrompt({
+        script: { name: "s" },
+        command: "id",
+        session,
+      }),
+      macro: sshMacroReplayPrompt({ macro, session }),
+      paste: terminalPastePrompt({ text: "a\nb", session, multiLine: true }),
+      bulkStandard: bulkCommandRunPrompt({
+        command: "uptime",
+        sessions,
+        destructive: false,
+      }),
+      bulkDestructive: bulkCommandRunPrompt({
+        command: "reboot",
+        sessions,
+        destructive: true,
+      }),
+      scriptToTrash: bulkScriptDeletePrompt({ name: "s", permanent: false }),
+      scriptDelete: bulkScriptDeletePrompt({ name: "s", permanent: true }),
+      trashEmpty: bulkScriptTrashEmptyPrompt({ count: 2 }),
+      transfer: fileTransferPrompt({ count: 2, size: "1 KB", session }),
+      transferFolders: fileTransferPrompt({
+        count: 0,
+        size: "0 B",
+        session,
+        folders: 1,
+      }),
+      remoteFile: remoteDeletePrompt({ name: "f" }),
+      remoteFolder: remoteDeletePrompt({
+        name: "d",
+        isFolder: true,
+        path: "/srv/d/",
+      }),
+    };
+
+    it("are the five that delete for good or send a destructive command", () => {
+      const danger = Object.entries(every)
+        .filter(([, request]) => request.tone === "danger")
+        .map(([name]) => name);
+      expect(danger).toEqual([
+        "bulkDestructive",
+        "scriptDelete",
+        "trashEmpty",
+        "remoteFile",
+        "remoteFolder",
+      ]);
+    });
+
+    it("say themselves that they open on Cancel, and no other request does", () => {
+      for (const [name, request] of Object.entries(every))
+        expect([name, request.defaultAction]).toEqual([
+          name,
+          request.tone === "danger" ? "cancel" : undefined,
+        ]);
     });
   });
 
@@ -561,6 +962,176 @@ describe("what the dialog may show of untrusted text", () => {
           "a\u{202E}b\u{200B}c\u{2066}d\u{FEFF}e\u0085f\u{2028}g",
         ),
       ).toBe("a⟨U+202E⟩b⟨U+200B⟩c⟨U+2066⟩d⟨U+FEFF⟩e⟨U+0085⟩f⟨U+2028⟩g");
+    });
+  });
+
+  // Written as numbers so that no invisible character sits in this file.
+  const INVISIBLE: Array<[number, string]> = [
+    [0x00ad, "soft hyphen"],
+    [0x0600, "Arabic number sign (format)"],
+    [0x061c, "Arabic letter mark"],
+    [0x06dd, "Arabic end of ayah (format)"],
+    [0x070f, "Syriac abbreviation mark (format)"],
+    [0x115f, "Hangul choseong filler"],
+    [0x1160, "Hangul jungseong filler"],
+    [0x180e, "Mongolian vowel separator"],
+    [0x200b, "zero width space"],
+    [0x200c, "zero width non-joiner"],
+    [0x200d, "zero width joiner"],
+    [0x200e, "left-to-right mark"],
+    [0x200f, "right-to-left mark"],
+    [0x2028, "line separator"],
+    [0x2029, "paragraph separator"],
+    [0x202a, "left-to-right embedding"],
+    [0x202b, "right-to-left embedding"],
+    [0x202c, "pop directional formatting"],
+    [0x202d, "left-to-right override"],
+    [0x202e, "right-to-left override"],
+    [0x2060, "word joiner"],
+    [0x2061, "function application"],
+    [0x2064, "invisible plus"],
+    [0x2066, "left-to-right isolate"],
+    [0x2067, "right-to-left isolate"],
+    [0x2068, "first strong isolate"],
+    [0x2069, "pop directional isolate"],
+    [0x206a, "inhibit symmetric swapping"],
+    [0x206f, "nominal digit shapes"],
+    [0x3164, "Hangul filler"],
+    [0xfe00, "variation selector 1"],
+    [0xfe0d, "variation selector 14"],
+    [0xfe0e, "text presentation selector"],
+    [0xfe0f, "emoji presentation selector"],
+    [0xfeff, "byte order mark"],
+    [0xffa0, "halfwidth Hangul filler"],
+    [0xfff9, "interlinear annotation anchor"],
+    [0xfffa, "interlinear annotation separator"],
+    [0xfffb, "interlinear annotation terminator"],
+    [0x110bd, "Kaithi number sign (format)"],
+    [0x1d173, "musical begin beam (format)"],
+    [0xe0000, "start of the tag block"],
+    [0xe0001, "language tag"],
+    [0xe0020, "tag space"],
+    [0xe007f, "cancel tag"],
+    [0xe0100, "variation selector 17"],
+    [0xe01ef, "variation selector 256"],
+    [0xe0fff, "end of the tag block"],
+  ];
+
+  describe("characters that draw nothing", () => {
+    const hex = (code: number) =>
+      code.toString(16).toUpperCase().padStart(4, "0");
+    const label = (code: number) => `⟨U+${hex(code)}⟩`;
+
+    it.each(INVISIBLE.map(([code, name]) => [hex(code), name, code] as const))(
+      "U+%s (%s) is marked in a preview and dropped from a name",
+      (_hex, _name, code) => {
+        const hidden = String.fromCodePoint(code);
+        expect(revealHiddenCharacters(`rm -rf a${hidden}b`)).toBe(
+          `rm -rf a${label(code)}b`,
+        );
+        expect(revealHiddenCharacters(hidden.repeat(2))).toBe(
+          label(code).repeat(2),
+        );
+        expect(toSingleLine(`a${hidden}b`, 80)).toBe("ab");
+      },
+    );
+
+    it("writes the code point with at least four digits, more when it needs them", () => {
+      expect(label(0xad)).toBe("⟨U+00AD⟩");
+      expect(label(0xe0001)).toBe("⟨U+E0001⟩");
+    });
+
+    it.each(
+      (
+        [
+          [0x2764, "heavy black heart"],
+          [0x26a0, "warning sign"],
+          [0x2714, "heavy check mark"],
+          [0x2139, "information source"],
+          [0x25b6, "play button"],
+          [0x00a9, "copyright sign"],
+          [0x1f170, "A button"],
+          [0x1f5a5, "desktop computer"],
+        ] as Array<[number, string]>
+      ).map(([code, name]) => [hex(code), name, code] as const),
+    )(
+      "leaves the presentation selector of an emoji (U+%s, %s) alone",
+      (_hex, _name, code) => {
+        const base = String.fromCodePoint(code);
+        for (const selector of [0xfe0e, 0xfe0f]) {
+          const emoji = `${base}${String.fromCodePoint(selector)}`;
+          expect(revealHiddenCharacters(`echo ${emoji} done`)).toBe(
+            `echo ${emoji} done`,
+          );
+          expect(toSingleLine(`web ${emoji}`, 80)).toBe(`web ${emoji}`);
+        }
+        // Only the two presentation selectors, and only once.
+        const odd = String.fromCodePoint(0xfe00);
+        expect(revealHiddenCharacters(`${base}${odd}`)).toBe(
+          `${base}${label(0xfe00)}`,
+        );
+        const twice = String.fromCodePoint(0xfe0f).repeat(2);
+        expect(revealHiddenCharacters(`${base}${twice}`)).toBe(
+          `${base}${String.fromCodePoint(0xfe0f)}${label(0xfe0f)}`,
+        );
+      },
+    );
+
+    it.each(["a", "1", "#", "*", "/", " ", ".", "é", "日"])(
+      "marks a presentation selector that follows %j, where it can only hide",
+      (base) => {
+        const selector = String.fromCodePoint(0xfe0f);
+        expect(revealHiddenCharacters(`${base}${selector}`)).toBe(
+          `${base}${label(0xfe0f)}`,
+        );
+        expect(revealHiddenCharacters(selector)).toBe(label(0xfe0f));
+        expect(toSingleLine(`x${base}${selector}y`, 80)).toBe(
+          `x${base}y`.replace(/\s+/g, " "),
+        );
+      },
+    );
+
+    it("leaves visible text of every script and plain emoji alone", () => {
+      const text = [
+        "Ελληνικά Кириллица עברית العربية हिन्दी ไทย 한국어 日本語",
+        `${String.fromCodePoint(0x1f600)} ${String.fromCodePoint(0x1f680)} ${String.fromCodePoint(0x2705)}`,
+        "tabs\tand spaces  stay",
+      ].join("\n");
+      expect(revealHiddenCharacters(text)).toBe(text);
+    });
+  });
+
+  describe("a line feed at the very end", () => {
+    const whole = { markFinalLineFeed: true };
+
+    it.each([
+      ["ls -la\n", "ls -la␊"],
+      ["ls -la\r\n", "ls -la␊"],
+      ["a\n\n", "a\n␊"],
+      ["\n", "␊"],
+      ["cd /srv\nrm -rf cache\n", "cd /srv\nrm -rf cache␊"],
+    ])(
+      "of %j is shown, as it decides whether the last line runs",
+      (text, shown) => {
+        expect(revealHiddenCharacters(text, whole)).toBe(shown);
+      },
+    );
+
+    it.each([
+      ["ls -la", "ls -la"],
+      ["", ""],
+      ["a\nb", "a\nb"],
+      // A lone carriage return is already shown; the break after it is ours.
+      ["ls -la\r", "ls -la␍\n"],
+    ])("is not invented for %j", (text, shown) => {
+      expect(revealHiddenCharacters(text, whole)).toBe(shown);
+    });
+
+    it("is left as it is for a text that is only an excerpt", () => {
+      expect(revealHiddenCharacters("ls -la\n")).toBe("ls -la\n");
+      expect(
+        revealHiddenCharacters("ls -la\n", { markFinalLineFeed: false }),
+      ).toBe("ls -la\n");
     });
   });
 

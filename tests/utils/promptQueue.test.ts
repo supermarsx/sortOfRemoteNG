@@ -48,12 +48,17 @@ describe("prompt queue", () => {
   });
 
   afterEach(() => {
-    // No path through the store may reach the webview's own dialogs.
-    expect(nativeConfirm).not.toHaveBeenCalled();
-    expect(nativeAlert).not.toHaveBeenCalled();
-    expect(nativePrompt).not.toHaveBeenCalled();
-    resetPromptQueueForTests();
-    vi.restoreAllMocks();
+    // No path through the store may reach the webview's own dialogs. The
+    // cleanup runs whatever the checks say, so a failure stays in its case.
+    try {
+      expect(nativeConfirm).not.toHaveBeenCalled();
+      expect(nativeAlert).not.toHaveBeenCalled();
+      expect(nativePrompt).not.toHaveBeenCalled();
+    } finally {
+      resetPromptQueueForTests();
+      vi.restoreAllMocks();
+      vi.useRealTimers();
+    }
   });
 
   describe("without a host", () => {

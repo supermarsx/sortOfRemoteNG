@@ -29,26 +29,75 @@ export const PROMPT_LIMITS = {
   /** A button label or a fact chip. */
   label: 60,
   facts: 8,
+  /** A remote path is shown whole up to this length, then without its middle. */
+  path: 600,
 } as const;
 
 const ELLIPSIS = "…";
 
-/* eslint-disable no-control-regex -- untrusted names and payloads: control characters are matched on purpose. */
-// Invisible characters that can reorder or hide text: direction marks and
-// overrides, zero-width characters, the soft hyphen, the line and paragraph
-// separators and the byte order mark.
-const INVISIBLE_PATTERN =
-  /[\u{AD}\u{61C}\u{200B}-\u{200F}\u{2028}-\u{202E}\u{2060}-\u{2069}\u{FEFF}]/gu;
+// Characters that draw nothing or reorder what is around them, as one class
+// body for both patterns below: the format category (direction marks,
+// embeddings, overrides and isolates, zero-width characters, the soft hyphen,
+// the byte order mark, tags, annotation anchors), the line and paragraph
+// separators, the variation selectors, the tag block and the fillers that
+// draw as a blank. The ranges restate parts of the category so that an engine
+// with older Unicode data marks the same characters. The selectors come
+// straight after the category: written after another character, a selector
+// would read as part of that character.
+const INVISIBLE = String.raw`\p{Cf}\u{FE00}-\u{FE0F}\u{AD}\u{61C}\u{115F}\u{1160}\u{180E}\u{200B}-\u{200F}\u{2028}-\u{202E}\u{2060}-\u{206F}\u{3164}\u{FEFF}\u{FFA0}\u{FFF9}-\u{FFFB}\u{E0000}-\u{E0FFF}`;
+const INVISIBLE_PATTERN = new RegExp(`[${INVISIBLE}]`, "gu");
+// eslint-disable-next-line no-control-regex -- untrusted names: control characters are matched on purpose.
 const CONTROL_PATTERN = /[\u{0}-\u{1F}\u{7F}-\u{9F}]/gu;
 // Everything a <pre> would hide: both of the above, except tab and line feed.
-const HIDDEN_PATTERN =
-  /\r\n|[\u{0}-\u{8}\u{B}-\u{1F}\u{7F}-\u{9F}\u{AD}\u{61C}\u{200B}-\u{200F}\u{2028}-\u{202E}\u{2060}-\u{2069}\u{FEFF}]/gu;
-/* eslint-enable no-control-regex */
+const HIDDEN_PATTERN = new RegExp(
+  String.raw`\r\n|[\u{0}-\u{8}\u{B}-\u{1F}\u{7F}-\u{9F}${INVISIBLE}]`,
+  "gu",
+);
+
+// The symbols an emoji presentation selector may follow (the bases of the
+// standard emoji variation sequences, without the ASCII keycaps). After one of
+// them U+FE0E and U+FE0F choose how it is drawn and hide nothing; anywhere
+// else they can only hide, and are treated like every other selector.
+const PICTOGRAPHS: ReadonlyArray<readonly [number, number]> = [
+  [0xa9, 0xa9],
+  [0xae, 0xae],
+  [0x203c, 0x203c],
+  [0x2049, 0x2049],
+  [0x2122, 0x2122],
+  [0x2139, 0x2139],
+  [0x2190, 0x21ff],
+  [0x2300, 0x23ff],
+  [0x24c2, 0x24c2],
+  [0x25a0, 0x27bf],
+  [0x2900, 0x297f],
+  [0x2b00, 0x2bff],
+  [0x3030, 0x3030],
+  [0x303d, 0x303d],
+  [0x3297, 0x3299],
+  [0x1f000, 0x1faff],
+];
 
 const isHighSurrogate = (code: number) => code >= 0xd800 && code <= 0xdbff;
 
-const codePointLabel = (character: string) =>
-  `⟨U+${character.charCodeAt(0).toString(16).toUpperCase().padStart(4, "0")}⟩`;
+const codePointBefore = (text: string, index: number) => {
+  if (index <= 0) return -1;
+  const unit = text.charCodeAt(index - 1);
+  const whole =
+    index >= 2 && unit >= 0xdc00 && unit <= 0xdfff
+      ? (text.codePointAt(index - 2) ?? unit)
+      : unit;
+  return whole > 0xffff ? whole : unit;
+};
+
+/** True for U+FE0E or U+FE0F at `index` when it styles the pictograph before it. */
+const isEmojiSelector = (code: number, text: string, index: number) => {
+  if (code !== 0xfe0e && code !== 0xfe0f) return false;
+  const base = codePointBefore(text, index);
+  return PICTOGRAPHS.some(([from, to]) => base >= from && base <= to);
+};
+
+const codePointLabel = (code: number) =>
+  `⟨U+${code.toString(16).toUpperCase().padStart(4, "0")}⟩`;
 
 const occurrences = (text: string, needle: string) => {
   let count = 0;
@@ -125,28 +174,88 @@ export function excerptPreview(text: string): PreviewExcerpt {
  * Enter, is shown and breaks the line; control characters appear as their
  * control pictures and invisible ones as their code point. Ordinary text,
  * tabs and line breaks are returned unchanged.
+ *
+ * `markFinalLineFeed` is for a text that is shown to its end: a line feed
+ * there draws nothing, yet for a paste it decides whether the last line runs,
+ * so it is shown as its own symbol.
  */
-export function revealHiddenCharacters(text: string): string {
-  return text.replace(HIDDEN_PATTERN, (match) => {
+export function revealHiddenCharacters(
+  text: string,
+  options?: { markFinalLineFeed?: boolean },
+): string {
+  const shown = text.replace(HIDDEN_PATTERN, (match, index: number) => {
     if (match === "\r\n") return "\n";
     if (match === "\r") return "␍\n";
-    const code = match.charCodeAt(0);
+    const code = match.codePointAt(0) ?? 0;
     if (code < 0x20) return String.fromCharCode(0x2400 + code);
     if (code === 0x7f) return "␡";
-    return codePointLabel(match);
+    return isEmojiSelector(code, text, index) ? match : codePointLabel(code);
   });
+  return options?.markFinalLineFeed && text.endsWith("\n")
+    ? `${shown.slice(0, -1)}␊`
+    : shown;
 }
 
 /** A name or label on one line: no control or direction characters, bounded with an ellipsis. */
 export function toSingleLine(text: string, limit: number): string {
   const line = String(text ?? "")
-    .replace(INVISIBLE_PATTERN, "")
+    .replace(INVISIBLE_PATTERN, (match, index: number, whole: string) =>
+      isEmojiSelector(match.codePointAt(0) ?? 0, whole, index) ? match : "",
+    )
     .replace(CONTROL_PATTERN, " ")
     .replace(/\s+/g, " ")
     .trim();
   if (line.length <= limit) return line;
   const end = isHighSurrogate(line.charCodeAt(limit - 1)) ? limit - 1 : limit;
   return `${line.slice(0, end).trimEnd()}${ELLIPSIS}`;
+}
+
+// The least of a path's start that is kept when its end takes the whole limit.
+const PATH_HEAD_MINIMUM = 16;
+
+/**
+ * A path that fits the limit, with the middle left out when it is longer. The
+ * start is kept, and so is the end: the final segment whole, whatever its
+ * length, with the folders before it while they fit in half the limit. Both
+ * `/` and `\` separate segments.
+ */
+export function shortenPath(
+  path: string,
+  limit: number = PROMPT_LIMITS.path,
+): { text: string; omitted: number } {
+  const whole = { text: path, omitted: 0 };
+  if (path.length <= limit) return whole;
+  const separatorBefore = (from: number) => {
+    for (let index = from; index >= 0; index -= 1) {
+      const code = path.charCodeAt(index);
+      if (code === 47 || code === 92) return index;
+    }
+    return -1;
+  };
+
+  // A folder's trailing separator belongs to its segment.
+  let tailStart = separatorBefore(path.length - 2);
+  if (tailStart <= 0) return whole;
+  for (
+    let next = separatorBefore(tailStart - 1);
+    next > 0 && path.length - next <= limit / 2;
+    next = separatorBefore(next - 1)
+  )
+    tailStart = next;
+
+  let headEnd = Math.max(
+    PATH_HEAD_MINIMUM,
+    limit - (path.length - tailStart) - ELLIPSIS.length,
+  );
+  if (headEnd >= tailStart) return whole;
+  if (isHighSurrogate(path.charCodeAt(headEnd - 1))) headEnd -= 1;
+  // End the start on a folder boundary when it has one.
+  const boundary = separatorBefore(headEnd - 1);
+  if (boundary > 0) headEnd = boundary + 1;
+  return {
+    text: `${path.slice(0, headEnd)}${ELLIPSIS}${path.slice(tailStart)}`,
+    omitted: tailStart - headEnd,
+  };
 }
 
 // ─── Wording shared with the dialog ─────────────────────────────
@@ -182,7 +291,11 @@ export const targetsOmittedNotice = (omitted: number) =>
 
 // ─── Builders ───────────────────────────────────────────────────
 
-/** The session a prompt is about; `name` wins, then `hostname`. */
+/**
+ * The session a prompt is about. A title uses `name`, or `hostname` when there
+ * is no name; given both, the request also shows the host in a row under the
+ * message, so that two sessions of one name cannot be mistaken.
+ */
 export interface PromptSessionRef {
   name?: string | null;
   hostname?: string | null;
@@ -196,6 +309,31 @@ const sessionLabel = (session: PromptSessionRef) =>
     session.name || session.hostname || "",
     PROMPT_LIMITS.nameInTitle,
   ) || "this session";
+
+/**
+ * The row that tells two sessions of one name apart: the name, then the host,
+ * as the bulk prompt lists each of its targets. A title names a session by its
+ * name, or by its host when it has no name, so the row is added only when both
+ * are known and differ. `always` is for a prompt whose title does not name the
+ * session at all: it then shows whichever of the two is known. Hidden
+ * characters in a host are marked, so two hosts cannot look the same.
+ */
+const sessionTargets = (
+  session: PromptSessionRef | undefined,
+  always = false,
+): Pick<PromptRequest, "targets"> => {
+  const name = session?.name || "";
+  const host = session?.hostname || "";
+  const both =
+    name !== "" &&
+    host !== "" &&
+    toSingleLine(name, Infinity) !== toSingleLine(host, Infinity);
+  if (!both && !(always && (name || host))) return {};
+  const item: PromptTarget = both
+    ? { id: "session", name, detail: revealHiddenCharacters(host) }
+    : { id: "session", name: name || revealHiddenCharacters(host) };
+  return { targets: { label: "Session", items: [item] } };
+};
 
 const REMEMBER_HINT = (what: string) =>
   `You are asked again if the ${what} changes or the session ends.`;
@@ -219,6 +357,7 @@ export function sshScriptRunPrompt(input: {
     title: `Run ${quoted(script.name)} on ${sessionLabel(session)}?`,
     message: "This runs the commands below in this SSH session.",
     confirmLabel: "Run script",
+    ...sessionTargets(session),
     preview: { label: "Commands to run", text: command },
     facts,
     hint: "Settings, Macros: Confirm before running SSH scripts",
@@ -266,6 +405,7 @@ export function sshMacroReplayPrompt(input: {
     title: `Replay ${quoted(macro.name)} on ${sessionLabel(session)}?`,
     message: `This types ${plural(macro.steps.length, "step", "steps")} into this SSH session.`,
     confirmLabel: "Replay macro",
+    ...sessionTargets(session),
     preview: { label: "Steps", text: steps.join("\n") },
     facts: [plural(macro.steps.length, "step", "steps")],
     hint: "Settings, Macros: Confirm before replay",
@@ -307,6 +447,7 @@ export function terminalPastePrompt(input: {
         : risk,
     confirmLabel: "Paste",
     tone: "warning",
+    ...sessionTargets(session),
     preview: { label: "Text to paste", text },
     facts: [
       plural(countTextLines(text), "line", "lines"),
@@ -344,7 +485,11 @@ export function bulkCommandRunPrompt(input: {
   const items = sessions.map((session): PromptTarget => {
     const name = session.name || session.hostname || session.id;
     return session.hostname && session.hostname !== name
-      ? { id: session.id, name, detail: session.hostname }
+      ? {
+          id: session.id,
+          name,
+          detail: revealHiddenCharacters(session.hostname),
+        }
       : { id: session.id, name };
   });
   return {
@@ -403,24 +548,49 @@ export function bulkScriptTrashEmptyPrompt(input: {
   };
 }
 
-/** Copy dropped files to a remote session. `size` is already formatted, for example "4.2 MB". */
+/**
+ * Copy dropped files to a remote session. `size` is already formatted, for
+ * example "4.2 MB". `folders` is how many folders the drop contains: the title
+ * then reads "3 files in 2 folders", and a drop of folders with no files in
+ * them asks about the empty folders instead of "0 files" and a size.
+ */
 export function fileTransferPrompt(input: {
   count: number;
   size: string;
   session: PromptSessionRef;
+  folders?: number;
 }): PromptRequest {
+  const folders =
+    input.folders !== undefined && input.folders > 0 ? input.folders : 0;
+  if (folders > 0 && input.count === 0)
+    return {
+      title: `Send ${plural(folders, "empty folder", "empty folders")} to ${sessionLabel(input.session)}?`,
+      message: `Only the ${folders === 1 ? "folder is" : "folders are"} created in the remote session; no files are copied.`,
+      confirmLabel: folders === 1 ? "Send folder" : "Send folders",
+      ...sessionTargets(input.session),
+    };
   return {
-    title: `Send ${plural(input.count, "file", "files")} to ${sessionLabel(input.session)}?`,
+    title: `Send ${plural(input.count, "file", "files")}${folders > 0 ? ` in ${plural(folders, "folder", "folders")}` : ""} to ${sessionLabel(input.session)}?`,
     message: `${toSingleLine(input.size, PROMPT_LIMITS.label)} will be copied to the remote session.`,
     confirmLabel: input.count === 1 ? "Send file" : "Send files",
+    ...sessionTargets(input.session),
   };
 }
 
-/** Delete a remote file or folder for good. */
+/**
+ * Delete a remote file or folder for good. `path` is the entry's absolute
+ * remote path. It is previewed under the name as untrusted text: the dialog
+ * marks its hidden characters, and a path over `PROMPT_LIMITS.path` loses its
+ * middle, never its final segment (see `shortenPath`). `session` says where:
+ * the title does not name the session, so its name and host get their own row.
+ */
 export function remoteDeletePrompt(input: {
   name: string;
   isFolder?: boolean;
+  path?: string;
+  session?: PromptSessionRef;
 }): PromptRequest {
+  const path = input.path ? shortenPath(input.path) : undefined;
   return {
     title: `Permanently delete ${quoted(input.name)}?`,
     message: input.isFolder
@@ -429,5 +599,17 @@ export function remoteDeletePrompt(input: {
     confirmLabel: "Delete",
     tone: "danger",
     defaultAction: "cancel",
+    ...sessionTargets(input.session, true),
+    ...(path
+      ? {
+          preview: {
+            label:
+              path.omitted > 0
+                ? `Path (${plural(path.omitted, "character", "characters")} in the middle ${path.omitted === 1 ? "is" : "are"} not shown)`
+                : "Path",
+            text: path.text,
+          },
+        }
+      : {}),
   };
 }

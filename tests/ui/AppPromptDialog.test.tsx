@@ -1,9 +1,21 @@
 import { readFileSync } from "node:fs";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import {
+  act,
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { AppPromptDialog } from "../../src/components/ui/dialogs/AppPromptDialog";
 import styles from "../../src/components/ui/dialogs/AppPromptDialog.module.css";
 import type { PromptRequest } from "../../src/utils/prompts/promptQueue";
+import {
+  remoteDeletePrompt,
+  sshScriptRunPrompt,
+} from "../../src/utils/prompts/runPromptRequests";
 
 const TSX_PATH = "src/components/ui/dialogs/AppPromptDialog.tsx";
 const CSS_PATH = "src/components/ui/dialogs/AppPromptDialog.module.css";
@@ -37,6 +49,32 @@ const cancelButton = () => screen.getByTestId("app-prompt-cancel");
 const backdrop = () => screen.getByTestId("app-prompt");
 const preview = () => screen.getByTestId("app-prompt-preview");
 
+/**
+ * A click as the browser itself delivers it: trusted, with `detail` 0 when it
+ * was made from Enter, Space or an assistive action and 1 for a pointer.
+ * Everything a test dispatches is untrusted, so this goes through jsdom's own
+ * dispatch; the checks at the end fail loudly if jsdom stops allowing that.
+ */
+const browserClick = (target: HTMLElement, detail: 0 | 1) => {
+  const implOf = (wrapper: object) => {
+    const symbol = Object.getOwnPropertySymbols(wrapper).find(
+      (candidate) => candidate.description === "impl",
+    );
+    return (wrapper as Record<symbol, any>)[symbol!];
+  };
+  const event = new MouseEvent("click", {
+    bubbles: true,
+    cancelable: true,
+    detail,
+  });
+  implOf(event).isTrusted = true;
+  act(() => {
+    implOf(target)._dispatch(implOf(event));
+  });
+  expect(event.isTrusted).toBe(true);
+  expect(event.detail).toBe(detail);
+};
+
 describe("AppPromptDialog", () => {
   let now = 10_000;
   beforeEach(() => {
@@ -47,11 +85,20 @@ describe("AppPromptDialog", () => {
     vi.spyOn(window, "prompt").mockReturnValue("yes");
   });
   afterEach(() => {
-    expect(window.confirm).not.toHaveBeenCalled();
-    expect(window.alert).not.toHaveBeenCalled();
-    expect(window.prompt).not.toHaveBeenCalled();
-    vi.restoreAllMocks();
-    vi.unstubAllGlobals();
+    // The cleanup runs whatever the checks say, so one failing case cannot
+    // leave its spies, stubs or rendered dialog to fail the cases after it.
+    // (A hook that throws keeps the library's own unmount, which is
+    // registered outside this suite, from running.)
+    try {
+      expect(window.confirm).not.toHaveBeenCalled();
+      expect(window.alert).not.toHaveBeenCalled();
+      expect(window.prompt).not.toHaveBeenCalled();
+    } finally {
+      cleanup();
+      vi.restoreAllMocks();
+      vi.unstubAllGlobals();
+      vi.useRealTimers();
+    }
   });
 
   describe("content", () => {
@@ -267,6 +314,20 @@ describe("AppPromptDialog", () => {
       await waitFor(() => expect(cancelButton()).toHaveFocus());
     });
 
+    it("opens a destructive request on Cancel unless it says otherwise", async () => {
+      const unspecified = open({ tone: "danger" });
+      await waitFor(() => expect(cancelButton()).toHaveFocus());
+      unspecified.unmount();
+
+      const explicit = open({ tone: "danger", defaultAction: "confirm" });
+      await waitFor(() => expect(confirmButton()).toHaveFocus());
+      explicit.unmount();
+
+      // Only danger changes the default: a warning still opens on the action.
+      open({ tone: "warning" });
+      await waitFor(() => expect(confirmButton()).toHaveFocus());
+    });
+
     it("has no Enter or Space shortcut outside the focused button", async () => {
       const { onDecision } = open({
         defaultAction: "cancel",
@@ -332,6 +393,59 @@ describe("AppPromptDialog", () => {
           true,
         );
       }
+    });
+
+    it("holds a click the browser makes from a key to the same delay as the key", () => {
+      const { onDecision } = open();
+      // Typed ahead: on screen for 100 ms, then for 299 ms.
+      now = 10_100;
+      browserClick(confirmButton(), 0);
+      browserClick(cancelButton(), 0);
+      now = 10_299;
+      browserClick(confirmButton(), 0);
+      browserClick(cancelButton(), 0);
+      expect(onDecision).not.toHaveBeenCalled();
+      // Readable: the same click now answers.
+      now = 10_300;
+      browserClick(confirmButton(), 0);
+      expect(onDecision).toHaveBeenCalledExactlyOnceWith({
+        confirmed: true,
+        remember: false,
+      });
+    });
+
+    it("holds such a click on Cancel too, then lets it cancel", () => {
+      const { onDecision } = open({ tone: "danger" });
+      now = 10_299;
+      browserClick(cancelButton(), 0);
+      expect(onDecision).not.toHaveBeenCalled();
+      now = 10_300;
+      browserClick(cancelButton(), 0);
+      expect(onDecision).toHaveBeenCalledExactlyOnceWith({
+        confirmed: false,
+        remember: false,
+      });
+    });
+
+    it("answers a pointer click at once", () => {
+      const { onDecision } = open();
+      now = 10_001;
+      browserClick(confirmButton(), 1);
+      expect(onDecision).toHaveBeenCalledExactlyOnceWith({
+        confirmed: true,
+        remember: false,
+      });
+    });
+
+    it("does not hold a click that a script dispatches, as tests do", () => {
+      const { onDecision } = open();
+      now = 10_001;
+      // fireEvent.click: no pointer count and not trusted.
+      fireEvent.click(confirmButton());
+      expect(onDecision).toHaveBeenCalledExactlyOnceWith({
+        confirmed: true,
+        remember: false,
+      });
     });
   });
 
@@ -517,6 +631,121 @@ describe("AppPromptDialog", () => {
       open({ preview: { label: "Commands", text: "café 日本\n\tok" } });
       expect(preview().textContent).toBe("café 日本\n\tok");
       expect(screen.queryByTestId("app-prompt-preview-note")).toBeNull();
+    });
+
+    it("marks tags, fillers and stray selectors too, and leaves an emoji alone", () => {
+      const tag = String.fromCodePoint(0xe0041);
+      const filler = String.fromCodePoint(0x3164);
+      const selector = String.fromCodePoint(0xfe0f);
+      const heart = `${String.fromCodePoint(0x2764)}${selector}`;
+      open({
+        preview: {
+          label: "Text to paste",
+          text: `rm a${tag}b ${filler} c${selector} ${heart}`,
+        },
+      });
+      expect(preview().textContent).toBe(
+        `rm a⟨U+E0041⟩b ⟨U+3164⟩ c⟨U+FE0F⟩ ${heart}`,
+      );
+      expect(screen.getByTestId("app-prompt-preview-note")).toBeInTheDocument();
+    });
+
+    it("shows a line feed at the very end, without the note", () => {
+      open({
+        preview: { label: "Text to paste", text: "cd /srv\nrm -rf cache\n" },
+      });
+      expect(preview().textContent).toBe("cd /srv\nrm -rf cache␊");
+      expect(screen.queryByTestId("app-prompt-preview-note")).toBeNull();
+    });
+
+    it("does not take the end of an excerpt for the end of the text", () => {
+      const long = `${"x".repeat(19_999)}\n${"y".repeat(50)}\n`;
+      open({ preview: { label: "Text to paste", text: long } });
+      expect(preview().textContent).toBe(long.slice(0, 20_000));
+      expect(preview().textContent!.endsWith("\n")).toBe(true);
+      expect(screen.getByTestId("app-prompt-preview-more")).toBeInTheDocument();
+    });
+
+    it("keeps the preview left to right in a right-to-left layout", () => {
+      document.documentElement.dir = "rtl";
+      try {
+        open();
+        expect(preview()).toHaveAttribute("dir", "ltr");
+      } finally {
+        document.documentElement.removeAttribute("dir");
+      }
+    });
+
+    it("shows the session's host beside its name, above what will run", () => {
+      render(
+        <AppPromptDialog
+          request={sshScriptRunPrompt({
+            script: { name: "Disk usage" },
+            command: COMMAND,
+            session: { name: "Production web", hostname: "10.0.0.5" },
+          })}
+          onDecision={vi.fn()}
+        />,
+      );
+      const where = screen.getByRole("region", { name: "Session" });
+      expect(where).toBe(screen.getByTestId("app-prompt-targets"));
+      expect(within(where).getAllByRole("listitem")).toHaveLength(1);
+      expect(where).toHaveTextContent("Production web 10.0.0.5");
+      expect(
+        where.compareDocumentPosition(preview()) &
+          Node.DOCUMENT_POSITION_FOLLOWING,
+      ).toBeTruthy();
+      // The title is the one the call sites and the e2e spec know.
+      expect(
+        screen.getByRole("heading", {
+          name: 'Run "Disk usage" on Production web?',
+        }),
+      ).toBeInTheDocument();
+    });
+
+    it("keeps a hostile host on one line, with its hidden characters marked, and bounded", () => {
+      const host = `10.0.0.5${String.fromCodePoint(0x200b)}\n${"x".repeat(500)}`;
+      render(
+        <AppPromptDialog
+          request={sshScriptRunPrompt({
+            script: { name: "Disk usage" },
+            command: COMMAND,
+            session: { name: "Production web", hostname: host },
+          })}
+          onDecision={vi.fn()}
+        />,
+      );
+      const row = within(
+        screen.getByRole("region", { name: "Session" }),
+      ).getByRole("listitem");
+      expect(
+        row.textContent!.startsWith("Production web 10.0.0.5⟨U+200B⟩ x"),
+      ).toBe(true);
+      expect(row.textContent).not.toContain("\n");
+      expect(row.textContent!.length).toBeLessThanOrEqual(
+        "Production web ".length + 121,
+      );
+    });
+
+    it("shows a remote path under the name, with its hidden characters marked", async () => {
+      const path = `/srv/${String.fromCodePoint(0x202e)}txt.exe\r/notes.txt`;
+      const onDecision = vi.fn();
+      render(
+        <AppPromptDialog
+          request={remoteDeletePrompt({ name: "notes.txt", path })}
+          onDecision={onDecision}
+        />,
+      );
+      const region = screen.getByRole("region", { name: "Path" });
+      expect(region).toBe(preview());
+      expect(region.textContent).toBe("/srv/⟨U+202E⟩txt.exe␍\n/notes.txt");
+      expect(region).toHaveAttribute("dir", "ltr");
+      expect(
+        screen.getByRole("heading", {
+          name: 'Permanently delete "notes.txt"?',
+        }),
+      ).toBeInTheDocument();
+      await waitFor(() => expect(cancelButton()).toHaveFocus());
     });
 
     it("bounds the list of targets and says how many more there are", () => {
