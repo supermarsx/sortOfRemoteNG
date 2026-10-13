@@ -294,6 +294,12 @@ fn complete_http_basic_auth(
     (1, panicked)
 }
 
+// Chromium answers both challenges itself from one username/password pair.
+// NTLM, Negotiate and unknown schemes never reach the credential hook.
+fn http_auth_scheme(scheme: &str) -> bool {
+    scheme.eq_ignore_ascii_case("basic") || scheme.eq_ignore_ascii_case("digest")
+}
+
 fn auth_challenge_text(value: Option<&CefString>, max: usize) -> Option<String> {
     let value = value?.as_slice()?;
     if value.is_empty() || value.len() > max { return None; }
@@ -319,6 +325,8 @@ pub trait NativeDocumentHooks: Send + Sync {
     /// Separate from form login and proxy credentials. Default denies. Native
     /// owners must recheck their live grant and invoke delivery synchronously
     /// at most once, without retaining the callback or performing database IO.
+    /// `challenge.scheme` is `basic` or `digest` in the server's letter case;
+    /// the owner decides which it answers. No other scheme is passed here.
     fn with_http_basic_auth(
         &self,
         _challenge: &NativeHttpAuthChallenge<'_>,
@@ -1761,7 +1769,7 @@ impl Shared {
         host: Option<&CefString>,
         port: i32,
         scheme: Option<&CefString>,
-        callback: Option<&AuthCallback>,
+        callback: Option<&impl HttpAuthCompletion>,
     ) -> i32 {
         // Observe poisoned/revoked session state even for malformed callbacks.
         let live = self.current() && self.accepts(browser);
@@ -1773,7 +1781,7 @@ impl Shared {
                 auth_challenge_text(scheme, 32),
                 u16::try_from(port).ok().filter(|port| *port != 0),
             ) else { return; };
-            if !scheme.eq_ignore_ascii_case("basic") { return; }
+            if !http_auth_scheme(&scheme) { return; }
             let Some(hooks) = self.hooks.as_ref() else { return; };
             let session = match self.session.lock() {
                 Ok(session) => session,
@@ -3679,6 +3687,70 @@ mod tests {
             identity: policy.identity(), origin_url: "https://fixture.invalid/",
             host: "fixture.invalid", port: 443, scheme: "basic",
         }, &mut |_, _| panic!("default hook must not release credentials")));
+    }
+
+    // Finding A1, host half: only `basic` reached the hook, so a saved Digest
+    // login could never be answered. Chromium computes the digest response.
+    #[tokio::test]
+    async fn digest_challenges_reach_the_auth_hook_and_other_schemes_never_do() {
+        use sorng_protocols::origin_browser::NativeHostReadiness;
+        use std::cell::Cell;
+        #[derive(Default)]
+        struct Completion { continued: Cell<usize>, cancelled: Cell<usize> }
+        impl HttpAuthCompletion for Completion {
+            fn continue_with(&self, _: &str, _: &str) { self.continued.set(self.continued.get() + 1); }
+            fn cancel(&self) { self.cancelled.set(self.cancelled.get() + 1); }
+        }
+        #[derive(Default)]
+        struct Hooks(Mutex<Vec<String>>);
+        impl NativeDocumentHooks for Hooks {
+            fn on_main_document(&self, _: &BrowserIdentity, _: u64) {}
+            fn with_http_basic_auth(
+                &self,
+                challenge: &NativeHttpAuthChallenge<'_>,
+                deliver: &mut dyn FnMut(&str, &str),
+            ) -> bool {
+                self.0.lock().unwrap().push(challenge.scheme.to_owned());
+                deliver("synthetic-user", "synthetic-password");
+                true
+            }
+        }
+        let hooks = Arc::new(Hooks::default());
+        let mut shared = fixture(Arc::new(Sink(Mutex::new(Vec::new())))).await;
+        shared.hooks = Some(hooks.clone());
+        shared.state.lock().unwrap().browser_id = Some(41);
+        {
+            // Pure admission fixture, never evidence of live containment.
+            let mut session = shared.session.lock().unwrap();
+            let report = NativeHostReadiness::Ready {
+                profile_key: session.policy().profile_key().to_owned(),
+                proxy_endpoint: session.proxy_endpoint(),
+            };
+            session.report_host(&shared.identity, report).unwrap();
+        }
+        let browser = focus_browser(1, 41);
+        let url = CefString::from("https://fixture.invalid/admin");
+        let host = CefString::from("fixture.invalid");
+        let challenge = |scheme: &str| {
+            let completion = Completion::default();
+            let decision = shared.http_basic_auth(
+                Some(&browser), Some(&url), Some(&host), 443,
+                Some(&CefString::from(scheme)), Some(&completion),
+            );
+            assert_eq!(decision, 1);
+            (completion.continued.get(), completion.cancelled.get())
+        };
+        let answered = ["basic", "Basic", "digest", "Digest", "DIGEST"];
+        for scheme in answered {
+            assert_eq!(challenge(scheme), (1, 0), "{scheme}");
+        }
+        assert_eq!(*hooks.0.lock().unwrap(), answered);
+        // Chromium cannot answer these from a saved password, and an unknown
+        // scheme must not learn that one exists.
+        for scheme in ["ntlm", "Negotiate", "bearer", "digest-sha-256", "basicx", " digest", ""] {
+            assert_eq!(challenge(scheme), (0, 1), "{scheme}");
+        }
+        assert_eq!(hooks.0.lock().unwrap().len(), answered.len());
     }
     use sorng_protocols::origin_browser::OriginBrowserPolicy;
     use sorng_protocols::private_forward_proxy::{Authority, DialFuture, ProxyLimits};
