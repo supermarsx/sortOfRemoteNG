@@ -156,6 +156,15 @@ mod tests {
     }
 
     #[test]
+    fn xslt_opt_out_keeps_inherited_blink_disables_without_duplicates() {
+        assert_eq!(disabled_blink_features(""), "XSLT");
+        assert_eq!(disabled_blink_features("Other"), "Other,XSLT");
+        for value in ["XSLT", "Other,XSLT"] {
+            assert_eq!(disabled_blink_features(value), value);
+        }
+    }
+
+    #[test]
     fn upgrades_eager_only_policy_with_the_companion_engine_feature() {
         assert_eq!(
             disabled_features("RecordLockAcquisitionTime,PreemptiveSodaDownload"),
