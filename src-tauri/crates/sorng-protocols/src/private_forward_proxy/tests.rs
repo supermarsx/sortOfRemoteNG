@@ -619,6 +619,8 @@ async fn over_capacity_clients_never_delay_an_admitted_clients_accept() {
             refused += 1;
         }
     }
+    // How many depends on how quickly this real listener handed the flood over;
+    // the accept tests pin the cap itself, without a clock.
     assert!(
         (MAX_PENDING_REFUSALS..=FLOOD).contains(&refused),
         "{refused}"

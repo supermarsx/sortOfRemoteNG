@@ -2,7 +2,7 @@ use super::*;
 use std::cell::RefCell;
 use std::collections::VecDeque;
 use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::{Mutex, Once};
+use std::sync::{Mutex, Once, Weak};
 use tokio::io::DuplexStream;
 use tokio::sync::{mpsc, Notify, Semaphore};
 use tokio::time::{timeout, Instant};
@@ -70,11 +70,19 @@ mod captured {
 struct Script {
     accept_faults: Mutex<VecDeque<io::Error>>,
     bind_faults: Mutex<VecDeque<io::Error>>,
+    // Real connections that the test accepted itself; see `Probe::hand_over`.
+    handed_over: Mutex<VecDeque<TcpStream>>,
     wake: Notify,
 }
 
+/// A listener that its relay released, still bound, until the source that
+/// bound it binds that port again.
+type Parked = Mutex<Option<TcpListener>>;
+
 struct FaultListener {
-    listener: TcpListener,
+    // `None` only once dropped.
+    listener: Option<TcpListener>,
+    parked: Weak<Parked>,
     script: Arc<Script>,
     failed: mpsc::UnboundedSender<Instant>,
 }
@@ -90,27 +98,71 @@ impl AcceptListener for FaultListener {
                     let _ = self.failed.send(Instant::now());
                     return Err(error);
                 }
+                // Never a wait: consecutive accepts return every handed-over
+                // connection within one turn of the relay's accept loop.
+                let handed_over = self.script.handed_over.lock().unwrap().pop_front();
+                if let Some(client) = handed_over {
+                    let peer = client.peer_addr()?;
+                    return Ok((client, peer));
+                }
                 tokio::select! {
                     biased;
                     _ = self.script.wake.notified() => {},
-                    result = self.listener.accept() => return result,
+                    result = self.listener.as_ref().unwrap().accept() => return result,
                 }
             }
         }
     }
 }
 
+impl Drop for FaultListener {
+    fn drop(&mut self) {
+        // Released, not closed, for as long as its source keeps the reservation.
+        // Otherwise the socket closes right here, as it does in production.
+        if let (Some(listener), Some(parked)) = (self.listener.take(), self.parked.upgrade()) {
+            *parked.lock().unwrap() = Some(listener);
+        }
+    }
+}
+
 type BindAttempt = (u16, Result<SocketAddr, io::ErrorKind>);
 
-/// Scripted bind failures and a scripted clock around the production loopback
-/// bind. Every requested wait is reported and none of them takes real time: it
-/// either elapses at once or, when held, only once the test releases it.
+/// Scripted bind failures, a scripted clock and a port reservation around the
+/// production loopback bind. Every requested wait is reported and none of them
+/// takes real time: it either elapses at once or, when held, only once the test
+/// releases it.
+///
+/// A loopback port that was really closed is the operating system's to give
+/// away, and nothing promises that the relay can bind it again an instant
+/// later. So a listener the relay releases stays bound, parked with its
+/// source, and binding that port again takes it back: these tests cannot lose
+/// their port. A port whose listener was never released is not parked; binding
+/// it is the production bind and fails as the operating system says. The
+/// reservation ends with the source, so a relay that has ended listens on
+/// nothing.
 struct FaultSource {
     script: Arc<Script>,
     held: Option<Arc<Semaphore>>,
+    // `None`: a released listener closes and every bind is the production bind.
+    parked: Option<Arc<Parked>>,
     failed: mpsc::UnboundedSender<Instant>,
     binds: mpsc::UnboundedSender<BindAttempt>,
     pauses: mpsc::UnboundedSender<Duration>,
+}
+
+impl FaultSource {
+    /// Gives up the reservation: a released port is closed and rebound for
+    /// real, and the operating system may refuse that rebind.
+    fn closing_released_ports(mut self) -> Self {
+        self.parked = None;
+        self
+    }
+
+    fn take_parked(&self, port: u16) -> Option<(TcpListener, SocketAddr)> {
+        let mut parked = self.parked.as_ref()?.lock().unwrap();
+        let address = parked.as_ref()?.local_addr().ok()?;
+        (address.port() == port).then(|| (parked.take().unwrap(), address))
+    }
 }
 
 impl ListenerSource for FaultSource {
@@ -120,7 +172,10 @@ impl ListenerSource for FaultSource {
         let fault = self.script.bind_faults.lock().unwrap().pop_front();
         let bound = match fault {
             Some(error) => Err(error),
-            None => LoopbackSource.bind(port).await,
+            None => match self.take_parked(port) {
+                Some(parked) => Ok(parked),
+                None => LoopbackSource.bind(port).await,
+            },
         };
         let attempt = bound
             .as_ref()
@@ -129,7 +184,8 @@ impl ListenerSource for FaultSource {
         let _ = self.binds.send((port, attempt));
         let (listener, address) = bound?;
         let listener = FaultListener {
-            listener,
+            listener: Some(listener),
+            parked: self.parked.as_ref().map(Arc::downgrade).unwrap_or_default(),
             script: self.script.clone(),
             failed: self.failed.clone(),
         };
@@ -162,6 +218,7 @@ fn rig(hold_clock: bool) -> (FaultSource, Probe) {
     let source = FaultSource {
         script: script.clone(),
         held: hold_clock.then(|| gate.clone()),
+        parked: Some(Arc::default()),
         failed: failed_tx,
         binds: binds_tx,
         pauses: pauses_tx,
@@ -189,6 +246,13 @@ impl Probe {
             .into_iter()
             .map(|kind| io::Error::new(kind, FAULT_TEXT));
         self.script.bind_faults.lock().unwrap().extend(faults);
+    }
+
+    /// Gives the relay connections as though its listener had accepted them,
+    /// and all of them before its accept loop can wait even once.
+    fn hand_over(&self, clients: impl IntoIterator<Item = TcpStream>) {
+        self.script.handed_over.lock().unwrap().extend(clients);
+        self.script.wake.notify_one();
     }
 
     /// Lets exactly one held wait elapse.
@@ -227,7 +291,7 @@ struct Relay {
 }
 
 /// The production start path, with only the listener source substituted.
-async fn start(source: FaultSource) -> io::Result<Relay> {
+async fn start(source: FaultSource, limits: ProxyLimits) -> io::Result<Relay> {
     let (upstream_tx, upstream) = mpsc::unbounded_channel();
     let dials = Arc::new(AtomicUsize::new(0));
     let calls = dials.clone();
@@ -242,7 +306,7 @@ async fn start(source: FaultSource) -> io::Result<Relay> {
         source,
         dialer,
         exact_authority_grant(Authority::parse(DESTINATION).unwrap()),
-        ProxyLimits::default(),
+        limits,
     )
     .await?;
     Ok(Relay {
@@ -261,16 +325,15 @@ struct Fixture {
 
 impl Fixture {
     async fn new() -> Self {
-        Self::with_clock(false).await
+        Self::started(rig(false), ProxyLimits::default()).await
     }
 
     async fn with_held_clock() -> Self {
-        Self::with_clock(true).await
+        Self::started(rig(true), ProxyLimits::default()).await
     }
 
-    async fn with_clock(hold_clock: bool) -> Self {
-        let (source, probe) = rig(hold_clock);
-        let Ok(relay) = start(source).await else {
+    async fn started((source, probe): (FaultSource, Probe), limits: ProxyLimits) -> Self {
+        let Ok(relay) = start(source, limits).await else {
             panic!("an unscripted loopback bind failed");
         };
         Self::assemble(relay, probe)
@@ -377,6 +440,33 @@ async fn roundtrip(client: &mut TcpStream, upstream: &mut DuplexStream) {
 async fn closed(stream: &mut (impl AsyncRead + Unpin)) {
     let result = timeout(DEADLINE, stream.read(&mut [0u8; 1])).await.unwrap();
     assert!(matches!(result, Ok(0)) || result.is_err());
+}
+
+/// Real loopback connections accepted by the test and not by a relay: the
+/// peers' ends and the accepted ends, in the same order.
+async fn accepted(count: usize) -> (Vec<TcpStream>, Vec<TcpStream>) {
+    let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).await.unwrap();
+    let address = listener.local_addr().unwrap();
+    let mut peers = Vec::new();
+    let mut clients = Vec::new();
+    timeout(DEADLINE, async {
+        for _ in 0..count {
+            peers.push(TcpStream::connect(address).await.unwrap());
+            clients.push(listener.accept().await.unwrap().0);
+        }
+    })
+    .await
+    .unwrap();
+    (peers, clients)
+}
+
+/// Everything a peer was sent before its connection ended.
+async fn sent(peer: &mut TcpStream) -> Vec<u8> {
+    let mut bytes = Vec::new();
+    let _ = timeout(DEADLINE, peer.read_to_end(&mut bytes))
+        .await
+        .unwrap();
+    bytes
 }
 
 /// Nothing a relay logged may carry native error text, a credential or a port.
@@ -573,7 +663,7 @@ async fn initial_bind_failing_twice_then_succeeding_starts_a_working_relay() {
     captured::start();
     let (source, probe) = rig(false);
     probe.fail_binds([io::ErrorKind::AddrInUse; 2]);
-    let Ok(relay) = start(source).await else {
+    let Ok(relay) = start(source, ProxyLimits::default()).await else {
         panic!("the third bind attempt must start the relay");
     };
     let mut fixture = Fixture::assemble(relay, probe);
@@ -603,7 +693,7 @@ async fn initial_bind_exhaustion_returns_and_logs_only_the_last_kind() {
         io::ErrorKind::AddrInUse,
         io::ErrorKind::PermissionDenied,
     ]);
-    let Err(error) = start(source).await else {
+    let Err(error) = start(source, ProxyLimits::default()).await else {
         panic!("three failed binds must not start a relay");
     };
     assert_eq!(error.kind(), io::ErrorKind::PermissionDenied);
@@ -626,7 +716,7 @@ async fn initial_bind_exhaustion_returns_and_logs_only_the_last_kind() {
 async fn dropping_a_start_cancels_its_bind_backoff() {
     let (source, mut probe) = rig(true);
     probe.fail_binds([io::ErrorKind::AddrInUse]);
-    let mut starting = Box::pin(start(source));
+    let mut starting = Box::pin(start(source, ProxyLimits::default()));
     assert!(futures_util::poll!(starting.as_mut()).is_pending());
     assert_eq!(probe.next_bind().await, (0, Err(io::ErrorKind::AddrInUse)));
     assert_eq!(probe.next_pause().await, Duration::from_millis(50));
@@ -687,6 +777,66 @@ async fn terminal_accept_failure_rebinds_the_same_port_and_keeps_serving() {
     assert_eq!(captured::count(log::Level::Error, ""), 0);
     assert_logs_only_kinds(&[fixture.secret(), credentials, endpoint.port().to_string()]);
     fixture.proxy.stop().await.unwrap();
+}
+
+#[tokio::test]
+async fn a_released_port_stays_reserved_until_the_relay_binds_it_again() {
+    // What keeps the rebind tests independent of every other socket: for as
+    // long as the relay is between its release and its rebind, nobody else
+    // can bind the port.
+    let mut fixture = Fixture::with_held_clock().await;
+    let endpoint = fixture.proxy.local_addr();
+    assert_eq!(fixture.probe.next_bind().await, (0, Ok(endpoint)));
+    fixture.inject(io::ErrorKind::PermissionDenied, 1);
+    fixture.next_error().await;
+    assert_eq!(fixture.probe.next_pause().await, Duration::from_millis(100));
+    assert!(TcpListener::bind(endpoint).await.is_err());
+    fixture.probe.release_clock();
+    assert_eq!(
+        fixture.probe.next_bind().await,
+        (endpoint.port(), Ok(endpoint))
+    );
+    let (mut client, mut peer) = fixture.connect().await;
+    roundtrip(&mut client, &mut peer).await;
+    fixture.proxy.stop().await.unwrap();
+}
+
+#[tokio::test]
+async fn a_really_closed_port_is_rebound_by_the_production_bind_under_a_live_tunnel() {
+    // Every other test keeps its released port reserved. Here the operating
+    // system decides: the listener is really closed while a tunnel it accepted
+    // stays open, and the production bind must then get the same port back.
+    // When ephemeral ports are scarce the OS refuses that with AddrInUse,
+    // which is not the relay's doing: then, and only then, the scenario
+    // starts over on a fresh port.
+    for _ in 0..5 {
+        let (source, probe) = rig(false);
+        let source = source.closing_released_ports();
+        let mut fixture = Fixture::started((source, probe), ProxyLimits::default()).await;
+        let endpoint = fixture.proxy.local_addr();
+        assert_eq!(fixture.probe.next_bind().await, (0, Ok(endpoint)));
+        let (mut client, mut peer) = fixture.connect().await;
+        fixture.inject(io::ErrorKind::PermissionDenied, 1);
+        fixture.next_error().await;
+        assert_eq!(fixture.probe.next_pause().await, Duration::from_millis(100));
+        match fixture.probe.next_bind().await {
+            (port, Ok(address)) => {
+                assert_eq!((port, address), (endpoint.port(), endpoint));
+                assert!(fixture.proxy.is_running());
+                roundtrip(&mut client, &mut peer).await;
+                // A real peer reaches the rebound listener at the same endpoint.
+                let (mut next_client, mut next_peer) = fixture.connect().await;
+                roundtrip(&mut next_client, &mut next_peer).await;
+                assert_eq!(fixture.dials.load(Ordering::SeqCst), 2);
+                fixture.proxy.stop().await.unwrap();
+                return;
+            }
+            (port, Err(kind)) => {
+                assert_eq!((port, kind), (endpoint.port(), io::ErrorKind::AddrInUse));
+            }
+        }
+    }
+    panic!("the operating system refused the rebind of every really closed port");
 }
 
 #[tokio::test]
@@ -821,4 +971,54 @@ async fn revocation_interrupts_every_rebind_backoff() {
         closed(&mut client).await;
         closed(&mut peer).await;
     }
+}
+
+#[tokio::test]
+async fn at_most_32_over_capacity_refusals_are_pending_and_the_rest_are_dropped() {
+    const FLOOD: usize = 40;
+    let limits = ProxyLimits {
+        max_clients: 1,
+        // The silent holder below has to outlast this test, not time out in it.
+        header_timeout: Duration::from_secs(120),
+        ..ProxyLimits::default()
+    };
+    let mut fixture = Fixture::started(rig(false), limits).await;
+    // A silent peer takes the only client slot and forty more follow it, all
+    // accepted within one turn of the accept loop. No refusal can finish, or
+    // even start, before the last of them is accepted, so how many are
+    // answered does not depend on time.
+    let (mut peers, clients) = accepted(1 + FLOOD).await;
+    fixture.probe.hand_over(clients);
+    let _holder = peers.remove(0);
+    let mut replies = Vec::new();
+    for peer in &mut peers {
+        replies.push(sent(peer).await);
+    }
+    // Exactly the first 32 are answered; the others are closed without a byte.
+    for (index, reply) in replies.iter().enumerate() {
+        if index < 32 {
+            assert!(reply.starts_with(b"HTTP/1.1 503 "), "peer {index}");
+        } else {
+            assert!(reply.is_empty(), "peer {index}");
+        }
+    }
+    let diagnostics = fixture.proxy.diagnostics();
+    assert_eq!(diagnostics.accepted_connections, 1 + FLOOD as u32);
+    assert_eq!(diagnostics.capacity_refusals, FLOOD as u32);
+    assert_eq!(fixture.dials.load(Ordering::SeqCst), 0);
+    // The bound is on refusals pending at once, not on refusals ever made:
+    // once those peers are gone, an over-capacity socket is answered again.
+    drop(peers);
+    timeout(DEADLINE, async {
+        loop {
+            let (mut late, client) = accepted(1).await;
+            fixture.probe.hand_over(client);
+            if sent(&mut late[0]).await.starts_with(b"HTTP/1.1 503 ") {
+                break;
+            }
+        }
+    })
+    .await
+    .expect("finished refusals never made room for another");
+    fixture.proxy.stop().await.unwrap();
 }

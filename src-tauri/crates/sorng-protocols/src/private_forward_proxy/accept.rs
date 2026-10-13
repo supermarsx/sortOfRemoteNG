@@ -296,14 +296,26 @@ mod tests {
 
     #[tokio::test]
     async fn loopback_source_rebinds_exactly_the_released_port() {
-        let (listener, address) = LoopbackSource.bind(0).await.unwrap();
-        assert_eq!(address.ip(), Ipv4Addr::LOCALHOST);
-        assert_ne!(address.port(), 0);
-        // A port that is still held is an error, never a second endpoint.
-        assert!(LoopbackSource.bind(address.port()).await.is_err());
-        drop(listener);
-        let (_rebound, rebound_address) = LoopbackSource.bind(address.port()).await.unwrap();
-        assert_eq!(rebound_address, address);
+        // A released port is the operating system's to give away, and when
+        // ephemeral ports are scarce it refuses the rebind with AddrInUse.
+        // That says nothing about this source: then, and only then, the test
+        // starts over on a fresh port.
+        for _ in 0..5 {
+            let (listener, address) = LoopbackSource.bind(0).await.unwrap();
+            assert_eq!(address.ip(), Ipv4Addr::LOCALHOST);
+            assert_ne!(address.port(), 0);
+            // A port that is still held is an error, never a second endpoint.
+            assert!(LoopbackSource.bind(address.port()).await.is_err());
+            drop(listener);
+            match LoopbackSource.bind(address.port()).await {
+                Ok((_rebound, rebound_address)) => {
+                    assert_eq!(rebound_address, address);
+                    return;
+                }
+                Err(error) => assert_eq!(error.kind(), io::ErrorKind::AddrInUse),
+            }
+        }
+        panic!("the operating system refused the rebind of every released port");
     }
 
     #[cfg(windows)]
