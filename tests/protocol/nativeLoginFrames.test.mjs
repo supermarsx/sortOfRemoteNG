@@ -198,6 +198,30 @@ test("an authorized iframe asks for nothing until the top document has finished 
   await completed(f);
 });
 
+// The routing window of a top document is not opened for a frame.
+test("an authorized iframe stays bound to the address it was created at when it routes before its form exists", async t => {
+  const f = fixture(t, { delayed: true });
+  await delay(60);
+  f.win.history.pushState(null, "", "/login/routed");
+  f.doc.body.innerHTML = loginHtml;
+  await delay(700);
+  assert.equal(f.signals.includes("form-prepare"), false);
+  assert.deepEqual(f.keys, []);
+  assert.equal(f.submits(), 0);
+  assert.deepEqual(f.errors, []);
+});
+
+test("a hashchange event in an authorized iframe ends its attempt even when its address did not change", async t => {
+  const f = fixture(t, { pauseAt: "form" });
+  await until(() => f.signals.includes("form"), () => JSON.stringify(f.signals));
+  f.win.dispatchEvent(new f.win.Event("hashchange"));
+  assert.equal(f.send("form"), false);
+  await delay(120);
+  assert.deepEqual(f.keys, []);
+  assert.equal(f.submits(), 0);
+  assert.deepEqual(f.errors, []);
+});
+
 for (const [label, peer] of [
   ["duplicate name", { name: "appFrame" }],
   ["mixed name/id", { id: "appFrame" }],

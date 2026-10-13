@@ -1420,6 +1420,8 @@ function virtualClock() {
     freezePageTimers() {
       frozen = true;
     },
+    // Page timers and intervals that are still scheduled.
+    pagePending: () => [...jobs.values()].filter((job) => job.page).length,
     async advance(ms) {
       const end = now + ms;
       for (let count = 0; count < 100000; count++) {
@@ -1591,7 +1593,7 @@ function loginDocument(t, clock, options = {}) {
             password,
             true,
             deadline,
-            savedOptions(),
+            { ...savedOptions(), ...options.saved },
             name,
           ),
     ]);
@@ -1703,6 +1705,11 @@ function loginDocument(t, clock, options = {}) {
     deliver,
     press,
     paste,
+    load,
+    // `document.open()`: interactive again until the next load end.
+    reopen() {
+      readyState = "interactive";
+    },
     field: element,
     submits: () => submits,
   };
@@ -2112,3 +2119,431 @@ for (const prevented of [false, true]) {
     assert.equal(f.submits(), 0);
   });
 }
+
+// ---------------------------------------------------------------------------
+// The address an attempt is bound to. A single-page application opened at its
+// root routes itself to its login view inside the same document before it
+// renders the form (Portainer: "/" becomes "/#!/auth"). Until the form is
+// found that only moves the address the attempt will be bound to; from then on
+// any change of address ends the attempt.
+// ---------------------------------------------------------------------------
+const ROOT = "https://device.test/";
+const shell = '<div id="view">Loading...</div>';
+// As such applications render it: a form with neither action nor method.
+const routedLogin =
+  '<form><input id="username"><input id="password" type="password"><button id="login" type="submit">Login</button></form>';
+// The page's own script, on the same clock as everything else.
+const pageAt = (f, ms, task) => f.clock.host(task, ms);
+const render = (f) => {
+  f.doc.getElementById("view").innerHTML = routedLogin;
+};
+const routes = {
+  hash: (f, to = "#!/auth") => {
+    f.w.location.hash = to;
+  },
+  history: (f, to = "/login") => f.w.history.pushState(null, "", to),
+};
+const stages = (f) => f.signals.filter((value) => !value.startsWith("type|"));
+
+for (const kind of ["hash", "history"]) {
+  test(`a page opened at its root that routes itself to its login view (${kind}) before it renders the form is signed in`, async (t) => {
+    const clock = virtualClock();
+    const f = loginDocument(t, clock, { url: ROOT, html: shell });
+    pageAt(f, 30, () => routes[kind](f));
+    pageAt(f, 200, () => render(f));
+    await clock.advance(190);
+    assert.notEqual(f.w.location.href, ROOT);
+    // Nothing is asked of the host while the page is still routing.
+    assert.deepEqual(f.signals, []);
+    assert.deepEqual(f.host.deliveries, []);
+    await loggedIn(f, 3000);
+  });
+}
+
+test("events that arrive late, for a route change made before the form was found, do not end the attempt", async (t) => {
+  const clock = virtualClock();
+  const f = loginDocument(t, clock, { url: ROOT, html: shell, loadAt: 1000 });
+  // The address changes at once; its `popstate` and `hashchange` can be
+  // delivered after load end, when the form has been found and bound.
+  pageAt(f, 30, () => f.w.history.replaceState(null, "", "/#!/auth"));
+  pageAt(f, 200, () => render(f));
+  pageAt(f, 1001, () => f.w.dispatchEvent(new f.w.PopStateEvent("popstate")));
+  pageAt(f, 1002, () =>
+    f.w.dispatchEvent(
+      new f.w.HashChangeEvent("hashchange", {
+        oldURL: ROOT,
+        newURL: `${ROOT}#!/auth`,
+      }),
+    ),
+  );
+  await clock.advance(900);
+  assert.deepEqual(f.signals, []);
+  await loggedIn(f, 3000);
+});
+
+test("an event that names the bound address as the one left ends the attempt, even with the page back on it", async (t) => {
+  const clock = virtualClock();
+  const f = loginDocument(t, clock, {
+    holdStage: { "form-prepare": 5000 },
+  });
+  const bound = f.w.location.href;
+  pageAt(f, 500, () => {
+    f.w.history.replaceState(null, "", "#elsewhere");
+    f.w.history.replaceState(null, "", bound);
+    f.w.dispatchEvent(
+      new f.w.HashChangeEvent("hashchange", {
+        oldURL: bound,
+        newURL: `${bound}#elsewhere`,
+      }),
+    );
+  });
+  await clock.advance(600);
+  assert.deepEqual(f.signals, ["form-prepare", "form-rejected"]);
+  await clock.advance(6000);
+  assert.deepEqual(f.signals, ["form-prepare", "form-rejected"]);
+  assert.deepEqual(f.host.keys, []);
+});
+
+test("a popstate that follows a move to another address ends the attempt at once", async (t) => {
+  const clock = virtualClock();
+  const f = loginDocument(t, clock, {
+    holdStage: { "form-prepare": 5000 },
+  });
+  pageAt(f, 500, () => {
+    f.w.history.replaceState(null, "", "/elsewhere");
+    f.w.dispatchEvent(new f.w.PopStateEvent("popstate"));
+  });
+  await clock.advance(600);
+  assert.deepEqual(f.signals, ["form-prepare", "form-rejected"]);
+  await clock.advance(6000);
+  assert.deepEqual(f.signals, ["form-prepare", "form-rejected"]);
+  assert.deepEqual(f.host.keys, []);
+});
+
+// Once the form is found the fence is what it always was, at every stage.
+const afterFound = [
+  [
+    "while the prepare grant is held",
+    { holdStage: { "form-prepare": 5000 } },
+    500,
+    ["form-prepare", "form-rejected"],
+  ],
+  [
+    "while the saved fill delay runs",
+    { saved: { fillDelayMs: 3000 } },
+    500,
+    ["form-prepare", "form-rejected"],
+  ],
+  [
+    "while the credential grant is held",
+    { holdStage: { form: 5000 } },
+    500,
+    ["form-prepare", "form", "form-rejected"],
+  ],
+  ["during typing", {}, 300, ["form-prepare", "form", "form-rejected"]],
+  [
+    "while the submit grant is held",
+    { holdStage: { "form-submit": 5000 } },
+    3000,
+    ["form-prepare", "form", "form-submit", "form-rejected"],
+  ],
+];
+for (const kind of ["hash", "history"]) {
+  for (const [label, options, at, expected] of afterFound) {
+    test(`an address change (${kind}) ${label} ends the attempt`, async (t) => {
+      const clock = virtualClock();
+      const f = loginDocument(t, clock, options);
+      pageAt(f, at, () =>
+        routes[kind](f, kind === "hash" ? "#elsewhere" : "/elsewhere"),
+      );
+      await clock.advance(12000);
+      assert.deepEqual(stages(f), expected);
+      assert.equal(f.field("username").value, "");
+      assert.equal(f.field("password").value, "");
+      assert.equal(f.submits(), 0);
+    });
+  }
+}
+
+test("a page that rewrites its address forever without showing a form ends at the detection bound, with nothing requested", async (t) => {
+  const clock = virtualClock();
+  const f = loginDocument(t, clock, { url: ROOT, html: shell });
+  let turn = 0;
+  const rewrite = () => {
+    f.w.location.hash = `#!/step-${++turn}`;
+    pageAt(f, 250, rewrite);
+  };
+  pageAt(f, 30, rewrite);
+  await clock.advance(7900);
+  assert.deepEqual(f.signals, []);
+  await clock.advance(400);
+  assert.ok(f.signals.length > 0);
+  // The window closed with the attempt: a form that shows up now is ignored.
+  render(f);
+  await clock.advance(5000);
+  assert.ok(f.signals.every((value) => value === "form-rejected"));
+  assert.deepEqual(f.host.deliveries, []);
+  assert.deepEqual(f.host.keys, []);
+});
+
+test("a page that keeps rewriting its address after its form is found is not signed in", async (t) => {
+  const clock = virtualClock();
+  const f = loginDocument(t, clock, { url: ROOT, html: shell });
+  let turn = 0;
+  const rewrite = () => {
+    f.w.location.hash = `#!/step-${++turn}`;
+    pageAt(f, 250, rewrite);
+  };
+  pageAt(f, 30, rewrite);
+  pageAt(f, 300, () => render(f));
+  await clock.advance(10000);
+  assert.equal(stages(f).at(-1), "form-rejected", JSON.stringify(f.signals));
+  assert.equal(f.signals.includes("form-completed"), false);
+  assert.equal(f.field("username").value, "");
+  assert.equal(f.field("password").value, "");
+  assert.equal(f.submits(), 0);
+});
+
+// A document whose load ends several seconds after navigation (seen in the
+// field at 5.5 to 6.5 s): the load gate and the routing window together.
+for (const kind of ["hash", "history"]) {
+  test(`a route change (${kind}) before a load end at 6 s is followed, and the form found after load end is signed in`, async (t) => {
+    const clock = virtualClock();
+    const f = loginDocument(t, clock, { url: ROOT, html: shell, loadAt: 6000 });
+    pageAt(f, 30, () => routes[kind](f));
+    pageAt(f, 6300, () => render(f));
+    await clock.advance(6290);
+    assert.deepEqual(f.signals, []);
+    await loggedIn(f, 3000);
+  });
+
+  test(`a route change (${kind}) after a load end at 5 s is followed too: load end does not close the routing window`, async (t) => {
+    const clock = virtualClock();
+    const f = loginDocument(t, clock, { url: ROOT, html: shell, loadAt: 5000 });
+    pageAt(f, 5500, () => routes[kind](f));
+    pageAt(f, 6000, () => render(f));
+    await clock.advance(5990);
+    assert.notEqual(f.w.location.href, ROOT);
+    assert.deepEqual(f.signals, []);
+    await loggedIn(f, 3000);
+  });
+}
+
+test("with the form rendered before a load end at 6 s, events from the earlier route change that follow load end are ignored", async (t) => {
+  const clock = virtualClock();
+  const f = loginDocument(t, clock, { url: ROOT, html: shell, loadAt: 6000 });
+  pageAt(f, 30, () => f.w.history.replaceState(null, "", "/#!/auth"));
+  pageAt(f, 200, () => render(f));
+  pageAt(f, 6001, () => f.w.dispatchEvent(new f.w.PopStateEvent("popstate")));
+  pageAt(f, 6002, () =>
+    f.w.dispatchEvent(
+      new f.w.HashChangeEvent("hashchange", {
+        oldURL: ROOT,
+        newURL: `${ROOT}#!/auth`,
+      }),
+    ),
+  );
+  await clock.advance(5900);
+  // Nothing is bound or asked before load end.
+  assert.deepEqual(f.signals, []);
+  assert.deepEqual(f.host.deliveries, []);
+  await loggedIn(f, 3000);
+});
+
+test("a page that loads late and never shows a form is given up on, whatever it does to its address", async (t) => {
+  const clock = virtualClock();
+  const f = loginDocument(t, clock, { url: ROOT, html: shell, loadAt: 6000 });
+  pageAt(f, 7000, () => routes.hash(f, "#!/first"));
+  pageAt(f, 9000, () => routes.hash(f, "#!/second"));
+  await clock.advance(14500);
+  assert.ok(f.signals.length > 0);
+  // The window closed with the attempt: a form that shows up now is ignored.
+  render(f);
+  routes.hash(f, "#!/third");
+  await clock.advance(10000);
+  assert.ok(f.signals.every((value) => value === "form-rejected"));
+  assert.deepEqual(f.host.deliveries, []);
+  assert.deepEqual(f.host.keys, []);
+});
+
+// The saved detection time runs from load end, and no form is bound before
+// it: a slow load uses none of that time, and an address change before load
+// end is still routing.
+for (const kind of ["hash", "history"]) {
+  test(`an address change (${kind}) before load end is routing even when the form is already rendered`, async (t) => {
+    const clock = virtualClock();
+    const f = loginDocument(t, clock, { loadAt: 3000 });
+    pageAt(f, 500, () =>
+      routes[kind](f, kind === "hash" ? "#elsewhere" : "/elsewhere"),
+    );
+    await clock.advance(2900);
+    assert.deepEqual(f.signals, []);
+    await loggedIn(f, 3000);
+  });
+}
+
+test("a form that appears 3 s after a load end at 6.5 s is still found and signed in", async (t) => {
+  const clock = virtualClock();
+  const f = loginDocument(t, clock, { url: ROOT, html: shell, loadAt: 6500 });
+  pageAt(f, 30, () => routes.hash(f));
+  pageAt(f, 9500, () => render(f));
+  await clock.advance(9490);
+  assert.deepEqual(f.signals, []);
+  await loggedIn(f, 3000);
+});
+
+// A ten-second load, as seen in the field: one case on each side of the
+// detection time (8 s here), which also ends the routing window.
+test("after a load end at 10 s the address may still change 7 s later, and a form that appears 7.5 s later is signed in", async (t) => {
+  const clock = virtualClock();
+  const f = loginDocument(t, clock, { url: ROOT, html: shell, loadAt: 10000 });
+  pageAt(f, 17000, () => routes.hash(f));
+  pageAt(f, 17500, () => render(f));
+  await clock.advance(17490);
+  assert.deepEqual(f.signals, []);
+  await loggedIn(f, 3000);
+});
+
+test("after a load end at 10 s a form that appears 8.5 s later is not signed in, and nothing is asked", async (t) => {
+  const clock = virtualClock();
+  const f = loginDocument(t, clock, { url: ROOT, html: shell, loadAt: 10000 });
+  pageAt(f, 30, () => routes.hash(f));
+  pageAt(f, 18500, () => render(f));
+  await clock.advance(17900);
+  assert.deepEqual(f.signals, []);
+  await clock.advance(5000);
+  assert.ok(f.signals.length > 0);
+  assert.ok(f.signals.every((value) => value === "form-rejected"));
+  assert.deepEqual(f.host.deliveries, []);
+  assert.equal(f.field("username").value, "");
+});
+
+// One case on each side of the bound of the wait for load end (60 s).
+test("a load end at 58 s followed by the form 3 s later is still in time", async (t) => {
+  const clock = virtualClock();
+  const f = loginDocument(t, clock, { url: ROOT, html: shell, loadAt: 58000 });
+  pageAt(f, 61000, () => render(f));
+  await clock.advance(60990);
+  assert.deepEqual(f.signals, []);
+  await loggedIn(f, 3000);
+});
+
+test("a document that never finishes loading is given up on at the load bound, with nothing requested", async (t) => {
+  const clock = virtualClock();
+  const f = loginDocument(t, clock, {
+    url: ROOT,
+    html: shell,
+    loadAt: Infinity,
+  });
+  pageAt(f, 200, () => render(f));
+  await clock.advance(59000);
+  assert.deepEqual(f.signals, []);
+  await clock.advance(2000);
+  assert.deepEqual(f.signals, ["form-rejected"]);
+  assert.deepEqual(f.host.deliveries, []);
+  assert.deepEqual(f.host.keys, []);
+});
+
+// The longer wait never fights the user: any input in the page ends the
+// attempt, during the load and while the form is still awaited after it.
+test("a user who types during a ten-second load ends the attempt: nothing is asked at load end and the field is left alone", async (t) => {
+  const clock = virtualClock();
+  const f = loginDocument(t, clock, { loadAt: 10000 });
+  await clock.advance(9000);
+  assert.deepEqual(f.signals, []);
+  f.press("username", "x");
+  assert.deepEqual(f.signals, ["form-rejected"]);
+  await clock.advance(20000);
+  assert.deepEqual(f.signals, ["form-rejected"]);
+  assert.deepEqual(f.host.deliveries, []);
+  assert.equal(f.field("username").value, "x");
+  assert.equal(f.field("password").value, "");
+});
+
+test("a user who types elsewhere in the page while the form is still awaited after load end ends the attempt", async (t) => {
+  const clock = virtualClock();
+  const f = loginDocument(t, clock, {
+    url: ROOT,
+    html: `<input id="search">${shell}`,
+    loadAt: 10000,
+  });
+  pageAt(f, 12000, () => render(f));
+  await clock.advance(11000);
+  assert.deepEqual(f.signals, []);
+  f.press("search", "q");
+  await clock.advance(10000);
+  assert.ok(f.signals.length > 0);
+  assert.ok(f.signals.every((value) => value === "form-rejected"));
+  assert.deepEqual(f.host.deliveries, []);
+  assert.equal(f.field("username").value, "");
+  assert.equal(f.field("search").value, "q");
+});
+
+test("a hidden tab that takes ten seconds to load is signed in the same way, with no frame ever painted", async (t) => {
+  const clock = virtualClock();
+  const f = loginDocument(t, clock, {
+    url: ROOT,
+    html: shell,
+    loadAt: 10000,
+    beforeInstall(w) {
+      Object.defineProperty(w.document, "visibilityState", {
+        get: () => "hidden",
+      });
+      Object.defineProperty(w.document, "hidden", { get: () => true });
+      w.document.hasFocus = () => false;
+      w.requestAnimationFrame = () => 0;
+    },
+  });
+  pageAt(f, 30, () => routes.hash(f));
+  pageAt(f, 11000, () => render(f));
+  await clock.advance(10990);
+  assert.deepEqual(f.signals, []);
+  await loggedIn(f, 3000);
+});
+
+// However an attempt ends, nothing of it keeps running.
+for (const [label, options, within] of [
+  ["a completed login", {}, 5000],
+  ["a load that never ended", { loadAt: Infinity }, 61000],
+  [
+    "a form that never appeared",
+    { url: ROOT, html: shell, loadAt: 10000 },
+    19000,
+  ],
+]) {
+  test(`after ${label} no page timer is left and later events do nothing`, async (t) => {
+    const clock = virtualClock();
+    const f = loginDocument(t, clock, options);
+    await clock.advance(within);
+    const said = f.signals.length;
+    assert.ok(
+      ["form-completed", "form-rejected"].includes(f.signals.at(-1)),
+      JSON.stringify(f.signals),
+    );
+    await clock.advance(300);
+    assert.equal(clock.pagePending(), 0);
+    f.load();
+    f.w.dispatchEvent(new f.w.PopStateEvent("popstate"));
+    f.w.dispatchEvent(new f.w.HashChangeEvent("hashchange"));
+    await clock.advance(120000);
+    assert.equal(f.signals.length, said);
+    assert.equal(clock.pagePending(), 0);
+  });
+}
+
+test("a document that was reopened and is completing again asks for nothing once its address has changed", async (t) => {
+  const clock = virtualClock();
+  const f = loginDocument(t, clock, { url: ROOT, html: shell });
+  // `document.open()`, the form written, `document.close()`: found, but
+  // interactive again until the second load end.
+  pageAt(f, 300, () => {
+    f.reopen();
+    render(f);
+  });
+  pageAt(f, 600, () => routes.history(f, "/elsewhere"));
+  pageAt(f, 1000, () => f.load());
+  await clock.advance(5000);
+  assert.ok(f.signals.length > 0);
+  assert.ok(f.signals.every((value) => value === "form-rejected"));
+  assert.deepEqual(f.host.deliveries, []);
+});

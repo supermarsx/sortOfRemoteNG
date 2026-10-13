@@ -172,7 +172,12 @@
     : Promise.resolve(fillField(element, value, guard));
   const doc = document;
   const origin = location.origin;
-  const initialHref = location.href;
+  // The address an attempt is bound to. A modular form in the top document is
+  // bound when its form is found: until then `routing` is true, nothing has
+  // been requested, and a single-page application may still route to its
+  // login view inside the document it was loaded in ("/" becomes "/#!/auth").
+  let initialHref = location.href;
+  let routing = false;
   const topDocument = window.top === window;
   let loginFrame = null;
   const parentNavigationEvents = ["pagehide", "unload", "hashchange", "popstate"];
@@ -259,7 +264,7 @@
       currentLoginContext() &&
       (location.protocol === "https:" || location.protocol === "http:") &&
       location.origin === origin &&
-      (configuration?.provider || location.href === initialHref)
+      (configuration?.provider || routing || location.href === initialHref)
     );
   }
   // Native key events start only after the main document's load end, and
@@ -1547,12 +1552,17 @@
       return now() - quietSince >= 250;
     }
     function prepare() {
-      if (done || phase !== "found" || !mainDocumentLoaded()) return;
+      if (done || phase !== "found") return;
+      // An address change since the form was found ends the attempt before
+      // anything is requested, also when no event announced it.
+      if (!current()) return finish(false);
+      if (!mainDocumentLoaded()) return;
       phase = "form-prepare";
       bound(GRANT_WAIT_MS);
       notify(phase);
     }
     async function tick() {
+      if (phase === "readiness") return detect();
       if (phase === "found") return prepare();
       if (done || busy || !["waiting-fill", "waiting-submit"].includes(phase))
         return;
@@ -1688,9 +1698,23 @@
         finish(false);
       }
     }
-    startTimer = setTimeout(() => {
+    routing = topDocument;
+    // In a top document, finding the form has the saved detection time from
+    // load end, not from navigation: a document that is slow to load has used
+    // none of it. The wait for load end has its own bound, and nothing is
+    // bound or asked during it.
+    bound(SETTLE_WAIT_MS);
+    function detect() {
+      if (done || phase !== "readiness") return;
+      if (topDocument && !mainDocumentLoaded()) return;
+      phase = "detecting";
+      clearTimeout(lifetime);
       waitForSelectedLoginForm(config.selectors, config.readiness).then(
         (result) => {
+          // Found, or detection gave up: the attempt is bound to the address
+          // it has now, and from here on any change of address ends it.
+          if (routing) initialHref = location.href;
+          routing = false;
           if (!current() || !result.ok) return finish(false);
           // The detection deadline ends here: it governed finding the form.
           phase = "found";
@@ -1699,7 +1723,8 @@
           prepare();
         },
       );
-    }, 0);
+    }
+    startTimer = setTimeout(detect, 0);
     // Each step runs on the event that enables it: a grant, the end of the
     // fill, load end. The interval only serves time-based conditions.
     timer = setInterval(tick, 100);
@@ -1710,8 +1735,21 @@
     };
     window.addEventListener("pagehide", abort, { once: true });
     window.addEventListener("unload", abort, { once: true });
-    window.addEventListener("hashchange", abort);
-    window.addEventListener("popstate", abort);
+    // While the form is still being looked for an address change only moves
+    // the address the attempt will be bound to. An event can also arrive late,
+    // for a change made before the binding: it names another old address and
+    // the bound one still stands.
+    const routed = (event) => {
+      if (routing) return;
+      if (
+        !topDocument ||
+        location.href !== initialHref ||
+        event.oldURL === initialHref
+      )
+        abort();
+    };
+    window.addEventListener("hashchange", routed);
+    window.addEventListener("popstate", routed);
     doc.addEventListener("input", edited, true);
     doc.addEventListener("click", edited, true);
     return function (
