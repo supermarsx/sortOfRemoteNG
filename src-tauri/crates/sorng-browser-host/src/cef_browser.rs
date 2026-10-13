@@ -1574,6 +1574,20 @@ impl Shared {
         source: ProcessId,
         message: Option<&ProcessMessage>,
     ) -> i32 {
+        // Explicit manual entry and automatic adapters must never race on a field.
+        // While its slot is active a request waits or is held, never dropped.
+        let manual = manual_input::active(self);
+        self.login_request(browser, frame, source, message, manual)
+    }
+
+    fn login_request(
+        self: &Arc<Self>,
+        browser: Option<&Browser>,
+        frame: Option<&Frame>,
+        source: ProcessId,
+        message: Option<&ProcessMessage>,
+        manual: bool,
+    ) -> i32 {
         use crate::cef_renderer::{
             message_text, LOGIN_DELIVERY, LOGIN_DELIVERY_STATUS, LOGIN_REQUEST,
         };
@@ -1587,8 +1601,6 @@ impl Shared {
         {
             return 0;
         }
-        // Explicit manual entry and automatic adapters must never race on a field.
-        if manual_input::active(self) { return 1; }
         let (Some(browser), Some(frame)) = (browser, frame) else {
             return 1;
         };
@@ -1606,7 +1618,7 @@ impl Shared {
             return 1;
         };
         if name == crate::native_totp::REQUEST {
-            self.totp_message(browser, frame, &args, &url, &origin);
+            self.totp_message(browser, frame, &args, &url, &origin, manual);
             return 1;
         }
         if name == LOGIN_DELIVERY_STATUS {
@@ -1643,6 +1655,17 @@ impl Shared {
         let Some(hooks) = &self.hooks else {
             return 1;
         };
+        if manual {
+            // Releasing a stage would make the page focus a login field.
+            if !self.hold_stage(browser, frame, &nonce, &origin, stage) {
+                self.feature_event(
+                    Some(browser),
+                    &origin,
+                    NativeFeatureStatus::LoginDelivery(Delivery::NativeNotDelivered),
+                );
+            }
+            return 1;
+        }
         self.feature_event(
             Some(browser),
             &origin,
@@ -1727,6 +1750,8 @@ impl Shared {
             frame.send_process_message(ProcessId::RENDERER, Some(&mut response));
             outcome = Delivery::NativeSent;
         };
+        // A release that ended before its first key is re-armed here.
+        self.settle_login_typing(stage);
         if catch_unwind(AssertUnwindSafe(|| {
             hooks.with_form_credentials(&request, &mut deliver)
         }))
@@ -1735,6 +1760,9 @@ impl Shared {
             self.fault(Some(browser), BrowserFault::Callback);
         } else {
             // No session/budget locks or borrowed credentials survive here.
+            if outcome == Delivery::NativeSent {
+                self.login_released(browser, frame, &origin, stage);
+            }
             self.feature_event(
                 Some(browser),
                 &origin,

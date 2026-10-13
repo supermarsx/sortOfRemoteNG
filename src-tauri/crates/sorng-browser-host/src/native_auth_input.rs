@@ -39,6 +39,11 @@ impl NativeAuthTyping {
     pub fn units_sent(&self) -> usize {
         self.offset
     }
+    /// Time left of the pacing interval. Automatic login holds an early key
+    /// request for this long on the UI thread instead of cancelling it.
+    pub fn ready_in(&self, now: Instant) -> Duration {
+        self.next_at.saturating_duration_since(now)
+    }
     pub fn new(
         target: NativeAuthTarget,
         text: &str,
@@ -311,6 +316,37 @@ mod tests {
         assert!(input.text.is_empty());
         assert_eq!(
             input.tick(now, |_| panic!("terminal"), |_, _| panic!("terminal")),
+            TypingStatus::Complete
+        );
+    }
+    #[test]
+    fn native_auth_input_reports_the_remaining_pacing_interval_without_advancing() {
+        let now = Instant::now();
+        let mut input = NativeAuthTyping::new(
+            target(),
+            "ab",
+            Duration::from_millis(20),
+            now,
+            now + Duration::from_secs(1),
+        )
+        .unwrap();
+        assert_eq!(input.ready_in(now), Duration::ZERO);
+        assert_eq!(input.tick(now, |_| true, |_, _| true), TypingStatus::Sent);
+        assert_eq!(input.ready_in(now), Duration::from_millis(20));
+        assert_eq!(
+            input.ready_in(now + Duration::from_millis(5)),
+            Duration::from_millis(15)
+        );
+        for late in [20, 500] {
+            assert_eq!(
+                input.ready_in(now + Duration::from_millis(late)),
+                Duration::ZERO
+            );
+        }
+        // Asking is not a tick: nothing was sent, cancelled or completed.
+        assert_eq!(input.units_sent(), 1);
+        assert_eq!(
+            input.tick(now + Duration::from_millis(20), |_| true, |_, _| true),
             TypingStatus::Complete
         );
     }

@@ -10,18 +10,110 @@ use std::time::{SystemTime, UNIX_EPOCH};
 #[path = "cef_login_typing.rs"]
 mod keyboard;
 
-// Saved automatic login belongs to the live attempt, including hidden tabs.
-// The separate manual-entry and native focus paths keep their foreground gates.
+// While a manual-input slot owns the keyboard the renderer repeats a deferred
+// start after this long, and the host re-evaluates a held request at this rate.
+const INTERLOCK_WAIT_MS: i32 = 200;
+// A stage request the interlock still holds after this long is abandoned.
+const STAGE_HOLD: Duration = Duration::from_secs(30);
+const MAX_HELD_STAGES: u8 = 8;
+static NEXT_HOLD: AtomicU64 = AtomicU64::new(1);
+
+/// How a login input request reached the host.
+#[derive(Clone, Copy)]
+struct Entry {
+    /// A manual-input slot owns the keyboard right now.
+    manual: bool,
+    /// Serial of the held request this call resumes.
+    held: Option<u64>,
+}
+
+#[derive(Debug, PartialEq, Eq)]
+enum Pace {
+    Send,
+    Hold(Duration),
+    Reject,
+}
+
+/// One request per key or submit. Renderer receipts are event-driven, so the
+/// next request can arrive before the native pacing interval ends, and a
+/// manual-input slot can own the keyboard: either way the request is held on
+/// the UI thread and resumed, never dropped or cancelled. A second request
+/// while one is held is a protocol violation.
+fn pace(manual: bool, ready_in: Duration, held: Option<u64>, resumed: Option<u64>) -> Pace {
+    if held != resumed {
+        Pace::Reject
+    } else if manual {
+        Pace::Hold(Duration::from_millis(INTERLOCK_WAIT_MS as u64))
+    } else if ready_in.is_zero() {
+        Pace::Send
+    } else {
+        Pace::Hold(ready_in)
+    }
+}
+
+fn next_hold() -> u64 {
+    NEXT_HOLD.fetch_add(1, Ordering::Relaxed)
+}
+
+/// The renderer's request, kept only while the host holds it.
+#[derive(Clone)]
+struct HeldRequest {
+    nonce: String,
+    event: String,
+    url: String,
+    origin: String,
+}
+
+#[allow(clippy::too_many_arguments)]
+fn hold(
+    shared: &Arc<Shared>,
+    browser: &Browser,
+    frame: &Frame,
+    nonce: &str,
+    event: &str,
+    url: &str,
+    origin: &str,
+    serial: u64,
+    wait: Duration,
+) -> bool {
+    let request = HeldRequest {
+        nonce: nonce.into(),
+        event: event.into(),
+        url: url.into(),
+        origin: origin.into(),
+    };
+    let mut task = HeldInput::new(
+        Arc::downgrade(shared),
+        browser.clone(),
+        frame.clone(),
+        request,
+        serial,
+    );
+    post_delayed_task(ThreadId::UI, Some(&mut task), wait.as_millis() as i64 + 1) == 1
+}
+
+#[derive(Debug, PartialEq, Eq)]
+enum StageHold {
+    Again,
+    Resume,
+    Abandon,
+}
+
+/// What a held stage request does when its timer fires.
+fn stage_hold(manual: bool, now: Instant, until: Instant) -> StageHold {
+    match (manual, now < until) {
+        (false, _) => StageHold::Resume,
+        (true, true) => StageHold::Again,
+        (true, false) => StageHold::Abandon,
+    }
+}
+
+// Saved automatic login belongs to the live attempt: hidden tabs, and views a
+// shell dialog or menu covers. Overlays block manual input, focus and DevTools
+// only; `accepts` keeps the owner and Attached/Hidden lifecycle fence, and each
+// key still needs its consent and DOM receipt.
 fn automatic_input_current(shared: &Shared, browser: &Browser) -> bool {
-    shared.current()
-        && shared.accepts(Some(browser))
-        && shared.state.lock().is_ok_and(|state| {
-            // Inactive presentations block manual input and inspector actions.
-            // A hidden tab's saved login still runs under its per-key consent
-            // and DOM receipt; it neither shows nor focuses the native window.
-            state.control.lifecycle() == Lifecycle::Hidden
-                || !shared.input_blocked.load(Ordering::Acquire)
-        })
+    shared.current() && shared.accepts(Some(browser))
 }
 
 #[derive(Default)]
@@ -29,6 +121,7 @@ pub(super) struct State {
     keyboard: keyboard::State,
     pending: Option<Pending>,
     starts: u8,
+    held_stages: u8,
 }
 
 struct Pending {
@@ -43,6 +136,7 @@ struct Pending {
     expires: Instant,
     deadline: f64,
     auto_submit: bool,
+    held: Option<u64>,
 }
 
 impl State {
@@ -110,6 +204,7 @@ fn command(event: &str) -> Option<(&str, &str, u8)> {
     Some((fields[1], fields[2], index))
 }
 
+#[allow(clippy::too_many_arguments)]
 fn reply(
     frame: &Frame,
     nonce: &str,
@@ -149,6 +244,7 @@ impl Shared {
         args: &ListValue,
         url: &str,
         origin: &str,
+        manual: bool,
     ) {
         let (Some(nonce), Some(event)) = (message_text(args, 0, 80), message_text(args, 2, 256))
         else {
@@ -157,21 +253,140 @@ impl Shared {
         if nonce.is_empty() || message_text(args, 1, 1024).as_deref() != Some(origin) {
             return;
         }
-        if event.starts_with("type|") {
-            keyboard::receive(self, browser, frame, &nonce, &event, url, origin);
+        let entry = Entry { manual, held: None };
+        self.login_input(browser, frame, &nonce, &event, url, origin, entry);
+    }
+
+    /// A stage was released to this frame's document. Until one of its keys is
+    /// sent, a navigation that replaces the document ends the release unused.
+    pub(super) fn login_released(
+        &self,
+        browser: &Browser,
+        frame: &Frame,
+        origin: &str,
+        stage: NativeLoginStage,
+    ) {
+        if stage.is_action() {
             return;
         }
+        let id = |frame: &Frame| CefString::from(&frame.identifier()).to_string();
+        let main = browser.main_frame().map(|main| id(&main)).unwrap_or_default();
+        if let Ok(mut state) = self.login_totp.lock() {
+            state.keyboard.released(id(frame), main, origin, stage);
+        }
+    }
+
+    /// A release that ended before its stage's first key entered nothing. Tell
+    /// the budget before the reservation of `stage`, so that it can be re-armed.
+    pub(super) fn settle_login_typing(&self, stage: NativeLoginStage) {
+        let ended = self
+            .login_totp
+            .lock()
+            .map(|mut state| state.keyboard.take_ended(stage == NativeLoginStage::FormPrepare))
+            .unwrap_or_default();
+        if ended.is_empty() {
+            return;
+        }
+        if let Ok(mut budget) = self.login_budget.lock() {
+            for (origin, stage) in ended {
+                budget.cancelled(self.login_adapter, &origin, stage);
+            }
+        }
+    }
+
+    /// A stage request that met the manual-input interlock. Delivering it would
+    /// make the page focus a login field under the manual slot, and the stage
+    /// channel has no `wait` reply, so the host keeps the request and runs it
+    /// again from the top once the slot has ended.
+    pub(super) fn hold_stage(
+        self: &Arc<Self>,
+        browser: &Browser,
+        frame: &Frame,
+        nonce: &str,
+        origin: &str,
+        stage: NativeLoginStage,
+    ) -> bool {
+        let Ok(mut state) = self.login_totp.lock() else {
+            return false;
+        };
+        if state.held_stages >= MAX_HELD_STAGES {
+            return false;
+        }
+        let mut task = HeldStage::new(
+            Arc::downgrade(self),
+            browser.clone(),
+            frame.clone(),
+            nonce.into(),
+            origin.into(),
+            stage,
+            Instant::now() + STAGE_HOLD,
+        );
+        if post_delayed_task(ThreadId::UI, Some(&mut task), INTERLOCK_WAIT_MS.into()) != 1 {
+            return false;
+        }
+        state.held_stages += 1;
+        true
+    }
+
+    fn resume_stage(
+        self: &Arc<Self>,
+        browser: &Browser,
+        frame: &Frame,
+        nonce: &str,
+        origin: &str,
+        stage: NativeLoginStage,
+    ) {
+        let Some(message) =
+            process_message_create(Some(&CefString::from(crate::cef_renderer::LOGIN_REQUEST)))
+        else {
+            return;
+        };
+        let Some(args) = message.argument_list() else {
+            return;
+        };
+        if args.set_string(0, Some(&CefString::from(nonce))) != 1
+            || args.set_string(1, Some(&CefString::from(origin))) != 1
+            || args.set_string(2, Some(&CefString::from(stage.wire()))) != 1
+        {
+            return;
+        }
+        // Every owner, document, origin and budget check runs again.
+        self.login_message(Some(browser), Some(frame), ProcessId::RENDERER, Some(&message));
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn login_input(
+        self: &Arc<Self>,
+        browser: &Browser,
+        frame: &Frame,
+        nonce: &str,
+        event: &str,
+        url: &str,
+        origin: &str,
+        entry: Entry,
+    ) {
+        if event.starts_with("type|") {
+            keyboard::receive(self, browser, frame, nonce, event, url, origin, entry);
+            return;
+        }
+        let nonce = nonce.to_owned();
         // Credential typing shares this channel; automatic OTP consent remains
         // HTTPS-only even when the saved login source explicitly permits HTTP.
         if frame.is_main() != 1 || https_origin(url).as_deref() != Some(origin) {
             return;
         }
-        let Some((action, challenge, index)) = command(&event) else {
+        let Some((action, challenge, index)) = command(event) else {
             return;
         };
         let Some(hooks) = &self.hooks else {
             return;
         };
+        // Explicit manual entry owns the keyboard. A start repeats after the
+        // delay without spending a start; a key or submit is held further down.
+        if entry.manual && action == "start" {
+            reply(frame, &nonce, origin, challenge, "wait", INTERLOCK_WAIT_MS, 0.0, false);
+            return;
+        }
         let request = NativeTotpRequest {
             identity: &self.identity,
             origin,
@@ -223,6 +438,13 @@ impl Shared {
             let Ok(mut state) = self.login_totp.lock() else {
                 return;
             };
+            // Typing that was cancelled or replaced while its request was held.
+            if entry.held.is_some()
+                && state.pending.as_ref().and_then(|pending| pending.held) != entry.held
+            {
+                reply(frame, &nonce, origin, challenge, "cancel", 0, 0.0, false);
+                return;
+            }
             if action == "cancel" {
                 if state.pending.as_ref().is_some_and(|p| p.nonce == nonce) {
                     state.cancel();
@@ -237,6 +459,8 @@ impl Shared {
             if action == "start" {
                 if state.pending.is_some() || state.starts >= 2 {
                     state.cancel();
+                    // Answered, never dropped: the renderer must not wait for expiry.
+                    reply(frame, &nonce, origin, challenge, "cancel", 0, 0.0, false);
                     return;
                 }
                 state.starts += 1;
@@ -284,6 +508,7 @@ impl Shared {
                         expires: code.valid_until,
                         deadline,
                         auto_submit: code.auto_submit,
+                        held: None,
                     };
                     let mut expiry = OtpExpiry::new(Arc::downgrade(self), nonce.clone());
                     if post_delayed_task(
@@ -332,6 +557,8 @@ impl Shared {
                 return;
             }
             let Some(pending) = state.pending.as_mut() else {
+                // Typing was cancelled natively (navigation, manual entry, expiry).
+                reply(frame, &nonce, origin, challenge, "cancel", 0, 0.0, false);
                 return;
             };
             if pending.nonce != nonce
@@ -346,9 +573,32 @@ impl Shared {
                 reply(frame, &nonce, origin, challenge, "cancel", 0, 0.0, false);
                 return;
             }
+            let now = Instant::now();
+            let ready_in = if action == "key" {
+                pending.typing.ready_in(now)
+            } else {
+                Duration::ZERO
+            };
+            match pace(entry.manual, ready_in, pending.held, entry.held) {
+                Pace::Send => pending.held = None,
+                Pace::Hold(wait) => {
+                    let serial = next_hold();
+                    pending.held = Some(serial);
+                    if !hold(self, browser, frame, &nonce, event, url, origin, serial, wait) {
+                        state.cancel();
+                        reply(frame, &nonce, origin, challenge, "cancel", 0, 0.0, false);
+                    }
+                    return;
+                }
+                Pace::Reject => {
+                    state.cancel();
+                    reply(frame, &nonce, origin, challenge, "cancel", 0, 0.0, false);
+                    return;
+                }
+            }
             if action == "key" && index < pending.digits {
                 let status = pending.typing.tick(
-                    Instant::now(),
+                    now,
                     |target| {
                         target.identity == self.identity
                             && target.document_sequence == generation
@@ -405,6 +655,52 @@ impl Shared {
 }
 
 wrap_task! {
+    struct HeldInput {
+        shared: std::sync::Weak<Shared>, browser: Browser, frame: Frame,
+        request: HeldRequest, serial: u64
+    }
+    impl Task {
+        fn execute(&self) {
+            if let Some(shared) = self.shared.upgrade() {
+                // Every owner, document and consent check runs again on resume.
+                let entry = Entry { manual: manual_input::active(&shared), held: Some(self.serial) };
+                let HeldRequest { nonce, event, url, origin } = &self.request;
+                shared.login_input(&self.browser, &self.frame, nonce, event, url, origin, entry);
+            }
+        }
+    }
+}
+
+wrap_task! {
+    struct HeldStage {
+        shared: std::sync::Weak<Shared>, browser: Browser, frame: Frame,
+        nonce: String, origin: String, stage: NativeLoginStage, until: Instant
+    }
+    impl Task {
+        fn execute(&self) {
+            let Some(shared) = self.shared.upgrade() else { return; };
+            let mut outcome = stage_hold(manual_input::active(&shared), Instant::now(), self.until);
+            if outcome == StageHold::Again {
+                let mut again = HeldStage::new(self.shared.clone(), self.browser.clone(), self.frame.clone(),
+                    self.nonce.clone(), self.origin.clone(), self.stage, self.until);
+                if post_delayed_task(ThreadId::UI, Some(&mut again), INTERLOCK_WAIT_MS.into()) == 1 { return; }
+                outcome = StageHold::Abandon;
+            }
+            if let Ok(mut state) = shared.login_totp.lock() {
+                state.held_stages = state.held_stages.saturating_sub(1);
+            }
+            if outcome == StageHold::Resume {
+                shared.resume_stage(&self.browser, &self.frame, &self.nonce, &self.origin, self.stage);
+            } else {
+                // Reported, and never delivered under the manual slot.
+                shared.feature_event(Some(&self.browser), &self.origin, NativeFeatureStatus::LoginDelivery(
+                    crate::native_features::NativeLoginDeliveryStatus::NativeNotDelivered));
+            }
+        }
+    }
+}
+
+wrap_task! {
     struct OtpExpiry { shared: std::sync::Weak<Shared>, nonce: String }
     impl Task {
         fn execute(&self) {
@@ -438,7 +734,8 @@ mod tests {
         assert!(automatic_input_current(&shared, &browser));
         assert!(!shared.focus_allowed(Some(&browser)));
         shared.state.lock().unwrap().control.show(&shared.identity).unwrap();
-        assert!(!automatic_input_current(&shared, &browser));
+        assert!(automatic_input_current(&shared, &browser));
+        assert!(!shared.focus_allowed(Some(&browser)));
         shared.state.lock().unwrap().control.hide(&shared.identity).unwrap();
         shared.input_blocked.store(false, Ordering::Release);
         assert!(automatic_input_current(&shared, &browser));
@@ -447,6 +744,356 @@ mod tests {
         }
         shared.session.lock().unwrap().revoke(&shared.identity).unwrap();
         assert!(!automatic_input_current(&shared, &browser));
+    }
+
+    // Finding M1: a shell dialog or menu, often raised for another tab, blocks
+    // input to this visible view. It must not cancel this tab's saved login.
+    #[tokio::test]
+    async fn shell_overlay_blocks_focus_but_not_saved_login_typing_in_an_attached_view() {
+        struct Sink;
+        impl BrowserEventSink for Sink { fn on_event(&self, _: BrowserEvent) {} }
+        let shared = super::super::tests::fixture(Arc::new(Sink)).await;
+        shared.state.lock().unwrap().browser_id = Some(41);
+        let browser = super::super::tests::focus_browser(1, 41);
+        assert_eq!(shared.state.lock().unwrap().control.lifecycle(), Lifecycle::Attached);
+        for blocked in [false, true, false] {
+            shared.input_blocked.store(blocked, Ordering::Release);
+            assert_eq!(shared.focus_allowed(Some(&browser)), !blocked);
+            assert!(automatic_input_current(&shared, &browser), "blocked: {blocked}");
+        }
+        // The overlay changes nothing about the owner and lifecycle fences.
+        shared.input_blocked.store(true, Ordering::Release);
+        for other in [super::super::tests::focus_browser(1, 42), super::super::tests::focus_browser(0, 41)] {
+            assert!(!automatic_input_current(&shared, &other));
+        }
+        shared.state.lock().unwrap().control.begin_close(&shared.identity).unwrap();
+        assert!(!automatic_input_current(&shared, &browser));
+    }
+
+    #[test]
+    fn early_and_interlocked_requests_are_held_for_resumption_instead_of_cancelled() {
+        let (early, slot) = (Duration::from_millis(20), Duration::from_millis(INTERLOCK_WAIT_MS as u64));
+        assert_eq!(pace(false, Duration::ZERO, None, None), Pace::Send);
+        // Event-driven receipts ask for the next key before the pacing interval ends.
+        assert_eq!(pace(false, early, None, None), Pace::Hold(early));
+        // The held request resumes under its own serial, and may be held again.
+        assert_eq!(pace(false, Duration::ZERO, Some(7), Some(7)), Pace::Send);
+        assert_eq!(pace(false, Duration::from_millis(3), Some(7), Some(7)), Pace::Hold(Duration::from_millis(3)));
+        // A manual-input slot owns the keyboard: nothing is sent, whatever the pacing says.
+        for ready_in in [Duration::ZERO, early] {
+            assert_eq!(pace(true, ready_in, None, None), Pace::Hold(slot));
+            assert_eq!(pace(true, ready_in, Some(7), Some(7)), Pace::Hold(slot));
+        }
+        // One request per key: a second one while the first is held is refused.
+        for manual in [false, true] {
+            assert_eq!(pace(manual, early, Some(7), None), Pace::Reject);
+            assert_eq!(pace(manual, Duration::ZERO, Some(7), None), Pace::Reject);
+            assert_eq!(pace(manual, Duration::ZERO, Some(8), Some(7)), Pace::Reject);
+            assert_eq!(pace(manual, Duration::ZERO, None, Some(7)), Pace::Reject);
+        }
+        assert_ne!(next_hold(), next_hold());
+    }
+
+    #[test]
+    fn a_held_stage_request_resumes_when_the_slot_ends_and_is_abandoned_at_its_bound() {
+        let now = Instant::now();
+        let (before, after) = (now + Duration::from_millis(1), now);
+        assert_eq!(stage_hold(true, now, before), StageHold::Again);
+        assert_eq!(stage_hold(true, now, after), StageHold::Abandon);
+        // The slot ended: the request runs, however long it was held.
+        assert_eq!(stage_hold(false, now, before), StageHold::Resume);
+        assert_eq!(stage_hold(false, now, after), StageHold::Resume);
+        assert!(STAGE_HOLD >= Duration::from_millis(INTERLOCK_WAIT_MS as u64) && MAX_HELD_STAGES > 0);
+    }
+
+    use cef::rc::{ConvertReturnValue, RcImpl};
+    use cef::sys::{_cef_browser_t, _cef_frame_t, cef_string_userfree_t};
+
+    pub(super) type Replies = Arc<Mutex<Vec<(String, i32, String)>>>;
+    // What the library-owned vtables below serve: recorded replies and a URL.
+    type Document = (Replies, String);
+
+    fn userfree(value: &str) -> cef_string_userfree_t {
+        let value: Vec<_> = value.encode_utf16().collect();
+        // SAFETY: CEF allocates and later frees the returned string.
+        unsafe {
+            let out = cef::sys::cef_string_userfree_utf16_alloc();
+            assert!(!out.is_null());
+            assert_eq!(cef::sys::cef_string_utf16_set(value.as_ptr(), value.len(), out, 1), 1);
+            out
+        }
+    }
+
+    // A valid main frame "login-frame" of browser 41 at the document URL. It
+    // records (action, index, role) of each native reply.
+    fn raw_frame(document: Document) -> *mut _cef_frame_t {
+        use cef::sys::{_cef_process_message_t, cef_process_id_t};
+        extern "C" fn one(_: *mut _cef_frame_t) -> i32 { 1 }
+        extern "C" fn identifier(_: *mut _cef_frame_t) -> cef_string_userfree_t { userfree("login-frame") }
+        extern "C" fn url(this: *mut _cef_frame_t) -> cef_string_userfree_t {
+            userfree(&RcImpl::<_cef_frame_t, Document>::get(this).interface.1)
+        }
+        extern "C" fn browser(this: *mut _cef_frame_t) -> *mut _cef_browser_t {
+            raw_browser(RcImpl::<_cef_frame_t, Document>::get(this).interface.clone())
+        }
+        extern "C" fn send(this: *mut _cef_frame_t, _: cef_process_id_t, message: *mut _cef_process_message_t) {
+            // The generated binding transfers one reference with the argument.
+            let message: ProcessMessage = message.wrap_result();
+            let args = message.argument_list().unwrap();
+            RcImpl::<_cef_frame_t, Document>::get(this).interface.0.lock().unwrap().push((
+                CefString::from(&args.string(2)).to_string(),
+                args.int(3),
+                CefString::from(&args.string(6)).to_string(),
+            ));
+        }
+        let raw = _cef_frame_t {
+            is_valid: Some(one), is_main: Some(one), get_identifier: Some(identifier),
+            get_url: Some(url), get_browser: Some(browser), send_process_message: Some(send),
+            // SAFETY: Unused vtable slots are nullable; RcImpl owns refcounting.
+            ..unsafe { std::mem::zeroed() }
+        };
+        RcImpl::new(raw, document).cast()
+    }
+
+    // Browser 41, whose main and only frame is the one above.
+    fn raw_browser(document: Document) -> *mut _cef_browser_t {
+        extern "C" fn valid(_: *mut _cef_browser_t) -> i32 { 1 }
+        extern "C" fn identifier(_: *mut _cef_browser_t) -> i32 { 41 }
+        extern "C" fn same(_: *mut _cef_browser_t, that: *mut _cef_browser_t) -> i32 {
+            // The generated binding transfers one reference with the argument.
+            if !that.is_null() { let _: Browser = that.wrap_result(); }
+            1
+        }
+        extern "C" fn main_frame(this: *mut _cef_browser_t) -> *mut _cef_frame_t {
+            raw_frame(RcImpl::<_cef_browser_t, Document>::get(this).interface.clone())
+        }
+        extern "C" fn frame_by_identifier(this: *mut _cef_browser_t, _: *const cef::sys::cef_string_t) -> *mut _cef_frame_t {
+            main_frame(this)
+        }
+        let raw = _cef_browser_t {
+            is_valid: Some(valid), get_identifier: Some(identifier), is_same: Some(same),
+            get_main_frame: Some(main_frame), get_frame_by_identifier: Some(frame_by_identifier),
+            // SAFETY: Unused vtable slots are nullable; RcImpl owns refcounting.
+            ..unsafe { std::mem::zeroed() }
+        };
+        RcImpl::new(raw, document).cast()
+    }
+
+    /// A frame that only records native replies; it has no document URL, so no
+    /// login origin. No renderer, window or website is involved.
+    pub(super) fn reply_frame(replies: Replies) -> Frame {
+        raw_frame((replies, String::new())).wrap_result()
+    }
+
+    /// Browser 41 and its main frame at `url`, as the login frame policy and
+    /// the typing gate read them. No renderer, window or website is involved.
+    pub(super) fn login_document(replies: Replies, url: &str) -> (Browser, Frame) {
+        let document = (replies, url.to_owned());
+        (raw_browser(document.clone()).wrap_result(), raw_frame(document).wrap_result())
+    }
+
+    pub(super) fn native_api() {
+        #[cfg(target_os = "macos")]
+        crate::platform::test_runtime::ensure_loaded();
+        crate::bootstrap_platform::select_pinned_api().unwrap();
+    }
+
+    // A modular document that was released only its prepare stage and then
+    // navigated away used to block every later document of that origin: the
+    // user saw one automatic login and then none for the rest of the tab.
+    #[tokio::test]
+    async fn a_prepare_only_document_that_was_replaced_does_not_block_its_successor() {
+        use crate::domain_permissions::{
+            WebsitePermissionDecision, WebsitePermissionEngine, WebsiteRequestClass,
+        };
+        use sorng_protocols::origin_browser::NativeHostReadiness;
+        struct Sink;
+        impl BrowserEventSink for Sink { fn on_event(&self, _: BrowserEvent) {} }
+        struct Hooks;
+        impl NativeDocumentHooks for Hooks {
+            fn on_main_document(&self, _: &BrowserIdentity, _: u64) {}
+            fn with_form_credentials(
+                &self,
+                request: &NativeLoginRequest<'_>,
+                deliver: &mut dyn FnMut(NativeLoginCredentials<'_>, Option<&str>),
+            ) {
+                let secret = request.stage == NativeLoginStage::Form;
+                deliver(NativeLoginCredentials {
+                    identity: request.identity, origin: request.origin,
+                    valid_until: Instant::now() + Duration::from_secs(30),
+                    username: if secret { "synthetic-user" } else { "" },
+                    password: if secret { "synthetic-password" } else { "" },
+                    auto_submit: true,
+                }, Some(crate::cef_renderer::DEFAULT_FORM_OPTIONS));
+            }
+        }
+        native_api();
+        let mut shared = super::super::tests::fixture(Arc::new(Sink)).await;
+        shared.hooks = Some(Arc::new(Hooks));
+        shared.login_adapter = NativeLoginAdapter::ModularForm;
+        shared.permissions = Arc::new(WebsitePermissionEngine::new(None, None,
+            &[(WebsiteRequestClass::Navigation, WebsitePermissionDecision::Allow)].into_iter().collect(),
+        ).unwrap());
+        shared.state.lock().unwrap().browser_id = Some(41);
+        {
+            // Pure admission fixture, never evidence of live containment.
+            let mut session = shared.session.lock().unwrap();
+            let report = NativeHostReadiness::Ready {
+                profile_key: session.policy().profile_key().to_owned(),
+                proxy_endpoint: session.proxy_endpoint(),
+            };
+            session.report_host(&shared.identity, report).unwrap();
+        }
+        let shared = Arc::new(shared);
+        let (origin, url) = ("https://fixture.invalid", "https://fixture.invalid/login.html");
+        let replies = Replies::default();
+        let (browser, frame) = login_document(replies.clone(), url);
+        let request = |nonce: &str, stage: &str, manual: bool| {
+            let message = process_message_create(Some(&CefString::from(crate::cef_renderer::LOGIN_REQUEST))).unwrap();
+            let args = message.argument_list().unwrap();
+            for (index, value) in [nonce, origin, stage].into_iter().enumerate() {
+                assert_eq!(args.set_string(index, Some(&CefString::from(value))), 1);
+            }
+            assert_eq!(shared.login_request(Some(&browser), Some(&frame), ProcessId::RENDERER, Some(&message), manual), 1);
+        };
+        // The stage of each delivery sent to the renderer, in order.
+        let delivered = || replies.lock().unwrap().iter().map(|reply| reply.2.clone()).collect::<Vec<_>>();
+        // What on_before_browse does when the login frame navigates or reloads.
+        let replace_document = || shared.login_totp.lock().unwrap().cancel_frame("login-frame");
+
+        request("document-1", "form-prepare", false);
+        assert_eq!(delivered(), ["form-prepare"]);
+        // While that document is in place its release stays exclusive.
+        request("document-2", "form-prepare", false);
+        assert_eq!(delivered(), ["form-prepare"]);
+
+        replace_document();
+        // Nothing is consumed or re-armed while a manual-input slot is active.
+        request("document-2", "form-prepare", true);
+        assert_eq!(delivered(), ["form-prepare"]);
+        assert!(shared.login_budget.lock().unwrap().released(origin, NativeLoginStage::FormPrepare));
+        // The successor gets the chain once more, and its fill.
+        request("document-2", "form-prepare", false);
+        request("document-2", "form", false);
+        assert_eq!(delivered(), ["form-prepare", "form-prepare", "form"]);
+
+        // Once: a third document is refused, whatever its predecessor reached.
+        replace_document();
+        request("document-3", "form-prepare", false);
+        request("document-3", "form", false);
+        assert_eq!(delivered().len(), 3);
+    }
+
+    // on_before_browse runs before the navigation is allowed. A document whose
+    // navigation was refused is still in place and must keep its prepare.
+    #[tokio::test]
+    async fn a_refused_navigation_does_not_cost_a_prepared_document_its_fill() {
+        use crate::domain_permissions::{
+            WebsitePermissionDecision, WebsitePermissionEngine, WebsiteRequestClass,
+        };
+        use sorng_protocols::origin_browser::NativeHostReadiness;
+        struct Sink;
+        impl BrowserEventSink for Sink { fn on_event(&self, _: BrowserEvent) {} }
+        struct Hooks;
+        impl NativeDocumentHooks for Hooks {
+            fn on_main_document(&self, _: &BrowserIdentity, _: u64) {}
+            fn with_form_credentials(
+                &self,
+                request: &NativeLoginRequest<'_>,
+                deliver: &mut dyn FnMut(NativeLoginCredentials<'_>, Option<&str>),
+            ) {
+                let secret = request.stage == NativeLoginStage::Form;
+                deliver(NativeLoginCredentials {
+                    identity: request.identity, origin: request.origin,
+                    valid_until: Instant::now() + Duration::from_secs(30),
+                    username: if secret { "synthetic-user" } else { "" },
+                    password: if secret { "synthetic-password" } else { "" },
+                    auto_submit: true,
+                }, Some(crate::cef_renderer::DEFAULT_FORM_OPTIONS));
+            }
+        }
+        native_api();
+        let mut shared = super::super::tests::fixture(Arc::new(Sink)).await;
+        shared.hooks = Some(Arc::new(Hooks));
+        shared.login_adapter = NativeLoginAdapter::ModularForm;
+        shared.permissions = Arc::new(WebsitePermissionEngine::new(None, None,
+            &[(WebsiteRequestClass::Navigation, WebsitePermissionDecision::Allow)].into_iter().collect(),
+        ).unwrap());
+        shared.state.lock().unwrap().browser_id = Some(41);
+        {
+            // Pure admission fixture, never evidence of live containment.
+            let mut session = shared.session.lock().unwrap();
+            let report = NativeHostReadiness::Ready {
+                profile_key: session.policy().profile_key().to_owned(),
+                proxy_endpoint: session.proxy_endpoint(),
+            };
+            session.report_host(&shared.identity, report).unwrap();
+        }
+        let shared = Arc::new(shared);
+        let (origin, url) = ("https://fixture.invalid", "https://fixture.invalid/login.html");
+        let replies = Replies::default();
+        let (browser, frame) = login_document(replies.clone(), url);
+        let request = |stage: &str| {
+            let message = process_message_create(Some(&CefString::from(crate::cef_renderer::LOGIN_REQUEST))).unwrap();
+            let args = message.argument_list().unwrap();
+            for (index, value) in ["document-1", origin, stage].into_iter().enumerate() {
+                assert_eq!(args.set_string(index, Some(&CefString::from(value))), 1);
+            }
+            assert_eq!(shared.login_request(Some(&browser), Some(&frame), ProcessId::RENDERER, Some(&message), false), 1);
+        };
+        request("form-prepare");
+        shared.login_totp.lock().unwrap().cancel_frame("login-frame");
+        request("form");
+        let delivered: Vec<_> = replies.lock().unwrap().iter().map(|reply| reply.2.clone()).collect();
+        assert_eq!(delivered, ["form-prepare", "form"]);
+    }
+
+    // Finding C7: the interlock used to drop these messages without a reply,
+    // stalling an in-flight automatic login until its own expiry.
+    #[tokio::test]
+    async fn manual_entry_defers_an_otp_start_with_wait_and_still_honours_cancel() {
+        struct Sink;
+        impl BrowserEventSink for Sink { fn on_event(&self, _: BrowserEvent) {} }
+        struct Hooks;
+        impl NativeDocumentHooks for Hooks { fn on_main_document(&self, _: &BrowserIdentity, _: u64) {} }
+        native_api();
+        let mut shared = super::super::tests::fixture(Arc::new(Sink)).await;
+        shared.hooks = Some(Arc::new(Hooks));
+        shared.state.lock().unwrap().browser_id = Some(41);
+        let shared = Arc::new(shared);
+        let browser = super::super::tests::focus_browser(1, 41);
+        let replies = Replies::default();
+        let frame = reply_frame(replies.clone());
+        let (origin, url) = ("https://fixture.invalid", "https://fixture.invalid/user/two_factor");
+        let manual = Entry { manual: true, held: None };
+        let send = |event: &str, origin: &str| shared.login_input(&browser, &frame, "document-1", event, url, origin, manual);
+
+        send("totp|start|gitea-totp|0", origin);
+        send("totp|start|gitea-totp|0", origin);
+        assert_eq!(*replies.lock().unwrap(), vec![("wait".to_owned(), INTERLOCK_WAIT_MS, "gitea-totp".to_owned()); 2]);
+        // Deferred, not spent: the two starts of this attempt are still available.
+        assert_eq!(shared.login_totp.lock().unwrap().starts, 0);
+
+        // Malformed or foreign-origin requests still get nothing at all.
+        send("totp|key|UPPER|0", origin);
+        send("totp|start|gitea-totp|0", "https://other.invalid");
+        assert_eq!(replies.lock().unwrap().len(), 2);
+
+        // A cancel is never deferred: it only clears native state.
+        let now = Instant::now();
+        shared.login_totp.lock().unwrap().pending = Some(Pending {
+            nonce: "document-1".into(), url: url.into(), frame_id: "login-frame".into(), generation: 0,
+            challenge: "gitea-totp".into(),
+            typing: NativeAuthTyping::new(NativeAuthTarget {
+                identity: shared.identity.clone(), browser_id: 41, frame_id: "login-frame".into(),
+                document_sequence: 0, document_url: url.into(), field_token: "document-1".into(),
+            }, "123456", Duration::from_millis(30), now, now + Duration::from_secs(30)).unwrap(),
+            digits: 6, next: 0, expires: now + Duration::from_secs(30), deadline: 1.0,
+            auto_submit: false, held: None,
+        });
+        send("totp|cancel|gitea-totp|0", origin);
+        assert!(shared.login_totp.lock().unwrap().pending.is_none());
+        assert_eq!(replies.lock().unwrap().len(), 2);
     }
 
     struct LockedConsentHooks {

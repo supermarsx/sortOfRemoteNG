@@ -71,7 +71,7 @@ function fixture(
   const listeners = new Map(),
     original = doc.addEventListener.bind(doc);
   doc.addEventListener = (type, callback, ...args) => {
-    if (["keydown", "beforeinput", "input"].includes(type)) {
+    if (["keydown", "beforeinput", "input", "keyup"].includes(type)) {
       if (!listeners.has(type)) listeners.set(type, []);
       listeners.get(type).push(callback);
     }
@@ -151,6 +151,7 @@ function fixture(
     input.value += unit;
     input.setSelectionRange(input.value.length, input.value.length);
     for (const fn of listeners.get("input") || []) fn(event);
+    for (const fn of listeners.get("keyup") || []) fn(event);
     keys.push([field, index]);
   }
   const notify = (event) => {
@@ -383,7 +384,7 @@ for (const change of [
     if (change === "action-port")
       f.doc.querySelector("form").action = "http://device.test:8081/login";
     if (change === "expired-grant") f.expire();
-    // A true result only queues the probe; authorization is its later key receipt.
+    // The start grant is checked against the live field at once, not on a timer.
     assert.equal(
       f.delivered.nativeTyping(
         "probe",
@@ -394,7 +395,7 @@ for (const change of [
           ? "type|form|password"
           : "type|form|username",
       ),
-      change !== "wrong-receipt",
+      false,
     );
     await delay(100);
     assert.equal(f.doc.getElementById("password").value, "");
@@ -480,3 +481,302 @@ for (const change of [
       assert.equal(f.doc.getElementById("username").value, "manual");
   });
 }
+
+// The keyboard helper alone against a model of the native host: `probe 0`
+// grants the start, each later `probe N` says N units were sent as CEF keys.
+const typingSource = readFileSync(
+  resolve(base, "native_login_typing.js"),
+  "utf8",
+);
+function keyboardFixture(t, text = "pA55@word") {
+  const dom = new JSDOM(
+    '<form><input id="username"><input id="password" type="password"></form>',
+    {
+      url: "https://device.test/login",
+      runScripts: "outside-only",
+    },
+  );
+  const win = dom.window,
+    doc = win.document;
+  t.after(() => win.close());
+  // Frozen page timers: a hidden page may run them at 1 Hz or not at all.
+  const timers = [];
+  win.setTimeout = (callback, ms) => {
+    timers.push({ callback, ms, cleared: false });
+    return timers.length;
+  };
+  win.clearTimeout = (id) => {
+    if (timers[id - 1]) timers[id - 1].cleared = true;
+  };
+  const listeners = new Map(),
+    original = doc.addEventListener.bind(doc);
+  doc.addEventListener = (type, callback, ...args) => {
+    if (!listeners.has(type)) listeners.set(type, []);
+    listeners.get(type).push(callback);
+    return original(type, callback, ...args);
+  };
+  const signals = [],
+    role = "type|form|username",
+    until = Date.now() + 15000;
+  const keyboard = win.eval(`${typingSource}\ncreateLoginKeyboard`)((event) =>
+    signals.push(event),
+  );
+  const input = doc.getElementById("username");
+  // Model of host.send_key_event: trusted keydown, beforeinput and input, then keyup.
+  const trusted = (data, key) => ({
+    target: input,
+    isTrusted: true,
+    key,
+    data,
+    inputType: "insertText",
+    preventDefault() {
+      this.prevented = true;
+    },
+  });
+  const emit = (type, event) => {
+    for (const fn of listeners.get(type) || []) fn(event);
+  };
+  function press(data, key = data) {
+    const event = trusted(data, key);
+    emit("keydown", event);
+    emit("beforeinput", event);
+    if (event.prevented) return false;
+    input.value += data;
+    input.setSelectionRange(input.value.length, input.value.length);
+    emit("input", event);
+    return true;
+  }
+  const release = (data, key = data) => emit("keyup", trusted(data, key));
+  const key = (data, name = data) => {
+    const entered = press(data, name);
+    release(data, name);
+    return entered;
+  };
+  const outcome = keyboard
+    .write(input, text, () => true, "form", "username", until)
+    .then(
+      () => "typed",
+      (error) => error.message,
+    );
+  // Promise reactions run before the immediate, so "pending" means unsettled.
+  const settled = () =>
+    Promise.race([
+      outcome,
+      new Promise((done) => setImmediate(() => done("pending"))),
+    ]);
+  const probe = (index) =>
+    keyboard.dispatch("probe", index, until, false, role);
+  const wait = (ms) => keyboard.dispatch("wait", ms, 0, false, role);
+  const keys = () => signals.filter((signal) => signal.startsWith("type|key|"));
+  // Runs only the pending timers that were scheduled with this delay.
+  const fire = (ms) =>
+    timers
+      .filter((timer) => !timer.cleared && timer.ms === ms)
+      .forEach((timer) => {
+        timer.cleared = true;
+        timer.callback();
+      });
+  return {
+    win,
+    doc,
+    input,
+    signals,
+    role,
+    until,
+    text,
+    press,
+    release,
+    key,
+    probe,
+    wait,
+    keys,
+    fire,
+    settled,
+    timers,
+  };
+}
+const START = "type|start|form|username|0",
+  CANCEL = "type|cancel|form|username|0";
+const KEY = (index) => `type|key|form|username|${index}`;
+
+test("key receipts are event-driven: a field types to completion while every page timer is frozen", async (t) => {
+  const f = keyboardFixture(t);
+  assert.deepEqual(f.signals, [START]);
+  assert.equal(f.probe(0), true);
+  for (let index = 0; index < f.text.length; index++) {
+    assert.equal(f.signals.at(-1), KEY(index), JSON.stringify(f.signals));
+    assert.equal(f.key(f.text[index]), true);
+    assert.equal(f.probe(index + 1), true);
+  }
+  assert.equal(await f.settled(), "typed");
+  assert.equal(f.input.value, f.text);
+  assert.equal(f.keys().length, f.text.length);
+  assert.equal(f.signals.includes(CANCEL), false);
+  assert.equal(
+    f.signals.some((signal) => signal.includes(f.text)),
+    false,
+  );
+});
+
+test("a host receipt that overtakes its DOM input event waits for that event, not for a timer", async (t) => {
+  const f = keyboardFixture(t, "ab");
+  assert.equal(f.probe(0), true);
+  assert.deepEqual(f.keys(), [KEY(0)]);
+  // The process message can arrive before Chromium dispatches the key.
+  assert.equal(f.probe(1), true);
+  assert.deepEqual(f.keys(), [KEY(0)]);
+  assert.equal(f.key("a"), true);
+  assert.deepEqual(f.keys(), [KEY(0), KEY(1)]);
+  assert.equal(f.probe(2), true);
+  assert.equal(await f.settled(), "pending");
+  assert.equal(f.key("b"), true);
+  assert.equal(await f.settled(), "typed");
+  assert.equal(f.input.value, "ab");
+});
+
+test("a key the engine never delivers fails closed and is never requested twice", async (t) => {
+  const f = keyboardFixture(t, "ab");
+  assert.equal(f.probe(0), true);
+  assert.equal(f.probe(1), true);
+  assert.equal(await f.settled(), "pending");
+  f.fire(1500);
+  assert.equal(await f.settled(), "native-typing-cancelled");
+  assert.deepEqual(f.keys(), [KEY(0)]);
+  assert.equal(f.signals.at(-1), CANCEL);
+  assert.equal(f.input.value, "");
+});
+
+for (const [label, drive] of [
+  ["a receipt for a key that was not requested", (f) => f.probe(1)],
+  [
+    "a receipt that skips a character",
+    (f) => {
+      f.probe(0);
+      f.key("a");
+      return f.probe(2);
+    },
+  ],
+  [
+    "a receipt that claims more than one key",
+    (f) => {
+      f.probe(0);
+      return f.probe(3);
+    },
+  ],
+  [
+    "a repeated receipt",
+    (f) => {
+      f.probe(0);
+      f.probe(1);
+      return f.probe(1);
+    },
+  ],
+  [
+    "a repeated start grant",
+    (f) => {
+      f.probe(0);
+      return f.probe(0);
+    },
+  ],
+  [
+    "a receipt after the last key",
+    (f) => {
+      f.probe(0);
+      f.key("a");
+      f.probe(1);
+      f.key("b");
+      f.probe(2);
+      f.press("c");
+      f.probe(3);
+      return f.probe(4);
+    },
+  ],
+  [
+    "an untrusted input event",
+    (f) => {
+      f.probe(0);
+      f.input.value = "a";
+      f.input.dispatchEvent(
+        new f.win.InputEvent("input", {
+          data: "a",
+          inputType: "insertText",
+          bubbles: true,
+        }),
+      );
+      return false;
+    },
+  ],
+]) {
+  test(`event-driven receipts reject ${label}`, async (t) => {
+    const f = keyboardFixture(t, "abc");
+    assert.equal(drive(f), false);
+    assert.equal(await f.settled(), "native-typing-cancelled");
+    assert.equal(f.signals.at(-1), CANCEL);
+    assert.equal(f.keys().length <= 3, true);
+  });
+}
+
+test("a wait repeats only an ungranted start; the host never asks the page to wait for a key", async (t) => {
+  const f = keyboardFixture(t, "ab");
+  // Load has not ended, or a manual-input slot owns the keyboard.
+  assert.equal(f.wait(200), true);
+  assert.deepEqual(f.signals, [START]);
+  f.fire(200);
+  assert.deepEqual(f.signals, [START, START]);
+  assert.equal(f.probe(0), true);
+  assert.deepEqual(f.keys(), [KEY(0)]);
+  // An early or interlocked key request is held by the host itself.
+  assert.equal(f.wait(200), false);
+  assert.equal(await f.settled(), "native-typing-cancelled");
+  assert.deepEqual(f.keys(), [KEY(0)]);
+  assert.equal(f.input.value, "");
+});
+
+test("a key that arrives while the start waits is the user's: typing stops without touching it", async (t) => {
+  const f = keyboardFixture(t, "ab");
+  assert.equal(f.wait(200), true);
+  assert.equal(f.press("x"), true);
+  assert.equal(await f.settled(), "native-typing-cancelled");
+  f.fire(200);
+  assert.deepEqual(f.signals, [START, CANCEL]);
+  assert.equal(f.input.value, "x");
+});
+
+test("a field is left only after its last key is released", async (t) => {
+  const f = keyboardFixture(t, "ab");
+  assert.equal(f.probe(0), true);
+  assert.equal(f.key("a"), true);
+  assert.equal(f.probe(1), true);
+  assert.equal(f.press("b"), true);
+  assert.equal(f.probe(2), true);
+  // Focus must not move to the next field while this key is still down.
+  assert.equal(await f.settled(), "pending");
+  f.release("b");
+  assert.equal(await f.settled(), "typed");
+  assert.equal(f.input.value, "ab");
+});
+
+test("a keyup the engine never delivers delays the field once instead of failing it", async (t) => {
+  const f = keyboardFixture(t, "a");
+  assert.equal(f.probe(0), true);
+  assert.equal(f.press("a"), true);
+  assert.equal(f.probe(1), true);
+  assert.equal(await f.settled(), "pending");
+  f.fire(250);
+  assert.equal(await f.settled(), "typed");
+  assert.deepEqual(f.keys(), [KEY(0)]);
+});
+
+test("a surrogate pair is one key whose receipt counts both units", async (t) => {
+  const pair = "\u{1f642}";
+  const f = keyboardFixture(t, `a${pair}`);
+  assert.equal(f.probe(0), true);
+  assert.equal(f.key("a"), true);
+  assert.equal(f.probe(1), true);
+  assert.deepEqual(f.keys(), [KEY(0), KEY(1)]);
+  assert.equal(f.key(pair, "Unidentified"), true);
+  assert.equal(f.probe(3), true);
+  assert.equal(await f.settled(), "typed");
+  assert.equal(f.input.value, `a${pair}`);
+  assert.deepEqual(f.keys(), [KEY(0), KEY(1)]);
+});

@@ -47,6 +47,31 @@ function createLoginKeyboard(signal) {
           row.element.selectionEnd === row.position))
     );
   }
+  // A key is entered once two facts hold, in either order: the host's receipt
+  // that it sent the key (`probe N+1`) and the trusted DOM input event. The
+  // later of the two calls this. No timer is on that path, so a hidden page's
+  // throttled timers cannot slow typing; timers here only wait or fail closed.
+  function advance(row) {
+    clearTimeout(row.timer);
+    if (!current(row)) {
+      finish(false);
+      return false;
+    }
+    if (row.position < row.text.length) {
+      row.armed = true;
+      send(row, "key", row.position);
+    } else if (row.down) {
+      // Leave the field only after its last key is released, so the next
+      // field's focus cannot receive that keyup. The timer is a fallback.
+      row.timer = setTimeout(() => {
+        row.down = false;
+        advance(row);
+      }, 250);
+    } else {
+      finish(true);
+    }
+    return true;
+  }
   document.addEventListener(
     "keydown",
     (event) => {
@@ -64,7 +89,9 @@ function createLoginKeyboard(signal) {
       ) {
         if (row.armed) event.preventDefault();
         finish(false);
+        return;
       }
+      row.down = true;
     },
     true,
   );
@@ -111,6 +138,23 @@ function createLoginKeyboard(signal) {
       acceptedEvents.add(event);
       row.position = length;
       row.armed = false;
+      // The host's receipt for this key may have overtaken its DOM event.
+      if (row.receipt === row.position) advance(row);
+    },
+    true,
+  );
+  document.addEventListener(
+    "keyup",
+    (event) => {
+      const row = active;
+      if (!row || !row.down || event.target !== row.element) return;
+      row.down = false;
+      if (
+        !row.armed &&
+        row.receipt === row.position &&
+        row.position === row.text.length
+      )
+        advance(row);
     },
     true,
   );
@@ -144,6 +188,8 @@ function createLoginKeyboard(signal) {
           reject(new Error("native-typing-target"));
           return;
         }
+        // `receipt` is the host's last `probe` index: -1 until the start is
+        // granted, then the number of keys the host reports having sent.
         const row = {
           element,
           text,
@@ -154,7 +200,9 @@ function createLoginKeyboard(signal) {
           resolve,
           reject,
           position: 0,
+          receipt: -1,
           armed: false,
+          down: false,
           waiting: false,
           url: location.href,
           timer: null,
@@ -177,9 +225,10 @@ function createLoginKeyboard(signal) {
       const row = active;
       if (!row || role !== `type|${row.stage}|${row.field}`) return false;
       if (command === "wait") {
+        // Only an ungranted start is repeated. The host holds a key request
+        // itself, so a wait once typing has begun is a protocol violation.
         if (
-          row.armed ||
-          row.position ||
+          row.receipt !== -1 ||
           row.waiting ||
           !current(row) ||
           !Number.isInteger(index) ||
@@ -200,37 +249,25 @@ function createLoginKeyboard(signal) {
         }, index);
         return true;
       }
+      // One receipt per request, in order: the start grant (0), then the
+      // number of units sent. A surrogate pair is one key and counts two.
       if (
         command !== "probe" ||
         row.waiting ||
         !Number.isInteger(index) ||
-        index < 0 ||
-        index > row.text.length
+        index <= row.receipt ||
+        (row.armed
+          ? index <= row.position || index > row.position + 2
+          : index !== row.position)
       ) {
         finish(false);
         return false;
       }
-      row.waiting = true;
-      const limit = Math.min(row.until, now() + 1500);
-      const probe = () => {
-        if (active !== row) return;
-        if (row.armed && row.position < index && now() < limit) {
-          row.timer = setTimeout(probe, 20);
-          return;
-        }
-        row.waiting = false;
-        if (row.armed || row.position !== index || !current(row)) {
-          finish(false);
-          return;
-        }
-        if (index === row.text.length) {
-          finish(true);
-          return;
-        }
-        row.armed = true;
-        send(row, "key", index);
-      };
-      row.timer = setTimeout(probe, 30);
+      row.receipt = index;
+      if (!row.armed) return advance(row);
+      // The receipt overtook its DOM event. A key the engine never delivers
+      // fails closed here and is never requested again.
+      row.timer = setTimeout(() => finish(false), 1500);
       return true;
     },
   };

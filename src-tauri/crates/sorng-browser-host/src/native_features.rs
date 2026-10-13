@@ -577,14 +577,70 @@ pub(crate) fn https_origin(value: &str) -> Option<String> {
 
 /// One release per exact origin and stage for this attempt. Reloads,
 /// renderer restarts and form mutations cannot start a submission loop.
+/// A release that ended before its stage's first key gets one more.
 #[derive(Default)]
 pub(crate) struct LoginBudget {
     released: HashSet<(String, NativeLoginStage)>,
+    rearmed: HashSet<(String, NativeLoginStage)>,
 }
 
 impl LoginBudget {
     pub(crate) fn released(&self, origin: &str, stage: NativeLoginStage) -> bool {
         self.released.contains(&(origin.to_owned(), stage))
+    }
+    /// This release ended before the stage's first key event: its typing
+    /// stopped, or its document was replaced. Nothing was entered or submitted.
+    /// Only the typing host knows that; a renderer status cannot report it. The
+    /// stage may be reserved once more, never a third time and never after its
+    /// submit was released. The modular prepare and fill stages are one chain:
+    /// it is re-armed once, at whichever of the two ended unused.
+    pub(crate) fn cancelled(
+        &mut self,
+        adapter: NativeLoginAdapter,
+        origin: &str,
+        stage: NativeLoginStage,
+    ) -> bool {
+        let submit = match stage {
+            NativeLoginStage::Form | NativeLoginStage::FormPrepare => NativeLoginStage::FormSubmit,
+            NativeLoginStage::Identifier => NativeLoginStage::IdentifierSubmit,
+            NativeLoginStage::Password | NativeLoginStage::BoundPassword => {
+                NativeLoginStage::PasswordSubmit
+            }
+            _ => return false,
+        };
+        let key = (origin.to_owned(), stage);
+        let prepare = stage == NativeLoginStage::FormPrepare;
+        let chain = if prepare {
+            (origin.to_owned(), NativeLoginStage::Form)
+        } else {
+            key.clone()
+        };
+        // Script-filled adapters send no key, so "no key" proves nothing there.
+        if !(adapter == NativeLoginAdapter::ModularForm || adapter.reviewed_provider())
+            || !self.released.contains(&key)
+            || self.rearmed.contains(&chain)
+            || self.released.contains(&(origin.to_owned(), submit))
+            // A prepare whose fill was released is settled through that fill.
+            || (prepare && self.released.contains(&chain))
+            // A released password stage means the identifier was accepted,
+            // possibly on another origin of the same provider.
+            || (stage == NativeLoginStage::Identifier
+                && self.released.iter().any(|(_, released)| {
+                    matches!(
+                        released,
+                        NativeLoginStage::Password | NativeLoginStage::BoundPassword
+                    )
+                }))
+        {
+            return false;
+        }
+        self.released.remove(&key);
+        if stage == NativeLoginStage::Form {
+            // The modular chain starts again from its metadata stage.
+            self.released
+                .remove(&(origin.to_owned(), NativeLoginStage::FormPrepare));
+        }
+        self.rearmed.insert(chain)
     }
     pub fn reserve(
         &mut self,
@@ -914,6 +970,211 @@ mod tests {
         assert!(budget.reserve(&request, &credentials));
         assert!(!budget.reserve(&request, &credentials));
         assert_eq!(request.stage.fields(&credentials), ("", ""));
+    }
+
+    fn reserve_stage(
+        budget: &mut LoginBudget,
+        policy: &OriginBrowserPolicy,
+        adapter: NativeLoginAdapter,
+        origin: &str,
+        stage: NativeLoginStage,
+    ) -> bool {
+        let metadata = stage.is_action() || stage == NativeLoginStage::FormPrepare;
+        budget.reserve(
+            &NativeLoginRequest {
+                identity: policy.identity(),
+                origin,
+                adapter,
+                stage,
+            },
+            &NativeLoginCredentials {
+                identity: policy.identity(),
+                origin,
+                valid_until: Instant::now() + Duration::from_secs(30),
+                username: if metadata { "" } else { "synthetic-user" },
+                password: if metadata { "" } else { "synthetic-password" },
+                auto_submit: true,
+            },
+        )
+    }
+
+    // Finding M2: one interrupted start used to end automatic login for the
+    // whole attempt. The typing host reports a stage it never sent a key for.
+    #[test]
+    fn a_release_cancelled_before_its_first_key_is_reserved_once_more_and_never_a_third_time() {
+        use NativeLoginStage::{Form, FormPrepare};
+        let (adapter, origin) = (NativeLoginAdapter::ModularForm, "https://device.test");
+        let policy = OriginBrowserPolicy::new("owner", "connection", "tab", origin).unwrap();
+        let mut budget = LoginBudget::default();
+        let reserve = |budget: &mut LoginBudget, stage| {
+            reserve_stage(budget, &policy, adapter, origin, stage)
+        };
+        // Nothing can be cancelled before it was released.
+        assert!(!budget.cancelled(adapter, origin, Form));
+        assert!(reserve(&mut budget, FormPrepare));
+        assert!(reserve(&mut budget, Form));
+        // A live release stays exclusive: a reload cannot take it again.
+        assert!(!reserve(&mut budget, FormPrepare));
+        assert!(!reserve(&mut budget, Form));
+        assert!(budget.cancelled(adapter, origin, Form));
+        // The old document can no longer type under the withdrawn release.
+        assert!(!budget.released(origin, Form));
+        assert!(reserve(&mut budget, FormPrepare));
+        assert!(reserve(&mut budget, Form));
+        // The second release is live again, and it is the last one.
+        assert!(!reserve(&mut budget, FormPrepare));
+        assert!(!reserve(&mut budget, Form));
+        assert!(!budget.cancelled(adapter, origin, Form));
+        assert!(budget.released(origin, Form));
+        assert!(!reserve(&mut budget, FormPrepare));
+        assert!(!reserve(&mut budget, Form));
+    }
+
+    #[test]
+    fn a_rearmed_release_never_allows_two_submits_for_one_origin() {
+        use NativeLoginStage::{Form, FormPrepare, FormSubmit};
+        let (adapter, origin) = (NativeLoginAdapter::ModularForm, "https://device.test");
+        let policy = OriginBrowserPolicy::new("owner", "connection", "tab", origin).unwrap();
+        let reserve = |budget: &mut LoginBudget, stage| {
+            reserve_stage(budget, &policy, adapter, origin, stage)
+        };
+        // A re-armed fill submits exactly once.
+        let mut budget = LoginBudget::default();
+        assert!(reserve(&mut budget, FormPrepare));
+        assert!(reserve(&mut budget, Form));
+        assert!(budget.cancelled(adapter, origin, Form));
+        // The submit of the withdrawn fill cannot be taken on its own.
+        assert!(!reserve(&mut budget, FormSubmit));
+        assert!(reserve(&mut budget, FormPrepare));
+        assert!(reserve(&mut budget, Form));
+        assert!(reserve(&mut budget, FormSubmit));
+        assert!(!reserve(&mut budget, FormSubmit));
+        for stage in [Form, FormPrepare, FormSubmit] {
+            assert!(!budget.cancelled(adapter, origin, stage));
+            assert!(!reserve(&mut budget, stage));
+        }
+        // Once the submit was released nothing for that origin is re-armed.
+        let mut budget = LoginBudget::default();
+        assert!(reserve(&mut budget, FormPrepare));
+        assert!(reserve(&mut budget, Form));
+        assert!(reserve(&mut budget, FormSubmit));
+        assert!(!budget.cancelled(adapter, origin, Form));
+        for stage in [FormPrepare, Form, FormSubmit] {
+            assert!(!reserve(&mut budget, stage));
+        }
+        // A submit cannot report itself cancelled, nor can a prepare stage
+        // whose fill was released: that chain is settled through its fill.
+        let mut budget = LoginBudget::default();
+        assert!(reserve(&mut budget, FormPrepare));
+        assert!(reserve(&mut budget, Form));
+        assert!(!budget.cancelled(adapter, origin, FormPrepare));
+        assert!(!budget.cancelled(adapter, origin, FormSubmit));
+        assert!(!reserve(&mut budget, FormPrepare));
+        assert!(!reserve(&mut budget, Form));
+    }
+
+    // A document that reserved only the metadata stage and then went away
+    // used to block every later document of that origin for the whole attempt.
+    #[test]
+    fn a_prepare_only_release_is_rearmed_once_and_only_while_its_fill_is_unreleased() {
+        use NativeLoginStage::{Form, FormPrepare, FormSubmit};
+        let (adapter, origin) = (NativeLoginAdapter::ModularForm, "https://device.test");
+        let policy = OriginBrowserPolicy::new("owner", "connection", "tab", origin).unwrap();
+        let reserve = |budget: &mut LoginBudget, stage| {
+            reserve_stage(budget, &policy, adapter, origin, stage)
+        };
+        let mut budget = LoginBudget::default();
+        assert!(!budget.cancelled(adapter, origin, FormPrepare));
+        assert!(reserve(&mut budget, FormPrepare));
+        // A live prepare stays exclusive.
+        assert!(!reserve(&mut budget, FormPrepare));
+        assert!(budget.cancelled(adapter, origin, FormPrepare));
+        // The replaced document cannot take the fill under its withdrawn prepare.
+        assert!(!budget.released(origin, FormPrepare));
+        assert!(!reserve(&mut budget, Form));
+        assert!(reserve(&mut budget, FormPrepare));
+        // The chain was re-armed once: no third prepare, and no second fill.
+        assert!(!budget.cancelled(adapter, origin, FormPrepare));
+        assert!(!reserve(&mut budget, FormPrepare));
+        assert!(reserve(&mut budget, Form));
+        assert!(!budget.cancelled(adapter, origin, Form));
+        assert!(!budget.cancelled(adapter, origin, FormPrepare));
+        assert!(!reserve(&mut budget, FormPrepare));
+        assert!(!reserve(&mut budget, Form));
+        assert!(reserve(&mut budget, FormSubmit));
+        assert!(!reserve(&mut budget, FormSubmit));
+        // Re-armed at the fill instead: a later prepare-only document does not
+        // get a third prepare either.
+        let mut budget = LoginBudget::default();
+        assert!(reserve(&mut budget, FormPrepare));
+        assert!(reserve(&mut budget, Form));
+        assert!(budget.cancelled(adapter, origin, Form));
+        assert!(reserve(&mut budget, FormPrepare));
+        assert!(!budget.cancelled(adapter, origin, FormPrepare));
+        assert!(!reserve(&mut budget, FormPrepare));
+        assert!(reserve(&mut budget, Form));
+        assert!(!reserve(&mut budget, Form));
+        // Another origin's prepare is its own chain.
+        assert!(!budget.cancelled(adapter, "https://other.test", FormPrepare));
+        assert!(budget.released(origin, FormPrepare));
+    }
+
+    #[test]
+    fn only_key_typed_adapters_rearm_and_only_the_cancelled_origin_and_stage() {
+        use NativeLoginStage::{
+            BoundPassword, Form, Identifier, IdentifierSubmit, Password, PasswordSubmit,
+        };
+        let origin = "https://fixture.test";
+        let policy = OriginBrowserPolicy::new("owner", "connection", "tab", origin).unwrap();
+        // Script-filled adapters send no key, so "no key" proves nothing there.
+        for adapter in [
+            NativeLoginAdapter::Generic,
+            NativeLoginAdapter::ExchangeOwa,
+            NativeLoginAdapter::VodafoneSmartRouter,
+        ] {
+            let mut budget = LoginBudget::default();
+            assert!(reserve_stage(&mut budget, &policy, adapter, origin, Form));
+            assert!(!budget.cancelled(adapter, origin, Form));
+            assert!(!reserve_stage(&mut budget, &policy, adapter, origin, Form));
+        }
+        let provider = NativeLoginAdapter::Bitwarden;
+        let reserve = |budget: &mut LoginBudget, stage| {
+            reserve_stage(budget, &policy, provider, origin, stage)
+        };
+        let mut budget = LoginBudget::default();
+        assert!(reserve(&mut budget, Identifier));
+        // Another origin or stage does not re-arm this one.
+        assert!(!budget.cancelled(provider, "https://other.test", Identifier));
+        assert!(!budget.cancelled(provider, origin, Password));
+        assert!(!reserve(&mut budget, Identifier));
+        assert!(budget.cancelled(provider, origin, Identifier));
+        assert!(reserve(&mut budget, Identifier));
+        assert!(!budget.cancelled(provider, origin, Identifier));
+        assert!(!reserve(&mut budget, Identifier));
+        assert!(reserve(&mut budget, Password));
+        // The identifier was accepted: it is spent, the password is not.
+        assert!(!budget.cancelled(provider, origin, Identifier));
+        assert!(budget.cancelled(provider, origin, Password));
+        // The alternative password stage stays exclusive with the released one.
+        assert!(reserve(&mut budget, Password));
+        assert!(!reserve_stage(
+            &mut budget,
+            &policy,
+            NativeLoginAdapter::ChatGpt,
+            origin,
+            BoundPassword
+        ));
+        assert!(reserve(&mut budget, PasswordSubmit));
+        assert!(!budget.cancelled(provider, origin, Password));
+        assert!(!reserve(&mut budget, Password));
+        assert!(!reserve(&mut budget, PasswordSubmit));
+        // An identifier whose submit was released is spent.
+        let mut budget = LoginBudget::default();
+        assert!(reserve(&mut budget, Identifier));
+        assert!(reserve(&mut budget, IdentifierSubmit));
+        assert!(!budget.cancelled(provider, origin, Identifier));
+        assert!(!reserve(&mut budget, Identifier));
+        assert!(!reserve(&mut budget, IdentifierSubmit));
     }
 
     #[test]
