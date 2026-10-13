@@ -9924,5 +9924,23 @@
       "legacyDeleteFailed": "No se pudieron eliminar los archivos de confianza antiguos.",
       "unavailable": "Esta acción solo está disponible en la aplicación de escritorio."
     }
+  },
+  "archiveRepair": {
+    "failed": "La operación no terminó. Revise la base de datos actual; las correcciones guardadas pueden haberse conservado.",
+    "remaining": "Correcciones guardadas. Revise las dependencias restantes.",
+    "ready": "Dependencias corregidas. Repita la exportación o sincronización.",
+    "undone": "Correcciones de dependencias deshechas.",
+    "label": "Corregir dependencias del archivo",
+    "review": "Revisar correcciones de dependencias",
+    "none": "No quedan dependencias sin resolver.",
+    "preview": "Revise cada cambio. Las copias no reciben nueva confianza de ejecución; las dependencias no disponibles permanecen hasta que las elimine.",
+    "manual": "Abra la conexión o documento de origen y elija un destino disponible de esta base de datos.",
+    "restore": "Restaurar y corregir",
+    "copy": "Copiar a esta base de datos y seleccionar",
+    "remove": "Eliminar esta referencia",
+    "root": "Mover a la raíz de la base de datos",
+    "resetGroup": "Restablecer grupo de pestañas predeterminado",
+    "all": "Corregir todos los problemas seguros",
+    "undo": "Deshacer correcciones de dependencias"
   }
 }

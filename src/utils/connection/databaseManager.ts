@@ -3891,6 +3891,39 @@ export class DatabaseManager {
     }
   }
 
+  /** Commit the complete reviewed repair, including its library and references, in one CAS. */
+  async commitArchiveDependencyRepair(
+    collectionId: string,
+    expected: StorageData,
+    replacement: StorageData,
+  ): Promise<void> {
+    const baseline = this.loadedRepresentations.get(expected);
+    if (baseline === undefined)
+      throw new Error(
+        "The dependency review expired. Review the database again.",
+      );
+    const epoch = this.captureDatabaseEpoch(collectionId);
+    const password = this.getUnlockedPasswordForDatabase(collectionId);
+    this.assertDatabaseEpoch(collectionId, epoch);
+    await this.saveDatabaseData(
+      collectionId,
+      replacement,
+      password,
+      undefined,
+      { expectedData: baseline },
+    );
+    this.assertDatabaseEpoch(collectionId, epoch);
+    try {
+      SettingsManager.getInstance().logAction(
+        "info",
+        "Database archive dependencies repaired",
+        collectionId,
+      );
+    } catch {
+      /* The transaction remains committed if logging is unavailable. */
+    }
+  }
+
   async exportFullDatabaseArchive(
     collectionId: string,
     exportPassword: string,

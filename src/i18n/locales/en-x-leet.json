@@ -9924,5 +9924,23 @@
       "legacyDeleteFailed": "7h3 1364cy 7ru57 f1135 c0u1d n07 83 d31373d.",
       "unavailable": "7h15 4c710n 15 0n1y 4v4114813 1n 7h3 d35k70p 4pp."
     }
+  },
+  "archiveRepair": {
+    "failed": "7h3 0p3r4710n d1d n07 f1n15h. R3v13w 7h3 curr3n7 d4748453 83f0r3 r37ry1n6; 54v3d r3p41r5 m4y 83 r3741n3d.",
+    "remaining": "F1x35 54v3d. R3v13w 7h3 r3m41n1n6 d3p3nd3nc135 83f0r3 r37ry1n6.",
+    "ready": "D3p3nd3nc135 r3p41r3d. R37ry 7h3 3xp0r7 0r 5ync 70 c0n71nu3.",
+    "undone": "D3p3nd3ncy r3p41r5 und0n3.",
+    "label": "R3p41r 4rch1v3 d3p3nd3nc135",
+    "review": "R3v13w d3p3nd3ncy f1x35",
+    "none": "N0 unr3501v3d d3p3nd3nc135 r3m41n.",
+    "preview": "R3v13w 34ch ch4n63. C0p135 r3c31v3 n0 n3w 3x3cu710n 7ru57; un4v4114813 d3p3nd3nc135 r3m41n unch4n63d un1355 y0u r3m0v3 7h3m.",
+    "manual": "0p3n 7h3 0wn1n6 c0nn3c710n 0r d0cum3n7 4nd ch0053 4n 4v4114813 database-owned 74r637.",
+    "restore": "R3570r3 4nd f1x",
+    "copy": "C0py 1n70 7h15 d4748453 4nd r35313c7",
+    "remove": "R3m0v3 7h15 r3f3r3nc3",
+    "root": "M0v3 70 d4748453 r007",
+    "resetGroup": "R3537 d3f4u17 748 6r0up",
+    "all": "F1x 411 54f3 155u35",
+    "undo": "Und0 d3p3nd3ncy r3p41r5"
   }
 }

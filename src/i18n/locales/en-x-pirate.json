@@ -9924,5 +9924,23 @@
       "legacyDeleteFailed": "The legacy trust charts could not be deleted.",
       "unavailable": "This action is only available in the desktop app."
     }
+  },
+  "archiveRepair": {
+    "failed": "The operation did not finish. Review the current database before retrying; saved repairs may be retained.",
+    "remaining": "Fixes saved. Review the remaining dependencies before retrying.",
+    "ready": "Dependencies repaired. Try anew the export or sync to continue.",
+    "undone": "Dependency repairs undone.",
+    "label": "Repair archive dependencies",
+    "review": "Review dependency fixes",
+    "none": "Nay unresolved dependencies remain.",
+    "preview": "Review each change. Copies receive nay new execution trust; unavailable dependencies remain unchanged unless ye heave overboard them.",
+    "manual": "Unfurl the owning voyage or document and choose an available database-owned target.",
+    "restore": "Restore and fix",
+    "copy": "Copy into this database and reselect",
+    "remove": "Heave overboard this reference",
+    "root": "Move to database root",
+    "resetGroup": "Reset default tab group",
+    "all": "Fix all safe issues",
+    "undo": "Undo dependency repairs"
   }
 }

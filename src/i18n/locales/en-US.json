@@ -9924,5 +9924,23 @@
       "legacyDeleteFailed": "The legacy trust files could not be deleted.",
       "unavailable": "This action is only available in the desktop app."
     }
+  },
+  "archiveRepair": {
+    "failed": "The operation did not finish. Review the current database before retrying; saved repairs may be retained.",
+    "remaining": "Fixes saved. Review the remaining dependencies before retrying.",
+    "ready": "Dependencies repaired. Retry the export or sync to continue.",
+    "undone": "Dependency repairs undone.",
+    "label": "Repair archive dependencies",
+    "review": "Review dependency fixes",
+    "none": "No unresolved dependencies remain.",
+    "preview": "Review each change. Copies receive no new execution trust; unavailable dependencies remain unchanged unless you remove them.",
+    "manual": "Open the owning connection or document and choose an available database-owned target.",
+    "restore": "Restore and fix",
+    "copy": "Copy into this database and reselect",
+    "remove": "Remove this reference",
+    "root": "Move to database root",
+    "resetGroup": "Reset default tab group",
+    "all": "Fix all safe issues",
+    "undo": "Undo dependency repairs"
   }
 }

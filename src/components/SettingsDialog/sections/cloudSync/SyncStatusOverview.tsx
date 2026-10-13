@@ -7,6 +7,7 @@ import { CloudSyncStatusIcon } from "../../../sync/CloudSyncStatusIcon";
 import { CloudSyncErrorMessage } from "../../../sync/CloudSyncErrorMessage";
 import { Card } from "../../../ui/settings/SettingsPrimitives";
 import type { Mgr } from "./types";
+import { ArchiveDependencyRepair } from "../../../sync/ArchiveDependencyRepair";
 
 function SyncStatusOverview({ mgr }: { mgr: Mgr }) {
   if (mgr.syncTargets.length === 0) return null;
@@ -210,6 +211,16 @@ function SyncStatusOverview({ mgr }: { mgr: Mgr }) {
                   </p>
                 </details>
               )}
+              {status?.lastSyncError &&
+                (() => {
+                  const databaseId =
+                    /Database "([A-Za-z0-9][A-Za-z0-9._:-]{0,127})": \d+ unresolved archive dependenc/.exec(
+                      status.lastSyncError,
+                    )?.[1];
+                  return databaseId ? (
+                    <ArchiveDependencyRepair databaseId={databaseId} />
+                  ) : null;
+                })()}
             </li>
           );
         })}

@@ -9924,5 +9924,23 @@
       "legacyDeleteFailed": "Les anciens fichiers de confiance n'ont pas pu être supprimés.",
       "unavailable": "Cette action n'est disponible que dans l'application de bureau."
     }
+  },
+  "archiveRepair": {
+    "failed": "L’opération ne s’est pas terminée. Vérifiez la base actuelle ; les corrections enregistrées peuvent avoir été conservées.",
+    "remaining": "Corrections enregistrées. Vérifiez les dépendances restantes.",
+    "ready": "Dépendances corrigées. Relancez l’exportation ou la synchronisation.",
+    "undone": "Corrections des dépendances annulées.",
+    "label": "Corriger les dépendances de l’archive",
+    "review": "Examiner les corrections des dépendances",
+    "none": "Aucune dépendance non résolue ne reste.",
+    "preview": "Vérifiez chaque modification. Les copies ne reçoivent aucune nouvelle autorisation d’exécution ; les dépendances indisponibles restent jusqu’à leur suppression.",
+    "manual": "Ouvrez la connexion ou le document propriétaire et choisissez une cible disponible dans cette base.",
+    "restore": "Restaurer et corriger",
+    "copy": "Copier dans cette base et sélectionner",
+    "remove": "Supprimer cette référence",
+    "root": "Déplacer à la racine de la base",
+    "resetGroup": "Réinitialiser le groupe d’onglets par défaut",
+    "all": "Corriger tous les problèmes sûrs",
+    "undo": "Annuler les corrections des dépendances"
   }
 }

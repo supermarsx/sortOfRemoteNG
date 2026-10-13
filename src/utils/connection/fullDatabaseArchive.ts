@@ -274,7 +274,9 @@ const present = (value: unknown): boolean =>
   !(Array.isArray(value) && !value.length) &&
   !(typeof value === "object" && value !== null && !Object.keys(value).length);
 
-function validateClosure(archive: FullDatabaseArchive): void {
+function collectClosure(
+  archive: FullDatabaseArchive,
+): ArchiveDependencyDiagnostics {
   const collector = new ArchiveDependencyCollector(archive.collection.id);
   const rows = [
     ...archive.connections.map((row, index) => ({
@@ -571,13 +573,30 @@ function validateClosure(archive: FullDatabaseArchive): void {
     documents[category].forEach((row, index) =>
       visitDocument(row, row.id, `documents.${category}[${index}]`),
     );
-  if (collector.diagnostics.totalIssues)
+  return collector.diagnostics;
+}
+
+function validateClosure(archive: FullDatabaseArchive): void {
+  const diagnostics = collectClosure(archive);
+  if (diagnostics.totalIssues)
     throw new FullDatabaseArchiveError(
-      collector.diagnostics.issues[0].reason === "file-credential"
+      diagnostics.issues[0].reason === "file-credential"
         ? "file-credential"
         : "dependencies",
-      collector.diagnostics,
+      diagnostics,
     );
+}
+
+/** Local repair preview only: never sanitizes or drops persisted private data. */
+export function inspectDatabaseArchiveDependencies(
+  databaseId: string,
+  data: StorageData,
+): ArchiveDependencyDiagnostics {
+  const normalized = materializeDatabaseArchiveDefaults(data);
+  return collectClosure({
+    ...normalized,
+    collection: { id: databaseId },
+  } as FullDatabaseArchive);
 }
 
 /** Normalize and verify the entire closure; credentials never pass generic redaction. */

@@ -16,6 +16,7 @@ import {
   type ExportFileResult,
 } from "./exportFile";
 import type { ExportDatabaseOption } from "./types";
+import { ArchiveDependencyRepair } from "../sync/ArchiveDependencyRepair";
 
 type Result = { name: string; result: ExportFileResult };
 export function FullDatabaseTransfer({
@@ -44,6 +45,7 @@ export function FullDatabaseTransfer({
   const [name, setName] = useState("");
   const [file, setFile] = useState<File | null>(null);
   const [error, setError] = useState("");
+  const [repairDatabaseId, setRepairDatabaseId] = useState<string>();
   const [results, setResults] = useState<Result[]>([]);
   const [restored, setRestored] = useState("");
   const selected = databases.filter((database) =>
@@ -59,6 +61,7 @@ export function FullDatabaseTransfer({
     running.current = true;
     setBusy(true);
     setError("");
+    setRepairDatabaseId(undefined);
     setResults([]);
     setRestored("");
     try {
@@ -140,6 +143,11 @@ export function FullDatabaseTransfer({
         setConfirmation("");
       }
     } catch (failure) {
+      if (
+        failure instanceof FullDatabaseArchiveError &&
+        failure.diagnostics?.databaseId
+      )
+        setRepairDatabaseId(failure.diagnostics.databaseId);
       setError(
         failure instanceof FullDatabaseArchiveError ||
           failure instanceof FullDatabaseRestoreIncompleteError
@@ -437,6 +445,12 @@ export function FullDatabaseTransfer({
         >
           {error}
         </p>
+      )}
+      {repairDatabaseId && (
+        <ArchiveDependencyRepair
+          databaseId={repairDatabaseId}
+          onRepaired={() => setError("")}
+        />
       )}
       {restored && (
         <p

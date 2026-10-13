@@ -9924,5 +9924,23 @@
       "legacyDeleteFailed": "Die alten Vertrauensdateien konnten nicht gelöscht werden.",
       "unavailable": "Diese Aktion ist nur in der Desktop-App verfügbar."
     }
+  },
+  "archiveRepair": {
+    "failed": "Der Vorgang wurde nicht abgeschlossen. Prüfen Sie die aktuelle Datenbank; gespeicherte Korrekturen können erhalten geblieben sein.",
+    "remaining": "Korrekturen gespeichert. Prüfen Sie die verbleibenden Abhängigkeiten.",
+    "ready": "Abhängigkeiten korrigiert. Wiederholen Sie Export oder Synchronisierung.",
+    "undone": "Abhängigkeitskorrekturen rückgängig gemacht.",
+    "label": "Archivabhängigkeiten korrigieren",
+    "review": "Abhängigkeitskorrekturen prüfen",
+    "none": "Keine ungelösten Abhängigkeiten mehr.",
+    "preview": "Prüfen Sie jede Änderung. Kopien erhalten kein neues Ausführungsvertrauen; nicht verfügbare Abhängigkeiten bleiben bis zur Entfernung unverändert.",
+    "manual": "Öffnen Sie die zugehörige Verbindung oder das Dokument und wählen Sie ein verfügbares Ziel dieser Datenbank.",
+    "restore": "Wiederherstellen und korrigieren",
+    "copy": "In diese Datenbank kopieren und auswählen",
+    "remove": "Diese Referenz entfernen",
+    "root": "In die Datenbankwurzel verschieben",
+    "resetGroup": "Standard-Tabgruppe zurücksetzen",
+    "all": "Alle sicher behebbaren Probleme korrigieren",
+    "undo": "Abhängigkeitskorrekturen rückgängig machen"
   }
 }

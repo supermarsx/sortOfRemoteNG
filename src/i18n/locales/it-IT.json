@@ -9924,5 +9924,23 @@
       "legacyDeleteFailed": "Non è stato possibile eliminare i vecchi file di attendibilità.",
       "unavailable": "Questa azione è disponibile solo nell'app desktop."
     }
+  },
+  "archiveRepair": {
+    "failed": "L’operazione non è terminata. Controlla il database attuale; le correzioni salvate potrebbero essere rimaste.",
+    "remaining": "Correzioni salvate. Controlla le dipendenze rimanenti.",
+    "ready": "Dipendenze corrette. Ripeti l’esportazione o la sincronizzazione.",
+    "undone": "Correzioni delle dipendenze annullate.",
+    "label": "Correggi dipendenze dell’archivio",
+    "review": "Esamina correzioni delle dipendenze",
+    "none": "Non rimangono dipendenze irrisolte.",
+    "preview": "Esamina ogni modifica. Le copie non ricevono nuova fiducia di esecuzione; le dipendenze indisponibili rimangono fino alla rimozione.",
+    "manual": "Apri la connessione o il documento proprietario e scegli una destinazione disponibile in questo database.",
+    "restore": "Ripristina e correggi",
+    "copy": "Copia in questo database e seleziona",
+    "remove": "Rimuovi questo riferimento",
+    "root": "Sposta nella radice del database",
+    "resetGroup": "Reimposta gruppo di schede predefinito",
+    "all": "Correggi tutti i problemi sicuri",
+    "undo": "Annulla correzioni delle dipendenze"
   }
 }

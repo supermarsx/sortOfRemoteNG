@@ -202,6 +202,51 @@ async function openPlainDatabase() {
 }
 
 describe("full database manager archive boundary", () => {
+  it("commits dependency repairs atomically and undo rejects a concurrent database edit", async () => {
+    const manager = DatabaseManager.getInstance();
+    await manager.unlockManagedDatabase(
+      collection.id,
+      "password-slot",
+      "source-unlock",
+    );
+    const expected = (await manager.loadDatabaseData(collection.id))!;
+    const replacement = structuredClone(expected);
+    replacement.connections[1].sshQuickActions!.items = [];
+    await manager.commitArchiveDependencyRepair(
+      collection.id,
+      expected,
+      replacement,
+    );
+    expect(
+      privateData.get(collection.id)!.connections[1].sshQuickActions!.items,
+    ).toEqual([]);
+    const unrelated = await manager.loadDatabaseData(collection.id);
+    privateData.get(collection.id)!.connections[1].name = "Concurrent edit";
+    await expect(
+      manager.commitArchiveDependencyRepair(
+        collection.id,
+        replacement,
+        expected,
+      ),
+    ).rejects.toThrow();
+    expect(privateData.get(collection.id)!.connections[1].name).toBe(
+      "Concurrent edit",
+    );
+    expect(unrelated).toBeDefined();
+  });
+
+  it("refuses manufactured dependency review receipts before any write", async () => {
+    const manager = DatabaseManager.getInstance();
+    const data = await fullData();
+    await expect(
+      manager.commitArchiveDependencyRepair(collection.id, data, data),
+    ).rejects.toThrow("review expired");
+    expect(
+      bridge.invoke.mock.calls.some(
+        ([command]) => command === "database_protection_save",
+      ),
+    ).toBe(false);
+  });
   it.each(["update", "delete", "reject"])(
     "applies explicit cloud %s with public/session CAS in one native transaction (mocked IPC)",
     async (operation) => {

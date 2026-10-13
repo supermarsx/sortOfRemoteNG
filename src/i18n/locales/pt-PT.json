@@ -9924,5 +9924,23 @@
       "legacyDeleteFailed": "Não foi possível eliminar os ficheiros de confiança antigos.",
       "unavailable": "Esta ação só está disponível na aplicação para computador."
     }
+  },
+  "archiveRepair": {
+    "failed": "A operação não terminou. Reveja a base de dados atual; as correções guardadas podem ter sido mantidas.",
+    "remaining": "Correções guardadas. Reveja as dependências restantes antes de tentar novamente.",
+    "ready": "Dependências corrigidas. Repita a exportação ou sincronização.",
+    "undone": "Correções de dependências anuladas.",
+    "label": "Corrigir dependências do arquivo",
+    "review": "Rever correções de dependências",
+    "none": "Não há dependências por resolver.",
+    "preview": "Reveja cada alteração. As cópias não recebem nova confiança de execução; as dependências indisponíveis mantêm-se até as remover.",
+    "manual": "Abra a ligação ou documento de origem e escolha um destino disponível desta base de dados.",
+    "restore": "Restaurar e corrigir",
+    "copy": "Copiar para esta base de dados e selecionar",
+    "remove": "Remover esta referência",
+    "root": "Mover para a raiz da base de dados",
+    "resetGroup": "Repor grupo de separadores predefinido",
+    "all": "Corrigir todos os problemas seguros",
+    "undo": "Anular correções de dependências"
   }
 }
