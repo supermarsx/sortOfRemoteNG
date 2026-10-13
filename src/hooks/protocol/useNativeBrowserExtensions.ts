@@ -57,11 +57,22 @@ export function useNativeBrowserExtensions(
   const writing = useRef(false);
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<{
-    scope: string;
+    owner: string;
     error?: string;
-    saved?: boolean;
+    /** The attempt a confirmed save started from. */
+    saved?: OriginBrowserIdentity;
   } | null>(null);
   const [, refresh] = useState(0);
+  // What a save's outcome belongs to: the saved row in its database. The
+  // attempt is deliberately not part of it, because a save makes the tab
+  // reconnect, and that reconnect must not take the outcome away.
+  const owner = JSON.stringify([
+    options.ownerDatabaseId,
+    options.connection?.id,
+    context?.databaseAvailability?.generation,
+  ]);
+  const currentOwner = useRef(owner);
+  currentOwner.current = owner;
   const scope = JSON.stringify([
     options.ownerDatabaseId,
     options.connection?.id,
@@ -181,11 +192,13 @@ export function useNativeBrowserExtensions(
   const save = async (
     change: NativeBrowserExtensionChange,
   ): Promise<boolean> => {
+    const attempt = options.identity;
     if (
       writing.current ||
       reason ||
       !options.connection ||
-      !options.ownerDatabaseId
+      !options.ownerDatabaseId ||
+      !attempt
     )
       return false;
     const capturedEpoch = epoch.current;
@@ -259,11 +272,11 @@ export function useNativeBrowserExtensions(
         change,
       );
       assertCurrent();
-      setResult({ scope, saved: true });
+      setResult({ owner, saved: attempt });
       return true;
     } catch {
-      if (mounted.current && currentScope.current === scope)
-        setResult({ scope, error: SAVE_FAILED });
+      if (mounted.current && currentOwner.current === owner)
+        setResult({ owner, error: SAVE_FAILED });
       return false;
     } finally {
       writing.current = false;
@@ -271,8 +284,10 @@ export function useNativeBrowserExtensions(
     }
   };
 
+  const outcome = result?.owner === owner ? result : null;
   return {
     scope,
+    owner,
     requested,
     appearance,
     globalEnabled,
@@ -284,8 +299,14 @@ export function useNativeBrowserExtensions(
     loginConfigurable:
       !options.connection?.httpApplication ||
       ["form", "manual"].includes(options.connection.httpApplication.loginMode),
-    error: result?.scope === scope ? result.error : undefined,
-    saved: result?.scope === scope && result.saved === true,
+    error: outcome?.error,
+    // Said from the confirmed write until the attempt that replaces the saving
+    // one is ready for these controls again: by then the change is applied.
+    saved:
+      !!outcome?.saved &&
+      (!options.identity ||
+        sameIdentity(options.identity, outcome.saved) ||
+        !!reason),
     save,
   };
 }

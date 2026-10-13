@@ -30,7 +30,10 @@ export function NativeBrowserExtensionPanel({
         change is saved, this tab reconnects by itself to apply it. Changes do
         not grant credential consent or run scripts.
       </p>
-      {controller.reason && <p role="status">{controller.reason}</p>}
+      {/* The saved line below already says why the controls are waiting. */}
+      {controller.reason && !controller.saved && (
+        <p role="status">{controller.reason}</p>
+      )}
       {controller.error && (
         <p role="alert" className="text-error">
           {controller.error}
@@ -154,7 +157,9 @@ export default function NativeBrowserExtensionControls({
 }) {
   const [openScope, setOpenScope] = useState<string | null>(null);
   const anchorRef = useRef<HTMLDivElement>(null);
-  const open = openScope === controller.scope;
+  // Open for the saved row, not for one attempt: a change made here makes
+  // the tab reconnect, and the panel has to be there to say so.
+  const open = openScope === controller.owner;
   return (
     <div ref={anchorRef} className="relative">
       <button
@@ -163,7 +168,7 @@ export default function NativeBrowserExtensionControls({
         aria-haspopup="dialog"
         aria-expanded={open}
         className="sor-icon-btn-sm"
-        onClick={() => setOpenScope(open ? null : controller.scope)}
+        onClick={() => setOpenScope(open ? null : controller.owner)}
       >
         <Puzzle size={16} />
       </button>

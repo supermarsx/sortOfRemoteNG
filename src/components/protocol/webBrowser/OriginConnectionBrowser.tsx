@@ -386,17 +386,12 @@ export default function OriginConnectionBrowser({
   const saveFlushed =
     !context.persistence?.dirty && !context.persistence?.saving;
   const liveAttempt = phase === "starting" || nativeAttached;
-  const seenChange = useRef<{ signature: string; restart: number } | null>(
-    null,
-  );
   useEffect(() => {
     if (
       applied.initialUrl === targetUrl &&
       applied.authoritySignature === authoritySignature
-    ) {
-      seenChange.current = null;
+    )
       return;
-    }
     const next = { initialUrl: targetUrl, authoritySignature };
     // No saved row was started from, or none is left to wait for.
     if (
@@ -406,29 +401,19 @@ export default function OriginConnectionBrowser({
       setApplied(next);
       return;
     }
-    if (seenChange.current?.signature !== authoritySignature)
-      seenChange.current = {
-        signature: authoritySignature,
-        restart: lastRestart?.serial ?? 0,
-      };
     if (!saveFlushed) return;
-    const seen = seenChange.current;
-    seenChange.current = null;
     setApplied(next);
     // The attempt has to be replaced by one that reads the row just written.
-    // A failed or finally closed tab keeps its explicit Retry instead, and the
-    // restart native asked for on seeing this write is not repeated; one the
-    // hook made for another cause may have read the row before the write. (The
-    // tab's own Save and reconnect marks its write as applied; see onSave.)
+    // A failed or finally closed tab keeps its explicit Retry instead. A
+    // restart the hook made by itself in the meantime does not stand in for
+    // this one: the shell cannot know which row that replacement read (an
+    // earlier edit's, or the old one if a route record changed). While that
+    // restart has not created yet, the hook serves both with one replacement.
+    // (The tab's own Save and reconnect marks its write as applied; see onSave.)
     if (
       targetUrl &&
       liveAttempt &&
-      applied.authoritySignature !== authoritySignature &&
-      !(
-        lastRestart?.automatic &&
-        lastRestart.reason === "source-changed" &&
-        lastRestart.serial > seen.restart
-      )
+      applied.authoritySignature !== authoritySignature
     )
       void restart("source-changed");
   }, [
@@ -437,7 +422,6 @@ export default function OriginConnectionBrowser({
     authoritySignature,
     saveFlushed,
     liveAttempt,
-    lastRestart,
     restart,
   ]);
   // The session row copied the saved host and scheme when its tab opened. It

@@ -889,9 +889,18 @@ describe("a saved connection edited while its tab is open (K2)", () => {
     expect(h.statuses).not.toContain("error");
   });
 
-  it("does not reconnect a second time when native reports the write first", async () => {
+  it("serves native's restart and its own with one replacement while the old page is still closing", async () => {
     await openTab();
     await edit({ password: "second-secret" });
+    const native = h.invoke.getMockImplementation()!;
+    let finishClose!: () => void;
+    h.invoke.mockImplementation((command, args) =>
+      command === "origin_browser_close"
+        ? new Promise<void>((resolve) => {
+            finishClose = resolve;
+          })
+        : native(command, args),
+    );
     let finishWrite!: () => void;
     h.save.mockImplementationOnce(async (rows) => {
       h.disk = rows;
@@ -912,16 +921,120 @@ describe("a saved connection edited while its tab is open (K2)", () => {
         failureReason: "source-changed",
       }),
     );
-    await reattached(2);
-    expect(h.creates[1].row.password).toBe("second-secret");
+    await waitFor(() => expect(finishClose).toBeDefined());
     await act(async () => {
       finishWrite();
       await flushing;
     });
     await settle();
+    // The shell's own request joined the restart that had not created yet.
+    expect(calls("origin_browser_create")).toHaveLength(1);
+    await act(async () => finishClose());
+    await reattached(2);
+    await settle();
     expect(calls("origin_browser_create")).toHaveLength(2);
     expect(calls("origin_browser_close")).toHaveLength(1);
+    expect(h.creates[1].row.password).toBe("second-secret");
+  });
+
+  it("reconnects once more when native's replacement was up before the write was seen to finish", async () => {
+    await openTab();
+    await edit({ password: "second-secret" });
+    let finishWrite!: () => void;
+    h.save.mockImplementationOnce(async (rows) => {
+      h.disk = rows;
+      await new Promise<void>((resolve) => {
+        finishWrite = resolve;
+      });
+    });
+    let flushing!: Promise<void>;
+    act(() => {
+      flushing = shell.current!.flush();
+    });
+    await emit(
+      snapshot("attempt-1", {
+        sequence: 5,
+        phase: "failed",
+        failureReason: "source-changed",
+      }),
+    );
+    await reattached(2);
+    await act(async () => {
+      finishWrite();
+      await flushing;
+    });
+    // The shell cannot know which row that replacement read (the two tests
+    // below are the cases where it read an older one), so it applies its own
+    // write with one more restart instead of trusting it.
+    await reattached(3);
+    await settle();
+    expect(calls("origin_browser_create")).toHaveLength(3);
+    expect(h.creates[2].row.password).toBe("second-secret");
+    expect(h.statuses).not.toContain("error");
     expect(tab().status).toBe("connected");
+  });
+
+  it("applies a second edit whose write lands after native restarted the tab for the first", async () => {
+    await openTab();
+    await edit({ password: "second-secret" });
+    let finishFirst!: () => void;
+    h.save.mockImplementationOnce(async (rows) => {
+      h.disk = rows;
+      await new Promise<void>((resolve) => {
+        finishFirst = resolve;
+      });
+    });
+    let flushing!: Promise<void>;
+    act(() => {
+      flushing = shell.current!.flush();
+    });
+    // The first write is on disk. Before the shell sees it return, the user
+    // saves a second edit, and native restarts the tab for the first.
+    await edit({ password: "third-secret" });
+    await emit(
+      snapshot("attempt-1", {
+        sequence: 5,
+        phase: "failed",
+        failureReason: "source-changed",
+      }),
+    );
+    await reattached(2);
+    expect(h.creates[1].row.password).toBe("second-secret");
+    // Now the first write returns and the second one is written after it.
+    await act(async () => {
+      finishFirst();
+      await flushing;
+    });
+    expect(h.disk[0].password).toBe("third-secret");
+    await reattached(3);
+    await settle();
+    // Exactly one further restart, and it runs from the second edit.
+    expect(calls("origin_browser_create")).toHaveLength(3);
+    expect(h.creates[2].row.password).toBe("third-secret");
+    expect(h.statuses).not.toContain("error");
+    expect(tab().status).toBe("connected");
+  });
+
+  it("applies an unwritten edit after native restarted the tab for a change the shell cannot see", async () => {
+    await openTab();
+    await edit({ password: "second-secret" });
+    // For example a route record this connection depends on: native reports
+    // the same reason, and the replacement reads the row still on disk.
+    await emit(
+      snapshot("attempt-1", {
+        sequence: 5,
+        phase: "failed",
+        failureReason: "source-changed",
+      }),
+    );
+    await reattached(2);
+    expect(h.creates[1].row.password).toBe("first-secret");
+    await flush();
+    await reattached(3);
+    await settle();
+    expect(calls("origin_browser_create")).toHaveLength(3);
+    expect(h.creates[2].row.password).toBe("second-secret");
+    expect(h.statuses).not.toContain("error");
   });
 
   it("reconnects once after an extension setting is saved from the tab itself", async () => {
@@ -939,7 +1052,7 @@ describe("a saved connection edited while its tab is open (K2)", () => {
     });
     await waitFor(() => expect(scripts).toBeEnabled());
     fireEvent.click(scripts);
-    await reattached(2);
+    await reconnected(2);
     await settle();
     expect(h.disk[0].httpAutomation.scriptInjectionEnabled).toBe(true);
     expect(h.creates[1].row.httpAutomation.scriptInjectionEnabled).toBe(true);
@@ -956,6 +1069,54 @@ describe("a saved connection edited while its tab is open (K2)", () => {
       "This connection's saved settings changed, so this tab reconnected to apply them.",
     );
     expect(screen.queryByText(/were not confirmed saved/)).toBeNull();
+  });
+
+  it("keeps the extension panel open with its saved line while the tab reconnects to apply the change", async () => {
+    await openTab();
+    fireEvent.click(screen.getByRole("button", { name: "Website extensions" }));
+    const panel = await screen.findByRole("dialog", {
+      name: "Native website extensions",
+    });
+    const scripts = () =>
+      within(panel).getByRole("checkbox", { name: "User scripts" });
+    await waitFor(() => expect(scripts()).toBeEnabled());
+    expect(scripts()).not.toBeChecked();
+    // The replacement stays unanswered, so the reconnect the save causes is
+    // still running when the panel is looked at.
+    const native = h.invoke.getMockImplementation()!;
+    let attach!: () => void;
+    h.invoke.mockImplementation((command, args) =>
+      command === "origin_browser_create"
+        ? new Promise<void>((resolve) => {
+            attach = resolve;
+          }).then(() => native(command, args))
+        : native(command, args),
+    );
+    fireEvent.click(scripts());
+    await waitFor(() => expect(attach).toBeDefined());
+    await settle();
+    expect(tab().status).toBe("reconnecting");
+    const savedLine =
+      "Saved to this connection. This tab now reconnects by itself to apply the change.";
+    expect(panel).toBeInTheDocument();
+    expect(within(panel).getByText(savedLine)).toBeVisible();
+    expect(scripts()).toBeDisabled();
+    expect(
+      within(panel).queryByText(/unavailable while this session is blocked/),
+    ).toBeNull();
+    expect(within(panel).queryByRole("alert")).toBeNull();
+    await act(async () => attach());
+    await reconnected(2);
+    // The replacement is ready for the controls again: they show the saved
+    // value, and the line about a reconnect that is over is gone.
+    await waitFor(() => expect(scripts()).toBeEnabled());
+    expect(scripts()).toBeChecked();
+    expect(panel).toBeInTheDocument();
+    expect(within(panel).queryByText(savedLine)).toBeNull();
+    expect(notice()).toHaveTextContent(
+      "This connection's saved settings changed, so this tab reconnected to apply them.",
+    );
+    expect(calls("origin_browser_create")).toHaveLength(2);
   });
 
   it("reconnects once after the tab's appearance is saved, with a notice that is not an error", async () => {
@@ -978,7 +1139,7 @@ describe("a saved connection edited while its tab is open (K2)", () => {
     fireEvent.click(
       within(panel).getByRole("button", { name: "Save appearance" }),
     );
-    await reattached(2);
+    await reconnected(2);
     await settle();
     // Native fixes the appearance when it creates a tab, so the saved one
     // reaches the page through one reconnect.
@@ -1157,18 +1318,19 @@ describe("an extension setting saved from the tab it reconnects", () => {
       h.disk = rows;
       holdReads = true;
     });
+    const receipt = {
+      version: 1,
+      identity,
+      appControls: true,
+      appEnabled: true,
+      forcedDark: true,
+      chromium: "unsupportedPrivateContext",
+    } as const;
     let props: NativeBrowserExtensionsOptions = {
       connection: row,
       ownerDatabaseId: "database-1",
       identity,
-      receipt: {
-        version: 1,
-        identity,
-        appControls: true,
-        appEnabled: true,
-        forcedDark: true,
-        chromium: "unsupportedPrivateContext",
-      },
+      receipt,
       webBrowserSettings: undefined,
       settingsReady: true,
       blocked: false,
@@ -1213,6 +1375,32 @@ describe("an extension setting saved from the tab it reconnects", () => {
         locked = true;
       },
       confirm: () => reads.splice(0).forEach((resolve) => resolve()),
+      /** The attempt that replaced the saving one is ready for the controls. */
+      attach(attemptId: string) {
+        const next = { ...identity, attemptId };
+        props = {
+          ...props,
+          connection: rows[0],
+          identity: next,
+          receipt: { ...receipt, identity: next },
+          blocked: false,
+        };
+        hook.rerender();
+      },
+      /** The same controls are handed another saved connection, whose own
+       * tab is still starting unless `attached`. */
+      other(attached = false) {
+        const next = { ...identity, connectionId: "connection-2" };
+        rows = [{ ...rows[0], id: next.connectionId }];
+        props = {
+          ...props,
+          connection: rows[0],
+          identity: attached ? next : null,
+          receipt: attached ? { ...receipt, identity: next } : null,
+          blocked: !attached,
+        };
+        hook.rerender();
+      },
     };
   }
   async function saveThenReconnect(t: ReturnType<typeof extensions>) {
@@ -1238,6 +1426,31 @@ describe("an extension setting saved from the tab it reconnects", () => {
       saved = await pending;
     });
     expect(saved).toBe(true);
+    // The line about the save outlives the attempt the save started from ...
+    expect(t.hook.result.current.saved).toBe(true);
+    expect(t.hook.result.current.error).toBeUndefined();
+    // ... and goes once the attempt that replaced it is ready: it is applied.
+    t.attach("attempt-2");
+    expect(t.hook.result.current.available).toBe(true);
+    expect(t.hook.result.current.saved).toBe(false);
+  });
+
+  it("shows neither line for another connection", async () => {
+    const t = extensions();
+    const { pending } = await saveThenReconnect(t);
+    await act(async () => {
+      t.confirm();
+      await pending;
+    });
+    expect(t.hook.result.current.saved).toBe(true);
+    // Not that connection's save, although its tab is not ready either.
+    t.other();
+    expect(t.hook.result.current.available).toBe(false);
+    expect(t.hook.result.current.saved).toBe(false);
+    expect(t.hook.result.current.error).toBeUndefined();
+    t.other(true);
+    expect(t.hook.result.current.available).toBe(true);
+    expect(t.hook.result.current.saved).toBe(false);
   });
 
   it("still refuses to confirm once the owning database is locked", async () => {
@@ -1250,5 +1463,11 @@ describe("an extension setting saved from the tab it reconnects", () => {
       saved = await pending;
     });
     expect(saved).toBe(false);
+    // The failure is said, although the tab is already reconnecting.
+    expect(t.hook.result.current.saved).toBe(false);
+    expect(t.hook.result.current.error).toMatch(/were not confirmed saved/);
+    // It does not follow the controls to another connection either.
+    t.other();
+    expect(t.hook.result.current.error).toBeUndefined();
   });
 });
