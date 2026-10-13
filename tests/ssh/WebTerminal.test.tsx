@@ -1757,6 +1757,82 @@ describe("WebTerminal", () => {
         expect(screen.getByText("System Info (Windows)")).toBeInTheDocument();
       });
     });
+
+    /** Opens the picker as a click does: the toolbar button has the keyboard. */
+    const openPickerFromToolbar = async () => {
+      mockInvoke.mockResolvedValueOnce("ssh-session-123");
+      renderWithProviders(mockSession);
+      await waitFor(() => {
+        expect(screen.getByText("Connected")).toBeInTheDocument();
+      });
+      const opener = screen.getByRole("button", { name: /run script/i });
+      opener.focus();
+      fireEvent.click(opener);
+      const search = await screen.findByPlaceholderText(/Search scripts/i);
+      // The dialog settles its focus one frame after it opens.
+      await act(async () => {
+        await new Promise((resolve) => requestAnimationFrame(resolve));
+        await new Promise((resolve) => requestAnimationFrame(resolve));
+      });
+      return { opener, search };
+    };
+
+    it("puts the keyboard in the search box when the picker opens", async () => {
+      const { search } = await openPickerFromToolbar();
+      expect(search).toHaveFocus();
+    });
+
+    it("filters as the user types, without a click into the search box first", async () => {
+      await openPickerFromToolbar();
+      await waitFor(() => {
+        expect(screen.getByText("System Info (Linux)")).toBeInTheDocument();
+      });
+
+      // Typing goes to whatever holds the keyboard.
+      fireEvent.change(document.activeElement!, {
+        target: { value: "windows" },
+      });
+
+      await waitFor(() => {
+        expect(screen.getByText("System Info (Windows)")).toBeInTheDocument();
+        expect(
+          screen.queryByText("System Info (Linux)"),
+        ).not.toBeInTheDocument();
+      });
+    });
+
+    it("keeps the close button reachable by Tab", async () => {
+      const { search } = await openPickerFromToolbar();
+      const dialog = screen.getByRole("dialog");
+      const close = within(dialog).getByRole("button", { name: "Close" });
+      expect(close).toBeEnabled();
+      expect(close.tabIndex).toBeGreaterThanOrEqual(0);
+      // It sits before the search box, one Shift+Tab away ...
+      expect(
+        close.compareDocumentPosition(search) &
+          Node.DOCUMENT_POSITION_FOLLOWING,
+      ).toBeTruthy();
+      // ... and Tab from the last control comes round to it.
+      close.focus();
+      fireEvent.keyDown(document, { key: "Tab", shiftKey: true });
+      expect(close).not.toHaveFocus();
+      expect(dialog).toContainElement(document.activeElement as HTMLElement);
+      fireEvent.keyDown(document, { key: "Tab" });
+      expect(close).toHaveFocus();
+    });
+
+    it("returns the keyboard to the Run Script button when the picker is dismissed", async () => {
+      const { opener } = await openPickerFromToolbar();
+
+      fireEvent.keyDown(document, { key: "Escape" });
+
+      await waitFor(() => {
+        expect(
+          screen.queryByTestId("web-terminal-script-selector-modal"),
+        ).not.toBeInTheDocument();
+      });
+      expect(opener).toHaveFocus();
+    });
   });
 
   describe("Send Ctrl+C Button", () => {

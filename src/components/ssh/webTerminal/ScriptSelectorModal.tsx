@@ -1,3 +1,4 @@
+import { useRef } from "react";
 import { OS_TAG_LABELS } from "../../recording/scriptManager/shared";
 import { ScriptMetadataIcon } from "../../recording/scriptManager/ScriptMetadataIcon";
 import {
@@ -12,11 +13,15 @@ import { FileCode, Filter, Play, Search } from "lucide-react";
 import { Select } from "../../ui/forms";
 
 function ScriptSelectorModal({ mgr }: { mgr: WebTerminalMgr }) {
+  // The picker opens for typing, so the search box takes the keyboard. Left
+  // to itself the dialog focuses its first control, the header's close button.
+  const searchRef = useRef<HTMLInputElement>(null);
   if (!mgr.showScriptSelector) return null;
   return (
     <Modal
       isOpen={mgr.showScriptSelector}
       onClose={mgr.closeScriptSelector}
+      initialFocusRef={searchRef}
       backdropClassName="bg-black/50"
       panelClassName="max-w-[500px] mx-4"
       dataTestId="web-terminal-script-selector-modal"
@@ -42,12 +47,12 @@ function ScriptSelectorModal({ mgr }: { mgr: WebTerminalMgr }) {
               className="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--color-textMuted)]"
             />
             <input
+              ref={searchRef}
               type="text"
               value={mgr.scriptSearchQuery}
               onChange={(e) => mgr.setScriptSearchQuery(e.target.value)}
               placeholder="Search scripts..."
               className="sor-search-input"
-              autoFocus
             />
           </div>
         </div>
