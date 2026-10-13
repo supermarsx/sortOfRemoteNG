@@ -9942,5 +9942,9 @@
     "resetGroup": "重置默认标签组",
     "all": "修复所有安全问题",
     "undo": "撤销依赖修复"
+  },
+  "secureClipboard": {
+    "sizeLimit": "安全剪贴板大小限制",
+    "sizeLimitHelp": "复制的凭据和导出内容的最大 UTF-8 大小。默认：150 MiB。更大的限制会在复制和清除时使用更多内存。"
   }
 }

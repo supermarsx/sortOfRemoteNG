@@ -403,6 +403,7 @@ const DEFAULT_SETTINGS: GlobalSettings = {
 
   // Clipboard Behavior
   copyOnSelect: false,
+  secureClipboardMaxMiB: 150,
   pasteOnRightClick: true,
   clearClipboardAfterSeconds: 0,
   trimPastedWhitespace: false,

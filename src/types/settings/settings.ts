@@ -262,6 +262,8 @@ export interface GlobalSettings {
   // ─── Clipboard Behavior ─────────────────────────────────────
   /** Copy terminal selection to clipboard automatically */
   copyOnSelect: boolean;
+  /** Secure clipboard payload size in MiB, from 0.0625 to 512. */
+  secureClipboardMaxMiB: number;
   /** Paste clipboard on right-click in terminal */
   pasteOnRightClick: boolean;
   /** Clear clipboard N seconds after a terminal paste (0 = off) */

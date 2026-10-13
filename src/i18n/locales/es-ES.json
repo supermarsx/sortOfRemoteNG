@@ -9942,5 +9942,9 @@
     "resetGroup": "Restablecer grupo de pestañas predeterminado",
     "all": "Corregir todos los problemas seguros",
     "undo": "Deshacer correcciones de dependencias"
+  },
+  "secureClipboard": {
+    "sizeLimit": "Límite del portapapeles seguro",
+    "sizeLimitHelp": "Tamaño UTF-8 máximo de credenciales y exportaciones copiadas. Predeterminado: 150 MiB. Límites mayores usan más memoria al copiar y borrar."
   }
 }

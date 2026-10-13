@@ -9942,5 +9942,9 @@
     "resetGroup": "Repor grupo de separadores predefinido",
     "all": "Corrigir todos os problemas seguros",
     "undo": "Anular correções de dependências"
+  },
+  "secureClipboard": {
+    "sizeLimit": "Limite de tamanho da área de transferência segura",
+    "sizeLimitHelp": "Tamanho UTF-8 máximo para credenciais e exportações copiadas. Predefinição: 150 MiB. Limites maiores usam mais memória ao copiar e limpar."
   }
 }

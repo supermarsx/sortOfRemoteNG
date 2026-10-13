@@ -9942,5 +9942,9 @@
     "resetGroup": "Standard-Tabgruppe zurücksetzen",
     "all": "Alle sicher behebbaren Probleme korrigieren",
     "undo": "Abhängigkeitskorrekturen rückgängig machen"
+  },
+  "secureClipboard": {
+    "sizeLimit": "Größenlimit der sicheren Zwischenablage",
+    "sizeLimitHelp": "Maximale UTF-8-Größe kopierter Zugangsdaten und Exporte. Standard: 150 MiB. Größere Limits benötigen beim Kopieren und Löschen mehr Speicher."
   }
 }

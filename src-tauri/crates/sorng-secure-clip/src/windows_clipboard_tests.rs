@@ -9,7 +9,10 @@
 //! Windows test account may not have. Permission failures are not clipboard proof;
 //! the automatic hidden-window-owner test in engine.rs does not need this access.
 
-use super::{read_os_clipboard, write_os_clipboard, ClipEngine};
+use super::{
+    clear_os_clipboard_if, read_os_clipboard, write_os_clipboard, ClearOutcome, ClipEngine,
+    EXCLUSION_FORMATS,
+};
 use crate::types::{ClearReason, CopyRequest, SecretKind, SecureClipConfig};
 use std::mem::size_of;
 use std::os::windows::process::CommandExt;
@@ -17,7 +20,9 @@ use std::process::{Command, Stdio};
 use std::ptr::null;
 use std::time::{Duration, Instant};
 use windows_sys::Win32::Foundation::{GENERIC_ALL, HANDLE};
-use windows_sys::Win32::System::DataExchange::IsClipboardFormatAvailable;
+use windows_sys::Win32::System::DataExchange::{
+    IsClipboardFormatAvailable, RegisterClipboardFormatW,
+};
 use windows_sys::Win32::System::StationsAndDesktops::{
     CloseDesktop, CloseWindowStation, CreateDesktopW, CreateWindowStationW,
     GetProcessWindowStation, GetThreadDesktop, GetUserObjectInformationW, SetProcessWindowStation,
@@ -130,6 +135,15 @@ fn isolated_windows_clipboard_child() {
         read_os_clipboard().expect("read engine copy"),
         request.value
     );
+    // A secret is on the clipboard only together with the formats that keep
+    // it out of clipboard history and cloud sync.
+    for format in &EXCLUSION_FORMATS {
+        assert!(
+            registered_format_is_available(format.name),
+            "{} must accompany the secret",
+            format.name
+        );
+    }
     assert!(
         engine
             .clear(ClearReason::ManualClear)
@@ -137,6 +151,9 @@ fn isolated_windows_clipboard_child() {
             .unwrap()
             .cleared
     );
+    for format in &EXCLUSION_FORMATS {
+        assert!(!registered_format_is_available(format.name));
+    }
     assert!(engine.current_entry().is_none());
     assert_eq!(unsafe { IsClipboardFormatAvailable(CF_UNICODETEXT) }, 0);
     assert!(
@@ -156,7 +173,40 @@ fn isolated_windows_clipboard_child() {
         "synthetic replacement from another application"
     );
     assert!(engine.current_entry().is_none());
-    write_os_clipboard("").expect("clear isolated fixture data");
+
+    // Finding C2: a clipboard that holds no text at expiry is not the
+    // engine's any more. The entry is dropped and nothing is written.
+    isolation.assert_current();
+    engine.copy(&request, &config).expect("third engine copy");
+    assert_eq!(
+        clear_os_clipboard_if(crate::types::MAX_CLIPBOARD_BYTES, &|_| true)
+            .expect("empty as another application would"),
+        ClearOutcome::Cleared
+    );
+    assert_eq!(unsafe { IsClipboardFormatAvailable(CF_UNICODETEXT) }, 0);
+    assert!(engine
+        .clear(ClearReason::AutoClear)
+        .expect("a clipboard without text must not keep the entry")
+        .is_some());
+    assert!(engine.current_entry().is_none());
+
+    // A conditional clear that is refused leaves the content exactly alone.
+    write_os_clipboard("synthetic content of another application").expect("replace clipboard");
+    assert_eq!(
+        clear_os_clipboard_if(crate::types::MAX_CLIPBOARD_BYTES, &|_| false)
+            .expect("refused clear"),
+        ClearOutcome::NotOwned
+    );
+    assert_eq!(
+        read_os_clipboard().expect("content after a refused clear"),
+        "synthetic content of another application"
+    );
+
+    assert_eq!(
+        clear_os_clipboard_if(crate::types::MAX_CLIPBOARD_BYTES, &|_| true)
+            .expect("clear isolated fixture data"),
+        ClearOutcome::Cleared
+    );
     assert_eq!(unsafe { IsClipboardFormatAvailable(CF_UNICODETEXT) }, 0);
 
     isolation.assert_current();
@@ -281,6 +331,17 @@ impl Drop for IsolatedStation {
             }
             CloseWindowStation(self.station);
         }
+    }
+}
+
+fn registered_format_is_available(name: &str) -> bool {
+    let name: Vec<u16> = name.encode_utf16().chain(Some(0)).collect();
+    // SAFETY: `name` is NUL-terminated UTF-16 that outlives the call; the
+    // availability query does not dereference clipboard memory.
+    unsafe {
+        let format = RegisterClipboardFormatW(name.as_ptr());
+        assert_ne!(format, 0, "register clipboard format");
+        IsClipboardFormatAvailable(format) != 0
     }
 }
 

@@ -1,3 +1,4 @@
+import { useSecureClipboardConfig } from "./hooks/security/useSecureClipboardConfig";
 import React, {
   useState,
   useCallback,
@@ -326,6 +327,7 @@ const AppContent: React.FC = () => {
   useUpdaterAutoCheck({ enabled: appReady, startDelayMs: 10_000 });
   useStartupFailureAlerts();
   useSettingsWriteFailureAlerts();
+  useSecureClipboardConfig(appSettings.secureClipboardMaxMiB);
   const {
     registry: wmRegistry,
     registerWindow: wmRegisterWindow,

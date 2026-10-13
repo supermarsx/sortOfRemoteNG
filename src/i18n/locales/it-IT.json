@@ -9942,5 +9942,9 @@
     "resetGroup": "Reimposta gruppo di schede predefinito",
     "all": "Correggi tutti i problemi sicuri",
     "undo": "Annulla correzioni delle dipendenze"
+  },
+  "secureClipboard": {
+    "sizeLimit": "Limite degli appunti sicuri",
+    "sizeLimitHelp": "Dimensione UTF-8 massima di credenziali ed esportazioni copiate. Predefinita: 150 MiB. Limiti maggiori usano più memoria durante copia e cancellazione."
   }
 }

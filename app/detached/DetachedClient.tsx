@@ -68,6 +68,7 @@ import {
   Network,
 } from "lucide-react";
 import { useSettings } from "../../src/contexts/SettingsContext";
+import { useSecureClipboardConfig } from "../../src/hooks/security/useSecureClipboardConfig";
 import { generateId } from "../../src/utils/core/id";
 import MenuSurface from "../../src/components/ui/overlays/MenuSurface";
 import { useTooltipSystem } from "../../src/hooks/window/useTooltipSystem";
@@ -240,6 +241,7 @@ export const DetachedSessionContent: React.FC<{
   const sendToSubmenuPanelId = useId();
 
   const { settings: appSettings } = useSettings();
+  useSecureClipboardConfig(appSettings.secureClipboardMaxMiB);
   const warnOnDetachClose = appSettings.warnOnDetachClose;
   const [titleDraft, setTitleDraft] = useState("");
   const titleInputRef = useRef<HTMLInputElement | null>(null);

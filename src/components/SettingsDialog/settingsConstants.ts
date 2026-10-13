@@ -248,6 +248,7 @@ export const TAB_DEFAULTS: Record<string, (keyof GlobalSettings)[]> = {
     "trimPastedWhitespace",
     "warnOnMultiLinePaste",
     "maxPasteLengthChars",
+    "secureClipboardMaxMiB",
     "idleDisconnectMinutes",
     "sendKeepaliveOnIdle",
     "keepaliveIntervalSeconds",

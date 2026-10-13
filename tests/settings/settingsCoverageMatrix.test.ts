@@ -100,6 +100,7 @@ function sampleValueFor(
   current: unknown,
   defaults: GlobalSettings,
 ): unknown {
+  if (key === "defaultConnectionProtocol") return "ssh";
   const special: Partial<Record<keyof GlobalSettings, unknown>> = {
     webBrowser: { ...defaults.webBrowser!, showBookmarksBar: false },
     internalProxy: { ...defaults.internalProxy!, connectTimeoutSeconds: 25 },

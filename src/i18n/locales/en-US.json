@@ -9942,5 +9942,9 @@
     "resetGroup": "Reset default tab group",
     "all": "Fix all safe issues",
     "undo": "Undo dependency repairs"
+  },
+  "secureClipboard": {
+    "sizeLimit": "Secure clipboard size limit",
+    "sizeLimitHelp": "Maximum UTF-8 size for copied credentials and exports. Default: 150 MiB. Larger limits use more memory while copying and clearing."
   }
 }

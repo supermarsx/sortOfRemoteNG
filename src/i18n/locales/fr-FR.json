@@ -9942,5 +9942,9 @@
     "resetGroup": "Réinitialiser le groupe d’onglets par défaut",
     "all": "Corriger tous les problèmes sûrs",
     "undo": "Annuler les corrections des dépendances"
+  },
+  "secureClipboard": {
+    "sizeLimit": "Limite du presse-papiers sécurisé",
+    "sizeLimitHelp": "Taille UTF-8 maximale des identifiants et exports copiés. Par défaut : 150 MiB. Une limite supérieure utilise davantage de mémoire lors de la copie et de l’effacement."
   }
 }

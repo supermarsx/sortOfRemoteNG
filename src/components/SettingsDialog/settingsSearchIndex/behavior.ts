@@ -420,6 +420,16 @@ export const BEHAVIOR_SEARCH_ENTRIES: SettingSearchEntry[] = [
     sectionLabel: "Behavior",
   },
   {
+    key: "secureClipboardMaxMiB",
+    label: "Secure clipboard size limit",
+    description:
+      "Maximum UTF-8 size for copied credentials and exports. Default: 150 MiB. Larger limits use more memory while copying and clearing.",
+    tags: ["clipboard", "secret", "export", "size", "memory", "limit"],
+    synonyms: ["150 MB", "clipboard capacity", "secure copy limit"],
+    section: "behavior",
+    sectionLabel: "Behavior",
+  },
+  {
     key: "maxPasteLengthChars",
     label: "Max paste length",
     description:

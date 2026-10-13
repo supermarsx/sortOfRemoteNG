@@ -11,9 +11,17 @@ async fn native_app_is_locked(state: &State<'_, super::auto_lock::AutoLockServic
     )
 }
 
+// Every command in this file fails with a fixed code from `SecureClipError`
+// and nothing else: no sentence, no operating-system text, never a value.
+// The rejection the frontend sees is the bare code string.
+
 // ═══════════════════════════════════════════════════════════════════
 //  Copy commands
 // ═══════════════════════════════════════════════════════════════════
+//
+// Contract K7: a copy fails with exactly one of `locked`, `busy`,
+// `too-large` or `unavailable`. The lock state is observed first, so that a
+// locked app answers `locked` whatever state the OS clipboard is in.
 
 #[tauri::command]
 pub async fn secure_clip_copy(
@@ -23,8 +31,8 @@ pub async fn secure_clip_copy(
 ) -> Result<ClipEntryDisplay, String> {
     let locked = native_app_is_locked(&auto_lock_state).await;
     let mut svc = state.write().await;
-    svc.synchronize_lock_state(locked).await?;
-    svc.copy(&request).await
+    svc.observe_lock_state(locked).await;
+    Ok(svc.copy(&request).await?)
 }
 
 #[tauri::command]
@@ -37,9 +45,10 @@ pub async fn secure_clip_copy_password(
 ) -> Result<ClipEntryDisplay, String> {
     let locked = native_app_is_locked(&auto_lock_state).await;
     let mut svc = state.write().await;
-    svc.synchronize_lock_state(locked).await?;
-    svc.copy_connection_password(&connection_id, &connection_name, password)
-        .await
+    svc.observe_lock_state(locked).await;
+    Ok(svc
+        .copy_connection_password(&connection_id, &connection_name, password)
+        .await?)
 }
 
 #[tauri::command]
@@ -51,8 +60,8 @@ pub async fn secure_clip_copy_totp(
 ) -> Result<ClipEntryDisplay, String> {
     let locked = native_app_is_locked(&auto_lock_state).await;
     let mut svc = state.write().await;
-    svc.synchronize_lock_state(locked).await?;
-    svc.copy_totp(connection_id.as_deref(), code).await
+    svc.observe_lock_state(locked).await;
+    Ok(svc.copy_totp(connection_id.as_deref(), code).await?)
 }
 
 #[tauri::command]
@@ -64,8 +73,10 @@ pub async fn secure_clip_copy_username(
 ) -> Result<ClipEntryDisplay, String> {
     let locked = native_app_is_locked(&auto_lock_state).await;
     let mut svc = state.write().await;
-    svc.synchronize_lock_state(locked).await?;
-    svc.copy_username(connection_id.as_deref(), username).await
+    svc.observe_lock_state(locked).await;
+    Ok(svc
+        .copy_username(connection_id.as_deref(), username)
+        .await?)
 }
 
 #[tauri::command]
@@ -77,9 +88,10 @@ pub async fn secure_clip_copy_passphrase(
 ) -> Result<ClipEntryDisplay, String> {
     let locked = native_app_is_locked(&auto_lock_state).await;
     let mut svc = state.write().await;
-    svc.synchronize_lock_state(locked).await?;
-    svc.copy_passphrase(connection_id.as_deref(), passphrase)
-        .await
+    svc.observe_lock_state(locked).await;
+    Ok(svc
+        .copy_passphrase(connection_id.as_deref(), passphrase)
+        .await?)
 }
 
 #[tauri::command]
@@ -91,8 +103,8 @@ pub async fn secure_clip_copy_api_key(
 ) -> Result<ClipEntryDisplay, String> {
     let locked = native_app_is_locked(&auto_lock_state).await;
     let mut svc = state.write().await;
-    svc.synchronize_lock_state(locked).await?;
-    svc.copy_api_key(label.as_deref(), key).await
+    svc.observe_lock_state(locked).await;
+    Ok(svc.copy_api_key(label.as_deref(), key).await?)
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -106,8 +118,8 @@ pub async fn secure_clip_paste(
 ) -> Result<String, String> {
     let locked = native_app_is_locked(&auto_lock_state).await;
     let mut svc = state.write().await;
-    svc.synchronize_lock_state(locked).await?;
-    svc.paste().await
+    svc.observe_lock_state(locked).await;
+    Ok(svc.paste().await?)
 }
 
 #[tauri::command]
@@ -118,8 +130,8 @@ pub async fn secure_clip_paste_by_id(
 ) -> Result<String, String> {
     let locked = native_app_is_locked(&auto_lock_state).await;
     let mut svc = state.write().await;
-    svc.synchronize_lock_state(locked).await?;
-    svc.paste_by_id(&entry_id).await
+    svc.observe_lock_state(locked).await;
+    Ok(svc.paste_by_id(&entry_id).await?)
 }
 
 /// Consume one policy-authorized paste and queue the secret directly to the
@@ -132,15 +144,16 @@ pub async fn secure_clip_paste_to_terminal(
     request: PasteToTerminalRequest,
 ) -> Result<PasteToTerminalResponse, String> {
     if request.session_id.trim().is_empty() || request.session_id.len() > 256 {
-        return Err("SSH session ID is invalid".to_string());
+        return Err(SecureClipError::InvalidRequest.into());
     }
+    // Simulated typing is not offered for a secure terminal paste.
     if request.simulate_typing {
-        return Err("Simulated typing is unavailable for secure terminal paste".to_string());
+        return Err(SecureClipError::Unavailable.into());
     }
 
     let locked = native_app_is_locked(&auto_lock_state).await;
     let mut svc = state.write().await;
-    svc.synchronize_lock_state(locked).await?;
+    svc.observe_lock_state(locked).await;
     let paste = svc
         .consume_terminal_paste(request.entry_id.as_deref())
         .await?;
@@ -159,7 +172,7 @@ pub async fn secure_clip_paste_to_terminal(
 #[tauri::command]
 pub async fn secure_clip_clear(state: State<'_, SecureClipServiceState>) -> Result<bool, String> {
     let mut svc = state.write().await;
-    svc.clear().await
+    Ok(svc.clear().await?)
 }
 
 #[tauri::command]
@@ -167,7 +180,7 @@ pub async fn secure_clip_on_app_lock(
     state: State<'_, SecureClipServiceState>,
 ) -> Result<bool, String> {
     let mut svc = state.write().await;
-    svc.clear_on_lock().await
+    Ok(svc.clear_on_lock().await?)
 }
 
 #[tauri::command]
@@ -184,7 +197,7 @@ pub async fn secure_clip_on_app_exit(
     state: State<'_, SecureClipServiceState>,
 ) -> Result<bool, String> {
     let mut svc = state.write().await;
-    svc.clear_on_exit().await
+    Ok(svc.clear_on_exit().await?)
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -265,8 +278,8 @@ pub async fn secure_clip_update_config(
 ) -> Result<(), String> {
     let locked = native_app_is_locked(&auto_lock_state).await;
     let mut svc = state.write().await;
-    svc.synchronize_lock_state(locked).await?;
-    svc.update_config(config).await
+    svc.observe_lock_state(locked).await;
+    Ok(svc.update_config(config).await?)
 }
 
 /// Raw OS clipboard reads are deliberately unavailable to the renderer.
@@ -276,5 +289,5 @@ pub async fn secure_clip_update_config(
 /// preserving compatibility with the existing command registry.
 #[tauri::command]
 pub async fn secure_clip_read_os_clipboard() -> Result<String, String> {
-    Err("Direct OS clipboard reads are disabled".to_string())
+    Err(SecureClipError::Unavailable.into())
 }

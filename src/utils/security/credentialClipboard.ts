@@ -99,6 +99,13 @@ function nativeFailure(error: unknown): CredentialClipboardFailure {
 // bridge or command that never answers at all.
 const prepareTimeoutMs = 10_000;
 const writeTimeoutMs = 10_000;
+/** Large exports need time for IPC serialization, UTF-16 conversion and wiping. */
+export function credentialClipboardTimeout(valueLength: number): number {
+  return Math.min(
+    120_000,
+    writeTimeoutMs + Math.floor(valueLength / (1024 * 1024)) * 1_000,
+  );
+}
 const timedOut = () => new CredentialClipboardError("clipboard-timed-out");
 
 /** Resolve the transport before reading secrets. Native writes do not depend on
@@ -153,7 +160,7 @@ export async function prepareCredentialClipboard(): Promise<CredentialClipboardW
               oneTime: false,
             },
           }),
-          writeTimeoutMs,
+          credentialClipboardTimeout(value.length),
           timedOut,
         );
       } else {
