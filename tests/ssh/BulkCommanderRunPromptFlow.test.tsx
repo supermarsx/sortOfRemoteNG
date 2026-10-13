@@ -256,9 +256,11 @@ describe("Bulk SSH commander prompts", () => {
       await openCommander();
       typeCommand("reboot");
       pressSend();
-      expect(prompts()).toHaveLength(1);
+      await waitFor(() => expect(prompts()).toHaveLength(1));
 
-      clickWithMouse(cancelButton());
+      await act(async () => {
+        clickWithMouse(cancelButton());
+      });
 
       expect(prompts()).toHaveLength(0);
       await act(async () => {
@@ -347,7 +349,7 @@ describe("Bulk SSH commander prompts", () => {
         await new Promise((resolve) => setTimeout(resolve, 0));
       });
 
-      expect(prompts()).toHaveLength(1);
+      await waitFor(() => expect(prompts()).toHaveLength(1));
       expect(screen.queryByTestId("app-prompt-queue")).toBeNull();
 
       clickWithMouse(confirmButton());
@@ -568,7 +570,7 @@ describe("Bulk SSH commander prompts", () => {
 
       expect(await screen.findByText("still streaming")).toBeInTheDocument();
       await waitFor(() => expect(tick).toHaveBeenCalled());
-      expect(prompts()).toHaveLength(1);
+      await waitFor(() => expect(prompts()).toHaveLength(1));
       expect(sends()).toEqual([]);
     });
 
@@ -576,7 +578,7 @@ describe("Bulk SSH commander prompts", () => {
       const view = await openCommander();
       typeCommand("reboot");
       pressSend();
-      expect(prompts()).toHaveLength(1);
+      await waitFor(() => expect(prompts()).toHaveLength(1));
 
       view.rerender(<AppWindow commander={false} />);
 
@@ -622,7 +624,7 @@ describe("Bulk SSH commander prompts", () => {
       expect(vi.mocked(invoke)).not.toHaveBeenCalled();
 
       pressSend();
-      expect(prompts()).toHaveLength(1);
+      await waitFor(() => expect(prompts()).toHaveLength(1));
       expect(
         screen.getByRole("dialog", {
           name: "Send a destructive command to 2 SSH sessions?",
@@ -677,7 +679,7 @@ describe("Bulk SSH commander prompts", () => {
       expect(prompts()).toHaveLength(0);
       pressSend();
 
-      expect(prompts()).toHaveLength(1);
+      await waitFor(() => expect(prompts()).toHaveLength(1));
       expect(
         screen.getByRole("dialog", {
           name: "Send a destructive command to 2 SSH sessions?",
@@ -751,7 +753,7 @@ describe("Bulk SSH commander prompts", () => {
       typeCommand("rotate-keys");
       pressSend();
 
-      expect(prompts()).toHaveLength(1);
+      await waitFor(() => expect(prompts()).toHaveLength(1));
       expect(
         screen.getByRole("dialog", {
           name: "Send a destructive command to 2 SSH sessions?",
@@ -761,7 +763,9 @@ describe("Bulk SSH commander prompts", () => {
         'Script "Rotate now"',
       );
       await waitFor(() => expect(cancelButton()).toHaveFocus());
-      clickWithMouse(cancelButton());
+      await act(async () => {
+        clickWithMouse(cancelButton());
+      });
       await act(async () => {
         await new Promise((resolve) => setTimeout(resolve, 0));
       });
@@ -793,7 +797,7 @@ describe("Bulk SSH commander prompts", () => {
         fireEvent.input(editor(), { target: { value }, inputType });
 
       const expectAskedAndCancel = async (name: string) => {
-        expect(prompts()).toHaveLength(1);
+        await waitFor(() => expect(prompts()).toHaveLength(1));
         expect(
           screen.getByRole("dialog", {
             name: "Send a destructive command to 2 SSH sessions?",
@@ -803,7 +807,9 @@ describe("Bulk SSH commander prompts", () => {
           `Script "${name}"`,
         );
         await waitFor(() => expect(cancelButton()).toHaveFocus());
-        clickWithMouse(cancelButton());
+        await act(async () => {
+          clickWithMouse(cancelButton());
+        });
         await act(async () => {
           await new Promise((resolve) => setTimeout(resolve, 0));
         });
@@ -917,11 +923,13 @@ describe("Bulk SSH commander prompts", () => {
       expect(editor()).toHaveValue("uname -r");
 
       pressSend();
-      expect(prompts()).toHaveLength(1);
+      await waitFor(() => expect(prompts()).toHaveLength(1));
       expect(screen.getByTestId("app-prompt-facts")).toHaveTextContent(
         'Script "Rotate keys (edited)"',
       );
-      clickWithMouse(cancelButton());
+      await act(async () => {
+        clickWithMouse(cancelButton());
+      });
       expect(prompts()).toHaveLength(0);
       expect(sends()).toEqual([]);
 
@@ -1047,7 +1055,9 @@ describe("Bulk SSH commander prompts", () => {
       expect(confirmButton()).toHaveTextContent("Move to trash");
       await waitFor(() => expect(confirmButton()).toHaveFocus());
 
-      clickWithMouse(cancelButton());
+      await act(async () => {
+        clickWithMouse(cancelButton());
+      });
       expect(prompts()).toHaveLength(0);
       await act(async () => {
         await new Promise((resolve) => setTimeout(resolve, 0));
@@ -1095,7 +1105,9 @@ describe("Bulk SSH commander prompts", () => {
       expect(confirmButton()).toHaveAttribute("data-tone", "danger");
       await waitFor(() => expect(cancelButton()).toHaveFocus());
 
-      clickWithMouse(cancelButton());
+      await act(async () => {
+        clickWithMouse(cancelButton());
+      });
       expect(prompts()).toHaveLength(0);
       await act(async () => {
         await new Promise((resolve) => setTimeout(resolve, 0));
@@ -1131,7 +1143,9 @@ describe("Bulk SSH commander prompts", () => {
       expect(confirmButton()).toHaveTextContent("Empty trash");
       await waitFor(() => expect(cancelButton()).toHaveFocus());
 
-      clickWithMouse(cancelButton());
+      await act(async () => {
+        clickWithMouse(cancelButton());
+      });
       expect(prompts()).toHaveLength(0);
       await act(async () => {
         await new Promise((resolve) => setTimeout(resolve, 0));

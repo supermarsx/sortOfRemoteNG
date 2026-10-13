@@ -1,3 +1,5 @@
+import { TrustedScriptMark } from "../../recording/scriptTrust/TrustedScriptMark";
+import { scriptTrustSubjectKey } from "../../../utils/recording/scriptRunTrust";
 import type { LucideIcon } from "lucide-react";
 import {
   AlertTriangle,
@@ -292,6 +294,26 @@ function ScriptLibraryPanel({ mgr, t }: { mgr: Mgr; t: TFunc }) {
                     key={script.id}
                     className="px-4 py-2 hover:bg-[var(--color-surfaceHover)] flex items-center gap-3 border-b border-[var(--color-border)]/30 group"
                   >
+                    {!showingTrash &&
+                      mgr.scriptTrust?.marks.get(
+                        scriptTrustSubjectKey({
+                          kind: "bulk-script",
+                          library: { kind: "app" },
+                          subjectId: script.id,
+                        }),
+                      ) && (
+                        <TrustedScriptMark
+                          scope="everywhere"
+                          name={script.name}
+                          onRevoke={() =>
+                            mgr.scriptTrust.revoke({
+                              kind: "bulk-script",
+                              library: { kind: "app" },
+                              subjectId: script.id,
+                            })
+                          }
+                        />
+                      )}
                     {showingTrash ? (
                       <div className="flex min-w-0 flex-1 items-center gap-3">
                         {summary}

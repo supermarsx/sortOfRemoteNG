@@ -1,3 +1,20 @@
+import {
+  consultScriptTrust,
+  grantScriptTrust,
+} from "../../utils/recording/scriptRunTrustStore";
+import {
+  digestRunContent,
+  bulkScriptRunContent,
+} from "../../utils/recording/scriptRunTrust";
+import {
+  useScriptRunTrust,
+  useScriptTrustMarks,
+} from "../recording/useScriptRunTrust";
+import {
+  bulkTrustedSendNotice,
+  RUN_TRUST_NOT_SAVED_NOTICE,
+  RUN_TRUST_LIST_FULL_NOTICE,
+} from "../../utils/prompts/runPromptRequests";
 import { useState, useMemo, useCallback, useRef, useEffect } from "react";
 import { useConnections } from "../../contexts/useConnections";
 import { invoke } from "@tauri-apps/api/core";
@@ -761,171 +778,299 @@ export function useBulkSSHCommander(isOpen: boolean) {
 
   // ─── Command execution ────────────────────────────────────────
 
-  const executeCommand = useCallback(async () => {
-    if (
-      !command.trim() ||
-      selectedSessions.length === 0 ||
-      isExecuting ||
-      isExecutingRef.current
-    ) {
-      return;
-    }
-
-    const isTauri =
-      typeof window !== "undefined" &&
-      Boolean((window as any).__TAURI__ || (window as any).__TAURI_INTERNALS__);
-    if (!isTauri) {
-      console.warn("Bulk SSH commander requires Tauri runtime");
-      return;
-    }
-
-    const normalizedCommand = command.trim();
-    // A loaded script keeps its destructive flag however its text was edited;
-    // any text is destructive when the classifier says so.
-    const commandRisk: BulkScriptRisk =
-      loadedScript?.risk === "destructive" ||
-      isDestructiveBulkScript(normalizedCommand)
-        ? "destructive"
-        : "standard";
-    if (
-      shouldConfirmBulkScriptRun(
-        scriptLibraryConfig.runConfirmation,
-        commandRisk,
-      )
-    ) {
-      const confirmed = await confirmInApp(
-        () =>
-          bulkCommandRunPrompt({
-            command: normalizedCommand,
-            sessions: selectedSessions,
-            destructive: commandRisk === "destructive",
-            scriptName: promptScriptName(loadedScript, normalizedCommand),
-            policy: scriptLibraryConfig.runConfirmation,
-          }),
-        commandRisk === "destructive" ? "cancel" : "confirm",
-        RUN_PROMPT_UNAVAILABLE,
-      );
-      if (!confirmed) return;
-      // The user reviewed `normalizedCommand` for `selectedSessions`. Send
-      // only that, and only while the editor and the selection still say so.
-      const current = runStateRef.current;
-      if (current.command !== command) {
-        toast.warning(
-          "The command changed while you were reviewing. Nothing was sent.",
-        );
-        return;
-      }
-      if (!sameRecipients(selectedSessions, current.selectedSessions)) {
-        toast.warning(
-          "The selected sessions changed while you were reviewing. Nothing was sent.",
-        );
-        return;
-      }
-    }
-
-    setExecuting(true);
-    const commandId = Date.now().toString();
-
-    const initialOutputs: Record<string, SessionOutput> = {};
-    selectedSessions.forEach((session) => {
-      initialOutputs[session.id] = {
-        sessionId: session.id,
-        sessionName: session.name,
-        output: "",
-        status: "running",
-      };
-    });
-    setSessionOutputs((prev) => ({ ...prev, ...initialOutputs }));
-
-    const historyItem: CommandHistoryItem = {
-      id: commandId,
-      command: normalizedCommand,
-      timestamp: new Date(),
-      sessionIds: selectedSessions.map((session) => session.id),
-      results: {},
+  const trustSendBusyRef = useRef(false);
+  const trustRunLiveRef = useRef(true);
+  const trustLibraryRef = useRef(savedScripts);
+  trustLibraryRef.current = savedScripts;
+  useEffect(() => {
+    trustRunLiveRef.current = true;
+    return () => {
+      trustRunLiveRef.current = false;
     };
-
-    const commandPromises = selectedSessions.map(async (session) => {
-      try {
-        const backendSessionId = session.backendSessionId;
-        if (!backendSessionId) throw new Error("No backend session ID");
-
-        await invoke("send_ssh_input", {
-          sessionId: backendSessionId,
-          data: normalizedCommand + "\n",
-        });
-
-        if (liveSessionIdsRef.current.has(session.id)) {
-          setSessionOutputs((prev) => ({
-            ...prev,
-            [session.id]: {
-              ...prev[session.id],
-              status: "dispatched",
-              output:
-                prev[session.id]?.output +
-                `\n$ ${normalizedCommand}\nCommand input was dispatched; this path did not capture remote completion evidence.\n`,
-            },
-          }));
-        }
-
-        historyItem.results[session.id] = {
-          detail:
-            "Command input was dispatched; no remote completion evidence was captured by this path.",
-          status: "pending",
-        };
-      } catch (error) {
-        const errorMsg = error instanceof Error ? error.message : String(error);
-        if (liveSessionIdsRef.current.has(session.id)) {
-          setSessionOutputs((prev) => ({
-            ...prev,
-            [session.id]: {
-              ...prev[session.id],
-              status: "cancelled",
-              error: errorMsg,
-            },
-          }));
-        }
-        historyItem.results[session.id] = {
-          detail: "Command input dispatch failed.",
-          error: errorMsg,
-          status: "cancelled",
-        };
+  }, []);
+  const executeCommand = useCallback(async () => {
+    if (trustSendBusyRef.current) return;
+    trustSendBusyRef.current = true;
+    try {
+      if (
+        !command.trim() ||
+        selectedSessions.length === 0 ||
+        isExecuting ||
+        isExecutingRef.current
+      ) {
+        return;
       }
-    });
 
-    await Promise.all(commandPromises);
-    if (trackHistory) {
-      setCommandHistory((prev) => [historyItem, ...prev].slice(0, 50));
-    }
+      const isTauri =
+        typeof window !== "undefined" &&
+        Boolean(
+          (window as any).__TAURI__ || (window as any).__TAURI_INTERNALS__,
+        );
+      if (!isTauri) {
+        console.warn("Bulk SSH commander requires Tauri runtime");
+        return;
+      }
 
-    // Persist to the dedicated SSH command history
-    const persistentExecutions: CommandExecution[] = selectedSessions.map(
-      (session) => {
-        const result = historyItem.results[session.id];
-        return {
-          sessionId: session.id,
-          connectionId: session.connectionId,
-          sessionName: session.name,
-          hostname: session.hostname ?? "",
-          status: result?.status ?? "cancelled",
-          source: "bulk-dispatch",
-          evidence:
-            result?.status === "pending"
-              ? "dispatch-accepted"
-              : "dispatch-failed",
-          errorMessage: result?.error,
+      const normalizedCommand = command.trim();
+      // A loaded script keeps its destructive flag however its text was edited;
+      // any text is destructive when the classifier says so.
+      const commandRisk: BulkScriptRisk =
+        loadedScript?.risk === "destructive" ||
+        isDestructiveBulkScript(normalizedCommand)
+          ? "destructive"
+          : "standard";
+      if (
+        shouldConfirmBulkScriptRun(
+          scriptLibraryConfig.runConfirmation,
+          commandRisk,
+        )
+      ) {
+        const activeScript =
+          loadedScript &&
+          savedScripts.find(
+            (script) =>
+              script.id === loadedScript.id &&
+              script.script.trim() === normalizedCommand,
+          );
+        const trustable = Boolean(
+          activeScript &&
+          loadedScript?.script.trim() === normalizedCommand &&
+          scriptTrailRef.current?.attached,
+        );
+        const query =
+          trustable && activeScript
+            ? {
+                kind: "bulk-script" as const,
+                library: { kind: "app" as const },
+                subjectId: activeScript.id,
+                contentDigest: await digestRunContent(
+                  "bulk-script",
+                  bulkScriptRunContent(normalizedCommand),
+                ),
+                connection: null,
+              }
+            : null;
+        const consulted = query ? await consultScriptTrust(query) : null;
+        const reviewedLibraryIsCurrent = async (): Promise<boolean> => {
+          if (!query || !activeScript) return true;
+          try {
+            // A sibling window may have edited the library without this
+            // webview receiving a storage event. The durable read is the fence.
+            const fresh = await bulkScriptsStore.load();
+            const matches = fresh.value?.active.filter(
+              (script) => script.id === query.subjectId,
+            );
+            if (
+              fresh.sanitized ||
+              matches?.length !== 1 ||
+              matches[0].script.trim() !== normalizedCommand ||
+              matches[0].risk !== activeScript.risk
+            )
+              throw new Error("The reviewed bulk script changed.");
+            return true;
+          } catch {
+            toast.warning(
+              "The saved script changed while you were reviewing. Nothing was sent.",
+            );
+            return false;
+          }
         };
-      },
-    );
-    if (trackHistory) {
-      historyMgr.addEntry(normalizedCommand, persistentExecutions);
-    }
+        if (!trustRunLiveRef.current) return;
+        if (
+          query &&
+          !trustLibraryRef.current.some(
+            (script) =>
+              script.id === query.subjectId &&
+              script.script.trim() === normalizedCommand,
+          )
+        ) {
+          toast.warning(
+            "The saved script changed while you were reviewing. Nothing was sent.",
+          );
+          return;
+        }
+        if (consulted?.trusted)
+          toast.info(
+            bulkTrustedSendNotice(activeScript!.name, selectedSessions.length),
+          );
+        else {
+          let choice: string | undefined;
+          const controller = new AbortController();
+          if (promptAbortRef.current) return;
+          promptAbortRef.current = controller;
+          try {
+            const decision = await requestPrompt(
+              {
+                ...bulkCommandRunPrompt({
+                  command: normalizedCommand,
+                  sessions: selectedSessions,
+                  destructive: commandRisk === "destructive",
+                  scriptName: promptScriptName(loadedScript, normalizedCommand),
+                  policy: scriptLibraryConfig.runConfirmation,
+                  ...(consulted?.canGrant
+                    ? { trust: { destructive: commandRisk === "destructive" } }
+                    : {}),
+                }),
+                defaultAction:
+                  commandRisk === "destructive" ? "cancel" : "confirm",
+              },
+              { signal: controller.signal },
+            );
+            if (!decision.confirmed || controller.signal.aborted) return;
+            choice = decision.choice;
+          } catch {
+            if (!controller.signal.aborted) toast.error(RUN_PROMPT_UNAVAILABLE);
+            return;
+          } finally {
+            if (promptAbortRef.current === controller)
+              promptAbortRef.current = null;
+          }
+          if (choice === "everywhere" && query && consulted?.canGrant) {
+            if (!(await reviewedLibraryIsCurrent())) return;
+            const result = await grantScriptTrust({
+              kind: query.kind,
+              library: query.library,
+              subjectId: query.subjectId,
+              contentDigest: query.contentDigest,
+              scope: "everywhere",
+              risk: commandRisk,
+            });
+            if (!result.ok)
+              toast.warning(
+                result.reason === "full"
+                  ? RUN_TRUST_LIST_FULL_NOTICE
+                  : RUN_TRUST_NOT_SAVED_NOTICE,
+              );
+          }
+        }
+        // Recheck after both the prompt and any asynchronous lasting grant,
+        // including the no-prompt trusted path. No stale library copy is sent.
+        if (!(await reviewedLibraryIsCurrent())) return;
+        // The user reviewed `normalizedCommand` for `selectedSessions`. Send
+        // only that, and only while the editor and the selection still say so.
+        if (!trustRunLiveRef.current) return;
+        const current = runStateRef.current;
+        if (current.command !== command) {
+          toast.warning(
+            "The command changed while you were reviewing. Nothing was sent.",
+          );
+          return;
+        }
+        if (!sameRecipients(selectedSessions, current.selectedSessions)) {
+          toast.warning(
+            "The selected sessions changed while you were reviewing. Nothing was sent.",
+          );
+          return;
+        }
+      }
 
-    setExecuting(false);
-    // A completed send ends the loaded script's hold on the editor.
-    scriptTrailRef.current = null;
-    writeEditor("");
-    commandInputRef.current?.focus();
+      setExecuting(true);
+      const commandId = Date.now().toString();
+
+      const initialOutputs: Record<string, SessionOutput> = {};
+      selectedSessions.forEach((session) => {
+        initialOutputs[session.id] = {
+          sessionId: session.id,
+          sessionName: session.name,
+          output: "",
+          status: "running",
+        };
+      });
+      setSessionOutputs((prev) => ({ ...prev, ...initialOutputs }));
+
+      const historyItem: CommandHistoryItem = {
+        id: commandId,
+        command: normalizedCommand,
+        timestamp: new Date(),
+        sessionIds: selectedSessions.map((session) => session.id),
+        results: {},
+      };
+
+      const commandPromises = selectedSessions.map(async (session) => {
+        try {
+          const backendSessionId = session.backendSessionId;
+          if (!backendSessionId) throw new Error("No backend session ID");
+
+          await invoke("send_ssh_input", {
+            sessionId: backendSessionId,
+            data: normalizedCommand + "\n",
+          });
+
+          if (liveSessionIdsRef.current.has(session.id)) {
+            setSessionOutputs((prev) => ({
+              ...prev,
+              [session.id]: {
+                ...prev[session.id],
+                status: "dispatched",
+                output:
+                  prev[session.id]?.output +
+                  `\n$ ${normalizedCommand}\nCommand input was dispatched; this path did not capture remote completion evidence.\n`,
+              },
+            }));
+          }
+
+          historyItem.results[session.id] = {
+            detail:
+              "Command input was dispatched; no remote completion evidence was captured by this path.",
+            status: "pending",
+          };
+        } catch (error) {
+          const errorMsg =
+            error instanceof Error ? error.message : String(error);
+          if (liveSessionIdsRef.current.has(session.id)) {
+            setSessionOutputs((prev) => ({
+              ...prev,
+              [session.id]: {
+                ...prev[session.id],
+                status: "cancelled",
+                error: errorMsg,
+              },
+            }));
+          }
+          historyItem.results[session.id] = {
+            detail: "Command input dispatch failed.",
+            error: errorMsg,
+            status: "cancelled",
+          };
+        }
+      });
+
+      await Promise.all(commandPromises);
+      if (trackHistory) {
+        setCommandHistory((prev) => [historyItem, ...prev].slice(0, 50));
+      }
+
+      // Persist to the dedicated SSH command history
+      const persistentExecutions: CommandExecution[] = selectedSessions.map(
+        (session) => {
+          const result = historyItem.results[session.id];
+          return {
+            sessionId: session.id,
+            connectionId: session.connectionId,
+            sessionName: session.name,
+            hostname: session.hostname ?? "",
+            status: result?.status ?? "cancelled",
+            source: "bulk-dispatch",
+            evidence:
+              result?.status === "pending"
+                ? "dispatch-accepted"
+                : "dispatch-failed",
+            errorMessage: result?.error,
+          };
+        },
+      );
+      if (trackHistory) {
+        historyMgr.addEntry(normalizedCommand, persistentExecutions);
+      }
+
+      setExecuting(false);
+      // A completed send ends the loaded script's hold on the editor.
+      scriptTrailRef.current = null;
+      writeEditor("");
+      commandInputRef.current?.focus();
+    } finally {
+      trustSendBusyRef.current = false;
+    }
   }, [
     command,
     selectedSessions,
@@ -933,8 +1078,8 @@ export function useBulkSSHCommander(isOpen: boolean) {
     trackHistory,
     historyMgr,
     loadedScript,
+    savedScripts,
     scriptLibraryConfig.runConfirmation,
-    confirmInApp,
     setExecuting,
     toast,
     writeEditor,
@@ -1336,7 +1481,18 @@ export function useBulkSSHCommander(isOpen: boolean) {
     setShowScriptLibrary(false);
   }, []);
 
+  const trustState = useScriptRunTrust();
+  const scriptTrustMarks = useScriptTrustMarks(
+    savedScripts.map((script) => ({
+      kind: "bulk-script" as const,
+      library: { kind: "app" as const },
+      subjectId: script.id,
+      content: bulkScriptRunContent(script.script),
+    })),
+    null,
+  );
   return {
+    scriptTrust: { marks: scriptTrustMarks, revoke: trustState.revokeSubject },
     // Sessions
     sshSessions,
     selectedSessionIds,

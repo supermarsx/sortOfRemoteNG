@@ -992,7 +992,7 @@ describe("BulkSSHCommander history panel over a loaded script", () => {
     const before = sends().length;
     pressSend();
 
-    expect(prompts()).toHaveLength(1);
+    await waitFor(() => expect(prompts()).toHaveLength(1));
     expect(
       screen.getByRole("dialog", {
         name: "Send a destructive command to 2 SSH sessions?",
