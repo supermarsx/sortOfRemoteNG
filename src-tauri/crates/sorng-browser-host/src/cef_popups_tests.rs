@@ -286,3 +286,57 @@ fn only_supported_native_dispositions_are_adoptable() {
         assert_eq!(disposition(unsupported), None);
     }
 }
+
+#[tokio::test]
+async fn tabs_are_allowed_only_for_a_group_whose_saved_policy_is_tabs() {
+    use cef::rc::{ConvertReturnValue, RcImpl};
+    use cef::sys::{_cef_dictionary_value_t, _cef_request_context_t};
+    let root = source().await;
+    root.state.lock().unwrap().browser_id = Some(41);
+    let browser = super::super::tests::focus_browser(1, 41);
+    let role = root.popup.clone();
+    // No group yet.
+    assert!(!tabs_allowed(&role));
+    // Library-owned objects with empty vtables: held by the group, never called.
+    let native: *mut _cef_request_context_t =
+        RcImpl::new(unsafe { std::mem::zeroed::<_cef_request_context_t>() }, ()).cast();
+    let extra_info: *mut _cef_dictionary_value_t =
+        RcImpl::new(unsafe { std::mem::zeroed::<_cef_dictionary_value_t>() }, ()).cast();
+    install(
+        &root,
+        &browser,
+        native.wrap_result(),
+        WindowInfo::default(),
+        BrowserSettings::default(),
+        extra_info.wrap_result(),
+        ViewportBounds::new(0.0, 0.0, 640.0, 480.0).unwrap(),
+    )
+    .unwrap();
+    let configure = |policy| {
+        GROUPS.with(|groups| groups.borrow_mut().get_mut(&role.group).unwrap().policy = policy);
+    };
+    // Installed, but the saved policy has not been configured.
+    assert!(!tabs_allowed(&role));
+    configure(Some(NativePopupPolicy::Block));
+    assert!(!tabs_allowed(&role));
+    configure(Some(NativePopupPolicy::Tabs));
+    assert!(tabs_allowed(&role));
+    // A popup child reads its group's policy; another group does not.
+    assert!(tabs_allowed(&PopupRole {
+        group: role.group,
+        child: Some(("popup-1".into(), Arc::new(AtomicBool::new(false)))),
+    }));
+    assert!(!tabs_allowed(&PopupRole {
+        group: role.group + 1,
+        child: None,
+    }));
+    // While the map is mutably borrowed the answer is "no", not a panic.
+    GROUPS.with(|groups| {
+        let _held = groups.borrow_mut();
+        assert!(!tabs_allowed(&role));
+    });
+    // The group is gone.
+    GROUPS.with(|groups| groups.borrow_mut().remove(&role.group));
+    assert!(!tabs_allowed(&role));
+    root.revoke();
+}

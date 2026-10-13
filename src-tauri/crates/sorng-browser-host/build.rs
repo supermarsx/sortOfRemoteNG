@@ -1,6 +1,7 @@
 fn main() {
     println!("cargo:rerun-if-changed=src/platform/macos_application.mm");
     println!("cargo:rerun-if-changed=src/platform/macos_occlusion.mm");
+    println!("cargo:rerun-if-changed=src/platform/macos_clipboard.mm");
     println!("cargo:rerun-if-changed=src/platform/windows_bootstrap_abi.cc");
     println!("cargo:rerun-if-env-changed=CEF_PATH");
     if std::env::var_os("CARGO_FEATURE_CEF_HOST").is_none() {
@@ -35,6 +36,7 @@ fn main() {
             .cpp(true)
             .file("src/platform/macos_application.mm")
             .file("src/platform/macos_occlusion.mm")
+            .file("src/platform/macos_clipboard.mm")
             .include(root)
             // CEF 154's ref-count headers use C++20 concepts (same_as,
             // derived_from). The Objective-C++ bridges include those headers.

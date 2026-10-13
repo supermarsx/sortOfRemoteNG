@@ -2,7 +2,7 @@
 //! renderer command bridge; CEF owns the separate DevTools window lifecycle.
 use super::*;
 use crate::cef_devtools_policy::{
-    bootstrap_document, bundled_document, inspector_resource, BootstrapRequest,
+    bootstrap_document, bundled_document, inspect_point, inspector_resource, BootstrapRequest,
 };
 use std::sync::Weak;
 use std::time::{Duration, Instant};
@@ -217,6 +217,42 @@ impl CefBrowserHost<'_> {
     /// The caller must authenticate the app window and current presentation.
     /// Repeated calls focus CEF's existing inspector instead of toggling it off.
     pub fn open_devtools(&self, identity: &BrowserIdentity) -> Result<(), BrowserError> {
+        self.show_inspector(identity, None)
+    }
+
+    /// The context menu's "Inspect": the same local inspector, selecting the
+    /// element under the point the native menu reported for this exact view.
+    /// A menu exists only over a visible, unblocked page, so unlike
+    /// `open_devtools` this never applies to a retained hidden document.
+    ///
+    /// The point is `ContextMenuParams::xcoord/ycoord` unchanged: the click
+    /// in the coordinates of the page's own view. Measured in the engine
+    /// (CEF 154.3.0, Windows 11, 2026-10-12): the same pair for a click
+    /// inside a same-origin or other-origin frame, not shifted by
+    /// scrolling, and in view units rather than CSS pixels on a zoomed
+    /// page. CEF documents `inspect_element_at` only as "the element at the
+    /// specified (x,y) location" and names no coordinate space, and this
+    /// row has not been selected in a real engine: that the two spaces
+    /// agree is an expectation, not a measurement.
+    pub(super) fn inspect_element(
+        &self,
+        identity: &BrowserIdentity,
+        x: i32,
+        y: i32,
+    ) -> Result<(), BrowserError> {
+        let (x, y) = inspect_point(x, y).ok_or(ControlError::InvalidBounds)?;
+        let browser = self.check(identity)?;
+        if !self.shared.focus_allowed(Some(&browser)) {
+            return Err(ControlError::InvalidTransition.into());
+        }
+        self.show_inspector(identity, Some(Point { x, y }))
+    }
+
+    fn show_inspector(
+        &self,
+        identity: &BrowserIdentity,
+        inspect_element_at: Option<Point>,
+    ) -> Result<(), BrowserError> {
         let browser = self.check(identity)?;
         if !inspector_owner_current(&self.shared) || !self.shared.accepts(Some(&browser)) {
             return Err(ControlError::InvalidTransition.into());
@@ -236,7 +272,7 @@ impl CefBrowserHost<'_> {
             Some(&WindowInfo::default()),
             Some(&mut client),
             Some(&BrowserSettings::default()),
-            None,
+            inspect_element_at.as_ref(),
         );
         // Pinned CEF creates its DevTools host synchronously on the UI thread.
         if host.has_dev_tools() != 1 {

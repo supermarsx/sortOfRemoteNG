@@ -1,6 +1,7 @@
 //! Local resources owned by Chromium's inspector, not website permissions.
 //! In particular `devtools://devtools/remote/` is a network-backed frontend and
 //! must not be admitted by a general `devtools:` scheme exception.
+use crate::control::MAX_VIEWPORT_EXTENT;
 
 pub(super) fn bundled_document(value: &str) -> bool {
     local_resource(value) == Some(LocalResource::Bundled)
@@ -13,6 +14,14 @@ pub(super) fn inspector_resource(value: &str) -> bool {
 pub(super) fn bootstrap_document(value: &str) -> bool {
     bundled_document(value)
         && url::Url::parse(value).is_ok_and(|url| url.path() == "/bundled/devtools_app.html")
+}
+
+/// A view-relative point from the native context-menu params, for "Inspect".
+/// A click cannot land outside the largest view the host lays out, so any
+/// other point is not handed to the engine.
+pub(super) fn inspect_point(x: i32, y: i32) -> Option<(i32, i32)> {
+    let inside = |value: i32| value >= 0 && f64::from(value) < MAX_VIEWPORT_EXTENT;
+    (inside(x) && inside(y)).then_some((x, y))
 }
 
 pub(super) struct BootstrapRequest<'a> {
@@ -138,6 +147,24 @@ mod tests {
             },
         ] {
             assert!(!request.eligible());
+        }
+    }
+
+    #[test]
+    fn inspect_takes_only_a_point_inside_a_possible_view() {
+        for point in [(0, 0), (12, 34), (32_767, 0), (0, 32_767), (32_767, 32_767)] {
+            assert_eq!(inspect_point(point.0, point.1), Some(point));
+        }
+        for (x, y) in [
+            (-1, 0),
+            (0, -1),
+            (32_768, 0),
+            (0, 32_768),
+            (i32::MIN, i32::MIN),
+            (i32::MAX, 1),
+            (1, i32::MAX),
+        ] {
+            assert_eq!(inspect_point(x, y), None, "{x},{y}");
         }
     }
 

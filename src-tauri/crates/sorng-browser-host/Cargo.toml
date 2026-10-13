@@ -14,6 +14,9 @@ required-features = ["cef-host"]
 default = []
 # Explicit engineering build only until all platform containment gates pass.
 cef-host = ["dep:cef", "dep:cef-dll-sys", "dep:raw-window-handle", "dep:windows-sys"]
+# Standalone acceptance client only. Observation seams for real-engine evidence;
+# the app never enables this, so its build contains none of them.
+acceptance-probe = []
 
 [dependencies]
 sorng-protocols = { path = "../sorng-protocols" }

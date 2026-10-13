@@ -252,6 +252,18 @@ fn disposition(value: WindowOpenDisposition) -> Option<PopupDisposition> {
     }
 }
 
+/// Whether this view's group may open tabs at all: the saved popup policy
+/// is Tabs. Read-only. The reservation in `before_popup` still decides.
+pub(super) fn tabs_allowed(role: &PopupRole) -> bool {
+    GROUPS.with(|groups| {
+        groups.try_borrow().is_ok_and(|groups| {
+            groups
+                .get(&role.group)
+                .is_some_and(|group| group.policy == Some(NativePopupPolicy::Tabs))
+        })
+    })
+}
+
 #[allow(clippy::too_many_arguments)]
 pub(super) fn before_popup(
     opener: &Arc<Shared>,
