@@ -350,6 +350,9 @@ export function useBulkSSHCommander(isOpen: boolean) {
   // How the text area says its next change was made ("insertText",
   // "historyUndo", ...), read once by `setCommand`; null when it did not say.
   const editorInputTypeRef = useRef<string | null>(null);
+  // The history entry the arrow keys put in the editor, until anything else
+  // writes there: an entry they recalled is not the user's text yet.
+  const historyShownRef = useRef<string | null>(null);
   liveSessionIdsRef.current = liveSessionIds;
   runStateRef.current = { command, selectedSessions };
 
@@ -541,6 +544,7 @@ export function useBulkSSHCommander(isOpen: boolean) {
   const writeEditor = useCallback((text: string) => {
     const trail = scriptTrailRef.current;
     editorTextRef.current = text;
+    historyShownRef.current = null;
     setCommandState(text);
     setLoadedScript(trail?.attached ? trail.script : null);
   }, []);
@@ -943,19 +947,33 @@ export function useBulkSSHCommander(isOpen: boolean) {
         executeCommand();
         return;
       }
-      // Arrow-key history navigation (only for single-line input)
-      if (e.key === "ArrowUp" && !e.shiftKey) {
+      // Arrow-key history navigation, only for single-line input: a one-line
+      // or empty editor, and on through an entry the keys themselves put
+      // there. In any other text of several lines the arrow keys are left to
+      // the text area, which moves the caret, and the text is not touched.
+      const stepsThroughHistory =
+        !/[\r\n]/.test(command) || historyShownRef.current === command;
+      if (e.key === "ArrowUp" && !e.shiftKey && stepsThroughHistory) {
         const cmd = historyMgr.navigateUp(command);
         if (cmd !== null) {
           e.preventDefault();
           replaceCommand(cmd);
+          historyShownRef.current = cmd;
         }
       }
-      if (e.key === "ArrowDown" && !e.shiftKey) {
+      // Arrow Down only steps back out of a navigation in progress; with none
+      // there is nothing newer to show, and the text stays as it is.
+      if (
+        e.key === "ArrowDown" &&
+        !e.shiftKey &&
+        stepsThroughHistory &&
+        historyMgr.navigationIndex >= 0
+      ) {
         const cmd = historyMgr.navigateDown();
         if (cmd !== null) {
           e.preventDefault();
           replaceCommand(cmd);
+          historyShownRef.current = cmd;
         }
       }
     },

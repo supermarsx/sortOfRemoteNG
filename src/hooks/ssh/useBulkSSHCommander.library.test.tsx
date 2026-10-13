@@ -36,6 +36,8 @@ const mocks = vi.hoisted(() => ({
     addEntry: vi.fn(),
     navigateUp: vi.fn((): string | null => null),
     navigateDown: vi.fn((): string | null => null),
+    // -1 while no arrow-key navigation is in progress, as in the real manager.
+    navigationIndex: -1,
   },
 }));
 
@@ -140,6 +142,7 @@ describe("useBulkSSHCommander script-library lifecycle", () => {
     mocks.history.addEntry.mockReset();
     mocks.history.navigateUp.mockReset().mockImplementation(() => null);
     mocks.history.navigateDown.mockReset().mockImplementation(() => null);
+    mocks.history.navigationIndex = -1;
     mocks.state.sessions = [];
     durableSnapshot = initialSnapshot();
     vi.spyOn(bulkScriptsStore, "load").mockImplementation(async () => ({
@@ -1356,6 +1359,8 @@ describe("useBulkSSHCommander script-library lifecycle", () => {
 
           mocks.history.navigateUp.mockReturnValueOnce("uptime");
           press(view, "ArrowUp");
+          // The manager now has a navigation in progress, at its newest entry.
+          mocks.history.navigationIndex = 0;
           expect(view.result.current.command).toBe("uptime");
           expect(view.result.current.loadedScript).toBeNull();
           await send(view);
@@ -1371,6 +1376,8 @@ describe("useBulkSSHCommander script-library lifecycle", () => {
 
           mocks.history.navigateUp.mockReturnValueOnce("uptime");
           press(view, "ArrowUp");
+          // The manager now has a navigation in progress, at its newest entry.
+          mocks.history.navigationIndex = 0;
           // Arrow Down past the newest entry gives back what was in the editor.
           mocks.history.navigateDown.mockReturnValueOnce("uname -r");
           press(view, "ArrowDown");
@@ -1394,6 +1401,8 @@ describe("useBulkSSHCommander script-library lifecycle", () => {
 
           mocks.history.navigateUp.mockReturnValueOnce("uptime");
           press(view, "ArrowUp");
+          // The manager now has a navigation in progress, at its newest entry.
+          mocks.history.navigationIndex = 0;
           edit(view, "uptime ");
           edit(view, "uptime -");
           edit(view, "uptime -p");
@@ -1952,6 +1961,232 @@ describe("useBulkSSHCommander script-library lifecycle", () => {
 
         expect(sentInputs()).toEqual([]);
         expect(mocks.toast.error).not.toHaveBeenCalled();
+      });
+    });
+
+    describe("the arrow keys in the editor", () => {
+      const severalLines = "echo one\necho two";
+
+      /** Presses the key; the returned spy tells whether the caret was kept from moving. */
+      const press = (
+        view: Commander,
+        key: "ArrowUp" | "ArrowDown",
+        shiftKey = false,
+      ) => {
+        const preventDefault = vi.fn();
+        act(() =>
+          view.result.current.handleKeyDown({
+            key,
+            ctrlKey: false,
+            metaKey: false,
+            shiftKey,
+            preventDefault,
+          } as unknown as ReactKeyboardEvent),
+        );
+        return preventDefault;
+      };
+
+      const edit = (view: Commander, text: string) =>
+        act(() => view.result.current.setCommand(text));
+
+      it("Arrow Down leaves the text alone when no history navigation is in progress", async () => {
+        const view = await mountCommander({ sessions: [sshSession(1)] });
+        // What the real manager hands back then: its empty draft.
+        mocks.history.navigateDown.mockImplementation(() => "");
+
+        for (const text of ["uptime", severalLines, ""]) {
+          edit(view, text);
+          const caretKept = press(view, "ArrowDown");
+          expect(view.result.current.command).toBe(text);
+          expect(caretKept).not.toHaveBeenCalled();
+        }
+        expect(mocks.history.navigateDown).not.toHaveBeenCalled();
+      });
+
+      it("leaves a text of several lines alone and lets the caret move", async () => {
+        const view = await mountCommander({ sessions: [sshSession(1)] });
+        mocks.history.navigateUp.mockImplementation(() => "uptime");
+        mocks.history.navigateDown.mockImplementation(() => "df -h");
+        // Even with a navigation on the manager's record.
+        mocks.history.navigationIndex = 0;
+
+        // A lone carriage return is a line break in a text area as well.
+        for (const text of [severalLines, "ls\n", "one\r\ntwo", "one\rtwo"]) {
+          edit(view, text);
+          for (const key of ["ArrowUp", "ArrowDown"] as const) {
+            const caretKept = press(view, key);
+            expect(view.result.current.command).toBe(text);
+            expect(caretKept).not.toHaveBeenCalled();
+          }
+        }
+        expect(mocks.history.navigateUp).not.toHaveBeenCalled();
+        expect(mocks.history.navigateDown).not.toHaveBeenCalled();
+      });
+
+      it("leaves a loaded script of several lines alone, with its flag", async () => {
+        const script: BulkScript = {
+          ...customScript,
+          id: "custom-two-steps",
+          name: "Two steps",
+          script: severalLines,
+          risk: "destructive",
+        };
+        const view = await mountCommander({
+          sessions: [sshSession(1)],
+          active: [script],
+        });
+        mocks.history.navigateUp.mockImplementation(() => "uptime");
+        mocks.history.navigateDown.mockImplementation(() => "");
+        act(() => view.result.current.loadScript(script));
+
+        press(view, "ArrowDown");
+        press(view, "ArrowUp");
+        mocks.history.navigationIndex = 0;
+        press(view, "ArrowDown");
+        press(view, "ArrowUp");
+
+        expect(view.result.current.command).toBe(severalLines);
+        expect(view.result.current.loadedScript).toEqual(script);
+        await act(async () => view.result.current.executeCommand());
+        expect(mocks.requestPrompt).toHaveBeenCalledTimes(1);
+        expect(promptCall()[0]).toMatchObject({
+          tone: "danger",
+          defaultAction: "cancel",
+          preview: { text: severalLines },
+          facts: ['Script "Two steps"'],
+        });
+      });
+
+      it("steps into the history from a one-line or an empty editor and gives the draft back", async () => {
+        const view = await mountCommander({ sessions: [sshSession(1)] });
+        edit(view, "df -h");
+
+        mocks.history.navigateUp.mockReturnValueOnce("uptime");
+        const up = press(view, "ArrowUp");
+        expect(mocks.history.navigateUp).toHaveBeenCalledWith("df -h");
+        expect(up).toHaveBeenCalledTimes(1);
+        expect(view.result.current.command).toBe("uptime");
+
+        mocks.history.navigationIndex = 0;
+        mocks.history.navigateDown.mockReturnValueOnce("df -h");
+        const down = press(view, "ArrowDown");
+        expect(down).toHaveBeenCalledTimes(1);
+        expect(view.result.current.command).toBe("df -h");
+
+        mocks.history.navigationIndex = -1;
+        edit(view, "");
+        mocks.history.navigateUp.mockReturnValueOnce("uptime");
+        press(view, "ArrowUp");
+        expect(mocks.history.navigateUp).toHaveBeenLastCalledWith("");
+        expect(view.result.current.command).toBe("uptime");
+      });
+
+      it("keeps stepping while the editor shows an entry of several lines that the keys put there", async () => {
+        const view = await mountCommander({ sessions: [sshSession(1)] });
+
+        mocks.history.navigateUp.mockReturnValueOnce(severalLines);
+        press(view, "ArrowUp");
+        mocks.history.navigationIndex = 0;
+        expect(view.result.current.command).toBe(severalLines);
+
+        mocks.history.navigateUp.mockReturnValueOnce("older entry");
+        const up = press(view, "ArrowUp");
+        mocks.history.navigationIndex = 1;
+        expect(up).toHaveBeenCalledTimes(1);
+        expect(view.result.current.command).toBe("older entry");
+
+        mocks.history.navigateDown.mockReturnValueOnce(severalLines);
+        press(view, "ArrowDown");
+        mocks.history.navigationIndex = 0;
+        expect(view.result.current.command).toBe(severalLines);
+
+        // And out of it again, back to the (empty) draft.
+        mocks.history.navigateDown.mockReturnValueOnce("");
+        const down = press(view, "ArrowDown");
+        mocks.history.navigationIndex = -1;
+        expect(down).toHaveBeenCalledTimes(1);
+        expect(view.result.current.command).toBe("");
+      });
+
+      it("moves the caret instead once that entry was edited", async () => {
+        const view = await mountCommander({ sessions: [sshSession(1)] });
+        mocks.history.navigateUp.mockReturnValueOnce(severalLines);
+        press(view, "ArrowUp");
+        mocks.history.navigationIndex = 0;
+        mocks.history.navigateUp.mockImplementation(() => "older entry");
+        mocks.history.navigateDown.mockImplementation(() => "");
+        mocks.history.navigateUp.mockClear();
+
+        edit(view, `${severalLines} # mine`);
+        expect(press(view, "ArrowUp")).not.toHaveBeenCalled();
+        expect(press(view, "ArrowDown")).not.toHaveBeenCalled();
+        expect(view.result.current.command).toBe(`${severalLines} # mine`);
+
+        // Typed back to the same text, it is the user's text now.
+        edit(view, severalLines);
+        expect(press(view, "ArrowUp")).not.toHaveBeenCalled();
+        expect(view.result.current.command).toBe(severalLines);
+        expect(mocks.history.navigateUp).not.toHaveBeenCalled();
+        expect(mocks.history.navigateDown).not.toHaveBeenCalled();
+      });
+
+      it("does not take a loaded script for the entry the keys showed, even with the same text", async () => {
+        const script: BulkScript = {
+          ...customScript,
+          id: "custom-two-steps",
+          name: "Two steps",
+          script: severalLines,
+        };
+        const view = await mountCommander({
+          sessions: [sshSession(1)],
+          active: [script],
+        });
+        mocks.history.navigateUp.mockReturnValueOnce(severalLines);
+        press(view, "ArrowUp");
+        mocks.history.navigationIndex = 0;
+        mocks.history.navigateUp.mockImplementation(() => "older entry");
+        mocks.history.navigateDown.mockImplementation(() => "");
+
+        act(() => view.result.current.loadScript(script));
+        expect(press(view, "ArrowUp")).not.toHaveBeenCalled();
+        expect(press(view, "ArrowDown")).not.toHaveBeenCalled();
+
+        expect(view.result.current.command).toBe(severalLines);
+        expect(view.result.current.loadedScript).toEqual(script);
+      });
+
+      it("keeps a one-line loaded script and its flag when Arrow Down is pressed without a navigation", async () => {
+        const script: BulkScript = {
+          ...customScript,
+          id: "custom-flagged",
+          name: "Rotate keys",
+          script: "uname -a",
+          risk: "destructive",
+        };
+        const view = await mountCommander({
+          sessions: [sshSession(1)],
+          active: [script],
+        });
+        mocks.history.navigateDown.mockImplementation(() => "");
+        act(() => view.result.current.loadScript(script));
+
+        expect(press(view, "ArrowDown")).not.toHaveBeenCalled();
+
+        expect(view.result.current.command).toBe("uname -a");
+        expect(view.result.current.loadedScript).toEqual(script);
+      });
+
+      it("never navigates with Shift held, which selects text", async () => {
+        const view = await mountCommander({ sessions: [sshSession(1)] });
+        mocks.history.navigateUp.mockImplementation(() => "uptime");
+        mocks.history.navigateDown.mockImplementation(() => "");
+        mocks.history.navigationIndex = 0;
+        edit(view, "df -h");
+
+        expect(press(view, "ArrowUp", true)).not.toHaveBeenCalled();
+        expect(press(view, "ArrowDown", true)).not.toHaveBeenCalled();
+
+        expect(view.result.current.command).toBe("df -h");
       });
     });
 

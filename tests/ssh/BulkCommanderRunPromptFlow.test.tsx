@@ -939,6 +939,99 @@ describe("Bulk SSH commander prompts", () => {
     });
   });
 
+  describe("the arrow keys in the editor", () => {
+    const twoSteps: BulkScript = {
+      ...customScript,
+      id: "custom-two-steps",
+      name: "Two steps",
+      script: "echo one\necho two",
+    };
+
+    const loadTwoSteps = async () => {
+      fireEvent.click(screen.getByText("Scripts"));
+      fireEvent.click(
+        await screen.findByRole("button", { name: "Load Two steps" }),
+      );
+      expect(editor()).toHaveValue("echo one\necho two");
+    };
+
+    /** Sends a harmless command so that the history has an entry to offer. */
+    const sendForHistory = async (command: string) => {
+      typeCommand(command);
+      pressSend();
+      await waitFor(() => expect(sends()).toHaveLength(2));
+      await waitFor(() =>
+        expect(getSSHCommandHistoryMemorySnapshot()).toHaveLength(1),
+      );
+      await waitFor(() => expect(editor()).toHaveValue(""));
+    };
+
+    /** True when the key was left to the text area, which then moves the caret. */
+    const pressKey = (key: "ArrowUp" | "ArrowDown") =>
+      fireEvent.keyDown(editor(), { key });
+
+    it("Arrow Down leaves a freshly loaded script of several lines in the editor", async () => {
+      await openCommander({ active: [twoSteps] });
+      await loadTwoSteps();
+
+      expect(pressKey("ArrowDown")).toBe(true);
+      expect(editor()).toHaveValue("echo one\necho two");
+      expect(pressKey("ArrowUp")).toBe(true);
+      expect(editor()).toHaveValue("echo one\necho two");
+    });
+
+    it("leaves it there with a history to offer as well", async () => {
+      await openCommander({ active: [twoSteps] });
+      await sendForHistory("uptime");
+      await loadTwoSteps();
+
+      expect(pressKey("ArrowUp")).toBe(true);
+      expect(editor()).toHaveValue("echo one\necho two");
+      expect(pressKey("ArrowDown")).toBe(true);
+      expect(editor()).toHaveValue("echo one\necho two");
+    });
+
+    it("a one-line draft still steps into the history and comes back", async () => {
+      await openCommander();
+      await sendForHistory("uptime");
+      typeCommand("df -h");
+
+      expect(pressKey("ArrowUp")).toBe(false);
+      expect(editor()).toHaveValue("uptime");
+      expect(pressKey("ArrowDown")).toBe(false);
+      expect(editor()).toHaveValue("df -h");
+      // The navigation is over: Arrow Down has nothing more to do.
+      expect(pressKey("ArrowDown")).toBe(true);
+      expect(editor()).toHaveValue("df -h");
+    });
+
+    it("Arrow Down does nothing to a one-line text when there was no navigation", async () => {
+      await openCommander();
+      await sendForHistory("uptime");
+      typeCommand("df -h");
+
+      expect(pressKey("ArrowDown")).toBe(true);
+      expect(editor()).toHaveValue("df -h");
+    });
+
+    it("steps on through an entry of several lines that the keys recalled, until it is edited", async () => {
+      await openCommander();
+      await sendForHistory("echo one\necho two");
+
+      expect(pressKey("ArrowUp")).toBe(false);
+      expect(editor()).toHaveValue("echo one\necho two");
+      // Untouched, it is still the history's: Arrow Down goes back to the draft.
+      expect(pressKey("ArrowDown")).toBe(false);
+      expect(editor()).toHaveValue("");
+
+      expect(pressKey("ArrowUp")).toBe(false);
+      typeCommand("echo one\necho two # mine");
+      expect(pressKey("ArrowUp")).toBe(true);
+      expect(pressKey("ArrowDown")).toBe(true);
+      expect(editor()).toHaveValue("echo one\necho two # mine");
+    });
+  });
+
   describe("deleting from the script library", () => {
     it("asks before a move to the trash when the policy says Always, cancels cleanly and moves once on confirm", async () => {
       await openCommander({ config: { deleteConfirmation: "always" } });
