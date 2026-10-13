@@ -14,7 +14,7 @@
       "title": "The public My Vodafone entry, rendered once without an account",
       "url": "https://my.vodafone.pt/",
       "capture": "capture.json",
-      "captureSha256": "dc6149a707eff881881a54455f058ea0f12675689b0abbb07db5a46eb9d87dae",
+      "captureSha256": "af8826c8d70c0d472190b3f92bbf9df949afd72f9d3b0d198f7c22f948a1ec8d",
       "retrieved": "2026-10-12",
       "note": "The entry address forwards to /main.html on the catalog host itself; no other host served the page. The sign-in panel is in the top document, inside the header menu, and was rendered. The other frames are empty or belong to reCAPTCHA; none holds a sign-in control."
     },

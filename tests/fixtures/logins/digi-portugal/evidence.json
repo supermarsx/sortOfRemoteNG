@@ -14,7 +14,7 @@
       "title": "The public My DIGI entry, rendered once without an account",
       "url": "https://mydigi.digi.pt/",
       "capture": "capture.json",
-      "captureSha256": "f493c9f95bee5ec01ba9feb41e700495387336989242b98b53769cc7fe333a18",
+      "captureSha256": "055c856e3cbb82dccc022deaf0f0b46c6145e552dd6f86466375d181a50b2fb7",
       "retrieved": "2026-10-12",
       "note": "The entry address forwards to /login on the catalog host itself; no other host served the page. The sign-in controls are in the top document; the two other frames belong to the consent tool and hold no control."
     },

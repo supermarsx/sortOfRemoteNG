@@ -14,7 +14,7 @@
       "title": "The public account sign-in page, rendered once without an account",
       "url": "https://www.noip.com/login",
       "capture": "capture.json",
-      "captureSha256": "ff7c9703517accd9fb7643e354cf1606bb8775bf3e2e2e015374d5689ddf55eb",
+      "captureSha256": "f0551b0dcef16b2220f4de4627e7b59677647b47933fcba32f91ace4739229b0",
       "retrieved": "2026-10-12"
     },
     {

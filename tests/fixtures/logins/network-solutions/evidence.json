@@ -13,7 +13,7 @@
       "title": "The catalog sign-in address, rendered once without an account: a challenge page, not the sign-in form",
       "url": "https://www.networksolutions.com/my-account/login",
       "capture": "capture.json",
-      "captureSha256": "56db4446e501002c23720cc41f5500c47888ac7d4506233e008ae94226f7eeb2",
+      "captureSha256": "6d69bc1d8875108d18531981dcaf97a5c8a26697be86b2a79d26100786cc3e6d",
       "retrieved": "2026-10-12",
       "note": "Made before the capture standard was settled. Under that standard it would not have been made, because robots.txt on this host is refused. It is kept as a record of the refusal, supports no selector and does not raise the class."
     }

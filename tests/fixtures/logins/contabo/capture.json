@@ -1,6 +1,6 @@
 {
   "schema": "sorng-login-capture/1",
-  "sanitizer": 3,
+  "sanitizer": 4,
   "applicationId": "contabo",
   "capturedAt": "2026-10-12",
   "mode": "hosted",
@@ -272,7 +272,7 @@
                   "class": "ui-dialog ui-widget ui-widget-content ui-corner-all ui-dialog-buttons",
                   "tabindex": "-1",
                   "role": "dialog",
-                  "aria-labelledby": "ui-id-1",
+                  "aria-labelledby": null,
                   "style": null
                 },
                 "rendered": false,
@@ -430,7 +430,7 @@
                   "class": "ui-dialog ui-widget ui-widget-content ui-corner-all",
                   "tabindex": "-1",
                   "role": "dialog",
-                  "aria-labelledby": "ui-id-2",
+                  "aria-labelledby": null,
                   "style": null
                 },
                 "rendered": false,

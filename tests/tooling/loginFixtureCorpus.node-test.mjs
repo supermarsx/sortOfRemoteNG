@@ -384,19 +384,18 @@ function matches(document, selector) {
 }
 
 /**
- * The alternatives of a selector list: split on its top-level commas only,
- * so a comma inside brackets, quotes or a functional pseudo-class such as
- * `:is(a, b)` or `:has(> a, b)` stays where it is. `null` when the brackets,
- * parentheses or quotes do not balance, or an alternative is empty.
+ * One selector list split on its commas, where a comma inside brackets,
+ * quotes or parentheses is not one of them. `null` when the brackets,
+ * parentheses or quotes do not balance, or a member is empty.
  */
-function selectorAlternatives(selector) {
+function splitSelectorList(list) {
   const parts = [];
   let parentheses = 0;
   let brackets = 0;
   let quote = null;
   let start = 0;
-  for (let index = 0; index < selector.length; index++) {
-    const character = selector[index];
+  for (let index = 0; index < list.length; index++) {
+    const character = list[index];
     if (character === "\\") index++;
     else if (quote) {
       if (character === quote) quote = null;
@@ -406,15 +405,111 @@ function selectorAlternatives(selector) {
     else if (character === "(") parentheses++;
     else if (character === ")") parentheses--;
     else if (character === "," && parentheses === 0 && brackets === 0) {
-      parts.push(selector.slice(start, index));
+      parts.push(list.slice(start, index));
       start = index + 1;
     }
     if (parentheses < 0 || brackets < 0) return null;
   }
   if (quote || parentheses !== 0 || brackets !== 0) return null;
-  parts.push(selector.slice(start));
-  const alternatives = parts.map((part) => part.trim());
-  return alternatives.some((part) => part === "") ? null : alternatives;
+  parts.push(list.slice(start));
+  const members = parts.map((part) => part.trim());
+  return members.some((part) => part === "") ? null : members;
+}
+
+const MAX_ALTERNATIVES = 64;
+// A list inside one of these stands for alternatives, as the selector's own
+// list does: `:is(a, b) c` is `:is(a) c` and `:is(b) c`.
+const LIST_PSEUDO_CLASSES = new Set(["is", "where", "has"]);
+
+/**
+ * One selector without a top-level comma, as the selectors its inner lists
+ * stand for. `:not()` is passed over with whatever it holds: what it excludes
+ * is not an alternative and is never shown to match. Returns the selectors,
+ * or `{ problem }` for a list in any other functional pseudo-class, or for
+ * more alternatives than are verified.
+ */
+function expandInnerLists(selector) {
+  let brackets = 0;
+  let quote = null;
+  for (let index = 0; index < selector.length; index++) {
+    const character = selector[index];
+    if (character === "\\") index++;
+    else if (quote) {
+      if (character === quote) quote = null;
+    } else if (character === '"' || character === "'") quote = character;
+    else if (character === "[") brackets++;
+    else if (character === "]") brackets--;
+    else if (character === "(" && brackets === 0) {
+      // The parentheses balance: the caller split the selector first.
+      let close = index;
+      for (let depth = 0, inner = null; close < selector.length; close++) {
+        const at = selector[close];
+        if (at === "\\") close++;
+        else if (inner) {
+          if (at === inner) inner = null;
+        } else if (at === '"' || at === "'") inner = at;
+        else if (at === "(") depth++;
+        else if (at === ")" && --depth === 0) break;
+      }
+      const name =
+        /:([a-z-]+)$/iu.exec(selector.slice(0, index))?.[1].toLowerCase() ?? "";
+      if (name === "not") {
+        index = close;
+        continue;
+      }
+      const members = splitSelectorList(selector.slice(index + 1, close));
+      if (!members) return { problem: null };
+      if (members.length === 1) continue;
+      if (!LIST_PSEUDO_CLASSES.has(name))
+        return {
+          problem: `has a list inside :${name}() that the checker cannot take apart; write its members as alternatives of the selector`,
+        };
+      const all = [];
+      for (const member of members) {
+        const expanded = expandInnerLists(
+          `${selector.slice(0, index + 1)}${member}${selector.slice(close)}`,
+        );
+        if (!Array.isArray(expanded)) return expanded;
+        all.push(...expanded);
+        if (all.length > MAX_ALTERNATIVES)
+          return {
+            problem: `stands for more than ${MAX_ALTERNATIVES} alternatives; write the layouts it is for as alternatives of the selector`,
+          };
+      }
+      return all;
+    }
+  }
+  return [selector];
+}
+
+function expandSelector(selector) {
+  const members = splitSelectorList(selector);
+  if (!members) return { problem: null };
+  const all = [];
+  for (const member of members) {
+    const expanded = expandInnerLists(member);
+    if (!Array.isArray(expanded)) return expanded;
+    all.push(...expanded);
+    if (all.length > MAX_ALTERNATIVES)
+      return {
+        problem: `stands for more than ${MAX_ALTERNATIVES} alternatives; write the layouts it is for as alternatives of the selector`,
+      };
+  }
+  return all;
+}
+
+/**
+ * The alternatives of a selector: every selector that its lists stand for.
+ * A list is the selector's own, split on its top-level commas, and the
+ * argument of `:is()`, `:where()` and `:has()` at any depth, so
+ * `:is(#new, #old) input` is `:is(#new) input` and `:is(#old) input`, and two
+ * such lists stand for every pairing of their members. `null` when the
+ * selector does not balance, a member is empty, a list sits in a functional
+ * pseudo-class the check cannot take apart, or there are more than 64.
+ */
+function selectorAlternatives(selector) {
+  const expanded = expandSelector(selector);
+  return Array.isArray(expanded) ? expanded : null;
 }
 
 const PROBE = new JSDOM("<!doctype html><html><body></body></html>").window
@@ -422,8 +517,9 @@ const PROBE = new JSDOM("<!doctype html><html><body></body></html>").window
 
 /**
  * The alternatives of a selector, each one a selector the static parser
- * accepts; `null` for a selector that cannot be parsed. A selector that
- * cannot be parsed can be neither checked nor run, so it fails its directory.
+ * accepts; `null` for a selector that cannot be parsed or taken apart. Such a
+ * selector can be neither checked nor trusted to run, so it fails its
+ * directory, with the reason `selectorProblem` gives.
  */
 function parsedAlternatives(selector) {
   const alternatives = selectorAlternatives(selector);
@@ -434,6 +530,15 @@ function parsedAlternatives(selector) {
     return null;
   }
   return alternatives;
+}
+
+/** Why `parsedAlternatives` gave nothing for a selector. */
+function selectorProblem(selector) {
+  const expanded = expandSelector(selector);
+  return (
+    (Array.isArray(expanded) ? null : expanded.problem) ??
+    "is not a selector the checker can parse"
+  );
 }
 
 /** The ids and field names a selector spells out: `#user`, `[name="user"]`. */
@@ -1000,7 +1105,7 @@ function checkApplication(directory, context) {
     const at = `selectors[${index}]`;
     const alternatives = parsedAlternatives(entry.selector);
     if (!alternatives) {
-      fail(`${at} is not a selector the checker can parse`);
+      fail(`${at} ${selectorProblem(entry.selector)}`);
       continue;
     }
     cited.add(entry.selector);
@@ -1119,7 +1224,7 @@ function checkApplication(directory, context) {
         for (const { at, selector, scope } of stepSelectors(steps)) {
           const alternatives = parsedAlternatives(selector);
           if (!alternatives) {
-            fail(`${shown} ${at} is not a selector the checker can parse`);
+            fail(`${shown} ${at} ${selectorProblem(selector)}`);
             continue;
           }
           // Cited as written, or each alternative cited on its own (which is
@@ -2966,24 +3071,48 @@ describe("the corpus check", () => {
     },
   );
 
-  test("splits a selector list on its top-level commas only", () => {
+  test("takes a selector apart at its top-level commas and at the lists inside :is(), :where() and :has()", () => {
     const cases = {
       "#a, #b": ["#a", "#b"],
       "form#f input": ["form#f input"],
+      // A list inside one of the three is as much a list as the selector's own.
       ":is(#a, #b) input, form:has(> #c, #d) button": [
-        ":is(#a, #b) input",
-        "form:has(> #c, #d) button",
+        ":is(#a) input",
+        ":is(#b) input",
+        // Each member of a relative list has its own combinator.
+        "form:has(> #c) button",
+        "form:has(#d) button",
       ],
+      ":where(#a, :is(#b, #c)) > input": [
+        ":where(#a) > input",
+        ":where(:is(#b)) > input",
+        ":where(:is(#c)) > input",
+      ],
+      // Two lists stand for every pairing of their members.
+      ":is(#a, #b) :is(.x, .y)": [
+        ":is(#a) :is(.x)",
+        ":is(#a) :is(.y)",
+        ":is(#b) :is(.x)",
+        ":is(#b) :is(.y)",
+      ],
+      "form:has(:is(#a, #b))": ["form:has(:is(#a))", "form:has(:is(#b))"],
+      "A:IS( #a ,  #b )": ["A:IS(#a)", "A:IS(#b)"],
+      ":is(#a) input": [":is(#a) input"],
       "input[data-x=\"a,b\"], input[name='c,d']": [
         'input[data-x="a,b"]',
         "input[name='c,d']",
       ],
+      'input[data-x=":is(a, b)"]': ['input[data-x=":is(a, b)"]'],
+      // What :not() excludes is not an alternative: it is left as written,
+      // with whatever is inside it.
       "a:not(.x, .y) , b": ["a:not(.x, .y)", "b"],
+      "form:not(:is(.a, .b)) input": ["form:not(:is(.a, .b)) input"],
       'input[placeholder="a \\" , b"], #c': [
         'input[placeholder="a \\" , b"]',
         "#c",
       ],
       "#a\\,b": ["#a\\,b"],
+      "li:nth-child(2n + 1)": ["li:nth-child(2n + 1)"],
     };
     for (const [selector, alternatives] of Object.entries(cases))
       assert.deepEqual(selectorAlternatives(selector), alternatives, selector);
@@ -2996,8 +3125,35 @@ describe("the corpus check", () => {
       "a:is(b",
       "a)",
       "input[name='x]",
-    ])
+      ":is(#a,,#b) input",
+      ":is(#a, ) input",
+    ]) {
       assert.equal(selectorAlternatives(broken), null, broken);
+      assert.equal(
+        selectorProblem(broken),
+        "is not a selector the checker can parse",
+        broken,
+      );
+    }
+    // A list the check cannot take apart, and more alternatives than it
+    // verifies: refused, each with its own reason.
+    for (const [unverifiable, reason] of [
+      ["li:nth-child(1 of .a, .b)", /list inside :nth-child\(\)/u],
+      ["p:lang(en, fr)", /list inside :lang\(\)/u],
+      [
+        `:is(${"abcdefghi".split("").join(", ")}) :is(${"abcdefgh".split("").join(", ")})`,
+        /more than 64 alternatives/u,
+      ],
+    ]) {
+      assert.equal(selectorAlternatives(unverifiable), null, unverifiable);
+      assert.match(selectorProblem(unverifiable), reason);
+    }
+    assert.equal(
+      selectorAlternatives(
+        `:is(${"abcdefgh".split("").join(", ")}) :is(${"abcdefgh".split("").join(", ")})`,
+      ).length,
+      64,
+    );
     // Parsed: the list is split and every alternative is a selector.
     assert.deepEqual(parsedAlternatives("#a, form:has(#b) input"), [
       "#a",
@@ -3140,6 +3296,80 @@ describe("the corpus check", () => {
         expectFailure(
           result,
           /selectors\[0\] alternative "form#clobber input#usr" matches nothing in any fixture/u,
+        );
+      });
+      // The same two layouts written as a list inside :is(): the check takes
+      // it apart, so a member that matches nothing is seen there too.
+      const grouped = (second) =>
+        `:is(form#iform input#usernamefld[name="usernamefld"], ${second})`;
+      await t.test(
+        "both members of a list inside :is() matched: accepted",
+        (t) =>
+          assert.deepEqual(
+            checkTemporary(
+              t,
+              twoLayouts(
+                (e) =>
+                  (e.selectors[0].selector = grouped(
+                    "form#clobber input#user",
+                  )),
+              ),
+              {
+                steps: steps(
+                  (s) =>
+                    (s.loginSteps[0].selectors.username = grouped(
+                      "form#clobber input#user",
+                    )),
+                ),
+              },
+            ).errors,
+            [],
+          ),
+      );
+      await t.test("a misspelt member of a list inside :is() fails", (t) => {
+        const result = checkTemporary(
+          t,
+          twoLayouts(
+            (e) =>
+              (e.selectors[0].selector = grouped("form#clobber input#usr")),
+          ),
+          {
+            steps: steps(
+              (s) =>
+                (s.loginSteps[0].selectors.username = grouped(
+                  "form#clobber input#usr",
+                )),
+            ),
+          },
+        );
+        expectFailure(
+          result,
+          /loginSteps\[0\]\.selectors\.username alternative ":is\(form#clobber input#usr\)" matches nothing in fixture\.html, fixture\.classic\.html/u,
+        );
+        expectFailure(
+          result,
+          /selectors\[0\] alternative ":is\(form#clobber input#usr\)" matches nothing in any fixture/u,
+        );
+      });
+      await t.test("a list the check cannot take apart fails", (t) => {
+        const unverifiable =
+          "form#iform input:nth-child(1 of #usernamefld, #nowhere)";
+        const result = checkTemporary(
+          t,
+          twoLayouts((e) => (e.selectors[0].selector = unverifiable)),
+          {
+            steps: steps(
+              (s) => (s.loginSteps[0].selectors.username = unverifiable),
+            ),
+          },
+        );
+        expectFailure(
+          result,
+          /selectors\[0\] has a list inside :nth-child\(\) that the checker cannot take apart/u,
+        );
+        expectFailure(
+          result,
+          /loginSteps\[0\]\.selectors\.username has a list inside :nth-child\(\) that the checker cannot take apart/u,
         );
       });
       await t.test("an alternative whose layout has no fixture fails", (t) => {

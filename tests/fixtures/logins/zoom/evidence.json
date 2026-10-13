@@ -14,7 +14,7 @@
       "title": "The public sign-in page, rendered once without an account",
       "url": "https://zoom.us/signin",
       "capture": "capture.json",
-      "captureSha256": "ffd4e6b5d61e663680dea76afae57ec0f60f61784897fc8a25b34de6834d59e5",
+      "captureSha256": "093c32f6261004e6c3694c979847e6537126c23acfa1ea8f2f2619b0deed9b08",
       "retrieved": "2026-10-12",
       "note": "Stayed on https://zoom.us/signin, HTTP 200. One top document with the form; a reCAPTCHA Enterprise frame from www.google.com is present and not displayed."
     },

@@ -14,7 +14,7 @@
       "title": "The public sign-in page of the original customer panel, rendered once without an account",
       "url": "https://my.contabo.com/account/login",
       "capture": "capture.json",
-      "captureSha256": "0ad87441e5ceed5e532179e6619ff0eb6fa7a0e211aef5a3e1e3c1c27fdae0dc",
+      "captureSha256": "014299d08f8415aec7f0571c66a44f6ea41d12633d9f8cc7e9ac6330bd1375bc",
       "retrieved": "2026-10-12"
     },
     {

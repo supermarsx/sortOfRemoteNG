@@ -1,6 +1,6 @@
 {
   "schema": "sorng-login-capture/1",
-  "sanitizer": 3,
+  "sanitizer": 4,
   "applicationId": "imt-online",
   "capturedAt": "2026-10-12",
   "mode": "hosted",
@@ -970,7 +970,7 @@
                   "class": "ui-dialog ui-widget ui-widget-content ui-corner-all  ui-draggable",
                   "tabindex": "-1",
                   "role": "dialog",
-                  "aria-labelledby": "ui-dialog-title-MaintenanceMsg",
+                  "aria-labelledby": null,
                   "style": null
                 },
                 "rendered": false,

@@ -38,12 +38,14 @@ const {
   NON_PUBLIC_SUFFIXES,
   CAPTURE_SANITIZER,
   CaptureFailure,
+  OfflineFailure,
   describeOutcome,
   exitCodeFor,
   loadCatalogTargets,
   loadWasAttempted,
   looksSecret,
   normaliseContacted,
+  openedDebuggingPort,
   removeStaleProfiles,
   renderFixtureHtml,
   resanitizeCapture,
@@ -869,8 +871,9 @@ test("attribute values are kept only when they are structural", () => {
     [button, "aria-keyshortcuts", "Alt+S", null],
     [button, "aria-description", "Opens your account", null],
     [button, "aria-unknown-future-text", "Sign in", null],
-    [input, "aria-labelledby", "label-user hint-user", "same"],
-    [input, "aria-describedby", "hint.user", "same"],
+    // A list of ids is kept only against the ids of its document (below).
+    [input, "aria-labelledby", "label-user hint-user", null],
+    [input, "aria-describedby", "hint.user", null],
     [input, "aria-describedby", "Signed in, as Mariana!", null],
     [input, "aria-invalid", "false", "same"],
     [input, "aria-required", "true", "same"],
@@ -911,6 +914,25 @@ test("attribute values are kept only when they are structural", () => {
       sanitizeAttribute(element, name, value, { mode: "hosted" }),
       expected === "same" ? value : expected,
       `${element.tag} ${name}=${value}`,
+    );
+  // A list of ids is words until every one of them is an id of the document:
+  // "signed in as" is three identifier-shaped tokens too.
+  const ids = new Set(["label-user", "hint-user", "hint.user", "as"]);
+  for (const [name, value, kept] of [
+    ["aria-labelledby", "label-user hint-user", true],
+    ["aria-describedby", "hint.user", true],
+    ["aria-describedby", "  hint.user   label-user ", true],
+    ["aria-labelledby", "label-user missing-one", false],
+    ["aria-describedby", "signed in as", false],
+    ["aria-controls", "Mariana", false],
+    ["aria-owns", "", true],
+    // Nine references are more than a control has.
+    ["aria-labelledby", new Array(9).fill("hint-user").join(" "), false],
+  ])
+    assert.equal(
+      sanitizeAttribute(input, name, value, { mode: "hosted", ids }),
+      kept ? value : null,
+      `${name}=${value}`,
     );
   // A private or intranet host is never written, whatever the mode.
   assert.equal(
@@ -1021,8 +1043,16 @@ test("the tool has no code that types, clicks, or reads text, cookies or storage
     /--user-data-dir=(?!\$\{profile\})/u,
     /--ignore-certificate-errors|--disable-web-security|--no-sandbox/u,
     /hideWebdriver|--user-agent|setUserAgentOverride/u,
+    // The pipe is the only way in: a debugging port would let any local
+    // process read and drive the page.
+    /--remote-debugging-(?!pipe")/u,
+    /--remote-allow-origins/u,
   ])
     assert.doesNotMatch(source, pattern);
+  assert.match(source, /"--remote-debugging-pipe",/u);
+  // One place creates a world in a document and one place evaluates in it.
+  for (const command of ["Page.createIsolatedWorld", "Runtime.evaluate"])
+    assert.equal(source.split(`"${command}"`).length - 1, 1, command);
   // The profile is created fresh under the system temporary directory.
   assert.match(source, /mkdtemp\(path\.join\(tmpdir\(\), PROFILE_PREFIX\)\)/u);
   assert.match(source, /--user-data-dir=\$\{profile\}/u);
@@ -1257,10 +1287,12 @@ test("re-sanitizing brings an earlier capture under the current rules, offline",
   assert.equal(after.frames[2].nameWithheld, true);
   const [, launcherElement, challengeElement] =
     after.frames[0].tree.children[0].children;
+  // Its source says where the other party's frame is from, as the frame
+  // record does, and no more: the path belongs to that party's page.
   assert.deepEqual(challengeElement.attributes, {
     title: null,
     name: null,
-    src: "https://www.google.com/recaptcha/enterprise/anchor",
+    src: "https://www.google.com",
   });
   // An authored name of a same-origin frame stays, in both places.
   assert.equal(launcherElement.attributes.name, "launcher");
@@ -1497,9 +1529,144 @@ test("a refusal before the load may be repeated; a failed load may not", async (
     describeOutcome(sent),
     /This was the one load for this page\. Do not run it again/u,
   );
-  // Anything unforeseen is treated as an attempted load.
+  // An error nothing classified is treated as an attempted load: the command
+  // classifies every error of its own (see the next test).
   assert.equal(exitCodeFor(new Error("unexpected")), 1);
   assert.equal(exitCodeFor(new CaptureRefusal("usage", "Usage")), 2);
+});
+
+test("only a hosted run that reached the site is called the one load", async (t) => {
+  const temp = await scratch(t);
+  const corpus = path.join(temp, "logins");
+  t.mock.method(console, "error", () => {});
+  t.mock.method(console, "log", () => {});
+  const outcome = (argv, options) =>
+    runCaptureCommand(argv, { corpus, ...options }).then(
+      () => null,
+      (error) => error,
+    );
+  const THE_LOAD = /This was the one load for this page/u;
+  const OFFLINE = /No page was requested/u;
+  // A place nothing can be written to: its parent is a file.
+  const blocker = path.join(temp, "a-file");
+  await writeFile(blocker, "x");
+  const unwritable = path.join(blocker, "capture.json");
+  const saved = path.join(temp, "saved.html");
+  await writeFile(saved, '<!doctype html><body><input id="user"></body>');
+
+  // --from-file: the page was parsed, the capture could not be written.
+  const offline = await outcome([
+    "--id",
+    "eaton-ups",
+    "--from-file",
+    saved,
+    "--out",
+    unwritable,
+  ]);
+  assert.ok(offline instanceof OfflineFailure, String(offline));
+  assert.equal(exitCodeFor(offline), 3);
+  assert.match(describeOutcome(offline), OFFLINE);
+  assert.doesNotMatch(describeOutcome(offline), THE_LOAD);
+  assert.doesNotMatch(describeOutcome(offline), /sent to the site/u);
+
+  // --resanitize: an evidence file that cannot be read (it is a directory).
+  const broken = path.join(temp, "broken-corpus");
+  await mkdir(path.join(broken, "zoom"), { recursive: true });
+  await mkdir(path.join(broken, "other", "evidence.json"), { recursive: true });
+  const legacy = `${JSON.stringify(legacyCapture())}\n`;
+  await writeFile(path.join(broken, "zoom", "capture.json"), legacy);
+  const resanitized = await outcome(["--resanitize", broken]);
+  assert.ok(resanitized instanceof OfflineFailure, String(resanitized));
+  assert.equal(exitCodeFor(resanitized), 3);
+  assert.match(describeOutcome(resanitized), OFFLINE);
+  assert.doesNotMatch(describeOutcome(resanitized), THE_LOAD);
+  // The same through the command line: its own status, its own sentence.
+  await writeFile(path.join(broken, "zoom", "capture.json"), legacy);
+  const cli = await runTool(["--resanitize", broken]);
+  assert.equal(cli.code, 3, cli.stderr);
+  assert.match(cli.stderr, OFFLINE);
+  assert.doesNotMatch(cli.stderr, THE_LOAD);
+  // A refusal in an offline mode stays a refusal: a file that is no capture,
+  // and one whose frames this tool cannot have written.
+  assert.equal((await runTool(["--resanitize", blocker])).code, 2);
+  const noFrames = path.join(temp, "no-frames.json");
+  await writeFile(
+    noFrames,
+    JSON.stringify({ ...legacyCapture(), frames: [null] }),
+  );
+  assert.ok(
+    refusal("usage")(await outcome(["--resanitize", noFrames])),
+    "frames that are not objects",
+  );
+
+  // Hosted, failing before anything is sent: may be repeated.
+  let loads = 0;
+  const early = await outcome(["--id", "github"], {
+    corpus: 42,
+    hosted: async () => {
+      loads++;
+    },
+  });
+  assert.ok(early instanceof CaptureFailure, String(early));
+  assert.equal(early.loadAttempted, false);
+  assert.equal(exitCodeFor(early), 2);
+  assert.match(describeOutcome(early), /does not count as the one load/u);
+  assert.equal(loads, 0);
+
+  // Hosted, failing inside the load in a way nothing classified: whether the
+  // site was reached is not known, so it counts.
+  const during = await outcome(
+    ["--id", "github", "--out", path.join(temp, "during.json")],
+    {
+      hosted: async () => {
+        throw new TypeError("unforeseen");
+      },
+    },
+  );
+  assert.ok(during instanceof CaptureFailure, String(during));
+  assert.equal(during.loadAttempted, true);
+  assert.equal(exitCodeFor(during), 1);
+  assert.match(describeOutcome(during), THE_LOAD);
+
+  // Hosted, the page was read and the capture could not be written: the load
+  // is spent, and the message says what was lost.
+  const standIn = async (target) => ({
+    capture: resanitizeCapture({
+      ...legacyCapture(),
+      applicationId: target.applicationId,
+    }),
+    run: { contacted: ["github.com:443"], refused: [] },
+  });
+  const late = await outcome(["--id", "github", "--out", unwritable], {
+    hosted: standIn,
+  });
+  assert.ok(late instanceof CaptureFailure, String(late));
+  assert.equal(late.loadAttempted, true);
+  assert.equal(exitCodeFor(late), 1);
+  assert.match(describeOutcome(late), THE_LOAD);
+  assert.match(late.message, /was read.*not written/su);
+  assert.equal(late.written, null);
+  assert.match(describeOutcome(late), /work from other material/u);
+
+  // Hosted, the capture was written and something after it failed (here the
+  // fixture draft): the load is spent, but nothing is lost, and the message
+  // must not send the reader to "other material".
+  const kept = path.join(temp, "kept.json");
+  const afterWrite = await outcome(
+    ["--id", "github", "--out", kept, "--fixture", unwritable],
+    { hosted: standIn },
+  );
+  assert.ok(afterWrite instanceof CaptureFailure, String(afterWrite));
+  assert.equal(afterWrite.loadAttempted, true);
+  assert.equal(afterWrite.written, kept);
+  assert.equal(exitCodeFor(afterWrite), 1);
+  assert.equal(existsSync(kept), true, "the capture is on disk");
+  assert.match(
+    describeOutcome(afterWrite),
+    /The capture was written to .*kept\.json/u,
+  );
+  assert.match(describeOutcome(afterWrite), /Do not run it again/u);
+  assert.doesNotMatch(describeOutcome(afterWrite), /other material/u);
 });
 
 const dynamicLogin = (tripwire, port) => `<!doctype html>
@@ -1692,12 +1859,33 @@ test(
       },
     ]);
     assert.ok(!text.includes("x-user") && !text.includes("x-form"));
-    // The element that embeds it belongs to the page and is kept.
+    // The element that embeds it belongs to the page and is kept; its source
+    // is reduced to the same origin the frame record gives.
     assert.equal(
       findById(capture, "cross").node.attributes.src,
-      `http://localhost:${port}/xframe`,
+      `http://localhost:${port}`,
     );
     assert.equal(findById(capture, "cross").node.attributes.name, null);
+    assert.equal(findById(capture, "same").node.attributes.src, "/frame");
+    // The read ran in the five documents of the page's own origin and in no
+    // other: the frame on localhost was listed, never opened.
+    assert.deepEqual(
+      run.read,
+      new Array(5).fill(`http://127.0.0.1:${port}`),
+      "documents the tool read",
+    );
+    // The browser is driven over the pipe alone: no debugging port is asked
+    // for, and none was opened.
+    assert.ok(run.arguments.includes("--remote-debugging-pipe"));
+    assert.deepEqual(
+      run.arguments.filter(
+        (argument) =>
+          /^--remote-(?!debugging-pipe$)/u.test(argument) ||
+          /devtools|debugging-port/iu.test(argument),
+      ),
+      [],
+    );
+    assert.equal(run.debuggingPort, false);
 
     // A frame name is page-controlled: only a plain authored identifier of a
     // same-origin frame is written, in the frame record and on its element.
@@ -2236,5 +2424,527 @@ test(
       }
     }, 15000);
     assert.ok(gone, "the browser exited and released its profile");
+  },
+);
+
+test(
+  "a frame on another origin is never read, whatever it holds",
+  { skip: edgeExecutable() ? false : "Microsoft Edge is not installed" },
+  async (t) => {
+    // The page itself has no password field. The only one is in a frame of
+    // another origin: reading that frame would be the only way to see it.
+    const sockets = new Set();
+    const documents = [];
+    const server = createServer((request, response) => {
+      const url = new URL(request.url, "http://127.0.0.1");
+      documents.push(`${request.headers.host}${url.pathname}`);
+      const html = (body) =>
+        response
+          .writeHead(200, { "Content-Type": "text/html; charset=utf-8" })
+          .end(`<!doctype html><body>${body}</body>`);
+      if (url.pathname === "/login")
+        html(
+          '<form id="top-form"><input id="top-user" name="user"></form>' +
+            '<iframe id="own" src="/own"></iframe>' +
+            `<iframe id="other" src="http://localhost:${server.address().port}/other"></iframe>`,
+        );
+      else if (url.pathname === "/own") html('<input id="own-field">');
+      else if (url.pathname === "/other")
+        html(
+          '<form id="other-form"><input id="other-pass" type="password"></form>' +
+            '<iframe id="other-inner" src="/other-inner"></iframe>',
+        );
+      else if (url.pathname === "/other-inner")
+        html('<input id="inner-pass" type="password">');
+      else response.writeHead(404).end();
+    });
+    server.on("connection", (socket) => {
+      sockets.add(socket);
+      socket.once("close", () => sockets.delete(socket));
+    });
+    await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+    t.after(async () => {
+      for (const socket of sockets) socket.destroy();
+      await new Promise((resolve) => server.close(resolve));
+    });
+    const { port } = server.address();
+    const own = `http://127.0.0.1:${port}`;
+
+    const { capture, run } = await captureLoopbackFixture(`${own}/login`, {
+      extraOrigins: [`http://localhost:${port}`],
+      settleMs: 1500,
+    });
+    const text = JSON.stringify(capture);
+
+    // The other party's frames did load: there was something to read.
+    assert.ok(documents.includes(`localhost:${port}/other`), documents.join());
+    assert.ok(documents.includes(`localhost:${port}/other-inner`));
+    // The read ran in the page and in its own frame, and nowhere else.
+    assert.deepEqual(run.read, [own, own]);
+    assert.deepEqual(capture.observations, [
+      "cross-origin-frame",
+      "no-password-field",
+    ]);
+    for (const id of ["other-form", "other-pass", "inner-pass", "other-inner"])
+      assert.ok(!text.includes(id), id);
+    assert.equal(findById(capture, "top-user").frame.index, 0);
+    assert.equal(findById(capture, "own-field").frame.sameOriginAsTop, true);
+    // Listed, with their origin, and nothing else: the frame and the frame
+    // inside it. (The browser may give an unnamed frame a name of its own;
+    // whatever it is, it is withheld.)
+    const others = capture.frames.filter((frame) => !frame.sameOriginAsTop);
+    assert.equal(others.length, 2);
+    for (const frame of others) {
+      assert.deepEqual(
+        Object.keys(frame).filter((key) => key !== "nameWithheld"),
+        ["index", "parent", "name", "url", "sameOriginAsTop"],
+      );
+      assert.equal(frame.name, null);
+      assert.equal(frame.url, `http://localhost:${port}`);
+    }
+    assert.equal(
+      findById(capture, "other").node.attributes.src,
+      `http://localhost:${port}`,
+    );
+    assert.deepEqual(resanitizeCapture(capture), capture);
+  },
+);
+
+test("re-sanitizing keeps only what the tool writes about a capture, in the shape it writes it", () => {
+  const MARK = "FREE-TEXT-MARKER";
+  const edited = legacyCapture();
+  edited.reviewer = `${MARK} at the top`;
+  edited.engine = `Someone's own browser, ${MARK}`;
+  edited.capturedAt = `yesterday, ${MARK}`;
+  edited.source.note = `${MARK} in source`;
+  edited.source.kind = MARK;
+  edited.source.httpStatus = `200 ${MARK}`;
+  edited.limits.comment = `${MARK} in limits`;
+  edited.limits.settleMs = MARK;
+  edited.limits.navigations = 7;
+  edited.limits.scriptsExecuted = MARK;
+  edited.limits.loadEvent = MARK;
+  edited.limits.truncated = MARK;
+  edited.limits.dialogsDismissed = -3;
+  edited.limits.input = MARK;
+  edited.network.note = MARK;
+  edited.frames[0].comment = MARK;
+  edited.frames[0].controls = MARK;
+  const after = resanitizeCapture(edited);
+  assert.ok(!JSON.stringify(after).includes(MARK), JSON.stringify(after));
+  assert.deepEqual(Object.keys(after), [
+    "schema",
+    "sanitizer",
+    "applicationId",
+    "capturedAt",
+    "mode",
+    "engine",
+    "source",
+    "limits",
+    "network",
+    "observations",
+    "frames",
+  ]);
+  assert.equal(after.engine, null);
+  assert.equal(after.capturedAt, null);
+  assert.deepEqual(after.source, {
+    kind: "hosted-login",
+    requestedUrl: "https://zoom.us/signin",
+    finalUrl: "https://zoom.us/signin",
+    httpStatus: null,
+  });
+  // What a mode fixes is written from the mode; the rest is dropped when it
+  // is not of its kind.
+  assert.deepEqual(after.limits, {
+    navigations: 1,
+    scriptsExecuted: true,
+    input: "none",
+    truncated: false,
+    redirects: "public-hosts-only",
+  });
+  assert.equal(after.frames[0].controls, 0);
+  assert.deepEqual(resanitizeCapture(after), after);
+
+  // A capture the tool wrote keeps every value, in the order it wrote them.
+  const kept = resanitizeCapture(legacyCapture());
+  assert.equal(kept.engine, "Microsoft Edge headless (Edg/146.0.3856.84)");
+  assert.equal(kept.capturedAt, "2026-10-12");
+  assert.deepEqual(Object.entries(kept.limits), [
+    ["navigations", 1],
+    ["scriptsExecuted", true],
+    ["loadEvent", true],
+    ["settleMs", 6000],
+    ["dialogsDismissed", 0],
+    ["input", "none"],
+    ["truncated", false],
+    ["redirects", "public-hosts-only"],
+  ]);
+  assert.deepEqual(Object.keys(kept.source), [
+    "kind",
+    "requestedUrl",
+    "finalUrl",
+    "httpStatus",
+  ]);
+
+  // The requested address is the catalog's: a plain https address of a
+  // public host, spelt canonically, or it is not written.
+  const requested = (value) => {
+    const capture = legacyCapture();
+    capture.source.requestedUrl = value;
+    return resanitizeCapture(capture).source.requestedUrl;
+  };
+  assert.equal(requested("https://zoom.us/signin"), "https://zoom.us/signin");
+  for (const value of [
+    `https://zoom.us/signin?note=${MARK}`,
+    `https://zoom.us/signin#${MARK}`,
+    "https://someone:secret@zoom.us/signin",
+    "http://zoom.us/signin",
+    "https://zoom.us:8443/signin",
+    "https://ZOOM.us/signin",
+    "zoom.us/signin",
+    "https://10.0.0.8/login",
+    "https://nas.local/login",
+    `captured by ${MARK}`,
+    42,
+    null,
+  ])
+    assert.equal(requested(value), null, String(value));
+  for (const [key, value] of [
+    ["applicationId", `Zoom (${MARK})`],
+    ["applicationId", 7],
+    ["capturedAt", "2026-13-45"],
+    ["capturedAt", "12 October 2026"],
+    ["engine", "Microsoft Edge headless (Edg/146.0) and more"],
+  ])
+    assert.equal(
+      resanitizeCapture({ ...legacyCapture(), [key]: value })[key],
+      null,
+      `${key}=${value}`,
+    );
+  assert.equal(
+    resanitizeCapture({ ...legacyCapture(), httpNote: MARK }).source.httpStatus,
+    200,
+  );
+
+  // A saved page: its description is fixed by the mode.
+  const saved = resanitizeCapture({
+    schema: CAPTURE_SCHEMA,
+    applicationId: "eaton-ups",
+    capturedAt: "2026-10-12",
+    mode: "file",
+    engine: MARK,
+    source: { kind: "saved-page", savedFrom: MARK, requestedUrl: MARK },
+    limits: { navigations: 3, scriptsExecuted: true, settleMs: 5, note: MARK },
+    network: { contacted: ["zoom.us:443"], refused: 0 },
+    observations: ["no-password-field", MARK],
+    frames: [{ index: 0, parent: null, controls: 0, tree: { tag: "html" } }],
+  });
+  assert.ok(!JSON.stringify(saved).includes(MARK));
+  assert.equal(saved.engine, "static parse of a saved page");
+  assert.deepEqual(saved.source, { kind: "saved-page" });
+  assert.deepEqual(saved.limits, {
+    navigations: 0,
+    scriptsExecuted: false,
+    input: "none",
+    truncated: false,
+  });
+  assert.equal(saved.network, undefined, "a saved page contacted nothing");
+
+  // What a capture says about its trees is read from them, not carried: a
+  // password field, a shadow tree and an error status cannot be claimed or
+  // denied by hand. Only a challenge is noted while the page is read.
+  const claimed = resanitizeCapture({
+    ...legacyCapture(),
+    observations: ["no-password-field", "shadow-dom", "error-status"],
+  });
+  assert.deepEqual(claimed.observations, [
+    "cross-origin-frame",
+    "password-field",
+  ]);
+  const failed = legacyCapture();
+  failed.source.httpStatus = 403;
+  failed.frames[0].tree.children[0].children = [
+    {
+      tag: "login-widget",
+      attributes: { id: "widget" },
+      shadow: [{ tag: "input", attributes: { id: "code" } }],
+    },
+  ];
+  assert.deepEqual(resanitizeCapture(failed).observations, [
+    "captcha",
+    "cross-origin-frame",
+    "error-status",
+    "no-password-field",
+    "shadow-dom",
+  ]);
+
+  // What is not one of the tool's captures is refused, not repaired.
+  for (const change of [
+    { mode: "something-else" },
+    { mode: undefined },
+    { frames: [null] },
+    { frames: ["frame"] },
+    { frames: [] },
+  ])
+    assert.throws(
+      () => resanitizeCapture({ ...legacyCapture(), ...change }),
+      refusal("usage"),
+      JSON.stringify(change),
+    );
+});
+
+test("a list of ids is kept only when each one names an element of the same captured document", async (t) => {
+  const temp = await scratch(t);
+  const file = path.join(temp, "saved.html");
+  await writeFile(
+    file,
+    "<!doctype html><html><body>" +
+      '<span id="user-hint">not a control, so not captured</span>' +
+      '<label id="user-label" for="user"></label>' +
+      '<input id="user" aria-labelledby="user-label" aria-describedby="user-hint pass" aria-controls="signed in as">' +
+      '<input id="pass" type="password" aria-describedby="pass user" aria-errormessage="">' +
+      '<login-box id="box" name="box"></login-box>' +
+      "</body></html>",
+  );
+  const capture = await captureFromFile(file, { applicationId: "eaton-ups" });
+  const attributes = (id) => findById(capture, id).node.attributes;
+  // Every id it names is in the capture: kept, in both directions.
+  assert.equal(attributes("user")["aria-labelledby"], "user-label");
+  assert.equal(attributes("pass")["aria-describedby"], "pass user");
+  assert.equal(attributes("pass")["aria-errormessage"], "");
+  // One of them is not: the value is withheld, its presence stays.
+  assert.equal(attributes("user")["aria-describedby"], null);
+  assert.ok("aria-describedby" in attributes("user"));
+  // Three plain words are not three ids.
+  assert.equal(attributes("user")["aria-controls"], null);
+  assert.deepEqual(resanitizeCapture(capture), capture);
+
+  // The same rule for a capture that exists already, per document: an id of
+  // another frame does not count.
+  const earlier = legacyCapture();
+  const [email, password] =
+    earlier.frames[0].tree.children[0].children[0].children;
+  email.attributes["aria-describedby"] = "password login-form";
+  email.attributes["aria-labelledby"] = "inner";
+  password.attributes["aria-controls"] = "welcome back";
+  const after = resanitizeCapture(earlier);
+  const [emailAfter, passwordAfter] =
+    after.frames[0].tree.children[0].children[0].children;
+  assert.equal(
+    emailAfter.attributes["aria-describedby"],
+    "password login-form",
+  );
+  assert.equal(emailAfter.attributes["aria-labelledby"], null);
+  assert.equal(passwordAfter.attributes["aria-controls"], null);
+  assert.deepEqual(resanitizeCapture(after), after);
+});
+
+test("the source of a frame element says no more than the frame record: the origin, when it is another party's", () => {
+  const capture = legacyCapture();
+  const body = capture.frames[0].tree.children[0];
+  const frame = (attributes, tag = "iframe") =>
+    body.children.push({ tag, attributes }) - 1;
+  const relative = frame({ id: "relative", src: "/help/frame" });
+  const own = frame({ id: "own", src: "https://zoom.us/embedded/chat" });
+  const other = frame({
+    id: "other",
+    src: "https://challenges.cloudflare.com/cdn-cgi/challenge-platform/h/b/turnstile",
+  });
+  const schemeless = frame({ id: "schemeless", src: "//idp.example.com/a/b" });
+  const privateHost = frame({ id: "private", src: "https://10.0.0.8/admin" });
+  const old = frame({ id: "old", src: "http://zoom.us/legacy" }, "frame");
+  // Only a frame's own source is reduced: a link or a form to another origin
+  // is where the page sends the user, and its path is what a step gates on.
+  body.children.push({
+    tag: "form",
+    attributes: { id: "sso", action: "https://sso.example.net/login/start" },
+  });
+  const after = resanitizeCapture(capture);
+  const written = after.frames[0].tree.children[0].children;
+  assert.equal(written[relative].attributes.src, "/help/frame");
+  assert.equal(written[own].attributes.src, "https://zoom.us/embedded/chat");
+  assert.equal(
+    written[other].attributes.src,
+    "https://challenges.cloudflare.com",
+  );
+  assert.equal(written[schemeless].attributes.src, "//idp.example.com");
+  assert.equal(written[privateHost].attributes.src, "https://origin-1.invalid");
+  // Another scheme is another origin.
+  assert.equal(written[old].attributes.src, "http://zoom.us");
+  assert.equal(
+    written.at(-1).attributes.action,
+    "https://sso.example.net/login/start",
+  );
+  assert.deepEqual(resanitizeCapture(after), after);
+});
+
+test("host aliases are numbered the same way whatever order a capture was written in", () => {
+  // Two private hosts, met in the tree and as the address of a frame of
+  // another origin. A capture could number them tree first or address first.
+  const build = (first, second, third) => {
+    const capture = legacyCapture();
+    capture.frames = capture.frames.slice(0, 1);
+    capture.frames[0].tree.children[0].children.push(
+      { tag: "a", attributes: { id: "one", href: `https://${first}/a` } },
+      { tag: "a", attributes: { id: "two", href: `https://${second}/b` } },
+    );
+    capture.frames.push({
+      index: 1,
+      parent: 0,
+      name: null,
+      url: `https://${third}/frame`,
+      sameOriginAsTop: false,
+    });
+    return capture;
+  };
+  const links = (capture) => [
+    ...capture.frames[0].tree.children[0].children
+      .slice(-2)
+      .map((node) => node.attributes.href),
+    capture.frames[1].url,
+  ];
+  // From raw hosts: numbered in the order they are met, a host met twice
+  // keeping its number.
+  const fresh = resanitizeCapture(build("10.0.0.8", "nas.local", "10.0.0.8"));
+  assert.deepEqual(links(fresh), [
+    "https://origin-1.invalid/a",
+    "https://origin-2.invalid/b",
+    "https://origin-1.invalid",
+  ]);
+  // From aliases numbered in any other order: brought to the same numbering,
+  // and stable from then on.
+  for (const [first, second, third] of [
+    ["origin-2.invalid", "origin-1.invalid", "origin-2.invalid"],
+    ["origin-7.invalid", "origin-3.invalid", "origin-7.invalid"],
+    ["origin-1.invalid", "origin-2.invalid", "origin-1.invalid"],
+  ]) {
+    const once = resanitizeCapture(build(first, second, third));
+    assert.deepEqual(links(once), links(fresh), `${first} ${second}`);
+    assert.deepEqual(resanitizeCapture(once), once);
+  }
+  // A third host that only the frame record names comes last.
+  const mixed = resanitizeCapture(
+    build("nas.local", "10.0.0.8", "192.168.1.9"),
+  );
+  assert.deepEqual(links(mixed), [
+    "https://origin-1.invalid/a",
+    "https://origin-2.invalid/b",
+    "https://origin-3.invalid",
+  ]);
+  assert.deepEqual(resanitizeCapture(mixed), mixed);
+  // Within one document its address is numbered before its tree. The tool
+  // writes no capture where that could matter (a document it reads has the
+  // origin of the final address, which is numbered first of all), so this
+  // one is made by hand: a top document on a private host, no final address.
+  const top = build("nas.local", "10.0.0.8", "nas.local");
+  top.source.finalUrl = null;
+  top.frames[0].url = "https://192.168.1.9/login";
+  const numbered = resanitizeCapture(top);
+  assert.equal(numbered.frames[0].url, "https://origin-1.invalid/login");
+  assert.deepEqual(links(numbered), [
+    "https://origin-2.invalid/a",
+    "https://origin-3.invalid/b",
+    "https://origin-2.invalid",
+  ]);
+  assert.deepEqual(resanitizeCapture(numbered), numbered);
+});
+
+test("what the tool writes from a saved page is already what re-sanitizing gives", async (t) => {
+  const temp = await scratch(t);
+  const file = path.join(temp, "saved.html");
+  // Hosts in several attributes and several orders, a frame, and a frame
+  // source on another host.
+  await writeFile(
+    file,
+    "<!doctype html><html><body>" +
+      '<a id="b" href="https://b.example.org/x"></a>' +
+      '<form id="f" action="https://a.example.org/login">' +
+      '<input id="u" formaction="https://c.example.org/alt">' +
+      '<button id="s" formaction="https://b.example.org/y"></button></form>' +
+      '<iframe id="i" name="appFrame" src="https://a.example.org/frame/deep"></iframe>' +
+      '<a id="a" href="//c.example.org/z"></a>' +
+      "</body></html>",
+  );
+  const capture = await captureFromFile(file, { applicationId: "eaton-ups" });
+  assert.deepEqual(resanitizeCapture(capture), capture);
+  const value = (id, name) => findById(capture, id).node.attributes[name];
+  assert.equal(value("b", "href"), "https://origin-1.invalid/x");
+  assert.equal(value("f", "action"), "https://origin-2.invalid/login");
+  assert.equal(value("u", "formaction"), "https://origin-3.invalid/alt");
+  assert.equal(value("s", "formaction"), "https://origin-1.invalid/y");
+  // A saved page does not say what its own origin was, so a frame's source
+  // cannot be shown to be another party's: the path stays, under the alias.
+  assert.equal(value("i", "src"), "https://origin-2.invalid/frame/deep");
+  assert.equal(value("i", "name"), "appFrame");
+  assert.equal(value("a", "href"), "//origin-3.invalid/z");
+});
+
+test("a debugging port leaves a mark in the profile, and the tool looks for it", async (t) => {
+  const profile = await scratch(t);
+  assert.equal(openedDebuggingPort(profile), false);
+  await writeFile(path.join(profile, "DevToolsActivePort"), "9222\n/devtools");
+  assert.equal(openedDebuggingPort(profile), true);
+});
+
+test(
+  "a browser that opens a debugging port beside the pipe voids the run",
+  { skip: edgeExecutable() ? false : "Microsoft Edge is not installed" },
+  async (t) => {
+    // The tool itself never asks for a port, so this runs a copy that does:
+    // the tool's source with one argument added, in a temporary directory.
+    const temp = await scratch(t);
+    const source = readFileSync(script, "utf8");
+    const pipe = '"--remote-debugging-pipe",';
+    assert.equal(source.split(pipe).length, 2, "the pipe argument, once");
+    const copy = path.join(temp, "capture-login-page.mjs");
+    await writeFile(
+      copy,
+      source.replace(pipe, `${pipe} "--remote-debugging-port=0",`),
+    );
+    const altered = await import(pathToFileURL(copy).href);
+
+    const sockets = new Set();
+    let documents = 0;
+    const server = createServer((_request, response) => {
+      documents++;
+      response
+        .writeHead(200, { "Content-Type": "text/html" })
+        .end('<!doctype html><body><input id="user"></body>');
+    });
+    server.on("connection", (socket) => {
+      sockets.add(socket);
+      socket.once("close", () => sockets.delete(socket));
+    });
+    await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+    t.after(async () => {
+      for (const socket of sockets) socket.destroy();
+      await new Promise((resolve) => server.close(resolve));
+    });
+    const profilesBefore = readdirSync(tmpdir()).filter((name) =>
+      name.startsWith("sorng-login-capture-"),
+    );
+
+    const outcome = await altered
+      .captureLoopbackFixture(
+        `http://127.0.0.1:${server.address().port}/login`,
+        { settleMs: 500 },
+      )
+      .then(
+        () => null,
+        (error) => error,
+      );
+    // No capture comes back, although the page was read without trouble.
+    assert.equal(outcome?.name, "CaptureFailure", String(outcome));
+    assert.match(outcome.message, /debugging port beside the pipe/u);
+    assert.equal(outcome.loadAttempted, true);
+    assert.equal(altered.exitCodeFor(outcome), 1);
+    assert.ok(documents >= 1, "the page was loaded");
+    assert.deepEqual(
+      readdirSync(tmpdir()).filter((name) =>
+        name.startsWith("sorng-login-capture-"),
+      ),
+      profilesBefore,
+      "the profile is removed all the same",
+    );
   },
 );

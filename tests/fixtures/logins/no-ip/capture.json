@@ -1,6 +1,6 @@
 {
   "schema": "sorng-login-capture/1",
-  "sanitizer": 3,
+  "sanitizer": 4,
   "applicationId": "no-ip",
   "capturedAt": "2026-10-12",
   "mode": "hosted",
@@ -1286,7 +1286,7 @@
                                                     "attributes": {
                                                       "class": "dropdown-menu fadeInDown",
                                                       "data-bs-backdrop": "static",
-                                                      "aria-labelledby": "resourcesDrop"
+                                                      "aria-labelledby": null
                                                     },
                                                     "children": [
                                                       {

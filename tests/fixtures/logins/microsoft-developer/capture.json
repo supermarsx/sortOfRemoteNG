@@ -1,6 +1,6 @@
 {
   "schema": "sorng-login-capture/1",
-  "sanitizer": 3,
+  "sanitizer": 4,
   "applicationId": "microsoft-developer",
   "capturedAt": "2026-10-12",
   "mode": "hosted",
@@ -380,7 +380,7 @@
                                               "autocomplete": "off",
                                               "role": "combobox",
                                               "tabindex": "0",
-                                              "aria-controls": "uhf-autosuggest-popout",
+                                              "aria-controls": null,
                                               "itemprop": "query-input",
                                               "data-m": null,
                                               "name": "q",
@@ -724,7 +724,7 @@
                                               "type": "button",
                                               "role": "button",
                                               "tabindex": "0",
-                                              "aria-labelledby": "secondary-sticky-nav-label"
+                                              "aria-labelledby": null
                                             },
                                             "rendered": true
                                           },
@@ -1262,7 +1262,7 @@
                                                       "class": "carousel__arrow-prev",
                                                       "title": null,
                                                       "data-slide": "prev",
-                                                      "aria-labelledby": "carousel-control-prev-banner-carousel",
+                                                      "aria-labelledby": null,
                                                       "disabled": ""
                                                     },
                                                     "rendered": true
@@ -1274,7 +1274,7 @@
                                                       "class": "carousel__arrow-next",
                                                       "title": null,
                                                       "data-slide": "next",
-                                                      "aria-labelledby": "carousel-control-next-banner-carousel"
+                                                      "aria-labelledby": null
                                                     },
                                                     "rendered": true
                                                   }
@@ -1422,7 +1422,7 @@
                                                   "class": "carousel__arrow-prev",
                                                   "title": null,
                                                   "data-slide": "prev",
-                                                  "aria-labelledby": "carousel-control-prev-discover-whats-new-carousel",
+                                                  "aria-labelledby": null,
                                                   "disabled": ""
                                                 },
                                                 "rendered": true
@@ -1434,7 +1434,7 @@
                                                   "class": "carousel__arrow-next",
                                                   "title": null,
                                                   "data-slide": "next",
-                                                  "aria-labelledby": "carousel-control-next-discover-whats-new-carousel"
+                                                  "aria-labelledby": null
                                                 },
                                                 "rendered": true
                                               }
@@ -1567,7 +1567,7 @@
                                                   "class": "carousel__arrow-prev",
                                                   "title": null,
                                                   "data-slide": "prev",
-                                                  "aria-labelledby": "carousel-control-prev-communities-carousel",
+                                                  "aria-labelledby": null,
                                                   "disabled": ""
                                                 },
                                                 "rendered": true
@@ -1579,7 +1579,7 @@
                                                   "class": "carousel__arrow-next",
                                                   "title": null,
                                                   "data-slide": "next",
-                                                  "aria-labelledby": "carousel-control-next-communities-carousel"
+                                                  "aria-labelledby": null
                                                 },
                                                 "rendered": true
                                               }
@@ -1916,7 +1916,7 @@
                                                   "class": "carousel__arrow-prev",
                                                   "title": null,
                                                   "data-slide": "prev",
-                                                  "aria-labelledby": "carousel-control-prev-events-carousel",
+                                                  "aria-labelledby": null,
                                                   "disabled": ""
                                                 },
                                                 "rendered": true
@@ -1928,7 +1928,7 @@
                                                   "class": "carousel__arrow-next",
                                                   "title": null,
                                                   "data-slide": "next",
-                                                  "aria-labelledby": "carousel-control-next-events-carousel"
+                                                  "aria-labelledby": null
                                                 },
                                                 "rendered": true
                                               }

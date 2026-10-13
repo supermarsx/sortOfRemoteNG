@@ -14,7 +14,7 @@
       "title": "The public entry page, rendered once without an account",
       "url": "https://outlook.office.com/mail/",
       "capture": "capture.json",
-      "captureSha256": "b7a72ebffe58c1a2ffad097ddab9fc8756fdae064e89cdf69b31a8dc52aaef68",
+      "captureSha256": "48b3d7431e86dea7c08783d1960b924d5d1d8b0929d18fdad53665868d883b01",
       "retrieved": "2026-10-12",
       "note": "Redirected to https://login.microsoftonline.com/common/oauth2/v2.0/authorize, HTTP 200. One top document, no frames, no challenge widget."
     },

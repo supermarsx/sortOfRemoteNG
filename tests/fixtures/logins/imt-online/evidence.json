@@ -14,7 +14,7 @@
       "title": "The public sign-in page, rendered once without an account",
       "url": "https://servicos.imt-ip.pt/login.aspx",
       "capture": "capture.json",
-      "captureSha256": "a78ec1de6c0b3ae1ded95eb43fd651aa2bc3b345b1a818faedccc84840e04e0f",
+      "captureSha256": "7aa7e60a305f258e9c424e6c8b51fd1aaf39198389f5c549c8dabb04a6e5b51e",
       "retrieved": "2026-10-12",
       "note": "Loaded and ended on the catalog host itself, HTTP 200, one frame. One page-wide POST form (form#Form, action /login.aspx) holds a sign-in module with two script-driven buttons and a group of three fields with its own submit button. A first run the same day stopped at the tool's own name lookup with nothing loaded; this is the single rerun the coordinator allowed."
     },

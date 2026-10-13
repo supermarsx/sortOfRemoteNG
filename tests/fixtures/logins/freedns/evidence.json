@@ -33,7 +33,7 @@
       "title": "The catalog address (the public home page), rendered once without an account: it has a DNS trace form and no sign-in form",
       "url": "https://freedns.afraid.org/",
       "capture": "capture.json",
-      "captureSha256": "f3abd93f6b48d8c4114ed604e2783525274512af359afea94b791dc98eadc360",
+      "captureSha256": "16b93315da0a795436710fa0128cfce1e2cd98d13e7181223792e4bc996afaa5",
       "retrieved": "2026-10-12"
     }
   ],

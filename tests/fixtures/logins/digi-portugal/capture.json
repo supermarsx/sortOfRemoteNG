@@ -1,6 +1,6 @@
 {
   "schema": "sorng-login-capture/1",
-  "sanitizer": 3,
+  "sanitizer": 4,
   "applicationId": "digi-portugal",
   "capturedAt": "2026-10-12",
   "mode": "hosted",
@@ -57,7 +57,7 @@
                   "id": "CybotCookiebotDialog",
                   "name": "CybotCookiebotDialog",
                   "role": "region",
-                  "aria-labelledby": "CybotCookiebotDialogBodyContentTitle",
+                  "aria-labelledby": null,
                   "tabindex": "-1",
                   "lang": "en",
                   "dir": "ltr",
@@ -209,7 +209,7 @@
                                       "tabindex": "-1",
                                       "role": "tab",
                                       "aria-selected": "false",
-                                      "aria-controls": "CybotCookiebotDialogDetailBodyContentTextAbout",
+                                      "aria-controls": null,
                                       "lang": "en"
                                     },
                                     "rendered": true
@@ -315,7 +315,7 @@
                                                         "tag": "div",
                                                         "attributes": {
                                                           "role": "group",
-                                                          "aria-labelledby": "CybotCookiebotDialogBodyLevelButtonsSelectPaneLegend"
+                                                          "aria-labelledby": null
                                                         },
                                                         "children": [
                                                           {
@@ -601,7 +601,7 @@
                                                                             "attributes": {
                                                                               "type": "checkbox",
                                                                               "id": "CybotCookiebotDialogBodyLevelButtonNecessaryInline",
-                                                                              "aria-labelledby": "CybotCookiebotDialogBodyLevelButtonNecessaryInlineLabel",
+                                                                              "aria-labelledby": null,
                                                                               "class": "CybotCookiebotDialogBodyLevelButton CybotCookiebotDialogBodyLevelButtonDisabled",
                                                                               "disabled": "disabled",
                                                                               "checked": "checked",
@@ -784,7 +784,7 @@
                                                                             "attributes": {
                                                                               "type": "checkbox",
                                                                               "id": "CybotCookiebotDialogBodyLevelButtonPreferencesInline",
-                                                                              "aria-labelledby": "CybotCookiebotDialogBodyLevelButtonPreferencesInlineLabel",
+                                                                              "aria-labelledby": null,
                                                                               "class": "CybotCookiebotDialogBodyLevelButton CybotCookiebotDialogBodyLevelConsentCheckbox",
                                                                               "data-target": "CybotCookiebotDialogBodyLevelButtonPreferences",
                                                                               "checked": "checked",
@@ -895,7 +895,7 @@
                                                                             "attributes": {
                                                                               "type": "checkbox",
                                                                               "id": "CybotCookiebotDialogBodyLevelButtonStatisticsInline",
-                                                                              "aria-labelledby": "CybotCookiebotDialogBodyLevelButtonStatisticsInlineLabel",
+                                                                              "aria-labelledby": null,
                                                                               "class": "CybotCookiebotDialogBodyLevelButton CybotCookiebotDialogBodyLevelConsentCheckbox",
                                                                               "data-target": "CybotCookiebotDialogBodyLevelButtonStatistics",
                                                                               "checked": "checked",
@@ -1078,7 +1078,7 @@
                                                                             "attributes": {
                                                                               "type": "checkbox",
                                                                               "id": "CybotCookiebotDialogBodyLevelButtonMarketingInline",
-                                                                              "aria-labelledby": "CybotCookiebotDialogBodyLevelButtonMarketingInlineLabel",
+                                                                              "aria-labelledby": null,
                                                                               "class": "CybotCookiebotDialogBodyLevelButton CybotCookiebotDialogBodyLevelConsentCheckbox",
                                                                               "data-target": "CybotCookiebotDialogBodyLevelButtonMarketing",
                                                                               "checked": "checked",
@@ -1367,7 +1367,7 @@
                                                       "data-target": "CybotCookiebotDialogDetailBodyContentIABv2PurposesBody",
                                                       "lang": "en",
                                                       "aria-label": null,
-                                                      "aria-controls": "CybotCookiebotDialogDetailBodyContentIABv2PurposesBody"
+                                                      "aria-controls": null
                                                     },
                                                     "rendered": false
                                                   }
@@ -1397,7 +1397,7 @@
                                                       "data-target": "CybotCookiebotDialogDetailBodyContentIABv2FeaturesBody",
                                                       "lang": "en",
                                                       "aria-label": null,
-                                                      "aria-controls": "CybotCookiebotDialogDetailBodyContentIABv2FeaturesBody"
+                                                      "aria-controls": null
                                                     },
                                                     "rendered": false
                                                   }
@@ -1426,7 +1426,7 @@
                                                       "data-target": "CybotCookiebotDialogDetailBodyContentIABv2PartnersBody",
                                                       "lang": "en",
                                                       "aria-label": null,
-                                                      "aria-controls": "CybotCookiebotDialogDetailBodyContentIABv2PartnersBody"
+                                                      "aria-controls": null
                                                     },
                                                     "rendered": false
                                                   }
@@ -1899,7 +1899,7 @@
                   "role": "presentation",
                   "aria-hidden": "true",
                   "title": null,
-                  "src": "https://consentcdn.cookiebot.com/sdk/bc-v4.min.html"
+                  "src": "https://consentcdn.cookiebot.com"
                 },
                 "rendered": true
               }

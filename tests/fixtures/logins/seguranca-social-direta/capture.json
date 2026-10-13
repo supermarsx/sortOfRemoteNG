@@ -1,6 +1,6 @@
 {
   "schema": "sorng-login-capture/1",
-  "sanitizer": 3,
+  "sanitizer": 4,
   "applicationId": "seguranca-social-direta",
   "capturedAt": "2026-10-12",
   "mode": "hosted",
@@ -1434,7 +1434,7 @@
                                                                           "tabindex": "0",
                                                                           "role": "button",
                                                                           "aria-expanded": "false",
-                                                                          "aria-controls": "pv_id_1_0_content",
+                                                                          "aria-controls": null,
                                                                           "data-pc-section": "headeraction"
                                                                         },
                                                                         "rendered": true
@@ -1565,7 +1565,7 @@
                                                                           "tabindex": "0",
                                                                           "role": "button",
                                                                           "aria-expanded": "false",
-                                                                          "aria-controls": "pv_id_1_2_content",
+                                                                          "aria-controls": null,
                                                                           "data-pc-section": "headeraction"
                                                                         },
                                                                         "rendered": true
@@ -1600,7 +1600,7 @@
                                                                           "tabindex": "0",
                                                                           "role": "button",
                                                                           "aria-expanded": "false",
-                                                                          "aria-controls": "pv_id_1_3_content",
+                                                                          "aria-controls": null,
                                                                           "data-pc-section": "headeraction"
                                                                         },
                                                                         "rendered": true

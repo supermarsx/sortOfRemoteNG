@@ -1,6 +1,6 @@
 {
   "schema": "sorng-login-capture/1",
-  "sanitizer": 3,
+  "sanitizer": 4,
   "applicationId": "outlook-online",
   "capturedAt": "2026-10-12",
   "mode": "hosted",
@@ -204,7 +204,7 @@
                                                                                           "data-bind": null,
                                                                                           "autocomplete": "username webauthn",
                                                                                           "aria-label": null,
-                                                                                          "aria-describedby": "usernameError winBodyHeader winBodySubHeader loginHeader",
+                                                                                          "aria-describedby": null,
                                                                                           "placeholder": null,
                                                                                           "data-report-attached": "1"
                                                                                         },

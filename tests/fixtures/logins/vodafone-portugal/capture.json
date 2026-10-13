@@ -1,6 +1,6 @@
 {
   "schema": "sorng-login-capture/1",
-  "sanitizer": 3,
+  "sanitizer": 4,
   "applicationId": "vodafone-portugal",
   "capturedAt": "2026-10-12",
   "mode": "hosted",
@@ -260,7 +260,7 @@
                                                                               "tabindex": "0",
                                                                               "href": "#",
                                                                               "aria-label": null,
-                                                                              "aria-controls": "submenu-level-5",
+                                                                              "aria-controls": null,
                                                                               "class": "menu-navigation__link first-level"
                                                                             },
                                                                             "rendered": false
@@ -281,7 +281,7 @@
                                                                               "tabindex": "0",
                                                                               "href": "#",
                                                                               "aria-label": null,
-                                                                              "aria-controls": "submenu-level-7",
+                                                                              "aria-controls": null,
                                                                               "class": "menu-navigation__link first-level"
                                                                             },
                                                                             "rendered": false
@@ -304,7 +304,7 @@
                                                                     "attributes": {
                                                                       "role": "button",
                                                                       "tabindex": "0",
-                                                                      "aria-controls": "mobile-menu",
+                                                                      "aria-controls": null,
                                                                       "aria-label": null,
                                                                       "class": "menu-navigation__link menu-navigation__link--nav"
                                                                     },
@@ -485,7 +485,7 @@
                                                                                                           "href": "#",
                                                                                                           "tabindex": "0",
                                                                                                           "aria-label": null,
-                                                                                                          "aria-controls": "submenu-level-5",
+                                                                                                          "aria-controls": null,
                                                                                                           "role": "button"
                                                                                                         },
                                                                                                         "rendered": false
@@ -504,7 +504,7 @@
                                                                                                           "href": "#",
                                                                                                           "tabindex": "0",
                                                                                                           "aria-label": null,
-                                                                                                          "aria-controls": "submenu-level-6",
+                                                                                                          "aria-controls": null,
                                                                                                           "role": "button"
                                                                                                         },
                                                                                                         "rendered": false
@@ -534,7 +534,7 @@
                                                                                           "tabindex": "0",
                                                                                           "role": "menuitem",
                                                                                           "aria-label": null,
-                                                                                          "aria-controls": "submenu-level-5",
+                                                                                          "aria-controls": null,
                                                                                           "class": "menu-navigation__link menu-navigation__link--subnav"
                                                                                         },
                                                                                         "rendered": false
@@ -645,7 +645,7 @@
                                                                                           "tabindex": "0",
                                                                                           "role": "menuitem",
                                                                                           "aria-label": null,
-                                                                                          "aria-controls": "submenu-level-7",
+                                                                                          "aria-controls": null,
                                                                                           "class": "menu-navigation__link"
                                                                                         },
                                                                                         "rendered": false
@@ -4352,7 +4352,7 @@
                               "frameborder": "0",
                               "scrolling": "no",
                               "sandbox": "allow-forms allow-popups allow-same-origin allow-scripts allow-top-navigation allow-modals allow-popups-to-escape-sandbox allow-storage-access-by-user-activation",
-                              "src": "https://www.google.com/recaptcha/api2/anchor"
+                              "src": "https://www.google.com"
                             },
                             "rendered": false
                           }

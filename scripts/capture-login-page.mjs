@@ -68,7 +68,8 @@ const USAGE = `Usage:
 
 Exit status: 0 written. 2 nothing was sent to the site (a refusal, or the run
 failed before the site was reached); it may be repeated once the cause is
-removed. 1 the site was reached and the run failed: that was the one load.`;
+removed. 1 the site was reached and the run failed: that was the one load.
+3 a run that requests no page (--from-file, --resanitize, --list) failed.`;
 
 /** A request the tool will not carry out. Nothing was loaded. */
 export class CaptureRefusal extends Error {
@@ -85,10 +86,23 @@ export class CaptureRefusal extends Error {
  * decides whether the run was the one load of the page.
  */
 export class CaptureFailure extends Error {
-  constructor(message, { loadAttempted }) {
+  constructor(message, { loadAttempted, written = null }) {
     super(message);
     this.name = "CaptureFailure";
     this.loadAttempted = loadAttempted;
+    // The capture file, when the run failed only after writing it.
+    this.written = written;
+  }
+}
+
+/**
+ * A run that requests no page (`--from-file`, `--resanitize`, `--list`) and
+ * failed. It says nothing about the one load of any page.
+ */
+export class OfflineFailure extends Error {
+  constructor(message, options) {
+    super(message, options);
+    this.name = "OfflineFailure";
   }
 }
 
@@ -105,19 +119,31 @@ const NOT_THE_LOAD =
 const THE_LOAD =
   "This was the one load for this page. Do not run it again: record the failure " +
   "in evidence.json and work from other material.";
+const LOADED_AND_KEPT =
+  "This was the one load for this page. Do not run it again: use the capture " +
+  "that was written.";
+
+const NO_PAGE =
+  "No page was requested: this mode reads and writes files only. Nothing here " +
+  "counts as the one load of any page; remove the cause and run it again.";
 
 /**
  * Exit status: 0 done; 2 nothing was sent to the site (a refusal, or a run
  * that failed before the guard reached the site), so it may be repeated; 1 the
- * site was reached and the run failed, which was the one load.
+ * site was reached and the run failed, which was the one load; 3 a run that
+ * requests no page failed. The command classifies every error it lets out; an
+ * error nothing classified is counted as a load, never as a free retry.
  */
 export function exitCodeFor(error) {
   if (error instanceof CaptureRefusal) return 2;
+  if (error instanceof OfflineFailure) return 3;
   return error instanceof CaptureFailure && !error.loadAttempted ? 2 : 1;
 }
 
 /** What the command prints for a run that did not write a capture. */
 export function describeOutcome(error) {
+  if (error instanceof OfflineFailure)
+    return `Failed: ${error.message}\n${NO_PAGE}`;
   if (error instanceof CaptureRefusal) {
     if (error.code === "usage") return error.message;
     // A name that did not resolve may resolve next time; every other refusal
@@ -130,6 +156,8 @@ export function describeOutcome(error) {
   }
   if (error instanceof CaptureFailure && !error.loadAttempted)
     return `Capture did not start: ${error.message}\n${NOT_THE_LOAD}`;
+  if (error instanceof CaptureFailure && error.written)
+    return `The capture was written to ${error.written}, and the run then failed: ${error.message}\n${LOADED_AND_KEPT}`;
   return `Capture failed after the page was requested: ${error?.message ?? error}\n${THE_LOAD}`;
 }
 
@@ -703,10 +731,15 @@ export function sanitizeAttribute(element, name, value, context = {}) {
   if (attribute.startsWith("aria-")) {
     if (ARIA_STATES.has(attribute))
       return tokens.every((token) => TOKEN.test(token)) ? text : null;
-    // Lists of ids. Every other aria attribute holds words for a person.
+    // Lists of ids. Every other aria attribute holds words for a person, and
+    // so does a list that is not all ids of its own document (`context.ids`):
+    // "signed in as" is three identifier-shaped tokens too.
     return ARIA_ID_LISTS.has(attribute) &&
       tokens.length <= 8 &&
-      tokens.every((token) => IDENTIFIER_NAME.test(token))
+      tokens.every(
+        (token) =>
+          IDENTIFIER_NAME.test(token) && context.ids?.has(token) === true,
+      )
       ? text
       : null;
   }
@@ -722,10 +755,39 @@ function sanitizeTag(tag) {
 }
 
 /**
+ * The ids of one captured document as they are written, shadow trees
+ * included: what a list of ids in that document may refer to. `idOf` reads an
+ * element's id from a raw node or from a written one.
+ */
+function documentIds(tree, idOf) {
+  const ids = new Set();
+  const visit = (node) => {
+    const id = idOf(node);
+    if (
+      typeof id === "string" &&
+      id !== "" &&
+      sanitizeAttribute({ tag: "", type: "" }, "id", id) === id
+    )
+      ids.add(id);
+    for (const child of [...(node?.children ?? []), ...(node?.shadow ?? [])])
+      visit(child);
+  };
+  if (tree) visit(tree);
+  return ids;
+}
+const rawId = (node) =>
+  Array.isArray(node?.attributes)
+    ? node.attributes.find(([name]) => name === "id")?.[1]
+    : undefined;
+const writtenId = (node) => node?.attributes?.id;
+
+/**
  * The written attributes of one element. `pairs` are `[name, value]`; a
- * `null` value is one that was already withheld and stays so. The `name` of a
- * frame element is held to the frame-name rule, and withheld altogether when
- * the frame shows another origin than its document.
+ * `null` value is one that was already withheld and stays so. A frame element
+ * that shows another origin than its document is another party's frame: its
+ * `src` is reduced to that origin, which is all the frame record says too,
+ * and its `name` is withheld. Any other frame's `name` is held to the
+ * frame-name rule.
  */
 function sanitizeAttributes(tag, pairs, context) {
   const type = pairs.find(([name]) => name === "type")?.[1] ?? "";
@@ -737,13 +799,21 @@ function sanitizeAttributes(tag, pairs, context) {
         value === null
           ? null
           : sanitizeAttribute(element, name, value, context);
-  if ((tag === "iframe" || tag === "frame") && attributes.name) {
+  if (tag === "iframe" || tag === "frame") {
     const shown = httpOrigin(attributes.src);
+    // Known only where the document's own origin is: not for a saved page.
     const elsewhere =
       shown !== null &&
       context.documentOrigin != null &&
       shown !== context.documentOrigin;
-    if (elsewhere || sanitizeFrameName(attributes.name) === null)
+    if (elsewhere)
+      attributes.src = attributes.src.startsWith("//")
+        ? shown.replace(/^https:/u, "")
+        : shown;
+    if (
+      attributes.name &&
+      (elsewhere || sanitizeFrameName(attributes.name) === null)
+    )
       attributes.name = null;
   }
   return { element, attributes };
@@ -751,17 +821,12 @@ function sanitizeAttributes(tag, pairs, context) {
 
 function sanitizeNode(raw, context, counts) {
   const tag = sanitizeTag(raw.tag);
-  const { element, attributes } = sanitizeAttributes(
-    tag,
-    raw.attributes,
-    context,
-  );
+  const { attributes } = sanitizeAttributes(tag, raw.attributes, context);
   const node = { tag, attributes };
   if (raw.control) {
     counts.controls++;
     if (typeof raw.rendered === "boolean") node.rendered = raw.rendered;
     if (Number.isInteger(raw.options)) node.options = raw.options;
-    if (tag === "input" && element.type === "password") counts.passwords++;
     if (
       /\b(?:g-recaptcha|h-captcha|cf-turnstile)\b/u.test(
         attributes.class ?? "",
@@ -774,12 +839,10 @@ function sanitizeNode(raw, context, counts) {
     node.children = raw.children.map((child) =>
       sanitizeNode(child, context, counts),
     );
-  if (raw.shadow?.length) {
-    counts.shadow = true;
+  if (raw.shadow?.length)
     node.shadow = raw.shadow.map((child) =>
       sanitizeNode(child, context, counts),
     );
-  }
   return node;
 }
 
@@ -797,32 +860,37 @@ function buildCapture({
   network,
 }) {
   const indexes = new Map(rawFrames.map((frame, index) => [frame.id, index]));
-  const observations = new Set();
-  let passwords = 0;
+  let captcha = false;
   let truncated = false;
+  // One alias table for every frame, as in resanitizeCapture.
+  context.aliases ??= new Map();
   const frames = rawFrames.map((frame, index) => {
-    const counts = { controls: 0, passwords: 0, captcha: false, shadow: false };
-    // A frame on another origin was listed, not read: it has no tree.
-    const tree = frame.raw
-      ? sanitizeNode(frame.raw.tree, context, counts)
-      : null;
-    truncated ||= Boolean(frame.raw?.truncated);
-    passwords += counts.passwords;
+    const counts = { controls: 0, captcha: false };
     const record = { index, parent: indexes.get(frame.parentId) ?? null };
+    // A frame's address before its tree: the order resanitizeCapture visits
+    // them in, so host aliases get the same numbers in both passes.
     if (mode !== "file") {
       // The name and the origin flag are settled by resanitizeCapture below.
       record.name = frame.name || null;
       record.url = sanitizeUrl(frame.url, context);
       if (CAPTCHA_FRAME.test(frame.url)) counts.captcha = true;
     }
-    if (counts.captcha) observations.add("captcha");
-    if (counts.shadow) observations.add("shadow-dom");
+    // A frame on another origin was listed, not read: it has no tree.
+    const tree = frame.raw
+      ? sanitizeNode(
+          frame.raw.tree,
+          { ...context, ids: documentIds(frame.raw.tree, rawId) },
+          counts,
+        )
+      : null;
+    truncated ||= Boolean(frame.raw?.truncated);
+    captcha ||= counts.captcha;
     return tree ? { ...record, controls: counts.controls, tree } : record;
   });
-  observations.add(passwords ? "password-field" : "no-password-field");
-  if (source.httpStatus >= 400) observations.add("error-status");
   // One function decides the written form, for a new capture and for an
-  // existing one alike, so the two can never differ.
+  // existing one alike, so the two can never differ. It also reads the
+  // password field, shadow tree and error status observations from what it
+  // keeps: a challenge is the only one that has to be handed to it.
   return resanitizeCapture(
     {
       schema: CAPTURE_SCHEMA,
@@ -833,15 +901,15 @@ function buildCapture({
       source,
       limits: { ...limits, input: "none", truncated },
       ...(network ? { network } : {}),
-      observations: [...observations],
+      observations: captcha ? ["captcha"] : [],
       frames,
     },
     { keepOrigins: context.keepOrigins },
   );
 }
 
-// The browser's own services, seen in every run whatever the page: they say
-// nothing about the page and are left out of the contacted list.
+// The browser's own services, seen in every run whatever the page. They are
+// left out of the contacted list by name, whoever asked for them.
 const BROWSER_OWN_HOST =
   /^(?:edge\.microsoft\.com|(?:[a-z0-9-]+\.)*smartscreen\.microsoft\.com|www\.bing\.com)$/u;
 // A country domain of one service depends on where the capture was made.
@@ -864,9 +932,14 @@ function dataLikeLabel(label) {
 }
 
 /**
- * The contacted list as written: every `host:port` the guard carried, minus
- * the browser's own services, with country-specific spellings folded into one
- * entry, sorted and without duplicates. Nothing a page requested is dropped.
+ * The contacted list as written: every `host:port` the guard carried, with
+ * three changes. Entries for `edge.microsoft.com`, any host under
+ * `smartscreen.microsoft.com` and `www.bing.com` are removed by name: the
+ * browser contacts them in every run, and the guard cannot tell its request
+ * from a page's, so a page that itself requests one of these three loses
+ * that entry. Country domains of Google are folded into one entry. A host
+ * label that looks like data is withheld. The result is sorted and has no
+ * duplicates; no other entry is dropped.
  */
 export function normaliseContacted(entries) {
   const written = new Set();
@@ -909,36 +982,122 @@ function resanitizeNode(captured, context) {
 }
 
 /** The version of the sanitizing rules a capture was written under. */
-export const CAPTURE_SANITIZER = 3;
-const OBSERVATIONS = new Set([
-  "captcha",
-  "error-status",
-  "no-password-field",
-  "password-field",
-  "shadow-dom",
-]);
+export const CAPTURE_SANITIZER = 4;
+const MODES = new Set(["hosted", "file", "loopback-fixture"]);
+const SAVED_PAGE_ENGINE = "static parse of a saved page";
+const HEADLESS_ENGINE =
+  /^Microsoft Edge headless \([A-Za-z]{1,24}\/\d[\d.]{0,31}\)$/u;
+
+const isCalendarDate = (text) => {
+  if (typeof text !== "string" || !/^\d{4}-\d{2}-\d{2}$/u.test(text))
+    return false;
+  const date = new Date(`${text}T00:00:00Z`);
+  return !Number.isNaN(date.getTime()) && date.toISOString().startsWith(text);
+};
+
+/**
+ * The address a capture was asked for, when it is one the tool can have
+ * loaded: for a hosted capture what `resolveCaptureTarget` accepts, a plain
+ * https address of a public host in its canonical spelling.
+ */
+function requestedAddress(value, mode) {
+  if (typeof value !== "string" || value.length > 2048 || !URL.canParse(value))
+    return null;
+  const url = new URL(value);
+  if (
+    url.href !== value ||
+    url.username ||
+    url.password ||
+    url.search ||
+    url.hash
+  )
+    return null;
+  const kind = classifyHost(url.hostname);
+  // The tool's own tests render synthetic pages on 127.0.0.1.
+  if (mode === "loopback-fixture")
+    return url.protocol === "http:" && kind === "loopback" ? value : null;
+  return url.protocol === "https:" && !url.port && kind === "public"
+    ? value
+    : null;
+}
+
+/** What the tool states about a run: known keys, each of its own kind. */
+function writtenLimits(limits, fileMode) {
+  const given = limits !== null && typeof limits === "object" ? limits : {};
+  const count = (value, most) =>
+    Number.isInteger(value) && value >= 0 && value <= most;
+  return {
+    // Fixed by the mode: one navigation with the page's scripts, or a parse.
+    navigations: fileMode ? 0 : 1,
+    scriptsExecuted: !fileMode,
+    ...(!fileMode && typeof given.loadEvent === "boolean"
+      ? { loadEvent: given.loadEvent }
+      : {}),
+    ...(!fileMode && count(given.settleMs, MAX_SETTLE_MS)
+      ? { settleMs: given.settleMs }
+      : {}),
+    ...(!fileMode && count(given.dialogsDismissed, 1000)
+      ? { dialogsDismissed: given.dialogsDismissed }
+      : {}),
+    input: "none",
+    truncated: given.truncated === true,
+    // A property of every load: a redirect to another public host is
+    // followed, and the guard refuses any other destination.
+    ...(fileMode ? {} : { redirects: "public-hosts-only" }),
+  };
+}
+
+/** What the written trees of a capture show, whatever it said before. */
+function observedInTrees(frames) {
+  let passwords = 0;
+  let shadow = false;
+  const visit = (node) => {
+    if (
+      node.tag === "input" &&
+      String(node.attributes.type ?? "").toLowerCase() === "password"
+    )
+      passwords++;
+    if (node.shadow?.length) shadow = true;
+    for (const child of [...(node.children ?? []), ...(node.shadow ?? [])])
+      visit(child);
+  };
+  for (const frame of frames) if (frame.tree) visit(frame.tree);
+  return { passwords, shadow };
+}
 
 /**
  * Brings a capture under the current sanitizing rules without loading
- * anything: frame names, the `name` of frame elements, the origin flag of
- * frames, the contacted list, and every attribute once more. Applying it to
- * its own result changes nothing, and every capture the tool writes has been
- * through it. The argument is not modified.
+ * anything, and is the one place that decides what a capture file holds:
+ * known keys only, each of its own kind, at every level. Frame names, the
+ * `name` and `src` of frame elements, the origin flag of frames, the
+ * contacted list and every attribute are decided once more; what the capture
+ * says about its own trees (a password field, a shadow tree, an error status)
+ * is read from them again. Applying it to its own result changes nothing, and
+ * every capture the tool writes has been through it. The argument is not
+ * modified. What is not one of the tool's captures is refused, not repaired.
  */
 export function resanitizeCapture(capture, { keepOrigins } = {}) {
   if (
     capture?.schema !== CAPTURE_SCHEMA ||
+    !MODES.has(capture.mode) ||
     !Array.isArray(capture.frames) ||
-    capture.frames.length === 0
+    capture.frames.length === 0 ||
+    !capture.frames.every(
+      (frame) =>
+        frame !== null && typeof frame === "object" && !Array.isArray(frame),
+    )
   )
     throw new CaptureRefusal(
       "usage",
       `Not a ${CAPTURE_SCHEMA} capture; nothing was changed.`,
     );
   const fileMode = capture.mode === "file";
-  const loopback = capture.mode === "loopback-fixture";
+  const given =
+    capture.source !== null && typeof capture.source === "object"
+      ? capture.source
+      : {};
   const context = {
-    mode: fileMode ? "file" : loopback ? "loopback-fixture" : "hosted",
+    mode: capture.mode,
     // One alias table for the whole capture, shared by every frame.
     aliases: new Map(),
     // A synthetic test capture keeps the loopback origins it was made on.
@@ -946,8 +1105,8 @@ export function resanitizeCapture(capture, { keepOrigins } = {}) {
       keepOrigins ??
       new Set(
         [
-          capture.source?.requestedUrl,
-          capture.source?.finalUrl,
+          given.requestedUrl,
+          given.finalUrl,
           ...capture.frames.map((frame) => frame.url),
         ]
           .map(httpOrigin)
@@ -957,17 +1116,32 @@ export function resanitizeCapture(capture, { keepOrigins } = {}) {
           ),
       ),
   };
-  const source = { ...capture.source };
-  if (typeof source.finalUrl === "string")
-    source.finalUrl = sanitizeUrl(source.finalUrl, context);
-  if ("httpStatus" in source && !Number.isInteger(source.httpStatus))
-    source.httpStatus = null;
+  // The final address first, then each frame's address before its tree:
+  // host aliases are numbered in this order, here and in the first pass.
+  const source = fileMode
+    ? { kind: "saved-page" }
+    : {
+        kind: "hosted-login",
+        requestedUrl: requestedAddress(given.requestedUrl, capture.mode),
+        finalUrl:
+          typeof given.finalUrl === "string"
+            ? sanitizeUrl(given.finalUrl, context)
+            : null,
+        httpStatus:
+          Number.isInteger(given.httpStatus) &&
+          given.httpStatus >= 100 &&
+          given.httpStatus <= 599
+            ? given.httpStatus
+            : null,
+      };
 
   const origins = [];
   let elsewhere = false;
   const frames = capture.frames.map((frame, index) => {
     const parent =
-      Number.isInteger(frame.parent) && frame.parent < index
+      Number.isInteger(frame.parent) &&
+      frame.parent >= 0 &&
+      frame.parent < index
         ? frame.parent
         : null;
     const record = { index, parent };
@@ -1004,40 +1178,60 @@ export function resanitizeCapture(capture, { keepOrigins } = {}) {
     origins.push(documentOrigin);
     return {
       ...record,
-      controls: Number.isInteger(frame.controls) ? frame.controls : 0,
-      tree: resanitizeNode(frame.tree, { ...context, documentOrigin }),
+      controls:
+        Number.isInteger(frame.controls) && frame.controls >= 0
+          ? frame.controls
+          : 0,
+      tree: resanitizeNode(frame.tree, {
+        ...context,
+        documentOrigin,
+        ids: documentIds(frame.tree, writtenId),
+      }),
     };
   });
 
-  const observations = new Set(
-    (capture.observations ?? []).filter((item) => OBSERVATIONS.has(item)),
-  );
+  // A challenge is seen in a frame's address, of which only the origin is
+  // kept, so that one observation is carried over. The others are read from
+  // what is written.
+  const seen = observedInTrees(frames);
+  const observations = new Set([
+    seen.passwords ? "password-field" : "no-password-field",
+  ]);
+  if ((capture.observations ?? []).includes?.("captcha"))
+    observations.add("captcha");
+  if (seen.shadow) observations.add("shadow-dom");
+  if (source.httpStatus >= 400) observations.add("error-status");
   if (elsewhere) observations.add("cross-origin-frame");
+  const network =
+    !fileMode && capture.network !== null && typeof capture.network === "object"
+      ? {
+          contacted: normaliseContacted(capture.network.contacted),
+          refused:
+            Number.isInteger(capture.network.refused) &&
+            capture.network.refused >= 0
+              ? capture.network.refused
+              : 0,
+        }
+      : null;
   return {
     schema: CAPTURE_SCHEMA,
     sanitizer: CAPTURE_SANITIZER,
-    applicationId: capture.applicationId,
-    capturedAt: capture.capturedAt,
+    applicationId:
+      typeof capture.applicationId === "string" &&
+      APPLICATION_ID.test(capture.applicationId)
+        ? capture.applicationId
+        : null,
+    capturedAt: isCalendarDate(capture.capturedAt) ? capture.capturedAt : null,
     mode: capture.mode,
-    engine: capture.engine,
+    engine: fileMode
+      ? SAVED_PAGE_ENGINE
+      : typeof capture.engine === "string" &&
+          HEADLESS_ENGINE.test(capture.engine)
+        ? capture.engine
+        : null,
     source,
-    limits: {
-      ...capture.limits,
-      input: "none",
-      // A property of every load: a redirect to another public host is
-      // followed, and the guard refuses any other destination.
-      ...(fileMode ? {} : { redirects: "public-hosts-only" }),
-    },
-    ...(capture.network
-      ? {
-          network: {
-            contacted: normaliseContacted(capture.network.contacted),
-            refused: Number.isInteger(capture.network.refused)
-              ? capture.network.refused
-              : 0,
-          },
-        }
-      : {}),
+    limits: writtenLimits(capture.limits, fileMode),
+    ...(network ? { network } : {}),
     observations: [...observations].sort(),
     frames,
   };
@@ -1486,6 +1680,14 @@ export async function removeStaleProfiles(olderThanMs = STALE_PROFILE_MS) {
 const TERMINATION_SIGNALS = ["SIGINT", "SIGTERM", "SIGHUP", "SIGBREAK"];
 
 /**
+ * Whether the browser that used `profileDirectory` listened on a debugging
+ * port: a browser that does writes the port into its profile.
+ */
+export function openedDebuggingPort(profileDirectory) {
+  return existsSync(path.join(profileDirectory, "DevToolsActivePort"));
+}
+
+/**
  * One navigation in headless Edge behind the connection guard, then one
  * read-only pass over the frames of the page's own origin. The only commands
  * sent to a page are the navigation and the skeleton read.
@@ -1497,7 +1699,16 @@ async function renderInEdge({ url, policy, settleMs }) {
       "This capture needs an installed Microsoft Edge; no browser is downloaded.",
       { loadAttempted: false },
     );
-  const run = { profileDirectory: null, refused: [], contacted: [] };
+  const run = {
+    profileDirectory: null,
+    refused: [],
+    contacted: [],
+    // What the browser was started with, the origin of every document the
+    // read ran in, and whether a debugging port was opened beside the pipe.
+    arguments: [],
+    read: [],
+    debuggingPort: false,
+  };
   let guard;
   let profile;
   let browser;
@@ -1520,40 +1731,39 @@ async function renderInEdge({ url, policy, settleMs }) {
     const browserTemp = path.join(profile, "temp");
     await mkdir(browserTemp);
     const stderr = [];
-    browser = spawn(
-      executable,
-      [
-        "--headless=new",
-        "--no-first-run",
-        "--no-default-browser-check",
-        "--disable-background-networking",
-        "--disable-component-update",
-        "--disable-default-apps",
-        "--disable-extensions",
-        "--disable-sync",
-        "--disable-domain-reliability",
-        "--disable-client-side-phishing-detection",
-        "--mute-audio",
-        "--no-pings",
-        "--dns-prefetch-disable",
-        "--disable-quic",
-        "--force-webrtc-ip-handling-policy=disable_non_proxied_udp",
-        // Everything, loopback included, goes through the guard. The browser
-        // itself can resolve nothing but the guard's own literal address.
-        `--proxy-server=http://127.0.0.1:${guard.port}`,
-        "--proxy-bypass-list=<-loopback>",
-        "--host-resolver-rules=MAP * ~NOTFOUND , EXCLUDE 127.0.0.1",
-        `--user-data-dir=${profile}`,
-        "--remote-debugging-pipe",
-        "about:blank",
-      ],
-      {
-        windowsHide: true,
-        // The browser reads commands on descriptor 3 and answers on 4.
-        stdio: ["ignore", "ignore", "pipe", "pipe", "pipe"],
-        env: { ...process.env, TEMP: browserTemp, TMP: browserTemp },
-      },
-    );
+    run.arguments = [
+      "--headless=new",
+      "--no-first-run",
+      "--no-default-browser-check",
+      "--disable-background-networking",
+      "--disable-component-update",
+      "--disable-default-apps",
+      "--disable-extensions",
+      "--disable-sync",
+      "--disable-domain-reliability",
+      "--disable-client-side-phishing-detection",
+      "--mute-audio",
+      "--no-pings",
+      "--dns-prefetch-disable",
+      "--disable-quic",
+      "--force-webrtc-ip-handling-policy=disable_non_proxied_udp",
+      // Everything, loopback included, goes through the guard. The browser
+      // itself can resolve nothing but the guard's own literal address.
+      `--proxy-server=http://127.0.0.1:${guard.port}`,
+      "--proxy-bypass-list=<-loopback>",
+      "--host-resolver-rules=MAP * ~NOTFOUND , EXCLUDE 127.0.0.1",
+      `--user-data-dir=${profile}`,
+      // The pipe is the only way to drive the browser: no debugging port,
+      // which any local process could connect to.
+      "--remote-debugging-pipe",
+      "about:blank",
+    ];
+    browser = spawn(executable, run.arguments, {
+      windowsHide: true,
+      // The browser reads commands on descriptor 3 and answers on 4.
+      stdio: ["ignore", "ignore", "pipe", "pipe", "pipe"],
+      env: { ...process.env, TEMP: browserTemp, TMP: browserTemp },
+    });
     browser.stderr.on("data", (chunk) => {
       stderr.push(chunk);
       if (stderr.length > 64) stderr.shift();
@@ -1688,6 +1898,7 @@ async function renderInEdge({ url, policy, settleMs }) {
         raw: null,
       };
       if (frame.id === main.id || (origin !== null && origin === topOrigin)) {
+        run.read.push(origin ?? "");
         try {
           const { executionContextId } = await devtools.send(
             "Page.createIsolatedWorld",
@@ -1752,6 +1963,13 @@ async function renderInEdge({ url, policy, settleMs }) {
       await guard.close();
       run.refused = [...guard.refused].sort();
       run.contacted = [...guard.contacted].sort();
+    }
+    // The pipe is the only way in: anything else voids the run.
+    if (profile && openedDebuggingPort(profile)) {
+      run.debuggingPort = true;
+      failure ??= new Error(
+        "the browser opened a debugging port beside the pipe; the capture is discarded",
+      );
     }
     if (
       profile &&
@@ -2071,6 +2289,40 @@ export async function runCaptureCommand(
   } catch {
     throw new CaptureRefusal("usage", USAGE);
   }
+  // Every error that leaves this command says what it means for the one load
+  // of a page: a refusal, a run that requests no page, or a hosted run that
+  // failed before, during or after its load.
+  const offline =
+    values.resanitize !== undefined ||
+    values.list ||
+    values["from-file"] !== undefined;
+  let stage = "before";
+  let written = null;
+  try {
+    return await carryOut(values, { corpus, hosted, lookup }, (next, file) => {
+      stage = next;
+      written = file ?? null;
+    });
+  } catch (error) {
+    if (
+      error instanceof CaptureRefusal ||
+      error instanceof CaptureFailure ||
+      error instanceof OfflineFailure
+    )
+      throw error;
+    const message = error?.message ?? String(error);
+    if (offline) throw new OfflineFailure(message, { cause: error });
+    throw new CaptureFailure(
+      stage === "after"
+        ? `the page was read, but the capture was not written: ${message}`
+        : message,
+      // Inside the load nothing says whether the site was reached: it counts.
+      { loadAttempted: stage !== "before", written },
+    );
+  }
+}
+
+async function carryOut(values, { corpus, hosted, lookup }, reached) {
   if (values.resanitize !== undefined) {
     for (const option of ["id", "url", "from-file", "out", "fixture"])
       if (values[option] !== undefined)
@@ -2122,6 +2374,7 @@ export async function runCaptureCommand(
     console.error(
       `Reminder: this tool does not read robots.txt or the provider's terms. Both must have been checked for ${new URL(target.url).host} before this run (${CORPUS_PATH}/README.md).`,
     );
+    reached("loading");
     ({ capture, run } = await hosted(target, {
       settleMs:
         values["settle-ms"] === undefined
@@ -2130,6 +2383,7 @@ export async function runCaptureCommand(
       catalog,
       lookup,
     }));
+    reached("after");
   }
 
   await mkdir(path.dirname(out), { recursive: true });
@@ -2137,6 +2391,8 @@ export async function runCaptureCommand(
     encoding: "utf8",
     flag: "wx",
   });
+  // From here on a failure loses nothing: the capture is on disk.
+  if (run) reached("written", out);
   if (fixture) {
     await mkdir(path.dirname(fixture), { recursive: true });
     await writeFile(fixture, renderFixtureHtml(capture), {

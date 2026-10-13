@@ -376,20 +376,33 @@ What the tool does and refuses:
   states this as `limits.redirects: "public-hosts-only"`.
 - It uses an installed Microsoft Edge, headless, with a new temporary profile that it deletes. It
   never touches the user's own Edge profile and downloads nothing. It opens no debugging port: the
-  browser is driven over a pipe, and exits when the tool does.
+  browser is driven over a pipe, and exits when the tool does. A run in which the browser did
+  open a port is discarded.
 - Every connection the browser makes passes a guard inside the tool that allows public addresses
   on ports 80 and 443 and nothing else. No option and no catalog entry opens another port.
 - It sends no keyboard or pointer input and activates nothing. It does not disguise the headless
   browser. A page that answers with a block or a challenge is recorded as that (`httpStatus`,
   `observations`), and the application stays class B from other material, or class C.
 - It reads only documents of the top document's origin. A frame from another origin is another
-  party's page: the capture says that it exists and where it is from, and nothing of what is in
-  it.
+  party's page: the tool runs nothing in it, and the capture says that it exists and where it is
+  from, and nothing of what is in it. The `src` of the element that embeds it is reduced to the
+  same origin.
 - It writes no page text, field value, URL query or fragment, inline handler, script or style
   body, and no browser state. A withheld attribute is written as `null`: present, value not kept.
   An `id`, a `name` or a reference to one is kept only when it is an identifier (no spaces, at
-  most 128 characters); every `aria-` attribute that holds words for a person is withheld. Hosts
-  of a saved page are written as `origin-N.invalid`.
+  most 128 characters); every `aria-` attribute that holds words for a person is withheld. A list
+  of ids (`aria-labelledby`, `aria-describedby`, `aria-controls` and the like) is kept only when
+  every id in it is the id of an element in the same captured document; otherwise it could be
+  words, and only its presence is recorded. Hosts of a saved page are written as
+  `origin-N.invalid`.
+- **What is kept as the page wrote it**, because selectors are written from it: tag names;
+  identifier-shaped `id`, `name`, `for` and `form` values; `class` (without any token that looks
+  like a secret); `type`, `autocomplete`, `pattern`, `accept`, `role` and the other structural
+  attributes (withheld whole when a token looks like a secret or the value is over 256
+  characters); and the name of a same-origin frame when it is a plain identifier. The tool cannot
+  tell an identifier from a word or a person's name: a frame named `mariana`, an id `joao-silva`
+  or a `pattern` that spells out an account format is kept. A reviewer reads the capture for
+  that before it is committed.
 
 ### When a run writes no capture
 
@@ -400,6 +413,14 @@ The exit status says whether the run was the one load of the page:
 | `0`  | The capture was written.                                                                                                                                | No. The page is captured.                                             |
 | `2`  | Nothing was sent to the site: a refusal at the pre-flight, or the run failed before the guard had a connection to the site (the browser did not start). | Yes, once, after removing the cause.                                  |
 | `1`  | The site was reached and the run then failed: a protocol error, a timeout, a page that could not be read, an interrupted run.                           | No. That was the one load: record the failure and use other material. |
+| `3`  | A run that requests no page failed: `--from-file`, `--resanitize` or `--list` could not read or write a file.                                           | Yes. No page is involved.                                             |
+
+Status `1` and its sentence, "This was the one load for this page", are for a hosted run only: one
+that reached the site, or that failed inside the load where the tool cannot tell whether it did.
+That includes a page that was read when the capture file could then not be written. When the
+capture file was written and a later step failed (the fixture draft, for example), the message
+names the file and says to use it. A hosted run that fails before anything is sent ends with `2`.
+A file-only run never ends with `1`.
 
 The message says the same in words. A pre-flight refusal such as
 `Refused: <host> did not resolve, so nothing was loaded` happens before any browser is started and
@@ -420,13 +441,25 @@ anonymous page load and nothing of the user's.
 `rendered: false` marks a control that exists but is not displayed, typically the next step's
 field. `observations` may hold `captcha`, `cross-origin-frame` (the page embeds a frame from
 another origin), `shadow-dom`, `no-password-field` (an identifier-first page) or `error-status`.
-The fixture draft covers the top document; a same-origin child frame's controls are under
-`frames[n].tree` and go into their own fixture file.
+`password-field`, `no-password-field`, `shadow-dom` and `error-status` are read from the trees
+and the status the capture itself holds, so they describe the page's own documents and never a
+frame of another origin; `captcha` is noted while the page is read, from a widget in the page or
+the address of a frame. The fixture draft covers the top document; a same-origin child frame's
+controls are under `frames[n].tree` and go into their own fixture file.
 
 A frame of another origin has no `tree` and no `controls`: only `url` (its origin, nothing more),
-`parent` and `sameOriginAsTop: false`. If a login form really lives in such a frame, the capture
-cannot show it and the steps format cannot address it: record that under `schemaGaps` and
-`staysInteractive`.
+`parent` and `sameOriginAsTop: false`. The `iframe` element that embeds it stays in its parent's
+tree, with its `src` reduced to the same origin. If a login form really lives in such a frame,
+the capture cannot show it and the steps format cannot address it: record that under `schemaGaps`
+and `staysInteractive`. A saved page does not say what its own origin was, so there a frame
+element keeps the path of its `src`, under the aliased host.
+
+Everything the capture says about itself has a fixed form: `source` holds `kind`, and for a
+hosted capture `requestedUrl` (the catalog address, exactly), `finalUrl` and `httpStatus`;
+`limits` holds what the mode fixes (`navigations`, `scriptsExecuted`, `input`, `redirects`) and
+what the run measured (`loadEvent`, `settleMs`, `dialogsDismissed`, `truncated`). There is no
+field for a note: anything else, or a value of the wrong kind, is dropped when the capture is
+written or re-sanitized.
 
 `frames[n].name` is written only for a frame of the top document's origin, and only when it is a
 plain identifier an author chose, such as `appFrame` or `login_iframe`. A frame name follows
@@ -434,12 +467,19 @@ plain identifier an author chose, such as `appFrame` or `login_iframe`. A frame 
 name is withheld and the frame carries `nameWithheld: true`. The `name` attribute of an `iframe`
 element is held to the same rule. A frame whose URL is `about:blank` has its parent's origin.
 
-`network.contacted` lists every host and port the page caused the browser to contact, sorted. Two
-things are normalised so the list does not describe the machine the capture was made on: the
-browser's own services (`edge.microsoft.com`, `*.smartscreen.microsoft.com`, `www.bing.com`) are
-left out, and a country domain of Google is written as `google.[country]`. Nothing a page
-requested is dropped. `network.refused` counts the connection targets the guard refused; they are
-not named, because they may be private hosts.
+`network.contacted` lists the hosts and ports the guard carried a connection to during the run,
+sorted, with three changes, so that the list does not describe the machine the capture was made
+on:
+
+- Entries for `edge.microsoft.com`, any host under `smartscreen.microsoft.com`, and
+  `www.bing.com` are removed, by name. The browser contacts them in every run, and the guard
+  cannot tell the browser's request from the page's. So a page that itself requests one of these
+  three hosts loses that entry: for them the list is not evidence of what the page contacted.
+- A country domain of Google is written as `google.[country]`.
+- A host label that looks like data rather than a name is written as `[withheld]`.
+
+No other entry is dropped. `network.refused` counts the connection targets the guard refused;
+they are not named, because they may be private hosts.
 
 An anonymous capture shows the first step only. Whatever follows it is `inferred` from other
 material and listed under `unverified`. When a capture has the `captcha` observation,
@@ -503,8 +543,10 @@ node scripts/capture-login-page.mjs --resanitize tests/fixtures/logins --update-
 ```
 
 This reads and writes files and does nothing else: no browser, no guard, no name lookup. It
-applies the current rules (frame names, frames of another origin, the contacted list, every
-attribute), marks the capture with `"sanitizer": 3`, and prints `captureSha256 <old> -> <new>`.
+applies the current rules (frame names, frames of another origin and the elements that embed
+them, lists of ids, the contacted list, every attribute, and the fixed form of `source` and
+`limits`), marks the capture with `"sanitizer": 4`, and prints `captureSha256 <old> -> <new>`.
+A file that is not one of the tool's captures is refused and left as it is.
 With `--update-evidence` it also replaces the old hash by the new one in every `evidence.json` of
 the corpus that pins it (the application's own, and a sibling's that cites the capture); without
 it, it names those files. A capture that already meets the rules is reported as `unchanged`.
@@ -564,6 +606,16 @@ formats freely.
   matching does not excuse a misspelt other. An alternative for a second layout of the page needs
   that layout as its own fixture file (`fixture.classic.html`), listed with the same origin and a
   path the step's gate accepts.
+- A list inside `:is()`, `:where()` or `:has()` is taken apart the same way, at any depth:
+  `:is(#new-layout, #old-layout) input` stands for `:is(#new-layout) input` and
+  `:is(#old-layout) input`, and each must match a fixture. Two such lists in one selector stand
+  for every pairing of their members, so `:is(#a, #b) :is(.x, .y)` is four alternatives and all
+  four must match; when only two of them are real layouts, write those two as alternatives of
+  the selector instead. A selector that stands for more than 64 alternatives fails.
+- A list inside any other functional pseudo-class (`:nth-child(1 of .a, .b)`, `:lang(en, fr)`)
+  fails its directory: the check cannot take it apart, so it could not say that each member
+  matches. `:not()` is the exception: what it excludes is not an alternative, and it is left as
+  written (see "What the check cannot see").
 - Citing a list: `evidence.json` may list the selector exactly as the steps file writes it, when
   all its alternatives come from the same source with the same basis. When they do not (the
   current layout was observed, the older one is inferred), give each alternative an entry of its
@@ -611,20 +663,41 @@ The check names each row that still needs its name or its Note.
 
 ## What the check cannot see
 
-The check is mechanical. It does not understand a fixture, and these pass it; a reviewer must
-read fixtures and captures for them:
+The check and the capture tool are mechanical. They do not understand a page, and what follows
+passes both. This is the one list of it: each item is the responsibility of whoever writes the
+directory and of whoever reviews it, and a reviewer reads fixtures, captures and evidence for
+them.
+
+In a fixture or an evidence file:
 
 - **A plain-word prefilled username.** A field value is withheld from a capture, but a fixture
   written by hand with `value="mariana"` is a short word like any other.
-- **A session id in a fixture path.** `action="/session/k3j2/login"` is a path; only long random
-  segments are recognised.
+- **A session identifier in a fixture path.** `action="/session/k3j2/login"` is a path; only long
+  random segments are recognised.
 - **A default password written as prose.** A comment or a text node saying that the device ships
   with a certain password is not `password=...` and is not caught.
-- **A capture edited to mode `file` with its hash recomputed.** The hash proves that the capture
-  was not changed after it was cited. It does not prove how the capture was obtained: that a
-  `user-capture` really came from the user is a statement by whoever wrote the evidence.
 - **A layout that was never seen.** `inferred` selectors match their fixture because the fixture
   was written for them. Only a sign-in by the user, or a page they saved, confirms a layout.
+- **What `:not()` excludes.** A selector inside `:not()` is never shown to match anything, so a
+  misspelling there passes.
+- **An instruction that names both save formats and recommends the wrong one.** The check asks
+  only that "Webpage, Complete" is named.
+
+In a capture:
+
+- **A page that is not the user's own.** `--from-file` reads any saved page. A page fetched by
+  someone else, or by a program, and imported as a `user-capture` looks the same as one the user
+  saved from their own account. The hash proves that the capture was not changed after it was
+  cited; it does not prove how the page was obtained. That is a statement by whoever wrote the
+  evidence, and a page a program fetched is subject to the robots rules and terms like any other
+  load.
+- **A name or a word that has the shape of an identifier.** A same-origin frame named `mariana`,
+  an id `joao-silva`, a class `acme-internal`, and the values of `pattern`, `accept` and
+  `autocomplete` are kept as written, apart from tokens that look like a secret: selectors are
+  written from exactly these attributes, and the tool cannot tell a name from an identifier.
+- **A request the page made to one of the browser's own hosts.** `edge.microsoft.com`, hosts
+  under `smartscreen.microsoft.com` and `www.bing.com` are removed from `network.contacted` by
+  name, whoever asked for them.
 
 ## One application, start to finish
 

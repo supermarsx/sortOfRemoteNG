@@ -13,7 +13,7 @@
       "title": "The public developer hub, rendered once without an account",
       "url": "https://developer.microsoft.com/en-us/",
       "capture": "capture.json",
-      "captureSha256": "da1025d03c88021ee4bd6f492c1ffb93e5d304fd7804193ceff2d6d6be63dfef",
+      "captureSha256": "886dd3446752c1658e99ebe72f224c972c459310d0f2c49cdb81ac2f2b054368",
       "retrieved": "2026-10-12",
       "note": "Requested on developer.microsoft.com and ended on the same host and path, HTTP 200. One top document, 114 controls: a search form that is not displayed, navigation and carousel buttons, and a media player in shadow roots."
     },

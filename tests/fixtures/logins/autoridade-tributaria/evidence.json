@@ -25,7 +25,7 @@
       "title": "The catalog entry page, rendered once without an account",
       "url": "https://www.portaldasfinancas.gov.pt/at/html/index.html",
       "capture": "capture.json",
-      "captureSha256": "7e8d424c1e9cf7d50244364b80e93ef719529b3fd4c6949ea450115228247d2a",
+      "captureSha256": "100975bf8b0b3dc752164b24d53311fb628508685fc6f1a11ebb4c6d8064e5ce",
       "retrieved": "2026-10-12",
       "note": "The portal home: one search form, no credential field, no element with id tab2, no frame. The capture ended on the catalog host itself. The sign-in form is on another host, which the capture tool does not load."
     },

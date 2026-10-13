@@ -1,6 +1,6 @@
 {
   "schema": "sorng-login-capture/1",
-  "sanitizer": 3,
+  "sanitizer": 4,
   "applicationId": "zoom",
   "capturedAt": "2026-10-12",
   "mode": "hosted",
@@ -166,7 +166,7 @@
                                                   "aria-disabled": "false",
                                                   "aria-expanded": "false",
                                                   "aria-haspopup": "true",
-                                                  "aria-controls": "zoom-id-6288-2"
+                                                  "aria-controls": null
                                                 },
                                                 "rendered": true
                                               }
@@ -225,7 +225,7 @@
                                                                 "attributes": {
                                                                   "class": "zoom-form-item mgb-0",
                                                                   "role": "group",
-                                                                  "aria-labelledby": "zoom-id-6288-6",
+                                                                  "aria-labelledby": null,
                                                                   "aria-required": "false"
                                                                 },
                                                                 "children": [
@@ -530,7 +530,7 @@
                                                                                           "frameborder": "0",
                                                                                           "scrolling": "no",
                                                                                           "sandbox": "allow-forms allow-popups allow-same-origin allow-scripts allow-top-navigation allow-modals allow-popups-to-escape-sandbox allow-storage-access-by-user-activation",
-                                                                                          "src": "https://www.google.com/recaptcha/enterprise/anchor"
+                                                                                          "src": "https://www.google.com"
                                                                                         },
                                                                                         "rendered": false
                                                                                       }
@@ -1303,8 +1303,8 @@
                                     "attributes": {
                                       "aria-expanded": "false",
                                       "ot-accordion": "true",
-                                      "aria-controls": "ot-desc-id-C0004",
-                                      "aria-labelledby": "ot-header-id-C0004"
+                                      "aria-controls": null,
+                                      "aria-labelledby": null
                                     },
                                     "rendered": false
                                   },
@@ -1330,7 +1330,7 @@
                                               "role": "switch",
                                               "class": "category-switch-handler",
                                               "data-optanongroupid": "C0004",
-                                              "aria-labelledby": "ot-header-id-C0004"
+                                              "aria-labelledby": null
                                             },
                                             "rendered": false
                                           },
@@ -1385,8 +1385,8 @@
                                     "attributes": {
                                       "aria-expanded": "false",
                                       "ot-accordion": "true",
-                                      "aria-controls": "ot-desc-id-C0003",
-                                      "aria-labelledby": "ot-header-id-C0003"
+                                      "aria-controls": null,
+                                      "aria-labelledby": null
                                     },
                                     "rendered": false
                                   },
@@ -1412,7 +1412,7 @@
                                               "role": "switch",
                                               "class": "category-switch-handler",
                                               "data-optanongroupid": "C0003",
-                                              "aria-labelledby": "ot-header-id-C0003"
+                                              "aria-labelledby": null
                                             },
                                             "rendered": false
                                           },
@@ -1467,8 +1467,8 @@
                                     "attributes": {
                                       "aria-expanded": "false",
                                       "ot-accordion": "true",
-                                      "aria-controls": "ot-desc-id-C0002",
-                                      "aria-labelledby": "ot-header-id-C0002"
+                                      "aria-controls": null,
+                                      "aria-labelledby": null
                                     },
                                     "rendered": false
                                   },
@@ -1494,7 +1494,7 @@
                                               "role": "switch",
                                               "class": "category-switch-handler",
                                               "data-optanongroupid": "C0002",
-                                              "aria-labelledby": "ot-header-id-C0002"
+                                              "aria-labelledby": null
                                             },
                                             "rendered": false
                                           },
@@ -1549,8 +1549,8 @@
                                     "attributes": {
                                       "aria-expanded": "false",
                                       "ot-accordion": "true",
-                                      "aria-controls": "ot-desc-id-C0001",
-                                      "aria-labelledby": "ot-header-id-C0001"
+                                      "aria-controls": null,
+                                      "aria-labelledby": null
                                     },
                                     "rendered": false
                                   },
@@ -1960,7 +1960,7 @@
                         "attributes": {
                           "class": "ot-sdk-container",
                           "role": "alertdialog",
-                          "aria-describedby": "onetrust-policy-text",
+                          "aria-describedby": null,
                           "aria-label": null
                         },
                         "children": [

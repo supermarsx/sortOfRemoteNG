@@ -14,7 +14,7 @@
       "title": "The public entry page, rendered once without an account",
       "url": "https://common.cloud.hpe.com/",
       "capture": "capture.json",
-      "captureSha256": "6dee656377b192cddf49bc228e180803547512f0ff5562ad13f2d9476c434d6c",
+      "captureSha256": "6046b9456139dcd18894850ec9df4b490048ae24eb69577c12e7d9e1d2445014",
       "retrieved": "2026-10-12",
       "note": "Ended on https://common.cloud.hpe.com/sso/continue, HTTP 200. One top document, no frames, no password field, no challenge widget. The browser also contacted auth.hpe.com and sso.common.cloud.hpe.com."
     },

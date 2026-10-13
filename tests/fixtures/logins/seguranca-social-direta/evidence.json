@@ -44,7 +44,7 @@
       "title": "The catalog entry page, rendered once without an account",
       "url": "https://www.seg-social.pt/ptss/",
       "capture": "capture.json",
-      "captureSha256": "66927e7cd1b3326e7f3dc70569a77f78fb57711b51327e1dd13b257a51263b37",
+      "captureSha256": "b0f0b999539266a333b1b65d889bf650c8d6814feee6a83274b439d58b808a64",
       "retrieved": "2026-10-12",
       "note": "Redirects to /ptss/pssd/home on the catalog host itself, the public portal home: a search box, a header menu button, a cookie notice form, no credential field. The sign-in page is another page, which the capture tool does not load."
     },

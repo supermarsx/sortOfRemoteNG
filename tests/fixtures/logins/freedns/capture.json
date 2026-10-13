@@ -1,6 +1,6 @@
 {
   "schema": "sorng-login-capture/1",
-  "sanitizer": 3,
+  "sanitizer": 4,
   "applicationId": "freedns",
   "capturedAt": "2026-10-12",
   "mode": "hosted",
