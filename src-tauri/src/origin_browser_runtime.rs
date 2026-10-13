@@ -20,6 +20,7 @@ use sorng_browser_host::{
     },
 };
 use sorng_browser_host::ipc::OriginBrowserRuntimeFailureCode as RuntimeFailureCode;
+use sorng_commands_core::database_protection::native_browser_owner::RecheckFailure;
 use sorng_commands_core::origin_browser_authority::{self, NativeOwnerLease};
 use sorng_encryption::EncryptionState;
 use sorng_protocols::{
@@ -88,6 +89,8 @@ const UNAVAILABLE: &str =
 const TLS_UNAVAILABLE: &str = "The loaded CEF runtime does not provide the required app certificate-verifier bridge. Install or rebuild the patched browser runtime; the saved trust policy was not changed.";
 const STALE: &str = "This website's database or browser session is no longer available. Reopen it from its owning database.";
 const MAX_ATTEMPTS: usize = 64;
+const RETIRE_PUBLISH_TRIES: usize = 4;
+// One caller's wait for the engine. It never bounds the engine start itself.
 const STARTUP_LIMIT: Duration = Duration::from_secs(20);
 const DATA_DIRECTORY_FAILED: &str = "Native browser working-data preparation failed. Review Settings > Web Browser and restart if the working folder changed; the owning database and retained cookies were not changed.";
 const PACKAGE_FAILED: &str = "Native browser package or runtime settings could not be prepared. Check the native startup diagnostics before retrying.";
@@ -176,10 +179,16 @@ impl Attempt {
             return;
         }
         // Inspect owner evidence before cleanup itself revokes the lease.
-        // Explicit watchdog/runtime evidence is not a database-unlock failure.
-        let reason = reason.or_else(|| BrowserSessionFailure::owner_loss(
-            self.document.current(), self.lease.is_current(), self.lease.is_temporary(),
-        ));
+        // Explicit watchdog/runtime evidence is not a database-unlock failure,
+        // and neither is an edit of the saved source that a recheck latched on
+        // the lease: the shell answers that one by starting the tab again.
+        let reason = flow::revocation_reason(
+            reason,
+            self.lease.revocation_cause() == Some(RecheckFailure::SourceChanged),
+            || BrowserSessionFailure::owner_loss(
+                self.document.current(), self.lease.is_current(), self.lease.is_temporary(),
+            ),
+        );
         if let Some(reason) = reason {
             self.failure.record_first(reason);
         }
@@ -368,9 +377,15 @@ async fn ensure_runtime(
     timing.mark(TimingStage::RuntimeRequested);
     let deadline = Instant::now() + STARTUP_LIMIT;
     let startup_claim = Arc::new(flow::StartupClaim::default());
-    // Dropping an in-flight command also cancels a queued native callback.
-    let cancelled = flow::RevokeOnDrop::new(|| {
-        cancel_startup(startup_claim.cancel_abandoned(document), Failure::Policy);
+    // However this caller ends (dropped command, cancelled prewarm, reloaded
+    // document, its own deadline), a native callback still queued for it can
+    // no longer enter. A start it already entered is not its to fail: that
+    // start finishes, and only a real initialization or policy fault or the
+    // start watchdog can revoke admission.
+    let ended = flow::RevokeOnDrop::new(|| {
+        if startup_claim.cancel() && shared().admission.pending() {
+            log::info!("Native browser start continues without the caller that entered it");
+        }
     });
     let prewarm_gate = prewarm.map(|(gate, _)| gate);
     let result = tokio::time::timeout(STARTUP_LIMIT, async {
@@ -487,14 +502,17 @@ async fn ensure_runtime(
                                     && prewarm_gate.is_none_or(|gate| gate.current())
                                     && !shared().admission.revoked()
                                     && {
-                                        // Linearize entry against cancellation. A cancelled
-                                        // caller cannot claim; a claimed caller's cancellation
-                                        // revokes pending admission even before begin_native.
+                                        // Linearize entry against the caller ending. A caller
+                                        // that ended cannot claim; once claimed, the start is
+                                        // the runtime's own and only its watchdog times it.
                                         queued_startup_claim.claim_native()
                                             && permit.begin_native()
-                                            && prepared.commit().map_err(|_| {
-                                                runtime_failure.record(RuntimeFailureCode::DataDirectory);
-                                            }).is_ok()
+                                            && {
+                                                watch_native_start();
+                                                prepared.commit().map_err(|_| {
+                                                    runtime_failure.record(RuntimeFailureCode::DataDirectory);
+                                                }).is_ok()
+                                            }
                                     }
                             };
                             match settings_fence.as_ref() {
@@ -561,36 +579,39 @@ async fn ensure_runtime(
             tokio::time::sleep(Duration::from_millis(20)).await;
         }
     })
-    .await;
-    let result = match result {
-        Ok(Err(error)) if error == STARTUP_TIMED_OUT => {
-            cancel_startup(startup_claim.cancel(), Failure::Timeout);
-            Err(error)
-        }
-        Ok(result) => result,
-        Err(_) => {
-            cancel_startup(startup_claim.cancel(), Failure::Timeout);
-            Err(STARTUP_TIMED_OUT.to_owned())
-        }
-    };
+    .await
+    // This caller's own deadline. The engine may still be starting, which is
+    // the failure the shell retries; it is not evidence of an engine defect.
+    .unwrap_or_else(|_| Err(STARTUP_TIMED_OUT.to_owned()));
     if result.is_ok() {
         timing.mark(TimingStage::RuntimeReady);
-        cancelled.disarm();
+        ended.disarm();
     }
     result
 }
 
-fn cancel_startup(owned_native_start: bool, failure: Failure) {
-    if shared().admission.timeout_owned_startup(owned_native_start) {
-        // Owner/document cancellation is not evidence of an engine defect.
-        if matches!(failure, Failure::Timeout) {
+/// Armed once, at native entry, and owned by no caller: the only clock that can
+/// end a start. A cancelled, dropped or timed-out caller never does.
+fn watch_native_start() {
+    tauri::async_runtime::spawn(async {
+        if flow::native_start_expired(
+            &shared().admission,
+            flow::NATIVE_START_LIMIT,
+            flow::NATIVE_START_STEP,
+        )
+        .await
+        {
             shared().runtime_failure.record_current(RuntimeFailureCode::StartupTimeout);
+            diagnostics::record(Stage::Failed, Some(Failure::Timeout));
+            log::error!(
+                "Native browser stage=policy error=start-watchdog-expired limit_seconds={}",
+                flow::NATIVE_START_LIMIT.as_secs()
+            );
+            // Expiry cannot cancel an in-progress native call. Never retry it or
+            // let a late policy callback restore traffic admission.
+            revoke_all();
         }
-        diagnostics::record(Stage::Failed, Some(failure));
-        // A timeout cannot cancel an in-progress native call. Never retry it or
-        // let a late policy callback restore traffic admission.
-        revoke_all();
-    }
+    });
 }
 
 struct Pending {
@@ -625,6 +646,35 @@ fn begin_normal_close(view: &mut View) {
         }
     }
     view.attempt.revoke();
+}
+
+/// Ends a view whose attempt is no longer current. Any recheck may have ended
+/// the lease without revoking the attempt, so revoke first (idempotent): that
+/// records why. A recorded cause is then published as the view's terminal
+/// state through the host's own session fault; a bare close would only emit
+/// `closing`, which names no cause. A view the shell closed itself stays a
+/// plain close, whatever a later engine-wide revocation records for it.
+fn retire(view: &View) {
+    view.attempt.revoke();
+    if !view.attempt.ordinary_close.load(Ordering::Acquire)
+        && view.attempt.failure.get().is_some()
+    {
+        // The host skips a poll while a request callback holds its state or
+        // session for an instant. Ask again at once, a bounded number of
+        // times: the session is revoked either way, and the close below is
+        // never withheld for a reason that could not be published.
+        for _ in 0..RETIRE_PUBLISH_TRIES {
+            let _ = view.host.poll_session_health();
+            if !matches!(
+                view.host.lifecycle(),
+                Lifecycle::Starting | Lifecycle::Attached | Lifecycle::Hidden
+            ) {
+                break;
+            }
+            std::thread::yield_now();
+        }
+    }
+    let _ = view.host.close(&view.attempt.identity);
 }
 
 struct Start {
@@ -767,13 +817,16 @@ pub(crate) fn start_pump(app: tauri::AppHandle, mut wake: tokio::sync::mpsc::Rec
                     for attempt in &revoked_attempts {
                         attempt.revoke_for(BrowserSessionFailure::Watchdog);
                     }
-                } else {
-                    // Startup timeouts, lost dispatch and real runtime faults
-                    // remain terminal. Never reinitialize the native engine.
-                    fail_runtime(RuntimeFailureCode::UiDispatch);
+                } else if shared().admission.pending() {
+                    // A start whose first pump is slow is still starting. It
+                    // has no attempt to revoke, and this timer does not fail
+                    // it: only the start watchdog may end a start.
+                    log::warn!("Native browser start is slow; still awaiting its UI callback");
                 }
             }).await
             else {
+                // Lost dispatch, unlike a late callback, remains terminal.
+                // Never reinitialize the native engine.
                 fail_runtime(RuntimeFailureCode::UiDispatch);
                 break;
             };
@@ -1303,7 +1356,13 @@ async fn create_document(
     timing.mark(TimingStage::OwnerCheckedBeforeProxy);
     let session = OriginBrowserSession::start(authorized.policy, authorized.route, ProxyLimits::default())
             .await
-            .map_err(|_| view_failure(Failure::PrivateProxy, PROXY_FAILED))?;
+            .map_err(|error| {
+                // Fixed policy text only. The relay logs the bind's own error
+                // kind; nothing of this attempt may outlive the failed start.
+                log::error!("Native browser stage=private-proxy error={error}");
+                login.revoke();
+                view_failure(Failure::PrivateProxy, PROXY_FAILED)
+            })?;
     let failure = session.failure_state();
     let session = Arc::new(Mutex::new(session));
     timing.mark(TimingStage::ProxyReady);
@@ -1491,6 +1550,12 @@ async fn create_document(
         }
         Err(error) => {
             attempt.revoke();
+            // A relay that ended while the tab was prepared is the cause,
+            // whichever step noticed it and whatever that step reported. Its
+            // fixed failure lets the shell start again with a fresh relay.
+            if attempt.failure.get() == Some(BrowserSessionFailure::PrivateProxy) {
+                return Err(view_failure(Failure::PrivateProxy, PROXY_FAILED));
+            }
             Err(error)
         }
     }
@@ -1552,8 +1617,7 @@ async fn operate(
                 if !matches!(operation, Operation::Close)
                     && (!shared().admission.ready() || !attempt.current())
                 {
-                    attempt.revoke();
-                    let _ = view.host.close(&attempt.identity);
+                    retire(view);
                     return Err(STALE.into());
                 }
                 let id = &attempt.identity;
@@ -2294,7 +2358,7 @@ pub(crate) fn tick() {
                 }
             }
             if !view.attempt.current() && !view.checkpoint.draining() {
-                let _ = view.host.close(&view.attempt.identity);
+                retire(view);
             }
             let keep = view.host.lifecycle() != Lifecycle::Closed || view.checkpoint.draining();
             if !keep {

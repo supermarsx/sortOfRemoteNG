@@ -225,24 +225,38 @@ mod tests {
         }
     }
 
+    /// How long the other tests of a parallel binary may keep the process-wide
+    /// write coordinator busy before an unchanged fixture counts as stuck.
+    const IDLE_BUDGET: std::time::Duration = std::time::Duration::from_secs(120);
+
     async fn assert_current_when_idle(fence: &SavedSettingsFence) {
         // Independent fixtures still share the process-wide write coordinator.
         // A failed nonblocking acquisition is expected while another test saves;
         // it is not evidence that this fixture's unchanged artifacts are stale.
-        tokio::time::timeout(std::time::Duration::from_secs(2), async {
-            loop {
-                assert!(
-                    fence.unchanged(),
-                    "fixture changed while waiting for write coordinator"
-                );
-                if fence.with_current(|| true) {
-                    break;
-                }
-                tokio::time::sleep(std::time::Duration::from_millis(1)).await;
+        // A released lock goes straight to the next queued writer, so the probe
+        // only passes in a gap between writers. Besides sampling, take a turn
+        // in that queue and probe as the turn ends, where a gap begins if no
+        // other writer is waiting. Nothing here bounds how long other tests
+        // keep the queue full, hence a budget sized for a whole binary.
+        let began = std::time::Instant::now();
+        loop {
+            assert!(
+                fence.unchanged(),
+                "fixture changed while waiting for write coordinator"
+            );
+            if fence.with_current(|| true) {
+                break;
             }
-        })
-        .await
-        .expect("unchanged fixture must become current when parallel writes finish");
+            drop(sorng_encryption::settings_coordinator::lock_settings_write().await);
+            if fence.with_current(|| true) {
+                break;
+            }
+            assert!(
+                began.elapsed() < IDLE_BUDGET,
+                "unchanged fixture must become current when parallel writes finish"
+            );
+            tokio::time::sleep(std::time::Duration::from_millis(1)).await;
+        }
     }
 
     #[test]
@@ -288,6 +302,9 @@ mod tests {
     async fn authority_timeout_preserves_runtime_ready_before_or_during_recheck() {
         for ready_before in [false, true] {
             let admission = startup_flow::RuntimeAdmission::default();
+            // This caller is the one that entered native initialization.
+            let claim = startup_flow::StartupClaim::default();
+            assert!(claim.claim_native());
             if ready_before {
                 admission.observe_policy(true);
             }
@@ -302,22 +319,102 @@ mod tests {
             assert!(outcome.is_err());
             // Even a caller that originally initialized CEF cannot revoke its
             // now-healthy runtime because a later owner/settings read timed out.
-            assert!(!admission.timeout_owned_startup(true));
+            assert!(claim.cancel());
+            assert!(!admission.expire_pending_start());
             assert!(admission.ready());
             assert!(!admission.revoked());
         }
     }
 
     #[test]
-    fn only_owned_pending_initialization_is_revoked_by_timeout() {
+    fn prewarm_cancelled_after_native_entry_cannot_disable_the_engine() {
+        // Every way the shell abandons a prewarm (a save, a lock, minimize,
+        // window close) reaches native as this gate's cancellation.
+        let gate = PrewarmGate::default();
+        assert!(gate.begin());
+        let startup = startup_flow::StartupGate::default();
         let admission = startup_flow::RuntimeAdmission::default();
-        // A slow authorization or caller joining another startup owns no init.
-        assert!(!admission.timeout_owned_startup(false));
+        let claim = startup_flow::StartupClaim::default();
+        let permit = startup.prepare().unwrap();
+        assert!(gate.current() && claim.claim_native() && permit.begin_native());
+        drop(permit);
+        gate.cancel();
+        assert!(!gate.current());
+        // Production: the cancelled command answers stale and, on its way out,
+        // cancels only its own claim.
+        assert!(claim.cancel());
+        assert!(admission.pending());
         assert!(!admission.revoked());
-        assert!(admission.timeout_owned_startup(true));
+        // The start it entered finishes. The user's own tab joins it and is
+        // admitted by the first true readback; CEF is not initialized again.
+        assert!(startup.started());
+        assert!(startup.prepare().is_none());
         admission.observe_policy(true);
-        assert!(admission.revoked());
-        assert!(!admission.ready());
+        assert!(admission.ready());
+        // The one automatic attempt itself stays spent.
+        assert!(!gate.begin());
+    }
+
+    #[tokio::test]
+    async fn an_edit_that_ends_a_live_lease_is_recorded_as_a_source_change_not_a_lost_owner() {
+        use native_browser_owner::RecheckFailure;
+        use sorng_protocols::origin_browser::BrowserSessionFailure as Reason;
+        // What the runtime's attempt reads from its lease when its revoker
+        // named no cause, in the runtime's own order.
+        let recorded = |lease: &NativeOwnerLease| {
+            startup_flow::revocation_reason(
+                None,
+                lease.revocation_cause() == Some(RecheckFailure::SourceChanged),
+                || Reason::owner_loss(true, lease.is_current(), lease.is_temporary()),
+            )
+        };
+
+        // The user fixes the saved password while the tab is open.
+        let mut f = Fixture::new(connection()).await;
+        let owner = authorize(&f.window, &f.state, &request(&f)).await.unwrap();
+        assert_eq!(recorded(&owner.lease), None);
+        let mut row = connection();
+        row["name"] = json!("Renamed");
+        f.replace_connection(row.clone());
+        assert!(owner.lease.recheck(&f.window, &f.state).await.is_ok());
+        assert_eq!(recorded(&owner.lease), None, "a rename ends nothing");
+        row["password"] = json!("corrected-secret");
+        f.replace_connection(row);
+        assert!(owner.lease.recheck(&f.window, &f.state).await.is_err());
+        assert!(!owner.lease.is_current(), "the edit still ends the lease");
+        assert_eq!(recorded(&owner.lease), Some(Reason::SourceChanged));
+        assert_eq!(
+            serde_json::to_value(recorded(&owner.lease)).unwrap(),
+            "source-changed"
+        );
+        // A clone held by another part of the attempt reads the same cause.
+        assert_eq!(recorded(&owner.lease.clone()), Some(Reason::SourceChanged));
+
+        // Losing the owner is not an edit: a removed row, and a locked database.
+        let mut f = Fixture::new(connection()).await;
+        let owner = authorize(&f.window, &f.state, &request(&f)).await.unwrap();
+        let mut row = connection();
+        row["id"] = json!("another-record");
+        f.replace_connection(row);
+        assert!(owner.lease.recheck(&f.window, &f.state).await.is_err());
+        assert_eq!(recorded(&owner.lease), Some(Reason::DatabaseOwner));
+
+        let f = Fixture::new(connection()).await;
+        let owner = authorize(&f.window, &f.state, &request(&f)).await.unwrap();
+        f.state.lock().await;
+        assert!(!owner.lease.is_current());
+        assert_eq!(recorded(&owner.lease), Some(Reason::DatabaseOwner));
+
+        // A lease the attempt itself revoked (an ordinary close) has no cause,
+        // and a later edit cannot give it one.
+        let mut f = Fixture::new(connection()).await;
+        let owner = authorize(&f.window, &f.state, &request(&f)).await.unwrap();
+        owner.lease.revoke();
+        let mut row = connection();
+        row["password"] = json!("corrected-secret");
+        f.replace_connection(row);
+        assert!(owner.lease.recheck(&f.window, &f.state).await.is_err());
+        assert_ne!(recorded(&owner.lease), Some(Reason::SourceChanged));
     }
 
     #[tokio::test]

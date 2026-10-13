@@ -315,6 +315,7 @@ fn session_failure_causes_survive_terminal_publication_without_private_data_or_a
         (Reason::RedirectDenied, "redirect-denied"),
         (Reason::RuntimeUnavailable, "runtime-unavailable"),
         (Reason::OwnerWindow, "owner-window"),
+        (Reason::SourceChanged, "source-changed"),
     ] {
         let identity = identity();
         let snapshot = retained(&identity);
@@ -401,6 +402,283 @@ fn production_session_invalidation_records_native_evidence_before_cleanup() {
         .split("fn revoke(&self)").next().unwrap();
     assert!(fail.contains("ContextError::ProxyRejected | ContextError::ProxyMismatch"));
     assert!(fail.find("revoke_for").unwrap() < fail.find("self.revoke()").unwrap());
+}
+
+fn in_order(source: &str, needles: &[&str]) {
+    let mut rest = source;
+    for needle in needles {
+        let offset = rest
+            .find(needle)
+            .unwrap_or_else(|| panic!("missing or out of order: {needle}"));
+        rest = &rest[offset + needle.len()..];
+    }
+}
+
+fn squeezed(source: &str) -> String {
+    source.split_whitespace().collect::<Vec<_>>().join(" ")
+}
+
+#[test]
+fn a_latched_source_change_is_recorded_and_published_before_the_view_closes() {
+    let runtime = include_str!("../../../src/origin_browser_runtime.rs");
+    // The cause is read from the lease while the lease still holds it: after
+    // this attempt is claimed for revocation, ahead of the owner-loss reading
+    // (which would call the same stale lease a lost database owner), and
+    // before cleanup revokes the lease.
+    let revoke = runtime.split("fn revoke_inner(&self, reason:").nth(1).unwrap()
+        .split("fn report_failure").next().unwrap();
+    in_order(revoke, &[
+        "self.cancelled.swap(true, Ordering::AcqRel)",
+        "// Inspect owner evidence",
+        "flow::revocation_reason(",
+        "self.lease.revocation_cause() == Some(RecheckFailure::SourceChanged)",
+        "BrowserSessionFailure::owner_loss",
+        "self.failure.record_first(reason)",
+        "self.lease.revoke()",
+    ]);
+    // A view whose attempt is no longer current ends in this order: revoke
+    // (which records why), publish that reason through the host's own session
+    // fault, then close. A plain close alone emits `closing` with no reason.
+    let retire = runtime.split("fn retire(view: &View) {").nth(1).unwrap()
+        .split("struct Start {").next().unwrap();
+    in_order(retire, &[
+        "view.attempt.revoke();",
+        "if !view.attempt.ordinary_close.load(Ordering::Acquire)",
+        "&& view.attempt.failure.get().is_some()",
+        "view.host.poll_session_health();",
+        "view.host.close(&view.attempt.identity);",
+    ]);
+    // Both places that meet such a view use it, and neither closes it bare.
+    let tick = squeezed(runtime.split("pub(crate) fn tick() {").nth(1).unwrap()
+        .split("pub(crate) fn shutdown()").next().unwrap());
+    assert!(tick.contains(
+        "if !view.attempt.current() && !view.checkpoint.draining() { retire(view); }"
+    ));
+    assert!(!tick.contains("view.host.close("));
+    let operate = squeezed(runtime.split("async fn operate(").nth(1).unwrap()
+        .split("pub(crate) async fn navigate(").next().unwrap());
+    assert!(operate.contains(
+        "&& (!shared().admission.ready() || !attempt.current()) { retire(view); return Err(STALE.into()); }"
+    ));
+    // The recorded cause reaches the owner window as the terminal reason.
+    let reason: OriginBrowserFailureReason =
+        sorng_protocols::origin_browser::BrowserSessionFailure::SourceChanged.into();
+    assert_eq!(serde_json::to_value(reason).unwrap(), "source-changed");
+}
+
+/// A real private relay on its own runtime. Dropping that runtime ends the
+/// relay's supervisor the way a listener it could not replace does: nobody
+/// revoked the session, and its relay is no longer running.
+fn relay_runtime() -> tokio::runtime::Runtime {
+    tokio::runtime::Builder::new_current_thread().enable_all().build().unwrap()
+}
+
+fn relay_session(
+    runtime: &tokio::runtime::Runtime,
+) -> sorng_protocols::origin_browser::OriginBrowserSession {
+    use sorng_protocols::private_forward_proxy::{Authority, DialFuture, ProxyLimits};
+    let policy =
+        OriginBrowserPolicy::new("owner", "connection", "tab", "https://fixture.test").unwrap();
+    runtime
+        .block_on(sorng_protocols::origin_browser::OriginBrowserSession::start(
+            policy,
+            std::sync::Arc::new(|_: Authority| -> DialFuture {
+                Box::pin(async { Err(std::io::Error::other("fixture must not dial")) })
+            }),
+            ProxyLimits::default(),
+        ))
+        .unwrap()
+}
+
+#[test]
+fn an_ended_relay_ends_its_attempt_as_private_proxy_and_a_retry_shares_nothing_with_it() {
+    use sorng_protocols::origin_browser::{
+        BrowserPolicyError, BrowserSessionFailure, BrowserSessionStatus, NativeHostReadiness,
+        NativeProxyChallenge,
+    };
+    use sorng_protocols::private_forward_proxy::PrivateProxyState;
+    let ready = |session: &sorng_protocols::origin_browser::OriginBrowserSession,
+                 endpoint: std::net::SocketAddr| NativeHostReadiness::Ready {
+        profile_key: session.policy().profile_key().into(),
+        proxy_endpoint: endpoint,
+    };
+
+    // An attached tab: host ready, navigation admitted, credentials answerable.
+    let relay = relay_runtime();
+    let mut ended = relay_session(&relay);
+    let identity = ended.policy().identity().clone();
+    let endpoint = ended.proxy_endpoint();
+    let credentials = ended
+        .with_proxy_credentials(|user, password| format!("{user}:{password}"))
+        .unwrap();
+    let report = ready(&ended, endpoint);
+    ended.report_host(&identity, report).unwrap();
+    assert!(ended.authorize_navigation(&identity, "https://fixture.test/").is_ok());
+    let evidence = ended.failure_state();
+
+    drop(relay);
+    // What the runtime's poll reads on its next tick, before anything revoked
+    // the session: not usable, for the relay's reason, and nothing is released.
+    assert_eq!(ended.status(), BrowserSessionStatus::Revoked);
+    assert_eq!(ended.failure_reason(), Some(BrowserSessionFailure::PrivateProxy));
+    assert!(ended.with_proxy_credentials(|_, _| ()).is_none());
+    assert_eq!(
+        ended.authorize_navigation(&identity, "https://fixture.test/").err(),
+        Some(BrowserPolicyError::Revoked)
+    );
+    assert_ne!(ended.proxy_diagnostics().state, PrivateProxyState::Listening);
+
+    // The poll and then the attempt revoke it. The recorded cause is the
+    // relay, and it is what the owner window is told as the terminal state.
+    ended.revoke(&identity).unwrap();
+    assert_eq!(evidence.get(), Some(BrowserSessionFailure::PrivateProxy));
+    let snapshot = retained(&identity);
+    assert_eq!(publish_with_reason(&snapshot, &identity, 2,
+        (OriginBrowserPhase::Failed, evidence.get().map(Into::into)), private_page(), || false,
+        |event| {
+            assert_scrubbed(&event);
+            assert_eq!(wire(&event)["phase"], "failed");
+            assert_eq!(wire(&event)["failureReason"], "private-proxy");
+            true
+        }), Publication::Published);
+    assert_eq!(publish(&snapshot, &identity, 3, OriginBrowserPhase::Attached, private_page(),
+        || false, |_| panic!("an ended attempt publishes no page again")),
+        Publication::OwnerUnavailable);
+
+    // The retry is a different attempt with its own relay and credentials.
+    let relay = relay_runtime();
+    let mut fresh = relay_session(&relay);
+    let fresh_identity = fresh.policy().identity().clone();
+    assert!(fresh_identity != identity);
+    let fresh_credentials = fresh
+        .with_proxy_credentials(|user, password| format!("{user}:{password}"))
+        .unwrap();
+    assert_ne!(fresh_credentials, credentials);
+    assert_eq!(fresh.status(), BrowserSessionStatus::NotReady);
+    assert_eq!(fresh.failure_state().get(), None);
+
+    // The ended attempt cannot be resumed, on its old endpoint or re-pointed at
+    // the fresh relay, and neither session answers for the other's identity.
+    for endpoint in [endpoint, fresh.proxy_endpoint()] {
+        let report = ready(&ended, endpoint);
+        assert_eq!(ended.report_host(&identity, report), Err(BrowserPolicyError::Revoked));
+    }
+    assert_eq!(ended.status(), BrowserSessionStatus::Revoked);
+    assert!(ended.with_proxy_credentials(|_, _| ()).is_none());
+    let challenge = |endpoint: std::net::SocketAddr, host: &'static str| NativeProxyChallenge {
+        is_proxy: true,
+        host,
+        port: endpoint.port(),
+        scheme: "basic",
+        realm: "private-forward-proxy",
+    };
+    let fresh_endpoint = fresh.proxy_endpoint();
+    assert!(fresh
+        .answer_proxy_challenge(&identity, challenge(fresh_endpoint, "127.0.0.1"), |_, _| ())
+        .is_none());
+    assert!(ended
+        .answer_proxy_challenge(&fresh_identity, challenge(fresh_endpoint, "127.0.0.1"), |_, _| ())
+        .is_none());
+    assert!(ended
+        .answer_proxy_challenge(&identity, challenge(endpoint, "127.0.0.1"), |_, _| ())
+        .is_none());
+    assert!(fresh
+        .answer_proxy_challenge(&fresh_identity, challenge(fresh_endpoint, "127.0.0.1"), |_, _| ())
+        .is_some());
+    relay.block_on(fresh.stop()).unwrap();
+}
+
+#[test]
+fn the_runtime_polls_every_live_view_each_tick_and_never_reuses_a_relay_or_an_attempt() {
+    let runtime = include_str!("../../../src/origin_browser_runtime.rs");
+    // How a relay that ended is noticed: every housekeeping tick asks each view
+    // whose attempt is still current, with or without page activity, and ends
+    // it in that same tick. Ticks are at most this far apart.
+    let pump = runtime.split("pub(crate) fn start_pump(").nth(1).unwrap()
+        .split("pub(crate) fn install(").next().unwrap();
+    in_order(pump, &[
+        "tick();",
+        "let housekeeping = Instant::now() + Duration::from_millis(100);",
+        "deadline = next.map_or(housekeeping, |next| next.min(housekeeping));",
+    ]);
+    let tick = runtime.split("pub(crate) fn tick() {").nth(1).unwrap()
+        .split("pub(crate) fn shutdown()").next().unwrap();
+    in_order(&squeezed(tick), &[
+        "ui.views.retain(|_, view| {",
+        "if view.attempt.current() {",
+        "let _ = view.host.poll_session_health(); }",
+        "if !view.attempt.current() && !view.checkpoint.draining() { retire(view); }",
+        "let keep = view.host.lifecycle() != Lifecycle::Closed || view.checkpoint.draining();",
+    ]);
+    // A tab still being prepared is asked on the same tick, before its view.
+    in_order(tick, &[
+        "for mut pending in ui.pending.drain(..) {",
+        "match pending.context.status() {",
+        "PreparationStatus::ProxyConfigured => (),",
+        "pending.attempt.revoke();",
+        "ui.views.retain(|_, view| {",
+    ]);
+    // The host's session fault carries the attempt's first recorded cause.
+    let sink = runtime.split("impl BrowserEventSink for Sink").nth(1).unwrap()
+        .split("pub(crate) async fn create(").next().unwrap();
+    assert!(sink.contains("Some(BrowserFault::Session) => Some(self.attempt.failure.get().map(Into::into)"));
+    // One relay per attempt, made when the attempt is, and never another: a
+    // retry is a new create. Cancellation is one way.
+    assert_eq!(runtime.matches("OriginBrowserSession::start(").count(), 1);
+    assert_eq!(runtime.matches("Arc::new(Mutex::new(session))").count(), 1);
+    let create = runtime.split("async fn create_document(").nth(1).unwrap()
+        .split("enum Operation {").next().unwrap();
+    in_order(create, &[
+        "OriginBrowserSession::start(",
+        "let session = Arc::new(Mutex::new(session));",
+        "let attempt = Arc::new(Attempt {",
+    ]);
+    assert_eq!(runtime.matches("Arc::new(Attempt {").count(), 1);
+    for forbidden in ["cancelled.store(false", "cancelled.swap(false", ".session = "] {
+        assert!(!runtime.contains(forbidden), "an ended attempt must not use {forbidden}");
+    }
+}
+
+#[test]
+fn a_relay_that_ended_on_its_own_is_the_first_cause_a_plain_revoke_records() {
+    use sorng_protocols::origin_browser::BrowserSessionFailure;
+    use sorng_protocols::private_forward_proxy::PrivateProxyState;
+    let runtime = relay_runtime;
+    let start = relay_session;
+
+    // The relay's supervisor ends without anybody revoking the session.
+    let relay = runtime();
+    let mut ended = start(&relay);
+    let identity = ended.policy().identity().clone();
+    let evidence = ended.failure_state();
+    drop(relay);
+    assert_eq!(ended.proxy_diagnostics().state, PrivateProxyState::TaskEnded);
+    assert_eq!(evidence.get(), None);
+    // What an attempt's revoke does when its revoker names no cause and no
+    // owner was lost: the session reports the relay.
+    ended.revoke(&identity).unwrap();
+    assert_eq!(evidence.get(), Some(BrowserSessionFailure::PrivateProxy));
+    assert!(ended.with_proxy_credentials(|_, _| ()).is_none());
+
+    // A cause the attempt recorded first is kept over the ended relay.
+    let relay = runtime();
+    let mut owner_lost = start(&relay);
+    let identity = owner_lost.policy().identity().clone();
+    let evidence = owner_lost.failure_state();
+    drop(relay);
+    evidence.record_first(BrowserSessionFailure::DatabaseOwner);
+    owner_lost.revoke_for(&identity, BrowserSessionFailure::DatabaseOwner).unwrap();
+    assert_eq!(evidence.get(), Some(BrowserSessionFailure::DatabaseOwner));
+
+    // A relay that the revoke itself stops is not a relay failure.
+    let relay = runtime();
+    let mut live = start(&relay);
+    let identity = live.policy().identity().clone();
+    let evidence = live.failure_state();
+    live.revoke(&identity).unwrap();
+    assert_eq!(evidence.get(), None);
+    relay.block_on(live.stop()).unwrap();
+    assert_eq!(evidence.get(), None);
 }
 
 #[test]

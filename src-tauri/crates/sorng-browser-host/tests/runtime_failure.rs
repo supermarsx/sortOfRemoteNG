@@ -326,14 +326,34 @@ fn production_call_sites_keep_owner_view_and_settings_errors_out_of_engine_evide
             "unexpected global diagnostic in {start}"
         );
     }
-    let cancel = source
-        .split("fn cancel_startup(")
+    // A caller that is cancelled, dropped or past its own deadline is not
+    // evidence of an engine defect. Only the start watchdog records a timeout,
+    // and only when its own expiry is what ended the start.
+    let caller = source
+        .split("async fn ensure_runtime(")
+        .nth(1)
+        .unwrap()
+        .split("fn watch_native_start()")
+        .next()
+        .unwrap();
+    assert!(!caller.contains("StartupTimeout"));
+    let watchdog = source
+        .split("fn watch_native_start()")
         .nth(1)
         .unwrap()
         .split("struct Pending")
         .next()
         .unwrap();
-    assert!(cancel.contains("if matches!(failure, Failure::Timeout)"));
+    assert!(
+        watchdog.find("if flow::native_start_expired(").unwrap()
+            < watchdog
+                .find("record_current(RuntimeFailureCode::StartupTimeout)")
+                .unwrap()
+    );
+    assert_eq!(
+        source.matches("RuntimeFailureCode::StartupTimeout").count(),
+        1
+    );
     let entry = include_str!("../../../src/origin_browser_entry.rs");
     let cancellation = entry
         .split("if !begin_native()")

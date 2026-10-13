@@ -1,5 +1,6 @@
 //! Async handoffs shared with the runtime's CEF-free lifecycle regression tests.
 
+use sorng_protocols::origin_browser::BrowserSessionFailure;
 use std::{
     collections::HashMap,
     future::Future,
@@ -98,8 +99,8 @@ impl ShellDocument {
 pub(super) struct StartupGate(AtomicU8);
 
 /// One caller's native-entry boundary. Cancellation and claiming use the SAME
-/// atomic transition: a timeout cannot slip between an earlier cancellation
-/// check and separate publication of native startup ownership.
+/// atomic transition: a caller that has ended cannot slip between an earlier
+/// cancellation check and entry into native initialization.
 #[derive(Default)]
 pub(super) struct StartupClaim(AtomicU8);
 
@@ -110,17 +111,13 @@ impl StartupClaim {
             .is_ok()
     }
 
-    /// True only for the first cancellation after this caller claimed entry.
-    /// The caller decides whether this is a global timeout/policy failure or
-    /// only loss of a shell document that owned no global runtime authority.
+    /// The caller ended: its command was dropped or cancelled, its document
+    /// reloaded, or its own deadline passed. Entry it had not claimed can no
+    /// longer happen. Entry it had claimed is neither undone nor failed: the
+    /// start belongs to the runtime from the claim on, and still requires its
+    /// normal policy readback. True, once, when such a start is left running.
     pub(super) fn cancel(&self) -> bool {
         self.0.swap(2, Ordering::AcqRel) == 1
-    }
-
-    /// A document reload cancels queued entry but cannot revoke the shared
-    /// engine. Native work already entered still requires normal policy readback.
-    pub(super) fn cancel_abandoned(&self, document: &ShellDocument) -> bool {
-        self.cancel() && document.current()
     }
 }
 
@@ -185,7 +182,7 @@ impl Drop for StartupPermit<'_> {
 }
 
 /// Polling is bounded even when the native UI callback stalls. A timeout cannot
-/// cancel a native call already in progress; its caller must revoke admission.
+/// cancel a native call already in progress, and it fails only the waiter.
 pub(super) async fn wait_for_readiness<E>(
     timeout: Duration,
     mut check: impl FnMut() -> Result<bool, E>,
@@ -203,9 +200,10 @@ pub(super) async fn wait_for_readiness<E>(
     .unwrap_or_else(|_| Err(timed_out()))
 }
 
-/// Native startup may need pump work before its policy is installed. A ready
-/// host can suspend admission for one stalled UI callback; only that callback's
-/// recovery owner may resume it. Policy/startup/exit revocation stays terminal.
+/// Native startup may need pump work before its policy is installed, and it
+/// stays pending however its callers end. A ready host can suspend admission
+/// for one stalled UI callback; only that callback's recovery owner may resume
+/// it. Initialization/policy faults, the start watchdog and exit stay terminal.
 #[derive(Default)]
 pub(super) struct RuntimeAdmission(AtomicU8);
 
@@ -214,6 +212,10 @@ impl RuntimeAdmission {
     const READY: u8 = 1;
     const REVOKED: u8 = 2;
     const SUSPENDED: u8 = 3;
+
+    pub(super) fn pending(&self) -> bool {
+        self.0.load(Ordering::Acquire) == Self::PENDING
+    }
 
     pub(super) fn ready(&self) -> bool {
         self.0.load(Ordering::Acquire) == Self::READY
@@ -264,21 +266,58 @@ impl RuntimeAdmission {
         self.0.store(Self::REVOKED, Ordering::Release);
     }
 
-    /// Only the caller that entered native initialization may fail a pending
-    /// startup. Authority checks and joining callers cannot revoke a ready host.
-    /// The CAS also preserves readiness published concurrently with the timeout.
-    pub(super) fn timeout_owned_startup(&self, owned_native_start: bool) -> bool {
-        owned_native_start
-            && self
-                .0
-                .compare_exchange(
-                    Self::PENDING,
-                    Self::REVOKED,
-                    Ordering::AcqRel,
-                    Ordering::Acquire,
-                )
-                .is_ok()
+    /// The start watchdog only. No caller can fail a pending start, whether it
+    /// entered native initialization or joined it. The CAS also preserves
+    /// readiness published concurrently with the expiry.
+    pub(super) fn expire_pending_start(&self) -> bool {
+        self.0
+            .compare_exchange(
+                Self::PENDING,
+                Self::REVOKED,
+                Ordering::AcqRel,
+                Ordering::Acquire,
+            )
+            .is_ok()
     }
+}
+
+/// How long an entered native start may go without a policy readback.
+pub(super) const NATIVE_START_LIMIT: Duration = Duration::from_secs(120);
+pub(super) const NATIVE_START_STEP: Duration = Duration::from_millis(250);
+
+/// The one clock that can end a start. It is armed at native entry and belongs
+/// to the start, not to a caller. The budget is spent one observed `step` at a
+/// time: time in which nothing ran (a suspended machine) is not counted against
+/// a start that could not progress either. True when this call revoked
+/// admission; a start that a readback or a real fault decided first ends false.
+pub(super) async fn native_start_expired(
+    admission: &RuntimeAdmission,
+    limit: Duration,
+    step: Duration,
+) -> bool {
+    let step = step.max(Duration::from_millis(1));
+    let mut observed = Duration::ZERO;
+    while admission.pending() {
+        if observed >= limit {
+            return admission.expire_pending_start();
+        }
+        tokio::time::sleep(step).await;
+        observed = observed.saturating_add(step);
+    }
+    false
+}
+
+/// The cause an attempt records when it is revoked. Evidence its revoker named
+/// wins. Otherwise an edit that a recheck latched on the lease is that edit and
+/// not a lost owner, although the lease is equally stale in both readings.
+pub(super) fn revocation_reason(
+    named: Option<BrowserSessionFailure>,
+    source_changed: bool,
+    owner_loss: impl FnOnce() -> Option<BrowserSessionFailure>,
+) -> Option<BrowserSessionFailure> {
+    named
+        .or_else(|| source_changed.then_some(BrowserSessionFailure::SourceChanged))
+        .or_else(owner_loss)
 }
 
 /// Cannot be copied or reused for another stall. Ordinary policy observations

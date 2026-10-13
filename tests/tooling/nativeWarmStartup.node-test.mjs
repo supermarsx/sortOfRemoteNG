@@ -23,7 +23,7 @@ test("warm startup performs one fresh owner read, with revocation and TLS gates 
   const ensure = between(
     source,
     "async fn ensure_runtime(",
-    "fn cancel_startup(",
+    "fn watch_native_start(",
   );
   const ready = between(
     ensure,

@@ -271,43 +271,57 @@ fn reload_cancels_queued_native_entry_without_consuming_the_provider() {
     let claim = flow::StartupClaim::default();
     let permit = startup.prepare().unwrap();
     documents.revoke("main");
-    assert!(!claim.cancel_abandoned(&document));
+    assert!(!document.current());
+    // Production drops the old document's command, which cancels its claim.
+    assert!(
+        !claim.cancel(),
+        "no start was entered, so none is left running"
+    );
     assert!(!claim.claim_native());
     drop(permit);
     assert!(startup.prepare().is_some());
 }
 
 #[test]
-fn reload_after_native_entry_is_local_but_timeout_and_policy_revocation_stay_terminal() {
-    let documents = flow::ShellDocuments::default();
-    let old = documents.current("main");
-    let startup = flow::StartupGate::default();
-    let permit = startup.prepare().unwrap();
-    let claim = flow::StartupClaim::default();
-    let admission = flow::RuntimeAdmission::default();
-    assert!(claim.claim_native());
-    assert!(permit.begin_native());
-    documents.revoke("main");
-    assert!(!admission.timeout_owned_startup(claim.cancel_abandoned(&old)));
-    assert!(!admission.ready(), "reload grants no native readiness");
-    assert!(!admission.revoked());
-    assert!(
-        startup.prepare().is_none(),
-        "CEF must never be initialized twice"
-    );
-    admission.observe_policy(true);
-    assert!(admission.ready());
-    admission.observe_policy(false);
-    admission.observe_policy(true);
-    assert!(admission.revoked(), "real policy loss remains terminal");
+fn a_caller_that_ends_after_native_entry_is_local_while_policy_loss_and_the_start_watchdog_stay_terminal(
+) {
+    // The ways a caller ends once its start was entered: its shell document
+    // reloads, its prewarm is cancelled or its command is dropped, or its own
+    // deadline passes. Each of them only cancels that caller's claim.
+    for reload in [true, false] {
+        let documents = flow::ShellDocuments::default();
+        let old = documents.current("main");
+        let startup = flow::StartupGate::default();
+        let permit = startup.prepare().unwrap();
+        let claim = flow::StartupClaim::default();
+        let admission = flow::RuntimeAdmission::default();
+        assert!(claim.claim_native());
+        assert!(permit.begin_native());
+        if reload {
+            documents.revoke("main");
+            assert!(!old.current());
+        }
+        assert!(claim.cancel(), "the entered start is left to the runtime");
+        assert!(!claim.cancel(), "and that is reported once");
+        assert!(admission.pending(), "a caller's end revokes nothing");
+        assert!(!admission.ready(), "and grants no native readiness");
+        assert!(!admission.revoked());
+        assert!(
+            startup.prepare().is_none(),
+            "CEF must never be initialized twice"
+        );
+        admission.observe_policy(true);
+        assert!(admission.ready());
+        admission.observe_policy(false);
+        admission.observe_policy(true);
+        assert!(admission.revoked(), "real policy loss remains terminal");
+    }
 
-    let live = documents.current("main");
-    let timed_out = flow::RuntimeAdmission::default();
-    let claim = flow::StartupClaim::default();
-    assert!(claim.claim_native());
-    assert!(timed_out.timeout_owned_startup(claim.cancel_abandoned(&live)));
-    timed_out.observe_policy(true);
-    assert!(timed_out.revoked());
+    let expired = flow::RuntimeAdmission::default();
+    assert!(expired.expire_pending_start());
+    expired.observe_policy(true);
+    assert!(expired.revoked(), "the start watchdog remains terminal");
+    assert!(!expired.ready());
 }
 
 #[test]
@@ -331,7 +345,24 @@ fn production_shell_hook_fences_creates_and_callbacks_without_global_revocation(
     assert!(!window_revoke.contains("admission.revoke("));
     assert!(runtime.contains(".run(create_document("));
     assert!(runtime.contains(".run(prewarm_document("));
-    assert!(runtime.contains("startup_claim.cancel_abandoned(document)"));
+    // A reload ends its commands like any other caller: the dropped command
+    // cancels its own claim, and nothing here can revoke the shared engine.
+    let ensure = runtime
+        .split("async fn ensure_runtime(")
+        .nth(1)
+        .unwrap()
+        .split("fn watch_native_start()")
+        .next()
+        .unwrap();
+    in_order(
+        ensure,
+        &[
+            "flow::RevokeOnDrop::new(|| {",
+            "startup_claim.cancel()",
+            "tokio::time::timeout(STARTUP_LIMIT, async {",
+        ],
+    );
+    assert!(!runtime.contains("cancel_abandoned"));
     assert!(runtime.contains("&& queued_document.current()"));
     assert!(runtime.contains("|| !queued_document.current()"));
     assert!(runtime.contains("if !shared().admission.ready() || !attempt.current()"));
@@ -500,25 +531,105 @@ fn concurrent_first_connections_issue_exactly_one_native_initialization() {
 }
 
 #[tokio::test]
-async fn policy_wait_is_bounded_and_late_success_cannot_reopen_admission() {
+async fn a_callers_deadline_after_its_claim_fails_only_that_caller() {
+    let startup = flow::StartupGate::default();
+    let admission = flow::RuntimeAdmission::default();
+    let claim = flow::StartupClaim::default();
+    let permit = startup.prepare().unwrap();
+    assert!(claim.claim_native());
+    assert!(permit.begin_native());
+    drop(permit);
+    // The caller that entered native initialization reaches its own deadline
+    // while that initialization is still running.
+    let first = flow::wait_for_readiness(
+        Duration::from_millis(5),
+        || Ok::<_, &str>(admission.ready()),
+        || "timeout",
+    )
+    .await;
+    assert_eq!(first, Err("timeout"));
+    assert!(claim.cancel());
+    assert!(admission.pending());
+    assert!(!admission.revoked());
+    // A second caller joins the same start and is admitted by its readback.
+    let checks = Cell::new(0);
+    let joined = flow::wait_for_readiness(
+        Duration::from_secs(5),
+        || {
+            checks.set(checks.get() + 1);
+            if checks.get() == 3 {
+                admission.observe_policy(true);
+            }
+            Ok::<_, &str>(admission.ready())
+        },
+        || "timeout",
+    )
+    .await;
+    assert_eq!(joined, Ok(()));
+    assert!(admission.ready());
+    // The first caller was answered before readiness and stays answered.
+    assert_eq!(first, Err("timeout"));
+    assert!(startup.prepare().is_none());
+}
+
+#[tokio::test]
+async fn start_watchdog_revokes_a_start_with_no_readback_and_late_success_cannot_reopen_it() {
     let startup = flow::StartupGate::default();
     let admission = flow::RuntimeAdmission::default();
     let permit = startup.prepare().unwrap();
     assert!(permit.begin_native());
-    let outcome = flow::wait_for_readiness(
-        Duration::from_millis(5),
-        || Ok::<_, &str>(admission.ready()),
-        || {
-            startup.fail();
-            admission.revoke();
-            "timeout"
-        },
-    )
-    .await;
-    assert_eq!(outcome, Err("timeout"));
+    drop(permit);
+    let limit = Duration::from_millis(40);
+    let began = std::time::Instant::now();
+    assert!(flow::native_start_expired(&admission, limit, Duration::from_millis(10)).await);
+    assert!(
+        began.elapsed() >= limit,
+        "the whole budget is observed first"
+    );
+    assert!(admission.revoked());
     admission.observe_policy(true);
     assert!(!admission.ready());
     assert!(startup.prepare().is_none());
+    // One decision per start: a second watchdog has nothing left to end.
+    assert!(
+        !flow::native_start_expired(&admission, Duration::ZERO, Duration::from_millis(1)).await
+    );
+}
+
+#[tokio::test]
+async fn start_watchdog_ends_quietly_once_readback_or_a_real_fault_decided_the_start() {
+    let admission = flow::RuntimeAdmission::default();
+    let watchdog = flow::native_start_expired(
+        &admission,
+        Duration::from_secs(30),
+        Duration::from_millis(5),
+    );
+    tokio::pin!(watchdog);
+    assert!(
+        tokio::time::timeout(Duration::from_millis(30), &mut watchdog)
+            .await
+            .is_err(),
+        "a pending start is watched, not ended early"
+    );
+    assert!(admission.pending());
+    admission.observe_policy(true);
+    assert!(!tokio::time::timeout(Duration::from_secs(5), watchdog)
+        .await
+        .unwrap());
+    assert!(admission.ready());
+
+    let failed = flow::RuntimeAdmission::default();
+    failed.revoke();
+    assert!(!flow::native_start_expired(&failed, Duration::ZERO, Duration::from_millis(1)).await);
+    assert!(failed.revoked());
+}
+
+#[test]
+fn start_watchdog_budget_is_two_minutes_spent_in_whole_observed_steps() {
+    assert_eq!(flow::NATIVE_START_LIMIT, Duration::from_secs(120));
+    let step = flow::NATIVE_START_STEP;
+    assert!((Duration::from_millis(50)..=Duration::from_secs(1)).contains(&step));
+    assert_eq!(flow::NATIVE_START_LIMIT.as_millis() % step.as_millis(), 0);
 }
 
 #[tokio::test]
@@ -551,22 +662,28 @@ async fn readiness_wait_rejects_lost_owner_and_does_not_mistake_startup_for_read
 }
 
 #[test]
-fn caller_timeout_only_revokes_its_own_pending_native_startup() {
+fn only_the_start_watchdog_can_expire_a_pending_start_and_never_a_ready_runtime() {
     let admission = flow::RuntimeAdmission::default();
-    assert!(!admission.timeout_owned_startup(false));
-    assert!(!admission.revoked());
-    assert!(admission.timeout_owned_startup(true));
+    assert!(admission.pending());
+    assert!(admission.expire_pending_start());
+    assert!(!admission.pending());
     admission.observe_policy(true);
     assert!(admission.revoked());
     assert!(!admission.ready());
+    assert!(!admission.expire_pending_start(), "one start, one expiry");
 
     let healthy = flow::RuntimeAdmission::default();
     healthy.observe_policy(true);
-    for owns_startup in [false, true] {
-        assert!(!healthy.timeout_owned_startup(owns_startup));
-        assert!(healthy.ready());
-        assert!(!healthy.revoked());
-    }
+    assert!(!healthy.pending());
+    assert!(!healthy.expire_pending_start());
+    assert!(healthy.ready());
+    // A host suspended for one late UI callback is not a pending start.
+    let recovery = healthy.suspend_for_watchdog().unwrap();
+    assert!(!healthy.pending());
+    assert!(!healthy.expire_pending_start());
+    assert!(recovery.complete(true));
+    assert!(healthy.ready());
+    assert!(!healthy.revoked());
 }
 
 #[test]
@@ -1176,21 +1293,46 @@ async fn unfinished_capability_revocation_times_out_without_late_readiness() {
 }
 
 #[tokio::test]
-async fn pending_startup_watchdog_is_terminal_despite_late_healthy_callback() {
+async fn a_slow_first_pump_leaves_a_pending_start_to_its_own_readback() {
     let admission = flow::RuntimeAdmission::default();
     let (sender, receiver) = oneshot::channel();
     let pump = flow::wait_for_pump(receiver, Duration::from_millis(10), || {
+        // Production: a start has no ready host to suspend and no attempt to
+        // revoke, and the pump timer ends nothing while `pending()`.
         assert!(admission.suspend_for_watchdog().is_none());
-        admission.revoke();
+        assert!(admission.pending());
     });
     tokio::pin!(pump);
     assert!(tokio::time::timeout(Duration::from_millis(35), &mut pump)
         .await
         .is_err());
-    assert!(admission.revoked());
+    assert!(admission.pending());
+    assert!(!admission.revoked());
+    // The late callback carries the first true policy readback itself.
     admission.observe_policy(true);
     sender.send(true).unwrap();
     assert!(pump.await.unwrap());
+    assert!(admission.ready());
+    // From here on a late callback is a ready host's stall again.
+    assert!(admission.suspend_for_watchdog().is_some());
+}
+
+#[tokio::test]
+async fn a_lost_first_pump_callback_is_terminal_for_a_pending_start() {
+    let admission = flow::RuntimeAdmission::default();
+    let (sender, receiver) = oneshot::channel::<bool>();
+    let pump = flow::wait_for_pump(receiver, Duration::from_millis(10), || {
+        assert!(admission.pending());
+    });
+    tokio::pin!(pump);
+    assert!(tokio::time::timeout(Duration::from_millis(35), &mut pump)
+        .await
+        .is_err());
+    drop(sender);
+    // Production: `fail_runtime(RuntimeFailureCode::UiDispatch)` on this error.
+    assert!(pump.await.is_err());
+    admission.revoke();
+    admission.observe_policy(true);
     assert!(admission.revoked());
     assert!(!admission.ready());
 }
@@ -1245,26 +1387,41 @@ fn runtime_watchdog_wires_fresh_callback_evidence_without_terminal_timer_failure
     );
     assert!(callback.contains("Some((deadline, healthy))"));
     assert!(callback.contains("runtime_failed(error)"));
-    let timeout = pump
+    let stalled = pump
         .split("flow::wait_for_pump(")
         .nth(1)
         .unwrap()
         .split("}).await")
         .next()
         .unwrap();
-    let transient = timeout
+    let transient = stalled
         .split("if recovery.is_some() {")
         .nth(1)
         .unwrap()
-        .split("} else {")
+        .split("} else if shared().admission.pending() {")
         .next()
         .unwrap();
     assert!(transient.contains("revoked_attempts = flow::snapshot_attempts(&shared().attempts)"));
     assert!(transient.contains("for attempt in &revoked_attempts"));
-    assert!(transient.contains("attempt.revoke();"));
-    assert!(!transient.contains("fail_runtime("));
-    assert!(!transient.contains("revoke_all("));
-    assert!(timeout.contains("fail_runtime(RuntimeFailureCode::UiDispatch)"));
+    assert!(transient.contains("attempt.revoke_for(BrowserSessionFailure::Watchdog);"));
+    // A callback that is late fails nothing for good: a ready host is
+    // suspended, and a start whose first pump is slow is still starting.
+    assert!(stalled.contains("} else if shared().admission.pending() {"));
+    for terminal in ["fail_runtime(", "revoke_all(", "admission.revoke("] {
+        assert!(
+            !stalled.contains(terminal),
+            "a late UI callback must not use {terminal}"
+        );
+    }
+    // A callback that is lost, not late, stays terminal.
+    let lost = pump
+        .split("}).await")
+        .nth(1)
+        .unwrap()
+        .split("// Shutdown has removed the UI registry")
+        .next()
+        .unwrap();
+    assert!(lost.contains("fail_runtime(RuntimeFailureCode::UiDispatch)"));
     assert!(pump.find("}).await").unwrap() < pump.find("recovery.complete(healthy)").unwrap());
     let revoker = runtime
         .split("fn revoke_attempts() {")
@@ -1466,30 +1623,352 @@ fn timeout_between_ui_checks_and_entry_claim_prevents_native_start() {
 }
 
 #[test]
-fn timeout_after_claim_before_global_started_revokes_late_readiness() {
-    use std::sync::{Arc, Barrier};
+fn caller_ending_after_claim_before_global_started_neither_stops_nor_repeats_the_start() {
+    use std::sync::{
+        atomic::{AtomicUsize, Ordering},
+        Arc, Barrier,
+    };
     let gate = flow::StartupGate::default();
     let claim = flow::StartupClaim::default();
     let admission = flow::RuntimeAdmission::default();
+    let initializations = AtomicUsize::new(0);
     let barrier = Arc::new(Barrier::new(2));
     std::thread::scope(|scope| {
         let ui = scope.spawn(|| {
             let permit = gate.prepare().unwrap();
             assert!(claim.claim_native());
-            barrier.wait(); // Ownership published, global STARTED not yet set.
+            barrier.wait(); // Entry claimed, global STARTED not yet set.
             barrier.wait();
+            // The caller ended in between. The claimed entry still commits,
+            // exactly once, and its readback admits.
+            if permit.begin_native() {
+                initializations.fetch_add(1, Ordering::AcqRel);
+            }
             assert!(!permit.begin_native());
-            admission.observe_policy(true); // A late callback cannot revive it.
+            drop(permit);
+            admission.observe_policy(true);
         });
         barrier.wait();
         assert!(!gate.started());
-        assert!(admission.timeout_owned_startup(claim.cancel()));
-        gate.fail();
+        assert!(claim.cancel());
+        assert!(admission.pending());
         barrier.wait();
         ui.join().unwrap();
     });
-    assert!(admission.revoked());
-    assert!(!admission.ready());
+    assert_eq!(initializations.load(Ordering::Acquire), 1);
+    assert!(admission.ready());
+    assert!(!admission.revoked());
+    assert!(gate.started());
+    assert!(gate.prepare().is_none(), "no second native initialization");
     assert!(!claim.claim_native());
     assert!(!claim.cancel());
+}
+
+#[test]
+fn a_second_native_initialization_is_impossible_whatever_ends_the_first_caller_or_the_start() {
+    use std::sync::{
+        atomic::{AtomicUsize, Ordering},
+        Arc, Barrier,
+    };
+    // Sixteen first connections race; every other one has already ended.
+    let startup = Arc::new(flow::StartupGate::default());
+    let starts = Arc::new(AtomicUsize::new(0));
+    let barrier = Arc::new(Barrier::new(16));
+    let threads: Vec<_> = (0..16)
+        .map(|caller| {
+            let (startup, starts, barrier) = (startup.clone(), starts.clone(), barrier.clone());
+            std::thread::spawn(move || {
+                let claim = flow::StartupClaim::default();
+                if caller % 2 == 1 {
+                    claim.cancel();
+                }
+                barrier.wait();
+                if let Some(permit) = startup.prepare() {
+                    if claim.claim_native() && permit.begin_native() {
+                        starts.fetch_add(1, Ordering::AcqRel);
+                    }
+                    // A caller that ends after its claim changes nothing.
+                    claim.cancel();
+                }
+            })
+        })
+        .collect();
+    for thread in threads {
+        thread.join().unwrap();
+    }
+    // A caller that had ended releases its permit unused, so a live one may
+    // still enter afterwards. Settle the race with one more live caller.
+    if let Some(permit) = startup.prepare() {
+        if permit.begin_native() {
+            starts.fetch_add(1, Ordering::AcqRel);
+        }
+    }
+    assert_eq!(starts.load(Ordering::Acquire), 1);
+    assert!(startup.started());
+    assert!(startup.prepare().is_none());
+    // Neither readiness, nor expiry, nor a real fault reopens the gate.
+    let admission = flow::RuntimeAdmission::default();
+    admission.observe_policy(true);
+    assert!(startup.prepare().is_none());
+    let expired = flow::RuntimeAdmission::default();
+    assert!(expired.expire_pending_start());
+    startup.fail();
+    assert!(startup.prepare().is_none());
+    assert!(!startup.deferred());
+
+    // Production has one entry into native initialization, behind that gate,
+    // and it consumes the one provider the process was started with.
+    let runtime = include_str!("../../../src/origin_browser_runtime.rs");
+    assert_eq!(runtime.matches("origin_browser_entry::install(").count(), 1);
+    assert_eq!(runtime.matches("permit.begin_native()").count(), 1);
+    let entry = include_str!("../../../src/origin_browser_entry.rs");
+    assert_eq!(entry.matches("CefRuntime::initialize_owned(").count(), 1);
+    in_order(
+        entry,
+        &[
+            "if !begin_native()",
+            ".with(|slot| slot.borrow_mut().take())",
+            "CefRuntime::initialize_owned(",
+        ],
+    );
+}
+
+#[test]
+fn an_edit_that_ended_the_lease_is_the_recorded_cause_unless_the_revoker_named_one() {
+    use sorng_protocols::origin_browser::BrowserSessionFailure as Reason;
+    let lost_owner = || Reason::owner_loss(true, false, false);
+    assert_eq!(lost_owner(), Some(Reason::DatabaseOwner));
+    // The same stale lease reads as a lost database owner. When its recheck
+    // latched an edit instead, that is the cause, serialized for the shell.
+    assert_eq!(
+        flow::revocation_reason(None, true, lost_owner),
+        Some(Reason::SourceChanged)
+    );
+    assert_eq!(
+        serde_json::to_value(flow::revocation_reason(None, true, lost_owner)).unwrap(),
+        "source-changed"
+    );
+    assert_eq!(
+        flow::revocation_reason(None, false, lost_owner),
+        Some(Reason::DatabaseOwner)
+    );
+    // An edit is never invented: without the lease's own evidence the old
+    // readings stand, including no cause at all for an ordinary close.
+    assert_eq!(
+        flow::revocation_reason(None, false, || Reason::owner_loss(false, false, false)),
+        Some(Reason::OwnerWindow)
+    );
+    assert_eq!(
+        flow::revocation_reason(None, false, || Reason::owner_loss(true, true, false)),
+        None
+    );
+    // Evidence a revoker names is kept over both readings, without reading them.
+    for named in [
+        Reason::Watchdog,
+        Reason::RuntimeUnavailable,
+        Reason::CertificateBridge,
+    ] {
+        assert_eq!(
+            flow::revocation_reason(Some(named), true, || panic!("a named cause wins")),
+            Some(named)
+        );
+    }
+}
+
+fn in_order(source: &str, needles: &[&str]) {
+    let mut rest = source;
+    for needle in needles {
+        let offset = rest
+            .find(needle)
+            .unwrap_or_else(|| panic!("missing or out of order: {needle}"));
+        rest = &rest[offset + needle.len()..];
+    }
+}
+
+fn squeezed(source: &str) -> String {
+    source.split_whitespace().collect::<Vec<_>>().join(" ")
+}
+
+#[test]
+fn only_real_faults_and_the_start_watchdog_revoke_a_start_never_its_callers() {
+    let runtime = include_str!("../../../src/origin_browser_runtime.rs");
+    let ensure = runtime
+        .split("async fn ensure_runtime(")
+        .nth(1)
+        .unwrap()
+        .split("fn watch_native_start()")
+        .next()
+        .unwrap();
+    // All a caller does on its way out, however it ends: cancel its own claim.
+    assert_eq!(ensure.matches("startup_claim.cancel()").count(), 1);
+    for forbidden in [
+        "cancel_startup(",
+        "cancel_abandoned",
+        "timeout_owned_startup",
+        "expire_pending_start",
+        "admission.revoke(",
+        "startup.fail(",
+        "fail_runtime(",
+        "StartupTimeout",
+    ] {
+        assert!(
+            !ensure.contains(forbidden),
+            "a caller must not use {forbidden}"
+        );
+    }
+    // The two revocations left in this function run inside the entered native
+    // callback and answer a real fault: a missing certificate bridge, and an
+    // initialization error after native entry.
+    let native = ensure
+        .split(".run_on_main_thread(move || {")
+        .nth(1)
+        .unwrap()
+        .split("receiver.await")
+        .next()
+        .unwrap();
+    assert_eq!(ensure.matches("revoke_all()").count(), 2);
+    assert_eq!(native.matches("revoke_all()").count(), 2);
+    in_order(
+        native,
+        &[
+            "Ok(()) => {",
+            "certificate_hooks.load(Ordering::Acquire)",
+            "revoke_all();",
+            "RuntimeFailureCode::CertificateBridge",
+            "Err(error) => {",
+            "if shared().startup.started() {",
+            "revoke_all();",
+        ],
+    );
+    // A caller's own deadline answers with the failure the shell retries.
+    let outcome = squeezed(ensure.split("receiver.await").nth(1).unwrap());
+    assert!(outcome.contains(".unwrap_or_else(|_| Err(STARTUP_TIMED_OUT.to_owned()))"));
+    assert!(outcome.contains("|| STARTUP_TIMED_OUT.to_owned(),"));
+
+    // The watchdog is armed once, at native entry, by no caller's clock.
+    in_order(
+        native,
+        &[
+            "queued_startup_claim.claim_native()",
+            "permit.begin_native()",
+            "watch_native_start();",
+            "prepared.commit()",
+        ],
+    );
+    assert_eq!(runtime.matches("watch_native_start()").count(), 2);
+    assert_eq!(runtime.matches("native_start_expired(").count(), 1);
+    let watchdog = runtime
+        .split("fn watch_native_start()")
+        .nth(1)
+        .unwrap()
+        .split("struct Pending")
+        .next()
+        .unwrap();
+    in_order(
+        watchdog,
+        &[
+            "tauri::async_runtime::spawn(",
+            "if flow::native_start_expired(",
+            "&shared().admission",
+            "flow::NATIVE_START_LIMIT",
+            "record_current(RuntimeFailureCode::StartupTimeout)",
+            "log::error!(",
+            "revoke_all();",
+        ],
+    );
+    assert_eq!(
+        runtime
+            .matches("record_current(RuntimeFailureCode::StartupTimeout)")
+            .count(),
+        1
+    );
+    let flow_source = include_str!("../../../src/origin_browser_runtime_flow.rs");
+    assert!(!flow_source.contains("timeout_owned_startup"));
+    assert!(!flow_source.contains("cancel_abandoned"));
+}
+
+#[test]
+fn native_initialization_failure_after_entry_and_exit_stay_terminal() {
+    let startup = flow::StartupGate::default();
+    let admission = flow::RuntimeAdmission::default();
+    let permit = startup.prepare().unwrap();
+    assert!(permit.begin_native());
+    drop(permit);
+    // Production: `if shared().startup.started() { revoke_all(); }`.
+    assert!(startup.started());
+    startup.fail();
+    admission.revoke();
+    admission.observe_policy(true);
+    assert!(admission.revoked());
+    assert!(!admission.ready());
+    assert!(startup.prepare().is_none());
+    assert!(admission.suspend_for_watchdog().is_none());
+
+    let runtime = include_str!("../../../src/origin_browser_runtime.rs");
+    let revoke_all = runtime
+        .split("pub(crate) fn revoke_all() {")
+        .nth(1)
+        .unwrap()
+        .split("fn revoke_attempts() {")
+        .next()
+        .unwrap();
+    in_order(
+        revoke_all,
+        &[
+            "shared().startup.fail();",
+            "shared().admission.revoke();",
+            "revoke_attempts();",
+        ],
+    );
+    let exit = runtime
+        .split("tauri::RunEvent::Exit => {")
+        .nth(1)
+        .unwrap()
+        .split("fn lookup(")
+        .next()
+        .unwrap();
+    assert!(exit.contains("revoke_all();"));
+}
+
+#[test]
+fn a_relay_that_cannot_start_or_ends_during_preparation_is_the_retried_private_proxy_failure() {
+    let runtime = include_str!("../../../src/origin_browser_runtime.rs");
+    // The two fixed texts the shell retries by itself, byte for byte.
+    assert!(runtime.contains("const PROXY_FAILED: &str = \"Native browser private proxy could not start. Reopen the tab and check the native startup diagnostics; no direct-network fallback was used.\";"));
+    assert!(runtime.contains("const STARTUP_TIMED_OUT: &str = \"Native browser initialization or policy readiness timed out. Check the native startup diagnostics and restart the app.\";"));
+    let create = squeezed(
+        runtime
+            .split("async fn create_document(")
+            .nth(1)
+            .unwrap()
+            .split("enum Operation {")
+            .next()
+            .unwrap(),
+    );
+    // A relay that could not start: its fixed cause is logged, and what the
+    // attempt had prepared so far is released before the caller is answered.
+    in_order(
+        &create,
+        &[
+            "OriginBrowserSession::start(authorized.policy, authorized.route, ProxyLimits::default())",
+            ".map_err(|error| {",
+            "log::error!(\"Native browser stage=private-proxy error={error}\");",
+            "login.revoke();",
+            "view_failure(Failure::PrivateProxy, PROXY_FAILED)",
+        ],
+    );
+    // A relay that ended while the tab was prepared: whichever step noticed,
+    // the attempt is revoked first and its first recorded cause decides.
+    let failed = create
+        .split("Err(error) => { attempt.revoke();")
+        .nth(1)
+        .expect("one arm ends every preparation that did not finish");
+    in_order(
+        failed,
+        &[
+            "if attempt.failure.get() == Some(BrowserSessionFailure::PrivateProxy) {",
+            "return Err(view_failure(Failure::PrivateProxy, PROXY_FAILED));",
+            "Err(error)",
+        ],
+    );
 }
