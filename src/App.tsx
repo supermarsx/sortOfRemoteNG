@@ -77,6 +77,7 @@ import { SessionViewer } from "./components/session/SessionViewer";
 import type { SettingsTabId } from "./components/SettingsDialog/settingsConstants";
 import { TabLayoutManager } from "./components/session/TabLayoutManager";
 import { ErrorBoundary } from "./components/app/ErrorBoundary";
+import { PromptHost } from "./components/ui/dialogs/PromptHost";
 import { SplashScreen } from "./components/app/SplashScreen";
 import { CriticalErrorScreen } from "./components/app/CriticalErrorScreen";
 import { MemoryWatchdogController } from "./components/app/MemoryWatchdogController";
@@ -2118,6 +2119,7 @@ const App: React.FC = () => (
           */}
             <AutoLockController />
           </ErrorBoundary>
+          <PromptHost />
         </SessionFullscreenProvider>
       </ConnectionProvider>
     </SettingsProvider>

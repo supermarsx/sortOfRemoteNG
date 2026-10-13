@@ -57,6 +57,8 @@ export interface ModalProps {
   dataTestId?: string;
   /** Accessible name for the dialog without changing its visible header. */
   ariaLabel?: string;
+  /** Id(s) of the element(s) inside the dialog that describe it. */
+  ariaDescribedBy?: string;
   /** Preferred initial focus target inside the dialog. */
   initialFocusRef?: React.RefObject<HTMLElement | null>;
   /** Size hint (mapped to max-width). */
@@ -79,6 +81,7 @@ export const Modal: React.FC<ModalProps> = ({
   contentClassName,
   dataTestId,
   ariaLabel,
+  ariaDescribedBy,
   initialFocusRef,
   size: _size,
   presentation = "modal",
@@ -188,6 +191,7 @@ export const Modal: React.FC<ModalProps> = ({
         )}
         role="dialog"
         aria-label={ariaLabel}
+        aria-describedby={ariaDescribedBy}
         aria-modal={presentation === "modal" ? "true" : undefined}
         tabIndex={-1}
       >

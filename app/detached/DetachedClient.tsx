@@ -27,6 +27,7 @@ import {
   TRUST_CENTER_PROTOCOL,
 } from "../../src/components/app/toolSession";
 import { ConfirmDialog } from "../../src/components/ui/dialogs/ConfirmDialog";
+import { PromptHost } from "../../src/components/ui/dialogs/PromptHost";
 import { SettingsManager } from "../../src/utils/settings/settingsManager";
 import { ThemeManager } from "../../src/utils/settings/themeManager";
 import { getCurrentWindow } from "@tauri-apps/api/window";
@@ -2433,6 +2434,7 @@ const DetachedClient: React.FC = () => {
             <DetachedSessionContent
               onRegisterDisconnect={handleRegisterDisconnect}
             />
+            <PromptHost />
           </DetachedSecurityBoundary>
         </ToastProvider>
       </ConnectionProvider>

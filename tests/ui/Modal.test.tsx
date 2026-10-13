@@ -43,6 +43,26 @@ describe("Modal", () => {
       screen.getByRole("dialog", { name: "Review trust identity import" }),
     ).toHaveAttribute("aria-modal", "true");
   });
+
+  it("supports an optional description and adds no attribute without one", () => {
+    const { unmount } = render(
+      <Modal isOpen ariaLabel="Run script" ariaDescribedBy="run-script-note">
+        <p id="run-script-note">This runs the commands below.</p>
+      </Modal>,
+    );
+    expect(
+      screen.getByRole("dialog", { name: "Run script" }),
+    ).toHaveAccessibleDescription("This runs the commands below.");
+    unmount();
+
+    render(
+      <Modal isOpen ariaLabel="Run script">
+        <p>This runs the commands below.</p>
+      </Modal>,
+    );
+    expect(screen.getByRole("dialog")).not.toHaveAttribute("aria-describedby");
+  });
+
   it("renders dialog semantics and traps focus within the panel", async () => {
     render(
       <div>
