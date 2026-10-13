@@ -15,7 +15,9 @@ name = "sorng-cef-acceptance"
 path = "src/main.rs"
 
 [dependencies]
-sorng-browser-host = { path = "../..", features = ["cef-host"] }
+# acceptance-probe: the context-menu evidence mode observes the production
+# handler through it. Only this client enables it; the app's build never does.
+sorng-browser-host = { path = "../..", features = ["cef-host", "acceptance-probe"] }
 sorng-protocols = { path = "../../../sorng-protocols" }
 cef = { version = "=154.3.0", default-features = false, features = ["sandbox", "resources"] }
 tao = "=0.35.3"

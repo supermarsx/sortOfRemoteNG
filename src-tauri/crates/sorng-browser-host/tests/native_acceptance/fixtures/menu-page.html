@@ -1,0 +1,218 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<title>Context menu fixture</title>
+<style>
+html, body { margin: 0; font: 12px/1.2 sans-serif; }
+.t { position: absolute; box-sizing: border-box; margin: 0; padding: 2px; overflow: hidden;
+  border: 1px solid #888; background: #fff; color: #222;
+  left: calc(10px + var(--c) * 130px); top: calc(10px + var(--r) * 50px);
+  width: calc(120px + (var(--w, 1) - 1) * 130px); height: 44px; }
+a.t { display: block; }
+img.t, video.t, audio.t, iframe.t { padding: 0; }
+iframe.t { border: 0; outline: 1px solid #888; height: 140px; }
+#prose { display: flex; align-items: center; justify-content: center; }
+#page-menu { position: absolute; left: 2px; top: 14px; padding: 1px 4px; border: 1px solid #222; background: #eee; }
+#link-low { left: 10px; top: 920px; }
+#end { position: absolute; left: 0; top: 999px; width: 1px; height: 1px; }
+</style>
+<body>
+<div data-t id="plain" class="t" style="--c:0;--r:0">plain</div>
+<a data-t id="link" class="t" style="--c:1;--r:0" href="/menu-target?item=1#part">link</a>
+<a data-t id="link-js" class="t" style="--c:2;--r:0" href="javascript:void(0)">script link</a>
+<a data-t id="link-other" class="t" style="--c:3;--r:0" href="https://elsewhere.test/menu-target?item=6">other origin</a>
+<a data-t id="link-http" class="t" style="--c:4;--r:0" href="http://fixture.test/menu-target?item=4">plain http</a>
+<a data-t id="link-frame" class="t" style="--c:5;--r:0" href="https://frame.test/menu-target?item=5">frame origin</a>
+
+<img data-t id="image" class="t" style="--c:0;--r:1" src="/menu-image.png?i=1" alt="">
+<a class="t" style="--c:1;--r:1;padding:0" href="/menu-target?item=2"><img data-t id="image-link" src="/menu-image.png?i=2" width="118" height="42" alt=""></a>
+<img data-t id="image-data" class="t" style="--c:2;--r:1" alt=""
+  src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAIAAACQkWg2AAAACXBIWXMAAAABAAAAAQBPJcTWAAAAI0lEQVR4nGOckWLEQApgIUk1w6gG4gALkergYFQDMYDkUAIA/RcBbJ2qzKcAAAAASUVORK5CYII=">
+<video data-t id="video" class="t" style="--c:3;--r:1" src="/menu-clip.webm" muted preload="auto"></video>
+<video data-t id="video-broken" class="t" style="--c:4;--r:1" src="/menu-missing.webm" muted preload="auto"></video>
+<div data-t id="prose" class="t" style="--c:5;--r:1">selectable</div>
+
+<input data-t id="text" class="t" style="--c:0;--r:2" value="fixture text value">
+<div data-t id="editable" class="t" style="--c:1;--r:2" contenteditable="true">fixture rich text</div>
+<input data-t id="password-empty" class="t" style="--c:2;--r:2" type="password" autocomplete="off">
+<input data-t id="password-filled" class="t" style="--c:3;--r:2" type="password" autocomplete="off" value="synthetic-local-only">
+<input data-t id="manual-target" class="t" style="--c:4;--r:2" autocomplete="off">
+<div data-t id="key-plain" class="t" style="--c:5;--r:2" tabindex="0">key</div>
+
+<audio data-t id="audio" class="t" style="--c:0;--r:3;--w:2" src="/menu-tone.wav" controls preload="auto"></audio>
+<div data-t id="own-key" class="t" style="--c:5;--r:3" tabindex="0">own key</div>
+
+<div data-t id="own-prevent" class="t" style="--c:0;--r:4">prevents</div>
+<div data-t id="own-menu" class="t" style="--c:1;--r:4">own menu<div id="page-menu" hidden>page menu</div></div>
+<div data-t id="own-inline" class="t" style="--c:2;--r:4" oncontextmenu="handledBy = 'own-inline'; return false">inline</div>
+<div data-t id="own-document" class="t" style="--c:3;--r:4">document</div>
+<div data-t id="own-passive" class="t" style="--c:4;--r:4">listens only</div>
+<div data-t id="own-stop" class="t" style="--c:5;--r:4">stops only</div>
+
+<div data-t id="own-mouse" class="t" style="--c:0;--r:5">mouse only</div>
+<a data-t id="link-raw" class="t" style="--c:1;--r:5" href="/menu-target?item=7&q=a b">raw link</a>
+
+<iframe data-t id="frame-same" class="t" style="--c:0;--r:6;--w:3" title="same origin"></iframe>
+<iframe data-t id="frame-cross" class="t" style="--c:3;--r:6;--w:3" title="other origin"></iframe>
+
+<a data-t id="link-low" class="t" href="/menu-target?item=8">low link</a>
+<div id="end"></div>
+<script>
+'use strict';
+// Passive observer for the native context-menu evidence run. It reports what
+// the page saw of each right-click and never asks for a menu itself.
+const FRAME = '';
+const query = new URLSearchParams(location.search);
+const slot = query.get('slot') || '';
+const doc = query.get('doc') || '';
+const GLOBAL = query.get('own') === 'global';
+const pageMenu = document.getElementById('page-menu');
+let sent = 0;
+const post = (kind, body) => fetch('/menu-report', {
+  method: 'POST',
+  keepalive: true,
+  body: JSON.stringify(Object.assign(
+    { slot, doc, frame: FRAME, kind, n: ++sent, atMs: Math.round(performance.now()) }, body)),
+}).catch(() => {});
+const idOf = node => {
+  const element = node instanceof Element ? node : null;
+  const target = element && element.closest('[data-t]');
+  return target ? target.id : 'page';
+};
+// Selection state of the fixture's own text. No step pastes, so a field only
+// ever holds what this page put there or what a step deleted from it.
+const selection = target => {
+  const active = document.activeElement;
+  const control = target && target.matches('input');
+  const editing = active && active.matches('input, textarea, [contenteditable]');
+  return {
+    docSel: editing ? null : String(getSelection()).length,
+    field: control ? [target.selectionStart, target.selectionEnd, target.value.length] : null,
+  };
+};
+const mediaState = () => {
+  const state = {};
+  for (const media of document.querySelectorAll('video[data-t], audio[data-t]'))
+    state[media.id] = [media.readyState, media.videoWidth || 0, media.error ? media.error.code : 0, media.currentSrc ? 1 : 0];
+  for (const image of document.querySelectorAll('img[data-t]'))
+    state[image.id] = [image.complete ? 1 : 0, image.naturalWidth];
+  return state;
+};
+
+// The trace is registered first and in the capture phase, so it sees every
+// contextmenu event whatever a later handler does with it.
+var handledBy = '';
+let mouseOnly = 0;
+addEventListener('contextmenu', event => {
+  clearTimeout(mouseOnly);
+  handledBy = '';
+  const element = event.target instanceof Element ? event.target.closest('[data-t]') : null;
+  const seen = Object.assign({
+    target: idOf(event.target), button: event.button, trusted: event.isTrusted,
+    x: event.clientX, y: event.clientY, focus: document.hasFocus(),
+    visibility: document.visibilityState, active: idOf(document.activeElement),
+  }, selection(element));
+  setTimeout(() => post('trace', Object.assign(seen, {
+    prevented: event.defaultPrevented, handledBy, ownMenu: !pageMenu.hidden,
+  })), 0);
+}, true);
+// A right button release that is not followed by contextmenu is reported too.
+addEventListener('mouseup', event => {
+  if (event.button !== 2) return;
+  clearTimeout(mouseOnly);
+  const seen = { target: idOf(event.target), x: event.clientX, y: event.clientY };
+  mouseOnly = setTimeout(() => post('mouse-only', seen), 300);
+}, true);
+addEventListener('mousedown', () => { pageMenu.hidden = true; }, true);
+
+// The page's own handling, one kind per region.
+const own = (id, handle) => document.getElementById(id).addEventListener('contextmenu', event => {
+  handledBy = id;
+  handle(event);
+});
+own('own-prevent', event => event.preventDefault());
+own('own-menu', event => { event.preventDefault(); pageMenu.hidden = false; });
+own('own-key', event => event.preventDefault());
+own('own-passive', () => {});
+own('own-stop', event => event.stopPropagation());
+document.addEventListener('contextmenu', event => {
+  if (event.target instanceof Element && event.target.closest('#own-document')) {
+    handledBy = 'document';
+    event.preventDefault();
+  } else if (GLOBAL) {
+    handledBy = 'document-global';
+    event.preventDefault();
+  }
+});
+for (const type of ['pointerdown', 'mousedown', 'mouseup', 'auxclick'])
+  document.getElementById('own-mouse').addEventListener(type, event => event.preventDefault());
+
+addEventListener('click', event => {
+  if (event.button !== 0) return;
+  const element = event.target instanceof Element ? event.target.closest('[data-t]') : null;
+  post('left', Object.assign({
+    target: idOf(event.target), detail: event.detail, trusted: event.isTrusted,
+    active: idOf(document.activeElement), focus: document.hasFocus(),
+  }, selection(element)));
+}, true);
+addEventListener('input', event => {
+  const target = event.target instanceof Element ? event.target.closest('[data-t]') : null;
+  if (!target) return;
+  post('input', {
+    target: target.id, inputType: event.inputType || '', trusted: event.isTrusted,
+    len: target instanceof HTMLInputElement ? target.value.length : target.textContent.length,
+  });
+}, true);
+let moved = 0;
+addEventListener('mousemove', event => {
+  if (!event.isTrusted) return;
+  const seen = { x: event.clientX, y: event.clientY, target: idOf(event.target) };
+  clearTimeout(moved);
+  moved = setTimeout(() => post('move', seen), 50);
+}, true);
+
+const layout = reason => {
+  const rects = {};
+  for (const element of document.querySelectorAll('[data-t]')) {
+    const box = element.getBoundingClientRect();
+    rects[element.id] = [box.left, box.top, box.width, box.height].map(v => Math.round(v * 100) / 100);
+  }
+  post('layout', {
+    reason, rects, scroll: [Math.round(scrollX), Math.round(scrollY)],
+    inner: [innerWidth, innerHeight], dpr: devicePixelRatio, focus: document.hasFocus(),
+    visibility: document.visibilityState, media: mediaState(), global: GLOBAL,
+  });
+};
+let relaid = 0;
+const relayout = reason => {
+  clearTimeout(relaid);
+  relaid = setTimeout(() => layout(reason), 150);
+};
+addEventListener('scroll', () => relayout('scroll'), { passive: true });
+addEventListener('resize', () => relayout('resize'));
+addEventListener('pageshow', event => { if (event.persisted) relayout('restored'); });
+
+for (const [id, origin, kind] of [['frame-same', '', 'same'], ['frame-cross', 'https://frame.test', 'cross']])
+  document.getElementById(id).src = origin + '/menu-frame?slot=' + encodeURIComponent(slot) +
+    '&doc=' + encodeURIComponent(doc) + '&frame=' + kind;
+// A subresource the fixture never answers keeps this document loading.
+if (query.get('hold') === '1') {
+  const held = new Image(1, 1);
+  held.style.cssText = 'position:absolute;left:0;top:0';
+  held.src = '/menu-hold?slot=' + encodeURIComponent(slot);
+  document.body.appendChild(held);
+}
+const settled = element => new Promise(resolve => {
+  const done = element instanceof HTMLImageElement
+    ? element.complete : element.readyState >= 1 || element.error;
+  if (done) return resolve();
+  for (const type of ['load', 'loadedmetadata', 'error'])
+    element.addEventListener(type, resolve, { once: true });
+});
+Promise.race([
+  Promise.all([...document.querySelectorAll('img[data-t], video[data-t], audio[data-t]')].map(settled)),
+  new Promise(resolve => setTimeout(resolve, 3000)),
+]).then(() => setTimeout(() => layout('ready'), 50));
+</script>
+</body>
+</html>

@@ -40,6 +40,10 @@ use tao::{
 };
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
+// Context-menu evidence: the same client, window and fixture server, its own
+// scenarios. A child module so that it shares the inert fixture window.
+pub(crate) mod menu;
+
 pub(crate) const MODE_VARIABLE: &str = "SORNG_CEF_ACCEPTANCE_MODE";
 const WINDOW_VARIABLE: &str = "SORNG_CEF_MEASURE_WINDOW_MS";
 const ONLY_VARIABLE: &str = "SORNG_CEF_MEASURE_ONLY";
@@ -56,6 +60,10 @@ const FORM_SETUP: &str = r#"{"selectors":{"username":"input[name=\"username\"]",
 const FORM_OPTIONS: &str = r#"{"version":1,"fillDelayMs":0,"submitDelayMs":0,"detectionTimeoutMs":8000,"submit":true,"fields":[]}"#;
 const CAPACITY_SOCKETS: usize = 40;
 const CAPACITY_HOLDS_PER_HOST: usize = 6;
+// The cap the second capacity scenario gives its own relay: what the default
+// was before the relay was sized to the engine's socket pools, and fewer than
+// that scenario's page opens. The default itself is never assumed here.
+const CAPACITY_SMALL_CAP: usize = 32;
 const SHOWN_BEFORE_HIDE: Duration = Duration::from_millis(700);
 const REPORT_GRACE: Duration = Duration::from_secs(6);
 const SCENARIO_SLACK: Duration = Duration::from_secs(35);
@@ -106,6 +114,8 @@ pub(crate) struct SlotPlan {
     pub height: f64,
     pub adapter: Adapter,
     pub flip: Flip,
+    /// `None` leaves the relay at its default client cap.
+    pub relay_clients: Option<usize>,
 }
 
 pub(crate) struct ScenarioPlan {
@@ -125,6 +135,7 @@ const fn login(id: &'static str, presentation: Presentation, flip: Flip) -> Slot
         height: 600.0,
         adapter: Adapter::ModularForm,
         flip,
+        relay_clients: None,
     }
 }
 
@@ -158,6 +169,7 @@ pub(crate) const SCENARIOS: &[ScenarioPlan] = &[
             height: 1.0,
             adapter: Adapter::ModularForm,
             flip: Flip::None,
+            relay_clients: None,
         }],
     },
     ScenarioPlan {
@@ -172,6 +184,7 @@ pub(crate) const SCENARIOS: &[ScenarioPlan] = &[
             height: 800.0,
             adapter: Adapter::ModularForm,
             flip: Flip::None,
+            relay_clients: None,
         }],
     },
     ScenarioPlan {
@@ -186,6 +199,7 @@ pub(crate) const SCENARIOS: &[ScenarioPlan] = &[
             height: 800.0,
             adapter: Adapter::Generic,
             flip: Flip::None,
+            relay_clients: None,
         }],
     },
     ScenarioPlan {
@@ -218,6 +232,24 @@ pub(crate) const SCENARIOS: &[ScenarioPlan] = &[
             height: 600.0,
             adapter: Adapter::Manual,
             flip: Flip::None,
+            relay_clients: None,
+        }],
+    },
+    // The same page through a relay whose cap the fixture sets below what
+    // the page opens: the refusal path, whatever the default is.
+    ScenarioPlan {
+        id: "f-relay-capacity-capped",
+        shell: Shell::AsLaunched,
+        page: Page::Capacity,
+        long_window: false,
+        slots: &[SlotPlan {
+            id: "f-relay-capacity-capped",
+            presentation: Presentation::Visible,
+            width: 800.0,
+            height: 600.0,
+            adapter: Adapter::Manual,
+            flip: Flip::None,
+            relay_clients: Some(CAPACITY_SMALL_CAP),
         }],
     },
     ScenarioPlan {
@@ -301,12 +333,13 @@ fn label_safe(value: &str) -> bool {
 }
 
 /// `Ok(false)` for an ordinary acceptance run. An unknown value is an error:
-/// a typo must not silently run the other mode.
+/// a typo must not silently run the other mode. `menu` selects the
+/// context-menu evidence scenarios, which share this mode's window.
 pub(crate) fn requested() -> Result<bool> {
     match std::env::var(MODE_VARIABLE) {
         Err(std::env::VarError::NotPresent) => Ok(false),
         Ok(mode) if mode.is_empty() || mode == "acceptance" => Ok(false),
-        Ok(mode) if mode == "measure" => Ok(true),
+        Ok(mode) if mode == "measure" || mode == "menu" => Ok(true),
         _ => Err("unknown acceptance mode".into()),
     }
 }
@@ -366,6 +399,7 @@ pub(crate) struct ServerState {
     release: tokio::sync::watch::Sender<u64>,
     /// The report's `measurements` object; present only in measurement mode.
     pub document: Option<serde_json::Value>,
+    pub menu: menu::Server,
 }
 
 impl Default for ServerState {
@@ -384,6 +418,7 @@ impl Default for ServerState {
             held_deadline: 0,
             release: tokio::sync::watch::channel(0).0,
             document: None,
+            menu: menu::Server::default(),
         }
     }
 }
@@ -451,7 +486,7 @@ pub(crate) fn serves(route: &str) -> bool {
     matches!(
         route,
         "/measure-login" | "/measure-capacity" | "/measure-report" | "/measure-hold" | "/measure-socket"
-    )
+    ) || menu::serves(route)
 }
 
 pub(crate) async fn serve(
@@ -461,6 +496,9 @@ pub(crate) async fn serve(
     header: &str,
     body: &[u8],
 ) -> std::io::Result<Served> {
+    if menu::serves(route) {
+        return menu::serve(tls, state, route, header, body).await;
+    }
     state.lock().unwrap().measure.requests += 1;
     let page = match route {
         "/measure-login" => include_str!("../fixtures/measure-login.html"),
@@ -890,8 +928,15 @@ impl Slot {
             &["https://frame.test"],
         )?;
         let identity = policy.identity().clone();
+        let limits = match plan.relay_clients {
+            Some(max_clients) => ProxyLimits {
+                max_clients,
+                ..ProxyLimits::default()
+            },
+            None => ProxyLimits::default(),
+        };
         let session = Arc::new(Mutex::new(run.async_runtime.block_on(
-            OriginBrowserSession::start(policy, dialer, ProxyLimits::default()),
+            OriginBrowserSession::start(policy, dialer, limits),
         )?));
         let defaults = [
             "navigation",
@@ -923,6 +968,8 @@ impl Slot {
             ("width", serde_json::json!(plan.width)),
             ("height", serde_json::json!(plan.height)),
             ("plannedFlip", serde_json::json!(plan.flip.label())),
+            ("relayMaxClients", serde_json::json!(limits.max_clients)),
+            ("relayCapExplicit", serde_json::json!(plan.relay_clients.is_some())),
             ("navigated", serde_json::json!(false)),
         ] {
             record.insert(key.into(), value);
@@ -1155,6 +1202,9 @@ fn publish(
 /// a point where native shutdown is still safe; the caller shuts down either
 /// way and reports. Failures collected here are failures of the tool.
 pub(crate) fn run(mut run: Run<'_, '_>, failures: &mut Vec<String>) -> Result<()> {
+    if menu::requested() {
+        return menu::run(&mut run, failures);
+    }
     let window_ms = window_ms(std::env::var(WINDOW_VARIABLE).ok().as_deref())?;
     let selected = only(std::env::var(ONLY_VARIABLE).ok().as_deref())?;
     let mut scenarios = Vec::new();
@@ -1239,6 +1289,9 @@ fn scenario(
     let mut closed = false;
     let mut last_snapshot = Instant::now();
     let mut ever_foreground = false;
+    // The first window of this process seen as the desktop's foreground
+    // window, on any turn of the loop from the scenario's start to its end.
+    let mut own_foreground: Option<String> = None;
     let mut stopped: Option<String> = None;
     let decoy_window = decoy.as_ref();
     run.events.run_return(|event, _, flow| {
@@ -1248,6 +1301,9 @@ fn scenario(
         }
         let step = (|| -> Result<()> {
             runtime.work()?;
+            if own_foreground.is_none() {
+                own_foreground = shell::foreground_own(&parent);
+            }
             match initialized.load(Ordering::Acquire) {
                 2 => {}
                 3 => return Err("global test rejecting proxy installation failed".into()),
@@ -1323,7 +1379,8 @@ fn scenario(
                         // reading taken at the end covers the held connections.
                         record["capacity"] = serde_json::json!({
                             "requested":{"sockets":CAPACITY_SOCKETS,"holdsPerHost":CAPACITY_HOLDS_PER_HOST,"holdHosts":2},
-                            "relayMaxClients":ProxyLimits::default().max_clients,
+                            "relayMaxClients":slots[0].record.get("relayMaxClients"),
+                            "relayCapExplicit":slots[0].plan.relay_clients.is_some(),
                             "relay":slots[0].record.get("relay"),"fixture":state.measure.capacity()
                         });
                     }
@@ -1360,6 +1417,7 @@ fn scenario(
     });
     record["closed"] = closed.into();
     record["elapsedMs"] = (started.elapsed().as_millis() as u64).into();
+    record["windowState"]["foregroundOwnedByFixtureProcess"] = own_foreground.into();
     let created = slots.iter().any(|slot| slot.browser.is_some());
     let mut sessions = Vec::new();
     if !closed && created {
@@ -1437,6 +1495,7 @@ mod shell {
         ) -> i32;
         fn ShowWindow(window: Hwnd, command: i32) -> i32;
         fn GetWindowThreadProcessId(window: Hwnd, process: *mut u32) -> u32;
+        fn GetClassNameW(window: Hwnd, name: *mut u16, capacity: i32) -> i32;
     }
     #[link(name = "dwmapi")]
     extern "system" {
@@ -1571,6 +1630,24 @@ mod shell {
 
     pub(super) fn foreground(window: &Window) -> bool {
         hwnd(window).is_some_and(|window| unsafe { GetForegroundWindow() == window })
+    }
+
+    /// The foreground window when it belongs to this process: the fixture
+    /// window, or any other window by its class. The toolkit and the engine
+    /// own further top-level windows, and a disabled fixture window does not
+    /// stop one of those from becoming the active one. A window title can
+    /// carry page text and is never read.
+    pub(super) fn foreground_own(fixture: &Window) -> Option<String> {
+        let foreground = unsafe { GetForegroundWindow() };
+        if foreground.is_null() || !own(foreground) {
+            return None;
+        }
+        if hwnd(fixture) == Some(foreground) {
+            return Some("fixture-window".into());
+        }
+        let mut name = [0u16; 64];
+        let length = unsafe { GetClassNameW(foreground, name.as_mut_ptr(), 64) }.clamp(0, 64);
+        Some(String::from_utf16_lossy(&name[..length as usize]))
     }
 
     pub(super) fn children(parent: &Window) -> Vec<Handle> {
@@ -1741,6 +1818,10 @@ mod shell {
         false
     }
 
+    pub(super) fn foreground_own(_: &Window) -> Option<String> {
+        None
+    }
+
     pub(super) fn children(_: &Window) -> Vec<Handle> {
         Vec::new()
     }
@@ -1822,8 +1903,30 @@ mod tests {
         assert!(SCENARIOS[first_changed..]
             .iter()
             .all(|plan| plan.shell != Shell::AsLaunched));
-        // More than the relay admits, through both of Chromium's socket pools.
-        assert!(CAPACITY_SOCKETS + 2 * CAPACITY_HOLDS_PER_HOST > ProxyLimits::default().max_clients);
+        // One page's connections, through both of Chromium's socket pools:
+        // within the relay's default, which follows the engine's own limits,
+        // and more than the cap the second capacity scenario sets itself.
+        let requested = CAPACITY_SOCKETS + 2 * CAPACITY_HOLDS_PER_HOST;
+        assert!(requested <= ProxyLimits::default().max_clients);
+        assert!(requested > CAPACITY_SMALL_CAP);
+        let caps: Vec<(&str, Option<usize>)> = SCENARIOS
+            .iter()
+            .filter(|plan| plan.page == Page::Capacity)
+            .map(|plan| (plan.id, plan.slots[0].relay_clients))
+            .collect();
+        assert_eq!(
+            caps,
+            [
+                ("f-relay-capacity", None),
+                ("f-relay-capacity-capped", Some(CAPACITY_SMALL_CAP))
+            ]
+        );
+        // No other scenario touches its relay's cap, and a cap the fixture
+        // sets is one the relay accepts.
+        for plan in SCENARIOS.iter().filter(|plan| plan.page != Page::Capacity) {
+            assert!(plan.slots.iter().all(|slot| slot.relay_clients.is_none()), "{}", plan.id);
+        }
+        assert!((1..=256).contains(&CAPACITY_SMALL_CAP));
     }
 
     #[test]

@@ -1,6 +1,6 @@
 /** Independent actual-browser gate. Never changes production Ready or trust stores. */
 import { spawn } from "node:child_process";
-import { randomUUID } from "node:crypto";
+import { randomBytes, randomUUID } from "node:crypto";
 import { constants } from "node:fs";
 import {
   copyFile,
@@ -311,6 +311,8 @@ export function assessNativeReport(report) {
     false, "acceptance must not grant production readiness");
   require(report?.mode !==
     "measure", "measurement report is not acceptance evidence");
+  require(report?.mode !==
+    "menu", "context-menu evidence report is not acceptance evidence");
   require(report?.nativeTlsAdmission?.patchId === TLS_PATCH_ID &&
     report.nativeTlsAdmission.verified ===
       true, "legacy SPKI fixture cannot establish patched-engine TLS admission; run the native TLS suite");
@@ -402,6 +404,9 @@ const scenario = (id, slots, options = {}) => ({
  * Measurement scenarios (a)-(f), in run order. Mirrors SCENARIOS in
  * native_acceptance/src/measure.rs; a tooling test compares the two tables.
  * The (e) scenarios run last because they change the fixture window's state.
+ * The two (f) scenarios open the same 52 connections through one relay: the
+ * first with the relay's default client cap, the second with a cap the
+ * fixture sets below 52, so the refusal path never depends on the default.
  * "modular-form" logins use the native key pipeline; "generic" assigns values
  * in page script and sends no key events. A long window lasts two and a half
  * windows, to show timer throttling that starts late.
@@ -435,6 +440,17 @@ export const MEASUREMENT_SCENARIOS = [
   scenario(
     "f-relay-capacity",
     [{ id: "f-relay-capacity", presentation: "visible", adapter: "manual" }],
+    { page: "capacity" },
+  ),
+  scenario(
+    "f-relay-capacity-capped",
+    [
+      {
+        id: "f-relay-capacity-capped",
+        presentation: "visible",
+        adapter: "manual",
+      },
+    ],
     { page: "capacity" },
   ),
   scenario("e-inactive", [login("e-inactive", "visible")], {
@@ -523,7 +539,7 @@ const KEY_COUNTS = [
 ];
 
 /**
- * Build the M1-M7 matrix from one native measurement report. A row is MEASURED
+ * Build the M1-M8 matrix from one native measurement report. A row is MEASURED
  * only when every observation it needs is present and its condition was
  * established natively; otherwise it carries reasons and no value. Nothing is
  * inferred, and a login that did not complete is a result, not a failure.
@@ -657,6 +673,58 @@ export function assessMeasurementReport(report) {
   };
   const keyRow = (row) =>
     Object.fromEntries(KEY_COUNTS.map((key) => [key, row?.[key] ?? null]));
+  // One capacity scenario: what the relay counted, what the fixture held and
+  // what the page saw. `capped` says whose cap the scenario is about: the
+  // fixture's own small one, which the page must exceed, or the default.
+  const capacityOf = (id, capped, reasons) => {
+    const scenario = scenarios.get(id);
+    const capacity = scenario?.capacity;
+    if (scenario?.navigated !== true || !capacity) {
+      reasons.push(`${id}: scenario did not run`);
+      return null;
+    }
+    const requested = {
+      sockets: capacity.requested?.sockets,
+      holds: capacity.requested?.holdsPerHost * capacity.requested?.holdHosts,
+    };
+    if (
+      !Number.isSafeInteger(capacity.relay?.capacityRefusals) ||
+      !Number.isSafeInteger(capacity.relayMaxClients)
+    )
+      reasons.push(`${id}: relay diagnostics not reported`);
+    else if ((capacity.relayCapExplicit === true) !== capped)
+      reasons.push(
+        `${id}: the relay's cap was ${capped ? "not set by the fixture" : "not its default"}`,
+      );
+    else if (
+      capped &&
+      !(requested.sockets + requested.holds > capacity.relayMaxClients)
+    )
+      reasons.push(
+        `${id}: requested connections did not exceed the relay limit`,
+      );
+    if (
+      !(capacity.fixture?.socketsAccepted + capacity.fixture?.holdsAccepted > 0)
+    )
+      reasons.push(`${id}: no long-lived connection reached the fixture`);
+    return {
+      requested,
+      relayMaxClients: capacity.relayMaxClients,
+      relayCapExplicit: capacity.relayCapExplicit === true,
+      capacityRefusals: capacity.relay?.capacityRefusals,
+      acceptedConnections: capacity.relay?.acceptedConnections,
+      authenticationChallenges: capacity.relay?.authenticationChallenges,
+      authenticatedRequests: capacity.relay?.authenticatedRequests,
+      upstreamFailures: capacity.relay?.upstreamFailures,
+      requestRejections: capacity.relay?.requestRejections,
+      relayState: capacity.relay?.state,
+      heldPeak: capacity.fixture?.heldPeak,
+      socketsAccepted: capacity.fixture?.socketsAccepted,
+      holdsAccepted: capacity.fixture?.holdsAccepted,
+      // What the page saw; absent when its report could not get through.
+      page: scenario.slots?.[0]?.reports?.final?.capacity ?? null,
+    };
+  };
   const row = (id, title, build) => {
     const reasons = [];
     const value = usable ? build(reasons) : null;
@@ -702,6 +770,9 @@ export function assessMeasurementReport(report) {
             lifecycleAtEnd: slot.lifecycleAtEnd,
             shell: shellAt(shell.atNavigation),
             everForeground: shell.everForeground ?? null,
+            // Any window of the fixture's process, not only the fixture
+            // window; absent from reports of clients that did not record it.
+            processForeground: shell.foregroundOwnedByFixtureProcess,
           };
         },
       ),
@@ -823,6 +894,10 @@ export function assessMeasurementReport(report) {
               seen.shell.everForeground !== false
             )
               reasons.push(`${id}: fixture window was foreground`);
+            else if (seen.shell.foregroundOwnedByFixtureProcess)
+              reasons.push(
+                `${id}: a window of the fixture process was foreground (${seen.shell.foregroundOwnedByFixtureProcess})`,
+              );
             else if (
               id === "e-inactive" &&
               !moments.every(
@@ -865,57 +940,13 @@ export function assessMeasurementReport(report) {
     ),
     row(
       "M7",
-      "relay capacity_refusals above 32 concurrent connections",
-      (reasons) => {
-        const scenario = scenarios.get("f-relay-capacity");
-        const capacity = scenario?.capacity;
-        if (scenario?.navigated !== true || !capacity) {
-          reasons.push("f-relay-capacity: scenario did not run");
-          return null;
-        }
-        const requested = {
-          sockets: capacity.requested?.sockets,
-          holds:
-            capacity.requested?.holdsPerHost * capacity.requested?.holdHosts,
-        };
-        if (
-          !Number.isSafeInteger(capacity.relay?.capacityRefusals) ||
-          !Number.isSafeInteger(capacity.relayMaxClients)
-        )
-          reasons.push("f-relay-capacity: relay diagnostics not reported");
-        else if (
-          !(requested.sockets + requested.holds > capacity.relayMaxClients)
-        )
-          reasons.push(
-            "f-relay-capacity: requested connections did not exceed the relay limit",
-          );
-        if (
-          !(
-            capacity.fixture?.socketsAccepted +
-              capacity.fixture?.holdsAccepted >
-            0
-          )
-        )
-          reasons.push(
-            "f-relay-capacity: no long-lived connection reached the fixture",
-          );
-        return {
-          requested,
-          relayMaxClients: capacity.relayMaxClients,
-          capacityRefusals: capacity.relay?.capacityRefusals,
-          acceptedConnections: capacity.relay?.acceptedConnections,
-          authenticationChallenges: capacity.relay?.authenticationChallenges,
-          authenticatedRequests: capacity.relay?.authenticatedRequests,
-          upstreamFailures: capacity.relay?.upstreamFailures,
-          requestRejections: capacity.relay?.requestRejections,
-          relayState: capacity.relay?.state,
-          heldPeak: capacity.fixture?.heldPeak,
-          socketsAccepted: capacity.fixture?.socketsAccepted,
-          holdsAccepted: capacity.fixture?.holdsAccepted,
-          // What the page saw; absent when its report could not get through.
-          page: scenario.slots?.[0]?.reports?.final?.capacity ?? null,
-        };
-      },
+      "52 concurrent connections through one relay with its default client cap",
+      (reasons) => capacityOf("f-relay-capacity", false, reasons),
+    ),
+    row(
+      "M8",
+      "relay capacity_refusals above a client cap set by the fixture",
+      (reasons) => capacityOf("f-relay-capacity-capped", true, reasons),
     ),
   ];
   const measured = rows.filter((entry) => entry.status === "MEASURED").length;
@@ -944,12 +975,16 @@ export function formatMeasurementMatrix(assessment) {
       : "window state not observed";
   const each = (value, describe) =>
     Object.entries(value).map(([id, v]) => `   ${id}: ${describe(v)}`);
+  const capacityLines = (value) => [
+    `   capacity_refusals=${value.capacityRefusals} requested=${value.requested.sockets + value.requested.holds} (${value.requested.sockets} sockets + ${value.requested.holds} holds) relayMaxClients=${value.relayMaxClients} (${value.relayCapExplicit ? "set by the fixture" : "default"}) relayAccepted=${value.acceptedConnections} fixtureHeldPeak=${value.heldPeak} (sockets ${value.socketsAccepted}, holds ${value.holdsAccepted})`,
+    `   page: ${value.page ? `sockets open=${value.page.sockets?.open} error=${value.page.sockets?.error}; holds failed same-host=${value.page.holds?.sameHost?.failed} other-host=${value.page.holds?.otherHost?.failed}` : "no report"}`,
+  ];
   const detail = {
     M1: (value) =>
       each(
         value,
         (v) =>
-          `native=${v.lifecycleAtNavigation} childShown=${v.childWindowShown} initial=${v.initial} final=${v.final} hasFocus=${v.initialHasFocus}->${v.hasFocus} everForeground=${v.everForeground} changes=${list((v.changes ?? []).map((c) => `${c.state}@${c.atMs}ms`))}${flip(v)} | ${shell(v.shell)}`,
+          `native=${v.lifecycleAtNavigation} childShown=${v.childWindowShown} initial=${v.initial} final=${v.final} hasFocus=${v.initialHasFocus}->${v.hasFocus} everForeground=${v.everForeground} processForeground=${v.processForeground === undefined ? "not recorded" : (v.processForeground ?? "never")} changes=${list((v.changes ?? []).map((c) => `${c.state}@${c.atMs}ms`))}${flip(v)} | ${shell(v.shell)}`,
       ),
     M2: (value) =>
       each(
@@ -977,10 +1012,8 @@ export function formatMeasurementMatrix(assessment) {
         (v) =>
           `${shell(v.shellAtNavigation)} | native=${v.lifecycleAtNavigation} visibility=${v.initialVisibility}->${v.visibility} hasFocus=${v.hasFocus} timer/s=${list(v.ticksPerSecond)} | ${result(v)}`,
       ),
-    M7: (value) => [
-      `   capacity_refusals=${value.capacityRefusals} requested=${value.requested.sockets + value.requested.holds} (${value.requested.sockets} sockets + ${value.requested.holds} holds) relayMaxClients=${value.relayMaxClients} relayAccepted=${value.acceptedConnections} fixtureHeldPeak=${value.heldPeak} (sockets ${value.socketsAccepted}, holds ${value.holdsAccepted})`,
-      `   page: ${value.page ? `sockets open=${value.page.sockets?.open} error=${value.page.sockets?.error}; holds failed same-host=${value.page.holds?.sameHost?.failed} other-host=${value.page.holds?.otherHost?.failed}` : "no report"}`,
-    ],
+    M7: (value) => capacityLines(value),
+    M8: (value) => capacityLines(value),
   };
   const lines = [
     "Real-engine measurements (local synthetic fixtures; not acceptance)",
@@ -992,6 +1025,942 @@ export function formatMeasurementMatrix(assessment) {
     else lines.push(...entry.reasons.map((reason) => `   ${reason}`));
   }
   lines.push(`measured ${assessment.measured}/${assessment.rows.length}`);
+  return lines.join("\n");
+}
+
+// ---------------------------------------------------------------------------
+// Context-menu evidence. The native client observes; what K10 and the
+// handler's unit tests say should happen is stated here, and the two are
+// compared row by row. A difference is a result to report, never a failure of
+// the run, and no expectation is ever adjusted to what was observed.
+// ---------------------------------------------------------------------------
+
+/**
+ * Rows this client must never select: an OS dialog, a top-level window, or
+ * the OS clipboard, written (Copy, Cut) or read into the page (both pastes).
+ */
+export const MENU_NEVER_SELECTED = [
+  "Print",
+  "Inspect",
+  "Developer tools",
+  "Copy",
+  "Cut",
+  "Paste",
+  "Paste as plain text",
+];
+
+const EDIT_ROWS = [
+  "Undo",
+  "Redo",
+  "Cut",
+  "Copy",
+  "Paste",
+  "Paste as plain text",
+  "Delete",
+  "Select all",
+];
+// [label, enabled]; null means K10 and the unit tests state no value.
+const withRows = (rows, over) =>
+  rows.map(([label, enabled]) => [
+    label,
+    label in over ? over[label] : enabled,
+  ]);
+const navigation = (over = {}) =>
+  withRows(
+    [
+      ["Back", false],
+      ["Forward", false],
+      ["Reload", true],
+      ["Stop loading", false],
+    ],
+    over,
+  );
+const tail = (over = {}) =>
+  withRows(
+    [
+      ["Print", true],
+      ["Inspect", true],
+      ["Developer tools", true],
+    ],
+    over,
+  );
+const linkRows = (open) => [
+  ["Open link in new tab", open],
+  ["Copy link address", true],
+];
+const mediaRows = (kind, open) => [
+  [`Open ${kind} in new tab`, open],
+  [`Copy ${kind} address`, true],
+];
+const editRows = (enabled) =>
+  EDIT_ROWS.map((label) => [label, label in enabled ? enabled[label] : null]);
+// Display order of the policy: link, media, navigation, edit, print, tools.
+const offered = ({ link = [], media = [], edit = [], nav = {}, end = {} }) => [
+  ...link,
+  ...media,
+  ...navigation(nav),
+  ...edit,
+  ...tail(end),
+];
+const pasteOnly = { Paste: true, "Paste as plain text": true };
+const passwordRule = { Cut: false, Copy: false, ...pasteOnly };
+
+const FIXTURE = "https://fixture.test";
+const rowsFor = (id, target, rows, point = 1) => ({
+  id,
+  target,
+  point,
+  outcome: "native-menu",
+  rows: offered(rows),
+});
+const outcomeFor = (id, target, outcome, point = 2) => ({
+  id,
+  target,
+  point,
+  outcome,
+});
+const command = (id, target, pick, expected = {}) => ({
+  id,
+  target,
+  pick,
+  point: 4,
+  outcome: "native-menu",
+  selected: true,
+  ...expected,
+});
+const setup = (id) => ({ id, point: 0 });
+
+/**
+ * Scenarios and steps in run order. Ids, targets and picks mirror PLANS in
+ * native_acceptance/src/measure/menu.rs; a tooling test compares the two.
+ * Everything else here is the expectation: `outcome` (who answered the
+ * right-click), `rows` (K10's rows for the target, with the enabled state the
+ * unit tests in cef_context_menu_tests.rs assume), and for a selected row
+ * what it must do. "page-handled" is the user's requirement: the page's own
+ * menu wins and the engine never asks the host for one.
+ */
+export const MENU_EVIDENCE_PLAN = [
+  {
+    id: "menu-main",
+    popups: "tabs",
+    steps: [
+      setup("calibrate"),
+      // By keyboard, with nothing focused: the page's own rows.
+      { id: "key-first", point: 1, outcome: "native-menu", rows: offered({}) },
+      rowsFor("rows-plain", "plain", {}),
+      rowsFor("rows-link", "link", { link: linkRows(true) }),
+      rowsFor("rows-link-raw", "link-raw", { link: linkRows(true) }),
+      rowsFor("rows-link-js", "link-js", { link: linkRows(false) }),
+      rowsFor("rows-link-other", "link-other", { link: linkRows(false) }),
+      rowsFor("rows-link-http", "link-http", { link: linkRows(false) }),
+      // An origin the attempt may load in a frame: K10 states no value.
+      rowsFor("rows-link-frame-origin", "link-frame", { link: linkRows(null) }),
+      rowsFor("rows-image", "image", { media: mediaRows("image", true) }),
+      rowsFor("rows-image-link", "image-link", {
+        link: linkRows(true),
+        media: mediaRows("image", true),
+      }),
+      rowsFor("rows-image-data", "image-data", {
+        media: mediaRows("image", false),
+      }),
+      rowsFor("rows-video", "video", { media: mediaRows("video", true) }),
+      rowsFor("rows-video-broken", "video-broken", {
+        media: mediaRows("video", true),
+      }),
+      rowsFor("rows-audio", "audio", { media: mediaRows("audio", true) }),
+      rowsFor("rows-text", "text", { edit: editRows(pasteOnly) }),
+      rowsFor("rows-editable", "editable", { edit: editRows(pasteOnly) }),
+      // The unit tests assume the engine reports CAN_PASTE only.
+      rowsFor("rows-password-empty", "password-empty", {
+        edit: editRows({
+          Undo: false,
+          Redo: false,
+          Delete: false,
+          "Select all": false,
+          ...passwordRule,
+        }),
+      }),
+      rowsFor("rows-password-filled", "password-filled", {
+        edit: editRows(passwordRule),
+      }),
+      setup("select-word"),
+      // Selected page text: CAN_COPY | CAN_SELECT_ALL outside a field.
+      rowsFor("rows-selection", "prose", {
+        edit: [
+          ["Copy", true],
+          ["Select all", true],
+        ],
+      }),
+      outcomeFor("own-before", "plain", "native-menu"),
+      outcomeFor("own-prevent", "own-prevent", "page-handled"),
+      outcomeFor("own-menu", "own-menu", "page-handled"),
+      outcomeFor("own-inline", "own-inline", "page-handled"),
+      outcomeFor("own-document", "own-document", "page-handled"),
+      // A handler that does not prevent the default leaves the native menu.
+      outcomeFor("own-passive", "own-passive", "native-menu"),
+      outcomeFor("own-stop", "own-stop", "native-menu"),
+      outcomeFor("own-mouse", "own-mouse", "native-menu"),
+      outcomeFor("own-after", "plain", "native-menu"),
+      outcomeFor("frame-plain", "frame-plain", "native-menu"),
+      outcomeFor("frame-own", "frame-own", "page-handled"),
+      rowsFor("frame-link", "frame-link", { link: linkRows(true) }, 2),
+      rowsFor("frame-text", "frame-text", { edit: editRows(pasteOnly) }, 2),
+      outcomeFor("frame-after", "frame-plain", "native-menu"),
+      outcomeFor("xframe-plain", "xframe-plain", "native-menu"),
+      outcomeFor("xframe-own", "xframe-own", "page-handled"),
+      // A link inside a frame of another origin: K10 states no Open value.
+      rowsFor("xframe-link", "xframe-link", { link: linkRows(null) }, 2),
+      outcomeFor("xframe-after", "xframe-plain", "native-menu"),
+      setup("focus-key-plain"),
+      { id: "key-plain", point: 2, outcome: "native-menu" },
+      setup("focus-key-own"),
+      { id: "key-own", point: 2, outcome: "page-handled" },
+      command("copy-link", "link", "Copy link address", {
+        copied: [`${FIXTURE}/menu-target?item=1#part`],
+      }),
+      // What "the link as the page wrote it" is for an unescaped relative
+      // address is not stated anywhere: observed, not compared.
+      command("copy-link-raw", "link-raw", "Copy link address", {
+        copied: null,
+      }),
+      command("copy-link-js", "link-js", "Copy link address", {
+        copied: ["javascript:void(0)"],
+      }),
+      command("copy-link-other", "link-other", "Copy link address", {
+        copied: ["https://elsewhere.test/menu-target?item=6"],
+      }),
+      command("copy-image", "image", "Copy image address", {
+        copied: [`${FIXTURE}/menu-image.png?i=1`],
+      }),
+      command("copy-image-in-link", "image-link", "Copy image address", {
+        copied: [`${FIXTURE}/menu-image.png?i=2`],
+      }),
+      command("copy-link-of-image", "image-link", "Copy link address", {
+        copied: [`${FIXTURE}/menu-target?item=2`],
+      }),
+      command("copy-image-data", "image-data", "Copy image address", {
+        copied: null,
+      }),
+      command("copy-video", "video", "Copy video address", {
+        copied: [`${FIXTURE}/menu-clip.webm`],
+      }),
+      command("copy-video-broken", "video-broken", "Copy video address", {
+        copied: [`${FIXTURE}/menu-missing.webm`],
+      }),
+      command("copy-audio", "audio", "Copy audio address", {
+        copied: [`${FIXTURE}/menu-tone.wav`],
+      }),
+      command("copy-frame-link", "frame-link", "Copy link address", {
+        copied: [`${FIXTURE}/menu-target?item=3`],
+      }),
+      command("copy-xframe-link", "xframe-link", "Copy link address", {
+        copied: ["https://frame.test/menu-target?item=3"],
+      }),
+      // Offered but disabled: the probe cannot run it and nothing opens.
+      command("open-link-other", "link-other", "Open link in new tab", {
+        selected: false,
+        tabs: 0,
+      }),
+      command("open-link-js", "link-js", "Open link in new tab", {
+        selected: false,
+        tabs: 0,
+      }),
+      command("open-link", "link", "Open link in new tab", {
+        tabs: 1,
+        served: "target-1",
+      }),
+      command("open-image", "image", "Open image in new tab", {
+        tabs: 1,
+        served: "image-1",
+      }),
+      command("open-video", "video", "Open video in new tab", { tabs: 1 }),
+      command("open-audio", "audio", "Open audio in new tab", { tabs: 1 }),
+      // The second origin of the attempt: K10 states no value for it.
+      command("open-link-frame-origin", "link-frame", "Open link in new tab", {
+        selected: null,
+        served: "target-5",
+      }),
+      setup("close-tabs"),
+      command("select-all", "text", "Select all"),
+      rowsFor(
+        "rows-text-selected",
+        "text",
+        {
+          edit: editRows({ Cut: true, Copy: true, Delete: true, ...pasteOnly }),
+        },
+        4,
+      ),
+      command("delete", "text", "Delete", { input: true }),
+      command("undo", "text", "Undo", { input: true }),
+      command("redo", "text", "Redo", { input: true }),
+      command("select-all-password", "password-filled", "Select all"),
+      rowsFor(
+        "rows-password-selected",
+        "password-filled",
+        { edit: editRows(passwordRule) },
+        4,
+      ),
+      setup("scroll-down"),
+      {
+        ...command("scrolled-link", "link-low", "Copy link address", {
+          copied: [`${FIXTURE}/menu-target?item=8`],
+        }),
+        point: 6,
+      },
+      setup("scroll-up"),
+      setup("zoom-in"),
+      setup("calibrate-zoomed"),
+      {
+        ...command("zoomed-link", "link", "Copy link address", {
+          copied: [`${FIXTURE}/menu-target?item=1#part`],
+        }),
+        point: 6,
+      },
+      {
+        ...command("zoomed-frame-link", "frame-link", "Copy link address", {
+          copied: [`${FIXTURE}/menu-target?item=3`],
+        }),
+        point: 6,
+      },
+      setup("zoom-reset"),
+      setup("calibrate-reset"),
+      setup("block"),
+      outcomeFor("blocked", "link", "host-refused", 3),
+      setup("unblock"),
+      outcomeFor("unblocked", "link", "native-menu", 3),
+      setup("hide"),
+      outcomeFor("hidden", "link", "host-refused", 3),
+      setup("show"),
+      outcomeFor("shown", "link", "native-menu", 3),
+      setup("focus-manual"),
+      setup("manual-capture"),
+      outcomeFor("manual-active", "link", "host-refused", 3),
+      setup("manual-cancel"),
+      outcomeFor("manual-ended", "link", "native-menu", 3),
+      setup("load-second"),
+      // Still loading: Stop is available and the host does not print.
+      rowsFor(
+        "rows-loading",
+        "plain",
+        {
+          nav: { Back: true, "Stop loading": true },
+          end: { Print: false },
+        },
+        4,
+      ),
+      command("stop", "plain", "Stop loading", { loading: [true, false] }),
+      rowsFor("rows-stopped", "plain", { nav: { Back: true } }, 4),
+      command("back", "plain", "Back", { served: "page-a" }),
+      // While the earlier document is still loading: observed, not compared.
+      rowsFor(
+        "rows-back-loading",
+        "plain",
+        {
+          nav: { Back: null, Forward: null, "Stop loading": null },
+          end: { Print: null },
+        },
+        4,
+      ),
+      setup("idle-after-back"),
+      rowsFor("rows-after-back", "plain", { nav: { Forward: true } }, 4),
+      command("forward", "plain", "Forward", { served: "page-b" }),
+      command("stop-forward", "plain", "Stop loading", {
+        loading: [true, false],
+      }),
+      command("reload", "plain", "Reload", { served: "page-b" }),
+      command("stop-reload", "plain", "Stop loading", {
+        loading: [true, false],
+      }),
+      setup("revoke"),
+      outcomeFor("revoked", "plain", "host-refused", 3),
+    ],
+  },
+  {
+    id: "menu-global",
+    popups: "block",
+    steps: [
+      setup("calibrate"),
+      outcomeFor("plain-before", "plain", "native-menu"),
+      setup("idle-first"),
+      // "An idle page with no history": the unit tests have Back disabled.
+      rowsFor("rows-first-idle", "plain", {}, 4),
+      // What Back does on the first page of a view is not stated anywhere.
+      command("back-first-page", "plain", "Back", { selected: null }),
+      setup("load-again"),
+      // The attempt's popup policy is Block. Four launches found the link
+      // row enabled and doing nothing; the handler now reads the view's
+      // popup policy, so each of the four rows that would open a tab is
+      // shown disabled and cannot be run. History differs by step here, so
+      // no value is stated for the navigation rows.
+      ...[
+        ["link", linkRows(false), "link"],
+        ["image", mediaRows("image", false), "media"],
+        ["video", mediaRows("video", false), "media"],
+        ["audio", mediaRows("audio", false), "media"],
+      ].map(([target, rows, group]) =>
+        command(
+          `open-${target}-popups-blocked`,
+          target,
+          `Open ${target} in new tab`,
+          {
+            selected: false,
+            tabs: 0,
+            rows: offered({
+              [group]: rows,
+              nav: { Back: null, Forward: null, "Stop loading": null },
+            }),
+          },
+        ),
+      ),
+      setup("load-global"),
+      outcomeFor("global-plain", "plain", "page-handled"),
+      outcomeFor("global-link", "link", "page-handled"),
+      outcomeFor("global-image", "image", "page-handled"),
+      outcomeFor("global-video", "video", "page-handled"),
+      outcomeFor("global-text", "text", "page-handled"),
+      // The framed document has no handler of its own; an event does not
+      // leave its document, so its plain area keeps the native menu.
+      outcomeFor("global-frame-plain", "frame-plain", "native-menu"),
+      setup("focus-key-global"),
+      { id: "key-global", point: 2, outcome: "page-handled" },
+      setup("load-plain"),
+      outcomeFor("plain-after", "plain", "native-menu"),
+    ],
+  },
+];
+
+const EDIT_FLAGS = [
+  "UNDO",
+  "REDO",
+  "CUT",
+  "COPY",
+  "PASTE",
+  "DELETE",
+  "SELECT_ALL",
+  "TRANSLATE",
+  "EDIT_RICHLY",
+];
+// The seven bits the policy reads.
+const POLICY_EDIT_FLAGS = 127;
+const editFlagNames = (flags) =>
+  EDIT_FLAGS.filter((_, bit) => flags & (1 << bit)).join("|") || "none";
+
+/**
+ * What the handler's unit tests (cef_context_menu_tests.rs) assume the
+ * engine reports for a right-click, by step of the first scenario. Only the
+ * values named here are compared, and edit flags only on the policy's bits.
+ */
+const MENU_ENGINE_ASSUMED = {
+  "rows-plain": {
+    link: "",
+    shownLink: "",
+    source: "",
+    media: "none",
+    editable: false,
+    editFlags: 0,
+  },
+  // "None repeats link, as for an ordinary link."
+  "rows-link": {
+    link: `${FIXTURE}/menu-target?item=1#part`,
+    shownLink: `${FIXTURE}/menu-target?item=1#part`,
+    media: "none",
+  },
+  "rows-link-other": {
+    link: "https://elsewhere.test/menu-target?item=6",
+    shownLink: "https://elsewhere.test/menu-target?item=6",
+  },
+  "rows-link-http": {
+    link: "http://fixture.test/menu-target?item=4",
+    shownLink: "http://fixture.test/menu-target?item=4",
+  },
+  // The tests try both a repeated and a blocked validated link here.
+  "rows-link-js": { shownLink: "javascript:void(0)" },
+  "rows-image": {
+    link: "",
+    source: `${FIXTURE}/menu-image.png?i=1`,
+    media: "image",
+  },
+  "rows-image-link": {
+    link: `${FIXTURE}/menu-target?item=2`,
+    source: `${FIXTURE}/menu-image.png?i=2`,
+    media: "image",
+  },
+  "rows-image-data": { media: "image" },
+  "rows-video": { source: `${FIXTURE}/menu-clip.webm`, media: "video" },
+  "rows-video-broken": {
+    source: `${FIXTURE}/menu-missing.webm`,
+    media: "video",
+  },
+  "rows-audio": { source: `${FIXTURE}/menu-tone.wav`, media: "audio" },
+  "rows-text": { editable: true },
+  "rows-editable": { editable: true },
+  // "Password field: the engine reports CAN_PASTE only."
+  "rows-password-empty": { editable: true, editFlags: 16 },
+  // "Selected page text: CAN_COPY | CAN_SELECT_ALL outside an editable field."
+  "rows-selection": { editable: false, editFlags: 8 | 64 },
+};
+
+// What the native client prints when this mode starts, and the handler's one
+// line for a command it could not run (an action name, nothing from the page).
+const MENU_STDERR_START = "CEF acceptance: context-menu evidence mode";
+const MENU_STDERR_LINE =
+  /^(?:CEF acceptance: context-menu evidence mode|Native browser context-menu action=[A-Za-z]{1,32} failure=command-unavailable)$/;
+
+const MENU_POINTS = {
+  1: "Rows per click target",
+  2: "The page's own menu",
+  3: "No menu while the host must not show one",
+  4: "Commands selected through the probe",
+  6: "Scrolled page and zoomed view",
+};
+
+/** Who answered one right-click, from the three observations the probe allows. */
+export function classifyMenuStep(step) {
+  if (step?.notSent) return "not-sent";
+  const asked = (step?.requests?.after ?? 0) - (step?.requests?.before ?? 0);
+  const shown = Array.isArray(step?.menus) ? step.menus.length : 0;
+  if (asked > 0 && shown > 0) return "native-menu";
+  if (asked > 0) return "host-refused";
+  if (shown > 0) return "inconsistent";
+  if (step?.trace?.prevented === true) return "page-handled";
+  // The page saw the event and let it through, yet the engine asked nothing.
+  if (step?.trace) return "no-request";
+  if (step?.mouseOnly) return "no-contextmenu-event";
+  return "not-delivered";
+}
+
+function compareRows(expected, observed) {
+  const differences = [];
+  const seen = new Map(observed.map(([label, enabled]) => [label, enabled]));
+  const wanted = new Map(expected);
+  for (const [label, enabled] of expected) {
+    if (!seen.has(label)) differences.push(`row missing: ${label}`);
+    else if (enabled !== null && seen.get(label) !== enabled)
+      differences.push(
+        `${label}: ${seen.get(label) ? "enabled" : "disabled"}, expected ${enabled ? "enabled" : "disabled"}`,
+      );
+  }
+  for (const [label, enabled] of observed)
+    if (!wanted.has(label))
+      differences.push(
+        `row not expected: ${label} (${enabled ? "enabled" : "disabled"})`,
+      );
+  const order = (rows, other) =>
+    rows.map(([label]) => label).filter((label) => other.has(label));
+  if (
+    JSON.stringify(order(expected, seen)) !==
+    JSON.stringify(order(observed, wanted))
+  )
+    differences.push(
+      `row order: ${order(observed, wanted).join(", ")}; expected ${order(expected, seen).join(", ")}`,
+    );
+  return differences;
+}
+
+/**
+ * Compare one native menu report with MENU_EVIDENCE_PLAN. Every step keeps
+ * its observed values; `differences` lists where they depart from what K10
+ * and the unit tests expect. Steps that did not run are listed, not guessed.
+ */
+export function assessMenuReport(report) {
+  const menu = report?.menu;
+  // The native plan lists target and pick for a right-click on a target only.
+  const comparable = MENU_EVIDENCE_PLAN.map((scenario) => ({
+    id: scenario.id,
+    popups: scenario.popups,
+    steps: scenario.steps.map((step) =>
+      step.target === undefined
+        ? { id: step.id }
+        : { id: step.id, target: step.target, pick: step.pick ?? null },
+    ),
+  }));
+  const usable =
+    report?.schema === 1 &&
+    report.engine === "cef" &&
+    report.bindingPin === "154.3.0" &&
+    report.mode === "menu" &&
+    report.productionReady === false &&
+    menu?.schema === 1 &&
+    Array.isArray(menu.scenarios) &&
+    sameJson(menu.plan, comparable) &&
+    sameJson(menu.neverSelected, MENU_NEVER_SELECTED);
+  const scenarios = [];
+  for (const plan of MENU_EVIDENCE_PLAN) {
+    const native = usable
+      ? menu.scenarios.find((scenario) => scenario?.id === plan.id)
+      : undefined;
+    const steps = [];
+    for (const expected of plan.steps) {
+      const step = Array.isArray(native?.steps)
+        ? native.steps.find((entry) => entry?.id === expected.id)
+        : undefined;
+      const entry = {
+        id: expected.id,
+        point: expected.point,
+        target: expected.target ?? null,
+        pick: expected.pick ?? null,
+        ran: step !== undefined,
+        differences: [],
+      };
+      steps.push(entry);
+      if (!step || expected.point === 0) {
+        if (step) entry.setup = step;
+        continue;
+      }
+      const differ = (text) => entry.differences.push(text);
+      entry.outcome = classifyMenuStep(step);
+      entry.expectedOutcome = expected.outcome;
+      entry.requests =
+        (step.requests?.after ?? 0) - (step.requests?.before ?? 0);
+      entry.requestWithinMs = step.requestWithinMs ?? null;
+      entry.menus = Array.isArray(step.menus) ? step.menus.length : 0;
+      entry.page = step.trace
+        ? {
+            target: step.trace.target,
+            prevented: step.trace.prevented,
+            handledBy: step.trace.handledBy,
+            ownMenu: step.trace.ownMenu,
+            trusted: step.trace.trusted,
+            button: step.trace.button,
+            focus: step.trace.focus,
+            visibility: step.trace.visibility,
+            docSel: step.trace.docSel ?? null,
+            field: step.trace.field ?? null,
+          }
+        : null;
+      entry.mouseOnly = step.mouseOnly != null;
+      entry.notSent = step.notSent ?? null;
+      entry.rows = (step.menus?.[0] ?? []).map(([, label, enabled]) => [
+        label,
+        enabled,
+      ]);
+      entry.rowIds = (step.menus?.[0] ?? []).map(([id]) => id);
+      entry.copied = (step.copied ?? []).map((copy) => copy.text);
+      entry.tabs = [step.tabs?.before ?? null, step.tabs?.after ?? null];
+      entry.served = step.served ?? {};
+      entry.loading = step.host?.loading ?? null;
+      entry.mainFrame = step.host?.mainFrame ?? null;
+      entry.mainDocuments = step.host?.mainDocuments ?? null;
+      entry.inputs = (step.pageReports ?? [])
+        .filter((seen) => seen?.kind === "input")
+        .map((seen) => ({
+          target: seen.target,
+          inputType: seen.inputType,
+          trusted: seen.trusted,
+          len: seen.len ?? null,
+        }));
+      entry.answer = step.answers?.[0] ?? null;
+      // What the engine reported for this click, as the policy saw it.
+      entry.engine = step.reported?.[0] ?? null;
+      entry.sent = step.sent ?? null;
+      entry.clipboardWritten =
+        step.clipboardSequence?.before != null &&
+        step.clipboardSequence.before !== step.clipboardSequence.after;
+      entry.notes = step.notes ?? [];
+      if (
+        expected.target &&
+        entry.page &&
+        entry.page.target !== expected.target
+      )
+        differ(
+          `the page saw the click on ${entry.page.target}, not ${expected.target}`,
+        );
+      if (entry.outcome !== expected.outcome)
+        differ(`outcome ${entry.outcome}, expected ${expected.outcome}`);
+      if (entry.requests > 1 || entry.menus > 1)
+        differ(
+          `one right-click produced ${entry.requests} requests and ${entry.menus} menus`,
+        );
+      if (expected.rows && entry.outcome === "native-menu")
+        for (const difference of compareRows(expected.rows, entry.rows))
+          differ(difference);
+      // The point "Inspect" hands to the engine must be where the click was.
+      if (entry.engine && entry.sent && expected.target) {
+        const [x, y] = entry.engine.point;
+        if (Math.abs(x - entry.sent[0]) > 1 || Math.abs(y - entry.sent[1]) > 1)
+          differ(
+            `the engine reported the click at (${x}, ${y}); it was sent at (${entry.sent[0]}, ${entry.sent[1]}) in view coordinates`,
+          );
+      }
+      const assumed =
+        plan.id === "menu-main" ? MENU_ENGINE_ASSUMED[expected.id] : undefined;
+      if (assumed && entry.engine)
+        for (const [key, value] of Object.entries(assumed)) {
+          const seen =
+            key === "editFlags"
+              ? entry.engine.editFlags & POLICY_EDIT_FLAGS
+              : entry.engine[key];
+          if (seen !== value)
+            differ(
+              key === "editFlags"
+                ? `engine edit flags ${editFlagNames(seen)}; the unit tests assume ${editFlagNames(value)}`
+                : `engine ${key} ${JSON.stringify(seen)}; the unit tests assume ${JSON.stringify(value)}`,
+            );
+        }
+      // The run itself must never write the OS clipboard.
+      if (entry.clipboardWritten)
+        differ("the OS clipboard sequence number changed during this step");
+      if (!expected.pick) continue;
+      const selected =
+        entry.answer?.handedBack === true && entry.answer.enabled === true;
+      entry.selected = selected;
+      if (entry.answer && entry.answer.offered !== true)
+        differ(`row not offered: ${expected.pick}`);
+      if (expected.selected != null && selected !== expected.selected)
+        differ(
+          `${expected.pick} was ${selected ? "selected" : "not selectable"}, expected ${expected.selected ? "an enabled row" : "a disabled row"}`,
+        );
+      if (
+        Array.isArray(expected.copied) &&
+        !sameJson(entry.copied, expected.copied)
+      )
+        differ(
+          `copied ${JSON.stringify(entry.copied)}, expected ${JSON.stringify(expected.copied)}`,
+        );
+      const opened =
+        entry.tabs[0] == null || entry.tabs[1] == null
+          ? null
+          : entry.tabs[1] - entry.tabs[0];
+      if (typeof expected.tabs === "number" && opened !== expected.tabs)
+        differ(`tabs opened: ${opened}, expected ${expected.tabs}`);
+      if (
+        expected.served &&
+        selected &&
+        (entry.served[expected.served] ?? 0) !== 1
+      )
+        differ(
+          `fixture requests for ${expected.served}: ${entry.served[expected.served] ?? 0}, expected 1`,
+        );
+      if (
+        expected.loading &&
+        selected &&
+        !sameJson(entry.loading, expected.loading)
+      )
+        differ(
+          `loading ${JSON.stringify(entry.loading)}, expected ${JSON.stringify(expected.loading)}`,
+        );
+      if (expected.input === true && selected && entry.inputs.length === 0)
+        differ("the page reported no input event");
+    }
+    scenarios.push({
+      id: plan.id,
+      popups: plan.popups,
+      ran: native !== undefined,
+      inputNotDelivered: native?.inputNotDelivered === true,
+      pageReady: native?.pageReady ?? null,
+      steps,
+      notRun: steps.filter((step) => !step.ran).map((step) => step.id),
+      window: native?.window ?? null,
+      clipboard: native?.clipboard ?? null,
+      page: native?.page ?? null,
+      engineBrowserId: native?.engineBrowserId ?? null,
+      childWindowMatched: native?.childWindowMatched ?? null,
+      viewUnitsPerCssPixel: native?.viewUnitsPerCssPixel ?? null,
+      closed: native?.closed ?? null,
+    });
+  }
+  const all = scenarios.flatMap((scenario) =>
+    scenario.steps.map((step) => ({ scenario: scenario.id, ...step })),
+  );
+  const observed = all.filter((step) => step.ran && step.point !== 0);
+  const pageWins = all.filter(
+    (step) =>
+      step.point !== 0 &&
+      MENU_EVIDENCE_PLAN.find((plan) => plan.id === step.scenario).steps.find(
+        (expected) => expected.id === step.id,
+      ).outcome === "page-handled",
+  );
+  // The same difference on many steps is one finding: grouped for reading.
+  const distinct = new Map();
+  for (const step of all)
+    for (const difference of step.differences) {
+      if (!distinct.has(difference)) distinct.set(difference, []);
+      distinct.get(difference).push(`${step.scenario}/${step.id}`);
+    }
+  return {
+    usable,
+    scenarios,
+    distinctDifferences: [...distinct].map(([difference, steps]) => ({
+      difference,
+      steps,
+    })),
+    observedSteps: observed.length,
+    plannedSteps: all.filter((step) => step.point !== 0).length,
+    differences: all
+      .filter((step) => step.differences.length > 0)
+      .map((step) => ({
+        scenario: step.scenario,
+        step: step.id,
+        differences: step.differences,
+      })),
+    // Any window of the client as the desktop's foreground window, in any
+    // scenario. `null` when the client did not record it.
+    foregroundTaken: scenarios.some(
+      (scenario) => scenario.window?.foregroundOwnedByClient === undefined,
+    )
+      ? null
+      : scenarios.some((scenario) =>
+          scenario.window.foregroundOwnedByClient.some(
+            (change) => change.window,
+          ),
+        ),
+    pageWins: {
+      planned: pageWins.length,
+      observed: pageWins.filter((step) => step.outcome === "page-handled")
+        .length,
+      steps: pageWins.map((step) => [
+        step.id,
+        step.ran ? step.outcome : "not-run",
+      ]),
+    },
+    productionReady: false,
+    actualCefAcceptance: false,
+  };
+}
+
+/** Plain-text evidence, one block per step, grouped by what the step is for. */
+export function formatMenuEvidence(evidence) {
+  const lines = [
+    "Native context menu: real-engine evidence (local synthetic fixtures; not acceptance)",
+  ];
+  if (!evidence.usable) {
+    lines.push(
+      "NOT OBSERVED: no menu report from the pinned native client with this runner's plan",
+    );
+    return lines.join("\n");
+  }
+  const rows = (list) =>
+    list.length
+      ? list
+          .map(([label, enabled]) => `${enabled ? "+" : "-"}${label}`)
+          .join(" ")
+      : "(none)";
+  for (const scenario of evidence.scenarios) {
+    lines.push("");
+    lines.push(
+      `Scenario ${scenario.id} (popup policy ${scenario.popups}): ${scenario.ran ? "ran" : "DID NOT RUN"}`,
+    );
+    if (!scenario.ran) continue;
+    const window = scenario.window ?? {};
+    lines.push(
+      `  browser ${scenario.engineBrowserId}, child window matched ${scenario.childWindowMatched}, view units per CSS pixel ${scenario.viewUnitsPerCssPixel}, devicePixelRatio ${scenario.page?.dpr ?? "?"}, document.hasFocus() ${scenario.page?.focus ?? "?"}`,
+    );
+    lines.push(
+      `  fixture window: foreground at start ${window.atStart?.foreground}, at end ${window.atEnd?.foreground}, ever ${window.everForeground}; windows above it at start ${window.atStart?.coveringWindows}`,
+    );
+    const owned = (window.foregroundOwnedByClient ?? []).filter(
+      (change) => change.window,
+    );
+    lines.push(
+      window.foregroundOwnedByClient === undefined
+        ? "  foreground owned by a window of the client: not recorded"
+        : owned.length === 0
+          ? "  foreground owned by a window of the client: never"
+          : `  FOREGROUND TAKEN by a window of the client: ${owned.map((change) => `${change.window} at ${change.atMs} ms${change.duringStep ? ` (step ${change.duringStep})` : ""}`).join("; ")}`,
+    );
+    // Activation and focus inside the client's own UI thread: observable on
+    // any desktop, including one where nothing can be foreground.
+    for (const seen of window.uiThreadWindows ?? [])
+      lines.push(
+        `  UI thread at ${seen.atMs} ms${seen.duringStep ? ` (step ${seen.duringStep})` : ""}: active window ${seen.windows?.active ?? "none"}${seen.windows?.active && !seen.windows.activeShown ? " (not shown)" : ""}, focus ${seen.windows?.focus ?? "none"}${seen.windows?.focus ? (seen.windows.focusInsideFixtureWindow ? " inside the fixture window" : " OUTSIDE the fixture window") : ""}`,
+      );
+    for (const seen of window.otherShownTopLevelWindows ?? [])
+      lines.push(
+        `  other shown top-level windows of the client at ${seen.atMs} ms${seen.duringStep ? ` (step ${seen.duringStep})` : ""}: ${(seen.windows ?? []).map((other) => `${other.class} ${other.width}x${other.height}${other.topmost ? " topmost" : ""}${other.noActivate ? " no-activate" : ""}`).join("; ") || "none"}`,
+      );
+    if (scenario.inputNotDelivered)
+      lines.push(
+        "  STOPPED: five right-clicks in a row reached neither the page nor the engine",
+      );
+    if (scenario.pageReady === false)
+      lines.push("  STOPPED: the fixture page never reported its layout");
+    lines.push(
+      `  OS clipboard sequence number: ${scenario.clipboard?.sequenceAtStart} at start, ${scenario.clipboard?.sequenceAtEnd} at end`,
+    );
+    if (scenario.notRun.length)
+      lines.push(`  NOT RUN: ${scenario.notRun.join(", ")}`);
+    for (const [point, title] of Object.entries(MENU_POINTS)) {
+      const steps = scenario.steps.filter(
+        (step) => step.ran && String(step.point) === point,
+      );
+      if (!steps.length) continue;
+      lines.push(`  ${point}. ${title}`);
+      for (const step of steps) {
+        const page = step.page
+          ? `page saw ${step.page.target} prevented=${step.page.prevented}${step.page.handledBy ? ` by ${step.page.handledBy}` : ""}${step.page.ownMenu ? " own-menu-drawn" : ""}`
+          : step.mouseOnly
+            ? "page saw the button but no contextmenu event"
+            : "no page report";
+        lines.push(
+          `    ${step.id}${step.target ? ` [${step.target}]` : ""}: ${step.outcome} | ${step.notSent ? `not sent (${step.notSent})` : page} | engine requests +${step.requests}${step.requestWithinMs != null ? ` within ${step.requestWithinMs} ms` : ""} | probe menus ${step.menus}`,
+        );
+        if (step.menus > 0) lines.push(`      rows: ${rows(step.rows)}`);
+        if (step.engine) {
+          const engine = step.engine;
+          const seen = [];
+          if (engine.link) seen.push(`link_url ${engine.link}`);
+          if (engine.shownLink)
+            seen.push(`unfiltered_link_url ${engine.shownLink}`);
+          if (engine.source) seen.push(`source_url ${engine.source}`);
+          seen.push(
+            `media ${engine.media}`,
+            `editable ${engine.editable}`,
+            `edit flags ${engine.editFlags} (${editFlagNames(engine.editFlags)})`,
+            `point (${engine.point.join(", ")})${step.sent ? ` sent (${step.sent.join(", ")})` : ""}`,
+          );
+          lines.push(`      engine: ${seen.join(" | ")}`);
+        }
+        if (step.pick) {
+          const effects = [];
+          if (step.copied.length)
+            effects.push(`copied ${JSON.stringify(step.copied)}`);
+          if (step.tabs[0] != null)
+            effects.push(`tabs ${step.tabs[0]} -> ${step.tabs[1]}`);
+          const served = Object.entries(step.served)
+            .filter(([name]) => name !== "report")
+            .map(([name, count]) => `${name} x${count}`);
+          if (served.length)
+            effects.push(`fixture served ${served.join(", ")}`);
+          if (step.loading)
+            effects.push(`loading ${step.loading[0]} -> ${step.loading[1]}`);
+          if (step.mainFrame && step.mainFrame[0] !== step.mainFrame[1])
+            effects.push(`view shows ${step.mainFrame[1]}`);
+          if (step.inputs.length)
+            effects.push(
+              `input ${step.inputs.map((seen) => `${seen.inputType || "?"}${seen.len != null ? ` len=${seen.len}` : ""}`).join(", ")}`,
+            );
+          lines.push(
+            `      ${step.pick}: ${step.selected ? "selected" : step.answer?.offered ? "offered disabled, not run" : "not offered"}${effects.length ? ` | ${effects.join(" | ")}` : ""}`,
+          );
+        }
+        if (step.page?.field)
+          lines.push(
+            `      field selection ${step.page.field[0]}..${step.page.field[1]} of ${step.page.field[2]}`,
+          );
+        for (const note of step.notes) lines.push(`      note: ${note}`);
+        for (const difference of step.differences)
+          lines.push(`      DIFFERENCE: ${difference}`);
+      }
+    }
+  }
+  lines.push("");
+  lines.push(
+    `The page's own menu wins: ${evidence.pageWins.observed} of ${evidence.pageWins.planned} planned cases observed as page-handled (page trace recorded, default prevented, no engine request, probe not called)`,
+  );
+  for (const [id, outcome] of evidence.pageWins.steps)
+    if (outcome !== "page-handled") lines.push(`   ${id}: ${outcome}`);
+  lines.push(
+    `Never selected: ${MENU_NEVER_SELECTED.join(", ")}. They are observed as rows only.`,
+  );
+  if (evidence.distinctDifferences.length) {
+    lines.push("");
+    lines.push("Differences from K10 and the unit tests, grouped:");
+    for (const { difference, steps } of evidence.distinctDifferences)
+      lines.push(`  ${difference} [${steps.length}: ${steps.join(", ")}]`);
+  }
+  lines.push(
+    `observed ${evidence.observedSteps}/${evidence.plannedSteps} steps; ${evidence.differences.length} with differences`,
+  );
   return lines.join("\n");
 }
 
@@ -1339,19 +2308,174 @@ export async function stageAcceptance({
   };
 }
 
+// A window of the client must never reach the desktop a person is working on:
+// in one observed launch there a client window held the foreground for about
+// 52 seconds. On Windows every suite therefore starts the client on a Win32
+// desktop made for the run, and the person's own desktop is used only when
+// that is asked for by name.
+export const INTERACTIVE_DESKTOP_OPTION = "use-interactive-desktop";
+const PRIVATE_DESKTOP_LAUNCHER = fileURLToPath(
+  new URL(
+    "../src-tauri/crates/sorng-browser-host/tests/native_acceptance/launch-on-private-desktop.ps1",
+    import.meta.url,
+  ),
+);
+// The launcher enforces the run's timeout itself; this is how much longer the
+// runner waits for the launcher to report before it kills the launcher too.
+const PRIVATE_DESKTOP_GRACE_MS = 30000;
+
+export function desktopFor({
+  platform,
+  interactiveDesktop = "false",
+  manual = "false",
+}) {
+  if (!["true", "false"].includes(interactiveDesktop))
+    throw new Error(`--${INTERACTIVE_DESKTOP_OPTION} must be true or false`);
+  if (interactiveDesktop === "true") return "interactive";
+  if (manual === "true")
+    throw new Error(
+      `--manual true shows a window to a person and needs --${INTERACTIVE_DESKTOP_OPTION} true`,
+    );
+  // Elsewhere the caller provides the display, as CI does with xvfb-run.
+  return platform === "win32" ? "private" : "caller-provided";
+}
+
+export function privateDesktopLaunch({
+  executable,
+  output,
+  timeoutMs,
+  token = randomBytes(8).toString("hex"),
+}) {
+  if (!/^[0-9a-f]{16}$/.test(token))
+    throw new Error("Invalid private desktop token");
+  // Beside the run directory, which the client must find empty.
+  const stdout = path.join(output, "client-stdout.txt");
+  const stderr = path.join(output, "client-stderr.txt");
+  const result = path.join(output, "private-desktop.json");
+  const desktop = `sorng-acceptance-${token}`;
+  return {
+    command: "pwsh",
+    args: [
+      "-NoProfile",
+      "-File",
+      PRIVATE_DESKTOP_LAUNCHER,
+      "-Executable",
+      executable,
+      "-WorkingDirectory",
+      path.dirname(executable),
+      "-Desktop",
+      desktop,
+      "-TimeoutMs",
+      String(timeoutMs),
+      "-StdoutPath",
+      stdout,
+      "-StderrPath",
+      stderr,
+      "-Result",
+      result,
+    ],
+    desktop,
+    stdout,
+    stderr,
+    result,
+  };
+}
+
+/** What the launcher's result must show for a run on a private desktop to count. */
+export function assessPrivateDesktop(result) {
+  if (!result || typeof result !== "object" || Array.isArray(result))
+    return ["the private-desktop launcher left no result"];
+  const failures = [];
+  const count = (value) => Number.isSafeInteger(value) && value >= 0;
+  if (result.started !== true) {
+    const reason = /^[a-z]+(-[a-z]+)*(-\d+)?$/.test(result.error ?? "")
+      ? result.error
+      : "no reason given";
+    return [`the client was not started on a private desktop: ${reason}`];
+  }
+  if (
+    result.foregroundViolation !== false ||
+    result.clientForegroundSamples !== 0 ||
+    result.clientForegroundOwnerChanges !== 0
+  )
+    failures.push(
+      "a process of the client owned the foreground window of the desktop the run was started from; the run was stopped and does not count",
+    );
+  if (!count(result.samples) || result.samples === 0)
+    failures.push("the desktop the run was started from was never sampled");
+  if (
+    !count(result.clipboardSequenceBefore) ||
+    result.clipboardSequenceBefore !== result.clipboardSequenceAfter ||
+    result.clipboardChanges !== 0
+  )
+    failures.push(
+      "the clipboard sequence number changed while the client ran; the run does not count",
+    );
+  if (result.processesLeftInJob !== 0)
+    failures.push(
+      "processes of the client outlived it and had to be terminated",
+    );
+  if (result.desktopClosed !== true || result.desktopGone !== true)
+    failures.push("the private desktop was not closed");
+  if (result.error)
+    failures.push("the private-desktop launcher reported an error");
+  return failures;
+}
+
+function observeWindowsSandbox({ pid, executable, output, suite }) {
+  const observerPath =
+    suite === "tls" ? "native_tls_acceptance" : "native_acceptance";
+  const observer = spawn(
+    "pwsh",
+    [
+      "-NoProfile",
+      "-File",
+      fileURLToPath(
+        new URL(
+          `../src-tauri/crates/sorng-browser-host/tests/${observerPath}/observe-windows-sandbox.ps1`,
+          import.meta.url,
+        ),
+      ),
+      "-BrowserProcessId",
+      String(pid),
+      "-Executable",
+      executable,
+      "-Output",
+      path.join(output, "sandbox.json"),
+    ],
+    { windowsHide: true, stdio: ["ignore", "ignore", "pipe"] },
+  );
+  let observerError = "";
+  observer.stderr.on("data", (b) => {
+    observerError = (observerError + b).slice(-8192);
+  });
+  return new Promise((resolve) => {
+    observer.once("error", resolve);
+    observer.once("exit", resolve);
+  }).then(() =>
+    writeFile(path.join(output, "sandbox-observer-error.txt"), observerError),
+  );
+}
+
 export async function runAcceptance({
   executable,
   output,
   timeoutMs,
   suite = "legacy",
   manual = "false",
+  interactiveDesktop = "false",
   windowMs,
   only,
 }) {
-  if (!["legacy", "tls", "measure"].includes(suite))
+  if (!["legacy", "tls", "measure", "menu"].includes(suite))
     throw new Error("Unknown acceptance suite");
   if (!["true", "false"].includes(manual))
     throw new Error("--manual must be true or false");
+  const desktop = desktopFor({
+    platform: process.platform,
+    interactiveDesktop,
+    manual,
+  });
   if (suite !== "measure" && (windowMs !== undefined || only !== undefined))
     throw new Error("windowMs and only apply to measure");
   let measurePlan;
@@ -1359,6 +2483,8 @@ export async function runAcceptance({
     measurePlan = measurementPlan({ windowMs, only });
     timeoutMs ??= Math.min(600000, measurePlan.expectedMs + 60000);
   }
+  // Two scenarios of at most five minutes each in the native client.
+  if (suite === "menu") timeoutMs ??= 600000;
   timeoutMs = Number(timeoutMs ?? (suite === "tls" ? 240000 : 90000));
   if (
     !Number.isSafeInteger(timeoutMs) ||
@@ -1390,66 +2516,74 @@ export async function runAcceptance({
     if (measurePlan.only)
       env.SORNG_CEF_MEASURE_ONLY = measurePlan.only.join(",");
   }
+  if (suite === "menu") env.SORNG_CEF_ACCEPTANCE_MODE = "menu";
   if (process.platform === "linux") env.GDK_BACKEND = "x11";
-  const child = spawn(executable, [], {
+  // On a private desktop the child is the launcher, which starts the client
+  // there, enforces the timeout and writes the client's output to files.
+  const launch =
+    desktop === "private"
+      ? privateDesktopLaunch({ executable, output, timeoutMs })
+      : undefined;
+  const child = spawn(launch?.command ?? executable, launch?.args ?? [], {
     cwd: path.dirname(executable),
     env,
     windowsHide: true,
     stdio: ["ignore", "pipe", "pipe"],
   });
-  let observerDone = Promise.resolve();
-  if (process.platform === "win32" && child.pid) {
-    const observerPath =
-      suite === "tls" ? "native_tls_acceptance" : "native_acceptance";
-    const observer = spawn(
-      "pwsh",
-      [
-        "-NoProfile",
-        "-File",
-        fileURLToPath(
-          new URL(
-            `../src-tauri/crates/sorng-browser-host/tests/${observerPath}/observe-windows-sandbox.ps1`,
-            import.meta.url,
-          ),
-        ),
-        "-BrowserProcessId",
-        String(child.pid),
-        "-Executable",
-        executable,
-        "-Output",
-        path.join(output, "sandbox.json"),
-      ],
-      { windowsHide: true, stdio: ["ignore", "ignore", "pipe"] },
-    );
-    let observerError = "";
-    observer.stderr.on("data", (b) => {
-      observerError = (observerError + b).slice(-8192);
-    });
-    observerDone = new Promise((resolve) => {
-      observer.once("error", resolve);
-      observer.once("exit", resolve);
-    }).then(() =>
-      writeFile(path.join(output, "sandbox-observer-error.txt"), observerError),
-    );
-  }
   let stdout = "",
     stderr = "",
     timedOut = false;
   child.stdout.on("data", (b) => {
     stdout = (stdout + b).slice(-65536);
   });
+  // The sandbox observer follows the client itself: the launcher names it in
+  // its first line.
+  const clientPid = launch
+    ? new Promise((resolve) => {
+        child.stdout.on("data", () => {
+          const pid = /^\{"started":true,"pid":(\d+)\}\r?$/m.exec(stdout)?.[1];
+          if (pid) resolve(Number(pid));
+        });
+        child.once("error", () => resolve(undefined));
+        child.once("exit", () => resolve(undefined));
+      })
+    : Promise.resolve(child.pid);
+  const observerDone =
+    process.platform === "win32"
+      ? clientPid.then((pid) =>
+          pid
+            ? observeWindowsSandbox({ pid, executable, output, suite })
+            : undefined,
+        )
+      : Promise.resolve();
+  // Fixed lines of the client and of the menu handler, kept as they arrive:
+  // the tail above may lose them, and neither carries page or user text.
+  const menuLines = [];
+  const keepMenuLines = (lines) => {
+    for (const line of lines)
+      if (MENU_STDERR_LINE.test(line) && menuLines.length < 64)
+        menuLines.push(line);
+  };
+  let partialLine = "";
   child.stderr.on("data", (b) => {
     stderr = (stderr + b).slice(-65536);
+    const lines = (partialLine + b).split(/\r?\n/);
+    partialLine = lines.pop().slice(-4096);
+    if (!launch) keepMenuLines(lines);
   });
-  const timer = setTimeout(() => {
-    timedOut = true;
-    if (process.platform === "win32" && child.pid)
-      spawn("taskkill", ["/PID", String(child.pid), "/T", "/F"], {
-        windowsHide: true,
-        stdio: "ignore",
-      });
-    else child.kill();
-  }, timeoutMs);
+  const timer = setTimeout(
+    () => {
+      timedOut = true;
+      // Killing the launcher closes its job, and with it the whole client.
+      if (process.platform === "win32" && child.pid)
+        spawn("taskkill", ["/PID", String(child.pid), "/T", "/F"], {
+          windowsHide: true,
+          stdio: "ignore",
+        });
+      else child.kill();
+    },
+    launch ? timeoutMs + PRIVATE_DESKTOP_GRACE_MS : timeoutMs,
+  );
   let exitCode;
   try {
     exitCode = await new Promise((resolve, reject) => {
@@ -1460,9 +2594,36 @@ export async function runAcceptance({
     clearTimeout(timer);
   }
   await observerDone;
+  let desktopRecord = { kind: desktop };
+  const desktopFailures = [];
+  if (launch) {
+    const text = (file) => readFile(file, "utf8").catch(() => "");
+    let result;
+    try {
+      result = JSON.parse(await readFile(launch.result, "utf8"));
+    } catch {}
+    desktopFailures.push(...assessPrivateDesktop(result));
+    desktopRecord = {
+      ...(result && typeof result === "object" ? result : {}),
+      kind: desktop,
+      launcherExit: exitCode,
+      launcherError: stderr.slice(-2048),
+    };
+    // From here on these describe the client, as they do without a launcher.
+    exitCode = result?.started === true ? result.exitCode : null;
+    timedOut ||= result?.timedOut === true;
+    stdout = (await text(launch.stdout)).slice(-65536);
+    const clientErrors = await text(launch.stderr);
+    stderr = clientErrors.slice(-65536);
+    keepMenuLines(clientErrors.split(/\r?\n/));
+  }
   await writeFile(
     path.join(run, "process.json"),
-    JSON.stringify({ exitCode, timedOut, stdout, stderr }, null, 2),
+    JSON.stringify(
+      { exitCode, timedOut, stdout, stderr, desktop: desktopRecord },
+      null,
+      2,
+    ),
   );
   let native, netlog, sandbox;
   try {
@@ -1507,6 +2668,7 @@ export async function runAcceptance({
       failures.push(`native process exit ${exitCode}; timeout=${timedOut}`);
     failures.push(
       ...applyNativeCrashGate({ failures: [] }, nativeCrashSummary).failures,
+      ...desktopFailures,
     );
     const report = {
       ok: failures.length === 0,
@@ -1522,6 +2684,7 @@ export async function runAcceptance({
       only: measurePlan.only ?? null,
       exitCode,
       timedOut,
+      desktop: desktopRecord,
       // Recorded for context. The public-egress tripwire is the acceptance
       // suite's gate and is not re-litigated by a measurement run.
       netlogOk: netlog?.ok === true,
@@ -1544,6 +2707,61 @@ export async function runAcceptance({
     );
     return report;
   }
+  if (suite === "menu") {
+    // Evidence, not a verdict: every observed value is kept, and a value
+    // that differs from the expectation is listed, never failed. `ok` says
+    // the tool ran cleanly.
+    const evidence = assessMenuReport(native);
+    const evidenceText = formatMenuEvidence(evidence);
+    const failures = Array.isArray(native?.failures)
+      ? [...native.failures]
+      : ["native menu report missing"];
+    if (exitCode !== 0 || timedOut)
+      failures.push(`native process exit ${exitCode}; timeout=${timedOut}`);
+    failures.push(
+      ...applyNativeCrashGate({ failures: [] }, nativeCrashSummary).failures,
+      ...desktopFailures,
+    );
+    const report = {
+      ok: failures.length === 0,
+      observedSteps: evidence.observedSteps,
+      plannedSteps: evidence.plannedSteps,
+      differences: evidence.differences,
+      pageWins: evidence.pageWins,
+      foregroundTaken: evidence.foregroundTaken,
+      evidence,
+      evidenceText,
+      failures,
+      run,
+      runId,
+      suite,
+      exitCode,
+      timedOut,
+      desktop: desktopRecord,
+      // The client's own start line shows that its stderr reached this
+      // runner; the handler prints one line per command it could not run.
+      stderrObserved: menuLines.includes(MENU_STDERR_START),
+      handlerFailures: menuLines.filter((line) => line !== MENU_STDERR_START),
+      netlogOk: netlog?.ok === true,
+      unexpectedSockets: netlog?.unexpectedSockets?.length ?? null,
+      unexpectedDns: netlog?.unexpectedDns?.length ?? null,
+      sandbox,
+      nativeCrashSummary,
+      platform: process.platform,
+      actualCefAcceptance: false,
+      publicProviderAcceptance: false,
+      productionReady: false,
+    };
+    await writeFile(
+      path.join(output, "menu-evidence.txt"),
+      `${evidenceText}\n`,
+    );
+    await writeFile(
+      path.join(output, "menu-evidence.json"),
+      JSON.stringify(report, null, 2),
+    );
+    return report;
+  }
   // Independent of positive/negative TLS outcomes and the browser exit code:
   // a crashed/restarted network service must not masquerade as a TLS rejection.
   const assessed = applyNativeCrashGate(
@@ -1556,6 +2774,7 @@ export async function runAcceptance({
     assessed.failures.push(
       `native process exit ${exitCode}; timeout=${timedOut}`,
     );
+  assessed.failures.push(...desktopFailures);
   if (!netlog?.ok)
     assessed.failures.push(
       "native network log missing or unexpected DNS/socket path",
@@ -1578,6 +2797,7 @@ export async function runAcceptance({
     suite,
     exitCode,
     timedOut,
+    desktop: desktopRecord,
     netlog,
     sandbox,
     nativeFailureReason,
@@ -1605,12 +2825,18 @@ async function main(args) {
   }
   if (command === "stage")
     return stageAcceptance({ ...options, customPlan: options["custom-plan"] });
-  if (command === "run") return runAcceptance(options);
-  if (command === "run-tls") return runAcceptance({ ...options, suite: "tls" });
+  const launch = (suite, rest) => {
+    const { [INTERACTIVE_DESKTOP_OPTION]: interactiveDesktop, ...others } =
+      rest;
+    return runAcceptance({ ...others, suite, interactiveDesktop });
+  };
+  if (command === "run") return launch(options.suite, options);
+  if (command === "run-tls") return launch("tls", options);
   if (command === "measure") {
     const { "window-ms": windowMs, ...rest } = options;
-    return runAcceptance({ ...rest, suite: "measure", windowMs });
+    return launch("measure", { ...rest, windowMs });
   }
+  if (command === "menu") return launch("menu", options);
   if (command === "trace") {
     const result = decodeNetlog(await readFile(options.netlog, "utf8"));
     if (options.output)
@@ -1620,7 +2846,7 @@ async function main(args) {
     return result;
   }
   throw new Error(
-    "Usage: node scripts/cef-browser-acceptance.mjs stage (--custom-plan PREPARED_PLAN_JSON | --runtime OFFICIAL_SDK) --client DLL --output NEW_DIR --target x86_64-pc-windows-msvc [--suite tls] | run-tls --executable PACKAGED_EXECUTABLE --output NEW_DIR [--manual true] | run --executable LEGACY_EXECUTABLE --output NEW_DIR | measure --executable LEGACY_EXECUTABLE --output NEW_DIR [--window-ms 5000..40000] [--only SCENARIO_ID,...]",
+    "Usage: node scripts/cef-browser-acceptance.mjs stage (--custom-plan PREPARED_PLAN_JSON | --runtime OFFICIAL_SDK) --client DLL --output NEW_DIR --target x86_64-pc-windows-msvc [--suite tls] | run-tls --executable PACKAGED_EXECUTABLE --output NEW_DIR [--manual true] | run --executable LEGACY_EXECUTABLE --output NEW_DIR | measure --executable LEGACY_EXECUTABLE --output NEW_DIR [--window-ms 5000..40000] [--only SCENARIO_ID,...] | menu --executable LEGACY_EXECUTABLE --output NEW_DIR. On Windows every run starts the client on a private desktop; --use-interactive-desktop true puts its windows on the desktop of whoever is using the machine instead.",
   );
 }
 if (
@@ -1634,6 +2860,17 @@ if (
         const { matrix, matrixText, sandbox, nativeCrashSummary, ...summary } =
           result;
         console.log(matrixText);
+        console.log(JSON.stringify(summary, null, 2));
+      } else if (result.suite === "menu") {
+        // The evidence is the product; the full report is menu-evidence.json.
+        const {
+          evidence,
+          evidenceText,
+          sandbox,
+          nativeCrashSummary,
+          ...summary
+        } = result;
+        console.log(evidenceText);
         console.log(JSON.stringify(summary, null, 2));
       } else console.log(JSON.stringify(result, null, 2));
       if (result.ok === false) process.exitCode = 1;

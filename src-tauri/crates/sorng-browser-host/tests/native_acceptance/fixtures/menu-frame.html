@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<title>Context menu fixture frame</title>
+<style>
+html, body { margin: 0; font: 12px/1.2 sans-serif; }
+.t { position: absolute; box-sizing: border-box; margin: 0; padding: 2px; overflow: hidden;
+  border: 1px solid #888; background: #fff; color: #222;
+  left: calc(5px + var(--c) * 93px); top: 10px; width: 85px; height: 44px; }
+a.t { display: block; }
+</style>
+<body>
+<div data-t id="plain" class="t" style="--c:0">plain</div>
+<a data-t id="link" class="t" style="--c:1" href="/menu-target?item=3">link</a>
+<div data-t id="own" class="t" style="--c:2">prevents</div>
+<input data-t id="text" class="t" style="--c:3" value="frame text">
+<script>
+'use strict';
+// The framed document observes its own right-clicks; an event never crosses
+// into the embedding document. Target names carry the frame's prefix and
+// rectangles are relative to this frame's own viewport.
+const query = new URLSearchParams(location.search);
+const slot = query.get('slot') || '';
+const doc = query.get('doc') || '';
+const FRAME = query.get('frame') === 'cross' ? 'cross' : 'same';
+const PREFIX = FRAME === 'cross' ? 'xframe-' : 'frame-';
+let sent = 0;
+const post = (kind, body) => fetch('/menu-report', {
+  method: 'POST',
+  keepalive: true,
+  body: JSON.stringify(Object.assign(
+    { slot, doc, frame: FRAME, kind, n: ++sent, atMs: Math.round(performance.now()) }, body)),
+}).catch(() => {});
+const idOf = node => {
+  const element = node instanceof Element ? node : null;
+  const target = element && element.closest('[data-t]');
+  return target ? PREFIX + target.id : PREFIX + 'page';
+};
+let handledBy = '';
+let mouseOnly = 0;
+addEventListener('contextmenu', event => {
+  clearTimeout(mouseOnly);
+  handledBy = '';
+  const seen = {
+    target: idOf(event.target), button: event.button, trusted: event.isTrusted,
+    x: event.clientX, y: event.clientY, focus: document.hasFocus(),
+    visibility: document.visibilityState, active: idOf(document.activeElement),
+  };
+  setTimeout(() => post('trace', Object.assign(seen, {
+    prevented: event.defaultPrevented, handledBy, ownMenu: false,
+  })), 0);
+}, true);
+addEventListener('mouseup', event => {
+  if (event.button !== 2) return;
+  clearTimeout(mouseOnly);
+  const seen = { target: idOf(event.target), x: event.clientX, y: event.clientY };
+  mouseOnly = setTimeout(() => post('mouse-only', seen), 300);
+}, true);
+document.getElementById('own').addEventListener('contextmenu', event => {
+  handledBy = PREFIX + 'own';
+  event.preventDefault();
+});
+const layout = reason => {
+  const rects = {};
+  for (const element of document.querySelectorAll('[data-t]')) {
+    const box = element.getBoundingClientRect();
+    rects[PREFIX + element.id] = [box.left, box.top, box.width, box.height].map(v => Math.round(v * 100) / 100);
+  }
+  post('layout', {
+    reason, rects, scroll: [Math.round(scrollX), Math.round(scrollY)],
+    inner: [innerWidth, innerHeight], dpr: devicePixelRatio, focus: document.hasFocus(),
+    visibility: document.visibilityState,
+  });
+};
+let relaid = 0;
+addEventListener('resize', () => {
+  clearTimeout(relaid);
+  relaid = setTimeout(() => layout('resize'), 150);
+});
+setTimeout(() => layout('ready'), 50);
+</script>
+</body>
+</html>

@@ -1,7 +1,9 @@
 <!doctype html><html><head><meta charset="utf-8"><title>Local synthetic relay capacity</title></head>
 <body style="margin:0;background:white;color:black"><h1>Local synthetic relay capacity</h1>
 <script>
-// Scenario (f): ask one relay for more long-lived connections than it admits.
+// Scenario (f): open many long-lived connections through one relay. With the
+// relay's default cap all of them are admitted; the capped scenario gives its
+// relay a cap below this page's total and observes the refusals.
 // WebSockets and plain requests use separate Chromium socket pools, so both
 // are opened, and the plain requests go to two fixture hosts because Chromium
 // opens at most six connections per host. The fixture holds every one of them;

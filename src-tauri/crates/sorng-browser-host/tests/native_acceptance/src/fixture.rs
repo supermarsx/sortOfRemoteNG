@@ -315,6 +315,11 @@ impl Fixture {
                 "rejectedReports":state.measure.rejected_reports
             });
         }
+        // Context-menu evidence mode only; likewise never acceptance evidence.
+        if let Some(menu) = &state.measure.menu.document {
+            report["mode"] = "menu".into();
+            report["menu"] = menu.clone();
+        }
         std::fs::write(output.join(file), serde_json::to_vec_pretty(&report)?)?;
         Ok(())
     }

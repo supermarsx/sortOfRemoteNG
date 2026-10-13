@@ -13,6 +13,68 @@ node scripts/cef-browser-acceptance.mjs stage --runtime $env:CEF_PATH --client s
 node scripts/cef-browser-acceptance.mjs run --executable .artifacts/cef-acceptance-bundle-01/sorng_cef_acceptance.exe --output .artifacts/cef-acceptance-run-01
 ```
 
+## Where the client's windows go
+
+On Windows every command that starts the client (`run`, `run-tls`, `measure`,
+`menu`) starts it on a **private Win32 desktop** made for that run. Nothing the
+client shows, focuses or activates can reach the desktop of whoever is using the
+machine, and nothing typed or clicked there can reach the client. This is the
+default and needs no option.
+
+`launch-on-private-desktop.ps1` does it: it creates a desktop with a fresh name
+(`sorng-acceptance-<16 hex digits>`) and the access list and integrity label of
+the current desktop, starts the client suspended with that desktop in its start-up
+information, puts it in a job object that kills every process in it when the
+launcher ends for any reason, enforces the run's timeout, and closes its handles.
+It never switches desktops, sends no input, activates no window and passes the
+client no argument: the sandbox and every engine flag are what they are on any
+desktop. The client's output goes to `NEW_DIR/client-stdout.txt` and
+`client-stderr.txt`, the launcher's record to `NEW_DIR/private-desktop.json`, and
+every report carries that record under `desktop`.
+
+While the client runs the launcher reads, every 50 ms, on the desktop it was
+started from: which process owns the foreground window, and the clipboard
+sequence number. **A run does not count**, and the report says so in `failures`,
+when a process of the client ever owned that foreground window (everything is
+killed at that moment), when the clipboard sequence number changed (also when
+somebody else copied something: the run cannot tell), when a process outlived
+the client, or when the desktop could not be closed.
+
+```powershell
+# Puts the client's windows on YOUR desktop. Only for the manual TLS window.
+node scripts/cef-browser-acceptance.mjs run-tls --executable ... --output NEW_DIR --manual true --use-interactive-desktop true
+```
+
+**`--use-interactive-desktop true` is the only way onto the desktop a person is
+using, and it should not be used while anyone is.** In the one launch observed
+on a live desktop a window of the client other than the fixture window held the
+foreground for about 52 seconds (see the context-menu section). No environment
+variable and no CI detection selects it. `--manual true` needs it, because a
+person has to see that window.
+
+What differs on a private desktop, as far as it was observed (three launches:
+one baseline scenario, the two capacity scenarios, one context-menu run): no
+window there is ever the foreground window, so the client's own foreground
+records are always empty, and M6's premise ("fixture window not foreground")
+would hold trivially (the `e-*` scenarios were not run there); no other
+program's window covers the fixture window (`coveringWindows` 0, was 3); and
+Windows adds two 50x50 topmost input-indicator windows to the client process.
+Observed there with nothing to compare it to: the client's UI thread never had
+an active or a focused window, also while tabs were created. In the
+baseline scenario the page was `visible` with `document.hasFocus()` true, and
+frame cadence (31-32 per second), the 20 ms timer (34-48 ticks per second) and
+login time (1.7 s) were inside the ranges measured on the interactive desktop.
+In the context-menu run every outcome, row, engine-reported value and click
+point equalled the interactive launch on all 97 common steps, apart from the
+one row the handler change was meant to disable. Relay counters do not depend
+on a window. The OS popup of a context menu, Inspect, Developer tools and Print
+are never opened in any mode, so nothing is known about them on either desktop.
+
+Linux and macOS have no such launcher: the client uses whatever display the
+caller provides (CI wraps the Linux run in `xvfb-run`). The Windows CI job calls
+the runner with defaults and therefore now runs on a private desktop too; that
+was not verified on a hosted runner.
+
 Both stage and run require new output directories and retain evidence. Staging
 reuses packaging-lane binary/SDK inspection but does not establish archive-to-tree
 provenance, signing or release acceptance. Use Dirac's archive-backed staging for
@@ -48,7 +110,7 @@ Missing observations always fail acceptance; the tool never unlocks runtime Read
 
 ## Measurement mode: hidden, blocked, concurrent and background logins
 
-`measure` runs the same client and fixture server through eleven scenarios and
+`measure` runs the same client and fixture server through twelve scenarios and
 prints observations, not a verdict. Its report is marked `mode: "measure"`; the
 acceptance validator rejects such a report and nothing here unlocks Ready.
 
@@ -59,10 +121,22 @@ node scripts/cef-browser-acceptance.mjs measure --executable .artifacts/cef-acce
 Build and stage as above; any bundle staged from this client works. A full run
 takes about 2 min 40 s (default 12 s window) and opens one 800x600 window titled
 "Local CEF acceptance — synthetic fixtures only"; the `e-covered` scenario adds a
-second, slightly larger "decoy" window for 15 s. Both are shown without
-activation and the fixture window is disabled, so a run never takes the keyboard
-or the foreground and cannot be clicked into. It writes
-`NEW_DIR/measurement-matrix.txt` (the M1-M7 matrix), `NEW_DIR/measurements.json`
+second, slightly larger "decoy" window for 15 s. On Windows both are on the
+run's private desktop. Both are shown without activation and the fixture window
+is disabled, so the fixture window cannot be activated or clicked into. That is
+not the same as the process never owning the foreground window: it owns other
+top-level windows (the toolkit's and the engine's), and in one context-menu
+launch on the interactive desktop one of them was the foreground window for
+about 52 s (see that section). The earlier statement that the nine measurement
+launches of 2026-10-12 "never took the foreground" rests on a check that only
+compares the foreground window with the fixture window; it cannot rule out
+another window of the client having been foreground in those launches, and
+nothing recorded then can settle it. Each scenario now records the first window
+of the process seen as the foreground window
+(`windowState.foregroundOwnedByFixtureProcess`), M1 prints it and M6 is not
+`MEASURED` when there was one; on a private desktop that record is always empty,
+because no window there is the foreground window. It writes
+`NEW_DIR/measurement-matrix.txt` (the M1-M8 matrix), `NEW_DIR/measurements.json`
 (matrix plus runner summary) and `NEW_DIR/run-*/native-report.json` (every raw
 page and native observation under `measurements`). The exit code is 0 when the
 tool ran cleanly; whether a login completed is a result, not a failure.
@@ -75,7 +149,8 @@ tool ran cleanly; whether a login completed is a result, not a failure.
 | `b-born-hidden-generic`                         | never shown, `Generic` adapter                                                         | M3    |
 | `c-visible-input-blocked`                       | `occlude(.., true)`, `show`, `occlude(.., true)`                                       | M3    |
 | `d-concurrent`                                  | three browsers navigated in one loop turn: shown, hidden after attach, born hidden     | M5    |
-| `f-relay-capacity`                              | 40 WebSockets and 2 x 6 held requests through one relay                                | M7    |
+| `f-relay-capacity`                              | 40 WebSockets and 2 x 6 held requests through one relay with its default client cap    | M7    |
+| `f-relay-capacity-capped`                       | the same page through a relay whose cap the fixture sets to 32                         | M8    |
 | `e-inactive`, `e-covered`, `e-minimized-hidden` | fixture window not foreground; covered by the decoy; minimized with a born-hidden view | M6    |
 
 Logins use `ModularForm`, the adapter production selects for a saved form
@@ -116,14 +191,200 @@ loopback ports that gave the same values; per-run values in
   right after its `form` delivery, in five runs of five.
 - A 1x1 view gives the page a 14x14 viewport and its narrow-screen layout.
 - Three concurrent logins all completed, in 1.8-2.1 s against 1.7-1.9 s alone.
-- 52 requested connections against a relay limit of 32: 20 refusals every run,
-  seen by the page as 19-20 failed WebSockets and at most one failed request.
+- 52 requested connections against a relay limit of 32, which was the relay's
+  default at `af3a0002`: 20 refusals every run, seen by the page as 19-20
+  failed WebSockets and at most one failed request. That is a property of a cap
+  of 32, not of the relay as it is now (see below).
+
+The relay's default client cap has since been raised to 256, the sum of the
+engine's two per-proxy socket pools (128 ordinary, 128 WebSocket), because a cap
+below it refuses connections the engine has already admitted. The capacity
+scenario is therefore two scenarios. `f-relay-capacity` (M7) sends the same 52
+connections through a relay with its default cap and reports what that relay
+did, whatever its default is: with 256 the expectation is 0 refusals and 0
+failed WebSockets, and a client built before the change measures the 20
+refusals above. `f-relay-capacity-capped` (M8) gives its relay a cap of 32 in
+the fixture (`ProxyLimits { max_clients: 32, .. }`), so the refusal path keeps
+its real-engine coverage without depending on the default; M8 is `MEASURED`
+only when the cap was set by the fixture and the page asked for more.
+
+Measured once with the new default (2026-10-12 23:00, private desktop, client
+built at `b8eda5db` with `private_forward_proxy.rs` sha256 `02df39eeb83ed237`):
+
+- M7, default cap 256: 52 connections requested, **0 capacity refusals**; all 40
+  WebSockets open, 0 WebSocket errors, 0 failed held requests; the fixture held
+  52 at once.
+- M8, cap 32 set by the fixture: **21 refusals**; 22 WebSockets open and 18
+  failed, 2 held requests failed (one per host); the fixture never held more
+  than 32 at once.
 
 macOS and Linux are not measured. The app shell itself (the Tauri window, its
 overlays and its tab management) was not measured either: these results are for
 the standalone client only. The three acceptance attempts (`run`) still
 create their window focused and enabled; a shown view takes native focus when
-it navigates, which is how an early measurement launch took the foreground.
+it navigates, which is how an early measurement launch took the foreground. On
+Windows they now do so on the run's private desktop.
+
+## Context-menu evidence mode: rows, commands and "the page's own menu wins"
+
+`menu` runs the same client and fixture server through two scenarios that
+right-click a fixture page and record what the production context-menu handler
+did. It prints observations next to what K10 and the handler's unit tests
+expect. A difference is a result to read, never a failure of the run, and the
+report (`mode: "menu"`) is rejected by the acceptance validator.
+
+```powershell
+node scripts/cef-browser-acceptance.mjs menu --executable .artifacts/cef-acceptance-bundle-NEW/sorng_cef_acceptance.exe --output NEW_DIR
+```
+
+Build and stage as above. This crate's manifest enables the host's
+`acceptance-probe` feature, and nothing else does: the app's build contains no
+probe. A run takes about 1 min 20 s and opens the same 800x600 window, disabled,
+shown without activation and placed below every other window; on Windows that
+is on the run's private desktop. No menu, inspector or print dialog is ever
+shown; up to five hidden child views exist briefly for "Open ... in new tab".
+It writes `NEW_DIR/menu-evidence.txt` (every step, then the differences
+grouped), `NEW_DIR/menu-evidence.json` and `NEW_DIR/run-*/native-report.json`
+(raw records under `menu`).
+
+**Never run it with `--use-interactive-desktop true` while someone is using the
+machine.** In the one launch made on a desktop that had a foreground window, a
+window of the client other than the fixture window owned the foreground for
+about 52 s (see Foreground below).
+
+How it observes:
+
+- A right-click is CEF's own `send_mouse_click_event` on the scenario's browser
+  (found with `browser_host_get_browser_by_identifier` when the host creates
+  the view, and checked against the view's child window), at the centre the
+  fixture page reported for the target. One pointer move per zoom level, which
+  the page answers, gives view units per CSS pixel. The context-menu key, the
+  wheel and End/Home go through the same engine methods. No OS-level input.
+- The host's probe stands in for the OS popup and for the clipboard writer and
+  counts every menu the engine asks for; its observer reports what the engine
+  told the policy. The page reports what it saw of each `contextmenu` event,
+  after all of its handlers ran.
+- One right-click is then one of: **native-menu** (engine asked, probe got
+  rows), **host-refused** (engine asked, no rows), **page-handled** (the page
+  prevented the default, the engine did not ask and the probe was not called
+  for 900 ms; a request otherwise arrives within 50 ms), or not delivered.
+- Seven rows are never selected, whatever a step asks for: Print, Inspect and
+  Developer tools open an OS dialog or an activating top-level window; Copy and
+  Cut write the OS clipboard; Paste and Paste as plain text would read whatever
+  the desktop's clipboard holds into the page. They are observed as rows only.
+  The OS clipboard is never written and nothing of it is read: only its
+  sequence number is recorded, around every step.
+- Each scenario records every change of which window of the client, if any, is
+  the desktop's foreground window (`window.foregroundOwnedByClient`; always
+  empty on a private desktop), every change of the active and of the focused
+  window of the client's UI thread (`window.uiThreadWindows`, which a private
+  desktop does not hide), and every shown top-level window of the client other
+  than the fixture window, by class.
+
+| Scenario      | Popup policy | What it covers                                                                                                                                          |
+| ------------- | ------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `menu-main`   | Tabs         | rows per target, the page's own handling (element, inline, `document`, two frames, keyboard), every selectable command, scroll, zoom, refusals, history |
+| `menu-global` | Block        | first page of a view, Back on it, the four "Open ... in new tab" rows with popups blocked, a document that prevents every `contextmenu`                 |
+
+Results (Windows 11 x64, 2026-10-12; five launches. Launches 1-4: interactive
+desktop, host at `41117759` plus the uncommitted menu work, `cef_context_menu.rs`
+sha256 `6e9062ce405e4985`. Launch 5: private desktop, client built at `b60d0a1a`
+with the handler at sha256 `ca65fc1e2b45e161` and the plan as committed here,
+101 steps. Per-run values in `.orchestration/logs/t101-e24.md`):
+
+- **The page's own menu wins.** 13 cases in each of five launches, 65 of 65:
+  the page saw the event and prevented it, the engine asked for no menu and the
+  probe was never called. `preventDefault()` on the element; the same with the
+  page drawing its own menu; inline `oncontextmenu="return false"`; a handler on
+  `document`; a handler inside a same-origin frame and inside a frame of another
+  origin; the context-menu key on a focused element; and a document that
+  prevents every `contextmenu` (plain area, link, image, video, text field,
+  keyboard). A handler that does not prevent the default (listening only,
+  `stopPropagation()` only, or preventing `mousedown`/`mouseup`/`pointerdown`/
+  `auxclick`) leaves the native menu, and so does a frame without a handler
+  inside a document that prevents everything.
+- **Rows** were the same in all five launches. Link: Open link in new tab,
+  Copy link address. Image, video, audio: Open ... in new tab, Copy ...
+  address; an image inside a link gets both groups, link first. Editable field:
+  Undo, Redo, Cut, Copy, Paste, Paste as plain text, Delete, Select all, with
+  both paste rows enabled. Selected text: Copy, Select all. Every menu: Back,
+  Forward, Reload, Stop loading, Print, Inspect, Developer tools. Open is
+  disabled for `javascript:`, another origin, a plain-http downgrade and a
+  `data:` image, and enabled for the attempt's second origin. Password field:
+  Cut and Copy disabled, both paste rows enabled, empty or filled or fully
+  selected.
+- **Differences from the unit tests' assumptions**: the engine sets
+  `CAN_SELECT_ALL` on every page, so Select all is on every menu, including a
+  plain page, a link and an image; and Back is enabled on the first page of a
+  view once it has loaded (selecting it shows `about:blank`). While a document
+  loads, Back and Forward show the state from before the navigation and Print
+  is disabled.
+- **No menu** while input is blocked, the view is hidden, a manual-input slot
+  is active, or the attempt is revoked: the engine still asks and the host
+  offers no rows. The next right-click after each state ends gets the menu
+  again.
+- **Commands**: every Copy ... address row delivered the expected text to the
+  probe's sink (13 targets, and three more on the scrolled and zoomed page).
+  Open link/image/video in new tab opened exactly one hidden view each and the
+  fixture served exactly that address; a disabled Open row cannot be run.
+  Select all, Delete, Undo, Redo, Stop loading, Back, Forward and Reload did
+  what their names say. All 33 commands selected in launch 4 and all 33 in
+  launch 5 reached the handler with its receipt intact, so the command arrives
+  before the dismissal that clears it.
+- **Popup policy.** With the policy Block, Open link in new tab was offered
+  enabled and did nothing but log `action=OpenLink failure=command-unavailable`,
+  in launches 1-4. The handler was then changed to read the view's popup policy
+  (sha256 `ca65fc1e2b45e161`), and launch 5 observed the change in the engine:
+  with Block, Open link, Open image, Open video and Open audio in new tab were
+  each shown **disabled** beside an enabled Copy ... address row, the probe
+  could not run any of them, no tab opened and the handler logged no failure
+  line; with Tabs the same four rows were enabled and each opened exactly one
+  hidden view (0 to 1, 1 to 2, 2 to 3, 3 to 4).
+- **What the engine reports**: `link_url` and `unfiltered_link_url` are both
+  the resolved address (`/menu-target?item=7&q=a b` arrives as
+  `https://fixture.test/menu-target?item=7&q=a%20b`); for `javascript:void(0)`
+  they are `about:blank#blocked` and `javascript:void(0)`. `media_type` follows
+  the element, also for a video whose source failed to load. Edit flags: empty
+  password field `CAN_PASTE`, filled `CAN_PASTE|CAN_SELECT_ALL`, plus
+  `CAN_TRANSLATE` everywhere and `CAN_EDIT_RICHLY` in a contenteditable.
+  Launch 5 reported the same link address, unfiltered address, source address,
+  media type, edit flags, editable state and point as launch 4 on all 80 common
+  steps that have an engine report.
+- **The click point** the menu would hand to Inspect equalled the view
+  coordinates of the click in every case: page, scrolled page (viewport, not
+  document), same-origin frame and other-origin frame (the page's view, not the
+  frame's), and at 125 % zoom (view units, not CSS pixels; one unit of rounding
+  inside a frame). The context-menu key reports the focused element's centre,
+  or (1, 1) with nothing focused.
+- **Foreground.** In one observed launch on the interactive desktop (launch 4)
+  a window of the client other than the fixture window held the foreground for
+  about 52 seconds. What is known: a 50 ms outside sampler found a process of
+  the bundle owning the foreground window in 826 of 1,317 samples; the client's
+  own record says the fixture window was never the foreground window and that
+  the only other shown top-level window of its process, from start to end, was
+  the toolkit's 16x16 `WS_EX_NOACTIVATE` event window; the 52 s fit the time
+  from the first "Open link in new tab", which creates a second browser, to the
+  end of the run, and the other reading (start-up to the end of the first
+  scenario) is not excluded; the host creates a view and a tab from the same
+  prepared window description (a child of the fixture window, `WS_VISIBLE`
+  cleared, `WS_EX_NOACTIVATE` set), then calls `set_focus(0)` and disables and
+  hides the child, and nothing in its tab path activates a window. What is not
+  known: which window it was, and even which process of the client owned it
+  (the sampler kept only whether the owner's image was in the bundle); why
+  Windows allowed it; and whether the app does the same, since the same
+  `open_tab` path runs there. Launches 1-3 could not show it: the session had
+  no foreground window then. Launch 5 cannot show it either: on a private
+  desktop no window is the foreground window. What launch 5 adds is that the
+  client's UI thread had no active window and no focused window at any moment,
+  including while five tabs were created.
+
+Not measured: what Inspect, Developer tools, Print, Copy, Cut, Paste and Paste
+as plain text do (they are never selected); the OS popup itself and its keyboard
+handling; the real clipboard writer; anything on macOS or Linux; a device scale
+factor other than 1; the app shell. After Back the host reported the earlier
+document as loading for about 8 s in launches 2 and 3 (session without a
+foreground window) and for less than 0.4 s in launches 4 (interactive desktop)
+and 5 (private desktop); the cause was not determined.
 
 ## Portable gate and remaining platform measurements
 
