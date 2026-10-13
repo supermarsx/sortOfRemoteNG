@@ -9946,5 +9946,25 @@
   "secureClipboard": {
     "sizeLimit": "安全剪贴板大小限制",
     "sizeLimitHelp": "复制的凭据和导出内容的最大 UTF-8 大小。默认：150 MiB。更大的限制会在复制和清除时使用更多内存。"
+  },
+  "statusBar": {
+    "loginStages": {
+      "waiting-page": "等待页面",
+      "security-check": "等待安全验证",
+      "filling-username": "输入用户名",
+      "filling-password": "输入密码",
+      "submitting": "提交登录",
+      "waiting-2fa": "等待双重验证",
+      "typing-code": "输入一次性验证码",
+      "completed": "已提交登录",
+      "held": "已暂停以手动输入",
+      "cancelled": "已取消登录",
+      "stopped": "自动登录已停止"
+    },
+    "autoLogin": "自动登录",
+    "concurrentLogins": "{{count}} 个正在进行的登录",
+    "loginDetails": "自动登录详情",
+    "loginElapsed": "已用时：{{seconds}} 秒",
+    "loginCompletionNote": "提交登录并不代表网站已接受。请检查网站是否需要验证或批准。"
   }
 }

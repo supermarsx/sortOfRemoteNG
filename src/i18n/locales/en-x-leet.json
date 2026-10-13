@@ -9946,5 +9946,25 @@
   "secureClipboard": {
     "sizeLimit": "53cur3 c11p804rd 5123 11m17",
     "sizeLimitHelp": "M4x1mum UTF-8 5123 f0r c0p13d cr3d3n71415 4nd 3xp0r75. D3f4u17: 150 MiB. 14r63r 11m175 u53 m0r3 m3m0ry wh113 c0py1n6 4nd c134r1n6."
+  },
+  "statusBar": {
+    "loginStages": {
+      "waiting-page": "W4171n6 f0r p463",
+      "security-check": "W4171n6 f0r 53cur17y ch3ck",
+      "filling-username": "7yp1n6 u53rn4m3",
+      "filling-password": "7yp1n6 p455w0rd",
+      "submitting": "5u8m1771n6 1061n",
+      "waiting-2fa": "W4171n6 f0r two-factor 4u7h3n71c4710n",
+      "typing-code": "7yp1n6 one-time c0d3",
+      "completed": "1061n 5u8m1773d",
+      "held": "H31d f0r m4nu41 3n7ry",
+      "cancelled": "1061n c4nc3113d",
+      "stopped": "4u70m471c 1061n 570pp3d"
+    },
+    "autoLogin": "4u70m471c 1061n",
+    "concurrentLogins": "{{count}} 4c71v3 1061n5",
+    "loginDetails": "4u70m471c 1061n d374115",
+    "loginElapsed": "314p53d: {{seconds}} 5",
+    "loginCompletionNote": "5u8m1771n6 4 1061n d035 n07 c0nf1rm 7h47 7h3 w385173 4cc3p73d 17. Ch3ck 7h3 w385173 f0r v3r1f1c4710n 0r 4ppr0v41 pr0mp75."
   }
 }

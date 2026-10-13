@@ -2047,6 +2047,7 @@ const AppContent: React.FC = () => {
         </div>
 
         <AppBottomBars
+          activeSessionId={activeSessionId}
           showStatusBar={!isSessionFullscreen}
           showErrorLog={showErrorLog || appSettings.showErrorLogBar}
           onToggleErrorLog={() => setShowErrorLog(!showErrorLog)}

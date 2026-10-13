@@ -9946,5 +9946,25 @@
   "secureClipboard": {
     "sizeLimit": "Límite del portapapeles seguro",
     "sizeLimitHelp": "Tamaño UTF-8 máximo de credenciales y exportaciones copiadas. Predeterminado: 150 MiB. Límites mayores usan más memoria al copiar y borrar."
+  },
+  "statusBar": {
+    "loginStages": {
+      "waiting-page": "Esperando la página",
+      "security-check": "Esperando la verificación de seguridad",
+      "filling-username": "Escribiendo el usuario",
+      "filling-password": "Escribiendo la contraseña",
+      "submitting": "Enviando inicio de sesión",
+      "waiting-2fa": "Esperando autenticación de dos factores",
+      "typing-code": "Escribiendo código de un solo uso",
+      "completed": "Inicio de sesión enviado",
+      "held": "En pausa para entrada manual",
+      "cancelled": "Inicio de sesión cancelado",
+      "stopped": "Inicio de sesión automático detenido"
+    },
+    "autoLogin": "Inicio de sesión automático",
+    "concurrentLogins": "{{count}} inicios de sesión activos",
+    "loginDetails": "Detalles del inicio de sesión automático",
+    "loginElapsed": "Tiempo transcurrido: {{seconds}} s",
+    "loginCompletionNote": "Enviar el inicio de sesión no confirma que el sitio lo haya aceptado. Compruebe si solicita verificación o aprobación."
   }
 }

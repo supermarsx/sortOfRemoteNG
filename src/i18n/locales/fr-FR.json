@@ -9946,5 +9946,25 @@
   "secureClipboard": {
     "sizeLimit": "Limite du presse-papiers sécurisé",
     "sizeLimitHelp": "Taille UTF-8 maximale des identifiants et exports copiés. Par défaut : 150 MiB. Une limite supérieure utilise davantage de mémoire lors de la copie et de l’effacement."
+  },
+  "statusBar": {
+    "loginStages": {
+      "waiting-page": "En attente de la page",
+      "security-check": "En attente du contrôle de sécurité",
+      "filling-username": "Saisie du nom d’utilisateur",
+      "filling-password": "Saisie du mot de passe",
+      "submitting": "Envoi de la connexion",
+      "waiting-2fa": "En attente de l’authentification à deux facteurs",
+      "typing-code": "Saisie du code à usage unique",
+      "completed": "Connexion envoyée",
+      "held": "En pause pour saisie manuelle",
+      "cancelled": "Connexion annulée",
+      "stopped": "Connexion automatique arrêtée"
+    },
+    "autoLogin": "Connexion automatique",
+    "concurrentLogins": "{{count}} connexions actives",
+    "loginDetails": "Détails de la connexion automatique",
+    "loginElapsed": "Temps écoulé : {{seconds}} s",
+    "loginCompletionNote": "L’envoi de la connexion ne confirme pas son acceptation par le site. Vérifiez si le site demande une vérification ou une approbation."
   }
 }

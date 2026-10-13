@@ -7,14 +7,19 @@ import {
   Loader2,
 } from "lucide-react";
 import { useAppStatusBar } from "../../hooks/app/useAppStatusBar";
-import { Connection, ConnectionSession } from "../../types/connection/connection";
+import {
+  Connection,
+  ConnectionSession,
+} from "../../types/connection/connection";
 import { DatabaseManager } from "../../utils/connection/databaseManager";
+import { NativeLoginStatus } from "./NativeLoginStatus";
 
 interface AppStatusBarProps {
   connections: Connection[];
   sessions: ConnectionSession[];
   databaseManager: DatabaseManager;
   isInitialized: boolean;
+  activeSessionId?: string | null;
 }
 
 type Mgr = ReturnType<typeof useAppStatusBar>;
@@ -67,10 +72,7 @@ const ProtocolTags: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
   return (
     <div className="flex items-center gap-1.5">
       {entries.map(([proto, count]) => (
-        <span
-          key={proto}
-          className="app-badge app-badge--neutral"
-        >
+        <span key={proto} className="app-badge app-badge--neutral">
           {proto} {count > 1 ? `×${count}` : ""}
         </span>
       ))}
@@ -91,9 +93,12 @@ export const AppStatusBar: React.FC<AppStatusBarProps> = (props) => {
         <ProtocolTags mgr={mgr} />
       </div>
       <div className="flex items-center gap-3">
-        <span className="text-[var(--color-textMuted)]">
-          sortOfRemoteNG
-        </span>
+        <NativeLoginStatus
+          connections={props.connections}
+          sessions={props.sessions}
+          activeSessionId={props.activeSessionId}
+        />
+        <span className="text-[var(--color-textMuted)]">sortOfRemoteNG</span>
       </div>
     </div>
   );

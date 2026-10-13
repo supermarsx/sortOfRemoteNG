@@ -9946,5 +9946,25 @@
   "secureClipboard": {
     "sizeLimit": "Secure clipboard size limit",
     "sizeLimitHelp": "Maximum UTF-8 size for copied credentials and exports. Default: 150 MiB. Larger limits use more memory while copying and clearing."
+  },
+  "statusBar": {
+    "loginStages": {
+      "waiting-page": "Waiting for page",
+      "security-check": "Waiting for security check",
+      "filling-username": "Typing crew name",
+      "filling-password": "Typing secret code",
+      "submitting": "Submitting login",
+      "waiting-2fa": "Waiting for two-factor authentication",
+      "typing-code": "Typing one-time code",
+      "completed": "Login submitted",
+      "held": "Held for manual entry",
+      "cancelled": "Login cancelled",
+      "stopped": "Automatic login stopped"
+    },
+    "autoLogin": "Automatic login",
+    "concurrentLogins": "{{count}} active logins",
+    "loginDetails": "Automatic login details",
+    "loginElapsed": "Elapsed: {{seconds}} s",
+    "loginCompletionNote": "Submitting a login does not confirm that the website accepted it. Check the website for verification or approval prompts."
   }
 }

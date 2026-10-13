@@ -9946,5 +9946,25 @@
   "secureClipboard": {
     "sizeLimit": "安全なクリップボードのサイズ上限",
     "sizeLimitHelp": "コピーした資格情報とエクスポートの最大 UTF-8 サイズ。既定値：150 MiB。上限を大きくするとコピーと消去に必要なメモリが増えます。"
+  },
+  "statusBar": {
+    "loginStages": {
+      "waiting-page": "ページを待機中",
+      "security-check": "セキュリティ確認を待機中",
+      "filling-username": "ユーザー名を入力中",
+      "filling-password": "パスワードを入力中",
+      "submitting": "ログインを送信中",
+      "waiting-2fa": "二要素認証を待機中",
+      "typing-code": "ワンタイムコードを入力中",
+      "completed": "ログインを送信しました",
+      "held": "手動入力のため一時停止中",
+      "cancelled": "ログインをキャンセルしました",
+      "stopped": "自動ログインを停止しました"
+    },
+    "autoLogin": "自動ログイン",
+    "concurrentLogins": "{{count}} 件のログインが進行中",
+    "loginDetails": "自動ログインの詳細",
+    "loginElapsed": "経過時間：{{seconds}} 秒",
+    "loginCompletionNote": "ログインの送信はウェブサイトでの承認を意味しません。認証や承認の要求がないか確認してください。"
   }
 }

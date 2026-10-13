@@ -9946,5 +9946,25 @@
   "secureClipboard": {
     "sizeLimit": "Limite de tamanho da área de transferência segura",
     "sizeLimitHelp": "Tamanho UTF-8 máximo para credenciais e exportações copiadas. Predefinição: 150 MiB. Limites maiores usam mais memória ao copiar e limpar."
+  },
+  "statusBar": {
+    "loginStages": {
+      "waiting-page": "A aguardar a página",
+      "security-check": "A aguardar verificação de segurança",
+      "filling-username": "A escrever o nome de utilizador",
+      "filling-password": "A escrever a palavra-passe",
+      "submitting": "A enviar início de sessão",
+      "waiting-2fa": "A aguardar autenticação de dois fatores",
+      "typing-code": "A escrever código de utilização única",
+      "completed": "Início de sessão enviado",
+      "held": "Em pausa para introdução manual",
+      "cancelled": "Início de sessão cancelado",
+      "stopped": "Início de sessão automático interrompido"
+    },
+    "autoLogin": "Início de sessão automático",
+    "concurrentLogins": "{{count}} inícios de sessão ativos",
+    "loginDetails": "Detalhes do início de sessão automático",
+    "loginElapsed": "Tempo decorrido: {{seconds}} s",
+    "loginCompletionNote": "Enviar o início de sessão não confirma que o site o aceitou. Verifique se o site pede verificação ou aprovação."
   }
 }

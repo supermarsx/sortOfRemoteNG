@@ -9946,5 +9946,25 @@
   "secureClipboard": {
     "sizeLimit": "Limite degli appunti sicuri",
     "sizeLimitHelp": "Dimensione UTF-8 massima di credenziali ed esportazioni copiate. Predefinita: 150 MiB. Limiti maggiori usano più memoria durante copia e cancellazione."
+  },
+  "statusBar": {
+    "loginStages": {
+      "waiting-page": "In attesa della pagina",
+      "security-check": "In attesa della verifica di sicurezza",
+      "filling-username": "Inserimento del nome utente",
+      "filling-password": "Inserimento della password",
+      "submitting": "Invio dell’accesso",
+      "waiting-2fa": "In attesa dell’autenticazione a due fattori",
+      "typing-code": "Inserimento del codice monouso",
+      "completed": "Accesso inviato",
+      "held": "In pausa per inserimento manuale",
+      "cancelled": "Accesso annullato",
+      "stopped": "Accesso automatico interrotto"
+    },
+    "autoLogin": "Accesso automatico",
+    "concurrentLogins": "{{count}} accessi attivi",
+    "loginDetails": "Dettagli dell’accesso automatico",
+    "loginElapsed": "Tempo trascorso: {{seconds}} s",
+    "loginCompletionNote": "L’invio dell’accesso non conferma che il sito lo abbia accettato. Verificare se il sito richiede verifiche o approvazioni."
   }
 }

@@ -9946,5 +9946,25 @@
   "secureClipboard": {
     "sizeLimit": "Größenlimit der sicheren Zwischenablage",
     "sizeLimitHelp": "Maximale UTF-8-Größe kopierter Zugangsdaten und Exporte. Standard: 150 MiB. Größere Limits benötigen beim Kopieren und Löschen mehr Speicher."
+  },
+  "statusBar": {
+    "loginStages": {
+      "waiting-page": "Warten auf Seite",
+      "security-check": "Warten auf Sicherheitsprüfung",
+      "filling-username": "Benutzername wird eingegeben",
+      "filling-password": "Passwort wird eingegeben",
+      "submitting": "Anmeldung wird gesendet",
+      "waiting-2fa": "Warten auf Zwei-Faktor-Authentifizierung",
+      "typing-code": "Einmalcode wird eingegeben",
+      "completed": "Anmeldung gesendet",
+      "held": "Für manuelle Eingabe angehalten",
+      "cancelled": "Anmeldung abgebrochen",
+      "stopped": "Automatische Anmeldung angehalten"
+    },
+    "autoLogin": "Automatische Anmeldung",
+    "concurrentLogins": "{{count}} aktive Anmeldungen",
+    "loginDetails": "Details der automatischen Anmeldung",
+    "loginElapsed": "Vergangene Zeit: {{seconds}} s",
+    "loginCompletionNote": "Das Senden der Anmeldung bestätigt nicht, dass die Website sie akzeptiert hat. Prüfen Sie die Website auf Bestätigungs- oder Genehmigungsanfragen."
   }
 }

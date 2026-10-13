@@ -9946,5 +9946,25 @@
   "secureClipboard": {
     "sizeLimit": "보안 클립보드 크기 제한",
     "sizeLimitHelp": "복사된 자격 증명 및 내보내기의 최대 UTF-8 크기입니다. 기본값: 150 MiB. 제한이 크면 복사 및 지우기에 더 많은 메모리가 사용됩니다."
+  },
+  "statusBar": {
+    "loginStages": {
+      "waiting-page": "페이지 대기 중",
+      "security-check": "보안 검사 대기 중",
+      "filling-username": "사용자 이름 입력 중",
+      "filling-password": "비밀번호 입력 중",
+      "submitting": "로그인 제출 중",
+      "waiting-2fa": "2단계 인증 대기 중",
+      "typing-code": "일회용 코드 입력 중",
+      "completed": "로그인 제출됨",
+      "held": "수동 입력을 위해 일시 중지됨",
+      "cancelled": "로그인 취소됨",
+      "stopped": "자동 로그인 중지됨"
+    },
+    "autoLogin": "자동 로그인",
+    "concurrentLogins": "진행 중인 로그인 {{count}}개",
+    "loginDetails": "자동 로그인 세부 정보",
+    "loginElapsed": "경과 시간: {{seconds}}초",
+    "loginCompletionNote": "로그인 제출은 웹사이트의 수락을 의미하지 않습니다. 웹사이트에서 확인 또는 승인 요청을 확인하세요."
   }
 }
