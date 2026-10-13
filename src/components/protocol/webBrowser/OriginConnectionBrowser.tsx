@@ -2,6 +2,7 @@ import React, {
   useCallback,
   useEffect,
   useLayoutEffect,
+  useMemo,
   useRef,
   useState,
 } from "react";
@@ -27,7 +28,10 @@ import type {
 import { useConnections } from "../../../contexts/useConnections";
 import { useSettings } from "../../../contexts/SettingsContext";
 import { useSessionRenderActivity } from "../../../contexts/SessionRenderActivityContext";
-import { useOriginBrowser } from "../../../hooks/protocol/useOriginBrowser";
+import {
+  useOriginBrowser,
+  type OriginBrowserRestartReason,
+} from "../../../hooks/protocol/useOriginBrowser";
 import {
   originBrowserLoadError,
   originBrowserSessionError,
@@ -35,7 +39,11 @@ import {
 import { useOriginBrowserOwner } from "../../../hooks/protocol/useOriginBrowserOwner";
 import { useOriginQuickConnection } from "../../../hooks/protocol/useOriginQuickConnection";
 import { useOriginBrowserOverlays } from "../../../hooks/protocol/useOriginBrowserOverlays";
-import { originBrowserConnectionTarget } from "../../../hooks/protocol/originBrowserConnectionTarget";
+import {
+  originBrowserConnectionTarget,
+  originBrowserSavedSource,
+} from "../../../hooks/protocol/originBrowserConnectionTarget";
+import { nativeBrowserAuthoritySignature } from "../../../utils/connection/nativeBrowserAuthoritySignature";
 import { normalizeWebBrowserSettings } from "../../../utils/settings/webBrowserSettings";
 import { resolveConnectionBrowserSettings } from "../../../utils/settings/browserSessionSettings";
 import { captureSessionDatabaseAccess } from "../../../utils/session/sessionDatabaseOwnership";
@@ -92,6 +100,53 @@ import { requestOriginBrowserRecovery } from "../../../utils/session/originBrows
 import { getQuickConnectConnection } from "../../../utils/session/runtimeConnectionRegistry";
 import OriginBrowserRecoveryActions from "./OriginBrowserRecoveryActions";
 
+/** Native answers a create within its 20 s engine wait plus the saved initial
+ * load timeout and 5 s. The rest is the slack the hook's own default leaves. */
+const NATIVE_START_MARGIN_SECONDS = 60;
+
+/** The save failed after the open page was already closed for it. */
+class SaveAfterCloseError extends Error {}
+
+type RestartStage = "running" | "done" | "failed";
+/** One line per in-place restart, in the user's terms. A restart is "done"
+ * only once its replacement is attached. */
+const RESTART_NOTICES: Record<
+  OriginBrowserRestartReason,
+  Record<RestartStage, string>
+> = {
+  "source-changed": {
+    running:
+      "This connection's saved settings changed. Reconnecting this tab to apply them…",
+    done: "This connection's saved settings changed, so this tab reconnected to apply them.",
+    failed:
+      "This connection's saved settings changed, so this tab tried to reconnect. It could not; the error below explains why.",
+  },
+  "settings-saved": {
+    running: "Saving browser settings and reconnecting this tab…",
+    done: "Browser settings saved. This tab reconnected to apply them.",
+    failed:
+      "Browser settings were saved, but this tab could not reconnect. The error below explains why.",
+  },
+  "session-cleared": {
+    running: "Clearing this browser session and reconnecting…",
+    done: "Browser session cleared. This tab reconnected with a new one.",
+    failed:
+      "The browser session was cleared, but this tab could not reconnect. The error below explains why.",
+  },
+  "relay-ended": {
+    running:
+      "The app's private proxy for this tab stopped. Reconnecting this tab with a new one…",
+    done: "The app's private proxy for this tab stopped, so this tab reconnected with a new one.",
+    failed:
+      "The app's private proxy for this tab stopped, so this tab tried to reconnect. It could not; the error below explains why.",
+  },
+  requested: {
+    running: "Reconnecting this tab…",
+    done: "This tab reconnected.",
+    failed: "This tab could not reconnect. The error below explains why.",
+  },
+};
+
 export default function OriginConnectionBrowser({
   session,
   sharedPopupId,
@@ -147,6 +202,8 @@ export default function OriginConnectionBrowser({
     (row) => row.id === session.connectionId,
   );
   const connection = matches.length === 1 ? matches[0] : temporary?.connection;
+  // Only a saved row has a database write to wait for and a host to follow.
+  const savedRow = matches.length === 1 ? matches[0] : undefined;
   const ownerDatabaseId =
     proof?.ownerDatabaseId ?? session.ownerDatabaseId ?? "";
   // Display preferences only. Native independently authenticates its policies.
@@ -166,15 +223,48 @@ export default function OriginConnectionBrowser({
   const [credentialsOpen, setCredentialsOpen] = useState(false);
   const [recordingOpen, setRecordingOpen] = useState(false);
   const addressRef = useRef<HTMLInputElement>(null);
-  let initialUrl = "";
+  // Native builds a saved tab's source from the saved row alone, so the
+  // target follows a saved host or scheme edit that the session row predates.
+  const savedSource = savedRow ? originBrowserSavedSource(savedRow) : undefined;
+  let targetUrl = "";
   try {
-    if (connection)
-      initialUrl = originBrowserConnectionTarget(connection, session);
+    if (connection && savedSource !== null)
+      targetUrl = originBrowserConnectionTarget(
+        connection,
+        savedSource ? { ...session, ...savedSource } : session,
+      );
   } catch {
     /* Native navigation remains disabled. */
   }
+  const authoritySignature = useMemo(
+    () => (savedRow ? nativeBrowserAuthoritySignature(savedRow) : undefined),
+    [savedRow],
+  );
+  // What the current attempt was started from. An edit reaches the row in
+  // memory before the database write that native reads, so a saved tab moves
+  // to it only once that write has finished (see the effect further down).
+  const [applied, setApplied] = useState({
+    initialUrl: targetUrl,
+    authoritySignature,
+  });
+  const source =
+    authoritySignature !== undefined && applied.authoritySignature !== undefined
+      ? applied
+      : { initialUrl: targetUrl, authoritySignature };
+  const { initialUrl } = source;
   const ownerAvailable =
     !!proof && !!connection && !sharedPopupId && !session.reattachOnly;
+  const canEdit =
+    !globalBrowserConfigInvalid &&
+    !isTemporary &&
+    context.databaseAvailability?.status === "ready" &&
+    context.databaseAvailability.databaseId === session.ownerDatabaseId &&
+    !!connection;
+  const permissionsOpen = editing && canEdit && ownerAvailable && isActive;
+  // "Save for next connection" closes the page before it saves. The tab ends
+  // only once the outcome of that save has been shown in its dialog.
+  const [finishing, setFinishing] = useState(false);
+  const holdFinalStatus = finishing && permissionsOpen;
   const dialogOpen =
     editing ||
     moreOpen ||
@@ -202,6 +292,12 @@ export default function OriginConnectionBrowser({
     consent: { kind: "required" },
     assertOwner: proof?.assertCurrent,
     quickConnect: temporary?.quickConnect,
+    authoritySignature: source.authoritySignature,
+    startTimeoutMs: browserConfigInvalid
+      ? undefined
+      : (browserConfig.initialLoadTimeoutSeconds +
+          NATIVE_START_MARGIN_SECONDS) *
+        1000,
   });
   const { close, navigate: nativeNavigate } = browser;
   useLayoutEffect(() => {
@@ -225,12 +321,20 @@ export default function OriginConnectionBrowser({
           .join(" "))
       : undefined;
   const dispatchSession = context.dispatch;
+  // The commit in which an owner appears still shows the state the hook held
+  // without one. The hook replaces it before the next render, so that state
+  // is never published as this session's error.
+  const ownerlessState =
+    browser.state.unavailableReason === "owner-unavailable";
+  const ownerStateSeen = useRef(false);
   useEffect(() => {
     if (
       !lifetime.current ||
       !ownerAvailable ||
       !proof ||
       !connectionStatus ||
+      (ownerlessState && !ownerStateSeen.current) ||
+      (connectionStatus === "disconnected" && holdFinalStatus) ||
       !liveSession ||
       liveSession.connectionId !== session.connectionId ||
       liveSession.ownerDatabaseId !== session.ownerDatabaseId ||
@@ -264,13 +368,175 @@ export default function OriginConnectionBrowser({
     proof,
     connectionStatus,
     sessionError,
+    ownerlessState,
+    holdFinalStatus,
   ]);
+  useEffect(() => {
+    ownerStateSeen.current =
+      ownerAvailable && (ownerStateSeen.current || !ownerlessState);
+  }, [ownerAvailable, ownerlessState]);
   // A document load error retains its native attempt for back/address/inspection.
   const nativeAttached =
     phase === "attached" ||
     (phase === "error" &&
       rootSnapshot?.phase === "attached" &&
       !!rootSnapshot.loadFailure);
+  const { restart, lastRestart } = browser;
+  // Older embedded and test contexts carry no persistence state.
+  const saveFlushed =
+    !context.persistence?.dirty && !context.persistence?.saving;
+  const liveAttempt = phase === "starting" || nativeAttached;
+  const seenChange = useRef<{ signature: string; restart: number } | null>(
+    null,
+  );
+  useEffect(() => {
+    if (
+      applied.initialUrl === targetUrl &&
+      applied.authoritySignature === authoritySignature
+    ) {
+      seenChange.current = null;
+      return;
+    }
+    const next = { initialUrl: targetUrl, authoritySignature };
+    // No saved row was started from, or none is left to wait for.
+    if (
+      authoritySignature === undefined ||
+      applied.authoritySignature === undefined
+    ) {
+      setApplied(next);
+      return;
+    }
+    if (seenChange.current?.signature !== authoritySignature)
+      seenChange.current = {
+        signature: authoritySignature,
+        restart: lastRestart?.serial ?? 0,
+      };
+    if (!saveFlushed) return;
+    const seen = seenChange.current;
+    seenChange.current = null;
+    setApplied(next);
+    // The attempt has to be replaced by one that reads the row just written.
+    // A failed or finally closed tab keeps its explicit Retry instead, and the
+    // restart native asked for on seeing this write is not repeated; one the
+    // hook made for another cause may have read the row before the write. (The
+    // tab's own Save and reconnect marks its write as applied; see onSave.)
+    if (
+      targetUrl &&
+      liveAttempt &&
+      applied.authoritySignature !== authoritySignature &&
+      !(
+        lastRestart?.automatic &&
+        lastRestart.reason === "source-changed" &&
+        lastRestart.serial > seen.restart
+      )
+    )
+      void restart("source-changed");
+  }, [
+    applied,
+    targetUrl,
+    authoritySignature,
+    saveFlushed,
+    liveAttempt,
+    lastRestart,
+    restart,
+  ]);
+  // The session row copied the saved host and scheme when its tab opened. It
+  // follows them once the tab runs from the edited row, for the tab strip and
+  // for every later start.
+  const savedHost = savedSource?.hostname;
+  const savedScheme = savedSource?.protocol;
+  useEffect(() => {
+    if (
+      !lifetime.current ||
+      !ownerAvailable ||
+      !proof ||
+      savedHost === undefined ||
+      savedScheme === undefined ||
+      applied.initialUrl !== targetUrl ||
+      applied.authoritySignature !== authoritySignature ||
+      !liveSession ||
+      liveSession.connectionId !== session.connectionId ||
+      liveSession.ownerDatabaseId !== session.ownerDatabaseId ||
+      (liveSession.hostname === savedHost &&
+        liveSession.protocol === savedScheme)
+    )
+      return;
+    try {
+      proof.assertCurrent();
+    } catch {
+      return;
+    }
+    dispatchSession({
+      type: "UPDATE_SESSION",
+      payload: { id: session.id, hostname: savedHost, protocol: savedScheme },
+    });
+  }, [
+    dispatchSession,
+    liveSession,
+    session.id,
+    session.connectionId,
+    session.ownerDatabaseId,
+    ownerAvailable,
+    proof,
+    savedHost,
+    savedScheme,
+    applied,
+    targetUrl,
+    authoritySignature,
+  ]);
+  // What the last in-place restart came to. It is "done" only once its
+  // replacement is attached, and a later Retry clears a failed one.
+  const restarting = !!browser.state.restart;
+  const [restartProgress, setRestartProgress] = useState<{
+    serial: number;
+    stage: RestartStage;
+  } | null>(null);
+  const [dismissedRestart, setDismissedRestart] = useState(0);
+  const [settingsSave, setSettingsSave] = useState<
+    "pending" | "saved" | "failed"
+  >("pending");
+  useEffect(() => {
+    if (!lastRestart) return;
+    const stage =
+      restartProgress?.serial === lastRestart.serial
+        ? restartProgress.stage
+        : null;
+    const failed = phase === "error" || phase === "unavailable";
+    const next = restarting
+      ? "running"
+      : stage === "running"
+        ? phase === "attached"
+          ? "done"
+          : failed
+            ? "failed"
+            : phase === "starting"
+              ? "running"
+              : null
+        : stage === "failed" && !failed
+          ? null
+          : stage;
+    if (next !== stage)
+      setRestartProgress(next && { serial: lastRestart.serial, stage: next });
+  }, [lastRestart, restarting, phase, restartProgress]);
+  const restartStage =
+    lastRestart &&
+    restartProgress?.serial === lastRestart.serial &&
+    dismissedRestart !== lastRestart.serial
+      ? restartProgress.stage
+      : null;
+  // A restart for a save says "saved" only once that save has succeeded. The
+  // table is complete for the hook's reasons as compiled; one it gains later
+  // still gets the general line here, never a blank or a broken shell.
+  const restartNotice =
+    lastRestart && restartStage
+      ? (RESTART_NOTICES[
+          lastRestart.reason !== "settings-saved" ||
+          settingsSave === "saved" ||
+          (settingsSave === "pending" && restartStage === "running")
+            ? lastRestart.reason
+            : "requested"
+        ] ?? RESTART_NOTICES.requested)[restartStage]
+      : null;
   const [repairedMfaFailure, setRepairedMfaFailure] =
     useState<typeof startupFailure>(null);
   const [devtoolsError, setDevtoolsError] = useState(false);
@@ -299,9 +565,10 @@ export default function OriginConnectionBrowser({
   };
   const restartEphemeralContext = async () => {
     assertShellOwner();
-    await browser.close(true);
-    assertShellOwner();
-    browser.reconnect();
+    // Close, then create, inside the hook: the tab never reads as ended, and
+    // the hook checks the owner again before it creates.
+    if (!(await browser.restart("session-cleared")))
+      throw new Error("Browser restart was not confirmed.");
   };
   const appearanceStatus = useNativeBrowserAppearance(
     rootSnapshot?.identity ?? null,
@@ -582,12 +849,6 @@ export default function OriginConnectionBrowser({
     typeof browser.state.navigationError === "string"
       ? browser.state.navigationError
       : null;
-  const canEdit =
-    !globalBrowserConfigInvalid &&
-    !isTemporary &&
-    context.databaseAvailability?.status === "ready" &&
-    context.databaseAvailability.databaseId === session.ownerDatabaseId &&
-    !!connection;
   const [recoveryError, setRecoveryError] = useState(false);
   const recoveryAllowed = isActive && !dialogOpen && settingsReady !== false;
   const recoveryScope = useRef({
@@ -1233,7 +1494,19 @@ export default function OriginConnectionBrowser({
           </div>
         </div>
       )}
-      {!initialUrl && connection && (
+      {savedSource === null && (
+        <div
+          role="alert"
+          className="sor-alert-error mx-3 mt-2 text-sm text-[var(--color-text)]"
+        >
+          This saved connection is no longer a website connection, so this tab
+          cannot reconnect to it. Close this tab and open the connection again.
+          <div className="mt-2 flex flex-wrap gap-2">
+            {recoveryActions(["connection"])}
+          </div>
+        </div>
+      )}
+      {!initialUrl && connection && savedSource !== null && (
         <div
           role="alert"
           className="sor-alert-error mx-3 mt-2 text-sm text-[var(--color-text)]"
@@ -1244,6 +1517,41 @@ export default function OriginConnectionBrowser({
               isTemporary ? ["connection"] : ["connection", "application"],
             )}
           </div>
+        </div>
+      )}
+      {restartNotice && lastRestart && (
+        // In the layout flow: a native child surface paints above DOM overlays.
+        <div
+          role="status"
+          aria-label="Browser reconnection"
+          className={`mx-3 mt-2 flex shrink-0 min-w-0 items-start gap-2 text-sm text-[var(--color-text)] ${
+            restartStage === "failed"
+              ? "sor-alert-warning"
+              : "rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2"
+          }`}
+        >
+          {restartStage === "running" ? (
+            <LoaderCircle
+              size={16}
+              className="mt-0.5 shrink-0 animate-spin motion-reduce:animate-none"
+              aria-hidden="true"
+            />
+          ) : (
+            <RotateCw
+              size={16}
+              className="mt-0.5 shrink-0"
+              aria-hidden="true"
+            />
+          )}
+          <p className="min-w-0 flex-1">{restartNotice}</p>
+          <button
+            type="button"
+            className="sor-btn sor-icon-btn-sm shrink-0"
+            aria-label="Dismiss reconnection notice"
+            onClick={() => setDismissedRestart(lastRestart.serial)}
+          >
+            <X size={14} aria-hidden="true" />
+          </button>
         </div>
       )}
       <OriginBrowserNotices notices={notices} />
@@ -1328,11 +1636,13 @@ export default function OriginConnectionBrowser({
               {" · Temporary Quick Connect"}
             </span>
           )}
-          {loading && browserConfig.showLoadingProgress
-            ? " · Loading"
-            : viewportState.phase !== "attached"
-              ? ` · ${viewportState.phase}`
-              : ""}
+          {restarting
+            ? " · reconnecting"
+            : loading && browserConfig.showLoadingProgress
+              ? " · Loading"
+              : viewportState.phase !== "attached"
+                ? ` · ${viewportState.phase}`
+                : ""}
         </span>
         {browserConfig.showSecurityInfo && (
           <span
@@ -1345,7 +1655,7 @@ export default function OriginConnectionBrowser({
           </span>
         )}
       </div>
-      {editing && canEdit && ownerAvailable && isActive && connection && (
+      {permissionsOpen && connection && (
         <BrowserPermissionsDialog
           session={session}
           connection={connection}
@@ -1364,45 +1674,96 @@ export default function OriginConnectionBrowser({
                 throw new Error();
             };
             const scope = context.databaseAvailability!;
-            const current = context.getCurrentConnections?.({
-              databaseId: session.ownerDatabaseId!,
-              generation: scope.generation,
-            });
-            const saved = current?.find((row) => row.id === connection.id);
+            const currentRow = () =>
+              context
+                .getCurrentConnections?.({
+                  databaseId: session.ownerDatabaseId!,
+                  generation: scope.generation,
+                })
+                ?.find((row) => row.id === connection.id);
+            const saved = currentRow();
             if (
               !saved ||
               saved.websiteDomainPermissions !==
                 connection.websiteDomainPermissions
             )
               throw new Error();
-            await browser.close(true);
-            assertAccess();
-            const currentAfterClose = context.getCurrentConnections?.({
-              databaseId: session.ownerDatabaseId!,
-              generation: scope.generation,
-            });
-            const savedAfterClose = currentAfterClose?.find(
-              (row) => row.id === connection.id,
-            );
-            if (
-              !savedAfterClose ||
-              savedAfterClose.websiteDomainPermissions !==
-                saved.websiteDomainPermissions
-            )
-              throw new Error();
-            await context.dispatchAndFlush({
-              type: "UPDATE_CONNECTION",
-              payload: {
-                ...savedAfterClose,
-                websiteDomainPermissions: permissions,
-              },
-            });
-            assertAccess();
-            await updateSettings({ webBrowser: config });
-            lease();
+            // Runs only once the open page is confirmed closed.
+            const persist = async () => {
+              assertAccess();
+              const savedAfterClose = currentRow();
+              if (
+                !savedAfterClose ||
+                savedAfterClose.websiteDomainPermissions !==
+                  saved.websiteDomainPermissions
+              )
+                throw new Error();
+              await context.dispatchAndFlush({
+                type: "UPDATE_CONNECTION",
+                payload: {
+                  ...savedAfterClose,
+                  websiteDomainPermissions: permissions,
+                },
+              });
+              // The attempt created next reads this row: it is not a change
+              // that a second, automatic reconnect has to follow.
+              const written = currentRow();
+              if (written && lifetime.current)
+                setApplied((current) => ({
+                  ...current,
+                  authoritySignature: nativeBrowserAuthoritySignature(written),
+                }));
+              assertAccess();
+              await updateSettings({ webBrowser: config });
+              lease();
+            };
+            if (!reconnect) {
+              setFinishing(true);
+              try {
+                await browser.close(true);
+              } catch (failure) {
+                // The page is still open, so the tab does not end.
+                if (lifetime.current) setFinishing(false);
+                throw failure;
+              }
+              try {
+                await persist();
+              } catch {
+                throw new SaveAfterCloseError();
+              }
+              if (!lifetime.current) return;
+              setEditing(false);
+              setFinishing(false);
+              return;
+            }
+            let persisted = false;
+            let replaced: boolean;
+            setSettingsSave("pending");
+            try {
+              // Close, save, create: the tab never reads as ended in between.
+              replaced = await browser.restart("settings-saved", {
+                beforeCreate: async () => {
+                  try {
+                    await persist();
+                  } catch (failure) {
+                    if (lifetime.current) setSettingsSave("failed");
+                    throw failure;
+                  }
+                  persisted = true;
+                  if (lifetime.current) setSettingsSave("saved");
+                },
+              });
+            } catch {
+              // The hook replaces the tab even though the save then failed.
+              throw new SaveAfterCloseError();
+            }
+            // Refused, or the open page could not be confirmed closed.
+            if (!replaced && !persisted) throw new Error();
             if (!lifetime.current) return;
             setEditing(false);
-            if (reconnect) browser.reconnect();
+            // Released only now: a page closed by an earlier, failed "Save for
+            // next connection" must not end the tab while it is replaced.
+            setFinishing(false);
           }}
         />
       )}
@@ -1432,7 +1793,9 @@ function BrowserPermissionsDialog({
     connection.websiteDomainPermissions,
   );
   const [pending, setPending] = useState(false);
-  const [error, setError] = useState(false);
+  const [error, setError] = useState<
+    false | "unsaved" | "restarted" | "closed"
+  >(false);
   const alive = useRef(true);
   const original = useRef({
     config: JSON.stringify(config),
@@ -1450,15 +1813,25 @@ function BrowserPermissionsDialog({
     setPending(true);
     try {
       captureSessionDatabaseAccess(session)();
+      const saved = JSON.stringify(connection.websiteDomainPermissions);
       if (
         original.current.config !== JSON.stringify(config) ||
-        original.current.permissions !==
-          JSON.stringify(connection.websiteDomainPermissions)
+        // Unchanged since this form opened, or already what an earlier save
+        // of this same form wrote before it failed.
+        (original.current.permissions !== saved &&
+          saved !== JSON.stringify(permissions))
       )
         throw new Error();
       await onSave(draft, permissions, reconnect);
-    } catch {
-      if (alive.current) setError(true);
+    } catch (failure) {
+      if (alive.current)
+        setError(
+          !(failure instanceof SaveAfterCloseError)
+            ? "unsaved"
+            : reconnect
+              ? "restarted"
+              : "closed",
+        );
     } finally {
       if (alive.current) setPending(false);
     }
@@ -1483,9 +1856,10 @@ function BrowserPermissionsDialog({
       />
       <ModalBody className="min-h-0 overflow-y-auto p-4 space-y-4">
         <p className="text-sm leading-relaxed text-[var(--color-textSecondary)]">
-          Saving closes this browser attempt. Saved permissions apply to the
-          next connection; Save and reconnect starts a new attempt. Login
-          consent and certificate trust remain separate.
+          Saved permissions never apply to a page that is already open. Save and
+          reconnect closes this page, saves and opens it again in this tab. Save
+          for next connection closes this page, saves and leaves this tab
+          disconnected. Login consent and certificate trust remain separate.
         </p>
         <SettingsCard>
           <WebsiteDomainPermissionsEditor
@@ -1509,8 +1883,12 @@ function BrowserPermissionsDialog({
             role="alert"
             className="sor-alert-error text-sm text-[var(--color-text)]"
           >
-            Settings could not be fully saved. Check database access and current
-            settings before retrying. The browser has not been restarted.
+            {error === "unsaved"
+              ? "Nothing was saved. Check database access and the browser status behind this dialog, then try again. If these settings were changed elsewhere in the meantime, reopen this dialog first."
+              : error === "restarted"
+                ? "The settings could not be fully saved. This tab was restarted with what is saved now. Check database access, then save again."
+                : "The settings could not be fully saved, and this tab's page is already closed. Check database access, then save again."}{" "}
+            Your changes are still in this form.
           </p>
         )}
         {pending && (

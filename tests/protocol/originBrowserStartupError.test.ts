@@ -2,7 +2,11 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import {
   originBrowserPolicyFailures,
+  originBrowserStartRetriesExhausted,
+  originBrowserStartTimeout,
   originBrowserStartupError,
+  originBrowserStartupRetryable,
+  originBrowserStartupStale,
 } from "../../src/hooks/protocol/originBrowserStartupError";
 
 const runtime = readFileSync("src-tauri/src/origin_browser_runtime.rs", "utf8");
@@ -120,11 +124,17 @@ describe("native browser per-view startup diagnostics", () => {
         new RegExp(`const ${name}: &str = "([^"]+)";`),
       )?.[1];
       expect(message).toBeTruthy();
+      // Native's sentence is shown as it is, except where it stopped being
+      // true: a start that timed out no longer needs an app restart.
+      const shown =
+        name === "STARTUP_TIMED_OUT"
+          ? "The native browser engine took too long to become ready. A slow start does not disable it, so it may still be starting: use Retry browser. If it keeps timing out, check the native startup diagnostics."
+          : message;
       expect(originBrowserStartupError("create", message)).toEqual({
         stage: "create",
         category: "runtime",
         code,
-        message: `Native browser startup failed (create). ${message}`,
+        message: `Native browser startup failed (create). ${shown}`,
       });
       expect(originBrowserStartupError("status", message).category).toBe("ipc");
       const appended = originBrowserStartupError(
@@ -135,6 +145,121 @@ describe("native browser per-view startup diagnostics", () => {
       expect(appended.message).not.toMatch(/user:secret|example\.test|token=/);
     },
   );
+
+  it("retries only the two native start failures that pass by themselves", () => {
+    const retried = names
+      .map(([name, code]) => {
+        const message = runtime.match(
+          new RegExp(`const ${name}: &str = "([^"]+)";`),
+        )?.[1];
+        expect(message).toBeTruthy();
+        const failure = originBrowserStartupError("create", message);
+        expect(failure.code).toBe(code);
+        // The same text from another stage, or decorated, proves nothing.
+        expect(
+          originBrowserStartupRetryable(
+            originBrowserStartupError("status", message),
+          ),
+        ).toBe(false);
+        expect(
+          originBrowserStartupRetryable(
+            originBrowserStartupError("create", `${message} SECRET`),
+          ),
+        ).toBe(false);
+        return originBrowserStartupRetryable(failure) ? name : null;
+      })
+      .filter(Boolean);
+    expect(retried).toEqual(["PROXY_FAILED", "STARTUP_TIMED_OUT"]);
+    for (const failure of [
+      originBrowserStartupError("create", new Error("unrecognized")),
+      originBrowserStartupError("owner-check", new Error("revoked")),
+      originBrowserStartupError("create", mfaOriginFailure),
+      originBrowserStartupError(
+        "create",
+        "A browser attempt already exists for this tab, or the native browser limit was reached.",
+      ),
+      originBrowserStartTimeout("create"),
+    ])
+      expect(originBrowserStartupRetryable(failure)).toBe(false);
+  });
+
+  it.each(["listen", "status", "owner-check", "create", "resync"] as const)(
+    "reports the shell's own start deadline at %s with a fixed code and Retry",
+    (stage) => {
+      const failure = originBrowserStartTimeout(stage);
+      expect(failure).toEqual({
+        stage,
+        category: "ipc",
+        code: "start-timeout",
+        message: expect.stringContaining(
+          `Native browser startup failed (${stage}).`,
+        ),
+      });
+      expect(failure.message).toContain("did not answer");
+      expect(failure.message).toContain("Use Retry browser");
+      // No native text can carry this code.
+      expect(
+        originBrowserStartupError(stage, failure.message).code,
+      ).toBeUndefined();
+    },
+  );
+
+  it("says how often a start was tried, after the unchanged failure text", () => {
+    const { message } = originBrowserStartupError(
+      "create",
+      runtime.match(/const STARTUP_TIMED_OUT: &str = "([^"]+)";/)?.[1],
+    );
+    const text = originBrowserStartRetriesExhausted(message, 3);
+    expect(text.startsWith(`${message} `)).toBe(true);
+    expect(text).toContain("retried automatically");
+    expect(text).toContain("after 3 attempts");
+  });
+
+  it("asks for an app restart only when the engine really failed, not when a start took too long", () => {
+    const text = (name: string) =>
+      runtime.match(new RegExp(`const ${name}: &str = "([^"]+)";`))![1];
+    const slow = originBrowserStartupError("create", text("STARTUP_TIMED_OUT"));
+    expect(slow.code).toBe("runtime-timeout");
+    expect(slow.message).toContain("took too long");
+    expect(slow.message).toContain("may still be starting");
+    expect(slow.message).toContain("use Retry browser");
+    expect(slow.message).not.toMatch(/restart the app/i);
+    // Native's own sentence is unchanged and stays the match key.
+    expect(text("STARTUP_TIMED_OUT")).toContain("restart the app");
+    expect(
+      originBrowserStartupError("create", `${text("STARTUP_TIMED_OUT")} `).code,
+    ).toBeUndefined();
+    const failed = originBrowserStartupError("create", text("STARTUP_FAILED"));
+    expect(failed.code).toBe("runtime-readiness");
+    expect(failed.message).toContain("restart the app");
+  });
+
+  it("recognizes a lease lost during the start only from the exact create answer", () => {
+    const stale = runtime.match(/const STALE: &str = "([^"]+)";/)?.[1];
+    expect(stale).toBeTruthy();
+    const failure = originBrowserStartupError("create", stale);
+    expect(failure.code).toBe("session-stale");
+    expect(originBrowserStartupStale(failure)).toBe(true);
+    // One fresh attempt, never the three of a failure that passes by itself.
+    expect(originBrowserStartupRetryable(failure)).toBe(false);
+    for (const other of [
+      originBrowserStartupError("status", stale),
+      originBrowserStartupError("resync", stale),
+      originBrowserStartupError("owner-check", stale),
+      originBrowserStartupError("create", `${stale} SECRET`),
+      originBrowserStartupError("create", { message: stale }),
+      originBrowserStartupError(
+        "create",
+        "Browser saved database owner is unavailable or changed",
+      ),
+      originBrowserStartupError(
+        "create",
+        "A browser attempt already exists for this tab, or the native browser limit was reached.",
+      ),
+      originBrowserStartTimeout("create"),
+    ])
+      expect(originBrowserStartupStale(other)).toBe(false);
+  });
 
   it("does not diagnose unknown manual startup failures as missing credentials", () => {
     const result = originBrowserStartupError(

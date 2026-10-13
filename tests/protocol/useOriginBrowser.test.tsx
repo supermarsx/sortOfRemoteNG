@@ -2,6 +2,7 @@ import { act, cleanup, renderHook, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { readFileSync } from "node:fs";
 import {
+  resetOriginBrowserLifecycleForTests,
   useOriginBrowser,
   tauriOriginBrowserTransport,
   type UseOriginBrowserOptions,
@@ -19,6 +20,9 @@ vi.mock("@tauri-apps/api/event", () => ({ listen: ipc.listen }));
 
 afterEach(() => {
   cleanup();
+  vi.useRealTimers();
+  // Closes still in flight and the last measured slot outlive a hook instance.
+  resetOriginBrowserLifecycleForTests();
   vi.clearAllMocks();
 });
 
@@ -540,14 +544,25 @@ describe("origin browser attempt controller", () => {
         snapshot: null,
       });
       f.transport.create.mockRejectedValue(message);
+      // A start that timed out is tried again before it is reported.
+      vi.useFakeTimers();
       const { result } = renderHook(() => useOriginBrowser(f.options));
-      await waitFor(() => expect(result.current.state.phase).toBe("error"));
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(2_500);
+      });
+      expect(result.current.state.phase).toBe("error");
       expect(result.current.state.startupFailure).toEqual({
         stage: "create",
         category: "runtime",
         code: expect.any(String),
       });
-      expect(result.current.state.error).toContain(message);
+      // Native's sentence is shown as it is, except for the timeout: a slow
+      // start no longer disables the engine, so nothing asks for a restart.
+      if (message.includes("timed out")) {
+        expect(result.current.state.error).toContain("took too long");
+        expect(result.current.state.error).toContain("use Retry browser");
+        expect(result.current.state.error).not.toMatch(/restart the app/i);
+      } else expect(result.current.state.error).toContain(message);
       expect(result.current.state.error).not.toContain("login, credentials");
     },
   );
@@ -850,7 +865,13 @@ describe("origin browser attempt controller", () => {
       requestId: expect.any(String),
       initialUrl: "https://fixture.invalid/login",
       visible: false,
-      bounds: { x: 0, y: 0, width: 1, height: 1 },
+      // Never measured: the shell content size, not a 1x1 page.
+      bounds: {
+        x: 0,
+        y: 0,
+        width: window.innerWidth,
+        height: window.innerHeight,
+      },
       policy: {
         darkMode: "forced",
         autoLogin: {

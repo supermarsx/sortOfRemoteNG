@@ -195,14 +195,19 @@ export function useNativeBrowserExtensions(
       databaseId = options.ownerDatabaseId;
     const manager = DatabaseManager.getInstance();
     const target = manager.captureCurrentDatabaseDataTarget();
+    // Once the row is written the tab reconnects to apply it, which replaces
+    // the attempt this save started from. From then on only the database
+    // checks decide whether the write can be confirmed.
+    let written = false;
     const assertCurrent = () => {
       const current = latest.current;
       if (
         !mounted.current ||
         epoch.current !== capturedEpoch ||
-        currentScope.current !== scope ||
-        availabilityRef.current ||
-        current.options.blocked ||
+        (!written &&
+          (currentScope.current !== scope ||
+            availabilityRef.current ||
+            current.options.blocked)) ||
         !current.options.settingsReady ||
         current.options.ownerDatabaseId !== databaseId ||
         current.options.connection?.id !== connectionId ||
@@ -247,6 +252,7 @@ export function useNativeBrowserExtensions(
           write: async (connection) => {
             assertCurrent();
             await captured.options.updateConnection(connection);
+            written = true;
             assertCurrent();
           },
         },

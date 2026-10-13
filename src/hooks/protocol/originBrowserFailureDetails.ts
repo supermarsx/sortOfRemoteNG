@@ -85,8 +85,8 @@ const startupDetails: Record<
   ],
   "runtime-timeout": [
     "Native browser initialization",
-    "Native initialization or required policy readiness timed out.",
-    "Review native startup diagnostics and the installed runtime in Web Browser settings, then restart the app.",
+    "The native browser engine took too long to become ready for this start. A slow start does not disable the engine; it may still be starting.",
+    "Use Retry browser. If it keeps timing out, review native startup diagnostics and the installed runtime in Web Browser settings.",
     "browser-settings",
   ],
   "runtime-readiness": [
@@ -311,6 +311,12 @@ const startupDetails: Record<
     "Open or unlock the owning database and reopen this connection from it.",
     "database",
   ],
+  "start-timeout": [
+    "Native browser start request",
+    "A start step did not answer before the app's deadline. The request may still be running; no cause was reported.",
+    "Use Retry browser. A replacement starts only after any late result of the unanswered request is closed. If it repeats, review native startup diagnostics in Web Browser settings and restart the app.",
+    "browser-settings",
+  ],
 };
 
 const loadDetails: Record<OriginBrowserLoadFailureCategory, Explanation> = {
@@ -477,6 +483,12 @@ const terminalDetails: Record<OriginBrowserFailureReason, Explanation> = {
     "Native page loading",
     "The session stopped because its page could not load. Native did not report a more specific cause.",
     "Review the connection destination, website permissions, configured route, and native browser diagnostics before reopening the tab.",
+    "connection",
+  ],
+  "source-changed": [
+    "Saved connection settings",
+    "The saved connection, or a saved record it depends on, changed while this tab was open, so the session was stopped instead of continuing with outdated settings.",
+    "Use Retry browser to start again with the current settings. If it repeats without a change, review native browser diagnostics in Web Browser settings.",
     "connection",
   ],
 };
@@ -696,6 +708,9 @@ export function getOriginBrowserFailureDetails(
     if (engine) return [engine];
   }
   if (startup) {
+    // The shell's own deadline can expire at any stage, not only in create.
+    if (startup.code === "start-timeout")
+      return [detail(startup.code, startupDetails[startup.code])];
     if (startup.stage === "create") {
       // Preserve the existing MFA-only reason contract for older callers.
       const code =

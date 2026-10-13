@@ -40,6 +40,8 @@ export function originBrowserSessionError(reason: unknown): string {
       return "Native browser session failed: an internal native browser callback failed, so the session was stopped. Reopen the tab. If it happens again, restart the app and check native browser diagnostics.";
     case "native-surface":
       return "Native browser session failed: the app could not maintain the embedded browser view. Reopen the tab. If it happens again, restart the app and check native browser diagnostics.";
+    case "source-changed":
+      return "Native browser session failed: the saved connection, or a saved record it depends on, changed while this tab was open, so the session was stopped instead of continuing with outdated settings. Use Retry browser to start again with the current settings. If it repeats without a change, review native browser diagnostics in Web Browser settings.";
     case "load":
       return "Native browser session failed: the page could not be loaded. Reopen the tab after checking the network route, destination permissions, and site availability. Check native browser diagnostics for a more specific cause.";
     default:

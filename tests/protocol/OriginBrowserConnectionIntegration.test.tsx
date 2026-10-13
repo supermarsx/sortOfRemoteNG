@@ -8,6 +8,7 @@ import {
   within,
   waitFor,
 } from "@testing-library/react";
+import { readFileSync } from "node:fs";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ToastProvider } from "../../src/contexts/ToastContext";
 import type {
@@ -17,6 +18,8 @@ import type {
 import type { OriginBrowserSnapshot } from "../../src/types/protocols/originBrowser";
 import progressStyles from "../../src/components/protocol/webBrowser/NavigationProgress.module.css";
 import { useOriginBrowserRecovery } from "../../src/hooks/protocol/useOriginBrowserRecovery";
+import { resetOriginBrowserLifecycleForTests } from "../../src/hooks/protocol/useOriginBrowser";
+import { nativeBrowserAuthoritySignature } from "../../src/utils/connection/nativeBrowserAuthoritySignature";
 import OriginConnectionBrowser from "../../src/components/protocol/webBrowser/OriginConnectionBrowser";
 import {
   registerQuickConnectConnection,
@@ -44,6 +47,10 @@ const f = vi.hoisted(() => ({
   navigationError: undefined as string | null | undefined,
   automationLibrary: { version: 1, scripts: [] as any[], macros: [] as any[] },
   mfaRepair: vi.fn(),
+  /** What the shell last handed the real hook. */
+  hookOptions: null as any,
+  /** Stands in for the reason of the hook's last restart, when set. */
+  restartReason: null as string | null,
 }));
 vi.mock(
   "../../src/components/protocol/webBrowser/OriginMfaOriginRepair",
@@ -67,7 +74,18 @@ vi.mock("../../src/hooks/protocol/useOriginBrowser", async (original) => {
   return {
     ...actual,
     useOriginBrowser: (...args: Parameters<typeof actual.useOriginBrowser>) => {
-      const browser = actual.useOriginBrowser(...args);
+      f.hookOptions = args[0];
+      const real = actual.useOriginBrowser(...args);
+      const browser =
+        f.restartReason && real.lastRestart
+          ? {
+              ...real,
+              lastRestart: {
+                ...real.lastRestart,
+                reason: f.restartReason as typeof real.lastRestart.reason,
+              },
+            }
+          : real;
       return f.navigationError === undefined
         ? browser
         : {
@@ -168,6 +186,7 @@ beforeEach(() => {
     value: { writeText: f.clipboard },
   });
   f.revoked = false;
+  f.restartReason = null;
   f.navigationError = undefined;
   f.serial = 0;
   f.automationLibrary = { version: 1, scripts: [], macros: [] };
@@ -341,6 +360,7 @@ afterEach(async () => {
   // next test installs a new native fixture and counts that fixture's actions.
   await act(async () => {});
   releaseRuntimeConnection(connection.id);
+  resetOriginBrowserLifecycleForTests();
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
   vi.clearAllMocks();
@@ -360,6 +380,14 @@ const ownerLocked = () =>
   );
 const calls = (name: string) =>
   f.invoke.mock.calls.filter(([command]) => command === name);
+// Every reason the hook can restart a tab for, read from its source because
+// the list is not exported: a reason added there has to be worded here.
+const restartReasons = [
+  ...readFileSync("src/hooks/protocol/useOriginBrowser.ts", "utf8")
+    .match(/const restartReasons = \[([\s\S]*?)\] as const;/)![1]
+    .replace(/\/\*[\s\S]*?\*\//g, "")
+    .matchAll(/"([^"]+)"/g),
+].map((match) => match[1]);
 function render(ui: React.ReactNode) {
   return renderView(ui, { wrapper: ToastProvider });
 }
@@ -2438,6 +2466,32 @@ describe("real-origin connection-tab integration", () => {
       showBookmarksBar: false,
     });
   });
+  it("reconnects once when a saved capability override changes, unlike a display override", async () => {
+    const browserSession = { version: 1, showBookmarksBar: false };
+    f.context.state.connections = [{ ...connection, browserSession }];
+    const view = await attached();
+    // Native fixes capabilities when it creates a tab, so this key stays in
+    // its digest: the open tab cannot keep running on the old value.
+    f.context.state.connections = [
+      {
+        ...connection,
+        browserSession: { ...browserSession, webglEnabled: false },
+      },
+    ];
+    view.rerender(<WebBrowser session={session} />);
+    await waitFor(() => expect(calls("origin_browser_create")).toHaveLength(2));
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Reload" })).toBeEnabled(),
+    );
+    await act(async () => {});
+    expect(calls("origin_browser_create")).toHaveLength(2);
+    expect(calls("origin_browser_close")).toHaveLength(1);
+    expect(
+      screen.getByRole("status", { name: "Browser reconnection" }),
+    ).toHaveTextContent(
+      "This connection's saved settings changed, so this tab reconnected to apply them.",
+    );
+  });
   it("does not promote connection display overrides when saving global request permissions", async () => {
     f.settings.webBrowser.defaultZoomPercent = 125;
     const browserSession = {
@@ -3314,6 +3368,88 @@ describe("real-origin connection-tab integration", () => {
     );
     expect(screen.getByRole("button", { name: "Reload" })).toBeEnabled();
   });
+  it("hands the hook the saved row's authority signature and a start deadline from its load timeout", async () => {
+    f.context.state.connections = [
+      {
+        ...connection,
+        browserSession: { version: 1, initialLoadTimeoutSeconds: 45 },
+      },
+    ];
+    await attached();
+    expect(f.hookOptions.authoritySignature).toMatch(/^[\da-f]{16}$/);
+    expect(f.hookOptions.authoritySignature).toBe(
+      nativeBrowserAuthoritySignature(f.context.state.connections[0]),
+    );
+    // Native's 20 s engine wait, the saved 45 s load and its 5 s margin, and
+    // the slack the hook's own default leaves.
+    expect(f.hookOptions.startTimeoutMs).toBe(105_000);
+  });
+  it("starts the next attempt from the saved host and asks the session row to follow", async () => {
+    const view = await attached();
+    f.context.state.connections = [
+      { ...connection, hostname: "renamed.invalid" },
+    ];
+    view.rerender(<WebBrowser session={session} />);
+    await waitFor(() => expect(calls("origin_browser_create")).toHaveLength(2));
+    // Native compares the request with the saved row alone. This fixture's
+    // dispatch does not update the session row, so the target cannot rely on
+    // the row having followed yet.
+    expect(calls("origin_browser_create")[1][1].request.initialUrl).toBe(
+      "https://renamed.invalid/",
+    );
+    await waitFor(() =>
+      expect(f.context.dispatch).toHaveBeenCalledWith({
+        type: "UPDATE_SESSION",
+        payload: {
+          id: session.id,
+          hostname: "renamed.invalid",
+          protocol: "https",
+        },
+      }),
+    );
+  });
+  it("reads every restart reason of the hook", () => {
+    expect(restartReasons).toEqual(
+      expect.arrayContaining(["requested", "source-changed"]),
+    );
+    expect(new Set(restartReasons).size).toBe(restartReasons.length);
+  });
+  it.each([...restartReasons, "a-reason-added-later"])(
+    "says in plain words why the tab is reconnecting for %s",
+    async (reason) => {
+      await attached();
+      f.restartReason = reason;
+      // The replacement stays unanswered, so the line is the one shown while
+      // a restart is still in progress.
+      const native = f.invoke.getMockImplementation()!;
+      f.invoke.mockImplementation((command, args) =>
+        command === "origin_browser_create"
+          ? new Promise(() => {})
+          : native(command, args),
+      );
+      act(() =>
+        f.snapshotListener?.({
+          payload: snapshot("attempt-1", {
+            sequence: 5,
+            phase: "failed",
+            failureReason: "source-changed",
+          }),
+        }),
+      );
+      const line = await screen.findByRole("status", {
+        name: "Browser reconnection",
+      });
+      const text = line.querySelector("p")?.textContent ?? "";
+      expect(text.trim()).not.toBe("");
+      expect(text).not.toMatch(/undefined|null|object/);
+      // Only a reason nobody has worded yet gets the general line, and it
+      // gets that line instead of nothing.
+      const general = "Reconnecting this tab…";
+      if (reason === "requested" || reason === "a-reason-added-later")
+        expect(text).toBe(general);
+      else expect(text).not.toBe(general);
+    },
+  );
   it("mounts both permission scopes and closes before persisting and reconnecting", async () => {
     await attached();
     fireEvent.click(screen.getByRole("button", { name: "Browser settings" }));
@@ -3361,8 +3497,9 @@ describe("real-origin connection-tab integration", () => {
     );
     fireEvent.click(screen.getByRole("button", { name: "Browser settings" }));
     fireEvent.click(screen.getByRole("button", { name: "Save and reconnect" }));
-    await screen.findByText(/Settings could not be fully saved/);
+    await screen.findByText(/Nothing was saved\./);
     expect(f.context.dispatchAndFlush).not.toHaveBeenCalled();
+    expect(f.updateSettings).not.toHaveBeenCalled();
     expect(calls("origin_browser_create")).toHaveLength(1);
     expect(screen.queryByText(/native secret/)).toBeNull();
   });

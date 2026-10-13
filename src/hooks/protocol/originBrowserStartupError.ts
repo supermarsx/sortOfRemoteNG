@@ -43,7 +43,9 @@ export type OriginBrowserKnownStartupFailureCode =
   | "session-stale"
   | "settings-unavailable"
   | "preferences-invalid"
-  | "capabilities-invalid";
+  | "capabilities-invalid"
+  /** The shell's own deadline for one start request, at any stage. */
+  | "start-timeout";
 export type OriginBrowserStartupFailureCode =
   OriginBrowserKnownStartupFailureCode | OriginBrowserPolicyFailureCode;
 export interface OriginBrowserStartupFailure {
@@ -746,6 +748,16 @@ const runtimeFailures = new Map<string, OriginBrowserStartupFailureCode>([
   ],
 ]);
 
+// Shown in place of native's own sentence where that one stopped being true.
+// The native text stays the match key, byte for byte; native pins it too. A
+// start that timed out no longer disables the engine, so nothing here asks
+// for an app restart: only a failed initialization or policy readback does.
+const runtimeWording: Partial<Record<OriginBrowserStartupFailureCode, string>> =
+  {
+    "runtime-timeout":
+      "The native browser engine took too long to become ready. A slow start does not disable it, so it may still be starting: use Retry browser. If it keeps timing out, check the native startup diagnostics.",
+  };
+
 function known(
   native: string,
   code: OriginBrowserStartupFailureCode,
@@ -887,6 +899,49 @@ const stageGuidance: Record<OriginBrowserStartupStage, string> = {
     "Could not read the created browser's state. This attempt is being closed; reopen the tab to retry.",
 };
 
+/** A start step went unanswered past the shell's deadline. The request may
+ * still be running, so this never names a native cause. */
+export function originBrowserStartTimeout(
+  stage: OriginBrowserStartupStage,
+): OriginBrowserStartupFailure & { message: string } {
+  return {
+    stage,
+    category: "ipc",
+    code: "start-timeout",
+    message: `Native browser startup failed (${stage}). This step did not answer before the app's deadline, so the attempt was stopped. Use Retry browser. If it repeats, check the native startup diagnostics and restart the app.`,
+  };
+}
+
+/** Start failures that pass by themselves: the engine is still starting, or
+ * the private relay could not bind its port. Every other one needs the user. */
+export function originBrowserStartupRetryable(
+  failure: OriginBrowserStartupFailure,
+): boolean {
+  return (
+    failure.stage === "create" &&
+    failure.category === "runtime" &&
+    (failure.code === "runtime-timeout" || failure.code === "private-proxy")
+  );
+}
+
+/** Native ended the attempt's authority while it was starting. With the owner
+ * still valid that means the saved connection, or a record it depends on, was
+ * edited meanwhile, and a fresh create reads it again. One such attempt only:
+ * what is stale twice is reported. */
+export function originBrowserStartupStale(
+  failure: OriginBrowserStartupFailure,
+): boolean {
+  return failure.stage === "create" && failure.code === "session-stale";
+}
+
+/** Says that the automatic retries are spent, after the fixed failure text. */
+export function originBrowserStartRetriesExhausted(
+  message: string,
+  attempts: number,
+): string {
+  return `${message} The browser retried automatically and stopped after ${attempts} attempts.`;
+}
+
 export function originBrowserStartupError(
   stage: OriginBrowserStartupStage,
   error: unknown,
@@ -920,11 +975,12 @@ export function originBrowserStartupError(
     typeof candidate === "string" &&
     runtimeFailures.has(candidate)
   ) {
+    const code = runtimeFailures.get(candidate)!;
     return {
       stage,
       category: "runtime",
-      code: runtimeFailures.get(candidate),
-      message: `Native browser startup failed (${stage}). ${candidate}`,
+      code,
+      message: `Native browser startup failed (${stage}). ${runtimeWording[code] ?? candidate}`,
     };
   }
   const guidance =

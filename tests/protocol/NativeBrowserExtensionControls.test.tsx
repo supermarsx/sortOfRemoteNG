@@ -266,7 +266,7 @@ describe("native extension controls", () => {
     expect(db.persisted[0].httpAutomation?.scriptInjectionEnabled).toBe(true);
     expect(
       screen.getByText(
-        "Saved to this connection. Reopen the website to apply.",
+        "Saved to this connection. This tab now reconnects by itself to apply the change.",
       ),
     ).toBeInTheDocument();
   });

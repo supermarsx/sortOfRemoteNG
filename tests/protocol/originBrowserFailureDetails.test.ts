@@ -5,8 +5,10 @@ import {
 } from "../../src/hooks/protocol/originBrowserFailureDetails";
 import {
   originBrowserPolicyFailures,
+  originBrowserStartTimeout,
   originBrowserStartupError,
 } from "../../src/hooks/protocol/originBrowserStartupError";
+import { originBrowserSessionError } from "../../src/hooks/protocol/originBrowserSessionError";
 import type { OriginBrowserState } from "../../src/hooks/protocol/useOriginBrowser";
 import type { OriginBrowserSnapshot } from "../../src/types/protocols/originBrowser";
 import { originBrowserRuntimeFailure } from "../../src/types/protocols/originBrowser";
@@ -686,6 +688,7 @@ describe("fixed actionable native failure details", () => {
     ["callback", "browser-settings"],
     ["native-surface", "browser-settings"],
     ["load", "connection"],
+    ["source-changed", "connection"],
   ] as const)("routes native terminal reason %s", (failureReason, action) => {
     const details = getOriginBrowserFailureDetails(
       state({
@@ -704,6 +707,97 @@ describe("fixed actionable native failure details", () => {
     if (failureReason !== "database-owner") {
       expect(JSON.stringify(details)).not.toMatch(/database|unlock|locked/i);
     }
+  });
+
+  it("explains a changed saved connection as recoverable, in the session text and its detail alike", () => {
+    const [detail] = getOriginBrowserFailureDetails(
+      state({
+        snapshot: snapshot({
+          phase: "failed",
+          failureReason: "source-changed",
+        }),
+      }),
+    );
+    expect(detail).toMatchObject({
+      code: "native-source-changed",
+      field: "Saved connection settings",
+      action: "connection",
+    });
+    for (const text of [
+      `${detail.problem} ${detail.nextStep}`,
+      originBrowserSessionError("source-changed"),
+    ]) {
+      expect(text).toContain("saved connection");
+      expect(text).toContain("changed while this tab was open");
+      expect(text).toContain("Use Retry browser");
+      expect(text).toContain("current settings");
+      expect(text).toContain("native browser diagnostics");
+      // The session was stopped on purpose; nothing here is a fault to repair.
+      expect(text).not.toMatch(
+        /password|credential|locked|unlock|restart the app|reopen/i,
+      );
+    }
+    // Only a failed snapshot carries it.
+    expect(
+      getOriginBrowserFailureDetails(
+        state({
+          phase: "attached",
+          error: null,
+          snapshot: snapshot({ failureReason: "source-changed" }),
+        }),
+      ),
+    ).toEqual([]);
+  });
+
+  it.each(["listen", "status", "owner-check", "create", "resync"] as const)(
+    "explains the shell's own start deadline at %s without naming a native cause",
+    (stage) => {
+      const { message, ...startupFailure } = originBrowserStartTimeout(stage);
+      const [detail] = getOriginBrowserFailureDetails(
+        state({ startupFailure, error: message }),
+      );
+      expect(detail).toMatchObject({
+        code: "start-timeout",
+        field: "Native browser start request",
+        action: "browser-settings",
+      });
+      expect(detail.problem).toContain("did not answer");
+      expect(detail.problem).toContain("may still be running");
+      expect(detail.nextStep).toContain("Use Retry browser");
+      expect(`${detail.problem} ${detail.nextStep}`).not.toMatch(
+        /password|credential|certificate|permission/i,
+      );
+    },
+  );
+
+  it("offers Retry for a start that took too long and an app restart only for an engine that failed", () => {
+    const detail = (code: "runtime-timeout" | "runtime-readiness") =>
+      getOriginBrowserFailureDetails(
+        state({
+          startupFailure: { stage: "create", category: "runtime", code },
+        }),
+      )[0];
+    const slow = detail("runtime-timeout");
+    expect(slow.code).toBe("runtime-timeout");
+    expect(slow.problem).toContain("took too long");
+    expect(slow.problem).toContain("may still be starting");
+    expect(slow.nextStep).toContain("Use Retry browser");
+    expect(`${slow.problem} ${slow.nextStep}`).not.toMatch(/restart the app/i);
+    expect(detail("runtime-readiness").nextStep).toContain("restart the app");
+    // The engine's own start watchdog does disable it until a restart.
+    expect(
+      getOriginBrowserFailureDetails(
+        state({
+          phase: "unavailable",
+          error: null,
+          unavailableReason: "policy-unavailable",
+          runtimeFailure: { code: "startup-timeout", stage: "initializing" },
+        }),
+      )[0],
+    ).toMatchObject({
+      code: "engine-startup-timeout",
+      nextStep: expect.stringContaining("Restart the app"),
+    });
   });
 
   it("routes denied redirects to permission review without weakening protections or blaming credentials", () => {

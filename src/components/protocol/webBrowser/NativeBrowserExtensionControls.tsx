@@ -26,9 +26,9 @@ export function NativeBrowserExtensionPanel({
   return (
     <div className="space-y-4 p-4">
       <p className="text-sm">
-        These settings belong to this saved connection and its database. Changes
-        apply when you reopen the website; they do not grant credential consent
-        or run scripts.
+        These settings belong to this saved connection and its database. After a
+        change is saved, this tab reconnects by itself to apply it. Changes do
+        not grant credential consent or run scripts.
       </p>
       {controller.reason && <p role="status">{controller.reason}</p>}
       {controller.error && (
@@ -38,7 +38,8 @@ export function NativeBrowserExtensionPanel({
       )}
       {controller.saved && (
         <p role="status">
-          Saved to this connection. Reopen the website to apply.
+          Saved to this connection. This tab now reconnects by itself to apply
+          the change.
         </p>
       )}
       <fieldset disabled={disabled} className="space-y-3">

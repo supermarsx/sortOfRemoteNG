@@ -83,6 +83,21 @@ export function originBrowserConnectionTarget(
   return target.href;
 }
 
+/** Native builds a saved tab's source from the saved row alone and rejects a
+ * request that differs, while the session row only copied the host and scheme
+ * when its tab opened. What that row has to say for the next attempt, or null
+ * once the saved connection is no longer a website. */
+export function originBrowserSavedSource(
+  connection: Connection,
+): Pick<ConnectionSession, "protocol" | "hostname"> | null {
+  if (
+    connection.isGroup ||
+    (connection.protocol !== "http" && connection.protocol !== "https")
+  )
+    return null;
+  return { protocol: connection.protocol, hostname: connection.hostname };
+}
+
 export function originBrowserDisplayUrl(value: string): string {
   try {
     const url = new URL(value);

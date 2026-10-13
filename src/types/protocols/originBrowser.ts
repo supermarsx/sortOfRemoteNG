@@ -105,7 +105,9 @@ export type OriginBrowserFailureReason =
   | "owner-window"
   | "callback"
   | "native-surface"
-  | "load";
+  | "load"
+  /** The saved connection or a record it depends on changed; recoverable. */
+  | "source-changed";
 
 /** Forward-compatible diagnostics: unknown reasons are omitted, never echoed. */
 export function originBrowserFailureReason(
@@ -128,6 +130,7 @@ export function originBrowserFailureReason(
     case "callback":
     case "native-surface":
     case "load":
+    case "source-changed":
       return reason;
     default:
       return undefined;
