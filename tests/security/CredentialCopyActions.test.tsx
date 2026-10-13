@@ -16,6 +16,8 @@ import WebTotpPanel from "../../src/components/protocol/webBrowser/WebTotpPanel"
 import TotpPopover from "../../src/components/ssh/webTerminal/TotpPopover";
 import TotpButton from "../../src/components/rdp/rdpClientHeader/TotpButton";
 import { useCredentialCopy } from "../../src/hooks/security/useCredentialCopy";
+import { useRuntimeVaultTotp } from "../../src/hooks/security/useRuntimeVaultTotp";
+import { CredentialFailure } from "../../src/utils/security/credentialFailure";
 import { totpApi } from "../../src/hooks/totp/useTOTP";
 import type { CredentialTypingTarget } from "../../src/utils/security/credentialTyping";
 import { resolveRuntimeVaultCredential } from "../../src/utils/security/runtimeCredentialVault";
@@ -60,16 +62,18 @@ vi.mock("../../src/contexts/useConnections", () => ({
 vi.mock("../../src/contexts/SessionRenderActivityContext", () => ({
   useSessionRenderActivity: () => ({ isActive: mock.active }),
 }));
-vi.mock("../../src/utils/connection/databaseManager", () => ({
-  DatabaseManager: {
-    getInstance: () => ({
-      captureCurrentDatabaseDataTarget: mock.capture,
-      getCurrentDatabase: () => ({ id: mock.currentDatabaseId }),
-      onCurrentDatabaseChange: () => () => {},
-    }),
-  },
-  onDatabaseAccessChange: () => () => {},
-}));
+vi.mock("../../src/utils/connection/databaseManager", () => {
+  // One instance, as in the app: the code panel memoizes on its identity.
+  const manager = {
+    captureCurrentDatabaseDataTarget: mock.capture,
+    getCurrentDatabase: () => ({ id: mock.currentDatabaseId }),
+    onCurrentDatabaseChange: () => () => {},
+  };
+  return {
+    DatabaseManager: { getInstance: () => manager },
+    onDatabaseAccessChange: () => () => {},
+  };
+});
 vi.mock("../../src/utils/tauri/invoke", () => ({
   getInvoke: mock.getInvoke,
 }));
@@ -294,7 +298,7 @@ describe("explicit credential copies", () => {
     expect(mock.nativeInvoke).not.toHaveBeenCalled();
     expect(input.target.readCurrent).not.toHaveBeenCalled();
     expect(screen.getByRole("status")).toHaveTextContent(
-      "Check owning database access",
+      "The owning database is closed or locked.",
     );
   });
 
@@ -425,7 +429,9 @@ describe("explicit credential copies", () => {
     fireEvent.click(screen.getByRole("button", { name: "Copy password" }));
     await flush();
     expect(clipboard).toHaveBeenCalledTimes(1);
-    expect(screen.getByRole("status")).toHaveTextContent("Could not copy");
+    expect(screen.getByRole("status")).toHaveTextContent(
+      "No password is saved for this credential.",
+    );
   });
 
   it("allows username-only vault entries without resolving a password", async () => {
@@ -473,7 +479,9 @@ describe("explicit credential copies", () => {
     fireEvent.click(screen.getByRole("button", { name: "Copy password" }));
     await flush();
     expect(screen.getByRole("status")).toHaveTextContent(
-      "Could not copy the selected credential.",
+      mode === "clipboard-error"
+        ? "The clipboard could not be updated. Check the secure clipboard settings and try again."
+        : "The vault entry could not be read. Unlock the owning database and check that the entry still holds this field.",
     );
     expect(view.container.innerHTML).not.toMatch(
       /SECRET_ERROR|STALE_LOCAL|VAULT_PASSWORD/,
@@ -642,17 +650,19 @@ describe("explicit credential copies", () => {
     const hook = renderHook(() =>
       useCredentialCopy(input.session, input.connection),
     );
-    let first!: Promise<void>;
+    let first!: ReturnType<typeof hook.result.current.copy>;
+    let second!: ReturnType<typeof hook.result.current.copy>;
     act(() => {
       first = hook.result.current.copy("password");
-      void hook.result.current.copy("username");
+      second = hook.result.current.copy("username");
     });
     await flush();
     expect(input.api.resolve).toHaveBeenCalledOnce();
     expect(JSON.stringify(hook.result.current)).not.toMatch(/PASSWORD|SECRET/);
+    await expect(second).resolves.toMatchObject({ ok: false, code: "busy" });
     await act(async () => {
       pending.resolve({ password: "ONLY_CLIPBOARD" });
-      await first;
+      await expect(first).resolves.toEqual({ ok: true });
     });
     expect(clipboard).toHaveBeenCalledExactlyOnceWith("ONLY_CLIPBOARD");
     expect(JSON.stringify(hook.result.current)).not.toContain("ONLY_CLIPBOARD");
@@ -1011,4 +1021,444 @@ describe("shared popover copy actions without TOTP", () => {
     expect(screen.queryByRole("button", { name: "Copy password" })).toBeNull();
     expect(mock.capture).not.toHaveBeenCalled();
   });
+});
+
+describe("each failure cause shows its own sentence", () => {
+  const typingTarget = (
+    overrides: Partial<CredentialTypingTarget> = {},
+  ): CredentialTypingTarget => ({
+    sessionId: "session",
+    assertCurrent: vi.fn(),
+    dispose: vi.fn(),
+    type: vi.fn(async (_value, check) => {
+      check();
+    }),
+    ...overrides,
+  });
+  const totp = {
+    secret: "JBSWY3DPEHPK3PXP",
+    algorithm: "sha1" as const,
+    digits: 6,
+    period: 30,
+    account: "test",
+    issuer: "test",
+  };
+  /** The start of a 30 second step, in Unix milliseconds. */
+  const step = 1_800_000_000_000;
+
+  it.each([
+    ["empty-password", "password", "No password is saved for this credential."],
+    ["empty-username", "username", "No username is saved for this credential."],
+    [
+      "saved-row-changed",
+      "password",
+      "The saved connection changed while its credential was being read.",
+    ],
+    [
+      "persisted-row-changed",
+      "password",
+      "The saved connection changed while its credential was being read.",
+    ],
+    ["database-locked", "password", "The owning database is closed or locked."],
+    ["read-rejected", "password", "The owning database is closed or locked."],
+    ["app-hidden", "password", "The app was hidden before the credential"],
+    ["vault-rejected", "password", "The vault entry could not be read."],
+    ["clipboard-locked", "password", "Nothing was copied because the app is"],
+    ["clipboard-busy", "password", "another program is using the clipboard"],
+    ["clipboard-too-large", "password", "too large for the secure clipboard"],
+    ["clipboard-unknown", "password", "Check the secure clipboard settings"],
+  ] as const)("copy: %s", async (cause, field, sentence) => {
+    const input = fixture(cause === "vault-rejected");
+    const log = vi.spyOn(console, "error").mockImplementation(() => {});
+    if (cause === "empty-password") input.persisted.password = "";
+    if (cause === "empty-username") input.persisted.username = "";
+    if (cause === "saved-row-changed")
+      mock.currentConnections = [{ ...input.connection }];
+    if (cause === "persisted-row-changed")
+      input.persisted.hostname = "changed.test";
+    if (cause === "database-locked")
+      vi.mocked(input.target.assertAccessible!).mockImplementation(() => {
+        throw new Error("SYNTHETIC_LOCK_DETAIL");
+      });
+    if (cause === "read-rejected")
+      vi.mocked(input.target.readCurrent!).mockRejectedValue(
+        new Error("SYNTHETIC_READ_DETAIL"),
+      );
+    if (cause === "vault-rejected")
+      vi.mocked(input.api.resolve).mockRejectedValue(
+        new Error("SYNTHETIC_VAULT_DETAIL"),
+      );
+    if (cause.startsWith("clipboard-")) {
+      mock.nativeClipboard = true;
+      mock.nativeInvoke.mockRejectedValue(
+        cause === "clipboard-unknown"
+          ? new Error("SYNTHETIC_CLIPBOARD_DETAIL")
+          : cause.slice("clipboard-".length),
+      );
+    }
+    const view = render(<CredentialCopyActions {...input} />);
+    // Hidden between the last render and the click reaching the gates.
+    if (cause === "app-hidden")
+      Object.defineProperty(document, "hidden", {
+        configurable: true,
+        value: true,
+      });
+    fireEvent.click(screen.getByRole("button", { name: `Copy ${field}` }));
+    await flush();
+    expect(screen.getByRole("status")).toHaveTextContent(sentence);
+    expect(view.container.innerHTML).not.toMatch(
+      /SYNTHETIC|CURRENT_LOCAL_PASSWORD|VAULT_PASSWORD/,
+    );
+    expect(clipboard).not.toHaveBeenCalled();
+    expect(log).not.toHaveBeenCalled();
+    // A failure never leaves the controls stuck.
+    expect(screen.getByRole("button", { name: "Copy username" })).toBeEnabled();
+  });
+
+  it.each([
+    ["tab-character", "contains a tab, line break or another control"],
+    ["too-long", "longer than 1024 characters"],
+    ["target-lost", "The typing target changed or is unavailable."],
+    ["session-refused", "The session did not accept the input."],
+    ["unconfirmed", "Typing stopped or was not confirmed. Some characters may"],
+    ["empty-password", "No password is saved for this credential."],
+  ] as const)("type: %s", async (cause, sentence) => {
+    const input = fixture(false);
+    if (cause === "tab-character") input.persisted.password = "SYN\tTHETIC";
+    if (cause === "too-long") input.persisted.password = "S".repeat(1025);
+    if (cause === "empty-password") input.persisted.password = "";
+    const target = typingTarget(
+      cause === "target-lost"
+        ? {
+            assertCurrent: vi.fn(() => {
+              throw new Error("SYNTHETIC_FOCUS_DETAIL");
+            }),
+          }
+        : cause === "session-refused"
+          ? {
+              type: vi.fn(async () => {
+                throw new CredentialFailure("typing-rejected");
+              }),
+            }
+          : cause === "unconfirmed"
+            ? {
+                type: vi.fn(async () => {
+                  throw new Error("SYNTHETIC_NATIVE_DETAIL");
+                }),
+              }
+            : {},
+    );
+    const view = render(
+      <CredentialCopyActions {...input} typingTarget={target} />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Type password" }));
+    await flush();
+    expect(screen.getByRole("status")).toHaveTextContent(sentence);
+    expect(view.container.innerHTML).not.toMatch(/SYNTHETIC|SSSS/);
+    if (cause !== "session-refused" && cause !== "unconfirmed")
+      expect(target.type).not.toHaveBeenCalled();
+    expect(clipboard).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ["closing-window", "The current code is about to expire."],
+    ["expired-while-generating", "The code expired before it could be used."],
+    ["unsupported-settings", "digits, period or algorithm are not supported"],
+    ["generator-failed", "The code could not be generated safely."],
+    ["authenticator-changed", "The selected authenticator changed or was"],
+  ] as const)("type code: %s", async (cause, sentence) => {
+    const cfg =
+      cause === "unsupported-settings" ? { ...totp, digits: 5 } : { ...totp };
+    const input = fixture(false, { totpConfigs: [cfg] });
+    const clock = vi
+      .spyOn(Date, "now")
+      .mockReturnValue(step + (cause === "closing-window" ? 27_001 : 1000));
+    const compute = vi
+      .spyOn(totpApi, "computeCode")
+      .mockImplementation(async () => {
+        if (cause === "expired-while-generating")
+          clock.mockReturnValue(step + 30_000);
+        if (cause === "generator-failed")
+          throw new Error("SYNTHETIC_SEED_DETAIL");
+        return "123456";
+      });
+    if (cause === "authenticator-changed")
+      input.persisted.totpConfigs = [{ ...cfg, account: "changed" }];
+    const target = typingTarget();
+    const view = render(
+      <CredentialCopyActions
+        {...input}
+        typingTarget={target}
+        codeSelection={{ localIndex: 0 }}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Type code" }));
+    await flush();
+    expect(screen.getByRole("status")).toHaveTextContent(sentence);
+    expect(view.container.innerHTML).not.toMatch(/SYNTHETIC|123456|JBSWY/);
+    expect(target.type).not.toHaveBeenCalled();
+    if (cause === "closing-window" || cause === "unsupported-settings")
+      expect(compute).not.toHaveBeenCalled();
+  });
+
+  it("says sent, not typed, when the target only queues the input", async () => {
+    const input = fixture(false);
+    const view = render(
+      <CredentialCopyActions
+        {...input}
+        typingTarget={typingTarget({ confirmation: "sent" })}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Type password" }));
+    await flush();
+    expect(screen.getByRole("status")).toHaveTextContent(
+      "Password sent to the session.",
+    );
+    view.rerender(
+      <CredentialCopyActions
+        {...input}
+        typingTarget={typingTarget({ confirmation: "typed" })}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Type username" }));
+    await flush();
+    expect(screen.getByRole("status")).toHaveTextContent("Username typed.");
+  });
+
+  it.each(["read", "verify", "vault"] as const)(
+    "stops a %s that never answers, says so, and lets the next action work",
+    async (stage) => {
+      vi.useFakeTimers();
+      try {
+        const input = fixture(stage === "vault");
+        const hung = new Promise<never>(() => {});
+        if (stage === "read")
+          vi.mocked(input.target.readCurrent!).mockReturnValueOnce(hung);
+        if (stage === "verify")
+          vi.mocked(input.target.verifyCurrent!).mockReturnValueOnce(hung);
+        if (stage === "vault")
+          vi.mocked(input.api.resolve).mockReturnValueOnce(hung);
+        render(<CredentialCopyActions {...input} />);
+        const copy = screen.getByRole("button", { name: "Copy password" });
+        fireEvent.click(copy);
+        await flush();
+        expect(copy).toBeDisabled();
+        await act(async () => {
+          await vi.advanceTimersByTimeAsync(14_999);
+        });
+        expect(copy).toBeDisabled();
+        await act(async () => {
+          await vi.advanceTimersByTimeAsync(1);
+        });
+        expect(screen.getByRole("status")).toHaveTextContent(
+          "Reading the credential took too long and was stopped.",
+        );
+        expect(copy).toBeEnabled();
+        expect(clipboard).not.toHaveBeenCalled();
+        expect(vi.getTimerCount()).toBe(0);
+
+        fireEvent.click(copy);
+        await flush();
+        expect(screen.getByRole("status")).toHaveTextContent(
+          "Password copied.",
+        );
+        expect(clipboard).toHaveBeenCalledExactlyOnceWith(
+          stage === "vault" ? "VAULT_PASSWORD" : "CURRENT_LOCAL_PASSWORD",
+        );
+      } finally {
+        vi.useRealTimers();
+      }
+    },
+  );
+
+  it("never discloses a vault secret that arrives after its attempt timed out", async () => {
+    vi.useFakeTimers();
+    try {
+      const input = fixture();
+      const late = deferred<{ password: string }>();
+      vi.mocked(input.api.resolve).mockReturnValueOnce(late.promise);
+      const view = render(<CredentialCopyActions {...input} />);
+      fireEvent.click(screen.getByRole("button", { name: "Copy password" }));
+      await flush();
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(15_000);
+      });
+      await act(async () => late.resolve({ password: "LATE_SECRET" }));
+      expect(clipboard).not.toHaveBeenCalled();
+      expect(view.container.innerHTML).not.toContain("LATE_SECRET");
+      expect(screen.getByRole("status")).toHaveTextContent(
+        "Reading the credential took too long",
+      );
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("stops waiting for a typing target that never answers, revokes it, and lets the next action work", async () => {
+    vi.useFakeTimers();
+    try {
+      const input = fixture(false);
+      const disclosed: (() => void)[] = [];
+      const hung = typingTarget({
+        type: vi.fn((_value, check) => {
+          disclosed.push(check);
+          return new Promise<void>(() => {});
+        }),
+      });
+      const view = render(
+        <CredentialCopyActions {...input} typingTarget={hung} />,
+      );
+      fireEvent.click(screen.getByRole("button", { name: "Type password" }));
+      await flush();
+      expect(hung.type).toHaveBeenCalledOnce();
+      // Above every target's own limit: slow typing is not cut off early.
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(44_999);
+      });
+      expect(screen.queryByRole("status")).not.toBeInTheDocument();
+      expect(hung.dispose).not.toHaveBeenCalled();
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(1);
+      });
+      expect(screen.getByRole("status")).toHaveTextContent(
+        "Typing stopped or was not confirmed. Some characters may have been entered",
+      );
+      expect(hung.dispose).toHaveBeenCalledOnce();
+      // A late native callback of the abandoned attempt may not disclose.
+      expect(disclosed[0]).toThrow();
+      expect(vi.getTimerCount()).toBe(0);
+
+      const next = typingTarget();
+      view.rerender(<CredentialCopyActions {...input} typingTarget={next} />);
+      fireEvent.click(screen.getByRole("button", { name: "Type username" }));
+      await flush();
+      expect(next.type).toHaveBeenCalledExactlyOnceWith(
+        "CURRENT_LOCAL_USER",
+        expect.any(Function),
+        undefined,
+      );
+      expect(screen.getByRole("status")).toHaveTextContent("Username typed.");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("offers a rejecting form so a caller can report the cause itself", async () => {
+    const input = fixture(false);
+    input.persisted.password = "";
+    const target = typingTarget();
+    const hook = renderHook(() =>
+      useCredentialCopy(input.session, input.connection, target),
+    );
+    let outcome: unknown;
+    await act(async () => {
+      outcome = await hook.result.current
+        .typeOrThrow("password")
+        .catch((caught: unknown) => caught);
+    });
+    expect(outcome).toBeInstanceOf(CredentialFailure);
+    expect(outcome).toMatchObject({ code: "password-empty" });
+    expect(hook.result.current.message).toBe(
+      "No password is saved for this credential.",
+    );
+    await act(async () => {
+      outcome = await hook.result.current.type("password");
+    });
+    expect(outcome).toEqual({
+      ok: false,
+      code: "password-empty",
+      message: "No password is saved for this credential.",
+    });
+    expect(target.type).not.toHaveBeenCalled();
+  });
+});
+
+describe("one authenticator rule at every disclosure site", () => {
+  const cfg = {
+    secret: "JBSWY3DPEHPK3PXP",
+    algorithm: "sha1" as const,
+    digits: 6,
+    period: 30,
+    account: "test",
+    issuer: "test",
+  };
+  const step = 1_800_000_000_000;
+  it.each([
+    [2999, false],
+    [3000, true],
+  ])(
+    "with %i ms of the step left, all three former rules agree (allowed=%s)",
+    async (remaining, allowed) => {
+      vi.spyOn(Date, "now").mockReturnValue(step + 30_000 - remaining);
+      const compute = vi
+        .spyOn(totpApi, "computeCode")
+        .mockResolvedValue("123456");
+
+      // 1. The shared copy/type hook (connection-local authenticator).
+      const local = fixture(false, { totpConfigs: [cfg] });
+      const target: CredentialTypingTarget = {
+        sessionId: "session",
+        assertCurrent: vi.fn(),
+        dispose: vi.fn(),
+        type: vi.fn(async (_value, check) => {
+          check();
+        }),
+      };
+      const copyHook = renderHook(() =>
+        useCredentialCopy(local.session, local.connection, target),
+      );
+      let typed!: Awaited<ReturnType<typeof copyHook.result.current.typeCode>>;
+      await act(async () => {
+        typed = await copyHook.result.current.typeCode({ localIndex: 0 });
+      });
+      copyHook.unmount();
+
+      // 2. The connection-local code panel's Copy button.
+      const panel = render(
+        <WebTotpPanel
+          configs={[cfg]}
+          ownerDatabaseId="owner"
+          connectionId="saved"
+          onClose={vi.fn()}
+        />,
+      );
+      await screen.findByText("123456");
+      fireEvent.click(screen.getByRole("button", { name: "Copy code 1" }));
+      await flush();
+      const copied = clipboard.mock.calls.length === 1;
+      panel.unmount();
+
+      // 3. The vault authenticator controller.
+      const vault = fixture(true);
+      const snapshot = await vault.api.list(vault.api.scope!);
+      snapshot.entries[0].availableFacets = ["totp"];
+      vi.mocked(vault.api.list).mockResolvedValue(snapshot);
+      vi.mocked(vault.api.resolve).mockResolvedValue({
+        totp: [{ ...cfg, digits: 6, id: "otp", label: "test" }],
+      });
+      const vaultHook = renderHook(() =>
+        useRuntimeVaultTotp(vault.session, vault.connection),
+      );
+      const generated = await vaultHook.result.current.generate("otp").then(
+        () => "generated",
+        (error: { code?: string }) => error.code,
+      );
+
+      expect({
+        typed: typed.ok ? "generated" : typed.code,
+        copied,
+        generated,
+      }).toEqual(
+        allowed
+          ? { typed: "generated", copied: true, generated: "generated" }
+          : {
+              typed: "code-window-closing",
+              copied: false,
+              generated: "code-window-closing",
+            },
+      );
+      // The display itself is not a disclosure: the panel showed the code.
+      expect(compute).toHaveBeenCalled();
+    },
+  );
 });

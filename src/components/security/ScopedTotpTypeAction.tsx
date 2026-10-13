@@ -3,9 +3,16 @@
 import { useEffect, useRef, useState } from "react";
 import { Keyboard } from "lucide-react";
 import type { RuntimeVaultTotpController } from "../../hooks/security/useRuntimeVaultTotp";
+import {
+  CredentialFailure,
+  settleWithin,
+} from "../../utils/security/credentialFailure";
 import type { CredentialTypingTarget } from "../../utils/security/credentialTyping";
 import { useSessionRenderActivity } from "../../contexts/SessionRenderActivityContext";
 import { useSessionObservationActivity } from "../../hooks/session/useSessionObservationActivity";
+
+// Reading the authenticator is local work: an answer this late is not coming.
+const generateTimeoutMs = 15_000;
 
 /** For the reviewed redirect controller: its opaque entry handles must never be
  * interpreted as entries belonging to the temporary destination connection. */
@@ -57,7 +64,11 @@ export function ScopedTotpTypeAction({
       Awaited<ReturnType<RuntimeVaultTotpController["generate"]>> | undefined;
     try {
       check();
-      generated = await controller.generate(id);
+      generated = await settleWithin(
+        controller.generate(id),
+        generateTimeoutMs,
+        () => new CredentialFailure("resolution-timed-out"),
+      );
       const assertDisclosure = () => {
         check();
         generated!.assertCurrent();
@@ -65,20 +76,29 @@ export function ScopedTotpTypeAction({
           !/^\d{6,8}$/.test(generated!.code) ||
           Date.now() >= generated!.expires
         )
-          throw new Error("Code expired.");
+          throw new CredentialFailure("code-expired");
       };
       assertDisclosure();
       await target.type(generated.code, assertDisclosure, {
         starts: started,
         expires: generated.expires,
       });
-      if (alive.current) setStatus({ busy: false, message: "Code typed." });
-    } catch {
       if (alive.current)
         setStatus({
           busy: false,
           message:
-            "Could not type the code. Focus the session field and reopen Credentials & 2FA.",
+            target.confirmation === "sent"
+              ? "Code sent to the session."
+              : "Code typed.",
+        });
+    } catch (error) {
+      if (alive.current)
+        setStatus({
+          busy: false,
+          message:
+            error instanceof CredentialFailure
+              ? error.message
+              : "Could not type the code. Focus the session field and reopen Credentials & 2FA.",
         });
     } finally {
       generated = undefined;

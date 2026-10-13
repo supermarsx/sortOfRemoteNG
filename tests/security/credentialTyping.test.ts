@@ -117,7 +117,10 @@ describe("captured native credential input", () => {
     if (reason === "away-back") popup.focus();
     if (reason === "window-blur") window.dispatchEvent(new Event("blur"));
     if (reason === "disposed") target.dispose();
-    await expect(target.type("password", () => {})).rejects.toThrow();
+    await expect(target.type("password", () => {})).rejects.toMatchObject({
+      code: "typing-target-lost",
+      partial: false,
+    });
     expect(invoke).not.toHaveBeenCalled();
   });
   it("fails absent focus before resolving or sending anything", () => {
@@ -134,17 +137,108 @@ describe("captured native credential input", () => {
     expect(invoke).not.toHaveBeenCalled();
   });
   it.each(["ssh", "rdp"] as const)(
-    "does not fall back to ordinary input on an older %s runtime",
+    "does not fall back to ordinary input on an older %s runtime, and names the refusal without native text",
     async (protocol) => {
       session.protocol = protocol;
-      invoke.mockRejectedValueOnce(new Error("command not found"));
-      await expect(capture().type("secret", () => {})).rejects.toThrow(
-        "command not found",
+      invoke.mockRejectedValueOnce(new Error("SYNTHETIC command not found"));
+      const error = await capture()
+        .type("secret", () => {})
+        .catch((caught: unknown) => caught);
+      expect(error).toMatchObject({ code: "typing-rejected", partial: false });
+      expect((error as Error).message).toBe(
+        "The session did not accept the input. Review the field before trying again.",
       );
       expect(invoke).toHaveBeenCalledTimes(1);
       expect((invoke.mock.calls[0] as unknown as [string])[0]).toContain(
         "credential_input",
       );
+    },
+  );
+  it.each([
+    [
+      "rdp-credential-input-not-sent: the session did not accept the input and nothing was typed",
+      "typing-rejected",
+      false,
+    ],
+    [
+      "rdp-credential-input-incomplete: typing stopped after 127 of 300 UTF-16 units and will not be resumed or repeated",
+      "typing-not-confirmed",
+      true,
+    ],
+    ["rdp-credential-input-incomplete", "typing-not-confirmed", true],
+    // Only the exact code counts: a look-alike is an ordinary refusal.
+    ["rdp-credential-input-incomplete-ish: 1 of 2", "typing-rejected", false],
+    ["RDP session not found", "typing-rejected", false],
+  ] as const)(
+    "reads only the code of the RDP refusal %j",
+    async (rejection, code, partial) => {
+      session.protocol = "rdp";
+      invoke.mockRejectedValueOnce(rejection);
+      const error = await capture()
+        .type("secret", () => {})
+        .catch((caught: unknown) => caught);
+      expect(error).toMatchObject({ code, partial });
+      expect((error as Error).message).not.toMatch(/127|300|UTF-16|not found/);
+      expect((error as Error).message.includes("may have been entered")).toBe(
+        partial,
+      );
+      expect(invoke).toHaveBeenCalledTimes(1);
+    },
+  );
+  it.each(["ssh", "rdp"] as const)(
+    "reports %s input as sent, not typed: the queue accepted it, the remote did not confirm it",
+    (protocol) => {
+      session.protocol = protocol;
+      expect(capture().confirmation).toBe("sent");
+    },
+  );
+  it.each(["ssh", "rdp"] as const)(
+    "stops waiting for a %s queue that never answers and warns about partial input",
+    async (protocol) => {
+      session.protocol = protocol;
+      const target = capture();
+      vi.useFakeTimers();
+      try {
+        invoke.mockReturnValueOnce(new Promise<undefined>(() => {}));
+        const settled = vi.fn();
+        const outcome = target
+          .type("secret", () => {})
+          .catch((caught: unknown) => caught)
+          .finally(settled);
+        // Well above the two seconds the RDP session has to pick the input
+        // up, so the engine's exact answer always arrives first.
+        await vi.advanceTimersByTimeAsync(9_999);
+        expect(settled).not.toHaveBeenCalled();
+        await vi.advanceTimersByTimeAsync(1);
+        const error = await outcome;
+        expect(error).toMatchObject({
+          code: "typing-not-confirmed",
+          partial: true,
+        });
+        expect((error as Error).message).toContain(
+          "Some characters may have been entered",
+        );
+        expect(invoke).toHaveBeenCalledTimes(1);
+        expect(vi.getTimerCount()).toBe(0);
+      } finally {
+        vi.useRealTimers();
+      }
+    },
+  );
+  it.each([
+    ["a tab", "pass\tword", "text-control-character", "tab, line break"],
+    ["a line break", "pass\nword", "text-control-character", "tab, line break"],
+    ["1025 characters", "a".repeat(1025), "text-too-long", "1024 characters"],
+    ["nothing", "", "text-empty", "nothing to type"],
+  ])(
+    "names %s as its own cause without dispatch",
+    async (_name, value, code, sentence) => {
+      const error = await capture()
+        .type(value, () => {})
+        .catch((caught: unknown) => caught);
+      expect(error).toMatchObject({ code });
+      expect((error as Error).message).toContain(sentence);
+      expect(invoke).not.toHaveBeenCalled();
     },
   );
   it.each(["ssh", "rdp"] as const)(

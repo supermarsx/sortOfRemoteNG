@@ -12,20 +12,76 @@ import { invoke } from "@tauri-apps/api/core";
 import type { OriginBrowserIdentity } from "../../types/protocols/originBrowser";
 import type { OriginCredentialInputTransport } from "../../types/protocols/originCredentialTyping";
 import {
+  CredentialFailure,
+  settleWithin,
+  type CredentialFailureCode,
+} from "../../utils/security/credentialFailure";
+import {
   assertCredentialText,
   type CredentialTypingTarget,
 } from "../../utils/security/credentialTyping";
 
-const unavailable =
-  "Typing is unavailable for this website field. Choose Type to try again in an empty field on an allowed origin. HTTP typing is limited to the configured origin, including its port.";
-const timedOut =
-  "Typing timed out waiting for an empty website field. Choose Type to try again.";
-const incomplete =
-  "Typing stopped or was not confirmed. Some characters may have been entered; review the field before trying again.";
 const focusTimeoutMs = 30000;
 const pollMs = 300;
+// The engine gives one typing request 32 seconds; this only catches an
+// acknowledgement that never arrives.
+const typeTimeoutMs = 35000;
+// Above the credential read's own limit plus typing, so that the more specific
+// inner failure is the one reported.
+const actionTimeoutMs = 60000;
 const nativeTransport: OriginCredentialInputTransport = (request) =>
   invoke("origin_browser_manual_input", { request });
+const unavailable = () => new CredentialFailure("typing-unavailable");
+
+/** The fixed reasons `origin_browser_manual_input` stops with (contract K7). */
+const nativeReasons = new Map<unknown, CredentialFailureCode>([
+  ["unsupported-frame", "typing-unsupported-frame"],
+  ["field-not-empty", "typing-field-not-empty"],
+  ["focus-lost", "typing-focus-lost"],
+  ["timed-out", "typing-timed-out"],
+  ["cancelled", "typing-cancelled"],
+  ["stale", "typing-stale"],
+]);
+/** Reasons after which part of the value may already be in the field. */
+const interruptions: ReadonlySet<CredentialFailureCode> = new Set([
+  "typing-focus-lost",
+  "typing-cancelled",
+  "typing-stale",
+]);
+
+/** Only an exact reason is recognised: bare, or as the `reason` or `code` of a
+ * rejection or reply. Native prose is never read or shown. */
+function nativeReason(value: unknown): CredentialFailureCode | undefined {
+  if (value === null || typeof value !== "object")
+    return nativeReasons.get(value);
+  const coded = value as { reason?: unknown; code?: unknown };
+  return nativeReasons.get(coded.reason) ?? nativeReasons.get(coded.code);
+}
+
+/** Why typing stopped. A specific cause wins; the generic one is named by
+ * phase. `started` says whether characters may already have reached the field. */
+function typingFailure(
+  error: unknown,
+  started: boolean,
+  waitedOut = false,
+): CredentialFailure {
+  const known =
+    error instanceof CredentialFailure && error.code !== "typing-unavailable"
+      ? error
+      : null;
+  if (!started)
+    return (
+      known ??
+      new CredentialFailure(
+        waitedOut ? "typing-timed-out" : "typing-unavailable",
+      )
+    );
+  if (!known || known.code === "typing-timed-out")
+    return new CredentialFailure("typing-not-confirmed", true);
+  return interruptions.has(known.code) && !known.partial
+    ? new CredentialFailure(known.code, true)
+    : known;
+}
 
 /** Abort local waiting, including stalled IPC. The capture caller separately
  * revokes any late native receipt; a timeout never grants disclosure authority. */
@@ -35,9 +91,9 @@ function until<T>(
   milliseconds: number,
 ): Promise<T> {
   return new Promise((resolve, reject) => {
-    const abort = () => finish(() => reject(new Error(unavailable)));
+    const abort = () => finish(() => reject(unavailable()));
     const timer = setTimeout(
-      () => finish(() => reject(new Error(timedOut))),
+      () => finish(() => reject(new CredentialFailure("typing-timed-out"))),
       Math.max(0, milliseconds),
     );
     function finish(action: () => void) {
@@ -100,6 +156,10 @@ export function useOriginCredentialTyping(
   } | null>(null);
   const wake = useRef<(() => void) | null>(null);
   const committed = useRef(false);
+  // Bumped when an action is given up while still running: its target dies, so
+  // that it cannot type into a later capture if it wakes up.
+  const liveGeneration = useRef(0);
+  const [generation, setGeneration] = useState(0);
   const [phase, setPhase] = useState<
     "idle" | "countdown" | "waiting" | "preparing" | "typing"
   >("idle");
@@ -157,29 +217,40 @@ export function useOriginCredentialTyping(
   const hasIdentity = options.identity !== null;
   const target = useMemo<CredentialTypingTarget | null>(() => {
     if (!options.enabled || !hasIdentity) return null;
+    const current = () =>
+      liveGeneration.current === generation && currentScope.current === scope;
     const receipt = () => {
       if (
-        currentScope.current !== scope ||
+        !current() ||
         !work.current ||
         work.current.abort.signal.aborted ||
         !captured.current
       )
-        throw new Error(unavailable);
+        throw unavailable();
       captured.current.assertCurrent();
       return captured.current;
     };
     return {
       sessionId: options.sessionId,
+      // Native typing resolves only after the page confirmed every character.
+      confirmation: "typed",
       assertCurrent: () => {
         receipt();
       },
-      type: (value, assertDisclosure, validity) =>
+      type: async (value, assertDisclosure, validity) =>
         receipt().type(value, assertDisclosure, validity),
       dispose: () => {
-        if (currentScope.current === scope) cancel();
+        if (current()) cancel();
       },
     };
-  }, [scope, cancel, options.enabled, hasIdentity, options.sessionId]);
+  }, [
+    scope,
+    cancel,
+    options.enabled,
+    hasIdentity,
+    options.sessionId,
+    generation,
+  ]);
 
   async function run(action: () => Promise<void>) {
     if (work.current || !target) return;
@@ -192,6 +263,25 @@ export function useOriginCredentialTyping(
     work.current = job;
     const { identity, viewId, assertOwner: owner } = options;
     const transport = options.transport ?? nativeTransport;
+    // Capture and type requests: a reason from the engine becomes the failure.
+    const request: OriginCredentialInputTransport = (message) =>
+      transport(message).then(
+        (reply) => {
+          // A reply that reports progress or success is never a refusal.
+          const reason = ["waiting", "captured", "complete"].includes(
+            reply.status,
+          )
+            ? undefined
+            : nativeReason(reply);
+          if (reason) throw new CredentialFailure(reason);
+          return reply;
+        },
+        (error: unknown) => {
+          throw new CredentialFailure(
+            nativeReason(error) ?? "typing-unavailable",
+          );
+        },
+      );
     const signal = job.abort.signal;
     const check = () => {
       if (
@@ -203,19 +293,19 @@ export function useOriginCredentialTyping(
         !latest.current.open ||
         document.hidden
       )
-        throw new Error(unavailable);
+        throw unavailable();
       owner();
       latest.current.assertOwner();
     };
     const interactive = () => {
       check();
       if (!committed.current || !latest.current.interactive)
-        throw new Error(unavailable);
+        throw unavailable();
     };
     const pause = (ms: number) =>
       new Promise<void>((resolve, reject) => {
         const timer = setTimeout(() => finish(resolve), ms);
-        const abort = () => finish(() => reject(new Error(unavailable)));
+        const abort = () => finish(() => reject(unavailable()));
         function finish(done: () => void) {
           clearTimeout(timer);
           signal.removeEventListener("abort", abort);
@@ -268,7 +358,8 @@ export function useOriginCredentialTyping(
       );
       while (true) {
         interactive();
-        if (Date.now() >= deadline) throw new Error(timedOut);
+        if (Date.now() >= deadline)
+          throw new CredentialFailure("typing-timed-out");
         setRemaining(Math.ceil((deadline - Date.now()) / 1000));
         let accepting = true;
         let released = false;
@@ -281,7 +372,7 @@ export function useOriginCredentialTyping(
             action: { kind: "cancel", captureId },
           }).catch(() => {});
         };
-        const pending = transport({
+        const pending = request({
           identity: identity!,
           viewId: viewId ?? undefined,
           action: { kind: "capture" },
@@ -316,13 +407,13 @@ export function useOriginCredentialTyping(
           !reply.captureId ||
           reply.captureId.length > 256
         )
-          throw new Error(unavailable);
+          throw unavailable();
         const captureId = reply.captureId;
         let disposed = released;
         let used = false;
         const assertCurrent = () => {
           interactive();
-          if (disposed || work.current !== job) throw new Error(unavailable);
+          if (disposed || work.current !== job) throw unavailable();
         };
         const receipt: CredentialTypingTarget = {
           sessionId: options.sessionId,
@@ -334,14 +425,26 @@ export function useOriginCredentialTyping(
             }
           },
           type: async (value, assertDisclosure, validity) => {
-            assertCurrent();
-            assertCredentialText(value);
-            if (used) throw new Error(unavailable);
+            // The notice is set here as well as in run(), so the cause is
+            // shown even when the calling action swallows this rejection.
+            const stop = (error: unknown) => {
+              const failure = typingFailure(error, job.typingStarted);
+              if (alive.current && sequence.current === ticket)
+                setNotice(failure.message);
+              return failure;
+            };
+            try {
+              assertCurrent();
+              assertCredentialText(value);
+            } catch (error) {
+              throw stop(error);
+            }
+            if (used) throw unavailable();
             used = true;
             setPhase("typing");
             try {
               assertDisclosure();
-              await latest.current.runInteractive(
+              const typing = latest.current.runInteractive(
                 identity!,
                 viewId,
                 assertCurrent,
@@ -353,9 +456,9 @@ export function useOriginCredentialTyping(
                     (Date.now() < validity.starts ||
                       Date.now() >= validity.expires)
                   )
-                    throw new Error(unavailable);
+                    throw new CredentialFailure("code-expired");
                   job.typingStarted = true;
-                  const result = await transport({
+                  const result = await request({
                     identity: identity!,
                     viewId: viewId ?? undefined,
                     action: {
@@ -378,14 +481,22 @@ export function useOriginCredentialTyping(
                     result.status !== "complete" ||
                     result.captureId !== captureId
                   )
-                    throw new Error(unavailable);
+                    throw unavailable();
                 },
+              );
+              // Disposing below revokes the request if this gives up first.
+              await settleWithin(
+                typing,
+                typeTimeoutMs,
+                () =>
+                  new CredentialFailure(
+                    "typing-not-confirmed",
+                    job.typingStarted,
+                  ),
               );
               job.completed = true;
             } catch (error) {
-              if (alive.current && sequence.current === ticket)
-                setNotice(job.typingStarted ? incomplete : unavailable);
-              throw error;
+              throw stop(error);
             } finally {
               receipt.dispose();
               if (captured.current === receipt) captured.current = null;
@@ -396,17 +507,24 @@ export function useOriginCredentialTyping(
         assertCurrent();
         setPhase("preparing");
         // The shared hook first resolves credentials/TOTP HERE, never while waiting.
-        await action();
+        // Cancelling does not end this wait: an action stays serialized until
+        // it settles. Only this limit gives one up, and then retires its target.
+        await settleWithin(action(), actionTimeoutMs, () => {
+          liveGeneration.current++;
+          if (alive.current) setGeneration(liveGeneration.current);
+          return new CredentialFailure(
+            job.typingStarted ? "typing-not-confirmed" : "resolution-timed-out",
+            job.typingStarted,
+          );
+        });
         break;
       }
-    } catch {
+    } catch (error) {
+      // A rejecting action reports why the credential could not be prepared.
       if (alive.current && sequence.current === ticket)
         setNotice(
-          job.typingStarted
-            ? incomplete
-            : Date.now() >= deadline
-              ? timedOut
-              : unavailable,
+          typingFailure(error, job.typingStarted, Date.now() >= deadline)
+            .message,
         );
     } finally {
       if (work.current === job) {

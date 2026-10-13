@@ -9,6 +9,7 @@ import {
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import RuntimeVaultTotpPanel from "../../src/components/security/RuntimeVaultTotpPanel";
 import type { RuntimeVaultTotpController } from "../../src/hooks/security/useRuntimeVaultTotp";
+import { CredentialFailure } from "../../src/utils/security/credentialFailure";
 
 const activity = vi.hoisted(() => ({ isActive: true }));
 vi.mock("../../src/contexts/SessionRenderActivityContext", () => ({
@@ -399,5 +400,99 @@ describe("RuntimeVaultTotpPanel manual disclosure", () => {
     expect(api.generate).toHaveBeenLastCalledWith("vault-totp");
     expect(api.generate).toHaveBeenCalledTimes(2);
     expect(clipboard).toHaveBeenCalledTimes(2);
+  });
+
+  it.each([
+    [
+      "a closing code window",
+      "The current code is about to expire. Wait for the next code, then try again.",
+    ],
+    [
+      "a clipboard refusal",
+      "The clipboard could not be updated. Check the secure clipboard settings and try again.",
+    ],
+    [
+      "an unknown error",
+      "The code could not be copied safely. Check vault access and try again.",
+    ],
+  ])(
+    "names %s instead of blaming vault access for everything",
+    async (cause, sentence) => {
+      const api = controller();
+      if (cause === "a closing code window")
+        api.generate = vi
+          .fn()
+          .mockRejectedValue(new CredentialFailure("code-window-closing"));
+      if (cause === "a clipboard refusal")
+        clipboard.mockRejectedValue(new Error("SYNTHETIC_CLIPBOARD_DETAIL"));
+      if (cause === "an unknown error")
+        api.generate = vi
+          .fn()
+          .mockRejectedValue(new Error("SYNTHETIC_GENERATOR_DETAIL"));
+      render(
+        <RuntimeVaultTotpPanel
+          controller={api}
+          onClose={vi.fn()}
+          anchorRef={anchorRef}
+        />,
+      );
+      await flush();
+      fireEvent.click(
+        screen.getByRole("button", {
+          name: "Copy code Vault authenticator (1)",
+        }),
+      );
+      await flush();
+      expect(screen.getByRole("alert")).toHaveTextContent(sentence);
+      expect(document.body.textContent).not.toContain("SYNTHETIC");
+      expect(
+        screen.queryByLabelText("Generated authenticator code"),
+      ).not.toBeInTheDocument();
+      expect(
+        screen.getByRole("button", {
+          name: "Copy code Vault authenticator (1)",
+        }),
+      ).toBeEnabled();
+    },
+  );
+
+  it("stops waiting for a generator that never answers and lets the next copy work", async () => {
+    const api = controller();
+    const working = api.generate;
+    api.generate = vi
+      .fn()
+      .mockReturnValueOnce(new Promise(() => {}))
+      .mockImplementation(working);
+    render(
+      <RuntimeVaultTotpPanel
+        controller={api}
+        onClose={vi.fn()}
+        anchorRef={anchorRef}
+      />,
+    );
+    await flush();
+    const copy = screen.getByRole("button", {
+      name: "Copy code Vault authenticator (1)",
+    });
+    fireEvent.click(copy);
+    await flush();
+    expect(copy).toBeDisabled();
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(14_999);
+    });
+    expect(copy).toBeDisabled();
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1);
+    });
+    expect(screen.getByRole("alert")).toHaveTextContent(
+      "Reading the credential took too long and was stopped.",
+    );
+    expect(copy).toBeEnabled();
+    expect(clipboard).not.toHaveBeenCalled();
+    expect(vi.getTimerCount()).toBe(0);
+    fireEvent.click(copy);
+    await flush();
+    expect(clipboard).toHaveBeenCalledExactlyOnceWith("123456");
   });
 });

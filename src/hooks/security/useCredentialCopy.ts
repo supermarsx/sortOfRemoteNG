@@ -5,6 +5,7 @@ import type {
   Connection,
   ConnectionSession,
 } from "../../types/connection/connection";
+import { selectSavedCredentialPair } from "../../utils/auth/httpCredentials";
 import { DatabaseManager } from "../../utils/connection/databaseManager";
 import { normalizeConnectionCredentialSource } from "../../utils/security/databaseCredentialVault";
 import { runtimeCredentialTargetKey } from "../../utils/security/runtimeCredentialVault";
@@ -12,20 +13,31 @@ import { useSessionObservationActivity } from "../session/useSessionObservationA
 import { useRuntimeCredentialVault } from "./useRuntimeCredentialVault";
 import {
   assertCredentialText,
+  typingUnavailable,
   type CredentialTypingTarget,
 } from "../../utils/security/credentialTyping";
-import { totpApi } from "../totp/useTOTP";
-import type { TotpAlgorithm } from "../../types/totp";
+import { prepareCredentialClipboard } from "../../utils/security/credentialClipboard";
 import {
-  CredentialClipboardError,
-  prepareCredentialClipboard,
-} from "../../utils/security/credentialClipboard";
+  CredentialFailure,
+  failedOutcome,
+  settleWithin,
+  toCredentialFailure,
+  type CredentialFailureCode,
+  type CredentialOutcome,
+} from "../../utils/security/credentialFailure";
+import {
+  generateTotpCode,
+  type TotpCodeParameters,
+} from "../../utils/security/totpCode";
 
 export type CredentialCopyField = "username" | "password";
 export type CredentialCodeSelection =
   { localIndex: number } | { vaultId: string };
-const failure =
-  "Could not copy the selected credential. Check owning database access and try again.";
+
+// Reading a credential is local work: a step still unanswered by then is hung.
+const resolveTimeoutMs = 15_000;
+// Above every target's own limit; native website typing allows 32 seconds.
+const typingTimeoutMs = 45_000;
 
 /** Secrets exist only in the explicit click's stack, never in React state. */
 export function useCredentialCopy(
@@ -98,18 +110,27 @@ export function useCredentialCopy(
     databaseAvailability?.status === "ready" &&
     databaseAvailability.databaseId === session.ownerDatabaseId;
 
+  /** Rejects with a `CredentialFailure` naming the cause; never with native
+   * text. The same sentence is shown as this hook's `message`. */
   const disclose = async (
     field: CredentialCopyField | CredentialCodeSelection,
     action: "copy" | "type",
-  ) => {
-    if (pending.current || !alive.current || !available) return;
+  ): Promise<void> => {
+    if (!alive.current) throw new CredentialFailure("session-changed");
+    if (pending.current) throw new CredentialFailure("busy");
+    if (!available) throw new CredentialFailure("database-unavailable");
     const lease = lifetime.current;
-    const current = () =>
+    const live = () =>
       alive.current &&
       lifetime.current === lease &&
       version.current.epoch === epoch;
+    // Set when the attempt is given up, so a step or a native callback that
+    // answers later finds it closed.
+    let stopped: CredentialFailure | null = null;
     const assertAttempt = () => {
-      if (!current() || document.hidden) throw new Error(failure);
+      if (stopped) throw stopped;
+      if (!live()) throw new CredentialFailure("session-changed");
+      if (document.hidden) throw new CredentialFailure("app-hidden");
       if (action === "type") {
         if (
           !typingTarget ||
@@ -117,23 +138,41 @@ export function useCredentialCopy(
           typingTarget.sessionId !== session.id ||
           session.status !== "connected"
         )
-          throw new Error(failure);
-        typingTarget.assertCurrent();
+          throw new CredentialFailure("typing-target-lost");
+        try {
+          typingTarget.assertCurrent();
+        } catch (error) {
+          throw toCredentialFailure(error, "typing-target-lost");
+        }
       }
     };
+    // One deadline for the whole read. Each awaited step races it, so a step
+    // that never answers ends the attempt instead of holding the controls.
+    let expire: ((failure: CredentialFailure) => void) | null = null;
+    const deadline = setTimeout(() => {
+      stopped = new CredentialFailure("resolution-timed-out");
+      expire?.(stopped);
+    }, resolveTimeoutMs);
+    const step = <T>(work: Promise<T>) =>
+      new Promise<T>((resolve, reject) => {
+        expire = reject;
+        work.then(resolve, reject);
+      });
     pending.current = true;
     setStatus({ epoch, busy: true, message: "" });
     let value: string | undefined;
+    let vaultRead: ReturnType<typeof resolveVault> | undefined;
     let resolved: Awaited<ReturnType<typeof resolveVault>> = null;
     let expires = Infinity;
     let starts = -Infinity;
+    let dispatched = false;
     const isCode = typeof field === "object";
     try {
       if (!isCode && field !== "username" && field !== "password")
-        throw new Error(failure);
+        throw new CredentialFailure("connection-changed");
       assertAttempt();
       const writeClipboard =
-        action === "copy" ? await prepareCredentialClipboard() : null;
+        action === "copy" ? await step(prepareCredentialClipboard()) : null;
       assertAttempt();
       const manager = DatabaseManager.getInstance();
       const target = manager.captureCurrentDatabaseDataTarget();
@@ -144,19 +183,40 @@ export function useCredentialCopy(
         !target.readCurrent ||
         !target.verifyCurrent
       )
-        throw new Error(failure);
+        throw new CredentialFailure("database-unavailable");
       const check = () => {
         assertAttempt();
-        if (manager.getCurrentDatabase()?.id !== session.ownerDatabaseId)
-          throw new Error(failure);
-        target.assertAccessible!();
-        // Includes provider updates waiting for React to commit, and its owner lease.
-        const currentRows = getCurrentConnections!({
-          databaseId: session.ownerDatabaseId!,
-          generation: databaseAvailability!.generation,
-        }).filter((item) => item.id === session.connectionId);
+        let currentRows: Connection[];
+        try {
+          if (manager.getCurrentDatabase()?.id !== session.ownerDatabaseId)
+            throw new Error();
+          target.assertAccessible!();
+          // Includes provider updates waiting for React to commit, and its owner lease.
+          currentRows = getCurrentConnections!({
+            databaseId: session.ownerDatabaseId!,
+            generation: databaseAvailability!.generation,
+          }).filter((item) => item.id === session.connectionId);
+        } catch {
+          throw new CredentialFailure("database-unavailable");
+        }
         if (currentRows.length !== 1 || currentRows[0] !== saved)
-          throw new Error(failure);
+          throw new CredentialFailure("connection-changed");
+      };
+      // A step that is not ours failed. A lost owner explains that better
+      // than the step does, so ask the gates first.
+      const because =
+        (code: CredentialFailureCode) =>
+        (error: unknown): never => {
+          if (error instanceof CredentialFailure) throw error;
+          check();
+          throw new CredentialFailure(code);
+        };
+      const assertVault = () => {
+        try {
+          resolved?.assertCurrent();
+        } catch (error) {
+          because("vault-unavailable")(error);
+        }
       };
       check();
       const key = runtimeCredentialTargetKey(connection!);
@@ -166,34 +226,37 @@ export function useCredentialCopy(
         session.protocol !== connection!.protocol ||
         runtimeCredentialTargetKey(saved!) !== key
       )
-        throw new Error(failure);
-      await target.verifyCurrent();
+        throw new CredentialFailure("connection-changed");
+      await step(target.verifyCurrent()).catch(because("database-unavailable"));
       check();
       const source = normalizeConnectionCredentialSource(
         connection!.credentialSource,
       );
-      let codeConfig:
-        | { secret: string; algorithm: string; digits: number; period: number }
-        | undefined;
+      let codeConfig: TotpCodeParameters | undefined;
       if (source?.kind === "vault") {
-        resolved = await resolveVault(
+        vaultRead = resolveVault(
           check,
           false,
           isCode ? "totp" : `manual-${action}-${field}`,
         );
+        resolved = await step(vaultRead).catch(because("vault-unavailable"));
         check();
-        if (!resolved) throw new Error(failure);
-        resolved.assertCurrent();
+        if (!resolved) throw new CredentialFailure("vault-unavailable");
+        assertVault();
         if (isCode) {
-          if (!("vaultId" in field)) throw new Error(failure);
+          if (!("vaultId" in field))
+            throw new CredentialFailure("authenticator-unavailable");
           const entries = resolved.facets.totp?.filter(
             (entry) => entry.id === field.vaultId,
           );
-          if (entries?.length !== 1) throw new Error(failure);
+          if (entries?.length !== 1)
+            throw new CredentialFailure("authenticator-unavailable");
           codeConfig = entries[0];
         } else value = resolved.facets[field];
       } else {
-        const snapshot = await target.readCurrent();
+        const snapshot = await step(target.readCurrent()).catch(
+          because("database-unavailable"),
+        );
         check();
         const rows = snapshot?.connections.filter(
           (item) => item.id === session.connectionId,
@@ -205,20 +268,14 @@ export function useCredentialCopy(
           normalizeConnectionCredentialSource(persisted.credentialSource)
             ?.kind === "vault"
         )
-          throw new Error(failure);
-        // HTTP's dedicated pair wins as a pair; never mix in a generic fallback.
-        // Manual disclosure does not depend on an automation/login mode.
-        const dedicated =
-          ["http", "https"].includes(persisted.protocol) &&
-          ((persisted.basicAuthUsername?.length ?? 0) > 0 ||
-            (persisted.basicAuthPassword?.length ?? 0) > 0);
+          throw new CredentialFailure("connection-changed");
         if (isCode) {
           if (
             !("localIndex" in field) ||
             !Number.isSafeInteger(field.localIndex) ||
             field.localIndex < 0
           )
-            throw new Error(failure);
+            throw new CredentialFailure("authenticator-unavailable");
           codeConfig = persisted.totpConfigs?.[field.localIndex];
           // Index must still describe the exact authenticator selected in the UI.
           if (
@@ -226,63 +283,43 @@ export function useCredentialCopy(
             JSON.stringify(codeConfig) !==
               JSON.stringify(connection!.totpConfigs?.[field.localIndex])
           )
-            throw new Error(failure);
+            throw new CredentialFailure("authenticator-unavailable");
         } else
-          value = dedicated
-            ? persisted[
-                field === "username" ? "basicAuthUsername" : "basicAuthPassword"
-              ]
-            : persisted[field];
+          // HTTP's dedicated pair wins as a pair; never mix in a generic fallback.
+          // Manual disclosure does not depend on an automation/login mode.
+          value = selectSavedCredentialPair(
+            persisted,
+            ["http", "https"].includes(persisted.protocol),
+          )?.[field];
       }
       if (isCode) {
-        if (
-          !codeConfig ||
-          !codeConfig.secret ||
-          codeConfig.secret.length > 4096 ||
-          !["sha1", "sha256", "sha512"].includes(
-            codeConfig.algorithm.toLowerCase(),
-          ) ||
-          ![6, 7, 8].includes(codeConfig.digits) ||
-          !Number.isInteger(codeConfig.period) ||
-          codeConfig.period < 1 ||
-          codeConfig.period > 3600
-        )
-          throw new Error(failure);
-        starts =
-          Math.floor(Date.now() / (codeConfig.period * 1000)) *
-          codeConfig.period *
-          1000;
-        expires = starts + codeConfig.period * 1000;
-        if (expires - Date.now() < 1000) throw new Error(failure);
-        value = await totpApi.computeCode(
-          codeConfig.secret,
-          codeConfig.algorithm.toUpperCase() as TotpAlgorithm,
-          codeConfig.digits,
-          codeConfig.period,
-        );
+        if (!codeConfig)
+          throw new CredentialFailure("authenticator-unavailable");
+        const generated = await step(generateTotpCode(codeConfig));
         check();
-        if (!new RegExp(`^\\d{${codeConfig.digits}}$`).test(value))
-          throw new Error(failure);
+        ({ starts, expires } = generated);
+        value = generated.code;
         codeConfig = undefined;
-      }
-      if (typeof value !== "string" || value.length === 0)
-        throw new Error(failure);
-      await target.verifyCurrent();
+      } else if (typeof value !== "string" || value.length === 0)
+        throw new CredentialFailure(`${field}-empty`);
+      await step(target.verifyCurrent()).catch(because("database-unavailable"));
       check();
-      resolved?.assertCurrent();
+      assertVault();
       const assertDisclosure = () => {
         check();
-        resolved?.assertCurrent();
+        assertVault();
         if (Date.now() < starts || Date.now() >= expires)
-          throw new Error(failure);
+          throw new CredentialFailure("code-expired");
       };
       assertDisclosure();
       // No asynchronous boundary between the final gates and the only disclosure.
-      if (action === "type") assertCredentialText(value);
+      if (action === "type") assertCredentialText(value!);
+      clearTimeout(deadline);
+      dispatched = true;
       const writing =
         action === "copy"
           ? writeClipboard!(
-              value,
+              value!,
               isCode ? "totpCode" : field,
               assertDisclosure,
               {
@@ -291,40 +328,69 @@ export function useCredentialCopy(
               },
             )
           : typingTarget!.type(
-              value,
+              value!,
               assertDisclosure,
               isCode ? { starts, expires } : undefined,
             );
       value = undefined;
-      await writing;
-      if (current())
+      // The clipboard writer bounds itself. A typing target may not.
+      if (action === "copy") await writing;
+      else
+        await settleWithin(writing, typingTimeoutMs, () => {
+          stopped = new CredentialFailure("typing-not-confirmed", true);
+          typingTarget!.dispose();
+          return stopped;
+        });
+      if (live())
         setStatus({
           epoch,
           busy: false,
-          message: `${isCode ? "Code" : field === "username" ? "Username" : "Password"} ${action === "copy" ? "copied" : "typed"}.`,
+          message: `${isCode ? "Code" : field === "username" ? "Username" : "Password"} ${action === "copy" ? "copied" : typingTarget!.confirmation === "sent" ? "sent to the session" : "typed"}.`,
         });
     } catch (error) {
-      if (current())
-        setStatus({
-          epoch,
-          busy: false,
-          message:
-            action === "copy"
-              ? error instanceof CredentialClipboardError
-                ? "Could not copy the selected credential. Check the secure clipboard settings and try again."
-                : failure
-              : "Could not type the selected value. Check database access, focus the session field and reopen Credentials & 2FA.",
-        });
+      const failure =
+        error instanceof CredentialFailure
+          ? error
+          : !dispatched
+            ? new CredentialFailure("database-unavailable")
+            : action === "copy"
+              ? new CredentialFailure("clipboard-unavailable")
+              : error instanceof Error && error.message === typingUnavailable
+                ? new CredentialFailure("typing-target-lost")
+                : // An unknown stop after typing began may have left characters.
+                  new CredentialFailure("typing-not-confirmed", true);
+      if (live()) setStatus({ epoch, busy: false, message: failure.message });
+      throw failure;
     } finally {
+      clearTimeout(deadline);
       value = undefined;
       if (resolved) resolved.facets = {};
+      // A vault read abandoned at the deadline may still answer: drop it.
+      else
+        void vaultRead?.then(
+          (late) => {
+            if (late) late.facets = {};
+          },
+          () => {},
+        );
       pending.current = false;
     }
   };
+  const settle = (work: Promise<void>): Promise<CredentialOutcome> =>
+    work.then(
+      (): CredentialOutcome => ({ ok: true }),
+      (error: unknown) =>
+        failedOutcome(toCredentialFailure(error, "database-unavailable")),
+    );
   return {
-    copy: (field: CredentialCopyField) => disclose(field, "copy"),
-    type: (field: CredentialCopyField) => disclose(field, "type"),
+    // These three never reject: the outcome and `message` carry any failure.
+    copy: (field: CredentialCopyField) => settle(disclose(field, "copy")),
+    type: (field: CredentialCopyField) => settle(disclose(field, "type")),
     typeCode: (selection: CredentialCodeSelection) =>
+      settle(disclose(selection, "type")),
+    /** Rejecting forms, for a caller that reports the failure itself. */
+    typeOrThrow: (field: CredentialCopyField) => disclose(field, "type"),
+    typeCodeOrThrow: (selection: CredentialCodeSelection) =>
       disclose(selection, "type"),
     typingAvailable:
       available &&

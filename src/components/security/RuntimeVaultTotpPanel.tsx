@@ -8,6 +8,10 @@ import { useSessionRenderActivity } from "../../contexts/SessionRenderActivityCo
 import { useSessionObservationActivity } from "../../hooks/session/useSessionObservationActivity";
 import { PopoverSurface } from "../ui/overlays/PopoverSurface";
 import { prepareCredentialClipboard } from "../../utils/security/credentialClipboard";
+import {
+  CredentialFailure,
+  settleWithin,
+} from "../../utils/security/credentialFailure";
 
 type Props = {
   controller: RuntimeVaultTotpController;
@@ -20,6 +24,8 @@ type Props = {
   renderTypeCode?: (id: string) => React.ReactNode;
 };
 type Code = Awaited<ReturnType<RuntimeVaultTotpController["generate"]>>;
+// Reading the vault is local work: an answer this late is not coming.
+const generateTimeoutMs = 15_000;
 
 function Codes({
   controller,
@@ -120,7 +126,11 @@ function Codes({
         latest.current.scopeKey !== scope
       )
         return;
-      const value = await latest.current.generate(id);
+      const value = await settleWithin(
+        latest.current.generate(id),
+        generateTimeoutMs,
+        () => new CredentialFailure("resolution-timed-out"),
+      );
       value.assertCurrent();
       if (
         epoch.current !== ticket ||
@@ -152,10 +162,13 @@ function Codes({
         setNow(Date.now());
         setCode({ ...value, entryId: id });
       }
-    } catch {
+    } catch (error) {
+      // A known cause (clipboard, code window, vault) says so itself.
       if (epoch.current === ticket)
         setError(
-          "The code could not be copied safely. Check vault access and try again.",
+          error instanceof CredentialFailure
+            ? error.message
+            : "The code could not be copied safely. Check vault access and try again.",
         );
     } finally {
       pending.current = false;

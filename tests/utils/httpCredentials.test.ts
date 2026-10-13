@@ -1,5 +1,74 @@
 import { describe, expect, it } from "vitest";
-import { resolveHttpBasicCredentials } from "../../src/utils/auth/httpCredentials";
+import {
+  resolveHttpBasicCredentials,
+  selectSavedCredentialPair,
+} from "../../src/utils/auth/httpCredentials";
+
+describe("one saved credential pair rule", () => {
+  const row = {
+    basicAuthUsername: "dedicated-user",
+    basicAuthPassword: "dedicated-secret",
+    username: "generic-user",
+    password: "generic-secret",
+  };
+  it("takes the dedicated pair as a whole as soon as either of its fields is set", () => {
+    expect(selectSavedCredentialPair(row, true)).toEqual({
+      username: "dedicated-user",
+      password: "dedicated-secret",
+      dedicated: true,
+    });
+    expect(
+      selectSavedCredentialPair({ ...row, basicAuthPassword: "" }, true),
+    ).toEqual({ username: "dedicated-user", password: "", dedicated: true });
+    expect(
+      selectSavedCredentialPair({ ...row, basicAuthUsername: undefined }, true),
+    ).toEqual({ username: "", password: "dedicated-secret", dedicated: true });
+  });
+  it("uses the generic pair when the dedicated one is blank or does not apply", () => {
+    const generic = {
+      username: "generic-user",
+      password: "generic-secret",
+      dedicated: false,
+    };
+    expect(
+      selectSavedCredentialPair(
+        { ...row, basicAuthUsername: "", basicAuthPassword: "" },
+        true,
+      ),
+    ).toEqual(generic);
+    // A protocol without dedicated fields ignores stray ones.
+    expect(selectSavedCredentialPair(row, false)).toEqual(generic);
+    expect(selectSavedCredentialPair({}, true)).toEqual({
+      username: "",
+      password: "",
+      dedicated: false,
+    });
+  });
+  it.each([
+    [{ basicAuthUsername: 7 }, true],
+    [{ basicAuthPassword: {} }, true],
+    [{ basicAuthUsername: "", basicAuthPassword: "", username: 7 }, true],
+    [{ password: [] }, false],
+  ])("rejects the malformed row %j", (change, dedicated) => {
+    expect(
+      selectSavedCredentialPair({ ...row, ...change } as never, dedicated),
+    ).toBeNull();
+  });
+  it("is the rule the Basic resolver applies", () => {
+    for (const candidate of [
+      row,
+      { ...row, basicAuthPassword: "" },
+      { ...row, basicAuthUsername: "", basicAuthPassword: "" },
+      { basicAuthPassword: "only-secret" },
+    ]) {
+      const pair = selectSavedCredentialPair(candidate, true)!;
+      expect(resolveHttpBasicCredentials(candidate)).toEqual({
+        username: pair.username,
+        password: pair.password,
+      });
+    }
+  });
+});
 
 describe("HTTP Basic credentials match editor defaults", () => {
   it.each([undefined, "basic", "password"] as const)(

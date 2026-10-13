@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type PointerEvent } from "react";
+import { CredentialFailure } from "../../utils/security/credentialFailure";
 import type { CredentialTypingTarget } from "../../utils/security/credentialTyping";
 
 export type CaptureCredentialTarget = (
@@ -55,8 +56,9 @@ export function useCredentialTyping(
           let inFlight = false;
           const captured: CredentialTypingTarget = {
             sessionId: next.sessionId,
+            confirmation: next.confirmation,
             assertCurrent: () => {
-              if (consumed) throw new Error("Typing target consumed.");
+              if (consumed) throw new CredentialFailure("typing-target-lost");
               next.assertCurrent();
             },
             dispose: () => {
@@ -65,7 +67,7 @@ export function useCredentialTyping(
             },
             type: async (value, assertDisclosure, validity) => {
               if (consumed || inFlight)
-                throw new Error("Typing target consumed or busy.");
+                throw new CredentialFailure("typing-target-lost");
               inFlight = true;
               try {
                 await next.type(value, assertDisclosure, validity);

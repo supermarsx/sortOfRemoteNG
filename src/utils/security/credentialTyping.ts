@@ -1,6 +1,12 @@
+import { CredentialFailure, settleWithin } from "./credentialFailure";
+
 /** A captured destination, never a credential or a clipboard operation. */
 export interface CredentialTypingTarget {
   readonly sessionId: string;
+  /** What a resolved `type` proves. `typed`: the destination acknowledged the
+   * input. `sent`: a session queue accepted it and the remote side confirmed
+   * nothing. Absent means `typed`. */
+  readonly confirmation?: "typed" | "sent";
   assertCurrent: () => void;
   type: (
     value: string,
@@ -14,15 +20,16 @@ export interface CredentialCodeValidity {
   expires: number;
 }
 
-export const typingUnavailable =
-  "The typing target changed or is unavailable. Focus the session field and reopen Credentials & 2FA.";
+export const typingUnavailable = new CredentialFailure("typing-target-lost")
+  .message;
 
-/** Reject terminal controls as well as line separators; never silently strip them. */
+/** Reject terminal controls as well as line separators; never silently strip
+ * them. The failure says which rule the value broke, never the value. */
 export function assertCredentialText(value: string): void {
+  if (typeof value !== "string" || !value.length)
+    throw new CredentialFailure("text-empty");
+  if (value.length > 1024) throw new CredentialFailure("text-too-long");
   if (
-    typeof value !== "string" ||
-    !value.length ||
-    value.length > 1024 ||
     Array.from(value).some((character) => {
       const point = character.codePointAt(0)!;
       return (
@@ -34,7 +41,7 @@ export function assertCredentialText(value: string): void {
       );
     })
   )
-    throw new Error("This value cannot be typed safely without control keys.");
+    throw new CredentialFailure("text-control-character");
 }
 
 /** Capture synchronously on pointer-down, before opening/focusing the popup.
@@ -55,7 +62,7 @@ export function captureCredentialFocus(
     surface.contains(element) &&
     !element.matches(":disabled,[aria-disabled=true],[readonly]");
   if (!win || !usable() || doc.hidden || !doc.hasFocus())
-    throw new Error(typingUnavailable);
+    throw new CredentialFailure("typing-target-lost");
   const revoke = () => {
     revoked = true;
   };
@@ -78,7 +85,7 @@ export function captureCredentialFocus(
       !doc.hasFocus() ||
       (active !== element && (!active || !isPopupControl(active)))
     )
-      throw new Error(typingUnavailable);
+      throw new CredentialFailure("typing-target-lost");
   };
   return {
     assertCurrent,
@@ -108,6 +115,23 @@ type NativeInvoke = (
   args: Record<string, unknown>,
 ) => Promise<unknown>;
 
+// The commands answer within about two seconds (SSH on queueing, RDP once the
+// session picked the input up); this only catches one that never returns.
+const nativeInputTimeoutMs = 10_000;
+
+/** Why a native input command refused. RDP rejects with a stable code, a
+ * colon, then a sentence; only the code is read and no native text is shown.
+ * Its "incomplete" code is the one refusal that leaves characters behind. */
+function nativeInputFailure(error: unknown): CredentialFailure {
+  if (error instanceof CredentialFailure) return error;
+  const text = typeof error === "string" ? error : "";
+  const colon = text.indexOf(":");
+  return (colon < 0 ? text : text.slice(0, colon)) ===
+    "rdp-credential-input-incomplete"
+    ? new CredentialFailure("typing-not-confirmed", true)
+    : new CredentialFailure("typing-rejected");
+}
+
 /** Uses credential-only native input commands. In particular, RDP uses Unicode input,
  * never the digits-only TOTP scancode handler or clipboard redirection. */
 export function captureNativeCredentialTarget(
@@ -122,7 +146,7 @@ export function captureNativeCredentialTarget(
     !initial.ownerDatabaseId ||
     (initial.protocol === "ssh" && !initial.shellId)
   )
-    throw new Error(typingUnavailable);
+    throw new CredentialFailure("typing-target-lost");
   const captured = { ...initial };
   const focus = captureCredentialFocus(captured.surface, isPopupControl);
   const assertCurrent = () => {
@@ -138,10 +162,13 @@ export function captureNativeCredentialTarget(
       next.generation !== captured.generation ||
       next.surface !== captured.surface
     )
-      throw new Error(typingUnavailable);
+      throw new CredentialFailure("typing-target-lost");
   };
   return {
     sessionId: captured.sessionId,
+    // Neither command hears back from the remote side: SSH returns once the
+    // input is queued, RDP once it is written to the session.
+    confirmation: "sent",
     assertCurrent,
     dispose: focus.dispose,
     type: async (value, assertDisclosure, validity) => {
@@ -163,12 +190,20 @@ export function captureNativeCredentialTarget(
             };
       assertDisclosure();
       assertCurrent();
-      await invoke(
-        captured.protocol === "ssh"
-          ? "send_ssh_credential_input"
-          : "rdp_send_credential_input",
-        args,
-      );
+      try {
+        await settleWithin(
+          invoke(
+            captured.protocol === "ssh"
+              ? "send_ssh_credential_input"
+              : "rdp_send_credential_input",
+            args,
+          ),
+          nativeInputTimeoutMs,
+          () => new CredentialFailure("typing-not-confirmed", true),
+        );
+      } catch (error) {
+        throw nativeInputFailure(error);
+      }
     },
   };
 }

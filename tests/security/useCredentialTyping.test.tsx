@@ -4,6 +4,7 @@ import {
   cleanup,
   fireEvent,
   render,
+  renderHook,
   screen,
 } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -141,4 +142,34 @@ describe("popup credential target lifecycle", () => {
       expect(target.type).not.toHaveBeenCalled();
     },
   );
+  it("keeps the captured target's confirmation level and names a reused target", async () => {
+    const inner: CredentialTypingTarget = {
+      sessionId: "tab",
+      confirmation: "sent",
+      assertCurrent: vi.fn(),
+      type: vi.fn(async () => {}),
+      dispose: vi.fn(),
+    };
+    const hook = renderHook(() => useCredentialTyping(false, () => inner));
+    await act(async () => {
+      hook.result.current.onPointerDown({
+        button: 0,
+        preventDefault: () => {},
+        currentTarget: document.body,
+      } as never);
+    });
+    const captured = hook.result.current.target!;
+    expect(captured.confirmation).toBe("sent");
+    await act(async () => {
+      await captured.type("synthetic", () => {});
+    });
+    expect(inner.type).toHaveBeenCalledOnce();
+    await expect(captured.type("synthetic", () => {})).rejects.toMatchObject({
+      code: "typing-target-lost",
+    });
+    expect(() => captured.assertCurrent()).toThrow(
+      "The typing target changed or is unavailable.",
+    );
+    expect(inner.type).toHaveBeenCalledOnce();
+  });
 });

@@ -1,8 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { Copy, X } from "lucide-react";
 import type { TOTPConfig } from "../../../types/settings/settings";
-import type { TotpAlgorithm } from "../../../types/totp";
-import { totpApi } from "../../../hooks/totp/useTOTP";
 import {
   DatabaseManager,
   onDatabaseAccessChange,
@@ -11,6 +9,11 @@ import { PopoverSurface } from "../../ui/overlays/PopoverSurface";
 import { getInvoke } from "../../../utils/tauri/invoke";
 import { ENCRYPTION_EVENT_LOCKED } from "../../../types/encryption/encryption";
 import { prepareCredentialClipboard } from "../../../utils/security/credentialClipboard";
+import { CredentialFailure } from "../../../utils/security/credentialFailure";
+import {
+  generateTotpCode,
+  totpRemainingFailure,
+} from "../../../utils/security/totpCode";
 
 export interface WebTotpPanelProps {
   configs: TOTPConfig[];
@@ -164,39 +167,17 @@ export default function WebTotpPanel({
           configs
             .slice(0, 64)
             .map(async (config, index): Promise<Code | null> => {
-              if (
-                !valid() ||
-                typeof config.secret !== "string" ||
-                !config.secret ||
-                config.secret.length > 4096 ||
-                !["sha1", "sha256", "sha512"].includes(config.algorithm) ||
-                !Number.isInteger(config.digits) ||
-                config.digits < 6 ||
-                config.digits > 8 ||
-                !Number.isInteger(config.period) ||
-                config.period < 1 ||
-                config.period > 3600
-              )
-                return null;
+              if (!valid()) return null;
               const period = Math.floor(started / (config.period * 1000));
               if (periods[index] === period) return cached[index] ?? null;
               periods[index] = period;
               try {
-                const value = await totpApi.computeCode(
-                  config.secret,
-                  config.algorithm.toUpperCase() as TotpAlgorithm,
-                  config.digits,
-                  config.period,
-                );
-                const expires =
-                  (Math.floor(started / (config.period * 1000)) + 1) *
-                  config.period *
-                  1000;
-                return valid() &&
-                  Date.now() < expires &&
-                  new RegExp(`^\\d{${config.digits}}$`).test(value)
-                  ? { value, expires }
-                  : null;
+                // Shown with its countdown to the end of the step; Copy
+                // applies the hand-out margin separately.
+                const { code, expires } = await generateTotpCode(config, {
+                  minimumRemainingMs: 0,
+                });
+                return valid() ? { value: code, expires } : null;
               } catch {
                 return null;
               }
@@ -230,8 +211,15 @@ export default function WebTotpPanel({
       return;
     }
     const code = result.codes[index];
-    if (!code || Date.now() >= code.expires) {
-      setNotice("Wait for a fresh code before copying.");
+    const unusable = code
+      ? totpRemainingFailure(code.expires, Date.now())
+      : "code-expired";
+    if (!code || unusable) {
+      setNotice(
+        unusable === "code-window-closing"
+          ? new CredentialFailure(unusable).message
+          : "Wait for a fresh code before copying.",
+      );
       return;
     }
     try {
@@ -254,9 +242,15 @@ export default function WebTotpPanel({
       );
       if (alive.current && canAccess() && latest.current.configs === configs)
         setNotice("Code copied. Paste it manually on the website.");
-    } catch {
+    } catch (error) {
+      // The code is on screen, so an unavailable clipboard has a way around.
       if (alive.current && canAccess())
-        setNotice("Could not copy the code. Select it and copy manually.");
+        setNotice(
+          error instanceof CredentialFailure &&
+            error.code !== "clipboard-unavailable"
+            ? error.message
+            : "Could not copy the code. Select it and copy manually.",
+        );
     }
   };
   const panel = (

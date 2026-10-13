@@ -4,6 +4,7 @@ import {
   useOriginCredentialTyping,
   type OriginCredentialTypingOptions,
 } from "../../src/hooks/security/useOriginCredentialTyping";
+import { CredentialFailure } from "../../src/utils/security/credentialFailure";
 import type {
   OriginCredentialInputReply,
   OriginCredentialInputRequest,
@@ -497,5 +498,260 @@ describe("native manual credential typing", () => {
     expect(test.transport).not.toHaveBeenCalled();
     expect(action).not.toHaveBeenCalled();
     expect(test.result.current.notice).toContain("timed out");
+  });
+});
+
+describe("native manual typing says why it stopped", () => {
+  const reasons = [
+    ["unsupported-frame", "inside an embedded frame"],
+    ["field-not-empty", "already contains text"],
+    ["focus-lost", "The app or the website field lost focus."],
+    ["timed-out", "Typing timed out waiting for an empty website field."],
+    ["cancelled", "Typing was cancelled before it finished."],
+    ["stale", "browser session is no longer current"],
+  ] as const;
+  it.each(reasons)(
+    "shows the %s capture refusal as its own sentence, however the engine delivers it",
+    async (reason, sentence) => {
+      for (const deliver of ["string", "object", "reply"] as const) {
+        const test = setup();
+        if (deliver === "reply")
+          test.transport.mockResolvedValueOnce({
+            status: "cancelled",
+            captureId: "",
+            reason,
+          } as OriginCredentialInputReply);
+        else
+          test.transport.mockRejectedValueOnce(
+            deliver === "string" ? reason : { code: reason },
+          );
+        test.open();
+        const action = vi.fn(async () => {});
+        const { pending } = await start(test, action);
+        await finish(pending);
+        expect(test.result.current.notice).toContain(sentence);
+        expect(test.result.current.notice).not.toContain(
+          "may have been entered",
+        );
+        expect(action).not.toHaveBeenCalled();
+        expect(test.result.current.phase).toBe("idle");
+        test.unmount();
+      }
+    },
+  );
+  it.each([
+    ["focus-lost", "The app or the website field lost focus.", true],
+    ["cancelled", "Typing was cancelled before it finished.", true],
+    ["stale", "browser session is no longer current", true],
+    ["timed-out", "Typing stopped or was not confirmed.", true],
+    ["field-not-empty", "already contains text", false],
+    ["unsupported-frame", "inside an embedded frame", false],
+  ] as const)(
+    "shows the %s typing refusal and warns about partial input only when it is possible",
+    async (reason, sentence, partial) => {
+      const test = setup();
+      test.transport.mockImplementation(async (request) => {
+        if (request.action.kind === "type") throw reason;
+        return {
+          status: request.action.kind === "capture" ? "captured" : "cancelled",
+          captureId: "capture-1",
+        };
+      });
+      test.open();
+      const target = test.result.current.target!;
+      let thrown: unknown;
+      const { pending } = await start(test, () =>
+        target
+          .type("synthetic-value", () => {})
+          .catch((error: unknown) => {
+            thrown = error;
+            throw error;
+          }),
+      );
+      await finish(pending);
+      expect(test.result.current.notice).toContain(sentence);
+      expect(test.result.current.notice.includes("may have been entered")).toBe(
+        partial,
+      );
+      expect(thrown).toMatchObject({ partial });
+      expect(test.result.current.finished).toBe(0);
+    },
+  );
+  it.each([
+    "Manual typing is unavailable in this browser attempt.",
+    "FOCUS-LOST",
+    "toString",
+    { reason: "constructor" },
+  ])(
+    "keeps the generic sentence for the unrecognised refusal %j",
+    async (value) => {
+      const test = setup();
+      test.transport.mockRejectedValueOnce(value);
+      test.open();
+      const { pending } = await start(test, async () => {});
+      await finish(pending);
+      expect(test.result.current.notice).toBe(
+        "Typing is unavailable for this website field. Choose Type to try again in an empty field on an allowed origin. HTTP typing is limited to the configured origin, including its port.",
+      );
+    },
+  );
+  it("shows why the credential could not be prepared instead of leaving the notice empty", async () => {
+    const test = setup();
+    test.open();
+    const { pending } = await start(test, async () => {
+      throw new CredentialFailure("password-empty");
+    });
+    await finish(pending);
+    expect(test.result.current.notice).toBe(
+      "No password is saved for this credential.",
+    );
+    expect(test.result.current.phase).toBe("idle");
+    expect(test.result.current.finished).toBe(0);
+    expect(
+      test.transport.mock.calls.some(([r]) => r.action.kind === "type"),
+    ).toBe(false);
+    // The captured field is released, and an unknown error never shows its text.
+    expect(
+      test.transport.mock.calls.filter(([r]) => r.action.kind === "cancel"),
+    ).toHaveLength(1);
+    const next = await start(test, async () => {
+      throw new Error("SYNTHETIC_BACKEND_DETAIL");
+    });
+    await finish(next.pending);
+    expect(test.result.current.notice).toContain("Typing is unavailable");
+    expect(test.result.current.notice).not.toContain("SYNTHETIC");
+  });
+  it.each([
+    ["a tab character", "bad\tvalue", undefined, "contains a tab, line break"],
+    [
+      "an expired code",
+      "123456",
+      { starts: Date.now() - 2000, expires: Date.now() - 1 },
+      "The code expired before it could be used.",
+    ],
+  ] as const)(
+    "names %s after capture without typing",
+    async (_name, value, validity, sentence) => {
+      // The cause is shown whether or not the action passes the rejection on.
+      for (const swallow of [false, true]) {
+        const test = setup();
+        test.open();
+        const target = test.result.current.target!;
+        const { pending } = await start(test, () => {
+          const typing = target.type(value, () => {}, validity);
+          return swallow ? typing.catch(() => {}) : typing;
+        });
+        await finish(pending);
+        expect(test.result.current.notice).toContain(sentence);
+        expect(
+          test.transport.mock.calls.some(([r]) => r.action.kind === "type"),
+        ).toBe(false);
+        test.unmount();
+      }
+    },
+  );
+  it("stops waiting for a credential that never resolves, and the next action works with a fresh target", async () => {
+    vi.useFakeTimers();
+    const test = setup();
+    test.open();
+    const stale = test.result.current.target!;
+    let resume!: () => void;
+    const { pending } = await start(test, async () => {
+      await new Promise<void>((resolve) => {
+        resume = resolve;
+      });
+      // The abandoned action wakes up later and tries to use its old target.
+      await stale.type("stale-value", () => {});
+    });
+    expect(test.result.current.phase).toBe("preparing");
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(59_999);
+    });
+    expect(test.result.current.phase).toBe("preparing");
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1);
+      await pending;
+    });
+    expect(test.result.current.phase).toBe("idle");
+    expect(test.result.current.notice).toBe(
+      "Reading the credential took too long and was stopped. Check the owning database, then try again.",
+    );
+    expect(vi.getTimerCount()).toBe(0);
+    // The stale action's target is dead; the hook hands out a new one.
+    const fresh = test.result.current.target!;
+    expect(fresh).not.toBe(stale);
+    expect(() => stale.assertCurrent()).toThrow();
+
+    let lateFailure: unknown;
+    const next = await start(test, async () => {
+      // The old action resumes while the new capture is live.
+      resume();
+      await Promise.resolve();
+      await stale
+        .type("stale-value", () => {})
+        .catch((error: unknown) => {
+          lateFailure = error;
+        });
+      await fresh.type("fresh-value", () => {});
+    });
+    await finish(next.pending);
+    expect(lateFailure).toBeInstanceOf(Error);
+    const typed = test.transport.mock.calls.filter(
+      ([r]) => r.action.kind === "type",
+    );
+    expect(typed).toHaveLength(1);
+    expect(typed[0][0].action).toMatchObject({ text: "fresh-value" });
+    expect(test.result.current.finished).toBe(1);
+  });
+  it("stops waiting for a native type acknowledgement that never arrives, revokes it, and the next action works", async () => {
+    vi.useFakeTimers();
+    const test = setup();
+    let hang = true;
+    test.transport.mockImplementation(async (request) =>
+      request.action.kind === "type" && hang
+        ? new Promise<OriginCredentialInputReply>(() => {})
+        : {
+            status:
+              request.action.kind === "capture"
+                ? "captured"
+                : request.action.kind === "type"
+                  ? "complete"
+                  : "cancelled",
+            captureId: "capture-1",
+          },
+    );
+    test.open();
+    const target = test.result.current.target!;
+    const { pending } = await start(test, () =>
+      target.type("synthetic-value", () => {}).catch(() => {}),
+    );
+    expect(test.result.current.phase).toBe("typing");
+    // The engine allows a typing request 32 seconds: its answer comes first.
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(34_999);
+    });
+    expect(test.result.current.phase).toBe("typing");
+    expect(test.result.current.notice).toBe("");
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1);
+      await pending;
+    });
+    expect(test.result.current.phase).toBe("idle");
+    expect(test.result.current.notice).toBe(
+      "Typing stopped or was not confirmed. Some characters may have been entered; review the field before trying again.",
+    );
+    expect(
+      test.transport.mock.calls[test.transport.mock.calls.length - 1]?.[0]
+        .action,
+    ).toEqual({ kind: "cancel", captureId: "capture-1" });
+    expect(vi.getTimerCount()).toBe(0);
+
+    hang = false;
+    const next = await start(test, () =>
+      test.result.current.target!.type("synthetic-value", () => {}),
+    );
+    await finish(next.pending);
+    expect(test.result.current.finished).toBe(1);
+    expect(test.result.current.notice).toBe("");
   });
 });

@@ -5,10 +5,13 @@ import type {
   ConnectionSession,
 } from "../../types/connection/connection";
 import type { VaultTotpFacet } from "../../types/security/databaseCredentialVault";
-import type { TotpAlgorithm } from "../../types/totp";
+import {
+  CredentialFailure,
+  toCredentialFailure,
+} from "../../utils/security/credentialFailure";
 import { runtimeCredentialTargetKey } from "../../utils/security/runtimeCredentialVault";
+import { generateTotpCode } from "../../utils/security/totpCode";
 import { useRuntimeCredentialVault } from "./useRuntimeCredentialVault";
-import { totpApi } from "../totp/useTOTP";
 
 export type RuntimeVaultTotpEntry = Omit<VaultTotpFacet, "secret">;
 export interface RuntimeVaultTotpController {
@@ -17,6 +20,7 @@ export interface RuntimeVaultTotpController {
   available: boolean;
   unavailableReason: string;
   load: () => Promise<RuntimeVaultTotpEntry[]>;
+  /** Rejects with a `CredentialFailure` naming the cause. */
   generate: (
     id: string,
   ) => Promise<{ code: string; expires: number; assertCurrent: () => void }>;
@@ -44,9 +48,7 @@ export function useRuntimeVaultTotp(
   const revision = version.current.revision;
   const assertCurrent = () => {
     if (version.current.revision !== revision)
-      throw new Error(
-        "This vault authenticator selection is no longer current.",
-      );
+      throw new CredentialFailure("session-changed");
   };
   const available =
     connection?.credentialSource?.kind === "vault" &&
@@ -56,14 +58,18 @@ export function useRuntimeVaultTotp(
     credentialVault.scope.databaseId === session.ownerDatabaseId;
   const read = async () => {
     assertCurrent();
-    if (!available)
-      throw new Error(
-        "Open and unlock the owning database vault to use its authenticators.",
-      );
-    const result = await resolve(assertCurrent, false, "totp");
-    if (!result) throw new Error("No vault authenticator is selected.");
-    result.assertCurrent();
-    return result;
+    if (!available) throw new CredentialFailure("database-unavailable");
+    try {
+      const result = await resolve(assertCurrent, false, "totp");
+      if (!result) throw new CredentialFailure("authenticator-unavailable");
+      result.assertCurrent();
+      return result;
+    } catch (error) {
+      // The resolver's own text is not a message. A changed selection explains
+      // its failure better than "unreadable" does.
+      if (!(error instanceof CredentialFailure)) assertCurrent();
+      throw toCredentialFailure(error, "vault-unavailable");
+    }
   };
   return {
     scopeKey: `${session.id}:${session.ownerDatabaseId ?? ""}:${revision}`,
@@ -84,45 +90,30 @@ export function useRuntimeVaultTotp(
     },
     generate: async (id) => {
       const result = await read();
+      const assertAccess = () => {
+        try {
+          result.assertCurrent();
+        } catch (error) {
+          throw toCredentialFailure(error, "session-changed");
+        }
+      };
       try {
-        const matches = result.facets.totp!.filter((entry) => entry.id === id);
+        const matches =
+          result.facets.totp?.filter((entry) => entry.id === id) ?? [];
         if (matches.length !== 1)
-          throw new Error("The chosen vault authenticator is unavailable.");
-        const entry = matches[0],
-          started = Date.now();
-        const expires =
-          (Math.floor(started / (entry.period * 1000)) + 1) *
-          entry.period *
-          1000;
-        if (expires - started < 3000)
-          throw new Error(
-            "Wait for the next authenticator time window, then generate a fresh code.",
-          );
-        const code = await totpApi.computeCode(
-          entry.secret,
-          entry.algorithm.toUpperCase() as TotpAlgorithm,
-          entry.digits,
-          entry.period,
-        );
-        result.assertCurrent();
-        if (
-          Date.now() >= expires - 1000 ||
-          !new RegExp(`^\\d{${entry.digits}}$`).test(code)
-        )
-          throw new Error("The generated code expired. Generate a fresh code.");
+          throw new CredentialFailure("authenticator-unavailable");
+        const generated = await generateTotpCode(matches[0]);
+        assertAccess();
         return {
-          code,
-          expires,
+          code: generated.code,
+          expires: generated.expires,
           assertCurrent: () => {
-            result.assertCurrent();
-            if (Date.now() >= expires)
-              throw new Error("This authenticator code expired.");
+            assertAccess();
+            generated.assertCurrent();
           },
         };
-      } catch {
-        throw new Error(
-          "The vault code could not be generated safely. Check database access and try again.",
-        );
+      } catch (error) {
+        throw toCredentialFailure(error, "code-not-generated");
       } finally {
         result.facets = {};
       }

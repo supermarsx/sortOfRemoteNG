@@ -51,11 +51,13 @@ vi.mock("../../src/hooks/security/useCredentialCopy", () => ({
     busy: false,
     message: "",
     copy: mock.copy,
-    type: async (field: string) => {
+    // The toolbar types through the rejecting forms. The real hook is
+    // exercised in OriginCredentialControlsRealCopy.test.tsx.
+    typeOrThrow: async (field: string) => {
       mock.type(field);
       await target!.type("selected-value", () => {});
     },
-    typeCode: async (selection: unknown) => {
+    typeCodeOrThrow: async (selection: unknown) => {
       mock.code(selection);
       await target!.type("123456", () => {}, {
         starts: Date.now() - 100,

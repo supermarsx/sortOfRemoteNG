@@ -92,7 +92,13 @@ const mount = (items = configs, owner: string | undefined = "db-a") =>
       onClose={() => {}}
     />,
   );
+/** 10 s into the 30 s step that starts at 30 000 ms: 20 s of the code left. */
+const midStep = 40_000;
 beforeEach(() => {
+  // The panel will not copy a code with under 3 s of its step left, so a test
+  // on the wall clock would depend on when it happened to run. Every test
+  // starts mid-step; the ones about the end of a step set their own position.
+  vi.spyOn(Date, "now").mockReturnValue(midStep);
   boundary.owner = "db-a";
   boundary.lease = 1;
   boundary.accessible = true;
@@ -284,6 +290,43 @@ describe("code-only owner-scoped website TOTP", () => {
     fireEvent.click(screen.getByRole("button", { name: "Copy code 1" }));
     expect(boundary.copy).toHaveBeenCalledTimes(1);
     expect(document.body.textContent).not.toContain("private-clipboard-detail");
+  });
+  it.each([
+    ["locked", "Nothing was copied because the app is locked."],
+    ["busy", "another program is using the clipboard"],
+  ])("names the native %s clipboard refusal", async (code, sentence) => {
+    mount();
+    await screen.findByText("123456");
+    boundary.copy.mockRejectedValueOnce(code);
+    fireEvent.click(screen.getByRole("button", { name: "Copy code 1" }));
+    expect(await screen.findByText(new RegExp(sentence))).toBeInTheDocument();
+    expect(screen.queryByText(/Code copied/)).not.toBeInTheDocument();
+  });
+  it("shows a code to the end of its window but refuses to copy one that is about to expire", async () => {
+    const clock = vi.spyOn(Date, "now").mockReturnValue(30_000 + 27_001);
+    mount();
+    await screen.findByText("123456");
+    fireEvent.click(screen.getByRole("button", { name: "Copy code 1" }));
+    expect(
+      await screen.findByText(
+        "The current code is about to expire. Wait for the next code, then try again.",
+      ),
+    ).toBeInTheDocument();
+    expect(boundary.copy).not.toHaveBeenCalled();
+    clock.mockReturnValue(30_000 + 27_000);
+    fireEvent.click(screen.getByRole("button", { name: "Copy code 1" }));
+    await screen.findByText(/Code copied/);
+    expect(boundary.copy).toHaveBeenCalledExactlyOnceWith("123456");
+  });
+  it("accepts the same algorithm spellings as Type code does", async () => {
+    mount([{ ...configs[0], algorithm: "SHA256" as never }]);
+    await screen.findByText("123456");
+    expect(boundary.compute).toHaveBeenCalledExactlyOnceWith(
+      configs[0].secret,
+      "SHA256",
+      6,
+      30,
+    );
   });
   it("suppresses malformed configs and native failure text", async () => {
     boundary.compute.mockRejectedValueOnce(new Error("private-seed-error"));

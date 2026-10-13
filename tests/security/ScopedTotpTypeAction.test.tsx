@@ -10,7 +10,11 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { ScopedTotpTypeAction } from "../../src/components/security/ScopedTotpTypeAction";
 import type { RuntimeVaultTotpController } from "../../src/hooks/security/useRuntimeVaultTotp";
 import type { CredentialTypingTarget } from "../../src/utils/security/credentialTyping";
-afterEach(cleanup);
+import { CredentialFailure } from "../../src/utils/security/credentialFailure";
+afterEach(() => {
+  cleanup();
+  vi.useRealTimers();
+});
 describe("reviewed redirect authenticator typing", () => {
   const setup = () => {
     const value = {
@@ -123,4 +127,87 @@ describe("reviewed redirect authenticator typing", () => {
       expect(target.type).not.toHaveBeenCalled();
     },
   );
+  it.each([
+    [
+      "a closing code window",
+      "The current code is about to expire. Wait for the next code, then try again.",
+    ],
+    [
+      "a session that refused the input",
+      "The session did not accept the input. Review the field before trying again.",
+    ],
+    [
+      "an unknown error",
+      "Could not type the code. Focus the session field and reopen Credentials & 2FA.",
+    ],
+  ])("names %s", async (cause, sentence) => {
+    const { controller, target } = setup();
+    if (cause === "a closing code window")
+      vi.mocked(controller.generate).mockRejectedValue(
+        new CredentialFailure("code-window-closing"),
+      );
+    if (cause === "a session that refused the input")
+      vi.mocked(target.type).mockRejectedValue(
+        new CredentialFailure("typing-rejected"),
+      );
+    if (cause === "an unknown error")
+      vi.mocked(target.type).mockRejectedValue(
+        new Error("SYNTHETIC_NATIVE_DETAIL"),
+      );
+    const view = render(
+      <ScopedTotpTypeAction controller={controller} target={target} id="e" />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Type code" }));
+    await act(async () => {});
+    expect(screen.getByRole("status")).toHaveTextContent(sentence);
+    expect(view.container.innerHTML).not.toMatch(/SYNTHETIC|123456/);
+    expect(screen.getByRole("button", { name: "Type code" })).toBeEnabled();
+  });
+  it("says sent, not typed, when the target only queues the input", async () => {
+    const { controller, target } = setup();
+    render(
+      <ScopedTotpTypeAction
+        controller={controller}
+        target={{ ...target, confirmation: "sent" }}
+        id="e"
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Type code" }));
+    await act(async () => {});
+    expect(screen.getByRole("status")).toHaveTextContent(
+      "Code sent to the session.",
+    );
+  });
+  it("stops waiting for a generator that never answers and lets the next action work", async () => {
+    vi.useFakeTimers();
+    const { controller, target, value } = setup();
+    vi.mocked(controller.generate)
+      .mockReturnValueOnce(new Promise(() => {}))
+      .mockResolvedValue({ ...value, expires: Date.now() + 60_000 });
+    render(
+      <ScopedTotpTypeAction controller={controller} target={target} id="e" />,
+    );
+    const type = screen.getByRole("button", { name: "Type code" });
+    fireEvent.click(type);
+    await act(async () => {});
+    expect(type).toBeDisabled();
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(14_999);
+    });
+    expect(type).toBeDisabled();
+    expect(screen.queryByRole("status")).not.toBeInTheDocument();
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1);
+    });
+    expect(screen.getByRole("status")).toHaveTextContent(
+      "Reading the credential took too long and was stopped.",
+    );
+    expect(type).toBeEnabled();
+    expect(target.type).not.toHaveBeenCalled();
+    expect(vi.getTimerCount()).toBe(0);
+    fireEvent.click(type);
+    await act(async () => {});
+    expect(target.type).toHaveBeenCalledOnce();
+    expect(screen.getByRole("status")).toHaveTextContent("Code typed.");
+  });
 });

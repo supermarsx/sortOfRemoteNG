@@ -27,7 +27,7 @@ export default function OriginCredentialCopyPanel({
   const [portalContainer, setPortalContainer] = useState<HTMLDivElement | null>(
     null,
   );
-  const { copy, type, typingAvailable, available, busy, message } =
+  const { copy, typeOrThrow, typingAvailable, available, busy, message } =
     useCredentialCopy(session, connection, typing?.target);
   return (
     <div ref={setPortalContainer} className="space-y-3">
@@ -65,7 +65,8 @@ export default function OriginCredentialCopyPanel({
                 type="button"
                 className="sor-btn sor-btn-secondary gap-2"
                 disabled={!typingAvailable || busy || typing.busy}
-                onClick={() => void typing.run(() => type(field))}
+                // Rejecting, so the typing notice names why nothing was typed.
+                onClick={() => void typing.run(() => typeOrThrow(field))}
               >
                 <Keyboard size={16} aria-hidden="true" />
                 Type {field}
@@ -140,7 +141,7 @@ export function OriginCredentialTypeCode({
   selection: CredentialCodeSelection;
   typing: OriginCredentialTypingController;
 }) {
-  const { typeCode, typingAvailable, busy, message } = useCredentialCopy(
+  const { typeCodeOrThrow, typingAvailable, busy, message } = useCredentialCopy(
     session,
     connection,
     typing.target,
@@ -153,7 +154,7 @@ export function OriginCredentialTypeCode({
         data-tooltip="Type code"
         className="sor-icon-btn-sm"
         disabled={!typingAvailable || busy || typing.busy}
-        onClick={() => void typing.run(() => typeCode(selection))}
+        onClick={() => void typing.run(() => typeCodeOrThrow(selection))}
       >
         <Keyboard size={14} aria-hidden="true" />
       </button>
