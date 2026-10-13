@@ -6,6 +6,8 @@ import type {
   DatabaseAutomationLibrary,
 } from "../../types/recording/automationLibrary";
 import type { ArchiveDependencyIssue } from "./archiveDependencyDiagnostics";
+import { archiveDependencyPath } from "./archiveDependencyDiagnostics";
+import { normalizeDatabaseDocuments } from "../documents/validation";
 import {
   inspectDatabaseArchiveDependencies,
   materializeDatabaseArchiveDefaults,
@@ -42,7 +44,75 @@ type Candidate = {
   entry?: AutomationEntry;
   field?: "sshQuickActions" | "httpAutomation";
   index?: number;
+  mutation?: "totp" | "legacy" | "document" | "document-folder";
 };
+
+/** Paths are emitted by the checker; never interpret them as JavaScript or raw property names. */
+function documentMutation(
+  data: StorageData,
+  issue: ArchiveDependencyIssue,
+): (() => void) | undefined {
+  const documents = data.documents!;
+  for (const category of ["documents", "people", "tickets"] as const) {
+    for (const [index, doc] of documents[category].entries()) {
+      if (doc.id !== issue.recordId) continue;
+      const walk = (
+        value: unknown,
+        path: string,
+        parent?: Record<string, unknown> | unknown[],
+        key?: string | number,
+      ): (() => void) | undefined => {
+        if (
+          path === issue.path &&
+          value &&
+          typeof value === "object" &&
+          "id" in value &&
+          value.id === issue.targetId &&
+          parent
+        ) {
+          if (Array.isArray(parent))
+            return () => {
+              const position = parent.indexOf(value);
+              if (position >= 0) parent.splice(position, 1);
+            };
+          if (parent.type === "reference")
+            return () => {
+              const blockId = parent.id;
+              for (const property of Object.keys(parent))
+                delete parent[property];
+              Object.assign(
+                parent,
+                typeof blockId === "string"
+                  ? { id: blockId, type: "note", text: "" }
+                  : { type: "text", text: "" },
+              );
+            };
+          return () => {
+            delete parent[String(key)];
+          };
+        }
+        if (Array.isArray(value)) {
+          for (const [i, child] of value.entries()) {
+            const found = walk(child, `${path}[${i}]`, value, i);
+            if (found) return found;
+          }
+        } else if (value && typeof value === "object") {
+          for (const [i, [field, child]] of Object.entries(value).entries()) {
+            const found = walk(
+              child,
+              archiveDependencyPath(path, field, i),
+              value as Record<string, unknown>,
+              field,
+            );
+            if (found) return found;
+          }
+        }
+      };
+      const found = walk(doc, `documents.${category}[${index}]`);
+      if (found) return found;
+    }
+  }
+}
 const receipts = new WeakMap<
   ArchiveDependencyRepairReview,
   {
@@ -139,6 +209,40 @@ export async function prepareArchiveDependencyRepair(
     ) {
       action = "move-to-root";
       safe = !recycled;
+    } else if (
+      row &&
+      issue.reason === "totp" &&
+      row.credentialSource?.kind === "vault" &&
+      row.credentialSource.totpId === issue.targetId
+    ) {
+      action = "remove-reference";
+      candidate.mutation = "totp";
+    } else if (row && issue.reason === "legacy-script") {
+      action = "remove-reference";
+      candidate.mutation = "legacy";
+    } else if (
+      issue.reason === "folder" &&
+      issue.path.startsWith("documents.documents[") &&
+      issue.path.endsWith(".parentFolderId")
+    ) {
+      action = "move-to-root";
+      safe = true;
+      candidate.mutation = "document-folder";
+    } else if (
+      ["document", "external-document", "cell"].includes(issue.reason)
+    ) {
+      const trial = structuredClone(data),
+        remove = documentMutation(trial, issue);
+      if (remove) {
+        try {
+          remove();
+          normalizeDatabaseDocuments(trial.documents);
+          action = "remove-reference";
+          candidate.mutation = "document";
+        } catch {
+          /* Required/unsupported structures remain manual. */
+        }
+      }
     } else if (row && issue.reason === "tab-group") {
       action = "reset-tab-group";
       safe = !recycled;
@@ -161,6 +265,7 @@ export async function prepareArchiveDependencyRepair(
 export function applyArchiveDependencyRepair(
   review: ArchiveDependencyRepairReview,
   selected: readonly string[],
+  options: { restoreRecycled?: boolean } = {},
 ) {
   const receipt = receipts.get(review);
   if (
@@ -189,7 +294,33 @@ export function applyArchiveDependencyRepair(
     number[]
   >();
   let libraryChanged = false;
+  const removedLegacy = new Map<unknown[], number[]>();
+  let documentsChanged = false;
+  // Capture references before any array removal shifts the checker's indexed paths.
+  const documentRemovals = review.issues
+    .filter(
+      (item) =>
+        chosen.has(item.id) &&
+        receipt.candidates.get(item.id)?.mutation === "document",
+    )
+    .map((item) => documentMutation(data, item.issue));
+  if (documentRemovals.some((item) => !item))
+    throw new Error("The document reference changed. Review it again.");
   for (const fix of review.issues.filter((item) => chosen.has(item.id))) {
+    const candidate = receipt.candidates.get(fix.id)!;
+    if (candidate.mutation === "document") {
+      documentsChanged = true;
+      continue;
+    }
+    if (candidate.mutation === "document-folder") {
+      const doc = data.documents!.documents.find(
+        (item) => item.id === fix.issue.recordId,
+      );
+      if (!doc) throw new Error("The document changed. Review it again.");
+      doc.parentFolderId = null;
+      documentsChanged = true;
+      continue;
+    }
     let row = data.connections.find((item) => item.id === fix.issue.recordId);
     if (!row && fix.recycled) {
       const entry = data.recycleBin!.entries.find(
@@ -198,15 +329,42 @@ export function applyArchiveDependencyRepair(
       if (!entry)
         throw new Error("The recycled record changed. Review it again.");
       row = entry.connection;
-      data.connections.push(row);
-      data.recycleBin!.entries = data.recycleBin!.entries.filter(
-        (item) => item !== entry,
-      );
+      if (options.restoreRecycled !== false) {
+        data.connections.push(row);
+        data.recycleBin!.entries = data.recycleBin!.entries.filter(
+          (item) => item !== entry,
+        );
+      }
       data.recycleBin!.revision = crypto.randomUUID();
     }
     if (!row) throw new Error("The dependency owner changed. Review it again.");
-    const candidate = receipt.candidates.get(fix.id)!;
-    if (fix.action === "move-to-root") delete row.parentId;
+    if (candidate.mutation === "totp") {
+      if (
+        row.credentialSource?.kind !== "vault" ||
+        row.credentialSource.totpId !== fix.issue.targetId
+      )
+        throw new Error("The credential changed. Review it again.");
+      delete row.credentialSource.totpId;
+    } else if (candidate.mutation === "legacy") {
+      if (fix.issue.path.endsWith(".scripts")) delete row.scripts;
+      else {
+        const actionPath =
+          /\.behaviorAutomation\.rules\[(\d+)\]\.actions\[(\d+)\]$/.exec(
+            fix.issue.path,
+          );
+        if (!actionPath)
+          throw new Error("The lifecycle action changed. Review it again.");
+        const actions =
+          row.behaviorAutomation?.rules[Number(actionPath[1])]?.actions;
+        const index = Number(actionPath[2]);
+        if (!actions || actions[index]?.type !== "runCustomScript")
+          throw new Error("The lifecycle action changed. Review it again.");
+        removedLegacy.set(actions, [
+          ...(removedLegacy.get(actions) ?? []),
+          index,
+        ]);
+      }
+    } else if (fix.action === "move-to-root") delete row.parentId;
     else if (fix.action === "reset-tab-group") delete row.defaultTabGroupId;
     else {
       const items = row[candidate.field!]?.items;
@@ -258,6 +416,13 @@ export function applyArchiveDependencyRepair(
   for (const [items, indices] of removed)
     for (const index of indices.sort((a, b) => b - a)) items.splice(index, 1);
   if (libraryChanged) library.revision++;
+  for (const [actions, indices] of removedLegacy)
+    for (const index of indices.sort((a, b) => b - a)) actions.splice(index, 1);
+  for (const remove of documentRemovals) remove!();
+  if (documentsChanged) {
+    data.documents!.revision++;
+    data.documents = normalizeDatabaseDocuments(data.documents);
+  }
   data.automationLibrary = normalizeDatabaseAutomationLibrary(library);
   return {
     data,

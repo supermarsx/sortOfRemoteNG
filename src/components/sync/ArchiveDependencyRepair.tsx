@@ -11,6 +11,7 @@ import {
 } from "../../utils/connection/archiveDependencyResolution";
 import type { AutomationEntry } from "../../types/recording/automationLibrary";
 import type { StorageData } from "../../utils/storage/storage";
+import { archiveDependencyRemedy } from "../../utils/connection/archiveDependencyDiagnostics";
 
 const buttons =
   "rounded border border-[var(--color-border)] px-3 py-1.5 text-xs hover:bg-[var(--color-surfaceHover)] disabled:opacity-50";
@@ -101,12 +102,14 @@ export function ArchiveDependencyRepair({
       setOriginal(data);
       setReview(next);
     });
-  const apply = (ids: string[]) =>
+  const apply = (ids: string[], restoreRecycled = true) =>
     exclusive(async () => {
       if (!review || !original || review.databaseId !== databaseId)
         throw new Error("Expired review");
       await flush();
-      const result = applyArchiveDependencyRepair(review, ids);
+      const result = applyArchiveDependencyRepair(review, ids, {
+        restoreRecycled,
+      });
       await manager.commitArchiveDependencyRepair(
         databaseId,
         original,
@@ -174,7 +177,7 @@ export function ArchiveDependencyRepair({
               </p>
               <ul className="space-y-2">
                 {review.issues.map((row) => (
-                  <li key={row.id}>
+                  <li key={row.id} aria-label={row.issue.path}>
                     <span className="break-all">{row.issue.path}</span>
                     {" · "}
                     {row.action === "manual" ? (
@@ -182,7 +185,8 @@ export function ArchiveDependencyRepair({
                         {translated(
                           "manual",
                           "Open the owning connection or document and choose an available database-owned target.",
-                        )}
+                        )}{" "}
+                        {archiveDependencyRemedy(row.issue.reason)}
                       </span>
                     ) : (
                       <button
@@ -206,6 +210,16 @@ export function ArchiveDependencyRepair({
                                     "resetGroup",
                                     "Reset default tab group",
                                   )}
+                      </button>
+                    )}
+                    {row.recycled && row.action === "remove-reference" && (
+                      <button
+                        type="button"
+                        disabled={busy}
+                        className={buttons}
+                        onClick={() => void apply([row.id], false)}
+                      >
+                        {translated("remove", "Remove this reference")}
                       </button>
                     )}
                   </li>

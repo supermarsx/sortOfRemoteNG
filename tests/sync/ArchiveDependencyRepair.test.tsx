@@ -5,6 +5,7 @@ import {
   render,
   screen,
   waitFor,
+  within,
 } from "@testing-library/react";
 import { fullData, collection } from "../fixtures/fullDatabaseArchive";
 import { ArchiveDependencyRepair } from "../../src/components/sync/ArchiveDependencyRepair";
@@ -96,12 +97,15 @@ describe("dependency repair review", () => {
     fireEvent.click(
       screen.getByRole("button", { name: "Review dependency fixes" }),
     );
-    await screen.findByRole("button", { name: "Remove this reference" });
+    const issue = await screen.findByRole("listitem", {
+      name: "connections[1].sshQuickActions.items[0]",
+    });
+    await within(issue).findByRole("button", { name: "Remove this reference" });
     expect(
       screen.getByRole("button", { name: "Fix all safe issues" }),
     ).toBeDisabled();
     fireEvent.click(
-      screen.getByRole("button", { name: "Remove this reference" }),
+      within(issue).getByRole("button", { name: "Remove this reference" }),
     );
     await screen.findByText(/The operation did not finish/);
     expect(data).toEqual(original);

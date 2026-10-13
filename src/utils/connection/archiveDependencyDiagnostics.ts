@@ -74,6 +74,12 @@ const remedies: Record<ArchiveDependencyReason, string> = {
     "This private key uses a device-local file. Move the key material into this database's credential vault and select that credential in the connection editor before retrying.",
 };
 
+export function archiveDependencyRemedy(
+  reason: ArchiveDependencyReason,
+): string {
+  return remedies[reason];
+}
+
 export class ArchiveDependencyCollector {
   readonly diagnostics: ArchiveDependencyDiagnostics;
 

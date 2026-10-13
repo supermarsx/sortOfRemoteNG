@@ -10,6 +10,102 @@ import {
 } from "../../src/utils/connection/archiveDependencyResolution";
 
 describe("archive dependency resolution", () => {
+  it.each(["document", "external-document", "cell"])(
+    "offers explicit removal of a broken %s link without losing neighboring document content",
+    async (kind) => {
+      const data = await fullData();
+      const block = data.documents!.documents[0].blocks[2];
+      if (block.type !== "reference") throw new Error("fixture");
+      block.reference =
+        kind === "cell"
+          ? {
+              databaseId: collection.id,
+              kind: "cell",
+              id: "document",
+              blockId: "absent",
+              sheetId: "absent",
+              address: "A1",
+            }
+          : {
+              databaseId:
+                kind === "external-document" ? "other-db" : collection.id,
+              kind: "document",
+              id: "absent",
+            };
+      const review = await prepareArchiveDependencyRepair(
+        collection.id,
+        data,
+        async () => undefined,
+      );
+      const issue = review.issues.find((row) => row.issue.reason === kind)!;
+      expect(issue.action).toBe("remove-reference");
+      expect(issue.safe).toBe(false);
+      const fixed = applyArchiveDependencyRepair(review, [issue.id]);
+      expect(fixed.data.documents!.documents[0].blocks[0]).toEqual(
+        data.documents!.documents[0].blocks[0],
+      );
+      expect(fixed.remaining.totalIssues).toBe(0);
+    },
+  );
+
+  it("moves a document with a missing parent to the root without deleting it", async () => {
+    const data = await fullData();
+    data.documents!.documents[0].parentFolderId = "absent";
+    const review = await prepareArchiveDependencyRepair(
+      collection.id,
+      data,
+      async () => undefined,
+    );
+    const issue = review.issues.find((row) => row.issue.reason === "folder")!;
+    expect(issue.safe).toBe(true);
+    const fixed = applyArchiveDependencyRepair(review, [issue.id]);
+    expect(fixed.data.documents!.documents[0].parentFolderId).toBeNull();
+    expect(fixed.remaining.totalIssues).toBe(0);
+  });
+
+  it("detaches a missing TOTP selection only after an explicit choice, preserving its credential", async () => {
+    const data = await fullData();
+    const source = data.connections[1].credentialSource!;
+    if (source.kind !== "vault") throw new Error("fixture");
+    source.totpId = "cccccccc-cccc-4ccc-8ccc-cccccccccccc";
+    const review = await prepareArchiveDependencyRepair(
+      collection.id,
+      data,
+      async () => undefined,
+    );
+    const issue = review.issues.find((row) => row.issue.reason === "totp")!;
+    expect(issue.action).toBe("remove-reference");
+    expect(issue.safe).toBe(false);
+    const fixed = applyArchiveDependencyRepair(review, [issue.id]);
+    expect(fixed.data.connections[1].credentialSource).toEqual({
+      kind: "vault",
+      credentialId: source.credentialId,
+    });
+    expect(fixed.data.credentialVault).toEqual(data.credentialVault);
+  });
+
+  it("removes legacy lifecycle script references explicitly and leaves route configuration intact", async () => {
+    const data = await fullData();
+    data.connections[1].scripts = {
+      onConnect: ["app-script"],
+      onDisconnect: ["another-script"],
+    };
+    const review = await prepareArchiveDependencyRepair(
+      collection.id,
+      data,
+      async () => undefined,
+    );
+    const issue = review.issues.find(
+      (row) => row.issue.reason === "legacy-script",
+    )!;
+    expect(issue.action).toBe("remove-reference");
+    expect(issue.safe).toBe(false);
+    const fixed = applyArchiveDependencyRepair(review, [issue.id]);
+    expect(fixed.data.connections[1].scripts).toBeUndefined();
+    expect(fixed.data.connections[2].security).toEqual(
+      data.connections[2].security,
+    );
+  });
   it("copies an app-wide quick action into its owning database without changing its source", async () => {
     const data = await fullData();
     const source = structuredClone(
@@ -121,6 +217,16 @@ describe("archive dependency resolution", () => {
       result.data.connections.find((item) => item.id === recycled.id)!
         .sshQuickActions!.items,
     ).toEqual([]);
+    const detached = applyArchiveDependencyRepair(review, [row.id], {
+      restoreRecycled: false,
+    });
+    expect(detached.data.recycleBin!.entries).toHaveLength(1);
+    expect(
+      detached.data.recycleBin!.entries[0].connection.sshQuickActions!.items,
+    ).toEqual([]);
+    expect(
+      detached.data.connections.some((item) => item.id === recycled.id),
+    ).toBe(false);
   });
 
   it("fails atomically when the review is altered or a choice is unknown", async () => {
