@@ -1,12 +1,12 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
-import { TOTPConfig } from '../../types/settings/settings';
-import { totpApi } from '../../hooks/totp/useTOTP';
-import type { TotpAlgorithm } from '../../types/totp';
+import { useState, useEffect, useCallback, useRef } from "react";
+import { TOTPConfig } from "../../types/settings/settings";
+import { totpApi } from "../../hooks/totp/useTOTP";
+import type { TotpAlgorithm } from "../../types/totp";
 
 // `TOTPConfig.algorithm` is lowercase (`sha1`); the Rust backend accepts
 // either case but the wire type is uppercase.
 const toAlgo = (a?: string): TotpAlgorithm =>
-  (a ?? 'sha1').toUpperCase() as TotpAlgorithm;
+  (a ?? "sha1").toUpperCase() as TotpAlgorithm;
 
 // ─── Hook ────────────────────────────────────────────────────────────
 
@@ -22,8 +22,8 @@ export function useRDPTotpPanel(
 ) {
   // ── Add form state ─────────────────────────────────────────────
   const [showAdd, setShowAdd] = useState(false);
-  const [newAccount, setNewAccount] = useState('');
-  const [newSecret, setNewSecret] = useState('');
+  const [newAccount, setNewAccount] = useState("");
+  const [newSecret, setNewSecret] = useState("");
   const [newIssuer, setNewIssuer] = useState(defaults.issuer);
   const [newDigits, setNewDigits] = useState<number>(defaults.digits);
   const [newPeriod, setNewPeriod] = useState<number>(defaults.period);
@@ -33,7 +33,9 @@ export function useRDPTotpPanel(
   // ── Display state ──────────────────────────────────────────────
   const [codes, setCodes] = useState<Record<string, string>>({});
   const [copiedSecret, setCopiedSecret] = useState<string | null>(null);
-  const [revealedSecrets, setRevealedSecrets] = useState<Set<string>>(new Set());
+  const [revealedSecrets, setRevealedSecrets] = useState<Set<string>>(
+    new Set(),
+  );
   const [showBackup, setShowBackup] = useState<string | null>(null);
   const [editingSecret, setEditingSecret] = useState<string | null>(null);
   const [editData, setEditData] = useState<Partial<TOTPConfig>>({});
@@ -46,31 +48,34 @@ export function useRDPTotpPanel(
 
   // ── Code generation ────────────────────────────────────────────
 
-  const refreshCodes = useCallback(async (cancelledRef: { current: boolean }) => {
-    const current = configsRef.current;
-    const results = await Promise.all(
-      current.map(async (cfg) => {
-        if (!cfg.secret) return [cfg.secret, ''] as const;
-        try {
-          const code = await totpApi.computeCode(
-            cfg.secret,
-            toAlgo(cfg.algorithm),
-            cfg.digits ?? 6,
-            cfg.period ?? 30,
-          );
-          return [cfg.secret, code] as const;
-        } catch {
-          return [cfg.secret, ''] as const;
-        }
-      }),
-    );
-    if (cancelledRef.current) return;
-    const next: Record<string, string> = {};
-    for (const [secret, code] of results) {
-      if (secret) next[secret] = code;
-    }
-    setCodes(next);
-  }, []);
+  const refreshCodes = useCallback(
+    async (cancelledRef: { current: boolean }) => {
+      const current = configsRef.current;
+      const results = await Promise.all(
+        current.map(async (cfg) => {
+          if (!cfg.secret) return [cfg.secret, ""] as const;
+          try {
+            const code = await totpApi.computeCode(
+              cfg.secret,
+              toAlgo(cfg.algorithm),
+              cfg.digits ?? 6,
+              cfg.period ?? 30,
+            );
+            return [cfg.secret, code] as const;
+          } catch {
+            return [cfg.secret, ""] as const;
+          }
+        }),
+      );
+      if (cancelledRef.current) return;
+      const next: Record<string, string> = {};
+      for (const [secret, code] of results) {
+        if (secret) next[secret] = code;
+      }
+      setCodes(next);
+    },
+    [],
+  );
 
   useEffect(() => {
     const cancelledRef = { current: false };
@@ -108,37 +113,53 @@ export function useRDPTotpPanel(
       account: newAccount,
       digits: newDigits,
       period: newPeriod,
-      algorithm: newAlgorithm as TOTPConfig['algorithm'],
+      algorithm: newAlgorithm as TOTPConfig["algorithm"],
       createdAt: new Date().toISOString(),
     };
     onUpdate([...configs, config]);
     setQrConfig(config);
-    setNewAccount('');
-    setNewSecret('');
+    setNewAccount("");
+    setNewSecret("");
     setNewIssuer(defaults.issuer);
     setNewDigits(defaults.digits);
     setNewPeriod(defaults.period);
     setNewAlgorithm(defaults.algorithm);
     setShowNewSecret(false);
     setShowAdd(false);
-  }, [newAccount, newSecret, newIssuer, newDigits, newPeriod, newAlgorithm, configs, onUpdate, defaults]);
+  }, [
+    newAccount,
+    newSecret,
+    newIssuer,
+    newDigits,
+    newPeriod,
+    newAlgorithm,
+    configs,
+    onUpdate,
+    defaults,
+  ]);
 
   // ── Delete ─────────────────────────────────────────────────────
 
-  const handleDelete = useCallback((secret: string) => {
-    onUpdate(configs.filter((c) => c.secret !== secret));
-  }, [configs, onUpdate]);
+  const handleDelete = useCallback(
+    (secret: string) => {
+      onUpdate(configs.filter((c) => c.secret !== secret));
+    },
+    [configs, onUpdate],
+  );
 
   // ── Copy code ──────────────────────────────────────────────────
 
-  const copyCode = useCallback((secret: string) => {
-    const code = codes[secret];
-    if (code) {
-      navigator.clipboard.writeText(code);
-      setCopiedSecret(secret);
-      setTimeout(() => setCopiedSecret(null), 1500);
-    }
-  }, [codes]);
+  const copyCode = useCallback(
+    (secret: string) => {
+      const code = codes[secret];
+      if (code) {
+        navigator.clipboard.writeText(code);
+        setCopiedSecret(secret);
+        setTimeout(() => setCopiedSecret(null), 1500);
+      }
+    },
+    [codes],
+  );
 
   // ── Secret reveal ──────────────────────────────────────────────
 
@@ -182,17 +203,20 @@ export function useRDPTotpPanel(
 
   // ── Backup codes ───────────────────────────────────────────────
 
-  const generateBackup = useCallback(async (secret: string) => {
-    const backupCodes = await totpApi.generateBackupCodes(10);
-    onUpdate(
-      configs.map((c) => (c.secret === secret ? { ...c, backupCodes } : c)),
-    );
-    setShowBackup(secret);
-  }, [configs, onUpdate]);
+  const generateBackup = useCallback(
+    async (secret: string) => {
+      const backupCodes = await totpApi.generateBackupCodes(10);
+      onUpdate(
+        configs.map((c) => (c.secret === secret ? { ...c, backupCodes } : c)),
+      );
+      setShowBackup(secret);
+    },
+    [configs, onUpdate],
+  );
 
   const copyAllBackup = useCallback((backupCodes: string[]) => {
-    navigator.clipboard.writeText(backupCodes.join('\n'));
-    setCopiedSecret('backup');
+    navigator.clipboard.writeText(backupCodes.join("\n"));
+    setCopiedSecret("backup");
     setTimeout(() => setCopiedSecret(null), 1500);
   }, []);
 
@@ -201,30 +225,38 @@ export function useRDPTotpPanel(
   const handleExport = useCallback(() => {
     const json = JSON.stringify(configs, null, 2);
     navigator.clipboard.writeText(json);
-    setCopiedSecret('export');
+    setCopiedSecret("export");
     setTimeout(() => setCopiedSecret(null), 1500);
   }, [configs]);
 
-  const handleImport = useCallback((json: string) => {
-    try {
-      const imported = JSON.parse(json) as TOTPConfig[];
-      const existingSecrets = new Set(configs.map((c) => c.secret));
-      const newConfigs = imported.filter((c) => !existingSecrets.has(c.secret));
-      if (newConfigs.length > 0) {
-        onUpdate([...configs, ...newConfigs]);
+  const handleImport = useCallback(
+    (json: string) => {
+      try {
+        const imported = JSON.parse(json) as TOTPConfig[];
+        const existingSecrets = new Set(configs.map((c) => c.secret));
+        const newConfigs = imported.filter(
+          (c) => !existingSecrets.has(c.secret),
+        );
+        if (newConfigs.length > 0) {
+          onUpdate([...configs, ...newConfigs]);
+        }
+        setShowImport(false);
+      } catch {
+        /* handled in ImportModal */
       }
-      setShowImport(false);
-    } catch {
-      /* handled in ImportModal */
-    }
-  }, [configs, onUpdate]);
+    },
+    [configs, onUpdate],
+  );
 
-  const handleFileImport = useCallback((entries: TOTPConfig[]) => {
-    if (entries.length > 0) {
-      onUpdate([...configs, ...entries]);
-    }
-    setShowFileImport(false);
-  }, [configs, onUpdate]);
+  const handleFileImport = useCallback(
+    (entries: TOTPConfig[]) => {
+      if (entries.length > 0) {
+        onUpdate([...configs, ...entries]);
+      }
+      setShowFileImport(false);
+    },
+    [configs, onUpdate],
+  );
 
   return {
     // Add form

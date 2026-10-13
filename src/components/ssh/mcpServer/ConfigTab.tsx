@@ -23,7 +23,10 @@ import {
   Share2,
 } from "lucide-react";
 import type { McpTabProps } from "./types";
-import type { McpServerConfig, McpLogLevel } from "../../../types/mcp/mcpServer";
+import type {
+  McpServerConfig,
+  McpLogLevel,
+} from "../../../types/mcp/mcpServer";
 import { MCP_LOG_LEVELS } from "../../../types/mcp/mcpServer";
 import { Checkbox } from "../../ui/forms";
 import {
@@ -240,10 +243,7 @@ export const ConfigTab: React.FC<McpTabProps> = ({ mgr }) => {
             onCopy={handleCopyKey}
             onRegenerate={handleGenerateKey}
             isRegenerating={mgr.isGeneratingKey}
-            placeholder={t(
-              "mcpServer.config.noApiKey",
-              "No API key generated",
-            )}
+            placeholder={t("mcpServer.config.noApiKey", "No API key generated")}
             description={t(
               "mcpServer.config.apiKeyDescription",
               "Include this key as a Bearer token in the Authorization header",
@@ -256,7 +256,10 @@ export const ConfigTab: React.FC<McpTabProps> = ({ mgr }) => {
             icon={<Globe size={16} />}
             checked={draft.allow_remote}
             onChange={(v) => update("allow_remote", v)}
-            label={t("mcpServer.config.allowRemote", "Allow remote connections")}
+            label={t(
+              "mcpServer.config.allowRemote",
+              "Allow remote connections",
+            )}
             description={t(
               "mcpServer.config.allowRemoteDesc",
               "Allow connections from non-localhost addresses (security risk)",
@@ -270,7 +273,10 @@ export const ConfigTab: React.FC<McpTabProps> = ({ mgr }) => {
 
           <Toggle
             icon={<AlertTriangle size={16} />}
-            label={t("mcpServer.config.exposeSensitive", "Expose sensitive data")}
+            label={t(
+              "mcpServer.config.exposeSensitive",
+              "Expose sensitive data",
+            )}
             description={t(
               "mcpServer.config.exposeSensitiveDesc",
               "Include passwords and secrets in resource responses",
@@ -372,7 +378,10 @@ export const ConfigTab: React.FC<McpTabProps> = ({ mgr }) => {
           <div className="space-y-2 w-full">
             <label className="flex items-center gap-2 text-sm text-[var(--color-textSecondary)]">
               <FileText className="w-4 h-4" />
-              {t("mcpServer.config.instructionsLabel", "Instructions to clients")}
+              {t(
+                "mcpServer.config.instructionsLabel",
+                "Instructions to clients",
+              )}
               <InfoTooltip text="Free-form text sent to AI clients during initialization, describing what this server provides and how to use it." />
             </label>
             <textarea
@@ -417,7 +426,8 @@ export const ConfigTab: React.FC<McpTabProps> = ({ mgr }) => {
         infoText="Choose which MCP resources (data sources) are exposed to AI clients."
         items={(mgr.resources ?? []).map((res) => ({
           name: res.uri,
-          description: res.name + (res.description ? ` — ${res.description}` : ""),
+          description:
+            res.name + (res.description ? ` — ${res.description}` : ""),
         }))}
         enabled={draft.enabled_resources}
         onChange={(next) => update("enabled_resources", next)}
@@ -466,7 +476,16 @@ const CapabilityListSection: React.FC<{
   onChange: (next: string[]) => void;
   emptyText: string;
   allLabel: string;
-}> = ({ title, icon, infoText, items, enabled, onChange, emptyText, allLabel }) => {
+}> = ({
+  title,
+  icon,
+  infoText,
+  items,
+  enabled,
+  onChange,
+  emptyText,
+  allLabel,
+}) => {
   const allEnabled = enabled.length === 0;
   const isItemEnabled = (name: string) => allEnabled || enabled.includes(name);
   const enabledCount = allEnabled ? items.length : enabled.length;

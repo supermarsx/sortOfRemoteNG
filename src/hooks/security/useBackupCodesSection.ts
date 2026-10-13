@@ -1,7 +1,7 @@
-import { useState, useCallback, useMemo } from 'react';
-import { Connection } from '../../types/connection/connection';
-import { TOTPConfig } from '../../types/settings/settings';
-import { totpApi } from '../../hooks/totp/useTOTP';
+import { useState, useCallback, useMemo } from "react";
+import { Connection } from "../../types/connection/connection";
+import { TOTPConfig } from "../../types/settings/settings";
+import { totpApi } from "../../hooks/totp/useTOTP";
 
 export function useBackupCodesSection(
   formData: Partial<Connection>,
@@ -10,20 +10,28 @@ export function useBackupCodesSection(
   const [expanded, setExpanded] = useState(false);
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
   const [pasteTarget, setPasteTarget] = useState<string | null>(null);
-  const [pasteText, setPasteText] = useState('');
+  const [pasteText, setPasteText] = useState("");
   const [addSingleTarget, setAddSingleTarget] = useState<string | null>(null);
-  const [singleCode, setSingleCode] = useState('');
+  const [singleCode, setSingleCode] = useState("");
 
-  const configs = useMemo(() => formData.totpConfigs ?? [], [formData.totpConfigs]);
+  const configs = useMemo(
+    () => formData.totpConfigs ?? [],
+    [formData.totpConfigs],
+  );
 
   const shouldHide = formData.isGroup || configs.length === 0;
 
-  const configsWithBackup = configs.filter(c => c.backupCodes && c.backupCodes.length > 0);
-  const totalBackupCodes = configsWithBackup.reduce((sum, c) => sum + (c.backupCodes?.length ?? 0), 0);
+  const configsWithBackup = configs.filter(
+    (c) => c.backupCodes && c.backupCodes.length > 0,
+  );
+  const totalBackupCodes = configsWithBackup.reduce(
+    (sum, c) => sum + (c.backupCodes?.length ?? 0),
+    0,
+  );
 
   const updateConfigs = useCallback(
     (newConfigs: TOTPConfig[]) => {
-      setFormData(prev => ({ ...prev, totpConfigs: newConfigs }));
+      setFormData((prev) => ({ ...prev, totpConfigs: newConfigs }));
     },
     [setFormData],
   );
@@ -31,21 +39,21 @@ export function useBackupCodesSection(
   const parseCodes = useCallback((text: string): string[] => {
     return text
       .split(/[\n,]+/)
-      .map(s => s.trim())
-      .filter(s => s.length > 0);
+      .map((s) => s.trim())
+      .filter((s) => s.length > 0);
   }, []);
 
   const handlePasteCodes = useCallback(
     (secret: string) => {
       const codes = parseCodes(pasteText);
       if (codes.length === 0) return;
-      const updated = configs.map(cfg =>
+      const updated = configs.map((cfg) =>
         cfg.secret === secret
           ? { ...cfg, backupCodes: [...(cfg.backupCodes ?? []), ...codes] }
           : cfg,
       );
       updateConfigs(updated);
-      setPasteText('');
+      setPasteText("");
       setPasteTarget(null);
     },
     [pasteText, configs, updateConfigs, parseCodes],
@@ -55,13 +63,13 @@ export function useBackupCodesSection(
     (secret: string) => {
       const code = singleCode.trim();
       if (!code) return;
-      const updated = configs.map(cfg =>
+      const updated = configs.map((cfg) =>
         cfg.secret === secret
           ? { ...cfg, backupCodes: [...(cfg.backupCodes ?? []), code] }
           : cfg,
       );
       updateConfigs(updated);
-      setSingleCode('');
+      setSingleCode("");
       setAddSingleTarget(null);
     },
     [singleCode, configs, updateConfigs],
@@ -69,11 +77,14 @@ export function useBackupCodesSection(
 
   const removeCode = useCallback(
     (secret: string, index: number) => {
-      const updated = configs.map(cfg => {
+      const updated = configs.map((cfg) => {
         if (cfg.secret !== secret || !cfg.backupCodes) return cfg;
         const newCodes = [...cfg.backupCodes];
         newCodes.splice(index, 1);
-        return { ...cfg, backupCodes: newCodes.length > 0 ? newCodes : undefined };
+        return {
+          ...cfg,
+          backupCodes: newCodes.length > 0 ? newCodes : undefined,
+        };
       });
       updateConfigs(updated);
     },
@@ -83,9 +94,12 @@ export function useBackupCodesSection(
   const generateBackupFor = useCallback(
     async (secret: string) => {
       const backupCodes = await totpApi.generateBackupCodes(10);
-      const updated = configs.map(cfg =>
+      const updated = configs.map((cfg) =>
         cfg.secret === secret
-          ? { ...cfg, backupCodes: [...(cfg.backupCodes ?? []), ...backupCodes] }
+          ? {
+              ...cfg,
+              backupCodes: [...(cfg.backupCodes ?? []), ...backupCodes],
+            }
           : cfg,
       );
       updateConfigs(updated);
@@ -95,7 +109,7 @@ export function useBackupCodesSection(
 
   const clearBackupFor = useCallback(
     (secret: string) => {
-      const updated = configs.map(cfg =>
+      const updated = configs.map((cfg) =>
         cfg.secret === secret ? { ...cfg, backupCodes: undefined } : cfg,
       );
       updateConfigs(updated);
@@ -104,7 +118,7 @@ export function useBackupCodesSection(
   );
 
   const copyAll = useCallback((codes: string[], key: string) => {
-    navigator.clipboard.writeText(codes.join('\n'));
+    navigator.clipboard.writeText(codes.join("\n"));
     setCopiedKey(key);
     setTimeout(() => setCopiedKey(null), 1500);
   }, []);
@@ -113,7 +127,7 @@ export function useBackupCodesSection(
     (secret: string) => {
       setPasteTarget(pasteTarget === secret ? null : secret);
       setAddSingleTarget(null);
-      setPasteText('');
+      setPasteText("");
     },
     [pasteTarget],
   );
@@ -122,19 +136,19 @@ export function useBackupCodesSection(
     (secret: string) => {
       setAddSingleTarget(addSingleTarget === secret ? null : secret);
       setPasteTarget(null);
-      setSingleCode('');
+      setSingleCode("");
     },
     [addSingleTarget],
   );
 
   const cancelPaste = useCallback(() => {
     setPasteTarget(null);
-    setPasteText('');
+    setPasteText("");
   }, []);
 
   const cancelAddSingle = useCallback(() => {
     setAddSingleTarget(null);
-    setSingleCode('');
+    setSingleCode("");
   }, []);
 
   return {

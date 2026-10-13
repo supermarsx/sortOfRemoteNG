@@ -3,9 +3,9 @@ import { Plus, Trash2, Copy, Shield, Key } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { useTOTPManager } from "../../hooks/security/useTOTPManager";
 import { Modal, ModalHeader, ModalBody } from "../ui/overlays/Modal";
-import { EmptyState } from '../ui/display';
+import { EmptyState } from "../ui/display";
 import type { TotpEntry } from "../../types/totp";
-import { Select } from '../ui/forms';
+import { Select } from "../ui/forms";
 
 type Mgr = ReturnType<typeof useTOTPManager>;
 
@@ -52,20 +52,41 @@ const AddTOTPForm: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
         <label className="block text-sm font-medium text-[var(--color-textSecondary)] mb-2">
           Digits
         </label>
-        <Select value={mgr.newConfig.digits || 6} onChange={(v: string) => mgr.setNewConfig({
+        <Select
+          value={mgr.newConfig.digits || 6}
+          onChange={(v: string) =>
+            mgr.setNewConfig({
               ...mgr.newConfig,
               digits: parseInt(v),
-            })} options={[{ value: "6", label: "6 digits" }, { value: "8", label: "8 digits" }]} className="sor-form-input w-full" />
+            })
+          }
+          options={[
+            { value: "6", label: "6 digits" },
+            { value: "8", label: "8 digits" },
+          ]}
+          className="sor-form-input w-full"
+        />
       </div>
 
       <div>
         <label className="block text-sm font-medium text-[var(--color-textSecondary)] mb-2">
           Period (seconds)
         </label>
-        <Select value={mgr.newConfig.period || 30} onChange={(v: string) => mgr.setNewConfig({
+        <Select
+          value={mgr.newConfig.period || 30}
+          onChange={(v: string) =>
+            mgr.setNewConfig({
               ...mgr.newConfig,
               period: parseInt(v),
-            })} options={[{ value: "15", label: "15 seconds" }, { value: "30", label: "30 seconds" }, { value: "60", label: "60 seconds" }]} className="sor-form-input w-full" />
+            })
+          }
+          options={[
+            { value: "15", label: "15 seconds" },
+            { value: "30", label: "30 seconds" },
+            { value: "60", label: "60 seconds" },
+          ]}
+          className="sor-form-input w-full"
+        />
       </div>
     </div>
 
@@ -76,10 +97,7 @@ const AddTOTPForm: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
       >
         Cancel
       </button>
-      <button
-        onClick={mgr.handleAddConfig}
-        className="sor-btn sor-btn-primary"
-      >
+      <button onClick={mgr.handleAddConfig} className="sor-btn sor-btn-primary">
         Add TOTP
       </button>
     </div>
@@ -91,7 +109,7 @@ const QRCodeDisplay: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
     <h3 className="text-lg font-medium text-[var(--color-text)] mb-4">
       Scan QR Code
     </h3>
-    { }
+    {}
     <img src={mgr.qrCodeUrl} alt="TOTP QR Code" className="mx-auto mb-4" />
     <p className="text-[var(--color-textSecondary)] text-sm">
       Scan this QR code with your authenticator app (Google Authenticator,
@@ -138,9 +156,7 @@ const TOTPConfigRow: React.FC<{
 
     <div className="flex items-center space-x-2">
       <button
-        onClick={() =>
-          mgr.copyToClipboard(mgr.currentCodes[config.id] || "")
-        }
+        onClick={() => mgr.copyToClipboard(mgr.currentCodes[config.id] || "")}
         className="sor-icon-btn-sm"
         title="Copy code"
       >

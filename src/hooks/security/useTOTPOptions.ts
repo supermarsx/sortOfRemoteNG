@@ -70,7 +70,10 @@ export function useTOTPOptions(
   const [replicateDone, setReplicateDone] = useState(false);
 
   // ── Derived ───────────────────────────────────────────────────
-  const configs = useMemo(() => formData.totpConfigs ?? [], [formData.totpConfigs]);
+  const configs = useMemo(
+    () => formData.totpConfigs ?? [],
+    [formData.totpConfigs],
+  );
   const configsRef = useRef(configs);
   configsRef.current = configs;
 
@@ -78,31 +81,34 @@ export function useTOTPOptions(
   // Fan out one `totp_compute_code` invoke per config; a cancellation
   // flag guards against state updates after the effect has been torn
   // down (the tick fires every second).
-  const refreshCodes = useCallback(async (cancelledRef: { current: boolean }) => {
-    const current = configsRef.current;
-    const results = await Promise.all(
-      current.map(async (cfg) => {
-        if (!cfg.secret) return [cfg.secret, ""] as const;
-        try {
-          const code = await totpApi.computeCode(
-            cfg.secret,
-            toAlgo(cfg.algorithm),
-            cfg.digits ?? 6,
-            cfg.period ?? 30,
-          );
-          return [cfg.secret, code] as const;
-        } catch {
-          return [cfg.secret, ""] as const;
-        }
-      }),
-    );
-    if (cancelledRef.current) return;
-    const next: Record<string, string> = {};
-    for (const [secret, code] of results) {
-      if (secret) next[secret] = code;
-    }
-    setCodes(next);
-  }, []);
+  const refreshCodes = useCallback(
+    async (cancelledRef: { current: boolean }) => {
+      const current = configsRef.current;
+      const results = await Promise.all(
+        current.map(async (cfg) => {
+          if (!cfg.secret) return [cfg.secret, ""] as const;
+          try {
+            const code = await totpApi.computeCode(
+              cfg.secret,
+              toAlgo(cfg.algorithm),
+              cfg.digits ?? 6,
+              cfg.period ?? 30,
+            );
+            return [cfg.secret, code] as const;
+          } catch {
+            return [cfg.secret, ""] as const;
+          }
+        }),
+      );
+      if (cancelledRef.current) return;
+      const next: Record<string, string> = {};
+      for (const [secret, code] of results) {
+        if (secret) next[secret] = code;
+      }
+      setCodes(next);
+    },
+    [],
+  );
 
   useEffect(() => {
     if (!expanded || configs.length === 0) return;
@@ -234,9 +240,7 @@ export function useTOTPOptions(
     async (secret: string) => {
       const backupCodes = await totpApi.generateBackupCodes(10);
       updateConfigs(
-        configs.map((c) =>
-          c.secret === secret ? { ...c, backupCodes } : c,
-        ),
+        configs.map((c) => (c.secret === secret ? { ...c, backupCodes } : c)),
       );
       setShowBackup(secret);
     },
@@ -281,9 +285,7 @@ export function useTOTPOptions(
 
   const handleFileImport = useCallback(
     (entries: TOTPConfig[]) => {
-      const existingSet = new Set(
-        configs.map((c) => c.secret.toLowerCase()),
-      );
+      const existingSet = new Set(configs.map((c) => c.secret.toLowerCase()));
       const newEntries = entries.filter(
         (e) => !existingSet.has(e.secret.toLowerCase()),
       );
@@ -315,9 +317,7 @@ export function useTOTPOptions(
 
   const otherConnections = useMemo(
     () =>
-      connState.connections.filter(
-        (c) => c.id !== formData.id && !c.isGroup,
-      ),
+      connState.connections.filter((c) => c.id !== formData.id && !c.isGroup),
     [connState.connections, formData.id],
   );
 

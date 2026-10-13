@@ -97,8 +97,7 @@ export const SettingsHostRow: React.FC<SettingsHostRowProps> = ({
   infoTooltip,
   warnOnPublicBind = false,
 }) => {
-  const isPublic =
-    warnOnPublicBind && PUBLIC_BIND_ADDRESSES.has(value.trim());
+  const isPublic = warnOnPublicBind && PUBLIC_BIND_ADDRESSES.has(value.trim());
   return (
     <>
       <SettingsTextRow
@@ -115,8 +114,8 @@ export const SettingsHostRow: React.FC<SettingsHostRowProps> = ({
         <div className="flex items-start gap-2 p-2 bg-warning/10 border border-warning/30 rounded text-warning text-xs">
           <AlertTriangle className="w-4 h-4 flex-shrink-0 mt-0.5" />
           <span>
-            Binding on a wildcard address exposes the service to your
-            entire network. Make sure authentication is enabled.
+            Binding on a wildcard address exposes the service to your entire
+            network. Make sure authentication is enabled.
           </span>
         </div>
       )}
@@ -164,9 +163,7 @@ export const SettingsPortRow: React.FC<SettingsPortRowProps> = ({
   if (!onRandomize) {
     // No randomize button — straight delegation to SettingsNumberRow.
     return (
-      <div
-        className={locked ? "opacity-50 pointer-events-none" : undefined}
-      >
+      <div className={locked ? "opacity-50 pointer-events-none" : undefined}>
         <SettingsNumberRow
           settingKey={settingKey}
           icon={icon}
@@ -194,9 +191,7 @@ export const SettingsPortRow: React.FC<SettingsPortRowProps> = ({
     >
       <div className="min-w-0">
         <span className="sor-settings-row-label flex items-center gap-1">
-          <span className="text-[var(--color-textSecondary)] mr-1">
-            {icon}
-          </span>
+          <span className="text-[var(--color-textSecondary)] mr-1">{icon}</span>
           {label}
           {infoTooltip && <InfoTooltip text={infoTooltip} />}
         </span>
@@ -432,8 +427,7 @@ export const SettingsTcpKeepAliveBlock: React.FC<
         icon={<Plug size={16} />}
         label={soKeepAlive.label ?? "Enable SO_KEEPALIVE option"}
         description={
-          soKeepAlive.description ??
-          "Enable socket-level keepalive mechanism"
+          soKeepAlive.description ?? "Enable socket-level keepalive mechanism"
         }
         checked={soKeepAlive.value}
         onChange={soKeepAlive.onChange}
@@ -449,8 +443,8 @@ export const SettingsTcpKeepAliveBlock: React.FC<
           enabled ? "" : "opacity-50 pointer-events-none"
         }`}
       >
-        {intervalSecs && (
-          intervalSecs.variant === "slider" ? (
+        {intervalSecs &&
+          (intervalSecs.variant === "slider" ? (
             <SettingsSliderRow
               settingKey={intervalSecs.settingKey ?? "keepAliveInterval"}
               icon={<RefreshCw size={16} />}
@@ -482,8 +476,7 @@ export const SettingsTcpKeepAliveBlock: React.FC<
                 "Time in seconds between TCP keep-alive probes."
               }
             />
-          )
-        )}
+          ))}
         {probes && (
           <SettingsNumberRow
             settingKey={probes.settingKey ?? "keepAliveProbes"}
@@ -640,10 +633,7 @@ export const SettingsApiKeyField: React.FC<SettingsApiKeyFieldProps> = ({
             title="Generate new key"
           >
             <RefreshCw
-              className={cx(
-                "w-4 h-4",
-                isRegenerating && "animate-spin",
-              )}
+              className={cx("w-4 h-4", isRegenerating && "animate-spin")}
             />
           </button>
         </div>

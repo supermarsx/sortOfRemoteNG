@@ -14,7 +14,13 @@
  * bind warning) rather than re-testing the base rows.
  */
 import { describe, it, expect, vi } from "vitest";
-import { render, screen, fireEvent, waitFor, act } from "@testing-library/react";
+import {
+  render,
+  screen,
+  fireEvent,
+  waitFor,
+  act,
+} from "@testing-library/react";
 
 import {
   SettingsApiKeyField,
@@ -93,11 +99,7 @@ describe("SettingsApiKeyField", () => {
 
   it("does not render the Copy button when value is empty", () => {
     render(
-      <SettingsApiKeyField
-        value=""
-        onCopy={vi.fn()}
-        onRegenerate={vi.fn()}
-      />,
+      <SettingsApiKeyField value="" onCopy={vi.fn()} onRegenerate={vi.fn()} />,
     );
     expect(screen.queryByLabelText("Copy key")).toBeNull();
   });
@@ -146,17 +148,12 @@ describe("SettingsApiKeyField", () => {
 describe("SettingsTcpKeepAliveBlock", () => {
   it("renders only the parent toggle when no sub-rows are provided", () => {
     const { container } = render(
-      <SettingsTcpKeepAliveBlock
-        enabled={true}
-        onEnabledChange={vi.fn()}
-      />,
+      <SettingsTcpKeepAliveBlock enabled={true} onEnabledChange={vi.fn()} />,
     );
     // One sor-settings-toggle-row (the parent), no sub-block wrapper.
     const toggles = container.querySelectorAll(".sor-settings-toggle-row");
     expect(toggles.length).toBe(1);
-    expect(
-      container.querySelector(".flex.flex-col.gap-2\\.5"),
-    ).toBeNull();
+    expect(container.querySelector(".flex.flex-col.gap-2\\.5")).toBeNull();
   });
 
   it("renders SO_KEEPALIVE next to the parent toggle when provided", () => {
@@ -216,9 +213,7 @@ describe("SettingsTcpKeepAliveBlock", () => {
 
 describe("SettingsPortRow", () => {
   it("renders without a randomize button by default", () => {
-    render(
-      <SettingsPortRow value={8080} onChange={vi.fn()} />,
-    );
+    render(<SettingsPortRow value={8080} onChange={vi.fn()} />);
     expect(screen.queryByLabelText("Randomize port")).toBeNull();
   });
 
@@ -255,31 +250,19 @@ describe("SettingsPortRow", () => {
 describe("SettingsHostRow", () => {
   it("shows the public-bind warning for 0.0.0.0", () => {
     render(
-      <SettingsHostRow
-        value="0.0.0.0"
-        onChange={vi.fn()}
-        warnOnPublicBind
-      />,
+      <SettingsHostRow value="0.0.0.0" onChange={vi.fn()} warnOnPublicBind />,
     );
-    expect(
-      screen.getByText(/wildcard address/i),
-    ).toBeTruthy();
+    expect(screen.getByText(/wildcard address/i)).toBeTruthy();
   });
 
   it("does not show the warning when warnOnPublicBind is off", () => {
-    render(
-      <SettingsHostRow value="0.0.0.0" onChange={vi.fn()} />,
-    );
+    render(<SettingsHostRow value="0.0.0.0" onChange={vi.fn()} />);
     expect(screen.queryByText(/wildcard address/i)).toBeNull();
   });
 
   it("does not warn on a localhost value", () => {
     render(
-      <SettingsHostRow
-        value="127.0.0.1"
-        onChange={vi.fn()}
-        warnOnPublicBind
-      />,
+      <SettingsHostRow value="127.0.0.1" onChange={vi.fn()} warnOnPublicBind />,
     );
     expect(screen.queryByText(/wildcard address/i)).toBeNull();
   });
@@ -287,24 +270,18 @@ describe("SettingsHostRow", () => {
 
 describe("SettingsRemoteAccessRow", () => {
   it("does not render the warning banner when unchecked", () => {
-    render(
-      <SettingsRemoteAccessRow checked={false} onChange={vi.fn()} />,
-    );
+    render(<SettingsRemoteAccessRow checked={false} onChange={vi.fn()} />);
     expect(screen.queryByText(/exposes the service/i)).toBeNull();
   });
 
   it("renders the warning banner when checked", () => {
-    render(
-      <SettingsRemoteAccessRow checked={true} onChange={vi.fn()} />,
-    );
+    render(<SettingsRemoteAccessRow checked={true} onChange={vi.fn()} />);
     expect(screen.getByText(/exposes the service/i)).toBeTruthy();
   });
 
   it("forwards onChange", () => {
     const onChange = vi.fn();
-    render(
-      <SettingsRemoteAccessRow checked={false} onChange={onChange} />,
-    );
+    render(<SettingsRemoteAccessRow checked={false} onChange={onChange} />);
     fireEvent.click(screen.getByRole("checkbox"));
     expect(onChange).toHaveBeenCalledWith(true);
   });
@@ -351,15 +328,9 @@ describe("SettingsSubGroupHeader", () => {
 
   it("uses tight spacing when tight=true", () => {
     const { container } = render(
-      <SettingsSubGroupHeader
-        icon={<span />}
-        label="Tight"
-        tight
-      />,
+      <SettingsSubGroupHeader icon={<span />} label="Tight" tight />,
     );
     expect(container.firstChild as HTMLElement).toHaveProperty("className");
-    expect((container.firstChild as HTMLElement).className).toContain(
-      "pt-2",
-    );
+    expect((container.firstChild as HTMLElement).className).toContain("pt-2");
   });
 });

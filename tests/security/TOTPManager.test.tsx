@@ -56,24 +56,30 @@ const CODE: TotpGeneratedCode = {
 };
 
 function setupInvoke() {
-  mocks.invoke.mockImplementation((cmd: string, args?: Record<string, unknown>) => {
-    switch (cmd) {
-      case "totp_list_entries":
-        return Promise.resolve([ENTRY]);
-      case "totp_generate_all_codes":
-        return Promise.resolve([CODE]);
-      case "totp_generate_secret":
-        return Promise.resolve("NEW_SECRET");
-      case "totp_create_entry":
-        return Promise.resolve({ ...ENTRY, id: "entry-2", label: String(args?.label) });
-      case "totp_entry_qr_data_uri":
-        return Promise.resolve("data:image/png;base64,qr");
-      case "totp_remove_entry":
-        return Promise.resolve(ENTRY);
-      default:
-        return Promise.resolve(undefined);
-    }
-  });
+  mocks.invoke.mockImplementation(
+    (cmd: string, args?: Record<string, unknown>) => {
+      switch (cmd) {
+        case "totp_list_entries":
+          return Promise.resolve([ENTRY]);
+        case "totp_generate_all_codes":
+          return Promise.resolve([CODE]);
+        case "totp_generate_secret":
+          return Promise.resolve("NEW_SECRET");
+        case "totp_create_entry":
+          return Promise.resolve({
+            ...ENTRY,
+            id: "entry-2",
+            label: String(args?.label),
+          });
+        case "totp_entry_qr_data_uri":
+          return Promise.resolve("data:image/png;base64,qr");
+        case "totp_remove_entry":
+          return Promise.resolve(ENTRY);
+        default:
+          return Promise.resolve(undefined);
+      }
+    },
+  );
 }
 
 describe("TOTPManager", () => {
@@ -124,7 +130,10 @@ describe("TOTPManager", () => {
     await waitFor(() => {
       expect(mocks.invoke).toHaveBeenCalledWith(
         "totp_create_entry",
-        expect.objectContaining({ label: "bob@example.com", secret: "NEW_SECRET" }),
+        expect.objectContaining({
+          label: "bob@example.com",
+          secret: "NEW_SECRET",
+        }),
       );
       expect(mocks.invoke).toHaveBeenCalledWith(
         "totp_entry_qr_data_uri",
@@ -140,7 +149,9 @@ describe("TOTPManager", () => {
     fireEvent.click(deleteButtons[0]);
 
     await waitFor(() => {
-      expect(mocks.invoke).toHaveBeenCalledWith("totp_remove_entry", { id: "entry-1" });
+      expect(mocks.invoke).toHaveBeenCalledWith("totp_remove_entry", {
+        id: "entry-1",
+      });
     });
   });
 
@@ -149,7 +160,7 @@ describe("TOTPManager", () => {
     const { container } = render(<TOTPManager isOpen onClose={onClose} />);
 
     await screen.findByText("TOTP Authenticator");
-    const backdrop = document.body.querySelector('.sor-modal-backdrop');
+    const backdrop = document.body.querySelector(".sor-modal-backdrop");
     expect(backdrop).toBeTruthy();
     if (backdrop) fireEvent.click(backdrop);
 
