@@ -1,4 +1,4 @@
-import { act, render, waitFor } from "@testing-library/react";
+import { act, cleanup, render, waitFor } from "@testing-library/react";
 import { StrictMode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ILinkHandler } from "@xterm/xterm";
@@ -13,6 +13,18 @@ import { resolveRuntimeNetworkPath } from "../../utils/network/resolveRuntimeNet
 import type { SessionVpnType } from "../../utils/network/vpnProviderCatalog";
 import * as macroService from "../../utils/recording/macroService";
 import { defaultScripts } from "../../data/defaultScripts";
+import {
+  PromptHostUnavailableError,
+  type PromptDecision,
+  type PromptMemoryScope,
+  type PromptOptions,
+  type PromptRequest,
+} from "../../utils/prompts/promptQueue";
+import {
+  sshMacroReplayPrompt,
+  sshScriptRunPrompt,
+  terminalPastePrompt,
+} from "../../utils/prompts/runPromptRequests";
 
 const mocks = vi.hoisted(() => {
   class MockTerminal {
@@ -161,7 +173,21 @@ const mocks = vi.hoisted(() => {
     readText: vi.fn(async () => ""),
     writeText: vi.fn(async (_text: string) => undefined),
   };
-  const confirmPaste = vi.fn((_message: string) => true);
+  // The answer to the app's themed prompt (script run, macro replay, risky
+  // paste): it backs the mocked `requestPrompt`, and `false` means Cancel.
+  const confirmPaste = vi.fn((_request: PromptRequest) => true);
+  const requestPrompt = vi.fn(
+    async (
+      request: PromptRequest,
+      _options?: PromptOptions,
+    ): Promise<PromptDecision> => ({
+      confirmed: confirmPaste(request) === true,
+      remember: false,
+    }),
+  );
+  // The webview's own box. Only the OSC 8 link guard may still raise it.
+  const nativeConfirm = vi.fn((_message?: string) => true);
+  const memoryScopes: PromptMemoryScope[] = [];
   const listeners = new Map<string, (event: { payload: any }) => void>();
   const runtimePath = {
     protocol: "ssh" as const,
@@ -193,6 +219,9 @@ const mocks = vi.hoisted(() => {
     toastContext,
     clipboard,
     confirmPaste,
+    requestPrompt,
+    nativeConfirm,
+    memoryScopes,
     invoke: vi.fn(),
     addHistoryEntry: vi.fn(),
     listen: vi.fn(async (..._args: unknown[]) => vi.fn()),
@@ -330,6 +359,32 @@ vi.mock("./useSSHCommandHistory", () => ({
     addEntry: mocks.addHistoryEntry,
   }),
 }));
+// The queue, the dialog and the host have their own tests; the flow through
+// the real ones is in tests/ssh/WebTerminalRunPromptFlow.test.tsx.
+vi.mock("../../utils/prompts/promptQueue", async (importOriginal) => {
+  const actual =
+    await importOriginal<typeof import("../../utils/prompts/promptQueue")>();
+  return {
+    ...actual,
+    requestPrompt: (request: PromptRequest, options?: PromptOptions) =>
+      mocks.requestPrompt(request, options),
+    // The real "Don't ask again" memory, with every key it is given on record.
+    createPromptMemory: () => {
+      const memory = actual.createPromptMemory();
+      return {
+        ...memory,
+        has: (scope: PromptMemoryScope) => {
+          mocks.memoryScopes.push(scope);
+          return memory.has(scope);
+        },
+        remember: (scope: PromptMemoryScope) => {
+          mocks.memoryScopes.push(scope);
+          memory.remember(scope);
+        },
+      };
+    },
+  };
+});
 
 import { useWebTerminal, type WebTerminalMgr } from "./useWebTerminal";
 
@@ -345,6 +400,8 @@ const session: ConnectionSession = {
   protocol: "ssh",
   hostname: mocks.connection.hostname,
 };
+/** The session as the terminal names it to the prompt builders. */
+const promptSession = { name: session.name, hostname: session.hostname };
 
 const emitTauriEvent = (event: string, payload: unknown) => {
   const listener = mocks.listeners.get(event);
@@ -383,13 +440,21 @@ beforeEach(() => {
   mocks.clipboard.writeText.mockResolvedValue(undefined);
   mocks.confirmPaste.mockReset();
   mocks.confirmPaste.mockReturnValue(true);
+  mocks.requestPrompt.mockReset();
+  mocks.requestPrompt.mockImplementation(async (request) => ({
+    confirmed: mocks.confirmPaste(request) === true,
+    remember: false,
+  }));
+  mocks.nativeConfirm.mockReset();
+  mocks.nativeConfirm.mockReturnValue(true);
+  mocks.memoryScopes.length = 0;
   Object.defineProperty(navigator, "clipboard", {
     configurable: true,
     value: mocks.clipboard,
   });
   Object.defineProperty(window, "confirm", {
     configurable: true,
-    value: mocks.confirmPaste,
+    value: mocks.nativeConfirm,
   });
   mocks.listeners.clear();
   mocks.listen.mockReset();
@@ -449,6 +514,13 @@ beforeEach(() => {
 
 afterEach(() => {
   vi.useRealTimers();
+  // Unmount first: a failed check below must not leave this test's terminal
+  // mounted for the next one.
+  cleanup();
+  // No terminal prompt may fall back to the webview's blocking box. The one
+  // native confirm left is the synchronous guard on an OSC 8 link.
+  for (const [message] of mocks.nativeConfirm.mock.calls)
+    expect(message).toContain("Open this terminal link in your browser?");
 });
 
 describe("useWebTerminal SSH link security", () => {
@@ -655,7 +727,7 @@ describe("useWebTerminal SSH link security", () => {
       "open_url_external",
       expect.anything(),
     );
-    expect(mocks.confirmPaste).not.toHaveBeenCalled();
+    expect(mocks.nativeConfirm).not.toHaveBeenCalled();
 
     mocks.settingsContext.settings = { allowSshExternalLinks: true };
     SettingsManager.getInstance().applyInMemory({
@@ -671,20 +743,20 @@ describe("useWebTerminal SSH link security", () => {
     expect(mocks.invoke).toHaveBeenCalledWith("open_url_external", {
       url: "https://example.test/",
     });
-    expect(mocks.confirmPaste).toHaveBeenCalledWith(
+    expect(mocks.nativeConfirm).toHaveBeenCalledWith(
       expect.stringContaining("https://actual-destination.test/"),
     );
 
     mocks.settingsContext.settings = { allowSshExternalLinks: false };
     view.rerender(<Harness />);
     mocks.invoke.mockClear();
-    mocks.confirmPaste.mockClear();
+    mocks.nativeConfirm.mockClear();
     activate();
     expect(mocks.invoke).not.toHaveBeenCalledWith(
       "open_url_external",
       expect.anything(),
     );
-    expect(mocks.confirmPaste).not.toHaveBeenCalled();
+    expect(mocks.nativeConfirm).not.toHaveBeenCalled();
     expect(mocks.MockTerminal.instances).toEqual([terminal]);
     view.unmount();
   });
@@ -759,9 +831,9 @@ describe("useWebTerminal SSH link security", () => {
     // Same API used by the dialog synchronously, before its 1500ms save timer.
     manager.applyInMemory({ allowSshExternalLinks: false });
     mocks.invoke.mockClear();
-    mocks.confirmPaste.mockClear();
+    mocks.nativeConfirm.mockClear();
     activate();
-    expect(mocks.confirmPaste).not.toHaveBeenCalled();
+    expect(mocks.nativeConfirm).not.toHaveBeenCalled();
     expect(mocks.invoke).not.toHaveBeenCalledWith(
       "open_url_external",
       expect.anything(),
@@ -782,7 +854,7 @@ describe("useWebTerminal SSH link security", () => {
       "open_url_external",
       expect.anything(),
     );
-    expect(mocks.confirmPaste).not.toHaveBeenCalled();
+    expect(mocks.nativeConfirm).not.toHaveBeenCalled();
     expect(mocks.MockTerminal.instances).toEqual([terminal]);
     view.unmount();
   });
@@ -804,21 +876,21 @@ describe("useWebTerminal SSH link security", () => {
         start: { x: 1, y: 1 },
         end: { x: 4, y: 1 },
       });
-    mocks.confirmPaste.mockImplementation(() => {
+    mocks.nativeConfirm.mockImplementation(() => {
       manager.applyInMemory({ allowSshExternalLinks: false });
       return true;
     });
     activate();
-    expect(mocks.confirmPaste).toHaveBeenCalledOnce();
+    expect(mocks.nativeConfirm).toHaveBeenCalledOnce();
     expect(mocks.invoke).not.toHaveBeenCalledWith(
       "open_url_external",
       expect.anything(),
     );
     manager.applyInMemory({ allowSshExternalLinks: true });
     manager.invalidateLoadedSettings(true);
-    mocks.confirmPaste.mockClear();
+    mocks.nativeConfirm.mockClear();
     activate();
-    expect(mocks.confirmPaste).not.toHaveBeenCalled();
+    expect(mocks.nativeConfirm).not.toHaveBeenCalled();
     expect(mocks.invoke).not.toHaveBeenCalledWith(
       "open_url_external",
       expect.anything(),
@@ -1766,9 +1838,17 @@ describe("useWebTerminal input lifecycle", () => {
 
     expect(pasted).toBe(false);
     expect(mocks.confirmPaste).toHaveBeenCalledOnce();
-    expect(mocks.confirmPaste).toHaveBeenCalledWith(
-      expect.stringContaining("contains multiple lines"),
+    const request = mocks.confirmPaste.mock.calls[0][0];
+    expect(request).toEqual(
+      terminalPastePrompt({
+        text: "first\nsecond",
+        session: promptSession,
+        multiLine: true,
+      }),
     );
+    expect(request.preview?.text).toBe("first\nsecond");
+    // A paste is different text every time: no "Don't ask again".
+    expect(request.remember).toBeUndefined();
     expect(
       mocks.invoke.mock.calls.filter(
         ([command]) => command === "send_ssh_input",
@@ -1795,15 +1875,27 @@ describe("useWebTerminal input lifecycle", () => {
 
     expect(pasted).toBe(true);
     expect(mocks.confirmPaste).toHaveBeenCalledOnce();
-    expect(mocks.confirmPaste.mock.calls[0][0]).toContain(
-      "contains multiple lines and contains 7 characters",
+    const request = mocks.confirmPaste.mock.calls[0][0];
+    // Both reasons in one request, for the trimmed text.
+    expect(request).toEqual(
+      terminalPastePrompt({
+        text: "one\ntwo",
+        session: promptSession,
+        multiLine: true,
+        lengthLimit: 5,
+      }),
     );
+    // The trimmed text is what is shown, and what is shown is what is sent.
+    expect(request.preview?.text).toBe("one\ntwo");
     expect(
       mocks.invoke.mock.calls.filter(
         ([command]) => command === "send_ssh_input",
       ),
     ).toEqual([
-      ["send_ssh_input", { sessionId: "backend-ssh-1", data: "one\ntwo" }],
+      [
+        "send_ssh_input",
+        { sessionId: "backend-ssh-1", data: request.preview?.text },
+      ],
     ]);
   });
 
@@ -1829,11 +1921,17 @@ describe("useWebTerminal input lifecycle", () => {
     expect(await model!.pasteFromClipboard()).toBe(false);
 
     expect(mocks.confirmPaste).toHaveBeenCalledOnce();
-    expect(mocks.confirmPaste).toHaveBeenCalledWith(
-      expect.stringContaining(
-        "contains 6 characters (configured threshold: 5)",
-      ),
+    const request = mocks.confirmPaste.mock.calls[0][0];
+    // Asked for its length alone: it is one line.
+    expect(request).toEqual(
+      terminalPastePrompt({
+        text: "123456",
+        session: promptSession,
+        multiLine: false,
+        lengthLimit: 5,
+      }),
     );
+    expect(request.preview?.text).toBe("123456");
     expect(
       mocks.invoke.mock.calls.filter(
         ([command]) => command === "send_ssh_input",
@@ -3522,5 +3620,970 @@ describe("useWebTerminal pre-open writes, post-open fit, and scrollOnOutput", ()
     expect(resizeCalls()[0][1]).toMatchObject({ sessionId: "backend-ssh-1" });
 
     view.unmount();
+  });
+});
+
+describe("useWebTerminal run prompts", () => {
+  const promptScript = (overrides: Record<string, unknown> = {}) => ({
+    id: "script-prompt",
+    name: "Disk usage",
+    description: "",
+    script: "df -h",
+    language: "bash" as const,
+    category: "Test",
+    osTags: ["linux" as const],
+    createdAt: "2026-01-01",
+    updatedAt: "2026-01-01",
+    ...overrides,
+  });
+  const promptMacro = (overrides: Record<string, unknown> = {}) => ({
+    id: "macro-prompt",
+    name: "Restart web",
+    createdAt: "2026-01-01",
+    updatedAt: "2026-01-01",
+    steps: [
+      {
+        command: "sudo systemctl restart nginx",
+        delayMs: 0,
+        sendNewline: true,
+      },
+      { command: "systemctl status nginx", delayMs: 0, sendNewline: true },
+    ],
+    ...overrides,
+  });
+  const NOT_CONFIRMED: PromptDecision = { confirmed: false, remember: false };
+  const CONFIRMED: PromptDecision = { confirmed: true, remember: false };
+  const REMEMBERED: PromptDecision = { confirmed: true, remember: true };
+
+  /** Everything that reaches the remote shell through a script, a macro or a paste. */
+  const sent = () =>
+    mocks.invoke.mock.calls.filter(
+      ([command]) =>
+        command === "send_ssh_input" || command === "execute_script",
+    );
+
+  /**
+   * Prompts that stay open until the test answers them. Like the real queue,
+   * an abort closes one unanswered; `honourAbort: false` models an answer that
+   * was already on its way when the abort came.
+   */
+  const holdPrompts = ({ honourAbort = true } = {}) => {
+    const open: Array<{
+      request: PromptRequest;
+      signal?: AbortSignal;
+      answer: (decision: PromptDecision) => void;
+    }> = [];
+    mocks.requestPrompt.mockImplementation(
+      (request, options) =>
+        new Promise<PromptDecision>((resolve) => {
+          open.push({ request, signal: options?.signal, answer: resolve });
+          if (honourAbort)
+            options?.signal?.addEventListener(
+              "abort",
+              () => resolve(NOT_CONFIRMED),
+              { once: true },
+            );
+        }),
+    );
+    return open;
+  };
+
+  const mountTerminal = async () => {
+    let model: WebTerminalMgr | null = null;
+    const Harness = () => {
+      model = useWebTerminal(session);
+      return <div ref={model.containerRef} data-testid="canvas" />;
+    };
+    const view = render(<Harness />);
+    await waitFor(() => expect(model?.status).toBe("connected"));
+    await waitFor(() =>
+      expect(mocks.listeners.has("ssh-shell-closed")).toBe(true),
+    );
+    const terminal =
+      mocks.MockTerminal.instances[mocks.MockTerminal.instances.length - 1];
+    // Opened: the terminal's own focus on open is behind us.
+    await waitFor(() => expect(terminal.element).not.toBeNull());
+    return { view, model: () => model as unknown as WebTerminalMgr, terminal };
+  };
+
+  type Kind = "script" | "macro" | "paste";
+  const KINDS: Kind[] = ["script", "macro", "paste"];
+  /** Starts one of the three flows; the paste text comes from the fake clipboard. */
+  const start = (kind: Kind, model: WebTerminalMgr): Promise<unknown> => {
+    if (kind === "script") return model.runScript(promptScript());
+    if (kind === "macro") return model.handleReplayMacro(promptMacro());
+    mocks.clipboard.readText.mockResolvedValue("first\nsecond");
+    return model.pasteFromClipboard();
+  };
+
+  const dropSession = () =>
+    emitTauriEvent("ssh-shell-closed", {
+      session_id: "backend-ssh-1",
+      reason: "transport_error",
+      recoverable: false,
+      message: "fixture transport closed",
+    });
+
+  it("asks for a script run with the session, the script and the exact text that will be sent", async () => {
+    const t = await mountTerminal();
+    const script = promptScript({ script: "#!/bin/bash\ndf -h\nfree -m" });
+    await act(() => t.model().runScript(script));
+    expect(mocks.requestPrompt).toHaveBeenCalledOnce();
+    const [request, options] = mocks.requestPrompt.mock.calls[0];
+    // The shebang line is not sent, so it is not put up for review.
+    expect(request).toEqual(
+      sshScriptRunPrompt({
+        script,
+        command: "df -h\nfree -m",
+        session: promptSession,
+        offerRemember: true,
+      }),
+    );
+    expect(request.title).toContain("Disk usage");
+    expect(request.title).toContain("SSH test");
+    expect(request.preview?.text).toBe("df -h\nfree -m");
+    expect(request.remember).toBeDefined();
+    expect(options?.signal).toBeInstanceOf(AbortSignal);
+    expect(sent()).toEqual([
+      [
+        "execute_script",
+        {
+          sessionId: "backend-ssh-1",
+          script: request.preview?.text,
+          interpreter: "bash",
+        },
+      ],
+    ]);
+  });
+
+  it("asks for a macro replay with its steps and replays the reviewed macro", async () => {
+    const t = await mountTerminal();
+    const macro = promptMacro();
+    await act(() => t.model().handleReplayMacro(macro));
+    expect(mocks.requestPrompt).toHaveBeenCalledOnce();
+    const [request, options] = mocks.requestPrompt.mock.calls[0];
+    expect(request).toEqual(
+      sshMacroReplayPrompt({
+        macro,
+        session: promptSession,
+        offerRemember: true,
+      }),
+    );
+    expect(request.title).toContain("Restart web");
+    expect(request.title).toContain("SSH test");
+    expect(request.preview?.text).toContain("sudo systemctl restart nginx");
+    expect(request.remember).toBeDefined();
+    expect(options?.signal).toBeInstanceOf(AbortSignal);
+    expect(macroService.replayMacro).toHaveBeenCalledOnce();
+    expect(vi.mocked(macroService.replayMacro).mock.calls[0][1]).toEqual(macro);
+  });
+
+  it.each(KINDS)(
+    "sends nothing for a %s while its prompt is open, and nothing on Cancel",
+    async (kind) => {
+      const open = holdPrompts();
+      const t = await mountTerminal();
+      let running!: Promise<unknown>;
+      act(() => {
+        running = start(kind, t.model());
+      });
+      await waitFor(() => expect(open).toHaveLength(1));
+      await act(async () => Promise.resolve());
+      expect(sent()).toEqual([]);
+      expect(macroService.replayMacro).not.toHaveBeenCalled();
+
+      await act(async () => {
+        open[0].answer(NOT_CONFIRMED);
+        await running;
+      });
+      expect(sent()).toEqual([]);
+      expect(macroService.replayMacro).not.toHaveBeenCalled();
+      expect(mocks.toast.error).not.toHaveBeenCalled();
+      expect(mocks.addHistoryEntry).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each(KINDS)(
+    "closes an open %s prompt unanswered when the session drops, and sends nothing",
+    async (kind) => {
+      const open = holdPrompts();
+      const t = await mountTerminal();
+      let running!: Promise<unknown>;
+      act(() => {
+        running = start(kind, t.model());
+      });
+      await waitFor(() => expect(open).toHaveLength(1));
+      expect(open[0].signal?.aborted).toBe(false);
+
+      act(() => dropSession());
+      expect(open[0].signal?.aborted).toBe(true);
+      await act(async () => {
+        await running;
+      });
+      expect(sent()).toEqual([]);
+      expect(macroService.replayMacro).not.toHaveBeenCalled();
+      expect(mocks.toast.error).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each(KINDS)(
+    "closes an open %s prompt unanswered when the terminal unmounts, and sends nothing",
+    async (kind) => {
+      const open = holdPrompts();
+      const t = await mountTerminal();
+      let running!: Promise<unknown>;
+      act(() => {
+        running = start(kind, t.model());
+      });
+      await waitFor(() => expect(open).toHaveLength(1));
+
+      act(() => t.view.unmount());
+      expect(open[0].signal?.aborted).toBe(true);
+      await running;
+      expect(sent()).toEqual([]);
+      expect(macroService.replayMacro).not.toHaveBeenCalled();
+      expect(mocks.toast.error).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each(KINDS)(
+    "treats a %s answer that arrives after the session dropped as not confirmed",
+    async (kind) => {
+      const open = holdPrompts({ honourAbort: false });
+      const t = await mountTerminal();
+      let running!: Promise<unknown>;
+      act(() => {
+        running = start(kind, t.model());
+      });
+      await waitFor(() => expect(open).toHaveLength(1));
+
+      act(() => dropSession());
+      await act(async () => {
+        open[0].answer(CONFIRMED);
+        await running;
+      });
+      expect(sent()).toEqual([]);
+      expect(macroService.replayMacro).not.toHaveBeenCalled();
+      // Closed, not failed: the user is not told an action went wrong.
+      expect(mocks.toast.error).not.toHaveBeenCalled();
+    },
+  );
+
+  it("does not paste into a session that began disconnecting while the prompt was open", async () => {
+    const open = holdPrompts();
+    const base = mocks.invoke.getMockImplementation()!;
+    let finishDisconnect!: () => void;
+    mocks.invoke.mockImplementation((command: string, args?: unknown) =>
+      command === "disconnect_ssh"
+        ? new Promise<void>((resolve) => {
+            finishDisconnect = resolve;
+          })
+        : base(command, args),
+    );
+    const t = await mountTerminal();
+    let pasting!: Promise<unknown>;
+    act(() => {
+      pasting = start("paste", t.model());
+    });
+    await waitFor(() => expect(open).toHaveLength(1));
+
+    let disconnecting!: Promise<boolean>;
+    act(() => {
+      disconnecting = t.model().disconnectSsh();
+    });
+    await waitFor(() => expect(finishDisconnect).toBeTypeOf("function"));
+    // The native disconnect is still pending: the status has not changed yet,
+    // so nothing has closed the prompt.
+    expect(t.model().status).toBe("connected");
+    expect(open[0].signal?.aborted).toBe(false);
+
+    await act(async () => {
+      open[0].answer(CONFIRMED);
+      expect(await pasting).toBe(false);
+    });
+    expect(sent()).toEqual([]);
+    await act(async () => {
+      finishDisconnect();
+      await disconnecting;
+    });
+    expect(sent()).toEqual([]);
+  });
+
+  it.each(KINDS)(
+    "shows one prompt per terminal: while a %s prompt is open nothing else asks or sends",
+    async (kind) => {
+      const open = holdPrompts();
+      const t = await mountTerminal();
+      let running!: Promise<unknown>;
+      act(() => {
+        running = start(kind, t.model());
+      });
+      await waitFor(() => expect(open).toHaveLength(1));
+
+      mocks.clipboard.readText.mockResolvedValue("third\nfourth");
+      await act(async () => {
+        expect(await t.model().pasteFromClipboard()).toBe(false);
+        await t.model().handleReplayMacro(promptMacro({ id: "macro-other" }));
+        await t.model().runScript(promptScript({ id: "script-other" }));
+      });
+      const pasteEvent = new Event("paste", {
+        bubbles: true,
+        cancelable: true,
+      });
+      Object.defineProperty(pasteEvent, "clipboardData", {
+        value: { getData: () => "fifth\nsixth" },
+      });
+      await act(async () => {
+        t.view.getByTestId("canvas").dispatchEvent(pasteEvent);
+        await Promise.resolve();
+      });
+      expect(open).toHaveLength(1);
+      expect(sent()).toEqual([]);
+      expect(macroService.replayMacro).not.toHaveBeenCalled();
+
+      // Answered: the next request asks again.
+      await act(async () => {
+        open[0].answer(NOT_CONFIRMED);
+        await running;
+      });
+      let next!: Promise<unknown>;
+      act(() => {
+        next = start(kind, t.model());
+      });
+      await waitFor(() => expect(open).toHaveLength(2));
+      expect(open[1].signal).not.toBe(open[0].signal);
+      expect(open[1].signal?.aborted).toBe(false);
+      await act(async () => {
+        open[1].answer(NOT_CONFIRMED);
+        await next;
+      });
+      expect(sent()).toEqual([]);
+    },
+  );
+
+  it("keeps typed input and session output flowing while a prompt is open", async () => {
+    const open = holdPrompts();
+    const t = await mountTerminal();
+    await waitFor(() => expect(mocks.listeners.has("ssh-output")).toBe(true));
+    let running!: Promise<unknown>;
+    act(() => {
+      running = start("script", t.model());
+    });
+    await waitFor(() => expect(open).toHaveLength(1));
+
+    await act(async () => {
+      await t.terminal.emitInput("x");
+    });
+    expect(sent()).toEqual([
+      ["send_ssh_input", { sessionId: "backend-ssh-1", data: "x" }],
+    ]);
+    act(() => {
+      emitTauriEvent("ssh-output", {
+        session_id: "backend-ssh-1",
+        data: "STREAMED",
+        generation: 1,
+        sequence_start: 0,
+        sequence_end: 8,
+        retained_start: 0,
+        dropped_bytes: 0,
+      });
+    });
+    await waitFor(() =>
+      expect(t.terminal.write).toHaveBeenCalledWith(
+        "STREAMED",
+        expect.any(Function),
+      ),
+    );
+    expect(open).toHaveLength(1);
+    await act(async () => {
+      open[0].answer(NOT_CONFIRMED);
+      await running;
+    });
+  });
+
+  it.each(["script", "macro"] as const)(
+    "does not ask again for a %s the user chose to remember, for that exact content only",
+    async (kind) => {
+      const answers = [REMEMBERED, CONFIRMED, CONFIRMED, CONFIRMED];
+      mocks.requestPrompt.mockImplementation(
+        async () => answers.shift() ?? CONFIRMED,
+      );
+      const t = await mountTerminal();
+      const run = (overrides: Record<string, unknown> = {}) =>
+        act(() =>
+          kind === "script"
+            ? t.model().runScript(promptScript(overrides))
+            : t.model().handleReplayMacro(promptMacro(overrides)),
+        );
+      const edited =
+        kind === "script"
+          ? { script: "df -h /var" }
+          : {
+              steps: [
+                {
+                  command: "sudo systemctl restart nginx",
+                  delayMs: 0,
+                  sendNewline: false,
+                },
+                {
+                  command: "systemctl status nginx",
+                  delayMs: 0,
+                  sendNewline: true,
+                },
+              ],
+            };
+      const runs = () =>
+        kind === "script"
+          ? sent().length
+          : vi.mocked(macroService.replayMacro).mock.calls.length;
+
+      await run();
+      expect(mocks.requestPrompt).toHaveBeenCalledTimes(1);
+      // Remembered: the same content runs again without a prompt.
+      await run();
+      await run({ name: "Renamed, same commands" });
+      expect(mocks.requestPrompt).toHaveBeenCalledTimes(1);
+      expect(runs()).toBe(3);
+      // Another script or macro is not covered by that answer.
+      await run({ id: `${kind}-other` });
+      expect(mocks.requestPrompt).toHaveBeenCalledTimes(2);
+      // Changed content asks again ...
+      await run(edited);
+      expect(mocks.requestPrompt).toHaveBeenCalledTimes(3);
+      // ... and so does the original once it has changed back.
+      await run();
+      expect(mocks.requestPrompt).toHaveBeenCalledTimes(4);
+      expect(runs()).toBe(6);
+    },
+  );
+
+  it("treats another interpreter as changed script content", async () => {
+    mocks.requestPrompt.mockImplementation(async () => REMEMBERED);
+    const t = await mountTerminal();
+    const script = { script: "echo one\necho two" };
+    await act(() => t.model().runScript(promptScript(script)));
+    await act(() => t.model().runScript(promptScript(script)));
+    expect(mocks.requestPrompt).toHaveBeenCalledTimes(1);
+    await act(() =>
+      t.model().runScript(promptScript({ ...script, language: "sh" })),
+    );
+    expect(mocks.requestPrompt).toHaveBeenCalledTimes(2);
+  });
+
+  it.each(["script", "macro"] as const)(
+    "asks again for a remembered %s after the session reconnects or drops",
+    async (kind) => {
+      mocks.requestPrompt.mockImplementation(async () => REMEMBERED);
+      const t = await mountTerminal();
+      const run = () =>
+        act(() =>
+          kind === "script"
+            ? t.model().runScript(promptScript())
+            : t.model().handleReplayMacro(promptMacro()),
+        );
+      await run();
+      await run();
+      expect(mocks.requestPrompt).toHaveBeenCalledTimes(1);
+
+      // The fixture backend answers with the same session id, so only the
+      // terminal forgetting on the way out of `connected` can ask again.
+      await act(async () => {
+        await t.model().handleReconnect();
+      });
+      expect(t.model().status).toBe("connected");
+      await run();
+      expect(mocks.requestPrompt).toHaveBeenCalledTimes(2);
+      await run();
+      expect(mocks.requestPrompt).toHaveBeenCalledTimes(2);
+    },
+  );
+
+  it("forgets what it remembered when the same view moves to another session", async () => {
+    mocks.requestPrompt.mockImplementation(async () => REMEMBERED);
+    let model: WebTerminalMgr | null = null;
+    const Harness = ({ target }: { target: ConnectionSession }) => {
+      model = useWebTerminal(target);
+      return <div ref={model.containerRef} />;
+    };
+    const view = render(<Harness target={session} />);
+    await waitFor(() => expect(model?.status).toBe("connected"));
+    await act(() => model!.runScript(promptScript()));
+    await act(() => model!.runScript(promptScript()));
+    expect(mocks.requestPrompt).toHaveBeenCalledTimes(1);
+
+    // The view keeps its backend actor here, so the next session has the same
+    // backend id: only the terminal forgetting as it lets go can ask again.
+    view.rerender(<Harness target={{ ...session, id: "frontend-ssh-2" }} />);
+    await waitFor(() => expect(mocks.MockTerminal.instances).toHaveLength(2));
+    await waitFor(() => expect(model?.status).toBe("connected"));
+    await act(() => model!.runScript(promptScript()));
+    expect(mocks.requestPrompt).toHaveBeenCalledTimes(2);
+    view.unmount();
+  });
+
+  it("asks every time when the box was not ticked, and never remembers a paste", async () => {
+    const t = await mountTerminal();
+    await act(() => t.model().runScript(promptScript()));
+    await act(() => t.model().runScript(promptScript()));
+    expect(mocks.requestPrompt).toHaveBeenCalledTimes(2);
+
+    // Even an answer that claims "remember" cannot skip the next paste prompt.
+    mocks.requestPrompt.mockImplementation(async () => REMEMBERED);
+    mocks.clipboard.readText.mockResolvedValue("first\nsecond");
+    expect(await t.model().pasteFromClipboard()).toBe(true);
+    expect(await t.model().pasteFromClipboard()).toBe(true);
+    expect(mocks.requestPrompt).toHaveBeenCalledTimes(4);
+    expect(mocks.requestPrompt.mock.calls[2][0].remember).toBeUndefined();
+    expect(mocks.requestPrompt.mock.calls[3][0].remember).toBeUndefined();
+  });
+
+  it.each(["script", "macro"] as const)(
+    "still re-checks the library for a remembered %s and sends nothing when it changed",
+    async (kind) => {
+      mocks.requestPrompt.mockImplementation(async () => REMEMBERED);
+      const t = await mountTerminal();
+      const run = () =>
+        act(() =>
+          kind === "script"
+            ? t.model().runScript(promptScript())
+            : t.model().handleReplayMacro(promptMacro()),
+        );
+      await run();
+      mocks.invoke.mockClear();
+      vi.mocked(macroService.replayMacro).mockClear();
+      (kind === "script"
+        ? mocks.reviewAppScript
+        : mocks.reviewAppMacro
+      ).mockRejectedValue(new Error("App entry changed"));
+      await run();
+      expect(mocks.requestPrompt).toHaveBeenCalledTimes(1);
+      expect(sent()).toEqual([]);
+      expect(macroService.replayMacro).not.toHaveBeenCalled();
+      expect(mocks.toast.error).toHaveBeenCalledOnce();
+    },
+  );
+
+  it.each(KINDS)(
+    "sends nothing for a %s when the window has no prompt host, and says so",
+    async (kind) => {
+      const consoleError = vi
+        .spyOn(console, "error")
+        .mockImplementation(() => undefined);
+      mocks.requestPrompt.mockImplementation(() =>
+        Promise.reject(new PromptHostUnavailableError()),
+      );
+      const t = await mountTerminal();
+      await act(async () => {
+        await start(kind, t.model());
+      });
+      expect(sent()).toEqual([]);
+      expect(macroService.replayMacro).not.toHaveBeenCalled();
+      expect(mocks.toast.error).toHaveBeenCalledOnce();
+      if (kind === "paste")
+        expect(mocks.toast.error).toHaveBeenCalledWith(
+          "Failed to confirm the terminal paste",
+          3000,
+        );
+      // The guard is released: a later request can ask again.
+      mocks.requestPrompt.mockImplementation(async () => CONFIRMED);
+      await act(async () => {
+        await start(kind, t.model());
+      });
+      expect(mocks.requestPrompt).toHaveBeenCalledTimes(2);
+      consoleError.mockRestore();
+    },
+  );
+
+  it("never logs the script, the macro steps or the pasted text", async () => {
+    const logged: unknown[][] = [];
+    const spies = (["log", "info", "warn", "error", "debug"] as const).map(
+      (level) =>
+        vi.spyOn(console, level).mockImplementation((...args: unknown[]) => {
+          logged.push(args);
+        }),
+    );
+    const t = await mountTerminal();
+    for (const decision of [CONFIRMED, NOT_CONFIRMED]) {
+      mocks.requestPrompt.mockImplementation(async () => decision);
+      mocks.clipboard.readText.mockResolvedValue("PRIVATE_PASTE\nsecond");
+      await act(async () => {
+        await t
+          .model()
+          .runScript(promptScript({ script: "echo PRIVATE_SCRIPT" }));
+        await t.model().handleReplayMacro(
+          promptMacro({
+            steps: [{ command: "PRIVATE_STEP", delayMs: 0, sendNewline: true }],
+          }),
+        );
+        await t.model().pasteFromClipboard();
+      });
+    }
+    mocks.requestPrompt.mockImplementation(() =>
+      Promise.reject(new PromptHostUnavailableError()),
+    );
+    await act(async () => {
+      await t.model().pasteFromClipboard();
+    });
+    spies.forEach((spy) => spy.mockRestore());
+    expect(
+      logged.map((args) => args.map(String).join(" ")).join("\n"),
+    ).not.toContain("PRIVATE_");
+  });
+
+  it("hands the keyboard to the terminal after an answer only when nothing else holds it", async () => {
+    const t = await mountTerminal();
+    const focus = vi.spyOn(t.terminal, "focus");
+    const settleFocus = () =>
+      act(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 20));
+      });
+
+    // The opener is gone (a popover that closed): focus fell to the page.
+    (document.activeElement as HTMLElement | null)?.blur();
+    expect(document.activeElement).toBe(document.body);
+    await act(() => t.model().handleReplayMacro(promptMacro()));
+    await settleFocus();
+    expect(focus).toHaveBeenCalledTimes(1);
+
+    // Something else has the keyboard (the opener the dialog returned to).
+    const opener = document.createElement("button");
+    document.body.appendChild(opener);
+    opener.focus();
+    await act(() => t.model().handleReplayMacro(promptMacro()));
+    await settleFocus();
+    expect(focus).toHaveBeenCalledTimes(1);
+    expect(document.activeElement).toBe(opener);
+    opener.remove();
+
+    // Another dialog is open: the terminal behind it must not take the keys.
+    const dialog = document.createElement("div");
+    dialog.setAttribute("role", "dialog");
+    dialog.setAttribute("aria-modal", "true");
+    document.body.appendChild(dialog);
+    expect(document.activeElement).toBe(document.body);
+    await act(() => t.model().handleReplayMacro(promptMacro()));
+    await settleFocus();
+    expect(focus).toHaveBeenCalledTimes(1);
+    dialog.remove();
+
+    // A cancel hands it back the same way as a confirm.
+    mocks.confirmPaste.mockReturnValue(false);
+    await act(() => t.model().handleReplayMacro(promptMacro()));
+    await settleFocus();
+    expect(focus).toHaveBeenCalledTimes(2);
+  });
+
+  it("does not hand the keyboard to a terminal whose tab is in the background", async () => {
+    let model: WebTerminalMgr | null = null;
+    const Harness = ({ active }: { active: boolean }) => {
+      model = useWebTerminal(session, undefined, active);
+      return <div ref={model.containerRef} />;
+    };
+    const view = render(<Harness active />);
+    await waitFor(() => expect(model?.status).toBe("connected"));
+    const terminal = mocks.MockTerminal.instances[0];
+    await waitFor(() => expect(terminal.element).not.toBeNull());
+    const focus = vi.spyOn(terminal, "focus");
+    const replayAndSettle = () =>
+      act(async () => {
+        await model!.handleReplayMacro(promptMacro());
+        await new Promise((resolve) => setTimeout(resolve, 20));
+      });
+    (document.activeElement as HTMLElement | null)?.blur();
+
+    view.rerender(<Harness active={false} />);
+    await replayAndSettle();
+    expect(mocks.requestPrompt).toHaveBeenCalledTimes(1);
+    expect(focus).not.toHaveBeenCalled();
+
+    view.rerender(<Harness active />);
+    await replayAndSettle();
+    expect(mocks.requestPrompt).toHaveBeenCalledTimes(2);
+    expect(focus).toHaveBeenCalledTimes(1);
+  });
+
+  it("leaves the keyboard with an open prompt when the terminal reflows for fullscreen", async () => {
+    const open = holdPrompts();
+    const t = await mountTerminal();
+    const focus = vi.spyOn(t.terminal, "focus");
+    const reflow = () =>
+      act(async () => {
+        t.model().toggleFullscreen();
+        await new Promise((resolve) => setTimeout(resolve, 120));
+      });
+    let running!: Promise<unknown>;
+    act(() => {
+      running = start("script", t.model());
+    });
+    await waitFor(() => expect(open).toHaveLength(1));
+    await reflow();
+    expect(focus).not.toHaveBeenCalled();
+
+    // Something else holds the keyboard, so the answer itself moves nothing;
+    // the next reflow focuses the terminal as it always did.
+    const opener = document.createElement("button");
+    document.body.appendChild(opener);
+    opener.focus();
+    await act(async () => {
+      open[0].answer(NOT_CONFIRMED);
+      await running;
+    });
+    await reflow();
+    expect(focus).toHaveBeenCalledTimes(1);
+    opener.remove();
+  });
+
+  it("hands the keyboard to the terminal when a run closes the script picker, not when the user closes it", async () => {
+    // No review: nothing but the picker rule can move the keyboard here.
+    mocks.settingsContext.settings = {
+      sessionQuickActions: { confirmBeforeScriptRun: false },
+    };
+    const t = await mountTerminal();
+    const focus = vi.spyOn(t.terminal, "focus");
+    const settleFocus = () =>
+      act(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 20));
+      });
+    const openPicker = () => {
+      act(() => t.model().setShowScriptSelector(true));
+      expect(t.model().showScriptSelector).toBe(true);
+    };
+
+    // A favourite runs with no picker open: there is nothing to hand over,
+    // and nothing is left behind for the next time the picker is dismissed.
+    await act(() => t.model().runScript(promptScript()));
+    openPicker();
+    act(() => t.model().closeScriptSelector());
+    await settleFocus();
+    expect(t.model().showScriptSelector).toBe(false);
+    expect(focus).not.toHaveBeenCalled();
+
+    // A run from the picker closes it, and the terminal takes the keyboard.
+    openPicker();
+    await act(() => t.model().runScript(promptScript()));
+    await settleFocus();
+    expect(t.model().showScriptSelector).toBe(false);
+    expect(focus).toHaveBeenCalledTimes(1);
+    expect(sent()).toHaveLength(2);
+
+    // Never from behind another dialog.
+    const dialog = document.createElement("div");
+    dialog.setAttribute("role", "dialog");
+    dialog.setAttribute("aria-modal", "true");
+    document.body.appendChild(dialog);
+    openPicker();
+    await act(() => t.model().runScript(promptScript()));
+    await settleFocus();
+    dialog.remove();
+    expect(t.model().showScriptSelector).toBe(false);
+    expect(focus).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not take the keyboard for a tab in the background when a run closes its picker", async () => {
+    mocks.settingsContext.settings = {
+      sessionQuickActions: { confirmBeforeScriptRun: false },
+    };
+    let model: WebTerminalMgr | null = null;
+    const Harness = ({ active }: { active: boolean }) => {
+      model = useWebTerminal(session, undefined, active);
+      return <div ref={model.containerRef} />;
+    };
+    const view = render(<Harness active />);
+    await waitFor(() => expect(model?.status).toBe("connected"));
+    const terminal = mocks.MockTerminal.instances[0];
+    await waitFor(() => expect(terminal.element).not.toBeNull());
+    const focus = vi.spyOn(terminal, "focus");
+    const runFromPicker = async () => {
+      act(() => model!.setShowScriptSelector(true));
+      await act(async () => {
+        await model!.runScript(promptScript());
+        await new Promise((resolve) => setTimeout(resolve, 20));
+      });
+      expect(model!.showScriptSelector).toBe(false);
+    };
+
+    act(() => model!.setShowScriptSelector(true));
+    view.rerender(<Harness active={false} />);
+    await runFromPicker();
+    expect(focus).not.toHaveBeenCalled();
+
+    view.rerender(<Harness active />);
+    await runFromPicker();
+    expect(focus).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps the script picker open when the run is not confirmed or a re-check fails, and closes it before sending otherwise", async () => {
+    const open = holdPrompts();
+    const base = mocks.invoke.getMockImplementation()!;
+    let finish!: (result: unknown) => void;
+    mocks.invoke.mockImplementation((command: string, args?: unknown) =>
+      command === "execute_script"
+        ? new Promise((resolve) => {
+            finish = resolve;
+          })
+        : base(command, args),
+    );
+    const t = await mountTerminal();
+    const script = promptScript({ script: "echo one\necho two" });
+    const pick = () => {
+      act(() => t.model().setShowScriptSelector(true));
+      let running!: Promise<void>;
+      act(() => {
+        running = t.model().runScript(script);
+      });
+      return running;
+    };
+
+    // Cancel: the picker is still there to pick again.
+    let running = pick();
+    await waitFor(() => expect(open).toHaveLength(1));
+    expect(t.model().showScriptSelector).toBe(true);
+    await act(async () => {
+      open[0].answer(NOT_CONFIRMED);
+      await running;
+    });
+    expect(t.model().showScriptSelector).toBe(true);
+
+    // Confirmed, but the library entry changed meanwhile: nothing is sent,
+    // the user is told, and the picker stays.
+    mocks.reviewAppScript.mockRejectedValueOnce(new Error("App entry changed"));
+    running = pick();
+    await waitFor(() => expect(open).toHaveLength(2));
+    await act(async () => {
+      open[1].answer(CONFIRMED);
+      await running;
+    });
+    expect(sent()).toEqual([]);
+    expect(mocks.toast.error).toHaveBeenCalledOnce();
+    expect(t.model().showScriptSelector).toBe(true);
+
+    // Confirmed and still current: the picker goes before the remote run
+    // has answered.
+    running = pick();
+    await waitFor(() => expect(open).toHaveLength(3));
+    await act(async () => {
+      open[2].answer(CONFIRMED);
+    });
+    await waitFor(() => expect(sent()).toHaveLength(1));
+    expect(t.model().showScriptSelector).toBe(false);
+    await act(async () => {
+      finish({ stdout: "", stderr: "", exitCode: 0 });
+      await running;
+    });
+    expect(t.model().showScriptSelector).toBe(false);
+    expect(sent()).toHaveLength(1);
+  });
+
+  it("keeps two sessions that share a display name apart: prompts, answers and what is remembered", async () => {
+    const open = holdPrompts();
+    const base = mocks.invoke.getMockImplementation()!;
+    let connects = 0;
+    mocks.invoke.mockImplementation((command: string, args?: unknown) =>
+      command === "connect_ssh"
+        ? Promise.resolve(`backend-twin-${++connects}`)
+        : base(command, args),
+    );
+    // Same name, same host, same script: only the session differs.
+    const twins = {
+      a: { ...session, id: "frontend-twin-a" },
+      b: { ...session, id: "frontend-twin-b" },
+    };
+    const models: { a?: WebTerminalMgr; b?: WebTerminalMgr } = {};
+    const View = ({ twin }: { twin: "a" | "b" }) => {
+      const model = useWebTerminal(twins[twin]);
+      models[twin] = model;
+      return <div ref={model.containerRef} />;
+    };
+    render(
+      <>
+        <View twin="a" />
+        <View twin="b" />
+      </>,
+    );
+    await waitFor(() => {
+      expect(models.a?.status).toBe("connected");
+      expect(models.b?.status).toBe("connected");
+    });
+    // Which backend each view talks to, learned without any prompt.
+    const backendOf = async (twin: "a" | "b") => {
+      mocks.invoke.mockClear();
+      await act(() => models[twin]!.sendCancel());
+      return (sent()[0][1] as { sessionId: string }).sessionId;
+    };
+    const backendA = await backendOf("a");
+    const backendB = await backendOf("b");
+    expect(backendA).not.toBe(backendB);
+    mocks.invoke.mockClear();
+
+    // The same script on both: two requests that look alike, one per session.
+    let runningA!: Promise<void>;
+    let runningB!: Promise<void>;
+    act(() => {
+      runningA = models.a!.runScript(promptScript());
+      runningB = models.b!.runScript(promptScript());
+    });
+    await waitFor(() => expect(open).toHaveLength(2));
+    expect(open[1].request).toEqual(open[0].request);
+    expect(open[0].request.dedupeKey).toBeUndefined();
+    expect(open[1].signal).not.toBe(open[0].signal);
+
+    // The second session's answer runs on the second session only.
+    await act(async () => {
+      open[1].answer(REMEMBERED);
+      await runningB;
+    });
+    expect(sent()).toEqual([
+      ["send_ssh_input", { sessionId: backendB, data: "df -h\n" }],
+    ]);
+    await act(async () => {
+      open[0].answer(NOT_CONFIRMED);
+      await runningA;
+    });
+    expect(sent()).toHaveLength(1);
+
+    // Remembered there: it runs again without asking.
+    await act(() => models.b!.runScript(promptScript()));
+    expect(open).toHaveLength(2);
+    expect(sent()).toHaveLength(2);
+    // The other session has the same name, script and content, and still asks.
+    act(() => {
+      runningA = models.a!.runScript(promptScript());
+    });
+    await waitFor(() => expect(open).toHaveLength(3));
+    await act(async () => {
+      open[2].answer(NOT_CONFIRMED);
+      await runningA;
+    });
+    expect(sent().every(([, args]) => args.sessionId === backendB)).toBe(true);
+
+    // What was remembered and looked up is keyed by the backend session and
+    // the content, never by the name the two sessions share.
+    const keyedBy = (backend: string) =>
+      mocks.memoryScopes.filter((scope) => scope.sessionId === backend);
+    expect(keyedBy(backendA).length).toBeGreaterThan(0);
+    expect(keyedBy(backendB).length).toBeGreaterThan(0);
+    expect(keyedBy(backendA).length + keyedBy(backendB).length).toBe(
+      mocks.memoryScopes.length,
+    );
+    for (const scope of mocks.memoryScopes) {
+      expect(scope.id).toBe("script-prompt");
+      expect(scope.content).toContain("df -h");
+      expect(JSON.stringify(scope)).not.toContain(session.name);
+    }
+  });
+
+  it("does not hand the keyboard to a terminal that unmounted with its prompt open", async () => {
+    const open = holdPrompts();
+    const t = await mountTerminal();
+    const focus = vi.spyOn(t.terminal, "focus");
+    let running!: Promise<unknown>;
+    act(() => {
+      running = start("script", t.model());
+    });
+    await waitFor(() => expect(open).toHaveLength(1));
+    act(() => t.view.unmount());
+    await running;
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(focus).not.toHaveBeenCalled();
   });
 });

@@ -71,6 +71,18 @@ import {
   withoutSessionVpnLeaseOwner,
 } from "../../utils/network/sessionVpnLeaseCleanup";
 import { redactSecrets } from "../../utils/errors/redact";
+import {
+  createPromptMemory,
+  requestPrompt,
+  type PromptDecision,
+  type PromptMemory,
+  type PromptRequest,
+} from "../../utils/prompts/promptQueue";
+import {
+  sshMacroReplayPrompt,
+  sshScriptRunPrompt,
+  terminalPastePrompt,
+} from "../../utils/prompts/runPromptRequests";
 import { useSSHCommandHistory } from "./useSSHCommandHistory";
 import { useSshQuickActions } from "./useSshQuickActions";
 import { normalizeSessionQuickActions } from "../../utils/connection/sessionQuickActions";
@@ -137,6 +149,15 @@ export interface SshConnectionFailure {
   maxRetryAttempts: number;
   retryDelaySeconds: number;
 }
+/** What a script run or a macro replay puts in front of the user before it is sent. */
+type SshRunReview =
+  | { kind: "script"; script: ManagedScript; command: string }
+  | { kind: "macro"; macro: TerminalMacro };
+const PROMPT_NOT_CONFIRMED: PromptDecision = Object.freeze({
+  confirmed: false,
+  remember: false,
+});
+const MODAL_DIALOG_SELECTOR = '[role="dialog"][aria-modal="true"]';
 interface NativeSshTerminalBufferSnapshot {
   session_id: string;
   data: string;
@@ -467,6 +488,12 @@ export function useWebTerminal(
   const scriptRunBusyRef = useRef(false);
   const macroListRef = useRef<HTMLDivElement>(null);
 
+  /* ── Run prompts: script run, macro replay, risky paste ── */
+  // The open prompt's abort handle; non-null while this terminal is asking.
+  const runPromptAbortRef = useRef<AbortController | null>(null);
+  // "Don't ask again" answers: in memory only, for the connected session only.
+  const runPromptMemoryRef = useRef<PromptMemory | null>(null);
+
   /* ── SSH command history ── */
   const commandHistory = useSSHCommandHistory(session.id);
   const addCommandHistoryEntry = commandHistory.addEntry;
@@ -614,6 +641,32 @@ export function useWebTerminal(
     resetScriptSelectorFilters();
   }, [resetScriptSelectorFilters]);
 
+  const showScriptSelectorRef = useRef(showScriptSelector);
+  showScriptSelectorRef.current = showScriptSelector;
+  const focusTerminalAfterPickerRef = useRef(false);
+
+  /**
+   * Closes the picker for a run that is going ahead, so the terminal and the
+   * script's output are in view at once. The picker hands the keyboard back
+   * to the toolbar button that opened it; after a run it belongs to the
+   * terminal, which takes it in the effect below, once that hand-back is done.
+   */
+  const closeScriptSelectorForRun = useCallback(() => {
+    focusTerminalAfterPickerRef.current = showScriptSelectorRef.current;
+    closeScriptSelector();
+  }, [closeScriptSelector]);
+
+  useEffect(() => {
+    if (showScriptSelector || !focusTerminalAfterPickerRef.current) return;
+    focusTerminalAfterPickerRef.current = false;
+    // Not for a tab in the background, and never from behind another dialog.
+    if (
+      terminalActiveRef.current &&
+      !document.querySelector(MODAL_DIALOG_SELECTOR)
+    )
+      termRef.current?.focus();
+  }, [showScriptSelector]);
+
   /* ──────────────────────────────────────────────────────────────
    * SSH helpers
    * ────────────────────────────────────────────────────────────── */
@@ -639,7 +692,13 @@ export function useWebTerminal(
       statusRef.current = next;
       isConnecting.current = next === "connecting" || next === "reconnecting";
       isSshReady.current = next === "connected";
-      if (next !== "connected") replayAbortRef.current?.abort();
+      if (next !== "connected") {
+        replayAbortRef.current?.abort();
+        // An open prompt and every "Don't ask again" belong to the session
+        // that was connected when they were given; neither outlives it.
+        runPromptAbortRef.current?.abort();
+        runPromptMemoryRef.current?.clear();
+      }
       if (next === "connected") {
         // Only an accepted current actor reaches this transition. Retire its
         // previous failure/progress message together with the retry state.
@@ -2454,6 +2513,95 @@ export function useWebTerminal(
     [cancelClipboardClearTimer, reportClipboardFailure],
   );
 
+  /* ── Run prompts ── */
+
+  /**
+   * Asks through the window's themed prompt, which does not stop the window
+   * the way the webview's own box does. One prompt per terminal: a request
+   * made while another is open is not confirmed. The prompt closes unanswered
+   * when the session leaves `connected` or the terminal unmounts, and a window
+   * without a prompt host rejects. Nothing is sent here: the caller re-checks
+   * its session after the answer.
+   */
+  const askRunPrompt = useCallback(
+    async (request: PromptRequest): Promise<PromptDecision> => {
+      if (runPromptAbortRef.current) return PROMPT_NOT_CONFIRMED;
+      const controller = new AbortController();
+      runPromptAbortRef.current = controller;
+      try {
+        const decision = await requestPrompt(request, {
+          signal: controller.signal,
+        });
+        // An answer that crosses the abort is for a session that has gone.
+        return controller.signal.aborted ? PROMPT_NOT_CONFIRMED : decision;
+      } finally {
+        if (runPromptAbortRef.current === controller)
+          runPromptAbortRef.current = null;
+        // The dialog returns the keyboard to what had it. When that is gone
+        // (the macro list closes first), the terminal takes it: after the
+        // dialog has left, and never from behind another dialog.
+        setTimeout(() => {
+          const active = document.activeElement;
+          if (
+            !terminalActiveRef.current ||
+            (active && active !== document.body) ||
+            document.querySelector(MODAL_DIALOG_SELECTOR)
+          )
+            return;
+          termRef.current?.focus();
+        }, 0);
+      }
+    },
+    [],
+  );
+
+  /**
+   * The review before a script run or a macro replay. True means go ahead:
+   * the user confirmed, or ticked "Don't ask again" for this exact content
+   * earlier on this connected session. It only answers the question; the
+   * caller still re-checks the session and the library before sending.
+   */
+  const confirmSshRun = useCallback(
+    async (review: SshRunReview): Promise<boolean> => {
+      const { name, hostname } = sessionRef.current;
+      const session = { name, hostname };
+      const remembered =
+        review.kind === "script"
+          ? {
+              kind: "ssh-script",
+              id: review.script.id,
+              sessionId: sshSessionId.current ?? "",
+              // What is executed: the text and the interpreter it is given to.
+              content: JSON.stringify([review.script.language, review.command]),
+            }
+          : {
+              kind: "ssh-macro",
+              id: review.macro.id,
+              sessionId: sshSessionId.current ?? "",
+              content: JSON.stringify(review.macro.steps),
+            };
+      const memory = (runPromptMemoryRef.current ??= createPromptMemory());
+      if (memory.has(remembered)) return true;
+      const decision = await askRunPrompt(
+        review.kind === "script"
+          ? sshScriptRunPrompt({
+              script: review.script,
+              command: review.command,
+              session,
+              offerRemember: true,
+            })
+          : sshMacroReplayPrompt({
+              macro: review.macro,
+              session,
+              offerRemember: true,
+            }),
+      );
+      if (decision.confirmed && decision.remember) memory.remember(remembered);
+      return decision.confirmed;
+    },
+    [askRunPrompt],
+  );
+
   /**
    * The single policy boundary for all clipboard-originated terminal input.
    * Ordinary xterm onData input intentionally bypasses this callback.
@@ -2473,30 +2621,39 @@ export function useWebTerminal(
       )
         ? Math.max(0, currentSettings.maxPasteLengthChars ?? 0)
         : 0;
-      const warnings: string[] = [];
-      if (
-        (currentSettings.warnOnMultiLinePaste ?? true) &&
-        /[\r\n]/.test(text)
-      ) {
-        warnings.push("contains multiple lines");
-      }
-      if (maxPasteLength > 0 && text.length > maxPasteLength) {
-        warnings.push(
-          `contains ${text.length.toLocaleString()} characters (configured threshold: ${maxPasteLength.toLocaleString()})`,
-        );
-      }
+      const multiLine =
+        (currentSettings.warnOnMultiLinePaste ?? true) && /[\r\n]/.test(text);
+      const overLimit = maxPasteLength > 0 && text.length > maxPasteLength;
 
-      if (warnings.length > 0) {
+      if (multiLine || overLimit) {
+        // The answer is for the session the prompt names, as it is now.
+        const actorId = sshSessionId.current;
+        const attempt = sshInitGenRef.current;
+        const { id: frontendId, name, hostname } = sessionRef.current;
         let confirmed = false;
         try {
-          confirmed = window.confirm(
-            `This terminal paste ${warnings.join(" and ")}. It may execute commands immediately. Continue?`,
-          );
+          confirmed = (
+            await askRunPrompt(
+              terminalPastePrompt({
+                text,
+                session: { name, hostname },
+                multiLine,
+                lengthLimit: overLimit ? maxPasteLength : undefined,
+              }),
+            )
+          ).confirmed;
         } catch (error) {
           reportClipboardFailure("confirm", error);
           return false;
         }
-        if (!confirmed) return false;
+        if (
+          !confirmed ||
+          isDisposed.current ||
+          actorId !== sshSessionId.current ||
+          attempt !== sshInitGenRef.current ||
+          frontendId !== sessionRef.current.id
+        )
+          return false;
       }
 
       try {
@@ -2513,7 +2670,7 @@ export function useWebTerminal(
         return false;
       }
     },
-    [handleInput, reportClipboardFailure, scheduleClipboardClear],
+    [askRunPrompt, handleInput, reportClipboardFailure, scheduleClipboardClear],
   );
 
   const pasteFromClipboard = useCallback(async (): Promise<boolean> => {
@@ -2635,17 +2792,23 @@ export function useWebTerminal(
         const assertCurrent = captureQuickActionSession();
         const reviewed = structuredClone(script);
         const assertLibrary = assertReviewed ?? reviewScript(reviewed);
+        // Built before the review: the text that is shown is the text sent.
+        const lines = reviewed.script
+          .split("\n")
+          .filter((line) => !line.startsWith("#!"));
+        const command = lines.join("\n");
         if (
           normalizeSessionQuickActions(settingsRef.current.sessionQuickActions)
             .confirmBeforeScriptRun &&
-          !window.confirm(
-            `Run script "${reviewed.name}" on ${sessionRef.current.name || sessionRef.current.hostname}?\n\nThis executes commands on this SSH session. Cancel to make no changes.`,
-          )
+          !(await confirmSshRun({ kind: "script", script: reviewed, command }))
         )
           return;
         assertCurrent();
         await assertLibrary();
         assertCurrent();
+        // The run goes ahead: the picker makes way for the terminal before
+        // anything is sent. A failed re-check above leaves it open instead.
+        closeScriptSelectorForRun();
         script = reviewed;
         const targetSessionId = sshSessionId.current;
         const currentSession = sessionRef.current;
@@ -2658,10 +2821,6 @@ export function useWebTerminal(
           : undefined;
         activityStarted = true;
         recordSessionActivity(activityContext, "ssh_script", "started");
-        const lines = script.script
-          .split("\n")
-          .filter((line) => !line.startsWith("#!"));
-        const command = lines.join("\n");
         const isSingleLine = lines.length === 1;
         const recordExecution = (
           execution: Omit<
@@ -2773,7 +2932,6 @@ export function useWebTerminal(
             );
           }
         }
-        closeScriptSelector();
       } catch {
         activityResult("failed");
         toastRef.current.error(
@@ -2785,7 +2943,8 @@ export function useWebTerminal(
     },
     [
       addCommandHistoryEntry,
-      closeScriptSelector,
+      closeScriptSelectorForRun,
+      confirmSshRun,
       formatErrorDetails,
       isSsh,
       safeWrite,
@@ -3458,6 +3617,9 @@ export function useWebTerminal(
       cancelSessionLifecycleActorAttempts(mountedSessionId);
       isDisposed.current = true;
       replayAbortRef.current?.abort();
+      // A prompt left open would be answered against whatever mounts next.
+      runPromptAbortRef.current?.abort();
+      runPromptMemoryRef.current?.clear();
       disconnectIntentRef.current = "user";
       clearReconnectTimer();
       for (const timer of sshAttemptWatchdogTimers) {
@@ -3576,7 +3738,8 @@ export function useWebTerminal(
   const reflowFullscreenTerminal = useCallback(() => {
     setTimeout(() => {
       safeFit();
-      termRef.current?.focus();
+      // An open prompt keeps the keyboard until it is answered.
+      if (!runPromptAbortRef.current) termRef.current?.focus();
     }, 60);
   }, [safeFit]);
 
@@ -3738,13 +3901,12 @@ export function useWebTerminal(
       let assertLibrary: () => Promise<void>;
       try {
         assertLibrary = assertReviewed ?? reviewMacro(reviewed);
-        if (
-          settingsRef.current.macros?.confirmBeforeReplay !== false &&
-          !window.confirm(
-            `Replay macro "${reviewed.name}" (${reviewed.steps.length} steps) on ${sessionRef.current.name || sessionRef.current.hostname}?`,
-          )
-        )
-          return;
+        if (settingsRef.current.macros?.confirmBeforeReplay !== false) {
+          // The macro list paints above every dialog: close it before asking.
+          setShowMacroList(false);
+          if (!(await confirmSshRun({ kind: "macro", macro: reviewed })))
+            return;
+        }
         assertCurrent();
         await assertLibrary();
         assertCurrent();
@@ -3797,7 +3959,7 @@ export function useWebTerminal(
         replayAbortRef.current = null;
       }
     },
-    [captureQuickActionSession, reviewMacro],
+    [captureQuickActionSession, confirmSshRun, reviewMacro],
   );
 
   const handleStopReplay = useCallback(() => {
