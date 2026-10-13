@@ -15,6 +15,10 @@ import {
 } from "../../src/utils/auth/httpApplicationLogin";
 import { normalizeAdvancedProtocolConnection } from "../../src/utils/connection/normalizeAdvancedProtocolConnection";
 import {
+  NATIVE_BROWSER_AUTHORITY_EXCLUSIONS,
+  nativeBrowserAuthoritySignature,
+} from "../../src/utils/connection/nativeBrowserAuthoritySignature";
+import {
   normalizeImportedAdvancedProtocolConnection,
   prepareConnectionForClone,
   prepareConnectionForExport,
@@ -618,6 +622,44 @@ describe("independent HTTP application security audit", () => {
             loginMode,
           }),
         ).not.toHaveProperty("customLogin");
+  });
+
+  it("counts custom login options as tab authority: every edit changes the signature and no exclusion covers them", () => {
+    const signature = (customLogin?: HttpApplicationSettings["customLogin"]) =>
+      nativeBrowserAuthoritySignature(
+        base({
+          httpApplication: {
+            version: 1,
+            id: "custom",
+            loginMode: "form",
+            ...(customLogin ? { customLogin } : {}),
+          },
+          httpAutoLoginSelectors: {
+            usernameSelector: "#u",
+            passwordSelector: "#p",
+            submitSelector: "#s",
+          },
+        }),
+      );
+    const signatures = [
+      signature(),
+      signature({ frame: "appFrame" }),
+      signature({ frame: "otherFrame" }),
+      signature({ passwordOnly: true }),
+      signature({ preStepSelector: "#tab2" }),
+      signature({ preStepSelector: "#tab3" }),
+      signature({ submission: "enter" }),
+      signature({ submission: "spa" }),
+    ];
+    expect(signatures.every((value) => typeof value === "string")).toBe(true);
+    expect(new Set(signatures).size).toBe(signatures.length);
+    // Where a credential is typed is authority, never presentation: the list
+    // of fields that leave an open tab alone must not reach these.
+    for (const path of NATIVE_BROWSER_AUTHORITY_EXCLUSIONS) {
+      expect(path[0]).not.toBe("httpApplication");
+      expect(path[0]).not.toBe("httpAutoLoginSelectors");
+      expect(path).not.toContain("customLogin");
+    }
   });
 
   it("keeps old native records absent but malformed present profile/selector columns fail-closed", () => {
