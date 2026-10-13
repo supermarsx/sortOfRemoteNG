@@ -48,7 +48,11 @@ pub fn close_all_windows<R: tauri::Runtime>(app: tauri::AppHandle<R>) -> Result<
 
 #[tauri::command]
 pub fn restart_app<R: tauri::Runtime>(app: tauri::AppHandle<R>) {
-    app.restart();
+    // `restart()` on the main thread, where this command runs, replaces the
+    // process at once and skips the run events. This asks the event loop
+    // instead: the exit handlers run first, then Tauri restarts the same
+    // binary with the same arguments.
+    app.request_restart();
 }
 
 #[tauri::command]

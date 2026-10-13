@@ -2,7 +2,7 @@
 
 use std::{
     path::{Path, PathBuf},
-    sync::{Arc, Mutex, MutexGuard},
+    sync::{Arc, Mutex, MutexGuard, OnceLock},
     time::Duration,
 };
 
@@ -53,6 +53,27 @@ struct UpdaterHttpTimeouts {
 }
 
 pub type UpdaterServiceState = Arc<UpdaterService>;
+
+/// Work the embedding app does before an installer handoff ends the process.
+pub type BeforeExit = Arc<dyn Fn() + Send + Sync>;
+
+/// The plugin's exit hook: the app's own work first, then the cleanup the
+/// plugin's default hook did. The app's work is contained, so whatever it does
+/// the update goes on.
+fn before_exit(
+    app_work: Option<BeforeExit>,
+    cleanup: impl Fn() + Send + Sync + 'static,
+) -> impl Fn() + Send + Sync + 'static {
+    move || {
+        if let Some(work) = &app_work {
+            let contained = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| work()));
+            if contained.is_err() {
+                log::error!("Updater: the app's work before exit panicked; the update continues");
+            }
+        }
+        cleanup();
+    }
+}
 
 #[derive(Debug, Clone)]
 struct StoredUpdaterSettings {
@@ -117,9 +138,17 @@ pub struct UpdaterService {
     settings_path: PathBuf,
     inner: Arc<Mutex<UpdaterState>>,
     updater_operation: tokio::sync::Mutex<()>,
+    before_exit: OnceLock<BeforeExit>,
 }
 
 impl UpdaterService {
+    /// Give the updater the work the app must do before an installer handoff
+    /// ends the process: that route never reaches the app's run events. The
+    /// first caller wins.
+    pub fn set_before_exit(&self, work: impl Fn() + Send + Sync + 'static) {
+        let _ = self.before_exit.set(Arc::new(work));
+    }
+
     pub fn new(
         current_version: impl Into<String>,
         app_data_dir: impl AsRef<Path>,
@@ -151,6 +180,7 @@ impl UpdaterService {
             settings_path,
             inner: Arc::new(Mutex::new(state)),
             updater_operation: tokio::sync::Mutex::new(()),
+            before_exit: OnceLock::new(),
         })
     }
 
@@ -533,6 +563,13 @@ impl UpdaterService {
             debug!("pinning the updater manifest target to {target}");
             builder = builder.target(target);
         }
+        // On Windows the plugin runs this hook and then ends the process
+        // itself, so the app's run events never fire. Setting it replaces the
+        // plugin's own hook, which only calls `cleanup_before_exit`: the app's
+        // work comes first, then exactly that.
+        let exiting = app.clone();
+        let cleanup = move || exiting.cleanup_before_exit();
+        builder = builder.on_before_exit(before_exit(self.before_exit.get().cloned(), cleanup));
         Ok(builder.build()?)
     }
 

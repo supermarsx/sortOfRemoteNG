@@ -8,8 +8,16 @@ import type {
   UpcomingTask,
 } from "../../types/scheduler/scheduler";
 
+// Every `sched_*` command takes the scheduler's managed state, which is absent
+// when the scheduler was skipped at startup. Tauri answers that with a sentence
+// that starts like this (2.11.5, `State::from_command`) and with no code.
+const STATE_NOT_MANAGED = "state not managed";
+const SCHEDULER_NOT_STARTED =
+  "Scheduled tasks are not running because the scheduler did not start, usually because the saved schedule could not be read. See the notice shown at startup.";
+
 function errorText(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
+  const text = error instanceof Error ? error.message : String(error);
+  return text.startsWith(STATE_NOT_MANAGED) ? SCHEDULER_NOT_STARTED : text;
 }
 
 export function useScheduler() {

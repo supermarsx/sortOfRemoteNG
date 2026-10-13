@@ -90,8 +90,9 @@ fn retain_browser(provider: Box<dyn RuntimeBootstrap>) -> Result<ProcessDispatch
 /// # Safety
 /// Call only with the pinned bootstrap's original entry parameters before all
 /// application services. The registry must shut down before this entry returns;
-/// failed initialization requires immediate process termination. The pending
-/// provider must never be moved to another thread or reused after shutdown.
+/// a failed `cef_initialize` ends the process without another CEF call, which
+/// `install` arranges. The pending provider must never be moved to another
+/// thread or reused after shutdown.
 #[cfg(windows)]
 pub(crate) unsafe fn prepare_windows(
     instance: sorng_browser_host::platform::windows::BootstrapInstance,
@@ -145,6 +146,65 @@ pub(crate) unsafe fn prepare_unix() -> Result<ProcessDispatch, EntryError> {
     match dispatch {
         ProcessDispatch::Exit(code) => Ok(ProcessDispatch::Exit(code)),
         ProcessDispatch::Browser => retain_browser(Box::new(provider)),
+    }
+}
+
+/// What a failed `CefRuntime::initialize_owned` left in this process.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum EngineLeft {
+    /// CEF was never entered, or was initialized and shut down again. Nothing
+    /// of it runs and nothing calls it: the application goes on without the
+    /// native browser.
+    Absent,
+    /// `cef_initialize` returned false, or the failure cannot be placed. CEF's
+    /// contract is to exit without calling any other CEF function.
+    MustExit,
+}
+
+/// Where each error of `CefRuntime::initialize_owned` is raised. `macos`
+/// because only its provider can refuse a shutdown and leave CEF running.
+fn engine_left(error: &RuntimeError, macos: bool) -> EngineLeft {
+    match error {
+        // A second call, refused before any provider is asked to initialize.
+        RuntimeError::AlreadyStarted => EngineLeft::Absent,
+        // Reported after a successful initialize, and only once the
+        // provider's shutdown has returned.
+        RuntimeError::SchedulerUnavailable | RuntimeError::NetworkPolicyUnavailable => {
+            EngineLeft::Absent
+        }
+        RuntimeError::Bootstrap(error) => match error {
+            // Settings validation and the lifecycle guard, both ahead of
+            // `cef_initialize` in every provider.
+            BootstrapError::SandboxDisabled
+            | BootstrapError::InvalidMessageLoop
+            | BootstrapError::WindowlessRendering
+            | BootstrapError::BrowserArgumentsEnabled
+            | BootstrapError::BrowserIdentityOverride
+            | BootstrapError::InvalidLifecycle => EngineLeft::Absent,
+            // Ahead of `cef_initialize` on Windows and Linux. On macOS it is
+            // also the answer of a refused shutdown, with CEF still running.
+            BootstrapError::PlatformPrecondition(_) if !macos => EngineLeft::Absent,
+            BootstrapError::PlatformPrecondition(_) | BootstrapError::InitializeFailed(_) => {
+                EngineLeft::MustExit
+            }
+            // Process dispatch and library selection: not raised here.
+            BootstrapError::RuntimeMismatch
+            | BootstrapError::ApiUnavailable
+            | BootstrapError::ProcessDispatchFailed
+            | BootstrapError::X11BackendRequired
+            | BootstrapError::X11DisplayRequired
+            | BootstrapError::InvalidArguments => EngineLeft::MustExit,
+        },
+        // Package paths and the pump thread: not raised here.
+        RuntimeError::InvalidPackagePath | RuntimeError::WrongThread => EngineLeft::MustExit,
+    }
+}
+
+/// The code CEF gave for a failed Initialize, for the notice.
+fn cef_exit_code(error: &RuntimeError) -> Option<i32> {
+    match error {
+        RuntimeError::Bootstrap(BootstrapError::InitializeFailed(code)) => Some(*code),
+        _ => None,
     }
 }
 
@@ -220,15 +280,19 @@ pub(crate) fn install(
             log::error!("Native browser stage=initializing error={error}");
             eprintln!("Native browser stage=initializing error={error}");
             log::logger().flush();
-            // CEF documents immediate process exit after failed Initialize.
-            // Delaying startup does not contain a native FATAL/abort.
-            let code = match error {
-                RuntimeError::Bootstrap(BootstrapError::InitializeFailed(code)) if code != 0 => {
-                    code
-                }
-                _ => 1,
-            };
-            std::process::exit(code);
+            if engine_left(&error, cfg!(target_os = "macos")) == EngineLeft::MustExit {
+                // CEF documents exit after a failed Initialize, without calling
+                // any other CEF function. Nothing from here on calls one: the
+                // runtime was never installed, and the settings are leaked
+                // because freeing their strings is a CEF call. The exit is
+                // announced, not silent.
+                std::mem::forget(settings);
+                crate::state_registry::end_for_engine_failure(cef_exit_code(&error));
+            }
+            // The gate is started, so the caller revokes admission for good:
+            // the native browser stays off until restart, with no second
+            // initialization, and the application and its sessions go on.
+            return Err(EntryError::Runtime(error));
         }
     };
     crate::origin_browser_runtime::install(runtime)

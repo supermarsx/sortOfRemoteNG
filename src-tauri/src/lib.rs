@@ -178,6 +178,13 @@ fn init_tracing() {
     }
 }
 
+/// Label of the window `splash::show` creates and the shell closes when ready.
+const SPLASH_WINDOW: &str = "splash";
+
+/// Without a splash nothing tells the app that the shell is listening. A cold
+/// start mounts its listeners well inside this.
+const NO_SPLASH_NOTICE_DELAY: std::time::Duration = std::time::Duration::from_secs(20);
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 /// Initializes and runs the SortOfRemote NG Tauri application.
 pub fn run() {
@@ -203,9 +210,16 @@ pub fn run() {
 
     // Install the ring CryptoProvider for rustls 0.23+.
     // Must happen before any TLS operation (reqwest, tokio-rustls, etc.).
-    rustls::crypto::ring::default_provider()
+    // It fails only when a provider is already installed, and TLS works with
+    // that one, so this is no reason to stop.
+    if rustls::crypto::ring::default_provider()
         .install_default()
-        .expect("Failed to install rustls CryptoProvider");
+        .is_err()
+    {
+        log::warn!(
+            "Startup stage=tls-provider: a rustls CryptoProvider was already installed; keeping it"
+        );
+    }
 
     let app = tauri::Builder::default()
         .plugin(app_profile::autostart_plugin(&profile))
@@ -233,8 +247,25 @@ pub fn run() {
             // Working-data preparation and CEF initialization belong to the
             // first authorized create, after encryption and all native states.
             web_network_guard::install(app);
-            state_registry::register(app)?;
-            splash::show(app)?;
+            if let Err(step) = state_registry::register(app) {
+                // A fatal step. The start ends here, with a dialog instead of
+                // an empty screen and with nothing of the app reachable; the
+                // rest of setup is not run.
+                state_registry::fail_start(app, step);
+                return Ok(());
+            }
+            // The splash only decorates the wait for the shell. Without one
+            // the shell has no window to close, so startup notices held for
+            // it are released on a timer instead.
+            if state_registry::recoverable(
+                "splash",
+                "the shell loads without a splash window",
+                splash::show(app),
+            )
+            .is_none()
+            {
+                state_registry::shell_ready_after(app.handle(), NO_SPLASH_NOTICE_DELAY);
+            }
             Ok(())
         })
         .invoke_handler(invoke_handler::build())
@@ -242,6 +273,17 @@ pub fn run() {
         .expect("error while building tauri application");
 
     app.run(|app_handle, event| {
+        if matches!(
+            event,
+            tauri::RunEvent::ExitRequested { .. } | tauri::RunEvent::Exit
+        ) {
+            // First on the way out. The native browser starts to shut down on
+            // the request itself, and a stop that hangs or aborts must not
+            // strand an owned secret on the OS clipboard. The clear is
+            // idempotent; the final `Exit` repeats it in case a clipboard
+            // command was still running when exit was requested.
+            state_registry::clear_secure_clipboard_on_exit(app_handle);
+        }
         #[cfg(feature = "native-browser")]
         origin_browser_runtime::on_event(app_handle, &event);
         // Open database keys follow their native window, not an unrelated
@@ -258,6 +300,11 @@ pub fn run() {
                     state.database_session_owner(),
                     label,
                 );
+            }
+            // The shell closes the splash once it is ready, which is when it
+            // can hear about the startup failures the app survived.
+            if label == SPLASH_WINDOW {
+                state_registry::shell_ready(app_handle);
             }
         }
         if matches!(event, tauri::RunEvent::Exit) {
