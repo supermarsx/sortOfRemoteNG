@@ -514,7 +514,8 @@ describe("HTTP Application subtab", () => {
       port: 443,
       httpApplication: { version: 1, id: "cloudflare", loginMode: "manual" },
     });
-    expect(screen.queryByLabelText("Website password")).not.toBeInTheDocument();
+    // Manual sign-in keeps the saved pair editable for typing on request.
+    expect(screen.getByLabelText("Website password")).toBeEnabled();
     expect(
       screen.getByText(/Manual browsing sends no saved credentials/),
     ).toBeInTheDocument();
@@ -571,7 +572,8 @@ describe("HTTP Application subtab", () => {
       httpAutoLogin: false,
     });
     expect(value().httpAutoLoginSelectors).toBeUndefined();
-    expect(screen.queryByLabelText("Website password")).not.toBeInTheDocument();
+    // Manual sign-in keeps the saved pair editable for typing on request.
+    expect(screen.getByLabelText("Website password")).toBeEnabled();
   });
   it("filters compact categories while All applications provides global search", () => {
     render(<Fixture />);

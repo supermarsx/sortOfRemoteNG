@@ -9,6 +9,7 @@ import {
 } from "../../src/utils/connection/exchangeOwaProfile";
 import {
   getHttpApplicationProfile,
+  getHttpApplicationLoginModes,
   normalizeHttpApplicationSettings,
 } from "../../src/utils/connection/httpApplicationProfiles";
 import {
@@ -326,7 +327,7 @@ describe("on-premises Exchange OWA application", () => {
     ).toThrow(/interactive MFA/);
   });
 
-  it("requires HTTPS and does not enable Microsoft 365 or generic Exchange automation", () => {
+  it("requires HTTPS and distinguishes native Microsoft 365 steps from generic Exchange", () => {
     expect(() =>
       validateHttpApplicationTarget(
         saved,
@@ -339,7 +340,13 @@ describe("on-premises Exchange OWA application", () => {
     ])
       expect(() => validateHttpApplicationTarget(saved, url)).toThrow(/HTTPS/);
     for (const id of ["outlook-online", "exchange"]) {
-      expect(getHttpApplicationProfile(id)?.capability).toBe("manual");
+      const profile = getHttpApplicationProfile(id)!;
+      expect(profile.capability).toBe("manual");
+      if (id === "outlook-online") {
+        expect(profile.loginModes).toEqual(["manual", "form"]);
+        expect(profile.declarativeLogin?.id).toBe(id);
+        expect(profile.declarativeLogin?.loginSteps.length).toBeGreaterThan(0);
+      } else expect(getHttpApplicationLoginModes(profile)).toEqual(["manual"]);
       expect(() =>
         resolveHttpApplicationLogin({
           ...saved,
@@ -349,7 +356,7 @@ describe("on-premises Exchange OWA application", () => {
             loginMode: "form",
           },
         }),
-      ).toThrow(/invalid/);
+      ).toThrow(id === "outlook-online" ? /native browser engine/ : /invalid/);
     }
   });
 });

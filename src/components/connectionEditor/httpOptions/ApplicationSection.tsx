@@ -26,6 +26,7 @@ import type { Mgr } from "./types";
 import ApplicationIconSuggestion from "./ApplicationIconSuggestion";
 import AutomaticMfaSection from "./AutomaticMfaSection";
 import ExchangeOwaMailboxFields from "./ExchangeOwaMailboxFields";
+import DroneScmBridgeFields from "./DroneScmBridgeFields";
 import { isSynologyFileConnection } from "../../../types/protocols/synology";
 import CredentialSourceSection from "../CredentialSourceSection";
 import AmazonMarketplaceFields from "./AmazonMarketplaceFields";
@@ -401,6 +402,12 @@ export default function ApplicationSection({ mgr }: { mgr: Mgr }) {
               )}
             </div>
           )}
+          {profile.id === "drone-ci" && (
+            <DroneScmBridgeFields
+              formData={mgr.formData}
+              setFormData={mgr.setFormData}
+            />
+          )}
           {profile.id === "joomla" && (
             <div className="max-w-xl space-y-2">
               <label
@@ -655,16 +662,33 @@ export default function ApplicationSection({ mgr }: { mgr: Mgr }) {
               </button>
             </div>
           )}
-          {settings?.loginMode !== "manual" && !settings?.invalid && (
+          {/* Manual sign-in keeps the pair editable: it is typed on request. */}
+          {settings && !settings.invalid && (
             <>
-              <HttpCredentialWarning connection={mgr.formData} />
+              {/* Only what the app itself sends; manual sends nothing. */}
+              {settings.loginMode !== "manual" && (
+                <HttpCredentialWarning connection={mgr.formData} />
+              )}
               <div className="max-w-2xl space-y-2">
                 <p className="text-sm font-medium">Website credential source</p>
-                <p className="text-xs text-[var(--color-textSecondary)]">
-                  Choose connection-local credentials or a reusable database
-                  vault credential for this automatic login. Vault references
-                  never copy or reveal their secrets in this connection.
-                </p>
+                {settings.loginMode === "manual" ? (
+                  <p
+                    data-testid="manual-login-credentials-note"
+                    className="text-xs text-[var(--color-textSecondary)]"
+                  >
+                    Manual sign-in never sends or types these credentials on its
+                    own. To use them, open Credentials &amp; 2FA in the
+                    tab&apos;s toolbar and choose Type username or Type password
+                    with the site&apos;s field focused. Vault references never
+                    copy or reveal their secrets in this connection.
+                  </p>
+                ) : (
+                  <p className="text-xs text-[var(--color-textSecondary)]">
+                    Choose connection-local credentials or a reusable database
+                    vault credential for this automatic login. Vault references
+                    never copy or reveal their secrets in this connection.
+                  </p>
+                )}
                 <CredentialSourceSection
                   formData={mgr.formData}
                   setFormData={mgr.setFormData}

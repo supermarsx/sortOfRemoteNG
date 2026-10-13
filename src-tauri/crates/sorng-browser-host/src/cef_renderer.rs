@@ -371,6 +371,9 @@ wrap_v8_handler! {
                         || fields[3].parse::<u8>().is_err() { return None; }
                     return Some((frame, document.scope.origin.clone()));
                 }
+                if matches!(event.as_str(), "challenge-waiting" | "challenge-reloading" | "challenge-timeout") {
+                    return (frame.is_main() == 1).then(|| (frame, document.scope.origin.clone()));
+                }
                 if matches!(event.as_str(), "google-completed" | "google-rejected" | "form-completed" | "form-rejected") {
                     let supported = if event.starts_with("google-") { document.scope.adapter == NativeLoginAdapter::Google }
                         else { document.scope.adapter.accepts_stage(NativeLoginStage::Form) || document.scope.adapter.reviewed_provider() };
@@ -385,16 +388,39 @@ wrap_v8_handler! {
                 Some((frame, document.scope.origin.clone()))
             });
             if let Some((frame, origin)) = send {
+                if matches!(event.as_str(), "challenge-waiting" | "challenge-reloading" | "challenge-timeout") { report(&frame, &event); return 1; }
                 if matches!(event.as_str(), "google-completed" | "google-rejected" | "form-completed" | "form-rejected") {
                     report(&frame, if event.ends_with("-completed") { "login-completed" } else { "login-rejected" });
                     return 1;
                 }
                 let request_name = if event.starts_with("totp|") || event.starts_with("type|") { crate::native_totp::REQUEST } else { LOGIN_REQUEST };
+                let child_name = if frame.is_main() != 1 {
+                    let Some(browser) = frame.browser() else { return 1; };
+                    let names = ADAPTERS.with(|adapters| {
+                        let adapters = adapters.borrow();
+                        let policy = adapters.get(&browser.identifier())?;
+                        (policy.adapter == NativeLoginAdapter::Declarative).then(|| policy.login_frames.names().to_vec())
+                    });
+                    if let Some(names) = names {
+                        // Read in the exact authenticated V8 context, independent
+                        // of the page's notify arguments. Id and name both work;
+                        // duplicates, detached/opaque frames and ambiguous matches
+                        // fail closed before emitting a native frame proof.
+                        let mut matched = None;
+                        let mut exception = None;
+                        let list = names.iter().map(|name| format!("\"{name}\"")).collect::<Vec<_>>().join(",");
+                        let script = format!("(()=>{{try{{const f=window.frameElement;if(!f||!f.isConnected||f.ownerDocument.defaultView!==window.parent||window.parent!==window.top||f.contentWindow!==window)return '';const n=[{list}].filter(n=>f.id===n||f.name===n);if(n.length!==1)return '';const all=[...f.ownerDocument.querySelectorAll('iframe,frame')].filter(e=>e.id===n[0]||e.name===n[0]);return all.length===1&&all[0]===f?n[0]:'';}}catch(_){{return '';}}}})()");
+                        if current.eval(Some(&CefString::from(script.as_str())), None, 0, Some(&mut matched), Some(&mut exception)) != 1 { return 1; }
+                        let Some(name) = matched.filter(|value| value.is_string() == 1).map(|value| CefString::from(&value.string_value()).to_string()).filter(|name| names.contains(name)) else { return 1; };
+                        Some(name)
+                    } else { None }
+                } else { None };
                 if let Some(mut message) = process_message_create(Some(&CefString::from(request_name))) {
                     if let Some(args) = message.argument_list() {
                         args.set_string(0, Some(&CefString::from(self.nonce.as_str())));
                         args.set_string(1, Some(&CefString::from(origin.as_str())));
                         args.set_string(2, Some(&CefString::from(event.as_str())));
+                        if let Some(name) = child_name { args.set_string(3, Some(&CefString::from(name.as_str()))); }
                         frame.send_process_message(ProcessId::BROWSER, Some(&mut message));
                     }
                 }
@@ -977,6 +1003,7 @@ fn login_delivery_payload(args: &ListValue, origin: &str) -> Option<LoginDeliver
             username.is_empty() || password.is_empty()
         }
         NativeLoginStage::FormPrepare
+        | NativeLoginStage::ScmConsent
         | NativeLoginStage::FormSubmit
         | NativeLoginStage::IdentifierSubmit
         | NativeLoginStage::PasswordSubmit => !username.is_empty() || !password.is_empty(),

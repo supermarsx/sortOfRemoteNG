@@ -86,12 +86,29 @@ export const PORTUGAL_PORTAL_PROFILES: readonly HttpApplicationProfile[] = [
   ),
   // https://my.vodafone.pt/ is the My Vodafone account portal and redirects
   // to /main.html; do not persist login.vodafone.pt transaction parameters.
-  portal(
-    "vodafone-portugal",
-    "My Vodafone — Portugal",
-    "https://my.vodafone.pt/",
-    "Área de cliente My Vodafone Portugal para contas, produtos e serviços. Selecione o acesso disponibilizado pelo portal e conclua as verificações pedidas.",
-  ),
+  // Evidence: tests/fixtures/logins/vodafone-portugal (class B, anonymous
+  // capture of 2026-10-12): one POST form in the header sign-in panel. The
+  // ids are used because a hidden recovery form reuses the user-name field's
+  // name. reCAPTCHA, the SMS code and the cookie dialog stay with the user.
+  {
+    id: "vodafone-portugal",
+    label: "My Vodafone — Portugal",
+    category: "business",
+    capability: "known-form",
+    requiresHttps: true,
+    loginModes: ["manual", "form"],
+    hostedLoginUrl: "https://my.vodafone.pt/",
+    selectors: {
+      usernameSelector:
+        '#login-register-login-list form[method="post"] input#login__name[name="login__name"]',
+      passwordSelector:
+        '#login-register-login-list form[method="post"] input#login__password[name="login__password"][type="password"]',
+      submitSelector:
+        '#login-register-login-list form[method="post"] button#login--button[type="submit"]',
+    },
+    description:
+      "Área de cliente My Vodafone Portugal para contas, produtos e serviços. Início de sessão automático opcional: o nome de utilizador e a palavra-passe guardados são escritos no formulário de início de sessão do portal (/main.html) e submetidos uma vez. O reCAPTCHA, o código enviado por SMS, o aviso de cookies e o acesso com o número Vodafone ficam a cargo do utilizador. O formulário foi revisto a partir de uma captura anónima; o início de sessão autenticado não foi verificado.",
+  },
   // https://www.digi.pt/apoio-ao-cliente -> My DIGI.
   portal(
     "digi-portugal",

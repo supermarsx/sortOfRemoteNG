@@ -64,6 +64,7 @@ describe("ordinary Vitest discovery", () => {
       "tests/protocol/nativeLoginFrames.test.mjs",
       "tests/protocol/nativeLoginKeyboard.test.mjs",
       "tests/protocol/nativeTotpClient.test.mjs",
+      "tests/protocol/droneScmConsent.test.mjs",
     ]);
     expect(config.test?.exclude).toEqual(
       expect.arrayContaining([...NODE_TEST_SUITE_EXCLUDES]),

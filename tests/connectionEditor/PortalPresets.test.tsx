@@ -3,7 +3,10 @@ import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 import { HTTPOptions } from "../../src/components/connectionEditor/HTTPOptions";
 import type { Connection } from "../../src/types/connection/connection";
-import type { HttpApplicationProfile } from "../../src/utils/connection/httpApplicationProfiles";
+import {
+  getHttpApplicationProfile,
+  type HttpApplicationProfile,
+} from "../../src/utils/connection/httpApplicationProfiles";
 import { PORTUGAL_PORTAL_PROFILES } from "../../src/utils/connection/portugalPortalProfiles";
 import { INTERNATIONAL_PORTAL_PROFILES } from "../../src/utils/connection/internationalPortalProfiles";
 import { resolveHttpApplicationLogin } from "../../src/utils/auth/httpApplicationLogin";
@@ -13,10 +16,11 @@ import { resolveHttpApplicationLogin } from "../../src/utils/auth/httpApplicatio
 const profiles = [
   ...PORTUGAL_PORTAL_PROFILES,
   ...INTERNATIONAL_PORTAL_PROFILES,
-];
+].map((profile) => getHttpApplicationProfile(profile.id)!);
 const hostedProfiles = profiles.filter((profile) => profile.hostedLoginUrl);
 const tenantProfiles = profiles.filter((profile) => !profile.hostedLoginUrl);
 const manualLabel = "Manual browsing — no saved credentials sent";
+const formLabel = "Automatic form login — explicitly opt in";
 
 function Fixture({ initial }: { initial: Partial<Connection> }) {
   const [formData, setFormData] = React.useState(initial);
@@ -97,7 +101,9 @@ function expectManualSelection(profile: HttpApplicationProfile) {
   expect(screen.getByLabelText("Application login mode")).toHaveTextContent(
     manualLabel,
   );
-  expect(screen.queryByLabelText("Website password")).not.toBeInTheDocument();
+  // Manual sign-in keeps the saved pair (locked when a vault entry is
+  // selected) for typing on request.
+  expect(screen.getByLabelText("Website password")).toBeInTheDocument();
 }
 
 function expectHostedAddress(profile: HttpApplicationProfile) {
@@ -231,9 +237,14 @@ describe("Portugal and international portal editor integration", () => {
       const modes = screen
         .getAllByRole("option")
         .map((node) => node.textContent);
-      // The finalized international array, including Zabbix, is manual-only.
-      expect(profile.capability).toBe("manual");
-      expect(modes).toEqual([manualLabel]);
+      // Resolved catalog entries may add reviewed native steps. Automatic
+      // login remains an explicit opt-in even when those steps are available.
+      if (profile.declarativeLogin || profile.capability === "known-form") {
+        expect(modes).toEqual([manualLabel, formLabel]);
+      } else {
+        expect(profile.capability).toBe("manual");
+        expect(modes).toEqual([manualLabel]);
+      }
     },
   );
 });

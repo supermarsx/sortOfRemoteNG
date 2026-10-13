@@ -1,8 +1,5 @@
-/* Auto-login coordinator: one-shot nonce redemption, reviewed-client dispatch,
- * cancellation and transport-secret cleanup. Private modules are assembled here
- * by autologin_asset.rs; this template is not a standalone executable asset.
- * See autologin/README.md for the include-scope and credential lifecycle seam.
- */
+/* Private one-shot coordinator. See autologin/README.md for the include scope
+ * and credential lifecycle; autologin_asset.rs assembles the private modules. */
 
 (function () {
   "use strict";
@@ -46,7 +43,6 @@
 
   function report(result) {
     // Fixed diagnostic result only; no credentials are included in the event.
-    // It never carries the credential, only the outcome.
     try {
       window.parent.postMessage(
         { type: "proxy_autologin_result", result: result },
@@ -71,6 +67,12 @@
     // Client single-shot: never fetch/fill/submit more than once per page.
     if (hasRun || stopped) return;
     hasRun = true;
+
+    if (loginChallengeStatus(document))
+      return resumeLoginAfterChallenge(function () {
+        hasRun = false;
+        return fetchCredsAndRun(nonce, selectors, loginFlow, readiness);
+      });
 
     if (loginFlow === "yealink-t20p") {
       var yealink = window.__sorng_yealink_login;

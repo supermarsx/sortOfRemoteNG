@@ -74,7 +74,18 @@ describe("analytics and CMS profile contracts", () => {
       "phpmyadmin",
     ]);
     for (const profile of ANALYTICS_CMS_PROFILES) {
-      expect(getHttpApplicationProfile(profile.id)).toBe(profile);
+      const enriched = getHttpApplicationProfile(profile.id)!;
+      expect(enriched).toMatchObject({
+        id: profile.id,
+        label: profile.label,
+        loginPath: profile.loginPath,
+        requiresHttps: true,
+      });
+      if (enriched.declarativeLogin) {
+        expect(enriched.declarativeLogin.id).toBe(profile.id);
+        expect(enriched.declarativeLogin.version).toBe(1);
+        expect(enriched.declarativeLogin.loginSteps.length).toBeGreaterThan(0);
+      }
       expect(
         normalizeHttpApplicationSettings({ id: profile.id }),
       ).toMatchObject({ id: profile.id, loginMode: "manual" });
@@ -107,15 +118,44 @@ describe("analytics and CMS profile contracts", () => {
     }
   });
   it.each(["ghost", "strapi"])(
-    "%s cannot silently enable automatic credentials",
+    "%s offers reviewed native steps while the legacy engine refuses automatic login",
     (id) => {
       expect(
         normalizeHttpApplicationSettings({ version: 1, id, loginMode: "form" })
           ?.invalid,
-      ).toBe(true);
-      expect(() =>
-        resolveHttpApplicationLogin(connection(id, "form")),
-      ).toThrow();
+      ).toBeUndefined();
+      expect(getHttpApplicationProfile(id)?.loginModes).toEqual([
+        "manual",
+        "form",
+      ]);
+      expect(() => resolveHttpApplicationLogin(connection(id, "form"))).toThrow(
+        /native browser engine/,
+      );
+      for (const loginMode of ["basic", "digest"] as const) {
+        expect(
+          normalizeHttpApplicationSettings({ version: 1, id, loginMode })
+            ?.invalid,
+        ).toBe(true);
+      }
+      const manual = connection(id);
+      for (const name of [
+        "username",
+        "password",
+        "basicAuthPassword",
+        "httpHeaders",
+        "totpConfigs",
+      ]) {
+        Object.defineProperty(manual, name, {
+          get() {
+            throw new Error("Manual login must not read secrets");
+          },
+        });
+      }
+      expect(resolveHttpApplicationLogin(manual)).toEqual({
+        credentials: null,
+        upstreamAuthMode: "none",
+        autoLogin: false,
+      });
     },
   );
 });

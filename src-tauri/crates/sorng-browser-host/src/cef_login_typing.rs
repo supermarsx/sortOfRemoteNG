@@ -114,6 +114,15 @@ fn parse(event: &str) -> Option<(&str, NativeLoginStage, &str, usize)> {
     {
         return None;
     }
+    // A staged release types only its own field: an identifier stage the
+    // username, a password stage the password. Only a form stage has both.
+    if match stage {
+        NativeLoginStage::Identifier => field != "username",
+        NativeLoginStage::Password | NativeLoginStage::BoundPassword => field != "password",
+        _ => false,
+    } {
+        return None;
+    }
     let index = fields[4].parse::<usize>().ok().filter(|i| *i <= 4096)?;
     if fields[1] != "key" && index != 0 {
         return None;
@@ -162,6 +171,17 @@ pub(super) fn receive(
         return;
     };
     if !stage_allowed(shared.login_adapter, stage, url)
+        // Declarative steps carry no extra fields, and a key is typed only
+        // where the steps put this stage (origin, live path, frame).
+        || (shared.login_adapter == NativeLoginAdapter::Declarative
+            && !matches!(field, "username" | "password"))
+        || !shared.login_frames.declarative_allows(
+            shared.login_adapter,
+            stage,
+            url,
+            frame.is_main() == 1,
+            None,
+        )
         || !shared
             .login_budget
             .lock()
@@ -179,12 +199,13 @@ pub(super) fn receive(
         reply(frame, nonce, origin, &role, "wait", INTERLOCK_WAIT_MS, 0.0, false);
         return;
     }
+    let Ok(document_url) = url::Url::parse(url) else { return; };
+    let Some(request_frame) = shared.login_frames.request_frame(shared.login_adapter, browser, frame) else { return; };
     let request = NativeLoginRequest {
         identity: &shared.identity,
         origin,
         adapter: shared.login_adapter,
-        stage,
-    };
+        stage, path: document_url.path(), frame: request_frame.as_deref() };
     let frame_id = CefString::from(&frame.identifier()).to_string();
     let Some(generation) = shared
         .automation
@@ -536,7 +557,7 @@ mod tests {
         let (origin, url) = ("https://fixture.invalid", "https://fixture.invalid/login.html");
         let identity = shared.identity.clone();
         assert!(shared.login_budget.lock().unwrap().reserve(
-            &NativeLoginRequest { identity: &identity, origin, adapter: shared.login_adapter, stage: NativeLoginStage::Form },
+            &NativeLoginRequest { identity: &identity, origin, adapter: shared.login_adapter, stage: NativeLoginStage::Form , path: "/", frame: None },
             &NativeLoginCredentials { identity: &identity, origin, valid_until: Instant::now() + Duration::from_secs(30),
                 username: "synthetic-user", password: "synthetic-password", auto_submit: true },
         ));
@@ -619,7 +640,7 @@ mod tests {
         let (origin, url) = ("https://fixture.invalid", "https://fixture.invalid/login.html");
         let identity = shared.identity.clone();
         assert!(shared.login_budget.lock().unwrap().reserve(
-            &NativeLoginRequest { identity: &identity, origin, adapter: shared.login_adapter, stage: NativeLoginStage::Form },
+            &NativeLoginRequest { identity: &identity, origin, adapter: shared.login_adapter, stage: NativeLoginStage::Form , path: "/", frame: None },
             &NativeLoginCredentials { identity: &identity, origin, valid_until: Instant::now() + Duration::from_secs(30),
                 username: "synthetic-user", password: "synthetic-password", auto_submit: true },
         ));
@@ -666,7 +687,7 @@ mod tests {
         let (origin, url) = ("https://fixture.invalid", "https://fixture.invalid/login.html");
         let identity = shared.identity.clone();
         assert!(shared.login_budget.lock().unwrap().reserve(
-            &NativeLoginRequest { identity: &identity, origin, adapter: shared.login_adapter, stage: NativeLoginStage::Form },
+            &NativeLoginRequest { identity: &identity, origin, adapter: shared.login_adapter, stage: NativeLoginStage::Form , path: "/", frame: None },
             &NativeLoginCredentials { identity: &identity, origin, valid_until: Instant::now() + Duration::from_secs(30),
                 username: "synthetic-user", password: "synthetic-password", auto_submit: true },
         ));
@@ -719,6 +740,30 @@ mod tests {
             "type|key|form|password|4097",
         ] {
             assert!(parse(event).is_none());
+        }
+    }
+
+    #[test]
+    fn a_staged_release_types_only_its_own_field() {
+        for event in [
+            "type|start|identifier|username|0",
+            "type|key|identifier|username|3",
+            "type|start|password|password|0",
+            "type|start|bound-password|password|0",
+            "type|start|form|username|0",
+            "type|start|form|extra0|0",
+        ] {
+            assert!(parse(event).is_some(), "{event}");
+        }
+        for event in [
+            "type|start|identifier|password|0",
+            "type|key|identifier|password|2",
+            "type|start|identifier|extra0|0",
+            "type|start|password|username|0",
+            "type|key|password|extra1|0",
+            "type|start|bound-password|username|0",
+        ] {
+            assert!(parse(event).is_none(), "{event}");
         }
     }
 }

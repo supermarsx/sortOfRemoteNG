@@ -38,11 +38,11 @@ const connection = (
 describe("HTTP application profile policy", () => {
   it("categorizes the existing applications plus Custom, Webmin, and Cloudflare, with non-web integrations separate", () => {
     // 149 existing profiles plus Vodafone Smart Router 3, YouTube Studio and
-    // the TP-Link managed switch.
-    expect(HTTP_APPLICATION_PROFILES).toHaveLength(152);
+    // the TP-Link managed switch and reviewed EAP standalone login.
+    expect(HTTP_APPLICATION_PROFILES).toHaveLength(153);
     expect(
       new Set(HTTP_APPLICATION_PROFILES.map((profile) => profile.id)).size,
-    ).toBe(152);
+    ).toBe(153);
     for (const profile of HTTP_APPLICATION_PROFILES) {
       expect(HTTP_APPLICATION_CATEGORIES[profile.category]).toBeTruthy();
       expect(profile.category === "native").toBe(profile.capability === "none");
@@ -61,6 +61,7 @@ describe("HTTP application profile policy", () => {
       "google-play-store",
       "google-developers",
       "google-play-console",
+      "vodafone-portugal",
       "opnsense",
       "vodafone-smart-router-3",
       "bitwarden-self-hosted",
@@ -80,6 +81,8 @@ describe("HTTP application profile policy", () => {
       "linkedin",
       "youtube",
       "ptisp",
+      "freedns",
+      "registro-br",
       "sqlpad",
       "gmail",
       "exchange-owa",
@@ -101,6 +104,7 @@ describe("HTTP application profile policy", () => {
       "guacamole",
       "github",
       "gitea",
+      "drone-ci",
       "exchange-ecp",
       "brevo",
       "rdweb",
@@ -111,29 +115,42 @@ describe("HTTP application profile policy", () => {
       "webmin",
       "voip-phone",
       "cpanel",
+      "tplink-eap",
       "gdrive",
     ]);
   });
-  it("ships declarative login switched off: steps files change no profile until the engines land", () => {
-    // t102-e13 turns the native flag on, and the legacy flag follows once the
-    // legacy engine runs steps. Until then every profile is what it was.
-    expect(DECLARATIVE_LOGIN_SUPPORTED).toBe(false);
+  it("offers reviewed declarative steps in the native engine while keeping legacy steps off", () => {
+    expect(DECLARATIVE_LOGIN_SUPPORTED).toBe(true);
     expect(DECLARATIVE_LOGIN_LEGACY_SUPPORTED).toBe(false);
-    for (const profile of HTTP_APPLICATION_PROFILES)
-      expect(profile).not.toHaveProperty("declarativeLogin");
+    const declarative = HTTP_APPLICATION_PROFILES.filter(
+      (profile) => profile.declarativeLogin,
+    );
+    expect(declarative).toHaveLength(29);
+    const exclusive = declarative.filter(
+      (profile) => profile.declarativeLoginMode === "exclusive",
+    ).length;
+    for (const profile of declarative) {
+      expect(
+        profile.declarativeLogin?.loginSteps.length,
+        profile.id,
+      ).toBeGreaterThan(0);
+      expect(getHttpApplicationLoginModes(profile), profile.id).toContain(
+        "form",
+      );
+    }
     const offering = (...modes: string[]) =>
       HTTP_APPLICATION_PROFILES.filter(
         (profile) =>
           getHttpApplicationLoginModes(profile).join() === modes.join(),
       ).length;
     // Manual only; native-only; and every profile that offers form login today.
-    expect(offering("manual")).toBe(61);
+    expect(offering("manual")).toBe(57 - exclusive);
     expect(offering()).toBe(8);
     expect(
       HTTP_APPLICATION_PROFILES.filter((profile) =>
         getHttpApplicationLoginModes(profile).includes("form"),
       ),
-    ).toHaveLength(76);
+    ).toHaveLength(81 + exclusive);
   });
   it("keeps the browser application targets mirror equal to the catalog: same ids in the same order, same entry points", () => {
     // src/utils/protocol/originBrowserApplicationTargets.json is kept by hand

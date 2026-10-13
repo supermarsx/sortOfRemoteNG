@@ -5,6 +5,7 @@ use sorng_browser_host::cef_browser::{ManualInputCompletion, ManualInputGuard};
 use sorng_browser_host::native_manual_input::{
     ManualInputAction, ManualInputRequest, ManualInputResponse,
 };
+const STALE: &str = "stale";
 
 // On Windows, keyboard focus moves from the shell HWND to the embedded CEF
 // child. Tao's cached is_focused() can then be false for the still-active app.
@@ -54,13 +55,13 @@ pub(crate) async fn operate(
         .duration_since(std::time::UNIX_EPOCH)
         .map_err(|_| "System clock is unavailable.")?
         .as_millis() as u64;
-    request.validate(now)?;
+    request.validate(now).map_err(|_| STALE)?;
     if matches!(&request.action, ManualInputAction::Capture { .. })
         && !owner_window_has_focus(&window)
     {
-        return Err("Focus this app and the website input before opening Credentials.".into());
+        return Err("focus-lost".into());
     }
-    let attempt = lookup(&window, &request.identity)?;
+    let attempt = lookup(&window, &request.identity).map_err(|_| STALE)?;
     attempt
         .lease
         .recheck(&window, state)
@@ -118,16 +119,16 @@ pub(crate) async fn operate(
             });
             let perform=|host:&CefBrowserHost<'_>|host.manual_input(host.identity(),&request.action,active,callback);
             let result=if let Some(target)=request.view_id.as_deref() {
-                view.host.with_popup(&attempt.identity,target,perform).map_err(|_|"The selected child website is unavailable.".to_string())?
+                view.host.with_popup(&attempt.identity,target,perform).map_err(|_|STALE.to_string())?
             } else {perform(&view.host)};
-            result.map_err(|_|"Manual typing is unavailable in this browser attempt. Focus an empty main-frame HTTP or HTTPS input and capture it again.".to_string())
+            result.map_err(|_|STALE.to_string())
         });
         if let Err(error)=result {if let Some(sender)=sender.lock().ok().and_then(|mut s|s.take()) {let _=sender.send(Err(error));}}
-    }).map_err(|_|UNAVAILABLE)?;
+    }).map_err(|_|STALE)?;
     tokio::time::timeout(Duration::from_secs(32), receiver)
         .await
         .map_err(|_| {
-            "Manual typing timed out. Capture the field again; no automatic retry was performed."
+            "timed-out"
         })?
-        .map_err(|_| UNAVAILABLE.to_string())?
+        .map_err(|_| STALE.to_string())?
 }

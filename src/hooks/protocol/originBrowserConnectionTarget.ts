@@ -67,7 +67,12 @@ export function originBrowserConnectionTarget(
     target.search = authority.initialSearch ?? "";
     target.hash = authority.initialHash ?? "";
   }
-  if (profile?.id === "cloudflare" && app?.loginMode === "form")
+  // Drone's /login starts the Git provider leg at once (a bridged sign-in);
+  // manual mode keeps the saved page.
+  if (
+    (profile?.id === "cloudflare" || profile?.id === "drone-ci") &&
+    app?.loginMode === "form"
+  )
     target.pathname = "/login";
   if (profile?.loginFlow === "bitwarden") target.hash = "/login";
   if (app?.id === "exchange-owa")

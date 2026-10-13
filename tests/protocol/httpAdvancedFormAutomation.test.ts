@@ -131,6 +131,142 @@ describe("actual advanced form client", () => {
     await vi.advanceTimersByTimeAsync(60000);
     expect(submit).toHaveBeenCalledOnce();
   });
+  describe("Escape from the user while the fill waits to submit", () => {
+    // jsdom cannot mark an event trusted: hand the client's own document
+    // listener the user's trusted Escape, as the engine delivers it.
+    function keydownListeners() {
+      const added = vi.spyOn(document, "addEventListener");
+      const removed = vi.spyOn(document, "removeEventListener");
+      const live = () =>
+        added.mock.calls
+          .filter(([type, , capture]) => type === "keydown" && capture === true)
+          .map(([, listener]) => listener as (event: unknown) => void)
+          .filter(
+            (listener) =>
+              !removed.mock.calls.some(
+                ([type, other]) => type === "keydown" && other === listener,
+              ),
+          );
+      const escape = (target: Element, props: object = {}) => {
+        const event = {
+          target,
+          key: "Escape",
+          isTrusted: true,
+          prevented: false,
+          stopped: false,
+          preventDefault() {
+            this.prevented = true;
+          },
+          stopImmediatePropagation() {
+            this.stopped = true;
+          },
+          ...props,
+        };
+        for (const listener of live()) listener(event);
+        return event;
+      };
+      return { live, escape };
+    }
+    function observe(...ids: string[]) {
+      const seen: [string, string, string][] = [];
+      for (const id of ids)
+        for (const type of ["input", "change"])
+          field(id).addEventListener(type, () =>
+            seen.push([id, type, field(id).value]),
+          );
+      return seen;
+    }
+    it("cancels the run, erases what it filled with input and change events, and submits nothing", async () => {
+      const submit = show();
+      const keys = keydownListeners();
+      const credentials = creds();
+      const pending = client.bootstrap(
+        credentials,
+        selectors,
+        config({ submitDelayMs: 500 }),
+      );
+      expect(field("pass").value).toBe("fixture-secret");
+      const seen = observe("user", "pass");
+      const event = keys.escape(field("pass"));
+      expect(event.prevented).toBe(true);
+      expect(event.stopped).toBe(true);
+      expect(await pending).toEqual({ ok: false, reason: "cancelled" });
+      expect(field("user").value).toBe("");
+      expect(field("pass").value).toBe("");
+      expect(field("pass").getAttribute("value")).toBeNull();
+      expect(seen).toEqual([
+        ["user", "input", ""],
+        ["user", "change", ""],
+        ["pass", "input", ""],
+        ["pass", "change", ""],
+      ]);
+      expect(credentials).toEqual({ username: null, password: null });
+      await vi.advanceTimersByTimeAsync(60000);
+      expect(submit).not.toHaveBeenCalled();
+      // The run is over: Escape is the page's again.
+      expect(keys.live()).toEqual([]);
+    });
+    it("erases explicit extra fields it filled, never a value the user changed", async () => {
+      const submit = show('<input id="tenant"><input id="site">');
+      const keys = keydownListeners();
+      const pending = client.bootstrap(
+        creds(),
+        selectors,
+        config({
+          submitDelayMs: 500,
+          fields: [
+            { selector: "#tenant", value: "team" },
+            { selector: "#site", value: "hq" },
+          ],
+        }),
+      );
+      field("user").value = "typed-by-user";
+      field("site").value = "site-by-user";
+      keys.escape(field("tenant"));
+      expect(await pending).toEqual({ ok: false, reason: "cancelled" });
+      expect(field("tenant").value).toBe("");
+      expect(field("site").value).toBe("site-by-user");
+      expect(field("pass").value).toBe("");
+      expect(field("user").value).toBe("typed-by-user");
+      expect(submit).not.toHaveBeenCalled();
+    });
+    it.each([
+      ["another control", { target: "submit" }],
+      ["an untrusted event", { isTrusted: false }],
+      ["a modified Escape", { ctrlKey: true }],
+      ["another key", { key: "a" }],
+    ])("leaves %s to the page and still submits once", async (_, props) => {
+      const submit = show();
+      const keys = keydownListeners();
+      const pending = client.bootstrap(
+        creds(),
+        selectors,
+        config({ submitDelayMs: 500 }),
+      );
+      const { target, ...rest } = props as { target?: string };
+      const event = keys.escape(field(target ?? "pass"), rest);
+      expect(event.prevented).toBe(false);
+      expect(event.stopped).toBe(false);
+      await vi.advanceTimersByTimeAsync(500);
+      expect(await pending).toMatchObject({ reason: "submitted" });
+      expect(submit).toHaveBeenCalledOnce();
+      expect(field("pass").value).toBe("fixture-secret");
+      expect(keys.live()).toEqual([]);
+    });
+    it("is not armed before anything was filled", async () => {
+      show();
+      const keys = keydownListeners();
+      const pending = client.bootstrap(
+        creds(),
+        selectors,
+        config({ fillDelayMs: 300 }),
+      );
+      expect(keys.live()).toEqual([]);
+      expect(keys.escape(field("pass")).prevented).toBe(false);
+      await vi.advanceTimersByTimeAsync(300);
+      expect(await pending).toMatchObject({ reason: "submitted" });
+    });
+  });
   it("honors the largest combined browser delay and still submits before expiry", async () => {
     const submit = show();
     const pending = client.bootstrap(

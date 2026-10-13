@@ -150,9 +150,9 @@ describe("declarative login steps in the application catalog", () => {
       })?.invalid,
     ).toBe(true);
     // A profile without a steps file gains nothing from the flag.
-    const drone = on.getHttpApplicationProfile("drone-ci")!;
-    expect(on.getHttpApplicationLoginModes(drone)).toEqual(["manual"]);
-    expect(drone).toEqual(base.getHttpApplicationProfile("drone-ci"));
+    const lxd = on.getHttpApplicationProfile("lxd")!;
+    expect(on.getHttpApplicationLoginModes(lxd)).toEqual(["manual"]);
+    expect(lxd).toEqual(base.getHttpApplicationProfile("lxd"));
   });
 
   it("uses none of a steps file that fails the format, names an unknown profile, or targets a login that is automatic today", async () => {
@@ -257,13 +257,13 @@ describe("declarative login steps in the application catalog", () => {
     const eligible = base.HTTP_APPLICATION_PROFILES.filter(
       base.acceptsHttpLoginSteps,
     );
-    // 61 manual profiles and the 14 named applications on the generic heuristic.
-    expect(eligible).toHaveLength(75);
+    // 57 manual profiles and the 14 named applications on the generic heuristic.
+    expect(eligible).toHaveLength(71);
     const off = await load(
       { native: false },
       eligible.map(({ id }) => [id, steps(id)] as const),
     );
-    expect(off.HTTP_APPLICATION_LOGIN_STEPS.size).toBe(75);
+    expect(off.HTTP_APPLICATION_LOGIN_STEPS.size).toBe(71);
     expect(off.HTTP_APPLICATION_LOGIN_STEPS_PROBLEMS).toEqual([]);
     expect(off.HTTP_APPLICATION_PROFILES).toEqual(
       base.HTTP_APPLICATION_PROFILES,
@@ -299,15 +299,15 @@ describe("declarative login steps in the application catalog", () => {
     const untouched = base.HTTP_APPLICATION_PROFILES.filter(
       (profile) => !base.acceptsHttpLoginSteps(profile),
     );
-    // 60 reviewed automatic logins, the 2 user-configured profiles, the 7
+    // 65 reviewed automatic logins including Drone CI and TP-Link EAP, the 2 user-configured profiles, the 7
     // transport-authentication profiles and the 8 native-only entries.
-    expect(untouched).toHaveLength(77);
+    expect(untouched).toHaveLength(82);
     expect(
       untouched.filter(
         ({ capability }) =>
           capability === "known-form" || capability === "custom-form",
       ),
-    ).toHaveLength(61);
+    ).toHaveLength(66);
     for (const profile of untouched) {
       const current = on.getHttpApplicationProfile(profile.id)!;
       expect(current).toEqual(profile);
@@ -407,7 +407,7 @@ describe("declarative login steps in the application catalog", () => {
         );
       }
     }
-    expect(modes).toEqual({ additive: 14, exclusive: 61 });
+    expect(modes).toEqual({ additive: 14, exclusive: 57 });
   });
 
   it("only adds coverage to an application that signs in automatically today: iLO keeps what it does and its steps are additive", async () => {
@@ -624,9 +624,10 @@ describe("declarative login steps in the application catalog", () => {
       ).toBeGreaterThan(0);
       expect(withLoginSteps).not.toMatch(MANUAL_ONLY_CLAIM);
     }
-    // The three class C applications have no sentence of their own: the
-    // general one is appended, should a steps file ever arrive for them.
-    const appended = ["eaton-ups", "drone-ci", "lxd"];
+    // These class C applications have no sentence of their own: the general
+    // one is appended, should a steps file ever arrive for them. (Drone CI
+    // left class C: it signs in through its saved Git provider.)
+    const appended = ["eaton-ups", "lxd"];
     for (const profile of on.HTTP_APPLICATION_PROFILES) {
       if (appended.includes(profile.id))
         expect(profile.description).toBe(
@@ -652,7 +653,7 @@ describe("declarative login steps in the application catalog", () => {
     expect(
       on.HTTP_APPLICATION_PROFILES.filter((profile) => profile.declarativeLogin)
         .length,
-    ).toBe(75);
+    ).toBe(71);
     // The exact wording for one profile of each shared sentence.
     expect(on.getHttpApplicationProfile("namecheap")!.description).toBe(
       "Domain registrar account dashboard, not a hosted website's control-panel account. Optional automatic sign-in types the saved username and password into the site's own sign-in pages, following the login steps recorded for this application, and stops at CAPTCHA, device approval, passkeys, SMS codes, security keys and any page it does not recognize. API keys are not website passwords. Use Open original sign-in for SSO or unsupported embedded-browser sign-in. The system browser has separate cookies and uses the operating system network route.",

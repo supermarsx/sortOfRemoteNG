@@ -80,6 +80,9 @@ fn login_form_options(adapter: NativeLoginAdapter, options: Option<&str>) -> Opt
     match (adapter, options) {
         (NativeLoginAdapter::ModularForm, None) => None,
         (NativeLoginAdapter::ModularForm, Some(options)) => Some(options),
+        // Declarative steps carry no saved form options: no extra-field
+        // values, and the identifier/password stages take only the default.
+        (NativeLoginAdapter::Declarative, _) => Some(crate::cef_renderer::DEFAULT_FORM_OPTIONS),
         // Stage-specific providers must not accidentally receive an ordinary
         // form's extra-field values along with an identifier-only grant.
         (_, Some(_)) => None,
@@ -519,6 +522,7 @@ struct Shared {
     sink: Arc<dyn BrowserEventSink>,
     hooks: Option<Arc<dyn NativeDocumentHooks>>,
     login_budget: Mutex<LoginBudget>,
+    challenge_reload_used: Arc<AtomicBool>,
     login_totp: Mutex<login_totp::State>,
     feature_gate: Mutex<RendererFeatureGate>,
     login_adapter: NativeLoginAdapter,
@@ -1496,6 +1500,9 @@ impl Shared {
                 || message_text(&args, 2, 80).as_deref() != Some(FEATURE_PROTOCOL_PIN) { return 1; }
             let status = match message_text(&args, 1, 40).as_deref() {
                 Some("login-completed") => NativeFeatureStatus::LoginAdapterCompleted,
+                Some("challenge-waiting") => NativeFeatureStatus::LoginChallengeWaiting,
+                Some("challenge-reloading") => NativeFeatureStatus::LoginChallengeReloading,
+                Some("challenge-timeout") => NativeFeatureStatus::LoginChallengeTimedOut,
                 Some("login-rejected") => NativeFeatureStatus::LoginAdapterRejected,
                 _ => return 1,
             };
@@ -1540,6 +1547,9 @@ impl Shared {
             Some("installation-failed") => NativeFeatureStatus::RendererInstallationFailed,
             Some("login-completed") => NativeFeatureStatus::LoginAdapterCompleted,
             Some("login-rejected") => NativeFeatureStatus::LoginAdapterRejected,
+            Some("challenge-waiting") => NativeFeatureStatus::LoginChallengeWaiting,
+            Some("challenge-reloading") => NativeFeatureStatus::LoginChallengeReloading,
+            Some("challenge-timeout") => NativeFeatureStatus::LoginChallengeTimedOut,
             _ => return 1,
         };
         let valid = self
@@ -1552,6 +1562,13 @@ impl Shared {
             return 1;
         }
         self.feature_event(Some(browser), &origin, status);
+        if status == NativeFeatureStatus::LoginChallengeReloading {
+            if !self.challenge_reload_used.swap(true, Ordering::AcqRel) && self.current() {
+                browser.reload();
+            } else {
+                self.feature_event(Some(browser), &origin, NativeFeatureStatus::LoginChallengeTimedOut);
+            }
+        }
         1
     }
 
@@ -1614,9 +1631,11 @@ impl Shared {
         let Some(origin) = self.login_frames.origin(browser, frame) else {
             return 1;
         };
-        let Some(args) = message.argument_list().filter(|args| args.size() == 3) else {
+        let child_steps = self.login_adapter == NativeLoginAdapter::Declarative && frame.is_main() != 1 && name != LOGIN_DELIVERY_STATUS;
+        let Some(args) = message.argument_list().filter(|args| args.size() == if child_steps { 4 } else { 3 }) else {
             return 1;
         };
+        if child_steps && !message_text(&args, 3, 128).is_some_and(|name| self.login_frames.record_renderer_frame(browser, frame, &name)) { return 1; }
         if name == crate::native_totp::REQUEST {
             self.totp_message(browser, frame, &args, &url, &origin, manual);
             return 1;
@@ -1649,7 +1668,17 @@ impl Shared {
         else {
             return 1;
         };
-        if !stage_allowed(self.login_adapter, stage, &url) {
+        if !stage_allowed(self.login_adapter, stage, &url)
+            // Declarative steps: only the stage of a step on this origin, live
+            // path and frame. Nothing is asked of the owner otherwise.
+            || !self.login_frames.declarative_allows(
+                self.login_adapter,
+                stage,
+                &url,
+                frame.is_main() == 1,
+                None,
+            )
+        {
             return 1;
         }
         let Some(hooks) = &self.hooks else {
@@ -1674,12 +1703,14 @@ impl Shared {
         if !self.current() {
             return 1;
         }
+        let Ok(document_url) = url::Url::parse(&url) else { return 1; };
+        let Some(request_frame) = self.login_frames.request_frame(self.login_adapter, browser, frame) else { return 1; };
         let request = NativeLoginRequest {
             identity: &self.identity,
             origin: &origin,
             adapter: self.login_adapter,
             stage,
-        };
+            path: document_url.path(), frame: request_frame.as_deref() };
         let mut outcome = Delivery::NativeNotDelivered;
         let mut deliver = |credentials: NativeLoginCredentials<'_>, form_options: Option<&str>| {
             outcome = Delivery::NativeRejectedGrant;
@@ -1692,6 +1723,8 @@ impl Shared {
             outcome = Delivery::NativeRejectedCurrent;
             if !self.current()
                 || !self.accepts(Some(browser))
+                || CefString::from(&frame.url()).to_string() != url
+                || self.login_frames.request_frame(self.login_adapter, browser, frame) != Some(request_frame.clone())
                 || self.login_frames.origin(browser, frame).as_deref() != Some(&origin)
                 || browser_origin(&CefString::from(&frame.url()).to_string()).as_deref()
                     != Some(&origin)
@@ -1714,7 +1747,18 @@ impl Shared {
                 return;
             };
             outcome = Delivery::NativeRejectedGrant;
-            if !budget.reserve(&request, &credentials) {
+            // The pending position of declarative steps: every earlier
+            // credential step released in this attempt, this stage not yet,
+            // judged on the live address of this frame.
+            let live = CefString::from(&frame.url()).to_string();
+            if !self.login_frames.declarative_allows(
+                self.login_adapter,
+                stage,
+                &live,
+                frame.is_main() == 1,
+                Some(&|origin, stage| budget.released(origin, stage)),
+            ) || !budget.reserve(&request, &credentials)
+            {
                 return;
             }
             outcome = Delivery::NativeMessageFailed;
@@ -2200,7 +2244,11 @@ impl<'a> CefBrowserHost<'a> {
             hooks.as_ref().and_then(|hooks| hooks.form_configuration())
         }))
         .map_err(|_| BrowserError::StateUnavailable)?;
-        if login_adapter == NativeLoginAdapter::ModularForm && login_configuration.is_none() {
+        if matches!(
+            login_adapter,
+            NativeLoginAdapter::ModularForm | NativeLoginAdapter::Declarative
+        ) && login_configuration.is_none()
+        {
             return Err(BrowserError::StateUnavailable);
         }
         let login_factory_json = login_configuration.unwrap_or_else(|| "{}".into());
@@ -2229,6 +2277,7 @@ impl<'a> CefBrowserHost<'a> {
             sink,
             hooks,
             login_budget: Mutex::new(LoginBudget::default()),
+            challenge_reload_used: Arc::default(),
             login_totp: Mutex::new(login_totp::State::default()),
             feature_gate: Mutex::new(RendererFeatureGate::default()),
             login_adapter,
@@ -3912,6 +3961,18 @@ mod tests {
     }
 
     #[test]
+    fn declarative_steps_never_carry_saved_form_options_or_extra_values() {
+        let options = crate::cef_renderer::DEFAULT_FORM_OPTIONS;
+        let saved = r##"{"version":1,"fillDelayMs":0,"submitDelayMs":0,"detectionTimeoutMs":8000,"submit":true,"fields":[{"selector":"#realm","value":"secret-realm"}]}"##;
+        for given in [None, Some(saved), Some(options)] {
+            assert_eq!(
+                login_form_options(NativeLoginAdapter::Declarative, given),
+                Some(options)
+            );
+        }
+    }
+
+    #[test]
     fn native_login_combined_hook_defaults_preserve_legacy_consent_without_options() {
         struct Hooks;
         impl NativeDocumentHooks for Hooks {
@@ -3939,6 +4000,8 @@ mod tests {
             origin: "https://fixture.invalid",
             adapter: NativeLoginAdapter::Generic,
             stage: NativeLoginStage::Form,
+            path: "/",
+            frame: None,
         };
         let mut count = 0;
         Hooks.with_form_credentials(&request, &mut |credentials, options| {
@@ -4404,6 +4467,7 @@ mod tests {
             sink,
             hooks: None,
             login_budget: Mutex::new(LoginBudget::default()),
+            challenge_reload_used: Arc::default(),
             login_totp: Mutex::new(login_totp::State::default()),
             feature_gate: Mutex::new(RendererFeatureGate::default()),
             login_adapter: NativeLoginAdapter::Generic,
@@ -4431,6 +4495,52 @@ mod tests {
                 },
             })),
         }
+    }
+
+    #[tokio::test]
+    async fn challenge_reload_is_native_origin_fenced_and_once_for_the_whole_attempt() {
+        use cef::rc::{ConvertParam, ConvertReturnValue, RcImpl};
+        use cef::sys::{_cef_browser_t, _cef_frame_t};
+        crate::bootstrap_platform::select_pinned_api().unwrap();
+        fn text(value: &str) -> cef::sys::cef_string_userfree_t {
+            let value = value.encode_utf16().collect::<Vec<_>>();
+            unsafe { let out = cef::sys::cef_string_userfree_utf16_alloc(); cef::sys::cef_string_utf16_set(value.as_ptr(), value.len(), out, 1); out }
+        }
+        extern "C" fn valid_frame(_: *mut _cef_frame_t) -> i32 { 1 }
+        extern "C" fn name(_: *mut _cef_frame_t) -> cef::sys::cef_string_userfree_t { text("main") }
+        extern "C" fn address(_: *mut _cef_frame_t) -> cef::sys::cef_string_userfree_t { text("https://fixture.invalid/") }
+        let raw = _cef_frame_t { is_valid: Some(valid_frame), is_main: Some(valid_frame), get_identifier: Some(name), get_url: Some(address), ..unsafe { std::mem::zeroed() } };
+        let raw: *mut _cef_frame_t = RcImpl::new(raw, ()).cast();
+        let frame: Frame = raw.wrap_result();
+        extern "C" fn valid_browser(_: *mut _cef_browser_t) -> i32 { 1 }
+        extern "C" fn identifier(_: *mut _cef_browser_t) -> i32 { 41 }
+        type Facts = (Frame, Arc<std::sync::atomic::AtomicUsize>);
+        extern "C" fn main(this: *mut _cef_browser_t) -> *mut _cef_frame_t { RcImpl::<_cef_browser_t, Facts>::get(this).interface.0.clone().into_raw() }
+        extern "C" fn reload(this: *mut _cef_browser_t) { RcImpl::<_cef_browser_t, Facts>::get(this).interface.1.fetch_add(1, Ordering::Relaxed); }
+        let reloads = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let raw = _cef_browser_t { is_valid: Some(valid_browser), get_identifier: Some(identifier), get_main_frame: Some(main), reload: Some(reload), ..unsafe { std::mem::zeroed() } };
+        let raw: *mut _cef_browser_t = RcImpl::new(raw, (frame.clone(), reloads.clone())).cast();
+        let browser: Browser = raw.wrap_result();
+        let shared = fixture(Arc::new(Sink(Mutex::new(Vec::new())))).await;
+        shared.state.lock().unwrap().browser_id = Some(41);
+        let message = process_message_create(Some(&CefString::from(crate::cef_renderer::FEATURE_STATUS))).unwrap();
+        let args = message.argument_list().unwrap();
+        args.set_string(0, Some(&CefString::from("https://other.invalid")));
+        args.set_string(1, Some(&CefString::from("challenge-reloading")));
+        args.set_string(2, Some(&CefString::from(FEATURE_PROTOCOL_PIN)));
+        shared.feature_message(Some(&browser), Some(&frame), ProcessId::RENDERER, Some(&message));
+        assert_eq!(reloads.load(Ordering::Relaxed), 0);
+        args.set_string(0, Some(&CefString::from("https://fixture.invalid")));
+        shared.feature_message(Some(&browser), Some(&frame), ProcessId::BROWSER, Some(&message));
+        assert_eq!(reloads.load(Ordering::Relaxed), 0);
+        shared.feature_message(Some(&browser), Some(&frame), ProcessId::RENDERER, Some(&message));
+        shared.feature_message(Some(&browser), Some(&frame), ProcessId::RENDERER, Some(&message));
+        assert_eq!(reloads.load(Ordering::Relaxed), 1);
+        let child_budget = shared.challenge_reload_used.clone();
+        assert!(child_budget.load(Ordering::Acquire));
+        shared.revoke();
+        shared.feature_message(Some(&browser), Some(&frame), ProcessId::RENDERER, Some(&message));
+        assert_eq!(reloads.load(Ordering::Relaxed), 1);
     }
 
     #[test]

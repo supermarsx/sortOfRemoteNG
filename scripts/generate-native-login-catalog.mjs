@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Generates the two files that join the per-application login steps to the
+// Generates the files that join the per-application login steps to the
 // engines, so neither is kept by hand:
 //
 //   src-tauri/crates/sorng-browser-host/src/native_login_catalog.json
@@ -9,6 +9,8 @@
 //   src/utils/connection/httpLoginStepsRegistry.ts
 //     the static imports through which the TypeScript catalog reads those
 //     steps files.
+//   src-tauri/src/origin_browser_totp_catalog.json
+//     the reviewed challenge metadata consumed by the separate native OTP authority.
 //
 // Usage: node scripts/generate-native-login-catalog.mjs [--check]
 // With --check nothing is written and a stale file exits 1.
@@ -37,9 +39,12 @@ export const NATIVE_LOGIN_CATALOG_PATH =
   "src-tauri/crates/sorng-browser-host/src/native_login_catalog.json";
 export const LOGIN_STEPS_REGISTRY_PATH =
   "src/utils/connection/httpLoginStepsRegistry.ts";
+export const NATIVE_TOTP_CATALOG_PATH =
+  "src-tauri/src/origin_browser_totp_catalog.json";
 const STEPS_DIRECTORY = "src/data/loginSteps";
 const CATALOG_MODULE = "src/utils/connection/httpApplicationProfiles.ts";
 const SUPPORT_MODULE = "src/utils/connection/declarativeLoginSupport.ts";
+const DRONE_SCM_MODULE = "src/utils/connection/droneScmBridge.ts";
 const USAGE = "Usage: node scripts/generate-native-login-catalog.mjs [--check]";
 
 const posix = (value) => value.split(path.sep).join("/");
@@ -143,6 +148,7 @@ async function loadCatalog(registrySource, registryDirectory) {
       contents: [
         `export * from "./${CATALOG_MODULE}";`,
         `export { DECLARATIVE_LOGIN_SUPPORTED } from "./${SUPPORT_MODULE}";`,
+        `export { DRONE_SCM_SPECS } from "./${DRONE_SCM_MODULE}";`,
       ].join("\n"),
       resolveDir: repo,
       loader: "ts",
@@ -189,6 +195,7 @@ async function loadCatalog(registrySource, registryDirectory) {
 export function renderNativeLoginCatalog({
   profiles,
   joomla,
+  droneScm,
   steps,
   modeOf,
   declarativeLoginSupported,
@@ -217,6 +224,40 @@ export function renderNativeLoginCatalog({
         }),
       ),
       joomla,
+      // Drone CI's Git providers (droneScmBridge.ts): the reviewed sign-in
+      // form per provider and where it applies. Native binds the origin from
+      // the saved connection; nothing here names a credential origin.
+      ...(droneScm
+        ? {
+            droneScm: Object.fromEntries(
+              Object.entries(droneScm).map(([provider, spec]) => [
+                provider,
+                {
+                  flow: spec.flow,
+                  defaultOrigin: spec.defaultOrigin,
+                  fixedOrigin: spec.fixedOrigin,
+                  onlyOrigin: spec.signIn?.onlyOrigin,
+                  notOrigin: spec.signIn?.notOrigin,
+                  selectors: spec.signIn?.selectors,
+                  ...(spec.consent
+                    ? {
+                        consent: Object.fromEntries(
+                          Object.entries(spec.consent).filter(([key]) =>
+                            [
+                              "paths",
+                              "formAction",
+                              "formSelector",
+                              "buttonSelector",
+                            ].includes(key),
+                          ),
+                        ),
+                      }
+                    : {}),
+                },
+              ]),
+            ),
+          }
+        : {}),
       ...(declarativeLoginSupported ? { declarativeLoginSupported: true } : {}),
     }),
   );
@@ -236,8 +277,8 @@ const sameText = (file, expected) =>
   readFileSync(file, "utf8").replaceAll("\r\n", "\n") === expected;
 
 /**
- * Generates both files, or with `check` reports which of them are stale. The
- * three paths default to the repository's own; tests pass scratch paths.
+ * Generates the catalog, registry and OTP table; `check` reports stale outputs.
+ * Paths default to the repository's own; tests pass scratch paths.
  * `declarativeLoginSupported` defaults to the catalog's own flag; passing it
  * is for tests and for engine fixtures that need the steps before switch-on.
  */
@@ -246,6 +287,9 @@ export async function generateNativeLoginCatalog({
   stepsDirectory = path.join(repo, STEPS_DIRECTORY),
   catalogPath = path.join(repo, NATIVE_LOGIN_CATALOG_PATH),
   registryPath = path.join(repo, LOGIN_STEPS_REGISTRY_PATH),
+  totpCatalogPath = catalogPath === path.join(repo, NATIVE_LOGIN_CATALOG_PATH)
+    ? path.join(repo, NATIVE_TOTP_CATALOG_PATH)
+    : path.join(path.dirname(catalogPath), "origin_browser_totp_catalog.json"),
   declarativeLoginSupported,
 } = {}) {
   const files = listStepsFiles(stepsDirectory);
@@ -272,6 +316,19 @@ export async function generateNativeLoginCatalog({
   const supported =
     declarativeLoginSupported ?? catalog.DECLARATIVE_LOGIN_SUPPORTED;
   const emitted = supported ? files : [];
+  // OTP metadata has its own native authority and never adds a password
+  // origin. When steps are off, keep their additional challenges out too.
+  const totpProfiles = supported
+    ? catalog
+    : await loadCatalog(
+        renderLoginStepsRegistry([], registryDirectory),
+        registryDirectory,
+      );
+  const totp = Object.fromEntries(
+    totpProfiles.HTTP_APPLICATION_PROFILES.filter(
+      (profile) => profile.totpChallenges?.length,
+    ).map((profile) => [profile.id, profile.totpChallenges]),
+  );
   const native = renderNativeLoginCatalog({
     profiles: catalog.HTTP_APPLICATION_PROFILES,
     joomla: Object.fromEntries(
@@ -280,11 +337,16 @@ export async function generateNativeLoginCatalog({
         catalog.getJoomlaLoginSelectors(value),
       ]),
     ),
+    droneScm: catalog.DRONE_SCM_SPECS,
     steps: supported ? catalog.HTTP_APPLICATION_LOGIN_STEPS : new Map(),
     modeOf: catalog.getHttpLoginStepsMode,
     declarativeLoginSupported: supported,
   });
   const outputs = [
+    [
+      totpCatalogPath,
+      await format(JSON.stringify(totp, null, 2), NATIVE_TOTP_CATALOG_PATH),
+    ],
     [
       catalogPath,
       await format(JSON.stringify(native, null, 2), NATIVE_LOGIN_CATALOG_PATH),

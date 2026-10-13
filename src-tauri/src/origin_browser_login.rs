@@ -18,7 +18,7 @@ use std::{
     },
     time::{Duration, Instant},
 };
-use tauri::WebviewWindow;
+use tauri::{Emitter, WebviewWindow};
 
 #[path = "origin_browser_login_consent.rs"]
 mod consent;
@@ -27,6 +27,31 @@ use consent::AttemptConsent;
 mod delivery;
 
 const CONSENT_LIFETIME: Duration = Duration::from_secs(10 * 60);
+/// Reserved application id that maps to the host's declarative adapter.
+const DECLARATIVE_ADAPTER_ID: &str = "declarative-steps";
+
+/// The host's wire name of a stage, for the declarative step check.
+fn stage_wire(stage: NativeLoginStage) -> &'static str {
+    match stage {
+        NativeLoginStage::ScmConsent => "scm-consent",
+        NativeLoginStage::Form => "form",
+        NativeLoginStage::FormPrepare => "form-prepare",
+        NativeLoginStage::FormSubmit => "form-submit",
+        NativeLoginStage::Identifier => "identifier",
+        NativeLoginStage::Password => "password",
+        NativeLoginStage::BoundPassword => "bound-password",
+        NativeLoginStage::IdentifierSubmit => "id-submit",
+        NativeLoginStage::PasswordSubmit => "pw-submit",
+    }
+}
+
+/// Declarative steps use the live document scope from the native host.
+fn steps_permit(authority: &NativeLoginAuthority, request: &NativeLoginRequest<'_>) -> bool {
+    if request.stage == NativeLoginStage::ScmConsent {
+        return request.frame.is_none() && authority.scm_consent_permits(request.origin, request.path);
+    }
+    authority.declarative_permits(request.origin, stage_wire(request.stage), Some(request.path), request.frame)
+}
 
 // Media ownership is independent of saved-login consent: manual login can
 // request devices too. This is only a liveness fence, never a permission grant.
@@ -56,6 +81,7 @@ impl MediaOwner {
 }
 
 pub(crate) struct LoginHooks {
+    started: Instant,
     observations: super::diagnostics::ObservationGate,
     appearance: std::sync::Mutex<sorng_browser_host::native_appearance::AppearanceConfig>,
     window: WebviewWindow,
@@ -68,6 +94,26 @@ pub(crate) struct LoginHooks {
 }
 
 impl LoginHooks {
+    fn activity(&self, stage: &'static str) {
+        if !self.media_owner.current(&self.media_owner.identity, || self.lease.is_current()) { return; }
+        let identity = &self.media_owner.identity;
+        // Trusted shell event only: no URL, fields, credentials or page strings.
+        let _ = self.window.emit("origin-browser-login-activity", serde_json::json!({
+            "connectionId": identity.connection_id(), "sessionId": identity.session_id(),
+            "attemptId": identity.attempt_id().to_string(), "stage": stage,
+            "timestampMs": std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|elapsed| elapsed.as_millis() as u64).unwrap_or(0),
+            "elapsedMs": self.started.elapsed().as_millis() as u64
+        }));
+    }
+    fn stage_activity(&self, stage: NativeLoginStage) {
+        self.activity(match stage {
+            NativeLoginStage::Identifier => "filling-username",
+            NativeLoginStage::Password | NativeLoginStage::BoundPassword => "filling-password",
+            NativeLoginStage::Form => "filling-username",
+            NativeLoginStage::FormPrepare => "waiting-page",
+            NativeLoginStage::ScmConsent | NativeLoginStage::FormSubmit | NativeLoginStage::IdentifierSubmit | NativeLoginStage::PasswordSubmit => "submitting",
+        });
+    }
     pub(crate) fn set_appearance_configuration(
         &self, config: sorng_browser_host::native_appearance::AppearanceConfig,
     ) -> Result<(), String> {
@@ -89,6 +135,7 @@ impl LoginHooks {
     ) -> Result<Arc<Self>, String> {
         if !authority.enabled() {
             return Ok(Arc::new(Self {
+                started: Instant::now(),
                 observations: Default::default(),
                 appearance: std::sync::Mutex::new(Default::default()),
                 window: window.clone(),
@@ -104,7 +151,12 @@ impl LoginHooks {
             .form_configuration()
             .and_then(|config| serde_json::from_str::<serde_json::Value>(config).ok())
             .is_some_and(|config| config.get("provider").is_some());
-        let adapter = if authority.form_configuration().is_some() && !provider {
+        let adapter = if authority.declarative() {
+            // The host's declarative adapter (t102-e9) is selected by this
+            // reserved id; until it exists the id is Unsupported and the
+            // login is refused below, never run as an ordinary form.
+            NativeLoginAdapter::from_application_id(DECLARATIVE_ADAPTER_ID)
+        } else if authority.form_configuration().is_some() && !provider {
             NativeLoginAdapter::ModularForm
         } else {
             NativeLoginAdapter::from_application_id(authority.application_id())
@@ -128,6 +180,7 @@ impl LoginHooks {
             authority.auto_submit_allowed(),
         );
         Ok(Arc::new(Self {
+            started: Instant::now(),
             observations: Default::default(),
             appearance: std::sync::Mutex::new(Default::default()),
             window: window.clone(),
@@ -141,6 +194,7 @@ impl LoginHooks {
     }
 
     pub(crate) fn revoke(&self) {
+        self.activity("stopped");
         self.media_owner.revoke();
         self.authority.revoke_totp();
         if let Some(basic_auth) = &self.basic_auth {
@@ -173,6 +227,7 @@ impl LoginHooks {
             || self.adapter != NativeLoginAdapter::ModularForm
             || !self.adapter.accepts_stage(request.stage)
             || !self.lease.is_current()
+            || !steps_permit(&self.authority, request)
         {
             return;
         }
@@ -196,7 +251,7 @@ impl LoginHooks {
                 }, Instant::now()) else { return; };
                 if matches!(
                     request.stage,
-                    NativeLoginStage::FormPrepare | NativeLoginStage::FormSubmit
+                    NativeLoginStage::FormPrepare | NativeLoginStage::FormSubmit | NativeLoginStage::ScmConsent
                 ) {
                     // The preparation/action packets are deliberately secret-free.
                     // Reuse the exact native grant verifier on every stage; do
@@ -204,9 +259,11 @@ impl LoginHooks {
                     let Some(metadata) = options.and_then(delivery::form_metadata) else {
                         return;
                     };
+                    self.stage_activity(request.stage);
                     deliver(credentials, Some(&metadata));
                     return;
                 }
+                self.stage_activity(request.stage);
                 deliver(credentials, options);
             },
         );
@@ -238,9 +295,23 @@ impl NativeDocumentHooks for LoginHooks {
     ) {
         use sorng_browser_host::native_features::{NativeFeatureStatus as F, NativeLoginDeliveryStatus as D};
         if !self.media_owner.current(identity, || self.lease.is_current()) { return; }
+        match status {
+            F::LoginChallengeWaiting => self.activity("waiting-page"),
+            F::LoginChallengeReloading => self.activity("submitting"),
+            F::LoginChallengeTimedOut => self.activity("stopped"),
+            F::LoginFormDetected => self.activity("security-check"),
+            F::LoginAdapterCompleted => self.activity("completed"),
+            F::LoginAdapterRejected => self.activity("cancelled"),
+            F::LoginDelivery(D::NativeRejectedGrant) => self.activity("held"),
+            F::LoginDelivery(D::NativeRejectedCurrent | D::NativeRejectedNavigation) => self.activity("cancelled"),
+            _ => {}
+        }
         // Fixed checkpoints only: the origin, page text, credentials and native
         // request identity are deliberately absent from the diagnostic payload.
         let (code, checkpoint) = match status {
+            F::LoginChallengeWaiting => (40, "login-challenge-waiting"),
+            F::LoginChallengeReloading => (41, "login-challenge-reloading"),
+            F::LoginChallengeTimedOut => (42, "login-challenge-timed-out"),
             F::RendererInstalled => (0, "renderer-installed"),
             F::RendererInstallationFailed => (1, "renderer-installation-failed"),
             F::LoginFormDetected => (2, "login-form-detected"),
@@ -280,7 +351,11 @@ impl NativeDocumentHooks for LoginHooks {
     fn with_totp(&self, request: &sorng_browser_host::native_totp::NativeTotpRequest<'_>,
         deliver: &mut dyn FnMut(sorng_browser_host::native_totp::NativeTotpCode<'_>)) -> Option<Duration> {
         if !self.media_owner.current(request.identity, || self.lease.is_current()) { return None; }
-        self.authority.with_totp(request, self, deliver)
+        self.activity("waiting-2fa");
+        self.authority.with_totp(request, self, &mut |code| {
+            self.activity("typing-code");
+            deliver(code);
+        })
     }
 
     fn totp_current(&self, request: &sorng_browser_host::native_totp::NativeTotpRequest<'_>, submit: bool) -> bool {
@@ -398,6 +473,7 @@ impl NativeDocumentHooks for LoginHooks {
         if request.adapter != self.adapter
             || !self.adapter.accepts_stage(request.stage)
             || !self.lease.is_current()
+            || !steps_permit(&self.authority, request)
         {
             return;
         }
@@ -419,6 +495,7 @@ impl NativeDocumentHooks for LoginHooks {
                     password: credentials.password,
                     auto_submit: credentials.auto_submit,
                 }, Instant::now()) else { return; };
+                self.stage_activity(request.stage);
                 deliver(credentials);
             },
         );

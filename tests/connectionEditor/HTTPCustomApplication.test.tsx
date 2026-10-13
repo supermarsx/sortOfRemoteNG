@@ -117,7 +117,8 @@ describe("Custom HTTP application", () => {
       upstreamAuthMode: "none",
       autoLogin: false,
     });
-    expect(screen.queryByLabelText("Website password")).not.toBeInTheDocument();
+    // Manual sign-in keeps the saved pair editable for typing on request.
+    expect(screen.getByLabelText("Website password")).toBeEnabled();
     choose("Application category", "All website applications");
     fireEvent.click(screen.getByLabelText("Website application"));
     fireEvent.change(

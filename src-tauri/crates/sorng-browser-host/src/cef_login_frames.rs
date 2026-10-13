@@ -11,28 +11,104 @@
 //! frames can instead have a generated dynamic name. Do not gate id-only iLO
 //! frames on that value or interpret a native frame identifier as a DOM id.
 
-use crate::native_features::{browser_origin, NativeLoginAdapter};
+use crate::native_features::{
+    browser_origin, DeclarativeLoginPolicy, LoginJson, NativeLoginAdapter, NativeLoginStage,
+};
 use cef::*;
+use std::sync::Arc;
 
 const MAX_LOGIN_FRAME_NAMES: usize = 8;
+/// Whether an (origin, stage) was released in this attempt (`LoginBudget`).
+pub(crate) type Released<'a> = &'a dyn Fn(&str, NativeLoginStage) -> bool;
 const MAX_LOGIN_FRAME_NAME_BYTES: usize = 128;
 
 /// Default and malformed configurations permit only the actual main frame.
 /// Contains no CEF handles; construct independently from native configuration
 /// in each process. This is a frame boundary, not a credential consent grant.
+/// For the declarative adapter it also carries the steps' scopes: which stage
+/// may run on which origin, path and frame. Without valid steps that adapter
+/// is allowed nothing.
 #[derive(Clone, Debug, Default)]
 pub(crate) struct LoginFramePolicy {
     same_origin_login_frames: Vec<String>,
+    declarative: Option<Arc<DeclarativeLoginPolicy>>,
+    verified_frames: Arc<std::sync::Mutex<std::collections::HashMap<String, String>>>,
+}
+
+/// Converts an already bounded (`parse_login_configuration`) CEF value.
+fn login_json(value: &Value) -> Option<LoginJson> {
+    Some(match value.get_type() {
+        ValueType::NULL => LoginJson::Null,
+        ValueType::BOOL => LoginJson::Bool(value.bool() == 1),
+        ValueType::INT => LoginJson::Number(f64::from(value.int())),
+        ValueType::DOUBLE => LoginJson::Number(value.double()),
+        ValueType::STRING => LoginJson::String(CefString::from(&value.string()).to_string()),
+        ValueType::LIST => {
+            let list = value.list()?;
+            LoginJson::List(
+                (0..list.size())
+                    .map(|index| list.value(index).as_ref().and_then(login_json))
+                    .collect::<Option<_>>()?,
+            )
+        }
+        ValueType::DICTIONARY => {
+            let dict = value.dictionary()?;
+            let mut keys = CefStringList::new();
+            if dict.keys(Some(&mut keys)) != 1 {
+                return None;
+            }
+            LoginJson::Object(
+                keys.into_iter()
+                    .map(|key| {
+                        let child = dict.value(Some(&CefString::from(key.as_str())))?;
+                        Some((key, login_json(&child)?))
+                    })
+                    .collect::<Option<_>>()?,
+            )
+        }
+        _ => return None,
+    })
 }
 
 impl LoginFramePolicy {
+    /// Bind the private renderer's live DOM frame match to its native CEF id.
+    /// The sender is the context-bound native LoginSignal callback, not page IPC.
+    pub(crate) fn record_renderer_frame(&self, browser: &Browser, frame: &Frame, name: &str) -> bool {
+        if frame.is_main() == 1 || self.origin(browser, frame).is_none() || !self.same_origin_login_frames.iter().any(|candidate| candidate == name) { return false; }
+        let id = CefString::from(&frame.identifier()).to_string();
+        self.verified_frames.lock().map(|mut frames| { frames.insert(id, name.to_owned()); }).is_ok()
+    }
+
+    pub(crate) fn names(&self) -> &[String] { &self.same_origin_login_frames }
+
+    /// Resolve the live DOM id/name proof through the actual native frame id.
+    pub(crate) fn request_frame(&self, adapter: NativeLoginAdapter, browser: &Browser, frame: &Frame) -> Option<Option<String>> {
+        if adapter != NativeLoginAdapter::Declarative { return Some(None); }
+        self.origin(browser, frame)?;
+        if frame.is_main() == 1 { return Some(None); }
+        let id = CefString::from(&frame.identifier()).to_string();
+        self.verified_frames.lock().ok()?.get(&id).cloned().map(Some)
+    }
     pub(crate) fn from_configuration(adapter: NativeLoginAdapter, json: &str) -> Self {
-        if adapter != NativeLoginAdapter::ModularForm {
+        if !matches!(
+            adapter,
+            NativeLoginAdapter::ModularForm | NativeLoginAdapter::Declarative
+        ) {
             return Self::default();
         }
         let Some(value) = crate::cef_renderer::parse_login_configuration(json) else {
             return Self::default();
         };
+        if adapter == NativeLoginAdapter::Declarative {
+            // Frames come from the steps only; a `sameOriginLoginFrames` list
+            // beside them is not read.
+            let Some(steps) =
+                login_json(&value).and_then(|json| DeclarativeLoginPolicy::parse(&json))
+            else {
+                return Self::default();
+            };
+            return Self::from_steps(steps);
+        }
         let Some(dict) = value.dictionary() else {
             return Self::default();
         };
@@ -52,12 +128,61 @@ impl LoginFramePolicy {
     // Keep validation independent of CEF allocation so the pure regression
     // tests do not load libcef. A missing/non-string entry invalidates the WHOLE
     // opt-in; never retain a valid prefix of a malformed configuration.
+    /// Steps without a frame keep the main-frame-only boundary; frame names
+    /// are validated like a catalog list, and a bad one voids the whole policy.
+    fn from_steps(steps: DeclarativeLoginPolicy) -> Self {
+        let names = steps.frames();
+        let mut policy = if names.is_empty() {
+            Self::default()
+        } else {
+            let policy = Self::from_names(NativeLoginAdapter::Declarative, names.len(), |index| {
+                names.get(index).cloned()
+            });
+            if policy.same_origin_login_frames.is_empty() {
+                return Self::default();
+            }
+            policy
+        };
+        policy.declarative = Some(Arc::new(steps));
+        policy
+    }
+
+    /// Whether `adapter` may use `stage` in this frame's document now. Any
+    /// adapter but the declarative one is unaffected. For it, the stage must
+    /// be the stage of a step on this origin whose path gate passes on the
+    /// LIVE address, in the top document or a child frame as the step says,
+    /// and (`released` given) every earlier credential step must have been
+    /// released in this attempt while this stage has not.
+    pub(crate) fn declarative_allows(
+        &self,
+        adapter: NativeLoginAdapter,
+        stage: NativeLoginStage,
+        url: &str,
+        main_frame: bool,
+        released: Option<Released<'_>>,
+    ) -> bool {
+        if adapter != NativeLoginAdapter::Declarative {
+            return true;
+        }
+        let Some(steps) = &self.declarative else {
+            return false;
+        };
+        match released {
+            Some(released) => steps.ready(stage, url, main_frame, released),
+            None => steps.allows(stage, url, main_frame),
+        }
+    }
+
     fn from_names(
         adapter: NativeLoginAdapter,
         count: usize,
         mut name_at: impl FnMut(usize) -> Option<String>,
     ) -> Self {
-        if adapter != NativeLoginAdapter::ModularForm || count == 0 || count > MAX_LOGIN_FRAME_NAMES
+        if !matches!(
+            adapter,
+            NativeLoginAdapter::ModularForm | NativeLoginAdapter::Declarative
+        ) || count == 0
+            || count > MAX_LOGIN_FRAME_NAMES
         {
             return Self::default();
         }
@@ -79,6 +204,8 @@ impl LoginFramePolicy {
         }
         Self {
             same_origin_login_frames: names,
+            declarative: None,
+            verified_frames: Default::default(),
         }
     }
 
@@ -362,6 +489,108 @@ mod tests {
             assert_eq!(origin(&policy, &main_frame(), &child_frame()), None);
             assert!(origin(&policy, &main_frame(), &main_frame()).is_some());
         }
+    }
+
+    #[test]
+    fn declarative_steps_scope_frames_and_stages_and_fail_closed() {
+        native_api();
+        let steps = |frame: &str| {
+            format!(
+                r##"{{"declarativeLogin":{{"connectionOrigin":"https://ilo.test:8443","passwordOnly":false,"credentialOrigins":[],"loginSteps":[{{"kind":"form"{frame},"paths":["/login.html"],"selectors":{{"username":"#u","password":"#p"}}}},{{"kind":"submit","submission":"enter"}}]}},"sameOriginLoginFrames":["otherFrame"],"readiness":{{"detectionTimeoutMs":8000}}}}"##
+            )
+        };
+        let adapter = NativeLoginAdapter::Declarative;
+        let framed =
+            LoginFramePolicy::from_configuration(adapter, &steps(r#","frame":"appFrame""#));
+        assert_eq!(
+            framed.same_origin_login_frames,
+            vec!["appFrame"],
+            "frames come from the steps only"
+        );
+        assert!(origin(&framed, &main_frame(), &child_frame()).is_some());
+        let url = "https://ilo.test:8443/login.html";
+        assert!(framed.declarative_allows(adapter, NativeLoginStage::Form, url, false, None));
+        assert!(framed.declarative_allows(adapter, NativeLoginStage::FormSubmit, url, false, None));
+        assert!(!framed.declarative_allows(adapter, NativeLoginStage::Form, url, true, None));
+        assert!(!framed.declarative_allows(
+            adapter,
+            NativeLoginStage::Identifier,
+            url,
+            false,
+            None
+        ));
+        assert!(!framed.declarative_allows(
+            adapter,
+            NativeLoginStage::Form,
+            "https://ilo.test:8443/other",
+            false,
+            None
+        ));
+        let released = |_: &str, stage: NativeLoginStage| stage == NativeLoginStage::Form;
+        assert!(!framed.declarative_allows(
+            adapter,
+            NativeLoginStage::Form,
+            url,
+            false,
+            Some(&released)
+        ));
+        assert!(framed.declarative_allows(
+            adapter,
+            NativeLoginStage::FormSubmit,
+            url,
+            false,
+            Some(&released)
+        ));
+        // Other adapters are not affected by the steps check.
+        assert!(framed.declarative_allows(
+            NativeLoginAdapter::ModularForm,
+            NativeLoginStage::Identifier,
+            url,
+            true,
+            None
+        ));
+
+        let top = LoginFramePolicy::from_configuration(adapter, &steps(""));
+        assert!(top.same_origin_login_frames.is_empty());
+        assert_eq!(origin(&top, &main_frame(), &child_frame()), None);
+        assert!(top.declarative_allows(adapter, NativeLoginStage::Form, url, true, None));
+
+        // Invalid steps, a modular adapter reading them, or no steps at all.
+        for (adapter, json) in [
+            (
+                NativeLoginAdapter::Declarative,
+                steps(r#","frame":"app.Frame""#),
+            ),
+            (
+                NativeLoginAdapter::Declarative,
+                steps(r#","origin":"https://evil.test""#),
+            ),
+            (
+                NativeLoginAdapter::Declarative,
+                r#"{"sameOriginLoginFrames":["appFrame"]}"#.to_owned(),
+            ),
+            (NativeLoginAdapter::Declarative, "malformed".to_owned()),
+        ] {
+            let policy = LoginFramePolicy::from_configuration(adapter, &json);
+            assert!(policy.same_origin_login_frames.is_empty(), "{json}");
+            assert_eq!(origin(&policy, &main_frame(), &child_frame()), None);
+            for stage in [
+                NativeLoginStage::Form,
+                NativeLoginStage::FormSubmit,
+                NativeLoginStage::FormPrepare,
+            ] {
+                assert!(
+                    !policy.declarative_allows(adapter, stage, url, true, None),
+                    "{json}"
+                );
+            }
+        }
+        let modular = LoginFramePolicy::from_configuration(
+            NativeLoginAdapter::ModularForm,
+            &steps(r#","frame":"appFrame""#),
+        );
+        assert_eq!(modular.same_origin_login_frames, vec!["otherFrame"]);
+        assert!(modular.declarative.is_none());
     }
 
     #[test]

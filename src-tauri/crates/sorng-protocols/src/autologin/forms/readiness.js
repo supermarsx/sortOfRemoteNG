@@ -1,4 +1,117 @@
 /* Private auto-login forms/readiness.js. Assembled inside the coordinator IIFE. */
+// Full-page Cloudflare verification, excluding a Turnstile widget on a real login.
+function loginChallengeStatus(doc) {
+  var markers = Array.from(
+    doc.querySelectorAll(
+      "#challenge-form, #challenge-running, #challenge-stage, #cf-wrapper, .cf-browser-verification",
+    ),
+  );
+  var marker = markers.some(function (element) {
+    for (var node = element; node; node = node.parentElement) {
+      var style = doc.defaultView.getComputedStyle(node);
+      if (
+        node.hidden ||
+        node.getAttribute("aria-hidden") === "true" ||
+        style.display === "none" ||
+        style.visibility === "hidden"
+      )
+        return false;
+    }
+    return true;
+  });
+  var text = ((doc.body && doc.body.textContent) || "").slice(0, 20000);
+  var title = doc.title || "";
+  var known =
+    marker ||
+    (markers.length === 0 &&
+      ((/performing security verification|incompatible browser extension or network configuration/i.test(
+        text,
+      ) &&
+        /cloudflare|challenges.cloudflare.com|ray id/i.test(text)) ||
+        (/just a moment|attention required/i.test(title) &&
+          /cloudflare|security verification|enable javascript and cookies/i.test(
+            text,
+          ))));
+  if (!known) return null;
+  return /incompatible browser extension or network configuration/i.test(text)
+    ? "incompatible"
+    : "waiting";
+}
+// The native host owns its authenticated, one-per-attempt reload action.
+// Legacy pages have no native notification channel and use their local marker.
+function requestLoginChallengeReload() {
+  if (typeof notify === "function") notify("challenge-reloading");
+  else window.location.reload();
+}
+// Coordinator guard: every provider waits before its own readiness/nonce flow.
+function waitForLoginChallenge() {
+  return new Promise(function (resolve) {
+    var doc = document,
+      origin = window.location.origin,
+      began = Date.now();
+    var timer,
+      finished = false,
+      reloaded = false;
+    var key = "sorng-cloudflare-reload.v1";
+    try {
+      reloaded = Date.now() - Number(sessionStorage.getItem(key)) < 120000;
+    } catch (_) {
+      reloaded = true;
+    }
+    function finish(ok, reason) {
+      if (finished) return;
+      finished = true;
+      clearTimeout(timer);
+      if (cancelActive === cancel) cancelActive = null;
+      resolve({ ok: ok, reason: reason });
+    }
+    function cancel() {
+      finish(false, "cancelled");
+    }
+    function tick() {
+      if (finished) return;
+      if (stopped || document !== doc || window.location.origin !== origin)
+        return cancel();
+      var challenge = loginChallengeStatus(doc);
+      if (!challenge) {
+        try {
+          sessionStorage.removeItem(key);
+        } catch (_) {}
+        finish(true, "challenge-cleared");
+        return;
+      }
+      if (Date.now() - began >= 120000) {
+        finish(false, "challenge-timeout");
+        return;
+      }
+      if (
+        challenge === "incompatible" &&
+        !reloaded &&
+        Date.now() - began >= 5000
+      ) {
+        reloaded = true;
+        try {
+          sessionStorage.setItem(key, String(Date.now()));
+        } catch (_) {}
+        requestLoginChallengeReload();
+      }
+      timer = setTimeout(tick, 200);
+    }
+    cancelActive = cancel;
+    tick();
+  });
+}
+// The legacy coordinator retains its single flight while challenge readiness waits.
+function resumeLoginAfterChallenge(retry) {
+  return waitForLoginChallenge().then(function (result) {
+    if (stopped) return;
+    if (!result.ok) {
+      report(result);
+      return;
+    }
+    return retry();
+  });
+}
 function waitForSelectedLoginForm(ov, readiness) {
   // A selector-configured application may first serve a dashboard shell and
   // then navigate to /login (legacy Nginx Proxy Manager does exactly this).
@@ -35,6 +148,9 @@ function waitForSelectedLoginForm(ov, readiness) {
     if (porkbunSelectors(ov)) options.detectionTimeoutMs = 60000;
     var deadline = Date.now() + options.detectionTimeoutMs;
     var origin = window.location.origin;
+    var challengeBegan = 0;
+    var challengeReloaded = false;
+    var challengeKey = "sorng-cloudflare-reload.v1";
     var finished = false;
     function finish(result) {
       if (finished) return;
@@ -54,6 +170,44 @@ function waitForSelectedLoginForm(ov, readiness) {
       if (stopped || window.location.origin !== origin) {
         cancel();
         return;
+      }
+      var challenge = loginChallengeStatus(document);
+      if (challenge) {
+        if (!challengeBegan) {
+          challengeBegan = Date.now();
+          if (typeof notify === "function") notify("challenge-waiting");
+          try {
+            challengeReloaded =
+              Date.now() - Number(sessionStorage.getItem(challengeKey)) <
+              120000;
+          } catch (_) {
+            challengeReloaded = true;
+          }
+        }
+        if (Date.now() - challengeBegan >= 120000) {
+          finish({ ok: false, reason: "challenge-timeout" });
+          return;
+        }
+        if (
+          challenge === "incompatible" &&
+          !challengeReloaded &&
+          Date.now() - challengeBegan >= 5000
+        ) {
+          challengeReloaded = true;
+          try {
+            sessionStorage.setItem(challengeKey, String(Date.now()));
+          } catch (_) {}
+          requestLoginChallengeReload();
+        }
+        timer = setTimeout(tick, 200);
+        return;
+      }
+      if (challengeBegan) {
+        challengeBegan = 0;
+        deadline = Date.now() + options.detectionTimeoutMs;
+        try {
+          sessionStorage.removeItem(challengeKey);
+        } catch (_) {}
       }
       if (Date.now() >= deadline) {
         finish({ ok: false, reason: "form-not-found-timeout" });

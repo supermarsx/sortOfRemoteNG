@@ -29,6 +29,7 @@ export const NODE_TEST_SUITE_EXCLUDES = [
   "tests/protocol/nativeLoginFrames.test.mjs",
   "tests/protocol/nativeLoginKeyboard.test.mjs",
   "tests/protocol/nativeTotpClient.test.mjs",
+  "tests/protocol/droneScmConsent.test.mjs",
 ] as const;
 
 export default defineConfig({

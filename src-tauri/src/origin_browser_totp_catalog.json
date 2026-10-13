@@ -11,9 +11,7 @@
         "/signin/challenge/totp"
       ],
       "submission": "google",
-      "origins": [
-        "https://accounts.google.com"
-      ]
+      "origins": ["https://accounts.google.com"]
     }
   ],
   "google-ad-manager": [
@@ -28,9 +26,7 @@
         "/signin/challenge/totp"
       ],
       "submission": "google",
-      "origins": [
-        "https://accounts.google.com"
-      ]
+      "origins": ["https://accounts.google.com"]
     }
   ],
   "google-adsense": [
@@ -45,9 +41,7 @@
         "/signin/challenge/totp"
       ],
       "submission": "google",
-      "origins": [
-        "https://accounts.google.com"
-      ]
+      "origins": ["https://accounts.google.com"]
     }
   ],
   "google-forms": [
@@ -62,9 +56,7 @@
         "/signin/challenge/totp"
       ],
       "submission": "google",
-      "origins": [
-        "https://accounts.google.com"
-      ]
+      "origins": ["https://accounts.google.com"]
     }
   ],
   "google-gemini": [
@@ -79,9 +71,7 @@
         "/signin/challenge/totp"
       ],
       "submission": "google",
-      "origins": [
-        "https://accounts.google.com"
-      ]
+      "origins": ["https://accounts.google.com"]
     }
   ],
   "google-workspace-admin": [
@@ -96,9 +86,7 @@
         "/signin/challenge/totp"
       ],
       "submission": "google",
-      "origins": [
-        "https://accounts.google.com"
-      ]
+      "origins": ["https://accounts.google.com"]
     }
   ],
   "google-play-store": [
@@ -113,9 +101,7 @@
         "/signin/challenge/totp"
       ],
       "submission": "google",
-      "origins": [
-        "https://accounts.google.com"
-      ]
+      "origins": ["https://accounts.google.com"]
     }
   ],
   "google-developers": [
@@ -130,9 +116,7 @@
         "/signin/challenge/totp"
       ],
       "submission": "google",
-      "origins": [
-        "https://accounts.google.com"
-      ]
+      "origins": ["https://accounts.google.com"]
     }
   ],
   "google-play-console": [
@@ -147,9 +131,37 @@
         "/signin/challenge/totp"
       ],
       "submission": "google",
-      "origins": [
-        "https://accounts.google.com"
-      ]
+      "origins": ["https://accounts.google.com"]
+    }
+  ],
+  "uptime-kuma": [
+    {
+      "id": "uptime-kuma-totp",
+      "label": "Uptime Kuma two-factor token",
+      "codeSelector": "div.form-container form input#otp",
+      "submitSelector": "div.form-container form button.btn-primary[type=\"submit\"]",
+      "paths": ["/dashboard"],
+      "submission": "spa"
+    }
+  ],
+  "pypi": [
+    {
+      "id": "pypi-totp",
+      "label": "PyPI authentication code",
+      "codeSelector": "form#totp-auth-form input#totp_value[name=\"totp_value\"]",
+      "submitSelector": "form#totp-auth-form input[type=\"submit\"]",
+      "paths": ["/account/two-factor/"],
+      "submission": "post"
+    }
+  ],
+  "zabbix": [
+    {
+      "id": "zabbix-totp",
+      "label": "Zabbix verification code",
+      "codeSelector": "form:not(:has(input[name=\"totp_secret\"])) input#verification_code[name=\"verification_code\"]",
+      "submitSelector": "form button#enter[name=\"enter\"][type=\"submit\"]",
+      "paths": ["/index_mfa.php", "/zabbix/index_mfa.php"],
+      "submission": "post"
     }
   ],
   "bitwarden-self-hosted": [
@@ -158,9 +170,7 @@
       "label": "Web vault — selected authenticator app",
       "codeSelector": "app-two-factor-auth form app-two-factor-auth-authenticator input[type=\"text\"]",
       "submitSelector": "app-two-factor-auth form:has(app-two-factor-auth-authenticator) button[type=\"submit\"]",
-      "paths": [
-        "/"
-      ],
+      "paths": ["/"],
       "submission": "spa"
     }
   ],
@@ -170,9 +180,7 @@
       "label": "Web vault — selected authenticator app",
       "codeSelector": "app-two-factor-auth form app-two-factor-auth-authenticator input[type=\"text\"]",
       "submitSelector": "app-two-factor-auth form:has(app-two-factor-auth-authenticator) button[type=\"submit\"]",
-      "paths": [
-        "/"
-      ],
+      "paths": ["/"],
       "submission": "spa"
     }
   ],
@@ -182,11 +190,18 @@
       "label": "Nextcloud twofactor_totp app — enrolled authenticator",
       "codeSelector": "form.totp-form[method=\"POST\" i] input[name=\"challenge\"][autocomplete=\"one-time-code\"][inputmode=\"numeric\"]",
       "submitSelector": "form.totp-form[method=\"POST\" i] button.two-factor-submit[type=\"submit\"]",
-      "paths": [
-        "/login/challenge/totp",
-        "/index.php/login/challenge/totp"
-      ],
+      "paths": ["/login/challenge/totp", "/index.php/login/challenge/totp"],
       "submission": "post"
+    }
+  ],
+  "contabo": [
+    {
+      "id": "contabo-otp",
+      "label": "Contabo one-time password",
+      "codeSelector": "form#otp_login_form input#otp_password[name=\"data[otp_password]\"]",
+      "submitSelector": "button#otp_login_button[type=\"button\"]",
+      "paths": ["/account/login"],
+      "submission": "spa"
     }
   ],
   "google-account": [
@@ -201,9 +216,7 @@
         "/signin/challenge/totp"
       ],
       "submission": "google",
-      "origins": [
-        "https://accounts.google.com"
-      ]
+      "origins": ["https://accounts.google.com"]
     }
   ],
   "google-cloud-console": [
@@ -218,9 +231,7 @@
         "/signin/challenge/totp"
       ],
       "submission": "google",
-      "origins": [
-        "https://accounts.google.com"
-      ]
+      "origins": ["https://accounts.google.com"]
     }
   ],
   "google-analytics": [
@@ -235,9 +246,7 @@
         "/signin/challenge/totp"
       ],
       "submission": "google",
-      "origins": [
-        "https://accounts.google.com"
-      ]
+      "origins": ["https://accounts.google.com"]
     }
   ],
   "google-tag-manager": [
@@ -252,9 +261,7 @@
         "/signin/challenge/totp"
       ],
       "submission": "google",
-      "origins": [
-        "https://accounts.google.com"
-      ]
+      "origins": ["https://accounts.google.com"]
     }
   ],
   "google-business-profile": [
@@ -269,9 +276,7 @@
         "/signin/challenge/totp"
       ],
       "submission": "google",
-      "origins": [
-        "https://accounts.google.com"
-      ]
+      "origins": ["https://accounts.google.com"]
     }
   ],
   "google-search-console": [
@@ -286,9 +291,7 @@
         "/signin/challenge/totp"
       ],
       "submission": "google",
-      "origins": [
-        "https://accounts.google.com"
-      ]
+      "origins": ["https://accounts.google.com"]
     }
   ],
   "google-ads": [
@@ -303,9 +306,7 @@
         "/signin/challenge/totp"
       ],
       "submission": "google",
-      "origins": [
-        "https://accounts.google.com"
-      ]
+      "origins": ["https://accounts.google.com"]
     }
   ],
   "youtube": [
@@ -320,9 +321,7 @@
         "/signin/challenge/totp"
       ],
       "submission": "google",
-      "origins": [
-        "https://accounts.google.com"
-      ]
+      "origins": ["https://accounts.google.com"]
     }
   ],
   "gmail": [
@@ -337,9 +336,7 @@
         "/signin/challenge/totp"
       ],
       "submission": "google",
-      "origins": [
-        "https://accounts.google.com"
-      ]
+      "origins": ["https://accounts.google.com"]
     }
   ],
   "porkbun": [
@@ -348,12 +345,8 @@
       "label": "Porkbun authenticator app",
       "codeSelector": "form#loginForm #twoFactorLoginContainer input#twoFactorLoginCode[autocomplete=\"one-time-code\"]",
       "submitSelector": "#accountLoginButtonContainer button#accountLoginButton",
-      "paths": [
-        "/account/login"
-      ],
-      "origins": [
-        "https://porkbun.com"
-      ],
+      "paths": ["/account/login"],
+      "origins": ["https://porkbun.com"],
       "submission": "porkbun"
     }
   ],
@@ -363,10 +356,7 @@
       "label": "DSM 7 verification code",
       "codeSelector": "#dsm-otp-fieldset input[name=\"one-time-code\"][autocomplete=\"one-time-code\"]",
       "submitSelector": "div[role=\"button\"][syno-id=\"otp-panel-next-btn\"]",
-      "paths": [
-        "/",
-        "/webman/index.cgi"
-      ],
+      "paths": ["/", "/webman/index.cgi"],
       "submission": "synology"
     }
   ],
@@ -376,10 +366,7 @@
       "label": "Cloudflare authenticator app",
       "codeSelector": "form input[autocomplete=\"one-time-code\"]",
       "submitSelector": "form:has(input[autocomplete=\"one-time-code\"]) button[type=\"submit\"]",
-      "paths": [
-        "/login",
-        "/login/"
-      ],
+      "paths": ["/login", "/login/"],
       "submission": "cloudflare"
     }
   ],
@@ -389,9 +376,7 @@
       "label": "Tactical RMM authenticator token",
       "codeSelector": ".q-dialog form input[autocomplete=\"one-time-code\"][inputmode=\"numeric\"]",
       "submitSelector": ".q-dialog form:has(input[autocomplete=\"one-time-code\"][inputmode=\"numeric\"]) button[type=\"submit\"]",
-      "paths": [
-        "/login"
-      ],
+      "paths": ["/login"],
       "submission": "spa"
     }
   ],
@@ -401,10 +386,7 @@
       "label": "Apache Guacamole TOTP extension — enrolled authenticator",
       "codeSelector": "form.login-form .totp-code-field:has(> .totp-enroll.ng-hide) .totp-code input[name=\"guac-totp\"]",
       "submitSelector": "form.login-form input.continue-login[type=\"submit\"][name=\"login\"]",
-      "paths": [
-        "/guacamole/",
-        "/"
-      ],
+      "paths": ["/guacamole/", "/"],
       "submission": "spa"
     }
   ],
@@ -414,9 +396,17 @@
       "label": "Gitea local-account authenticator",
       "codeSelector": "form[action$=\"/user/two_factor\"] input#passcode[name=\"passcode\"][autocomplete=\"one-time-code\"]",
       "submitSelector": "form[action$=\"/user/two_factor\"] button.ui.primary",
-      "paths": [
-        "/user/two_factor"
-      ],
+      "paths": ["/user/two_factor"],
+      "submission": "post"
+    }
+  ],
+  "drone-ci": [
+    {
+      "id": "drone-ci-gitea-totp",
+      "label": "Gitea authenticator (Drone sign-in)",
+      "codeSelector": "form[action$=\"/user/two_factor\"] input#passcode[name=\"passcode\"][autocomplete=\"one-time-code\"]",
+      "submitSelector": "form[action$=\"/user/two_factor\"] button.ui.primary",
+      "paths": ["/user/two_factor"],
       "submission": "post"
     }
   ],
@@ -426,9 +416,7 @@
       "label": "WordPress Two-Factor plugin — authenticator app",
       "codeSelector": "form[name=\"validate_2fa_form\"]:has(input[name=\"provider\"][value=\"Two_Factor_Totp\"]) input#authcode[autocomplete=\"one-time-code\"]",
       "submitSelector": "form[name=\"validate_2fa_form\"]:has(input[name=\"provider\"][value=\"Two_Factor_Totp\"]) input#submit[type=\"submit\"]",
-      "paths": [
-        "/wp-login.php"
-      ],
+      "paths": ["/wp-login.php"],
       "submission": "post"
     }
   ],
@@ -444,9 +432,7 @@
         "/signin/challenge/totp"
       ],
       "submission": "google",
-      "origins": [
-        "https://accounts.google.com"
-      ]
+      "origins": ["https://accounts.google.com"]
     }
   ]
 }

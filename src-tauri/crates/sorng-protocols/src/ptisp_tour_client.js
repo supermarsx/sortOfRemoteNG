@@ -78,7 +78,7 @@
     if (phase === "stopped" || document.readyState === "loading") return;
     if (phase === "close") {
       var close = Array.from(
-        document.querySelectorAll("button.my-tour-close"),
+        document.querySelectorAll("button.my-tour-close, button#my-tour-close"),
       ).find(function (button) {
         return visible(button) && enabled(button);
       });

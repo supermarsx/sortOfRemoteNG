@@ -178,7 +178,7 @@
       "hostedLoginUrl": "https://www.networksolutions.com/my-account/login"
     },
     "time4vps": {
-      "hostedLoginUrl": "https://billing.time4vps.com/"
+      "hostedLoginUrl": "https://billing.time4vps.com/clientarea/"
     },
     "contabo": {
       "hostedLoginUrl": "https://my.contabo.com/account/login"
@@ -377,6 +377,7 @@
     "netbox": {},
     "vmware": {},
     "cpanel": {},
+    "tplink-eap": {},
     "draytek": {},
     "tplink-switch": {},
     "grafana": {},

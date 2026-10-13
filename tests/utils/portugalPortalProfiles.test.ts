@@ -30,7 +30,33 @@ describe("Portuguese portal profiles before registry integration", () => {
     ).toHaveLength(1);
   });
 
-  it.each(PORTUGAL_PORTAL_PROFILES)(
+  it("types into a reviewed form only for My Vodafone; every other portal is manual-only", () => {
+    expect(
+      PORTUGAL_PORTAL_PROFILES.filter(
+        ({ capability }) => capability !== "manual",
+      ).map(({ id, capability }) => [id, capability]),
+    ).toEqual([["vodafone-portugal", "known-form"]]);
+    const vodafone = PORTUGAL_PORTAL_PROFILES.find(
+      ({ id }) => id === "vodafone-portugal",
+    )!;
+    // The form itself is pinned against its evidence in
+    // tests/utils/reviewedPortalForms.test.ts.
+    expect(vodafone).toMatchObject({
+      loginModes: ["manual", "form"],
+      requiresHttps: true,
+      category: "business",
+    });
+    expect(vodafone.totpChallenges).toBeUndefined();
+    expect(vodafone.loginFlow).toBeUndefined();
+    expect(vodafone.loginPath).toBeUndefined();
+    expect(vodafone.description).toContain("reCAPTCHA");
+    expect(vodafone.description).toContain("SMS");
+    expect(vodafone.description).not.toContain("apenas manual");
+  });
+
+  it.each(
+    PORTUGAL_PORTAL_PROFILES.filter(({ id }) => id !== "vodafone-portugal"),
+  )(
     "$id exposes manual sign-in only, without credential or challenge automation",
     (profile) => {
       expect(profile).toMatchObject({

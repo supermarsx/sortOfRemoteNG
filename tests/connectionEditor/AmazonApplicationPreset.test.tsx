@@ -88,12 +88,34 @@ describe("Amazon shopping and AWS rendered preset selection", () => {
         ),
       ).toBeInTheDocument();
       fireEvent.click(screen.getByLabelText("Application login mode"));
-      expect(screen.getAllByRole("option")).toHaveLength(1);
+      expect(
+        screen.getAllByRole("option").map((option) => option.textContent),
+      ).toEqual(
+        id === "amazon-shopping"
+          ? [
+              "Manual browsing — no saved credentials sent",
+              "Automatic form login — explicitly opt in",
+            ]
+          : ["Manual browsing — no saved credentials sent"],
+      );
       expect(
         screen.getByRole("option", {
           name: "Manual browsing — no saved credentials sent",
         }),
       ).toBeInTheDocument();
+      if (id === "amazon-shopping") {
+        fireEvent.mouseDown(
+          screen.getByRole("option", {
+            name: "Automatic form login — explicitly opt in",
+          }),
+        );
+        expect(read().httpApplication?.loginMode).toBe("form");
+        expect(read().username).toBe("fixture-account");
+        expect(read().password).toBe("fixture-secret");
+        expect(() => resolveHttpApplicationLogin(read())).toThrow(
+          /native browser engine/,
+        );
+      }
     },
   );
 

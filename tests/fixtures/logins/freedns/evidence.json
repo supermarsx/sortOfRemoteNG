@@ -81,7 +81,7 @@
     "The sign-in form's markup: no source shows it. Element types, the spelling of the form's action attribute and the page it is displayed on are inferred from the request the script sends.",
     "That /zc.php is the path the form is displayed on; it is the path the script posts to.",
     "That the sign-in form carries a hidden input named action with the value auth. The selectors were narrowed to require it deliberately, so that another form at that address with the same two field names cannot match; if the real form differs, nothing is filled and the user signs in by hand.",
-    "That pressing Enter in the last field sends what the server expects. The script also sends a submit parameter, which a browser adds only if the form has such a button.",
+    "That submitting through the form's own submit control sends what the server expects. The script also sends a submit parameter, which a browser adds only if the form has such a button; no submit selector is written, so automatic sign-in uses whatever submit control the form has.",
     "Nothing after sign-in was observed, and whether the site ever asks for more than the two fields is unknown.",
     "The page can change at any time and may differ by region or language."
   ],

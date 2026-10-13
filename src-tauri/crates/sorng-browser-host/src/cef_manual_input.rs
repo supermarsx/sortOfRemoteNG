@@ -14,8 +14,8 @@ use std::{
 
 pub type ManualInputGuard = Arc<dyn Fn() -> bool + Send + Sync>;
 pub type ManualInputCompletion = Box<dyn FnOnce(Result<ManualInputResponse, &'static str>) + Send>;
-const STALE: &str = "Manual typing stopped: the selected view, database, document or focused field changed. Focus an empty main-frame input on an HTTPS page or the configured HTTP origin and capture it again.";
-const FIELD: &str = "Manual typing requires an empty focused input in the main frame of the selected HTTPS page or configured HTTP origin. Embedded iframe fields are not supported; focus a supported field before opening Credentials.";
+const STALE: &str = "stale";
+const FIELD: &str = "focus-lost";
 static NEXT: AtomicU64 = AtomicU64::new(1);
 #[derive(PartialEq, Eq)]
 enum Phase {
@@ -23,6 +23,18 @@ enum Phase {
     Ready,
     Restore,
     Check,
+}
+fn pending_receipt(phase: &Phase, deadline: Instant, reason: &str, now: Instant) -> bool {
+    reason == "pending" && *phase == Phase::Check && now < deadline
+}
+fn capture_frame(focused: Option<Frame>) -> Result<Option<Frame>, &'static str> {
+    if focused
+        .as_ref()
+        .is_some_and(|frame| frame.is_valid() == 1 && frame.is_main() != 1)
+    {
+        return Err("unsupported-frame");
+    }
+    Ok(focused.filter(|frame| frame.is_valid() == 1 && frame.is_main() == 1))
 }
 struct Slot {
     owner: Weak<Shared>,
@@ -42,6 +54,7 @@ struct Slot {
     last_clock: u64,
     complete: bool,
     interval_ms: i64,
+    receipt_deadline: Instant,
 }
 thread_local! { static SLOTS: RefCell<HashMap<usize,Slot>> = RefCell::new(HashMap::new()); }
 fn key(shared: &Shared) -> usize {
@@ -104,6 +117,22 @@ fn wait_for_field(mut slot: Slot) {
     let _ = dispatch(&mut slot, "cancel");
     callback(&mut slot, Ok(ManualInputResponse::waiting()));
 }
+fn reap_dead_owners() {
+    let dead = SLOTS.with(|slots| {
+        let mut slots = slots.borrow_mut();
+        let keys = slots
+            .iter()
+            .filter(|(_, slot)| slot.owner.upgrade().is_none())
+            .map(|(key, _)| *key)
+            .collect::<Vec<_>>();
+        keys.into_iter()
+            .filter_map(|key| slots.remove(&key))
+            .collect::<Vec<_>>()
+    });
+    for slot in dead {
+        retire(slot, Some(STALE));
+    }
+}
 fn current(slot: &Slot, require_input: bool) -> bool {
     let Some(shared) = slot.owner.upgrade() else {
         return false;
@@ -139,6 +168,7 @@ wrap_task! {
     struct Probe { owner: Weak<Shared>, capture: String, serial: u64 }
     impl Task {
         fn execute(&self) {
+            reap_dead_owners();
             let Some(shared)=self.owner.upgrade() else {return;};
             let slot=SLOTS.with(|s| {
                 let mut s=s.borrow_mut();
@@ -155,6 +185,7 @@ wrap_task! {
     struct Watch { owner: Weak<Shared>, capture: String }
     impl Task {
         fn execute(&self) {
+            reap_dead_owners();
             let Some(shared)=self.owner.upgrade() else {return;};
             let slot=SLOTS.with(|s| {
                 let mut s=s.borrow_mut();
@@ -162,7 +193,10 @@ wrap_task! {
                 s.remove(&key(&shared))
             });
             let Some(mut slot)=slot else {return;};
-            if !current(&slot,slot.input.is_some()) || (slot.phase!=Phase::Ready && Instant::now()>=slot.ack_deadline) {
+            if Instant::now()>=slot.deadline || (slot.phase==Phase::Check && Instant::now()>=slot.receipt_deadline) || (slot.phase!=Phase::Ready && Instant::now()>=slot.ack_deadline) {
+                retire(slot,Some("timed-out")); return;
+            }
+            if !current(&slot,slot.input.is_some()) {
                 retire(slot,Some(STALE)); return;
             }
             slot.last_clock=clock();
@@ -180,6 +214,7 @@ pub(super) fn operate(
     guard: ManualInputGuard,
     completion: ManualInputCompletion,
 ) -> Result<(), BrowserError> {
+    reap_dead_owners();
     let browser = host.check(identity)?;
     let owner = key(&host.shared);
     match action {
@@ -189,17 +224,24 @@ pub(super) fn operate(
                 completion(Err(STALE));
                 return Ok(());
             }
-            let Some(frame) = browser
-                .focused_frame()
-                .filter(|f| f.is_valid() == 1 && f.is_main() == 1)
-            else {
+            let focused = match capture_frame(browser.focused_frame()) {
+                Ok(frame) => frame,
+                Err(reason) => {
+                    completion(Err(reason));
+                    return Ok(());
+                }
+            };
+            let Some(frame) = focused else {
                 completion(Ok(ManualInputResponse::waiting()));
                 return Ok(());
             };
             let url = CefString::from(&frame.url()).to_string();
-            if !host.shared.session.lock().is_ok_and(|session| {
-                wire::document_allowed(session.policy().source_origin(), &url)
-            }) {
+            if !host
+                .shared
+                .session
+                .lock()
+                .is_ok_and(|session| wire::document_allowed(session.policy().source_origin(), &url))
+            {
                 completion(Err(FIELD));
                 return Ok(());
             }
@@ -237,6 +279,7 @@ pub(super) fn operate(
                 last_clock: clock(),
                 complete: false,
                 interval_ms: 20,
+                receipt_deadline: Instant::now(),
             };
             if !dispatch(&mut slot, "capture") {
                 retire(slot, Some(STALE));
@@ -257,7 +300,7 @@ pub(super) fn operate(
                 s.remove(&owner)
             });
             if let Some(slot) = slot {
-                retire(slot, Some(STALE));
+                retire(slot, Some("cancelled"));
             }
             completion(Ok(ManualInputResponse {
                 status: "cancelled",
@@ -359,7 +402,7 @@ pub(super) fn receive(
     if source != ProcessId::RENDERER || frame.is_main() != 1 {
         return true;
     }
-    let Some(args) = message.argument_list().filter(|a| a.size() == 3) else {
+    let Some(args) = message.argument_list().filter(|a| a.size() == 4) else {
         return true;
     };
     let (Some(id), Some(serial)) = (
@@ -389,10 +432,39 @@ pub(super) fn receive(
         return true;
     }
     if args.bool(2) != 1 {
+        let reason = crate::cef_renderer::message_text(&args, 3, 32).unwrap_or_default();
+        if pending_receipt(&slot.phase, slot.receipt_deadline, &reason, Instant::now()) {
+            slot.serial = NEXT.fetch_add(1, Ordering::Relaxed);
+            let mut probe = Probe::new(Arc::downgrade(shared), slot.capture.clone(), slot.serial);
+            if post_delayed_task(ThreadId::UI, Some(&mut probe), 20) != 1 {
+                retire(slot, Some(STALE));
+                return true;
+            }
+            SLOTS.with(|slots| slots.borrow_mut().insert(key(shared), slot));
+            return true;
+        }
         if slot.phase == Phase::Capture {
-            wait_for_field(slot);
+            if matches!(
+                wire::ManualInputReason::parse(&reason),
+                Some(
+                    wire::ManualInputReason::UnsupportedFrame
+                        | wire::ManualInputReason::FieldNotEmpty
+                )
+            ) {
+                retire(
+                    slot,
+                    Some(wire::ManualInputReason::parse(&reason).unwrap().wire()),
+                );
+            } else {
+                wait_for_field(slot);
+            }
         } else {
-            retire(slot, Some(FIELD));
+            let reason = if reason == "pending" {
+                "timed-out"
+            } else {
+                wire::ManualInputReason::parse(&reason).map_or(FIELD, |reason| reason.wire())
+            };
+            retire(slot, Some(reason));
         }
         return true;
     }
@@ -439,6 +511,7 @@ pub(super) fn receive(
     }
     slot.complete = result == TypingStatus::Complete;
     slot.phase = Phase::Check;
+    slot.receipt_deadline = Instant::now() + Duration::from_millis(wire::RECEIPT_MS);
     // A fresh private focused-field receipt is required after EVERY character.
     // Waiting still probes; it never queues the secret to the renderer.
     let mut probe = Probe::new(Arc::downgrade(shared), slot.capture.clone(), slot.serial);
@@ -448,4 +521,114 @@ pub(super) fn receive(
     }
     SLOTS.with(|s| s.borrow_mut().insert(key(shared), slot));
     true
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use cef::rc::{ConvertReturnValue, RcImpl};
+    fn inert_browser() -> Browser {
+        let raw: *mut cef::sys::_cef_browser_t =
+            RcImpl::<cef::sys::_cef_browser_t, ()>::new(unsafe { std::mem::zeroed() }, ()).cast();
+        raw.wrap_result()
+    }
+    fn inert_frame() -> Frame {
+        let raw: *mut cef::sys::_cef_frame_t =
+            RcImpl::<cef::sys::_cef_frame_t, ()>::new(unsafe { std::mem::zeroed() }, ()).cast();
+        raw.wrap_result()
+    }
+    #[test]
+    fn the_native_focused_child_is_rejected_before_a_capture_slot_or_renderer_request() {
+        extern "C" fn valid(_: *mut cef::sys::_cef_frame_t) -> i32 {
+            1
+        }
+        extern "C" fn child(_: *mut cef::sys::_cef_frame_t) -> i32 {
+            0
+        }
+        let raw = cef::sys::_cef_frame_t {
+            is_valid: Some(valid),
+            is_main: Some(child),
+            ..unsafe { std::mem::zeroed() }
+        };
+        let raw: *mut cef::sys::_cef_frame_t = RcImpl::new(raw, ()).cast();
+        assert_eq!(
+            capture_frame(Some(raw.wrap_result())).err(),
+            Some("unsupported-frame")
+        );
+        assert!(capture_frame(None).unwrap().is_none());
+    }
+    #[test]
+    fn delayed_receipt_polling_cannot_extend_the_first_key_deadline_or_authorize_other_phases() {
+        let start = Instant::now();
+        let deadline = start + Duration::from_millis(wire::RECEIPT_MS);
+        for elapsed in [0, 20, 200, 599] {
+            assert!(pending_receipt(
+                &Phase::Check,
+                deadline,
+                "pending",
+                start + Duration::from_millis(elapsed)
+            ));
+        }
+        for elapsed in [600, 601, 1000] {
+            assert!(!pending_receipt(
+                &Phase::Check,
+                deadline,
+                "pending",
+                start + Duration::from_millis(elapsed)
+            ));
+        }
+        assert!(!pending_receipt(
+            &Phase::Restore,
+            deadline,
+            "pending",
+            start
+        ));
+        assert!(!pending_receipt(
+            &Phase::Capture,
+            deadline,
+            "pending",
+            start
+        ));
+        assert!(!pending_receipt(
+            &Phase::Check,
+            deadline,
+            "focus-lost",
+            start
+        ));
+    }
+    #[test]
+    fn a_dead_owner_removes_the_native_slot_and_completes_its_caller() {
+        #[cfg(target_os = "macos")]
+        crate::platform::test_runtime::ensure_loaded();
+        crate::bootstrap_platform::select_pinned_api().unwrap();
+        let result = Arc::new(Mutex::new(None));
+        let observed = result.clone();
+        let now = Instant::now();
+        let slot = Slot {
+            owner: Weak::new(),
+            browser: inert_browser(),
+            frame: inert_frame(),
+            url: "https://fixture.invalid".into(),
+            generation: 1,
+            capture: "a".into(),
+            serial: 1,
+            phase: Phase::Check,
+            deadline: now + Duration::from_secs(30),
+            ack_deadline: now + Duration::from_secs(3),
+            guard: Arc::new(|| true),
+            callback: Some(Box::new(move |reply| {
+                *observed.lock().unwrap() = Some(reply.map(|value| value.status))
+            })),
+            input: None,
+            validity: None,
+            last_clock: 0,
+            complete: false,
+            interval_ms: 20,
+            receipt_deadline: now + Duration::from_millis(wire::RECEIPT_MS),
+        };
+        SLOTS.with(|slots| slots.borrow_mut().insert(usize::MAX, slot));
+        reap_dead_owners();
+        assert!(SLOTS.with(|slots| !slots.borrow().contains_key(&usize::MAX)));
+        assert_eq!(*result.lock().unwrap(), Some(Err("stale")));
+    }
 }

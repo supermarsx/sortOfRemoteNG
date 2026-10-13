@@ -38,6 +38,30 @@ describe("native connection target", () => {
       "https://fixture.invalid/login",
     );
   });
+  it("opens Drone CI's /login only for its bridged form login", () => {
+    const drone = (loginMode: "manual" | "form"): Connection => ({
+      ...connection,
+      hostname: "ci.example.test",
+      httpApplication: {
+        version: 1,
+        id: "drone-ci",
+        loginMode,
+        ...(loginMode === "form"
+          ? {
+              droneScmProvider: "gitea" as const,
+              droneScmOrigin: "https://git.example.test",
+            }
+          : {}),
+      },
+    });
+    const at = { ...session, hostname: "ci.example.test" };
+    expect(originBrowserConnectionTarget(drone("form"), at)).toBe(
+      "https://ci.example.test/login",
+    );
+    expect(originBrowserConnectionTarget(drone("manual"), at)).toBe(
+      "https://ci.example.test/",
+    );
+  });
   it("preserves an explicit non-default saved port", () => {
     expect(
       originBrowserConnectionTarget({ ...connection, port: 8443 }, session),

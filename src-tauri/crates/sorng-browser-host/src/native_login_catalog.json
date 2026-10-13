@@ -1,7 +1,43 @@
 {
   "profiles": {
     "amazon-shopping": {
-      "capability": "manual"
+      "capability": "manual",
+      "declarativeLogin": {
+        "mode": "exclusive",
+        "credentialOrigins": [],
+        "passwordOnly": false,
+        "loginSteps": [
+          {
+            "kind": "identifier",
+            "paths": ["/ap/signin"],
+            "selectors": {
+              "username": "form[name=\"signIn\"] input#ap_email_login[type=\"email\"][name=\"email\"], form[name=\"signIn\"] input#ap_email[type=\"email\"][name=\"email\"]"
+            }
+          },
+          {
+            "kind": "submit",
+            "submission": "click",
+            "selectors": {
+              "control": "form[name=\"signIn\"] span#continue input.a-button-input[type=\"submit\"]"
+            }
+          },
+          {
+            "kind": "password",
+            "paths": ["/ap/signin", "/ax/claim"],
+            "waitFor": "form[name=\"signIn\"] input#ap_password[type=\"password\"]",
+            "selectors": {
+              "password": "form[name=\"signIn\"] input#ap_password[type=\"password\"][name=\"password\"]"
+            }
+          },
+          {
+            "kind": "submit",
+            "submission": "click",
+            "selectors": {
+              "control": "form[name=\"signIn\"] input#signInSubmit[type=\"submit\"]"
+            }
+          }
+        ]
+      }
     },
     "aws-console": {
       "capability": "manual"
@@ -52,10 +88,67 @@
       "capability": "manual"
     },
     "autoridade-tributaria": {
-      "capability": "manual"
+      "capability": "manual",
+      "declarativeLogin": {
+        "mode": "exclusive",
+        "credentialOrigins": ["https://www.acesso.gov.pt"],
+        "passwordOnly": false,
+        "loginSteps": [
+          {
+            "kind": "click",
+            "origin": "https://www.acesso.gov.pt",
+            "paths": ["/v2/loginForm"],
+            "selectors": {
+              "control": "[role=\"tab\"][id$=\"-trigger-N\"]"
+            }
+          },
+          {
+            "kind": "form",
+            "origin": "https://www.acesso.gov.pt",
+            "paths": ["/v2/loginForm"],
+            "selectors": {
+              "username": "input[name=\"username\"]",
+              "password": "input[name=\"password\"][type=\"password\"]"
+            }
+          },
+          {
+            "kind": "submit",
+            "submission": "enter"
+          }
+        ]
+      }
     },
     "seguranca-social-direta": {
-      "capability": "manual"
+      "capability": "manual",
+      "declarativeLogin": {
+        "mode": "exclusive",
+        "credentialOrigins": [],
+        "passwordOnly": false,
+        "loginSteps": [
+          {
+            "kind": "click",
+            "paths": ["/sso/login"],
+            "selectors": {
+              "control": "#toogleAuth"
+            }
+          },
+          {
+            "kind": "form",
+            "paths": ["/sso/login"],
+            "selectors": {
+              "username": "input#username",
+              "password": "input#password[type=\"password\"]"
+            }
+          },
+          {
+            "kind": "submit",
+            "submission": "click",
+            "selectors": {
+              "control": "#submitBtn"
+            }
+          }
+        ]
+      }
     },
     "irn-online": {
       "capability": "manual"
@@ -70,10 +163,37 @@
       "capability": "manual"
     },
     "vodafone-portugal": {
-      "capability": "manual"
+      "capability": "known-form",
+      "selectors": {
+        "usernameSelector": "#login-register-login-list form[method=\"post\"] input#login__name[name=\"login__name\"]",
+        "passwordSelector": "#login-register-login-list form[method=\"post\"] input#login__password[name=\"login__password\"][type=\"password\"]",
+        "submitSelector": "#login-register-login-list form[method=\"post\"] button#login--button[type=\"submit\"]"
+      }
     },
     "digi-portugal": {
-      "capability": "manual"
+      "capability": "manual",
+      "declarativeLogin": {
+        "mode": "exclusive",
+        "credentialOrigins": [],
+        "passwordOnly": false,
+        "loginSteps": [
+          {
+            "kind": "form",
+            "paths": ["/login"],
+            "selectors": {
+              "username": "#AuthLoginStep input#AuthLoginStepUser[type=\"text\"]",
+              "password": "#AuthLoginStep input#AuthLoginStepPassword[type=\"password\"]"
+            }
+          },
+          {
+            "kind": "submit",
+            "submission": "spa",
+            "selectors": {
+              "control": "#AuthLoginStep #AuthLoginStepButton button.button-login"
+            }
+          }
+        ]
+      }
     },
     "imt-online": {
       "capability": "manual"
@@ -94,7 +214,29 @@
       "capability": "manual"
     },
     "no-ip": {
-      "capability": "manual"
+      "capability": "manual",
+      "declarativeLogin": {
+        "mode": "exclusive",
+        "credentialOrigins": [],
+        "passwordOnly": false,
+        "loginSteps": [
+          {
+            "kind": "form",
+            "paths": ["/login"],
+            "selectors": {
+              "username": "form#clogs input#username[name=\"username\"]",
+              "password": "form#clogs input#password[name=\"password\"][type=\"password\"]"
+            }
+          },
+          {
+            "kind": "submit",
+            "submission": "click",
+            "selectors": {
+              "control": "form#clogs button#clogs-captcha-button[type=\"submit\"]"
+            }
+          }
+        ]
+      }
     },
     "microsoft-account": {
       "capability": "manual"
@@ -109,13 +251,58 @@
       "capability": "manual"
     },
     "zulip": {
-      "capability": "manual"
+      "capability": "manual",
+      "declarativeLogin": {
+        "mode": "exclusive",
+        "credentialOrigins": [],
+        "passwordOnly": false,
+        "loginSteps": [
+          {
+            "kind": "form",
+            "paths": ["/login/", "/accounts/login/"],
+            "selectors": {
+              "username": "form#login_form input#id_username[name=\"username\"]",
+              "password": "form#login_form input#id_password[name=\"password\"][type=\"password\"]"
+            }
+          },
+          {
+            "kind": "submit",
+            "submission": "click",
+            "selectors": {
+              "control": "form#login_form button[type=\"submit\"][name=\"button\"]"
+            }
+          }
+        ]
+      }
     },
     "arlo": {
       "capability": "manual"
     },
     "uptime-kuma": {
-      "capability": "manual"
+      "capability": "manual",
+      "declarativeLogin": {
+        "mode": "exclusive",
+        "credentialOrigins": [],
+        "passwordOnly": false,
+        "loginSteps": [
+          {
+            "kind": "form",
+            "paths": ["/dashboard"],
+            "pathPrefixes": ["/dashboard/"],
+            "selectors": {
+              "username": "div.form-container form input#floatingInput[type=\"text\"]",
+              "password": "div.form-container form input.form-control[type=\"password\"]"
+            }
+          },
+          {
+            "kind": "submit",
+            "submission": "spa",
+            "selectors": {
+              "control": "div.form-container form button.btn-primary[type=\"submit\"]"
+            }
+          }
+        ]
+      }
     },
     "steam": {
       "capability": "manual"
@@ -133,7 +320,29 @@
       "capability": "manual"
     },
     "pypi": {
-      "capability": "manual"
+      "capability": "manual",
+      "declarativeLogin": {
+        "mode": "exclusive",
+        "credentialOrigins": [],
+        "passwordOnly": false,
+        "loginSteps": [
+          {
+            "kind": "form",
+            "paths": ["/account/login/"],
+            "selectors": {
+              "username": "form#login-form input#username[name=\"username\"][autocomplete=\"username\"]",
+              "password": "form#login-form input#password[name=\"password\"][type=\"password\"]"
+            }
+          },
+          {
+            "kind": "submit",
+            "submission": "click",
+            "selectors": {
+              "control": "form#login-form input[type=\"submit\"]"
+            }
+          }
+        ]
+      }
     },
     "reddit": {
       "capability": "manual"
@@ -148,10 +357,54 @@
       "capability": "manual"
     },
     "wazuh": {
-      "capability": "manual"
+      "capability": "manual",
+      "declarativeLogin": {
+        "mode": "exclusive",
+        "credentialOrigins": [],
+        "passwordOnly": false,
+        "loginSteps": [
+          {
+            "kind": "form",
+            "paths": ["/app/login"],
+            "selectors": {
+              "username": "form input[data-test-subj=\"user-name\"][aria-label=\"username_input\"]",
+              "password": "form input[data-test-subj=\"password\"][aria-label=\"password_input\"][type=\"password\"]"
+            }
+          },
+          {
+            "kind": "submit",
+            "submission": "spa",
+            "selectors": {
+              "control": "form button[data-test-subj=\"submit\"][type=\"submit\"]"
+            }
+          }
+        ]
+      }
     },
     "zabbix": {
-      "capability": "manual"
+      "capability": "manual",
+      "declarativeLogin": {
+        "mode": "exclusive",
+        "credentialOrigins": [],
+        "passwordOnly": false,
+        "loginSteps": [
+          {
+            "kind": "form",
+            "paths": ["/", "/index.php", "/zabbix/", "/zabbix/index.php"],
+            "selectors": {
+              "username": "form input#name[name=\"name\"][type=\"text\"]",
+              "password": "form input#password[name=\"password\"][type=\"password\"]"
+            }
+          },
+          {
+            "kind": "submit",
+            "submission": "click",
+            "selectors": {
+              "control": "form button#enter[name=\"enter\"][type=\"submit\"]"
+            }
+          }
+        ]
+      }
     },
     "opnsense": {
       "capability": "known-form",
@@ -195,7 +448,29 @@
       "capability": "manual"
     },
     "contabo": {
-      "capability": "manual"
+      "capability": "manual",
+      "declarativeLogin": {
+        "mode": "exclusive",
+        "credentialOrigins": [],
+        "passwordOnly": false,
+        "loginSteps": [
+          {
+            "kind": "form",
+            "paths": ["/account/login"],
+            "selectors": {
+              "username": "form#AccountLoginForm input#AccountUsername[name=\"data[Account][username]\"]",
+              "password": "form#AccountLoginForm input#AccountPassword[name=\"data[Account][password]\"][type=\"password\"]"
+            }
+          },
+          {
+            "kind": "submit",
+            "submission": "click",
+            "selectors": {
+              "control": "form#AccountLoginForm input[type=\"image\"]"
+            }
+          }
+        ]
+      }
     },
     "chatgpt": {
       "capability": "known-form",
@@ -210,7 +485,29 @@
       "capability": "manual"
     },
     "gitlab-com": {
-      "capability": "manual"
+      "capability": "manual",
+      "declarativeLogin": {
+        "mode": "exclusive",
+        "credentialOrigins": [],
+        "passwordOnly": false,
+        "loginSteps": [
+          {
+            "kind": "form",
+            "paths": ["/users/sign_in"],
+            "selectors": {
+              "username": "form#sign-in-form input[name=\"user[login]\"][autocomplete=\"username\"]",
+              "password": "form#sign-in-form input[name=\"user[password]\"][type=\"password\"]"
+            }
+          },
+          {
+            "kind": "submit",
+            "submission": "click",
+            "selectors": {
+              "control": "form#sign-in-form button[data-testid=\"sign-in-button\"][type=\"submit\"]"
+            }
+          }
+        ]
+      }
     },
     "gitlab-self-hosted": {
       "capability": "known-form",
@@ -268,7 +565,28 @@
       }
     },
     "hpe-greenlake": {
-      "capability": "manual"
+      "capability": "manual",
+      "declarativeLogin": {
+        "mode": "exclusive",
+        "credentialOrigins": [],
+        "passwordOnly": false,
+        "loginSteps": [
+          {
+            "kind": "identifier",
+            "paths": ["/sso/continue"],
+            "selectors": {
+              "username": "div#root form input[name=\"username\"][data-testid=\"sign-up-email-input\"]"
+            }
+          },
+          {
+            "kind": "submit",
+            "submission": "spa",
+            "selectors": {
+              "control": "div#root form button[type=\"submit\"]"
+            }
+          }
+        ]
+      }
     },
     "adobe": {
       "capability": "manual"
@@ -278,7 +596,42 @@
       "loginFlow": "google"
     },
     "zoom": {
-      "capability": "manual"
+      "capability": "manual",
+      "declarativeLogin": {
+        "mode": "exclusive",
+        "credentialOrigins": [],
+        "passwordOnly": false,
+        "loginSteps": [
+          {
+            "kind": "identifier",
+            "paths": ["/signin"],
+            "selectors": {
+              "username": "[data-testid=\"signin-account-page\"] form.zoom-form input#email[name=\"account\"]"
+            }
+          },
+          {
+            "kind": "submit",
+            "submission": "spa",
+            "selectors": {
+              "control": "[data-testid=\"signin-account-page\"] button#signin_btn_next[data-testid=\"account-next-btn\"]"
+            }
+          },
+          {
+            "kind": "password",
+            "paths": ["/signin"],
+            "selectors": {
+              "password": "input#password"
+            }
+          },
+          {
+            "kind": "submit",
+            "submission": "spa",
+            "selectors": {
+              "control": "button#js_btn_login"
+            }
+          }
+        ]
+      }
     },
     "icloud": {
       "capability": "manual"
@@ -298,10 +651,19 @@
       "capability": "manual"
     },
     "freedns": {
-      "capability": "manual"
+      "capability": "known-form",
+      "selectors": {
+        "usernameSelector": "form[action*=\"zc.php\"]:has(input[type=\"hidden\"][name=\"action\"][value=\"auth\"]) input[name=\"username\"]",
+        "passwordSelector": "form[action*=\"zc.php\"]:has(input[type=\"hidden\"][name=\"action\"][value=\"auth\"]) input[name=\"password\"][type=\"password\"]"
+      }
     },
     "registro-br": {
-      "capability": "manual"
+      "capability": "known-form",
+      "selectors": {
+        "usernameSelector": "form input[id=\"login.user\"][name=\"login.user\"]",
+        "passwordSelector": "form input[id=\"login.password\"][name=\"login.password\"][type=\"password\"]",
+        "submitSelector": "form:has(input[id=\"login.password\"]) button.bt-next"
+      }
     },
     "sqlpad": {
       "capability": "known-form",
@@ -319,7 +681,44 @@
       "loginFlow": "google"
     },
     "outlook-online": {
-      "capability": "manual"
+      "capability": "manual",
+      "declarativeLogin": {
+        "mode": "exclusive",
+        "credentialOrigins": ["https://login.microsoftonline.com"],
+        "passwordOnly": false,
+        "loginSteps": [
+          {
+            "kind": "identifier",
+            "origin": "https://login.microsoftonline.com",
+            "paths": ["/common/oauth2/v2.0/authorize"],
+            "selectors": {
+              "username": "form#i0281[name=\"f1\"] input#i0116[name=\"loginfmt\"][type=\"email\"]"
+            }
+          },
+          {
+            "kind": "submit",
+            "submission": "click",
+            "selectors": {
+              "control": "form#i0281[name=\"f1\"] input#idSIButton9[type=\"submit\"]"
+            }
+          },
+          {
+            "kind": "password",
+            "origin": "https://login.microsoftonline.com",
+            "paths": ["/common/oauth2/v2.0/authorize"],
+            "selectors": {
+              "password": "form#i0281[name=\"f1\"] input#i0118[name=\"passwd\"][type=\"password\"]:not(.moveOffScreen):not([aria-hidden=\"true\"])"
+            }
+          },
+          {
+            "kind": "submit",
+            "submission": "click",
+            "selectors": {
+              "control": "form#i0281[name=\"f1\"] input#idSIButton9[type=\"submit\"]"
+            }
+          }
+        ]
+      }
     },
     "exchange-owa": {
       "capability": "known-form",
@@ -367,10 +766,54 @@
       }
     },
     "ghost": {
-      "capability": "manual"
+      "capability": "manual",
+      "declarativeLogin": {
+        "mode": "exclusive",
+        "credentialOrigins": [],
+        "passwordOnly": false,
+        "loginSteps": [
+          {
+            "kind": "form",
+            "paths": ["/ghost/"],
+            "selectors": {
+              "username": "form input#identification[name=\"identification\"][type=\"email\"]",
+              "password": "form:has(input#identification[name=\"identification\"]) input#password[name=\"password\"][type=\"password\"]"
+            }
+          },
+          {
+            "kind": "submit",
+            "submission": "spa",
+            "selectors": {
+              "control": "form:has(input#identification[name=\"identification\"]) button[type=\"submit\"]"
+            }
+          }
+        ]
+      }
     },
     "strapi": {
-      "capability": "manual"
+      "capability": "manual",
+      "declarativeLogin": {
+        "mode": "exclusive",
+        "credentialOrigins": [],
+        "passwordOnly": false,
+        "loginSteps": [
+          {
+            "kind": "form",
+            "paths": ["/admin/auth/login"],
+            "selectors": {
+              "username": "form input[name=\"email\"]",
+              "password": "form input[name=\"password\"][type=\"password\"]"
+            }
+          },
+          {
+            "kind": "submit",
+            "submission": "spa",
+            "selectors": {
+              "control": "form button[type=\"submit\"]"
+            }
+          }
+        ]
+      }
     },
     "phpmyadmin": {
       "capability": "known-form",
@@ -489,7 +932,7 @@
       }
     },
     "drone-ci": {
-      "capability": "manual"
+      "capability": "known-form"
     },
     "exchange-ecp": {
       "capability": "known-form",
@@ -549,7 +992,26 @@
     },
     "ilo": {
       "capability": "generic-form",
-      "sameOriginLoginFrames": ["appFrame"]
+      "sameOriginLoginFrames": ["appFrame"],
+      "declarativeLogin": {
+        "mode": "additive",
+        "credentialOrigins": [],
+        "passwordOnly": false,
+        "loginSteps": [
+          {
+            "kind": "form",
+            "frame": "appFrame",
+            "selectors": {
+              "username": "input#usernameInput",
+              "password": "input#passwordInput"
+            }
+          },
+          {
+            "kind": "submit",
+            "submission": "enter"
+          }
+        ]
+      }
     },
     "webmin": {
       "capability": "known-form",
@@ -560,13 +1022,52 @@
       }
     },
     "idrac": {
-      "capability": "generic-form"
+      "capability": "generic-form",
+      "declarativeLogin": {
+        "mode": "additive",
+        "credentialOrigins": [],
+        "passwordOnly": false,
+        "loginSteps": [
+          {
+            "kind": "form",
+            "selectors": {
+              "username": "form[name=\"idracStartScreen\"] input[name=\"username\"], form#auth #user",
+              "password": "form[name=\"idracStartScreen\"] input[name=\"password\"][type=\"password\"], form#auth #password"
+            }
+          },
+          {
+            "kind": "submit",
+            "submission": "enter"
+          }
+        ]
+      }
     },
     "lenovo": {
       "capability": "generic-form"
     },
     "supermicro": {
-      "capability": "generic-form"
+      "capability": "generic-form",
+      "declarativeLogin": {
+        "mode": "additive",
+        "credentialOrigins": [],
+        "passwordOnly": false,
+        "loginSteps": [
+          {
+            "kind": "form",
+            "selectors": {
+              "username": "form[name=\"form1\"] input[name=\"name\"]",
+              "password": "form[name=\"form1\"] input[name=\"pwd\"][type=\"password\"]"
+            }
+          },
+          {
+            "kind": "submit",
+            "submission": "click",
+            "selectors": {
+              "control": "form[name=\"form1\"] input[type=\"submit\"]"
+            }
+          }
+        ]
+      }
     },
     "voip-phone": {
       "capability": "known-form",
@@ -578,10 +1079,55 @@
       }
     },
     "netbox": {
-      "capability": "generic-form"
+      "capability": "generic-form",
+      "declarativeLogin": {
+        "mode": "additive",
+        "credentialOrigins": [],
+        "passwordOnly": false,
+        "loginSteps": [
+          {
+            "kind": "form",
+            "paths": ["/login/"],
+            "selectors": {
+              "username": "form input#id_username[name=\"username\"]",
+              "password": "form input#id_password[name=\"password\"][type=\"password\"]"
+            }
+          },
+          {
+            "kind": "submit",
+            "submission": "click",
+            "selectors": {
+              "control": "form:has(input#id_password[name=\"password\"]) button[type=\"submit\"]"
+            }
+          }
+        ]
+      }
     },
     "vmware": {
-      "capability": "generic-form"
+      "capability": "generic-form",
+      "declarativeLogin": {
+        "mode": "additive",
+        "credentialOrigins": [],
+        "passwordOnly": false,
+        "loginSteps": [
+          {
+            "kind": "form",
+            "paths": ["/websso/SAML2/SSO"],
+            "pathPrefixes": ["/websso/SAML2/SSO/"],
+            "selectors": {
+              "username": "input#username",
+              "password": "input#password[type=\"password\"]"
+            }
+          },
+          {
+            "kind": "submit",
+            "submission": "spa",
+            "selectors": {
+              "control": "#submit"
+            }
+          }
+        ]
+      }
     },
     "cpanel": {
       "capability": "known-form",
@@ -591,26 +1137,187 @@
         "submitSelector": "form#login_form button#login_submit[name=\"login\"][type=\"submit\"]"
       }
     },
+    "tplink-eap": {
+      "capability": "known-form",
+      "selectors": {
+        "usernameSelector": "form#form-login input#login-username[name=\"username\"]",
+        "passwordSelector": "form#form-login span.password-wrap:has(> input#login-password[name=\"password\"]) > input.password-hidden[type=\"password\"]",
+        "submitSelector": "form#form-login button#login-btn[type=\"button\"]"
+      }
+    },
     "draytek": {
-      "capability": "generic-form"
+      "capability": "generic-form",
+      "declarativeLogin": {
+        "mode": "additive",
+        "credentialOrigins": [],
+        "passwordOnly": false,
+        "loginSteps": [
+          {
+            "kind": "form",
+            "paths": ["/", "/weblogin.htm"],
+            "selectors": {
+              "username": "input[name=\"sUserName\"], form[name=\"LoginForm\"] input#sUsername",
+              "password": "input[name=\"sSysPass\"], form[name=\"LoginForm\"] input#sPassword[type=\"password\"]"
+            }
+          },
+          {
+            "kind": "submit",
+            "submission": "click",
+            "selectors": {
+              "control": "[name=\"btnOk\"], form[name=\"LoginForm\"] input[type=\"submit\"]"
+            }
+          }
+        ]
+      }
     },
     "tplink-switch": {
-      "capability": "generic-form"
+      "capability": "generic-form",
+      "declarativeLogin": {
+        "mode": "additive",
+        "credentialOrigins": [],
+        "passwordOnly": false,
+        "loginSteps": [
+          {
+            "kind": "form",
+            "selectors": {
+              "username": "input#username",
+              "password": "input#password"
+            }
+          },
+          {
+            "kind": "submit",
+            "submission": "enter"
+          }
+        ]
+      }
     },
     "grafana": {
-      "capability": "generic-form"
+      "capability": "generic-form",
+      "declarativeLogin": {
+        "mode": "additive",
+        "credentialOrigins": [],
+        "passwordOnly": false,
+        "loginSteps": [
+          {
+            "kind": "form",
+            "selectors": {
+              "username": "form input[data-testid=\"data-testid Username input field\"], form:has(input#current-password[aria-label=\"Password input field\"]) input[aria-label=\"Username input field\"]",
+              "password": "form:has(input[data-testid=\"data-testid Username input field\"]) input[data-testid=\"data-testid Password input field\"][type=\"password\"], form:has(input[aria-label=\"Username input field\"]) input#current-password[aria-label=\"Password input field\"][type=\"password\"]"
+            }
+          },
+          {
+            "kind": "submit",
+            "submission": "spa",
+            "selectors": {
+              "control": "form:has(input[data-testid=\"data-testid Username input field\"]) button[data-testid=\"data-testid Login button\"][type=\"submit\"], form:has(input#current-password[aria-label=\"Password input field\"]) button[aria-label=\"Login button\"][type=\"submit\"]"
+            }
+          }
+        ]
+      }
     },
     "budibase": {
-      "capability": "generic-form"
+      "capability": "generic-form",
+      "declarativeLogin": {
+        "mode": "additive",
+        "credentialOrigins": [],
+        "passwordOnly": false,
+        "loginSteps": [
+          {
+            "kind": "form",
+            "paths": ["/builder/auth/login"],
+            "selectors": {
+              "username": "div.fancy-form:has(input[type=\"password\"]) div.fancy-field input[type=\"text\"]",
+              "password": "div.fancy-form div.fancy-field input[type=\"password\"]"
+            }
+          },
+          {
+            "kind": "submit",
+            "submission": "spa",
+            "selectors": {
+              "control": "button.spectrum-Button.spectrum-Button--cta"
+            }
+          }
+        ]
+      }
     },
     "jira": {
-      "capability": "generic-form"
+      "capability": "generic-form",
+      "declarativeLogin": {
+        "mode": "additive",
+        "credentialOrigins": [],
+        "passwordOnly": false,
+        "loginSteps": [
+          {
+            "kind": "form",
+            "selectors": {
+              "username": "#login-form-username, #username-field",
+              "password": "#login-form-password, #password-field"
+            }
+          },
+          {
+            "kind": "submit",
+            "submission": "click",
+            "selectors": {
+              "control": "#login-form-submit, #login-button"
+            }
+          }
+        ]
+      }
     },
     "osticket": {
-      "capability": "generic-form"
+      "capability": "generic-form",
+      "declarativeLogin": {
+        "mode": "additive",
+        "credentialOrigins": [],
+        "passwordOnly": false,
+        "loginSteps": [
+          {
+            "kind": "form",
+            "selectors": {
+              "username": "form#login:has(input[name=\"do\"][value=\"scplogin\"]) input#name[name=\"userid\"]",
+              "password": "form#login:has(input[name=\"do\"][value=\"scplogin\"]) input#pass[name=\"passwd\"][type=\"password\"]"
+            }
+          },
+          {
+            "kind": "submit",
+            "submission": "click",
+            "selectors": {
+              "control": "form#login:has(input[name=\"do\"][value=\"scplogin\"]) button.submit[type=\"submit\"][name=\"submit\"]"
+            }
+          }
+        ]
+      }
     },
     "mailcow": {
-      "capability": "generic-form"
+      "capability": "generic-form",
+      "declarativeLogin": {
+        "mode": "additive",
+        "credentialOrigins": [],
+        "passwordOnly": false,
+        "loginSteps": [
+          {
+            "kind": "form",
+            "paths": [
+              "/",
+              "/admin",
+              "/admin/",
+              "/domainadmin",
+              "/domainadmin/"
+            ],
+            "selectors": {
+              "username": "form[method=\"post\"] input#login_user[name=\"login_user\"]",
+              "password": "form[method=\"post\"] input#pass_user[name=\"pass_user\"][type=\"password\"]"
+            }
+          },
+          {
+            "kind": "submit",
+            "submission": "click",
+            "selectors": {
+              "control": "form:has(input#login_user[name=\"login_user\"]) button[type=\"submit\"][value=\"Login\"]"
+            }
+          }
+        ]
+      }
     },
     "haproxy": {
       "capability": "http-auth"
@@ -682,5 +1389,54 @@
       "passwordSelector": "form#form-login input#mod-login-password[name=\"passwd\"][type=\"password\"]",
       "submitSelector": "form#form-login button#btn-login-submit[type=\"submit\"], form#form-login button.login-button:not([type]), form#form-login button.login-button[type=\"submit\"]"
     }
-  }
+  },
+  "droneScm": {
+    "gitea": {
+      "flow": "oauth",
+      "selectors": {
+        "usernameSelector": "form[action$=\"/user/login\"] input#user_name[name=\"user_name\"]",
+        "passwordSelector": "form[action$=\"/user/login\"] input#password[name=\"password\"][type=\"password\"]",
+        "submitSelector": "form[action$=\"/user/login\"] button.ui.primary"
+      },
+      "consent": {
+        "paths": ["/login/oauth/authorize"],
+        "formAction": "/login/oauth/grant",
+        "formSelector": "form[method=\"post\" i][action$=\"/login/oauth/grant\"]",
+        "buttonSelector": "button#authorize-app[type=\"submit\"][name=\"granted\"][value=\"true\"]"
+      }
+    },
+    "gogs": {
+      "flow": "drone-form",
+      "selectors": {
+        "usernameSelector": "form[method=\"post\" i][action=\"/login\"] input[type=\"text\"][name=\"username\"]",
+        "passwordSelector": "form[method=\"post\" i][action=\"/login\"] input[type=\"password\"][name=\"password\"]",
+        "submitSelector": "form[method=\"post\" i][action=\"/login\"] input[type=\"submit\"]"
+      }
+    },
+    "github": {
+      "flow": "oauth",
+      "defaultOrigin": "https://github.com",
+      "onlyOrigin": "https://github.com",
+      "selectors": {
+        "usernameSelector": "form[action=\"/session\"] input#login_field[name=\"login\"]",
+        "passwordSelector": "form[action=\"/session\"] input#password[name=\"password\"][type=\"password\"]",
+        "submitSelector": "form[action=\"/session\"] input[name=\"commit\"][type=\"submit\"]"
+      }
+    },
+    "gitlab": {
+      "flow": "oauth",
+      "notOrigin": "https://gitlab.com",
+      "selectors": {
+        "usernameSelector": "form#sign-in-form input[name=\"user[login]\"][autocomplete=\"username\"]",
+        "passwordSelector": "form#sign-in-form input[name=\"user[password]\"][type=\"password\"]",
+        "submitSelector": "form#sign-in-form button[data-testid=\"sign-in-button\"][type=\"submit\"]"
+      }
+    },
+    "bitbucket": {
+      "flow": "oauth",
+      "defaultOrigin": "https://bitbucket.org",
+      "fixedOrigin": true
+    }
+  },
+  "declarativeLoginSupported": true
 }

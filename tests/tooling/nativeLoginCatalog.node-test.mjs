@@ -103,6 +103,7 @@ function workspace(t, files = {}) {
     stepsDirectory,
     catalogPath: path.join(root, "native_login_catalog.json"),
     registryPath: path.join(root, "httpLoginStepsRegistry.ts"),
+    totpCatalogPath: path.join(root, "origin_browser_totp_catalog.json"),
   };
   for (const [relative, content] of Object.entries(files))
     land(scratch, relative, content);
@@ -118,6 +119,7 @@ function land(scratch, relative, content) {
   );
 }
 const generated = (scratch) => [
+  read(scratch.totpCatalogPath),
   read(scratch.catalogPath),
   read(scratch.registryPath),
 ];
@@ -127,7 +129,7 @@ const ON = { declarativeLoginSupported: true };
 test("the committed native catalog and steps registry are what the generator produces", async () => {
   const result = await generateNativeLoginCatalog({ check: true });
   assert.deepEqual(result.stale, []);
-  assert.equal(result.profiles, 152);
+  assert.equal(result.profiles, 153);
 });
 
 test("--check passes on the tree and the command line takes nothing else", () => {
@@ -140,7 +142,7 @@ test("--check passes on the tree and the command line takes nothing else", () =>
   assert.equal(checked.status, 0, checked.stderr);
   assert.match(
     checked.stdout,
-    /^Checked the native login catalog: 152 profiles; \d+ login steps files validated, \d+ emitted/u,
+    /^Checked the native login catalog: 153 profiles; \d+ login steps files validated, \d+ emitted/u,
   );
   for (const args of [["--force"], ["--check", "extra"]]) {
     const refused = run(...args);
@@ -156,7 +158,7 @@ test("switched off, a steps file is validated and nothing of it is emitted", asy
   const empty = workspace(t);
   assert.deepEqual(await generateNativeLoginCatalog({ ...empty, ...OFF }), {
     stale: [],
-    profiles: 152,
+    profiles: 153,
     steps: 0,
     emitted: 0,
   });
@@ -166,14 +168,14 @@ test("switched off, a steps file is validated and nothing of it is emitted", asy
   });
   assert.deepEqual(await generateNativeLoginCatalog({ ...scratch, ...OFF }), {
     stale: [],
-    profiles: 152,
+    profiles: 153,
     steps: 2,
     emitted: 0,
   });
   // Byte for byte what an empty steps directory gives: no key, no import.
   assert.deepEqual(generated(scratch), generated(empty));
   const catalog = JSON.parse(read(scratch.catalogPath));
-  assert.deepEqual(Object.keys(catalog), ["profiles", "joomla"]);
+  assert.deepEqual(Object.keys(catalog), ["profiles", "joomla", "droneScm"]);
   for (const profile of Object.values(catalog.profiles))
     for (const key of Object.keys(profile))
       assert.ok(FIVE_FIELDS.includes(key), key);
@@ -200,7 +202,7 @@ test("switched off, a steps file is validated and nothing of it is emitted", asy
     ...OFF,
     check: true,
   });
-  assert.deepEqual(checked, { stale: [], profiles: 152, steps: 2, emitted: 0 });
+  assert.deepEqual(checked, { stale: [], profiles: 153, steps: 2, emitted: 0 });
 
   // Still validated: a file the catalog cannot use fails the check.
   land(scratch, "self-hosted/zulip.json", {
@@ -230,7 +232,7 @@ test("switched on, the generated catalog equals the TypeScript catalog plus the 
     "appliances/idrac.json": passwordOnlyFile("idrac"),
   });
   const result = await generateNativeLoginCatalog({ ...scratch, ...ON });
-  assert.deepEqual(result, { stale: [], profiles: 152, steps: 2, emitted: 2 });
+  assert.deepEqual(result, { stale: [], profiles: 153, steps: 2, emitted: 2 });
   const empty = workspace(t);
   await generateNativeLoginCatalog({ ...empty, ...OFF });
   const before = JSON.parse(read(empty.catalogPath));
@@ -266,10 +268,12 @@ test("switched on, the generated catalog equals the TypeScript catalog plus the 
     if (id !== "zulip" && id !== "idrac")
       assert.deepEqual(after.profiles[id], profile, id);
   assert.deepEqual(after.joomla, before.joomla);
+  assert.deepEqual(after.droneScm, before.droneScm);
   // The announcement the native engine waits for, after everything else.
   assert.deepEqual(Object.keys(after), [
     "profiles",
     "joomla",
+    "droneScm",
     "declarativeLoginSupported",
   ]);
   assert.equal(after.declarativeLoginSupported, true);
@@ -298,13 +302,14 @@ test("the check fails when the catalog or the registry is stale", async (t) => {
   const stale = async (scratch, flag) =>
     (await generateNativeLoginCatalog({ ...scratch, ...flag, check: true }))
       .stale;
-  // Switching on without regenerating: both files are stale.
+  // Switching on adds the reviewed steps' challenge to the native OTP table.
   const scratch = workspace(t, {
     "self-hosted/zulip.json": stepsFile("zulip"),
   });
   await generateNativeLoginCatalog({ ...scratch, ...OFF });
   const switchedOff = generated(scratch);
   assert.deepEqual(await stale(scratch, ON), [
+    scratch.totpCatalogPath,
     scratch.catalogPath,
     scratch.registryPath,
   ]);
@@ -410,6 +415,7 @@ test("the generator refuses steps it cannot use and writes nothing, switched on 
       );
       assert.equal(existsSync(scratch.catalogPath), false, name);
       assert.equal(existsSync(scratch.registryPath), false, name);
+      assert.equal(existsSync(scratch.totpCatalogPath), false, name);
     }
 });
 
@@ -482,4 +488,70 @@ test("a rendered entry keeps its five fields and adds only the steps it is given
       joomla: input.joomla,
     },
   );
+});
+
+test("the Drone CI provider table carries only what native binds: flow, origins and the reviewed form", () => {
+  const droneScm = {
+    gitea: {
+      label: "Gitea",
+      flow: "oauth",
+      authorizePath: "/login/oauth/authorize",
+      signIn: {
+        selectors: { usernameSelector: "#u", passwordSelector: "#p" },
+        evidence: "go-gitea",
+      },
+      totp: { id: "t", codeSelector: "#c" },
+      consent: { buttonSelector: "#authorize-app", evidence: "grant.tmpl" },
+    },
+    github: {
+      label: "GitHub",
+      flow: "oauth",
+      defaultOrigin: "https://github.com",
+      signIn: {
+        selectors: { usernameSelector: "#l" },
+        onlyOrigin: "https://github.com",
+        evidence: "x",
+      },
+      totp: null,
+      consent: null,
+    },
+    bitbucket: {
+      label: "Bitbucket Cloud",
+      flow: "oauth",
+      defaultOrigin: "https://bitbucket.org",
+      fixedOrigin: true,
+      signIn: null,
+      totp: null,
+      consent: null,
+    },
+  };
+  const rendered = renderNativeLoginCatalog({
+    profiles: [{ id: "drone-ci", capability: "known-form" }],
+    joomla: {},
+    droneScm,
+    steps: new Map(),
+    modeOf: () => "exclusive",
+    ...OFF,
+  });
+  assert.deepEqual(rendered.droneScm, {
+    gitea: {
+      flow: "oauth",
+      selectors: { usernameSelector: "#u", passwordSelector: "#p" },
+      consent: { buttonSelector: "#authorize-app" },
+    },
+    github: {
+      flow: "oauth",
+      defaultOrigin: "https://github.com",
+      onlyOrigin: "https://github.com",
+      selectors: { usernameSelector: "#l" },
+    },
+    bitbucket: {
+      flow: "oauth",
+      defaultOrigin: "https://bitbucket.org",
+      fixedOrigin: true,
+    },
+  });
+  // Reviewed consent controls are carried; challenge/evidence text is separate.
+  for (const absent of ["grant.tmpl", "go-gitea", "#c", "Gitea"])
+    assert.equal(JSON.stringify(rendered).includes(absent), false, absent);
 });

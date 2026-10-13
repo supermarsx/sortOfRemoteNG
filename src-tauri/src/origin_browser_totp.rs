@@ -111,6 +111,17 @@ impl NativeTotpAuthority {
             // origin into an identity-provider grant without explicit review.
             return Err(NativeAuthorityError::MfaOriginMismatch);
         }
+        // Drone CI: a code only on the bridged Gitea origin, whatever else
+        // happens to be a login origin.
+        if login.application_id == drone_scm::APPLICATION_ID
+            && !drone_scm::totp_origin_allowed(
+                connection,
+                &saved_source(connection)?.origin().ascii_serialization(),
+                origin,
+            )
+        {
+            return Err(NativeAuthorityError::MfaOriginMismatch);
+        }
         let vault = if let Some(vault_id) = credentials::vault_id(connection)? {
             if connection
                 .pointer("/credentialSource/totpId")
@@ -328,6 +339,35 @@ mod tests {
             json!([{"id":SELECTED,"secret":SECRET,"digits":8,"period":30,"algorithm":"sha1"}]);
         row
     }
+    #[tokio::test]
+    async fn steps_challenges_keep_the_saved_origin_lease_and_exact_reviewed_path() {
+        for (profile, challenge, path) in [
+            ("uptime-kuma", "uptime-kuma-totp", "/dashboard"),
+            ("pypi", "pypi-totp", "/account/two-factor/"),
+            ("zabbix", "zabbix-totp", "/index_mfa.php"),
+            ("contabo", "contabo-otp", "/account/login"),
+        ] {
+            let mut connection = row();
+            connection["httpApplication"]["id"] = profile.into();
+            connection["httpAutoMfa"]["challengeId"] = challenge.into();
+            let source = saved_source(&connection).unwrap();
+            let mut other_origin = connection.clone();
+            other_origin["httpAutoMfa"]["origin"] = "https://code-only.example".into();
+            let mut unconsented = Fixture::new(other_origin).await;
+            unconsented.request.initial_url = source.to_string();
+            assert!(matches!(unconsented.authorize().await, Err(NativeAuthorityError::MfaOriginMismatch)), "{profile}");
+            let mut fixture = Fixture::new(connection).await;
+            fixture.request.initial_url = source.to_string();
+            let authorized = fixture.authorize().await.unwrap();
+            let totp = authorized.login.totp.as_ref().unwrap();
+            let request = NativeTotpRequest { identity: authorized.policy.identity(), origin: "https://source.example", document_url: &format!("https://source.example{path}"), challenge };
+            assert!(totp.current(&request), "{profile}");
+            assert!(!totp.current(&NativeTotpRequest { document_url: "https://source.example/other", ..request }), "{profile}");
+            assert!(!totp.current(&NativeTotpRequest { origin: "https://other.example", document_url: &format!("https://other.example{path}"), ..request }), "{profile}");
+            totp.revoke();
+            assert!(!totp.current(&request), "{profile}");
+        }
+    }
     fn request(identity: &BrowserIdentity) -> NativeTotpRequest<'_> {
         NativeTotpRequest {
             identity,
@@ -391,6 +431,50 @@ mod tests {
         assert!(!totp.current(&request));
     }
 
+    #[tokio::test]
+    async fn drone_ci_codes_go_only_to_the_bridged_gitea_origin() {
+        const GITEA: &str = "https://git.example.test";
+        let mut row = row();
+        row["hostname"] = "ci.example.test".into();
+        row["httpApplication"] = json!({"version":1,"id":"drone-ci","loginMode":"form",
+            "droneScmProvider":"gitea","droneScmOrigin":GITEA});
+        row["httpAutoMfa"]["challengeId"] = "drone-ci-gitea-totp".into();
+        row["httpAutoMfa"]["origin"] = GITEA.into();
+        let mut f = Fixture::new(row.clone()).await;
+        f.request.initial_url = "https://ci.example.test/login".into();
+        let auth = f.authorize().await.unwrap();
+        let totp = auth.login.totp.as_ref().unwrap();
+        assert_eq!(totp.origin, GITEA);
+        let mut request = NativeTotpRequest {
+            identity: auth.policy.identity(),
+            origin: GITEA,
+            document_url: "https://git.example.test/user/two_factor",
+            challenge: "drone-ci-gitea-totp",
+        };
+        assert!(totp.current(&request));
+        request.origin = "https://ci.example.test";
+        request.document_url = "https://ci.example.test/user/two_factor";
+        assert!(!totp.current(&request));
+
+        // Drone itself, or a provider without a reviewed challenge, never
+        // receives a code.
+        for (origin, application) in [
+            ("https://ci.example.test", row["httpApplication"].clone()),
+            (GITEA, json!({"version":1,"id":"drone-ci","loginMode":"form",
+                "droneScmProvider":"gitlab","droneScmOrigin":GITEA})),
+            ("https://ci.example.test", json!({"version":1,"id":"drone-ci",
+                "loginMode":"form","droneScmProvider":"gogs"})),
+        ] {
+            let mut other = row.clone();
+            other["httpApplication"] = application;
+            other["httpAutoMfa"]["origin"] = origin.into();
+            f.replace_connection(other);
+            assert!(
+                matches!(f.authorize().await, Err(NativeAuthorityError::MfaOriginMismatch)),
+                "{origin}"
+            );
+        }
+    }
     #[tokio::test]
     async fn selected_native_totp_is_reviewed_one_shot_and_expires_at_the_period() {
         let f = Fixture::new(row()).await;

@@ -104,9 +104,9 @@ pub(super) fn receive(
         doc.sensitive = action != "cancel";
         Some((doc.context.clone(), doc.dispatch.clone()))
     });
-    let success = data.is_some_and(|(mut context, dispatch)| {
+    let (success, reason) = data.map_or((false, "stale".to_string()), |(mut context, dispatch)| {
         if context.enter() != 1 {
-            return false;
+            return (false, "stale".to_string());
         }
         let result = dispatch
             .execute_function_with_context(
@@ -116,9 +116,27 @@ pub(super) fn receive(
                     v8_value_create_string(Some(&CefString::from(action.as_str()))),
                     v8_value_create_string(Some(&CefString::from(id.as_str()))),
                     v8_value_create_int(args.int(2)),
+                    v8_value_create_bool(1),
                 ]),
             )
-            .is_some_and(|r| r.is_bool() == 1 && r.bool_value() == 1);
+            .filter(|result| result.is_object() == 1)
+            .map(|result| {
+                let success = result
+                    .value_bykey(Some(&CefString::from("success")))
+                    .is_some_and(|value| value.is_bool() == 1 && value.bool_value() == 1);
+                let reason = result
+                    .value_bykey(Some(&CefString::from("reason")))
+                    .filter(|value| value.is_string() == 1)
+                    .map(|value| CefString::from(&value.string_value()).to_string())
+                    .filter(|reason| {
+                        reason == "pending"
+                            || reason.is_empty()
+                            || wire::ManualInputReason::parse(reason).is_some()
+                    })
+                    .unwrap_or_else(|| "stale".into());
+                (success, reason)
+            })
+            .unwrap_or_else(|| (false, "stale".to_string()));
         context.exit();
         result
     });
@@ -127,6 +145,7 @@ pub(super) fn receive(
             out.set_string(0, Some(&CefString::from(id.as_str())));
             out.set_string(1, Some(&CefString::from(serial.as_str())));
             out.set_bool(2, i32::from(success));
+            out.set_string(3, Some(&CefString::from(reason.as_str())));
             frame.send_process_message(ProcessId::BROWSER, Some(&mut reply));
         }
     }

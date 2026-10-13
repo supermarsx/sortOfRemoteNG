@@ -27,6 +27,7 @@ pub(super) fn project<'a>(
         NativeLoginStage::Identifier => (credentials.username, ""),
         NativeLoginStage::Password => ("", credentials.password),
         NativeLoginStage::FormPrepare
+        | NativeLoginStage::ScmConsent
         | NativeLoginStage::FormSubmit
         | NativeLoginStage::IdentifierSubmit
         | NativeLoginStage::PasswordSubmit => ("", ""),
@@ -137,6 +138,8 @@ mod tests {
                 origin: policy.source_origin(),
                 adapter,
                 stage,
+                path: "/",
+                frame: None,
             };
             let delivered = project(
                 &request,
@@ -163,6 +166,8 @@ mod tests {
             let request = NativeLoginRequest {
                 identity: policy.identity(), origin: policy.source_origin(),
                 adapter: NativeLoginAdapter::ModularForm, stage,
+                path: "/",
+                frame: None,
             };
             for origin in [policy.source_origin(), "http://device.test", "http://device.test:8081", "https://device.test:8080"] {
                 let delivered = project(&request, NativeLoginCredentials {

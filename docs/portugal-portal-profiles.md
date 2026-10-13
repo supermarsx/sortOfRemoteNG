@@ -10,13 +10,13 @@ permalink: /portugal-portal-profiles/
 Reviewed on 2026-10-06. Implementation:
 `src/utils/connection/portugalPortalProfiles.ts`, exporting
 `PORTUGAL_PORTAL_PROFILES: readonly HttpApplicationProfile[]`. The module contains
-12 manual-only profiles. Tests import this array directly; registration, shared
+12 profiles: 11 manual-only and My Vodafone, which has one reviewed sign-in form. Tests import this array directly; registration, shared
 authentication logic, editor changes and icon mapping belong to the main lane.
 
 ## Capability and routing limits
 
-Every profile has `capability: "manual"`, `loginModes: ["manual"]` and
-`requiresHttps: true`. There are no form selectors, credential adapters, email-only
+Every profile has `requiresHttps: true`. Every profile except My Vodafone has
+`capability: "manual"` and `loginModes: ["manual"]`; My Vodafone is described below. There are no form selectors, credential adapters, email-only
 assistance, automatic TOTP challenges, auxiliary credential origins or wildcard
 grants. No account was registered, no credentials were entered and no authenticated
 session was tested. Public documentation, links, anonymous HTML and HTTP redirects
@@ -152,7 +152,14 @@ presets. No unknown tenant hostname has been synthesized.
   website.
 - Login and registration are selected inside the portal. No captured
   `login.vodafone.pt` authorization URLs, request IDs, nonces or callbacks are
-  saved. No login form contract, SMS challenge or authenticated access was tested.
+  saved.
+- Automatic sign-in (added 2026-10-13): `capability: "known-form"`, login modes
+  manual and form, manual selected by default. The user-name, password and submit
+  selectors of the one POST form in the sign-in panel of `/main.html` come from an
+  anonymous capture of 2026-10-12 (class B evidence in
+  `tests/fixtures/logins/vodafone-portugal/`). The invisible reCAPTCHA, the SMS code,
+  the cookie dialog and sign-in with the customer's own Vodafone number stay with the
+  user. No authenticated access was tested.
 
 ### DIGI Portugal
 
@@ -245,8 +252,9 @@ logos.
 ## Validation scope
 
 `tests/utils/portugalPortalProfiles.test.ts` imports the exported array directly
-and checks completeness/uniqueness, manual-only capabilities, absence of credential
-and challenge automation, exact reviewed destinations, HTTPS without embedded
+and checks completeness/uniqueness, manual-only capabilities (My Vodafone's reviewed form
+is pinned against its evidence in `tests/utils/reviewedPortalForms.test.ts`), absence of
+challenge automation, exact reviewed destinations, HTTPS without embedded
 identity state, and separation of the two MEO portal origins. These are offline
 metadata checks, not live website or proxy-routing tests. The main lane must wire
 the registry and validate its shared default-mode/consent behavior separately.

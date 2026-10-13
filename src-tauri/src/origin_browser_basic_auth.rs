@@ -1,11 +1,16 @@
-//! Temporary, native-only HTTP Basic credentials. Never a proxy or form grant.
-use super::{NativeAuthorityError, NativeOwnerLease};
+//! Native-only HTTP Basic/Digest credentials: a Quick Connect tab's Basic pair,
+//! or a saved connection whose login mode is `basic` or `digest`. Never a proxy
+//! or form grant. Chromium computes a Digest response itself from the pair.
+use super::{credentials, NativeAuthorityError, NativeOwnerLease};
+use serde_json::Value;
 use sorng_browser_host::ipc::OriginBrowserQuickConnect;
+use sorng_encryption::EncryptionState;
 use sorng_protocols::origin_browser::{BrowserIdentity, OriginBrowserPolicy};
 use std::sync::{
     atomic::{AtomicBool, AtomicUsize, Ordering},
     Arc,
 };
+use tauri::{Runtime, WebviewWindow};
 use url::{Host, Url};
 use zeroize::Zeroizing;
 
@@ -13,6 +18,41 @@ const MAX_CREDENTIAL_BYTES: usize = 16_384;
 const MAX_URL_BYTES: usize = 16_384;
 // Bound repeated 401s, including parallel resource challenges, for one attempt.
 const MAX_RESPONSES: usize = 32;
+
+/// The one HTTP authentication scheme a grant answers. A Digest grant never
+/// answers Basic: that would hand the cleartext password to whoever can
+/// answer with a Basic challenge (the legacy engine refuses it too).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum HttpAuthScheme {
+    Basic,
+    Digest,
+}
+
+impl HttpAuthScheme {
+    fn matches(self, scheme: &str) -> bool {
+        scheme.eq_ignore_ascii_case(match self {
+            Self::Basic => "basic",
+            Self::Digest => "digest",
+        })
+    }
+}
+
+/// Saved opt-in only. An application row answers when its login mode is
+/// `basic` or `digest`; `manual` and `form` never do. A row without an
+/// application answers when its legacy `authType` is exactly `basic` or
+/// `digest` (`explicit == false`: a bad pair then disables only this answer,
+/// never the tab, because such rows also carry form-login credentials).
+fn saved_mode(connection: &Value) -> Option<(HttpAuthScheme, bool)> {
+    let (mode, explicit) = match connection.get("httpApplication") {
+        Some(application) => (application.get("loginMode")?.as_str()?, true),
+        None => (connection.get("authType")?.as_str()?, false),
+    };
+    match mode {
+        "basic" => Some((HttpAuthScheme::Basic, explicit)),
+        "digest" => Some((HttpAuthScheme::Digest, explicit)),
+        _ => None,
+    }
+}
 
 /// No Debug, Clone or serde: secrets stay in the owning browser process.
 pub struct NativeBasicAuth {
@@ -36,6 +76,43 @@ impl NativeBasicAuth {
             grant,
             lease: lease.clone(),
         })))
+    }
+
+    /// A saved connection's grant for its exact source origin (`policy`'s,
+    /// which the caller derived from the saved row): same scheme, host and
+    /// port, so an HTTPS source never answers over HTTP and an HTTP source
+    /// exists only when the row itself is saved as HTTP and `httpsOnly` is off.
+    /// The pair is the one the editor and the legacy engine send for these
+    /// modes: the vault entry when one is selected, else the dedicated Basic
+    /// pair, else the generic pair; never an application rewrite of it.
+    pub(super) async fn saved<R: Runtime>(
+        connection: &Value,
+        policy: &OriginBrowserPolicy,
+        lease: &NativeOwnerLease,
+        window: &WebviewWindow<R>,
+        state: &EncryptionState,
+    ) -> Result<Option<Arc<Self>>, NativeAuthorityError> {
+        let Some((scheme, explicit)) = saved_mode(connection) else {
+            return Ok(None);
+        };
+        if lease.is_temporary() || !lease.is_current() {
+            return Err(NativeAuthorityError::OwnerUnavailable);
+        }
+        let grant = match credentials::resolve_pair(connection, lease, window, state).await {
+            Ok(pair) => BasicAuthGrant::saved(scheme, pair, policy),
+            Err(error) => Err(error),
+        };
+        match grant {
+            Ok(Some(grant)) => Ok(Some(Arc::new(Self {
+                grant,
+                lease: lease.clone(),
+            }))),
+            // A saved basic/digest mode without a usable pair is an error the
+            // user must fix, as the editor and legacy engine report it.
+            Ok(None) if explicit => Err(NativeAuthorityError::CredentialUnavailable),
+            Err(error) if explicit => Err(error),
+            Ok(None) | Err(_) => Ok(None),
+        }
     }
 
     /// Native non-proxy challenge only. Borrow synchronously, at most once.
@@ -68,27 +145,54 @@ impl NativeBasicAuth {
 struct BasicAuthGrant {
     identity: BrowserIdentity,
     source: Url,
+    scheme: HttpAuthScheme,
     username: Zeroizing<String>,
     password: Zeroizing<String>,
     revoked: AtomicBool,
     responses: AtomicUsize,
 }
 
+/// `None` for an empty pair; an error for one no HTTP scheme can carry.
+fn checked_pair(username: &str, password: &str) -> Result<bool, NativeAuthorityError> {
+    if [username, password]
+        .iter()
+        .any(|value| value.len() > MAX_CREDENTIAL_BYTES || value.chars().any(char::is_control))
+        || username.contains(':')
+    {
+        return Err(NativeAuthorityError::CredentialUnavailable);
+    }
+    Ok(!username.is_empty() || !password.is_empty())
+}
+
 impl BasicAuthGrant {
+    fn saved(
+        scheme: HttpAuthScheme,
+        pair: credentials::Credentials,
+        policy: &OriginBrowserPolicy,
+    ) -> Result<Option<Self>, NativeAuthorityError> {
+        if !checked_pair(&pair.username, &pair.password)? {
+            return Ok(None);
+        }
+        let source =
+            challenge_url(policy.source_origin()).ok_or(NativeAuthorityError::SourceMismatch)?;
+        Ok(Some(Self {
+            identity: policy.identity().clone(),
+            source,
+            scheme,
+            username: pair.username,
+            password: pair.password,
+            revoked: AtomicBool::new(false),
+            responses: AtomicUsize::new(0),
+        }))
+    }
+
     fn new(
         quick: &OriginBrowserQuickConnect,
         policy: &OriginBrowserPolicy,
     ) -> Result<Option<Self>, NativeAuthorityError> {
         let username = quick.basic_auth_username.as_deref().unwrap_or("");
         let password = quick.basic_auth_password.as_deref().unwrap_or("");
-        if [username, password]
-            .iter()
-            .any(|value| value.len() > MAX_CREDENTIAL_BYTES || value.chars().any(char::is_control))
-            || username.contains(':')
-        {
-            return Err(NativeAuthorityError::CredentialUnavailable);
-        }
-        if username.is_empty() && password.is_empty() {
+        if !checked_pair(username, password)? {
             return Ok(None);
         }
         let source =
@@ -109,6 +213,8 @@ impl BasicAuthGrant {
         Ok(Some(Self {
             identity: policy.identity().clone(),
             source,
+            // Quick Connect offers Basic fields only; unchanged.
+            scheme: HttpAuthScheme::Basic,
             username: Zeroizing::new(username.to_owned()),
             password: Zeroizing::new(password.to_owned()),
             revoked: AtomicBool::new(false),
@@ -133,7 +239,7 @@ impl BasicAuthGrant {
     ) -> bool {
         if identity != &self.identity
             || self.revoked.load(Ordering::Acquire)
-            || !scheme.eq_ignore_ascii_case("basic")
+            || !self.scheme.matches(scheme)
             || port == 0
             || self.source.port_or_known_default() != Some(port)
             || !challenge_url(origin_url).is_some_and(|url| url.origin() == self.source.origin())
@@ -467,5 +573,403 @@ mod tests {
             443,
             "basic"
         ));
+    }
+
+    /// Saved rows through the real `authorize_create` path (synthetic database).
+    mod saved {
+        use super::super::super::tests::{connection, Fixture};
+        use super::super::NativeBasicAuth;
+        use crate::origin_browser_authority::{
+            authorize_create_with_certificate_hooks, NativeAuthorityError, NativeAuthorizedBrowser,
+        };
+        use serde_json::{json, Value};
+        use sorng_protocols::origin_browser::BrowserIdentity;
+
+        const SOURCE: &str = "https://source.example/login?q=fixture";
+
+        fn app(id: &str, mode: &str) -> Value {
+            let mut row = connection();
+            row["httpApplication"] = json!({"version":1,"id":id,"loginMode":mode});
+            row["basicAuthUsername"] = "basic-user".into();
+            row["basicAuthPassword"] = "basic-secret".into();
+            row
+        }
+
+        fn legacy(auth_type: Option<&str>) -> Value {
+            let mut row = connection();
+            if let Some(auth_type) = auth_type {
+                row["authType"] = auth_type.into();
+            }
+            row
+        }
+
+        async fn authorize(row: Value) -> Result<NativeAuthorizedBrowser, NativeAuthorityError> {
+            Fixture::new(row).await.authorize().await
+        }
+
+        /// The pair delivered, or None when nothing was answered.
+        fn answer(
+            auth: &NativeBasicAuth,
+            identity: &BrowserIdentity,
+            url: &str,
+            host: &str,
+            port: u16,
+            scheme: &str,
+        ) -> Option<(String, String)> {
+            let mut delivered = None;
+            let mut calls = 0;
+            let allowed = auth.with_credentials(identity, url, host, port, scheme, &mut |u, p| {
+                calls += 1;
+                delivered = Some((u.to_owned(), p.to_owned()));
+            });
+            assert_eq!(calls, usize::from(allowed));
+            delivered
+        }
+
+        fn pair(user: &str, password: &str) -> Option<(String, String)> {
+            Some((user.into(), password.into()))
+        }
+
+        #[tokio::test]
+        async fn saved_basic_mode_answers_only_its_exact_source_origin() {
+            let authorized = authorize(app("http-basic", "basic")).await.unwrap();
+            assert!(!authorized.login.enabled());
+            let auth = authorized.basic_auth.as_deref().expect("saved basic grant");
+            let id = authorized.policy.identity();
+            assert_eq!(
+                answer(
+                    auth,
+                    id,
+                    "https://source.example/other/page",
+                    "source.example",
+                    443,
+                    "Basic"
+                ),
+                pair("basic-user", "basic-secret")
+            );
+            for (url, host, port, scheme) in [
+                // Wrong scheme: a basic grant never answers Digest (or anything else).
+                ("https://source.example/", "source.example", 443, "Digest"),
+                ("https://source.example/", "source.example", 443, "NTLM"),
+                // Sub-resource or redirect target on another origin.
+                ("https://other.example/", "other.example", 443, "Basic"),
+                (
+                    "https://sub.source.example/",
+                    "sub.source.example",
+                    443,
+                    "Basic",
+                ),
+                (
+                    "https://source.example:8443/",
+                    "source.example",
+                    8443,
+                    "Basic",
+                ),
+                // Never downgraded to cleartext HTTP on the same host.
+                ("http://source.example/", "source.example", 80, "Basic"),
+                // Host/port reported by the engine must agree with the URL.
+                ("https://source.example/", "other.example", 443, "Basic"),
+                ("https://source.example/", "source.example", 8443, "Basic"),
+            ] {
+                assert_eq!(
+                    answer(auth, id, url, host, port, scheme),
+                    None,
+                    "{url} {host} {port} {scheme}"
+                );
+            }
+        }
+
+        #[tokio::test]
+        async fn saved_digest_mode_answers_digest_and_never_a_basic_downgrade() {
+            let mut row = app("http-digest", "digest");
+            // No dedicated pair: the generic pair is used, as in the editor.
+            row.as_object_mut().unwrap().remove("basicAuthUsername");
+            row.as_object_mut().unwrap().remove("basicAuthPassword");
+            let authorized = authorize(row).await.unwrap();
+            let auth = authorized
+                .basic_auth
+                .as_deref()
+                .expect("saved digest grant");
+            let id = authorized.policy.identity();
+            for scheme in ["Digest", "digest", "DIGEST"] {
+                assert_eq!(
+                    answer(auth, id, SOURCE, "source.example", 443, scheme),
+                    pair("test-user", "fixture-secret")
+                );
+            }
+            assert_eq!(
+                answer(auth, id, SOURCE, "source.example", 443, "Basic"),
+                None
+            );
+            assert_eq!(
+                answer(
+                    auth,
+                    id,
+                    "https://other.example/",
+                    "other.example",
+                    443,
+                    "Digest"
+                ),
+                None
+            );
+        }
+
+        #[tokio::test]
+        async fn manual_and_form_modes_and_other_legacy_auth_types_never_answer() {
+            for row in [
+                app("http-basic", "manual"),
+                app("http-digest", "manual"),
+                app("generic-form", "form"),
+                app("generic-form", "manual"),
+                legacy(None),
+                legacy(Some("password")),
+                legacy(Some("header")),
+                legacy(Some("key")),
+            ] {
+                let authorized = authorize(row.clone()).await.unwrap();
+                assert!(authorized.basic_auth.is_none(), "{row}");
+            }
+        }
+
+        #[tokio::test]
+        async fn legacy_basic_and_digest_auth_types_answer_their_own_scheme() {
+            let authorized = authorize(legacy(Some("basic"))).await.unwrap();
+            let auth = authorized
+                .basic_auth
+                .as_deref()
+                .expect("legacy basic grant");
+            let id = authorized.policy.identity();
+            assert_eq!(
+                answer(auth, id, SOURCE, "source.example", 443, "basic"),
+                pair("test-user", "fixture-secret")
+            );
+            assert_eq!(
+                answer(auth, id, SOURCE, "source.example", 443, "digest"),
+                None
+            );
+            let authorized = authorize(legacy(Some("digest"))).await.unwrap();
+            let auth = authorized
+                .basic_auth
+                .as_deref()
+                .expect("legacy digest grant");
+            let id = authorized.policy.identity();
+            assert!(answer(auth, id, SOURCE, "source.example", 443, "Digest").is_some());
+            assert_eq!(
+                answer(auth, id, SOURCE, "source.example", 443, "Basic"),
+                None
+            );
+        }
+
+        #[tokio::test]
+        async fn saved_mode_without_a_usable_pair_is_refused_but_legacy_rows_still_open() {
+            let mut row = app("http-basic", "basic");
+            for key in [
+                "basicAuthUsername",
+                "basicAuthPassword",
+                "username",
+                "password",
+            ] {
+                row.as_object_mut().unwrap().remove(key);
+            }
+            assert!(matches!(
+                authorize(row).await,
+                Err(NativeAuthorityError::CredentialUnavailable)
+            ));
+            let mut row = app("http-basic", "basic");
+            row["basicAuthUsername"] = "user:name".into();
+            assert!(matches!(
+                authorize(row).await,
+                Err(NativeAuthorityError::CredentialUnavailable)
+            ));
+            let mut row = app("http-digest", "digest");
+            row["basicAuthPassword"] = "line\r\nbreak".into();
+            assert!(matches!(
+                authorize(row).await,
+                Err(NativeAuthorityError::CredentialUnavailable)
+            ));
+            // A legacy row also carries form-login credentials: an unusable
+            // pair only disables the HTTP answer, never the tab.
+            let mut row = legacy(Some("basic"));
+            row["username"] = "user:name".into();
+            assert!(authorize(row).await.unwrap().basic_auth.is_none());
+            let mut row = legacy(Some("basic"));
+            row["username"] = "".into();
+            row["password"] = "".into();
+            row["httpAutoLogin"] = false.into();
+            assert!(authorize(row).await.unwrap().basic_auth.is_none());
+        }
+
+        #[tokio::test]
+        async fn dedicated_pair_wins_whole_and_application_rewrites_do_not_apply() {
+            // Username only in the dedicated pair: never mixed with the generic password.
+            let mut row = app("proxmox", "basic");
+            row["basicAuthPassword"] = Value::Null;
+            row["basicAuthUsername"] = "root".into();
+            let authorized = authorize(row).await.unwrap();
+            let auth = authorized.basic_auth.as_deref().unwrap();
+            // Proxmox's `@pam` realm suffix is a form-login rewrite only.
+            assert_eq!(
+                answer(
+                    auth,
+                    authorized.policy.identity(),
+                    SOURCE,
+                    "source.example",
+                    443,
+                    "Basic"
+                ),
+                pair("root", "")
+            );
+        }
+
+        #[tokio::test]
+        async fn vault_selection_supplies_the_pair_and_local_fields_are_ignored() {
+            let vault = "01234567-89ab-4cde-8fab-0123456789ab";
+            let mut row = app("http-basic", "basic");
+            row["credentialSource"] = json!({"kind":"vault","credentialId":vault});
+            let mut f = Fixture::new(row.clone()).await;
+            f.replace_totp_fixture_data(&json!({"connections":[row], "settings":{}, "credentialVault":{
+                "version":1,"revision":1,"entries":[{"id":vault,"facets":{"username":"vault-user","password":"vault-secret"}}]
+            }}));
+            let authorized = f.authorize().await.unwrap();
+            let auth = authorized.basic_auth.as_deref().unwrap();
+            assert_eq!(
+                answer(
+                    auth,
+                    authorized.policy.identity(),
+                    SOURCE,
+                    "source.example",
+                    443,
+                    "Basic"
+                ),
+                pair("vault-user", "vault-secret")
+            );
+            // Missing vault entry: refused, never a fallback to the local pair.
+            let mut row = app("http-basic", "basic");
+            row["credentialSource"] = json!({"kind":"vault","credentialId":vault});
+            assert!(matches!(
+                authorize(row).await,
+                Err(NativeAuthorityError::CredentialUnavailable)
+            ));
+        }
+
+        #[tokio::test]
+        async fn lease_loss_and_saved_edits_stop_delivery_at_once() {
+            let mut f = Fixture::new(app("http-basic", "basic")).await;
+            let authorized = f.authorize().await.unwrap();
+            let auth = authorized.basic_auth.as_deref().unwrap();
+            let id = authorized.policy.identity();
+            assert!(answer(auth, id, SOURCE, "source.example", 443, "Basic").is_some());
+            let mut edited = app("http-basic", "basic");
+            edited["basicAuthPassword"] = "changed".into();
+            f.replace_connection(edited);
+            assert!(authorized.lease.recheck(&f.window, &f.state).await.is_err());
+            assert_eq!(
+                answer(auth, id, SOURCE, "source.example", 443, "Basic"),
+                None
+            );
+
+            let authorized = Fixture::new(app("http-basic", "basic"))
+                .await
+                .authorize()
+                .await
+                .unwrap();
+            let auth = authorized.basic_auth.as_deref().unwrap();
+            let id = authorized.policy.identity();
+            authorized.lease.revoke();
+            assert_eq!(
+                answer(auth, id, SOURCE, "source.example", 443, "Basic"),
+                None
+            );
+        }
+
+        #[tokio::test]
+        async fn saved_grant_is_bounded_to_32_responses_per_attempt() {
+            let authorized = authorize(app("http-basic", "basic")).await.unwrap();
+            let auth = authorized.basic_auth.as_deref().unwrap();
+            let id = authorized.policy.identity();
+            for _ in 0..32 {
+                assert!(answer(auth, id, SOURCE, "source.example", 443, "Basic").is_some());
+            }
+            assert_eq!(
+                answer(auth, id, SOURCE, "source.example", 443, "Basic"),
+                None
+            );
+        }
+
+        #[tokio::test]
+        async fn saved_http_source_answers_only_its_exact_http_origin_and_https_only_refuses_it() {
+            let mut row = app("http-basic", "basic");
+            row["protocol"] = "http".into();
+            row["hostname"] = "http://router.example:8080/".into();
+            row["port"] = 8080.into();
+            row["httpVerifySsl"] = false.into();
+            let mut f = Fixture::new(row.clone()).await;
+            f.request.initial_url = "http://router.example:8080/".into();
+            let authorized =
+                authorize_create_with_certificate_hooks(&f.window, &f.state, &f.request)
+                    .await
+                    .unwrap();
+            let auth = authorized
+                .basic_auth
+                .as_deref()
+                .expect("saved HTTP basic grant");
+            let id = authorized.policy.identity();
+            assert!(answer(
+                auth,
+                id,
+                "http://router.example:8080/x",
+                "router.example",
+                8080,
+                "Basic"
+            )
+            .is_some());
+            for (url, port) in [
+                ("https://router.example:8080/", 8080),
+                ("http://router.example/", 80),
+                ("https://router.example/", 443),
+            ] {
+                assert_eq!(
+                    answer(auth, id, url, "router.example", port, "Basic"),
+                    None,
+                    "{url}"
+                );
+            }
+            row["httpProxyPolicy"] = json!({"version":1,"httpsOnly":true});
+            let mut f = Fixture::new(row).await;
+            f.request.initial_url = "http://router.example:8080/".into();
+            assert!(
+                authorize_create_with_certificate_hooks(&f.window, &f.state, &f.request)
+                    .await
+                    .is_err()
+            );
+        }
+
+        #[tokio::test]
+        async fn quick_connect_grant_still_answers_basic_only() {
+            let mut f = Fixture::new(connection()).await;
+            let mut wire = serde_json::to_value(&f.request).unwrap();
+            wire["owner"]["ownerDatabaseId"] = json!("quick-connect:tab");
+            wire["expectedSecurityRevision"] = json!("quick-connect");
+            wire["sourceSessionId"] = json!("tab");
+            wire["initialUrl"] = json!("https://temporary.example/");
+            wire["quickConnect"] = json!({"protocol":"https","hostname":"temporary.example","port":443,
+                "httpVerifySsl":true,"basicAuthUsername":"quick-user","basicAuthPassword":"quick-secret"});
+            f.request = serde_json::from_value(wire).unwrap();
+            let authorized =
+                authorize_create_with_certificate_hooks(&f.window, &f.state, &f.request)
+                    .await
+                    .unwrap();
+            let auth = authorized.basic_auth.as_deref().unwrap();
+            let id = authorized.policy.identity();
+            let url = "https://temporary.example/";
+            assert_eq!(
+                answer(auth, id, url, "temporary.example", 443, "Basic"),
+                pair("quick-user", "quick-secret")
+            );
+            assert_eq!(
+                answer(auth, id, url, "temporary.example", 443, "Digest"),
+                None
+            );
+        }
     }
 }

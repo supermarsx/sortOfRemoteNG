@@ -94,6 +94,37 @@ describe("independent HTTP application security audit", () => {
           );
           continue;
         }
+        if (profile.id === "drone-ci" && loginMode === "form") {
+          // Bridged through the saved Git provider: the native engine binds
+          // that origin; the proxy engine refuses instead of guessing a form.
+          expect(() =>
+            resolveHttpApplicationLogin({
+              ...connection,
+              httpApplication: {
+                ...connection.httpApplication!,
+                droneScmProvider: "gitea",
+                droneScmOrigin: "https://git.example.test",
+              },
+            }),
+          ).toThrow(/native browser engine/);
+          continue;
+        }
+        if (
+          loginMode === "form" &&
+          profile.declarativeLogin &&
+          profile.declarativeLoginMode === "exclusive"
+        ) {
+          // This resolver serves the legacy proxy engine. Native-only steps
+          // must fail closed here rather than guessing a form or forwarding
+          // credentials to an engine which cannot enforce the reviewed steps.
+          expect(() => resolveHttpApplicationLogin(connection)).toThrow(
+            /native browser engine/,
+          );
+          expect(profile.declarativeLogin.id).toBe(profile.id);
+          expect(profile.declarativeLogin.version).toBe(1);
+          expect(profile.declarativeLogin.loginSteps.length).toBeGreaterThan(0);
+          continue;
+        }
         const result = resolveHttpApplicationLogin(connection);
         if (loginMode === "manual")
           expect(result).toEqual({
@@ -114,7 +145,10 @@ describe("independent HTTP application security audit", () => {
             autoLogin: false,
           });
       }
-      if (profile.capability === "manual") expect(allowed).toEqual(["manual"]);
+      if (profile.capability === "manual")
+        expect(allowed).toEqual(
+          profile.declarativeLogin ? ["manual", "form"] : ["manual"],
+        );
       if (profile.capability === "none") expect(allowed).toEqual([]);
     },
   );

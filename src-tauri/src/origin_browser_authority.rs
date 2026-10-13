@@ -58,6 +58,8 @@ mod permission_validation_tests;
 mod ptisp_defaults;
 #[path = "origin_browser_autodesk_defaults.rs"]
 mod autodesk_defaults;
+#[path = "origin_browser_drone_scm.rs"]
+mod drone_scm;
 #[path = "origin_browser_automation_authority.rs"]
 mod automation;
 pub use automation::NativeAutomationAuthority;
@@ -69,6 +71,8 @@ mod credentials;
 mod native_totp;
 #[path = "origin_browser_basic_auth.rs"]
 mod basic_auth;
+#[path = "origin_browser_login_steps.rs"]
+mod login_steps;
 pub use basic_auth::NativeBasicAuth;
 #[path = "origin_browser_routes.rs"]
 mod routes;
@@ -185,6 +189,10 @@ pub struct NativeLoginAuthority {
     availability: NativeCredentialAvailability,
     manual_submit: bool,
     totp: Option<native_totp::NativeTotpAuthority>,
+    /// Re-validated declarative steps, only when the catalog announces
+    /// `declarativeLoginSupported`. `origins` is then exactly its credential
+    /// origins, and every stage must also pass `declarative_permits`.
+    steps: Option<login_steps::LoginStepsPlan>,
 }
 
 impl NativeLoginAuthority {
@@ -271,6 +279,35 @@ impl NativeLoginAuthority {
         self.availability
     }
 
+    /// True when this login runs reviewed declarative steps.
+    pub fn declarative(&self) -> bool {
+        self.steps.is_some()
+    }
+
+    /// For a declarative login: whether the steps let `stage` (the host's wire
+    /// name) run on this exact origin, at the live `path` and `frame` the host
+    /// reports for the requesting document at the moment of the request.
+    /// Without a reported path only steps without a path gate qualify. Always
+    /// true for any other login (its own rules apply unchanged).
+    pub fn scm_consent_permits(&self, origin: &str, path: &str) -> bool {
+        self.application_id == drone_scm::APPLICATION_ID && self.form_configuration.as_deref()
+            .and_then(|json| serde_json::from_str::<Value>(json).ok())
+            .and_then(|setup| setup.get("droneScmConsent").cloned())
+            .is_some_and(|consent| consent["origin"].as_str() == Some(origin) && consent["paths"].as_array().is_some_and(|paths| paths.iter().any(|value| value.as_str() == Some(path))))
+    }
+
+    pub fn declarative_permits(
+        &self,
+        origin: &str,
+        stage: &str,
+        path: Option<&str>,
+        frame: Option<&str>,
+    ) -> bool {
+        self.steps
+            .as_ref()
+            .is_none_or(|plan| plan.permits(origin, stage, path, frame))
+    }
+
     pub fn with_credentials(
         &self,
         request: &NativeLoginRequest<'_>,
@@ -316,17 +353,35 @@ impl NativeLoginAuthority {
 /// Reviewed defaults are generated from the legacy application catalog and
 /// parity-tested against that catalog. Unknown/staged/manual profiles never
 /// fall back to heuristic filling. Saved overrides remain authoritative.
+static NATIVE_LOGIN_CATALOG: LazyLock<Value> = LazyLock::new(|| {
+    serde_json::from_str(include_str!(
+        "../crates/sorng-browser-host/src/native_login_catalog.json"
+    ))
+    .expect("reviewed native login catalog")
+});
+
+#[cfg(test)]
+thread_local! {
+    /// Test-only stand-in for the generated catalog (per test thread).
+    static NATIVE_LOGIN_CATALOG_OVERRIDE: std::cell::Cell<Option<&'static Value>> =
+        const { std::cell::Cell::new(None) };
+}
+
+/// The reviewed, generated native catalog (`generate-native-login-catalog.mjs`).
+fn native_login_catalog() -> &'static Value {
+    #[cfg(test)]
+    if let Some(catalog) = NATIVE_LOGIN_CATALOG_OVERRIDE.with(std::cell::Cell::get) {
+        return catalog;
+    }
+    &NATIVE_LOGIN_CATALOG
+}
+
 fn saved_form_configuration(
     connection: &Value,
     application_id: &str,
 ) -> Result<Option<(String, String)>, ()> {
-    static CATALOG: LazyLock<Value> = LazyLock::new(|| {
-        serde_json::from_str(include_str!(
-            "../crates/sorng-browser-host/src/native_login_catalog.json"
-        ))
-        .expect("reviewed native login catalog")
-    });
-    let profile = &CATALOG["profiles"][application_id];
+    let catalog = native_login_catalog();
+    let profile = &catalog["profiles"][application_id];
     if profile.get("loginFlow").is_some()
         || profile["emailOnly"] == true
         || !matches!(
@@ -364,13 +419,32 @@ fn saved_form_configuration(
             .map(str::to_owned)
             .ok_or(())
     };
-    let defaults = if application_id == "joomla" {
+    // Drone CI: the saved Git provider's reviewed form only. Never generic
+    // detection, never a saved selector override (`origin_browser_drone_scm`).
+    let drone = if application_id == drone_scm::APPLICATION_ID {
+        if connection.get("httpAutoLoginSelectors").is_some_and(|value| {
+            !value.is_null() && !value.as_object().is_some_and(|row| row.is_empty())
+        }) {
+            return Err(());
+        }
+        let source = saved_source(connection).map_err(|_| ())?;
+        Some(
+            drone_scm::bridge(connection, &source.origin().ascii_serialization())?
+                .selectors
+                .ok_or(())?,
+        )
+    } else {
+        None
+    };
+    let defaults = if let Some(drone) = &drone {
+        drone
+    } else if application_id == "joomla" {
         let version = connection
             .pointer("/httpApplication/joomlaVersion")
             .map(|value| value.as_str().ok_or(()))
             .transpose()?
             .unwrap_or("auto");
-        CATALOG["joomla"].get(version).ok_or(())?
+        catalog["joomla"].get(version).ok_or(())?
     } else {
         &profile["selectors"]
     };
@@ -416,6 +490,11 @@ fn saved_form_configuration(
         readiness["formSelector"] = selector.clone().into();
     }
     let mut setup = serde_json::json!({"selectors":selectors,"readiness":readiness});
+    if application_id == drone_scm::APPLICATION_ID {
+        if let Some(consent) = drone_scm::consent_configuration(connection)? {
+            setup["droneScmConsent"] = consent;
+        }
+    }
     // Only the reviewed application catalog can extend login into an iframe.
     // Saved arbitrary JSON, destination grants and page messages cannot do so.
     if let Some(frames) = profile.get("sameOriginLoginFrames") {
@@ -677,6 +756,120 @@ fn saved_login_configuration(
     )))
 }
 
+/// Declarative steps for an automatic (form-mode) saved login.
+/// `Ok(None)`: no steps apply, so the login is exactly what it was before
+/// steps existed. `Err(())`: the row asks for steps this build cannot run
+/// (a `customLogin` while the catalog does not announce
+/// `declarativeLoginSupported`) or the steps are invalid; the login is then
+/// refused, never run in part or as an ordinary form.
+///
+/// The plan comes only from the reviewed catalog or, for the Custom
+/// application, from the saved row, and is re-validated here with the rules
+/// of `src/utils/connection/httpLoginSteps.ts`. Google and the coded staged
+/// providers never take steps. An `additive` catalog entry keeps the
+/// profile's existing form login.
+fn saved_declarative_login(
+    connection: &Value,
+    settings: &Value,
+    application_id: &str,
+    source_origin: &str,
+) -> Result<Option<(String, login_steps::LoginStepsPlan)>, ()> {
+    let catalog = native_login_catalog();
+    let supported = catalog.get("declarativeLoginSupported") == Some(&Value::Bool(true));
+    let profile = &catalog["profiles"][application_id];
+    // The source origin is derived from the saved row: it is HTTP only when
+    // the row is explicitly saved as HTTP (and `httpsOnly` already refused it).
+    let http_allowed = source_origin.starts_with("http://");
+    let custom = connection
+        .pointer("/httpApplication/customLogin")
+        .filter(|value| !value.is_null());
+    let plan = if let Some(options) = custom {
+        if profile["capability"].as_str() != Some("custom-form") {
+            return Err(());
+        }
+        match login_steps::from_custom(
+            connection.get("httpAutoLoginSelectors"),
+            options,
+            source_origin,
+            http_allowed,
+        ) {
+            // `{}`: no option set; an ordinary Custom form, as in the editor.
+            Ok(None) => return Ok(None),
+            Ok(Some(plan)) if supported => plan,
+            // Native used to ignore these options and type the three
+            // selectors anyway; that would type into another document.
+            _ => return Err(()),
+        }
+    } else if let Some(declarative) = profile.get("declarativeLogin").filter(|_| supported) {
+        if profile.get("loginFlow").is_some()
+            || GOOGLE_ROUTES["profiles"].get(application_id).is_some()
+        {
+            return Ok(None);
+        }
+        let (plan, mode) =
+            login_steps::from_catalog(declarative, source_origin, http_allowed).ok_or(())?;
+        if mode == "additive" {
+            return Ok(None);
+        }
+        if connection
+            .get("httpAutoLoginSelectors")
+            .is_some_and(|value| !value.is_null() && !value.as_object().is_some_and(serde_json::Map::is_empty))
+        {
+            return Err(());
+        }
+        plan
+    } else {
+        return Ok(None);
+    };
+    let minimum = |key: &str| -> Result<u64, ()> {
+        match settings.pointer(&format!("/webBrowser/{key}")) {
+            None => Ok(0),
+            Some(value) => value.as_u64().filter(|value| *value <= 30_000).ok_or(()),
+        }
+    };
+    let mut fill = minimum("minimumFormFillDelayMs")?;
+    let mut submit = minimum("minimumFormSubmitDelayMs")?;
+    let mut detection = 8_000;
+    if let Some(raw) = connection.get("httpFormAutomation").filter(|v| !v.is_null()) {
+        // Timing only: the steps name every control, so a form selector or
+        // extra field values have no place in a declarative login.
+        let options: sorng_protocols::themed_autologin::HttpFormAutomation =
+            serde_json::from_value(raw.clone()).map_err(|_| ())?;
+        options.validate().map_err(|_| ())?;
+        if options.form_selector.is_some() || !options.fields.is_empty() {
+            return Err(());
+        }
+        fill = fill.max(u64::from(options.fill_delay_ms));
+        submit = submit.max(u64::from(options.submit_delay_ms));
+        detection = u64::from(options.detection_timeout_ms);
+    }
+    let detection = detection.max((fill + submit + 8_000).min(60_000));
+    let setup = serde_json::json!({
+        "declarativeLogin": plan.configuration(),
+        "readiness": {"detectionTimeoutMs": detection},
+        "timing": {"fillDelayMs": fill, "submitDelayMs": submit},
+    });
+    Ok(Some((setup.to_string(), plan)))
+}
+
+/// Saved credentials are usable when both are present, or, for password-only
+/// declarative steps, when the password is.
+fn credential_availability(
+    selected: &credentials::Credentials,
+    connection: &Value,
+    steps: Option<&login_steps::LoginStepsPlan>,
+) -> NativeCredentialAvailability {
+    if steps.is_some_and(login_steps::LoginStepsPlan::password_only) {
+        if selected.password.is_empty() {
+            NativeCredentialAvailability::Unavailable
+        } else {
+            NativeCredentialAvailability::Saved
+        }
+    } else {
+        selected.availability(connection)
+    }
+}
+
 fn saved_login(
     connection: &Value,
     settings: &Value,
@@ -696,9 +889,23 @@ fn saved_login(
         .pointer("/httpApplication/id")
         .and_then(Value::as_str)
         .unwrap_or("generic-form");
+    // Nothing is typed without automatic login, so only then can steps (or a
+    // refusal of them) matter.
+    let declarative = if enabled {
+        saved_declarative_login(connection, settings, application_id, policy.source_origin())
+    } else {
+        Ok(None)
+    };
+    let steps = declarative
+        .as_ref()
+        .ok()
+        .and_then(|value| value.as_ref().map(|(_, plan)| plan.clone()));
     let (availability, selected) = match credentials::vault_id(connection) {
         Ok(None) => match credentials::local(connection) {
-            Ok(selected) => (selected.availability(connection), Some(selected)),
+            Ok(selected) => (
+                credential_availability(&selected, connection, steps.as_ref()),
+                Some(selected),
+            ),
             Err(_) => (NativeCredentialAvailability::Unavailable, None),
         },
         _ => (
@@ -716,7 +923,16 @@ fn saved_login(
     let selectors_supported = connection
         .get("httpAutoLoginSelectors")
         .is_none_or(|value| value.is_null() || value.as_object().is_some_and(|row| row.is_empty()));
-    let form = saved_login_configuration(connection, settings, application_id);
+    let form = match declarative {
+        Err(()) => Err(()),
+        // ModularForm options are never used by the declarative adapter; keep
+        // the default secret-free shape so nothing else changes downstream.
+        Ok(Some((setup, _))) => Ok(Some((
+            setup,
+            serde_json::json!({"version":1,"fillDelayMs":0,"submitDelayMs":0,"detectionTimeoutMs":8000,"submit":true,"fields":[]}).to_string(),
+        ))),
+        Ok(None) => saved_login_configuration(connection, settings, application_id),
+    };
     let supports_default_adapter = (form.is_ok() && form.as_ref().is_ok_and(Option::is_some)
         || (selectors_supported
             && connection
@@ -733,8 +949,29 @@ fn saved_login(
         GOOGLE_ROUTES["profiles"][application_id].as_str() == Some(policy.source_origin());
     // Google product/document routes are not password-entry authorities. Even
     // the source (Studio, Gmail, etc.) and www.google.com cannot get secrets.
-    let mut origins = if google_login || !enabled {
+    // Drone CI: exactly the bridge's one credential origin, never the Drone
+    // origin for an OAuth provider and never a redirect destination.
+    let drone = drone_scm::is_drone(connection);
+    let drone_origin = if drone && enabled {
+        drone_scm::bridge(connection, policy.source_origin())
+            .ok()
+            .and_then(|bridge| bridge.credential_origin)
+    } else {
+        None
+    };
+    let mut origins = if drone {
+        // Gogs: Drone's own form on the saved source (which may be HTTP).
+        drone_origin
+            .iter()
+            .filter(|origin| origin.as_str() == policy.source_origin())
+            .cloned()
+            .collect()
+    } else if google_login || !enabled {
         Vec::new()
+    } else if let Some(plan) = &steps {
+        // Exactly the origins a step runs on: the source only when a step
+        // uses it, plus the reviewed listed origins. Nothing is added below.
+        plan.credential_origins().to_vec()
     } else {
         vec![policy.source_origin().to_owned()]
     };
@@ -748,8 +985,17 @@ fn saved_login(
     if google_login && enabled {
         add_origin("https://accounts.google.com");
     }
+    // OAuth: the saved HTTPS SCM, and only if the tab may reach it at all.
+    if let Some(origin) = drone_origin
+        .as_deref()
+        .filter(|origin| *origin != policy.source_origin())
+    {
+        add_origin(origin);
+    }
     if enabled
         && !google_login
+        && steps.is_none()
+        && !drone
         && connection
             .pointer("/httpRedirectAuthentication/version")
             .and_then(Value::as_u64)
@@ -795,6 +1041,7 @@ fn saved_login(
         password: selected.password,
         availability,
         totp: None,
+        steps,
         manual_submit: settings
             .pointer("/webBrowser/manualFormSubmit")
             .and_then(Value::as_bool)
@@ -939,7 +1186,7 @@ async fn authorize_create_inner<R: Runtime>(
     let mut login = saved_login(&connection, &settings, request, &policy, &lease);
     if login.enabled() {
         let selected = credentials::resolve(&connection, &lease, window, state).await?;
-        login.availability = selected.availability(&connection);
+        login.availability = credential_availability(&selected, &connection, login.steps.as_ref());
         login.username = selected.username;
         login.password = selected.password;
         login.totp = native_totp::NativeTotpAuthority::resolve(&connection, &login, window, state).await?;
@@ -957,10 +1204,12 @@ async fn authorize_create_inner<R: Runtime>(
         &policy,
         &lease,
     )?);
+    let basic_auth = match &request.quick_connect {
+        Some(quick) => NativeBasicAuth::new(quick, &policy, &lease)?,
+        None => NativeBasicAuth::saved(&connection, &policy, &lease, window, state).await?,
+    };
     Ok(NativeAuthorizedBrowser {
-        basic_auth: request.quick_connect.as_ref()
-            .map(|quick| NativeBasicAuth::new(quick, &policy, &lease))
-            .transpose()?.flatten(),
+        basic_auth,
         automation: Arc::new(NativeAutomationAuthority::new(
             &connection,
             &lease,
@@ -1152,7 +1401,8 @@ fn saved_source(connection: &Value) -> Result<Url, NativeAuthorityError> {
             url.set_query(saved_query.as_deref());
             url.set_fragment(saved_fragment.as_deref());
         }
-        if id == "cloudflare"
+        // Drone CI's /login starts the bridged Git provider sign-in at once.
+        if matches!(id, "cloudflare" | "drone-ci")
             && application.get("loginMode").and_then(Value::as_str) == Some("form")
         {
             url.set_path("/login");
@@ -1393,6 +1643,15 @@ fn saved_permissions_inner(
             )?;
         }
         let all: Vec<_> = CLASSES.iter().map(|(class, _)| *class).collect();
+        // Drone CI's saved Git provider: navigation for the bridged sign-in,
+        // not credential authority (that is `saved_login`'s, from the bridge).
+        if let Some(destination) = drone_scm::navigation_origin(connection, &origin) {
+            grant(
+                &destination,
+                &all,
+                invalid("connection.httpApplication.droneScmOrigin", "must be an exact HTTPS origin"),
+            )?;
+        }
         if let Some(redirects) = connection.get("httpTrustedRedirectDestinations") {
             let scope = "connection.httpTrustedRedirectDestinations";
             if redirects.get("version") != Some(&Value::from(1)) {
@@ -3363,6 +3622,93 @@ mod tests {
         assert!(options_released);
     }
 
+    #[tokio::test]
+    async fn drone_ci_bridge_types_only_on_the_saved_git_provider() {
+        const GITEA: &str = "https://git.example.test";
+        const DRONE: &str = "https://ci.example.test";
+        let mut row = connection();
+        row["hostname"] = "ci.example.test".into();
+        row["httpApplication"] = json!({"version":1,"id":"drone-ci","loginMode":"form",
+            "droneScmProvider":"gitea","droneScmOrigin":GITEA,
+            "droneScmClientId":"3f0c2a8e-1b7d-4c55-9a0e-6d2b1f8e7c41"});
+        // Generic redirect forwarding never widens a Drone bridge.
+        row["httpRedirectAuthentication"] =
+            json!({"version":1,"mode":"saved-login","allowInsecureHttp":false});
+        row["httpTrustedRedirectDestinations"] =
+            json!({"version":1,"origins":["https://login.example"]});
+        let mut f = Fixture::new(row.clone()).await;
+        f.request.initial_url = format!("{DRONE}/login");
+        let authorized = f.authorize().await.unwrap();
+        assert_eq!(authorized.login.application_id(), "drone-ci");
+        assert_eq!(authorized.login.consent_origins(), &[GITEA]);
+        assert!(authorized.policy.allowed_origins().iter().any(|o| o == GITEA));
+        assert!(authorized.login.supports_default_adapter());
+        assert!(authorized.login.scm_consent_permits(GITEA, "/login/oauth/authorize"));
+        assert!(!authorized.login.scm_consent_permits(DRONE, "/login/oauth/authorize"));
+        assert!(!authorized.login.scm_consent_permits(GITEA, "/user/login"));
+        let setup: Value =
+            serde_json::from_str(authorized.login.form_configuration().unwrap()).unwrap();
+        assert_eq!(
+            setup["selectors"]["username"],
+            "form[action$=\"/user/login\"] input#user_name[name=\"user_name\"]"
+        );
+        for (origin, expected) in [(GITEA, true), (DRONE, false), ("https://login.example", false)] {
+            let mut released = false;
+            authorized.login.with_credentials(
+                &NativeLoginRequest { identity: authorized.policy.identity(), origin },
+                &Consent { allow: true },
+                &mut |_| released = true,
+            );
+            assert_eq!(released, expected, "{origin}");
+        }
+
+        // Manual mode: no SCM navigation, nothing to type, the saved page opens.
+        let mut manual = row.clone();
+        manual["httpApplication"]["loginMode"] = "manual".into();
+        let mut f = Fixture::new(manual).await;
+        f.request.initial_url = format!("{DRONE}/");
+        let authorized = f.authorize().await.unwrap();
+        assert!(authorized.login.consent_origins().is_empty());
+        assert!(!authorized.policy.allowed_origins().iter().any(|o| o == GITEA));
+
+        // A saved selector override or a broken bridge never falls back to
+        // generic form detection.
+        for (key, value) in [
+            ("httpAutoLoginSelectors", json!({"usernameSelector":"#user"})),
+            ("httpApplication", json!({"version":1,"id":"drone-ci","loginMode":"form"})),
+            ("httpApplication", json!({"version":1,"id":"drone-ci","loginMode":"form",
+                "droneScmProvider":"gitea","droneScmOrigin":DRONE})),
+            ("httpApplication", json!({"version":1,"id":"drone-ci","loginMode":"form",
+                "droneScmProvider":"bitbucket"})),
+        ] {
+            let mut broken = row.clone();
+            broken[key] = value.clone();
+            let mut f = Fixture::new(broken).await;
+            f.request.initial_url = format!("{DRONE}/login");
+            if let Ok(authorized) = f.authorize().await {
+                assert!(
+                    !authorized.login.supports_default_adapter()
+                        || authorized.login.form_configuration().is_none(),
+                    "{key}: {value}"
+                );
+                assert!(!authorized.login.consent_origins().iter().any(|o| o == DRONE), "{value}");
+            }
+        }
+
+        // Gogs: Drone's own form on the saved source, no SCM navigation.
+        let mut gogs = row.clone();
+        gogs["httpApplication"] =
+            json!({"version":1,"id":"drone-ci","loginMode":"form","droneScmProvider":"gogs"});
+        let mut f = Fixture::new(gogs).await;
+        f.request.initial_url = format!("{DRONE}/login");
+        let authorized = f.authorize().await.unwrap();
+        assert_eq!(authorized.login.consent_origins(), &[DRONE]);
+        assert!(authorized
+            .login
+            .form_configuration()
+            .unwrap()
+            .contains("[name=\\\"username\\\"]"));
+    }
     #[tokio::test]
     async fn connect_chain_preserves_hops_remote_dns_and_opaque_payload() {
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();

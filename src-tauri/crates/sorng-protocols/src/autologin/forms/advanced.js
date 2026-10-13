@@ -21,6 +21,8 @@ function bootstrapFill(
     var options;
     var activeCapture;
     var submitAttempted = false;
+    // Escape from the user in a filled field takes the fields back.
+    var stopEscape = null;
     var cpanel =
       readinessProfile === "cpanel"
         ? createCpanelLifecycle({
@@ -45,6 +47,8 @@ function bootstrapFill(
       finished = true;
       clearTimeout(retryTimer);
       clearTimeout(lifetimeTimer);
+      if (stopEscape) stopEscape();
+      stopEscape = null;
       if (cpanel) cpanel.dispose();
       document.removeEventListener("DOMContentLoaded", tick);
       if (cancelActive === cancel) cancelActive = null;
@@ -115,6 +119,35 @@ function bootstrapFill(
         var validate = function () {
           return guarded(captured);
         };
+        if (stopEscape) stopEscape();
+        stopEscape = watchFillEscape(
+          target.pw.ownerDocument || document,
+          function () {
+            return [target.user, target.pw].concat(
+              captured.extras.map(function (field) {
+                return field.element;
+              }),
+            );
+          },
+          function () {
+            if (finished) return;
+            // Only values this run wrote; a user's change stays theirs.
+            var erase = [];
+            if (target.user && target.user.value === creds.username)
+              erase.push(target.user);
+            if (target.pw.value === creds.password) erase.push(target.pw);
+            captured.extras.forEach(function (field) {
+              // A select keeps its option; only typed text is taken back.
+              if (
+                field.element.tagName !== "SELECT" &&
+                field.element.value === field.value
+              )
+                erase.push(field.element);
+            });
+            finish({ ok: false, reason: "cancelled" });
+            erase.forEach(clearFilledField);
+          },
+        );
         if (target.user) {
           fillField(target.user, creds.username, validate);
           if (!guarded(captured)) {

@@ -68,6 +68,7 @@ export const HTTP_APPLICATION_ICON_SUGGESTIONS = Object.freeze({
   freepbx: "freepbx",
   draytek: "draytek",
   "tplink-switch": "tplink",
+  "tplink-eap": "tplink",
   grafana: "grafana",
   budibase: "budibase",
   jira: "jira",

@@ -22,7 +22,7 @@
  * Switching on is two steps in one change: set this to `true`, then run the
  * generator once. Its `--check` fails until both generated files follow.
  */
-export const DECLARATIVE_LOGIN_SUPPORTED: boolean = false;
+export const DECLARATIVE_LOGIN_SUPPORTED: boolean = true;
 
 /**
  * The legacy proxy engine, which runs same-origin steps only. While `false`,

@@ -71,6 +71,9 @@ test("native profile snapshot exactly matches all reviewed legacy defaults", asy
   // compared exactly as before, on a copy without the two steps keys.
   const reviewed = structuredClone(catalog);
   delete reviewed.declarativeLoginSupported;
+  // Drone CI's provider table is generated from droneScmBridge.ts, not from
+  // a profile; tests/tooling/nativeLoginCatalog.node-test.mjs pins it.
+  delete reviewed.droneScm;
   for (const profile of Object.values(reviewed.profiles))
     delete profile.declarativeLogin;
   assert.deepEqual(reviewed, JSON.parse(JSON.stringify(expected)));
@@ -113,7 +116,11 @@ test("native profile snapshot exactly matches all reviewed legacy defaults", asy
   );
   assert.equal(catalog.declarativeLoginSupported, supported ? true : undefined);
 });
-function fixture(t, configuration = { selectors }, url = "https://device.test/login") {
+function fixture(
+  t,
+  configuration = { selectors },
+  url = "https://device.test/login",
+) {
   const dom = new JSDOM(
     '<form method="post" action="/login"><input id="username"><input id="password" type="password"><button id="login" type="submit">Login</button></form>',
     {
@@ -210,11 +217,19 @@ for (const submit of [false, true]) {
   });
 }
 
-for (const origin of ["http://other.test:8080", "https://device.test:8080", "http://device.test:8081", "http://device.test"]) {
+for (const origin of [
+  "http://other.test:8080",
+  "https://device.test:8080",
+  "http://device.test:8081",
+  "http://device.test",
+]) {
   test(`HTTP selected form rejects wrong delivery origin ${origin}`, async (t) => {
     const f = fixture(t, { selectors }, "http://device.test:8080/login");
     await delay(40);
-    assert.equal(f.deliver(origin, "alice", "secret", true, Date.now() + 2000), false);
+    assert.equal(
+      f.deliver(origin, "alice", "secret", true, Date.now() + 2000),
+      false,
+    );
     assert.equal(f.field("username").value, "");
     assert.equal(f.field("password").value, "");
     assert.equal(f.submits(), 0);
@@ -235,7 +250,16 @@ test("HTTPS credentials cannot follow a redirect to the same HTTP host and port"
   assert.deepEqual(f.signals, ["form"]);
   f.navigate("http://device.test:8080/login");
   assert.equal(f.send(true), false);
-  assert.equal(f.deliver("http://device.test:8080", "alice", "secret", true, Date.now() + 2000), false);
+  assert.equal(
+    f.deliver(
+      "http://device.test:8080",
+      "alice",
+      "secret",
+      true,
+      Date.now() + 2000,
+    ),
+    false,
+  );
   assert.equal(f.field("password").value, "");
   assert.equal(f.submits(), 0);
 });
@@ -367,17 +391,22 @@ function nativeFixture(
   const digests = new Set();
   // Chromium exposes random bytes, but not SubtleCrypto, on ordinary HTTP.
   if (new URL(url).protocol === "https:")
-    Object.defineProperty(w, "crypto", { value: {
-      getRandomValues: array => webcrypto.getRandomValues(array),
-      subtle: {
-        async digest(...args) {
-          const pending = webcrypto.subtle.digest(...args);
-          digests.add(pending);
-          try { return await pending; }
-          finally { digests.delete(pending); }
+    Object.defineProperty(w, "crypto", {
+      value: {
+        getRandomValues: (array) => webcrypto.getRandomValues(array),
+        subtle: {
+          async digest(...args) {
+            const pending = webcrypto.subtle.digest(...args);
+            digests.add(pending);
+            try {
+              return await pending;
+            } finally {
+              digests.delete(pending);
+            }
+          },
         },
       },
-    } });
+    });
   async function settle() {
     await delay(1);
     // Cancellation clears all simulated timers, but its real WebCrypto cleanup
@@ -830,14 +859,21 @@ const delayedProviderCases = [
 ];
 for (const wrapped of [false, true]) {
   test(`Google accepts an implicit-submit Next button (${wrapped ? "wrapped" : "direct"}) through both stages`, async (t) => {
-    const next = (id) => wrapped
-      ? `<div id="${id}"><button>Next</button></div>`
-      : `<button name="action" id="${id}">Next</button>`;
-    const f = providerFixture(t, "google-account",
+    const next = (id) =>
+      wrapped
+        ? `<div id="${id}"><button>Next</button></div>`
+        : `<button name="action" id="${id}">Next</button>`;
+    const f = providerFixture(
+      t,
+      "google-account",
       `<form method="POST" novalidate><input id="identifierId" name="identifier" type="text" autocomplete="username"><input name="hiddenPassword" type="password" aria-hidden="true" tabindex="-1">${next("identifierNext")}</form>`,
-      "https://accounts.google.com/v3/signin/identifier");
+      "https://accounts.google.com/v3/signin/identifier",
+    );
     let clicks = 0;
-    f.field("button").onclick = (event) => { event.preventDefault(); clicks++; };
+    f.field("button").onclick = (event) => {
+      event.preventDefault();
+      clicks++;
+    };
     await f.advance(700);
     assert.deepEqual(f.signals, ["identifier"]);
     assert.equal(f.send("identifier"), true);
@@ -847,7 +883,10 @@ for (const wrapped of [false, true]) {
     assert.equal(clicks, 1);
     f.w.history.replaceState(null, "", "/v3/signin/challenge/pwd");
     f.w.document.body.innerHTML = `<form method="POST"><input name="Passwd" type="password">${next("passwordNext")}</form>`;
-    f.field("button").onclick = (event) => { event.preventDefault(); clicks++; };
+    f.field("button").onclick = (event) => {
+      event.preventDefault();
+      clicks++;
+    };
     await f.advance(700);
     assert.equal(f.signals.at(-1), "password");
     assert.equal(f.send("password"), true);
@@ -867,9 +906,12 @@ for (const [name, form, button] of [
   ["other target", 'method="post" target="_blank"', ""],
 ]) {
   test(`Google implicit-button support keeps rejecting ${name}`, async (t) => {
-    const f = providerFixture(t, "google-account",
+    const f = providerFixture(
+      t,
+      "google-account",
       `<form ${form}><input id="identifierId" name="identifier" type="text"><button id="identifierNext" ${button}>Next</button></form>`,
-      "https://accounts.google.com/v3/signin/identifier");
+      "https://accounts.google.com/v3/signin/identifier",
+    );
     await f.advance(1000);
     assert.deepEqual(f.signals, []);
     assert.equal(f.send("identifier"), false);
@@ -930,31 +972,50 @@ for (const [provider, url, html] of delayedProviderCases) {
   });
 }
 
-const googlePasswordToggle = '<input type="checkbox" id="show-password" aria-labelledby="show-password-label"><label id="show-password-label" for="show-password">Show password</label>';
+const googlePasswordToggle =
+  '<input type="checkbox" id="show-password" aria-labelledby="show-password-label"><label id="show-password-label" for="show-password">Show password</label>';
 const googlePasswordForm = (toggle = googlePasswordToggle) =>
   `<form method="POST"><input name="Passwd" type="password">${toggle}<button id="passwordNext" type="button">Next</button></form>`;
 
 for (const stage of ["identifier", "password"]) {
   for (const when of ["initially", "during input"]) {
     test(`Google ${stage} can fill with Next disabled ${when} and waits for readiness before clicking`, async (t) => {
-      const f = providerFixture(t, "google-account",
-        stage === "password" ? googlePasswordForm()
+      const f = providerFixture(
+        t,
+        "google-account",
+        stage === "password"
+          ? googlePasswordForm()
           : '<form method="POST"><input id="identifierId" name="identifier" type="email"><button id="identifierNext" type="button">Next</button></form>',
-        `https://accounts.google.com/v3/signin/${stage === "password" ? "challenge/pwd" : "identifier"}`);
+        `https://accounts.google.com/v3/signin/${stage === "password" ? "challenge/pwd" : "identifier"}`,
+      );
       const button = f.field("button");
-      const field = f.field(stage === "password" ? '[name="Passwd"]' : "#identifierId");
+      const field = f.field(
+        stage === "password" ? '[name="Passwd"]' : "#identifierId",
+      );
       let clicks = 0;
-      button.onclick = () => { assert.equal(button.disabled, false); clicks++; };
+      button.onclick = () => {
+        assert.equal(button.disabled, false);
+        clicks++;
+      };
       button.disabled = when === "initially";
-      field.addEventListener("input", () => {
-        button.disabled = true;
-        f.w.setTimeout(() => { button.disabled = false; }, 600);
-      }, { once: true });
+      field.addEventListener(
+        "input",
+        () => {
+          button.disabled = true;
+          f.w.setTimeout(() => {
+            button.disabled = false;
+          }, 600);
+        },
+        { once: true },
+      );
       await f.advance(700);
       assert.deepEqual(f.signals, [stage]);
       assert.equal(f.send(stage), true);
       await f.advance(500);
-      assert.equal(field.value, stage === "password" ? "test-secret" : "alice@example.test");
+      assert.equal(
+        field.value,
+        stage === "password" ? "test-secret" : "alice@example.test",
+      );
       assert.equal(button.disabled, true);
       assert.equal(clicks, 0);
       await f.advance(400);
@@ -967,8 +1028,12 @@ for (const stage of ["identifier", "password"]) {
 
 for (const blocking of ["disabled", "aria-disabled", "aria-busy"]) {
   test(`Google password never clicks a persistently ${blocking} Next and clears its expired fill`, async (t) => {
-    const f = providerFixture(t, "google-account", googlePasswordForm(),
-      "https://accounts.google.com/v3/signin/challenge/pwd");
+    const f = providerFixture(
+      t,
+      "google-account",
+      googlePasswordForm(),
+      "https://accounts.google.com/v3/signin/challenge/pwd",
+    );
     const button = f.field("button");
     if (blocking === "disabled") button.disabled = true;
     else button.setAttribute(blocking, "true");
@@ -994,8 +1059,12 @@ for (const blocking of ["disabled", "aria-disabled", "aria-busy"]) {
 
 for (const change of ["replacement", "form-action", "route", "pagehide"]) {
   test(`Google password revalidates ${change} before enabling a previously disabled Next`, async (t) => {
-    const f = providerFixture(t, "google-account", googlePasswordForm(),
-      "https://accounts.google.com/v3/signin/challenge/pwd");
+    const f = providerFixture(
+      t,
+      "google-account",
+      googlePasswordForm(),
+      "https://accounts.google.com/v3/signin/challenge/pwd",
+    );
     const field = f.field('[name="Passwd"]');
     const button = f.field("button");
     button.disabled = true;
@@ -1006,8 +1075,10 @@ for (const change of ["replacement", "form-action", "route", "pagehide"]) {
     await f.advance(200);
     assert.equal(field.value, "test-secret");
     if (change === "replacement") button.replaceWith(button.cloneNode(true));
-    if (change === "form-action") f.field("form").action = "https://other.test/";
-    if (change === "route") f.w.history.replaceState(null, "", "/v3/signin/challenge/otp");
+    if (change === "form-action")
+      f.field("form").action = "https://other.test/";
+    if (change === "route")
+      f.w.history.replaceState(null, "", "/v3/signin/challenge/otp");
     if (change === "pagehide") f.w.dispatchEvent(new f.w.Event("pagehide"));
     f.field("button").disabled = false;
     await f.advance(700);
@@ -1019,13 +1090,27 @@ for (const change of ["replacement", "form-action", "route", "pagehide"]) {
 }
 
 test("Google disabled Next neither bypasses the origin grant nor upgrades fill-only consent", async (t) => {
-  const f = providerFixture(t, "google-account", googlePasswordForm(),
-    "https://accounts.google.com/v3/signin/challenge/pwd");
+  const f = providerFixture(
+    t,
+    "google-account",
+    googlePasswordForm(),
+    "https://accounts.google.com/v3/signin/challenge/pwd",
+  );
   f.field("button").disabled = true;
   let clicks = 0;
   f.field("button").onclick = () => clicks++;
   await f.advance(700);
-  assert.equal(f.deliver("https://other.test", "", "test-secret", false, f.now() + 2000, "password"), false);
+  assert.equal(
+    f.deliver(
+      "https://other.test",
+      "",
+      "test-secret",
+      false,
+      f.now() + 2000,
+      "password",
+    ),
+    false,
+  );
   assert.equal(f.send("password", false, 0), false);
   assert.equal(f.field('[name="Passwd"]').value, "");
   assert.equal(f.send("password", false), true);
@@ -1038,8 +1123,12 @@ test("Google disabled Next neither bypasses the origin grant nor upgrades fill-o
 });
 
 test("Google password stops after its readiness bound when native never delivers a grant", async (t) => {
-  const f = providerFixture(t, "google-account", googlePasswordForm(),
-    "https://accounts.google.com/v3/signin/challenge/pwd");
+  const f = providerFixture(
+    t,
+    "google-account",
+    googlePasswordForm(),
+    "https://accounts.google.com/v3/signin/challenge/pwd",
+  );
   f.field("button").disabled = true;
   await f.advance(700);
   assert.deepEqual(f.signals, ["password"]);
@@ -1050,9 +1139,12 @@ test("Google password stops after its readiness bound when native never delivers
 });
 
 test("Google password stage tolerates its unchecked presentation-only visibility checkbox", async (t) => {
-  const f = providerFixture(t, "google-account",
+  const f = providerFixture(
+    t,
+    "google-account",
     googlePasswordForm(),
-    "https://accounts.google.com/v3/signin/challenge/pwd");
+    "https://accounts.google.com/v3/signin/challenge/pwd",
+  );
   let clicks = 0;
   f.field("button").onclick = () => clicks++;
   await f.advance(700);
@@ -1066,21 +1158,52 @@ test("Google password stage tolerates its unchecked presentation-only visibility
 });
 
 for (const [name, toggle] of [
-  ["submitted checkbox", googlePasswordToggle.replace('type="checkbox"', 'type="checkbox" name="consent"')],
-  ["checked checkbox", googlePasswordToggle.replace('type="checkbox"', 'type="checkbox" checked')],
-  ["required checkbox", googlePasswordToggle.replace('type="checkbox"', 'type="checkbox" required')],
-  ["disabled checkbox", googlePasswordToggle.replace('type="checkbox"', 'type="checkbox" disabled')],
+  [
+    "submitted checkbox",
+    googlePasswordToggle.replace(
+      'type="checkbox"',
+      'type="checkbox" name="consent"',
+    ),
+  ],
+  [
+    "checked checkbox",
+    googlePasswordToggle.replace('type="checkbox"', 'type="checkbox" checked'),
+  ],
+  [
+    "required checkbox",
+    googlePasswordToggle.replace('type="checkbox"', 'type="checkbox" required'),
+  ],
+  [
+    "disabled checkbox",
+    googlePasswordToggle.replace('type="checkbox"', 'type="checkbox" disabled'),
+  ],
   ["unlabelled checkbox", '<input type="checkbox">'],
   ["ambiguous checkboxes", googlePasswordToggle + '<input type="checkbox">'],
-  ["unrelated label", googlePasswordToggle.replace('for="show-password"', 'for="other"')],
-  ["changed ARIA association", googlePasswordToggle.replace('aria-labelledby="show-password-label"', 'aria-labelledby="other"')],
+  [
+    "unrelated label",
+    googlePasswordToggle.replace('for="show-password"', 'for="other"'),
+  ],
+  [
+    "changed ARIA association",
+    googlePasswordToggle.replace(
+      'aria-labelledby="show-password-label"',
+      'aria-labelledby="other"',
+    ),
+  ],
   ["additional text field", googlePasswordToggle + '<input name="account">'],
-  ["OTP challenge", googlePasswordToggle + '<input autocomplete="one-time-code">'],
+  [
+    "OTP challenge",
+    googlePasswordToggle + '<input autocomplete="one-time-code">',
+  ],
   ["CAPTCHA challenge", googlePasswordToggle + '<input name="captcha">'],
 ]) {
   test(`Google password visibility support still rejects ${name}`, async (t) => {
-    const f = providerFixture(t, "google-account", googlePasswordForm(toggle),
-      "https://accounts.google.com/v3/signin/challenge/pwd");
+    const f = providerFixture(
+      t,
+      "google-account",
+      googlePasswordForm(toggle),
+      "https://accounts.google.com/v3/signin/challenge/pwd",
+    );
     await f.advance(700);
     assert.deepEqual(f.signals, []);
     assert.equal(f.send("password"), false);
@@ -1090,20 +1213,29 @@ for (const [name, toggle] of [
 
 for (const change of ["checked", "named", "replaced", "label", "form-action"]) {
   test(`Google password visibility ${change} during focus prevents disclosure`, async (t) => {
-    const f = providerFixture(t, "google-account", googlePasswordForm(),
-      "https://accounts.google.com/v3/signin/challenge/pwd");
+    const f = providerFixture(
+      t,
+      "google-account",
+      googlePasswordForm(),
+      "https://accounts.google.com/v3/signin/challenge/pwd",
+    );
     let clicks = 0;
     f.field("button").onclick = () => clicks++;
     await f.advance(700);
     assert.deepEqual(f.signals, ["password"]);
-    f.field('[name="Passwd"]').addEventListener("focus", () => {
-      const toggle = f.field('[type="checkbox"]');
-      if (change === "checked") toggle.checked = true;
-      if (change === "named") toggle.name = "consent";
-      if (change === "replaced") toggle.replaceWith(toggle.cloneNode(true));
-      if (change === "label") f.field("label").htmlFor = "other";
-      if (change === "form-action") f.field("form").action = "https://other.test/";
-    }, { once: true });
+    f.field('[name="Passwd"]').addEventListener(
+      "focus",
+      () => {
+        const toggle = f.field('[type="checkbox"]');
+        if (change === "checked") toggle.checked = true;
+        if (change === "named") toggle.name = "consent";
+        if (change === "replaced") toggle.replaceWith(toggle.cloneNode(true));
+        if (change === "label") f.field("label").htmlFor = "other";
+        if (change === "form-action")
+          f.field("form").action = "https://other.test/";
+      },
+      { once: true },
+    );
     f.send("password");
     await f.advance(700);
     assert.equal(f.field('[name="Passwd"]').value, "");
@@ -1186,7 +1318,13 @@ for (const submit of [false, true]) {
   });
 }
 
-for (const change of ["manual-edit", "action", "navigation", "expiry", "pagehide"]) {
+for (const change of [
+  "manual-edit",
+  "action",
+  "navigation",
+  "expiry",
+  "pagehide",
+]) {
   test(`HTTP deferred receipt cancels on ${change} without SubtleCrypto`, async (t) => {
     const f = deferredFixture(t, "http://device.test:8080/login");
     const options = () => formOptions({ fillDelayMs: 0, submitDelayMs: 3000 });
@@ -1197,25 +1335,45 @@ for (const change of ["manual-edit", "action", "navigation", "expiry", "pagehide
     await f.advance(100);
     assert.equal(f.field("#password").value, "test-secret");
     if (change === "manual-edit") f.field("#password").value = "manual-value";
-    if (change === "action") f.field("form").action = "http://device.test:8081/login";
+    if (change === "action")
+      f.field("form").action = "http://device.test:8081/login";
     if (change === "navigation") f.navigate("https://device.test:8080/login");
     if (change === "pagehide") f.w.dispatchEvent(new f.w.Event("pagehide"));
     await f.advance(change === "expiry" ? 16000 : 3200);
     assert.equal(f.send("form-submit", true, 2000, options()), false);
-    assert.equal(f.field("#password").value, change === "manual-edit" ? "manual-value" : "");
+    assert.equal(
+      f.field("#password").value,
+      change === "manual-edit" ? "manual-value" : "",
+    );
     assert.equal(f.submits(), 0);
     assert.equal(f.signals.at(-1), "form-rejected");
   });
 }
 
-for (const origin of ["http://other.test:8080", "https://device.test:8080", "http://device.test:8081", "http://device.test"]) {
+for (const origin of [
+  "http://other.test:8080",
+  "https://device.test:8080",
+  "http://device.test:8081",
+  "http://device.test",
+]) {
   test(`HTTP deferred stages require exact origin ${origin}`, async (t) => {
     const f = deferredFixture(t, "http://device.test:8080/login");
     const options = () => formOptions({ fillDelayMs: 0, submitDelayMs: 0 });
     for (const stage of ["form-prepare", "form", "form-submit"]) {
       await f.advance(200);
       assert.equal(f.signals.at(-1), stage);
-      assert.equal(f.deliver(origin, stage === "form" ? "alice" : "", stage === "form" ? "secret" : "", true, f.now() + 2000, options(), stage), false);
+      assert.equal(
+        f.deliver(
+          origin,
+          stage === "form" ? "alice" : "",
+          stage === "form" ? "secret" : "",
+          true,
+          f.now() + 2000,
+          options(),
+          stage,
+        ),
+        false,
+      );
       assert.equal(f.send(stage, true, 2000, options()), true);
     }
     await f.advance(100);
@@ -1224,40 +1382,62 @@ for (const origin of ["http://other.test:8080", "https://device.test:8080", "htt
 }
 
 for (const edited of [false, true]) {
-test(`HTTP Bitwarden custom port checks identity receipts without SubtleCrypto (edited ${edited})`, async (t) => {
-  const f = providerFixture(t, "bitwarden-self-hosted", bitwardenMarkup, "http://device.test:8080/login");
-  assert.equal(f.w.crypto.subtle, undefined);
-  f.field('[data-testid="login-continue-button"]').onclick = () => {
-    f.field("#email").hidden = true;
-    f.field("#masterPassword").hidden = false;
-    f.field('[data-testid="login-continue-button"]').hidden = true;
-    f.field('[data-testid="login-submit-button"]').hidden = false;
-  };
-  await f.advance(600);
-  assert.equal(f.signals.at(-1), "identifier");
-  assert.equal(f.send("identifier"), true);
-  await f.advance(1200);
-  assert.equal(f.signals.at(-1), "password");
-  if (edited) f.field("#email").value = "manual-user@example.test";
-  assert.equal(f.send("password"), true);
-  await f.advance(600);
-  assert.equal(f.field("#masterPassword").value, edited ? "" : "test-secret");
-  assert.equal(f.submits(), Number(!edited));
-  assert.equal(f.signals.at(-1), edited ? "form-rejected" : "form-completed");
-});
+  test(`HTTP Bitwarden custom port checks identity receipts without SubtleCrypto (edited ${edited})`, async (t) => {
+    const f = providerFixture(
+      t,
+      "bitwarden-self-hosted",
+      bitwardenMarkup,
+      "http://device.test:8080/login",
+    );
+    assert.equal(f.w.crypto.subtle, undefined);
+    f.field('[data-testid="login-continue-button"]').onclick = () => {
+      f.field("#email").hidden = true;
+      f.field("#masterPassword").hidden = false;
+      f.field('[data-testid="login-continue-button"]').hidden = true;
+      f.field('[data-testid="login-submit-button"]').hidden = false;
+    };
+    await f.advance(600);
+    assert.equal(f.signals.at(-1), "identifier");
+    assert.equal(f.send("identifier"), true);
+    await f.advance(1200);
+    assert.equal(f.signals.at(-1), "password");
+    if (edited) f.field("#email").value = "manual-user@example.test";
+    assert.equal(f.send("password"), true);
+    await f.advance(600);
+    assert.equal(f.field("#masterPassword").value, edited ? "" : "test-secret");
+    assert.equal(f.submits(), Number(!edited));
+    assert.equal(f.signals.at(-1), edited ? "form-rejected" : "form-completed");
+  });
 }
 
-for (const [provider, url, markup] of delayedProviderCases.filter(([provider]) =>
-  ["google-account", "cloudflare", "adobe-admin-console", "chatgpt", "claude"].includes(provider))) {
-  for (const changedUrl of [url.replace("https:", "http:"), url.replace(new URL(url).host, `${new URL(url).host}:8443`)]) {
+for (const [provider, url, markup] of delayedProviderCases.filter(
+  ([provider]) =>
+    [
+      "google-account",
+      "cloudflare",
+      "adobe-admin-console",
+      "chatgpt",
+      "claude",
+    ].includes(provider),
+)) {
+  for (const changedUrl of [
+    url.replace("https:", "http:"),
+    url.replace(new URL(url).host, `${new URL(url).host}:8443`),
+  ]) {
     test(`${provider} keeps its fixed HTTPS origin: rejects ${changedUrl}`, async (t) => {
-      const html = markup.includes("<form") ? markup : `<form method="post">${markup}</form>`;
+      const html = markup.includes("<form")
+        ? markup
+        : `<form method="post">${markup}</form>`;
       const f = providerFixture(t, provider, html, changedUrl);
       await f.advance(1000);
       assert.ok(!f.signals.includes("identifier"));
       assert.equal(f.send("identifier"), false);
       assert.equal(f.submits(), 0);
-      assert.ok([...f.w.document.querySelectorAll('input:not([type="hidden"])')].every(field => !field.value));
+      assert.ok(
+        [...f.w.document.querySelectorAll('input:not([type="hidden"])')].every(
+          (field) => !field.value,
+        ),
+      );
     });
   }
 }

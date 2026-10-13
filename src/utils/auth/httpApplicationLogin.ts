@@ -421,6 +421,9 @@ export function resolveHttpApplicationLogin(
   const profile = getHttpApplicationProfile(settings.id)!;
   if (settings.loginMode === "manual")
     return { credentials: null, upstreamAuthMode: "none", autoLogin: false };
+  // The bridged sign-in types on the Git provider's origin, which only the
+  // native engine can bind; the proxy engine never guesses a form for it.
+  if (settings.id === "drone-ci") throw nativeEngineOnly(profile.label);
   if (
     settings.id === "linkedin" &&
     (Object.keys(

@@ -59,8 +59,15 @@ test("renderer evidence uses owner-fenced fixed checkpoints, never page or crede
     /format!|log::|\.lock\(|\.await|\.url\(|credentials\./,
   );
   const checkpoints = [...feature.matchAll(/=>\s*\((\d+),\s*"([a-z-]+)"\)/g)];
-  assert.equal(checkpoints.length, 25);
-  assert.equal(new Set(checkpoints.map((m) => m[1])).size, 25);
+  assert.equal(checkpoints.length, 28);
+  assert.equal(new Set(checkpoints.map((m) => m[1])).size, 28);
+  for (const [code, name] of [
+    ["40", "login-challenge-waiting"],
+    ["41", "login-challenge-reloading"],
+    ["42", "login-challenge-timed-out"],
+  ]) {
+    assert.ok(checkpoints.some((m) => m[1] === code && m[2] === name));
+  }
   assert.ok(checkpoints.some((m) => m[2] === "renderer-installation-failed"));
   assert.ok(checkpoints.some((m) => m[2] === "native-rejected-grant"));
   assert.match(login, /Native::ResourceAdmission/);
@@ -69,17 +76,32 @@ test("renderer evidence uses owner-fenced fixed checkpoints, never page or crede
     "utf8",
   );
   assert.match(journal, /observation_records >= 512/);
-  assert.match(journal, /!relay\s*&& !observation\s*&& !tls_failure\s*&& !session_failure\s*&& self\.navigation_records >= 128/);
-  assert.match(journal, /relay && self\.relay_records >= MAX_TIMED_STARTUPS as usize/);
-  assert.match(journal, /tls_failure && self\.tls_failure_records >= MAX_RECORDS/);
-  assert.match(journal, /session_failure && self\.session_failure_records >= MAX_RECORDS/);
+  assert.match(
+    journal,
+    /!relay\s*&& !observation\s*&& !tls_failure\s*&& !session_failure\s*&& self\.navigation_records >= 128/,
+  );
+  assert.match(
+    journal,
+    /relay && self\.relay_records >= MAX_TIMED_STARTUPS as usize/,
+  );
+  assert.match(
+    journal,
+    /tls_failure && self\.tls_failure_records >= MAX_RECORDS/,
+  );
+  assert.match(
+    journal,
+    /session_failure && self\.session_failure_records >= MAX_RECORDS/,
+  );
   for (const [kind, counter] of [
     ["tls_failure", "tls_failure_records"],
     ["session_failure", "session_failure_records"],
     ["relay", "relay_records"],
     ["observation", "observation_records"],
   ]) {
-    assert.match(journal, new RegExp(`if ${kind} \\{ self\\.${counter} \\+= 1; \\}`));
+    assert.match(
+      journal,
+      new RegExp(`if ${kind} \\{ self\\.${counter} \\+= 1; \\}`),
+    );
   }
   assert.match(journal, /else \{ self\.navigation_records \+= 1; \}/);
 });

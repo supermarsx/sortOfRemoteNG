@@ -115,7 +115,18 @@ describe("source-reviewed dashboard presets", () => {
     );
     expect(Object.keys(HOSTED_DASHBOARD_ICON_SUGGESTIONS)).toEqual(ids);
     for (const p of HOSTED_DASHBOARD_PROFILES) {
-      expect(getHttpApplicationProfile(p.id)).toBe(p);
+      const effective = getHttpApplicationProfile(p.id)!;
+      if (effective.declarativeLogin) {
+        expect(effective).toMatchObject({
+          id: p.id,
+          label: p.label,
+          category: p.category,
+          capability: p.capability,
+          hostedLoginUrl: p.hostedLoginUrl,
+        });
+        expect(effective.declarativeLogin.loginSteps.length).toBeGreaterThan(0);
+        expect(getHttpApplicationLoginModes(effective)).toContain("form");
+      } else expect(effective).toBe(p);
       expect(normalizeHttpApplicationSettings({ id: p.id })).toMatchObject({
         id: p.id,
         loginMode: "manual",
@@ -133,6 +144,9 @@ describe("source-reviewed dashboard presets", () => {
       (p) =>
         p.hostedLoginUrl &&
         p.id !== "ptisp" &&
+        // Reviewed single forms: tests/utils/reviewedPortalForms.test.ts.
+        p.id !== "freedns" &&
+        p.id !== "registro-br" &&
         p.id !== "instagram" &&
         p.id !== "linkedin" &&
         p.id !== "chatgpt" &&
@@ -159,7 +173,11 @@ describe("source-reviewed dashboard presets", () => {
       });
       expect(() =>
         resolveHttpApplicationLogin(connection(p.id, "form")),
-      ).toThrow(/invalid|unavailable/);
+      ).toThrow(
+        getHttpApplicationProfile(p.id)?.declarativeLogin
+          ? /native browser engine/
+          : /invalid|unavailable/,
+      );
       expect(() =>
         validateHttpApplicationTarget(connection(p.id), url.href),
       ).not.toThrow();
@@ -200,6 +218,20 @@ describe("source-reviewed dashboard presets", () => {
       );
     },
   );
+
+  it("opens Time4VPS at the observed Client Area link while keeping unreviewed login interactive", () => {
+    const profile = getHttpApplicationProfile("time4vps")!;
+    expect(profile.hostedLoginUrl).toBe(
+      "https://billing.time4vps.com/clientarea/",
+    );
+    expect(profile.capability).toBe("manual");
+    expect(profile.selectors).toBeUndefined();
+    expect(profile.declarativeLogin).toBeUndefined();
+    expect(resolveHttpApplicationLogin(connection("time4vps"))).toMatchObject({
+      credentials: null,
+      autoLogin: false,
+    });
+  });
 
   it("keeps mail, local GitLab and device targets separate from public account hosts", () => {
     for (const id of [

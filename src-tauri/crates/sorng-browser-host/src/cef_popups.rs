@@ -217,6 +217,7 @@ fn child_shared(
         certificate_policy: source.certificate_policy,
         capabilities: source.capabilities,
         login_budget: Mutex::new(LoginBudget::default()),
+        challenge_reload_used: source.challenge_reload_used.clone(),
         login_totp: Mutex::new(login_totp::State::default()),
         feature_gate: Mutex::new(RendererFeatureGate::default()),
         certificate_pending: Mutex::new(None),

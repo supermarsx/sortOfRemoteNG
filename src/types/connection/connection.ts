@@ -86,6 +86,14 @@ export interface HttpApplicationSettings {
   apiOrigin?: string;
   /** Tactical RMM's exact HTTPS MeshCentral origin; optional port, no path or secrets. */
   meshOrigin?: string;
+  /** Drone CI only: the Git provider Drone signs in through (`droneScmBridge.ts`). */
+  droneScmProvider?: import("../../utils/connection/droneScmBridge").DroneScmProvider;
+  /** Drone CI only: exact origin of that provider; credentials are typed only
+   * there (never on a redirect target), no path or secrets. */
+  droneScmOrigin?: string;
+  /** Drone CI only: the provider OAuth application's public client id; binds
+   * the consent click to Drone's own application. */
+  droneScmClientId?: string;
   /** Proxmox account realm; applied only to the volatile login username. */
   realm?: string;
   /** Joomla administrator entry pathname only; never a URL or query secret. */

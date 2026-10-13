@@ -96,6 +96,12 @@ pub enum NativeLoginAdapter {
     ExchangeEcp,
     ExchangeOwa,
     VodafoneSmartRouter,
+    /// Reviewed declarative login steps (t102 contract L1). Selected only by
+    /// the native owner for a configuration carrying `declarativeLogin`, never
+    /// from an application id. Which stage may run on which origin, path and
+    /// frame comes from those steps (`DeclarativeLoginPolicy`), checked by the
+    /// host on every request, delivery and key.
+    Declarative,
 }
 
 impl NativeLoginAdapter {
@@ -103,6 +109,7 @@ impl NativeLoginAdapter {
     /// this maps only the application's default reviewed form contract.
     pub fn from_application_id(id: &str) -> Self {
         match id {
+            "declarative-steps" => Self::Declarative,
             "generic-form" => Self::Generic,
             "porkbun" => Self::Porkbun,
             "exchange-ecp" => Self::ExchangeEcp,
@@ -153,6 +160,9 @@ impl NativeLoginAdapter {
                 | Self::ExchangeEcp
                 | Self::ExchangeOwa
                 | Self::VodafoneSmartRouter
+                // Only the connection's own origin; every listed step origin
+                // is HTTPS (`DeclarativeLoginPolicy::allows`).
+                | Self::Declarative
         )
     }
     /// Stage shape only; native frame URL, owner, consent and expiry must still
@@ -190,6 +200,17 @@ impl NativeLoginAdapter {
                 NativeLoginStage::Form
                     | NativeLoginStage::FormPrepare
                     | NativeLoginStage::FormSubmit
+                    | NativeLoginStage::ScmConsent
+            ),
+            // `form-prepare` is the grant for a `click` pre-step: no
+            // credential, once per origin. No bound-password stage.
+            Self::Declarative => matches!(
+                stage,
+                NativeLoginStage::Identifier
+                    | NativeLoginStage::Password
+                    | NativeLoginStage::Form
+                    | NativeLoginStage::FormPrepare
+                    | NativeLoginStage::FormSubmit
             ),
             Self::Generic
             | Self::Porkbun
@@ -204,6 +225,8 @@ impl NativeLoginAdapter {
             Self::Manual
         } else if value == "modular-form" {
             Self::ModularForm
+        } else if value == "declarative-steps" {
+            Self::Declarative
         } else {
             Self::from_application_id(value)
         }
@@ -225,6 +248,7 @@ impl NativeLoginAdapter {
             Self::ExchangeEcp => "exchange-ecp",
             Self::ExchangeOwa => "exchange-owa",
             Self::VodafoneSmartRouter => "vodafone-smart-router-3",
+            Self::Declarative => "declarative-steps",
             Self::Unsupported => "unsupported",
         }
     }
@@ -246,6 +270,8 @@ impl NativeLoginAdapter {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum NativeLoginStage {
+    /// One saved SCM application approval, with fresh submit consent and no secrets.
+    ScmConsent,
     Form,
     /// Timing metadata only; no credential or extra-field values.
     FormPrepare,
@@ -263,6 +289,7 @@ pub enum NativeLoginStage {
 impl NativeLoginStage {
     pub(crate) fn parse(value: &str) -> Option<Self> {
         match value {
+            "scm-consent" => Some(Self::ScmConsent),
             "form" => Some(Self::Form),
             "form-prepare" => Some(Self::FormPrepare),
             "form-submit" => Some(Self::FormSubmit),
@@ -276,6 +303,7 @@ impl NativeLoginStage {
     }
     pub(crate) fn wire(self) -> &'static str {
         match self {
+            Self::ScmConsent => "scm-consent",
             Self::Form => "form",
             Self::FormPrepare => "form-prepare",
             Self::FormSubmit => "form-submit",
@@ -291,6 +319,7 @@ impl NativeLoginStage {
         match self {
             Self::Form | Self::BoundPassword => (credentials.username, credentials.password),
             Self::FormPrepare
+            | Self::ScmConsent
             | Self::FormSubmit
             | Self::IdentifierSubmit
             | Self::PasswordSubmit => ("", ""),
@@ -302,7 +331,7 @@ impl NativeLoginStage {
     pub fn is_action(self) -> bool {
         matches!(
             self,
-            Self::FormSubmit | Self::IdentifierSubmit | Self::PasswordSubmit
+            Self::FormSubmit | Self::IdentifierSubmit | Self::PasswordSubmit | Self::ScmConsent
         )
     }
 }
@@ -314,6 +343,9 @@ pub(crate) fn stage_allowed(
 ) -> bool {
     if !adapter.accepts_stage(stage) {
         return false;
+    }
+    if stage == NativeLoginStage::ScmConsent {
+        return adapter == NativeLoginAdapter::ModularForm && url::Url::parse(url).is_ok_and(|url| url.scheme() == "https" && url.path() == "/login/oauth/authorize" && url.fragment().is_none());
     }
     let stage = match stage {
         NativeLoginStage::IdentifierSubmit => NativeLoginStage::Identifier,
@@ -405,6 +437,10 @@ pub(crate) fn stage_allowed(
             }
         }
         NativeLoginAdapter::ModularForm => true,
+        // Shape only, like ModularForm. The browser host additionally checks
+        // the steps (`DeclarativeLoginPolicy::allows`) for origin, live path
+        // and frame before anything is released or typed.
+        NativeLoginAdapter::Declarative => true,
         NativeLoginAdapter::Generic => stage == NativeLoginStage::Form,
         NativeLoginAdapter::VodafoneSmartRouter => stage == NativeLoginStage::Form,
         NativeLoginAdapter::ExchangeEcp | NativeLoginAdapter::ExchangeOwa => url::Url::parse(url)
@@ -453,6 +489,9 @@ impl RendererFeatureGate {
 /// particular, adapter completion does not establish authenticated login.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum NativeFeatureStatus {
+    LoginChallengeWaiting,
+    LoginChallengeReloading,
+    LoginChallengeTimedOut,
     RendererInstalled,
     RendererInstallationFailed,
     LoginFormDetected,
@@ -537,6 +576,10 @@ pub struct NativeLoginRequest<'a> {
     pub origin: &'a str,
     pub adapter: NativeLoginAdapter,
     pub stage: NativeLoginStage,
+    /// Live native document pathname; never supplied by page IPC.
+    pub path: &'a str,
+    /// Exact configured child-frame name, matched against the native frame.
+    pub frame: Option<&'a str>,
 }
 
 /// Borrow credentials only while the native owner holds a current, unlocked,
@@ -616,7 +659,12 @@ impl LoginBudget {
             key.clone()
         };
         // Script-filled adapters send no key, so "no key" proves nothing there.
-        if !(adapter == NativeLoginAdapter::ModularForm || adapter.reviewed_provider())
+        // A declarative pre-step click enters no key either: its grant is
+        // never re-armed, so a click that reloads its page cannot repeat.
+        if !(adapter == NativeLoginAdapter::ModularForm
+            || adapter == NativeLoginAdapter::Declarative
+            || adapter.reviewed_provider())
+            || (adapter == NativeLoginAdapter::Declarative && prepare)
             || !self.released.contains(&key)
             || self.rearmed.contains(&chain)
             || self.released.contains(&(origin.to_owned(), submit))
@@ -692,6 +740,7 @@ impl LoginBudget {
             }
         } else if request.adapter == NativeLoginAdapter::ModularForm {
             let previous = match request.stage {
+                NativeLoginStage::ScmConsent if credentials.auto_submit => None,
                 NativeLoginStage::FormPrepare => None,
                 NativeLoginStage::Form => Some(NativeLoginStage::FormPrepare),
                 NativeLoginStage::FormSubmit if credentials.auto_submit => {
@@ -702,6 +751,21 @@ impl LoginBudget {
             if previous
                 .is_some_and(|stage| !self.released.contains(&(request.origin.to_owned(), stage)))
             {
+                return false;
+            }
+        } else if request.adapter == NativeLoginAdapter::Declarative {
+            // Actions were settled above (same origin, credential stage first,
+            // submit consent). The order between steps, across origins and
+            // documents, is the steps' own: the browser host checks it with
+            // `DeclarativeLoginPolicy::ready` before reserving. Here each
+            // (origin, stage) is released once.
+            if !matches!(
+                request.stage,
+                NativeLoginStage::FormPrepare
+                    | NativeLoginStage::Identifier
+                    | NativeLoginStage::Password
+                    | NativeLoginStage::Form
+            ) {
                 return false;
             }
         } else if request.adapter.accepts_stage(NativeLoginStage::Identifier) {
@@ -743,6 +807,476 @@ impl LoginBudget {
         }
         self.released
             .insert((request.origin.to_owned(), request.stage))
+    }
+}
+
+/// A JSON value of the native-owned login configuration, after
+/// `parse_login_configuration` has bounded it. Built by the CEF layer; kept
+/// free of CEF types so the steps rules are tested without the runtime.
+#[derive(Clone, Debug, PartialEq)]
+pub(crate) enum LoginJson {
+    Null,
+    Bool(bool),
+    Number(f64),
+    String(String),
+    List(Vec<LoginJson>),
+    Object(Vec<(String, LoginJson)>),
+}
+
+impl LoginJson {
+    fn get(&self, key: &str) -> Option<&LoginJson> {
+        match self {
+            Self::Object(entries) => entries.iter().find(|(name, _)| name == key).map(|(_, v)| v),
+            _ => None,
+        }
+    }
+    fn keys_within(&self, allowed: &[&str]) -> bool {
+        matches!(self, Self::Object(entries)
+            if entries.iter().all(|(name, _)| allowed.contains(&name.as_str()))
+                && entries.iter().enumerate().all(|(index, (name, _))|
+                    entries[..index].iter().all(|(other, _)| other != name)))
+    }
+    fn text(&self) -> Option<&str> {
+        match self {
+            Self::String(value) => Some(value),
+            _ => None,
+        }
+    }
+    fn list(&self) -> Option<&[LoginJson]> {
+        match self {
+            Self::List(values) => Some(values),
+            _ => None,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum DeclarativeStepKind {
+    Click,
+    Identifier,
+    Password,
+    Form,
+    Submit,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct DeclarativeStep {
+    kind: DeclarativeStepKind,
+    /// Concrete origin: the step's own, or the connection's.
+    origin: String,
+    paths: Vec<String>,
+    prefixes: Vec<String>,
+    /// DOM id or name of a direct same-origin child frame; None = top document.
+    frame: Option<String>,
+    /// `submit` only: the credential step it sends.
+    submits: Option<DeclarativeStepKind>,
+}
+
+/// The host's copy of a reviewed steps file for one connection: where each
+/// stage may run. It is parsed from the native-owned configuration with the
+/// validator's structural and order rules (src/utils/connection/httpLoginSteps.ts)
+/// and fails closed: anything it does not accept yields no policy at all, and
+/// without a policy the declarative adapter releases nothing. Selectors are
+/// checked for shape only; the page client applies them.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub(crate) struct DeclarativeLoginPolicy {
+    connection_origin: String,
+    password_only: bool,
+    steps: Vec<DeclarativeStep>,
+}
+
+const DECLARATIVE_MAX_STEPS: usize = 16;
+const DECLARATIVE_MAX_ORIGINS: usize = 8;
+const DECLARATIVE_MAX_PATHS: usize = 16;
+const DECLARATIVE_MAX_SELECTOR_UNITS: usize = 512;
+const DECLARATIVE_MAX_PATH_BYTES: usize = 512;
+const DECLARATIVE_MAX_FRAME_BYTES: usize = 128;
+
+fn declarative_selector(value: &LoginJson) -> bool {
+    value.text().is_some_and(|text| {
+        let units = text.encode_utf16().count();
+        units > 0
+            && units <= DECLARATIVE_MAX_SELECTOR_UNITS
+            && !text
+                .chars()
+                .any(|c| (c as u32) < 32 || (127..=159).contains(&(c as u32)))
+            && !text.starts_with(' ')
+            && !text.ends_with(' ')
+    })
+}
+
+fn declarative_path(value: &str) -> bool {
+    value.len() <= DECLARATIVE_MAX_PATH_BYTES && value.starts_with('/') && {
+        let segments: Vec<&str> = value[1..].split('/').collect();
+        segments.iter().enumerate().all(|(index, segment)| {
+            if segment.is_empty() {
+                index == segments.len() - 1
+            } else {
+                segment
+                    .bytes()
+                    .all(|b| b.is_ascii_alphanumeric() || b"._~-".contains(&b))
+                    && *segment != "."
+                    && *segment != ".."
+            }
+        })
+    }
+}
+
+fn declarative_strings(
+    value: &LoginJson,
+    max: usize,
+    valid: impl Fn(&str) -> bool,
+) -> Option<Vec<String>> {
+    let list = value.list()?;
+    if list.is_empty() || list.len() > max {
+        return None;
+    }
+    let mut entries = Vec::with_capacity(list.len());
+    for entry in list {
+        let text = entry.text()?;
+        if !valid(text) || entries.iter().any(|seen| seen == text) {
+            return None;
+        }
+        entries.push(text.to_owned());
+    }
+    Some(entries)
+}
+
+/// A listed origin: exact, canonical HTTPS. Private names are the validator's
+/// to refuse; the host only needs the exact HTTPS form.
+fn declarative_listed_origin(value: &str) -> bool {
+    value.len() <= 512
+        && value.starts_with("https://")
+        && browser_origin(value).as_deref() == Some(value)
+}
+
+impl DeclarativeLoginPolicy {
+    /// `configuration` is the whole factory configuration; only its
+    /// `declarativeLogin` member is read here.
+    pub(crate) fn parse(configuration: &LoginJson) -> Option<Self> {
+        let login = configuration.get("declarativeLogin")?;
+        if !login.keys_within(&[
+            "connectionOrigin",
+            "passwordOnly",
+            "credentialOrigins",
+            "loginSteps",
+        ]) {
+            return None;
+        }
+        let connection_origin = login.get("connectionOrigin")?.text()?;
+        if connection_origin.len() > 2048
+            || browser_origin(connection_origin).as_deref() != Some(connection_origin)
+        {
+            return None;
+        }
+        let password_only = match login.get("passwordOnly")? {
+            LoginJson::Bool(value) => *value,
+            _ => return None,
+        };
+        let listed = match login.get("credentialOrigins")? {
+            LoginJson::List(values) if values.is_empty() => Vec::new(),
+            value => {
+                declarative_strings(value, DECLARATIVE_MAX_ORIGINS, declarative_listed_origin)?
+            }
+        };
+        let raw = login.get("loginSteps")?.list()?;
+        if raw.is_empty() || raw.len() > DECLARATIVE_MAX_STEPS {
+            return None;
+        }
+        let mut steps: Vec<DeclarativeStep> = Vec::with_capacity(raw.len());
+        for value in raw {
+            let kind = match value.get("kind")?.text()? {
+                "click" => DeclarativeStepKind::Click,
+                "identifier" => DeclarativeStepKind::Identifier,
+                "password" => DeclarativeStepKind::Password,
+                "form" => DeclarativeStepKind::Form,
+                "submit" => DeclarativeStepKind::Submit,
+                _ => return None,
+            };
+            if password_only
+                && matches!(
+                    kind,
+                    DeclarativeStepKind::Identifier | DeclarativeStepKind::Form
+                )
+            {
+                return None;
+            }
+            if let Some(wait) = value.get("waitFor") {
+                if !declarative_selector(wait) {
+                    return None;
+                }
+            }
+            if kind == DeclarativeStepKind::Submit {
+                let submission = value.get("submission")?.text()?;
+                let control = match submission {
+                    "click" | "spa" => true,
+                    "enter" => false,
+                    _ => return None,
+                };
+                let allowed: &[&str] = if control {
+                    &["kind", "submission", "waitFor", "selectors"]
+                } else {
+                    &["kind", "submission", "waitFor"]
+                };
+                if !value.keys_within(allowed) {
+                    return None;
+                }
+                if control {
+                    let selectors = value.get("selectors")?;
+                    if !selectors.keys_within(&["control"])
+                        || !declarative_selector(selectors.get("control")?)
+                    {
+                        return None;
+                    }
+                }
+                // Directly after the credential step it submits, in its scope.
+                let target = steps.last()?;
+                if !matches!(
+                    target.kind,
+                    DeclarativeStepKind::Identifier
+                        | DeclarativeStepKind::Password
+                        | DeclarativeStepKind::Form
+                ) {
+                    return None;
+                }
+                let submits = target.kind;
+                let step = DeclarativeStep {
+                    kind,
+                    origin: target.origin.clone(),
+                    paths: target.paths.clone(),
+                    prefixes: target.prefixes.clone(),
+                    frame: target.frame.clone(),
+                    submits: Some(submits),
+                };
+                steps.push(step);
+                continue;
+            }
+            if !value.keys_within(&[
+                "kind",
+                "origin",
+                "paths",
+                "pathPrefixes",
+                "frame",
+                "waitFor",
+                "selectors",
+            ]) {
+                return None;
+            }
+            let origin = match value.get("origin") {
+                None => connection_origin.to_owned(),
+                Some(origin) => {
+                    let origin = origin.text()?;
+                    if !declarative_listed_origin(origin) || !listed.iter().any(|o| o == origin) {
+                        return None;
+                    }
+                    origin.to_owned()
+                }
+            };
+            let paths = match value.get("paths") {
+                None => Vec::new(),
+                Some(list) => declarative_strings(list, DECLARATIVE_MAX_PATHS, declarative_path)?,
+            };
+            let prefixes = match value.get("pathPrefixes") {
+                None => Vec::new(),
+                Some(list) => declarative_strings(list, DECLARATIVE_MAX_PATHS, |p| {
+                    declarative_path(p) && p.len() > 1 && p.ends_with('/')
+                })?,
+            };
+            let frame = match value.get("frame") {
+                None => None,
+                Some(frame) => {
+                    let frame = frame.text()?;
+                    if frame.is_empty()
+                        || frame.len() > DECLARATIVE_MAX_FRAME_BYTES
+                        || !frame
+                            .bytes()
+                            .all(|b| b.is_ascii_alphanumeric() || b"_-".contains(&b))
+                    {
+                        return None;
+                    }
+                    Some(frame.to_owned())
+                }
+            };
+            let keys: &[&str] = match kind {
+                DeclarativeStepKind::Click => &["control"],
+                DeclarativeStepKind::Identifier => &["username"],
+                DeclarativeStepKind::Password => &["password"],
+                DeclarativeStepKind::Form => &["username", "password"],
+                DeclarativeStepKind::Submit => return None,
+            };
+            let selectors = value.get("selectors")?;
+            if !selectors.keys_within(keys)
+                || !keys
+                    .iter()
+                    .all(|key| selectors.get(key).is_some_and(declarative_selector))
+            {
+                return None;
+            }
+            steps.push(DeclarativeStep {
+                kind,
+                origin,
+                paths,
+                prefixes,
+                frame,
+                submits: None,
+            });
+        }
+        let policy = Self {
+            connection_origin: connection_origin.to_owned(),
+            password_only,
+            steps,
+        };
+        (policy.sequence_valid() && policy.frames().len() <= 8).then_some(policy)
+    }
+
+    /// The validator's order rules on concrete origins (`checkSequence`).
+    fn sequence_valid(&self) -> bool {
+        use DeclarativeStepKind::*;
+        let credential = |kind| matches!(kind, Identifier | Password | Form);
+        if !self.steps.iter().any(|step| credential(step.kind)) {
+            return false;
+        }
+        let mut typed = HashSet::new();
+        let mut submitted = HashSet::new();
+        let mut clicked = HashSet::new();
+        let mut username_seen = false;
+        for (index, step) in self.steps.iter().enumerate() {
+            match step.kind {
+                Identifier | Password | Form => {
+                    let fields: &[&str] = match step.kind {
+                        Form => &["username", "password"],
+                        Identifier => &["username"],
+                        _ => &["password"],
+                    };
+                    for field in fields {
+                        if !typed.insert((*field, step.origin.as_str())) {
+                            return false;
+                        }
+                    }
+                    if step.kind == Password && !username_seen && !self.password_only {
+                        return false;
+                    }
+                    if step.kind != Password {
+                        username_seen = true;
+                    }
+                }
+                Click => {
+                    // One pre-step per origin: its grant is one release per
+                    // origin and attempt. A second would never be granted.
+                    if !clicked.insert(step.origin.as_str())
+                        || !self.steps[index + 1..]
+                            .iter()
+                            .any(|later| credential(later.kind) && later.origin == step.origin)
+                    {
+                        return false;
+                    }
+                }
+                Submit => {
+                    let stage = if step.submits == Some(Identifier) {
+                        "identifier"
+                    } else {
+                        "password"
+                    };
+                    if !submitted.insert((stage, step.origin.as_str())) {
+                        return false;
+                    }
+                }
+            }
+        }
+        true
+    }
+
+    /// Unique frame names the steps use, in file order.
+    pub(crate) fn frames(&self) -> Vec<String> {
+        let mut names: Vec<String> = Vec::new();
+        for frame in self.steps.iter().filter_map(|step| step.frame.as_ref()) {
+            if !names.contains(frame) {
+                names.push(frame.clone());
+            }
+        }
+        names
+    }
+
+    fn matches(step: &DeclarativeStep, origin: &str, path: &str, main_frame: bool) -> bool {
+        step.origin == origin
+            && step.frame.is_none() == main_frame
+            && ((step.paths.is_empty() && step.prefixes.is_empty())
+                || step.paths.iter().any(|p| p == path)
+                || step.prefixes.iter().any(|p| path.starts_with(p.as_str())))
+    }
+
+    fn kind_for(step: &DeclarativeStep, stage: NativeLoginStage) -> bool {
+        use DeclarativeStepKind::*;
+        match stage {
+            NativeLoginStage::FormPrepare => step.kind == Click,
+            NativeLoginStage::Identifier => step.kind == Identifier,
+            NativeLoginStage::Password => step.kind == Password,
+            NativeLoginStage::Form => step.kind == Form,
+            NativeLoginStage::IdentifierSubmit => step.submits == Some(Identifier),
+            NativeLoginStage::PasswordSubmit => step.submits == Some(Password),
+            NativeLoginStage::FormSubmit => step.submits == Some(Form),
+            NativeLoginStage::BoundPassword => false,
+            NativeLoginStage::ScmConsent => false,
+        }
+    }
+
+    /// The step this stage would run as in the document at `url`, if any:
+    /// its origin, its path gate on the LIVE address, and top document or
+    /// child frame. Listed origins are HTTPS; only the connection's own origin
+    /// may be HTTP.
+    fn step_for(&self, stage: NativeLoginStage, url: &str, main_frame: bool) -> Option<usize> {
+        let origin = browser_origin(url)?;
+        if !origin.starts_with("https://") && origin != self.connection_origin {
+            return None;
+        }
+        let parsed = url::Url::parse(url).ok()?;
+        let path = parsed.path();
+        self.steps.iter().position(|step| {
+            Self::kind_for(step, stage) && Self::matches(step, &origin, path, main_frame)
+        })
+    }
+
+    pub(crate) fn allows(&self, stage: NativeLoginStage, url: &str, main_frame: bool) -> bool {
+        self.step_for(stage, url, main_frame).is_some()
+    }
+
+    /// The pending position: every credential step before this one has been
+    /// released in this attempt (on its own origin), and this stage has not.
+    /// A page reloaded at a later stage therefore cannot ask for an earlier or
+    /// the same release again, and a later stage never runs first.
+    pub(crate) fn ready(
+        &self,
+        stage: NativeLoginStage,
+        url: &str,
+        main_frame: bool,
+        released: impl Fn(&str, NativeLoginStage) -> bool,
+    ) -> bool {
+        use DeclarativeStepKind::*;
+        let Some(index) = self.step_for(stage, url, main_frame) else {
+            return false;
+        };
+        let step = &self.steps[index];
+        if released(&step.origin, stage) {
+            return false;
+        }
+        let credential_stage = |kind| match kind {
+            Identifier => Some(NativeLoginStage::Identifier),
+            Password => Some(NativeLoginStage::Password),
+            Form => Some(NativeLoginStage::Form),
+            _ => None,
+        };
+        // A submit sends the credential step directly before it.
+        let before = if step.kind == Submit {
+            index.saturating_sub(1)
+        } else {
+            index
+        };
+        self.steps[..before].iter().all(|earlier| {
+            credential_stage(earlier.kind)
+                .is_none_or(|earlier_stage| released(&earlier.origin, earlier_stage))
+        }) && (step.kind != Submit
+            || credential_stage(self.steps[index - 1].kind)
+                .is_some_and(|previous| released(&step.origin, previous)))
     }
 }
 
@@ -941,6 +1475,8 @@ mod tests {
             origin: "https://device.test",
             adapter: NativeLoginAdapter::ModularForm,
             stage: NativeLoginStage::FormSubmit,
+            path: "/",
+            frame: None,
         };
         let mut credentials = NativeLoginCredentials {
             identity: policy.identity(),
@@ -986,6 +1522,8 @@ mod tests {
                 origin,
                 adapter,
                 stage,
+                path: "/",
+                frame: None,
             },
             &NativeLoginCredentials {
                 identity: policy.identity(),
@@ -1186,6 +1724,8 @@ mod tests {
             origin: "https://auth.openai.com",
             adapter: NativeLoginAdapter::ChatGpt,
             stage: NativeLoginStage::BoundPassword,
+            path: "/",
+            frame: None,
         };
         let mut credentials = NativeLoginCredentials {
             identity: policy.identity(),
@@ -1237,6 +1777,8 @@ mod tests {
                 origin,
                 adapter,
                 stage: NativeLoginStage::IdentifierSubmit,
+                path: "/",
+                frame: None,
             };
             let mut credentials = NativeLoginCredentials {
                 identity: policy.identity(),
@@ -1306,6 +1848,8 @@ mod tests {
                     origin: credentials.origin,
                     adapter,
                     stage,
+                    path: "/",
+                    frame: None,
                 };
                 assert!(!LoginBudget::default().reserve(&request, &credentials));
             }
@@ -1423,7 +1967,7 @@ mod tests {
             assert!(!stage_allowed(adapter, stage, &http));
             let origin = browser_origin(&http).unwrap();
             let policy = OriginBrowserPolicy::new("owner", "connection", "tab", &origin).unwrap();
-            let request = NativeLoginRequest { identity: policy.identity(), origin: &origin, adapter, stage };
+            let request = NativeLoginRequest { identity: policy.identity(), origin: &origin, adapter, stage , path: "/", frame: None };
             let credentials = NativeLoginCredentials {
                 identity: policy.identity(), origin: &origin,
                 valid_until: Instant::now() + Duration::from_secs(30),
@@ -1602,6 +2146,8 @@ mod tests {
             origin: "https://accounts.google.com",
             adapter: NativeLoginAdapter::Google,
             stage: NativeLoginStage::Password,
+            path: "/",
+            frame: None,
         };
         let credentials = NativeLoginCredentials {
             identity: policy.identity(),
@@ -1628,6 +2174,22 @@ mod tests {
     }
 
     #[test]
+    fn scm_approval_is_action_only_https_and_once_per_attempt() {
+        let policy = OriginBrowserPolicy::new("db", "connection", "tab", "https://git.example.test").unwrap();
+        let request = NativeLoginRequest { identity: policy.identity(), origin: policy.source_origin(), adapter: NativeLoginAdapter::ModularForm, stage: NativeLoginStage::ScmConsent, path: "/login/oauth/authorize", frame: None };
+        let mut credentials = NativeLoginCredentials { identity: policy.identity(), origin: request.origin, username: "", password: "", auto_submit: false, valid_until: Instant::now() + Duration::from_secs(10) };
+        let mut budget = LoginBudget::default();
+        assert!(!budget.reserve(&request, &credentials));
+        credentials.auto_submit = true;
+        assert!(budget.reserve(&request, &credentials));
+        assert!(!budget.reserve(&request, &credentials));
+        assert!(stage_allowed(request.adapter, request.stage, "https://git.example.test/login/oauth/authorize"));
+        assert!(!stage_allowed(request.adapter, request.stage, "http://git.example.test/login/oauth/authorize"));
+        assert!(!stage_allowed(request.adapter, request.stage, "https://git.example.test/user/login"));
+        assert_eq!(request.stage.fields(&credentials), ("", ""));
+    }
+
+    #[test]
     fn disclosure_requires_exact_attempt_origin_expiry_and_one_shot_budget() {
         let policy =
             OriginBrowserPolicy::new("owner", "connection", "tab", "https://example.test").unwrap();
@@ -1638,6 +2200,8 @@ mod tests {
             origin: "https://example.test",
             adapter: NativeLoginAdapter::Generic,
             stage: NativeLoginStage::Form,
+            path: "/",
+            frame: None,
         };
         let mut credentials = NativeLoginCredentials {
             identity: other.identity(),
@@ -1668,6 +2232,8 @@ mod tests {
         let request = NativeLoginRequest {
             identity: policy.identity(), origin,
             adapter: NativeLoginAdapter::Generic, stage: NativeLoginStage::Form,
+            path: "/",
+            frame: None,
         };
         let mut credentials = NativeLoginCredentials {
             identity: policy.identity(), origin,
@@ -1700,6 +2266,8 @@ mod tests {
         let mut request = NativeLoginRequest {
             identity: policy.identity(), origin,
             adapter: NativeLoginAdapter::Bitwarden, stage: NativeLoginStage::Identifier,
+            path: "/",
+            frame: None,
         };
         let mut credentials = NativeLoginCredentials {
             identity: policy.identity(), origin,
@@ -1720,5 +2288,399 @@ mod tests {
         assert!(budget.reserve(&request, &credentials));
         request.stage = NativeLoginStage::Password;
         assert!(budget.reserve(&request, &credentials));
+    }
+}
+
+#[cfg(test)]
+mod declarative_tests {
+    use super::*;
+    use sorng_protocols::origin_browser::OriginBrowserPolicy;
+    use std::time::Duration;
+    use NativeLoginStage::*;
+
+    fn json(value: &serde_json::Value) -> LoginJson {
+        match value {
+            serde_json::Value::Null => LoginJson::Null,
+            serde_json::Value::Bool(v) => LoginJson::Bool(*v),
+            serde_json::Value::Number(v) => LoginJson::Number(v.as_f64().unwrap()),
+            serde_json::Value::String(v) => LoginJson::String(v.clone()),
+            serde_json::Value::Array(v) => LoginJson::List(v.iter().map(json).collect()),
+            serde_json::Value::Object(v) => {
+                LoginJson::Object(v.iter().map(|(k, v)| (k.clone(), json(v))).collect())
+            }
+        }
+    }
+
+    fn configuration(origin: &str, file: serde_json::Value) -> LoginJson {
+        json(&serde_json::json!({
+            "declarativeLogin": {
+                "connectionOrigin": origin,
+                "passwordOnly": file.get("passwordOnly").cloned().unwrap_or(false.into()),
+                "credentialOrigins": file["credentialOrigins"],
+                "loginSteps": file["loginSteps"],
+            },
+            "readiness": {"detectionTimeoutMs": 8000},
+        }))
+    }
+
+    const MS: &str = "https://login.microsoftonline.com";
+
+    fn identifier_first() -> serde_json::Value {
+        serde_json::json!({
+            "credentialOrigins": [MS],
+            "loginSteps": [
+                {"kind": "identifier", "origin": MS, "paths": ["/common/oauth2/v2.0/authorize"],
+                 "selectors": {"username": "input#i0116"}},
+                {"kind": "submit", "submission": "click", "selectors": {"control": "#idSIButton9"}},
+                {"kind": "password", "origin": MS, "paths": ["/common/oauth2/v2.0/authorize"],
+                 "selectors": {"password": "input#i0118"}},
+                {"kind": "submit", "submission": "click", "selectors": {"control": "#idSIButton9"}}
+            ]
+        })
+    }
+
+    fn policy(origin: &str, file: serde_json::Value) -> Option<DeclarativeLoginPolicy> {
+        DeclarativeLoginPolicy::parse(&configuration(origin, file))
+    }
+
+    #[test]
+    fn adapter_is_selected_by_reserved_id_and_has_exactly_its_stages() {
+        let adapter = NativeLoginAdapter::Declarative;
+        assert_eq!(NativeLoginAdapter::from_wire("declarative-steps"), adapter);
+        assert_eq!(adapter.wire(), "declarative-steps");
+        assert_eq!(
+            NativeLoginAdapter::from_application_id("declarative-steps"),
+            adapter
+        );
+        assert!(!adapter.reviewed_provider());
+        for stage in [
+            Identifier,
+            Password,
+            Form,
+            FormPrepare,
+            IdentifierSubmit,
+            PasswordSubmit,
+            FormSubmit,
+        ] {
+            assert!(adapter.accepts_stage(stage), "{stage:?}");
+        }
+        assert!(!adapter.accepts_stage(BoundPassword));
+        assert!(!stage_allowed(
+            adapter,
+            BoundPassword,
+            "https://device.test/login"
+        ));
+    }
+
+    #[test]
+    fn every_reviewed_steps_file_parses_for_https_and_http_connections() {
+        let root =
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../src/data/loginSteps");
+        let mut count = 0;
+        for family in std::fs::read_dir(&root).unwrap() {
+            for file in std::fs::read_dir(family.unwrap().path()).unwrap() {
+                let path = file.unwrap().path();
+                let value: serde_json::Value =
+                    serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+                for origin in ["https://device.example:8443", "http://192.168.1.10:8080"] {
+                    let parsed = policy(origin, value.clone());
+                    assert!(parsed.is_some(), "{} with {origin}", path.display());
+                }
+                count += 1;
+            }
+        }
+        assert!(count > 0, "{count}");
+    }
+
+    #[test]
+    fn invalid_or_unsupported_steps_yield_no_policy() {
+        let origin = "https://device.test";
+        let base = identifier_first();
+        assert!(policy(origin, base.clone()).is_some());
+        let mut cases: Vec<serde_json::Value> = Vec::new();
+        let mut edit = |change: &dyn Fn(&mut serde_json::Value)| {
+            let mut file = base.clone();
+            change(&mut file);
+            cases.push(file);
+        };
+        edit(&|f| f["credentialOrigins"] = serde_json::json!([]));
+        edit(&|f| f["credentialOrigins"] = serde_json::json!(["http://login.microsoftonline.com"]));
+        edit(&|f| f["loginSteps"][0]["origin"] = "https://evil.test".into());
+        edit(&|f| f["loginSteps"][0]["unknown"] = true.into());
+        edit(&|f| f["loginSteps"][0]["kind"] = "type".into());
+        edit(&|f| f["loginSteps"][0]["selectors"]["password"] = "#p".into());
+        edit(&|f| f["loginSteps"][0]["selectors"]["username"] = "a\u{7}b".into());
+        edit(&|f| f["loginSteps"][0]["selectors"]["username"] = "x".repeat(513).into());
+        edit(&|f| f["loginSteps"][0]["paths"] = serde_json::json!(["/a/../b"]));
+        edit(&|f| f["loginSteps"][0]["paths"] = serde_json::json!([]));
+        edit(&|f| f["loginSteps"][0]["frame"] = "a.b".into());
+        edit(&|f| f["loginSteps"][1]["submission"] = "auto".into());
+        edit(&|f| f["loginSteps"][1]["origin"] = MS.into());
+        edit(&|f| {
+            f["loginSteps"].as_array_mut().unwrap().remove(0);
+        });
+        edit(&|f| {
+            f["loginSteps"].as_array_mut().unwrap().swap(0, 1);
+        });
+        edit(&|f| f["passwordOnly"] = true.into());
+        edit(&|f| f["loginSteps"] = serde_json::json!([]));
+        edit(&|f| {
+            let step = f["loginSteps"][0].clone();
+            f["loginSteps"] = serde_json::Value::Array(vec![step; 17]);
+        });
+        edit(&|f| {
+            let steps = f["loginSteps"].as_array_mut().unwrap();
+            steps.push(serde_json::json!({"kind": "click", "selectors": {"control": "#later"}}));
+        });
+        edit(&|f| {
+            let steps = f["loginSteps"].as_array_mut().unwrap();
+            let again = steps[2].clone();
+            steps.push(again);
+        });
+        edit(&|f| {
+            let steps = f["loginSteps"].as_array_mut().unwrap();
+            for name in ["#cookies", "#open"] {
+                steps.insert(0, serde_json::json!({"kind": "click", "origin": MS, "selectors": {"control": name}}));
+            }
+        });
+        for (index, file) in cases.into_iter().enumerate() {
+            assert!(policy(origin, file).is_none(), "case {index}");
+        }
+        for bad in [
+            "https://device.test/",
+            "device.test",
+            "ftp://device.test",
+            "https://u:p@device.test",
+        ] {
+            assert!(policy(bad, base.clone()).is_none(), "{bad}");
+        }
+        let mut config = configuration(origin, base.clone());
+        if let LoginJson::Object(entries) = &mut config {
+            if let LoginJson::Object(login) = &mut entries[0].1 {
+                login.push(("extra".into(), LoginJson::Bool(true)));
+            }
+        }
+        assert!(DeclarativeLoginPolicy::parse(&config).is_none());
+    }
+
+    #[test]
+    fn stages_run_only_on_their_step_origin_live_path_and_frame() {
+        let p = policy("https://outlook.office.com", identifier_first()).unwrap();
+        let at = "https://login.microsoftonline.com/common/oauth2/v2.0/authorize?x=1";
+        for stage in [Identifier, IdentifierSubmit, Password, PasswordSubmit] {
+            assert!(p.allows(stage, at, true), "{stage:?}");
+            assert!(
+                !p.allows(stage, at, false),
+                "a child frame is not the step's document"
+            );
+            assert!(!p.allows(stage, "https://login.microsoftonline.com/other", true));
+            assert!(!p.allows(
+                stage,
+                "https://outlook.office.com/common/oauth2/v2.0/authorize",
+                true
+            ));
+            assert!(!p.allows(
+                stage,
+                "http://login.microsoftonline.com/common/oauth2/v2.0/authorize",
+                true
+            ));
+        }
+        for stage in [Form, FormPrepare, FormSubmit, BoundPassword] {
+            assert!(!p.allows(stage, at, true), "{stage:?}");
+        }
+        // A same-origin frame step, on the connection's own HTTP origin.
+        let ilo = serde_json::json!({"credentialOrigins": [], "loginSteps": [
+            {"kind": "click", "selectors": {"control": "#open"}},
+            {"kind": "form", "frame": "appFrame", "selectors": {"username": "#u", "password": "#p"}},
+            {"kind": "submit", "submission": "enter"}]});
+        let p = policy("http://ilo.test:8080", ilo).unwrap();
+        assert_eq!(p.frames(), vec!["appFrame".to_owned()]);
+        assert!(p.allows(Form, "http://ilo.test:8080/html/login.html", false));
+        assert!(p.allows(FormSubmit, "http://ilo.test:8080/html/login.html", false));
+        assert!(!p.allows(Form, "http://ilo.test:8080/html/login.html", true));
+        assert!(p.allows(FormPrepare, "http://ilo.test:8080/index.html", true));
+        assert!(!p.allows(FormPrepare, "http://ilo.test:8080/index.html", false));
+        assert!(!p.allows(Form, "http://ilo.test:8081/html/login.html", false));
+        assert!(!p.allows(Form, "https://ilo.test:8080/html/login.html", false));
+        // Prefixes: the directory and below only.
+        let prefixed = serde_json::json!({"credentialOrigins": [], "loginSteps": [
+            {"kind": "form", "pathPrefixes": ["/ui/"], "selectors": {"username": "#u", "password": "#p"}}]});
+        let p = policy("https://vc.test", prefixed).unwrap();
+        assert!(p.allows(Form, "https://vc.test/ui/login", true));
+        assert!(!p.allows(Form, "https://vc.test/uix/login", true));
+        assert!(!p.allows(Form, "https://vc.test/ui", true));
+    }
+
+    #[test]
+    fn the_pending_position_is_the_released_steps_and_cannot_go_back_or_repeat() {
+        let p = policy("https://outlook.office.com", identifier_first()).unwrap();
+        let at = "https://login.microsoftonline.com/common/oauth2/v2.0/authorize";
+        let mut released: HashSet<(String, NativeLoginStage)> = HashSet::new();
+        let ready = |released: &HashSet<(String, NativeLoginStage)>, stage| {
+            p.ready(stage, at, true, |origin, stage| {
+                released.contains(&(origin.to_owned(), stage))
+            })
+        };
+        assert!(ready(&released, Identifier));
+        assert!(
+            !ready(&released, IdentifierSubmit),
+            "submit before its credential step"
+        );
+        assert!(!ready(&released, Password), "a later step never runs first");
+        released.insert((MS.into(), Identifier));
+        assert!(!ready(&released, Identifier), "a reload cannot ask again");
+        assert!(ready(&released, IdentifierSubmit));
+        assert!(ready(&released, Password));
+        released.insert((MS.into(), Password));
+        assert!(!ready(&released, Password), "no second password");
+        assert!(ready(&released, PasswordSubmit));
+        released.insert((MS.into(), PasswordSubmit));
+        assert!(!ready(&released, PasswordSubmit));
+        // Password-only: the password step needs no identifier.
+        let device = serde_json::json!({"credentialOrigins": [], "passwordOnly": true, "loginSteps": [
+            {"kind": "password", "selectors": {"password": "#p"}},
+            {"kind": "submit", "submission": "click", "selectors": {"control": "#go"}}]});
+        let p = policy("http://router.test", device).unwrap();
+        assert!(p.ready(Password, "http://router.test/", true, |_, _| false));
+        assert!(!p.ready(Identifier, "http://router.test/", true, |_, _| false));
+    }
+
+    fn reserve(
+        budget: &mut LoginBudget,
+        policy: &OriginBrowserPolicy,
+        origin: &str,
+        stage: NativeLoginStage,
+        auto_submit: bool,
+        username: &str,
+        password: &str,
+    ) -> bool {
+        budget.reserve(
+            &NativeLoginRequest {
+                identity: policy.identity(),
+                origin,
+                adapter: NativeLoginAdapter::Declarative,
+                stage,
+                path: "/",
+                frame: None,
+            },
+            &NativeLoginCredentials {
+                identity: policy.identity(),
+                origin,
+                valid_until: Instant::now() + Duration::from_secs(30),
+                username,
+                password,
+                auto_submit,
+            },
+        )
+    }
+
+    #[test]
+    fn declarative_budget_releases_each_stage_once_and_submits_only_after_its_step() {
+        let origin = "https://device.test";
+        let policy = OriginBrowserPolicy::new("owner", "connection", "tab", origin).unwrap();
+        let mut budget = LoginBudget::default();
+        let b = &mut budget;
+        assert!(!reserve(b, &policy, origin, PasswordSubmit, true, "", ""));
+        assert!(
+            reserve(b, &policy, origin, Password, true, "", "secret"),
+            "password-only device"
+        );
+        assert!(!reserve(b, &policy, origin, Password, true, "", "secret"));
+        assert!(
+            !reserve(b, &policy, origin, PasswordSubmit, false, "", ""),
+            "fill-only consent"
+        );
+        assert!(reserve(b, &policy, origin, PasswordSubmit, true, "", ""));
+        assert!(!reserve(b, &policy, origin, PasswordSubmit, true, "", ""));
+        assert!(reserve(b, &policy, origin, FormPrepare, true, "", ""));
+        assert!(!reserve(b, &policy, origin, FormPrepare, true, "", ""));
+        assert!(!reserve(
+            b,
+            &policy,
+            origin,
+            BoundPassword,
+            true,
+            "user",
+            "secret"
+        ));
+        assert!(reserve(b, &policy, origin, Identifier, true, "user", ""));
+        assert!(
+            reserve(b, &policy, "https://idp.test", Form, true, "user", "secret"),
+            "no prepare stage needed"
+        );
+        assert!(!reserve(
+            b,
+            &policy,
+            "https://idp.test",
+            IdentifierSubmit,
+            true,
+            "",
+            ""
+        ));
+        assert!(reserve(
+            b,
+            &policy,
+            "https://idp.test",
+            FormSubmit,
+            true,
+            "",
+            ""
+        ));
+    }
+
+    #[test]
+    fn a_click_grant_is_never_rearmed_and_a_credential_stage_once() {
+        let origin = "https://device.test";
+        let adapter = NativeLoginAdapter::Declarative;
+        let policy = OriginBrowserPolicy::new("owner", "connection", "tab", origin).unwrap();
+        let mut budget = LoginBudget::default();
+        assert!(reserve(
+            &mut budget,
+            &policy,
+            origin,
+            FormPrepare,
+            true,
+            "",
+            ""
+        ));
+        assert!(!budget.cancelled(adapter, origin, FormPrepare));
+        assert!(!reserve(
+            &mut budget,
+            &policy,
+            origin,
+            FormPrepare,
+            true,
+            "",
+            ""
+        ));
+        assert!(reserve(
+            &mut budget,
+            &policy,
+            origin,
+            Identifier,
+            true,
+            "user",
+            ""
+        ));
+        assert!(budget.cancelled(adapter, origin, Identifier));
+        assert!(reserve(
+            &mut budget,
+            &policy,
+            origin,
+            Identifier,
+            true,
+            "user",
+            ""
+        ));
+        assert!(!budget.cancelled(adapter, origin, Identifier));
+        assert!(!reserve(
+            &mut budget,
+            &policy,
+            origin,
+            Identifier,
+            true,
+            "user",
+            ""
+        ));
     }
 }

@@ -80,10 +80,10 @@
   "unverified": [
     "The page can change at any time. This is one anonymous render on the review date.",
     "Nothing after the submit was observed, because no account was used: the reCAPTCHA outcome and the SMS code page.",
-    "What the page's script does on submit. The form declares the method post and no action, and the reCAPTCHA response field is outside the form, so a script very likely takes part; the steps click the form's own submit button.",
+    "What the page's script does on submit. The form declares the method post and no action, and the reCAPTCHA response field is outside the form, so a script very likely takes part; automatic sign-in clicks the form's own submit button.",
     "That the submit button becomes enabled when the application types into the two fields.",
     "That the sign-in panel is in view without opening the header menu. The capture reports the form as rendered, which says it has a layout box, not that it is on screen.",
-    "Whether another host ever takes over the password step. The in-repository review of 2026-10-06 (docs/portugal-portal-profiles.md) mentions authorisation addresses on login.vodafone.pt; the capture shows the form on my.vodafone.pt, and no step runs anywhere else."
+    "Whether another host ever takes over the password step. The in-repository review of 2026-10-06 (docs/portugal-portal-profiles.md) mentions authorisation addresses on login.vodafone.pt; the capture shows the form on my.vodafone.pt, and nothing is typed anywhere else."
   ],
   "neededFromUser": "One sign-in with this layout, or the sign-in panel and the code page that follows it saved as \"Webpage, Complete\". Save any page signed out and with no password typed in; keep the \"_files\" folder beside the .html and both outside the repository: they can hold the account name.",
   "notes": "Checked before the capture: robots.txt of my.vodafone.pt disallows /LOGIN and /LOGOUT but neither the entry address nor /main.html, where the form is, and the service conditions have no clause on automated access. Only the catalog entry address was loaded, once, with no input."

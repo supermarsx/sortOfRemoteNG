@@ -83,6 +83,8 @@ function fixture(
   };
   const signals = [],
     keys = [];
+  // `beforeKey(field, index)` returning false stands in for that key.
+  const hooks = {};
   let delivered,
     submits = 0;
   const until = Date.now() + 15000;
@@ -130,6 +132,7 @@ function fixture(
       if (waitForInput) doc.querySelector("button").disabled = true;
     };
   function key(field, index) {
+    if (hooks.beforeKey && hooks.beforeKey(field, index) === false) return;
     const input = doc.getElementById(
         google && field === "username" ? "identifierId" : field,
       ),
@@ -162,11 +165,14 @@ function fixture(
         const [, action, stage, field, n] = event.split("|"),
           index = Number(n),
           role = `type|${stage}|${field}`;
-        if (action === "start")
+        if (action === "start") {
+          if (hooks.beforeStart && hooks.beforeStart(field) === false) return;
           delivered.nativeTyping("probe", 0, until, false, role);
+        }
         if (action === "key") {
           key(field, index);
           delivered.nativeTyping("probe", index + 1, until, false, role);
+          if (hooks.afterProbe) hooks.afterProbe(field, index + 1);
         }
       } else if (google && ["identifier", "password"].includes(event)) {
         delivered(
@@ -204,6 +210,22 @@ function fixture(
     google ? "google-account" : "modular-form",
     true,
   );
+  // A trusted Escape from the user's keyboard, as CEF delivers it.
+  const escape = (target = doc.activeElement) => {
+    const event = {
+      target,
+      isTrusted: true,
+      key: "Escape",
+      preventDefault() {
+        this.prevented = true;
+      },
+      stopImmediatePropagation() {
+        this.stopped = true;
+      },
+    };
+    for (const fn of listeners.get("keydown") || []) fn(event);
+    return event;
+  };
   return {
     doc,
     win,
@@ -213,6 +235,8 @@ function fixture(
     until,
     delivered,
     errors,
+    hooks,
+    escape,
     expire: () => {
       expired = true;
     },
@@ -488,7 +512,7 @@ const typingSource = readFileSync(
   resolve(base, "native_login_typing.js"),
   "utf8",
 );
-function keyboardFixture(t, text = "pA55@word") {
+function keyboardFixture(t, text = "pA55@word", onEscape) {
   const dom = new JSDOM(
     '<form><input id="username"><input id="password" type="password"></form>',
     {
@@ -518,8 +542,9 @@ function keyboardFixture(t, text = "pA55@word") {
   const signals = [],
     role = "type|form|username",
     until = Date.now() + 15000;
-  const keyboard = win.eval(`${typingSource}\ncreateLoginKeyboard`)((event) =>
-    signals.push(event),
+  const keyboard = win.eval(`${typingSource}\ncreateLoginKeyboard`)(
+    (event) => signals.push(event),
+    onEscape,
   );
   const input = doc.getElementById("username");
   // Model of host.send_key_event: trusted keydown, beforeinput and input, then keyup.
@@ -576,7 +601,32 @@ function keyboardFixture(t, text = "pA55@word") {
         timer.cleared = true;
         timer.callback();
       });
+  const escape = (overrides = {}) => {
+    const event = {
+      target: input,
+      isTrusted: true,
+      key: "Escape",
+      preventDefault() {
+        this.prevented = true;
+      },
+      stopImmediatePropagation() {
+        this.stopped = true;
+      },
+      ...overrides,
+    };
+    emit("keydown", event);
+    return event;
+  };
+  // What the page and its framework observe on the field.
+  const observed = [];
+  for (const type of ["input", "change"])
+    input.addEventListener(type, (event) =>
+      observed.push([type, input.value, event.isTrusted]),
+    );
   return {
+    keyboard,
+    escape,
+    observed,
     win,
     doc,
     input,
@@ -779,4 +829,247 @@ test("a surrogate pair is one key whose receipt counts both units", async (t) =>
   assert.equal(await f.settled(), "typed");
   assert.equal(f.input.value, `a${pair}`);
   assert.deepEqual(f.keys(), [KEY(0), KEY(1)]);
+});
+
+// Escape during a fill: the user takes the field back. Typing stops and what
+// native typing entered is erased the way a user's delete is seen by the page.
+test("Escape while a field is typed cancels typing and erases the typed text with input and change events", async (t) => {
+  let escapes = 0;
+  const f = keyboardFixture(t, "abc", () => escapes++);
+  assert.equal(f.probe(0), true);
+  assert.equal(f.key("a"), true);
+  assert.equal(f.probe(1), true);
+  assert.equal(f.key("b"), true);
+  // Not yet received: the next key was requested (armed) when Escape lands.
+  assert.equal(f.probe(2), true);
+  const event = f.escape();
+  assert.equal(event.prevented, true);
+  assert.equal(event.stopped, true);
+  assert.equal(await f.settled(), "native-typing-cancelled");
+  assert.equal(f.signals.at(-1), CANCEL);
+  assert.equal(f.input.value, "");
+  assert.deepEqual(f.observed, [
+    ["input", "", false],
+    ["change", "", false],
+  ]);
+  assert.equal(escapes, 1);
+  // The key the host had already sent is not entered after the erase...
+  assert.equal(f.press("c"), false);
+  assert.equal(f.input.value, "");
+  // ...and only that one: the user's own typing is theirs again.
+  assert.equal(f.press("x"), true);
+  assert.equal(f.input.value, "x");
+  assert.equal(
+    f.signals.some((signal) => signal.includes("abc")),
+    false,
+  );
+});
+
+test("Escape between keys erases the field and holds back nothing the user types next", async (t) => {
+  const f = keyboardFixture(t, "abc", () => {});
+  assert.equal(f.probe(0), true);
+  assert.equal(f.key("a"), true);
+  // The DOM event arrived; its receipt has not, so no key is requested.
+  const event = f.escape();
+  assert.equal(event.prevented, true);
+  assert.equal(await f.settled(), "native-typing-cancelled");
+  assert.equal(f.input.value, "");
+  assert.equal(f.press("x"), true);
+  assert.equal(f.input.value, "x");
+});
+
+test("a held-back key is only the one already sent, and only for a short time", async (t) => {
+  const f = keyboardFixture(t, "abc", () => {});
+  assert.equal(f.probe(0), true);
+  assert.equal(f.key("a"), true);
+  assert.equal(f.probe(1), true);
+  f.escape();
+  // The page clock is the keyboard's own: let the hold run out for real.
+  await delay(1600);
+  assert.equal(f.press("x"), true);
+  assert.equal(f.input.value, "x");
+  // Nothing is held back any more after that.
+  assert.equal(f.press("y"), true);
+  assert.equal(f.input.value, "xy");
+});
+
+test("Escape before the first key stops typing and leaves the empty field untouched", async (t) => {
+  const f = keyboardFixture(t, "abc", () => {});
+  assert.equal(f.wait(200), true);
+  const event = f.escape();
+  assert.equal(event.prevented, true);
+  assert.equal(await f.settled(), "native-typing-cancelled");
+  assert.equal(f.input.value, "");
+  assert.deepEqual(f.observed, []);
+});
+
+test("Escape never erases text the page or user put in the field", async (t) => {
+  const f = keyboardFixture(t, "abc", () => {});
+  assert.equal(f.probe(0), true);
+  assert.equal(f.key("a"), true);
+  // A page script rewrote the field; the next check would fail typing anyway.
+  f.input.value = "page";
+  f.escape();
+  assert.equal(await f.settled(), "native-typing-cancelled");
+  assert.equal(f.input.value, "page");
+  assert.deepEqual(f.observed, []);
+});
+
+test("the erase restores the value attribute a page mirrored the typed text into", async (t) => {
+  const f = keyboardFixture(t, "abc", () => {});
+  assert.equal(f.probe(0), true);
+  assert.equal(f.key("a"), true);
+  assert.equal(f.probe(1), true);
+  assert.equal(f.key("b"), true);
+  f.input.setAttribute("value", "ab");
+  f.escape();
+  assert.equal(f.input.value, "");
+  assert.equal(f.input.getAttribute("value"), null);
+});
+
+test("an untrusted or modified Escape is not the user's take-back", async (t) => {
+  for (const overrides of [{ isTrusted: false }, { ctrlKey: true }]) {
+    let escapes = 0;
+    const f = keyboardFixture(t, "abc", () => escapes++);
+    assert.equal(f.probe(0), true);
+    assert.equal(f.key("a"), true);
+    f.escape(overrides);
+    // Any other key still stops typing, as before, without erasing.
+    assert.equal(await f.settled(), "native-typing-cancelled");
+    assert.equal(f.input.value, "a");
+    assert.equal(escapes, 0);
+  }
+});
+
+test("Escape in a field the attempt already typed ends the attempt while it is still running", async (t) => {
+  let escapes = 0;
+  const f = keyboardFixture(t, "ab", () => escapes++);
+  assert.equal(f.probe(0), true);
+  assert.equal(f.key("a"), true);
+  assert.equal(f.probe(1), true);
+  assert.equal(f.key("b"), true);
+  assert.equal(f.probe(2), true);
+  assert.equal(await f.settled(), "typed");
+  const event = f.escape();
+  assert.equal(event.prevented, true);
+  assert.equal(event.stopped, true);
+  assert.equal(escapes, 1);
+  // A second Escape is the page's again: the attempt was handed back once.
+  assert.equal(f.escape().prevented, undefined);
+  assert.equal(escapes, 1);
+});
+
+test("Escape outside an active fill keeps its normal page behaviour", async (t) => {
+  let escapes = 0;
+  const f = keyboardFixture(t, "ab", () => escapes++);
+  assert.equal(f.probe(0), true);
+  assert.equal(f.key("a"), true);
+  assert.equal(f.probe(1), true);
+  assert.equal(f.key("b"), true);
+  assert.equal(f.probe(2), true);
+  assert.equal(await f.settled(), "typed");
+  // The attempt ended (submitted or stopped): the client releases the keyboard.
+  f.keyboard.cancel();
+  const event = f.escape();
+  assert.equal(event.prevented, undefined);
+  assert.equal(event.stopped, undefined);
+  assert.equal(f.input.value, "ab");
+  assert.equal(escapes, 0);
+  // Escape in some other control is the page's too (it still stops typing,
+  // as any key outside the typed field always has).
+  const g = keyboardFixture(t, "ab", () => escapes++);
+  assert.equal(g.wait(200), true);
+  const other = g.doc.getElementById("password");
+  const elsewhere = g.escape({ target: other });
+  assert.equal(elsewhere.prevented, undefined);
+  assert.equal(elsewhere.stopped, undefined);
+  assert.equal(await g.settled(), "native-typing-cancelled");
+  assert.equal(escapes, 0);
+});
+
+// The production client: Escape ends the whole attempt and erases every field
+// it typed, the way a user's delete is seen, and nothing is submitted.
+test("Escape while the password is typed erases both fields, fires their events and submits nothing", async (t) => {
+  const f = fixture(t);
+  const seen = [];
+  for (const id of ["username", "password"])
+    for (const type of ["input", "change"])
+      f.doc
+        .getElementById(id)
+        .addEventListener(type, (event) =>
+          seen.push([id, type, event.target.value, event.isTrusted]),
+        );
+  let event = null;
+  f.hooks.beforeKey = (field, index) => {
+    if (field !== "password" || index !== 3) return true;
+    event = f.escape();
+    return false;
+  };
+  for (let i = 0; i < 100 && !f.signals.includes("form-rejected"); i++)
+    await delay(50);
+  assert.ok(event, JSON.stringify(f.signals));
+  assert.equal(event.prevented, true);
+  await delay(100);
+  assert.equal(f.doc.getElementById("username").value, "");
+  assert.equal(f.doc.getElementById("password").value, "");
+  assert.equal(f.submits(), 0);
+  assert.equal(f.signals.at(-1), "form-rejected");
+  assert.ok(f.signals.includes("type|cancel|form|password|0"));
+  for (const id of ["username", "password"])
+    assert.deepEqual(
+      seen.filter(([field]) => field === id),
+      [
+        [id, "input", "", false],
+        [id, "change", "", false],
+      ],
+    );
+  assert.equal(
+    f.signals.some((s) => s.includes(f.values.password)),
+    false,
+  );
+  assert.deepEqual(f.errors, []);
+});
+
+test("Escape after the username is typed and before the password starts erases the username", async (t) => {
+  const f = fixture(t);
+  let event = null;
+  f.hooks.beforeStart = (field) => {
+    if (field !== "password") return true;
+    event = f.escape();
+    return false;
+  };
+  for (let i = 0; i < 100 && !f.signals.includes("form-rejected"); i++)
+    await delay(50);
+  assert.ok(event, JSON.stringify(f.signals));
+  assert.equal(event.prevented, true);
+  await delay(100);
+  assert.equal(f.doc.getElementById("username").value, "");
+  assert.equal(f.doc.getElementById("password").value, "");
+  assert.equal(f.submits(), 0);
+  assert.equal(f.signals.at(-1), "form-rejected");
+  assert.deepEqual(f.errors, []);
+});
+
+test("Escape in the typed password while the attempt waits to submit ends it and erases both fields", async (t) => {
+  const f = fixture(t);
+  const password = f.doc.getElementById("password");
+  let event = null;
+  f.hooks.afterProbe = (field, typed) => {
+    if (field !== "password" || typed !== f.values.password.length) return;
+    // Every key is in; the submit delay has not passed yet.
+    setTimeout(() => {
+      event = f.escape(password);
+    }, 0);
+  };
+  for (let i = 0; i < 100 && !f.signals.includes("form-rejected"); i++)
+    await delay(50);
+  assert.ok(event, JSON.stringify(f.signals));
+  assert.equal(event.prevented, true);
+  assert.equal(event.stopped, true);
+  await delay(100);
+  assert.equal(f.doc.getElementById("username").value, "");
+  assert.equal(password.value, "");
+  assert.equal(f.submits(), 0);
+  assert.equal(f.signals.at(-1), "form-rejected");
+  assert.deepEqual(f.errors, []);
 });

@@ -134,6 +134,42 @@ pub(super) fn vault_id(connection: &Value) -> Result<Option<String>, NativeAutho
     }
 }
 
+/// The saved pair an HTTP Basic/Digest answer uses, exactly as the editor's
+/// `resolveHttpBasicCredentials` and the legacy engine pick it: the vault
+/// entry when selected (never a local fallback), else the dedicated Basic pair
+/// as a whole, else the generic pair. No application rewrite (no Proxmox
+/// realm suffix, no email-only rule): those belong to form login.
+pub(super) async fn resolve_pair<R: Runtime>(
+    connection: &Value,
+    lease: &NativeOwnerLease,
+    window: &WebviewWindow<R>,
+    state: &EncryptionState,
+) -> Result<Credentials, NativeAuthorityError> {
+    let Some(id) = vault_id(connection)? else {
+        let username = text(connection, "basicAuthUsername")?;
+        let password = text(connection, "basicAuthPassword")?;
+        if !username.is_empty() || !password.is_empty() {
+            return Ok(Credentials { username, password });
+        }
+        return Ok(Credentials {
+            username: text(connection, "username")?,
+            password: text(connection, "password")?,
+        });
+    };
+    let entry = lease
+        .read_dependency(window, state, true, &id)
+        .await
+        .map_err(|_| NativeAuthorityError::CredentialUnavailable)?;
+    let fields = entry
+        .get("facets")
+        .filter(|value| value.is_object())
+        .ok_or(NativeAuthorityError::CredentialUnavailable)?;
+    Ok(Credentials {
+        username: text(fields, "username")?,
+        password: text(fields, "password")?,
+    })
+}
+
 pub(super) async fn resolve<R: Runtime>(
     connection: &Value,
     lease: &NativeOwnerLease,

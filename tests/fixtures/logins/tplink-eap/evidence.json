@@ -1,0 +1,67 @@
+{
+  "$schema": "../evidence.schema.json",
+  "version": 1,
+  "id": "tplink-eap",
+  "class": "A",
+  "mechanism": "form",
+  "source": "https://emulator.tp-link.com/225v3/pages/login.html",
+  "reviewed": "2026-10-13",
+  "summary": "Official EAP225 v3 emulator login plus the password widget source: the original named field is hidden, a visible password clone is used, and the site login handler applies MD5 before posting. Native typing preserves site events. Other firmware and Omada software are not covered.",
+  "sources": [
+    {
+      "id": "login",
+      "kind": "public-source",
+      "title": "TP-Link EAP225 v3 official emulator login markup and handler",
+      "url": "https://emulator.tp-link.com/225v3/pages/login.html",
+      "retrieved": "2026-10-13",
+      "lines": "43-228",
+      "version": "EAP225 v3 official emulator"
+    },
+    {
+      "id": "widget",
+      "kind": "public-source",
+      "title": "TP-Link EAP225 v3 password widget source",
+      "url": "https://emulator.tp-link.com/225v3/js/su/widget/form/password.js",
+      "retrieved": "2026-10-13",
+      "lines": "48-208",
+      "version": "EAP225 v3 official emulator"
+    }
+  ],
+  "selectors": [
+    {
+      "selector": "form#form-login input#login-username[name=\"username\"]",
+      "role": "username",
+      "source": "login",
+      "basis": "observed",
+      "locator": "login markup; password widget creates visible clone"
+    },
+    {
+      "selector": "form#form-login span.password-wrap:has(> input#login-password[name=\"password\"]) > input.password-hidden[type=\"password\"]",
+      "role": "password",
+      "source": "widget",
+      "basis": "observed",
+      "locator": "login markup; password widget creates visible clone"
+    },
+    {
+      "selector": "form#form-login button#login-btn[type=\"button\"]",
+      "role": "control",
+      "source": "login",
+      "basis": "observed",
+      "locator": "login markup; password widget creates visible clone"
+    }
+  ],
+  "fixtures": [
+    {
+      "file": "fixture.html",
+      "path": "/pages/login.html",
+      "derivedFrom": ["login", "widget"],
+      "note": "Minimal hydrated login markup; fixture does not include vendor scripts."
+    }
+  ],
+  "staysInteractive": [
+    {
+      "kind": "other",
+      "note": "First-time account creation, controller-managed devices, other firmware and Omada controller sign-in."
+    }
+  ]
+}

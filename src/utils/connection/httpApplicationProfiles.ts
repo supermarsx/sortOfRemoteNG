@@ -1,3 +1,4 @@
+import { TPLINK_EAP_PROFILE } from "./tplinkEapProfile";
 import type {
   HttpApplicationSettings,
   HttpAutoLoginSelectors,
@@ -42,6 +43,7 @@ import {
   withDeclarativeLogin,
 } from "./httpApplicationLoginSteps";
 import { normalizeHttpCustomLoginOptions } from "./httpCustomLogin";
+import { DRONE_SCM_SPECS, normalizeDroneScmSettings } from "./droneScmBridge";
 
 export {
   DECLARATIVE_LOGIN_SUPPORTED,
@@ -466,9 +468,18 @@ const BASE_HTTP_APPLICATION_PROFILES: readonly HttpApplicationProfile[] = [
     id: "drone-ci",
     label: "Drone CI",
     category: "management",
-    capability: "manual",
+    // No form of its own: the reviewed sign-in form is the saved Git
+    // provider's (droneScmBridge.ts); native chooses it per provider.
+    capability: "known-form",
+    loginModes: ["manual", "form"],
+    totpChallenges: [
+      {
+        ...DRONE_SCM_SPECS.gitea.totp!,
+        paths: [...DRONE_SCM_SPECS.gitea.totp!.paths],
+      },
+    ],
     description:
-      "Interactive sign-in through the configured Git provider's OAuth flow. Drone has no universal local username/password form; runner RPC secrets and API tokens are not browser credentials. Use the system browser for cross-origin callbacks, provider MFA or security keys.",
+      "Drone has no local accounts. Automatic sign-in follows Drone to the Git provider saved in Application settings and types this connection's saved username and password only on that provider's reviewed sign-in page: Gitea (plus its authenticator code), the Gogs form Drone shows itself, github.com, or a self-hosted GitLab. It never types on Drone for an OAuth provider or on any other redirect target. The provider's Authorize page, Bitbucket, gitlab.com and GitHub Enterprise sign-in, passkeys, security keys, SSO and CAPTCHA remain interactive. Runner RPC secrets and API tokens are not browser credentials. Native browser engine only.",
   },
   EXCHANGE_ECP_PROFILE,
   {
@@ -630,6 +641,7 @@ const BASE_HTTP_APPLICATION_PROFILES: readonly HttpApplicationProfile[] = [
     description:
       "Reviewed cPanel, WHM and Webmail login form. Automatic sign-in waits for the complete page and a stable enabled login form before submitting. Use the website account and the saved connection's cPanel/WHM port; API tokens are not browser credentials.",
   },
+  TPLINK_EAP_PROFILE,
   generic("draytek", "DrayTek", "networking"),
   generic(
     "tplink-switch",
@@ -920,6 +932,27 @@ export function normalizeHttpApplicationSettings(
       : undefined;
   const exchangeOwaMailboxValid =
     raw.exchangeOwaMailbox === undefined || exchangeOwaMailbox !== undefined;
+  // Drone CI's Git provider: one fail-closed group, only on drone-ci, and
+  // required before form login may run (there is nothing else to type into).
+  const droneScmGiven =
+    raw.droneScmProvider !== undefined ||
+    raw.droneScmOrigin !== undefined ||
+    raw.droneScmClientId !== undefined;
+  const droneScm =
+    id === "drone-ci" && droneScmGiven
+      ? normalizeDroneScmSettings({
+          provider: raw.droneScmProvider,
+          ...(raw.droneScmOrigin !== undefined
+            ? { origin: raw.droneScmOrigin }
+            : {}),
+          ...(raw.droneScmClientId !== undefined
+            ? { clientId: raw.droneScmClientId }
+            : {}),
+        })
+      : undefined;
+  const droneScmValid =
+    (!droneScmGiven || (droneScm !== undefined && droneScm.ok)) &&
+    (id !== "drone-ci" || loginMode !== "form" || droneScmGiven);
   // Only the Custom application has selectors of its own to scope.
   const customLogin =
     id === "custom"
@@ -938,6 +971,7 @@ export function normalizeHttpApplicationSettings(
     apiOriginValid &&
     meshOriginValid &&
     exchangeOwaMailboxValid &&
+    droneScmValid &&
     customLogin !== null &&
     amazonMarketplaceValid &&
     raw.invalid !== true;
@@ -948,6 +982,17 @@ export function normalizeHttpApplicationSettings(
     ...(apiOrigin ? { apiOrigin } : {}),
     ...(meshOrigin ? { meshOrigin } : {}),
     ...(exchangeOwaMailbox ? { exchangeOwaMailbox } : {}),
+    ...(droneScm?.ok
+      ? {
+          droneScmProvider: droneScm.value.provider,
+          ...(droneScm.value.origin
+            ? { droneScmOrigin: droneScm.value.origin }
+            : {}),
+          ...(droneScm.value.clientId
+            ? { droneScmClientId: droneScm.value.clientId }
+            : {}),
+        }
+      : {}),
     ...(customLogin ? { customLogin } : {}),
     ...(amazonMarketplaceValid && typeof amazonMarketplace === "string"
       ? { amazonMarketplace }

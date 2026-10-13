@@ -32,6 +32,48 @@ function setNativeValue(el, value) {
   }
 }
 
+// Erase a value this client entered the way a user's delete is seen: native
+// setter, then bubbling `input` and `change` so framework state empties too.
+// Nothing is retained; an already empty field fires nothing.
+function clearFilledField(el) {
+  try {
+    if (!el || el.value === "") return;
+  } catch (_) {
+    return;
+  }
+  setNativeValue(el, "");
+  try {
+    el.dispatchEvent(new Event("input", { bubbles: true }));
+  } catch (_) {}
+  try {
+    el.dispatchEvent(new Event("change", { bubbles: true }));
+  } catch (_) {}
+}
+
+// Escape from the user in a field this run filled, while the run is still
+// going, takes the fields back: `onEscape` ends the run and erases them.
+// Escape anywhere else, and every other key, stays the page's.
+function watchFillEscape(doc, owned, onEscape) {
+  var listener = function (event) {
+    if (
+      !event.isTrusted ||
+      event.key !== "Escape" ||
+      event.ctrlKey ||
+      event.altKey ||
+      event.metaKey ||
+      owned().indexOf(event.target) < 0
+    )
+      return;
+    event.preventDefault();
+    event.stopImmediatePropagation();
+    onEscape();
+  };
+  doc.addEventListener("keydown", listener, true);
+  return function () {
+    doc.removeEventListener("keydown", listener, true);
+  };
+}
+
 function checkGuard(guard) {
   if (guard && !guard()) throw new Error("form-changed-or-unsafe");
 }

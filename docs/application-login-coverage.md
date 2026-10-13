@@ -25,31 +25,30 @@ mode, and you turn automatic login on per connection.
 
 | Where each application stands today                                          | Applications |
 | ---------------------------------------------------------------------------- | ------------ |
-| Signs in automatically with a reviewed login                                 | 60           |
+| Signs in automatically with a reviewed login                                 | 65           |
 | HTTP authentication, no page form                                            | 7            |
 | Configured by you                                                            | 2            |
 | No web login                                                                 | 8            |
 | Login steps written, class A: every selector seen in an authoritative source | 13           |
-| Login steps written, class B: unverified layout                              | 18           |
+| Login steps written, class B: unverified layout                              | 16           |
 | Evidence, but no steps file                                                  | 3            |
-| Nothing to build from (class C)                                              | 41           |
-| Total                                                                        | 152          |
+| Nothing to build from (class C)                                              | 39           |
+| Total                                                                        | 153          |
 
-Of the 60 that sign in automatically, 33 use reviewed form selectors and 27 keep a hand-written
+Of the 65 that sign in automatically, 38 use reviewed form selectors and 27 keep a hand-written
 adapter (`adobe` 1, `bitwarden` 2, `chatgpt` 1, `claude` 1, `cloudflare` 1, `google` 19,
 `synology` 1, `yealink` 1).
 
-No steps-based login is switched on yet. The 31 applications with login steps behave as they did
-before the steps were written: 19 are manual and 12 use field detection.
+Steps-based login is switched on in the source. Every connection still starts in Manual mode.
 
 No evidence record cites a sign-in confirmed by a user, and none cites a page a user saved.
 
 | Why nothing can be built | Applications | Meaning                                                                                                                                                        |
 | ------------------------ | ------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Robots rules or terms    | 25           | The site's robots rules or its terms forbid a program reading the page, so it was not loaded.                                                                  |
-| Refused or unreadable    | 10           | The site answered with a refusal or a challenge, or its robots rules or terms could not be read, so the page was not loaded; or the one permitted load failed. |
+| Refused or unreadable    | 9            | The site answered with a refusal or a challenge, or its robots rules or terms could not be read, so the page was not loaded; or the one permitted load failed. |
 | No public markup         | 2            | The application has a password form, but no public source shows its markup.                                                                                    |
-| No password form         | 4            | The evidence shows no user name and password form for a saved password to fill.                                                                                |
+| No password form         | 3            | The evidence shows no user name and password form for a saved password to fill.                                                                                |
 
 <!-- coverage:summary:end -->
 
@@ -148,7 +147,7 @@ Every application is listed once, in the section that says where it stands today
 
 <!-- coverage:matrix:begin -->
 
-### Signs in automatically today (60)
+### Signs in automatically today (65)
 
 A reviewed login in the catalog: reviewed form selectors, or a hand-written adapter for a sign-in
 that takes several pages.
@@ -163,9 +162,11 @@ that takes several pages.
 | Claude                                    | `claude`                  | `known-form`       | -     | -         | -          | Hand-written adapter (`claude`)     |
 | Cloudflare Dashboard                      | `cloudflare`              | `known-form`       | -     | -         | -          | Hand-written adapter (`cloudflare`) |
 | cPanel / WHM                              | `cpanel`                  | `known-form`       | -     | -         | -          | Reviewed form selectors             |
+| Drone CI                                  | `drone-ci`                | `known-form`       | C     | `none`    | none       | Reviewed form selectors             |
 | Drupal                                    | `drupal`                  | `known-form`       | -     | -         | -          | Reviewed form selectors             |
 | Exchange Admin Center / ECP               | `exchange-ecp`            | `known-form`       | -     | -         | -          | Reviewed form selectors             |
 | Exchange Outlook on the web (on-premises) | `exchange-owa`            | `known-form`       | -     | -         | -          | Reviewed form selectors             |
+| FreeDNS (afraid.org)                      | `freedns`                 | `known-form`       | B     | `form`    | none       | Reviewed form selectors             |
 | FreePBX Administration                    | `freepbx`                 | `known-form`       | -     | -         | -          | Reviewed form selectors             |
 | Gitea                                     | `gitea`                   | `known-form`       | -     | -         | -          | Reviewed form selectors             |
 | GitHub                                    | `github`                  | `known-form`       | -     | -         | -          | Reviewed form selectors             |
@@ -192,6 +193,7 @@ that takes several pages.
 | LinkedIn                                  | `linkedin`                | `known-form`       | -     | -         | -          | Reviewed form selectors             |
 | Matomo                                    | `matomo`                  | `known-form`       | -     | -         | -          | Reviewed form selectors             |
 | MeshCentral                               | `meshcentral`             | `known-form`       | -     | -         | -          | Reviewed form selectors             |
+| My Vodafone — Portugal                    | `vodafone-portugal`       | `known-form`       | B     | `form`    | none       | Reviewed form selectors             |
 | Nextcloud                                 | `nextcloud`               | `known-form`       | -     | -         | -          | Reviewed form selectors             |
 | Nginx Proxy Manager                       | `nginxProxyMgr`           | `known-form`       | -     | -         | -          | Reviewed form selectors             |
 | Odoo                                      | `odoo`                    | `known-form`       | -     | -         | -          | Reviewed form selectors             |
@@ -204,9 +206,11 @@ that takes several pages.
 | Portainer                                 | `portainer`               | `known-form`       | -     | -         | -          | Reviewed form selectors             |
 | Proxmox VE                                | `proxmox`                 | `known-form`       | -     | -         | -          | Reviewed form selectors             |
 | PTisp customer area                       | `ptisp`                   | `known-form`       | -     | -         | -          | Reviewed form selectors             |
+| Registro.br                               | `registro-br`             | `known-form`       | B     | `form`    | none       | Reviewed form selectors             |
 | SQLPad                                    | `sqlpad`                  | `known-form`       | -     | -         | -          | Reviewed form selectors             |
 | Synology DSM                              | `synology-dsm`            | `known-form`       | -     | -         | -          | Hand-written adapter (`synology`)   |
 | Tactical RMM                              | `tacticalrmm`             | `known-form`       | -     | -         | -          | Reviewed form selectors             |
+| tplink-eap                                | `tplink-eap`              | `known-form`       | A     | `form`    | none       | Reviewed form selectors             |
 | Vaultwarden                               | `vaultwarden`             | `known-form`       | -     | -         | -          | Hand-written adapter (`bitwarden`)  |
 | Vodafone Smart Router 3                   | `vodafone-smart-router-3` | `known-form`       | -     | -         | -          | Reviewed form selectors             |
 | VoIP phone (Yealink)                      | `voip-phone`              | `known-form`       | -     | -         | -          | Hand-written adapter (`yealink`)    |
@@ -255,7 +259,7 @@ Native integration entries with no web login page.
 | PHP runtime                 | `php`           | `none`             | -     | -         | -          | No web login page |
 | VMware Workstation / Fusion | `vmwareDesktop` | `none`             | -     | -         | -          | No web login page |
 
-### Login steps written, not switched on (31)
+### Login steps written (29)
 
 A steps file exists under `src/data/loginSteps/`. Class A: every selector was seen in an
 authoritative source. Class B: the layout is unverified until someone signs in with it.
@@ -269,7 +273,6 @@ authoritative source. Class B: the layout is unverified until someone signs in w
 | Dell iDRAC                                  | `idrac`                   | `generic-form`     | B     | `form`    | `appliances/idrac.json`                           | Unverified layout    |
 | DIGI — Portugal (My DIGI)                   | `digi-portugal`           | `manual`           | B     | `form`    | `portuguese-portals/digi-portugal.json`           | Unverified layout    |
 | DrayTek                                     | `draytek`                 | `generic-form`     | B     | `form`    | `appliances/draytek.json`                         | Unverified layout    |
-| FreeDNS (afraid.org)                        | `freedns`                 | `manual`           | B     | `form`    | `registrars-hosting/freedns.json`                 | Unverified layout    |
 | Ghost Admin                                 | `ghost`                   | `manual`           | A     | `form`    | `self-hosted/ghost.json`                          | Authoritative source |
 | GitLab.com                                  | `gitlab-com`              | `manual`           | B     | `form`    | `self-hosted/gitlab-com.json`                     | Unverified layout    |
 | Grafana                                     | `grafana`                 | `generic-form`     | A     | `form`    | `self-hosted/grafana.json`                        | Authoritative source |
@@ -277,7 +280,6 @@ authoritative source. Class B: the layout is unverified until someone signs in w
 | HPE GreenLake dashboard                     | `hpe-greenlake`           | `manual`           | B     | `form`    | `enterprise-identity/hpe-greenlake.json`          | Unverified layout    |
 | Jira                                        | `jira`                    | `generic-form`     | B     | `form`    | `appliances/jira.json`                            | Unverified layout    |
 | Mailcow                                     | `mailcow`                 | `generic-form`     | A     | `form`    | `self-hosted/mailcow.json`                        | Authoritative source |
-| My Vodafone — Portugal                      | `vodafone-portugal`       | `manual`           | B     | `form`    | `portuguese-portals/vodafone-portugal.json`       | Unverified layout    |
 | NetBox                                      | `netbox`                  | `generic-form`     | A     | `form`    | `self-hosted/netbox.json`                         | Authoritative source |
 | No-IP account                               | `no-ip`                   | `manual`           | B     | `form`    | `registrars-hosting/no-ip.json`                   | Unverified layout    |
 | osTicket                                    | `osticket`                | `generic-form`     | A     | `form`    | `self-hosted/osticket.json`                       | Authoritative source |
@@ -304,7 +306,7 @@ The login layout is known. The Note says why no steps file was written.
 | IMT — Serviços online | `imt-online` | `manual`           | B     | `form`    | none       | The page's own form needs a third value, a taxpayer number, which the steps format does not carry; its two buttons lead to another origin                                                |
 | Microsoft Exchange    | `exchange`   | `manual`           | A     | `form`    | none       | The steps format cannot express what the Outlook Web Access form needs. The reviewed `exchange-owa` login is not connected to this profile, so it is manual today                        |
 
-### Nothing to build from (41)
+### Nothing to build from (39)
 
 Class C. The Note says why. Each application's `evidence.json` says what was looked for and what you
 can supply.
@@ -320,7 +322,6 @@ can supply.
 | AWS Management Console — GovCloud (US) | `aws-console-govcloud` | `manual`           | C     | `none`    | none       | Robots rules or terms: robots.txt disallows the console host for every agent                                                                                      |
 | Canva                                  | `canva`                | `generic-form`     | C     | `none`    | none       | Robots rules or terms: robots.txt shuts the login page to the agent that made the review; what was found describes an email-and-code sign-in, not a password form |
 | Cegid Primavera — Portal de Cliente    | `cegid-primavera`      | `manual`           | C     | `none`    | none       | Robots rules or terms: sign-in is on the vendor's identity service, whose robots rules disallow every path                                                        |
-| Drone CI                               | `drone-ci`             | `manual`           | C     | `none`    | none       | No password form: sign-in is an OAuth hand-off to the Git provider                                                                                                |
 | E-REDES — Balcão Digital               | `e-redes`              | `manual`           | C     | `none`    | none       | Robots rules or terms: the operator's terms of use forbid automatic mechanisms that copy the website                                                              |
 | Eaton UPS web administration           | `eaton-ups`            | `manual`           | C     | `none`    | none       | No public markup: the network card has a login page, but no public source shows it                                                                                |
 | eBay account                           | `ebay`                 | `manual`           | C     | `none`    | none       | Robots rules or terms: robots.txt disallows the sign-in host for every agent                                                                                      |
@@ -345,7 +346,6 @@ can supply.
 | OVHcloud Control Panel (EU)            | `ovhcloud`             | `manual`           | C     | `none`    | none       | Robots rules or terms: the sign-in form is on another host, whose robots.txt disallows its address                                                                |
 | Reddit                                 | `reddit`               | `manual`           | C     | `none`    | none       | Robots rules or terms: robots.txt disallows the site for every agent; the fields also sit in shadow roots, which the steps format cannot address                  |
 | register.com (Network Solutions)       | `register-com`         | `manual`           | C     | `none`    | none       | Refused or unreadable: shares the Network Solutions sign-in, which answers HTTP 403 with a security check                                                         |
-| Registro.br                            | `registro-br`          | `manual`           | C     | `none`    | none       | Refused or unreadable: no terms document could be found or read                                                                                                   |
 | Steam account                          | `steam`                | `manual`           | C     | `none`    | none       | Robots rules or terms: the subscriber agreement bars scripts and other systems not controlled by a person                                                         |
 | Tesla Account                          | `tesla`                | `manual`           | C     | `none`    | none       | Refused or unreadable: robots.txt and the terms page both answered HTTP 403                                                                                       |
 | Time4VPS dashboard                     | `time4vps`             | `manual`           | C     | `none`    | none       | Refused or unreadable: the billing host and the provider's website refuse automated reads                                                                         |

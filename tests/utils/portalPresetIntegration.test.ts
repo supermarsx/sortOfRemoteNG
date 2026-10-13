@@ -17,10 +17,13 @@ import { getHttpApplicationExternalTarget } from "../../src/utils/auth/httpAppli
 
 // Offline integration contracts for these two lanes only. No live requests,
 // production accounts, Google service cases or central catalog count changes.
-const profiles = [
+const sourceProfiles = [
   ...PORTUGAL_PORTAL_PROFILES,
   ...INTERNATIONAL_PORTAL_PROFILES,
 ];
+const profiles = sourceProfiles.map((profile) =>
+  getHttpApplicationProfile(profile.id)!,
+);
 const hostedProfiles = profiles.filter((profile) => profile.hostedLoginUrl);
 const tenantProfiles = profiles.filter((profile) => !profile.hostedLoginUrl);
 const noLogin = {
@@ -56,15 +59,35 @@ function forbidSecretReads(target: object, keys: readonly string[]) {
 }
 
 describe("Portugal and international portal core integration", () => {
-  it("registers every exported profile exactly once without replacing its metadata", () => {
+  it("registers every source profile exactly once and preserves its reviewed identity and origin metadata", () => {
     expect(PORTUGAL_PORTAL_PROFILES.length).toBeGreaterThan(0);
     expect(INTERNATIONAL_PORTAL_PROFILES.length).toBeGreaterThan(0);
     expect(new Set(profiles.map(({ id }) => id)).size).toBe(profiles.length);
-    for (const profile of profiles) {
+    for (const source of sourceProfiles) {
+      const profile = getHttpApplicationProfile(source.id)!;
       expect(
         HTTP_APPLICATION_PROFILES.filter(({ id }) => id === profile.id),
       ).toEqual([profile]);
       expect(getHttpApplicationProfile(profile.id)).toBe(profile);
+      expect(profile).toMatchObject({
+        id: source.id,
+        label: source.label,
+        category: source.category,
+        capability: source.capability,
+        requiresHttps: source.requiresHttps,
+      });
+      expect(profile.hostedLoginUrl).toBe(source.hostedLoginUrl);
+      expect(profile.loginPath).toBe(source.loginPath);
+      if (profile.declarativeLogin) {
+        expect(profile.declarativeLogin.id).toBe(source.id);
+        expect(profile.declarativeLogin.version).toBe(1);
+        expect(profile.declarativeLogin.evidence.reviewed).toMatch(
+          /^\d{4}-\d{2}-\d{2}$/,
+        );
+        expect(new URL(profile.declarativeLogin.evidence.source).protocol).toBe(
+          "https:",
+        );
+      }
     }
   });
 
@@ -113,16 +136,26 @@ describe("Portugal and international portal core integration", () => {
   );
 
   it.each(profiles)(
-    "$id rejects imported form and transport authentication",
+    "$id rejects imported login modes it does not offer",
     (profile) => {
       const modes = getHttpApplicationLoginModes(profile);
       const connection = connectionFor(profile);
+      const reviewedForm =
+        Boolean(profile.declarativeLogin) ||
+        profile.capability === "known-form";
       expect(profile.requiresHttps).toBe(true);
-      expect(profile.capability).toBe("manual");
-      expect(modes).toEqual(["manual"]);
-      expect(profile.selectors).toBeUndefined();
-      expect(profile.totpChallenges).toBeUndefined();
-      expect(profile.loginFlow).toBeUndefined();
+      expect(["known-form", "manual"]).toContain(profile.capability);
+      expect(modes).toEqual(reviewedForm ? ["manual", "form"] : ["manual"]);
+      if (!reviewedForm) expect(profile.selectors).toBeUndefined();
+      const source = sourceProfiles.find(({ id }) => id === profile.id)!;
+      const challenges = [
+        ...(source.totpChallenges ?? []),
+        ...(profile.declarativeLogin?.totpChallenges ?? []),
+      ];
+      expect(profile.totpChallenges).toEqual(
+        challenges.length ? challenges : undefined,
+      );
+      expect(profile.loginFlow).toBe(source.loginFlow);
 
       const rejectedModes = ["basic", "digest", "form"] as const;
       for (const loginMode of rejectedModes.filter(

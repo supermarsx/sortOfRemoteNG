@@ -38,6 +38,7 @@ pub fn form_client_source() -> String {
         .replace("/* REVIEWED_FORM_MODULES */", FORM_MODULES)
         .replace("/* REVIEWED_TOTP_GUARDS */", &legacy[begin..end])
         .replace("/* NATIVE_KEYBOARD_CLIENT */", include_str!("native_login_typing.js"))
+        .replace("/* REVIEWED_PTISP_TOUR */", include_str!("../../sorng-protocols/src/ptisp_tour_client.js"))
 }
 
 #[cfg(test)]

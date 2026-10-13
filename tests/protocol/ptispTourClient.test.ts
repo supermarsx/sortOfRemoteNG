@@ -139,6 +139,17 @@ describe("PTisp tour readiness helper", () => {
     vi.useRealTimers();
   });
 
+  it("closes the id-only my-tour-close control before confirming", async () => {
+    let shown!: ReturnType<typeof dialog>;
+    const close = tour(() => (shown = dialog()));
+    close.button.className = "";
+    close.button.id = "my-tour-close";
+    window.eval(source);
+    await flush();
+    expect(close.clicked).toHaveBeenCalledOnce();
+    expect(shown.clicked).toHaveBeenCalledOnce();
+  });
+
   it("uses the site's close, click and form handlers once, including synchronous confirmation", async () => {
     let shown!: ReturnType<typeof dialog>;
     const close = tour(() => (shown = dialog()));

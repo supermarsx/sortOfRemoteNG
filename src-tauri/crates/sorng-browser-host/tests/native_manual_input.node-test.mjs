@@ -94,6 +94,24 @@ function fixture(url = "https://example.test/login") {
 // Real DOM focus retargeting matters here: focusin between fields under the
 // same shadow host does not reach document. Only the native window blur and
 // clock are simulated; no browser/profile/network or real credentials are used.
+test("detailed native receipts classify iframe and nonempty captures and wait only for the masked field", () => {
+  const f = fixture();
+  f.win.top = {};
+  assert.equal(f.run("capture", "a", 0, true).reason, "unsupported-frame");
+  f.win.top = f.win;
+  f.input._value = "existing";
+  assert.equal(f.run("capture", "a", 0, true).reason, "field-not-empty");
+  f.input._value = "";
+  assert.equal(f.run("capture", "a", 0, true).success, true);
+  assert.equal(f.run("restore", "a", 0, true).success, true);
+  const pending = f.run("check", "a", 1, true);
+  assert.equal(pending.success, false);
+  assert.equal(pending.reason, "pending");
+  f.input._value = "•";
+  assert.equal(f.run("check", "a", 1, true).success, true);
+  f.doc.activeElement = f.doc.body;
+  assert.equal(f.run("check", "a", 1, true).reason, "focus-lost");
+});
 function domFixture(t, url = "https://example.test/login") {
   const dom = new JSDOM("<!doctype html><body></body>", {
     url,
@@ -113,7 +131,30 @@ function domFixture(t, url = "https://example.test/login") {
   const hasFocus = doc.hasFocus.bind(doc);
   doc.hasFocus = () => windowFocused && hasFocus();
   win.performance.now = () => time;
+  // jsdom cannot mark an event trusted; record the client's document
+  // listeners so a test can hand them the user's trusted key and input events.
+  const docListeners = new Map();
+  const addDocListener = doc.addEventListener.bind(doc);
+  doc.addEventListener = (name, listener, options) => {
+    if (!docListeners.has(name)) docListeners.set(name, []);
+    docListeners.get(name).push(listener);
+    addDocListener(name, listener, options);
+  };
   const run = win.eval(source);
+  function trusted(name, props) {
+    const event = {
+      isTrusted: true,
+      preventDefault() {
+        this.prevented = true;
+      },
+      stopImmediatePropagation() {
+        this.stopped = true;
+      },
+      ...props,
+    };
+    for (const listener of docListeners.get(name) || []) listener(event);
+    return event;
+  }
   function input(parent = doc.body, tag = "input") {
     const el = doc.createElement(tag);
     // jsdom has no layout engine. Only this fixture field is made visible.
@@ -132,6 +173,7 @@ function domFixture(t, url = "https://example.test/login") {
     run,
     input,
     shadow,
+    trusted,
     blur(trusted = true) {
       windowFocused = false;
       for (const listener of blurListeners)
@@ -447,7 +489,15 @@ test("HTTP custom-port manual typing captures, restores and validates the exact 
   assert.equal(f.run("restore", "a", 0), false);
 });
 
-for (const change of ["host", "scheme", "port", "frame", "owner", "manual-edit", "expired-blur"]) {
+for (const change of [
+  "host",
+  "scheme",
+  "port",
+  "frame",
+  "owner",
+  "manual-edit",
+  "expired-blur",
+]) {
   test(`HTTP manual typing preserves the ${change} guard`, () => {
     const f = fixture("http://example.test:8080/login");
     if (change === "expired-blur") {
@@ -459,9 +509,18 @@ for (const change of ["host", "scheme", "port", "frame", "owner", "manual-edit",
     }
     assert.equal(f.run("capture", "a", 0), true);
     if (["host", "scheme", "port"].includes(change)) {
-      const url = new URL(change === "host" ? "http://other.test:8080/login"
-        : change === "scheme" ? "https://example.test:8080/login" : "http://example.test:8081/login");
-      Object.assign(f.location, { href: url.href, origin: url.origin, protocol: url.protocol });
+      const url = new URL(
+        change === "host"
+          ? "http://other.test:8080/login"
+          : change === "scheme"
+            ? "https://example.test:8080/login"
+            : "http://example.test:8081/login",
+      );
+      Object.assign(f.location, {
+        href: url.href,
+        origin: url.origin,
+        protocol: url.protocol,
+      });
     }
     if (change === "frame") f.win.top = {};
     if (change === "owner") f.input.ownerDocument = {};
@@ -473,7 +532,11 @@ for (const change of ["host", "scheme", "port", "frame", "owner", "manual-edit",
 }
 
 test("manual typing never captures unsupported schemes or a child frame", () => {
-  for (const url of ["file:///login", "ftp://example.test/login", "about:blank"]) {
+  for (const url of [
+    "file:///login",
+    "ftp://example.test/login",
+    "about:blank",
+  ]) {
     assert.equal(fixture(url).run("capture", "a", 0), false);
   }
   const f = fixture("http://example.test:8080/login");
@@ -512,4 +575,125 @@ test("native restore follows one-shot validation and still awaits renderer recei
     receipt.indexOf("!current(&slot, slot.input.is_some())") <
       receipt.indexOf("send_cef_character("),
   );
+});
+
+// Escape from the user while manual typing runs: typing stops at the next
+// receipt and what it typed is erased the way a user's delete is seen.
+function typingFixture(t, tag = "input") {
+  const f = domFixture(t);
+  const field = f.input(f.doc.body, tag);
+  if (tag === "input") field.type = "password";
+  field.focus();
+  assert.equal(f.run("capture", "a", 0), true);
+  assert.equal(f.run("restore", "a", 0), true);
+  const observed = [];
+  for (const type of ["input", "change"])
+    field.addEventListener(type, (event) =>
+      observed.push([type, field.value, event.isTrusted]),
+    );
+  // Model of one host key: it lands unless the page prevents its beforeinput.
+  const key = (data) => {
+    const event = f.trusted("beforeinput", {
+      target: field,
+      inputType: "insertText",
+      data,
+    });
+    if (event.prevented) return false;
+    field.value += data;
+    return true;
+  };
+  const escape = (props = {}) =>
+    f.trusted("keydown", { target: field, key: "Escape", ...props });
+  return { ...f, field, observed, key, escape };
+}
+
+for (const tag of ["input", "textarea"]) {
+  test(`Escape during manual typing into a ${tag} erases the typed text with input and change events`, (t) => {
+    const f = typingFixture(t, tag);
+    assert.equal(f.key("p"), true);
+    assert.equal(f.run("check", "a", 1), true);
+    assert.equal(f.key("w"), true);
+    assert.equal(f.run("check", "a", 2), true);
+    // The host may already have sent the next key when Escape lands.
+    const event = f.escape();
+    assert.equal(event.prevented, true);
+    assert.equal(event.stopped, true);
+    assert.equal(f.field.value, "");
+    assert.deepEqual(f.observed, [
+      ["input", "", false],
+      ["change", "", false],
+    ]);
+    // That key is held back once; typing has stopped at its next receipt.
+    assert.equal(f.key("d"), false);
+    assert.equal(f.field.value, "");
+    assert.equal(f.run("check", "a", 3), false);
+    // The user's own typing is theirs again.
+    assert.equal(f.key("x"), true);
+    assert.equal(f.field.value, "x");
+  });
+}
+
+test("Escape between a receipt and the host's next key holds nothing back after the hold", (t) => {
+  const f = typingFixture(t);
+  assert.equal(f.key("p"), true);
+  assert.equal(f.run("check", "a", 1), true);
+  f.escape();
+  f.advance(1501);
+  assert.equal(f.key("x"), true);
+  assert.equal(f.field.value, "x");
+});
+
+test("Escape never erases text beyond what manual typing has entered", (t) => {
+  const f = typingFixture(t);
+  assert.equal(f.key("p"), true);
+  assert.equal(f.run("check", "a", 1), true);
+  // Not ours: more than the receipts allow.
+  f.field.value = "p-and-more";
+  const event = f.escape();
+  assert.equal(event.prevented, true);
+  assert.equal(f.field.value, "p-and-more");
+  assert.deepEqual(f.observed, []);
+  assert.equal(f.run("check", "a", 1), false);
+});
+
+test("Escape outside active manual typing keeps its normal page behaviour", (t) => {
+  // Captured but not typing yet.
+  const a = domFixture(t);
+  const one = a.input();
+  one.focus();
+  assert.equal(a.run("capture", "a", 0), true);
+  const before = a.trusted("keydown", { target: one, key: "Escape" });
+  assert.equal(before.prevented, undefined);
+  assert.equal(a.run("restore", "a", 0), true);
+  // Typing finished: the host retired the slot.
+  const b = typingFixture(t);
+  assert.equal(b.key("p"), true);
+  assert.equal(b.run("check", "a", 1), true);
+  assert.equal(b.run("cancel", "a", 0), true);
+  const after = b.escape();
+  assert.equal(after.prevented, undefined);
+  assert.equal(after.stopped, undefined);
+  assert.equal(b.field.value, "p");
+  // Untrusted or modified Escape during typing is not the user's take-back.
+  for (const props of [{ isTrusted: false }, { ctrlKey: true }]) {
+    const c = typingFixture(t);
+    assert.equal(c.key("p"), true);
+    assert.equal(c.run("check", "a", 1), true);
+    assert.equal(c.escape(props).prevented, undefined);
+    assert.equal(c.field.value, "p");
+    assert.equal(c.key("w"), true);
+    assert.equal(c.run("check", "a", 2), true);
+  }
+  // Escape in another control is the page's.
+  const d = typingFixture(t);
+  const other = d.input();
+  assert.equal(d.escape({ target: other }).prevented, undefined);
+});
+test("typing never resumes after Escape, even when a late key matches the next receipt", (t) => {
+  const f = typingFixture(t);
+  const event = f.escape();
+  assert.equal(event.prevented, true);
+  f.advance(1501);
+  assert.equal(f.key("p"), true);
+  assert.equal(f.run("check", "a", 1), false);
 });

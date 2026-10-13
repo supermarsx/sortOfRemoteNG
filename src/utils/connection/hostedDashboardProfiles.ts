@@ -85,9 +85,9 @@ export const HOSTED_DASHBOARD_PROFILES: readonly HttpApplicationProfile[] = [
   hosted(
     "time4vps",
     "Time4VPS dashboard",
-    "https://billing.time4vps.com/",
+    "https://billing.time4vps.com/clientarea/",
     "management",
-    "Billing and VPS customer area, not a VPS operating-system login.",
+    "Billing and VPS customer area, opened at the vendor's Client Area link. Use the customer account; VPS operating-system passwords are separate.",
   ),
   hosted(
     "contabo",
@@ -240,20 +240,51 @@ export const HOSTED_DASHBOARD_PROFILES: readonly HttpApplicationProfile[] = [
     "networking",
     "Marcaria domain and trademark account. Website protection and verification challenges remain interactive.",
   ),
-  hosted(
-    "freedns",
-    "FreeDNS (afraid.org)",
-    "https://freedns.afraid.org/",
-    "networking",
-    "FreeDNS member dashboard. Dynamic-DNS update URLs/tokens are not account login credentials.",
-  ),
-  hosted(
-    "registro-br",
-    "Registro.br",
-    "https://registro.br/login/",
-    "networking",
-    "Registro.br domain account dashboard. Website verification and MFA remain interactive.",
-  ),
+  // Evidence: tests/fixtures/logins/freedns (class B). The member sign-in form
+  // is inferred from acme.sh 3.1.6's sign-in POST (dnsapi/dns_freedns.sh at
+  // 807da649); its page is not loaded by any review because robots.txt
+  // disallows it. The hidden action=auth field keeps every other form out.
+  // No submit selector: no source shows the button, so the page client uses
+  // the form's own submit control.
+  {
+    id: "freedns",
+    label: "FreeDNS (afraid.org)",
+    category: "networking",
+    capability: "known-form",
+    requiresHttps: true,
+    loginModes: ["manual", "form"],
+    hostedLoginUrl: "https://freedns.afraid.org/",
+    selectors: {
+      usernameSelector:
+        'form[action*="zc.php"]:has(input[type="hidden"][name="action"][value="auth"]) input[name="username"]',
+      passwordSelector:
+        'form[action*="zc.php"]:has(input[type="hidden"][name="action"][value="auth"]) input[name="password"][type="password"]',
+    },
+    description:
+      "FreeDNS member dashboard. Dynamic-DNS update URLs/tokens are not account login credentials. Optional automatic sign-in types the saved username and password into the member sign-in form once you open it from the site's own login link; the address this connection opens is the home page, which has no sign-in form. The form's layout is inferred from a third-party client's sign-in request and has not been live-verified; if it differs, nothing is typed.",
+  },
+  // Evidence: tests/fixtures/logins/registro-br (class B), from the site's
+  // own published modules LoginForm and AppField (build muzzhtfb, read
+  // 2026-10-13, nothing rendered). Continue checks with the site, which may
+  // add a Turnstile check; the second factor appears in the same form.
+  {
+    id: "registro-br",
+    label: "Registro.br",
+    category: "networking",
+    capability: "known-form",
+    requiresHttps: true,
+    loginModes: ["manual", "form"],
+    hostedLoginUrl: "https://registro.br/login/",
+    usernameLabel: "Account (code, CPF, CNPJ or domain)",
+    selectors: {
+      usernameSelector: 'form input[id="login.user"][name="login.user"]',
+      passwordSelector:
+        'form input[id="login.password"][name="login.password"][type="password"]',
+      submitSelector: 'form:has(input[id="login.password"]) button.bt-next',
+    },
+    description:
+      "Registro.br domain account dashboard. Optional automatic sign-in types the saved account (code, CPF, CNPJ or domain) and password into the site's sign-in form and presses Continue. The Cloudflare Turnstile check, two-factor authenticator codes, security keys and recovery codes remain interactive. The form was reviewed from the site's published script, not a rendered page, and has not been live-verified.",
+  },
   {
     id: "sqlpad",
     label: "SQLPad",

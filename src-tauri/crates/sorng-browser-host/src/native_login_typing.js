@@ -1,9 +1,24 @@
 // Private helper, installed only by the native renderer. This transports roles
 // and receipts, never credential strings. Only CEF sends actual keyboard input.
-function createLoginKeyboard(signal) {
+//
+// Escape from the user while a fill runs takes the field back: typing stops,
+// the text typed into the focused field is erased (prototype setter, then
+// input and change events, so a framework sees the empty value), and
+// `onEscape` ends the whole attempt, whose client erases its other fields.
+function createLoginKeyboard(signal, onEscape) {
   let active = null,
-    lastField = null;
+    lastField = null,
+    // Fields completed in this attempt, until the client releases the keyboard.
+    filled = [],
+    // The one key the host may already have sent when Escape erased its field.
+    stray = null;
   const acceptedEvents = new WeakSet();
+  // The page's own `value` attribute before typing, never the typed text.
+  const attributes = new WeakMap();
+  const valueSetter = Object.getOwnPropertyDescriptor(
+    HTMLInputElement.prototype,
+    "value",
+  ).set;
   const now = Date.now.bind(Date);
   // Provider/form fingerprints may throw after a page changes its action or
   // controls. Treat that as a stale receipt, including during background waits.
@@ -16,6 +31,52 @@ function createLoginKeyboard(signal) {
   };
   const send = (row, action, index = 0) =>
     signal(`type|${action}|${row.stage}|${row.field}|${index}`);
+  function erase(element) {
+    try {
+      valueSetter.call(element, "");
+      element.dispatchEvent(new Event("input", { bubbles: true }));
+      element.dispatchEvent(new Event("change", { bubbles: true }));
+      if (attributes.has(element)) {
+        const before = attributes.get(element);
+        if (element.getAttribute("value") !== before) {
+          if (before === null) element.removeAttribute("value");
+          else element.setAttribute("value", before);
+        }
+      }
+    } catch (_) {
+      /* A detached or replaced field holds nothing of ours to erase. */
+    }
+  }
+  function escaped(event) {
+    if (
+      !onEscape ||
+      event.key !== "Escape" ||
+      !event.isTrusted ||
+      event.ctrlKey ||
+      event.altKey ||
+      event.metaKey
+    )
+      return false;
+    const row = active;
+    if (row ? event.target !== row.element : !filled.includes(event.target))
+      return false;
+    event.preventDefault();
+    if (typeof event.stopImmediatePropagation === "function")
+      event.stopImmediatePropagation();
+    filled = [];
+    if (row) {
+      // Only text native typing entered so far; never a value someone changed.
+      const ours =
+        row.position > 0 &&
+        row.element.value === row.text.slice(0, row.position);
+      // A requested key may still be on its way from the host.
+      if (row.armed) stray = { element: row.element, until: now() + 1500 };
+      finish(false);
+      if (ours) erase(row.element);
+    }
+    onEscape();
+    return true;
+  }
   function finish(ok) {
     const row = active;
     if (!row) return;
@@ -25,6 +86,7 @@ function createLoginKeyboard(signal) {
     row.text = "";
     if (ok) {
       lastField = row.element;
+      if (filled.length < 64) filled.push(row.element);
       row.resolve(true);
     } else {
       send(row, "cancel");
@@ -75,6 +137,7 @@ function createLoginKeyboard(signal) {
   document.addEventListener(
     "keydown",
     (event) => {
+      if (escaped(event)) return;
       const row = active;
       if (!row) return;
       if (
@@ -98,6 +161,14 @@ function createLoginKeyboard(signal) {
   document.addEventListener(
     "beforeinput",
     (event) => {
+      if (stray && event.isTrusted && event.inputType === "insertText") {
+        const held = stray;
+        stray = null;
+        if (event.target === held.element && now() < held.until) {
+          event.preventDefault();
+          return;
+        }
+      }
       const row = active;
       if (!row) return;
       if (
@@ -169,7 +240,11 @@ function createLoginKeyboard(signal) {
   window.addEventListener("pagehide", () => finish(false), { once: true });
   return {
     ownsEvent: (event) => acceptedEvents.has(event),
-    cancel: () => finish(false),
+    // The client ends its attempt here, whether it submitted or stopped.
+    cancel: () => {
+      filled = [];
+      finish(false);
+    },
     write(element, text, guard, stage, field, until) {
       return new Promise((resolve, reject) => {
         if (
@@ -209,6 +284,8 @@ function createLoginKeyboard(signal) {
           expiry: null,
         };
         active = row;
+        if (!attributes.has(element))
+          attributes.set(element, element.getAttribute("value"));
         element.focus({ preventScroll: true });
         if (!current(row)) {
           finish(false);

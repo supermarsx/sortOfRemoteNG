@@ -8,6 +8,41 @@ pub const REQUEST: &str = "sorng.manual-input.request.v1";
 pub const RESPONSE: &str = "sorng.manual-input.response.v1";
 pub const CAPTURE_MS: u64 = 60_000;
 pub const TYPE_MS: u64 = 30_000;
+pub const RECEIPT_MS: u64 = 600;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum ManualInputReason {
+    UnsupportedFrame,
+    FieldNotEmpty,
+    FocusLost,
+    TimedOut,
+    Cancelled,
+    Stale,
+}
+impl ManualInputReason {
+    pub fn wire(self) -> &'static str {
+        match self {
+            Self::UnsupportedFrame => "unsupported-frame",
+            Self::FieldNotEmpty => "field-not-empty",
+            Self::FocusLost => "focus-lost",
+            Self::TimedOut => "timed-out",
+            Self::Cancelled => "cancelled",
+            Self::Stale => "stale",
+        }
+    }
+    pub fn parse(value: &str) -> Option<Self> {
+        match value {
+            "unsupported-frame" => Some(Self::UnsupportedFrame),
+            "field-not-empty" => Some(Self::FieldNotEmpty),
+            "focus-lost" => Some(Self::FocusLost),
+            "timed-out" => Some(Self::TimedOut),
+            "cancelled" => Some(Self::Cancelled),
+            "stale" => Some(Self::Stale),
+            _ => None,
+        }
+    }
+}
 
 /// HTTPS retains the existing manual-entry policy. HTTP must be the immutable
 /// saved source, never a redirect or a destination admitted by network grants.
@@ -148,12 +183,40 @@ impl ManualInputRequest {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn all_fixed_manual_typing_reasons_round_trip_without_page_strings() {
+        use super::ManualInputReason::*;
+        for reason in [
+            UnsupportedFrame,
+            FieldNotEmpty,
+            FocusLost,
+            TimedOut,
+            Cancelled,
+            Stale,
+        ] {
+            let value = serde_json::to_value(reason).unwrap();
+            assert_eq!(value.as_str(), Some(reason.wire()));
+            assert_eq!(
+                serde_json::from_value::<super::ManualInputReason>(value).unwrap(),
+                reason
+            );
+            assert_eq!(super::ManualInputReason::parse(reason.wire()), Some(reason));
+        }
+        assert!(super::ManualInputReason::parse("page supplied secret").is_none());
+        assert!(serde_json::from_str::<super::ManualInputReason>("\"pending\"").is_err());
+    }
     use super::*;
     #[test]
     fn manual_http_input_requires_exact_saved_source_scheme_host_and_port() {
         let source = "http://device.test:8080";
-        assert!(document_allowed(source, "http://device.test:8080/login?q=x#f"));
-        assert!(document_allowed("http://device.test", "http://device.test:80/login"));
+        assert!(document_allowed(
+            source,
+            "http://device.test:8080/login?q=x#f"
+        ));
+        assert!(document_allowed(
+            "http://device.test",
+            "http://device.test:80/login"
+        ));
         for (source, url) in [
             (source, "http://device.test/login"),
             (source, "http://device.test:8081/login"),
@@ -169,7 +232,10 @@ mod tests {
         }
         // HTTPS destinations retain their existing manual-entry semantics.
         assert!(document_allowed(source, "https://other.test:8443/login"));
-        assert!(document_allowed("https://device.test", "https://other.test/login"));
+        assert!(document_allowed(
+            "https://device.test",
+            "https://other.test/login"
+        ));
     }
 
     #[test]

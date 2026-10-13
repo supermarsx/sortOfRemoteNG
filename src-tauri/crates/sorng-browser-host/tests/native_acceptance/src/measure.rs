@@ -1990,6 +1990,8 @@ mod tests {
                 origin,
                 adapter,
                 stage,
+                path: "/",
+                frame: None,
             }
         }
         let modular = hooks(Adapter::ModularForm);

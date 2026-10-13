@@ -184,7 +184,7 @@ describe("steps-based logins in the connection editor", () => {
 
   it("keeps an application without a steps file manual and unannotated", () => {
     render(<Fixture />);
-    choose("Website application", "Drone CI");
+    choose("Website application", "LXD / Incus");
     expect(evidenceNote()).not.toBeInTheDocument();
     expect(modes()).toEqual([manualLabel]);
     cleanup();

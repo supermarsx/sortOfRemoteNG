@@ -3,9 +3,68 @@
 // run `node scripts/generate-native-login-catalog.mjs`.
 // Empty while DECLARATIVE_LOGIN_SUPPORTED is off: the generator then
 // validates the steps files and ships none of them.
+import stepsAmazonShopping from "../../data/loginSteps/commerce-social-developer/amazon-shopping.json";
+import stepsAutoridadeTributaria from "../../data/loginSteps/portuguese-portals/autoridade-tributaria.json";
+import stepsBudibase from "../../data/loginSteps/self-hosted/budibase.json";
+import stepsContabo from "../../data/loginSteps/registrars-hosting/contabo.json";
+import stepsDigiPortugal from "../../data/loginSteps/portuguese-portals/digi-portugal.json";
+import stepsDraytek from "../../data/loginSteps/appliances/draytek.json";
+import stepsGhost from "../../data/loginSteps/self-hosted/ghost.json";
+import stepsGitlabCom from "../../data/loginSteps/self-hosted/gitlab-com.json";
+import stepsGrafana from "../../data/loginSteps/self-hosted/grafana.json";
+import stepsHpeGreenlake from "../../data/loginSteps/enterprise-identity/hpe-greenlake.json";
+import stepsIdrac from "../../data/loginSteps/appliances/idrac.json";
+import stepsIlo from "../../data/loginSteps/appliances/ilo.json";
+import stepsJira from "../../data/loginSteps/appliances/jira.json";
+import stepsMailcow from "../../data/loginSteps/self-hosted/mailcow.json";
+import stepsNetbox from "../../data/loginSteps/self-hosted/netbox.json";
+import stepsNoIp from "../../data/loginSteps/registrars-hosting/no-ip.json";
+import stepsOsticket from "../../data/loginSteps/self-hosted/osticket.json";
+import stepsOutlookOnline from "../../data/loginSteps/enterprise-identity/outlook-online.json";
+import stepsPypi from "../../data/loginSteps/self-hosted/pypi.json";
+import stepsSegurancaSocialDireta from "../../data/loginSteps/portuguese-portals/seguranca-social-direta.json";
+import stepsStrapi from "../../data/loginSteps/self-hosted/strapi.json";
+import stepsSupermicro from "../../data/loginSteps/appliances/supermicro.json";
+import stepsTplinkSwitch from "../../data/loginSteps/appliances/tplink-switch.json";
+import stepsUptimeKuma from "../../data/loginSteps/self-hosted/uptime-kuma.json";
+import stepsVmware from "../../data/loginSteps/appliances/vmware.json";
+import stepsWazuh from "../../data/loginSteps/self-hosted/wazuh.json";
+import stepsZabbix from "../../data/loginSteps/self-hosted/zabbix.json";
+import stepsZoom from "../../data/loginSteps/enterprise-identity/zoom.json";
+import stepsZulip from "../../data/loginSteps/self-hosted/zulip.json";
 
 /** Every login steps file by application id, as written and not yet checked. */
 export const HTTP_LOGIN_STEPS_FILES: readonly (readonly [
   id: string,
   file: unknown,
-])[] = [];
+])[] = [
+  ["amazon-shopping", stepsAmazonShopping],
+  ["autoridade-tributaria", stepsAutoridadeTributaria],
+  ["budibase", stepsBudibase],
+  ["contabo", stepsContabo],
+  ["digi-portugal", stepsDigiPortugal],
+  ["draytek", stepsDraytek],
+  ["ghost", stepsGhost],
+  ["gitlab-com", stepsGitlabCom],
+  ["grafana", stepsGrafana],
+  ["hpe-greenlake", stepsHpeGreenlake],
+  ["idrac", stepsIdrac],
+  ["ilo", stepsIlo],
+  ["jira", stepsJira],
+  ["mailcow", stepsMailcow],
+  ["netbox", stepsNetbox],
+  ["no-ip", stepsNoIp],
+  ["osticket", stepsOsticket],
+  ["outlook-online", stepsOutlookOnline],
+  ["pypi", stepsPypi],
+  ["seguranca-social-direta", stepsSegurancaSocialDireta],
+  ["strapi", stepsStrapi],
+  ["supermicro", stepsSupermicro],
+  ["tplink-switch", stepsTplinkSwitch],
+  ["uptime-kuma", stepsUptimeKuma],
+  ["vmware", stepsVmware],
+  ["wazuh", stepsWazuh],
+  ["zabbix", stepsZabbix],
+  ["zoom", stepsZoom],
+  ["zulip", stepsZulip],
+];

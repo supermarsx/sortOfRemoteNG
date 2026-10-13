@@ -50,7 +50,8 @@ const expectedMarkets = {
   ZA: "www.amazon.co.za",
 };
 
-const profiles = [...AMAZON_SHOPPING_PROFILES, ...AWS_CONSOLE_PROFILES];
+const sourceProfiles = [...AMAZON_SHOPPING_PROFILES, ...AWS_CONSOLE_PROFILES];
+const profiles = sourceProfiles.map(({ id }) => getHttpApplicationProfile(id)!);
 const connectionFor = (id: string): Partial<Connection> => ({
   protocol: "https",
   hostname: new URL(getHttpApplicationProfile(id)!.hostedLoginUrl!).hostname,
@@ -109,6 +110,13 @@ describe("Amazon retail and AWS console preset boundaries", () => {
       HTTP_APPLICATION_PROFILES.length,
     );
     for (const profile of profiles) {
+      const source = sourceProfiles.find(({ id }) => id === profile.id)!;
+      expect(profile).toMatchObject({
+        id: source.id,
+        label: source.label,
+        hostedLoginUrl: source.hostedLoginUrl,
+        requiresHttps: source.requiresHttps,
+      });
       expect(
         HTTP_APPLICATION_PROFILES.filter((p) => p.id === profile.id),
       ).toEqual([profile]);
@@ -116,9 +124,11 @@ describe("Amazon retail and AWS console preset boundaries", () => {
   });
 
   it.each(profiles)(
-    "$id remains interactive, including stale autofill/MFA settings",
+    "$id defaults to interactive login and rejects unsupported imported modes",
     (profile) => {
-      expect(getHttpApplicationLoginModes(profile)).toEqual(["manual"]);
+      expect(getHttpApplicationLoginModes(profile)).toEqual(
+        profile.declarativeLogin ? ["manual", "form"] : ["manual"],
+      );
       expect(profile.capability).toBe("manual");
       expect(profile.requiresHttps).toBe(true);
       expect(profile.selectors).toBeUndefined();
@@ -138,6 +148,18 @@ describe("Amazon retail and AWS console preset boundaries", () => {
       for (const loginMode of ["form", "basic", "digest"] as const) {
         const connection = connectionFor(profile.id);
         connection.httpApplication = { version: 1, id: profile.id, loginMode };
+        if (loginMode === "form" && profile.declarativeLogin) {
+          expect(
+            normalizeHttpApplicationSettings(connection.httpApplication)
+              ?.invalid,
+          ).toBeUndefined();
+          expect(profile.declarativeLogin.id).toBe(profile.id);
+          expect(profile.declarativeLogin.loginSteps.length).toBeGreaterThan(0);
+          expect(() => resolveHttpApplicationLogin(connection)).toThrow(
+            /native browser engine/,
+          );
+          continue;
+        }
         expect(
           normalizeHttpApplicationSettings(connection.httpApplication)?.invalid,
         ).toBe(true);
@@ -152,7 +174,14 @@ describe("Amazon retail and AWS console preset boundaries", () => {
     "$id does not even read stored secret fields in manual mode",
     (profile) => {
       const connection = connectionFor(profile.id);
-      for (const name of ["password", "basicAuthPassword", "httpHeaders"]) {
+      for (const name of [
+        "username",
+        "password",
+        "basicAuthUsername",
+        "basicAuthPassword",
+        "httpHeaders",
+        "totpConfigs",
+      ]) {
         Object.defineProperty(connection, name, {
           get() {
             throw new Error("Secret must not be read");
@@ -160,6 +189,25 @@ describe("Amazon retail and AWS console preset boundaries", () => {
         });
       }
       expect(resolveHttpApplicationLogin(connection)).toMatchObject({
+        credentials: null,
+        autoLogin: false,
+      });
+      const vault = Object.defineProperties(
+        {},
+        {
+          username: {
+            get() {
+              throw new Error("Vault username must not be read");
+            },
+          },
+          password: {
+            get() {
+              throw new Error("Vault password must not be read");
+            },
+          },
+        },
+      ) as { username: string; password: string };
+      expect(resolveHttpApplicationLogin(connection, vault)).toMatchObject({
         credentials: null,
         autoLogin: false,
       });
