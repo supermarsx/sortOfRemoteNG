@@ -85,6 +85,7 @@ function fixture(
     isSshReady: { current: true },
     isConnecting: { current: false },
     scriptRunBusyRef: { current: false },
+    macroReplayBusyRef: { current: false },
     replayAbortRef: { current: null },
     sessionRef,
     settingsRef: {

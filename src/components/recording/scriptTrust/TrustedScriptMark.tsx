@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
-import { ShieldCheck, X } from "lucide-react";
+import { ShieldCheck, AlertTriangle, X } from "lucide-react";
 import type { ScriptTrustScope } from "../../../utils/recording/scriptRunTrust";
 
 /**
@@ -11,6 +11,7 @@ import type { ScriptTrustScope } from "../../../utils/recording/scriptRunTrust";
 
 export interface TrustedScriptMarkProps {
   scope: ScriptTrustScope;
+  destructive?: boolean;
   /** The script's or macro's name, for the accessible names. */
   name: string;
   /** Without it the mark has no revoke button. */
@@ -23,6 +24,7 @@ const trustedScriptMarkLabel = (scope: ScriptTrustScope): string =>
 
 export const TrustedScriptMark: React.FC<TrustedScriptMarkProps> = ({
   scope,
+  destructive,
   name,
   onRevoke,
   className,
@@ -74,6 +76,12 @@ export const TrustedScriptMark: React.FC<TrustedScriptMarkProps> = ({
         <ShieldCheck size={12} aria-hidden="true" />
         <span aria-hidden="true">Trusted</span>
       </span>
+      {destructive && (
+        <span className="inline-flex items-center gap-1 text-warning">
+          <AlertTriangle size={12} aria-hidden="true" />
+          Destructive
+        </span>
+      )}
       {onRevoke && (
         <button
           type="button"

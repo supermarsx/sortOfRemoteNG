@@ -157,7 +157,7 @@ vi.mock("../../src/contexts/SettingsContext", async (original) => {
   };
 });
 vi.mock("../../src/utils/tauri/invoke", () => ({
-  getInvoke: async () => async () => null,
+  getInvoke: async () => null,
 }));
 vi.mock("../../src/hooks/security/useRuntimeCredentialVault", () => ({
   useRuntimeCredentialVault: () => async () => null,
@@ -369,6 +369,8 @@ beforeEach(() => {
   h.library.scripts = [diskUsage, uptime];
   h.library.macros = [restartWeb];
   h.invoke.mockImplementation(async (command: string) => {
+    if (command === "read_app_data")
+      throw new Error("No native trust store in this legacy fixture");
     if (command === "connect_ssh") return "backend-flow-1";
     if (command === "start_shell") return "shell-flow-1";
     if (command === "execute_script")

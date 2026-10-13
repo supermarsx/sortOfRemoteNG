@@ -305,6 +305,36 @@ describe("useScriptTrustMarks", () => {
   const keyOf = (subject: ScriptTrustMarkSubject) =>
     scriptTrustSubjectKey(subject);
 
+  it("hides the old Trusted mark immediately when edited content or its binding awaits a new digest", async () => {
+    const one = scriptSubject("script-1", "echo one");
+    backend.seed(
+      record(connectionTrustEntry({ contentDigest: await digestOf(one) })),
+    );
+    const view = renderHook(
+      ({
+        list,
+        bound,
+      }: {
+        list: ScriptTrustMarkSubject[];
+        bound: typeof binding;
+      }) => useScriptTrustMarks(list, bound),
+      { initialProps: { list: [one], bound: binding } },
+    );
+    await waitFor(() => expect(view.result.current.size).toBe(1));
+    view.rerender({
+      list: [scriptSubject("script-1", "echo changed")],
+      bound: binding,
+    });
+    expect(view.result.current.size).toBe(0);
+    view.rerender({ list: [one], bound: binding });
+    await waitFor(() => expect(view.result.current.size).toBe(1));
+    view.rerender({
+      list: [one],
+      bound: { ...binding, endpointDigest: fakeDigest("other-endpoint") },
+    });
+    expect(view.result.current.size).toBe(0);
+  });
+
   it("marks a script only for the exact content and the exact binding", async () => {
     const one = scriptSubject("script-1", "echo one");
     const two = scriptSubject("script-2", "echo two");

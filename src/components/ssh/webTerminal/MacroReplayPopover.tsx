@@ -1,3 +1,5 @@
+import { classifyRunRisk } from "../../../utils/recording/scriptRunTrust";
+import { TrustedScriptMark } from "../../recording/scriptTrust/TrustedScriptMark";
 import { WebTerminalMgr } from "./types";
 import PopoverSurface from "../../ui/overlays/PopoverSurface";
 import { PlayCircle, StopCircle } from "lucide-react";
@@ -46,17 +48,35 @@ function MacroReplayPopover({ mgr }: { mgr: WebTerminalMgr }) {
             <OptionEmptyState>No saved macros</OptionEmptyState>
           ) : (
             mgr.savedMacros.map((m) => (
-              <OptionItemButton
-                key={m.id}
-                onClick={() => mgr.handleReplayMacro(m)}
-                divider
-                className="text-sm"
-              >
-                <div className="font-medium truncate">{m.name}</div>
-                <div className="text-[10px] text-[var(--color-textSecondary)]">
-                  {m.steps.length} steps
-                </div>
-              </OptionItemButton>
+              <div key={m.id}>
+                <OptionItemButton
+                  onClick={() => mgr.handleReplayMacro(m)}
+                  divider
+                  className="text-sm"
+                >
+                  <div className="font-medium truncate">{m.name}</div>
+                  <div className="text-[10px] text-[var(--color-textSecondary)]">
+                    {m.steps.length} steps
+                  </div>
+                </OptionItemButton>
+                {mgr.scriptTrust?.macroMarks.get(m.id) && (
+                  <TrustedScriptMark
+                    scope={mgr.scriptTrust.macroMarks.get(m.id)!}
+                    destructive={
+                      classifyRunRisk({ kind: "ssh-macro", steps: m.steps }) ===
+                      "destructive"
+                    }
+                    name={m.name}
+                    onRevoke={() =>
+                      mgr.scriptTrust.revoke({
+                        kind: "ssh-macro",
+                        library: { kind: "app" },
+                        subjectId: m.id,
+                      })
+                    }
+                  />
+                )}
+              </div>
             ))
           )}
         </OptionList>

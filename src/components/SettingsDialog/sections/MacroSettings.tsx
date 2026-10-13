@@ -1,3 +1,4 @@
+import { TrustedScriptsSection } from "./macros/TrustedScriptsSection";
 import React, { useEffect, useState } from "react";
 import { GlobalSettings, MacroConfig } from "../../../types/settings/settings";
 import {
@@ -177,6 +178,8 @@ const MacroSettings: React.FC<MacroSettingsProps> = ({
           />
         </Card>
       </div>
+
+      <TrustedScriptsSection />
 
       {/* Limits */}
       <div className="space-y-4">

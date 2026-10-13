@@ -105,6 +105,7 @@ const DIR_TAB_MAP: Record<string, string> = {
   behavior: "behavior",
   bots: "bots",
   cloudSync: "cloudSync",
+  macros: "macros",
   proxy: "proxy",
   rdpDefaults: "rdpDefaults",
   security: "security",

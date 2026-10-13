@@ -414,6 +414,7 @@ describe("SSH connection favorites", () => {
     expect(view.options.runScript).toHaveBeenCalledWith(
       expect.objectContaining({ script: "db-fixture" }),
       expect.any(Function),
+      { library: { kind: "database", databaseId: "db-a" } },
     );
     db.terminalScripts.customScripts[0].name = "DB Changed";
     fixture.databaseLibrary.changeRevision = 1;
@@ -548,6 +549,7 @@ describe("SSH connection favorites", () => {
     expect(view.options.runScript).toHaveBeenCalledWith(
       expect.objectContaining({ script: "fresh-fixture" }),
       expect.any(Function),
+      { library: { kind: "app" } },
     );
     expect(view.actor).toHaveBeenCalledOnce();
   });

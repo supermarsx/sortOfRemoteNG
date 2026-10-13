@@ -79,10 +79,42 @@ import {
   type PromptRequest,
 } from "../../utils/prompts/promptQueue";
 import {
+  RUN_TRUST_CHOICE,
+  RUN_TRUST_LIST_FULL_NOTICE,
+  RUN_TRUST_NOT_SAVED_NOTICE,
   sshMacroReplayPrompt,
   sshScriptRunPrompt,
   terminalPastePrompt,
 } from "../../utils/prompts/runPromptRequests";
+import type { AutomationScope } from "../../types/recording/automationLibrary";
+import {
+  classifyRunRisk,
+  digestRunContent,
+  sshMacroRunContent,
+  sshScriptCommand,
+  sshScriptRunContent,
+  scriptTrustSubjectKey,
+  type ScriptTrustConnectionBinding,
+  type ScriptTrustGrant,
+  type ScriptTrustQuery,
+  type ScriptTrustRisk,
+  type ScriptTrustScope,
+  type ScriptTrustSubjectRef,
+} from "../../utils/recording/scriptRunTrust";
+import {
+  consultScriptTrust,
+  grantScriptTrust,
+  revokeScriptTrust,
+  type ScriptTrustRevokeResult,
+} from "../../utils/recording/scriptRunTrustStore";
+import {
+  captureScriptTrustSourceBinding,
+  resolveScriptTrustBinding,
+} from "../../utils/recording/scriptRunTrustBinding";
+import {
+  useScriptTrustMarks,
+  type ScriptTrustMarkSubject,
+} from "../recording/useScriptRunTrust";
 import { useSSHCommandHistory } from "./useSSHCommandHistory";
 import { useSshQuickActions } from "./useSshQuickActions";
 import { normalizeSessionQuickActions } from "../../utils/connection/sessionQuickActions";
@@ -149,10 +181,107 @@ export interface SshConnectionFailure {
   maxRetryAttempts: number;
   retryDelaySeconds: number;
 }
+/**
+ * Where a script or macro that is run comes from. Without it, the app's own
+ * library: the picker and the macro list. A favourite names its library.
+ */
+export interface SshRunOrigin {
+  library: AutomationScope;
+}
 /** What a script run or a macro replay puts in front of the user before it is sent. */
 type SshRunReview =
-  | { kind: "script"; script: ManagedScript; command: string }
-  | { kind: "macro"; macro: TerminalMacro };
+  | {
+      kind: "script";
+      script: ManagedScript;
+      command: string;
+      origin?: SshRunOrigin;
+    }
+  | { kind: "macro"; macro: TerminalMacro; origin?: SshRunOrigin };
+/** What a lasting answer would be given for, captured before the prompt. */
+interface SshRunTrustCapture {
+  query: ScriptTrustQuery;
+  risk: ScriptTrustRisk;
+  canGrant: boolean;
+}
+const APP_LIBRARY: AutomationScope = Object.freeze({ kind: "app" });
+/** The terminal's marks for e5: keyed by the script's or macro's id in the app library. */
+export interface WebTerminalScriptTrust {
+  /** The verified binding of this session's saved connection, or null. */
+  binding: ScriptTrustConnectionBinding | null;
+  scriptMarks: ReadonlyMap<string, ScriptTrustScope>;
+  macroMarks: ReadonlyMap<string, ScriptTrustScope>;
+  /**
+   * Takes back what makes this script or macro run here without asking: the
+   * "everywhere" entry and the entry for this connection. Other connections
+   * keep theirs. Resolves with the first failure, or the last result.
+   */
+  revoke: (subject: ScriptTrustSubjectRef) => Promise<ScriptTrustRevokeResult>;
+}
+const sameTrustBinding = (
+  left: ScriptTrustConnectionBinding | null,
+  right: ScriptTrustConnectionBinding | null,
+) =>
+  left === right ||
+  (left !== null &&
+    right !== null &&
+    left.databaseId === right.databaseId &&
+    left.connectionId === right.connectionId &&
+    left.endpointDigest === right.endpointDigest);
+/**
+ * The question the record is asked for a run: this exact content, in this
+ * library, here. Built from the reviewed copy, so a lasting answer is given
+ * for exactly what the prompt showed.
+ */
+async function captureSshRunTrust(
+  review: SshRunReview,
+  binding: ScriptTrustConnectionBinding | null,
+): Promise<Omit<SshRunTrustCapture, "canGrant">> {
+  const library = review.origin?.library ?? APP_LIBRARY;
+  if (review.kind === "script") {
+    const content = sshScriptRunContent(review.script.language, review.command);
+    return {
+      query: {
+        kind: "ssh-script",
+        library,
+        subjectId: review.script.id,
+        contentDigest: await digestRunContent("ssh-script", content),
+        connection: binding,
+      },
+      risk: classifyRunRisk({ kind: "ssh-script", command: review.command }),
+    };
+  }
+  const content = sshMacroRunContent(review.macro.steps);
+  return {
+    query: {
+      kind: "ssh-macro",
+      library,
+      subjectId: review.macro.id,
+      contentDigest: await digestRunContent("ssh-macro", content),
+      connection: binding,
+    },
+    risk: classifyRunRisk({ kind: "ssh-macro", steps: review.macro.steps }),
+  };
+}
+/** The grant for a lasting answer, from the values captured before the prompt. */
+function sshRunTrustGrant(
+  trust: SshRunTrustCapture,
+  choice: string,
+): ScriptTrustGrant | null {
+  const { query, risk } = trust;
+  if (query.kind === "bulk-script") return null;
+  const common = {
+    kind: query.kind,
+    library: query.library,
+    subjectId: query.subjectId,
+    contentDigest: query.contentDigest,
+    risk,
+  };
+  if (choice === RUN_TRUST_CHOICE.everywhere)
+    return { ...common, scope: "everywhere" };
+  if (choice === RUN_TRUST_CHOICE.connection && query.connection)
+    return { ...common, scope: "connection", connection: query.connection };
+  return null;
+}
 const PROMPT_NOT_CONFIRMED: PromptDecision = Object.freeze({
   confirmed: false,
   remember: false,
@@ -336,6 +465,12 @@ export function useWebTerminal(
 
   /* ── SSH refs ── */
   const sshSessionId = useRef<string | null>(null);
+  // Kept only in this live hook: a detached/reattached actor without a verified
+  // original source cannot acquire trust for a newly edited saved endpoint.
+  const authenticatedTrustBindingRef = useRef<{
+    actorId: string;
+    binding: ScriptTrustConnectionBinding | null;
+  } | null>(null);
   const initialVpnLeaseOwners = sessionVpnLeaseOwnerIds(session);
   const initialVpnLeaseOwner =
     session.vpnLeaseOwnerId ?? initialVpnLeaseOwners[0] ?? null;
@@ -485,6 +620,9 @@ export function useWebTerminal(
   >(null);
   const [replayingMacro, setReplayingMacro] = useState(false);
   const replayAbortRef = useRef<AbortController | null>(null);
+  // From the trigger to the replay's start: a trusted macro has no prompt in
+  // between, so a second trigger must not start a second replay.
+  const macroReplayBusyRef = useRef(false);
   const scriptRunBusyRef = useRef(false);
   const macroListRef = useRef<HTMLDivElement>(null);
 
@@ -493,6 +631,8 @@ export function useWebTerminal(
   const runPromptAbortRef = useRef<AbortController | null>(null);
   // "Don't ask again" answers: in memory only, for the connected session only.
   const runPromptMemoryRef = useRef<PromptMemory | null>(null);
+  // A review (the record's consult, then the prompt) in flight on this terminal.
+  const runReviewBusyRef = useRef(false);
 
   /* ── SSH command history ── */
   const commandHistory = useSSHCommandHistory(session.id);
@@ -2139,6 +2279,12 @@ export function useWebTerminal(
         }
 
         armAttemptWatchdog(Number(sshConfig.connect_timeout) || 30);
+        const attemptedTrustBinding = await captureScriptTrustSourceBinding(
+          connectionContextRef.current,
+          currentSession,
+          currentConnection,
+        );
+        if (await stopIfStale()) return;
         assertVaultAccess?.();
         runtimePath.assertCurrent?.();
         const sessionId = await invoke<string>("connect_ssh", {
@@ -2186,6 +2332,10 @@ export function useWebTerminal(
           payload: updatedSession,
         });
         writeLine("\x1b[32mShell started successfully\x1b[0m");
+        authenticatedTrustBindingRef.current = {
+          actorId: sessionId,
+          binding: attemptedTrustBinding,
+        };
         setStatusState("connected");
 
         // Register session with the SSH scripts engine for event-driven scripts
@@ -2557,49 +2707,139 @@ export function useWebTerminal(
 
   /**
    * The review before a script run or a macro replay. True means go ahead:
-   * the user confirmed, or ticked "Don't ask again" for this exact content
-   * earlier on this connected session. It only answers the question; the
-   * caller still re-checks the session and the library before sending.
+   * the user confirmed, chose "Don't ask again" for this exact content
+   * earlier on this connected session, or trusted this exact content for
+   * this connection or everywhere. It only answers the question; the caller
+   * still re-checks the session and the library before sending.
    */
+  const resolveAuthenticatedTrustBinding = useCallback(async () => {
+    const captured = authenticatedTrustBindingRef.current;
+    const actorId = sshSessionId.current;
+    if (
+      !captured?.binding ||
+      captured.actorId !== actorId ||
+      !isSshReady.current
+    )
+      return null;
+    const reviewedContext = connectionContextRef.current;
+    const current = await resolveScriptTrustBinding(
+      reviewedContext,
+      sessionRef.current,
+    );
+    return connectionContextRef.current === reviewedContext &&
+      authenticatedTrustBindingRef.current === captured &&
+      sshSessionId.current === actorId &&
+      sameTrustBinding(captured.binding, current)
+      ? current
+      : null;
+  }, []);
+
   const confirmSshRun = useCallback(
     async (review: SshRunReview): Promise<boolean> => {
-      const { name, hostname } = sessionRef.current;
-      const session = { name, hostname };
-      const remembered =
-        review.kind === "script"
+      // One review at a time: another one while the record is being read or
+      // the prompt is open is not confirmed.
+      if (runReviewBusyRef.current) return false;
+      runReviewBusyRef.current = true;
+      try {
+        const { name, hostname } = sessionRef.current;
+        const session = { name, hostname };
+        const actorId = sshSessionId.current;
+        const remembered =
+          review.kind === "script"
+            ? {
+                kind: "ssh-script",
+                id: review.script.id,
+                sessionId: actorId ?? "",
+                // What is executed: the text and the interpreter it is given to.
+                content: JSON.stringify([
+                  review.script.language,
+                  review.command,
+                ]),
+              }
+            : {
+                kind: "ssh-macro",
+                id: review.macro.id,
+                sessionId: actorId ?? "",
+                content: JSON.stringify(review.macro.steps),
+              };
+        const memory = (runPromptMemoryRef.current ??= createPromptMemory());
+        if (memory.has(remembered)) return true;
+
+        // The record is read now, every time: a revoke anywhere is obeyed.
+        let trust: SshRunTrustCapture | null = null;
+        let trusted = false;
+        try {
+          const captured = await captureSshRunTrust(
+            review,
+            await resolveAuthenticatedTrustBinding(),
+          );
+          const consult = await consultScriptTrust(captured.query);
+          trusted = consult.trusted;
+          trust = { ...captured, canGrant: consult.canGrant };
+        } catch {
+          // Nothing could be read: ask, and offer nothing that cannot be saved.
+          trust = null;
+        }
+        // The answer is for the session that was asked about, as it is now.
+        if (isDisposed.current || actorId !== sshSessionId.current)
+          return false;
+        if (trusted) return true;
+
+        const offer = trust?.canGrant
           ? {
-              kind: "ssh-script",
-              id: review.script.id,
-              sessionId: sshSessionId.current ?? "",
-              // What is executed: the text and the interpreter it is given to.
-              content: JSON.stringify([review.script.language, review.command]),
+              connection: trust.query.connection !== null,
+              everywhere: true,
+              destructive: trust.risk === "destructive",
             }
-          : {
-              kind: "ssh-macro",
-              id: review.macro.id,
-              sessionId: sshSessionId.current ?? "",
-              content: JSON.stringify(review.macro.steps),
-            };
-      const memory = (runPromptMemoryRef.current ??= createPromptMemory());
-      if (memory.has(remembered)) return true;
-      const decision = await askRunPrompt(
-        review.kind === "script"
-          ? sshScriptRunPrompt({
-              script: review.script,
-              command: review.command,
-              session,
-              offerRemember: true,
-            })
-          : sshMacroReplayPrompt({
-              macro: review.macro,
-              session,
-              offerRemember: true,
-            }),
-      );
-      if (decision.confirmed && decision.remember) memory.remember(remembered);
-      return decision.confirmed;
+          : undefined;
+        const decision = await askRunPrompt(
+          review.kind === "script"
+            ? sshScriptRunPrompt({
+                script: review.script,
+                command: review.command,
+                session,
+                offerRemember: true,
+                trust: offer,
+              })
+            : sshMacroReplayPrompt({
+                macro: review.macro,
+                session,
+                offerRemember: true,
+                trust: offer,
+              }),
+        );
+        if (!decision.confirmed) return false;
+        if (decision.remember || decision.choice === RUN_TRUST_CHOICE.session) {
+          memory.remember(remembered);
+          return true;
+        }
+        const grant =
+          trust?.canGrant && decision.choice
+            ? sshRunTrustGrant(trust, decision.choice)
+            : null;
+        if (grant) {
+          // A lasting answer is not also kept in the session's memory, so a
+          // revoke takes effect here at once. A grant that is not saved
+          // still lets the confirmed run go ahead.
+          let saved: Awaited<ReturnType<typeof grantScriptTrust>>;
+          try {
+            saved = await grantScriptTrust(grant);
+          } catch {
+            saved = { ok: false, reason: "failed" };
+          }
+          if (!saved.ok)
+            toastRef.current.warning(
+              saved.reason === "full"
+                ? RUN_TRUST_LIST_FULL_NOTICE
+                : RUN_TRUST_NOT_SAVED_NOTICE,
+            );
+        }
+        return true;
+      } finally {
+        runReviewBusyRef.current = false;
+      }
     },
-    [askRunPrompt],
+    [askRunPrompt, resolveAuthenticatedTrustBinding],
   );
 
   /**
@@ -2767,7 +3007,11 @@ export function useWebTerminal(
   };
 
   const runScript = useCallback(
-    async (script: ManagedScript, assertReviewed?: () => Promise<void>) => {
+    async (
+      script: ManagedScript,
+      assertReviewed?: () => Promise<void>,
+      origin?: SshRunOrigin,
+    ) => {
       if (
         !isSsh ||
         !sshSessionId.current ||
@@ -2800,7 +3044,12 @@ export function useWebTerminal(
         if (
           normalizeSessionQuickActions(settingsRef.current.sessionQuickActions)
             .confirmBeforeScriptRun &&
-          !(await confirmSshRun({ kind: "script", script: reviewed, command }))
+          !(await confirmSshRun({
+            kind: "script",
+            script: reviewed,
+            command,
+            origin,
+          }))
         )
           return;
         assertCurrent();
@@ -3886,40 +4135,60 @@ export function useWebTerminal(
   }, [macroRecorder]);
 
   const handleReplayMacro = useCallback(
-    async (macro: TerminalMacro, assertReviewed?: () => Promise<void>) => {
-      if (!sshSessionId.current || replayAbortRef.current) return;
+    async (
+      macro: TerminalMacro,
+      assertReviewed?: () => Promise<void>,
+      origin?: SshRunOrigin,
+    ) => {
+      if (
+        !sshSessionId.current ||
+        replayAbortRef.current ||
+        macroReplayBusyRef.current
+      )
+        return;
+      // Held from here until the replay has started (or nothing will be):
+      // with a trusted macro no prompt stands between two triggers.
+      macroReplayBusyRef.current = true;
       let assertCurrent: () => void;
-      try {
-        assertCurrent = captureQuickActionSession();
-      } catch {
-        toastRef.current.error(
-          "Connect and authenticate this SSH session before replaying a macro.",
-        );
-        return;
-      }
-      const reviewed = structuredClone(macro);
       let assertLibrary: () => Promise<void>;
+      let reviewed: TerminalMacro;
+      let controller: AbortController;
       try {
-        assertLibrary = assertReviewed ?? reviewMacro(reviewed);
-        if (settingsRef.current.macros?.confirmBeforeReplay !== false) {
-          // The macro list paints above every dialog: close it before asking.
-          setShowMacroList(false);
-          if (!(await confirmSshRun({ kind: "macro", macro: reviewed })))
-            return;
+        try {
+          assertCurrent = captureQuickActionSession();
+        } catch {
+          toastRef.current.error(
+            "Connect and authenticate this SSH session before replaying a macro.",
+          );
+          return;
         }
-        assertCurrent();
-        await assertLibrary();
-        assertCurrent();
-      } catch {
-        toastRef.current.error(
-          "The SSH session changed while reviewing this macro. Nothing was replayed.",
-        );
-        return;
+        reviewed = structuredClone(macro);
+        try {
+          assertLibrary = assertReviewed ?? reviewMacro(reviewed);
+          if (settingsRef.current.macros?.confirmBeforeReplay !== false) {
+            // The macro list paints above every dialog: close it before asking.
+            setShowMacroList(false);
+            if (
+              !(await confirmSshRun({ kind: "macro", macro: reviewed, origin }))
+            )
+              return;
+          }
+          assertCurrent();
+          await assertLibrary();
+          assertCurrent();
+        } catch {
+          toastRef.current.error(
+            "The SSH session changed while reviewing this macro. Nothing was replayed.",
+          );
+          return;
+        }
+        setShowMacroList(false);
+        setReplayingMacro(true);
+        controller = new AbortController();
+        replayAbortRef.current = controller;
+      } finally {
+        macroReplayBusyRef.current = false;
       }
-      setShowMacroList(false);
-      setReplayingMacro(true);
-      const controller = new AbortController();
-      replayAbortRef.current = controller;
       const activitySession = sessionRef.current;
       const activityContext = activitySession.ownerDatabaseId
         ? {
@@ -3965,6 +4234,119 @@ export function useWebTerminal(
   const handleStopReplay = useCallback(() => {
     replayAbortRef.current?.abort();
   }, []);
+
+  /* ── Trusted scripts: what the rows show ── */
+
+  // The marks are a hint before the click; every run still consults the record.
+  const [trustBinding, setTrustBinding] =
+    useState<ScriptTrustConnectionBinding | null>(null);
+  const databaseAvailability = connectionContext.databaseAvailability;
+  const getCurrentConnections = connectionContext.getCurrentConnections;
+  useEffect(() => {
+    let current = true;
+    void resolveAuthenticatedTrustBinding().then((binding) => {
+      if (current)
+        setTrustBinding((previous) =>
+          sameTrustBinding(previous, binding) ? previous : binding,
+        );
+    });
+    return () => {
+      current = false;
+    };
+  }, [
+    state.connections,
+    databaseAvailability,
+    getCurrentConnections,
+    session.connectionId,
+    session.protocol,
+    session.hostname,
+    session.ownerDatabaseId,
+    status,
+    session.backendSessionId,
+    resolveAuthenticatedTrustBinding,
+  ]);
+
+  const trustSubjects = useMemo<ScriptTrustMarkSubject[]>(
+    () => [
+      ...scripts.map((script) => ({
+        kind: "ssh-script" as const,
+        library: APP_LIBRARY,
+        subjectId: script.id,
+        content: sshScriptRunContent(
+          script.language,
+          sshScriptCommand(script.script),
+        ),
+      })),
+      ...savedMacros.map((macro) => ({
+        kind: "ssh-macro" as const,
+        library: APP_LIBRARY,
+        subjectId: macro.id,
+        content: sshMacroRunContent(macro.steps),
+      })),
+    ],
+    [scripts, savedMacros],
+  );
+  const trustMarks = useScriptTrustMarks(trustSubjects, trustBinding);
+  const scriptMarks = useMemo(() => {
+    const marks = new Map<string, ScriptTrustScope>();
+    for (const script of scripts) {
+      const scope = trustMarks.get(
+        scriptTrustSubjectKey({
+          kind: "ssh-script",
+          library: APP_LIBRARY,
+          subjectId: script.id,
+        }),
+      );
+      if (scope) marks.set(script.id, scope);
+    }
+    return marks as ReadonlyMap<string, ScriptTrustScope>;
+  }, [scripts, trustMarks]);
+  const macroMarks = useMemo(() => {
+    const marks = new Map<string, ScriptTrustScope>();
+    for (const macro of savedMacros) {
+      const scope = trustMarks.get(
+        scriptTrustSubjectKey({
+          kind: "ssh-macro",
+          library: APP_LIBRARY,
+          subjectId: macro.id,
+        }),
+      );
+      if (scope) marks.set(macro.id, scope);
+    }
+    return marks as ReadonlyMap<string, ScriptTrustScope>;
+  }, [savedMacros, trustMarks]);
+  const revokeTrust = useCallback(
+    async (
+      subject: ScriptTrustSubjectRef,
+    ): Promise<ScriptTrustRevokeResult> => {
+      const everywhere = await revokeScriptTrust({
+        ...subject,
+        scope: "everywhere",
+      });
+      if (!everywhere.ok || !trustBinding) return everywhere;
+      const here = await revokeScriptTrust({
+        ...subject,
+        scope: "connection",
+        connection: {
+          databaseId: trustBinding.databaseId,
+          connectionId: trustBinding.connectionId,
+        },
+      });
+      return here.ok
+        ? { ok: true, removed: everywhere.removed + here.removed }
+        : here;
+    },
+    [trustBinding],
+  );
+  const scriptTrust = useMemo<WebTerminalScriptTrust>(
+    () => ({
+      binding: trustBinding,
+      scriptMarks,
+      macroMarks,
+      revoke: revokeTrust,
+    }),
+    [trustBinding, scriptMarks, macroMarks, revokeTrust],
+  );
 
   /* ── TOTP ── */
 
@@ -4023,6 +4405,7 @@ export function useWebTerminal(
   };
 
   return {
+    scriptTrust,
     /* context */
     session,
     connection: connection

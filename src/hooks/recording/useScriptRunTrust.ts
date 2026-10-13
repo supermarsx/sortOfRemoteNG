@@ -140,7 +140,12 @@ export function useScriptTrustMarks(
   binding: ScriptTrustConnectionBinding | null,
 ): ReadonlyMap<string, ScriptTrustScope> {
   const { status, entries } = useScriptRunTrust();
-  const [marks, setMarks] = useState(NO_MARKS);
+  const [marked, setMarked] = useState<{
+    subjects: readonly ScriptTrustMarkSubject[];
+    entries: readonly ScriptTrustEntry[];
+    binding: string;
+    marks: ReadonlyMap<string, ScriptTrustScope>;
+  } | null>(null);
   const digests = useRef(new Map<string, Promise<string>>());
   // A caller may build the list anew on every render: keep the first of equals.
   const stable = useRef(subjects);
@@ -149,12 +154,20 @@ export function useScriptTrustMarks(
   const databaseId = binding?.databaseId;
   const connectionId = binding?.connectionId;
   const endpointDigest = binding?.endpointDigest;
+  const bindingKey = JSON.stringify([databaseId, connectionId, endpointDigest]);
 
   useEffect(() => {
     let current = true;
     const publish = (next: ReadonlyMap<string, ScriptTrustScope>) => {
       if (current)
-        setMarks((previous) => (sameMarks(previous, next) ? previous : next));
+        setMarked((previous) =>
+          previous?.subjects === list &&
+          previous.entries === entries &&
+          previous.binding === bindingKey &&
+          sameMarks(previous.marks, next)
+            ? previous
+            : { subjects: list, entries, binding: bindingKey, marks: next },
+        );
     };
     if (status !== "ready" || entries.length === 0 || list.length === 0) {
       publish(NO_MARKS);
@@ -198,7 +211,22 @@ export function useScriptTrustMarks(
     return () => {
       current = false;
     };
-  }, [status, entries, list, databaseId, connectionId, endpointDigest]);
+  }, [
+    status,
+    entries,
+    list,
+    databaseId,
+    connectionId,
+    endpointDigest,
+    bindingKey,
+  ]);
 
-  return marks;
+  // Never show a result computed for yesterday's editor value or endpoint,
+  // even for one render while the new digest is still being calculated.
+  return status === "ready" &&
+    marked?.subjects === list &&
+    marked.entries === entries &&
+    marked.binding === bindingKey
+    ? marked.marks
+    : NO_MARKS;
 }

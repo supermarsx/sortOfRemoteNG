@@ -1,3 +1,4 @@
+import type { AutomationScope } from "../../types/recording/automationLibrary";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useConnections } from "../../contexts/useConnections";
 import { useSettings } from "../../contexts/SettingsContext";
@@ -122,10 +123,12 @@ interface Options {
   runScript: (
     script: ManagedScript,
     assertReviewed?: () => Promise<void>,
+    origin?: { library: AutomationScope },
   ) => Promise<void>;
   replayMacro: (
     macro: TerminalMacro,
     assertReviewed?: () => Promise<void>,
+    origin?: { library: AutomationScope },
   ) => Promise<void>;
 }
 export interface SshQuickActionItem extends QuickActionReference {
@@ -645,11 +648,13 @@ export function useSshQuickActions(options: Options) {
           await current.current.options.runScript(
             payload as ManagedScript,
             assertReviewed,
+            { library: quickActionReferenceScope(reference) },
           );
         else
           await current.current.options.replayMacro(
             payload as TerminalMacro,
             assertReviewed,
+            { library: quickActionReferenceScope(reference) },
           );
       } catch (failure) {
         setError(

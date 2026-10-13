@@ -1,3 +1,8 @@
+import {
+  classifyRunRisk,
+  sshScriptCommand,
+} from "../../../utils/recording/scriptRunTrust";
+import { TrustedScriptMark } from "../../recording/scriptTrust/TrustedScriptMark";
 import { useRef } from "react";
 import { OS_TAG_LABELS } from "../../recording/scriptManager/shared";
 import { ScriptMetadataIcon } from "../../recording/scriptManager/ScriptMetadataIcon";
@@ -134,51 +139,71 @@ function ScriptSelectorModal({ mgr }: { mgr: WebTerminalMgr }) {
                   </div>
                   <div className="space-y-1">
                     {categoryScripts.map((script) => (
-                      <button
-                        key={script.id}
-                        onClick={() => mgr.runScript(script)}
-                        className="w-full text-left px-3 py-2 rounded-lg hover:bg-[var(--color-surfaceHover)] transition-colors group"
-                      >
-                        <div className="flex items-center justify-between">
-                          <div className="flex-1 min-w-0">
-                            <div className="flex items-center gap-2">
-                              <span className="text-sm font-medium text-[var(--color-text)] truncate">
-                                {script.name}
-                              </span>
-                              {script.osTags && script.osTags.length > 0 && (
-                                <div className="flex items-center gap-0.5 flex-shrink-0">
-                                  {script.osTags.slice(0, 2).map((tag) => (
-                                    <span
-                                      key={tag}
-                                      className="text-[10px]"
-                                      title={OS_TAG_LABELS[tag]}
-                                    >
-                                      <ScriptMetadataIcon
-                                        platform={tag}
-                                        size={12}
-                                      />
-                                    </span>
-                                  ))}
-                                  {script.osTags.length > 2 && (
-                                    <span className="text-[10px] text-[var(--color-textMuted)]">
-                                      +{script.osTags.length - 2}
-                                    </span>
-                                  )}
+                      <div key={script.id}>
+                        <button
+                          onClick={() => mgr.runScript(script)}
+                          className="w-full text-left px-3 py-2 rounded-lg hover:bg-[var(--color-surfaceHover)] transition-colors group"
+                        >
+                          <div className="flex items-center justify-between">
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center gap-2">
+                                <span className="text-sm font-medium text-[var(--color-text)] truncate">
+                                  {script.name}
+                                </span>
+                                {script.osTags && script.osTags.length > 0 && (
+                                  <div className="flex items-center gap-0.5 flex-shrink-0">
+                                    {script.osTags.slice(0, 2).map((tag) => (
+                                      <span
+                                        key={tag}
+                                        className="text-[10px]"
+                                        title={OS_TAG_LABELS[tag]}
+                                      >
+                                        <ScriptMetadataIcon
+                                          platform={tag}
+                                          size={12}
+                                        />
+                                      </span>
+                                    ))}
+                                    {script.osTags.length > 2 && (
+                                      <span className="text-[10px] text-[var(--color-textMuted)]">
+                                        +{script.osTags.length - 2}
+                                      </span>
+                                    )}
+                                  </div>
+                                )}
+                              </div>
+                              {script.description && (
+                                <div className="text-xs text-[var(--color-textMuted)] truncate">
+                                  {script.description}
                                 </div>
                               )}
                             </div>
-                            {script.description && (
-                              <div className="text-xs text-[var(--color-textMuted)] truncate">
-                                {script.description}
-                              </div>
-                            )}
+                            <Play
+                              size={14}
+                              className="text-success opacity-0 group-hover:opacity-100 transition-opacity ml-2 flex-shrink-0"
+                            />
                           </div>
-                          <Play
-                            size={14}
-                            className="text-success opacity-0 group-hover:opacity-100 transition-opacity ml-2 flex-shrink-0"
+                        </button>
+                        {mgr.scriptTrust?.scriptMarks.get(script.id) && (
+                          <TrustedScriptMark
+                            scope={mgr.scriptTrust.scriptMarks.get(script.id)!}
+                            destructive={
+                              classifyRunRisk({
+                                kind: "ssh-script",
+                                command: sshScriptCommand(script.script),
+                              }) === "destructive"
+                            }
+                            name={script.name}
+                            onRevoke={() =>
+                              mgr.scriptTrust.revoke({
+                                kind: "ssh-script",
+                                library: { kind: "app" },
+                                subjectId: script.id,
+                              })
+                            }
                           />
-                        </div>
-                      </button>
+                        )}
+                      </div>
                     ))}
                   </div>
                 </div>

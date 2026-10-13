@@ -8,6 +8,22 @@ import type { SettingSearchEntry } from "./types";
  * enforces the join in both directions.
  */
 export const MACROS_SEARCH_ENTRIES: SettingSearchEntry[] = [
+  {
+    key: "macros.trustedScripts",
+    label: "Trusted scripts",
+    description:
+      "Review and revoke scripts and macros trusted on one connection or everywhere.",
+    tags: [
+      "scripts",
+      "trust",
+      "revoke",
+      "permanent",
+      "connection",
+      "everywhere",
+    ],
+    section: "macros",
+    sectionLabel: "Macros",
+  },
   ...[
     [
       "sshEnabled",

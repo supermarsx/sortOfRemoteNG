@@ -138,3 +138,37 @@ export async function resolveScriptTrustBinding(
     return null;
   }
 }
+
+/** Capture the secret-free identity of the exact source used to create an actor.
+ * A runtime-only row or a source already different from the saved row cannot
+ * acquire a connection grant. This returns only the digest, never its inputs. */
+export async function captureScriptTrustSourceBinding(
+  context: ScriptTrustBindingContext,
+  session: ScriptTrustBindingSession,
+  source: Connection,
+): Promise<ScriptTrustConnectionBinding | null> {
+  try {
+    if (
+      !session.ownerDatabaseId ||
+      source.id !== session.connectionId ||
+      source.isGroup ||
+      source.protocol !== "ssh" ||
+      // The saved reference cannot prove the account resolved from the vault
+      // has remained the same. Without that proof this actor has no durable
+      // connection scope; session and everywhere choices remain available.
+      source.credentialSource?.kind === "vault"
+    )
+      return null;
+    const captured = await bind(session.ownerDatabaseId, source);
+    const saved = await resolveScriptTrustBinding(context, session);
+    return captured &&
+      saved &&
+      captured.databaseId === saved.databaseId &&
+      captured.connectionId === saved.connectionId &&
+      captured.endpointDigest === saved.endpointDigest
+      ? captured
+      : null;
+  } catch {
+    return null;
+  }
+}

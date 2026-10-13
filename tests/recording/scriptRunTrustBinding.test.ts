@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { describe, expect, it, vi } from "vitest";
 import type { Connection } from "../../src/types/connection/connection";
 import {
+  captureScriptTrustSourceBinding,
   resolveSavedConnectionTrustBinding,
   resolveScriptTrustBinding,
   type ScriptTrustBindingContext,
@@ -380,6 +381,24 @@ describe("the binding of a session's saved connection", () => {
 });
 
 describe("the binding of a saved row, without a session", () => {
+  it("cannot capture a vault actor whose resolved account cannot be freshly verified", async () => {
+    const source = row({
+      credentialSource: {
+        kind: "vault",
+        credentialId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      },
+    });
+    const where = context([source]);
+    expect(
+      await resolveSavedConnectionTrustBinding(where, {
+        databaseId: "db-1",
+        connectionId: "conn-1",
+      }),
+    ).not.toBeNull();
+    expect(
+      await captureScriptTrustSourceBinding(where, session(), source),
+    ).toBeNull();
+  });
   it("is what a session on that row would get, and null when the row cannot be verified", async () => {
     const where = context([row(), row({ id: "conn-2", protocol: "rdp" })]);
     expect(

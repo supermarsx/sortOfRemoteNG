@@ -311,7 +311,11 @@ export const TrustedScriptsSection: React.FC = () => {
   const listed = trust.status === "ready" ? rows : [];
 
   return (
-    <div className="space-y-4" data-testid="trusted-scripts">
+    <div
+      className="space-y-4"
+      data-testid="trusted-scripts"
+      data-setting-key="macros.trustedScripts"
+    >
       <SectionHeader
         icon={<ShieldCheck className="w-4 h-4 text-primary" />}
         title="Trusted scripts"
