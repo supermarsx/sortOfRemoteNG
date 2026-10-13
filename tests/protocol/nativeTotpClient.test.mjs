@@ -56,6 +56,8 @@ function fixture(t, options = {}) {
     signals.push(event);
     const [, command, , indexText] = event.split("|");
     const index = Number(indexText);
+    // From the start request on, no page timer ever fires again.
+    if (options.freezeOnStart && command === "start") win.setTimeout = () => 0;
     if (options.manual) return;
     setTimeout(() => {
       if (command === "start") dispatch("probe", 0, expiry, options.submit !== false);
@@ -109,6 +111,86 @@ test("manual code and another focused control are never overwritten", async t =>
   await delay(120);
   assert.equal(f.input.value, "999"); assert.equal(f.signals.length, 0);
 });
+
+// Finding A2: the challenge can appear while the control that submitted the
+// password still has focus.
+test("OTP discovery keeps looking while another control holds focus and starts once it is released", async t => {
+  const f = fixture(t);
+  const button = f.doc.querySelector("button");
+  button.focus();
+  await delay(450);
+  assert.equal(f.doc.activeElement, button);
+  assert.deepEqual(f.signals, []);
+  assert.equal(f.input.value, "");
+  button.blur();
+  for (let i = 0; i < 40 && f.submits() === 0; i++) await delay(50);
+  assert.equal(f.input.value, "123456");
+  assert.equal(f.submits(), 1);
+  assert.equal(f.signals.filter(s => s.includes("|start|")).length, 1);
+});
+
+test("a control that is no longer shown does not keep OTP discovery waiting", async t => {
+  const f = fixture(t, { html: '<form method="post" action="/user/two_factor"><input id="passcode" name="passcode" autocomplete="one-time-code"><button class="ui primary" type="submit">Verify</button></form><button id="previous" type="button">Sign in</button>' });
+  const previous = f.doc.getElementById("previous");
+  previous.focus();
+  previous.hidden = true;
+  assert.equal(f.doc.activeElement, previous);
+  for (let i = 0; i < 40 && f.submits() === 0; i++) await delay(50);
+  assert.equal(f.input.value, "123456");
+  assert.equal(f.submits(), 1);
+});
+
+const kinds = f => f.signals.map(s => { const [, command, , index] = s.split("|"); return command + index; });
+
+test("OTP digits are requested by receipts and input events: typing finishes with every page timer frozen", async t => {
+  const f = fixture(t, { freezeOnStart:true });
+  for (let i = 0; i < 40 && f.submits() === 0; i++) await delay(25);
+  assert.equal(f.typed.join(""), "123456");
+  assert.equal(f.submits(), 1);
+  assert.deepEqual(kinds(f), ["start0", "key0", "key1", "key2", "key3", "key4", "key5", "finish6"]);
+});
+
+test("an OTP receipt that overtakes its input event waits for that event, and an undelivered digit fails closed", async t => {
+  const f = fixture(t, { manual:true });
+  for (let i = 0; i < 40 && !f.signals.length; i++) await delay(10);
+  assert.deepEqual(kinds(f), ["start0"]);
+  // The start grant asks for the first digit at once, not after a timer.
+  assert.equal(f.dispatch("probe", 0, f.expiry, true), true);
+  assert.deepEqual(kinds(f), ["start0", "key0"]);
+  // Receipt first: the next digit waits for the trusted input event.
+  assert.equal(f.dispatch("probe", 1, f.expiry, true), true);
+  assert.deepEqual(kinds(f), ["start0", "key0"]);
+  f.character("1");
+  assert.deepEqual(kinds(f), ["start0", "key0", "key1"]);
+  // Input event first: the receipt requests the next digit.
+  f.character("2");
+  assert.deepEqual(kinds(f), ["start0", "key0", "key1"]);
+  assert.equal(f.dispatch("probe", 2, f.expiry, true), true);
+  assert.deepEqual(kinds(f), ["start0", "key0", "key1", "key2"]);
+  // A digit the engine never delivers is not requested again.
+  assert.equal(f.dispatch("probe", 3, f.expiry, true), true);
+  await delay(1700);
+  assert.deepEqual(kinds(f), ["start0", "key0", "key1", "key2", "cancel0"]);
+  assert.equal(f.input.value, "12");
+  assert.equal(f.dispatch("probe", 3, f.expiry, true), false);
+  assert.equal(f.submits(), 0);
+});
+
+for (const [label, drive] of [
+  ["a repeated start grant", f => f.dispatch("probe", 0, f.expiry, true)],
+  ["a receipt for a digit that was not requested", f => { f.character("1"); f.dispatch("probe", 1, f.expiry, true); f.character("2"); return f.dispatch("probe", 3, f.expiry, true); }],
+  ["a receipt that claims two digits at once", f => f.dispatch("probe", 2, f.expiry, true)],
+]) {
+  test(`event-driven OTP receipts reject ${label}`, async t => {
+    const f = fixture(t, { manual:true });
+    for (let i = 0; i < 40 && !f.signals.length; i++) await delay(10);
+    assert.equal(f.dispatch("probe", 0, f.expiry, true), true);
+    assert.equal(drive(f), false);
+    assert.equal(kinds(f).at(-1), "cancel0");
+    assert.equal(f.signals.filter(s => s.includes("|key|")).length <= 2, true);
+    assert.equal(f.submits(), 0);
+  });
+}
 
 test("navigation, action replacement, focus changes, and expired code cancel without keys", async t => {
   for (const change of [

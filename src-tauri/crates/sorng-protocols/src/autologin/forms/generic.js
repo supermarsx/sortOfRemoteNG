@@ -201,22 +201,24 @@ function submitForm(target, ov, readinessProfile) {
     if (notCancelled) form.submit();
     return "form.submit";
   }
-  // Last resort: Enter in the password field.
+  // Last resort: Enter in the password field, as one key sequence. Like a
+  // real key, a keydown the page prevents produces no keypress.
   try {
-    pw.dispatchEvent(
-      new KeyboardEvent("keydown", {
-        key: "Enter",
-        keyCode: 13,
-        bubbles: true,
-      }),
-    );
-    pw.dispatchEvent(
-      new KeyboardEvent("keyup", {
-        key: "Enter",
-        keyCode: 13,
-        bubbles: true,
-      }),
-    );
+    var enter = function (type, charCode) {
+      return pw.dispatchEvent(
+        new KeyboardEvent(type, {
+          key: "Enter",
+          code: "Enter",
+          keyCode: 13,
+          charCode: charCode,
+          which: 13,
+          bubbles: true,
+          cancelable: true,
+        }),
+      );
+    };
+    if (enter("keydown", 0)) enter("keypress", 13);
+    enter("keyup", 0);
   } catch (_) {}
   return "enter-key";
 }

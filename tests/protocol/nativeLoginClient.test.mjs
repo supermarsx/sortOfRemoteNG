@@ -1357,3 +1357,758 @@ for (const change of [
     );
   });
 }
+
+// ---------------------------------------------------------------------------
+// K5 page half: budgets, timer independence, cancellation and concurrency.
+// The production assembly (keyboard helper included) runs against a MODEL of
+// the native host on one virtual clock shared by every document of a test.
+// Page timers can be throttled; the host's own delays never are. A model is
+// not evidence of live CEF input.
+// ---------------------------------------------------------------------------
+const production = source.replace("/* NATIVE_KEYBOARD_CLIENT */", () =>
+  readFileSync(resolve(base, "native_login_typing.js"), "utf8"),
+);
+// Trusted keys reached a hidden native view every 35-38 ms (t101-e1r).
+const KEY_MS = 36;
+const plainLogin =
+  '<form method="post" action="/login"><input id="username"><input id="password" type="password"><button id="login" type="submit">Login</button></form>';
+const savedOptions = () => ({
+  version: 1,
+  fillDelayMs: 0,
+  submitDelayMs: 0,
+  detectionTimeoutMs: 8000,
+  submit: true,
+  fields: [],
+});
+
+function virtualClock() {
+  let now = 1_000_000,
+    nextId = 0,
+    frozen = false;
+  const jobs = new Map(),
+    digests = new Set();
+  const due = (from, ms, throttle) => {
+    const at = from + Math.max(1, ms || 0);
+    return throttle ? Math.ceil(at / throttle) * throttle : at;
+  };
+  const schedule = (callback, ms, interval, throttle, page) => {
+    const id = ++nextId;
+    const at = due(now, ms, throttle);
+    jobs.set(id, { callback, at, interval, throttle, page });
+    return id;
+  };
+  // Every microtask runs before the next turn; real WebCrypto needs more turns.
+  async function settle() {
+    for (;;) {
+      await new Promise((done) => setImmediate(done));
+      if (!digests.size) return;
+      await Promise.all([...digests]);
+    }
+  }
+  return {
+    now: () => now,
+    digests,
+    // The host is another process: nothing throttles its delays.
+    host: (callback, ms) => schedule(callback, ms, 0, 0, false),
+    page: (throttle) => ({
+      setTimeout: (callback, ms) => schedule(callback, ms, 0, throttle, true),
+      setInterval: (callback, ms) =>
+        schedule(callback, ms, Math.max(1, ms || 0), throttle, true),
+      clear: (id) => jobs.delete(id),
+    }),
+    // From here on no page timer or interval ever fires again.
+    freezePageTimers() {
+      frozen = true;
+    },
+    async advance(ms) {
+      const end = now + ms;
+      for (let count = 0; count < 100000; count++) {
+        let next = null;
+        for (const entry of jobs)
+          if (
+            !(frozen && entry[1].page) &&
+            entry[1].at <= end &&
+            (!next || entry[1].at < next[1].at)
+          )
+            next = entry;
+        if (!next) break;
+        const [id, job] = next;
+        now = Math.max(now, job.at);
+        if (job.interval) job.at = due(job.at, job.interval, job.throttle);
+        else jobs.delete(id);
+        job.callback();
+        await settle();
+      }
+      now = end;
+      await settle();
+    },
+  };
+}
+
+// One release per stage for the attempt; a release whose typing stopped before
+// its first key is re-armed once (LoginBudget in native_features.rs).
+const hostBudget = () => ({
+  released: new Set(),
+  typed: false,
+  rearmed: false,
+});
+
+function loginDocument(t, clock, options = {}) {
+  const url = options.url ?? "https://device.test/login";
+  const origin = new URL(url).origin;
+  const dom = new JSDOM(options.html ?? plainLogin, {
+    url,
+    runScripts: "outside-only",
+  });
+  const w = dom.window,
+    doc = w.document;
+  const timers = clock.page(options.throttleMs ?? 0);
+  w.setTimeout = timers.setTimeout;
+  w.setInterval = timers.setInterval;
+  w.clearTimeout = w.clearInterval = timers.clear;
+  w.Date.now = clock.now;
+  w.TextEncoder = TextEncoder;
+  Object.defineProperty(w, "crypto", {
+    value: {
+      getRandomValues: (array) => webcrypto.getRandomValues(array),
+      subtle: {
+        async digest(...args) {
+          const pending = webcrypto.subtle.digest(...args);
+          clock.digests.add(pending);
+          try {
+            return await pending;
+          } finally {
+            clock.digests.delete(pending);
+          }
+        },
+      },
+    },
+  });
+  Object.defineProperty(w.HTMLElement.prototype, "offsetParent", {
+    get() {
+      return this.parentElement;
+    },
+  });
+  w.HTMLElement.prototype.getClientRects = function () {
+    return this.isConnected ? [{ width: 100, height: 20 }] : [];
+  };
+  // The main document is still loading until the host reports load end.
+  let readyState = options.loadAt === undefined ? "complete" : "interactive";
+  Object.defineProperty(doc, "readyState", {
+    configurable: true,
+    get: () => readyState,
+  });
+  const listeners = new Map(),
+    add = doc.addEventListener.bind(doc);
+  doc.addEventListener = (type, callback, ...rest) => {
+    if (["keydown", "beforeinput", "input", "keyup"].includes(type)) {
+      if (!listeners.has(type)) listeners.set(type, []);
+      listeners.get(type).push(callback);
+    }
+    return add(type, callback, ...rest);
+  };
+  let submits = 0,
+    closed = false,
+    deliver;
+  doc.addEventListener("submit", (event) => {
+    event.preventDefault();
+    submits++;
+  });
+  const values = options.values ?? {
+    username: "operator-account",
+    password: "pA55@word-16char",
+  };
+  const element = options.element ?? ((field) => doc.getElementById(field));
+  const budget = options.budget ?? hostBudget();
+  const host = {
+    loaded: options.loadAt === undefined,
+    // A manual-input slot owns the keyboard: a start waits, a key is held.
+    manual: false,
+    used: new Set(),
+    pending: null,
+    keys: [],
+    deliveries: [],
+  };
+  const fire = (type, event) => {
+    for (const callback of listeners.get(type) ?? []) callback(event);
+  };
+  const trusted = (input, unit, inputType) => ({
+    target: input,
+    isTrusted: true,
+    key: unit,
+    data: unit,
+    inputType,
+    preventDefault() {
+      this.prevented = true;
+    },
+  });
+  // Only this model writes characters; production sends CEF key events.
+  function press(field, unit) {
+    const input = element(field),
+      event = trusted(input, unit, "insertText");
+    fire("keydown", event);
+    if (!event.prevented) fire("beforeinput", event);
+    if (event.prevented) return false;
+    input.value += unit;
+    // An email field has no selection API.
+    if (input.selectionStart !== null)
+      input.setSelectionRange(input.value.length, input.value.length);
+    fire("input", event);
+    fire("keyup", event);
+    return true;
+  }
+  // A person replaces the field's content without any key event.
+  function paste(field, text) {
+    const input = element(field);
+    input.value = text;
+    fire("input", trusted(input, text, "insertFromPaste"));
+  }
+  function stopped() {
+    if (budget.typed || budget.rearmed || budget.released.has("form-submit"))
+      return;
+    budget.rearmed = true;
+    for (const stage of ["form-prepare", "form", "identifier", "password"])
+      budget.released.delete(stage);
+  }
+  function stage(name) {
+    if (closed || budget.released.has(name)) return;
+    const previous = { form: "form-prepare", "form-submit": "form" }[name];
+    if (previous && !budget.released.has(previous)) return;
+    budget.released.add(name);
+    const username = ["form", "identifier"].includes(name)
+      ? values.username
+      : "";
+    const password = ["form", "password"].includes(name) ? values.password : "";
+    // As native: 30 s for a credential stage, 2 s for a metadata or action one.
+    const deadline = clock.now() + (username || password ? 30000 : 2000);
+    host.deliveries.push([
+      name,
+      options.provider
+        ? deliver(origin, username, password, true, deadline, name)
+        : deliver(
+            origin,
+            username,
+            password,
+            true,
+            deadline,
+            savedOptions(),
+            name,
+          ),
+    ]);
+  }
+  function typing(event) {
+    const [, action, stageName, field, index] = event.split("|");
+    const role = `type|${stageName}|${field}`;
+    const reply = (command, value = 0, deadline = 0) =>
+      deliver.nativeTyping(command, value, deadline, false, role);
+    // As native: a start waits for manual entry or load end without spending
+    // anything, and before load end nothing else is recorded either.
+    if (action === "start" && host.manual) return reply("wait", 200);
+    if (!host.loaded)
+      return reply(...(action === "start" ? ["wait", 200] : ["cancel"]));
+    if (action === "cancel") {
+      host.pending = null;
+      stopped();
+      return reply("cancel");
+    }
+    if (action === "start") {
+      if (host.pending || host.used.has(role) || options.refuseStart?.(role)) {
+        host.pending = null;
+        stopped();
+        return reply("cancel");
+      }
+      host.used.add(role);
+      host.pending = {
+        role,
+        field,
+        next: 0,
+        readyAt: clock.now(),
+        deadline: clock.now() + 30000,
+      };
+      return reply("probe", 0, host.pending.deadline);
+    }
+    const pending = host.pending;
+    if (!pending || pending.role !== role || pending.next !== Number(index)) {
+      host.pending = null;
+      stopped();
+      return reply("cancel");
+    }
+    const send = () => {
+      if (closed || host.pending !== pending) return;
+      if (host.manual) return void clock.host(send, 200);
+      if (options.cancelKey?.(field, pending.next)) {
+        host.pending = null;
+        stopped();
+        return void reply("cancel");
+      }
+      if (!press(field, values[field][pending.next])) return;
+      budget.typed = true;
+      host.keys.push([field, pending.next]);
+      pending.next += 1;
+      pending.readyAt = clock.now() + KEY_MS;
+      if (pending.next === values[field].length) host.pending = null;
+      reply("probe", pending.next, pending.deadline);
+    };
+    clock.host(send, Math.max(0, pending.readyAt - clock.now()));
+  }
+  const signals = [];
+  const signal = (event) => {
+    signals.push(event);
+    if (event === "form-completed" || event === "form-rejected") return;
+    clock.host(() => {
+      if (closed) return;
+      if (event.startsWith("type|")) return typing(event);
+      // Held under manual entry and run again, or abandoned without a reply.
+      const hold = options.holdStage?.[event];
+      if (hold === Infinity) return;
+      if (hold) clock.host(() => stage(event), hold);
+      else stage(event);
+    }, 1);
+  };
+  function load() {
+    readyState = "complete";
+    host.loaded = true;
+    doc.dispatchEvent(new w.Event("readystatechange"));
+    w.dispatchEvent(new w.Event("load"));
+  }
+  if (options.loadAt !== undefined) clock.host(load, options.loadAt);
+  options.beforeInstall?.(w);
+  deliver = w.eval(production)(
+    signal,
+    options.provider
+      ? { provider: options.provider }
+      : {
+          selectors: options.selectors ?? selectors,
+          readiness: { detectionTimeoutMs: 8000 },
+          ...(options.readinessProfile
+            ? { readinessProfile: options.readinessProfile }
+            : {}),
+        },
+    options.provider ?? "modular-form",
+    true,
+  );
+  t.after(() => {
+    closed = true;
+    w.dispatchEvent(new w.Event("pagehide"));
+    w.close();
+  });
+  return {
+    w,
+    doc,
+    origin,
+    clock,
+    signals,
+    host,
+    values,
+    deliver,
+    press,
+    paste,
+    field: element,
+    submits: () => submits,
+  };
+}
+
+async function loggedIn(f, within) {
+  await f.clock.advance(within);
+  assert.equal(f.signals.at(-1), "form-completed", JSON.stringify(f.signals));
+  assert.equal(f.submits(), 1);
+  assert.equal(f.field("username").value, f.values.username);
+  assert.equal(f.field("password").value, f.values.password);
+  assert.equal(
+    f.host.keys.length,
+    f.values.username.length + f.values.password.length,
+  );
+  for (const stage of ["form-prepare", "form", "form-submit"])
+    assert.equal(f.signals.filter((value) => value === stage).length, 1);
+  assert.equal(
+    f.signals.some((value) =>
+      [f.values.username, f.values.password].some((secret) =>
+        value.includes(secret),
+      ),
+    ),
+    false,
+  );
+}
+
+for (const [label, readinessProfile] of [
+  ["a plain form", undefined],
+  ["a cPanel form", "cpanel"],
+]) {
+  test(`with page timers at 1 Hz a 16+16 character login completes on ${label}`, async (t) => {
+    const clock = virtualClock();
+    const f = loginDocument(t, clock, { throttleMs: 1000, readinessProfile });
+    assert.equal(f.values.username.length, 16);
+    assert.equal(f.values.password.length, 16);
+    if (readinessProfile) f.doc.querySelector("form").onsubmit = () => false;
+    await loggedIn(f, 20000);
+  });
+}
+
+test("a main document whose load ends at 7 s is still typed into and submitted", async (t) => {
+  const clock = virtualClock();
+  const f = loginDocument(t, clock, { loadAt: 7000 });
+  await loggedIn(f, 10000);
+});
+
+test("once the form is found, a login completes with every page timer frozen", async (t) => {
+  const clock = virtualClock();
+  const f = loginDocument(t, clock);
+  // The first notification needs one task: the renderer registers the
+  // document record only after the factory has returned.
+  await clock.advance(1);
+  assert.deepEqual(f.signals, ["form-prepare"]);
+  clock.freezePageTimers();
+  await loggedIn(f, 3000);
+});
+
+test("nothing is requested from the host before load end, and load end itself starts the requests", async (t) => {
+  const clock = virtualClock();
+  const f = loginDocument(t, clock, { loadAt: 7000 });
+  await clock.advance(6900);
+  // The wait is spent before any release is used or any credential delivered.
+  assert.deepEqual(f.signals, []);
+  assert.deepEqual(f.host.deliveries, []);
+  clock.freezePageTimers();
+  await loggedIn(f, 3000);
+});
+
+test("an attempt the user ended while the document was loading asks for nothing when load ends", async (t) => {
+  const clock = virtualClock();
+  const f = loginDocument(t, clock, { loadAt: 2000 });
+  await clock.advance(1000);
+  assert.deepEqual(f.signals, []);
+  f.press("username", "x");
+  assert.deepEqual(f.signals, ["form-rejected"]);
+  await clock.advance(5000);
+  assert.deepEqual(f.signals, ["form-rejected"]);
+  assert.deepEqual(f.host.deliveries, []);
+  assert.equal(f.field("username").value, "x");
+});
+
+test("a document replaced while it loads uses no release, so its successor logs in", async (t) => {
+  const clock = virtualClock();
+  const budget = hostBudget();
+  const first = loginDocument(t, clock, { budget, loadAt: Infinity });
+  await clock.advance(3000);
+  first.w.dispatchEvent(new first.w.Event("pagehide"));
+  await clock.advance(100);
+  assert.deepEqual(first.host.deliveries, []);
+  assert.deepEqual(first.host.keys, []);
+  const second = loginDocument(t, clock, { budget });
+  await loggedIn(second, 5000);
+});
+
+test("three documents whose loads end one after another log in concurrently with their own credentials", async (t) => {
+  const clock = virtualClock();
+  const tabs = [2500, 5000, 7500].map((loadAt, index) =>
+    loginDocument(t, clock, {
+      loadAt,
+      url: `https://device${index}.test/login`,
+      values: {
+        username: `tab${index}-operator-id`,
+        password: `pw${index}-S3cret-chars`,
+      },
+    }),
+  );
+  for (const f of tabs) {
+    assert.equal(f.values.username.length, 16);
+    assert.equal(f.values.password.length, 16);
+  }
+  await clock.advance(12000);
+  for (const f of tabs) {
+    await loggedIn(f, 0);
+    // Nothing is shared: no other document's value or key reached this one.
+    for (const other of tabs.filter((tab) => tab !== f)) {
+      assert.notEqual(f.field("username").value, other.values.username);
+      assert.notEqual(f.field("password").value, other.values.password);
+    }
+    assert.deepEqual(f.host.deliveries, [
+      ["form-prepare", true],
+      ["form", true],
+      ["form-submit", true],
+    ]);
+  }
+});
+
+test("a key the host holds for 10 s under manual entry is resumed, not timed out", async (t) => {
+  const clock = virtualClock();
+  const f = loginDocument(t, clock);
+  await clock.advance(300);
+  const typed = f.host.keys.length;
+  assert.ok(typed > 0 && typed < 16, String(typed));
+  f.host.manual = true;
+  await clock.advance(10000);
+  assert.equal(f.host.keys.length, typed);
+  assert.equal(f.signals.includes("form-rejected"), false);
+  f.host.manual = false;
+  await loggedIn(f, 3000);
+});
+
+test("a stage request the host held for 20 s is still accepted when it is delivered", async (t) => {
+  const clock = virtualClock();
+  const f = loginDocument(t, clock, { holdStage: { form: 20000 } });
+  await clock.advance(19000);
+  assert.deepEqual(f.signals, ["form-prepare", "form"]);
+  await loggedIn(f, 4000);
+});
+
+test("a credential that arrives after a held request keeps its whole validity for typing", async (t) => {
+  const clock = virtualClock();
+  const f = loginDocument(t, clock, { holdStage: { form: 20000 } });
+  await clock.advance(20300);
+  const typed = f.host.keys.length;
+  assert.ok(typed > 0 && typed < 16, String(typed));
+  // 36 s after the request, 16 s after the credential was delivered.
+  f.host.manual = true;
+  await clock.advance(16000);
+  assert.equal(f.signals.includes("form-rejected"), false);
+  f.host.manual = false;
+  await loggedIn(f, 3000);
+});
+
+test("a stage request the host abandons ends the attempt at its own bound without typing", async (t) => {
+  const clock = virtualClock();
+  const f = loginDocument(t, clock, { holdStage: { form: Infinity } });
+  await clock.advance(34000);
+  assert.deepEqual(f.signals, ["form-prepare", "form"]);
+  await clock.advance(2000);
+  assert.deepEqual(f.signals, ["form-prepare", "form", "form-rejected"]);
+  assert.equal(
+    f.deliver(
+      f.origin,
+      f.values.username,
+      f.values.password,
+      true,
+      clock.now() + 30000,
+      savedOptions(),
+      "form",
+    ),
+    false,
+  );
+  await clock.advance(1000);
+  assert.deepEqual(f.host.keys, []);
+  assert.equal(f.field("username").value, "");
+  assert.equal(f.submits(), 0);
+});
+
+test("a host cancel in the middle of the password erases everything typed and nothing is requested again", async (t) => {
+  const clock = virtualClock();
+  const f = loginDocument(t, clock, {
+    cancelKey: (field, index) => field === "password" && index === 5,
+  });
+  await clock.advance(5000);
+  assert.equal(f.host.keys.length, 16 + 5);
+  assert.equal(f.signals.at(-1), "form-rejected", JSON.stringify(f.signals));
+  assert.equal(f.field("username").value, "");
+  assert.equal(f.field("password").value, "");
+  assert.equal(f.submits(), 0);
+  const seen = f.signals.length;
+  await clock.advance(60000);
+  assert.equal(f.signals.length, seen);
+  assert.equal(f.signals.includes("form-submit"), false);
+  assert.equal(
+    f.signals.filter((value) => value.startsWith("type|start|")).length,
+    2,
+  );
+  assert.equal(
+    f.deliver(
+      f.origin,
+      "",
+      "",
+      true,
+      clock.now() + 2000,
+      savedOptions(),
+      "form-submit",
+    ),
+    false,
+  );
+  assert.equal(f.submits(), 0);
+});
+
+test("a staged provider erases a partly typed identifier when the host cancels", async (t) => {
+  const clock = virtualClock();
+  const f = loginDocument(t, clock, {
+    provider: "claude",
+    url: "https://claude.ai/login",
+    html: semanticEmail,
+    values: { username: "alice@example.test", password: "" },
+    element: () => f.doc.querySelector('input[type="email"]'),
+    cancelKey: (field, index) => index === 5,
+  });
+  await clock.advance(5000);
+  assert.equal(f.host.keys.length, 5);
+  assert.equal(f.signals.at(-1), "form-rejected", JSON.stringify(f.signals));
+  assert.equal(f.field("username").value, "");
+  assert.equal(f.submits(), 0);
+});
+
+test("with page timers at 1 Hz a staged provider still types and submits", async (t) => {
+  const clock = virtualClock();
+  const f = loginDocument(t, clock, {
+    throttleMs: 1000,
+    provider: "claude",
+    url: "https://claude.ai/login",
+    html: semanticEmail,
+    values: { username: "alice@example.test", password: "" },
+    element: () => f.doc.querySelector('input[type="email"]'),
+  });
+  await clock.advance(10000);
+  assert.deepEqual(
+    f.signals.filter((value) => !value.startsWith("type|")),
+    ["identifier", "form-completed"],
+  );
+  assert.equal(f.field("username").value, f.values.username);
+  assert.equal(f.host.keys.length, f.values.username.length);
+  assert.equal(f.submits(), 1);
+});
+
+test("a value the user put in the field is never erased, even when it is a prefix of the saved credential", async (t) => {
+  const clock = virtualClock();
+  const f = loginDocument(t, clock);
+  for (let i = 0; i < 50 && f.host.keys.length < 4; i++)
+    await clock.advance(20);
+  assert.ok(f.host.keys.length >= 4 && f.host.keys.length < 16);
+  f.host.manual = true;
+  await clock.advance(200);
+  const prefix = f.values.username.slice(0, 2);
+  f.paste("username", prefix);
+  await clock.advance(1000);
+  assert.equal(f.signals.at(-1), "form-rejected", JSON.stringify(f.signals));
+  assert.equal(f.field("username").value, prefix);
+  assert.equal(f.field("password").value, "");
+  assert.equal(f.submits(), 0);
+});
+
+test("typing the host stops before its first key is reported, and only the next document logs in again", async (t) => {
+  const clock = virtualClock();
+  const budget = hostBudget();
+  let refuse = true;
+  const first = loginDocument(t, clock, { budget, refuseStart: () => refuse });
+  await clock.advance(1000);
+  assert.deepEqual(first.signals, [
+    "form-prepare",
+    "form",
+    "type|start|form|username|0",
+    "type|cancel|form|username|0",
+    "form-rejected",
+  ]);
+  assert.equal(budget.rearmed, true);
+  // The same document asks for nothing more, so nothing can be typed twice.
+  await clock.advance(60000);
+  assert.equal(first.signals.length, 5);
+  assert.deepEqual(first.host.keys, []);
+  assert.equal(first.field("username").value, "");
+  assert.equal(first.submits(), 0);
+  refuse = false;
+  const second = loginDocument(t, clock, { budget });
+  await loggedIn(second, 5000);
+  // Re-armed once: a third document of this attempt is given nothing.
+  const third = loginDocument(t, clock, { budget });
+  await clock.advance(40000);
+  assert.deepEqual(third.signals, ["form-prepare", "form-rejected"]);
+  assert.deepEqual(third.host.keys, []);
+  assert.equal(third.submits(), 0);
+});
+
+test("a staged provider asks for credentials only after the main document has loaded", async (t) => {
+  const f = providerFixture(
+    t,
+    "claude",
+    semanticEmail,
+    "https://claude.ai/login",
+  );
+  let readyState = "interactive";
+  Object.defineProperty(f.w.document, "readyState", {
+    configurable: true,
+    get: () => readyState,
+  });
+  await f.advance(3000);
+  assert.deepEqual(f.signals, []);
+  readyState = "complete";
+  f.w.dispatchEvent(new f.w.Event("load"));
+  await f.advance(700);
+  assert.deepEqual(f.signals, ["identifier"]);
+});
+
+test("a provider credential delivered just before the 60 s detection limit keeps its own validity", async (t) => {
+  const f = providerFixture(t, "claude", "", "https://claude.ai/login");
+  await f.advance(59300);
+  f.w.document.body.innerHTML = semanticEmail;
+  await f.advance(600);
+  assert.deepEqual(f.signals, ["identifier"]);
+  assert.equal(f.send("identifier", true, 30000), true);
+  await f.advance(1000);
+  assert.equal(f.submits(), 1);
+  assert.deepEqual(f.signals, ["identifier", "form-completed"]);
+});
+
+// Finding 2.2 "Enter-key submit": a login without a submit control.
+const buttonless = { username: "#username", password: "#password" };
+async function fillButtonless(t, html) {
+  const f = nativeFixture(
+    t,
+    html,
+    "https://device.test/login",
+    { selectors: buttonless, readiness: { detectionTimeoutMs: 15000 } },
+    "modular-form",
+  );
+  const options = () => formOptions({ fillDelayMs: 0, submitDelayMs: 0 });
+  for (const stage of ["form-prepare", "form", "form-submit"]) {
+    await f.advance(200);
+    assert.equal(f.signals.at(-1), stage);
+    assert.equal(f.send(stage, true, 2000, options()), true);
+  }
+  await f.advance(100);
+  assert.equal(f.field("#password").value, "test-secret");
+  assert.equal(f.signals.at(-1), "form-completed");
+  return f;
+}
+
+test("a form without a submit control is submitted through the form itself, once", async (t) => {
+  const f = await fillButtonless(
+    t,
+    '<form method="post" action="/login"><input id="username"><input id="password" type="password"></form>',
+  );
+  assert.equal(f.submits(), 1);
+});
+
+for (const prevented of [false, true]) {
+  test(`a login without a form or button gets one Enter key sequence on the password field (keydown prevented: ${prevented})`, async (t) => {
+    const keys = [];
+    const f = nativeFixture(
+      t,
+      '<div><input id="username"><input id="password" type="password"></div>',
+      "https://device.test/login",
+      { selectors: buttonless, readiness: { detectionTimeoutMs: 15000 } },
+      "modular-form",
+    );
+    for (const type of ["keydown", "keypress", "keyup"])
+      f.field("#password").addEventListener(type, (event) => {
+        keys.push([type, event.key, event.keyCode, event.charCode]);
+        if (prevented && type === "keydown") event.preventDefault();
+      });
+    const options = () => formOptions({ fillDelayMs: 0, submitDelayMs: 0 });
+    for (const stage of ["form-prepare", "form", "form-submit"]) {
+      await f.advance(200);
+      assert.equal(f.signals.at(-1), stage);
+      assert.equal(f.send(stage, true, 2000, options()), true);
+    }
+    await f.advance(100);
+    assert.equal(f.signals.at(-1), "form-completed");
+    // As a real Enter: a prevented keydown produces no keypress.
+    assert.deepEqual(
+      keys,
+      prevented
+        ? [
+            ["keydown", "Enter", 13, 0],
+            ["keyup", "Enter", 13, 0],
+          ]
+        : [
+            ["keydown", "Enter", 13, 0],
+            ["keypress", "Enter", 13, 13],
+            ["keyup", "Enter", 13, 0],
+          ],
+    );
+    assert.equal(f.submits(), 0);
+  });
+}

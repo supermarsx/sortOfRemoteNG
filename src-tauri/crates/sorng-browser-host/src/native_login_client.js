@@ -17,7 +17,7 @@
     // native process/document nonces and owner consent authorize the operation.
     const guardSetup = { ...setup, nonce: Array.from(crypto.getRandomValues(new Uint8Array(16)), b => b.toString(16).padStart(2, "0")).join("") };
     let stopped = false, timer, target = null, prefix = "", armed = false;
-    let deadline = 0, autoSubmit = false, pending = false, submitted = false;
+    let deadline = 0, autoSubmit = false, receipt = null, submitted = false;
     const emit = (stage, index = 0) => signal(`totp|${stage}|${setup.id}|${index}`);
     const later = (fn, ms) => { clearTimeout(timer); timer = setTimeout(fn, ms); };
     const cancel = () => {
@@ -51,12 +51,37 @@
     function discover() {
       if (stopped) return;
       const found = controls();
-      if (!found) { if (now() - started < 600000) later(discover, 200); else cancel(); return; }
-      // Never replace manual input or take focus away from another live control.
-      if (found.input.value || (doc.activeElement !== doc.body && doc.activeElement !== found.input)) return;
+      // Keep looking while the challenge is absent or another live control
+      // holds focus. Never take focus away from it or replace manual input.
+      // A control that is no longer shown is not live: an unpainted page may
+      // leave focus on the panel it has just hidden.
+      const focused = doc.activeElement;
+      if (!found || (!found.input.value && focused !== doc.body && focused !== found.input && visible(focused))) {
+        if (now() - started < 600000) later(discover, 200); else cancel();
+        return;
+      }
+      if (found.input.value) return;
       target = found;
       found.input.focus({ preventScroll: true });
       later(() => { if (current()) emit("start"); else cancel(); }, setup.fillDelayMs);
+    }
+    // Both facts are in for `index` digits: the host's receipt and the trusted
+    // input event of the digit it names. Ask for the next digit, or finish.
+    function entered(index) {
+      clearTimeout(timer);
+      receipt = null;
+      if (armed || prefix.length !== index || !current()) { cancel(); return false; }
+      if (index < setup.digits) { armed = true; emit("key", index); return true; }
+      if (!autoSubmit) { stopped = true; prefix = ""; target = null; return true; }
+      const earliest = now() + setup.submitDelayMs;
+      const settledBy = Math.min(deadline, earliest + 3000);
+      const finish = () => {
+        if (!current() || now() >= settledBy) { cancel(); return; }
+        if (now() < earliest || !current(true)) { later(finish, 50); return; }
+        emit("finish", index);
+      };
+      if (setup.submitDelayMs) later(finish, setup.submitDelayMs); else finish();
+      return true;
     }
     function inputEvent(event) {
       if (!target || stopped) return;
@@ -65,6 +90,8 @@
           target.input.value !== prefix + event.data) { cancel(); return; }
       prefix += event.data;
       armed = false;
+      // The host's receipt for this digit may have overtaken its DOM event.
+      if (receipt === prefix.length) entered(receipt);
     }
     doc.addEventListener("input", inputEvent, true);
     doc.addEventListener("beforeinput", (event) => {
@@ -115,33 +142,17 @@
         button.click();
         return true;
       }
-      if (command !== "probe" || pending || index < 0 || index > setup.digits) { cancel(); return false; }
-      pending = true;
-      // Let Chromium process the previous native key before validating its
-      // resulting input event. Polling never retries or repeats a character.
-      const limit = Math.min(deadline, now() + 1500);
-      const probe = () => {
-        if (stopped) return;
-        if (armed && prefix.length === index - 1 && now() < limit) { later(probe, 25); return; }
-        pending = false;
-        if (armed || prefix.length !== index || !current()) { cancel(); return; }
-        if (index === setup.digits) {
-          if (autoSubmit) {
-            const earliest = now() + setup.submitDelayMs;
-            const settledBy = Math.min(deadline, earliest + 3000);
-            const finish = () => {
-              if (!current() || now() >= settledBy) { cancel(); return; }
-              if (now() < earliest || !current(true)) { later(finish, 50); return; }
-              emit("finish", index);
-            };
-            later(finish, setup.submitDelayMs);
-          } else { stopped = true; prefix = ""; target = null; }
-        } else {
-          armed = true;
-          emit("key", index);
-        }
-      };
-      later(probe, 50);
+      if (command !== "probe" || receipt !== null || index < 0 || index > setup.digits) { cancel(); return false; }
+      // One receipt per request, in order. The next digit is requested by the
+      // later of this receipt and the trusted input event of the digit it
+      // names. No timer is on that path, so a hidden page's throttled timers
+      // cannot slow typing, and nothing retries or repeats a character.
+      if (!armed) return entered(index);
+      if (index !== prefix.length + 1) { cancel(); return false; }
+      receipt = index;
+      // The receipt overtook its DOM event. A digit the engine never delivers
+      // fails closed here.
+      later(cancel, Math.max(0, Math.min(1500, deadline - now())));
       return true;
     };
   }
@@ -173,6 +184,12 @@
   let expiryTimer;
   let startTimer;
   let config;
+  // Bounds of the waits that follow detection: a stage grant (the host can
+  // hold a request for 30 s under manual entry), the page finishing its load
+  // and settling while it holds no credential, and a delivered credential.
+  const GRANT_WAIT_MS = 35000;
+  const SETTLE_WAIT_MS = 60000;
+  const CREDENTIAL_LIMIT_MS = 30000;
   function authorizedLoginFrame() {
     try {
       const parent = window.parent;
@@ -244,6 +261,21 @@
       location.origin === origin &&
       (configuration?.provider || location.href === initialHref)
     );
+  }
+  // Native key events start only after the main document's load end, and
+  // every stage is released once per attempt. Ask for nothing before it: the
+  // wait is never charged to a credential, and a document replaced while it
+  // loads leaves every release to its successor.
+  function mainDocumentLoaded() {
+    try {
+      return (loginFrame ? loginFrame.document : doc).readyState === "complete";
+    } catch (_) {
+      return false;
+    }
+  }
+  // True while the field holds only what native typing has entered so far.
+  function typedPrefix(value, typed, text) {
+    return !!text && typed === text.length && value.startsWith(text);
   }
   function cancel() {
     stopped = true;
@@ -403,8 +435,13 @@
     }
     function clearOwned() {
       for (const entry of owned) {
-        // A manual edit belongs to the user, even during cancellation.
-        if (entry.value !== null && entry.element.value === entry.value)
+        // A manual edit belongs to the user, even during cancellation. Text
+        // native typing entered is erased whole or partial.
+        const text = entry.element.value;
+        if (
+          entry.value !== null &&
+          (text === entry.value || typedPrefix(entry.value, entry.typed, text))
+        )
           setter.call(entry.element, "");
         else if (entry.hash) {
           const value = entry.element.value,
@@ -440,7 +477,10 @@
       notify(ok ? "form-completed" : "form-rejected");
     }
     function edited(event) {
-      if (event.isTrusted && !keyboard?.ownsEvent(event)) finish(false);
+      if (!event.isTrusted) return;
+      if (!keyboard?.ownsEvent(event)) return finish(false);
+      const entry = owned.find((item) => item.element === event.target);
+      if (entry) entry.typed = event.target.value.length;
     }
     function painted(node) {
       if (
@@ -507,9 +547,12 @@
       });
     }
     function route() {
+      // The limit bounds detection. A delivered credential or action keeps
+      // its own validity instead.
+      const live = packet !== null || owned.length > 0 || action !== null;
       if (
         !current() ||
-        now() >= limit ||
+        now() >= (live ? Math.max(limit, expires) : limit) ||
         new URL(location.href).searchParams.has("error")
       )
         return false;
@@ -1092,7 +1135,11 @@
           stableSince = now();
           return;
         }
-        if (now() - stableSince < Math.max(400, timing.fillDelayMs)) return;
+        if (
+          now() - stableSince < Math.max(400, timing.fillDelayMs) ||
+          !mainDocumentLoaded()
+        )
+          return;
         pending = { stage, target: found };
         stable = null;
         notify(stage);
@@ -1216,7 +1263,7 @@
       const target = pending.target;
       pending = null;
       consumed.add(deliveredStage);
-      expires = Math.min(deadline, limit);
+      expires = Math.min(deadline, now() + CREDENTIAL_LIMIT_MS);
       secretTimer = setTimeout(
         () => finish(false),
         Math.max(0, expires - now()),
@@ -1353,7 +1400,8 @@
       lifetime,
       records = [],
       busy = false,
-      eligibleAt = 0;
+      eligibleAt = 0,
+      waitDeadline = 0;
     let controlHash = null,
       quietSince = 0;
     const salt = crypto.getRandomValues(new Uint8Array(16));
@@ -1367,7 +1415,11 @@
           continue;
         }
         if (value !== null) {
-          if (entry.element.value === value) setNativeValue(entry.element, "");
+          // Erase what native typing entered, whole or partial; never a value
+          // somebody else changed.
+          const text = entry.element.value;
+          if (text === value || typedPrefix(value, entry.typed, text))
+            setNativeValue(entry.element, "");
         } else if (entry.hash) {
           // No cleartext remains in the waiting action. Compare before clearing
           // so cancellation never erases a user's replacement value.
@@ -1405,10 +1457,20 @@
       notify(ok ? "form-completed" : "form-rejected");
     }
     function edited(event) {
-      if (event.isTrusted && !keyboard?.ownsEvent(event)) finish(false);
+      if (!event.isTrusted) return;
+      if (!keyboard?.ownsEvent(event)) return finish(false);
+      const entry = records.find((item) => item.element === event.target);
+      if (entry) entry.typed = event.target.value.length;
+    }
+    // No deadline covers the whole attempt. Finding the form has the detection
+    // deadline; every later wait starts its own bound here.
+    function bound(ms) {
+      waitDeadline = now() + ms;
+      clearTimeout(lifetime);
+      lifetime = setTimeout(() => finish(false), Math.max(0, ms));
     }
     function valid() {
-      if (done || !current() || now() >= readyDeadline || !captured)
+      if (done || !current() || now() >= waitDeadline || !captured)
         return false;
       // Extra values are separately hashed; do not keep them in the shared
       // capture while a saved delay or disabled button is being observed.
@@ -1484,7 +1546,14 @@
       }
       return now() - quietSince >= 250;
     }
+    function prepare() {
+      if (done || phase !== "found" || !mainDocumentLoaded()) return;
+      phase = "form-prepare";
+      bound(GRANT_WAIT_MS);
+      notify(phase);
+    }
     async function tick() {
+      if (phase === "found") return prepare();
       if (done || busy || !["waiting-fill", "waiting-submit"].includes(phase))
         return;
       busy = true;
@@ -1499,6 +1568,10 @@
           return finish(false);
         if (phase === "waiting-submit" && !(await valuesMatch()))
           return finish(false);
+        // A credential request gets its own bound. A submit request stays
+        // under the one that began when the fill ended, so typed values never
+        // outlive it.
+        if (phase === "waiting-fill") bound(GRANT_WAIT_MS);
         phase = phase === "waiting-fill" ? "form" : "form-submit";
         notify(phase);
       } catch (_) {
@@ -1578,6 +1651,10 @@
               ? CPANEL_POLICY.submitSettleMs
               : 0,
           );
+        // The submit control, the saved delay and the submit grant get the
+        // saved detection time again; after it the typed values are erased.
+        bound(metadata.detectionTimeoutMs);
+        tick();
       } catch (_) {
         finish(false);
       } finally {
@@ -1615,18 +1692,18 @@
       waitForSelectedLoginForm(config.selectors, config.readiness).then(
         (result) => {
           if (!current() || !result.ok) return finish(false);
-          readyDeadline = result.deadline;
-          phase = "form-prepare";
+          // The detection deadline ends here: it governed finding the form.
+          phase = "found";
           cancelActive = () => finish(false);
-          lifetime = setTimeout(
-            () => finish(false),
-            Math.max(0, readyDeadline - now()),
-          );
-          notify(phase);
+          bound(SETTLE_WAIT_MS);
+          prepare();
         },
       );
     }, 0);
+    // Each step runs on the event that enables it: a grant, the end of the
+    // fill, load end. The interval only serves time-based conditions.
     timer = setInterval(tick, 100);
+    window.addEventListener("load", tick, { once: true });
     const abort = () => {
       if (cancelActive) cancelActive();
       finish(false);
@@ -1672,7 +1749,9 @@
           });
         if (phase !== "form" && options.fields.length)
           throw new Error("metadata-secrets");
-        expires = Math.min(deadline, readyDeadline);
+        // Typing gets the credential's own validity, never what detection or
+        // the wait for load end left over.
+        expires = Math.min(deadline, now() + CREDENTIAL_LIMIT_MS);
         if (phase === "form-prepare") {
           metadata = options;
           const target = findLoginForm(config.selectors, metadata);
@@ -1687,6 +1766,10 @@
                 : 0,
             );
           phase = "waiting-fill";
+          // The saved delay and cPanel hydration: no credential is in the
+          // page yet.
+          bound(eligibleAt - now() + SETTLE_WAIT_MS);
+          tick();
         } else {
           const operation = phase;
           phase = "processing";
@@ -1694,9 +1777,10 @@
             () => finish(false),
             Math.max(0, expires - now()),
           );
-          if (operation === "form")
+          if (operation === "form") {
+            bound(expires - now());
             fill(username, password, options, autoSubmit);
-          else submit(autoSubmit);
+          } else submit(autoSubmit);
         }
         return true;
       } catch (_) {

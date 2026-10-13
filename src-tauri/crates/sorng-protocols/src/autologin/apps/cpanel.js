@@ -262,6 +262,7 @@ var CPANEL_POLICY = {
   pageSettleMs: 3000,
   submitSettleMs: 1000,
   detectionFloorMs: 12000,
+  paintFallbackMs: 100,
 };
 
 // Per-run application state only. Credentials remain owned by the scheduler;
@@ -376,17 +377,28 @@ function createCpanelLifecycle(context) {
         if (!afterPaint) {
           // Yield a paint AND a task so input/load handlers' queued work
           // runs before the final validation. rAF alone runs before paint.
-          if (view.requestAnimationFrame)
-            frame = view.requestAnimationFrame(function () {
+          // A hidden page is never painted, so a timer bounds that wait.
+          var queued = null;
+          if (view.requestAnimationFrame) {
+            queued = view.requestAnimationFrame(function () {
+              if (frame !== queued) return;
               frame = null;
+              clearTimeout(timer);
               timer = setTimeout(function () {
                 check(true);
               }, 0);
             });
-          else
-            timer = setTimeout(function () {
+            frame = queued;
+          }
+          timer = setTimeout(
+            function () {
+              if (frame !== null && view.cancelAnimationFrame)
+                view.cancelAnimationFrame(frame);
+              frame = null;
               check(true);
-            }, 0);
+            },
+            queued === null ? 0 : CPANEL_POLICY.paintFallbackMs,
+          );
           return;
         }
         if (filled && !context.valuesMatch(captured)) {

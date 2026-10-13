@@ -664,6 +664,39 @@ describe("cPanel auto-login readiness", () => {
     expect(submit).toHaveBeenCalledOnce();
   });
 
+  // Finding B3: a hidden page is not painted, so a queued frame never runs.
+  it("settles without a paint when requestAnimationFrame never fires", async () => {
+    installForm();
+    let result: Result | undefined;
+    void start().then((value) => {
+      result = value;
+    });
+    await vi.advanceTimersByTimeAsync(8000);
+    expect(result).toMatchObject({ reason: "submitted" });
+    expect(field("pass").value).toBe("cp-secret");
+    expect(submit).toHaveBeenCalledOnce();
+    expect(frames.size).toBe(0);
+  });
+
+  it("ignores a frame that arrives after the timer fallback already took over", async () => {
+    vi.stubGlobal("cancelAnimationFrame", undefined);
+    installForm();
+    void start();
+    await vi.advanceTimersByTimeAsync(3000);
+    expect(frames.size).toBe(1);
+    const late = [...frames.values()][0];
+    // Late hydration restarts the quiet interval, and here the queued frame
+    // cannot be cancelled. It must not cut the new interval short.
+    field("session").value = "hydrated-late";
+    await vi.advanceTimersByTimeAsync(100);
+    expect(field("pass").value).toBe("");
+    late(performance.now());
+    await vi.advanceTimersByTimeAsync(100);
+    expect(field("pass").value).toBe("");
+    await vi.advanceTimersByTimeAsync(400);
+    expect(field("pass").value).toBe("cp-secret");
+  });
+
   it("keeps fill-only mode and clears its private credentials", async () => {
     installForm();
     const credentials = { username: "cp-user", password: "cp-secret" };

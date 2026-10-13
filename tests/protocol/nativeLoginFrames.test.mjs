@@ -188,6 +188,16 @@ test("authorized background appFrame waits for delayed controls without activati
   assert.equal(f.top.document.hasFocus(), false);
 });
 
+test("an authorized iframe asks for nothing until the top document has finished loading", async t => {
+  let state = "interactive";
+  const f = fixture(t, { beforeInstall: f => f.override(f.top.document, "readyState", { get: () => state }) });
+  await delay(400);
+  assert.deepEqual(f.signals, []);
+  assert.deepEqual(f.keys, []);
+  state = "complete";
+  await completed(f);
+});
+
 for (const [label, peer] of [
   ["duplicate name", { name: "appFrame" }],
   ["mixed name/id", { id: "appFrame" }],
