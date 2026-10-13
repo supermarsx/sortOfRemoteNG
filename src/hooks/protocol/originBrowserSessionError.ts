@@ -49,6 +49,15 @@ export function originBrowserSessionError(reason: unknown): string {
   }
 }
 
+/** The tab followed a saved record that kept changing until its budget of
+ * automatic restarts was spent. Two counts from the shell, no native text. */
+export function originBrowserSourceChangesExhausted(
+  restarts: number,
+  minutes: number,
+): string {
+  return `Native browser session failed: the saved connection, or a saved record it depends on, kept changing while this tab was open. The tab restarted automatically ${restarts} times within ${minutes} minutes to follow the changes, then stopped restarting by itself. Use Retry browser to start again with the current settings. If nothing is editing this connection, review native browser diagnostics in Web Browser settings.`;
+}
+
 /** Actionable request failure without guessing a cause from native prose. */
 export function originBrowserLoadError(value: unknown): string {
   const failure = originBrowserLoadFailure("attached", value);

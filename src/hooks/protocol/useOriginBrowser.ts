@@ -13,6 +13,7 @@ import {
 import {
   originBrowserLoadError,
   originBrowserSessionError,
+  originBrowserSourceChangesExhausted,
 } from "./originBrowserSessionError";
 import { getOriginBrowserRuntimeFailureDetail } from "./originBrowserFailureDetails";
 import {
@@ -99,18 +100,29 @@ export const ORIGIN_BROWSER_LIFECYCLE = Object.freeze({
   /** Pause before a rejected presentation, control or navigation is resent,
    * and again before a second rejection fails the attempt. */
   ipcRetryDelayMs: 250,
-  /** Loop window for an automatic restart, whichever cause asked for it.
-   * Native rechecks a replacement at its first TLS handshake, or when its
-   * first document settles, so a loop repeats within seconds of the
-   * replacement coming up; nobody saves another edit that fast, and a relay
-   * that ends again that fast is not repaired by one more restart. */
-  sourceChangedWindowMs: 10_000,
-  /** Automatic restarts in a row, of both causes together, before the tab
-   * stops and offers Retry. */
-  sourceChangedRunLimit: 3,
-  /** A replacement that stayed up this long ends the run. It is longer than
-   * the slowest loop: a 150 s start and a 120 s first document. */
-  sourceChangedRunResetMs: 600_000,
+  /** Loop window for the automatic restart of a tab whose relay ended: a
+   * relay that ends again this soon after its replacement came up is not
+   * repaired by one more restart. */
+  relayEndedWindowMs: 10_000,
+  /** Automatic relay restarts in a row before the tab stops and offers Retry. */
+  relayEndedRunLimit: 3,
+  /** A replacement that stayed up this long ends the relay's run. */
+  relayEndedRunResetMs: 600_000,
+  /** Automatic restarts for a saved change within sourceChangedBudgetMs. A
+   * saved change is not a failure, so each one is followed however soon it
+   * comes after the last: the editor saves a second after every pause in
+   * typing. The budget only ends a record that is rewritten on every start,
+   * which gets here within minutes; nobody edits at this rate for this long. */
+  sourceChangedBudget: 60,
+  sourceChangedBudgetMs: 600_000,
+  /** Before the replacement for a saved change is created, no further saved
+   * change for this long. The editor saves 1 s after the last keystroke, so a
+   * user who is still typing saves again within it; the replacement is then
+   * made once, for what they typed last, and not for every half-typed value. */
+  sourceChangedQuietMs: 1_500,
+  /** The quiet period ends this long after the first saved change at most, so
+   * a steady trickle of saves cannot keep the tab waiting. */
+  sourceChangedQuietCapMs: 5_000,
 });
 
 const restartReasons = [
@@ -126,7 +138,8 @@ export type OriginBrowserRestartReason = (typeof restartReasons)[number];
 
 export interface OriginBrowserRestart {
   reason: OriginBrowserRestartReason;
-  /** The hook restarted by itself on native's saved-connection-changed report. */
+  /** The hook restarted by itself, on native's report of a saved change or of
+   * a live tab's relay that ended. */
   automatic: boolean;
   /** Increases with every restart of this tab, so a repeat is a new value. */
   serial: number;
@@ -287,6 +300,8 @@ interface Attempt {
   holds: number;
   /** Stops the start deadline once the attempt is verified or retired. */
   disarm: () => void;
+  /** Ends the pause before this start's next create, if it is in one. */
+  wake: (() => void) | null;
   /** A page was shown: what ends it now is a failed session, not a start. */
   everAttached: boolean;
   cancelled: boolean;
@@ -323,6 +338,44 @@ interface RestartCycle {
   work: Promise<void> | null;
   /** Set by a final close, Retry or disposal: nothing more is run for it. */
   ended: boolean;
+  /** For a saved change: the wait before the replacement is created. */
+  quiet: QuietPeriod | null;
+}
+
+interface QuietPeriod {
+  /** Settles when the saved changes have settled, or the period has ended. */
+  done: Promise<void>;
+  /** Another saved change: wait the quiet time again, within the cap. */
+  extend: () => void;
+  /** Over at once: the user asked, or the restart ended. */
+  end: () => void;
+}
+
+/** Timers only, no clock reads: every saved change restarts the quiet timer,
+ * and the cap timer, started with the first, ends the period regardless. */
+function startQuietPeriod(): QuietPeriod | null {
+  const { ms, capMs } = quietPeriod;
+  if (ms <= 0) return null;
+  let settle!: () => void;
+  const done = new Promise<void>((resolve) => {
+    settle = resolve;
+  });
+  let quiet: ReturnType<typeof setTimeout> | undefined;
+  let cap: ReturnType<typeof setTimeout> | undefined;
+  const end = () => {
+    clearTimeout(quiet);
+    clearTimeout(cap);
+    quiet = cap = undefined;
+    settle();
+  };
+  const extend = () => {
+    if (cap === undefined) return;
+    clearTimeout(quiet);
+    quiet = setTimeout(end, ms);
+  };
+  quiet = setTimeout(end, ms);
+  cap = setTimeout(end, Math.max(ms, capMs));
+  return { done, extend, end };
 }
 
 /** Attempts with a native request still unanswered, by owner triple. Module
@@ -347,10 +400,28 @@ function release(attempt: Attempt) {
   if (attempts && !attempts.size) closing.delete(attempt.ownerKey);
 }
 
+/** The quiet period in force; tests that are not about it may switch it off. */
+let quietPeriod: { ms: number; capMs: number } = {
+  ms: ORIGIN_BROWSER_LIFECYCLE.sourceChangedQuietMs,
+  capMs: ORIGIN_BROWSER_LIFECYCLE.sourceChangedQuietCapMs,
+};
+
 /** Test isolation only: every test stands for a freshly loaded shell document. */
 export function resetOriginBrowserLifecycleForTests() {
   closing.clear();
   knownViewport = null;
+  quietPeriod = {
+    ms: ORIGIN_BROWSER_LIFECYCLE.sourceChangedQuietMs,
+    capMs: ORIGIN_BROWSER_LIFECYCLE.sourceChangedQuietCapMs,
+  };
+}
+
+/** Tests only: a different quiet period, or none (0), until the next reset. */
+export function setOriginBrowserQuietPeriodForTests(
+  ms: number,
+  capMs: number = ms,
+) {
+  quietPeriod = { ms, capMs };
 }
 
 /** A hidden tab still lays its page out, and a login form must render to be
@@ -519,22 +590,15 @@ export function useOriginBrowser(options: UseOriginBrowserOptions) {
           : ORIGIN_BROWSER_LIFECYCLE.startTimeoutMs,
     };
   }, [startTimeoutMs]);
-  // The creates one start has spent, and the restart it belongs to. A start
-  // that is retried through a new attempt, because native had already created
-  // its view, carries both.
-  const startBudget = useRef({
-    used: 0,
-    stale: false,
-    carried: false,
-    restart: null as OriginBrowserRestartReason | null,
-  });
-  // The run of automatic restarts so far, and when its last replacement came up.
-  const automaticRestart = useRef<{
+  // The run of automatic relay restarts, and when its last replacement came up.
+  const relayRun = useRef<{
     count: number;
     at: number;
     /** Until its replacement is up; a slow create must not use the window up. */
     starting: boolean;
   } | null>(null);
+  // When each automatic restart for a saved change began, oldest first.
+  const savedChanges = useRef<number[]>([]);
   const presentation = useRef({
     active: false,
     dialogOpen: true,
@@ -549,6 +613,10 @@ export function useOriginBrowser(options: UseOriginBrowserOptions) {
       attempt.cancelled = true;
       attempt.pendingSnapshot = null;
       attempt.disarm();
+      // Whatever ends the attempt ends its pause: nothing is created for a tab
+      // that was closed or replaced while its start waited to be retried.
+      attempt.wake?.();
+      attempt.wake = null;
       attempt.unsubscribe?.();
       attempt.unsubscribe = null;
       if (!attempt.identity) return true;
@@ -597,12 +665,23 @@ export function useOriginBrowser(options: UseOriginBrowserOptions) {
     [],
   );
 
+  // A start that is only waiting to be retried ends with the Retry or the
+  // restart that replaces it, at once and not when React gets to render it.
+  // (An attempt that is still live is ended by the cleanup of its effect.)
+  const endStartPause = useCallback(() => {
+    const attempt = current.current;
+    if (!attempt?.cancelled) return;
+    attempt.wake?.();
+    attempt.wake = null;
+  }, []);
+
   // A restart that cannot go on: its callers learn that nothing was replaced.
   const endRestart = useCallback(() => {
     const cycle = restartCycle.current;
     if (!cycle) return;
     restartCycle.current = null;
     cycle.ended = true;
+    cycle.quiet?.end();
     for (const request of cycle.waiting.splice(0)) request.resolve(false);
   }, []);
   useLayoutEffect(() => endRestart, [endRestart]);
@@ -618,8 +697,13 @@ export function useOriginBrowser(options: UseOriginBrowserOptions) {
       new Promise<boolean>((resolve, reject) => {
         const request = { beforeCreate, resolve, reject };
         // Until the replacement's create is issued, one restart serves all.
-        if (restartCycle.current && !restartCycle.current.ended) {
-          restartCycle.current.waiting.push(request);
+        const open = restartCycle.current;
+        if (open && !open.ended) {
+          open.waiting.push(request);
+          // Another saved change while the replacement waits: wait again, for
+          // the newest row. Anything else is the user's, and is not kept waiting.
+          if (reason === "source-changed") open.quiet?.extend();
+          else open.quiet?.end();
           return;
         }
         restartCycle.current = {
@@ -627,12 +711,21 @@ export function useOriginBrowser(options: UseOriginBrowserOptions) {
           waiting: [request],
           work: null,
           ended: false,
+          // Native's report of a saved change opens the quiet period. The
+          // shell's own restart for a write it saw finish joins a period that
+          // is open, but does not open one: it may be the only restart for
+          // that write, and the shell expects it to begin at once.
+          quiet:
+            reason === "source-changed" && automatic
+              ? startQuietPeriod()
+              : null,
         };
         cleanupRetryRequested.current = true;
+        endStartPause();
         setLastRestart({ reason, automatic, serial: ++restartSerial.current });
         setGeneration((value) => value + 1);
       }),
-    [],
+    [endStartPause],
   );
 
   const present = useCallback(() => {
@@ -765,486 +858,16 @@ export function useOriginBrowser(options: UseOriginBrowserOptions) {
       });
       return;
     }
-    const budget = startBudget.current;
-    if (!budget.carried) {
-      const restarting = restartCycle.current;
-      budget.used = 0;
-      budget.stale = false;
-      budget.restart =
-        restarting && !restarting.ended ? restarting.reason : null;
-    }
-    budget.carried = false;
-    const attempt: Attempt = {
-      ownerKey,
-      holds: 0,
-      disarm: () => undefined,
-      everAttached: false,
-      cancelled: false,
-      verified: false,
-      pendingSnapshot: null,
-      attached: false,
-      loadFailed: false,
-      createStarted: false,
-      identity: null,
-      closeTask: null,
-      closeFailed: false,
-      startup: Promise.resolve(),
-      unsubscribe: null,
-      sequence: -1,
-      presentationRevision: 0,
-      presentationKey: "",
-      transport,
-      publish: () => undefined,
-      fail: () => undefined,
+    // The creates this start has spent, and the restart it belongs to. A
+    // start that has to be retried after native had created its view goes on
+    // as a new attempt of the same start: same controller, same count.
+    const restarting = restartCycle.current;
+    const budget = {
+      used: 0,
+      stale: false,
+      restart: restarting && !restarting.ended ? restarting.reason : null,
     };
-    current.current = attempt;
-    const live = () => current.current === attempt && !attempt.cancelled;
-    attempt.fail = (operation = "state") => {
-      if (!live()) return;
-      setState({
-        ...initialState,
-        phase: "error",
-        error: "Native browser operation failed.",
-        operationFailure: operation,
-      });
-      void closeAttempt(attempt);
-    };
-    attempt.publish = (value) => {
-      if (
-        !live() ||
-        !attempt.identity ||
-        !validIdentity(value?.identity) ||
-        !sameIdentity(value.identity, attempt.identity)
-      )
-        return;
-      const snapshot = shellSnapshot(value);
-      if (!snapshot) {
-        attempt.fail();
-        return;
-      }
-      if (!attempt.verified) {
-        if (
-          !attempt.pendingSnapshot ||
-          snapshot.sequence > attempt.pendingSnapshot.sequence
-        )
-          attempt.pendingSnapshot = snapshot;
-        return;
-      }
-      if (snapshot.sequence <= attempt.sequence) return;
-      attempt.sequence = snapshot.sequence;
-      // A fresh attempt repairs two causes: the saved connection changed, or
-      // a live tab's private relay ended (native ends it on purpose, so that
-      // its successor binds a new port with new credentials). Every other
-      // cause means the owner, the window or the engine is gone or unsafe.
-      const repair =
-        snapshot.phase !== "failed"
-          ? null
-          : snapshot.failureReason === "source-changed"
-            ? ("source-changed" as const)
-            : snapshot.failureReason === "private-proxy" && attempt.everAttached
-              ? ("relay-ended" as const)
-              : null;
-      if (repair) {
-        // Loop protection only, with one count for both causes so that a mix
-        // of them cannot loop faster than either alone: the report restarts
-        // the tab by itself unless it comes within the loop window of the
-        // last automatic replacement coming up, or would be the fourth
-        // automatic restart in a row; a run ends when the user retries or asks
-        // for a restart, or once a replacement has stayed up for ten minutes.
-        const last = automaticRestart.current;
-        const now = Date.now();
-        const up = last && !last.starting ? now - last.at : 0;
-        const run =
-          last && up < ORIGIN_BROWSER_LIFECYCLE.sourceChangedRunResetMs
-            ? last.count
-            : 0;
-        const replacing = !!restartCycle.current && !restartCycle.current.ended;
-        if (
-          replacing ||
-          !run ||
-          (up >= ORIGIN_BROWSER_LIFECYCLE.sourceChangedWindowMs &&
-            run < ORIGIN_BROWSER_LIFECYCLE.sourceChangedRunLimit)
-        ) {
-          if (!replacing)
-            automaticRestart.current = {
-              count: run + 1,
-              at: now,
-              starting: true,
-            };
-          // Stop accepting actions now; the restart confirms this close.
-          void closeAttempt(attempt);
-          if (!replacing) void beginRestart(repair, true);
-          return;
-        }
-      }
-      // The relay ended before this start showed a page. That is one of the
-      // start's tries, like a relay that could not bind its port, and not a
-      // failed session: close what native created and start once more. Never
-      // both this and the restart above: that one needs a page that was shown.
-      const startFailed =
-        snapshot.phase === "failed" &&
-        snapshot.failureReason === "private-proxy" &&
-        !attempt.everAttached;
-      if (startFailed && budget.used < ORIGIN_BROWSER_LIFECYCLE.startTries) {
-        void closeAttempt(attempt);
-        setTimeout(
-          () => {
-            // A Retry, a new scope or disposal in the pause is the next start.
-            if (current.current !== attempt) return;
-            startBudget.current.carried = true;
-            setGeneration((value) => value + 1);
-          },
-          ORIGIN_BROWSER_LIFECYCLE.startRetryDelaysMs[budget.used - 1],
-        );
-        return;
-      }
-      attempt.attached = snapshot.phase === "attached";
-      attempt.everAttached ||= attempt.attached;
-      // A transport failure keeps its context attached for diagnostics and
-      // recovery, but its Chromium error surface must not cover the shell UI.
-      // Update before present(): React state has not committed this snapshot yet.
-      attempt.loadFailed = !!snapshot.loadFailure;
-      setState({
-        ...initialState,
-        snapshot,
-        phase:
-          snapshot.phase === "failed" || snapshot.loadFailure
-            ? "error"
-            : snapshot.phase,
-        error:
-          snapshot.phase === "failed"
-            ? startFailed && budget.used > 1
-              ? originBrowserStartRetriesExhausted(
-                  originBrowserSessionError(snapshot.failureReason),
-                  budget.used,
-                )
-              : originBrowserSessionError(snapshot.failureReason)
-            : snapshot.loadFailure
-              ? originBrowserLoadError(snapshot.loadFailure)
-              : null,
-        // Native may answer before the page is attached: still the restart.
-        restart:
-          snapshot.phase === "starting" && !snapshot.loadFailure
-            ? budget.restart
-            : null,
-      });
-      if (["closing", "closed", "failed"].includes(snapshot.phase)) {
-        void closeAttempt(attempt).then((closed) => {
-          if (current.current !== attempt || snapshot.phase !== "closing")
-            return;
-          setState({
-            ...initialState,
-            phase: closed ? "closed" : "error",
-            error: closed
-              ? null
-              : "Native browser cleanup could not be confirmed.",
-            operationFailure: closed ? null : "cleanup",
-          });
-        });
-      } else present();
-    };
-    setState({ ...initialState, phase: "starting", restart: budget.restart });
-    let startupStage: OriginBrowserStartupStage = "listen";
-    // Native answers every start request within a bound of its own. Past the
-    // shell's bound the request is treated as lost: report it and leave Retry
-    // available. The request itself stays awaited, so a late create is closed.
-    let deadline: ReturnType<typeof setTimeout> | undefined;
-    attempt.disarm = () => {
-      if (deadline !== undefined) clearTimeout(deadline);
-      deadline = undefined;
-    };
-    const arm = (ms: number, expired: () => void) => {
-      attempt.disarm();
-      deadline = setTimeout(() => {
-        deadline = undefined;
-        if (live()) expired();
-      }, ms);
-    };
-    const startTimedOut = () => {
-      const { message, ...startupFailure } =
-        originBrowserStartTimeout(startupStage);
-      setState({
-        ...initialState,
-        phase: "error",
-        error: message,
-        startupFailure,
-      });
-      void closeAttempt(attempt);
-    };
-    const cleanupUnconfirmed = () => {
-      endRestart();
-      setState({
-        ...initialState,
-        phase: "unavailable",
-        unavailableReason: "host-unavailable",
-        error:
-          "Native browser cleanup could not be confirmed. Retry browser to check again before starting a replacement.",
-        operationFailure: "cleanup",
-      });
-      void closeAttempt(attempt);
-    };
-    const unavailable = (
-      reason: OriginBrowserUnavailableReason,
-      runtimeFailure?: unknown,
-    ) => {
-      if (!live()) return;
-      const safeReason: OriginBrowserUnavailableReason = [
-        "runtime-missing",
-        "platform-unsupported",
-        "containment-unverified",
-        "policy-unavailable",
-        "owner-unavailable",
-        "host-unavailable",
-      ].includes(reason)
-        ? reason
-        : "host-unavailable";
-      setState({
-        ...initialState,
-        phase: "unavailable",
-        unavailableReason: safeReason,
-        runtimeFailure: originBrowserRuntimeFailure(runtimeFailure) ?? null,
-      });
-      void closeAttempt(attempt);
-    };
-    const startupFailed = async (error: unknown) => {
-      if (!live()) return;
-      const failure = originBrowserStartupError(startupStage, error);
-      let runtimeFailure: OriginBrowserRuntimeFailure | null = null;
-      // Deferred initialization can fail inside create. Its legacy rejection
-      // string may describe only a wrapper step; prefer the engine's recorded
-      // cause when the same owner/attempt still exists. Never reclassify login,
-      // permission or arbitrary IPC failures from an unrelated global record.
-      if (startupStage === "create" && failure.category === "runtime") {
-        let timer: ReturnType<typeof setTimeout> | undefined;
-        try {
-          ownerGuard.current?.();
-          const refreshed = await Promise.race([
-            transport.status({ owner }),
-            new Promise<null>((resolve) => {
-              timer = setTimeout(() => resolve(null), 3000);
-            }),
-          ]);
-          if (!live()) return;
-          ownerGuard.current?.();
-          if (
-            refreshed?.capability?.availability === "unavailable" &&
-            originBrowserRuntimeFailure(refreshed.runtimeFailure)
-          ) {
-            unavailable(
-              refreshed.capability.reason ?? "host-unavailable",
-              refreshed.runtimeFailure,
-            );
-            return;
-          }
-          if (refreshed?.capability?.availability === "deferred") {
-            runtimeFailure =
-              originBrowserRuntimeFailure(refreshed.runtimeFailure) ?? null;
-          }
-        } catch {
-          // The original allowlisted failure remains useful if this secondary
-          // diagnostic lookup fails. Do not replace it with another IPC error.
-        } finally {
-          if (timer !== undefined) clearTimeout(timer);
-        }
-      }
-      if (!live()) return;
-      // Keep the mapper's safe optional recovery discriminator as well as the
-      // stage/category. Its fixed display message is not a classification.
-      const { message, ...startupFailure } = failure;
-      const engine = getOriginBrowserRuntimeFailureDetail(runtimeFailure);
-      const text = engine ? `${engine.problem} ${engine.nextStep}` : message;
-      setState({
-        ...initialState,
-        phase: "error",
-        error:
-          budget.used > 1 &&
-          (originBrowserStartupRetryable(failure) ||
-            originBrowserStartupStale(failure))
-            ? originBrowserStartRetriesExhausted(text, budget.used)
-            : text,
-        startupFailure,
-        runtimeFailure,
-      });
-      void closeAttempt(attempt);
-    };
-    const start = async () => {
-      // A reconnect cannot overlap an unacknowledged predecessor, including a
-      // create reply which arrived only after its React owner was disposed.
-      // Snapshot the set: a later effect cleanup can enqueue this attempt too.
-      // Iterating the live set could then make startup wait on itself.
-      // The same holds across a remount: the tab this one replaces may still
-      // be closing, or still be waiting for its own create to answer.
-      const predecessors = new Set([
-        ...(retirement.get(ownerKey) ?? []),
-        ...(closing.get(ownerKey) ?? []),
-      ]);
-      if (predecessors.size)
-        arm(
-          lifecycle.current.createTimeoutMs +
-            ORIGIN_BROWSER_LIFECYCLE.closeTimeoutMs,
-          cleanupUnconfirmed,
-        );
-      for (const predecessor of predecessors) {
-        await predecessor.startup;
-        if (!live()) return;
-        const closed = await closeAttempt(
-          predecessor,
-          retryCleanup.has(predecessor),
-        );
-        if (!live()) return;
-        if (!closed) {
-          // Keep it with this tab: only its explicit Retry may ask again.
-          const unconfirmed = retirement.get(ownerKey) ?? new Set<Attempt>();
-          unconfirmed.add(predecessor);
-          retirement.set(ownerKey, unconfirmed);
-          cleanupUnconfirmed();
-          return;
-        }
-        retirement.get(ownerKey)?.delete(predecessor);
-      }
-      if (!live()) return;
-      const restart = restartCycle.current;
-      if (restart && !restart.ended) {
-        // Work that outlasts the deadline no longer has a replacement to
-        // wait for, so its caller is told that nothing was replaced.
-        arm(ORIGIN_BROWSER_LIFECYCLE.startStepTimeoutMs, () => {
-          endRestart();
-          startTimedOut();
-        });
-        await (restart.work ??= runRestartWork(restart));
-        if (!live()) return;
-      }
-      // Install before create. Resync after the reply to cover early events.
-      arm(ORIGIN_BROWSER_LIFECYCLE.startStepTimeoutMs, startTimedOut);
-      const unsubscribe = await transport.listen(attempt.publish);
-      if (!live()) {
-        unsubscribe();
-        return;
-      }
-      attempt.unsubscribe = unsubscribe;
-      startupStage = "status";
-      arm(ORIGIN_BROWSER_LIFECYCLE.startStepTimeoutMs, startTimedOut);
-      const status = await transport.status({ owner });
-      if (!live()) return;
-      if (status.capability?.availability === "unavailable") {
-        unavailable(
-          status.capability.reason ?? "host-unavailable",
-          status.runtimeFailure,
-        );
-        return;
-      }
-      if (
-        status.capability?.availability !== "available" &&
-        status.capability?.availability !== "deferred"
-      )
-        throw new Error();
-      let requestId: string;
-      let result: OriginBrowserCreateResult;
-      for (;;) {
-        startupStage = "owner-check";
-        requestId = crypto.randomUUID();
-        ownerGuard.current?.();
-        startupStage = "create";
-        attempt.createStarted = true;
-        budget.used++;
-        arm(lifecycle.current.createTimeoutMs, startTimedOut);
-        try {
-          result = await transport.create({
-            ...(quickConnect ? { quickConnect } : {}),
-            owner,
-            expectedSecurityRevision,
-            sourceSessionId,
-            requestId,
-            initialUrl: url,
-            bounds:
-              viewport.current ??
-              lastViewport.current ??
-              knownViewport ??
-              shellBounds(),
-            visible: false,
-            policy: {
-              darkMode: "forced",
-              autoLogin: {
-                enabled: true,
-                consent:
-                  consentKind === "existing-grant"
-                    ? { kind: "existing-grant", grantId: grantId! }
-                    : { kind: "required" },
-              },
-            },
-          });
-          break;
-        } catch (error) {
-          const failure = originBrowserStartupError("create", error);
-          // A lease lost to an edit of the saved connection gets one fresh
-          // create, which native authorizes from the saved row again.
-          const lostLease = originBrowserStartupStale(failure) && !budget.stale;
-          if (
-            !live() ||
-            budget.used >= ORIGIN_BROWSER_LIFECYCLE.startTries ||
-            !(lostLease || originBrowserStartupRetryable(failure))
-          )
-            throw error;
-          budget.stale ||= lostLease;
-          // Otherwise the engine may still be starting, or the relay's port
-          // was busy. Nothing native is left to answer, so no successor waits.
-          attempt.createStarted = false;
-          attempt.disarm();
-          await pause(
-            ORIGIN_BROWSER_LIFECYCLE.startRetryDelaysMs[budget.used - 1],
-          );
-          if (!live()) return;
-        }
-      }
-      const identity = result?.snapshot?.identity;
-      if (!validIdentity(identity) || !sameOwner(identity, owner)) {
-        // Never close another owner's tab on a malformed response.
-        attempt.fail();
-        return;
-      }
-      attempt.identity = copyIdentity(identity);
-      if (!live()) {
-        await closeAttempt(attempt);
-        return;
-      }
-      if (result.requestId !== requestId) {
-        attempt.fail();
-        return;
-      }
-      startupStage = "resync";
-      arm(ORIGIN_BROWSER_LIFECYCLE.startStepTimeoutMs, startTimedOut);
-      const refreshed = await transport.status({
-        owner,
-        identity: attempt.identity,
-      });
-      if (!live()) return;
-      if (refreshed.capability?.availability === "unavailable") {
-        unavailable(
-          refreshed.capability.reason ?? "host-unavailable",
-          refreshed.runtimeFailure,
-        );
-        return;
-      }
-      if (refreshed.capability?.availability !== "available") throw new Error();
-      // Fold early native events and both replies before exposing a view. A
-      // newer failure/close must not briefly display an older attached state.
-      attempt.publish(result.snapshot);
-      if (!live()) return;
-      if (refreshed.snapshot) attempt.publish(refreshed.snapshot);
-      if (!live()) return;
-      const latest = attempt.pendingSnapshot;
-      attempt.pendingSnapshot = null;
-      attempt.verified = true;
-      attempt.disarm();
-      const restarted = automaticRestart.current;
-      if (restarted?.starting) {
-        restarted.starting = false;
-        restarted.at = Date.now();
-      }
-      if (latest) attempt.publish(latest);
-    };
-    attempt.startup = start().catch(startupFailed);
-    return () => {
+    const retire = (attempt: Attempt) => {
       if (current.current === attempt) current.current = null;
       void closeAttempt(attempt);
       // A cancelled listener/status/waiter cannot reach create. Do not retain
@@ -1267,6 +890,537 @@ export function useOriginBrowser(options: UseOriginBrowserOptions) {
         if (!predecessors.size && retirement.get(ownerKey) === predecessors)
           retirement.delete(ownerKey);
       });
+    };
+    let active: Attempt | null = null;
+    const launch = (userRetry: ReadonlySet<Attempt>) => {
+      const attempt: Attempt = {
+        ownerKey,
+        holds: 0,
+        disarm: () => undefined,
+        wake: null,
+        everAttached: false,
+        cancelled: false,
+        verified: false,
+        pendingSnapshot: null,
+        attached: false,
+        loadFailed: false,
+        createStarted: false,
+        identity: null,
+        closeTask: null,
+        closeFailed: false,
+        startup: Promise.resolve(),
+        unsubscribe: null,
+        sequence: -1,
+        presentationRevision: 0,
+        presentationKey: "",
+        transport,
+        publish: () => undefined,
+        fail: () => undefined,
+      };
+      current.current = attempt;
+      const live = () => current.current === attempt && !attempt.cancelled;
+      attempt.fail = (operation = "state") => {
+        if (!live()) return;
+        setState({
+          ...initialState,
+          phase: "error",
+          error: "Native browser operation failed.",
+          operationFailure: operation,
+        });
+        void closeAttempt(attempt);
+      };
+      attempt.publish = (value) => {
+        if (
+          !live() ||
+          !attempt.identity ||
+          !validIdentity(value?.identity) ||
+          !sameIdentity(value.identity, attempt.identity)
+        )
+          return;
+        const snapshot = shellSnapshot(value);
+        if (!snapshot) {
+          attempt.fail();
+          return;
+        }
+        if (!attempt.verified) {
+          if (
+            !attempt.pendingSnapshot ||
+            snapshot.sequence > attempt.pendingSnapshot.sequence
+          )
+            attempt.pendingSnapshot = snapshot;
+          return;
+        }
+        if (snapshot.sequence <= attempt.sequence) return;
+        attempt.sequence = snapshot.sequence;
+        // A fresh attempt repairs two causes: the saved connection changed, or
+        // a live tab's private relay ended (native ends it on purpose, so that
+        // its successor binds a new port with new credentials). Every other
+        // cause means the owner, the window or the engine is gone or unsafe.
+        const repair =
+          snapshot.phase !== "failed"
+            ? null
+            : snapshot.failureReason === "source-changed"
+              ? ("source-changed" as const)
+              : snapshot.failureReason === "private-proxy" &&
+                  attempt.everAttached
+                ? ("relay-ended" as const)
+                : null;
+        // Set when the saved changes used their budget up: the error says so.
+        let exhausted = false;
+        if (repair) {
+          const now = Date.now();
+          // A report about the attempt that a restart is already replacing
+          // belongs to that restart, so one restart is under way at most. A
+          // change that reaches the replacement instead ends it in turn, and
+          // native authorises every create from the saved row: the last row
+          // wins.
+          const replacing =
+            !!restartCycle.current && !restartCycle.current.ended;
+          let follow = replacing;
+          if (!replacing && repair === "source-changed") {
+            // Followed however soon after the last one, and apart from the
+            // relay's run. Only their number inside the budget's window is
+            // bounded; Retry, or a restart the user asks for, starts a new
+            // count.
+            const recent = savedChanges.current.filter(
+              (at) => now - at < ORIGIN_BROWSER_LIFECYCLE.sourceChangedBudgetMs,
+            );
+            follow =
+              recent.length < ORIGIN_BROWSER_LIFECYCLE.sourceChangedBudget;
+            if (follow) recent.push(now);
+            savedChanges.current = recent;
+            exhausted = !follow;
+          } else if (!replacing) {
+            // Loop protection: the relay is restarted unless it ended within
+            // the loop window of its last automatic replacement coming up, or
+            // this would be the fourth such restart in a row; a run ends when
+            // the user retries or asks for a restart, or once a replacement
+            // has stayed up for ten minutes.
+            const last = relayRun.current;
+            const up = last && !last.starting ? now - last.at : 0;
+            const run =
+              last && up < ORIGIN_BROWSER_LIFECYCLE.relayEndedRunResetMs
+                ? last.count
+                : 0;
+            follow =
+              !run ||
+              (up >= ORIGIN_BROWSER_LIFECYCLE.relayEndedWindowMs &&
+                run < ORIGIN_BROWSER_LIFECYCLE.relayEndedRunLimit);
+            if (follow)
+              relayRun.current = { count: run + 1, at: now, starting: true };
+          }
+          if (follow) {
+            // Stop accepting actions now; the restart confirms this close.
+            void closeAttempt(attempt);
+            if (!replacing) void beginRestart(repair, true);
+            return;
+          }
+        }
+        // The relay ended before this start showed a page. That is one of the
+        // start's tries, like a relay that could not bind its port, and not a
+        // failed session: close what native created and start once more. Never
+        // both this and the restart above: that one needs a page that was shown.
+        const startFailed =
+          snapshot.phase === "failed" &&
+          snapshot.failureReason === "private-proxy" &&
+          !attempt.everAttached;
+        if (startFailed && budget.used < ORIGIN_BROWSER_LIFECYCLE.startTries) {
+          void closeAttempt(attempt);
+          // The pause is part of this start. Disposal, a final close, a Retry
+          // or a restart ends it, and what is created next is then theirs.
+          const timer = setTimeout(
+            () => {
+              attempt.wake = null;
+              // Second barrier, should an ending ever miss the pause: nothing
+              // is launched over an attempt that is no longer the current one.
+              if (current.current !== attempt) return;
+              retire(attempt);
+              launch(new Set());
+            },
+            ORIGIN_BROWSER_LIFECYCLE.startRetryDelaysMs[budget.used - 1],
+          );
+          attempt.wake = () => clearTimeout(timer);
+          return;
+        }
+        attempt.attached = snapshot.phase === "attached";
+        attempt.everAttached ||= attempt.attached;
+        // A transport failure keeps its context attached for diagnostics and
+        // recovery, but its Chromium error surface must not cover the shell UI.
+        // Update before present(): React state has not committed this snapshot yet.
+        attempt.loadFailed = !!snapshot.loadFailure;
+        setState({
+          ...initialState,
+          snapshot,
+          phase:
+            snapshot.phase === "failed" || snapshot.loadFailure
+              ? "error"
+              : snapshot.phase,
+          error:
+            snapshot.phase === "failed"
+              ? exhausted
+                ? originBrowserSourceChangesExhausted(
+                    ORIGIN_BROWSER_LIFECYCLE.sourceChangedBudget,
+                    ORIGIN_BROWSER_LIFECYCLE.sourceChangedBudgetMs / 60_000,
+                  )
+                : startFailed && budget.used > 1
+                  ? originBrowserStartRetriesExhausted(
+                      originBrowserSessionError(snapshot.failureReason),
+                      budget.used,
+                    )
+                  : originBrowserSessionError(snapshot.failureReason)
+              : snapshot.loadFailure
+                ? originBrowserLoadError(snapshot.loadFailure)
+                : null,
+          // Native may answer before the page is attached: still the restart.
+          restart:
+            snapshot.phase === "starting" && !snapshot.loadFailure
+              ? budget.restart
+              : null,
+        });
+        if (["closing", "closed", "failed"].includes(snapshot.phase)) {
+          void closeAttempt(attempt).then((closed) => {
+            if (current.current !== attempt || snapshot.phase !== "closing")
+              return;
+            setState({
+              ...initialState,
+              phase: closed ? "closed" : "error",
+              error: closed
+                ? null
+                : "Native browser cleanup could not be confirmed.",
+              operationFailure: closed ? null : "cleanup",
+            });
+          });
+        } else present();
+      };
+      setState({ ...initialState, phase: "starting", restart: budget.restart });
+      let startupStage: OriginBrowserStartupStage = "listen";
+      // Native answers every start request within a bound of its own. Past the
+      // shell's bound the request is treated as lost: report it and leave Retry
+      // available. The request itself stays awaited, so a late create is closed.
+      let deadline: ReturnType<typeof setTimeout> | undefined;
+      attempt.disarm = () => {
+        if (deadline !== undefined) clearTimeout(deadline);
+        deadline = undefined;
+      };
+      const arm = (ms: number, expired: () => void) => {
+        attempt.disarm();
+        deadline = setTimeout(() => {
+          deadline = undefined;
+          if (live()) expired();
+        }, ms);
+      };
+      const startTimedOut = () => {
+        const { message, ...startupFailure } =
+          originBrowserStartTimeout(startupStage);
+        setState({
+          ...initialState,
+          phase: "error",
+          error: message,
+          startupFailure,
+        });
+        void closeAttempt(attempt);
+      };
+      const cleanupUnconfirmed = () => {
+        endRestart();
+        setState({
+          ...initialState,
+          phase: "unavailable",
+          unavailableReason: "host-unavailable",
+          error:
+            "Native browser cleanup could not be confirmed. Retry browser to check again before starting a replacement.",
+          operationFailure: "cleanup",
+        });
+        void closeAttempt(attempt);
+      };
+      const unavailable = (
+        reason: OriginBrowserUnavailableReason,
+        runtimeFailure?: unknown,
+      ) => {
+        if (!live()) return;
+        const safeReason: OriginBrowserUnavailableReason = [
+          "runtime-missing",
+          "platform-unsupported",
+          "containment-unverified",
+          "policy-unavailable",
+          "owner-unavailable",
+          "host-unavailable",
+        ].includes(reason)
+          ? reason
+          : "host-unavailable";
+        setState({
+          ...initialState,
+          phase: "unavailable",
+          unavailableReason: safeReason,
+          runtimeFailure: originBrowserRuntimeFailure(runtimeFailure) ?? null,
+        });
+        void closeAttempt(attempt);
+      };
+      const startupFailed = async (error: unknown) => {
+        if (!live()) return;
+        const failure = originBrowserStartupError(startupStage, error);
+        let runtimeFailure: OriginBrowserRuntimeFailure | null = null;
+        // Deferred initialization can fail inside create. Its legacy rejection
+        // string may describe only a wrapper step; prefer the engine's recorded
+        // cause when the same owner/attempt still exists. Never reclassify login,
+        // permission or arbitrary IPC failures from an unrelated global record.
+        if (startupStage === "create" && failure.category === "runtime") {
+          let timer: ReturnType<typeof setTimeout> | undefined;
+          try {
+            ownerGuard.current?.();
+            const refreshed = await Promise.race([
+              transport.status({ owner }),
+              new Promise<null>((resolve) => {
+                timer = setTimeout(() => resolve(null), 3000);
+              }),
+            ]);
+            if (!live()) return;
+            ownerGuard.current?.();
+            if (
+              refreshed?.capability?.availability === "unavailable" &&
+              originBrowserRuntimeFailure(refreshed.runtimeFailure)
+            ) {
+              unavailable(
+                refreshed.capability.reason ?? "host-unavailable",
+                refreshed.runtimeFailure,
+              );
+              return;
+            }
+            if (refreshed?.capability?.availability === "deferred") {
+              runtimeFailure =
+                originBrowserRuntimeFailure(refreshed.runtimeFailure) ?? null;
+            }
+          } catch {
+            // The original allowlisted failure remains useful if this secondary
+            // diagnostic lookup fails. Do not replace it with another IPC error.
+          } finally {
+            if (timer !== undefined) clearTimeout(timer);
+          }
+        }
+        if (!live()) return;
+        // Keep the mapper's safe optional recovery discriminator as well as the
+        // stage/category. Its fixed display message is not a classification.
+        const { message, ...startupFailure } = failure;
+        const engine = getOriginBrowserRuntimeFailureDetail(runtimeFailure);
+        const text = engine ? `${engine.problem} ${engine.nextStep}` : message;
+        setState({
+          ...initialState,
+          phase: "error",
+          error:
+            budget.used > 1 &&
+            (originBrowserStartupRetryable(failure) ||
+              originBrowserStartupStale(failure))
+              ? originBrowserStartRetriesExhausted(text, budget.used)
+              : text,
+          startupFailure,
+          runtimeFailure,
+        });
+        void closeAttempt(attempt);
+      };
+      const start = async () => {
+        // A reconnect cannot overlap an unacknowledged predecessor, including a
+        // create reply which arrived only after its React owner was disposed.
+        // Snapshot the set: a later effect cleanup can enqueue this attempt too.
+        // Iterating the live set could then make startup wait on itself.
+        // The same holds across a remount: the tab this one replaces may still
+        // be closing, or still be waiting for its own create to answer.
+        const predecessors = new Set([
+          ...(retirement.get(ownerKey) ?? []),
+          ...(closing.get(ownerKey) ?? []),
+        ]);
+        if (predecessors.size)
+          arm(
+            lifecycle.current.createTimeoutMs +
+              ORIGIN_BROWSER_LIFECYCLE.closeTimeoutMs,
+            cleanupUnconfirmed,
+          );
+        for (const predecessor of predecessors) {
+          await predecessor.startup;
+          if (!live()) return;
+          const closed = await closeAttempt(
+            predecessor,
+            userRetry.has(predecessor),
+          );
+          if (!live()) return;
+          if (!closed) {
+            // Keep it with this tab: only its explicit Retry may ask again.
+            const unconfirmed = retirement.get(ownerKey) ?? new Set<Attempt>();
+            unconfirmed.add(predecessor);
+            retirement.set(ownerKey, unconfirmed);
+            cleanupUnconfirmed();
+            return;
+          }
+          retirement.get(ownerKey)?.delete(predecessor);
+        }
+        if (!live()) return;
+        const restart = restartCycle.current;
+        if (restart?.quiet && !restart.ended) {
+          // A saved change: nothing is created until the saved row has stopped
+          // changing. The wait ends early with this attempt, or with the
+          // restart; it is bounded by the period's cap either way.
+          const { done } = restart.quiet;
+          await new Promise<void>((resolve) => {
+            attempt.wake = resolve;
+            void done.then(resolve);
+          });
+          attempt.wake = null;
+          if (!live()) return;
+        }
+        if (restart && !restart.ended) {
+          // Work that outlasts the deadline no longer has a replacement to
+          // wait for, so its caller is told that nothing was replaced.
+          arm(ORIGIN_BROWSER_LIFECYCLE.startStepTimeoutMs, () => {
+            endRestart();
+            startTimedOut();
+          });
+          await (restart.work ??= runRestartWork(restart));
+          if (!live()) return;
+        }
+        // Install before create. Resync after the reply to cover early events.
+        arm(ORIGIN_BROWSER_LIFECYCLE.startStepTimeoutMs, startTimedOut);
+        const unsubscribe = await transport.listen(attempt.publish);
+        if (!live()) {
+          unsubscribe();
+          return;
+        }
+        attempt.unsubscribe = unsubscribe;
+        startupStage = "status";
+        arm(ORIGIN_BROWSER_LIFECYCLE.startStepTimeoutMs, startTimedOut);
+        const status = await transport.status({ owner });
+        if (!live()) return;
+        if (status.capability?.availability === "unavailable") {
+          unavailable(
+            status.capability.reason ?? "host-unavailable",
+            status.runtimeFailure,
+          );
+          return;
+        }
+        if (
+          status.capability?.availability !== "available" &&
+          status.capability?.availability !== "deferred"
+        )
+          throw new Error();
+        let requestId: string;
+        let result: OriginBrowserCreateResult;
+        for (;;) {
+          startupStage = "owner-check";
+          requestId = crypto.randomUUID();
+          ownerGuard.current?.();
+          startupStage = "create";
+          attempt.createStarted = true;
+          budget.used++;
+          arm(lifecycle.current.createTimeoutMs, startTimedOut);
+          try {
+            result = await transport.create({
+              ...(quickConnect ? { quickConnect } : {}),
+              owner,
+              expectedSecurityRevision,
+              sourceSessionId,
+              requestId,
+              initialUrl: url,
+              bounds:
+                viewport.current ??
+                lastViewport.current ??
+                knownViewport ??
+                shellBounds(),
+              visible: false,
+              policy: {
+                darkMode: "forced",
+                autoLogin: {
+                  enabled: true,
+                  consent:
+                    consentKind === "existing-grant"
+                      ? { kind: "existing-grant", grantId: grantId! }
+                      : { kind: "required" },
+                },
+              },
+            });
+            break;
+          } catch (error) {
+            const failure = originBrowserStartupError("create", error);
+            // A lease lost to an edit of the saved connection gets one fresh
+            // create, which native authorizes from the saved row again.
+            const lostLease =
+              originBrowserStartupStale(failure) && !budget.stale;
+            if (
+              !live() ||
+              budget.used >= ORIGIN_BROWSER_LIFECYCLE.startTries ||
+              !(lostLease || originBrowserStartupRetryable(failure))
+            )
+              throw error;
+            budget.stale ||= lostLease;
+            // Otherwise the engine may still be starting, or the relay's port
+            // was busy. Nothing native is left to answer, so no successor
+            // waits, and the pause ends early if the attempt does.
+            attempt.createStarted = false;
+            attempt.disarm();
+            await new Promise<void>((resolve) => {
+              const timer = setTimeout(
+                resolve,
+                ORIGIN_BROWSER_LIFECYCLE.startRetryDelaysMs[budget.used - 1],
+              );
+              attempt.wake = () => {
+                clearTimeout(timer);
+                resolve();
+              };
+            });
+            attempt.wake = null;
+            if (!live()) return;
+          }
+        }
+        const identity = result?.snapshot?.identity;
+        if (!validIdentity(identity) || !sameOwner(identity, owner)) {
+          // Never close another owner's tab on a malformed response.
+          attempt.fail();
+          return;
+        }
+        attempt.identity = copyIdentity(identity);
+        if (!live()) {
+          await closeAttempt(attempt);
+          return;
+        }
+        if (result.requestId !== requestId) {
+          attempt.fail();
+          return;
+        }
+        startupStage = "resync";
+        arm(ORIGIN_BROWSER_LIFECYCLE.startStepTimeoutMs, startTimedOut);
+        const refreshed = await transport.status({
+          owner,
+          identity: attempt.identity,
+        });
+        if (!live()) return;
+        if (refreshed.capability?.availability === "unavailable") {
+          unavailable(
+            refreshed.capability.reason ?? "host-unavailable",
+            refreshed.runtimeFailure,
+          );
+          return;
+        }
+        if (refreshed.capability?.availability !== "available")
+          throw new Error();
+        // Fold early native events and both replies before exposing a view. A
+        // newer failure/close must not briefly display an older attached state.
+        attempt.publish(result.snapshot);
+        if (!live()) return;
+        if (refreshed.snapshot) attempt.publish(refreshed.snapshot);
+        if (!live()) return;
+        const latest = attempt.pendingSnapshot;
+        attempt.pendingSnapshot = null;
+        attempt.verified = true;
+        attempt.disarm();
+        const restarted = relayRun.current;
+        if (restarted?.starting) {
+          restarted.starting = false;
+          restarted.at = Date.now();
+        }
+        if (latest) attempt.publish(latest);
+      };
+      attempt.startup = start().catch(startupFailed);
+      active = attempt;
+    };
+    launch(retryCleanup);
+    return () => {
+      if (active) retire(active);
     };
   }, [
     ownerDatabaseId,
@@ -1648,11 +1802,13 @@ export function useOriginBrowser(options: UseOriginBrowserOptions) {
       // An explicit Retry outranks a restart still waiting on its caller,
       // and the user has seen the tab: automatic restarts count from zero.
       endRestart();
-      automaticRestart.current = null;
+      endStartPause();
+      relayRun.current = null;
+      savedChanges.current = [];
       cleanupRetryRequested.current = true;
       setGeneration((value) => value + 1);
     }
-  }, [commandScope, endRestart]);
+  }, [commandScope, endRestart, endStartPause]);
   /** Replaces the attempt in place: confirmed close, then create. Resolves
    * true once the replacement is being created, false when it was refused,
    * superseded or its cleanup stayed unconfirmed. */
@@ -1669,10 +1825,12 @@ export function useOriginBrowser(options: UseOriginBrowserOptions) {
       )
         return Promise.resolve(false);
       const safe = restartReasons.includes(reason) ? reason : "requested";
-      // The shell acting on a cause the run counts is not a user action;
+      // The shell acting on a cause that is counted is not a user action;
       // every other reason is something the user asked for.
-      if (safe !== "source-changed" && safe !== "relay-ended")
-        automaticRestart.current = null;
+      if (safe !== "source-changed" && safe !== "relay-ended") {
+        relayRun.current = null;
+        savedChanges.current = [];
+      }
       return beginRestart(safe, false, beforeCreate);
     },
     [commandScope, beginRestart],

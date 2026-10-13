@@ -8,12 +8,17 @@ import {
 } from "@testing-library/react";
 import { readFileSync } from "node:fs";
 import { useLayoutEffect } from "react";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { OriginBrowserViewport } from "../../src/components/protocol/webBrowser/OriginBrowserViewport";
 import { getOriginBrowserFailureDetails } from "../../src/hooks/protocol/originBrowserFailureDetails";
-import { originBrowserSessionError } from "../../src/hooks/protocol/originBrowserSessionError";
 import {
+  originBrowserSessionError,
+  originBrowserSourceChangesExhausted,
+} from "../../src/hooks/protocol/originBrowserSessionError";
+import {
+  ORIGIN_BROWSER_LIFECYCLE,
   resetOriginBrowserLifecycleForTests,
+  setOriginBrowserQuietPeriodForTests,
   useOriginBrowser,
   type UseOriginBrowserOptions,
 } from "../../src/hooks/protocol/useOriginBrowser";
@@ -27,6 +32,12 @@ import type {
 } from "../../src/types/protocols/originBrowser";
 
 type Browser = ReturnType<typeof useOriginBrowser>;
+
+// Most tests here are about what a restart does, not when it begins: they run
+// without the quiet period after a saved change. Its own tests switch it on.
+beforeEach(() => {
+  setOriginBrowserQuietPeriodForTests(0);
+});
 
 afterEach(() => {
   cleanup();
@@ -156,14 +167,14 @@ function Shell({
   seen(browser);
   return <Viewport close={browser.close} />;
 }
-function mount(options: UseOriginBrowserOptions) {
+function mount(options: UseOriginBrowserOptions, View = Shell) {
   const statuses: Browser["connectionStatus"][] = [];
   const latest: { browser: Browser | null } = { browser: null };
   const seen = (browser: Browser) => {
     latest.browser = browser;
     statuses.push(browser.connectionStatus);
   };
-  const view = render(<Shell options={options} seen={seen} />);
+  const view = render(<View options={options} seen={seen} />);
   return {
     /** Every connection status the shell rendered, in order. */
     statuses,
@@ -171,7 +182,7 @@ function mount(options: UseOriginBrowserOptions) {
       return latest.browser!;
     },
     rerender: (next: UseOriginBrowserOptions) =>
-      view.rerender(<Shell options={next} seen={seen} />),
+      view.rerender(<View options={next} seen={seen} />),
     unmount: view.unmount,
   };
 }
@@ -195,9 +206,12 @@ function Visible({
     />
   );
 }
-async function attached(overrides: Partial<UseOriginBrowserOptions> = {}) {
+async function attached(
+  overrides: Partial<UseOriginBrowserOptions> = {},
+  View = Shell,
+) {
   const f = fixture(overrides);
-  const shell = mount(f.options);
+  const shell = mount(f.options, View);
   act(() => shell.browser.setViewport(bounds));
   await waitFor(() => expect(shell.browser.state.phase).toBe("attached"));
   return { ...f, shell };
@@ -782,6 +796,47 @@ const stopped = async (
   expect(t.shell.browser.connectionStatus).toBe("error");
   expect(t.transport.create).toHaveBeenCalledTimes(creates);
 };
+type Report = (serial: number) => OriginBrowserSnapshot;
+/** The same reports for a second tab of the same connection. */
+const tab2 = { ...owner, sessionId: "tab-2" };
+const endedInTab2 =
+  (failureReason: Reason): Report =>
+  (serial) =>
+    snapshot(serial, {
+      identity: identity(serial, tab2),
+      sequence: 1,
+      phase: "failed",
+      failureReason,
+    });
+/** Automatic restarts for saved changes `first` to `last`, five seconds apart. */
+const followed = async (
+  t: Tab,
+  first: number,
+  last: number,
+  report: Report = sourceChanged,
+) => {
+  for (let serial = first; serial <= last; serial++) {
+    t.emit(report(serial));
+    // Sixty of these: run the mocked IPC chain out instead of polling for it.
+    await turns();
+    expect(t.shell.browser.state.phase).toBe("attached");
+    expect(t.shell.browser.state.snapshot?.identity.attemptId).toBe(
+      `native-attempt-${serial + 1}`,
+    );
+    later(5_000);
+  }
+};
+/** Three automatic relay restarts in a row, each after the loop window. */
+const threeRelayEnds = async (
+  t: Tab,
+  report: Report = (serial) => ended(serial, "private-proxy"),
+) => {
+  for (const serial of [1, 2, 3]) {
+    t.emit(report(serial));
+    await reattached(t, serial + 1);
+    later(10_000);
+  }
+};
 /** Native answers each create before its page is attached. */
 function answersBeforeAttach(
   transport: ReturnType<typeof fixture>["transport"],
@@ -805,7 +860,7 @@ function starting() {
 }
 
 describe("saved connection changed (K1, K2)", () => {
-  it("restarts once for a source-changed report, and stops on a second one", async () => {
+  it("restarts for a source-changed report, and again when the replacement reports another", async () => {
     const t = await attached();
     t.shell.statuses.length = 0;
     t.emit(sourceChanged(1));
@@ -829,42 +884,33 @@ describe("saved connection changed (K1, K2)", () => {
       reason: "source-changed",
       automatic: true,
     });
-    // The replacement reports the same cause straight away: no restart loop.
+    // The replacement reports another change straight away: followed as well.
     t.emit(sourceChanged(2));
-    await turns();
-    expect(t.transport.create).toHaveBeenCalledTimes(2);
-    expect(t.shell.browser.state.phase).toBe("error");
-    expect(t.shell.browser.state.snapshot?.failureReason).toBe(
-      "source-changed",
+    await reattached(t, 3);
+    expect(t.transport.create).toHaveBeenCalledTimes(3);
+    expect(t.transport.close.mock.calls).toEqual([
+      [{ identity: identity(1) }],
+      [{ identity: identity(2) }],
+    ]);
+    expect(new Set(t.shell.statuses)).toEqual(
+      new Set(["reconnecting", "connected"]),
     );
-    expect(t.shell.browser.state.error).toContain("saved connection");
-    expect(t.shell.browser.connectionStatus).toBe("error");
-    // Retry stays available.
-    act(() => t.shell.browser.reconnect());
-    await waitFor(() =>
-      expect(t.shell.browser.state.snapshot?.identity.attemptId).toBe(
-        "native-attempt-3",
-      ),
-    );
+    expect(t.shell.browser.lastRestart).toMatchObject({
+      reason: "source-changed",
+      automatic: true,
+      serial: 2,
+    });
   });
 
-  /** Three automatic restarts in a row, each after the loop window. */
-  const threeInARow = async (t: Tab) => {
-    for (const serial of [1, 2, 3]) {
-      t.emit(sourceChanged(serial));
-      await reattached(t, serial + 1);
-      later(10_000);
-    }
-  };
-
   it.each([undefined, "signature-1"])(
-    "treats a report after the loop window as a fresh change and restarts again (row signature %s, unchanged)",
+    "follows a report seconds after the last restart and one hours later alike (row signature %s, unchanged)",
     async (authoritySignature) => {
       vi.useFakeTimers({ toFake: ["Date"] });
       const t = await attached({ authoritySignature });
+      t.shell.statuses.length = 0;
       t.emit(sourceChanged(1));
       await reattached(t, 2);
-      later(10_000);
+      later(9_999);
       t.emit(sourceChanged(2));
       await reattached(t, 3);
       // Hours later, the same record again: a real change, not rationed.
@@ -876,128 +922,10 @@ describe("saved connection changed (K1, K2)", () => {
       expect(t.shell.browser.lastRestart).toMatchObject({
         reason: "source-changed",
         automatic: true,
+        serial: 3,
       });
     },
   );
-
-  it.each([undefined, "signature-1"])(
-    "stops for a report inside the loop window (row signature %s)",
-    async (authoritySignature) => {
-      vi.useFakeTimers({ toFake: ["Date"] });
-      const t = await attached({ authoritySignature });
-      t.emit(sourceChanged(1));
-      await reattached(t, 2);
-      later(9_999);
-      // A changed row signature does not excuse a repeat this fast either.
-      t.shell.rerender({ ...t.options, authoritySignature: "signature-2" });
-      t.emit(sourceChanged(2));
-      await stopped(t, 2);
-    },
-  );
-
-  it("stops a slow loop at the fourth automatic restart in a row, and Retry starts a new run", async () => {
-    vi.useFakeTimers({ toFake: ["Date"] });
-    const t = await attached();
-    await threeInARow(t);
-    t.emit(sourceChanged(4));
-    await stopped(t, 4);
-    expect(t.shell.browser.state.error).toContain("saved connection");
-    // The user looked at it: the count starts again.
-    act(() => t.shell.browser.reconnect());
-    await reattached(t, 5);
-    later(10_000);
-    t.emit(sourceChanged(5));
-    await reattached(t, 6);
-  });
-
-  it("ends the run once a replacement has stayed up for ten minutes", async () => {
-    vi.useFakeTimers({ toFake: ["Date"] });
-    const t = await attached();
-    await threeInARow(t);
-    later(600_000 - 10_000 - 1);
-    t.emit(sourceChanged(4));
-    await stopped(t, 4);
-
-    const other = await attached({ owner: { ...owner, sessionId: "tab-2" } });
-    const second = (serial: number) =>
-      snapshot(serial, {
-        identity: identity(serial, { ...owner, sessionId: "tab-2" }),
-        sequence: 1,
-        phase: "failed",
-        failureReason: "source-changed",
-      });
-    for (const serial of [1, 2, 3]) {
-      other.emit(second(serial));
-      await reattached(other, serial + 1);
-      later(10_000);
-    }
-    later(600_000 - 10_000);
-    other.emit(second(4));
-    await reattached(other, 5);
-    expect(other.shell.statuses).not.toContain("error");
-  });
-
-  it("ends the run when the user asks for a restart, but not for the shell's own source-changed restart", async () => {
-    vi.useFakeTimers({ toFake: ["Date"] });
-    const t = await attached();
-    await threeInARow(t);
-    // The shell following a saved row is the same cause, not a user action.
-    act(() => {
-      void t.shell.browser.restart("source-changed");
-    });
-    await reattached(t, 5);
-    later(10_000);
-    t.emit(sourceChanged(5));
-    await stopped(t, 5);
-    // A restart that was refused changes nothing either.
-    const stale = t.shell.browser;
-    act(() => t.shell.browser.reconnect());
-    await reattached(t, 6);
-    await act(async () => expect(await stale.restart("requested")).toBe(false));
-
-    const other = await attached({ owner: { ...owner, sessionId: "tab-2" } });
-    const second = (serial: number) =>
-      snapshot(serial, {
-        identity: identity(serial, { ...owner, sessionId: "tab-2" }),
-        sequence: 1,
-        phase: "failed",
-        failureReason: "source-changed",
-      });
-    for (const serial of [1, 2, 3]) {
-      other.emit(second(serial));
-      await reattached(other, serial + 1);
-      later(10_000);
-    }
-    act(() => {
-      void other.shell.browser.restart("requested");
-    });
-    await reattached(other, 5);
-    later(10_000);
-    other.emit(second(5));
-    await reattached(other, 6);
-  });
-
-  it("counts the repeat window from when the replacement came up, not from a slow create", async () => {
-    vi.useFakeTimers({ toFake: ["Date"] });
-    const t = await attached();
-    const creating = deferred<OriginBrowserCreateResult>();
-    t.transport.create.mockReturnValueOnce(creating.promise);
-    t.emit(sourceChanged(1));
-    await waitFor(() => expect(t.transport.create).toHaveBeenCalledTimes(2));
-    vi.setSystemTime(Date.now() + 60_000);
-    await act(async () =>
-      creating.resolve({
-        requestId: t.transport.create.mock.calls[1][0].requestId,
-        snapshot: snapshot(2),
-      }),
-    );
-    await waitFor(() => expect(t.shell.browser.state.phase).toBe("attached"));
-    // It reports the same cause as soon as it is up: still a loop, not a change.
-    t.emit(sourceChanged(2));
-    await turns();
-    expect(t.shell.browser.state.phase).toBe("error");
-    expect(t.transport.create).toHaveBeenCalledTimes(2);
-  });
 
   it("lets the native report explain a rejected navigation instead of failing the tab", async () => {
     const t = await attached();
@@ -1364,7 +1292,419 @@ describe("start watchdog and bounded retry (K3, S5)", () => {
   });
 });
 
-describe("a live tab whose private relay ended (same loop protection as a saved change)", () => {
+describe("saved changes are followed, not rationed", () => {
+  it("applies a second saved change that lands seconds after the tab reconnected for the first", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    const t = await attached();
+    t.shell.statuses.length = 0;
+    t.emit(ended(1, "source-changed"));
+    await reattached(t, 2);
+    later(3_000);
+    t.emit(ended(2, "source-changed"));
+    await reattached(t, 3);
+    expect(t.shell.statuses).not.toContain("error");
+    expect(t.shell.statuses).not.toContain("disconnected");
+  });
+
+  it("applies every one of eight saved changes made inside ten minutes", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    const t = await attached();
+    t.shell.statuses.length = 0;
+    for (let serial = 1; serial <= 8; serial++) {
+      t.emit(ended(serial, "source-changed"));
+      await reattached(t, serial + 1);
+      later(45_000);
+    }
+    expect(t.transport.create).toHaveBeenCalledTimes(9);
+    expect(t.shell.statuses).not.toContain("error");
+  });
+
+  it("follows a change that lands while the replacement is starting with one more restart, and shows no error in between", async () => {
+    const t = await attached();
+    t.shell.statuses.length = 0;
+    // Native answers the replacement's resync with the newer change.
+    t.transport.status.mockImplementation(async (request) => ({
+      capability: { availability: "available" },
+      snapshot: !request.identity
+        ? null
+        : request.identity.attemptId === "native-attempt-2"
+          ? sourceChanged(2)
+          : snapshot(0, { identity: request.identity }),
+    }));
+    t.emit(sourceChanged(1));
+    await reattached(t, 3);
+    expect(t.transport.close.mock.calls).toEqual([
+      [{ identity: identity(1) }],
+      [{ identity: identity(2) }],
+    ]);
+    expect(new Set(t.shell.statuses)).toEqual(
+      new Set(["reconnecting", "connected"]),
+    );
+    expect(t.shell.browser.lastRestart).toMatchObject({
+      reason: "source-changed",
+      automatic: true,
+      serial: 2,
+    });
+    // One restart for the one change that landed, and nothing more by itself.
+    await turns();
+    expect(t.transport.create).toHaveBeenCalledTimes(3);
+  });
+
+  it.each(["source-changed", "private-proxy"] as const)(
+    "folds a %s report about the attempt a restart is already replacing into that restart",
+    async (failureReason) => {
+      const t = await attached();
+      t.shell.statuses.length = 0;
+      act(() => {
+        void t.shell.browser.restart("source-changed");
+        // Native reports on the same attempt before React renders the restart.
+        t.emit(ended(1, failureReason));
+      });
+      await reattached(t, 2);
+      await turns();
+      expect(t.transport.create).toHaveBeenCalledTimes(2);
+      expect(t.transport.close).toHaveBeenCalledExactlyOnceWith({
+        identity: identity(1),
+      });
+      expect(new Set(t.shell.statuses)).toEqual(
+        new Set(["reconnecting", "connected"]),
+      );
+      expect(t.shell.browser.lastRestart).toMatchObject({
+        reason: "source-changed",
+        automatic: false,
+        serial: 1,
+      });
+    },
+  );
+
+  it("stops following at the sixty-first automatic restart inside ten minutes, says so, and Retry starts a new count", async () => {
+    vi.stubGlobal(
+      "ResizeObserver",
+      class {
+        observe() {}
+        unobserve() {}
+        disconnect() {}
+      },
+    );
+    vi.useFakeTimers({ toFake: ["Date"] });
+    const t = await attached({}, Visible);
+    t.shell.statuses.length = 0;
+    await followed(t, 1, 60);
+    expect(t.shell.statuses).not.toContain("error");
+    t.emit(sourceChanged(61));
+    await stopped(t, 61);
+    expect(t.shell.statuses).not.toContain("disconnected");
+    const error = t.shell.browser.state.error!;
+    expect(error).toBe(originBrowserSourceChangesExhausted(60, 10));
+    expect(error).toMatch(/^Native browser session failed: /);
+    expect(error).toContain("kept changing while this tab was open");
+    expect(error).toContain(
+      "restarted automatically 60 times within 10 minutes",
+    );
+    expect(error).toContain(
+      "Use Retry browser to start again with the current settings",
+    );
+    expect(screen.getByRole("alert")).toHaveTextContent(error);
+    // Retry works from here, and the user has seen the tab: a new count.
+    const retry = screen.getByRole("button", { name: "Retry browser" });
+    expect(retry).toBeEnabled();
+    fireEvent.click(retry);
+    await reattached(t, 62);
+    t.emit(sourceChanged(62));
+    await reattached(t, 63);
+  });
+
+  it("counts the automatic restarts of the last ten minutes only", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    const t = await attached();
+    // The first of sixty began five minutes before the last one came up.
+    await followed(t, 1, 60);
+    later(600_000 - 300_000 - 1);
+    t.emit(sourceChanged(61));
+    await stopped(t, 61);
+
+    const other = await attached({ owner: tab2 });
+    await followed(other, 1, 60, endedInTab2("source-changed"));
+    // Ten minutes after the first of them, that one no longer counts.
+    later(600_000 - 300_000);
+    other.emit(endedInTab2("source-changed")(61));
+    await reattached(other, 62);
+    // The second began five seconds later and still does.
+    other.emit(endedInTab2("source-changed")(62));
+    await stopped(other, 62);
+  });
+
+  it("counts neither the shell's own source-changed restart nor a relay restart, and neither clears the count", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    const t = await attached();
+    await followed(t, 1, 59);
+    act(() => {
+      void t.shell.browser.restart("source-changed");
+    });
+    await reattached(t, 61);
+    t.emit(ended(61, "private-proxy"));
+    await reattached(t, 62);
+    // The sixtieth saved change is still followed; the one after it is not.
+    t.emit(sourceChanged(62));
+    await reattached(t, 63);
+    t.emit(sourceChanged(63));
+    await stopped(t, 63);
+  });
+
+  it("starts a new count when the user asks for a restart", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    const t = await attached();
+    await followed(t, 1, 60);
+    act(() => {
+      void t.shell.browser.restart("requested");
+    });
+    await reattached(t, 62);
+    t.emit(sourceChanged(62));
+    await reattached(t, 63);
+  });
+
+  it("repairs a relay that ends seconds after the tab reconnected for a saved change", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    const t = await attached();
+    t.shell.statuses.length = 0;
+    t.emit(ended(1, "source-changed"));
+    await reattached(t, 2);
+    later(3_000);
+    t.emit(ended(2, "private-proxy"));
+    await reattached(t, 3);
+    expect(t.shell.statuses).not.toContain("error");
+    expect(t.shell.browser.lastRestart).toMatchObject({
+      reason: "relay-ended",
+      automatic: true,
+    });
+  });
+
+  it.each([
+    [["source-changed", "private-proxy", "source-changed", "private-proxy"]],
+    [["private-proxy", "source-changed", "private-proxy", "source-changed"]],
+  ] as const)(
+    "keeps a count for each cause, so %j is four restarts and leaves the relay its third",
+    async (causes) => {
+      vi.useFakeTimers({ toFake: ["Date"] });
+      const t = await attached();
+      t.shell.statuses.length = 0;
+      for (const [index, cause] of causes.entries()) {
+        t.emit(ended(index + 1, cause));
+        await reattached(t, index + 2);
+        later(10_000);
+      }
+      expect(t.shell.statuses).not.toContain("error");
+      // The relay's own run is two long: one more, and then it stops.
+      t.emit(ended(5, "private-proxy"));
+      await reattached(t, 6);
+      later(10_000);
+      t.emit(ended(6, "private-proxy"));
+      await stopped(t, 6, "private-proxy");
+      expect(t.shell.statuses).not.toContain("disconnected");
+    },
+  );
+
+  it("follows a saved change after the relay's run is used up, which does not renew that run", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    const t = await attached();
+    await threeRelayEnds(t);
+    t.emit(sourceChanged(4));
+    await reattached(t, 5);
+    later(10_000);
+    t.emit(ended(5, "private-proxy"));
+    await stopped(t, 5, "private-proxy");
+  });
+});
+
+describe("a quiet period before the replacement for a saved change", () => {
+  const { sourceChangedQuietMs: quiet, sourceChangedQuietCapMs: cap } =
+    ORIGIN_BROWSER_LIFECYCLE;
+  /** Full fake timers, the real quiet period, a tab that is up. */
+  async function up() {
+    vi.useFakeTimers();
+    resetOriginBrowserLifecycleForTests();
+    const f = fixture();
+    const shell = mount(f.options);
+    act(() => shell.browser.setViewport(bounds));
+    await advance();
+    expect(shell.browser.state.phase).toBe("attached");
+    shell.statuses.length = 0;
+    return { ...f, shell };
+  }
+
+  it("uses 1.5 s after the last saved change, and 5 s from the first at most", () => {
+    expect(quiet).toBe(1_500);
+    expect(cap).toBe(5_000);
+  });
+
+  it("shows reconnecting at once and creates the replacement when the saved change has settled", async () => {
+    const t = await up();
+    t.emit(sourceChanged(1));
+    expect(t.shell.browser.connectionStatus).toBe("reconnecting");
+    expect(t.shell.browser.state.restart).toBe("source-changed");
+    await advance(quiet - 1);
+    // The ended page is closed at once; only its replacement waits.
+    expect(t.transport.close).toHaveBeenCalledExactlyOnceWith({
+      identity: identity(1),
+    });
+    expect(t.transport.create).toHaveBeenCalledOnce();
+    expect(t.shell.browser.connectionStatus).toBe("reconnecting");
+    await advance(1);
+    expect(t.transport.create).toHaveBeenCalledTimes(2);
+    expect(t.shell.browser.state.phase).toBe("attached");
+    expect(t.shell.statuses).not.toContain("error");
+    expect(t.shell.statuses).not.toContain("disconnected");
+  });
+
+  it("waits again after each further saved change, and makes one replacement for all of them", async () => {
+    const t = await up();
+    t.emit(sourceChanged(1));
+    await advance(1_000);
+    // Nothing runs for native to report on: the shell's restart for the next
+    // write it saw finish is what the hook can see.
+    act(() => {
+      void t.shell.browser.restart("source-changed");
+    });
+    await advance(quiet - 1);
+    expect(t.transport.create).toHaveBeenCalledOnce();
+    await advance(1);
+    expect(t.transport.create).toHaveBeenCalledTimes(2);
+    await advance(60_000);
+    expect(t.transport.create).toHaveBeenCalledTimes(2);
+    expect(t.transport.close).toHaveBeenCalledOnce();
+    expect(t.shell.browser.lastRestart).toMatchObject({
+      reason: "source-changed",
+      automatic: true,
+      serial: 1,
+    });
+  });
+
+  it("is not postponed past 5 s from the first saved change by a steady trickle of them", async () => {
+    const t = await up();
+    t.emit(sourceChanged(1));
+    for (let at = 1_000; at < cap; at += 1_000) {
+      await advance(1_000);
+      act(() => {
+        void t.shell.browser.restart("source-changed");
+      });
+    }
+    await advance(cap - 4_000 - 1);
+    expect(t.transport.create).toHaveBeenCalledOnce();
+    await advance(1);
+    expect(t.transport.create).toHaveBeenCalledTimes(2);
+  });
+
+  it("does not open a quiet period for the shell's own restart for a saved change", async () => {
+    const t = await up();
+    act(() => {
+      void t.shell.browser.restart("source-changed");
+    });
+    await advance();
+    expect(t.transport.create).toHaveBeenCalledTimes(2);
+    expect(t.shell.browser.state.phase).toBe("attached");
+    // Nor does a native report about the attempt that restart is replacing.
+    act(() => {
+      void t.shell.browser.restart("source-changed");
+      t.emit(sourceChanged(2));
+    });
+    await advance();
+    expect(t.transport.create).toHaveBeenCalledTimes(3);
+  });
+
+  it.each(["requested", "settings-saved", "session-cleared"] as const)(
+    "ends the wait for a restart the user asks for (%s)",
+    async (reason) => {
+      const t = await up();
+      t.emit(sourceChanged(1));
+      await advance(500);
+      act(() => {
+        void t.shell.browser.restart(reason);
+        // A saved change after the user asked does not open the wait again.
+        void t.shell.browser.restart("source-changed");
+      });
+      await advance();
+      expect(t.transport.create).toHaveBeenCalledTimes(2);
+      expect(t.shell.browser.state.phase).toBe("attached");
+      expect(vi.getTimerCount()).toBe(0);
+    },
+  );
+
+  it("ends the wait for Retry", async () => {
+    const t = await up();
+    t.emit(sourceChanged(1));
+    await advance(500);
+    act(() => t.shell.browser.reconnect());
+    await advance();
+    expect(t.transport.create).toHaveBeenCalledTimes(2);
+    expect(t.shell.browser.state.phase).toBe("attached");
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it("never waits for a relay that ended", async () => {
+    const t = await up();
+    t.emit(ended(1, "private-proxy"));
+    await advance();
+    expect(t.transport.create).toHaveBeenCalledTimes(2);
+  });
+
+  it("creates nothing for a tab closed during the wait, and leaves no timer", async () => {
+    const t = await up();
+    t.emit(sourceChanged(1));
+    await advance(500);
+    let replaced!: Promise<boolean>;
+    act(() => {
+      replaced = t.shell.browser.restart("source-changed");
+    });
+    act(() => {
+      void t.shell.browser.close();
+    });
+    await advance();
+    // The shell learns that nothing replaced the closed tab.
+    expect(await replaced).toBe(false);
+    expect(vi.getTimerCount()).toBe(0);
+    await advance(60_000);
+    expect(t.transport.create).toHaveBeenCalledOnce();
+    // Not even the replacement's first request to native is made.
+    expect(t.transport.listen).toHaveBeenCalledOnce();
+    expect(t.shell.browser.state.phase).toBe("closed");
+    expect(t.shell.browser.connectionStatus).toBe("disconnected");
+  });
+
+  it("creates nothing for a tab unmounted during the wait, and leaves no timer", async () => {
+    const t = await up();
+    t.emit(sourceChanged(1));
+    await advance(500);
+    const rendered = t.shell.statuses.length;
+    t.shell.unmount();
+    await advance();
+    expect(vi.getTimerCount()).toBe(0);
+    await advance(60_000);
+    expect(t.transport.create).toHaveBeenCalledOnce();
+    expect(t.transport.listen).toHaveBeenCalledOnce();
+    expect(t.shell.statuses).toHaveLength(rendered);
+  });
+
+  it("keeps waiting, without a second replacement, when the address changes during the wait", async () => {
+    const t = await up();
+    t.emit(sourceChanged(1));
+    await advance(1_000);
+    t.shell.rerender({
+      ...t.options,
+      initialUrl: "https://fixture.invalid/other",
+    });
+    await advance(quiet - 1_000 - 1);
+    expect(t.transport.create).toHaveBeenCalledOnce();
+    await advance(1);
+    expect(t.transport.create).toHaveBeenCalledTimes(2);
+    expect(t.transport.create.mock.calls[1][0].initialUrl).toBe(
+      "https://fixture.invalid/other",
+    );
+    await advance(60_000);
+    expect(t.transport.create).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe("a live tab whose private relay ended (loop protection: ten seconds, three in a row, ten minutes)", () => {
   it("restarts the tab once, as its own reason, after the ended attempt is closed", async () => {
     const t = await attached();
     t.shell.statuses.length = 0;
@@ -1407,24 +1747,86 @@ describe("a live tab whose private relay ended (same loop protection as a saved 
     await reattached(t, 4);
   });
 
-  it.each([
-    [["source-changed", "private-proxy", "source-changed", "private-proxy"]],
-    [["private-proxy", "source-changed", "private-proxy", "source-changed"]],
-  ] as const)(
-    "counts both causes in one run, so %j stops at the fourth",
-    async (causes) => {
-      vi.useFakeTimers({ toFake: ["Date"] });
-      const t = await attached();
-      for (const [index, cause] of causes.slice(0, 3).entries()) {
-        t.emit(ended(index + 1, cause));
-        await reattached(t, index + 2);
-        later(10_000);
-      }
-      t.emit(ended(4, causes[3]));
-      await stopped(t, 4, causes[3]);
-      expect(t.shell.statuses).not.toContain("disconnected");
-    },
-  );
+  it("stops a slow loop at the fourth automatic restart in a row, and Retry starts a new run", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    const t = await attached();
+    await threeRelayEnds(t);
+    t.emit(ended(4, "private-proxy"));
+    await stopped(t, 4, "private-proxy");
+    // The user looked at it: the count starts again.
+    act(() => t.shell.browser.reconnect());
+    await reattached(t, 5);
+    later(10_000);
+    t.emit(ended(5, "private-proxy"));
+    await reattached(t, 6);
+  });
+
+  it("ends the run once a replacement has stayed up for ten minutes", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    const t = await attached();
+    await threeRelayEnds(t);
+    later(600_000 - 10_000 - 1);
+    t.emit(ended(4, "private-proxy"));
+    await stopped(t, 4, "private-proxy");
+
+    const other = await attached({ owner: tab2 });
+    await threeRelayEnds(other, endedInTab2("private-proxy"));
+    later(600_000 - 10_000);
+    other.emit(endedInTab2("private-proxy")(4));
+    await reattached(other, 5);
+    expect(other.shell.statuses).not.toContain("error");
+  });
+
+  it("ends the run when the user asks for a restart, but not for the shell's own source-changed restart", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    const t = await attached();
+    await threeRelayEnds(t);
+    // The shell following a saved row is not the user looking at the relay.
+    act(() => {
+      void t.shell.browser.restart("source-changed");
+    });
+    await reattached(t, 5);
+    later(10_000);
+    t.emit(ended(5, "private-proxy"));
+    await stopped(t, 5, "private-proxy");
+    // A restart that was refused changes nothing either.
+    const stale = t.shell.browser;
+    act(() => t.shell.browser.reconnect());
+    await reattached(t, 6);
+    await act(async () => expect(await stale.restart("requested")).toBe(false));
+
+    const other = await attached({ owner: tab2 });
+    await threeRelayEnds(other, endedInTab2("private-proxy"));
+    act(() => {
+      void other.shell.browser.restart("requested");
+    });
+    await reattached(other, 5);
+    later(10_000);
+    other.emit(endedInTab2("private-proxy")(5));
+    await reattached(other, 6);
+  });
+
+  it("counts the repeat window from when the replacement came up, not from a slow create", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    const t = await attached();
+    const creating = deferred<OriginBrowserCreateResult>();
+    t.transport.create.mockReturnValueOnce(creating.promise);
+    t.emit(ended(1, "private-proxy"));
+    await waitFor(() => expect(t.transport.create).toHaveBeenCalledTimes(2));
+    vi.setSystemTime(Date.now() + 60_000);
+    await act(async () =>
+      creating.resolve({
+        requestId: t.transport.create.mock.calls[1][0].requestId,
+        snapshot: snapshot(2),
+      }),
+    );
+    await waitFor(() => expect(t.shell.browser.state.phase).toBe("attached"));
+    // It ends again as soon as it is up: still a loop, not a fresh failure.
+    t.emit(ended(2, "private-proxy"));
+    await turns();
+    expect(t.shell.browser.state.phase).toBe("error");
+    expect(t.transport.create).toHaveBeenCalledTimes(2);
+  });
 
   it.each([
     "database-owner",
@@ -1736,6 +2138,249 @@ describe("reasons native publishes for a tab it ended", () => {
     closed.unmount();
     await advance(60_000);
     expect(other.transport.create).toHaveBeenCalledOnce();
+  });
+});
+
+describe("a pause between two creates ends with the start it belongs to", () => {
+  /** A start whose relay ended `pauses` times before a page was shown: it is
+   * now inside the pause before its next create. */
+  async function paused(pauses: 1 | 2) {
+    const f = starting();
+    const shell = mount(f.options);
+    await advance();
+    f.emit(ended(1, "private-proxy"));
+    if (pauses === 2) {
+      await advance(500);
+      f.emit(ended(2, "private-proxy"));
+    }
+    await advance(100);
+    expect(f.transport.create).toHaveBeenCalledTimes(pauses);
+    expect(shell.browser.state.phase).toBe("starting");
+    return { ...f, shell };
+  }
+  const closes = (f: ReturnType<typeof fixture>, serials: number[]) =>
+    expect(f.transport.close.mock.calls).toEqual(
+      serials.map((serial) => [{ identity: identity(serial) }]),
+    );
+
+  it.each([1, 2] as const)(
+    "closing the tab during pause %i issues no create, leaves no view, no timer and no later render",
+    async (pauses) => {
+      vi.useFakeTimers();
+      const t = await paused(pauses);
+      const rendered = t.shell.statuses.length;
+      t.shell.unmount();
+      await advance();
+      // Cancelled, not merely ignored when it fires.
+      expect(vi.getTimerCount()).toBe(0);
+      await advance(60_000);
+      expect(t.transport.create).toHaveBeenCalledTimes(pauses);
+      closes(t, pauses === 1 ? [1] : [1, 2]);
+      expect(t.shell.statuses).toHaveLength(rendered);
+    },
+  );
+
+  it("closing the tab exactly as the pause ends issues no create and leaves no view", async () => {
+    vi.useFakeTimers();
+    const t = await paused(1);
+    await advance(399);
+    const rendered = t.shell.statuses.length;
+    act(() => {
+      vi.advanceTimersByTime(1);
+      t.shell.unmount();
+    });
+    await advance(60_000);
+    expect(t.transport.create).toHaveBeenCalledOnce();
+    closes(t, [1]);
+    expect(vi.getTimerCount()).toBe(0);
+    // At most the render of the retry itself, none after the tab was closed.
+    expect(t.shell.statuses.length - rendered).toBeLessThanOrEqual(1);
+  });
+
+  it("follows a create that was already issued when the tab closed with its close", async () => {
+    vi.useFakeTimers();
+    const t = await paused(1);
+    const late = deferred<OriginBrowserCreateResult>();
+    t.transport.create.mockReturnValueOnce(late.promise);
+    await advance(400);
+    expect(t.transport.create).toHaveBeenCalledTimes(2);
+    t.shell.unmount();
+    await act(async () =>
+      late.resolve({
+        requestId: t.transport.create.mock.calls[1][0].requestId,
+        snapshot: snapshot(2, { phase: "starting" }),
+      }),
+    );
+    await advance(60_000);
+    closes(t, [1, 2]);
+    expect(t.transport.create).toHaveBeenCalledTimes(2);
+    expect(t.transport.control).not.toHaveBeenCalled();
+  });
+
+  it("retries the start only after the ended view is confirmed closed, and does not ask twice by itself", async () => {
+    vi.useFakeTimers();
+    const f = starting();
+    f.transport.close.mockRejectedValueOnce(new Error("native secret"));
+    const shell = mount(f.options);
+    await advance();
+    f.emit(ended(1, "private-proxy"));
+    await advance(60_000);
+    // The retry of the start found the first view unconfirmed and stopped.
+    expect(f.transport.create).toHaveBeenCalledOnce();
+    closes(f, [1]);
+    expect(shell.browser.state).toMatchObject({
+      phase: "unavailable",
+      unavailableReason: "host-unavailable",
+      operationFailure: "cleanup",
+    });
+    expect(JSON.stringify(shell.browser.state)).not.toContain("secret");
+    // The user's Retry asks again, and then the start goes on.
+    act(() => shell.browser.reconnect());
+    await advance();
+    closes(f, [1, 1]);
+    expect(f.transport.create).toHaveBeenCalledTimes(2);
+  });
+
+  it.each([1, 2] as const)(
+    "a final close during pause %i is final: no create follows and the tab ends closed",
+    async (pauses) => {
+      vi.useFakeTimers();
+      const t = await paused(pauses);
+      act(() => {
+        void t.shell.browser.close();
+      });
+      await advance();
+      const pending = vi.getTimerCount();
+      await advance(60_000);
+      // The closed tab does not come back.
+      expect(t.transport.create).toHaveBeenCalledTimes(pauses);
+      expect(t.shell.browser.state.phase).toBe("closed");
+      expect(t.shell.browser.connectionStatus).toBe("disconnected");
+      closes(t, pauses === 1 ? [1] : [1, 2]);
+      expect(pending).toBe(0);
+    },
+  );
+
+  it("a final close exactly as the pause ends is still final", async () => {
+    vi.useFakeTimers();
+    const t = await paused(1);
+    await advance(399);
+    act(() => {
+      vi.advanceTimersByTime(1);
+      void t.shell.browser.close();
+    });
+    await advance(60_000);
+    expect(t.transport.create).toHaveBeenCalledOnce();
+    expect(t.shell.browser.state.phase).toBe("closed");
+    expect(t.shell.browser.connectionStatus).toBe("disconnected");
+    closes(t, [1]);
+  });
+
+  it.each(["requested", "source-changed", "relay-ended"] as const)(
+    "a %s restart asked for during the pause is the only next start, even if the pause ends before React renders it",
+    async (reason) => {
+      vi.useFakeTimers();
+      const t = await paused(1);
+      act(() => {
+        void t.shell.browser.restart(reason);
+        // The pause ended with the request, not with a later render.
+        expect(vi.getTimerCount()).toBe(0);
+        vi.advanceTimersByTime(400);
+      });
+      await advance(60_000);
+      expect(t.transport.create).toHaveBeenCalledTimes(2);
+      closes(t, [1]);
+      // It is that restart, not a silent continuation of the old start.
+      expect(t.shell.browser.state.restart).toBe(reason);
+      expect(t.shell.browser.connectionStatus).toBe("reconnecting");
+      expect(t.shell.browser.lastRestart).toMatchObject({
+        reason,
+        automatic: false,
+      });
+      expect(t.shell.statuses).not.toContain("disconnected");
+      expect(t.shell.statuses).not.toContain("error");
+    },
+  );
+
+  it("a Retry asked for during the pause is a new start with its own three creates, even if the pause ends first", async () => {
+    vi.useFakeTimers();
+    const t = await paused(1);
+    act(() => {
+      t.shell.browser.reconnect();
+      expect(vi.getTimerCount()).toBe(0);
+      vi.advanceTimersByTime(400);
+    });
+    await advance();
+    expect(t.transport.create).toHaveBeenCalledTimes(2);
+    t.emit(ended(2, "private-proxy"));
+    await advance(500);
+    expect(t.transport.create).toHaveBeenCalledTimes(3);
+    t.emit(ended(3, "private-proxy"));
+    await advance(2_000);
+    // The third create of the user's own start, not the end of the old one.
+    expect(t.transport.create).toHaveBeenCalledTimes(4);
+    expect(t.shell.statuses).not.toContain("error");
+    t.emit(ended(4, "private-proxy"));
+    await advance(60_000);
+    expect(t.transport.create).toHaveBeenCalledTimes(4);
+    expect(t.shell.browser.state.phase).toBe("error");
+  });
+
+  it.each([
+    [1, 100],
+    [2, 600],
+  ] as const)(
+    "closing the tab while create %i waits to be retried cancels that wait",
+    async (creates, elapsed) => {
+      vi.useFakeTimers();
+      const f = fixture();
+      f.transport.create.mockRejectedValue(engineStarting);
+      const shell = mount(f.options);
+      await advance(elapsed);
+      expect(f.transport.create).toHaveBeenCalledTimes(creates);
+      const rendered = shell.statuses.length;
+      shell.unmount();
+      await advance();
+      expect(vi.getTimerCount()).toBe(0);
+      await advance(60_000);
+      expect(f.transport.create).toHaveBeenCalledTimes(creates);
+      expect(f.transport.close).not.toHaveBeenCalled();
+      expect(shell.statuses).toHaveLength(rendered);
+    },
+  );
+
+  it("a Retry while a create waits to be retried replaces the start without an extra create", async () => {
+    vi.useFakeTimers();
+    const f = fixture();
+    f.transport.create.mockRejectedValueOnce(engineStarting);
+    const shell = mount(f.options);
+    await advance(100);
+    expect(f.transport.create).toHaveBeenCalledOnce();
+    act(() => shell.browser.reconnect());
+    await advance();
+    expect(f.transport.create).toHaveBeenCalledTimes(2);
+    expect(shell.browser.state.phase).toBe("attached");
+    await advance(60_000);
+    expect(f.transport.create).toHaveBeenCalledTimes(2);
+    expect(f.transport.close).not.toHaveBeenCalled();
+  });
+
+  it("a final close while a create waits to be retried does not wait the pause out", async () => {
+    vi.useFakeTimers();
+    const f = fixture();
+    f.transport.create.mockRejectedValue(engineStarting);
+    const shell = mount(f.options);
+    await advance(100);
+    expect(f.transport.create).toHaveBeenCalledOnce();
+    act(() => {
+      void shell.browser.close();
+    });
+    await advance();
+    // Closed at once, not when the pause would have ended.
+    expect(shell.browser.state.phase).toBe("closed");
+    expect(vi.getTimerCount()).toBe(0);
+    await advance(60_000);
+    expect(f.transport.create).toHaveBeenCalledOnce();
   });
 });
 
