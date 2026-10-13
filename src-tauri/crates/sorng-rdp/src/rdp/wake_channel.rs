@@ -71,6 +71,27 @@ pub struct CheckpointReport {
     /// Input is transient across transport checkpoints: replaying stale keys or
     /// clicks after reconnect could target a different remote screen.
     pub dropped_input_events: u64,
+    /// Credential typing requests are transient for the same reason. Dropping
+    /// one tells its sender that nothing was typed.
+    pub dropped_credential_inputs: u64,
+}
+
+/// Counts `command` in `report` when it is input that must not outlive the
+/// transport it was aimed at, and says whether it is.
+fn count_transient_input(command: &RdpCommand, report: &mut CheckpointReport) -> bool {
+    match command {
+        RdpCommand::Input(events) => {
+            report.dropped_input_events = report
+                .dropped_input_events
+                .saturating_add(events.len() as u64);
+            true
+        }
+        RdpCommand::CredentialInput(_) => {
+            report.dropped_credential_inputs = report.dropped_credential_inputs.saturating_add(1);
+            true
+        }
+        _ => false,
+    }
 }
 
 fn regular_command_byte_weight(command: &RdpCommand) -> usize {
@@ -78,6 +99,9 @@ fn regular_command_byte_weight(command: &RdpCommand) -> usize {
         RdpCommand::Input(events) => events.len().saturating_mul(std::mem::size_of::<
             crate::ironrdp::pdu::input::fast_path::FastPathInputEvent,
         >()),
+        RdpCommand::CredentialInput(request) => request
+            .unit_count()
+            .saturating_mul(std::mem::size_of::<u16>()),
         RdpCommand::ClipboardCopy(text) => text.len(),
         RdpCommand::ClipboardCopyFiles(entries) => entries.iter().fold(
             entries
@@ -306,19 +330,19 @@ impl WakeReceiver {
     /// command's permit remains owned by the deferred envelope, so this queue
     /// and the live channel share one hard bound.
     pub fn preserve_pending_for_checkpoint(&mut self) -> CheckpointReport {
+        let mut report = CheckpointReport {
+            status: CheckpointStatus::Continue,
+            dropped_input_events: 0,
+            dropped_credential_inputs: 0,
+        };
         if self.shutdown_requested.load(Ordering::Acquire) {
-            return CheckpointReport {
-                status: CheckpointStatus::Shutdown,
-                dropped_input_events: 0,
-            };
+            report.status = CheckpointStatus::Shutdown;
+            return report;
         }
 
-        let mut dropped_input_events = 0u64;
         let mut durable_deferred = VecDeque::with_capacity(self.deferred.len());
         while let Some(queued) = self.deferred.pop_front() {
-            if let RdpCommand::Input(events) = &queued.command {
-                dropped_input_events = dropped_input_events.saturating_add(events.len() as u64);
-            } else {
+            if !count_transient_input(&queued.command, &mut report) {
                 durable_deferred.push_back(queued);
             }
         }
@@ -327,32 +351,19 @@ impl WakeReceiver {
         loop {
             match self.cmd_rx.try_recv() {
                 Ok(queued) => {
-                    if let RdpCommand::Input(events) = &queued.command {
-                        dropped_input_events =
-                            dropped_input_events.saturating_add(events.len() as u64);
-                    } else {
+                    if !count_transient_input(&queued.command, &mut report) {
                         self.deferred.push_back(queued);
                     }
                 }
-                Err(mpsc::error::TryRecvError::Empty) => {
-                    return CheckpointReport {
-                        status: CheckpointStatus::Continue,
-                        dropped_input_events,
-                    };
-                }
+                Err(mpsc::error::TryRecvError::Empty) => return report,
                 Err(mpsc::error::TryRecvError::Disconnected) => {
                     // Commands accepted before the final sender disappeared
                     // remain executable. Report terminal disconnect only when
                     // there is no preserved work left to service.
-                    let status = if self.deferred.is_empty() {
-                        CheckpointStatus::Disconnected
-                    } else {
-                        CheckpointStatus::Continue
-                    };
-                    return CheckpointReport {
-                        status,
-                        dropped_input_events,
-                    };
+                    if self.deferred.is_empty() {
+                        report.status = CheckpointStatus::Disconnected;
+                    }
+                    return report;
                 }
             }
         }
@@ -583,6 +594,64 @@ mod tests {
             receiver.try_recv(),
             Err(mpsc::error::TryRecvError::Empty)
         ));
+    }
+
+    fn credential_request(
+        units: usize,
+    ) -> (
+        crate::rdp::input::CredentialInputRequest,
+        crate::rdp::input::CredentialInputReceipt,
+    ) {
+        let text = crate::rdp::input::credential_text_input(&"s".repeat(units))
+            .expect("synthetic credential text");
+        crate::rdp::input::credential_input_request(text)
+    }
+
+    #[tokio::test]
+    async fn checkpoint_drops_credential_input_and_tells_its_sender_nothing_was_typed() {
+        use crate::rdp::input::CredentialInputFailure;
+
+        let (sender, mut receiver) = create_wake_channel().expect("wake channel");
+        let (request, receipt) = credential_request(300);
+        sender.send(RdpCommand::Reconnect).expect("reconnect");
+        sender
+            .send(RdpCommand::CredentialInput(request))
+            .expect("credential input");
+        sender
+            .send(RdpCommand::ClipboardPaste)
+            .expect("clipboard paste");
+
+        let report = receiver.preserve_pending_for_checkpoint();
+        assert_eq!(report.status, CheckpointStatus::Continue);
+        assert_eq!(report.dropped_credential_inputs, 1);
+        assert_eq!(report.dropped_input_events, 0);
+        // The credential is gone for good: a later checkpoint or the live loop
+        // can never replay it against a different remote screen.
+        assert!(matches!(receiver.try_recv(), Ok(RdpCommand::Reconnect)));
+        assert!(matches!(
+            receiver.try_recv(),
+            Ok(RdpCommand::ClipboardPaste)
+        ));
+        assert!(matches!(
+            receiver.try_recv(),
+            Err(mpsc::error::TryRecvError::Empty)
+        ));
+        let reported = tokio::time::timeout(
+            std::time::Duration::from_secs(5),
+            receipt.wait(std::time::Duration::from_secs(600)),
+        )
+        .await
+        .expect("the sender is answered at the checkpoint, not at its timeout");
+        assert_eq!(reported, Err(CredentialInputFailure::NotSent));
+    }
+
+    #[test]
+    fn credential_input_weighs_its_units_in_the_queue_budget() {
+        let (request, _receipt) = credential_request(1024);
+        assert_eq!(
+            regular_command_byte_weight(&RdpCommand::CredentialInput(request)),
+            std::mem::size_of::<RdpCommand>() + 1024 * std::mem::size_of::<u16>()
+        );
     }
 
     #[test]

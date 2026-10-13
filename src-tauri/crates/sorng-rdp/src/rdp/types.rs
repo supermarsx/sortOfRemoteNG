@@ -3,6 +3,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
 use super::frame_channel::{DynFrameChannel, FrameDeliveryCredits};
+use super::input::CredentialInputRequest;
 use super::session_state::SessionStateSnapshot;
 use super::wake_channel::WakeSender;
 use crate::ironrdp::pdu::input::fast_path::FastPathInputEvent;
@@ -589,6 +590,10 @@ mod activity_control_tests {
 
 pub enum RdpCommand {
     Input(Vec<FastPathInputEvent>),
+    /// Credential text to type as one uninterrupted run. Unlike `Input` it is
+    /// never shed by the input backlog limit, and its sender is told how it
+    /// ended.
+    CredentialInput(CredentialInputRequest),
     Shutdown,
     /// Attach a new frame channel viewer (for session persistence).
     AttachViewer(DynFrameChannel),

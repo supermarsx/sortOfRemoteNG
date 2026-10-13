@@ -28,6 +28,7 @@ use tokio::sync::mpsc;
 use super::cert_trust::classify_security_error_for_lifecycle;
 use super::frame_delivery::*;
 use super::frame_store::SharedFrameStoreState;
+use super::input::{CredentialInputRequest, CredentialInputWrite, FASTPATH_INPUT_PDU_MAX_EVENTS};
 #[cfg(feature = "rdp-multimon")]
 use super::multimon::build_display_control_messages;
 use super::network::{
@@ -56,6 +57,12 @@ fn preserve_at_transport_checkpoint(
         log::warn!(
             "RDP session {session_id}: dropped {} transient input events at {checkpoint} checkpoint",
             report.dropped_input_events
+        );
+    }
+    if report.dropped_credential_inputs > 0 {
+        log::warn!(
+            "RDP session {session_id}: dropped {} credential input request(s) at {checkpoint} checkpoint; nothing was typed",
+            report.dropped_credential_inputs
         );
     }
     report.status
@@ -1993,6 +2000,83 @@ fn send_live_full_frame(
     )
 }
 
+/// Maximum input events coalesced per loop iteration.
+const INPUT_BACKLOG_LIMIT: usize = 512;
+
+/// One piece of a command drain's input, in the order it must reach the wire.
+enum QueuedInput<'a> {
+    /// Ordinary events that fit one fast-path input PDU.
+    Events(&'a [FastPathInputEvent]),
+    /// One credential, typed as an uninterrupted run of its own PDUs.
+    Credential(CredentialInputRequest),
+}
+
+/// Input accepted during one drain of the command queue, in arrival order.
+#[derive(Default)]
+struct DrainedInput {
+    /// Ordinary events, coalesced up to `INPUT_BACKLOG_LIMIT`.
+    events: Vec<FastPathInputEvent>,
+    /// Each credential with the number of ordinary events accepted before it.
+    credentials: Vec<(usize, CredentialInputRequest)>,
+    dropped_events: u64,
+}
+
+impl DrainedInput {
+    fn clear(&mut self) {
+        self.events.clear();
+        self.credentials.clear();
+        self.dropped_events = 0;
+    }
+
+    fn push_events(&mut self, events: Vec<FastPathInputEvent>) {
+        if self.events.len() < INPUT_BACKLOG_LIMIT {
+            self.events.extend(events);
+        } else {
+            self.dropped_events += events.len() as u64;
+        }
+    }
+
+    /// A credential is typed whole or its sender is told otherwise, so the
+    /// backlog limit never sheds it.
+    fn push_credential(&mut self, request: CredentialInputRequest) {
+        self.credentials.push((self.events.len(), request));
+    }
+
+    /// Everything accepted, in arrival order. Ordinary events come in runs
+    /// that fit one PDU; a credential comes whole, between the events accepted
+    /// before and after it. Credentials not taken are dropped unsent.
+    fn in_arrival_order(&mut self) -> impl Iterator<Item = QueuedInput<'_>> {
+        let events = self.events.as_slice();
+        let mut credentials = self.credentials.drain(..).peekable();
+        let mut sent = 0;
+        std::iter::from_fn(move || {
+            let run_end = credentials
+                .peek()
+                .map_or(events.len(), |(position, _)| *position);
+            if sent < run_end {
+                let run = &events[sent..run_end.min(sent + FASTPATH_INPUT_PDU_MAX_EVENTS)];
+                sent += run.len();
+                return Some(QueuedInput::Events(run));
+            }
+            credentials
+                .next()
+                .map(|(_, request)| QueuedInput::Credential(request))
+        })
+    }
+}
+
+/// Writes one input PDU and asks the transport to hand it on now. rustls
+/// reports a failed socket write only on the next call, so without the flush
+/// a dead connection would pass for delivered input. Back-pressure is not a
+/// failure: the bytes stay queued in order.
+fn write_and_flush(stream: &mut impl io::Write, pdu: &[u8]) -> io::Result<()> {
+    stream.write_all(pdu)?;
+    match stream.flush() {
+        Err(error) if !is_timeout_error(&error) => Err(error),
+        _ => Ok(()),
+    }
+}
+
 #[derive(Default)]
 struct FramePacer {
     interval: Option<Duration>,
@@ -2383,7 +2467,7 @@ fn run_active_session_loop(
     let mut frame_flow = FrameFlowController::new(FrameFlowBudget::default());
 
     // Reusable buffers
-    let mut merged_inputs: Vec<FastPathInputEvent> = Vec::new();
+    let mut pending_input = DrainedInput::default();
     // Only the current GFX output leaves the producer mailbox. Its RGBA row
     // cursor survives credit waits; later outputs remain in the count/48 MiB
     // bounded mailbox until this one is fully delivered.
@@ -2391,9 +2475,6 @@ fn run_active_session_loop(
     let mut gfx_refresh_needed = false;
     let mut last_gfx_refresh: Option<Instant> = None;
     let mut prefer_gfx = true;
-
-    /// Maximum input events coalesced per loop iteration.
-    const INPUT_BACKLOG_LIMIT: usize = 512;
 
     // Max time to sleep in the poller (for stats/keepalive timers).
     let poll_timeout = stats_interval.min(Duration::from_secs(5));
@@ -2500,10 +2581,9 @@ fn run_active_session_loop(
             // so read_pdu() below acts as the timer. No explicit wait.
         }
         // - Drain ALL pending commands (input coalescing) -
-        merged_inputs.clear();
+        pending_input.clear();
         let mut should_break = false;
         let mut should_reconnect = false;
-        let mut input_dropped = 0u64;
         let mut requested_resize: Option<(u16, u16)> = None;
         loop {
             match cmd_rx.try_recv() {
@@ -2522,13 +2602,8 @@ fn run_active_session_loop(
                     should_break = true;
                     break;
                 }
-                Ok(RdpCommand::Input(events)) => {
-                    if merged_inputs.len() < INPUT_BACKLOG_LIMIT {
-                        merged_inputs.extend(events);
-                    } else {
-                        input_dropped += events.len() as u64;
-                    }
-                }
+                Ok(RdpCommand::Input(events)) => pending_input.push_events(events),
+                Ok(RdpCommand::CredentialInput(request)) => pending_input.push_credential(request),
                 Ok(RdpCommand::SetDesktopSize { width, height }) => {
                     requested_resize = Some((width, height));
                 }
@@ -2664,6 +2739,7 @@ fn run_active_session_loop(
                 Ok(RdpCommand::SignOut) => {
                     log::info!("RDP session {session_id}: sign-out requested");
                     use crate::ironrdp::pdu::input::fast_path::KeyboardFlags;
+                    let merged_inputs = &mut pending_input.events;
                     let win_press =
                         FastPathInputEvent::KeyboardEvent(KeyboardFlags::EXTENDED, 0x5B);
                     let r_press = FastPathInputEvent::KeyboardEvent(KeyboardFlags::empty(), 0x13);
@@ -2692,6 +2768,7 @@ fn run_active_session_loop(
                 Ok(RdpCommand::ForceReboot) => {
                     log::info!("RDP session {session_id}: force reboot requested");
                     use crate::ironrdp::pdu::input::fast_path::KeyboardFlags;
+                    let merged_inputs = &mut pending_input.events;
                     let win_press =
                         FastPathInputEvent::KeyboardEvent(KeyboardFlags::EXTENDED, 0x5B);
                     let r_press = FastPathInputEvent::KeyboardEvent(KeyboardFlags::empty(), 0x13);
@@ -2905,9 +2982,10 @@ fn run_active_session_loop(
         if should_reconnect {
             return SessionLoopExit::ReconnectRequested;
         }
-        if input_dropped > 0 {
+        if pending_input.dropped_events > 0 {
             log::warn!(
-                "RDP session {session_id}: dropped {input_dropped} input events (backlog > {INPUT_BACKLOG_LIMIT})"
+                "RDP session {session_id}: dropped {} input events (backlog > {INPUT_BACKLOG_LIMIT})",
+                pending_input.dropped_events
             );
         }
 
@@ -2944,13 +3022,60 @@ fn run_active_session_loop(
             }
         }
 
-        // Send all coalesced input in a single batch
-        if !merged_inputs.is_empty() {
+        // Send the drained input in arrival order. A fast-path input PDU holds
+        // at most 255 events, so a longer run goes out as consecutive PDUs.
+        for input in pending_input.in_arrival_order() {
+            let events = match input {
+                QueuedInput::Events(events) => events,
+                QueuedInput::Credential(request) => {
+                    let written = request.write(|pdu| {
+                        stats
+                            .bytes_sent
+                            .fetch_add(pdu.len() as u64, Ordering::Relaxed);
+                        stats.pdus_sent.fetch_add(1, Ordering::Relaxed);
+                        write_and_flush(est.tls_framed.get_inner_mut().0, pdu)
+                    });
+                    match written {
+                        CredentialInputWrite::Complete { events } => {
+                            stats.record_input_sent_batch(events as u64);
+                        }
+                        CredentialInputWrite::Withdrawn => {
+                            log::info!(
+                                "RDP session {session_id}: credential input was withdrawn before it was typed"
+                            );
+                        }
+                        CredentialInputWrite::Unencodable => {
+                            log::warn!(
+                                "RDP {session_id}: credential input stopped: a PDU could not be encoded"
+                            );
+                            emit_log(
+                                event_emitter,
+                                log_sink,
+                                "warn",
+                                "Credential input stopped: a PDU could not be encoded".to_string(),
+                                session_id,
+                            );
+                        }
+                        CredentialInputWrite::TransportFailed(error) => {
+                            let msg = format!("Write failed: {error}");
+                            emit_log(
+                                event_emitter,
+                                log_sink,
+                                "warn",
+                                format!("Network error (will reconnect): {msg}"),
+                                session_id,
+                            );
+                            return SessionLoopExit::NetworkError(msg);
+                        }
+                    }
+                    continue;
+                }
+            };
             // Single batch update — avoids N separate Instant::now() calls.
-            stats.record_input_sent_batch(merged_inputs.len() as u64);
+            stats.record_input_sent_batch(events.len() as u64);
             match est
                 .active_stage
-                .process_fastpath_input(&mut est.image, &merged_inputs)
+                .process_fastpath_input(&mut est.image, events)
             {
                 Ok(outputs) => {
                     if activity_state.should_emit_output(viewer_detached, activity_control) {
@@ -4366,6 +4491,10 @@ mod runner_tests {
     use crate::gfx::processor::{bounded_gfx_frame_channel, GfxFrame, GfxOutput};
     use crate::rdp::frame_channel::FrameChannel;
     use crate::rdp::frame_flow_control::{FrameDisposition, FramePressureState};
+    use crate::rdp::input::{
+        credential_input_request, credential_text_input, CredentialInputFailure,
+        CredentialInputReceipt,
+    };
     use sorng_core::events::{AppEventEmitter, DynEventEmitter};
     use std::sync::atomic::{AtomicBool, Ordering as AtomicBoolOrdering};
 
@@ -5135,5 +5264,315 @@ mod runner_tests {
             .to_string()
             .contains("session_shutdown"));
         assert!(!establish_called);
+    }
+
+    fn key(scancode: u8) -> FastPathInputEvent {
+        FastPathInputEvent::KeyboardEvent(
+            crate::ironrdp::pdu::input::fast_path::KeyboardFlags::empty(),
+            scancode,
+        )
+    }
+
+    fn credential(units: usize) -> (CredentialInputRequest, CredentialInputReceipt) {
+        let text = credential_text_input(&"s".repeat(units)).expect("synthetic credential text");
+        credential_input_request(text)
+    }
+
+    /// What reached the wire, in order: the scancodes of one ordinary PDU, or
+    /// the number of PDUs one credential was typed in.
+    #[derive(Debug, PartialEq)]
+    enum Sent {
+        Events(Vec<u8>),
+        Credential { pdus: usize },
+    }
+
+    fn send_all(input: &mut DrainedInput) -> Vec<Sent> {
+        input
+            .in_arrival_order()
+            .map(|queued| match queued {
+                QueuedInput::Events(events) => {
+                    // The session's encoder refuses a run it cannot put in one PDU.
+                    crate::ironrdp::pdu::input::fast_path::FastPathInput::new(events.to_vec())
+                        .expect("one fast-path input PDU");
+                    Sent::Events(
+                        events
+                            .iter()
+                            .map(|event| match event {
+                                FastPathInputEvent::KeyboardEvent(_, scancode) => *scancode,
+                                _ => panic!("ordinary test input is scancodes"),
+                            })
+                            .collect(),
+                    )
+                }
+                QueuedInput::Credential(request) => {
+                    let mut pdus = 0;
+                    let written = request.write(|_| {
+                        pdus += 1;
+                        Ok(())
+                    });
+                    assert!(matches!(written, CredentialInputWrite::Complete { .. }));
+                    Sent::Credential { pdus }
+                }
+            })
+            .collect()
+    }
+
+    #[test]
+    fn ordinary_input_that_fits_one_pdu_is_still_sent_as_one_batch() {
+        let mut input = DrainedInput::default();
+        input.push_events(vec![key(1), key(2)]);
+        input.push_events(vec![key(3)]);
+        input.push_events((4..=255).map(key).collect());
+
+        assert_eq!(send_all(&mut input), [Sent::Events((1..=255).collect())]);
+        assert_eq!(input.dropped_events, 0);
+    }
+
+    #[test]
+    fn ordinary_input_over_the_pdu_limit_goes_out_as_consecutive_pdus() {
+        let scancodes: Vec<u8> = (0..600u32).map(|index| (index % 251) as u8).collect();
+        let mut input = DrainedInput::default();
+        // One command may carry any number of events while the backlog has room.
+        input.push_events(scancodes.iter().copied().map(key).collect());
+
+        assert_eq!(
+            send_all(&mut input),
+            [
+                Sent::Events(scancodes[..255].to_vec()),
+                Sent::Events(scancodes[255..510].to_vec()),
+                Sent::Events(scancodes[510..].to_vec()),
+            ]
+        );
+    }
+
+    #[tokio::test]
+    async fn the_backlog_limit_sheds_ordinary_input_but_never_a_credential() {
+        let mut input = DrainedInput::default();
+        for index in 0..INPUT_BACKLOG_LIMIT {
+            input.push_events(vec![key((index % 251) as u8)]);
+        }
+        let (request, receipt) = credential(300);
+        input.push_credential(request);
+        input.push_events(vec![key(7), key(8)]);
+        assert_eq!(
+            input.dropped_events, 2,
+            "ordinary input past the limit is still shed"
+        );
+
+        let sent = send_all(&mut input);
+        assert_eq!(
+            sent.iter()
+                .map(|sent| match sent {
+                    Sent::Events(events) => events.len(),
+                    Sent::Credential { .. } => 0,
+                })
+                .collect::<Vec<_>>(),
+            [255, 255, 2, 0]
+        );
+        assert_eq!(sent[3], Sent::Credential { pdus: 3 });
+        assert_eq!(receipt.wait(Duration::from_secs(5)).await, Ok(()));
+    }
+
+    #[tokio::test]
+    async fn a_credential_is_typed_whole_between_the_input_around_it() {
+        let mut input = DrainedInput::default();
+        input.push_events(vec![key(1), key(2)]);
+        let (first, first_receipt) = credential(300);
+        input.push_credential(first);
+        input.push_events(vec![key(3)]);
+        let (second, second_receipt) = credential(128);
+        input.push_credential(second);
+        // Back to back with the one before it: two typing operations never mix.
+        let (third, third_receipt) = credential(1);
+        input.push_credential(third);
+        input.push_events(vec![key(4), key(5)]);
+
+        assert_eq!(
+            send_all(&mut input),
+            [
+                Sent::Events(vec![1, 2]),
+                Sent::Credential { pdus: 3 },
+                Sent::Events(vec![3]),
+                Sent::Credential { pdus: 2 },
+                Sent::Credential { pdus: 1 },
+                Sent::Events(vec![4, 5]),
+            ]
+        );
+        for receipt in [first_receipt, second_receipt, third_receipt] {
+            assert_eq!(receipt.wait(Duration::from_secs(5)).await, Ok(()));
+        }
+    }
+
+    #[tokio::test]
+    async fn a_send_that_stops_early_leaves_later_credentials_untyped_and_their_senders_told() {
+        let mut input = DrainedInput::default();
+        let (first, first_receipt) = credential(300);
+        input.push_credential(first);
+        input.push_events(vec![key(1)]);
+        let (second, second_receipt) = credential(300);
+        input.push_credential(second);
+
+        // The session loop returns as soon as the transport fails.
+        let mut offered = 0;
+        let mut order = input.in_arrival_order();
+        let Some(QueuedInput::Credential(request)) = order.next() else {
+            panic!("the first credential comes first");
+        };
+        let written = request.write(|_| {
+            offered += 1;
+            if offered == 2 {
+                return Err(io::ErrorKind::ConnectionReset.into());
+            }
+            Ok(())
+        });
+        assert!(matches!(written, CredentialInputWrite::TransportFailed(_)));
+        drop(order);
+
+        assert_eq!(offered, 2, "nothing is retried or sent after the failure");
+        assert_eq!(
+            first_receipt.wait(Duration::from_secs(5)).await,
+            Err(CredentialInputFailure::Incomplete {
+                written_units: 127,
+                total_units: 300,
+            })
+        );
+        let unsent = tokio::time::timeout(
+            Duration::from_secs(5),
+            second_receipt.wait(Duration::from_secs(600)),
+        )
+        .await
+        .expect("its sender is answered without waiting for the pickup timeout");
+        assert_eq!(unsent, Err(CredentialInputFailure::NotSent));
+    }
+
+    #[tokio::test]
+    async fn input_handed_to_a_dead_transport_is_not_taken_for_sent() {
+        /// Like rustls: accepts the bytes, reports the socket's verdict later.
+        #[derive(Default)]
+        struct Deferred {
+            written: Vec<u8>,
+            flushes: usize,
+            verdict: Option<io::ErrorKind>,
+        }
+        impl io::Write for Deferred {
+            fn write(&mut self, bytes: &[u8]) -> io::Result<usize> {
+                self.written.extend_from_slice(bytes);
+                Ok(bytes.len())
+            }
+            fn flush(&mut self) -> io::Result<()> {
+                self.flushes += 1;
+                self.verdict.map_or(Ok(()), |kind| Err(kind.into()))
+            }
+        }
+
+        let mut healthy = Deferred::default();
+        assert!(write_and_flush(&mut healthy, &[1, 2, 3]).is_ok());
+        assert_eq!(healthy.written, [1, 2, 3]);
+        assert_eq!(healthy.flushes, 1);
+
+        let mut dead = Deferred {
+            verdict: Some(io::ErrorKind::ConnectionReset),
+            ..Deferred::default()
+        };
+        assert_eq!(
+            write_and_flush(&mut dead, &[1]).unwrap_err().kind(),
+            io::ErrorKind::ConnectionReset
+        );
+
+        // Back-pressure keeps the bytes queued in order; it is not a failure.
+        for kind in [io::ErrorKind::WouldBlock, io::ErrorKind::TimedOut] {
+            let mut congested = Deferred {
+                verdict: Some(kind),
+                ..Deferred::default()
+            };
+            assert!(write_and_flush(&mut congested, &[1]).is_ok());
+        }
+
+        // The first complete PDU was accepted by write_all before flush
+        // failed. Delivery is unknown, even with zero completed PDUs; never
+        // tell the caller that nothing was typed, and never try it again.
+        let mut uncertain = Deferred {
+            verdict: Some(io::ErrorKind::ConnectionReset),
+            ..Deferred::default()
+        };
+        let (request, receipt) = credential(300);
+        assert!(matches!(
+            request.write(|pdu| write_and_flush(&mut uncertain, pdu)),
+            CredentialInputWrite::TransportFailed(_)
+        ));
+        let _: crate::ironrdp::pdu::input::fast_path::FastPathInput =
+            crate::ironrdp_core::decode(&uncertain.written).expect("one complete accepted PDU");
+        assert_eq!(uncertain.flushes, 1, "no retry or subsequent PDU");
+        let outcome = receipt.wait(Duration::from_secs(5)).await;
+        assert_eq!(
+            outcome,
+            Err(CredentialInputFailure::Incomplete {
+                written_units: 0,
+                total_units: 300,
+            })
+        );
+        let message = outcome.unwrap_err().to_string();
+        assert!(message.contains("delivery of the interrupted PDU is unknown"));
+        assert!(!message.contains("nothing was typed"));
+    }
+
+    #[tokio::test]
+    async fn a_credential_accepted_during_the_handshake_is_never_typed_after_it() {
+        use crate::rdp::frame_store::SharedFrameStore;
+        use crate::rdp::wake_channel::create_wake_channel;
+
+        let settings =
+            ResolvedSettings::from_payload(&crate::rdp::RdpSettingsPayload::default(), 4, 4);
+        let emitter: DynEventEmitter = Arc::new(RecordingEmitter::default());
+        let stats = Arc::new(RdpSessionStats::new());
+        let frame_store = SharedFrameStore::new();
+        let (sender, mut receiver) = create_wake_channel().expect("wake channel");
+        let (log_tx, _log_rx) = std::sync::mpsc::sync_channel(RDP_LOG_CHANNEL_CAPACITY);
+        let (request, receipt) = credential(300);
+        let mut accepted_mid_handshake = Some(request);
+
+        let result = run_reconnect_loop(
+            "credential-checkpoint",
+            &settings,
+            &emitter,
+            &mut receiver,
+            &stats,
+            &frame_store,
+            &log_tx,
+            |_cmd_rx| {
+                // Accepted after the handshake's last internal checkpoint.
+                if let Some(request) = accepted_mid_handshake.take() {
+                    sender
+                        .send(RdpCommand::CredentialInput(request))
+                        .expect("the queue accepts it");
+                }
+                Ok(())
+            },
+            |_session, cmd_rx| {
+                loop {
+                    match cmd_rx.try_recv() {
+                        Ok(RdpCommand::CredentialInput(_)) => {
+                            panic!("a credential aimed at an earlier screen must never replay")
+                        }
+                        Ok(_) => {}
+                        Err(mpsc::error::TryRecvError::Empty) => break,
+                        Err(mpsc::error::TryRecvError::Disconnected) => {
+                            panic!("sender remains live")
+                        }
+                    }
+                }
+                SessionLoopExit::Shutdown
+            },
+            |_cmd_rx, _delay| Ok(()),
+        );
+
+        assert!(result.is_ok(), "the loop should stop cleanly: {result:?}");
+        let reported = tokio::time::timeout(
+            Duration::from_secs(5),
+            receipt.wait(Duration::from_secs(600)),
+        )
+        .await
+        .expect("the sender is answered at the fence, not at its timeout");
+        assert_eq!(reported, Err(CredentialInputFailure::NotSent));
     }
 }

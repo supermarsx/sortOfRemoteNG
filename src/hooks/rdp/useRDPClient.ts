@@ -1001,8 +1001,8 @@ export function useRDPClient(session: ConnectionSession) {
       const events: Record<string, unknown>[] = [];
       for (let i = 0; i < text.length; i++) {
         const code = text.charCodeAt(i);
-        events.push({ type: "UnicodeKey", code, pressed: true });
-        events.push({ type: "UnicodeKey", code, pressed: false });
+        events.push({ type: "Unicode", code, pressed: true });
+        events.push({ type: "Unicode", code, pressed: false });
       }
       if (events.length > 0) {
         await invoke("rdp_send_input", {
