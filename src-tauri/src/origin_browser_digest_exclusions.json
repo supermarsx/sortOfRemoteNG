@@ -1,0 +1,104 @@
+{
+  "version": 1,
+  "purpose": "Saved-connection fields that never change the authority of an open native browser tab. The native lease (authority_digest in database_protection.rs) removes exactly these object-key paths before hashing the saved row, and the frontend imports the same list to decide whether an edit needs a restart.",
+  "rule": "A path may be listed only when the authority of an open tab cannot depend on its saved value: either no native browser code uses the value for an attempt, or native uses it once for a display setting that an open tab afterwards receives only through its own validated live path. Every field that is not listed, including any unknown or future field, stays in the digest, and editing it ends the open tab with the recoverable source-changed outcome. A path names object keys from the row down; it never reaches into an array and never matches the same key elsewhere. After the listed paths are removed, an object named under absentWhenOnly that is left holding exactly the given members is treated as absent.",
+  "exclusions": [
+    {
+      "path": ["httpBookmarks"],
+      "kind": "library",
+      "reason": "Bookmark bar content. Opening a bookmark is an ordinary navigation that the attempt's own policy admits or refuses."
+    },
+    {
+      "path": ["httpAutomation", "items"],
+      "kind": "library",
+      "reason": "Saved script and macro library entries. The consent flags beside them stay in the digest."
+    },
+    {
+      "path": ["updatedAt"],
+      "kind": "bookkeeping",
+      "reason": "Rewritten by every save."
+    },
+    {
+      "path": ["lastConnected"],
+      "kind": "bookkeeping",
+      "reason": "Written by the application when a session to this connection starts."
+    },
+    {
+      "path": ["connectionCount"],
+      "kind": "bookkeeping",
+      "reason": "Incremented by the application when a session to this connection starts."
+    },
+    {
+      "path": ["name"],
+      "kind": "presentation",
+      "reason": "Display label in the tree and on the tab."
+    },
+    {
+      "path": ["description"],
+      "kind": "presentation",
+      "reason": "Free-text note shown in the editor."
+    },
+    {
+      "path": ["tags"],
+      "kind": "presentation",
+      "reason": "Labels for filtering and grouping the tree."
+    },
+    {
+      "path": ["icon"],
+      "kind": "presentation",
+      "reason": "Tree and tab icon."
+    },
+    {
+      "path": ["colorTag"],
+      "kind": "presentation",
+      "reason": "Colour classification in the tree."
+    },
+    {
+      "path": ["tabColor"],
+      "kind": "presentation",
+      "reason": "Tint of the session tab."
+    },
+    {
+      "path": ["favorite"],
+      "kind": "presentation",
+      "reason": "Favourite marker."
+    },
+    {
+      "path": ["order"],
+      "kind": "presentation",
+      "reason": "Manual position within its folder."
+    },
+    {
+      "path": ["parentId"],
+      "kind": "presentation",
+      "reason": "Containing folder. Native browser code never resolves a setting through a folder."
+    },
+    {
+      "path": ["browserSession", "defaultZoomPercent"],
+      "kind": "display",
+      "reason": "Default page zoom. Native uses it once, as the initial zoom of a new tab. An open tab takes every later zoom, a changed default included, through the validated zoom control action."
+    },
+    {
+      "path": ["browserSession", "showBookmarksBar"],
+      "kind": "display",
+      "reason": "Whether the application shows its own bookmarks bar. Native checks the type when a tab is created and never uses the value."
+    },
+    {
+      "path": ["browserSession", "showSecurityInfo"],
+      "kind": "display",
+      "reason": "Whether the application shows its own security information bar. Native checks the type when a tab is created and never uses the value."
+    },
+    {
+      "path": ["browserSession", "showLoadingProgress"],
+      "kind": "display",
+      "reason": "Whether the application shows its own loading indicator. Native checks the type when a tab is created and never uses the value."
+    }
+  ],
+  "absentWhenOnly": [
+    {
+      "path": ["browserSession"],
+      "members": { "version": 1 },
+      "reason": "A browser-session override object that holds only its schema version resolves exactly like no object. Editors create the object with the first override and drop it with the last, so a display override alone must not look like an edit of anything else."
+    }
+  ]
+}

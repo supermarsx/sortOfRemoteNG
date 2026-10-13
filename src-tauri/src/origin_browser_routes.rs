@@ -1,6 +1,8 @@
 //! Native saved profile/chain expansion. Catalog bytes come only from the
 //! managed profile storage, never the renderer or a global connection search.
 use super::*;
+use crate::database_protection::native_browser_owner::{SourceCheck, SourceDependencies};
+use sha2::{Digest, Sha256};
 use tauri::Manager;
 
 const ERROR: NativeAuthorityError = NativeAuthorityError::RouteUnsupported;
@@ -94,18 +96,6 @@ pub(super) async fn expand<R: Runtime>(
     } else {
         None
     };
-    let chain_profiles = if let (Some(id), Some(services)) = (chain_id, &services) {
-        let chain = services
-            .chains
-            .lock()
-            .await
-            .get_chain(id)
-            .await
-            .map_err(|_| ERROR)?;
-        proxy_chain_ids(&chain, id)?
-    } else {
-        Vec::new()
-    };
     let references = [
         "proxyProfileId",
         "proxyChainId",
@@ -137,47 +127,220 @@ pub(super) async fn expand<R: Runtime>(
     if path.parent().and_then(|p| p.canonicalize().ok()).as_deref() != Some(owner_root.as_path()) {
         return Err(ERROR);
     }
-    let raw = sorng_storage::storage::lock_app_data(&storage)
-        .await
-        .read_app_data("proxy_collection_data")
-        .await
-        .map_err(|_| ERROR)?
-        .ok_or(ERROR)?;
-    let raw = Zeroizing::new(raw);
-    if raw.len() > 8 * 1024 * 1024 || !lease.is_current() {
+    let sources = RouteSources {
+        storage: storage.inner().clone(),
+        chain: chain_id
+            .zip(services.as_ref())
+            .map(|(id, services)| (services.chains.clone(), id.to_owned())),
+    };
+    let (catalog, prefix) = sources.read().await.map_err(|_| ERROR)?;
+    let (expanded, binding) = sources.bind(connection, &catalog, prefix)?;
+    if !lease.is_current() {
         return Err(ERROR);
     }
-    let catalog: Value = serde_json::from_str(&raw).map_err(|_| ERROR)?;
-    let prefix = chain_profiles
-        .iter()
-        .map(|id| {
-            enabled_proxy(
-                selected(&catalog, "profiles", id)?
-                    .get("config")
-                    .ok_or(ERROR)?,
-            )
-        })
-        .collect::<Result<Vec<_>, _>>()?;
-    let mut connection = connection.clone();
-    if let (Some(id), Some(services)) = (chain_id, &services) {
+    if let Some(services) = &services {
         services.check_owner(state, lease)?;
-        let current = services
-            .chains
+    }
+    lease
+        .register_source_dependencies(Arc::new(binding))
+        .map_err(|_| ERROR)?;
+    Ok(expanded)
+}
+
+/// Everything an expansion reads besides the saved row. Captured at setup, so
+/// a recheck compares the same storage and chain service and never looks them
+/// up again through a window.
+struct RouteSources {
+    storage: sorng_storage::storage::SecureStorageState,
+    chain: Option<(crate::chaining::ChainingServiceState, String)>,
+}
+
+enum Unresolved {
+    /// The catalog could not be read at all: no evidence about its records.
+    Unreadable,
+    /// The records are readable and do not yield a supported route.
+    Unsupported,
+}
+
+impl From<NativeAuthorityError> for Unresolved {
+    fn from(_: NativeAuthorityError) -> Self {
+        Self::Unsupported
+    }
+}
+
+impl RouteSources {
+    async fn chain_profiles(&self) -> Result<Vec<String>, Unresolved> {
+        let Some((chains, id)) = &self.chain else {
+            return Ok(Vec::new());
+        };
+        let chain = chains
             .lock()
             .await
             .get_chain(id)
             .await
-            .map_err(|_| ERROR)?;
-        if proxy_chain_ids(&current, id)? != chain_profiles {
+            .map_err(|_| Unresolved::Unsupported)?;
+        Ok(proxy_chain_ids(&chain, id)?)
+    }
+
+    /// One read of the saved catalog and of the native chain's proxy prefix.
+    async fn read(&self) -> Result<(Value, Vec<Value>), Unresolved> {
+        let chain_profiles = self.chain_profiles().await?;
+        let raw = sorng_storage::storage::lock_app_data(&self.storage)
+            .await
+            .read_app_data("proxy_collection_data")
+            .await
+            .map_err(|_| Unresolved::Unreadable)?
+            .ok_or(Unresolved::Unsupported)?;
+        let raw = Zeroizing::new(raw);
+        if raw.len() > 8 * 1024 * 1024 {
+            return Err(Unresolved::Unsupported);
+        }
+        let catalog: Value = serde_json::from_str(&raw).map_err(|_| Unresolved::Unsupported)?;
+        let prefix = chain_profiles
+            .iter()
+            .map(|id| {
+                enabled_proxy(
+                    selected(&catalog, "profiles", id)?
+                        .get("config")
+                        .ok_or(ERROR)?,
+                )
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        if self.chain.is_some() && self.chain_profiles().await? != chain_profiles {
+            return Err(Unresolved::Unsupported);
+        }
+        Ok((catalog, prefix))
+    }
+
+    fn expand(
+        &self,
+        connection: &Value,
+        catalog: &Value,
+        prefix: Vec<Value>,
+    ) -> Result<Value, NativeAuthorityError> {
+        let mut connection = connection.clone();
+        if self.chain.is_some() {
+            // Erase the saved selector only once every layer has been resolved.
+            connection
+                .as_object_mut()
+                .ok_or(ERROR)?
+                .remove("connectionChainId");
+        }
+        expand_catalog_with_prefix(&connection, catalog, prefix)
+    }
+
+    /// Expand `connection` against one read of its records, and bind what
+    /// the attempt will dial through to the records it came from.
+    fn bind(
+        self,
+        connection: &Value,
+        catalog: &Value,
+        prefix: Vec<Value>,
+    ) -> Result<(Value, RouteBinding), NativeAuthorityError> {
+        let expanded = self.expand(connection, catalog, prefix.clone())?;
+        let binding = RouteBinding {
+            selectors: route_selectors(connection)?,
+            fingerprint: route_fingerprint(&saved_route(&expanded)?),
+            sources: self,
+        };
+        // The binding must reproduce this exact route from the selectors
+        // alone, or a recheck would compare something else.
+        if !binding.current(catalog, prefix) {
             return Err(ERROR);
         }
-        // Erase the saved selector only once every layer has been resolved.
-        connection
-            .as_object_mut()
-            .ok_or(ERROR)?
-            .remove("connectionChainId");
+        Ok((expanded, binding))
     }
-    expand_catalog_with_prefix(&connection, &catalog, prefix)
+}
+
+/// The only parts of the saved row an expansion reads. The row itself is bound
+/// by the lease's digest, so they cannot change under a live attempt.
+const SELECTORS: [&str; 6] = [
+    "proxyProfileId",
+    "proxyChainId",
+    "tunnelProfileId",
+    "tunnelChainId",
+    "connectionChainId",
+    "security",
+];
+
+fn route_selectors(connection: &Value) -> Result<Zeroizing<String>, NativeAuthorityError> {
+    let row = connection.as_object().ok_or(ERROR)?;
+    let selectors: std::collections::BTreeMap<&str, &Value> = SELECTORS
+        .iter()
+        .filter_map(|key| Some((*key, row.get(*key)?)))
+        .collect();
+    serde_json::to_string(&selectors)
+        .map(Zeroizing::new)
+        .map_err(|_| ERROR)
+}
+
+/// One-way binding of exactly what an attempt dials through: every hop's
+/// kind, endpoint and proxy credentials, in order.
+fn route_fingerprint(hops: &[ProxyHop]) -> [u8; 32] {
+    let mut hasher = Sha256::new();
+    hasher.update((hops.len() as u64).to_le_bytes());
+    for hop in hops {
+        hasher.update([match hop.kind {
+            ProxyKind::Http => 1u8,
+            ProxyKind::Https => 2,
+            ProxyKind::Socks4 => 3,
+            ProxyKind::Socks5 => 4,
+        }]);
+        let endpoint = hop.endpoint.to_string();
+        for part in [
+            endpoint.as_str(),
+            hop.username.as_str(),
+            hop.password.as_str(),
+        ] {
+            hasher.update((part.len() as u64).to_le_bytes());
+            hasher.update(part.as_bytes());
+        }
+    }
+    hasher.finalize().into()
+}
+
+/// A catalog route's saved records live outside the owning database, so the
+/// lease's own digests cannot see them change. This keeps the route an
+/// attempt was given and expands the current records again on every recheck:
+/// an edit that leaves the attempt on a different route than the saved one
+/// (or on none) ends it, and an edit elsewhere in the catalog does not.
+struct RouteBinding {
+    sources: RouteSources,
+    selectors: Zeroizing<String>,
+    fingerprint: [u8; 32],
+}
+
+impl RouteBinding {
+    /// Whether these records still yield the route the attempt was given.
+    fn current(&self, catalog: &Value, prefix: Vec<Value>) -> bool {
+        let Ok(selectors) = serde_json::from_str::<Value>(&self.selectors) else {
+            return false;
+        };
+        self.sources
+            .expand(&selectors, catalog, prefix)
+            .and_then(|expanded| saved_route(&expanded))
+            .is_ok_and(|hops| route_fingerprint(&hops) == self.fingerprint)
+    }
+}
+
+impl SourceDependencies for RouteBinding {
+    fn check(
+        &self,
+    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = SourceCheck> + Send + '_>> {
+        Box::pin(async move {
+            match self.sources.read().await {
+                Ok((catalog, prefix)) => {
+                    if self.current(&catalog, prefix) {
+                        SourceCheck::Current
+                    } else {
+                        SourceCheck::Changed
+                    }
+                }
+                Err(Unresolved::Unsupported) => SourceCheck::Changed,
+                Err(Unresolved::Unreadable) => SourceCheck::Unavailable,
+            }
+        })
+    }
 }
 
 fn selected<'a>(
@@ -517,5 +680,175 @@ mod tests {
         let mut dynamic = catalog.clone();
         dynamic["chains"][0]["dynamics"]["strategy"] = "failover".into();
         assert!(expand_catalog(&json!({"proxyChainId":"chain"}), &dynamic).is_err());
+    }
+
+    fn sources(root: &std::path::Path) -> RouteSources {
+        RouteSources {
+            storage: sorng_storage::storage::SecureStorage::new(
+                root.join("storage.json").to_string_lossy().into(),
+            ),
+            chain: None,
+        }
+    }
+
+    fn saved_catalog() -> Value {
+        json!({"profiles":[
+            {"id":"outer","name":"Outer","config":{"enabled":true,"type":"http","host":"127.0.0.1","port":1,"username":""}},
+            {"id":"inner","config":{"enabled":true,"type":"socks5","host":"inside.invalid","port":1080}}
+        ],"chains":[{"id":"chain","dynamics":{"strategy":"strict"},"layers":[
+            {"position":1,"type":"proxy","proxyProfileId":"outer"}
+        ]}],"tunnelProfiles":[
+            {"id":"tunnel","config":{"enabled":true,"type":"proxy","proxy":{"proxyType":"http","host":"127.0.0.1","port":1}}}
+        ],"tunnelChains":[{"id":"tunnels","dynamics":{"strategy":"strict"},"layers":[
+            {"enabled":true,"type":"proxy","proxy":{"proxyType":"http","host":"127.0.0.1","port":1}}
+        ]}]})
+    }
+
+    fn selector(key: &str, value: Value) -> Value {
+        let mut row = json!({"id":"saved", "password":"row-fixture-secret"});
+        row[key] = value;
+        row
+    }
+
+    // The comparison itself needs no storage: these two tests never read it.
+    #[test]
+    fn binding_follows_every_saved_record_a_route_is_expanded_from() {
+        let saved = saved_catalog();
+        let inline = json!({"tunnelChain":[
+            {"id":"layer","type":"proxy","enabled":true,"tunnelProfileId":"tunnel"}
+        ]});
+        for (key, value, pointer, edit) in [
+            ("proxyProfileId", json!("outer"), "/profiles/0/config/host", json!("elsewhere.invalid")),
+            ("proxyProfileId", json!("outer"), "/profiles/0/config/port", json!(2)),
+            ("proxyProfileId", json!("outer"), "/profiles/0/config/username", json!("user")),
+            ("proxyProfileId", json!("outer"), "/profiles/0/config/type", json!("socks5")),
+            // The record still exists but no longer yields a supported route.
+            ("proxyProfileId", json!("outer"), "/profiles/0/config/enabled", json!(false)),
+            ("proxyProfileId", json!("outer"), "/profiles/0/config/type", json!("ssh")),
+            // The record is gone, or the catalog is no longer a catalog.
+            ("proxyProfileId", json!("outer"), "/profiles/0/id", json!("renamed")),
+            ("proxyProfileId", json!("outer"), "/profiles", json!([])),
+            ("proxyProfileId", json!("outer"), "", json!("not a catalog")),
+            ("proxyChainId", json!("chain"), "/chains/0/layers/0/proxyProfileId", json!("inner")),
+            ("proxyChainId", json!("chain"), "/chains/0/dynamics/strategy", json!("failover")),
+            ("proxyChainId", json!("chain"), "/profiles/0/config/host", json!("elsewhere.invalid")),
+            ("tunnelProfileId", json!("tunnel"), "/tunnelProfiles/0/config/proxy/port", json!(2)),
+            ("tunnelChainId", json!("tunnels"), "/tunnelChains/0/layers/0/proxy/host", json!("elsewhere.invalid")),
+            ("security", inline, "/tunnelProfiles/0/config/proxy/host", json!("elsewhere.invalid")),
+        ] {
+            let (expanded, binding) = sources(std::path::Path::new("unread"))
+                .bind(&selector(key, value), &saved, Vec::new())
+                .unwrap();
+            assert_eq!(saved_route(&expanded).unwrap().len(), 1, "{key}");
+            assert!(binding.current(&saved, Vec::new()), "{key} {pointer}");
+            let mut edited = saved.clone();
+            *edited.pointer_mut(pointer).unwrap() = edit;
+            assert!(!binding.current(&edited, Vec::new()), "{key} {pointer}");
+            // A native chain's proxy prefix is part of the route as well.
+            let prefix = enabled_proxy(&saved["profiles"][1]["config"]).unwrap();
+            assert!(!binding.current(&saved, vec![prefix]), "{key}");
+        }
+    }
+
+    #[test]
+    fn binding_ignores_catalog_edits_that_leave_the_route_as_it_is() {
+        let saved = saved_catalog();
+        let (_, binding) = sources(std::path::Path::new("unread"))
+            .bind(&selector("proxyProfileId", json!("outer")), &saved, Vec::new())
+            .unwrap();
+        let mut edited = saved.clone();
+        // Another profile, a label, a new record, other collections and order.
+        edited["profiles"][1]["config"]["host"] = "elsewhere.invalid".into();
+        edited["profiles"][0]["name"] = "Renamed".into();
+        edited["profiles"][0]["description"] = "Lab uplink".into();
+        edited["profiles"].as_array_mut().unwrap().push(
+            json!({"id":"new","config":{"enabled":true,"type":"http","host":"new.invalid","port":3128}}),
+        );
+        edited["profiles"].as_array_mut().unwrap().reverse();
+        edited["chains"] = json!([]);
+        edited["tunnelProfiles"][0]["config"]["proxy"]["port"] = 2.into();
+        assert!(binding.current(&edited, Vec::new()));
+        // No binding is made from records that do not yield a supported route.
+        assert!(sources(std::path::Path::new("unread"))
+            .bind(
+                &selector("proxyProfileId", json!("missing")),
+                &saved,
+                Vec::new()
+            )
+            .is_err());
+    }
+
+    #[tokio::test]
+    async fn binding_rereads_the_saved_catalog_and_an_unreadable_one_is_not_an_edit() {
+        let saved = saved_catalog();
+        let root = tempfile::tempdir().unwrap();
+        let path = root.path().join("storage.json");
+        // Written directly: a durable write through the storage service holds
+        // the process-wide settings coordinator, which other tests probe.
+        let store = |catalog: Option<&Value>| {
+            let mut data = json!({"connections":[], "settings":{}, "timestamp":0, "app_data":{}});
+            if let Some(catalog) = catalog {
+                data["app_data"]["proxy_collection_data"] = catalog.to_string().into();
+            }
+            std::fs::write(&path, data.to_string()).unwrap();
+        };
+        store(Some(&saved));
+        let stored = sources(root.path());
+        let (catalog, prefix) = stored.read().await.ok().unwrap();
+        assert_eq!(catalog, saved);
+        let (_, binding) = stored
+            .bind(&selector("proxyProfileId", json!("outer")), &catalog, prefix)
+            .unwrap();
+        assert_eq!(binding.check().await, SourceCheck::Current);
+        let mut edited = saved.clone();
+        edited["profiles"][0]["config"]["port"] = 2.into();
+        store(Some(&edited));
+        assert_eq!(binding.check().await, SourceCheck::Changed);
+        store(None);
+        assert_eq!(binding.check().await, SourceCheck::Changed);
+        std::fs::remove_file(&path).unwrap();
+        assert_eq!(binding.check().await, SourceCheck::Changed);
+        std::fs::write(&path, b"not a storage document").unwrap();
+        assert_eq!(binding.check().await, SourceCheck::Unavailable);
+        // The binding keeps no verdict of its own: latching is the lease's part.
+        store(Some(&saved));
+        assert_eq!(binding.check().await, SourceCheck::Current);
+    }
+
+    #[test]
+    fn binding_keeps_only_route_selectors_and_fingerprints_every_hop_field() {
+        let selectors = route_selectors(&json!({"id":"saved", "name":"Example",
+            "password":"row-fixture-secret", "proxyProfileId":"outer",
+            "security":{"proxy":{"enabled":false}}, "futureField":true}))
+        .unwrap();
+        assert_eq!(
+            serde_json::from_str::<Value>(&selectors).unwrap(),
+            json!({"proxyProfileId":"outer", "security":{"proxy":{"enabled":false}}})
+        );
+        let hop = |kind: &str, host: &str, port: u16, username: &str, password: &str| {
+            json!({"enabled":true, "type":"proxy", "proxy":{"proxyType":kind, "host":host,
+                "port":port, "username":username, "password":password}})
+        };
+        let route = |layers: Vec<Value>| {
+            route_fingerprint(&saved_route(&json!({"security":{"tunnelChain":layers}})).unwrap())
+        };
+        let first = || hop("http", "one.invalid", 1, "user", "secret");
+        let second = || hop("socks5", "two.invalid", 2, "", "");
+        let routes = [
+            route(vec![first(), second()]),
+            route(vec![second(), first()]),
+            route(vec![first()]),
+            route(vec![first(), second(), second()]),
+            route(vec![hop("https", "one.invalid", 1, "user", "secret"), second()]),
+            route(vec![hop("http", "other.invalid", 1, "user", "secret"), second()]),
+            route(vec![hop("http", "one.invalid", 3, "user", "secret"), second()]),
+            route(vec![hop("http", "one.invalid", 1, "other", "secret"), second()]),
+            route(vec![hop("http", "one.invalid", 1, "user", "other"), second()]),
+            // Field boundaries are part of the binding.
+            route(vec![hop("http", "one.invalid", 1, "users", "ecret"), second()]),
+        ];
+        let distinct: std::collections::BTreeSet<_> = routes.iter().collect();
+        assert_eq!(distinct.len(), routes.len());
+        assert_eq!(routes[0], route(vec![first(), second()]));
     }
 }

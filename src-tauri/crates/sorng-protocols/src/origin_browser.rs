@@ -477,6 +477,10 @@ pub enum BrowserSessionFailure {
     RedirectDenied,
     RuntimeUnavailable,
     OwnerWindow,
+    /// The saved connection, or a saved record it was built from, was edited
+    /// while its owner stayed valid. The attempt is over like any other; only
+    /// a fresh create for the same owner can pick the edit up.
+    SourceChanged,
 }
 
 impl BrowserSessionFailure {
@@ -1920,12 +1924,32 @@ mod tests {
         assert_eq!(Reason::owner_loss(false, false, true), Some(Reason::OwnerWindow));
     }
 
+    #[test]
+    fn session_failure_source_change_is_distinct_fixed_and_never_inferred_from_owner_loss() {
+        use BrowserSessionFailure as Reason;
+        assert_eq!(serde_json::to_value(Reason::SourceChanged).unwrap(), "source-changed");
+        assert_eq!(serde_json::to_value(Reason::DatabaseOwner).unwrap(), "database-owner");
+        assert_ne!(Reason::SourceChanged, Reason::DatabaseOwner);
+        // Only the lease's own recheck evidence can say that a saved record
+        // was edited; a lost owner alone never claims it.
+        for document in [true, false] {
+            for lease in [true, false] {
+                for temporary in [true, false] {
+                    assert_ne!(
+                        Reason::owner_loss(document, lease, temporary),
+                        Some(Reason::SourceChanged)
+                    );
+                }
+            }
+        }
+    }
+
     #[tokio::test]
     async fn session_failure_retains_each_specific_cause_through_cleanup_and_owner_loss() {
         use BrowserSessionFailure as Reason;
         for reason in [Reason::DatabaseOwner, Reason::Watchdog, Reason::PrivateContext,
             Reason::PrivateProxy, Reason::NativeState, Reason::CertificateBridge, Reason::RedirectDenied,
-            Reason::RuntimeUnavailable, Reason::OwnerWindow] {
+            Reason::RuntimeUnavailable, Reason::OwnerWindow, Reason::SourceChanged] {
             let mut current = session().await;
             let id = current.policy().identity().clone();
             current.report_host(&id, ready(&current)).unwrap();

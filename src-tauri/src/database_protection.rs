@@ -471,11 +471,59 @@ pub mod native_browser_timing {
 pub mod native_browser_owner {
     use super::*;
     use std::sync::{
-        atomic::{AtomicBool, Ordering},
+        atomic::{AtomicBool, AtomicU8, Ordering},
         Arc,
     };
 
     const UNAVAILABLE: &str = "Browser database owner is unavailable or changed";
+
+    /// Why a recheck ended a lease. Both outcomes latch revocation, so no
+    /// attempt ever continues on stale authority; the distinction only says
+    /// whether a fresh create for the same owner is worth attempting.
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    pub enum RecheckFailure {
+        /// The window, profile, key, security revision and saved row are all
+        /// still valid. The sole mismatch is the row's authority digest or a
+        /// record the attempt was built from: the user edited its source.
+        SourceChanged,
+        /// Everything else: locked, rotated, another window or profile,
+        /// unreadable storage, a deleted row, or an already ended lease.
+        Unavailable,
+    }
+
+    const CAUSE_NONE: u8 = 0;
+    const CAUSE_SOURCE_CHANGED: u8 = 1;
+    const CAUSE_UNAVAILABLE: u8 = 2;
+
+    /// Result of comparing saved records that live outside the owning
+    /// database with what an attempt was built from.
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    pub(crate) enum SourceCheck {
+        Current,
+        /// A bound record was edited, removed or no longer yields the same
+        /// result.
+        Changed,
+        /// The records could not be read, which is not evidence of an edit.
+        Unavailable,
+    }
+
+    /// Saved records outside the owning database that an attempt was built
+    /// from, such as the proxy catalog entries behind its route. The owner
+    /// keeps its own setup-time binding and compares it on every recheck.
+    pub(crate) trait SourceDependencies: Send + Sync {
+        /// Called without the database-operation guard, whose coordinator
+        /// lease is not re-entrant. Must not call back into the lease.
+        fn check(&self) -> Pin<Box<dyn Future<Output = SourceCheck> + Send + '_>>;
+    }
+
+    enum Rechecked {
+        Current {
+            // Read only by the proof-cache tests.
+            #[cfg_attr(not(test), allow(dead_code))]
+            reused: bool,
+        },
+        SourceChanged,
+    }
 
     #[derive(Clone)]
     pub struct NativeOwnerLease(Arc<LeaseInner>);
@@ -522,10 +570,14 @@ pub mod native_browser_owner {
         session_validity: Option<database_sessions::SessionValidity>,
         generation: u64,
         connection_id: String,
+        // `authority_digest` of the selected row, not the persisted cookie
+        // binding that `connection_digest` computes.
         connection_digest: [u8; 32],
         dependencies: std::sync::Mutex<Dependencies>,
+        source_dependencies: std::sync::OnceLock<Arc<dyn SourceDependencies>>,
         recheck_proof: std::sync::Mutex<Option<RecheckProof>>,
         revoked: AtomicBool,
+        revocation_cause: AtomicU8,
         cookie_gate: std::sync::Mutex<()>,
     }
 
@@ -565,7 +617,7 @@ pub mod native_browser_owner {
             let key = self.with_cookie_retention_key(|key| Ok(key.duplicate()))?;
             let mut envelope = DatabaseEnvelope::parse(&snapshot.data, &inner.database)?;
             let mut data = browser_sessions::SecretData(envelope.open(&key)?);
-            if connection_digest(select_connection(&data.0, &inner.connection_id)?)?
+            if authority_digest(select_connection(&data.0, &inner.connection_id)?)?
                 != inner.connection_digest
             {
                 return Err(UNAVAILABLE.into());
@@ -956,6 +1008,68 @@ pub mod native_browser_owner {
             self.0.revoked.store(true, Ordering::Release);
         }
 
+        /// Revoke after a failed recheck and return the cause now latched.
+        /// The cause is stored before revocation becomes observable, so a
+        /// reader that sees a stale lease also sees why. The first cause
+        /// wins, and a lease that something else already ended (closed tab,
+        /// lock, rotation) is never relabelled as an ordinary edit.
+        fn revoke_for(&self, cause: RecheckFailure) -> RecheckFailure {
+            let inner = &self.0;
+            let _gate = inner.cookie_gate.lock().unwrap_or_else(|e| e.into_inner());
+            let cause = match cause {
+                RecheckFailure::SourceChanged if !inner.revoked.load(Ordering::Acquire) => {
+                    CAUSE_SOURCE_CHANGED
+                }
+                _ => CAUSE_UNAVAILABLE,
+            };
+            let latched = match inner.revocation_cause.compare_exchange(
+                CAUSE_NONE,
+                cause,
+                Ordering::AcqRel,
+                Ordering::Acquire,
+            ) {
+                Ok(_) => cause,
+                Err(first) => first,
+            };
+            inner.revoked.store(true, Ordering::Release);
+            if latched == CAUSE_SOURCE_CHANGED {
+                RecheckFailure::SourceChanged
+            } else {
+                RecheckFailure::Unavailable
+            }
+        }
+
+        /// Fixed evidence from the first failed recheck of this lease and its
+        /// clones. `None` while current, and after a revoke or memory-only
+        /// invalidation that no recheck has observed. Diagnostic only: it
+        /// never renews authority, and a forked lease does not inherit it.
+        pub fn revocation_cause(&self) -> Option<RecheckFailure> {
+            match self.0.revocation_cause.load(Ordering::Acquire) {
+                CAUSE_SOURCE_CHANGED => Some(RecheckFailure::SourceChanged),
+                CAUSE_UNAVAILABLE => Some(RecheckFailure::Unavailable),
+                _ => None,
+            }
+        }
+
+        /// Setup-only. Binds saved records outside the owning database to
+        /// this attempt, so a later edit ends it as `SourceChanged` instead
+        /// of leaving it on a stale copy. The set is immutable: one
+        /// registration per lease, never for a temporary one, whose recheck
+        /// reads no saved data. Any refusal revokes the lease.
+        pub(crate) fn register_source_dependencies(
+            &self,
+            dependencies: Arc<dyn SourceDependencies>,
+        ) -> Result<(), String> {
+            if self.is_temporary()
+                || !self.is_current()
+                || self.0.source_dependencies.set(dependencies).is_err()
+            {
+                self.revoke();
+                return Err(UNAVAILABLE.into());
+            }
+            Ok(())
+        }
+
         /// Native-only bounded cookie operation. The database session mutex is
         /// held throughout delivery, serializing explicit lock/window closure
         /// with the operation. No key is retained by this lease or sent to IPC.
@@ -1040,8 +1154,12 @@ pub mod native_browser_owner {
                         connection_id: inner.connection_id.clone(),
                         connection_digest: inner.connection_digest,
                         dependencies: std::sync::Mutex::new(dependencies),
+                        // Cookie persistence is bound to the saved identity,
+                        // not to the route the browser attempt dials through.
+                        source_dependencies: std::sync::OnceLock::new(),
                         recheck_proof: std::sync::Mutex::new(None),
                         revoked: AtomicBool::new(false),
+                        revocation_cause: AtomicU8::new(CAUSE_NONE),
                         cookie_gate: std::sync::Mutex::new(()),
                     })),
                     binding,
@@ -1063,13 +1181,31 @@ pub mod native_browser_owner {
             window: &WebviewWindow<R>,
             state: &EncryptionState,
         ) -> Result<(), String> {
+            self.recheck_detailed(window, state)
+                .await
+                .map_err(|_| UNAVAILABLE.to_owned())
+        }
+
+        /// `recheck` with the reason kept. Either failure ends this lease
+        /// for good and returns the cause it is latched with, which a later
+        /// call repeats. `SourceChanged` says only that the saved connection
+        /// or a record it depends on was edited while every owner check
+        /// still passed, so the caller may offer a fresh create.
+        pub async fn recheck_detailed<R: Runtime>(
+            &self,
+            window: &WebviewWindow<R>,
+            state: &EncryptionState,
+        ) -> Result<(), RecheckFailure> {
             let timing = native_browser_timing::Trace::recheck();
-            let result = self.recheck_inner(window, state, &timing).await;
-            if result.is_err() {
-                self.revoke();
-            }
+            let result = match self.recheck_inner(window, state, &timing).await {
+                Ok(Rechecked::Current { .. }) => Ok(()),
+                Ok(Rechecked::SourceChanged) => {
+                    Err(self.revoke_for(RecheckFailure::SourceChanged))
+                }
+                Err(_) => Err(self.revoke_for(RecheckFailure::Unavailable)),
+            };
             timing.finish(u8::from(result.is_ok()));
-            result.map(|_| ()).map_err(|_| UNAVAILABLE.to_owned())
+            result
         }
 
         async fn recheck_inner<R: Runtime>(
@@ -1077,7 +1213,7 @@ pub mod native_browser_owner {
             window: &WebviewWindow<R>,
             state: &EncryptionState,
             timing: &native_browser_timing::Trace,
-        ) -> Result<bool, String> {
+        ) -> Result<Rechecked, String> {
             let inner = &self.0;
             if window.label() != inner.window
                 || state.database_session_owner() != inner.state.database_session_owner()
@@ -1091,9 +1227,9 @@ pub mod native_browser_owner {
             }
             timing.mark_slot(0);
             if inner.temporary {
-                return Ok(false);
+                return Ok(Rechecked::Current { reused: false });
             }
-            let _guard = lock_database_operation(&inner.root.join("databases")).await?;
+            let guard = lock_database_operation(&inner.root.join("databases")).await?;
             timing.mark_slot(1);
             if native_root(window, state)? != inner.root || !self.is_current() {
                 return Err(UNAVAILABLE.into());
@@ -1125,28 +1261,50 @@ pub mod native_browser_owner {
                     .as_ref()
                     .is_some_and(|proof| proof.content == content && proof.dependencies == *dependencies)
             };
+            // A changed source is a verdict only once every remaining owner
+            // check below has passed too. Until then it is carried, not
+            // returned, so a locked or replaced owner is never reported as an
+            // ordinary edit.
+            let mut changed = false;
             if !reused {
                 let data = DatabaseEnvelope::parse(&snapshot.data, &inner.database)?.open(&key)?;
                 let selected = select_connection(&data, &inner.connection_id)?;
-                if connection_digest(selected)? != inner.connection_digest {
-                    return Err(UNAVAILABLE.into());
-                }
                 let dependencies = inner.dependencies.lock().map_err(|_| UNAVAILABLE)?;
-                validate_dependency_set(&data, &dependencies)?;
-                *inner.recheck_proof.lock().map_err(|_| UNAVAILABLE)? = Some(RecheckProof {
-                    content,
-                    dependencies: dependencies.clone(),
-                });
+                // The row must still exist exactly once. A registered record
+                // that was edited or removed is a change of saved source.
+                changed = authority_digest(selected)? != inner.connection_digest
+                    || validate_dependency_set(&data, &dependencies).is_err();
+                if !changed {
+                    *inner.recheck_proof.lock().map_err(|_| UNAVAILABLE)? = Some(RecheckProof {
+                        content,
+                        dependencies: dependencies.clone(),
+                    });
+                }
             }
             // Neither a cache hit nor publishing a proof renews authority.
             // Drop dependency/cache guards before any window-revocation path.
             timing.mark_slot(4);
+            if let Some(source) = inner.source_dependencies.get() {
+                // Records outside the database are not covered by the proof
+                // above and are compared every time. Their storage takes the
+                // same non-reentrant coordinator lease as the database guard.
+                drop(guard);
+                match source.check().await {
+                    SourceCheck::Current => (),
+                    SourceCheck::Changed => changed = true,
+                    SourceCheck::Unavailable => return Err(UNAVAILABLE.into()),
+                }
+            }
             if !self.is_current() {
                 return Err(UNAVAILABLE.into());
             }
             require_live_unlock_window(window, state)?;
             timing.mark_slot(5);
-            Ok(reused)
+            Ok(if changed {
+                Rechecked::SourceChanged
+            } else {
+                Rechecked::Current { reused }
+            })
         }
 
         fn validate_dependencies(&self, data: &Value) -> Result<(), String> {
@@ -1186,7 +1344,7 @@ pub mod native_browser_owner {
                     ),
                 )?;
                 let data = DatabaseEnvelope::parse(&snapshot.data, &inner.database)?.open(&key)?;
-                if connection_digest(select_connection(&data, &inner.connection_id)?)?
+                if authority_digest(select_connection(&data, &inner.connection_id)?)?
                     != inner.connection_digest
                 {
                     return Err(UNAVAILABLE.into());
@@ -1238,19 +1396,19 @@ pub mod native_browser_owner {
         use tauri::test::{mock_builder, mock_context, noop_assets, MockRuntime};
         use tauri::{WebviewUrl, WebviewWindowBuilder};
 
-        struct Fixture {
+        pub(super) struct Fixture {
             _app: tauri::App<MockRuntime>,
-            root: tempfile::TempDir,
-            state: EncryptionState,
-            window: WebviewWindow<MockRuntime>,
+            pub(super) root: tempfile::TempDir,
+            pub(super) state: EncryptionState,
+            pub(super) window: WebviewWindow<MockRuntime>,
             request: OriginBrowserCreateRequest,
             plaintext_bytes: usize,
             key: DatabaseKey,
             envelope: DatabaseEnvelope,
-            data: Value,
+            pub(super) data: Value,
         }
         impl Fixture {
-            async fn new(padding: usize) -> Self {
+            pub(super) async fn new(padding: usize) -> Self {
                 let app = mock_builder().build(mock_context(noop_assets())).unwrap();
                 let window = WebviewWindowBuilder::new(&app, "main", WebviewUrl::default())
                     .build()
@@ -1331,7 +1489,7 @@ pub mod native_browser_owner {
                 }
             }
 
-            async fn lease(&self) -> NativeOwnerLease {
+            pub(super) async fn lease(&self) -> NativeOwnerLease {
                 read(
                     &self.window,
                     &self.state,
@@ -1345,7 +1503,7 @@ pub mod native_browser_owner {
                 .1
             }
 
-            fn write_data(&mut self, same_stamp: bool) {
+            pub(super) fn write_data(&mut self, same_stamp: bool) {
                 self.envelope.replace_data(&self.data, &self.key).unwrap();
                 let path = self.root.path().join("databases/db.json");
                 let bytes = serde_json::to_vec(&self.envelope.value().unwrap()).unwrap();
@@ -1372,7 +1530,7 @@ pub mod native_browser_owner {
         }
 
         async fn reused(f: &Fixture, lease: &NativeOwnerLease) -> bool {
-            lease
+            match lease
                 .recheck_inner(
                     &f.window,
                     &f.state,
@@ -1380,6 +1538,10 @@ pub mod native_browser_owner {
                 )
                 .await
                 .unwrap()
+            {
+                Rechecked::Current { reused } => reused,
+                Rechecked::SourceChanged => panic!("saved source changed"),
+            }
         }
 
         #[tokio::test]
@@ -1623,6 +1785,301 @@ pub mod native_browser_owner {
     }
 
     #[cfg(test)]
+    mod source_change_tests {
+        use super::latency_tests::Fixture;
+        use super::*;
+
+        async fn detailed(f: &Fixture, lease: &NativeOwnerLease) -> Result<(), RecheckFailure> {
+            lease.recheck_detailed(&f.window, &f.state).await
+        }
+
+        #[tokio::test]
+        async fn presentation_and_bookkeeping_edits_keep_an_open_tab_authorized() {
+            let mut f = Fixture::new(0).await;
+            let lease = f.lease().await;
+            let row = &mut f.data["connections"][0];
+            row["name"] = "Renamed".into();
+            row["description"] = "Moved to the lab rack".into();
+            row["tags"] = json!(["lab"]);
+            row["icon"] = "server".into();
+            row["colorTag"] = "red".into();
+            row["tabColor"] = "#336699".into();
+            row["favorite"] = true.into();
+            row["order"] = 7.into();
+            row["parentId"] = "folder".into();
+            row["lastConnected"] = "2026-10-12T09:00:00.000Z".into();
+            row["connectionCount"] = 4.into();
+            row["updatedAt"] = "2026-10-12T09:00:01.000Z".into();
+            row["httpBookmarks"] = json!([{"name":"Docs","path":"/docs"}]);
+            f.write_data(false);
+            assert_eq!(lease.recheck(&f.window, &f.state).await, Ok(()));
+            assert_eq!(detailed(&f, &lease).await, Ok(()));
+            assert!(lease.is_current());
+            assert_eq!(lease.revocation_cause(), None);
+            // The tolerated edit did not move the binding: a real one still ends the tab.
+            f.data["connections"][0]["port"] = 8443.into();
+            f.write_data(false);
+            assert_eq!(detailed(&f, &lease).await, Err(RecheckFailure::SourceChanged));
+        }
+
+        #[tokio::test]
+        async fn browser_session_display_overrides_keep_the_tab_and_its_other_keys_end_it() {
+            let mut f = Fixture::new(0).await;
+            let lease = f.lease().await;
+            // The editor creates the override object with the first override.
+            f.data["connections"][0]["browserSession"] = json!({"version":1,
+                "defaultZoomPercent":150, "showBookmarksBar":false, "showSecurityInfo":false,
+                "showLoadingProgress":false});
+            f.write_data(false);
+            assert_eq!(detailed(&f, &lease).await, Ok(()));
+            assert!(lease.is_current());
+            assert_eq!(lease.revocation_cause(), None);
+            // A capability beside them is authority like any other field.
+            f.data["connections"][0]["browserSession"]["websiteExtensionsEnabled"] = false.into();
+            f.write_data(false);
+            assert_eq!(detailed(&f, &lease).await, Err(RecheckFailure::SourceChanged));
+            assert!(!lease.is_current());
+        }
+
+        #[tokio::test]
+        async fn security_relevant_edits_end_the_tab_as_a_latched_source_change() {
+            // One database and unlock session; every edit gets its own lease.
+            // The digest tests cover every other field without a database.
+            let mut f = Fixture::new(0).await;
+            let original = f.data.clone();
+            for (field, value) in [
+                ("port", json!(8443)),
+                ("password", json!("changed-fixture")),
+                ("websiteDomainPermissions", json!({"version":1,"websites":[]})),
+            ] {
+                let lease = f.lease().await;
+                let clone = lease.clone();
+                f.data["connections"][0][field] = value;
+                f.write_data(false);
+                assert_eq!(
+                    detailed(&f, &lease).await,
+                    Err(RecheckFailure::SourceChanged),
+                    "{field}"
+                );
+                assert!(!lease.is_current() && !clone.is_current(), "{field}");
+                assert_eq!(clone.revocation_cause(), Some(RecheckFailure::SourceChanged));
+                if field == "port" {
+                    // No ABA revival: the lease stays ended for its first cause.
+                    f.data = original.clone();
+                    f.write_data(false);
+                    assert_eq!(
+                        lease.recheck(&f.window, &f.state).await,
+                        Err(UNAVAILABLE.to_owned())
+                    );
+                    assert_eq!(detailed(&f, &clone).await, Err(RecheckFailure::SourceChanged));
+                    assert!(!lease.is_current());
+                    assert_eq!(lease.revocation_cause(), Some(RecheckFailure::SourceChanged));
+                }
+            }
+        }
+
+        #[tokio::test]
+        async fn owner_loss_is_unavailable_even_when_the_saved_row_also_changed() {
+            for (change, edited) in [
+                ("lock", true),
+                ("revision", true),
+                ("window", true),
+                ("deleted", false),
+            ] {
+                let mut f = Fixture::new(0).await;
+                let lease = f.lease().await;
+                if edited {
+                    f.data["connections"][0]["port"] = 8443.into();
+                    f.write_data(false);
+                }
+                match change {
+                    "lock" => database_sessions::global().lock().unwrap().lock(
+                        f.state.database_session_owner(),
+                        &profile_binding(f.root.path()).unwrap(),
+                        "db",
+                        "main",
+                    ),
+                    "revision" => {
+                        let index = f.root.path().join("databases/index.json");
+                        let bytes = std::fs::read(&index).unwrap();
+                        let mut value: Value = serde_json::from_slice(
+                            sorng_storage::sdbf::parse_and_verify(&bytes).unwrap(),
+                        )
+                        .unwrap();
+                        value[0]["securityRevision"] = "next-revision".into();
+                        sorng_storage::sdbf::safe_write(&index, &serde_json::to_vec(&value).unwrap())
+                            .unwrap();
+                    }
+                    "window" => {
+                        database_sessions::revoke_window(f.state.database_session_owner(), "main")
+                    }
+                    _ => {
+                        f.data["connections"] = json!([]);
+                        f.write_data(false);
+                    }
+                }
+                assert_eq!(
+                    detailed(&f, &lease).await,
+                    Err(RecheckFailure::Unavailable),
+                    "{change} edited={edited}"
+                );
+                assert!(!lease.is_current(), "{change}");
+                assert_eq!(
+                    lease.revocation_cause(),
+                    Some(RecheckFailure::Unavailable),
+                    "{change}"
+                );
+            }
+        }
+
+        #[tokio::test]
+        async fn a_closed_tab_is_never_reported_as_a_source_change() {
+            let mut f = Fixture::new(0).await;
+            let lease = f.lease().await;
+            lease.revoke();
+            assert_eq!(lease.revocation_cause(), None);
+            f.data["connections"][0]["port"] = 8443.into();
+            f.write_data(false);
+            assert_eq!(detailed(&f, &lease).await, Err(RecheckFailure::Unavailable));
+            assert_eq!(lease.revocation_cause(), Some(RecheckFailure::Unavailable));
+            // A verdict reached while something else ended the lease is not kept either.
+            let lease = f.lease().await;
+            lease.0.revoked.store(true, Ordering::Release);
+            assert_eq!(
+                lease.revoke_for(RecheckFailure::SourceChanged),
+                RecheckFailure::Unavailable
+            );
+            assert_eq!(lease.revocation_cause(), Some(RecheckFailure::Unavailable));
+        }
+
+        #[tokio::test]
+        async fn edited_or_removed_dependency_is_a_latched_source_change() {
+            for removed in [false, true] {
+                let mut f = Fixture::new(0).await;
+                f.data["connections"]
+                    .as_array_mut()
+                    .unwrap()
+                    .push(json!({"id":"dependency", "hostname":"one"}));
+                f.write_data(false);
+                let lease = f.lease().await;
+                lease
+                    .read_dependency(&f.window, &f.state, false, "dependency")
+                    .await
+                    .unwrap();
+                if removed {
+                    f.data["connections"].as_array_mut().unwrap().pop();
+                } else {
+                    f.data["connections"][1]["hostname"] = "two".into();
+                }
+                f.write_data(false);
+                assert_eq!(
+                    detailed(&f, &lease).await,
+                    Err(RecheckFailure::SourceChanged),
+                    "removed={removed}"
+                );
+                assert!(!lease.is_current());
+                assert_eq!(
+                    lease.revocation_cause(),
+                    Some(RecheckFailure::SourceChanged)
+                );
+            }
+        }
+
+        struct Scripted(std::sync::Mutex<Vec<SourceCheck>>);
+        impl SourceDependencies for Scripted {
+            fn check(&self) -> Pin<Box<dyn Future<Output = SourceCheck> + Send + '_>> {
+                let next = self.0.lock().unwrap().remove(0);
+                Box::pin(async move { next })
+            }
+        }
+        fn scripted(script: Vec<SourceCheck>) -> Arc<Scripted> {
+            Arc::new(Scripted(script.into()))
+        }
+
+        #[tokio::test]
+        async fn records_outside_the_database_are_compared_on_every_recheck() {
+            for (script, row_edited, expected) in [
+                (
+                    vec![SourceCheck::Current, SourceCheck::Changed],
+                    false,
+                    RecheckFailure::SourceChanged,
+                ),
+                (
+                    vec![SourceCheck::Current, SourceCheck::Unavailable],
+                    false,
+                    RecheckFailure::Unavailable,
+                ),
+                // Unreadable records are never reported as an ordinary edit.
+                (
+                    vec![SourceCheck::Current, SourceCheck::Unavailable],
+                    true,
+                    RecheckFailure::Unavailable,
+                ),
+            ] {
+                let mut f = Fixture::new(0).await;
+                let lease = f.lease().await;
+                lease
+                    .register_source_dependencies(scripted(script))
+                    .unwrap();
+                // The database proof is reused here; the outside records are not.
+                assert_eq!(detailed(&f, &lease).await, Ok(()));
+                if row_edited {
+                    f.data["connections"][0]["port"] = 8443.into();
+                    f.write_data(false);
+                }
+                assert_eq!(detailed(&f, &lease).await, Err(expected));
+                assert!(!lease.is_current());
+                assert_eq!(lease.revocation_cause(), Some(expected));
+            }
+        }
+
+        #[tokio::test]
+        async fn outside_records_are_bound_once_to_a_current_saved_lease_only() {
+            let f = Fixture::new(0).await;
+            let lease = f.lease().await;
+            let current = || scripted(vec![SourceCheck::Current]);
+            lease.register_source_dependencies(current()).unwrap();
+            // The set is immutable, and a second registration fails closed.
+            assert!(lease.register_source_dependencies(current()).is_err());
+            assert!(!lease.is_current());
+            let lease = f.lease().await;
+            lease.revoke();
+            assert!(lease.register_source_dependencies(current()).is_err());
+            // A cookie fork is bound to the saved identity, not to the route.
+            let lease = f.lease().await;
+            lease
+                .register_source_dependencies(scripted(vec![]))
+                .unwrap();
+            let (fork, _) = lease.fork_for_cookie_retention().unwrap();
+            assert!(fork.0.source_dependencies.get().is_none());
+            assert_eq!(fork.revocation_cause(), None);
+            // A temporary tab has no saved records at all.
+            let request = serde_json::from_value(json!({
+                "owner":{"ownerDatabaseId":"quick-connect:tab", "connectionId":"temporary",
+                    "sessionId":"tab"},
+                "expectedSecurityRevision":"quick-connect", "sourceSessionId":"tab",
+                "requestId":"create", "initialUrl":"https://temporary.example/",
+                "quickConnect":{"protocol":"https", "hostname":"temporary.example", "port":443,
+                    "httpVerifySsl":true},
+                "bounds":{"x":0,"y":0,"width":800,"height":600}, "visible":false,
+                "policy":{"darkMode":"forced", "autoLogin":{"enabled":true,
+                    "consent":{"kind":"required"}}}
+            }))
+            .unwrap();
+            let temporary = temporary(
+                &f.window,
+                &f.state,
+                &request,
+                &json!({"id":"temporary", "protocol":"https", "hostname":"temporary.example",
+                    "port":443}),
+            )
+            .unwrap();
+            assert!(temporary.register_source_dependencies(current()).is_err());
+            assert!(!temporary.is_current());
+        }
+    }
+
+    #[cfg(test)]
     mod cookie_owner_tests {
         use super::*;
 
@@ -1654,8 +2111,10 @@ pub mod native_browser_owner {
                 connection_id: "connection".into(),
                 connection_digest: [1; 32],
                 dependencies: std::sync::Mutex::new(Default::default()),
+                source_dependencies: std::sync::OnceLock::new(),
                 recheck_proof: std::sync::Mutex::new(None),
                 revoked: AtomicBool::new(false),
+                revocation_cause: AtomicU8::new(CAUSE_NONE),
                 cookie_gate: std::sync::Mutex::new(()),
             }))
         }
@@ -1941,10 +2400,12 @@ pub mod native_browser_owner {
         Ok(Sha256::digest(&*bytes).into())
     }
 
-    /// Bookmark/library presentation changes do not alter this attempt's
-    /// security authority. Keep every other field (including unknown future
-    /// fields) in the digest: URLs, credentials, routing and automation consent
-    /// edits still require a fresh attempt.
+    /// Persisted binding, format v1. `browser_sessions` stores this digest in
+    /// every saved sign-in record and discards a record that no longer
+    /// matches, so its three removals are frozen here and deliberately do not
+    /// follow the shared exclusion file: changing them would silently delete
+    /// every retained sign-in on upgrade. A live lease compares
+    /// `authority_digest` instead.
     pub(super) fn connection_digest(value: &Value) -> Result<[u8; 32], String> {
         let mut connection = value.clone();
         let object = connection.as_object_mut().ok_or(UNAVAILABLE)?;
@@ -1957,6 +2418,97 @@ pub mod native_browser_owner {
             automation.remove("items");
         }
         digest(&connection)
+    }
+
+    /// The one reviewed list of saved-connection paths that never alter an
+    /// open tab's authority. The frontend imports the same file.
+    const DIGEST_EXCLUSIONS: &str = include_str!("origin_browser_digest_exclusions.json");
+
+    struct DigestRules {
+        /// Object-key paths removed before hashing.
+        exclusions: Vec<Vec<String>>,
+        /// An object at the path that is left holding exactly these members
+        /// is hashed as if it were absent.
+        absent_when_only: Vec<(Vec<String>, Value)>,
+    }
+
+    /// The rules from the shared file. A file without the expected shape
+    /// yields no rules at all, which fails every lease closed instead of
+    /// hashing more or less than was reviewed.
+    fn digest_rules() -> Result<&'static DigestRules, String> {
+        fn path(entry: &Value) -> Option<Vec<String>> {
+            let path = entry
+                .get("path")?
+                .as_array()?
+                .iter()
+                .map(|key| key.as_str().filter(|key| !key.is_empty()).map(str::to_owned))
+                .collect::<Option<Vec<_>>>()?;
+            (!path.is_empty()).then_some(path)
+        }
+        static RULES: std::sync::LazyLock<Option<DigestRules>> = std::sync::LazyLock::new(|| {
+            let file: Value = serde_json::from_str(DIGEST_EXCLUSIONS).ok()?;
+            if file.get("version") != Some(&Value::from(1)) {
+                return None;
+            }
+            Some(DigestRules {
+                exclusions: file
+                    .get("exclusions")?
+                    .as_array()?
+                    .iter()
+                    .map(path)
+                    .collect::<Option<_>>()?,
+                absent_when_only: file
+                    .get("absentWhenOnly")?
+                    .as_array()?
+                    .iter()
+                    .map(|entry| {
+                        let members = entry.get("members").filter(|value| value.is_object())?;
+                        Some((path(entry)?, members.clone()))
+                    })
+                    .collect::<Option<_>>()?,
+            })
+        });
+        RULES.as_ref().ok_or_else(|| UNAVAILABLE.to_owned())
+    }
+
+    /// What an open tab is bound to. Presentation and bookkeeping edits
+    /// (rename, colour, folder, last-connected and the like) and the display
+    /// overrides of the browser session leave it unchanged. Every other
+    /// field, including any unknown or future one, stays in the digest: URLs,
+    /// credentials, routing, permissions, capabilities and automation consent
+    /// edits still end the attempt.
+    pub(super) fn authority_digest(value: &Value) -> Result<[u8; 32], String> {
+        fn parent<'a>(
+            row: &'a mut Value,
+            path: &'a [String],
+        ) -> Option<(&'a mut serde_json::Map<String, Value>, &'a str)> {
+            let (leaf, parents) = path.split_last()?;
+            let mut node = row;
+            for key in parents {
+                node = node.get_mut(key.as_str())?;
+            }
+            Some((node.as_object_mut()?, leaf.as_str()))
+        }
+        let mut connection = browser_sessions::SecretData(value.clone());
+        if !connection.0.is_object() {
+            return Err(UNAVAILABLE.into());
+        }
+        let rules = digest_rules()?;
+        for path in &rules.exclusions {
+            if let Some((object, leaf)) = parent(&mut connection.0, path) {
+                object.remove(leaf);
+            }
+        }
+        // After the removals: editors create an override object with the
+        // first override and drop it with the last.
+        for (path, members) in &rules.absent_when_only {
+            if let Some((object, leaf)) = parent(&mut connection.0, path) {
+                if object.get(leaf) == Some(members) {
+                    object.remove(leaf);
+                }
+            }
+        }
+        digest(&connection.0)
     }
 
     #[cfg(test)]
@@ -1984,10 +2536,12 @@ pub mod native_browser_owner {
             session_validity: Some(session_validity),
             generation: state.key_generation(),
             connection_id: connection["id"].as_str().unwrap().into(),
-            connection_digest: connection_digest(connection).unwrap(),
+            connection_digest: authority_digest(connection).unwrap(),
             dependencies: std::sync::Mutex::new(Default::default()),
+            source_dependencies: std::sync::OnceLock::new(),
             recheck_proof: std::sync::Mutex::new(None),
             revoked: AtomicBool::new(false),
+            revocation_cause: AtomicU8::new(CAUSE_NONE),
             cookie_gate: std::sync::Mutex::new(()),
         }))
     }
@@ -1996,6 +2550,294 @@ pub mod native_browser_owner {
     mod connection_digest_tests {
         use super::*;
         use serde_json::json;
+
+        /// The reviewed list. A path added to the shared file must be added
+        /// here in the same review, after checking that no native browser
+        /// code reads it for an attempt.
+        const REVIEWED: &[&[&str]] = &[
+            &["httpBookmarks"],
+            &["httpAutomation", "items"],
+            &["updatedAt"],
+            &["lastConnected"],
+            &["connectionCount"],
+            &["name"],
+            &["description"],
+            &["tags"],
+            &["icon"],
+            &["colorTag"],
+            &["tabColor"],
+            &["favorite"],
+            &["order"],
+            &["parentId"],
+            &["browserSession", "defaultZoomPercent"],
+            &["browserSession", "showBookmarksBar"],
+            &["browserSession", "showSecurityInfo"],
+            &["browserSession", "showLoadingProgress"],
+        ];
+
+        /// Reviewed with the list above: an object at this path that holds
+        /// exactly these members is hashed as if it were absent.
+        const REVIEWED_ABSENT: &[(&[&str], &str)] = &[(&["browserSession"], r#"{"version":1}"#)];
+
+        fn set(row: &mut Value, path: &[&str], value: Value) {
+            let (leaf, parents) = path.split_last().unwrap();
+            let mut node = row;
+            for key in parents {
+                if node.get(*key).is_none() {
+                    node[*key] = json!({});
+                }
+                node = &mut node[*key];
+            }
+            node[*leaf] = value;
+        }
+
+        fn row() -> Value {
+            json!({"id":"website", "isGroup":false, "protocol":"https",
+                "hostname":"https://example.test", "port":443, "name":"Example",
+                "tags":["one"], "httpAutomation":{"version":1,"items":[],
+                "scriptInjectionEnabled":false},
+                "browserSession":{"version":1,"restoreCookies":false}})
+        }
+
+        #[test]
+        fn exclusion_file_is_exactly_the_reviewed_list_the_digest_applies() {
+            let file: Value = serde_json::from_str(DIGEST_EXCLUSIONS).unwrap();
+            assert_eq!(file["version"], 1);
+            let listed: Vec<Vec<String>> = file["exclusions"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|entry| serde_json::from_value(entry["path"].clone()).unwrap())
+                .collect();
+            assert_eq!(listed, REVIEWED);
+            let absent: Vec<(Vec<String>, Value)> = file["absentWhenOnly"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|entry| {
+                    (
+                        serde_json::from_value(entry["path"].clone()).unwrap(),
+                        entry["members"].clone(),
+                    )
+                })
+                .collect();
+            let reviewed_absent: Vec<(Vec<String>, Value)> = REVIEWED_ABSENT
+                .iter()
+                .map(|(path, members)| {
+                    (
+                        path.iter().map(|key| (*key).to_owned()).collect(),
+                        serde_json::from_str(members).unwrap(),
+                    )
+                })
+                .collect();
+            assert_eq!(absent, reviewed_absent);
+            let rules = digest_rules().unwrap();
+            assert_eq!(rules.exclusions, listed);
+            assert_eq!(rules.absent_when_only, absent);
+            // Exactly these paths leave the digest, and nothing else does.
+            let mut full = row();
+            for path in REVIEWED {
+                set(&mut full, path, json!("saved"));
+            }
+            let mut stripped = full.clone();
+            for path in REVIEWED {
+                let (leaf, parents) = path.split_last().unwrap();
+                let mut node = &mut stripped;
+                for key in parents {
+                    node = &mut node[*key];
+                }
+                assert!(node.as_object_mut().unwrap().remove(*leaf).is_some());
+            }
+            assert_eq!(authority_digest(&full).unwrap(), digest(&stripped).unwrap());
+            let before = authority_digest(&row()).unwrap();
+            for path in REVIEWED {
+                let mut changed = row();
+                set(&mut changed, path, json!("edited"));
+                assert_eq!(before, authority_digest(&changed).unwrap(), "{path:?}");
+            }
+        }
+
+        #[test]
+        fn every_other_field_including_unknown_and_nested_ones_still_changes_authority() {
+            let before = authority_digest(&row()).unwrap();
+            let cases: &[(&[&str], Value)] = &[
+                (&["id"], json!("other")),
+                (&["isGroup"], json!(true)),
+                (&["protocol"], json!("http")),
+                (&["hostname"], json!("https://other.test")),
+                (&["port"], json!(8443)),
+                (&["username"], json!("user")),
+                (&["password"], json!("changed-fixture")),
+                (&["domain"], json!("lab")),
+                (&["basicAuthUsername"], json!("user")),
+                (&["basicAuthPassword"], json!("changed-fixture")),
+                (&["authType"], json!("basic")),
+                (&["credentialSource"], json!({"kind":"vault","credentialId":"entry"})),
+                (&["totpSecret"], json!("JBSWY3DPEHPK3PXP")),
+                (&["totpConfigs"], json!([{"id":"totp"}])),
+                (&["httpsTrustPolicy"], json!("strict")),
+                (&["httpVerifySsl"], json!(false)),
+                (&["httpHeaders"], json!({"X-Fixture":"1"})),
+                (&["httpAutoLogin"], json!(true)),
+                (&["httpAutoLoginSelectors"], json!({"usernameSelector":"#user"})),
+                (&["httpAutoMfa"], json!({"version":1,"enabled":true})),
+                (&["httpApplication"], json!({"version":1,"id":"ilo","loginMode":"form"})),
+                (&["httpFormAutomation"], json!({"version":1})),
+                (&["websiteDomainPermissions"], json!({"version":1})),
+                (&["httpProxyPolicy"], json!({"version":1,"sameOriginOnly":false})),
+                (&["httpTrustedRedirectDestinations"], json!({"origins":[]})),
+                (&["httpRedirectAuthentication"], json!({"version":1})),
+                (&["browserSession"], json!({"version":1,"cookiesEnabled":false})),
+                (&["browserSession", "sessionRetention"], json!({"mode":"memory"})),
+                (&["proxyProfileId"], json!("profile")),
+                (&["proxyChainId"], json!("chain")),
+                (&["connectionChainId"], json!("chain")),
+                (&["tunnelProfileId"], json!("tunnel")),
+                (&["tunnelChainId"], json!("chain")),
+                (&["security", "proxy"], json!({"enabled":true})),
+                (&["security", "tunnelChain"], json!([])),
+                (&["httpAutomation", "version"], json!(2)),
+                (&["httpAutomation", "scriptInjectionEnabled"], json!(true)),
+                (&["httpAutomation", "futureConsent"], json!(true)),
+                (&["machineAssignment"], json!({"machineId":"lab"})),
+                (&["createdAt"], json!("2026-10-12T09:00:00.000Z")),
+                (&["expanded"], json!(true)),
+                (&["color"], json!("red")),
+                (&["lastAccessed"], json!("2026-10-12T09:00:00.000Z")),
+                (&["futureSecurityField"], json!(true)),
+                // A listed key is only excluded at its listed place.
+                (&["security", "name"], json!("edited")),
+                (&["httpAutomation", "name"], json!("edited")),
+                (&["browserSession", "tags"], json!(["edited"])),
+                (&["httpApplication", "description"], json!("edited")),
+                (&["items"], json!([])),
+                (&["defaultZoomPercent"], json!(150)),
+                (&["security", "showBookmarksBar"], json!(false)),
+                (&["httpAutomation", "showSecurityInfo"], json!(false)),
+                // Dark styling is resolved once when a tab is created; the
+                // live appearance sync carries only the application palette.
+                (&["httpAutomation", "forceDark"], json!(true)),
+                (&["httpAutomation", "darkMode"], json!({"version":1,"useGlobalDefaults":true})),
+                (&["httpAutomation", "interactionMacrosEnabled"], json!(true)),
+                // Every other browser-session override, and any unknown one.
+                (&["browserSession", "version"], json!(2)),
+                (&["browserSession", "restoreCookies"], json!(true)),
+                (&["browserSession", "cookiesEnabled"], json!(false)),
+                (&["browserSession", "localStorageEnabled"], json!(false)),
+                (&["browserSession", "databasesEnabled"], json!(false)),
+                (&["browserSession", "webglEnabled"], json!(false)),
+                (&["browserSession", "mediaStreamEnabled"], json!(false)),
+                (&["browserSession", "crossOriginRequestsEnabled"], json!(false)),
+                (&["browserSession", "websiteExtensionsEnabled"], json!(false)),
+                (&["browserSession", "hideAutomationIndicator"], json!(false)),
+                (&["browserSession", "initialLoadTimeoutSeconds"], json!(45)),
+                (&["browserSession", "documentReadyTimeoutSeconds"], json!(60)),
+                (&["browserSession", "minimumFormFillDelayMs"], json!(50)),
+                (&["browserSession", "minimumFormSubmitDelayMs"], json!(50)),
+                (&["browserSession", "manualFormSubmit"], json!(false)),
+                (&["browserSession", "futureOverride"], json!(true)),
+            ];
+            for (path, value) in cases {
+                let mut changed = row();
+                set(&mut changed, path, value.clone());
+                assert_ne!(before, authority_digest(&changed).unwrap(), "{path:?}");
+            }
+            // Removing a field is an edit too, and a non-object row has no authority.
+            for field in ["port", "browserSession"] {
+                let mut removed = row();
+                removed.as_object_mut().unwrap().remove(field);
+                assert_ne!(before, authority_digest(&removed).unwrap(), "{field}");
+            }
+            assert!(authority_digest(&json!([])).is_err());
+            // A listed parent that is not an object is hashed as it is saved.
+            let mut scalar = row();
+            scalar["httpAutomation"] = json!("items");
+            assert_ne!(before, authority_digest(&scalar).unwrap());
+        }
+
+        /// Saved sign-in records store `connection_digest`. Its scope and
+        /// encoding are a persisted format: any change discards every stored
+        /// record, so it must not follow the shared exclusion file.
+        #[test]
+        fn persisted_cookie_binding_keeps_its_original_scope_and_encoding() {
+            let saved = json!({"id":"website", "hostname":"https://example.test",
+                "name":"Example", "updatedAt":"2026-10-12T09:00:00.000Z",
+                "httpBookmarks":[{"name":"Docs","path":"/docs"}],
+                "httpAutomation":{"version":1,"items":[{"kind":"script","id":"saved"}],
+                "scriptInjectionEnabled":false}});
+            assert_eq!(
+                connection_digest(&saved)
+                    .unwrap()
+                    .iter()
+                    .map(|byte| format!("{byte:02x}"))
+                    .collect::<String>(),
+                "6cffb95ed451fd38ae22ded4600739282783ff54aaa9e3c8dcf1085942f49bf6"
+            );
+            let mut overridden = saved.clone();
+            overridden["browserSession"] = json!({"version":1,"restoreCookies":false});
+            for path in REVIEWED.iter().skip(3) {
+                let mut changed = overridden.clone();
+                set(&mut changed, path, json!("edited"));
+                assert_ne!(
+                    connection_digest(&overridden).unwrap(),
+                    connection_digest(&changed).unwrap(),
+                    "{path:?}"
+                );
+                assert_eq!(
+                    authority_digest(&overridden).unwrap(),
+                    authority_digest(&changed).unwrap(),
+                    "{path:?}"
+                );
+            }
+            // An override object with only its version is still part of it.
+            let mut versioned = saved.clone();
+            versioned["browserSession"] = json!({"version":1});
+            assert_ne!(
+                connection_digest(&saved).unwrap(),
+                connection_digest(&versioned).unwrap()
+            );
+        }
+
+        /// Editors create the override object with the first override and
+        /// drop it with the last, so display overrides are only inert if an
+        /// object left with nothing but its version equals no object.
+        #[test]
+        fn display_overrides_and_a_version_only_override_object_carry_no_authority() {
+            let mut bare = row();
+            bare.as_object_mut().unwrap().remove("browserSession");
+            let before = authority_digest(&bare).unwrap();
+            let with = |session: Value| {
+                let mut changed = bare.clone();
+                changed["browserSession"] = session;
+                authority_digest(&changed).unwrap()
+            };
+            for session in [
+                json!({"version":1}),
+                json!({"version":1,"defaultZoomPercent":150}),
+                json!({"version":1,"defaultZoomPercent":50,"showBookmarksBar":false,
+                    "showSecurityInfo":false,"showLoadingProgress":false}),
+                // Native rejects a malformed value at the next create, and an
+                // open tab never reads it.
+                json!({"version":1,"defaultZoomPercent":"wide","showBookmarksBar":null}),
+            ] {
+                assert_eq!(before, with(session.clone()), "{session}");
+            }
+            for session in [
+                Value::Null,
+                json!([]),
+                json!("1"),
+                json!({}),
+                json!({"version":2}),
+                json!({"version":"1"}),
+                json!({"version":1,"futureOverride":true}),
+                json!({"version":1,"defaultZoomPercent":150,"cookiesEnabled":true}),
+                json!({"version":1,"showBookmarksBar":false,"websiteExtensionsEnabled":true}),
+                json!({"version":1,"sessionRetention":{"version":1,"mode":"memory",
+                    "idleTimeoutMinutes":30,"maxAgeHours":24,"clearOnDatabaseLock":false}}),
+            ] {
+                assert_ne!(before, with(session.clone()), "{session}");
+            }
+        }
 
         #[test]
         fn bookmark_and_favorite_edits_preserve_browser_authority() {
@@ -2064,10 +2906,12 @@ pub mod native_browser_owner {
             session_validity: None,
             generation: state.key_generation(),
             connection_id: request.owner.connection_id.clone(),
-            connection_digest: connection_digest(connection)?,
+            connection_digest: authority_digest(connection)?,
             dependencies: std::sync::Mutex::new(Default::default()),
+            source_dependencies: std::sync::OnceLock::new(),
             recheck_proof: std::sync::Mutex::new(None),
             revoked: AtomicBool::new(false),
+            revocation_cause: AtomicU8::new(CAUSE_NONE),
             cookie_gate: std::sync::Mutex::new(()),
         }));
         if !lease.is_current() { return Err(UNAVAILABLE.into()); }
@@ -2128,8 +2972,9 @@ pub mod native_browser_owner {
                 session_validity: Some(session_validity),
                 generation,
                 connection_id: connection_id.into(),
-                connection_digest: connection_digest(&connection)?,
+                connection_digest: authority_digest(&connection)?,
                 dependencies: std::sync::Mutex::new(std::collections::BTreeMap::new()),
+                source_dependencies: std::sync::OnceLock::new(),
                 // The initial read just authenticated this exact snapshot and
                 // selected row; no dependency has been registered yet.
                 recheck_proof: std::sync::Mutex::new(Some(RecheckProof {
@@ -2137,6 +2982,7 @@ pub mod native_browser_owner {
                     dependencies: Dependencies::new(),
                 })),
                 revoked: AtomicBool::new(false),
+                revocation_cause: AtomicU8::new(CAUSE_NONE),
                 cookie_gate: std::sync::Mutex::new(()),
             }));
             if !lease.is_current() {

@@ -788,6 +788,7 @@ pub enum OriginBrowserFailureReason {
     RedirectDenied,
     RuntimeUnavailable,
     OwnerWindow,
+    SourceChanged,
     Callback,
     NativeSurface,
     Load,
@@ -806,6 +807,7 @@ impl From<sorng_protocols::origin_browser::BrowserSessionFailure> for OriginBrow
             Reason::RedirectDenied => Self::RedirectDenied,
             Reason::RuntimeUnavailable => Self::RuntimeUnavailable,
             Reason::OwnerWindow => Self::OwnerWindow,
+            Reason::SourceChanged => Self::SourceChanged,
         }
     }
 }

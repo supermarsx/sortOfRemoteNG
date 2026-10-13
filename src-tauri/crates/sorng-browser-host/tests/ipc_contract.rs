@@ -27,6 +27,7 @@ fn native_failure_reason_is_optional_fixed_and_only_serialized_for_failed_phase(
             (OriginBrowserFailureReason::RedirectDenied, "redirect-denied"),
             (OriginBrowserFailureReason::RuntimeUnavailable, "runtime-unavailable"),
             (OriginBrowserFailureReason::OwnerWindow, "owner-window"),
+            (OriginBrowserFailureReason::SourceChanged, "source-changed"),
             (OriginBrowserFailureReason::Callback, "callback"),
             (OriginBrowserFailureReason::NativeSurface, "native-surface"),
             (OriginBrowserFailureReason::Load, "load"),
@@ -63,6 +64,48 @@ fn native_failure_reason_is_optional_fixed_and_only_serialized_for_failed_phase(
                 .is_none());
         }
     }
+}
+
+#[test]
+fn native_session_failures_keep_their_wire_values_and_a_source_change_is_not_owner_loss() {
+    use sorng_protocols::origin_browser::BrowserSessionFailure as Native;
+    // Exhaustive on purpose: a new native cause must be mirrored here too.
+    fn listed(reason: Native) -> bool {
+        match reason {
+            Native::DatabaseOwner
+            | Native::Watchdog
+            | Native::PrivateContext
+            | Native::PrivateProxy
+            | Native::NativeState
+            | Native::CertificateBridge
+            | Native::RedirectDenied
+            | Native::RuntimeUnavailable
+            | Native::OwnerWindow
+            | Native::SourceChanged => true,
+        }
+    }
+    for native in [
+        Native::DatabaseOwner,
+        Native::Watchdog,
+        Native::PrivateContext,
+        Native::PrivateProxy,
+        Native::NativeState,
+        Native::CertificateBridge,
+        Native::RedirectDenied,
+        Native::RuntimeUnavailable,
+        Native::OwnerWindow,
+        Native::SourceChanged,
+    ] {
+        assert!(listed(native));
+        assert_eq!(
+            serde_json::to_value(OriginBrowserFailureReason::from(native)).unwrap(),
+            serde_json::to_value(native).unwrap()
+        );
+    }
+    let changed = OriginBrowserFailureReason::from(Native::SourceChanged);
+    assert_eq!(changed, OriginBrowserFailureReason::SourceChanged);
+    assert_eq!(serde_json::to_value(changed).unwrap(), "source-changed");
+    assert_ne!(changed, OriginBrowserFailureReason::from(Native::DatabaseOwner));
 }
 
 fn owner() -> Value {
