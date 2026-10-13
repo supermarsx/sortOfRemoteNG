@@ -556,6 +556,25 @@ export const S = {
   settingsSearchHighlight: '[data-testid="settings-search-highlight"]',
   /** Any tab button in the (search-filtered) settings sidebar. */
   settingsTabButton: '[data-testid^="settings-tab-"]',
+
+  // In-app prompt (t103; data-testids from
+  // src/components/ui/dialogs/AppPromptDialog.tsx). `appPrompt` is the
+  // backdrop; `appPromptDialog` is the role="dialog" panel inside it, whose
+  // aria-label is the prompt's title.
+  appPrompt: '[data-testid="app-prompt"]',
+  appPromptDialog: '[data-testid="app-prompt"] [role="dialog"]',
+  appPromptQueue: '[data-testid="app-prompt-queue"]',
+  appPromptMessage: '[data-testid="app-prompt-message"]',
+  appPromptTargets: '[data-testid="app-prompt-targets"]',
+  appPromptTargetsMore: '[data-testid="app-prompt-targets-more"]',
+  appPromptPreview: '[data-testid="app-prompt-preview"]',
+  appPromptPreviewMore: '[data-testid="app-prompt-preview-more"]',
+  appPromptPreviewNote: '[data-testid="app-prompt-preview-note"]',
+  appPromptFacts: '[data-testid="app-prompt-facts"]',
+  appPromptRemember: '[data-testid="app-prompt-remember"]',
+  appPromptHint: '[data-testid="app-prompt-hint"]',
+  appPromptCancel: '[data-testid="app-prompt-cancel"]',
+  appPromptConfirm: '[data-testid="app-prompt-confirm"]',
 } as const;
 
 /** Session tab carrying the given `data-session-status` (t63). */
