@@ -47,14 +47,13 @@ fn windows_text(value: &str) -> Option<String> {
 
     let tail = if disk_root(&ordinary) {
         &ordinary[3..]
-    } else if let Some(unc) = ordinary.strip_prefix(r"\\") {
+    } else {
+        let unc = ordinary.strip_prefix(r"\\")?;
         let mut parts = unc.splitn(3, '\\');
         if !ordinary_component(parts.next()?) || !ordinary_component(parts.next()?) {
             return None;
         }
         parts.next().unwrap_or("")
-    } else {
-        return None;
     };
     // Allow a root or one trailing separator, but never collapse empty, dot or
     // parent components. Inspect raw components: Path::components hides some.
