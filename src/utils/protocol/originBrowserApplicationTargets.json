@@ -178,7 +178,8 @@
       "hostedLoginUrl": "https://www.networksolutions.com/my-account/login"
     },
     "time4vps": {
-      "hostedLoginUrl": "https://billing.time4vps.com/clientarea/"
+      "hostedLoginUrl": "https://billing.time4vps.com/clientarea/",
+      "loginPath": "/clientarea/"
     },
     "contabo": {
       "hostedLoginUrl": "https://my.contabo.com/account/login"
