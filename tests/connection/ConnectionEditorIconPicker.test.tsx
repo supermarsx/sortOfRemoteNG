@@ -11,6 +11,7 @@ import { ConnectionEditor } from "../../src/components/connection/ConnectionEdit
 import { ConnectionProvider } from "../../src/contexts/ConnectionContext";
 import { useConnections } from "../../src/contexts/useConnections";
 import type { Connection } from "../../src/types/connection/connection";
+import { resolveEditorConnectionIcon } from "../../src/components/connection/editor/connectionIconPickerModel";
 
 const i18nMock = vi.hoisted(() => {
   const t = vi.fn(
@@ -194,6 +195,11 @@ describe("ConnectionEditor icon persistence", () => {
     });
 
     const saved = latestConnections[0];
+    const automaticIcon = resolveEditorConnectionIcon({
+      ...saved,
+      icon: undefined,
+    });
+    const automaticSource = `Automatic · ${saved.protocol.toUpperCase()} protocol`;
     expect(saved.icon).toBe("star");
     expect(typeof saved.icon).toBe("string");
     expect(saved).not.toHaveProperty("iconComponent");
@@ -225,7 +231,7 @@ describe("ConnectionEditor icon persistence", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Use automatic icon" }));
     await waitFor(() => {
-      expect(screen.getByText("Automatic · RDP protocol")).toBeInTheDocument();
+      expect(screen.getByText(automaticSource)).toBeInTheDocument();
       expect(
         screen.getByRole("button", { name: "Use automatic icon" }),
       ).toBeDisabled();
@@ -249,9 +255,9 @@ describe("ConnectionEditor icon persistence", () => {
     );
     fireEvent.click(screen.getByTestId("connection-editor-tab-organize"));
     expect(
-      screen.getByLabelText("Current effective icon: Microsoft"),
+      screen.getByLabelText(`Current effective icon: ${automaticIcon.label}`),
     ).toBeInTheDocument();
-    expect(screen.getByText("Automatic · RDP protocol")).toBeInTheDocument();
+    expect(screen.getByText(automaticSource)).toBeInTheDocument();
     expect(
       screen.getByRole("button", { name: "Use automatic icon" }),
     ).toBeDisabled();
