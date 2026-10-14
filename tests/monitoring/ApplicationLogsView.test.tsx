@@ -96,7 +96,9 @@ describe("Application logs", () => {
       "not automatically redacted",
     );
     expect(mocks.clipboard).not.toHaveBeenCalled();
-    fireEvent.click(screen.getByRole("button", { name: "Copy log text" }));
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Copy log text" }),
+    );
     await waitFor(() =>
       expect(mocks.clipboard).toHaveBeenCalledWith("ERROR private address"),
     );
