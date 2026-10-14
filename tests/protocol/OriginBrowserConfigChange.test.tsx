@@ -1164,6 +1164,90 @@ describe("a saved connection edited while its tab is open (K2)", () => {
     expect(screen.queryByText(/were not confirmed saved/)).toBeNull();
   });
 
+  it("toasts a recovered unreachable proxy once after a real page load, without duplicating the banner", async () => {
+    await openTab();
+    const native = h.invoke.getMockImplementation()!;
+    h.invoke.mockImplementation(async (command, args) => {
+      const result = await native(command, args);
+      if (
+        (command === "origin_browser_create" ||
+          command === "origin_browser_status") &&
+        result?.snapshot?.identity.attemptId === "attempt-2"
+      )
+        return { ...result, snapshot: { ...result.snapshot, loading: true } };
+      return result;
+    });
+    await emit(
+      snapshot("attempt-1", {
+        sequence: 5,
+        loadFailure: { code: -130, category: "proxy" },
+      }),
+    );
+    await waitFor(() => expect(calls("origin_browser_create")).toHaveLength(2));
+    await settle();
+    const message = "This tab reconnected with a fresh private proxy.";
+    expect(screen.queryByText(message)).toBeNull();
+    await emit(
+      snapshot("attempt-2", { sequence: 5, displayUrl: "about:blank" }),
+    );
+    await settle();
+    expect(screen.queryByText(message)).toBeNull();
+    await emit(snapshot("attempt-2", { sequence: 6, documentLoaded: false }));
+    await settle();
+    expect(screen.queryByText(message)).toBeNull();
+    await emit(snapshot("attempt-2", { sequence: 7, documentLoaded: true }));
+    await settle();
+    await waitFor(() => expect(screen.getAllByText(message)).toHaveLength(1));
+    expect(notice()).toBeNull();
+    expect(
+      screen.getByText(message).closest('[role="status"]'),
+    ).not.toHaveAttribute("aria-label", "Browser reconnection");
+    await emit(
+      snapshot("attempt-2", {
+        sequence: 8,
+        documentLoaded: true,
+        title: "Updated title",
+      }),
+    );
+    await settle();
+    expect(screen.getAllByText(message)).toHaveLength(1);
+  });
+
+  it("does not toast success when the fresh proxy still fails, and retains failure diagnostics", async () => {
+    await openTab();
+    const native = h.invoke.getMockImplementation()!;
+    h.invoke.mockImplementation(async (command, args) => {
+      const result = await native(command, args);
+      if (
+        (command === "origin_browser_create" ||
+          command === "origin_browser_status") &&
+        result?.snapshot?.identity.attemptId === "attempt-2"
+      )
+        return { ...result, snapshot: { ...result.snapshot, loading: true } };
+      return result;
+    });
+    await emit(
+      snapshot("attempt-1", {
+        sequence: 5,
+        loadFailure: { code: -130, category: "proxy" },
+      }),
+    );
+    await waitFor(() => expect(calls("origin_browser_create")).toHaveLength(2));
+    await emit(
+      snapshot("attempt-2", {
+        sequence: 5,
+        loadFailure: { code: -130, category: "proxy" },
+      }),
+    );
+    await settle();
+    expect(
+      screen.queryByText("This tab reconnected with a fresh private proxy."),
+    ).toBeNull();
+    expect(
+      screen.getByText(/fresh private proxy could not load the website/),
+    ).toBeInTheDocument();
+  });
+
   it("says so in plain words when the tab reconnects because its private proxy stopped", async () => {
     const mounted = await openTab();
     // What native publishes when the private relay of an attached tab ends.

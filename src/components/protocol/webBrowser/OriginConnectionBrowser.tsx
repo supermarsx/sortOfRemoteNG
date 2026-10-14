@@ -27,6 +27,7 @@ import type {
 } from "../../../types/connection/connection";
 import { useConnections } from "../../../contexts/useConnections";
 import { useSettings } from "../../../contexts/SettingsContext";
+import { useToastContext } from "../../../contexts/ToastContext";
 import { useSessionRenderActivity } from "../../../contexts/SessionRenderActivityContext";
 import {
   useOriginBrowser,
@@ -108,8 +109,8 @@ const NATIVE_START_MARGIN_SECONDS = 60;
 class SaveAfterCloseError extends Error {}
 
 type RestartStage = "running" | "done" | "failed";
-/** One line per in-place restart, in the user's terms. A restart is "done"
- * only once its replacement is attached. */
+/** One notice per in-place restart, in the user's terms. Proxy recovery is
+ * "done" only after its replacement loads a real page successfully. */
 const RESTART_NOTICES: Record<
   OriginBrowserRestartReason,
   Record<RestartStage, string>
@@ -165,6 +166,7 @@ export default function OriginConnectionBrowser({
 }) {
   const context = useConnections();
   const { settings, settingsReady, updateSettings } = useSettings();
+  const { toast } = useToastContext();
   // These fallback values are display-only. Invalid shared settings never
   // reach native creation or the permissions dialog's save path.
   let globalBrowserConfig = normalizeWebBrowserSettings(undefined);
@@ -475,8 +477,8 @@ export default function OriginConnectionBrowser({
     targetUrl,
     authoritySignature,
   ]);
-  // What the last in-place restart came to. It is "done" only once its
-  // replacement is attached, and a later Retry clears a failed one.
+  // The hook keeps proxy recovery pending through attachment until the real
+  // page settles. A later Retry clears a failed restart.
   const restarting = !!browser.state.restart;
   const [restartProgress, setRestartProgress] = useState<{
     serial: number;
@@ -528,6 +530,24 @@ export default function OriginConnectionBrowser({
             : "requested"
         ] ?? RESTART_NOTICES.requested)[restartStage]
       : null;
+  const toastedProxyRecovery = useRef<number | null>(null);
+  useEffect(() => {
+    if (
+      lastRestart?.reason !== "proxy-unreachable" ||
+      restartStage !== "done" ||
+      restarting ||
+      phase !== "attached" ||
+      rootSnapshot?.phase !== "attached" ||
+      rootSnapshot.documentLoaded !== true ||
+      rootSnapshot.loading ||
+      rootSnapshot.loadFailure ||
+      !/^https?:\/\//i.test(rootSnapshot.displayUrl) ||
+      toastedProxyRecovery.current === lastRestart.serial
+    )
+      return;
+    toastedProxyRecovery.current = lastRestart.serial;
+    toast.success(RESTART_NOTICES["proxy-unreachable"].done);
+  }, [lastRestart, restartStage, restarting, phase, rootSnapshot, toast]);
   const [repairedMfaFailure, setRepairedMfaFailure] =
     useState<typeof startupFailure>(null);
   const [devtoolsError, setDevtoolsError] = useState(false);
@@ -1510,41 +1530,45 @@ export default function OriginConnectionBrowser({
           </div>
         </div>
       )}
-      {restartNotice && lastRestart && (
-        // In the layout flow: a native child surface paints above DOM overlays.
-        <div
-          role="status"
-          aria-label="Browser reconnection"
-          className={`mx-3 mt-2 flex shrink-0 min-w-0 items-start gap-2 text-sm text-[var(--color-text)] ${
-            restartStage === "failed"
-              ? "sor-alert-warning"
-              : "rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2"
-          }`}
-        >
-          {restartStage === "running" ? (
-            <LoaderCircle
-              size={16}
-              className="mt-0.5 shrink-0 animate-spin motion-reduce:animate-none"
-              aria-hidden="true"
-            />
-          ) : (
-            <RotateCw
-              size={16}
-              className="mt-0.5 shrink-0"
-              aria-hidden="true"
-            />
-          )}
-          <p className="min-w-0 flex-1">{restartNotice}</p>
-          <button
-            type="button"
-            className="sor-btn sor-icon-btn-sm shrink-0"
-            aria-label="Dismiss reconnection notice"
-            onClick={() => setDismissedRestart(lastRestart.serial)}
+      {restartNotice &&
+        lastRestart &&
+        !(
+          lastRestart.reason === "proxy-unreachable" && restartStage === "done"
+        ) && (
+          // In the layout flow: a native child surface paints above DOM overlays.
+          <div
+            role="status"
+            aria-label="Browser reconnection"
+            className={`mx-3 mt-2 flex shrink-0 min-w-0 items-start gap-2 text-sm text-[var(--color-text)] ${
+              restartStage === "failed"
+                ? "sor-alert-warning"
+                : "rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2"
+            }`}
           >
-            <X size={14} aria-hidden="true" />
-          </button>
-        </div>
-      )}
+            {restartStage === "running" ? (
+              <LoaderCircle
+                size={16}
+                className="mt-0.5 shrink-0 animate-spin motion-reduce:animate-none"
+                aria-hidden="true"
+              />
+            ) : (
+              <RotateCw
+                size={16}
+                className="mt-0.5 shrink-0"
+                aria-hidden="true"
+              />
+            )}
+            <p className="min-w-0 flex-1">{restartNotice}</p>
+            <button
+              type="button"
+              className="sor-btn sor-icon-btn-sm shrink-0"
+              aria-label="Dismiss reconnection notice"
+              onClick={() => setDismissedRestart(lastRestart.serial)}
+            >
+              <X size={14} aria-hidden="true" />
+            </button>
+          </div>
+        )}
       <OriginBrowserNotices notices={notices} />
       {browserConfig.showLoadingProgress && (
         // Native child surfaces paint above DOM overlays. Reserve shell space
