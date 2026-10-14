@@ -2952,7 +2952,32 @@
         (user && user === pw)
       )
         return null;
-      return { user, pw };
+      const forms = Array.from(new Set([user?.form, pw?.form].filter(Boolean)));
+      const submitters = Array.from(
+        doc.querySelectorAll("button,input"),
+      ).filter((node) => forms.includes(node.form));
+      // Bind the destination before the native grant arrives, including for
+      // fill-only consent. The existing per-key guard rechecks this snapshot;
+      // checking only at submit would already have delivered the credentials.
+      const binding = JSON.stringify([
+        doc.baseURI,
+        doc.querySelector("base[target]")?.getAttribute("target"),
+        forms.map((form) => [
+          form.action,
+          form.method,
+          form.getAttribute("action"),
+          form.getAttribute("method"),
+          form.getAttribute("target"),
+        ]),
+        submitters.map((node) => [
+          node.type,
+          node.getAttribute("formaction"),
+          node.getAttribute("formmethod"),
+          node.getAttribute("formtarget"),
+          node.getAttribute("form"),
+        ]),
+      ]);
+      return { user, pw, forms, submitters, binding };
     }
     function same(a, b) {
       return (
@@ -2960,7 +2985,14 @@
         !!b &&
         a.button === b.button &&
         a.user === b.user &&
-        a.pw === b.pw
+        a.pw === b.pw &&
+        a.binding === b.binding &&
+        (a.forms || []).length === (b.forms || []).length &&
+        (a.forms || []).every((form, index) => form === b.forms[index]) &&
+        (a.submitters || []).length === (b.submitters || []).length &&
+        (a.submitters || []).every(
+          (node, index) => node === b.submitters[index],
+        )
       );
     }
     function stepCurrent() {
@@ -2970,6 +3002,11 @@
         !!current_ &&
         same(current_.target, target(current_.step))
       );
+    }
+    function changedReason() {
+      return current() && current_ && applies(current_.step)
+        ? "changed"
+        : "navigation";
     }
     // A form that submits outside this document, by GET (credentials in the
     // address) or to another origin is never submitted.
@@ -3071,8 +3108,8 @@
       busy = true;
       try {
         const step = steps[current_.step.index + 1];
-        if (!stepCurrent() || !applies(step))
-          return finish(false, "navigation");
+        if (!stepCurrent()) return finish(false, changedReason());
+        if (!applies(step)) return finish(false, "navigation");
         if (now() < eligibleAt) return;
         const located = submitTarget(step);
         if (!located) return;
@@ -3100,7 +3137,7 @@
         if (phase === "seeking") return seek();
         if (phase === "waiting-submit") return awaitSubmit();
         if (["requested", "submit-requested"].includes(phase) && !stepCurrent())
-          return finish(false, "navigation");
+          return finish(false, changedReason());
       } catch (_) {
         finish(false, "layout-mismatch");
       }
@@ -3337,7 +3374,7 @@
         )
           return false;
         if (!stepCurrent()) {
-          finish(false, "navigation");
+          finish(false, changedReason());
           return false;
         }
         pending = null;
