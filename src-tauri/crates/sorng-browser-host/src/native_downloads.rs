@@ -18,6 +18,20 @@ use std::{
 };
 
 pub const ORIGIN_BROWSER_DOWNLOAD_EVENT: &str = "origin-browser-download";
+pub const ORIGIN_BROWSER_DOWNLOAD_BLOCKED_EVENT: &str = "origin-browser-download-blocked";
+
+#[derive(Clone, Copy, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum DownloadBlockedReason {
+    Disabled,
+    Capacity,
+}
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DownloadBlockedNotice {
+    pub identity: OriginBrowserIdentity,
+    pub reason: DownloadBlockedReason,
+}
 pub const MAX_DOWNLOADS: usize = 128;
 pub const MAX_ACTIVE_DOWNLOADS: usize = 8;
 pub const SAVE_TIMEOUT: Duration = Duration::from_secs(120);
@@ -185,6 +199,7 @@ pub trait NativeDownloadDelegate: Send + Sync {
         false
     }
     fn changed(&self, snapshot: DownloadSnapshot);
+    fn blocked(&self, _notice: DownloadBlockedNotice) {}
 }
 
 /// Construct only from a native save dialog result, never from IPC. Not
@@ -422,6 +437,33 @@ impl DownloadManager {
     pub fn can_start(&self) -> bool {
         self.current() && self.delegate.downloads_enabled() && self.pool.can_start()
     }
+    /// Admission for a real CEF file trigger. Denial cannot silently vanish:
+    /// report a bounded reason to this exact owner without a URL or path.
+    pub fn admit_start(&self) -> bool {
+        if !self.current() {
+            return false;
+        }
+        let reason = if !self.delegate.downloads_enabled() {
+            Some(DownloadBlockedReason::Disabled)
+        } else if !self.pool.can_start() {
+            Some(DownloadBlockedReason::Capacity)
+        } else {
+            None
+        };
+        if let Some(reason) = reason {
+            self.report_blocked(reason);
+            return false;
+        }
+        true
+    }
+    fn report_blocked(&self, reason: DownloadBlockedReason) {
+        if self.current() {
+            self.delegate.blocked(DownloadBlockedNotice {
+                identity: OriginBrowserIdentity::from_native(&self.identity),
+                reason,
+            });
+        }
+    }
     /// Recheck queued CEF operations immediately before delivery, after any
     /// intervening user cancellation or owner revocation on the UI thread.
     pub fn permits_transfer(&self, cef_id: u32) -> bool {
@@ -500,7 +542,18 @@ impl DownloadManager {
         callback: Box<dyn BeforeDownload>,
         now: Instant,
     ) -> Result<(), DownloadError> {
-        self.insert(cef_id, now)?;
+        if let Err(error) = self.insert(cef_id, now) {
+            // Response-header downloads can reach this callback without an
+            // earlier CanDownload admission. Report their denial as well.
+            match error {
+                DownloadError::ActionUnavailable => {
+                    self.report_blocked(DownloadBlockedReason::Disabled)
+                }
+                DownloadError::Limit => self.report_blocked(DownloadBlockedReason::Capacity),
+                _ => {}
+            }
+            return Err(error);
+        }
         let row = self
             .rows
             .get_mut(&cef_id)

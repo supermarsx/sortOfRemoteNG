@@ -1,4 +1,4 @@
-//! State-machine and owner-boundary tests; no network or native dialog launches.
+//! Owner/state tests with an isolated loopback proxy fixture; no native dialog launches.
 use sorng_browser_host::ipc;
 use sorng_browser_host::native_downloads::*;
 use sorng_protocols::origin_browser::{BrowserIdentity, OriginBrowserPolicy};
@@ -50,6 +50,7 @@ struct Owner {
     live: AtomicBool,
     prompts: Mutex<Vec<(DownloadSaveRequest, DownloadSaveCompletion)>>,
     events: Mutex<Vec<DownloadSnapshot>>,
+    blocked: Mutex<Vec<DownloadBlockedNotice>>,
     revealed: Mutex<Vec<PathBuf>>,
 }
 impl NativeDownloadDelegate for Owner {
@@ -67,6 +68,9 @@ impl NativeDownloadDelegate for Owner {
     }
     fn changed(&self, snapshot: DownloadSnapshot) {
         self.events.lock().unwrap().push(snapshot);
+    }
+    fn blocked(&self, notice: DownloadBlockedNotice) {
+        self.blocked.lock().unwrap().push(notice);
     }
     fn supports_reveal(&self) -> bool {
         true
@@ -86,6 +90,11 @@ fn fixture(database: &str) -> (DownloadManager, Arc<Owner>, Arc<Mutex<Counts>>, 
         .unwrap()
         .identity()
         .clone();
+    fixture_identity(identity)
+}
+fn fixture_identity(
+    identity: BrowserIdentity,
+) -> (DownloadManager, Arc<Owner>, Arc<Mutex<Counts>>, Instant) {
     let owner = Arc::new(Owner {
         identity: identity.clone(),
         pool: Arc::new(DownloadPool::new(identity.clone())),
@@ -93,6 +102,7 @@ fn fixture(database: &str) -> (DownloadManager, Arc<Owner>, Arc<Mutex<Counts>>, 
         live: AtomicBool::new(true),
         prompts: Mutex::new(Vec::new()),
         events: Mutex::new(Vec::new()),
+        blocked: Mutex::new(Vec::new()),
         revealed: Mutex::new(Vec::new()),
     });
     (
@@ -101,6 +111,142 @@ fn fixture(database: &str) -> (DownloadManager, Arc<Owner>, Arc<Mutex<Counts>>, 
         Arc::new(Mutex::new(Counts::default())),
         Instant::now(),
     )
+}
+#[tokio::test]
+async fn attachment_response_through_owned_proxy_waits_for_save_then_publishes_completion() {
+    use base64::Engine;
+    use sorng_protocols::origin_browser::{NativeHostReadiness, OriginBrowserSession};
+    use sorng_protocols::private_forward_proxy::{Authority, DialFuture, ProxyLimits};
+    use tokio::{
+        io::{AsyncReadExt, AsyncWriteExt},
+        net::{TcpListener, TcpStream},
+    };
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let address = listener.local_addr().unwrap();
+    let server = tokio::spawn(async move {
+        let (mut stream, _) = listener.accept().await.unwrap();
+        let mut request = Vec::new();
+        let mut byte = [0];
+        while !request.ends_with(b"\r\n\r\n") {
+            stream.read_exact(&mut byte).await.unwrap();
+            request.push(byte[0]);
+            assert!(request.len() < 8192);
+        }
+        let request = String::from_utf8(request).unwrap();
+        assert!(request.starts_with("GET /report.txt HTTP/1.1\r\n"));
+        assert!(!request.to_ascii_lowercase().contains("proxy-authorization"));
+        stream.write_all(b"HTTP/1.1 200 OK\r\nContent-Type: application/octet-stream\r\nContent-Disposition: attachment; filename=report.txt\r\nContent-Length: 18\r\nConnection: close\r\n\r\nSYNTHETIC-DOWNLOAD").await.unwrap();
+        stream.shutdown().await.unwrap();
+    });
+    let dials = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let routed = dials.clone();
+    let dialer = Arc::new(move |authority: Authority| -> DialFuture {
+        let routed = routed.clone();
+        Box::pin(async move {
+            assert_eq!(authority.host(), "download-fixture.invalid");
+            assert_eq!(authority.port(), 80);
+            routed.fetch_add(1, Ordering::SeqCst);
+            Ok(Box::new(TcpStream::connect(address).await?)
+                as sorng_protocols::private_forward_proxy::BoxedStream)
+        })
+    });
+    let policy = OriginBrowserPolicy::new(
+        "download-owner",
+        "connection",
+        "tab",
+        "http://download-fixture.invalid",
+    )
+    .unwrap();
+    let identity = policy.identity().clone();
+    let mut session = OriginBrowserSession::start(policy, dialer, ProxyLimits::default())
+        .await
+        .unwrap();
+    session
+        .report_host(
+            &identity,
+            NativeHostReadiness::Ready {
+                profile_key: session.policy().profile_key().into(),
+                proxy_endpoint: session.proxy_endpoint(),
+            },
+        )
+        .unwrap();
+    let target = "http://download-fixture.invalid/report.txt";
+    assert!(session.authorize_navigation(&identity, target).is_ok());
+    let authorization = session
+        .with_proxy_credentials(|user, password| {
+            base64::engine::general_purpose::STANDARD.encode(format!("{user}:{password}"))
+        })
+        .unwrap();
+    let mut client = TcpStream::connect(session.proxy_endpoint()).await.unwrap();
+    client.write_all(format!("GET {target} HTTP/1.1\r\nHost: download-fixture.invalid\r\nProxy-Authorization: Basic {authorization}\r\nConnection: close\r\n\r\n").as_bytes()).await.unwrap();
+    let mut response = Vec::new();
+    tokio::time::timeout(Duration::from_secs(5), client.read_to_end(&mut response))
+        .await
+        .unwrap()
+        .unwrap();
+    server.await.unwrap();
+    assert!(response.ends_with(b"SYNTHETIC-DOWNLOAD"));
+    assert!(String::from_utf8_lossy(&response)
+        .contains("Content-Disposition: attachment; filename=report.txt"));
+    assert_eq!(
+        dials.load(Ordering::SeqCst),
+        1,
+        "one owned-proxy request, no fallback or refetch"
+    );
+
+    // The response supplies CEF's existing item/callback; ownership and Save
+    // consent are independent of fetching the response. No real file is saved.
+    let (mut manager, owner, counts, now) = fixture_identity(identity);
+    assert!(manager.admit_start());
+    manager
+        .before(41, "report.txt", Box::new(Before(counts.clone())), now)
+        .unwrap();
+    assert_eq!(
+        owner.events.lock().unwrap()[0].status,
+        DownloadStatus::AwaitingDestination
+    );
+    assert_eq!(counts.lock().unwrap().saved, 0);
+    assert!(!manager.permits_transfer(41));
+    approve(&owner);
+    manager.poll(now);
+    assert_eq!(counts.lock().unwrap().saved, 1);
+    manager
+        .update(
+            41,
+            DownloadProgress {
+                in_progress: true,
+                received: 9,
+                total: 18,
+                ..Default::default()
+            },
+            Box::new(Control(counts.clone())),
+            now,
+        )
+        .unwrap();
+    manager
+        .update(
+            41,
+            DownloadProgress {
+                complete: true,
+                received: 18,
+                total: 18,
+                ..Default::default()
+            },
+            Box::new(Control(counts.clone())),
+            now + PROGRESS_INTERVAL,
+        )
+        .unwrap();
+    let rows = manager
+        .list(&ipc::OriginBrowserIdentity::from_native(&owner.identity))
+        .unwrap();
+    assert_eq!(rows[0].status, DownloadStatus::Completed);
+    assert_eq!(rows[0].received_bytes, 18);
+    assert!(rows[0].can_reveal);
+    assert!(owner.blocked.lock().unwrap().is_empty());
+    let events = serde_json::to_string(&*owner.events.lock().unwrap()).unwrap();
+    assert!(!events.contains("download-fixture.invalid"));
+    assert!(!events.contains("SYNTHETIC-DOWNLOAD"));
+    session.stop().await.unwrap();
 }
 fn destination() -> SaveDestination {
     SaveDestination::from_dialog(std::env::temp_dir().join("sorng-native-download-test-unused.txt"))
@@ -394,11 +540,28 @@ fn disabled_download_policy_is_an_empty_readable_list_not_a_dead_owner() {
     owner.enabled.store(false, Ordering::Release);
     assert!(manager.current());
     assert!(!manager.can_start());
+    assert!(!manager.admit_start());
+    let notice = serde_json::to_value(&owner.blocked.lock().unwrap()[0]).unwrap();
+    assert_eq!(notice["reason"], "disabled");
+    assert_eq!(
+        notice["identity"],
+        serde_json::to_value(ipc::OriginBrowserIdentity::from_native(&owner.identity)).unwrap()
+    );
+    assert_eq!(
+        notice.as_object().unwrap().len(),
+        2,
+        "no URL, destination or private filename"
+    );
     let identity = ipc::OriginBrowserIdentity::from_native(&owner.identity);
     assert!(manager.list(&identity).unwrap().is_empty());
     assert_eq!(
         manager.before(1, "file", Box::new(Before(counts.clone())), now),
         Err(DownloadError::ActionUnavailable)
+    );
+    assert_eq!(
+        owner.blocked.lock().unwrap().len(),
+        2,
+        "response-header callback without earlier CanDownload also reports denial"
     );
     assert_eq!(
         manager.update(1, progress(), Box::new(Control(counts.clone())), now),
@@ -410,6 +573,12 @@ fn disabled_download_policy_is_an_empty_readable_list_not_a_dead_owner() {
     assert_eq!(counts.lock().unwrap().cancelled, 1);
     assert!(manager.list(&identity).unwrap().is_empty());
     owner.live.store(false, Ordering::Release);
+    assert!(!manager.admit_start());
+    assert_eq!(
+        owner.blocked.lock().unwrap().len(),
+        2,
+        "revoked owners emit nothing"
+    );
     assert_eq!(
         manager.list(&identity).err(),
         Some(DownloadError::OwnerUnavailable)
@@ -529,6 +698,11 @@ fn active_capacity_is_bounded_and_unknown_updates_are_cancelled_at_limit() {
             .unwrap();
     }
     assert_eq!(owner.prompts.lock().unwrap().len(), MAX_ACTIVE_DOWNLOADS);
+    assert!(!manager.admit_start());
+    assert_eq!(
+        serde_json::to_value(&owner.blocked.lock().unwrap()[0]).unwrap()["reason"],
+        "capacity"
+    );
     assert_eq!(
         manager.before(100, "file", Box::new(Before(counts.clone())), now),
         Err(DownloadError::Limit)

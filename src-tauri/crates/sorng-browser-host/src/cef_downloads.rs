@@ -201,7 +201,7 @@ wrap_download_handler! {
         fn can_download(&self, browser: Option<&mut Browser>, url: Option<&CefString>, _request_method: Option<&CefString>) -> i32 {
             self.inner.protect(0, || {
                 (self.inner.allowed(browser.as_deref(), url)
-                    && self.inner.manager.try_borrow().is_ok_and(|manager| manager.can_start())) as i32
+                    && self.inner.manager.try_borrow().is_ok_and(|manager| manager.admit_start())) as i32
             })
         }
         fn on_before_download(&self, browser: Option<&mut Browser>, download_item: Option<&mut DownloadItem>,

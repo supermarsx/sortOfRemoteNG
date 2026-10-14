@@ -129,4 +129,8 @@ export function useNativeBrowserDownloads(
 }
 export type NativeBrowserDownloadsController = ReturnType<
   typeof useNativeBrowserDownloads
->;
+> & {
+  notice?: string;
+  noticeId?: number;
+  noticeReason?: "disabled" | "capacity";
+};

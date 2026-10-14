@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useRef, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import {
   Download,
   FileDown,
@@ -45,6 +45,10 @@ export default function NativeBrowserDownloads({
   const anchor = useRef<HTMLDivElement>(null);
   const [openScope, setOpenScope] = useState<string | null>(null);
   const open = !!controller.scope && openScope === controller.scope;
+  useEffect(() => {
+    if (controller.scope && controller.notice && controller.noticeId)
+      setOpenScope(controller.scope);
+  }, [controller.scope, controller.notice, controller.noticeId]);
   return (
     <div ref={anchor} className="relative shrink-0">
       <button
@@ -106,6 +110,22 @@ export default function NativeBrowserDownloads({
             </div>
           </header>
           <div className="overflow-auto p-4 space-y-3">
+            {controller.notice && (
+              <div className="sor-alert-warning space-y-2 text-sm">
+                <p role="alert">{controller.notice}</p>
+                {allowed &&
+                  controller.noticeReason === "disabled" &&
+                  onOpenSettings && (
+                    <button
+                      type="button"
+                      className="sor-btn sor-btn-secondary"
+                      onClick={onOpenSettings}
+                    >
+                      Open settings
+                    </button>
+                  )}
+              </div>
+            )}
             {!allowed && (
               <div className="sor-alert-warning space-y-2 text-sm">
                 <p>

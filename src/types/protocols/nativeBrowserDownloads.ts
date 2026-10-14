@@ -1,6 +1,7 @@
 import type { OriginBrowserIdentity } from "./originBrowser";
 
 export const NATIVE_DOWNLOAD_EVENT = "origin-browser-download";
+export const NATIVE_DOWNLOAD_BLOCKED_EVENT = "origin-browser-download-blocked";
 export type NativeDownloadAction = "pause" | "resume" | "cancel" | "reveal";
 export interface NativeDownload {
   identity: OriginBrowserIdentity;

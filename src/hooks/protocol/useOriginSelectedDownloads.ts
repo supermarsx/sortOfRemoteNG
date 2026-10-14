@@ -5,6 +5,7 @@ import type { OriginBrowserIdentity } from "../../types/protocols/originBrowser"
 import {
   nativeDownload,
   NATIVE_DOWNLOAD_EVENT,
+  NATIVE_DOWNLOAD_BLOCKED_EVENT,
   type NativeDownload,
   type NativeDownloadAction,
 } from "../../types/protocols/nativeBrowserDownloads";
@@ -28,6 +29,12 @@ export function useOriginSelectedDownloads(
     error: "",
   });
   const [busy, setBusy] = useState(new Set<number>());
+  const [notice, setNotice] = useState({
+    scope: "",
+    message: "",
+    id: 0,
+    reason: undefined as "disabled" | "capacity" | undefined,
+  });
   const published = useRef(state);
   const actions = useRef(new Set<string>());
   const publish = useCallback((next: typeof state) => {
@@ -41,6 +48,7 @@ export function useOriginSelectedDownloads(
     let live = true;
     let timer: ReturnType<typeof setTimeout> | undefined;
     let off: (() => void) | undefined;
+    let offBlocked: (() => void) | undefined;
     let inFlight = false;
     let dirty = false;
     let due = Infinity;
@@ -116,11 +124,42 @@ export function useOriginSelectedDownloads(
         else off = unsubscribe;
       })
       .catch(() => {});
+    void listen<unknown>(NATIVE_DOWNLOAD_BLOCKED_EVENT, (event) => {
+      const payload = event.payload as {
+        identity?: OriginBrowserIdentity;
+        reason?: unknown;
+      } | null;
+      if (!current() || !samePopupSource(payload?.identity, identity)) return;
+      const message =
+        payload?.reason === "disabled"
+          ? "Website downloads are disabled. Enable downloads in Web Browser settings and reopen this website, then retry."
+          : payload?.reason === "capacity"
+            ? "This website has reached its download limit. Complete or cancel an active download, or reopen this website to clear its download history, then retry."
+            : "";
+      if (!message) return;
+      try {
+        latest.current.assertOwner();
+      } catch {
+        return;
+      }
+      setNotice((old) => ({
+        scope,
+        message,
+        id: old.id + 1,
+        reason: payload!.reason as "disabled" | "capacity",
+      }));
+    })
+      .then((unsubscribe) => {
+        if (!current()) unsubscribe();
+        else offBlocked = unsubscribe;
+      })
+      .catch(() => {});
     void poll();
     return () => {
       live = false;
       clearTimeout(timer);
       off?.();
+      offBlocked?.();
     };
     // Identity and view are captured in scope; object churn must not restart polling.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -168,6 +207,9 @@ export function useOriginSelectedDownloads(
   const rows = state.scope === scope ? state.rows : [];
   return {
     scope,
+    notice: notice.scope === scope ? notice.message : "",
+    noticeId: notice.scope === scope ? notice.id : 0,
+    noticeReason: notice.scope === scope ? notice.reason : undefined,
     rows,
     busy,
     act,

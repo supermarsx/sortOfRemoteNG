@@ -2,8 +2,9 @@
 //! runtime (not commands-core): native dialogs are an app dependency, while
 //! NativeOwnerLease remains factored through commands-core.
 use sorng_browser_host::native_downloads::{
-    DownloadError, DownloadPool, DownloadSaveCompletion, DownloadSaveRequest, DownloadSnapshot,
-    NativeDownloadDelegate, SaveDestination, ORIGIN_BROWSER_DOWNLOAD_EVENT,
+    DownloadBlockedNotice, DownloadError, DownloadPool, DownloadSaveCompletion,
+    DownloadSaveRequest, DownloadSnapshot, NativeDownloadDelegate, SaveDestination,
+    ORIGIN_BROWSER_DOWNLOAD_BLOCKED_EVENT, ORIGIN_BROWSER_DOWNLOAD_EVENT,
 };
 use sorng_commands_core::origin_browser_authority::NativeOwnerLease;
 use sorng_protocols::origin_browser::BrowserIdentity;
@@ -75,6 +76,19 @@ impl DownloadOwner {
     }
 }
 impl NativeDownloadDelegate for DownloadOwner {
+    fn blocked(&self, notice: DownloadBlockedNotice) {
+        if self.is_current(&self.identity)
+            && notice.identity.validate_matches(&self.identity).is_ok()
+        {
+            if self
+                .window
+                .emit(ORIGIN_BROWSER_DOWNLOAD_BLOCKED_EVENT, notice)
+                .is_err()
+            {
+                self.revoke();
+            }
+        }
+    }
     fn pool(&self) -> Arc<DownloadPool> {
         self.pool.clone()
     }

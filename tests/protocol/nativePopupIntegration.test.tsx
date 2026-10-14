@@ -24,6 +24,47 @@ beforeEach(() => {
 afterEach(() => vi.useRealTimers());
 
 describe("selected download reconciliation", () => {
+  it("shows blocked download notices only for the current exact owner and unsubscribes stale attempts", async () => {
+    const listeners = new Map<string, (event: { payload: unknown }) => void>();
+    const off = vi.fn();
+    mocked.listen.mockImplementation(async (name, callback) => {
+      listeners.set(name, callback);
+      return off;
+    });
+    mocked.invoke.mockResolvedValue([]);
+    const owner = vi.fn();
+    const view = renderHook(
+      ({ identity }) => useOriginSelectedDownloads(identity, null, true, owner),
+      { initialProps: { identity: source } },
+    );
+    await act(async () => {});
+    const notify = listeners.get("origin-browser-download-blocked")!;
+    act(() =>
+      notify({
+        payload: {
+          identity: { ...source, attemptId: "other" },
+          reason: "disabled",
+        },
+      }),
+    );
+    expect(view.result.current.notice).toBe("");
+    act(() => notify({ payload: { identity: source, reason: "disabled" } }));
+    expect(view.result.current.notice).toContain(
+      "Enable downloads in Web Browser settings",
+    );
+    owner.mockImplementation(() => {
+      throw new Error("closed");
+    });
+    act(() => notify({ payload: { identity: source, reason: "capacity" } }));
+    expect(view.result.current.notice).not.toContain("limit");
+    owner.mockReset();
+    view.rerender({ identity: { ...source, attemptId: "replacement" } });
+    expect(view.result.current.notice).toBe("");
+    act(() => notify({ payload: { identity: source, reason: "disabled" } }));
+    expect(view.result.current.notice).toBe("");
+    view.unmount();
+    expect(off).toHaveBeenCalled();
+  });
   it("does no work while inactive and does not render identical active snapshots", async () => {
     vi.useFakeTimers();
     mocked.invoke.mockResolvedValue([]);
@@ -64,7 +105,7 @@ describe("selected download reconciliation", () => {
     vi.useFakeTimers();
     let notify!: (event: { payload: unknown }) => void;
     mocked.listen.mockImplementation(async (_event, callback) => {
-      notify = callback;
+      if (_event === "origin-browser-download") notify = callback;
       return () => {};
     });
     mocked.invoke.mockResolvedValue([]);

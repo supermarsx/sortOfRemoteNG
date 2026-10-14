@@ -123,16 +123,30 @@ pub(crate) fn context_resource_handler(
     is_download: c_int,
     request_initiator: Option<&CefString>,
     worker_context: bool,
-    verified_navigation_frame: bool,
+    verified_factory_frame: bool,
     disable_default_handling: Option<&mut c_int>,
 ) -> ResourceRequestHandler {
+    // CEF's download loader reports a main/subframe request with navigation=0,
+    // download=1 and an opaque "null" initiator. Normalize that native factory
+    // only after its matching browser/frame ownership has been verified. This
+    // is destination admission, never script-origin or filesystem authority.
+    let download_factory = is_download == 1
+        && is_navigation == 0
+        && !worker_context
+        && verified_factory_frame
+        && request.is_some_and(|request| {
+            matches!(
+                request.resource_type(),
+                ResourceType::MAIN_FRAME | ResourceType::SUB_FRAME
+            )
+        });
     let scope = request.and_then(|request| {
         ResourceScope::from_native(
             request.resource_type(),
-            is_navigation,
+            if download_factory { 1 } else { is_navigation },
             request_initiator,
             worker_context,
-            verified_navigation_frame,
+            verified_factory_frame,
         )
     });
     let allowed =
@@ -156,7 +170,7 @@ pub(crate) fn context_resource_handler(
                     && !scope.navigation_factory
                     && ordinary_redirect_resource(scope.kind))
                     || (is_navigation == 1
-                        && verified_navigation_frame
+                        && verified_factory_frame
                         && matches!(
                             scope.kind,
                             ResourceType::MAIN_FRAME | ResourceType::SUB_FRAME
@@ -289,6 +303,22 @@ pub(crate) fn verified_navigation_frame(
         )
 }
 
+/// Native request-factory ownership for navigation or the separately tagged
+/// CEF download loader. Keep the navigation-only helper's contract unchanged.
+pub(crate) fn verified_request_frame(
+    browser: Option<&Browser>,
+    frame: Option<&Frame>,
+    request: Option<&Request>,
+    is_navigation: c_int,
+    is_download: c_int,
+) -> bool {
+    if !matches!(is_navigation, 0 | 1) || !matches!(is_download, 0 | 1) {
+        return false;
+    }
+    let navigation_factory = is_navigation == 1 || is_download == 1;
+    navigation_factory && verified_navigation_frame(browser, frame, request, 1)
+}
+
 impl ResourceScope {
     fn from_native(
         kind: ResourceType,
@@ -347,8 +377,10 @@ fn resolve_resource(
     if let Some(origin) = local_media_origin(scope, url) {
         let admitted = session.authorize_navigation(identity, &origin).is_ok();
         return permissions.resolve(WebsitePermissionQuery {
-            website_origin: session.policy().source_origin(), destination_origin: &origin,
-            request_class: "image-media", native_denied: !admitted,
+            website_origin: session.policy().source_origin(),
+            destination_origin: &origin,
+            request_class: "image-media",
+            native_denied: !admitted,
         });
     }
     let destination = session.authorize_navigation(identity, url).ok();
@@ -395,12 +427,25 @@ fn resolve_resource(
 }
 
 fn local_media_origin(scope: &ResourceScope, address: &str) -> Option<String> {
-    if scope.worker_context || scope.navigation_factory || !matches!(scope.kind, ResourceType::MEDIA | ResourceType::IMAGE) || address.len() > 16_384 || address.chars().any(char::is_control) { return None; }
+    if scope.worker_context
+        || scope.navigation_factory
+        || !matches!(scope.kind, ResourceType::MEDIA | ResourceType::IMAGE)
+        || address.len() > 16_384
+        || address.chars().any(char::is_control)
+    {
+        return None;
+    }
     let initiator = scope.initiator.as_ref()?;
     let url = url::Url::parse(address).ok()?;
     match url.scheme() {
         "blob" if url.origin().ascii_serialization() == *initiator => Some(initiator.clone()),
-        "data" if scope.kind == ResourceType::MEDIA && (address.starts_with("data:audio/") || address.starts_with("data:video/")) && address.contains(',') => Some(initiator.clone()),
+        "data"
+            if scope.kind == ResourceType::MEDIA
+                && (address.starts_with("data:audio/") || address.starts_with("data:video/"))
+                && address.contains(',') =>
+        {
+            Some(initiator.clone())
+        }
         _ => None,
     }
 }
@@ -740,7 +785,7 @@ wrap_request_handler! {
             disable_default_handling: Option<&mut c_int>,
         ) -> Option<ResourceRequestHandler> {
             // Never return None: that would opt into default/context handling.
-            let navigation_frame = verified_navigation_frame(browser.as_deref(), frame.as_deref(), request.as_deref(), is_navigation);
+            let navigation_frame = verified_request_frame(browser.as_deref(), frame.as_deref(), request.as_deref(), is_navigation, is_download);
             Some(context_resource_handler(
                 self.session.clone(), self.identity.clone(), self.permissions.clone(), request.as_deref(),
                 is_navigation, is_download, request_initiator, browser.is_none() || frame.is_none(), navigation_frame, disable_default_handling,
@@ -886,8 +931,9 @@ mod tests {
     use super::*;
     include!("cef_recording_tests.rs");
     use crate::domain_permissions::{
-        WebsiteDestinationPermissions, WebsiteDomainPermissionsSettings, WebsiteOriginPermissions,
-        WebsiteNetworkPolicy, WebsitePermissionSetting, WebsitePermissionSource, WebsiteRequestClass,
+        WebsiteDestinationPermissions, WebsiteDomainPermissionsSettings, WebsiteNetworkPolicy,
+        WebsiteOriginPermissions, WebsitePermissionSetting, WebsitePermissionSource,
+        WebsiteRequestClass,
     };
     use base64::Engine;
     use sorng_protocols::origin_browser::{NativeHostReadiness, OriginBrowserPolicy};
@@ -1369,15 +1415,22 @@ mod tests {
         }
 
         pub(super) fn request(resource_kind: ResourceType) -> Request {
+            request_url(resource_kind, "https://fixture.invalid/navigation")
+        }
+        pub(super) fn request_url(resource_kind: ResourceType, target: &'static str) -> Request {
             extern "C" fn kind(this: *mut _cef_request_t) -> cef::sys::cef_resource_type_t {
-                RcImpl::<_cef_request_t, ResourceType>::get(this)
+                RcImpl::<_cef_request_t, (ResourceType, &'static str)>::get(this)
                     .interface
+                    .0
                     .into()
             }
-            extern "C" fn url(_this: *mut _cef_request_t) -> cef::sys::cef_string_userfree_t {
-                let text: Vec<u16> = "https://fixture.invalid/navigation"
-                    .encode_utf16()
-                    .collect();
+            extern "C" fn url(this: *mut _cef_request_t) -> cef::sys::cef_string_userfree_t {
+                let text: Vec<u16> =
+                    RcImpl::<_cef_request_t, (ResourceType, &'static str)>::get(this)
+                        .interface
+                        .1
+                        .encode_utf16()
+                        .collect();
                 // SAFETY: CEF's unversioned string allocator matches the wrapper's
                 // userfree destructor. Copy the buffer; never return a borrowed pointer.
                 unsafe {
@@ -1391,17 +1444,17 @@ mod tests {
                     output
                 }
             }
-            fn wrap(resource_kind: ResourceType) -> Request {
+            fn wrap(resource_kind: ResourceType, target: &'static str) -> Request {
                 let raw = _cef_request_t {
                     get_resource_type: Some(kind),
                     get_url: Some(url),
                     // SAFETY: Nullable unused entries; RcImpl supplies ownership.
                     ..unsafe { std::mem::zeroed() }
                 };
-                let raw: *mut _cef_request_t = RcImpl::new(raw, resource_kind).cast();
+                let raw: *mut _cef_request_t = RcImpl::new(raw, (resource_kind, target)).cast();
                 raw.wrap_result()
             }
-            wrap(resource_kind)
+            wrap(resource_kind, target)
         }
 
         pub(super) fn response() -> Response {
@@ -1562,6 +1615,181 @@ mod tests {
                 expected
             );
             assert_eq!(disabled, i32::from(expected == ReturnValue::CANCEL));
+        }
+    }
+
+    #[tokio::test]
+    async fn verified_native_download_factory_accepts_opaque_initiator_without_becoming_script_provenance(
+    ) {
+        #[cfg(target_os = "macos")]
+        crate::platform::test_runtime::ensure_loaded();
+        let (session, identity) = session().await;
+        report_synthetic_ready(&mut session.lock().unwrap(), &identity);
+        let mut browser = navigation_mocks::browser(1, 41);
+        let mut frame = navigation_mocks::frame(1, 1, Some(browser.clone()));
+        let mut request = navigation_mocks::request(ResourceType::MAIN_FRAME);
+        // The real CEF download loader reports MAIN_FRAME, navigation=0,
+        // download=1, opaque "null". Its browser/frame ownership is verified
+        // independently of those flags before destination admission.
+        let verified = verified_request_frame(Some(&browser), Some(&frame), Some(&request), 0, 1);
+        assert!(verified);
+        let mut disabled = 0;
+        let handler = context_resource_handler(
+            Arc::new(session),
+            identity,
+            Arc::new(allow_classes(&[WebsiteRequestClass::Navigation])),
+            Some(&request),
+            0,
+            1,
+            Some(&CefString::from("null")),
+            false,
+            verified,
+            Some(&mut disabled),
+        );
+        let (mut callback, _) = navigation_mocks::callback();
+        assert_eq!(
+            handler.on_before_resource_load(
+                Some(&mut browser),
+                Some(&mut frame),
+                Some(&mut request),
+                Some(&mut callback)
+            ),
+            ReturnValue::CONTINUE
+        );
+        assert_eq!(disabled, 0);
+    }
+
+    #[tokio::test]
+    async fn native_download_factory_keeps_raw_flags_frame_origin_policy_and_attempt_fences() {
+        #[cfg(target_os = "macos")]
+        crate::platform::test_runtime::ensure_loaded();
+        for case in [
+            "main",
+            "subframe",
+            "ordinary-main",
+            "bad-navigation",
+            "bad-download",
+            "bad-negative-download",
+            "script",
+            "worker",
+            "missing-browser",
+            "missing-frame",
+            "missing-request",
+            "invalid-browser",
+            "invalid-frame",
+            "foreign-frame",
+            "mismatched-main",
+            "mismatched-subframe",
+            "class-denied",
+            "destination-denied",
+            "stale-attempt",
+            "revoked",
+        ] {
+            let (session, mut identity) = session().await;
+            report_synthetic_ready(&mut session.lock().unwrap(), &identity);
+            if case == "revoked" {
+                session.lock().unwrap().revoke(&identity).unwrap();
+            }
+            if case == "stale-attempt" {
+                identity = OriginBrowserPolicy::new(
+                    "cef-owner",
+                    "cef-connection",
+                    "cef-tab",
+                    "https://fixture.invalid",
+                )
+                .unwrap()
+                .identity()
+                .clone();
+            }
+            let mut browser = navigation_mocks::browser(i32::from(case != "invalid-browser"), 41);
+            let frame_owner = if case == "foreign-frame" {
+                navigation_mocks::browser(1, 42)
+            } else {
+                browser.clone()
+            };
+            let subframe = matches!(case, "subframe" | "mismatched-subframe");
+            let main = if matches!(case, "mismatched-main" | "mismatched-subframe") {
+                i32::from(subframe)
+            } else {
+                i32::from(!subframe)
+            };
+            let mut frame = navigation_mocks::frame(
+                i32::from(case != "invalid-frame"),
+                main,
+                Some(frame_owner),
+            );
+            let kind = if case == "script" {
+                ResourceType::SCRIPT
+            } else if subframe {
+                ResourceType::SUB_FRAME
+            } else {
+                ResourceType::MAIN_FRAME
+            };
+            let target = if case == "destination-denied" {
+                "https://attacker.invalid/download"
+            } else {
+                "https://fixture.invalid/navigation"
+            };
+            let mut request = navigation_mocks::request_url(kind, target);
+            let navigation = if case == "bad-navigation" { 2 } else { 0 };
+            let download = match case {
+                "ordinary-main" => 0,
+                "bad-download" => 2,
+                "bad-negative-download" => -1,
+                _ => 1,
+            };
+            let browser_ref = (case != "missing-browser").then_some(&browser);
+            let frame_ref = (case != "missing-frame").then_some(&frame);
+            let request_ref = (case != "missing-request").then_some(&request);
+            let verified =
+                verified_request_frame(browser_ref, frame_ref, request_ref, navigation, download);
+            assert!(
+                !verified_navigation_frame(browser_ref, frame_ref, request_ref, navigation),
+                "navigation-only helper remains unchanged: {case}"
+            );
+            let policy = if case == "class-denied" {
+                deny_permissions()
+            } else {
+                Arc::new(allow_classes(&[
+                    WebsiteRequestClass::Navigation,
+                    WebsiteRequestClass::Frame,
+                    WebsiteRequestClass::Script,
+                ]))
+            };
+            let mut disabled = 0;
+            let handler = context_resource_handler(
+                Arc::new(session),
+                identity,
+                policy,
+                request_ref,
+                navigation,
+                download,
+                Some(&CefString::from("null")),
+                matches!(case, "worker" | "missing-browser" | "missing-frame"),
+                verified,
+                Some(&mut disabled),
+            );
+            let (mut callback, _) = navigation_mocks::callback();
+            let expected = if matches!(case, "main" | "subframe") {
+                ReturnValue::CONTINUE
+            } else {
+                ReturnValue::CANCEL
+            };
+            assert_eq!(
+                handler.on_before_resource_load(
+                    Some(&mut browser),
+                    Some(&mut frame),
+                    Some(&mut request),
+                    Some(&mut callback)
+                ),
+                expected,
+                "{case}"
+            );
+            assert_eq!(
+                disabled,
+                i32::from(expected == ReturnValue::CANCEL),
+                "{case}"
+            );
         }
     }
 
@@ -2802,20 +3030,56 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn local_media_requires_live_native_origin_and_media_permission_without_enabling_local_scripts() {
+    async fn local_media_requires_live_native_origin_and_media_permission_without_enabling_local_scripts(
+    ) {
         let (session, identity) = session().await;
         report_synthetic_ready(&mut session.lock().unwrap(), &identity);
         let session = session.lock().unwrap();
         let allowed = allow_classes(&[WebsiteRequestClass::ImageMedia]);
         let denied = allow_classes(&[WebsiteRequestClass::Script]);
-        for address in ["blob:https://fixture.invalid/asset", "data:audio/wav;base64,AAAA", "data:video/mp4;base64,AAAA"] {
+        for address in [
+            "blob:https://fixture.invalid/asset",
+            "data:audio/wav;base64,AAAA",
+            "data:video/mp4;base64,AAAA",
+        ] {
             let scope = first_party_scope(ResourceType::MEDIA);
-            assert_eq!(resolve_resource(&session, &identity, &allowed, &scope, address).decision, WebsitePermissionDecision::Allow);
-            assert_eq!(resolve_resource(&session, &identity, &denied, &scope, address).decision, WebsitePermissionDecision::Deny);
-            assert_eq!(resolve_resource(&session, &identity, &allowed, &first_party_scope(ResourceType::SCRIPT), address).decision, WebsitePermissionDecision::Deny);
+            assert_eq!(
+                resolve_resource(&session, &identity, &allowed, &scope, address).decision,
+                WebsitePermissionDecision::Allow
+            );
+            assert_eq!(
+                resolve_resource(&session, &identity, &denied, &scope, address).decision,
+                WebsitePermissionDecision::Deny
+            );
+            assert_eq!(
+                resolve_resource(
+                    &session,
+                    &identity,
+                    &allowed,
+                    &first_party_scope(ResourceType::SCRIPT),
+                    address
+                )
+                .decision,
+                WebsitePermissionDecision::Deny
+            );
         }
-        for address in ["blob:https://other.invalid/asset", "blob:null/asset", "data:text/html,<script></script>", "data:application/javascript,alert(1)"] {
-            assert_eq!(resolve_resource(&session, &identity, &allowed, &first_party_scope(ResourceType::MEDIA), address).decision, WebsitePermissionDecision::Deny);
+        for address in [
+            "blob:https://other.invalid/asset",
+            "blob:null/asset",
+            "data:text/html,<script></script>",
+            "data:application/javascript,alert(1)",
+        ] {
+            assert_eq!(
+                resolve_resource(
+                    &session,
+                    &identity,
+                    &allowed,
+                    &first_party_scope(ResourceType::MEDIA),
+                    address
+                )
+                .decision,
+                WebsitePermissionDecision::Deny
+            );
         }
     }
 

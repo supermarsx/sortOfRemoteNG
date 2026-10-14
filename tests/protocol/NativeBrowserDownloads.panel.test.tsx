@@ -61,6 +61,51 @@ function article(fileName: string) {
 afterEach(cleanup);
 
 describe("native downloads panel availability", () => {
+  it("opens an actionable notice on a blocked website file trigger without enabling downloads or choosing a path", async () => {
+    const downloads = {
+      ...controller(),
+      notice:
+        "Website downloads are disabled. Enable downloads in Web Browser settings and reopen this website, then retry.",
+      noticeId: 1,
+    };
+    const settings = vi.fn();
+    render(
+      <NativeBrowserDownloads
+        controller={downloads}
+        allowed={false}
+        onOpenSettings={settings}
+      />,
+    );
+    expect(
+      await screen.findByRole("dialog", { name: "Website downloads" }),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("alert")).toHaveTextContent("Enable downloads");
+    expect(downloads.act).not.toHaveBeenCalled();
+    expect(settings).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: /settings/i }));
+    expect(settings).toHaveBeenCalledOnce();
+  });
+  it("retains a settings action when the current tab's captured native policy is disabled despite changed frontend settings", async () => {
+    const downloads = {
+      ...controller(),
+      notice:
+        "Website downloads are disabled. Reopen this website to apply changed settings.",
+      noticeId: 1,
+      noticeReason: "disabled" as const,
+    };
+    const settings = vi.fn();
+    render(
+      <NativeBrowserDownloads
+        controller={downloads}
+        allowed
+        onOpenSettings={settings}
+      />,
+    );
+    await screen.findByRole("dialog", { name: "Website downloads" });
+    fireEvent.click(screen.getByRole("button", { name: "Open settings" }));
+    expect(settings).toHaveBeenCalledOnce();
+    expect(downloads.act).not.toHaveBeenCalled();
+  });
   it("cannot open without a live controller scope", () => {
     const downloads = { ...controller(), scope: "" };
     render(<NativeBrowserDownloads controller={downloads} allowed />);
