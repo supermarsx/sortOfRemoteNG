@@ -16,6 +16,10 @@ export const LINKEDIN_PROFILE: HttpApplicationProfile = {
   category: "business",
   capability: "known-form",
   hostedLoginUrl: LINKEDIN_LOGIN_URL,
+  scriptDefaults: {
+    sourceOrigin: "https://www.linkedin.com",
+    allowAllScripts: true,
+  },
   requiresHttps: true,
   usernameLabel: "Email or phone",
   loginModes: ["manual", "form"],

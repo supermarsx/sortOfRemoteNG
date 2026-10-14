@@ -577,6 +577,10 @@
         "usernameSelector": "form input[name=\"username\"]",
         "passwordSelector": "form input[name=\"password\"][type=\"password\"]",
         "submitSelector": "form button[type=\"submit\"]"
+      },
+      "scriptDefaults": {
+        "sourceOrigin": "https://www.instagram.com",
+        "allowAllScripts": true
       }
     },
     "linkedin": {
@@ -585,6 +589,10 @@
         "usernameSelector": "input#username[name=\"session_key\"], input[type=\"email\"][autocomplete=\"username\"]",
         "passwordSelector": "input#password[name=\"session_password\"][type=\"password\"], input[type=\"password\"][autocomplete=\"current-password\"]",
         "submitSelector": "button[type=\"submit\"][data-litms-control-urn=\"login-submit\"], button[type=\"button\"]"
+      },
+      "scriptDefaults": {
+        "sourceOrigin": "https://www.linkedin.com",
+        "allowAllScripts": true
       }
     },
     "hpe-greenlake": {

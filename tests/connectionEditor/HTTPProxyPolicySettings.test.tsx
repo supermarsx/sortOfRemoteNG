@@ -42,17 +42,118 @@ const fontOptOut = (): Partial<Connection> => ({
 });
 
 describe("Internal proxy controls", () => {
+  it.each([
+    { defaultPolicy: { ...DEFAULT_HTTP_PROXY_POLICY, sameOriginOnly: true } },
+    { defaultPolicy: { ...DEFAULT_HTTP_PROXY_POLICY, pageScripts: "block" } },
+    { crossOriginRequestsEnabled: false },
+  ])(
+    "shows inherited browser restrictions instead of claiming the social script default is effective: %j",
+    (webBrowser) => {
+      shared.settings = { webBrowser };
+      const initial: Partial<Connection> = {
+        id: "social",
+        protocol: "https",
+        hostname: "www.instagram.com",
+        port: 443,
+        httpApplication: { version: 1, id: "instagram", loginMode: "manual" },
+      };
+      render(<Fixture initial={initial} />);
+      expect(
+        screen.getByRole("checkbox", { name: /^Allow all website scripts/ }),
+      ).not.toBeChecked();
+      expect(draft()).toEqual(initial);
+    },
+  );
+  it.each([
+    ["instagram", "www.instagram.com"],
+    ["linkedin", "www.linkedin.com"],
+  ])(
+    "shows %s's effective native script default and turns off through explicit website permissions",
+    (id, hostname) => {
+      const initial: Partial<Connection> = {
+        id: "social-connection",
+        protocol: "https",
+        hostname,
+        port: 443,
+        httpApplication: { version: 1, id, loginMode: "manual" },
+        httpProxyPolicy: { ...DEFAULT_HTTP_PROXY_POLICY },
+      };
+      render(<Fixture initial={initial} />);
+      const checkbox = screen.getByRole("checkbox", {
+        name: /^Allow all website scripts/,
+      });
+      expect(checkbox).toBeChecked();
+      expect(
+        screen.getByText(
+          /This application's native browser allows all HTTPS script sources by default/,
+        ),
+      ).toBeVisible();
+      expect(draft()).toEqual(initial);
+      fireEvent.click(checkbox);
+      expect(checkbox).not.toBeChecked();
+      expect(draft().websiteDomainPermissions.websites[0]).toEqual({
+        origin: `https://${hostname}`,
+        requestClasses: { script: "deny" },
+        destinations: [],
+      });
+      fireEvent.click(checkbox);
+      expect(checkbox).toBeChecked();
+      expect(
+        draft().websiteDomainPermissions.websites[0].requestClasses.script,
+      ).toBe("allow");
+    },
+  );
+  it("keeps social-app explicit destination and other-class denials when enabling the default", () => {
+    render(
+      <Fixture
+        initial={{
+          id: "social",
+          protocol: "https",
+          hostname: "www.instagram.com",
+          port: 443,
+          httpApplication: { version: 1, id: "instagram", loginMode: "manual" },
+          websiteDomainPermissions: {
+            version: 1,
+            websites: [
+              {
+                origin: "https://www.instagram.com",
+                requestClasses: { script: "deny", "fetch-xhr": "deny" },
+                destinations: [
+                  {
+                    origin: "https://cdn.example",
+                    requestClasses: { script: "deny" },
+                  },
+                ],
+              },
+            ],
+          },
+        }}
+      />,
+    );
+    const checkbox = screen.getByRole("checkbox", {
+      name: /^Allow all website scripts/,
+    });
+    expect(checkbox).not.toBeChecked();
+    fireEvent.click(checkbox);
+    expect(draft().websiteDomainPermissions.websites[0]).toEqual({
+      origin: "https://www.instagram.com",
+      requestClasses: { script: "allow", "fetch-xhr": "deny" },
+      destinations: [
+        { origin: "https://cdn.example", requestClasses: { script: "deny" } },
+      ],
+    });
+  });
   it("explains native routing and website security without promising a CSP bypass", () => {
     render(<Fixture />);
-    expect(screen.getByText(/Native browser: supported website requests/)).toHaveTextContent(
-      "private proxy and isolated browser session",
-    );
-    expect(screen.getByText(/Native browser: permits external script sources/)).toHaveTextContent(
-      "the website still controls inline scripts and eval",
-    );
-    expect(screen.getByText(/Native browser: permits external script sources/)).toHaveTextContent(
-      "Explicit native domain denials remain in force",
-    );
+    expect(
+      screen.getByText(/Native browser: supported website requests/),
+    ).toHaveTextContent("private proxy and isolated browser session");
+    expect(
+      screen.getByText(/Native browser: permits external script sources/),
+    ).toHaveTextContent("the website still controls inline scripts and eval");
+    expect(
+      screen.getByText(/Native browser: permits external script sources/),
+    ).toHaveTextContent("Explicit native domain denials remain in force");
     expect(draft().httpProxyPolicy).toBeUndefined();
   });
   it("mounts connection-only overrides with shared inheritance without copying shared grants", () => {

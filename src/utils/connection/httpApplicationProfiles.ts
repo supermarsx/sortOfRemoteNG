@@ -75,6 +75,12 @@ export interface HttpApplicationProfile {
   totpChallenges?: readonly HttpApplicationTotpChallenge[];
   /** Fixed public hosted login, never inferred from a page-supplied redirect. */
   hostedLoginUrl?: string;
+  /** Application script defaults, bound to the exact hosted source origin.
+   * These resource permissions do not authorize credential delivery. */
+  scriptDefaults?: Readonly<{
+    sourceOrigin: string;
+    allowAllScripts: true;
+  }>;
   /** Safe source-reviewed path for an explicit external-browser handoff. */
   loginPath?: string;
   loginModes?: readonly HttpApplicationSettings["loginMode"][];

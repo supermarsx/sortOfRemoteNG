@@ -213,6 +213,7 @@ export function renderNativeLoginCatalog({
               emailOnly: profile.emailOnly,
               selectors: profile.selectors,
               sameOriginLoginFrames: profile.sameOriginLoginFrames,
+              scriptDefaults: profile.scriptDefaults,
               declarativeLogin: file && {
                 mode: modeOf(profile),
                 credentialOrigins: file.credentialOrigins,

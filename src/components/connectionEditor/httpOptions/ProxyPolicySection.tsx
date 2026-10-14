@@ -12,6 +12,12 @@ import TrustedRedirectDestinationsSection from "./TrustedRedirectDestinationsSec
 import SynologyRedirectDefaultsSection from "./SynologyRedirectDefaultsSection";
 import ExternalResourceOriginsEditor from "../../security/ExternalResourceOriginsEditor";
 import ConnectionDomainPermissionsSection from "./ConnectionDomainPermissionsSection";
+import { useSettings } from "../../../contexts/SettingsContext";
+import {
+  applicationScriptDefaultOrigin,
+  applicationScriptsAllowed,
+  setApplicationScriptPermission,
+} from "../../../utils/connection/applicationScriptDefaults";
 
 /** Draft-only editor. Native validation is repeated before opening a proxy. */
 export default function ProxyPolicySection({ mgr }: { mgr: Mgr }) {
@@ -21,6 +27,7 @@ export default function ProxyPolicySection({ mgr }: { mgr: Mgr }) {
   const [error, setError] = useState("");
   const [fontOrigin, setFontOrigin] = useState("");
   const [fontError, setFontError] = useState("");
+  const { settings, settingsReady } = useSettings();
   let policy: HttpProxyPolicy;
   try {
     policy = normalizeHttpProxyPolicy(mgr.formData.httpProxyPolicy);
@@ -61,6 +68,26 @@ export default function ProxyPolicySection({ mgr }: { mgr: Mgr }) {
     }
   };
   const fontOrigins = policy.externalFontOrigins ?? [];
+  const appScriptOrigin = applicationScriptDefaultOrigin(mgr.formData);
+  let appEffectivePolicy: HttpProxyPolicy | null = null;
+  try {
+    appEffectivePolicy = normalizeHttpProxyPolicy(
+      mgr.formData.httpProxyPolicy ?? settings.webBrowser?.defaultPolicy,
+    );
+  } catch {
+    // Shared invalid restrictions cannot be replaced by an application default.
+  }
+  const appScriptsAllowed =
+    applicationScriptsAllowed(
+      mgr.formData,
+      appEffectivePolicy ?? policy,
+      settings.webBrowser?.domainPermissions,
+    ) &&
+    !!appEffectivePolicy &&
+    settingsReady !== false &&
+    (mgr.formData.browserSession?.crossOriginRequestsEnabled ??
+      settings.webBrowser?.crossOriginRequestsEnabled ??
+      true);
   const fontsDisabled = policy.sameOriginOnly || !policy.allowExternalFonts;
   const updateFontOrigins = (origins: string[]) => {
     try {
@@ -198,23 +225,63 @@ export default function ProxyPolicySection({ mgr }: { mgr: Mgr }) {
       </div>
       <div className="rounded-lg border border-[var(--color-border)] p-4 space-y-3">
         <CheckboxField
+          disabled={
+            !!appScriptOrigin &&
+            (!appEffectivePolicy || settingsReady === false)
+          }
           checked={
-            (policy.allowAllScripts === true ||
-              policy.allowAllRequests === true) &&
+            (appScriptOrigin
+              ? appScriptsAllowed
+              : policy.allowAllScripts === true ||
+                policy.allowAllRequests === true) &&
             policy.pageScripts === "allow" &&
             !policy.sameOriginOnly
           }
           onChange={(allowAllScripts) =>
-            update({
-              allowAllScripts,
-              allowAllRequests: false,
-              ...(allowAllScripts
-                ? { pageScripts: "allow", sameOriginOnly: false }
-                : {}),
-            })
+            appScriptOrigin
+              ? mgr.setFormData((previous) => {
+                  if (
+                    previous.id !== mgr.formData.id ||
+                    applicationScriptDefaultOrigin(previous) !== appScriptOrigin
+                  )
+                    return previous;
+                  try {
+                    return {
+                      ...previous,
+                      websiteDomainPermissions: setApplicationScriptPermission(
+                        previous,
+                        allowAllScripts,
+                      ),
+                      httpProxyPolicy: normalizeHttpProxyPolicy({
+                        ...normalizeHttpProxyPolicy(
+                          previous.httpProxyPolicy ??
+                            settings.webBrowser?.defaultPolicy,
+                        ),
+                        allowAllScripts,
+                        allowAllRequests: false,
+                      }),
+                    };
+                  } catch {
+                    setError(
+                      "Website script permissions are invalid. Review the existing request permissions.",
+                    );
+                    return previous;
+                  }
+                })
+              : update({
+                  allowAllScripts,
+                  allowAllRequests: false,
+                  ...(allowAllScripts
+                    ? { pageScripts: "allow", sameOriginOnly: false }
+                    : {}),
+                })
           }
           label="Allow all website scripts"
-          description="Trust current and future HTTPS script sources for this saved connection. Enables website scripts and turns off same-origin-only restrictions."
+          description={
+            appScriptOrigin
+              ? "This application's native browser allows all HTTPS script sources by default. Turn off to deny this website's script requests in request permissions. Individual destination blocks remain in force."
+              : "Trust current and future HTTPS script sources for this saved connection. Enables website scripts and turns off same-origin-only restrictions."
+          }
           variant="form"
         />
         <p className="text-xs leading-relaxed text-warning">
@@ -230,15 +297,17 @@ export default function ProxyPolicySection({ mgr }: { mgr: Mgr }) {
           through its own CSP. Legacy mode also overrides script-specific CSP.
           Explicit native domain denials remain in force.
         </p>
-        {policy.allowAllScripts &&
-          policy.pageScripts === "allow" &&
-          !policy.sameOriginOnly && (
-            <p role="status" className="text-xs text-[var(--color-textMuted)]">
-              All-script trust is active. The source list below still controls
-              stylesheets; its script grants are preserved for when you turn
-              this option off. Save and reload the website to apply changes.
-            </p>
-          )}
+        {(appScriptOrigin
+          ? appScriptsAllowed
+          : policy.allowAllScripts &&
+            policy.pageScripts === "allow" &&
+            !policy.sameOriginOnly) && (
+          <p role="status" className="text-xs text-[var(--color-textMuted)]">
+            {appScriptOrigin
+              ? "The application's script default is active. Individual destination blocks remain in force; turning off creates an explicit script-class deny. Save and reload the website to apply changes."
+              : "All-script trust is active. The source list below still controls stylesheets; its script grants are preserved for when you turn this option off. Save and reload the website to apply changes."}
+          </p>
+        )}
       </div>
       <div className="space-y-2">
         <CheckboxField

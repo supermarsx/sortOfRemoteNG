@@ -58,6 +58,11 @@ mod permission_validation_tests;
 mod ptisp_defaults;
 #[path = "origin_browser_autodesk_defaults.rs"]
 mod autodesk_defaults;
+#[path = "origin_browser_social_script_defaults.rs"]
+mod social_script_defaults;
+#[cfg(test)]
+#[path = "origin_browser_social_script_defaults_tests.rs"]
+mod social_script_defaults_tests;
 #[path = "origin_browser_drone_scm.rs"]
 mod drone_scm;
 #[path = "origin_browser_automation_authority.rs"]
@@ -1824,7 +1829,11 @@ fn saved_permissions_inner(
         source_origin: origin.clone(),
         destination_defaults: candidates.clone(),
         allow_all_requests: option("allowAllRequests"),
-        allow_all_scripts: option("allowAllScripts"),
+        // Legacy normalization stores false even without an explicit choice.
+        // It means no extra connection opt-in, not revocation of an origin-bound
+        // application default. Explicit class/destination denies still win.
+        allow_all_scripts: option("allowAllScripts")
+            || social_script_defaults::enabled(connection, &origin),
         https_only: option("httpsOnly"),
         same_origin_only: same_origin,
         allow_http_downgrade: option("allowHttpDowngradeRedirects"),

@@ -13,6 +13,10 @@ export const INSTAGRAM_PROFILE: HttpApplicationProfile = {
   category: "business",
   capability: "known-form",
   hostedLoginUrl: INSTAGRAM_LOGIN_URL,
+  scriptDefaults: {
+    sourceOrigin: "https://www.instagram.com",
+    allowAllScripts: true,
+  },
   requiresHttps: true,
   loginModes: ["manual", "form"],
   selectors: INSTAGRAM_LOGIN_SELECTORS,

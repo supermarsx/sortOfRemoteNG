@@ -28,12 +28,13 @@ const {
 
 const committedCatalog = path.join(repo, NATIVE_LOGIN_CATALOG_PATH);
 const read = (file) => readFileSync(file, "utf8").replaceAll("\r\n", "\n");
-const FIVE_FIELDS = [
+const PROFILE_FIELDS = [
   "capability",
   "loginFlow",
   "emailOnly",
   "selectors",
   "sameOriginLoginFrames",
+  "scriptDefaults",
 ];
 
 /** A reviewed two-origin, identifier-first login with a frame-free pre-step. */
@@ -178,7 +179,7 @@ test("switched off, a steps file is validated and nothing of it is emitted", asy
   assert.deepEqual(Object.keys(catalog), ["profiles", "joomla", "droneScm"]);
   for (const profile of Object.values(catalog.profiles))
     for (const key of Object.keys(profile))
-      assert.ok(FIVE_FIELDS.includes(key), key);
+      assert.ok(PROFILE_FIELDS.includes(key), key);
   assert.equal(/^import /mu.test(read(scratch.registryPath)), false);
   assert.equal(read(scratch.catalogPath).includes("#open-sign-in"), false);
 
