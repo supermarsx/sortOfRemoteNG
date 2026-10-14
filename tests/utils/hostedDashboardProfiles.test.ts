@@ -219,18 +219,31 @@ describe("source-reviewed dashboard presets", () => {
     },
   );
 
-  it("opens Time4VPS at the observed Client Area link while keeping unreviewed login interactive", () => {
+  it("offers the reviewed Time4VPS form only in the native engine and keeps manual consent as the default", () => {
     const profile = getHttpApplicationProfile("time4vps")!;
     expect(profile.hostedLoginUrl).toBe(
       "https://billing.time4vps.com/clientarea/",
     );
     expect(profile.capability).toBe("manual");
     expect(profile.selectors).toBeUndefined();
-    expect(profile.declarativeLogin).toBeUndefined();
+    expect(profile.declarativeLoginMode).toBe("exclusive");
+    expect(profile.declarativeLogin?.credentialOrigins).toEqual([
+      "https://billing.time4vps.com",
+    ]);
+    expect(profile.declarativeLogin?.loginSteps[0]).toMatchObject({
+      kind: "form",
+      origin: "https://billing.time4vps.com",
+      paths: ["/clientarea/"],
+    });
+    expect(getHttpApplicationLoginModes(profile)).toEqual(["manual", "form"]);
+    expect(profile.totpChallenges).toBeUndefined();
     expect(resolveHttpApplicationLogin(connection("time4vps"))).toMatchObject({
       credentials: null,
       autoLogin: false,
     });
+    expect(() =>
+      resolveHttpApplicationLogin(connection("time4vps", "form")),
+    ).toThrow(/native browser engine/);
   });
 
   it("keeps mail, local GitLab and device targets separate from public account hosts", () => {

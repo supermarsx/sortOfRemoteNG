@@ -445,7 +445,30 @@
       "capability": "manual"
     },
     "time4vps": {
-      "capability": "manual"
+      "capability": "manual",
+      "declarativeLogin": {
+        "mode": "exclusive",
+        "credentialOrigins": ["https://billing.time4vps.com"],
+        "passwordOnly": false,
+        "loginSteps": [
+          {
+            "kind": "form",
+            "origin": "https://billing.time4vps.com",
+            "paths": ["/clientarea/"],
+            "selectors": {
+              "username": "form#login-widget-form input#login-widget-user[name=\"username\"][type=\"text\"][required]",
+              "password": "form#login-widget-form input#login-widget-password[name=\"password\"][type=\"password\"][autocomplete=\"off\"][required]"
+            }
+          },
+          {
+            "kind": "submit",
+            "submission": "click",
+            "selectors": {
+              "control": "form#login-widget-form button#login-widget-submit[type=\"submit\"]"
+            }
+          }
+        ]
+      }
     },
     "contabo": {
       "capability": "manual",

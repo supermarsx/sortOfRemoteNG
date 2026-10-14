@@ -25,6 +25,7 @@ import stepsPypi from "../../data/loginSteps/self-hosted/pypi.json";
 import stepsSegurancaSocialDireta from "../../data/loginSteps/portuguese-portals/seguranca-social-direta.json";
 import stepsStrapi from "../../data/loginSteps/self-hosted/strapi.json";
 import stepsSupermicro from "../../data/loginSteps/appliances/supermicro.json";
+import stepsTime4vps from "../../data/loginSteps/hosted/time4vps.json";
 import stepsTplinkSwitch from "../../data/loginSteps/appliances/tplink-switch.json";
 import stepsUptimeKuma from "../../data/loginSteps/self-hosted/uptime-kuma.json";
 import stepsVmware from "../../data/loginSteps/appliances/vmware.json";
@@ -60,6 +61,7 @@ export const HTTP_LOGIN_STEPS_FILES: readonly (readonly [
   ["seguranca-social-direta", stepsSegurancaSocialDireta],
   ["strapi", stepsStrapi],
   ["supermicro", stepsSupermicro],
+  ["time4vps", stepsTime4vps],
   ["tplink-switch", stepsTplinkSwitch],
   ["uptime-kuma", stepsUptimeKuma],
   ["vmware", stepsVmware],

@@ -29,10 +29,10 @@ mode, and you turn automatic login on per connection.
 | HTTP authentication, no page form                                            | 7            |
 | Configured by you                                                            | 2            |
 | No web login                                                                 | 8            |
-| Login steps written, class A: every selector seen in an authoritative source | 13           |
+| Login steps written, class A: every selector seen in an authoritative source | 14           |
 | Login steps written, class B: unverified layout                              | 16           |
 | Evidence, but no steps file                                                  | 3            |
-| Nothing to build from (class C)                                              | 39           |
+| Nothing to build from (class C)                                              | 38           |
 | Total                                                                        | 153          |
 
 Of the 65 that sign in automatically, 38 use reviewed form selectors and 27 keep a hand-written
@@ -41,12 +41,12 @@ adapter (`adobe` 1, `bitwarden` 2, `chatgpt` 1, `claude` 1, `cloudflare` 1, `goo
 
 Steps-based login is switched on in the source. Every connection still starts in Manual mode.
 
-No evidence record cites a sign-in confirmed by a user, and none cites a page a user saved.
+No evidence record cites a sign-in confirmed by a user, and 1 cites a page a user saved.
 
 | Why nothing can be built | Applications | Meaning                                                                                                                                                        |
 | ------------------------ | ------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Robots rules or terms    | 25           | The site's robots rules or its terms forbid a program reading the page, so it was not loaded.                                                                  |
-| Refused or unreadable    | 9            | The site answered with a refusal or a challenge, or its robots rules or terms could not be read, so the page was not loaded; or the one permitted load failed. |
+| Refused or unreadable    | 8            | The site answered with a refusal or a challenge, or its robots rules or terms could not be read, so the page was not loaded; or the one permitted load failed. |
 | No public markup         | 2            | The application has a password form, but no public source shows its markup.                                                                                    |
 | No password form         | 3            | The evidence shows no user name and password form for a saved password to fill.                                                                                |
 
@@ -259,7 +259,7 @@ Native integration entries with no web login page.
 | PHP runtime                 | `php`           | `none`             | -     | -         | -          | No web login page |
 | VMware Workstation / Fusion | `vmwareDesktop` | `none`             | -     | -         | -          | No web login page |
 
-### Login steps written (29)
+### Login steps written (30)
 
 A steps file exists under `src/data/loginSteps/`. Class A: every selector was seen in an
 authoritative source. Class B: the layout is unverified until someone signs in with it.
@@ -288,6 +288,7 @@ authoritative source. Class B: the layout is unverified until someone signs in w
 | Segurança Social Direta                     | `seguranca-social-direta` | `manual`           | B     | `form`    | `portuguese-portals/seguranca-social-direta.json` | Unverified layout    |
 | Strapi Admin                                | `strapi`                  | `manual`           | B     | `form`    | `self-hosted/strapi.json`                         | Unverified layout    |
 | Supermicro BMC                              | `supermicro`              | `generic-form`     | B     | `form`    | `appliances/supermicro.json`                      | Unverified layout    |
+| Time4VPS dashboard                          | `time4vps`                | `manual`           | A     | `form`    | `hosted/time4vps.json`                            | Authoritative source |
 | TP-Link managed switch                      | `tplink-switch`           | `generic-form`     | A     | `form`    | `appliances/tplink-switch.json`                   | Authoritative source |
 | Uptime Kuma (self-hosted)                   | `uptime-kuma`             | `manual`           | A     | `form`    | `self-hosted/uptime-kuma.json`                    | Authoritative source |
 | VMware vSphere                              | `vmware`                  | `generic-form`     | B     | `form`    | `appliances/vmware.json`                          | Unverified layout    |
@@ -306,7 +307,7 @@ The login layout is known. The Note says why no steps file was written.
 | IMT — Serviços online | `imt-online` | `manual`           | B     | `form`    | none       | The page's own form needs a third value, a taxpayer number, which the steps format does not carry; its two buttons lead to another origin                                                |
 | Microsoft Exchange    | `exchange`   | `manual`           | A     | `form`    | none       | The steps format cannot express what the Outlook Web Access form needs. The reviewed `exchange-owa` login is not connected to this profile, so it is manual today                        |
 
-### Nothing to build from (39)
+### Nothing to build from (38)
 
 Class C. The Note says why. Each application's `evidence.json` says what was looked for and what you
 can supply.
@@ -348,7 +349,6 @@ can supply.
 | register.com (Network Solutions)       | `register-com`         | `manual`           | C     | `none`    | none       | Refused or unreadable: shares the Network Solutions sign-in, which answers HTTP 403 with a security check                                                         |
 | Steam account                          | `steam`                | `manual`           | C     | `none`    | none       | Robots rules or terms: the subscriber agreement bars scripts and other systems not controlled by a person                                                         |
 | Tesla Account                          | `tesla`                | `manual`           | C     | `none`    | none       | Refused or unreadable: robots.txt and the terms page both answered HTTP 403                                                                                       |
-| Time4VPS dashboard                     | `time4vps`             | `manual`           | C     | `none`    | none       | Refused or unreadable: the billing host and the provider's website refuse automated reads                                                                         |
 | UZO — Particulares (my UZO)            | `uzo-particulares`     | `manual`           | C     | `none`    | none       | Robots rules or terms: the customer area's conditions of use forbid tools that collect data from it                                                               |
 | Via Verde — Área de cliente            | `via-verde`            | `manual`           | C     | `none`    | none       | Robots rules or terms: one clause of the site's conditions can be read as forbidding it, and an unclear clause is treated as a prohibition                        |
 | X (Twitter)                            | `x`                    | `manual`           | C     | `none`    | none       | Robots rules or terms: robots.txt disallows the site for every agent it does not name                                                                             |

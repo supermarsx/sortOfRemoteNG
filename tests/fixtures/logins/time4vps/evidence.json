@@ -2,18 +2,69 @@
   "$schema": "../evidence.schema.json",
   "version": 1,
   "id": "time4vps",
-  "class": "C",
-  "mechanism": "none",
-  "reviewed": "2026-10-12",
-  "summary": "Not captured: the billing host and the provider's website refuse automated reads, so neither the robots rules nor the terms could be read and the check before a capture did not come back clean. No other public source shows the sign-in form. The sign-in page was not loaded.",
-  "sources": [],
-  "selectors": [],
-  "fixtures": [],
-  "staysInteractive": [{ "kind": "other", "note": "The whole sign-in." }],
-  "lookedFor": [
-    "robots.txt of billing.time4vps.com, the catalog host, read on the review date with a plain HTTP client: HTTP 403 and a page titled Just a moment... that asks to enable JavaScript and cookies. No rule could be read.",
-    "The terms of service page on www.time4vps.com, read on the review date: the same HTTP 403 page to a plain HTTP client, and HTTP 403 to a second automated reader. A web search found no other copy of the terms.",
-    "A code search on GitHub for the billing host: the vendor's WHMCS module and API clients, which use the API with an account's own credentials. Nothing that reproduces the sign-in form."
+  "class": "A",
+  "mechanism": "form",
+  "source": "tests/fixtures/logins/time4vps/capture.json",
+  "reviewed": "2026-10-14",
+  "summary": "Actual user-supplied Client Area form controls, sanitized before persistence and parsed offline with the capture tool. An independent anonymous product-runtime probe confirmed the billing origin, /clientarea/ path, visible POST form controls and no login iframe. Only structural attributes are retained; account text, password, hidden action and security-token values, scripts and the form action query are absent. This records account/password controls, not authenticated acceptance or automatic authenticator sign-in; the second-stage contract is still unavailable.",
+  "sources": [
+    {
+      "id": "user-form",
+      "kind": "user-capture",
+      "title": "User-supplied actual login-widget form fragment, with all values and page tokens removed before offline capture",
+      "capture": "capture.json",
+      "captureSha256": "a1151b40a958e69c2d73d529e076ae1bedfffc04b6022c6f42b217e0d51d4b53",
+      "retrieved": "2026-10-14",
+      "note": "This is the supplied form fragment, not a whole-page render or an authenticated acceptance run. Form method is POST; the original action is a same-document redirect query, withheld by the sanitizer. Input values and hidden values were never persisted."
+    }
   ],
-  "neededFromUser": "The sign-in page saved from the user's own browser as \"Webpage, Complete\" and read with the capture tool's --from-file mode, plus the page that follows the first step if the sign-in has two. That would make this class A. Save any page signed out and with no password typed in; keep the \"_files\" folder beside the .html and both outside the repository: they can hold the account name."
+  "selectors": [
+    {
+      "selector": "form#login-widget-form input#login-widget-user[name=\"username\"][type=\"text\"][required]",
+      "role": "username",
+      "source": "user-form",
+      "basis": "observed",
+      "locator": "login-widget-user"
+    },
+    {
+      "selector": "form#login-widget-form input#login-widget-password[name=\"password\"][type=\"password\"][autocomplete=\"off\"][required]",
+      "role": "password",
+      "source": "user-form",
+      "basis": "observed",
+      "locator": "login-widget-password"
+    },
+    {
+      "selector": "form#login-widget-form button#login-widget-submit[type=\"submit\"]",
+      "role": "control",
+      "source": "user-form",
+      "basis": "observed",
+      "locator": "login-widget-submit"
+    }
+  ],
+  "fixtures": [
+    {
+      "file": "fixture.html",
+      "origin": "https://billing.time4vps.com",
+      "path": "/clientarea/",
+      "derivedFrom": ["user-form"],
+      "note": "Synthetic token-free structural fixture at the vendor publicly observed Client Area destination; no page scripts or field values."
+    }
+  ],
+  "staysInteractive": [
+    {
+      "kind": "totp",
+      "note": "User selected authenticator-app MFA, but its actual sign-in route, input, submit, method/action and frame metadata are still pending. No challenge selectors have been inferred."
+    },
+    {
+      "kind": "email-code",
+      "note": "Email MFA is a separate verification method and cannot use the saved authenticator seed."
+    },
+    {
+      "kind": "captcha"
+    },
+    {
+      "kind": "other",
+      "note": "Recovery, MFA enrollment and any unsupported layout."
+    }
+  ]
 }

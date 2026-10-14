@@ -3709,6 +3709,222 @@ mod tests {
             .unwrap()
             .contains("[name=\\\"username\\\"]"));
     }
+    fn time4_initial_connection() -> Value {
+        let mut row = connection();
+        row["hostname"] = "https://billing.time4vps.com/clientarea/".into();
+        row["credentialSource"] = json!({"kind":"local"});
+        row["httpApplication"] = json!({"version":1,"id":"time4vps","loginMode":"form"});
+        row
+    }
+
+    #[tokio::test]
+    async fn time4_initial_native_authority_binds_selected_local_account_and_exact_steps() {
+        const ORIGIN: &str = "https://billing.time4vps.com";
+        let mut f = Fixture::new(time4_initial_connection()).await;
+        f.request.initial_url = format!("{ORIGIN}/clientarea/");
+        let authorized = f.authorize().await.unwrap();
+        assert_eq!(authorized.login.application_id(), "time4vps");
+        assert!(authorized.login.declarative());
+        assert_eq!(authorized.login.consent_origins(), &[ORIGIN]);
+        for stage in ["form", "form-submit"] {
+            assert!(authorized.login.declarative_permits(
+                ORIGIN,
+                stage,
+                Some("/clientarea/"),
+                None
+            ));
+            for (origin, path, frame) in [
+                (
+                    "https://billing.time4vps.com.evil.test",
+                    Some("/clientarea/"),
+                    None,
+                ),
+                ("http://billing.time4vps.com", Some("/clientarea/"), None),
+                (ORIGIN, Some("/signup/"), None),
+                (ORIGIN, Some("/clientarea/recovery/"), None),
+                (ORIGIN, None, None),
+                (ORIGIN, Some("/clientarea/"), Some("unreviewed-frame")),
+            ] {
+                assert!(!authorized
+                    .login
+                    .declarative_permits(origin, stage, path, frame));
+            }
+        }
+        for stage in ["totp", "totp-submit", "password", "identifier", "unknown"] {
+            assert!(!authorized.login.declarative_permits(
+                ORIGIN,
+                stage,
+                Some("/clientarea/"),
+                None
+            ));
+        }
+        assert!(authorized.login.totp.is_none());
+        let setup: Value =
+            serde_json::from_str(authorized.login.form_configuration().unwrap()).unwrap();
+        let serialized = setup.to_string();
+        assert!(serialized.contains("login-widget-user"));
+        assert!(serialized.contains("login-widget-password"));
+        assert!(!serialized.contains("fixture-secret"));
+        assert!(!serialized.contains("test-user"));
+        let mut calls = 0;
+        authorized.login.with_credentials(
+            &NativeLoginRequest {
+                identity: authorized.policy.identity(),
+                origin: ORIGIN,
+            },
+            &Consent { allow: true },
+            &mut |credentials| {
+                assert_eq!(credentials.username, "test-user");
+                assert_eq!(credentials.password, "fixture-secret");
+                assert!(!credentials.auto_submit); // Persisted default requires manual submission.
+                calls += 1;
+            },
+        );
+        assert_eq!(calls, 1);
+        authorized.login.with_credentials(
+            &NativeLoginRequest {
+                identity: authorized.policy.identity(),
+                origin: "https://billing.time4vps.com.evil.test",
+            },
+            &Consent { allow: true },
+            &mut |_| panic!("lookalike origin released selected local credentials"),
+        );
+    }
+
+    #[tokio::test]
+    async fn time4_initial_native_authority_uses_selected_vault_and_revokes_edited_source() {
+        const ID: &str = "01234567-89ab-4cde-8fab-0123456789ab";
+        let mut row = time4_initial_connection();
+        row["credentialSource"] = json!({"kind":"vault","credentialId":ID});
+        row["basicAuthUsername"] = "ignored-inline-user".into();
+        row["basicAuthPassword"] = "ignored-inline-password".into();
+        let mut f = Fixture::new(row.clone()).await;
+        f.request.initial_url = "https://billing.time4vps.com/clientarea/".into();
+        let mut data = json!({"connections":[row],"settings":{},"credentialVault":{
+            "version":1,"revision":1,"entries":[{"id":ID,"facets":{
+                "username":"selected-vault@example.test","password":"selected-vault-fixture"}}]
+        }});
+        f.replace_totp_fixture_data(&data);
+        let authorized = f.authorize().await.unwrap();
+        assert!(authorized.login.declarative());
+        let mut calls = 0;
+        authorized.login.with_credentials(
+            &NativeLoginRequest {
+                identity: authorized.policy.identity(),
+                origin: "https://billing.time4vps.com",
+            },
+            &Consent { allow: true },
+            &mut |credentials| {
+                assert_eq!(credentials.username, "selected-vault@example.test");
+                assert_eq!(credentials.password, "selected-vault-fixture");
+                calls += 1;
+            },
+        );
+        assert_eq!(calls, 1);
+        let setup = authorized.login.form_configuration().unwrap();
+        assert!(!setup.contains("selected-vault-fixture"));
+        assert!(!setup.contains("selected-vault@example.test"));
+        data["credentialVault"]["entries"][0]["facets"]["password"] =
+            "changed-vault-fixture".into();
+        f.replace_totp_fixture_data(&data);
+        assert!(authorized.lease.recheck(&f.window, &f.state).await.is_err());
+        authorized.login.with_credentials(
+            &NativeLoginRequest {
+                identity: authorized.policy.identity(),
+                origin: "https://billing.time4vps.com",
+            },
+            &Consent { allow: true },
+            &mut |_| panic!("changed vault source released an old account"),
+        );
+    }
+
+    #[tokio::test]
+    async fn time4_initial_native_authority_never_falls_back_from_missing_vault_to_inline() {
+        let mut row = time4_initial_connection();
+        row["credentialSource"] =
+            json!({"kind":"vault","credentialId":"01234567-89ab-4cde-8fab-0123456789ab"});
+        for owner in [None, Some("other-database")] {
+            let mut selected = row.clone();
+            if let Some(owner) = owner {
+                selected["credentialSource"]["ownerDatabaseId"] = owner.into();
+            }
+            let mut f = Fixture::new(selected).await;
+            f.request.initial_url = "https://billing.time4vps.com/clientarea/".into();
+            assert!(matches!(
+                f.authorize().await,
+                Err(NativeAuthorityError::CredentialUnavailable)
+            ));
+        }
+    }
+
+    #[tokio::test]
+    async fn time4_initial_native_authority_requires_saved_mode_live_consent_and_submit_opt_in() {
+        const ORIGIN: &str = "https://billing.time4vps.com";
+        let row = time4_initial_connection();
+        let mut f = Fixture::new(row.clone()).await;
+        f.request.initial_url = format!("{ORIGIN}/clientarea/");
+        let authorized = f.authorize().await.unwrap();
+        let request = NativeLoginRequest {
+            identity: authorized.policy.identity(),
+            origin: ORIGIN,
+        };
+        authorized
+            .login
+            .with_credentials(&request, &Consent { allow: false }, &mut |_| {
+                panic!("denied consent released secrets")
+            });
+        f.request.policy.auto_login.enabled = false;
+        f.request.policy.auto_login.consent = OriginBrowserConsent::Required {};
+        assert!(matches!(
+            f.authorize().await,
+            Err(NativeAuthorityError::InvalidRequest)
+        ));
+        let disabled = saved_login(
+            &row,
+            &Value::Null,
+            &f.request,
+            &authorized.policy,
+            &authorized.lease,
+        );
+        assert!(!disabled.enabled());
+        disabled.with_credentials(&request, &Consent { allow: true }, &mut |_| {
+            panic!("disabled request released secrets")
+        });
+        let mut manual = row.clone();
+        manual["httpApplication"]["loginMode"] = "manual".into();
+        let mut manual_fixture = Fixture::new(manual).await;
+        manual_fixture.request.initial_url = format!("{ORIGIN}/clientarea/");
+        let manual_authorized = manual_fixture.authorize().await.unwrap();
+        assert!(!manual_authorized.login.enabled());
+        manual_authorized.login.with_credentials(
+            &NativeLoginRequest {
+                identity: manual_authorized.policy.identity(),
+                origin: ORIGIN,
+            },
+            &Consent { allow: true },
+            &mut |_| panic!("saved manual mode released secrets"),
+        );
+        let mut submit_row = row;
+        submit_row["browserSession"] = json!({"version":1,"manualFormSubmit":false});
+        let mut submit_fixture = Fixture::new(submit_row).await;
+        submit_fixture.request.initial_url = format!("{ORIGIN}/clientarea/");
+        let submit_authorized = submit_fixture.authorize().await.unwrap();
+        assert!(submit_authorized.login.auto_submit_allowed());
+        let mut calls = 0;
+        submit_authorized.login.with_credentials(
+            &NativeLoginRequest {
+                identity: submit_authorized.policy.identity(),
+                origin: ORIGIN,
+            },
+            &Consent { allow: true },
+            &mut |credentials| {
+                assert!(credentials.auto_submit);
+                calls += 1;
+            },
+        );
+        assert_eq!(calls, 1);
+    }
+
     #[tokio::test]
     async fn connect_chain_preserves_hops_remote_dns_and_opaque_payload() {
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();

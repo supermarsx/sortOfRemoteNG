@@ -5,6 +5,7 @@ import { LINKEDIN_PROFILE } from "./linkedinProfile";
 import { CHATGPT_PROFILE } from "./chatgptProfile";
 import { CLAUDE_PROFILE } from "./claudeProfile";
 import { EXCHANGE_OWA_PROFILE } from "./exchangeOwaProfile";
+import { TIME4VPS_PROFILE } from "./time4VpsProfile";
 
 /** Replaced by the catalog while an application's login steps are active. */
 export const HOSTED_DASHBOARD_INTERACTIVE_SIGN_IN =
@@ -82,13 +83,7 @@ export const HOSTED_DASHBOARD_PROFILES: readonly HttpApplicationProfile[] = [
     "networking",
     "Account Manager for domains, hosting and billing. Verification and recovery challenges stay on the website.",
   ),
-  hosted(
-    "time4vps",
-    "Time4VPS dashboard",
-    "https://billing.time4vps.com/clientarea/",
-    "management",
-    "Billing and VPS customer area, opened at the vendor's Client Area link. Use the customer account; VPS operating-system passwords are separate.",
-  ),
+  TIME4VPS_PROFILE,
   hosted(
     "contabo",
     "Contabo customer panel",

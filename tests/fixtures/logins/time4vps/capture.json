@@ -1,0 +1,89 @@
+{
+  "schema": "sorng-login-capture/1",
+  "sanitizer": 4,
+  "applicationId": "time4vps",
+  "capturedAt": "2026-10-14",
+  "mode": "file",
+  "engine": "static parse of a saved page",
+  "source": {
+    "kind": "saved-page"
+  },
+  "limits": {
+    "navigations": 0,
+    "scriptsExecuted": false,
+    "input": "none",
+    "truncated": false
+  },
+  "observations": ["password-field"],
+  "frames": [
+    {
+      "index": 0,
+      "parent": null,
+      "controls": 6,
+      "tree": {
+        "tag": "html",
+        "attributes": {},
+        "children": [
+          {
+            "tag": "body",
+            "attributes": {
+              "class": "cmd-clientarea"
+            },
+            "children": [
+              {
+                "tag": "form",
+                "attributes": {
+                  "id": "login-widget-form",
+                  "action": "",
+                  "method": "post"
+                },
+                "children": [
+                  {
+                    "tag": "input",
+                    "attributes": {
+                      "id": "login-widget-user",
+                      "name": "username",
+                      "type": "text",
+                      "required": ""
+                    }
+                  },
+                  {
+                    "tag": "input",
+                    "attributes": {
+                      "id": "login-widget-password",
+                      "name": "password",
+                      "type": "password",
+                      "autocomplete": "off",
+                      "required": ""
+                    }
+                  },
+                  {
+                    "tag": "input",
+                    "attributes": {
+                      "name": "action",
+                      "type": "hidden"
+                    }
+                  },
+                  {
+                    "tag": "input",
+                    "attributes": {
+                      "name": "security_token",
+                      "type": "hidden"
+                    }
+                  },
+                  {
+                    "tag": "button",
+                    "attributes": {
+                      "id": "login-widget-submit",
+                      "type": "submit"
+                    }
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    }
+  ]
+}
