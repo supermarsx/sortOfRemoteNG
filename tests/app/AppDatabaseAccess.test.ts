@@ -61,16 +61,31 @@ describe("application database lock wiring", () => {
     ).outputText;
     const dispatch = vi.fn();
     const closeCurrentDatabase = vi.fn().mockResolvedValue(undefined);
+    const getCurrentDatabase = vi.fn(() => ({ id: "detached-owner" }));
+    const releaseDetachedDatabaseAccess = vi.fn().mockResolvedValue(undefined);
     const cleanup = new Function(
       "dispatch",
       "DatabaseManager",
       `${script}; return cleanup;`,
-    )(dispatch, { getInstance: () => ({ closeCurrentDatabase }) });
+    )(dispatch, {
+      getInstance: () => ({
+        closeCurrentDatabase,
+        getCurrentDatabase,
+        releaseDetachedDatabaseAccess,
+      }),
+    });
     await cleanup(() => false);
     expect(dispatch).not.toHaveBeenCalled();
     expect(closeCurrentDatabase).not.toHaveBeenCalled();
+    expect(getCurrentDatabase).not.toHaveBeenCalled();
+    expect(releaseDetachedDatabaseAccess).not.toHaveBeenCalled();
     await cleanup(() => true);
-    expect(closeCurrentDatabase).toHaveBeenCalledWith("lock");
+    // The detached window releases its own access without closing the main
+    // window's database or changing that window's writer baseline.
+    expect(releaseDetachedDatabaseAccess).toHaveBeenCalledExactlyOnceWith(
+      "detached-owner",
+    );
+    expect(closeCurrentDatabase).not.toHaveBeenCalled();
     expect(dispatch).toHaveBeenCalledWith({
       type: "SET_SESSIONS",
       payload: [],
