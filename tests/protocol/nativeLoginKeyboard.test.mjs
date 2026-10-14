@@ -30,10 +30,13 @@ function fixture(
   waitForInput = false,
   background = null,
   url = "https://device.test/login",
+  googleLayout = null,
 ) {
   const dom = new JSDOM(
     google
-      ? '<form method="POST"><input id="identifierId" name="identifier" type="text" autocomplete="username"><input name="hiddenPassword" type="password" aria-hidden="true" tabindex="-1"><button name="action" id="identifierNext">Next</button></form>'
+      ? googleLayout
+        ? '<input id="identifierId" name="identifier" type="text" autocomplete="username webauthn"><input name="hiddenPassword" type="password" aria-hidden="true"><div id="identifierNext"><button type="button">Next</button></div><iframe src="https://accounts.youtube.com/accounts/CheckConnection" tabindex="-1" style="position:absolute;z-index:-1;pointer-events:auto"></iframe>'
+        : '<form method="POST"><input id="identifierId" name="identifier" type="text" autocomplete="username"><input name="hiddenPassword" type="password" aria-hidden="true" tabindex="-1"><button name="action" id="identifierNext">Next</button></form>'
       : '<form method="post" action="/login"><input id="username"><input id="password" type="password"><button id="login" type="submit">Login</button></form>',
     {
       url: google ? "https://accounts.google.com/v3/signin/identifier" : url,
@@ -65,6 +68,38 @@ function fixture(
   win.HTMLElement.prototype.getClientRects = function () {
     return this.isConnected ? [{ width: 100, height: 20 }] : [];
   };
+  if (googleLayout) {
+    // The actual native Google scene has a positive-area utility iframe
+    // behind the opaque body, with its denied document remaining about:blank.
+    const child = new JSDOM("", { url: "about:blank" });
+    t.after(() => child.window.close());
+    const frame = doc.querySelector("iframe");
+    Object.defineProperty(frame, "contentDocument", {
+      configurable: true,
+      get: () => child.window.document,
+    });
+    doc.body.style.backgroundColor = "rgb(240, 244, 249)";
+    doc.body.style.opacity = "1";
+    const rect = (width, height) => ({
+      left: 0,
+      top: 0,
+      right: width,
+      bottom: height,
+      width,
+      height,
+    });
+    win.HTMLElement.prototype.getBoundingClientRect = function () {
+      return this === doc.body
+        ? rect(800, 600)
+        : this.tagName === "IFRAME"
+          ? rect(300, 150)
+          : rect(100, 20);
+    };
+    Object.defineProperty(win, "innerWidth", { value: 800 });
+    Object.defineProperty(win, "innerHeight", { value: 600 });
+    doc.elementFromPoint = () => doc.body;
+    googleLayout(doc, frame, child.window.document);
+  }
   if (win.location.protocol === "https:")
     Object.defineProperty(win.crypto, "subtle", { value: webcrypto.subtle });
   win.TextEncoder = TextEncoder;
@@ -137,6 +172,9 @@ function fixture(
         google && field === "username" ? "identifierId" : field,
       ),
       unit = values[field][index];
+    // Production checks the native field grant and sends keys to the actual
+    // focused target. A moved focus cannot write another unit into this field.
+    if (doc.activeElement !== input) return;
     const event = {
       target: input,
       isTrusted: true,
@@ -244,6 +282,142 @@ function fixture(
     identifierValue: () => identifierValue,
   };
 }
+
+const googleUtility = (t, mutate = () => {}) =>
+  fixture(
+    t,
+    false,
+    true,
+    false,
+    false,
+    null,
+    "https://device.test/login",
+    mutate,
+  );
+
+test("Google observed formless identifier and obscured blank connection frame reach both native-key stages", async (t) => {
+  const f = googleUtility(t);
+  for (let i = 0; i < 160 && f.submits() === 0; i++) await delay(50);
+  assert.equal(f.submits(), 1, JSON.stringify(f.signals));
+  assert.equal(f.identifierValue(), f.values.username);
+  assert.equal(f.doc.getElementById("password").value, f.values.password);
+  assert.equal(f.signals.filter((s) => s === "identifier").length, 1);
+  assert.equal(f.signals.filter((s) => s === "password").length, 1);
+  assert.ok(f.keys.length > 0);
+  assert.deepEqual(f.errors, []);
+});
+
+const unsafeGoogleFrames = {
+  "opaque cover removed": (doc) =>
+    (doc.body.style.backgroundColor = "transparent"),
+  "translucent cover": (doc) =>
+    (doc.body.style.backgroundColor = "rgba(240,244,249,0.5)"),
+  "front z-index": (_doc, frame) => (frame.style.zIndex = "1"),
+  "normal-flow position": (_doc, frame) => (frame.style.position = "static"),
+  "focused frame": (_doc, frame) => frame.focus(),
+  "focusable frame": (_doc, frame) => (frame.tabIndex = 0),
+  "opaque redirected child": (_doc, frame) =>
+    Object.defineProperty(frame, "contentDocument", { value: null }),
+  "interactive blank child": (_doc, _frame, child) =>
+    (child.body.innerHTML = '<input name="otp">'),
+  "nonempty blank child": (_doc, _frame, child) =>
+    (child.body.textContent = "Verify you are human"),
+  "lookalike origin": (_doc, frame) =>
+    (frame.src =
+      "https://accounts.youtube.com.evil.test/accounts/CheckConnection"),
+  "lookalike path": (_doc, frame) =>
+    (frame.src = "https://accounts.youtube.com/accounts/CheckConnection/other"),
+  userinfo: (_doc, frame) =>
+    (frame.src = "https://user@accounts.youtube.com/accounts/CheckConnection"),
+  srcdoc: (_doc, frame) => frame.setAttribute("srcdoc", "<p>Challenge</p>"),
+  "another visible iframe": (doc) =>
+    doc.body.append(doc.createElement("iframe")),
+  "tiny positive-area iframe": (_doc, frame) =>
+    (frame.getBoundingClientRect = () => ({
+      left: 0,
+      top: 0,
+      right: 1,
+      bottom: 1,
+      width: 1,
+      height: 1,
+    })),
+  "exposed hit sample": (doc, frame) => (doc.elementFromPoint = () => frame),
+  "missing opaque geometry cover": (doc) =>
+    (doc.body.getBoundingClientRect = () => ({
+      left: 0,
+      top: 0,
+      right: 10,
+      bottom: 10,
+      width: 10,
+      height: 10,
+    })),
+  "non-body parent": (doc, frame) => {
+    const parent = doc.createElement("div");
+    doc.body.append(parent);
+    parent.append(frame);
+  },
+};
+for (const [name, mutate] of Object.entries(unsafeGoogleFrames)) {
+  test(`Google keeps ${name} blocked before any native credential request`, async (t) => {
+    const f = googleUtility(t, mutate);
+    await delay(800);
+    assert.equal(f.signals.includes("identifier"), false);
+    assert.equal(f.keys.length, 0);
+    assert.equal(f.submits(), 0);
+    assert.deepEqual(f.errors, []);
+  });
+}
+for (const name of [
+  "opaque cover removed",
+  "front z-index",
+  "focused frame",
+  "opaque redirected child",
+  "interactive blank child",
+  "another visible iframe",
+]) {
+  test(`Google rechecks ${name} during each native credential unit`, async (t) => {
+    const f = googleUtility(t);
+    const frame = f.doc.querySelector("iframe"),
+      child = frame.contentDocument;
+    f.hooks.beforeKey = (_field, index) => {
+      if (index === 2) unsafeGoogleFrames[name](f.doc, frame, child);
+    };
+    for (let i = 0; i < 60 && !f.signals.includes("form-rejected"); i++)
+      await delay(50);
+    assert.equal(f.signals.at(-1), "form-rejected");
+    assert.ok(f.keys.length > 0 && f.keys.length <= 3);
+    assert.equal(f.submits(), 0);
+    assert.equal(f.doc.getElementById("identifierId").value, "");
+    assert.deepEqual(f.errors, []);
+  });
+}
+test("Google rechecks opaque cover after the final receipt and before Next", async (t) => {
+  const f = googleUtility(t);
+  f.hooks.afterProbe = (field, count) => {
+    if (field === "username" && count === f.values.username.length)
+      f.doc.body.style.backgroundColor = "transparent";
+  };
+  for (let i = 0; i < 60 && !f.signals.includes("form-rejected"); i++)
+    await delay(50);
+  assert.equal(f.signals.at(-1), "form-rejected");
+  assert.equal(f.keys.length, f.values.username.length);
+  assert.equal(f.identifierValue(), undefined);
+  assert.equal(f.signals.includes("password"), false);
+  assert.equal(f.submits(), 0);
+  assert.deepEqual(f.errors, []);
+});
+test("Google obscured utility does not authorize a changed main route", async (t) => {
+  const f = googleUtility(t, (doc) =>
+    doc.defaultView.history.replaceState(
+      null,
+      "",
+      "/v3/signin/challenge/selection",
+    ),
+  );
+  await delay(800);
+  assert.equal(f.keys.length, 0);
+  assert.equal(f.signals.includes("identifier"), false);
+});
 
 for (const visibilityToggle of [false, true]) {
   test(`Google implicit Next buttons work with production native-keyboard mode across SPA stages (visibility toggle: ${visibilityToggle})`, async (t) => {

@@ -1156,6 +1156,93 @@
       );
       return nodes.length === 1 ? nodes[0] : null;
     }
+    function obscuredGoogleConnectionFrame(node) {
+      // Google's connection probe can remain about:blank when its auxiliary
+      // origin is denied. Its positive layout box sits behind the opaque body;
+      // it is not a displayed challenge. Never admit an opaque/redirected
+      // document, a focused frame, or a frame brought in front of that cover.
+      if (
+        provider !== "google-account" ||
+        origin !== "https://accounts.google.com" ||
+        !/^\/(v3\/signin|signin\/v2|signin)\/(identifier|challenge\/pwd)$/.test(
+          location.pathname,
+        ) ||
+        node.tagName !== "IFRAME" ||
+        node.parentElement !== doc.body ||
+        node.tabIndex >= 0 ||
+        doc.activeElement === node ||
+        node.hasAttribute("srcdoc")
+      )
+        return false;
+      try {
+        const url = new URL(node.getAttribute("src"), doc.baseURI);
+        if (
+          url.origin !== "https://accounts.youtube.com" ||
+          url.pathname !== "/accounts/CheckConnection" ||
+          url.username ||
+          url.password ||
+          url.hash
+        )
+          return false;
+        const child = node.contentDocument;
+        if (
+          !child ||
+          child.URL !== "about:blank" ||
+          !child.body ||
+          child.body.textContent.trim() ||
+          child.querySelector(
+            "input,button,select,textarea,iframe,object,embed,script,[contenteditable=true]",
+          )
+        )
+          return false;
+        const style = getComputedStyle(node);
+        const cover = getComputedStyle(doc.body);
+        if (
+          !["absolute", "fixed"].includes(style.position) ||
+          !(Number(style.zIndex) < 0) ||
+          style.pointerEvents !== "auto" ||
+          cover.opacity !== "1" ||
+          !(
+            /^rgb\(/.test(cover.backgroundColor) ||
+            /^rgba\([^)]*,\s*1\s*\)$/.test(cover.backgroundColor)
+          )
+        )
+          return false;
+        const rect = node.getBoundingClientRect();
+        const body = doc.body.getBoundingClientRect();
+        if (
+          rect.width <= 1 ||
+          rect.height <= 1 ||
+          rect.left < 0 ||
+          rect.top < 0 ||
+          rect.right > window.innerWidth ||
+          rect.bottom > window.innerHeight ||
+          body.left > rect.left ||
+          body.top > rect.top ||
+          body.right < rect.right ||
+          body.bottom < rect.bottom
+        )
+          return false;
+        const xs = [
+          rect.left + 0.5,
+          (rect.left + rect.right) / 2,
+          rect.right - 0.5,
+        ];
+        const ys = [
+          rect.top + 0.5,
+          (rect.top + rect.bottom) / 2,
+          rect.bottom - 0.5,
+        ];
+        return xs.every((x) =>
+          ys.every((y) => {
+            const hit = doc.elementFromPoint(x, y);
+            return hit && hit !== node;
+          }),
+        );
+      } catch (_) {
+        return false;
+      }
+    }
     function blocked() {
       if (
         window._cf_chl_opt ||
@@ -1178,6 +1265,7 @@
             'input[name*="recovery" i], input[type="file"], iframe, .cf-turnstile, [role="dialog"], [role="alert"], [aria-invalid="true"]',
         ),
       ).some((node) => {
+        if (obscuredGoogleConnectionFrame(node)) return false;
         if (
           completedTurnstile &&
           (node.matches(".cf-turnstile") ||
