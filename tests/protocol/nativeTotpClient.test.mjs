@@ -86,6 +86,7 @@ function fixture(t, options = {}) {
   let submits = 0,
     dispatch;
   const input = doc.querySelector(options.inputSelector || "input");
+  if (options.initialFocus) doc.querySelector(options.initialFocus).focus();
   for (const form of doc.querySelectorAll("form"))
     form.addEventListener("submit", (e) => {
       e.preventDefault();
@@ -108,8 +109,9 @@ function fixture(t, options = {}) {
   // This is a browser-process keyboard MODEL, not evidence of live CEF input.
   // Only this test driver mutates the field; production sends CEF key events.
   const character = (unit) => {
+    const destination = doc.activeElement;
     const event = {
-      target: input,
+      target: destination,
       isTrusted: true,
       key: unit,
       data: unit,
@@ -121,8 +123,12 @@ function fixture(t, options = {}) {
     for (const callback of listeners.get("keydown") || []) callback(event);
     for (const callback of listeners.get("beforeinput") || []) callback(event);
     if (event.prevented) return;
-    input.value += unit;
-    input.setSelectionRange(input.value.length, input.value.length);
+    if (!(destination instanceof win.HTMLInputElement)) return;
+    destination.value += unit;
+    destination.setSelectionRange(
+      destination.value.length,
+      destination.value.length,
+    );
     for (const callback of listeners.get("input") || []) callback(event);
     typed.push(unit);
   };
@@ -168,6 +174,103 @@ test("approved OTP stage types sequentially and submits only after fresh native 
   assert.equal(f.signals.filter((s) => s.includes("|key|")).length, 6);
   assert.equal(f.signals.filter((s) => s.includes("|finish|")).length, 1);
   assert.equal(f.dispatch("submit", 6, f.expiry, true), false);
+});
+
+// Structural output of Tactical v0.101.64 LoginView + its pinned Quasar 2.18.5
+// QDialog render/focus functions. Neither source hides the background form.
+const tacticalOtpHtml =
+  '<form class="q-form"><input autocomplete="username"><input autocomplete="current-password" type="password"><button type="submit">Login</button></form><div class="q-dialog q-dialog--modal" role="dialog" aria-modal="true"><div class="q-dialog__backdrop" aria-hidden="true" tabindex="-1"></div><div class="q-dialog__inner" tabindex="-1"><div class="q-card"><form class="q-form"><label class="q-field"><input autofocus autocomplete="one-time-code" inputmode="numeric" type="text"></label><button type="button" id="cancel-token">Cancel</button><button type="submit">Submit</button></form></div></div></div>';
+
+test("Tactical RMM Quasar dialog focus container yields to its reviewed OTP field before native keys", async (t) => {
+  const setup = catalog.tacticalrmm[0];
+  const f = fixture(t, {
+    html: tacticalOtpHtml,
+    url: "https://device.test/login",
+    setup,
+    inputSelector: setup.codeSelector,
+    initialFocus: ".q-dialog__inner",
+  });
+  for (let count = 0; count < 40 && f.submits() === 0; count++) await delay(25);
+  assert.equal(f.doc.activeElement, f.input);
+  assert.equal(f.typed.join(""), "123456");
+  assert.equal(f.submits(), 1);
+  assert.equal(f.doc.querySelector('input[type="password"]').value, "");
+});
+
+for (const [label, html, initialFocus] of [
+  ["Cancel control", tacticalOtpHtml, "#cancel-token"],
+  [
+    "background password",
+    tacticalOtpHtml,
+    'input[autocomplete="current-password"]',
+  ],
+  [
+    "another visible modal",
+    tacticalOtpHtml +
+      '<div class="q-dialog" role="dialog" aria-modal="true"><button>Other task</button></div>',
+    ".q-dialog__inner",
+  ],
+  [
+    "nonmodal container",
+    tacticalOtpHtml.replace('aria-modal="true"', 'aria-modal="false"'),
+    ".q-dialog__inner",
+  ],
+  [
+    "action container",
+    tacticalOtpHtml.replace(
+      'class="q-dialog__inner"',
+      'class="q-dialog__inner" role="button"',
+    ),
+    ".q-dialog__inner",
+  ],
+  [
+    "editable container",
+    tacticalOtpHtml.replace(
+      'class="q-dialog__inner"',
+      'class="q-dialog__inner" contenteditable="true"',
+    ),
+    ".q-dialog__inner",
+  ],
+]) {
+  test(`Tactical OTP never takes focus from ${label}`, async (t) => {
+    const setup = catalog.tacticalrmm[0];
+    const f = fixture(t, {
+      html,
+      url: "https://device.test/login",
+      setup,
+      inputSelector: setup.codeSelector,
+      initialFocus,
+    });
+    const owner = f.doc.activeElement;
+    await delay(450);
+    assert.equal(f.doc.activeElement, owner);
+    assert.equal(f.input.value, "");
+    assert.equal(f.typed.length, 0);
+    assert.equal(f.submits(), 0);
+    assert.equal(f.signals.length, 0);
+  });
+}
+
+test("Tactical modal focus callback changing the route cancels before a native OTP grant", async (t) => {
+  const setup = catalog.tacticalrmm[0];
+  const f = fixture(t, {
+    html: tacticalOtpHtml,
+    url: "https://device.test/login",
+    setup,
+    inputSelector: setup.codeSelector,
+    initialFocus: ".q-dialog__inner",
+  });
+  f.input.addEventListener("focus", () =>
+    f.win.history.replaceState(null, "", "/another-task"),
+  );
+  await delay(250);
+  assert.equal(f.typed.length, 0);
+  assert.equal(f.input.value, "");
+  assert.equal(f.submits(), 0);
+  assert.equal(
+    f.signals.some((s) => s.includes("|start|")),
+    false,
+  );
 });
 
 for (const [profile, fixtureFile] of [

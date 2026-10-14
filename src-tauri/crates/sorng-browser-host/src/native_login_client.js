@@ -486,12 +486,41 @@
       // A control that is no longer shown is not live: an unpainted page may
       // leave focus on the panel it has just hidden.
       const focused = doc.activeElement;
+      const tacticalModal = found?.input.closest(
+        '.q-dialog[role="dialog"][aria-modal="true"]',
+      );
+      // Quasar's reviewed Tactical modal can hold focus on its non-interactive
+      // inner container while autofocus settles. That container owns this
+      // challenge; it is not a user-selected input or action to preserve.
+      const tacticalContainer =
+        found &&
+        tacticalModal &&
+        setup.id === "tacticalrmm-totp" &&
+        setup.submission === "spa" &&
+        location.pathname === "/login" &&
+        setup.codeSelector ===
+          '.q-dialog form input[autocomplete="one-time-code"][inputmode="numeric"]' &&
+        setup.submitSelector ===
+          '.q-dialog form:has(input[autocomplete="one-time-code"][inputmode="numeric"]) button[type="submit"]' &&
+        focused instanceof HTMLDivElement &&
+        focused.matches('.q-dialog__inner[tabindex="-1"]') &&
+        !focused.hasAttribute("role") &&
+        !focused.closest('[contenteditable]:not([contenteditable="false"])') &&
+        focused.contains(found.input) &&
+        tacticalModal.contains(found.form) &&
+        focused.closest('.q-dialog[role="dialog"][aria-modal="true"]') ===
+          tacticalModal &&
+        visible(tacticalModal) &&
+        Array.from(
+          doc.querySelectorAll('.q-dialog[role="dialog"][aria-modal="true"]'),
+        ).filter(visible).length === 1;
       if (
         !found ||
         (!found.input.value &&
           focused !== doc.body &&
           focused !== found.input &&
-          visible(focused))
+          visible(focused) &&
+          !tacticalContainer)
       ) {
         if (now() - started < 600000) later(discover, 200);
         else cancel();
