@@ -157,10 +157,56 @@
       "capability": "manual"
     },
     "meo-particulares": {
-      "capability": "manual"
+      "capability": "manual",
+      "declarativeLogin": {
+        "mode": "exclusive",
+        "credentialOrigins": ["https://login.telecom.pt"],
+        "passwordOnly": false,
+        "loginSteps": [
+          {
+            "kind": "form",
+            "origin": "https://login.telecom.pt",
+            "paths": ["/AuthorizeService/authorize.aspx"],
+            "selectors": {
+              "username": "form#MainForm input#ContentPlaceHolder1_LoginTemplate_Template_WebSSOUsernameTextBox[type=\"email\"]",
+              "password": "form#MainForm input#ContentPlaceHolder1_LoginTemplate_Template_WebSSOPasswordTextBox[type=\"password\"][autocomplete=\"off\"]"
+            }
+          },
+          {
+            "kind": "submit",
+            "submission": "click",
+            "selectors": {
+              "control": "form#MainForm button#ContentPlaceHolder1_LoginTemplate_Template_WebSSOSubmitButton[name=\"SubmitButton\"][type=\"submit\"]"
+            }
+          }
+        ]
+      }
     },
     "meo-empresas": {
-      "capability": "manual"
+      "capability": "manual",
+      "declarativeLogin": {
+        "mode": "exclusive",
+        "credentialOrigins": ["https://login.telecom.pt"],
+        "passwordOnly": false,
+        "loginSteps": [
+          {
+            "kind": "form",
+            "origin": "https://login.telecom.pt",
+            "paths": ["/AuthorizeService/authorize.aspx"],
+            "selectors": {
+              "username": "form#MainForm input#ContentPlaceHolder1_LoginTemplate_Template_WebSSOUsernameTextBox[type=\"email\"]",
+              "password": "form#MainForm input#ContentPlaceHolder1_LoginTemplate_Template_WebSSOPasswordTextBox[type=\"password\"][autocomplete=\"off\"]"
+            }
+          },
+          {
+            "kind": "submit",
+            "submission": "click",
+            "selectors": {
+              "control": "form#MainForm button#ContentPlaceHolder1_LoginTemplate_Template_WebSSOSubmitButton[name=\"SubmitButton\"][type=\"submit\"]"
+            }
+          }
+        ]
+      }
     },
     "vodafone-portugal": {
       "capability": "known-form",

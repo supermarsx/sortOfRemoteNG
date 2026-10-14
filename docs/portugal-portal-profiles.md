@@ -125,21 +125,33 @@ presets. No unknown tenant hostname has been synthesized.
   **MEO — Empresas**.
 - Consumer entry: <https://my.meo.pt/>. The [official my MEO page](https://www.meo.pt/cliente)
   links **my MEO na Web** directly there. Its documentation also explains that
-  some company services can be associated in my MEO. The reader saw only the
-  JavaScript-required shell at the consumer entry.
+  some company services can be associated in my MEO. Anonymous native-browser
+  inspection on 2026-10-14 confirmed the public API dependency on
+  `services.telecom.pt` and the handoff through `id.services.telecom.pt/oic`
+  to `login.telecom.pt/AuthorizeService/authorize.aspx`.
 - Business entry:
   <https://cliente-empresas.meo.pt/Pages/Dashboard/Dashboard.aspx>.
   The [official business customer page](https://www.meo.pt/empresas/cliente)
   publishes that exact **Entrar** link under the Grandes Empresas area.
-  Following it redirected toward `id.services.telecom.pt/oic`, including an
-  OpenID transaction and a callback to `/Pages/Login/Login.aspx`; the research
-  reader could not access the identity destination. The preset saves the
+  Anonymous native-browser inspection on 2026-10-14 followed the published
+  entry through the portal’s `/login`, `id.services.telecom.pt/oic`, and
+  `login.telecom.pt/AuthorizeService/authorize.aspx`. The preset saves the
   published dashboard entry and none of the transaction parameters.
 - These are deliberately separate profiles. Business service eligibility and
   account association are determined by MEO; neither preset asserts every company
-  uses the Grandes Empresas portal. ID MEO, Google/Apple options, verification and
-  account association remain interactive. A Google sign-in option on a third-party
-  portal does not make it a first-party Google profile.
+  uses the Grandes Empresas portal. Both native profiles offer optional saved
+  or vault email/password entry into the captured ID MEO POST form, with
+  separately authorized submission. Manual mode remains the default. The
+  identity origin is a credential destination; transit, API and CAPTCHA hosts
+  receive resource permissions only, through the owned proxy. hCaptcha’s
+  documented HTTPS resource domain family supports varying asset hosts;
+  explicit website denials and same-origin restrictions still apply.
+  CAPTCHA, SMS verification, Google/Apple federation and account association
+  remain interactive. A Google sign-in option on a third-party portal does not
+  make it a first-party Google profile. Anonymous captures establish the form
+  and handoffs; successful authenticated account sign-in has not been tested.
+  Sanitized evidence: `tests/fixtures/logins/meo-particulares` and
+  `tests/fixtures/logins/meo-empresas`.
 
 ### My Vodafone Portugal
 

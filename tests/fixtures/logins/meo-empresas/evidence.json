@@ -2,41 +2,72 @@
   "$schema": "../evidence.schema.json",
   "version": 1,
   "id": "meo-empresas",
-  "class": "C",
-  "mechanism": "none",
-  "reviewed": "2026-10-12",
-  "summary": "The MEO business customer area, which hands sign-in to the operator's identity service. Its sign-in page was not captured, because the conditions of use of the customer area forbid tools that collect and extract data from it. Nothing else describes its markup.",
+  "class": "B",
+  "mechanism": "form",
+  "source": "https://cliente-empresas.meo.pt/Pages/Dashboard/Dashboard.aspx",
+  "reviewed": "2026-10-14",
+  "summary": "Anonymous private patched-product CEF followed this portal actual sign-in transaction to the exact top-document ID MEO POST form. The email, password and Entrar submit controls were observed. Tokens, query parameters, field values and raw HTML were never retained; the fixture is a structural reconstruction of sanitized native metadata, not an authenticated acceptance capture.",
   "sources": [
     {
-      "id": "conditions",
-      "kind": "vendor-documentation",
-      "title": "MEO: conditions of use of the business customer area, document Mod.C/1003061 of 2025-05",
-      "url": "https://conteudos.meo.pt/empresarial/Documentos/Condicoes-Utilizacao/Condicoes-Utilizacao-ACE.pdf",
-      "retrieved": "2026-10-12",
-      "note": "Section 8: «É expressamente proibida a extração e/ou utilização sistemática de parte ou de todo o conteúdo da Área de Cliente sem a autorização prévia e expressa da MEO. Em particular, é proibida qualquer forma de data mining ou a utilização de outras ferramentas e/ou instrumentos de recolha e extração de dados para reutilização de partes da Área de Cliente». Section 3: the account is an e-mail address as user name and a password chosen at registration."
+      "id": "page",
+      "kind": "anonymous-capture",
+      "title": "Anonymous native-runtime form metadata reached from this portal original entry using fresh private cookies and the owned TLS proxy",
+      "url": "https://cliente-empresas.meo.pt/Pages/Dashboard/Dashboard.aspx",
+      "capture": "capture.json",
+      "captureSha256": "2a7a78c5e33fb0982f03a738249150e2cd5da8f8ef21c234a9fe1192c775bf55",
+      "retrieved": "2026-10-14",
+      "note": "Actual portal entry followed to id.services.telecom.pt/oic and login.telecom.pt/AuthorizeService/authorize.aspx. Native browser scripts executed; the capture tree is reconstructed offline from sanitized form attributes. Transaction queries remained untouched only in browser memory and are absent from artifacts. Original requested URL, final identity URL and actual main-document navigation count are recorded."
+    }
+  ],
+  "selectors": [
+    {
+      "selector": "form#MainForm input#ContentPlaceHolder1_LoginTemplate_Template_WebSSOUsernameTextBox[type=\"email\"]",
+      "role": "username",
+      "source": "page",
+      "basis": "observed",
+      "locator": "MainForm, top document, rendered control"
     },
     {
-      "id": "portal-review",
-      "kind": "repository",
-      "title": "The in-repository review of the Portuguese portals of 2026-10-06, section MEO individuals and companies",
-      "path": "docs/portugal-portal-profiles.md",
-      "lines": "122-142",
-      "retrieved": "2026-10-12"
+      "selector": "form#MainForm input#ContentPlaceHolder1_LoginTemplate_Template_WebSSOPasswordTextBox[type=\"password\"][autocomplete=\"off\"]",
+      "role": "password",
+      "source": "page",
+      "basis": "observed",
+      "locator": "MainForm, top document, rendered control"
+    },
+    {
+      "selector": "form#MainForm button#ContentPlaceHolder1_LoginTemplate_Template_WebSSOSubmitButton[name=\"SubmitButton\"][type=\"submit\"]",
+      "role": "control",
+      "source": "page",
+      "basis": "observed",
+      "locator": "MainForm, top document, rendered control"
     }
   ],
-  "selectors": [],
-  "fixtures": [],
+  "fixtures": [
+    {
+      "file": "fixture.html",
+      "origin": "https://login.telecom.pt",
+      "path": "/AuthorizeService/authorize.aspx",
+      "derivedFrom": ["page"],
+      "note": "Observed top-document controls, hCaptcha placeholder and hidden response field names. Cross-origin hCaptcha documents were not inspected and contain no captured tree. No scripts, site keys, values, ASP.NET state or transaction queries."
+    }
+  ],
   "staysInteractive": [
     {
-      "kind": "single-sign-on",
-      "note": "The whole sign-in. Per the in-repository review the entry redirects to the operator's identity service with an OpenID transaction; that destination was not read."
+      "kind": "captcha",
+      "note": "Human hCaptcha is present. No challenge was solved or inspected internally; credential typing is restricted to the top-document email/password controls."
+    },
+    {
+      "kind": "sms-code",
+      "note": "No secondary sign-in challenge was captured or automated; any SMS verification remains the user responsibility."
+    },
+    {
+      "kind": "other",
+      "note": "Registration, recovery and unsupported layouts."
     }
   ],
-  "lookedFor": [
-    "The conditions of use of the business customer area: section 8 forbids data mining and any other tool that collects and extracts data to reuse parts of the customer area without the operator's prior express authorisation. An anonymous capture is such a tool, so none was made.",
-    "robots.txt: cliente-empresas.meo.pt serves none (HTTP 404).",
-    "The in-repository review of 2026-10-06: following the published entry redirected toward the operator's identity host (id.services.telecom.pt); the identity destination could not be read.",
-    "No other public description of the sign-in page's markup was looked for."
+  "unverified": [
+    "Authenticated account sign-in and server acceptance were not attempted.",
+    "Human CAPTCHA completion and any secondary account challenge were not exercised."
   ],
-  "neededFromUser": "The sign-in page saved from your own browser as an HTML file that contains the fields of the form, and the page that asks for the password if that is a separate one. It is read offline, nothing is fetched from the site, and a page you saved yourself can support a reviewed login. Or the operator's authorisation, or your decision that one anonymous capture of the public page is acceptable despite the clause. Save any page signed out, with no password typed in, as \"Webpage, Complete\"; keep the \"_files\" folder beside the .html and both outside the repository: they can hold the account name."
+  "neededFromUser": "Authenticated acceptance would establish post-submit continuation; no account or challenge-solving request was made for this anonymous initial-form review."
 }

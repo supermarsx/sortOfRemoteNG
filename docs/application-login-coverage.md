@@ -30,9 +30,9 @@ mode, and you turn automatic login on per connection.
 | Configured by you                                                            | 2            |
 | No web login                                                                 | 8            |
 | Login steps written, class A: every selector seen in an authoritative source | 14           |
-| Login steps written, class B: unverified layout                              | 16           |
+| Login steps written, class B: unverified layout                              | 18           |
 | Evidence, but no steps file                                                  | 3            |
-| Nothing to build from (class C)                                              | 38           |
+| Nothing to build from (class C)                                              | 36           |
 | Total                                                                        | 153          |
 
 Of the 65 that sign in automatically, 38 use reviewed form selectors and 27 keep a hand-written
@@ -45,7 +45,7 @@ No evidence record cites a sign-in confirmed by a user, and 1 cites a page a use
 
 | Why nothing can be built | Applications | Meaning                                                                                                                                                        |
 | ------------------------ | ------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Robots rules or terms    | 25           | The site's robots rules or its terms forbid a program reading the page, so it was not loaded.                                                                  |
+| Robots rules or terms    | 23           | The site's robots rules or its terms forbid a program reading the page, so it was not loaded.                                                                  |
 | Refused or unreadable    | 8            | The site answered with a refusal or a challenge, or its robots rules or terms could not be read, so the page was not loaded; or the one permitted load failed. |
 | No public markup         | 2            | The application has a password form, but no public source shows its markup.                                                                                    |
 | No password form         | 3            | The evidence shows no user name and password form for a saved password to fill.                                                                                |
@@ -259,7 +259,7 @@ Native integration entries with no web login page.
 | PHP runtime                 | `php`           | `none`             | -     | -         | -          | No web login page |
 | VMware Workstation / Fusion | `vmwareDesktop` | `none`             | -     | -         | -          | No web login page |
 
-### Login steps written (30)
+### Login steps written (32)
 
 A steps file exists under `src/data/loginSteps/`. Class A: every selector was seen in an
 authoritative source. Class B: the layout is unverified until someone signs in with it.
@@ -280,6 +280,8 @@ authoritative source. Class B: the layout is unverified until someone signs in w
 | HPE GreenLake dashboard                     | `hpe-greenlake`           | `manual`           | B     | `form`    | `enterprise-identity/hpe-greenlake.json`          | Unverified layout    |
 | Jira                                        | `jira`                    | `generic-form`     | B     | `form`    | `appliances/jira.json`                            | Unverified layout    |
 | Mailcow                                     | `mailcow`                 | `generic-form`     | A     | `form`    | `self-hosted/mailcow.json`                        | Authoritative source |
+| MEO — Empresas                              | `meo-empresas`            | `manual`           | B     | `form`    | `portuguese-portals/meo-empresas.json`            | Unverified layout    |
+| MEO — Particulares (my MEO)                 | `meo-particulares`        | `manual`           | B     | `form`    | `portuguese-portals/meo-particulares.json`        | Unverified layout    |
 | NetBox                                      | `netbox`                  | `generic-form`     | A     | `form`    | `self-hosted/netbox.json`                         | Authoritative source |
 | No-IP account                               | `no-ip`                   | `manual`           | B     | `form`    | `registrars-hosting/no-ip.json`                   | Unverified layout    |
 | osTicket                                    | `osticket`                | `generic-form`     | A     | `form`    | `self-hosted/osticket.json`                       | Authoritative source |
@@ -307,7 +309,7 @@ The login layout is known. The Note says why no steps file was written.
 | IMT — Serviços online | `imt-online` | `manual`           | B     | `form`    | none       | The page's own form needs a third value, a taxpayer number, which the steps format does not carry; its two buttons lead to another origin                                                |
 | Microsoft Exchange    | `exchange`   | `manual`           | A     | `form`    | none       | The steps format cannot express what the Outlook Web Access form needs. The reviewed `exchange-owa` login is not connected to this profile, so it is manual today                        |
 
-### Nothing to build from (38)
+### Nothing to build from (36)
 
 Class C. The Note says why. Each application's `evidence.json` says what was looked for and what you
 can supply.
@@ -335,8 +337,6 @@ can supply.
 | Lovable                                | `lovable`              | `manual`           | C     | `none`    | none       | Robots rules or terms: the provider's terms forbid access by automated tools                                                                                      |
 | LXD / Incus                            | `lxd`                  | `manual`           | C     | `none`    | none       | No password form: a client certificate (mutual TLS) or OpenID Connect                                                                                             |
 | Marcaria                               | `marcaria`             | `manual`           | C     | `none`    | none       | Robots rules or terms: robots.txt disallows the directory that holds the sign-in page                                                                             |
-| MEO — Empresas                         | `meo-empresas`         | `manual`           | C     | `none`    | none       | Robots rules or terms: the customer area's conditions of use forbid tools that collect data from it                                                               |
-| MEO — Particulares (my MEO)            | `meo-particulares`     | `manual`           | C     | `none`    | none       | Robots rules or terms: the customer area's conditions of use forbid tools that collect data from it                                                               |
 | Microsoft Developer portal             | `microsoft-developer`  | `manual`           | C     | `none`    | none       | No password form: the catalog address is a content page; where you sign in depends on the program chosen there                                                    |
 | Microsoft personal account             | `microsoft-account`    | `manual`           | C     | `none`    | none       | Refused or unreadable: the one permitted load failed before anything was read                                                                                     |
 | Namecheap                              | `namecheap`            | `manual`           | C     | `none`    | none       | Refused or unreadable: the provider's legal pages refuse automated reads, so its terms could not be read                                                          |

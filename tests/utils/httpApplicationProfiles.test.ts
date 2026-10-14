@@ -125,7 +125,7 @@ describe("HTTP application profile policy", () => {
     const declarative = HTTP_APPLICATION_PROFILES.filter(
       (profile) => profile.declarativeLogin,
     );
-    expect(declarative).toHaveLength(30);
+    expect(declarative).toHaveLength(32);
     const exclusive = declarative.filter(
       (profile) => profile.declarativeLoginMode === "exclusive",
     ).length;

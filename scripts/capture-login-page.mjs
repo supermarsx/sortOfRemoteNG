@@ -985,6 +985,8 @@ function resanitizeNode(captured, context) {
 export const CAPTURE_SANITIZER = 4;
 const MODES = new Set(["hosted", "file", "loopback-fixture"]);
 const SAVED_PAGE_ENGINE = "static parse of a saved page";
+export const NATIVE_CEF_METADATA_ENGINE =
+  "Native CEF anonymous metadata (offline structural reconstruction)";
 const HEADLESS_ENGINE =
   /^Microsoft Edge headless \([A-Za-z]{1,24}\/\d[\d.]{0,31}\)$/u;
 
@@ -1022,13 +1024,18 @@ function requestedAddress(value, mode) {
 }
 
 /** What the tool states about a run: known keys, each of its own kind. */
-function writtenLimits(limits, fileMode) {
+function writtenLimits(limits, fileMode, nativeMetadata = false) {
   const given = limits !== null && typeof limits === "object" ? limits : {};
   const count = (value, most) =>
     Number.isInteger(value) && value >= 0 && value <= most;
   return {
-    // Fixed by the mode: one navigation with the page's scripts, or a parse.
-    navigations: fileMode ? 0 : 1,
+    // Edge records its one requested load; native metadata records actual
+    // main-document callbacks, including the observed identity redirects.
+    navigations: fileMode
+      ? 0
+      : nativeMetadata && count(given.navigations, 32)
+        ? given.navigations
+        : 1,
     scriptsExecuted: !fileMode,
     ...(!fileMode && typeof given.loadEvent === "boolean"
       ? { loadEvent: given.loadEvent }
@@ -1226,11 +1233,16 @@ export function resanitizeCapture(capture, { keepOrigins } = {}) {
     engine: fileMode
       ? SAVED_PAGE_ENGINE
       : typeof capture.engine === "string" &&
-          HEADLESS_ENGINE.test(capture.engine)
+          (HEADLESS_ENGINE.test(capture.engine) ||
+            capture.engine === NATIVE_CEF_METADATA_ENGINE)
         ? capture.engine
         : null,
     source,
-    limits: writtenLimits(capture.limits, fileMode),
+    limits: writtenLimits(
+      capture.limits,
+      fileMode,
+      capture.engine === NATIVE_CEF_METADATA_ENGINE,
+    ),
     ...(network ? { network } : {}),
     observations: [...observations].sort(),
     frames,

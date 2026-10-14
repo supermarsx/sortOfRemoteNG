@@ -54,6 +54,7 @@ test("native profile snapshot exactly matches all reviewed legacy defaults", asy
           emailOnly: profile.emailOnly,
           selectors: profile.selectors,
           sameOriginLoginFrames: profile.sameOriginLoginFrames,
+          scriptDefaults: profile.scriptDefaults,
         },
       ]),
     ),
@@ -67,7 +68,7 @@ test("native profile snapshot exactly matches all reviewed legacy defaults", asy
   const catalog = JSON.parse(
     readFileSync(resolve(base, "native_login_catalog.json"), "utf8"),
   );
-  // Login steps are checked on their own below. The five reviewed fields are
+  // Login steps are checked on their own below. The reviewed profile fields are
   // compared exactly as before, on a copy without the two steps keys.
   const reviewed = structuredClone(catalog);
   delete reviewed.declarativeLoginSupported;

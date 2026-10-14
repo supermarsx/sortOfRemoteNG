@@ -116,7 +116,7 @@ const SIGN_IN_NOTES: readonly (readonly [
   ],
   [
     PORTUGAL_PORTAL_MANUAL_SIGN_IN,
-    "Início de sessão automático opcional: o nome de utilizador e a palavra-passe guardados são escritos nas páginas de início de sessão do próprio portal, seguindo os passos de início de sessão registados para esta aplicação. O preenchimento para em CAPTCHA, autenticação federada, Chave Móvel Digital, Cartão de Cidadão e em qualquer página não reconhecida, que ficam a cargo do utilizador.",
+    "Início de sessão automático opcional: o nome de utilizador e a palavra-passe guardados são escritos nas páginas de início de sessão do próprio portal, seguindo os passos de início de sessão registados para esta aplicação. CAPTCHA, códigos SMS, autenticação federada, Chave Móvel Digital, Cartão de Cidadão e páginas não reconhecidas ficam a cargo do utilizador.",
   ],
   // Amazon Shopping.
   [

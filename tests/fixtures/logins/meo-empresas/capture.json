@@ -1,0 +1,173 @@
+{
+  "schema": "sorng-login-capture/1",
+  "sanitizer": 4,
+  "applicationId": "meo-empresas",
+  "capturedAt": "2026-10-14",
+  "mode": "hosted",
+  "engine": "Native CEF anonymous metadata (offline structural reconstruction)",
+  "source": {
+    "kind": "hosted-login",
+    "requestedUrl": "https://cliente-empresas.meo.pt/Pages/Dashboard/Dashboard.aspx",
+    "finalUrl": "https://login.telecom.pt/AuthorizeService/authorize.aspx",
+    "httpStatus": null
+  },
+  "limits": {
+    "navigations": 4,
+    "scriptsExecuted": true,
+    "input": "none",
+    "truncated": false,
+    "redirects": "public-hosts-only"
+  },
+  "observations": ["captcha", "cross-origin-frame", "password-field"],
+  "frames": [
+    {
+      "index": 0,
+      "parent": null,
+      "name": null,
+      "sameOriginAsTop": true,
+      "url": "https://login.telecom.pt/AuthorizeService/authorize.aspx",
+      "controls": 14,
+      "tree": {
+        "tag": "html",
+        "attributes": {},
+        "children": [
+          {
+            "tag": "body",
+            "attributes": {},
+            "children": [
+              {
+                "tag": "form",
+                "attributes": {
+                  "id": "MainForm",
+                  "method": "post",
+                  "action": "/AuthorizeService/authorize.aspx"
+                },
+                "children": [
+                  {
+                    "tag": "input",
+                    "attributes": {
+                      "type": "hidden",
+                      "name": "__EVENTTARGET"
+                    }
+                  },
+                  {
+                    "tag": "input",
+                    "attributes": {
+                      "type": "hidden",
+                      "name": "__EVENTARGUMENT"
+                    }
+                  },
+                  {
+                    "tag": "input",
+                    "attributes": {
+                      "type": "hidden",
+                      "name": "__VIEWSTATE"
+                    }
+                  },
+                  {
+                    "tag": "input",
+                    "attributes": {
+                      "type": "hidden",
+                      "name": "__VIEWSTATEGENERATOR"
+                    }
+                  },
+                  {
+                    "tag": "input",
+                    "attributes": {
+                      "type": "hidden",
+                      "name": "__EVENTVALIDATION"
+                    }
+                  },
+                  {
+                    "tag": "input",
+                    "attributes": {
+                      "type": "hidden",
+                      "name": "npu"
+                    }
+                  },
+                  {
+                    "tag": "input",
+                    "attributes": {
+                      "type": "hidden",
+                      "name": "WebSSOLabelUsernameValue"
+                    }
+                  },
+                  {
+                    "tag": "label",
+                    "attributes": {
+                      "for": "ContentPlaceHolder1_LoginTemplate_Template_WebSSOUsernameTextBox"
+                    }
+                  },
+                  {
+                    "tag": "input",
+                    "attributes": {
+                      "id": "ContentPlaceHolder1_LoginTemplate_Template_WebSSOUsernameTextBox",
+                      "type": "email"
+                    }
+                  },
+                  {
+                    "tag": "label",
+                    "attributes": {
+                      "for": "ContentPlaceHolder1_LoginTemplate_Template_WebSSOPasswordTextBox"
+                    }
+                  },
+                  {
+                    "tag": "input",
+                    "attributes": {
+                      "id": "ContentPlaceHolder1_LoginTemplate_Template_WebSSOPasswordTextBox",
+                      "type": "password",
+                      "autocomplete": "off"
+                    }
+                  },
+                  {
+                    "tag": "div",
+                    "attributes": {
+                      "id": "ContentPlaceHolder1_LoginTemplate_Template_WebSSOCaptchaControl_CaptchaContainer",
+                      "class": "h-captcha"
+                    }
+                  },
+                  {
+                    "tag": "textarea",
+                    "attributes": {
+                      "name": "g-recaptcha-response",
+                      "hidden": ""
+                    }
+                  },
+                  {
+                    "tag": "textarea",
+                    "attributes": {
+                      "name": "h-captcha-response",
+                      "hidden": ""
+                    }
+                  },
+                  {
+                    "tag": "button",
+                    "attributes": {
+                      "id": "ContentPlaceHolder1_LoginTemplate_Template_WebSSOSubmitButton",
+                      "name": "SubmitButton",
+                      "type": "submit"
+                    }
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "index": 1,
+      "parent": 0,
+      "name": null,
+      "url": "https://newassets.hcaptcha.com",
+      "sameOriginAsTop": false
+    },
+    {
+      "index": 2,
+      "parent": 0,
+      "name": null,
+      "url": "https://newassets.hcaptcha.com",
+      "sameOriginAsTop": false
+    }
+  ]
+}

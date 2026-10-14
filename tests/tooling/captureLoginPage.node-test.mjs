@@ -2948,3 +2948,49 @@ test(
     );
   },
 );
+test("native CEF metadata reconstruction preserves honest hosted provenance and strips transaction tokens on roundtrip", () => {
+  const before = legacyCapture();
+  before.engine = tool.NATIVE_CEF_METADATA_ENGINE;
+  before.mode = "hosted";
+  before.source = {
+    kind: "hosted-login",
+    requestedUrl: "https://my.meo.pt/",
+    finalUrl:
+      "https://login.telecom.pt/AuthorizeService/authorize.aspx?state=PRIVATE_TRANSACTION",
+    httpStatus: null,
+  };
+  before.frames[0].url = before.source.finalUrl;
+  before.limits = {
+    navigations: 3,
+    scriptsExecuted: true,
+    input: "none",
+    truncated: false,
+  };
+  const after = resanitizeCapture(before);
+  assert.equal(
+    after.engine,
+    "Native CEF anonymous metadata (offline structural reconstruction)",
+  );
+  assert.equal(after.source.requestedUrl, "https://my.meo.pt/");
+  assert.equal(
+    after.source.finalUrl,
+    "https://login.telecom.pt/AuthorizeService/authorize.aspx",
+  );
+  assert.equal(after.frames[0].url, after.source.finalUrl);
+  assert.equal(after.limits.navigations, 3);
+  assert.equal(after.limits.scriptsExecuted, true);
+  assert.equal(after.limits.input, "none");
+  assert.ok(!JSON.stringify(after).includes("PRIVATE_TRANSACTION"));
+  assert.deepEqual(resanitizeCapture(after), after);
+  assert.equal(
+    resanitizeCapture({ ...before, mode: "file" }).engine,
+    "static parse of a saved page",
+  );
+  assert.equal(
+    resanitizeCapture({
+      ...before,
+      engine: tool.NATIVE_CEF_METADATA_ENGINE + " PRIVATE_TRANSACTION",
+    }).engine,
+    null,
+  );
+});

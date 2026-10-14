@@ -1,0 +1,29 @@
+{
+  "$schema": "../../../types/connection/httpLoginSteps.schema.json",
+  "version": 1,
+  "id": "meo-particulares",
+  "evidence": {
+    "class": "B",
+    "source": "https://my.meo.pt/",
+    "reviewed": "2026-10-14"
+  },
+  "credentialOrigins": ["https://login.telecom.pt"],
+  "loginSteps": [
+    {
+      "kind": "form",
+      "origin": "https://login.telecom.pt",
+      "paths": ["/AuthorizeService/authorize.aspx"],
+      "selectors": {
+        "username": "form#MainForm input#ContentPlaceHolder1_LoginTemplate_Template_WebSSOUsernameTextBox[type=\"email\"]",
+        "password": "form#MainForm input#ContentPlaceHolder1_LoginTemplate_Template_WebSSOPasswordTextBox[type=\"password\"][autocomplete=\"off\"]"
+      }
+    },
+    {
+      "kind": "submit",
+      "submission": "click",
+      "selectors": {
+        "control": "form#MainForm button#ContentPlaceHolder1_LoginTemplate_Template_WebSSOSubmitButton[name=\"SubmitButton\"][type=\"submit\"]"
+      }
+    }
+  ]
+}

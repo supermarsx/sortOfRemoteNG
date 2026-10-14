@@ -58,6 +58,11 @@ mod permission_validation_tests;
 mod ptisp_defaults;
 #[path = "origin_browser_autodesk_defaults.rs"]
 mod autodesk_defaults;
+#[path = "origin_browser_meo_defaults.rs"]
+mod meo_defaults;
+#[cfg(test)]
+#[path = "origin_browser_meo_defaults_tests.rs"]
+mod meo_defaults_tests;
 #[path = "origin_browser_social_script_defaults.rs"]
 mod social_script_defaults;
 #[cfg(test)]
@@ -1386,7 +1391,15 @@ fn saved_source(connection: &Value) -> Result<Url, NativeAuthorityError> {
             if url.scheme() != "https" {
                 return Err(NativeAuthorityError::ApplicationUnsupported);
             }
-            url.set_path(Url::parse(hosted).map_err(|_| error)?.path());
+            let hosted = Url::parse(hosted).map_err(|_| error)?;
+            // ID MEO is a separate credential origin. Its reviewed plan may
+            // only start from the corresponding published customer portal.
+            if matches!(id, "meo-particulares" | "meo-empresas")
+                && url.origin() != hosted.origin()
+            {
+                return Err(NativeAuthorityError::SourceMismatch);
+            }
+            url.set_path(hosted.path());
         } else if let Some(path) = application.get("loginPath") {
             let path = path
                 .as_str()
@@ -1647,6 +1660,13 @@ fn saved_permissions_inner(
                 invalid("bundled.autodeskRoutes", "route must be an exact HTTPS origin"),
             )?;
         }
+        for (destination, classes) in meo_defaults::grants(connection, &origin) {
+            grant(
+                destination,
+                classes,
+                invalid("bundled.meoRoutes", "route must be an exact HTTPS origin"),
+            )?;
+        }
         let all: Vec<_> = CLASSES.iter().map(|(class, _)| *class).collect();
         // Drone CI's saved Git provider: navigation for the bridged sign-in,
         // not credential authority (that is `saved_login`'s, from the bridge).
@@ -1828,7 +1848,11 @@ fn saved_permissions_inner(
     let network = WebsiteNetworkPolicy {
         source_origin: origin.clone(),
         destination_defaults: candidates.clone(),
-        resource_domain_defaults: Vec::new(),
+        resource_domain_defaults: if same_origin {
+            Vec::new()
+        } else {
+            meo_defaults::resource_domain_defaults(connection, &origin)
+        },
         allow_all_requests: option("allowAllRequests"),
         // Legacy normalization stores false even without an explicit choice.
         // It means no extra connection opt-in, not revocation of an origin-bound
@@ -1846,6 +1870,7 @@ fn saved_permissions_inner(
     // The finite list remains the reviewed static scope for login selection.
     // Network-only broad defaults must never be substituted for this list.
     let static_resolver = base.with_network_policy(WebsiteNetworkPolicy {
+        resource_domain_defaults: Vec::new(),
         allow_all_requests: false,
         allow_all_scripts: false,
         ..network
@@ -3188,6 +3213,64 @@ mod tests {
             row["port"] = json!(80);
             row["httpApplication"] = json!({"version":1,"id":id,"loginMode":"form"});
             assert_eq!(saved_source(&row).unwrap_err(), NativeAuthorityError::ApplicationUnsupported, "{id}");
+        }
+    }
+
+    #[test]
+    fn meo_hosted_entries_bind_the_published_portal_origin_without_transaction_state() {
+        for (id, entry) in [
+            ("meo-particulares", "https://my.meo.pt/"),
+            (
+                "meo-empresas",
+                "https://cliente-empresas.meo.pt/Pages/Dashboard/Dashboard.aspx",
+            ),
+        ] {
+            let mut row = connection();
+            row["hostname"] = format!("{entry}?fixture-state=discard#discard").into();
+            row["port"] = json!(443);
+            row["httpApplication"] = json!({"version":1,"id":id,"loginMode":"form"});
+            assert_eq!(saved_source(&row).unwrap().as_str(), entry);
+            for source in [
+                "https://attacker.test/",
+                "https://my.meo.pt.attacker.test/",
+                "https://cliente-empresas.meo.pt.attacker.test/",
+                "https://login.telecom.pt/AuthorizeService/Login",
+                "https://id.services.telecom.pt/oic",
+                if id == "meo-particulares" {
+                    "https://cliente-empresas.meo.pt/"
+                } else {
+                    "https://my.meo.pt/"
+                },
+            ] {
+                row["hostname"] = source.into();
+                assert_eq!(
+                    saved_source(&row).unwrap_err(),
+                    NativeAuthorityError::SourceMismatch,
+                    "{id}"
+                );
+            }
+            row["hostname"] = entry.into();
+            row["port"] = json!(8443);
+            assert_eq!(
+                saved_source(&row).unwrap_err(),
+                NativeAuthorityError::SourceMismatch,
+                "{id}"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn meo_foreign_saved_source_never_constructs_encrypted_login_authority() {
+        for id in ["meo-particulares", "meo-empresas"] {
+            let mut row = connection();
+            row["hostname"] = "https://attacker.test/".into();
+            row["httpApplication"] = json!({"version":1,"id":id,"loginMode":"form"});
+            let mut f = Fixture::new(row).await;
+            f.request.initial_url = "https://attacker.test/".into();
+            assert!(matches!(
+                f.authorize().await,
+                Err(NativeAuthorityError::SourceMismatch)
+            ));
         }
     }
 

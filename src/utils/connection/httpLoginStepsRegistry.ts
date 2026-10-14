@@ -17,6 +17,8 @@ import stepsIdrac from "../../data/loginSteps/appliances/idrac.json";
 import stepsIlo from "../../data/loginSteps/appliances/ilo.json";
 import stepsJira from "../../data/loginSteps/appliances/jira.json";
 import stepsMailcow from "../../data/loginSteps/self-hosted/mailcow.json";
+import stepsMeoEmpresas from "../../data/loginSteps/portuguese-portals/meo-empresas.json";
+import stepsMeoParticulares from "../../data/loginSteps/portuguese-portals/meo-particulares.json";
 import stepsNetbox from "../../data/loginSteps/self-hosted/netbox.json";
 import stepsNoIp from "../../data/loginSteps/registrars-hosting/no-ip.json";
 import stepsOsticket from "../../data/loginSteps/self-hosted/osticket.json";
@@ -53,6 +55,8 @@ export const HTTP_LOGIN_STEPS_FILES: readonly (readonly [
   ["ilo", stepsIlo],
   ["jira", stepsJira],
   ["mailcow", stepsMailcow],
+  ["meo-empresas", stepsMeoEmpresas],
+  ["meo-particulares", stepsMeoParticulares],
   ["netbox", stepsNetbox],
   ["no-ip", stepsNoIp],
   ["osticket", stepsOsticket],

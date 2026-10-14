@@ -664,7 +664,7 @@ describe("declarative login steps in the application catalog", () => {
     expect(
       on.getHttpApplicationProfile("autoridade-tributaria")!.description,
     ).toBe(
-      "Entrada oficial do Portal das Finanças. Escolha Iniciar Sessão ou o serviço pretendido no portal; a disponibilidade do destino de autenticação depende da AT. Início de sessão automático opcional: o nome de utilizador e a palavra-passe guardados são escritos nas páginas de início de sessão do próprio portal, seguindo os passos de início de sessão registados para esta aplicação. O preenchimento para em CAPTCHA, autenticação federada, Chave Móvel Digital, Cartão de Cidadão e em qualquer página não reconhecida, que ficam a cargo do utilizador.",
+      "Entrada oficial do Portal das Finanças. Escolha Iniciar Sessão ou o serviço pretendido no portal; a disponibilidade do destino de autenticação depende da AT. Início de sessão automático opcional: o nome de utilizador e a palavra-passe guardados são escritos nas páginas de início de sessão do próprio portal, seguindo os passos de início de sessão registados para esta aplicação. CAPTCHA, códigos SMS, autenticação federada, Chave Móvel Digital, Cartão de Cidadão e páginas não reconhecidas ficam a cargo do utilizador.",
     );
   });
 
@@ -1159,4 +1159,53 @@ describe("frame-scoped, password-only and pre-step custom logins", () => {
       );
     }
   });
+});
+
+describe("reviewed MEO identity plans", () => {
+  it.each([
+    ["meo-particulares", "https://my.meo.pt/"],
+    [
+      "meo-empresas",
+      "https://cliente-empresas.meo.pt/Pages/Dashboard/Dashboard.aspx",
+    ],
+  ])(
+    "%s exposes explicit native form login while preserving manual consent",
+    async (id, entry) => {
+      const on = await load({ native: true });
+      const profile = on.getHttpApplicationProfile(id)!;
+      expect(profile.hostedLoginUrl).toBe(entry);
+      expect(profile.loginModes).toEqual(["manual", "form"]);
+      expect(profile.declarativeLoginMode).toBe("exclusive");
+      expect(profile.declarativeLogin?.credentialOrigins).toEqual([
+        "https://login.telecom.pt",
+      ]);
+      expect(profile.declarativeLogin?.loginSteps[0]).toMatchObject({
+        kind: "form",
+        origin: "https://login.telecom.pt",
+        paths: ["/AuthorizeService/authorize.aspx"],
+      });
+      expect(profile.selectors).toBeUndefined();
+      expect(profile.totpChallenges).toBeUndefined();
+      expect(profile.description).not.toMatch(MANUAL_ONLY_CLAIM);
+      expect(profile.description).toContain("SMS");
+      expect(
+        on.normalizeHttpApplicationSettings({ version: 1, id })?.loginMode,
+      ).toBe("manual");
+      expect(
+        on.normalizeHttpApplicationSettings({
+          version: 1,
+          id,
+          loginMode: "form",
+        })?.invalid,
+      ).toBeUndefined();
+      expect(on.resolveHttpApplicationLogin(connection(id, "manual"))).toEqual({
+        credentials: null,
+        upstreamAuthMode: "none",
+        autoLogin: false,
+      });
+      expect(() => on.resolveHttpApplicationLogin(connection(id))).toThrow(
+        /needs the native browser engine/,
+      );
+    },
+  );
 });
