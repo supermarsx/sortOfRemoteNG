@@ -130,6 +130,10 @@ describe("ordinary Vitest discovery", () => {
       "tests/tooling/nativeLoginDiagnostics.node-test.mjs",
       "tests/tooling/cefStartupFieldTrials.node-test.mjs",
       "tests/tooling/nativeOriginProbe.node-test.mjs",
+      "tests/tooling/appStartupSteps.node-test.mjs",
+      "tests/tooling/nativeEngineFailure.node-test.mjs",
+      "tests/tooling/secureClipboardExit.node-test.mjs",
+      "tests/tooling/webNetworkGuardLatch.node-test.mjs",
     ];
     expect(command?.trim().split(/\s+/)).toEqual([
       "run:",
