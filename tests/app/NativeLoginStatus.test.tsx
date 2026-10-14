@@ -54,6 +54,7 @@ const emit = (
   connectionId: string,
   stage: string,
   timestampMs = 100,
+  extra: Record<string, unknown> = {},
 ) =>
   act(() =>
     events.listener?.({
@@ -64,6 +65,7 @@ const emit = (
         timestampMs,
         elapsedMs: 2500,
         attemptId: `a-${sessionId}`,
+        ...extra,
       },
     }),
   );
@@ -72,6 +74,135 @@ beforeEach(() => {
   events.stop.mockClear();
 });
 describe("active native login status", () => {
+  it("focuses the Close action and restores the details trigger on keyboard dismissal", async () => {
+    render(
+      <NativeLoginStatus
+        connections={connections}
+        sessions={sessions}
+        activeSessionId="s1"
+      />,
+    );
+    await waitFor(() => expect(events.listener).toBeDefined());
+    emit("s1", "c1", "cancelled", 100);
+    const trigger = screen.getByRole("button", {
+      name: "Portainer: Login cancelled",
+    });
+    trigger.focus();
+    fireEvent.click(trigger);
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Close" })).toHaveFocus(),
+    );
+    fireEvent.keyDown(document, { key: "Escape" });
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(trigger).toHaveFocus();
+    expect(screen.getByRole("status")).toHaveTextContent(
+      "Portainer: Login cancelled",
+    );
+  });
+  it("keeps the concrete native cause across generic rejection and stop events, but clears it when a fresh step resumes", async () => {
+    render(
+      <NativeLoginStatus
+        connections={connections}
+        sessions={sessions}
+        activeSessionId="s1"
+      />,
+    );
+    await waitFor(() => expect(events.listener).toBeDefined());
+    emit("s1", "c1", "filling-password", 100);
+    emit("s1", "c1", "cancelled", 200, {
+      reasonCode: "navigation-scope-rejected",
+    });
+    emit("s1", "c1", "cancelled", 300, { reasonCode: "adapter-rejected" });
+    emit("s1", "c1", "stopped", 400, { reasonCode: "attempt-stopped" });
+    fireEvent.click(screen.getByRole("button", { name: /^Portainer:/ }));
+    expect(screen.getByRole("dialog")).toHaveTextContent(
+      "outside the approved saved-login navigation scope",
+    );
+    expect(screen.getByRole("dialog")).toHaveTextContent(
+      "Last reported step: Typing password",
+    );
+    emit("s1", "c1", "waiting-page", 500);
+    emit("s1", "c1", "cancelled", 600);
+    expect(screen.getByRole("dialog")).toHaveTextContent(
+      "No specific cancellation reason was reported",
+    );
+    expect(screen.getByRole("dialog")).toHaveTextContent(
+      "Last reported step: Waiting for page",
+    );
+    expect(screen.getByRole("dialog")).not.toHaveTextContent(
+      "approved saved-login navigation scope",
+    );
+  });
+  it.each([
+    [
+      "cancelled",
+      "current-context-rejected",
+      /page, login step or browser context no longer matched/,
+    ],
+    [
+      "cancelled",
+      "navigation-scope-rejected",
+      /outside the approved saved-login navigation scope/,
+    ],
+    ["cancelled", "adapter-rejected", /did not report a more specific cause/],
+    [
+      "stopped",
+      "challenge-timeout",
+      /security-check wait reached its time limit/,
+    ],
+    ["held", "grant-rejected", /did not authorize credential delivery/],
+  ])(
+    "explains %s/%s with the actual prior checkpoint and a usable Close action",
+    async (stage, reasonCode, expected) => {
+      render(
+        <NativeLoginStatus
+          connections={connections}
+          sessions={sessions}
+          activeSessionId="s1"
+        />,
+      );
+      await waitFor(() => expect(events.listener).toBeDefined());
+      emit("s1", "c1", "filling-password", 100);
+      emit("s1", "c1", stage, 200, { reasonCode, elapsedMs: 79_000 });
+      fireEvent.click(screen.getByRole("button", { name: /^Portainer:/ }));
+      const dialog = screen.getByRole("dialog", {
+        name: "Automatic login details",
+      });
+      expect(dialog).toHaveTextContent(expected);
+      expect(dialog).toHaveTextContent("Last reported step: Typing password");
+      expect(dialog).toHaveTextContent("Elapsed: 79 s");
+      const close = screen.getByRole("button", { name: "Close" });
+      expect(close).toHaveClass("sor-btn", "sor-btn-primary", "min-w-24");
+      fireEvent.click(close);
+      expect(screen.queryByRole("dialog")).toBeNull();
+      expect(screen.getByRole("status")).toHaveTextContent(/^Portainer:/);
+      fireEvent.click(screen.getByRole("button", { name: /^Portainer:/ }));
+      expect(screen.getByRole("dialog")).toHaveTextContent(expected);
+    },
+  );
+  it("provides an honest fallback without leaking unknown codes or inheriting another attempt's checkpoint", async () => {
+    render(
+      <NativeLoginStatus
+        connections={connections}
+        sessions={sessions}
+        activeSessionId="s1"
+      />,
+    );
+    await waitFor(() => expect(events.listener).toBeDefined());
+    emit("s1", "c1", "typing-code", 100);
+    emit("s1", "c1", "cancelled", 200, {
+      attemptId: "fresh-attempt",
+      reasonCode: "PRIVATE_TOKEN",
+      reason: "PRIVATE_ACCOUNT",
+    });
+    fireEvent.click(screen.getByRole("button", { name: /^Portainer:/ }));
+    const dialog = screen.getByRole("dialog");
+    expect(dialog).toHaveTextContent(
+      "No specific cancellation reason was reported",
+    );
+    expect(dialog).not.toHaveTextContent("Last reported step");
+    expect(dialog).not.toHaveTextContent("PRIVATE_");
+  });
   it("follows the active tab, counts concurrent activity and opens secret-free details", async () => {
     const view = render(
       <NativeLoginStatus

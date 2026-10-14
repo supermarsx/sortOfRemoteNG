@@ -93,8 +93,14 @@ pub(crate) struct LoginHooks {
     basic_auth: Option<Arc<NativeBasicAuth>>,
 }
 
+#[path = "origin_browser_login_activity.rs"]
+mod activity;
+
 impl LoginHooks {
     fn activity(&self, stage: &'static str) {
+        self.activity_with_reason(stage, None);
+    }
+    fn activity_with_reason(&self, stage: &'static str, reason_code: Option<&'static str>) {
         if !self.media_owner.current(&self.media_owner.identity, || self.lease.is_current()) { return; }
         let identity = &self.media_owner.identity;
         // Trusted shell event only: no URL, fields, credentials or page strings.
@@ -102,7 +108,8 @@ impl LoginHooks {
             "connectionId": identity.connection_id(), "sessionId": identity.session_id(),
             "attemptId": identity.attempt_id().to_string(), "stage": stage,
             "timestampMs": std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|elapsed| elapsed.as_millis() as u64).unwrap_or(0),
-            "elapsedMs": self.started.elapsed().as_millis() as u64
+            "elapsedMs": self.started.elapsed().as_millis() as u64,
+            "reasonCode": reason_code
         }));
     }
     fn stage_activity(&self, stage: NativeLoginStage) {
@@ -194,7 +201,7 @@ impl LoginHooks {
     }
 
     pub(crate) fn revoke(&self) {
-        self.activity("stopped");
+        self.activity_with_reason("stopped", Some("attempt-stopped"));
         self.media_owner.revoke();
         self.authority.revoke_totp();
         if let Some(basic_auth) = &self.basic_auth {
@@ -295,16 +302,8 @@ impl NativeDocumentHooks for LoginHooks {
     ) {
         use sorng_browser_host::native_features::{NativeFeatureStatus as F, NativeLoginDeliveryStatus as D};
         if !self.media_owner.current(identity, || self.lease.is_current()) { return; }
-        match status {
-            F::LoginChallengeWaiting => self.activity("waiting-page"),
-            F::LoginChallengeReloading => self.activity("submitting"),
-            F::LoginChallengeTimedOut => self.activity("stopped"),
-            F::LoginFormDetected => self.activity("security-check"),
-            F::LoginAdapterCompleted => self.activity("completed"),
-            F::LoginAdapterRejected => self.activity("cancelled"),
-            F::LoginDelivery(D::NativeRejectedGrant) => self.activity("held"),
-            F::LoginDelivery(D::NativeRejectedCurrent | D::NativeRejectedNavigation) => self.activity("cancelled"),
-            _ => {}
+        if let Some((stage, reason)) = activity::for_status(status) {
+            self.activity_with_reason(stage, reason);
         }
         // Fixed checkpoints only: the origin, page text, credentials and native
         // request identity are deliberately absent from the diagnostic payload.

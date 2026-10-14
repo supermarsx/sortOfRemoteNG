@@ -16,6 +16,15 @@ export const loginActivityStages = [
   "stopped",
 ] as const;
 export type NativeLoginStage = (typeof loginActivityStages)[number];
+export const nativeLoginReasonCodes = [
+  "current-context-rejected",
+  "navigation-scope-rejected",
+  "adapter-rejected",
+  "challenge-timeout",
+  "grant-rejected",
+  "attempt-stopped",
+] as const;
+export type NativeLoginReasonCode = (typeof nativeLoginReasonCodes)[number];
 export interface NativeLoginActivity {
   connectionId: string;
   sessionId: string;
@@ -25,6 +34,10 @@ export interface NativeLoginActivity {
   elapsedMs: number;
   /** Shell monotonic observation time; never taken from the native payload. */
   observedAtMs?: number;
+  /** Fixed native diagnostic code; never arbitrary page or account text. */
+  reasonCode?: NativeLoginReasonCode;
+  /** Derived from preceding events in this exact attempt, not payload text. */
+  lastActiveStage?: NativeLoginStage;
 }
 
 /** Keep only native-owned identifiers and fixed stages, never payload text. */
@@ -56,6 +69,9 @@ export function parseNativeLoginActivity(
     stage: raw.stage as NativeLoginStage,
     timestampMs: raw.timestampMs as number,
     elapsedMs: raw.elapsedMs as number,
+    ...(nativeLoginReasonCodes.includes(raw.reasonCode as NativeLoginReasonCode)
+      ? { reasonCode: raw.reasonCode as NativeLoginReasonCode }
+      : {}),
   };
 }
 
@@ -78,9 +94,43 @@ export function useNativeLoginActivity(sessionIds: readonly string[]) {
       setActivity((current) => {
         const prior = current[event.sessionId];
         if (prior && prior.timestampMs > event.timestampMs) return current;
+        const terminal = ["cancelled", "stopped", "completed", "held"].includes(
+          event.stage,
+        );
+        const lastActiveStage =
+          terminal &&
+          prior?.attemptId === event.attemptId &&
+          prior.connectionId === event.connectionId
+            ? ["cancelled", "stopped", "completed", "held"].includes(
+                prior.stage,
+              )
+              ? prior.lastActiveStage
+              : prior.stage
+            : undefined;
+        const priorFailure =
+          prior && ["cancelled", "stopped", "held"].includes(prior.stage);
+        const sameFailureChain =
+          terminal &&
+          event.stage !== "completed" &&
+          priorFailure &&
+          prior.attemptId === event.attemptId &&
+          prior.connectionId === event.connectionId;
+        const specific = (code?: NativeLoginReasonCode) =>
+          !!code && !["adapter-rejected", "attempt-stopped"].includes(code);
+        const reasonCode =
+          sameFailureChain &&
+          specific(prior.reasonCode) &&
+          !specific(event.reasonCode)
+            ? prior.reasonCode
+            : event.reasonCode;
         return {
           ...current,
-          [event.sessionId]: { ...event, observedAtMs: performance.now() },
+          [event.sessionId]: {
+            ...event,
+            ...(reasonCode ? { reasonCode } : {}),
+            observedAtMs: performance.now(),
+            ...(lastActiveStage ? { lastActiveStage } : {}),
+          },
         };
       });
     })

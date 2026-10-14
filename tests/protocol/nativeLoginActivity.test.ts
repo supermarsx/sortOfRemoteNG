@@ -28,4 +28,33 @@ describe("native login activity projection", () => {
     ])
       expect(parseNativeLoginActivity({ ...event, ...patch })).toBeNull();
   });
+  it("accepts only fixed cancellation codes and never arbitrary cancellation details", () => {
+    expect(
+      parseNativeLoginActivity({
+        ...event,
+        stage: "cancelled",
+        reasonCode: "navigation-scope-rejected",
+        reason: "private account text",
+      }),
+    ).toEqual({
+      ...event,
+      stage: "cancelled",
+      reasonCode: "navigation-scope-rejected",
+    });
+    for (const reasonCode of [
+      "https://provider.test/?token=private",
+      "private account text",
+      {},
+      123,
+    ]) {
+      expect(
+        parseNativeLoginActivity({
+          ...event,
+          stage: "cancelled",
+          reasonCode,
+          lastActiveStage: "filling-password",
+        }),
+      ).toEqual({ ...event, stage: "cancelled" });
+    }
+  });
 });
