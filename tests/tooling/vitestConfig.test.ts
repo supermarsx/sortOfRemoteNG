@@ -134,6 +134,7 @@ describe("ordinary Vitest discovery", () => {
       "tests/tooling/nativeEngineFailure.node-test.mjs",
       "tests/tooling/secureClipboardExit.node-test.mjs",
       "tests/tooling/webNetworkGuardLatch.node-test.mjs",
+      "tests/tooling/tauriEventListenerCleanup.node-test.mjs",
     ];
     expect(command?.trim().split(/\s+/)).toEqual([
       "run:",

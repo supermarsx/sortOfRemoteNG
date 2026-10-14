@@ -718,6 +718,8 @@ opt-level = 2
 opt-level = 2
 
 [patch.crates-io]
+# Keep retired JS event IDs out of queued native dispatch after tab cleanup.
+tauri = { path = "patches/tauri-event-cleanup" }
 ironrdp-connector = { path = "patches/ironrdp-connector" }
 ironrdp-blocking = { path = "patches/ironrdp-blocking" }
 ironrdp-session = { path = "patches/ironrdp-session" }

@@ -496,7 +496,7 @@ jobs:
         with:
           toolchain: "1.98.1"
       - name: Native browser std-only contracts (Node + rustc)
-        run: node --test tests/tooling/nativeWarmStartup.node-test.mjs tests/tooling/nativeCredentialFocus.node-test.mjs tests/tooling/nativeNavigationFailure.node-test.mjs tests/tooling/nativeLoginDiagnostics.node-test.mjs tests/tooling/cefStartupFieldTrials.node-test.mjs tests/tooling/nativeOriginProbe.node-test.mjs tests/tooling/appStartupSteps.node-test.mjs tests/tooling/nativeEngineFailure.node-test.mjs tests/tooling/secureClipboardExit.node-test.mjs tests/tooling/webNetworkGuardLatch.node-test.mjs
+        run: node --test tests/tooling/nativeWarmStartup.node-test.mjs tests/tooling/nativeCredentialFocus.node-test.mjs tests/tooling/nativeNavigationFailure.node-test.mjs tests/tooling/nativeLoginDiagnostics.node-test.mjs tests/tooling/cefStartupFieldTrials.node-test.mjs tests/tooling/nativeOriginProbe.node-test.mjs tests/tooling/appStartupSteps.node-test.mjs tests/tooling/nativeEngineFailure.node-test.mjs tests/tooling/secureClipboardExit.node-test.mjs tests/tooling/webNetworkGuardLatch.node-test.mjs tests/tooling/tauriEventListenerCleanup.node-test.mjs
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: src-tauri

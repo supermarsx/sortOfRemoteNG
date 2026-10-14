@@ -5,3 +5,6 @@ native/cef-patches/**/*.patch whitespace=-blank-at-eol
 # Official vendored bytes have pinned hashes (and upstream mixed line endings).
 # Preserve API, license and generated provenance through Git clean/smudge filters.
 src-tauri/crates/sorng-protocols/src/vendor/darkreader/* -text whitespace=cr-at-eol
+
+# Preserve the pinned framework archive, including upstream whitespace.
+src-tauri/patches/tauri-event-cleanup/** -text -whitespace
