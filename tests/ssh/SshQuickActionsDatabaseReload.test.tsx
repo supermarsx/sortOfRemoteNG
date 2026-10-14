@@ -228,6 +228,7 @@ describe("SSH exact-owner read-only library refresh", () => {
     expect(h.runScript).toHaveBeenCalledWith(
       expect.objectContaining({ script: "printf updated" }),
       expect.any(Function),
+      { library: reference().scope },
     );
     expect(save).not.toHaveBeenCalled();
     expect(await IndexedDbService.getItem(key())).toEqual(changed);
