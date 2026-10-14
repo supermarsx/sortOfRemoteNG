@@ -899,7 +899,7 @@ test("fill-only consent types and stops: no submit is requested or performed", a
   assert.equal(p.reason(), "fill-only");
 });
 
-test("a form that would submit by GET or to another origin is not submitted", async (t) => {
+test("an initially unsafe form never requests or receives credentials", async (t) => {
   for (const attributes of [
     'method="get" action="/session"',
     'method="post" action="https://other.example/session"',
@@ -919,9 +919,10 @@ test("a form that would submit by GET or to another origin is not submitted", as
     assert.equal(
       p.$("#pass").value,
       "",
-      `${attributes}: typed values are erased`,
+      `${attributes}: credentials are never delivered`,
     );
-    assert.equal(p.reason(), "changed");
+    assert.equal(p.typed.length, 0, attributes);
+    assert.ok(!h.requests.some(([, stage]) => stage === "form"), attributes);
   }
 });
 

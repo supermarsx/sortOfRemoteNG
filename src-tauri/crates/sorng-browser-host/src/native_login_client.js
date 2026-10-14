@@ -3041,9 +3041,24 @@
       )
         return null;
       const forms = Array.from(new Set([user?.form, pw?.form].filter(Boolean)));
+      // Admission precedes the native grant, including fill-only delivery.
+      // Only a reviewed SPA submit permits a non-POST form method; its
+      // origin and browsing context are still pinned to this document.
+      const following = steps[step.index + 1];
+      const spa =
+        following?.kind === "submit" && following.submission === "spa";
+      if (forms.some((form) => !safeForm(form, null, spa))) return null;
       const submitters = Array.from(
         doc.querySelectorAll("button,input"),
       ).filter((node) => forms.includes(node.form));
+      if (
+        submitters.some(
+          (node) =>
+            ["submit", "image"].includes(node.type) &&
+            !safeForm(node.form, node, spa),
+        )
+      )
+        return null;
       // Bind the destination before the native grant arrives, including for
       // fill-only consent. The existing per-key guard rechecks this snapshot;
       // checking only at submit would already have delivered the credentials.
@@ -3063,6 +3078,9 @@
           node.getAttribute("formmethod"),
           node.getAttribute("formtarget"),
           node.getAttribute("form"),
+          ["submit", "image"].includes(node.type)
+            ? formAction(node.form, node).href
+            : null,
         ]),
       ]);
       return { user, pw, forms, submitters, binding };
@@ -3098,17 +3116,21 @@
     }
     // A form that submits outside this document, by GET (credentials in the
     // address) or to another origin is never submitted.
-    function safeForm(form, submitter) {
-      if (!form) return true;
-      const action = new URL(
-        submitter?.getAttribute("formaction") ||
-          form.getAttribute("action") ||
-          location.href,
+    function formAction(form, submitter) {
+      const raw =
+        submitter?.getAttribute("formaction") ?? form.getAttribute("action");
+      // Present-empty action means this document, not the owner's action.
+      return new URL(
+        raw === null || raw === "" ? location.href : raw,
         doc.baseURI,
       );
+    }
+    function safeForm(form, submitter, spa = false) {
+      if (!form) return true;
+      const action = formAction(form, submitter);
       const method = (
-        submitter?.getAttribute("formmethod") ||
-        form.getAttribute("method") ||
+        submitter?.getAttribute("formmethod") ??
+        form.getAttribute("method") ??
         "get"
       ).toLowerCase();
       const context =
@@ -3120,7 +3142,7 @@
         action.origin === origin &&
         !action.username &&
         !action.password &&
-        (method === "post" || method === "dialog") &&
+        (spa || method === "post" || method === "dialog") &&
         (!context || context.toLowerCase() === "_self")
       );
     }
