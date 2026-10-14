@@ -29,7 +29,10 @@ pub(crate) fn require_shell(window: &WebviewWindow) -> Result<(), String> {
         url.origin() == configured.origin()
     } else {
         matches!(url.as_str().split_once("://"), Some(("tauri", rest)) if rest == "localhost" || rest.starts_with("localhost/"))
-            || matches!(url.origin().ascii_serialization().as_str(), "http://tauri.localhost" | "https://tauri.localhost")
+            || matches!(
+                url.origin().ascii_serialization().as_str(),
+                "http://tauri.localhost" | "https://tauri.localhost"
+            )
     };
     if !valid {
         return Err("Application logs cannot be read by website content.".into());
@@ -37,18 +40,32 @@ pub(crate) fn require_shell(window: &WebviewWindow) -> Result<(), String> {
     Ok(())
 }
 
-fn root(window: &WebviewWindow, state: &EncryptionState, source: LogSource) -> Result<PathBuf, String> {
+fn root(
+    window: &WebviewWindow,
+    state: &EncryptionState,
+    source: LogSource,
+) -> Result<PathBuf, String> {
     match source {
-        LogSource::Application => state.artifact_policy_root()
+        LogSource::Application => state
+            .artifact_policy_root()
             .map(Ok)
-            .unwrap_or_else(|| window.app_handle().path().app_data_dir().map_err(|_| "Application log directory unavailable.".to_string()))
+            .unwrap_or_else(|| {
+                window
+                    .app_handle()
+                    .path()
+                    .app_data_dir()
+                    .map_err(|_| "Application log directory unavailable.".to_string())
+            })
             .map(|root| root.join("logs")),
         LogSource::Browser => {
             #[cfg(feature = "native-browser")]
             if let Some(root) = crate::origin_browser_startup_diagnostics::journal_root() {
                 return Ok(root);
             }
-            window.app_handle().path().app_local_data_dir()
+            window
+                .app_handle()
+                .path()
+                .app_local_data_dir()
                 .map(|root| root.join("native-browser"))
                 .map_err(|_| "Browser journal directory unavailable.".into())
         }
@@ -62,10 +79,16 @@ pub(crate) async fn application_logs_list(
     source: LogSource,
 ) -> Result<LogList, String> {
     require_shell(&window)?;
-    let root = root(&window, &state, source)?;
-    let result = tauri::async_runtime::spawn_blocking(move || files::list(&root, source))
-        .await.map_err(|_| "Application log listing could not complete.".to_string())??;
+    let expected_root = root(&window, &state, source)?;
+    let read_root = expected_root.clone();
+    let generation = state.key_generation();
+    let result = tauri::async_runtime::spawn_blocking(move || files::list(&read_root, source))
+        .await
+        .map_err(|_| "Application log listing could not complete.".to_string())??;
     require_shell(&window)?;
+    if state.key_generation() != generation || root(&window, &state, source)? != expected_root {
+        return Err("Log storage changed while listing. Refresh the logs.".into());
+    }
     Ok(result)
 }
 
@@ -77,12 +100,14 @@ pub(crate) async fn application_logs_read(
     id: String,
 ) -> Result<LogRead, String> {
     require_shell(&window)?;
-    let root = root(&window, &state, source)?;
+    let expected_root = root(&window, &state, source)?;
     let generation = state.key_generation();
-    let result = files::read(&root, source, &id, &state).await?;
+    let result = files::read(&expected_root, source, &id, &state).await?;
     require_shell(&window)?;
-    if state.key_generation() != generation {
-        return Err("Log protection changed while reading. Refresh the log after unlocking the app.".into());
+    if state.key_generation() != generation || root(&window, &state, source)? != expected_root {
+        return Err(
+            "Log protection changed while reading. Refresh the log after unlocking the app.".into(),
+        );
     }
     Ok(result)
 }

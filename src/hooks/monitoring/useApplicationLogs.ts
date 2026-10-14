@@ -10,6 +10,7 @@ import type {
 
 interface LogState extends ApplicationLogListing {
   source: ApplicationLogSource;
+  ownerKey: string;
   selectedId: string;
   content: ApplicationLogContent | null;
   error: string | null;
@@ -18,8 +19,13 @@ interface LogState extends ApplicationLogListing {
   revision: number;
 }
 
-const emptyState = (source: ApplicationLogSource, revision = 0): LogState => ({
+const emptyState = (
+  source: ApplicationLogSource,
+  revision = 0,
+  ownerKey = "",
+): LogState => ({
   source,
+  ownerKey,
   files: [],
   truncated: false,
   selectedId: "",
@@ -40,12 +46,41 @@ function failureMessage(failure: unknown): string {
   return detail.slice(0, 1200);
 }
 
+function validFile(value: unknown): boolean {
+  if (!value || typeof value !== "object") return false;
+  const file = value as Record<string, unknown>;
+  return (
+    [file.id, file.name].every(
+      (value) =>
+        typeof value === "string" &&
+        value.length > 0 &&
+        value.length <= 256 &&
+        !/[/\\]/.test(value) &&
+        !Array.from(value).some(
+          (char) => char.charCodeAt(0) < 32 || char.charCodeAt(0) === 127,
+        ),
+    ) &&
+    typeof file.modifiedUnixMs === "number" &&
+    Number.isSafeInteger(file.modifiedUnixMs) &&
+    file.modifiedUnixMs >= 0 &&
+    file.modifiedUnixMs <= 8.64e15 &&
+    typeof file.sizeBytes === "number" &&
+    Number.isSafeInteger(file.sizeBytes) &&
+    file.sizeBytes >= 0 &&
+    typeof file.encrypted === "boolean"
+  );
+}
+
 /** No persisted cache, hidden polling, paths, or log-writer mutations. */
 export function useApplicationLogs(
   source: ApplicationLogSource,
   isActive: boolean,
+  ownerKey = "",
+  followNewest = false,
 ) {
-  const [state, setState] = useState<LogState>(() => emptyState(source));
+  const [state, setState] = useState<LogState>(() =>
+    emptyState(source, 0, ownerKey),
+  );
   const [autoRefresh, setAutoRefresh] = useState(false);
   const [retrySubscription, setRetrySubscription] = useState(0);
   const request = useRef(0);
@@ -53,6 +88,14 @@ export function useApplicationLogs(
   const ready = useRef(false);
   const busy = useRef(false);
   const selection = useRef("");
+  const newest = useRef(followNewest);
+  newest.current = followNewest;
+  const invalidate = useCallback(() => {
+    lifecycle.current++;
+    request.current++;
+    ready.current = false;
+    busy.current = false;
+  }, []);
 
   const read = useCallback(
     async (id: string, token: number) => {
@@ -64,6 +107,7 @@ export function useApplicationLogs(
       if (
         !content ||
         typeof content.text !== "string" ||
+        content.text.length > 262144 ||
         typeof content.truncated !== "boolean"
       ) {
         throw new Error(
@@ -96,17 +140,19 @@ export function useApplicationLogs(
       if (
         !listing ||
         !Array.isArray(listing.files) ||
+        listing.files.length > 100 ||
+        !listing.files.every(validFile) ||
         typeof listing.truncated !== "boolean"
       ) {
         throw new Error(
           "The native log reader returned an invalid file list. Restart the updated desktop app and retry.",
         );
       }
-      const selectedId = listing.files.some(
-        (file) => file.id === selection.current,
-      )
-        ? selection.current
-        : (listing.files[0]?.id ?? "");
+      const selectedId =
+        !newest.current &&
+        listing.files.some((file) => file.id === selection.current)
+          ? selection.current
+          : (listing.files[0]?.id ?? "");
       selection.current = selectedId;
       setState((previous) => ({ ...previous, ...listing, selectedId }));
       if (selectedId) await read(selectedId, token);
@@ -166,7 +212,7 @@ export function useApplicationLogs(
     ready.current = false;
     busy.current = false;
     selection.current = "";
-    setState(emptyState(source, request.current));
+    setState(emptyState(source, request.current, ownerKey));
     setAutoRefresh(false);
     if (!isActive) return;
     let unlisten: (() => void) | undefined;
@@ -181,7 +227,7 @@ export function useApplicationLogs(
           selection.current = "";
           setAutoRefresh(false);
           setState({
-            ...emptyState(source, request.current),
+            ...emptyState(source, request.current, ownerKey),
             error:
               "Application storage was locked. Displayed logs were cleared. Refresh to read plaintext logs; encrypted log files require unlocked application storage.",
           });
@@ -196,19 +242,16 @@ export function useApplicationLogs(
       } catch (failure) {
         if (epoch === lifecycle.current)
           setState({
-            ...emptyState(source, request.current),
+            ...emptyState(source, request.current, ownerKey),
             error: failureMessage(failure),
           });
       }
     })();
     return () => {
-      lifecycle.current++;
-      request.current++;
-      ready.current = false;
-      busy.current = false;
+      invalidate();
       unlisten?.();
     };
-  }, [source, isActive, refresh, retrySubscription]);
+  }, [source, isActive, ownerKey, refresh, retrySubscription, invalidate]);
 
   useEffect(() => {
     if (!isActive || !autoRefresh) return;
@@ -217,9 +260,9 @@ export function useApplicationLogs(
   }, [isActive, autoRefresh, refresh]);
 
   return {
-    ...(isActive && state.source === source
+    ...(isActive && state.source === source && state.ownerKey === ownerKey
       ? state
-      : emptyState(source, request.current)),
+      : emptyState(source, request.current, ownerKey)),
     autoRefresh,
     setAutoRefresh,
     isCurrent: (revision: number) =>

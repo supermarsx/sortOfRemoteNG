@@ -59,6 +59,90 @@ afterEach(() => {
 });
 
 describe("native application log reads", () => {
+  it.each([
+    { ...files[0], name: {} },
+    { ...files[0], modifiedUnixMs: NaN },
+    { ...files[0], id: "../outside" },
+  ])(
+    "rejects malformed file rows before selecting or reading",
+    async (invalid) => {
+      mocks.invoke.mockResolvedValue({ files: [invalid], truncated: false });
+      const { result } = renderHook(() =>
+        useApplicationLogs("application", true),
+      );
+      await waitFor(() =>
+        expect(result.current.error).toContain("invalid file list"),
+      );
+      expect(readCount()).toBe(0);
+      expect(result.current.content).toBeNull();
+    },
+  );
+  it("rejects oversized native text without retaining it", async () => {
+    mocks.invoke.mockImplementation(async (command) =>
+      command === "application_logs_list"
+        ? { files, truncated: false }
+        : { text: "x".repeat(262145), truncated: false },
+    );
+    const { result } = renderHook(() =>
+      useApplicationLogs("application", true),
+    );
+    await waitFor(() =>
+      expect(result.current.error).toContain("invalid response"),
+    );
+    expect(result.current.content).toBeNull();
+  });
+  it("recent mode follows new files on refresh while archived selections stay pinned", async () => {
+    const { result, rerender } = renderHook(
+      ({ recent }) => useApplicationLogs("browser", true, "owner", recent),
+      { initialProps: { recent: true } },
+    );
+    await waitFor(() => expect(result.current.selectedId).toBe("latest"));
+    const newer = {
+      ...files[0],
+      id: "newest",
+      modifiedUnixMs: files[0].modifiedUnixMs + 1000,
+    };
+    mocks.invoke.mockImplementation(async (command, args) =>
+      command === "application_logs_list"
+        ? { files: [newer, ...files], truncated: false }
+        : { text: args.id, truncated: false },
+    );
+    await act(async () => result.current.refresh());
+    expect(result.current.selectedId).toBe("newest");
+    rerender({ recent: false });
+    await act(async () => result.current.selectFile("older"));
+    await act(async () => result.current.refresh());
+    expect(result.current.selectedId).toBe("older");
+  });
+  it("owner replacement clears displayed content and rejects old in-flight reads", async () => {
+    const { result, rerender } = renderHook(
+      ({ owner }) => useApplicationLogs("application", true, owner),
+      { initialProps: { owner: "old-owner" } },
+    );
+    await waitFor(() => expect(result.current.content).not.toBeNull());
+    const pending = deferred<ApplicationLogContent>();
+    mocks.invoke.mockImplementation(async (command) =>
+      command === "application_logs_list"
+        ? { files, truncated: false }
+        : pending.promise,
+    );
+    act(() => {
+      void result.current.refresh();
+    });
+    await waitFor(() => expect(readCount()).toBe(2));
+    mocks.invoke.mockImplementation(async (command) =>
+      command === "application_logs_list"
+        ? { files, truncated: false }
+        : { text: "new-owner", truncated: false },
+    );
+    rerender({ owner: "new-owner" });
+    expect(result.current.content).toBeNull();
+    await waitFor(() => expect(result.current.content?.text).toBe("new-owner"));
+    await act(async () =>
+      pending.resolve({ text: "old-owner-private", truncated: false }),
+    );
+    expect(result.current.content?.text).toBe("new-owner");
+  });
   it("loads only fixed-source IDs after subscribing to storage locks", async () => {
     const { result } = renderHook(() =>
       useApplicationLogs("application", true),
