@@ -154,6 +154,8 @@ export interface OriginBrowserSnapshot {
   readonly currentUrl?: string;
   readonly title: string;
   readonly loading: boolean;
+  /** Native verified main-document OnLoadEnd; attachment alone is insufficient. */
+  readonly documentLoaded?: boolean;
   readonly canGoBack: boolean;
   readonly canGoForward: boolean;
 }

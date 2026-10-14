@@ -6,6 +6,53 @@ use sorng_browser_host::ipc::*;
 use sorng_protocols::origin_browser::OriginBrowserPolicy as NativePolicy;
 
 #[test]
+fn document_completion_requires_native_attached_proof_and_is_cleared_by_failure_or_scrub() {
+    let native = NativePolicy::new("owner", "connection", "tab", "https://fixture.test").unwrap();
+    for phase in [
+        OriginBrowserPhase::Starting,
+        OriginBrowserPhase::Attached,
+        OriginBrowserPhase::Closed,
+        OriginBrowserPhase::Failed,
+    ] {
+        let mut snapshot = OriginBrowserSnapshot::new(
+            native.identity(),
+            1,
+            phase,
+            OriginBrowserPageState {
+                url: "https://fixture.test/ready",
+                title: "",
+                loading: false,
+                document_loaded: true,
+                can_go_back: false,
+                can_go_forward: false,
+            },
+        )
+        .unwrap();
+        assert_eq!(
+            serde_json::to_value(&snapshot).unwrap()["documentLoaded"],
+            matches!(phase, OriginBrowserPhase::Attached)
+        );
+        snapshot.set_load_failure(sorng_browser_host::native_navigation::classify_load_error(
+            -111, true,
+        ));
+        assert_eq!(
+            serde_json::to_value(&snapshot).unwrap()["documentLoaded"],
+            false
+        );
+        snapshot.set_load_failure(None);
+        assert_eq!(
+            serde_json::to_value(&snapshot).unwrap()["documentLoaded"],
+            false
+        );
+        snapshot.scrub_page_state();
+        assert_eq!(
+            serde_json::to_value(&snapshot).unwrap()["documentLoaded"],
+            false
+        );
+    }
+}
+
+#[test]
 fn native_failure_reason_is_optional_fixed_and_only_serialized_for_failed_phase() {
     let native = NativePolicy::new("owner", "connection", "tab", "https://fixture.test").unwrap();
     for phase in [
@@ -40,6 +87,7 @@ fn native_failure_reason_is_optional_fixed_and_only_serialized_for_failed_phase(
                     url: "",
                     title: "",
                     loading: false,
+                    document_loaded: false,
                     can_go_back: false,
                     can_go_forward: false,
                 },
@@ -119,7 +167,7 @@ fn document_failure_is_attached_only_and_scrubbing_clears_it() {
     for phase in [OriginBrowserPhase::Starting, OriginBrowserPhase::Attached,
         OriginBrowserPhase::Closing, OriginBrowserPhase::Closed, OriginBrowserPhase::Failed] {
         let mut snapshot = OriginBrowserSnapshot::new(native.identity(), 1, phase,
-            OriginBrowserPageState { url: "", title: "", loading: false,
+            OriginBrowserPageState { url: "", title: "", loading: false, document_loaded: false,
                 can_go_back: true, can_go_forward: false }).unwrap();
         snapshot.set_load_failure(failure);
         let value = serde_json::to_value(&snapshot).unwrap();
@@ -376,6 +424,7 @@ fn snapshot(native: &NativePolicy, sequence: u64, url: &str, title: &str) -> Ori
             url,
             title,
             loading: false,
+            document_loaded: false,
             can_go_back: true,
             can_go_forward: false,
         },
@@ -867,7 +916,8 @@ fn snapshots_separate_full_owner_address_from_redacted_diagnostics_and_bound_tit
     assert_eq!(value["canGoBack"], true);
     assert_eq!(value["canGoForward"], false);
     assert!(!value["displayUrl"].as_str().unwrap().contains("private"));
-    assert_eq!(value.as_object().unwrap().len(), 9);
+    assert_eq!(value["documentLoaded"], false);
+    assert_eq!(value.as_object().unwrap().len(), 10);
     assert_eq!(ORIGIN_BROWSER_STATE_EVENT, "origin-browser-state");
 }
 
@@ -890,6 +940,7 @@ fn snapshot_sequence_and_source_url_fail_closed_without_echoing_invalid_values()
                 url,
                 title: "",
                 loading: true,
+                document_loaded: false,
                 can_go_back: false,
                 can_go_forward: false,
             },

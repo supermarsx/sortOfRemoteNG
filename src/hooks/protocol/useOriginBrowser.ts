@@ -172,7 +172,8 @@ export interface OriginBrowserState {
   operationFailure?:
     "presentation" | "navigation" | "control" | "state" | "cleanup" | null;
   runtimeFailure?: OriginBrowserRuntimeFailure | null;
-  /** Set from restart() until its replacement attaches or fails. */
+  /** Set until replacement attachment or failure; proxy recovery additionally
+   * waits for a completed real document load. */
   restart?: OriginBrowserRestartReason | null;
 }
 
@@ -250,6 +251,8 @@ function shellSnapshot(
     typeof value.title !== "string" ||
     value.title.length > 512 ||
     typeof value.loading !== "boolean" ||
+    (value.documentLoaded !== undefined &&
+      typeof value.documentLoaded !== "boolean") ||
     typeof value.canGoBack !== "boolean" ||
     typeof value.canGoForward !== "boolean"
   )
@@ -290,6 +293,9 @@ function shellSnapshot(
     ...(currentUrl === undefined ? {} : { currentUrl }),
     title: Array.from(value.title).filter(printable).join(""),
     loading: value.loading,
+    ...(value.documentLoaded === undefined
+      ? {}
+      : { documentLoaded: value.documentLoaded }),
     canGoBack: value.canGoBack,
     canGoForward: value.canGoForward,
   };
@@ -310,6 +316,7 @@ interface Attempt {
   pendingSnapshot: OriginBrowserSnapshot | null;
   attached: boolean;
   loadFailed: boolean;
+  proxyRecoveryResolved: boolean;
   createStarted: boolean;
   identity: OriginBrowserIdentity | null;
   closeTask: Promise<boolean> | null;
@@ -725,6 +732,8 @@ export function useOriginBrowser(options: UseOriginBrowserOptions) {
         cleanupRetryRequested.current = true;
         endStartPause();
         setLastRestart({ reason, automatic, serial: ++restartSerial.current });
+        if (reason === "proxy-unreachable")
+          setState((previous) => ({ ...previous, restart: reason }));
         setGeneration((value) => value + 1);
       }),
     [endStartPause],
@@ -906,6 +915,7 @@ export function useOriginBrowser(options: UseOriginBrowserOptions) {
         pendingSnapshot: null,
         attached: false,
         loadFailed: false,
+        proxyRecoveryResolved: false,
         createStarted: false,
         identity: null,
         closeTask: null,
@@ -944,6 +954,15 @@ export function useOriginBrowser(options: UseOriginBrowserOptions) {
           !value.loadFailure &&
           (value.loading ||
             value.displayUrl === "about:blank" ||
+            value.displayUrl.startsWith("chrome-error:"))
+        )
+          return;
+        if (
+          budget.restart === "proxy-unreachable" &&
+          !attempt.proxyRecoveryResolved &&
+          value.phase === "attached" &&
+          !value.loadFailure &&
+          (value.displayUrl === "about:blank" ||
             value.displayUrl.startsWith("chrome-error:"))
         )
           return;
@@ -1082,6 +1101,20 @@ export function useOriginBrowser(options: UseOriginBrowserOptions) {
         // recovery, but its Chromium error surface must not cover the shell UI.
         // Update before present(): React state has not committed this snapshot yet.
         attempt.loadFailed = !!snapshot.loadFailure;
+        // Attaching a fresh listener/context does not prove that its selected
+        // upstream route can load the website. Keep recovery pending through
+        // loading and inert/error placeholders; a failed load ends it honestly.
+        const proxyRecovery = budget.restart === "proxy-unreachable";
+        if (
+          proxyRecovery &&
+          (snapshot.loadFailure ||
+            ["failed", "closing", "closed"].includes(snapshot.phase) ||
+            (snapshot.phase === "attached" &&
+              snapshot.documentLoaded === true &&
+              !snapshot.loading &&
+              /^https?:\/\//i.test(snapshot.displayUrl)))
+        )
+          attempt.proxyRecoveryResolved = true;
         setState({
           ...initialState,
           snapshot,
@@ -1107,7 +1140,9 @@ export function useOriginBrowser(options: UseOriginBrowserOptions) {
                 : null,
           // Native may answer before the page is attached: still the restart.
           restart:
-            snapshot.phase === "starting" && !snapshot.loadFailure
+            (snapshot.phase === "starting" ||
+              (proxyRecovery && !attempt.proxyRecoveryResolved)) &&
+            !snapshot.loadFailure
               ? budget.restart
               : null,
         });
@@ -1891,7 +1926,9 @@ export function useOriginBrowser(options: UseOriginBrowserOptions) {
     state.phase === "idle"
       ? null
       : state.phase === "attached"
-        ? "connected"
+        ? state.restart === "proxy-unreachable"
+          ? "reconnecting"
+          : "connected"
         : state.phase === "error" || state.phase === "unavailable"
           ? "error"
           : state.restart

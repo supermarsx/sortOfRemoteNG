@@ -20,18 +20,41 @@ fn string(value: &str) -> cef_string_userfree_t {
 }
 
 fn frame(main: bool, id: &'static str) -> Frame {
-    extern "C" fn valid(_: *mut _cef_frame_t) -> i32 { 1 }
+    frame_url(main, id, "https://fixture.invalid/ready")
+}
+fn frame_url(main: bool, id: &'static str, url: &'static str) -> Frame {
+    extern "C" fn valid(_: *mut _cef_frame_t) -> i32 {
+        1
+    }
     extern "C" fn is_main(this: *mut _cef_frame_t) -> i32 {
-        i32::from(RcImpl::<_cef_frame_t, (bool, &'static str)>::get(this).interface.0)
+        i32::from(
+            RcImpl::<_cef_frame_t, (bool, &'static str, &'static str)>::get(this)
+                .interface
+                .0,
+        )
     }
     extern "C" fn identifier(this: *mut _cef_frame_t) -> cef_string_userfree_t {
-        string(RcImpl::<_cef_frame_t, (bool, &'static str)>::get(this).interface.1)
+        string(
+            RcImpl::<_cef_frame_t, (bool, &'static str, &'static str)>::get(this)
+                .interface
+                .1,
+        )
+    }
+    extern "C" fn address(this: *mut _cef_frame_t) -> cef_string_userfree_t {
+        string(
+            RcImpl::<_cef_frame_t, (bool, &'static str, &'static str)>::get(this)
+                .interface
+                .2,
+        )
     }
     let raw = _cef_frame_t {
-        is_valid: Some(valid), is_main: Some(is_main), get_identifier: Some(identifier),
+        is_valid: Some(valid),
+        is_main: Some(is_main),
+        get_identifier: Some(identifier),
+        get_url: Some(address),
         ..unsafe { std::mem::zeroed() }
     };
-    let raw: *mut _cef_frame_t = RcImpl::new(raw, (main, id)).cast();
+    let raw: *mut _cef_frame_t = RcImpl::new(raw, (main, id, url)).cast();
     raw.wrap_result()
 }
 
@@ -53,7 +76,29 @@ async fn fixture() -> (Arc<Shared>, Arc<Events>, Browser, LoadHandler) {
     #[cfg(target_os = "macos")]
     crate::platform::test_runtime::ensure_loaded();
     let events = Arc::new(Events::default());
-    let shared = Arc::new(super::tests::fixture(events.clone()).await);
+    let mut core = super::tests::fixture(events.clone()).await;
+    core.permissions = Arc::new(
+        WebsitePermissionEngine::new(
+            None,
+            None,
+            &[(
+                crate::domain_permissions::WebsiteRequestClass::Navigation,
+                crate::domain_permissions::WebsitePermissionDecision::Allow,
+            )]
+            .into_iter()
+            .collect(),
+        )
+        .unwrap(),
+    );
+    {
+        let mut session = core.session.lock().unwrap();
+        let ready = sorng_protocols::origin_browser::NativeHostReadiness::Ready {
+            profile_key: session.policy().profile_key().into(),
+            proxy_endpoint: session.proxy_endpoint(),
+        };
+        session.report_host(&core.identity, ready).unwrap();
+    }
+    let shared = Arc::new(core);
     shared.state.lock().unwrap().browser_id = Some(41);
     let browser = browser(frame(true, "committed-main"));
     let handler = NativeLoad::new(shared.clone());
@@ -80,6 +125,7 @@ async fn provisional_tunnel_failure_survives_error_document_and_loading_stopped(
     handler.on_load_end(Some(&mut browser), Some(&mut committed), 200);
     handler.on_loading_state_change(Some(&mut browser), 0, 1, 0);
     assert_eq!(shared.state.lock().unwrap().page.load_failure, Some(failure));
+    assert!(!shared.state.lock().unwrap().page.document_loaded);
     assert!(!shared.automation.lock().unwrap().available());
     assert!(events.0.lock().unwrap().last().unwrap().state.can_go_back);
     assert!(shared.current());
@@ -108,8 +154,58 @@ async fn http_error_content_remains_a_loaded_document() {
         shared.automation.lock().unwrap().navigating = true;
         handler.on_load_end(Some(&mut browser), Some(&mut main), status);
         assert!(shared.state.lock().unwrap().page.load_failure.is_none());
+        assert!(shared.state.lock().unwrap().page.document_loaded);
         assert!(shared.automation.lock().unwrap().available());
     }
+}
+
+#[tokio::test]
+async fn only_current_admitted_main_load_end_proves_completion_even_without_loading_edge() {
+    let (shared, events, mut owned, handler) = fixture().await;
+    assert!(!shared.state.lock().unwrap().page.loading);
+    assert!(!shared.state.lock().unwrap().page.document_loaded);
+    handler.on_loading_state_change(Some(&mut owned), 0, 0, 0);
+    assert!(!shared.state.lock().unwrap().page.document_loaded);
+    let mut child = frame(false, "child");
+    let mut foreign_main = frame(true, "foreign-main");
+    let mut inert = frame_url(true, "committed-main", "about:blank");
+    let mut denied = frame_url(true, "committed-main", "https://attacker.invalid/ready");
+    let mut mismatch = frame_url(true, "committed-main", "https://fixture.invalid/other");
+    for callback in [
+        &mut child,
+        &mut foreign_main,
+        &mut inert,
+        &mut denied,
+        &mut mismatch,
+    ] {
+        handler.on_load_end(Some(&mut owned), Some(callback), 200);
+        assert!(!shared.state.lock().unwrap().page.document_loaded);
+    }
+    let mut main = owned.main_frame().unwrap();
+    let mut other = super::tests::focus_browser(1, 42);
+    handler.on_load_end(Some(&mut other), Some(&mut main), 200);
+    assert!(!shared.state.lock().unwrap().page.document_loaded);
+    handler.on_load_end(Some(&mut owned), Some(&mut main), 200);
+    assert!(
+        events
+            .0
+            .lock()
+            .unwrap()
+            .last()
+            .unwrap()
+            .state
+            .document_loaded
+    );
+    handler.on_load_error(
+        Some(&mut owned),
+        Some(&mut main),
+        Errorcode::TUNNEL_CONNECTION_FAILED,
+        None,
+        None,
+    );
+    assert!(!shared.state.lock().unwrap().page.document_loaded);
+    handler.on_load_end(Some(&mut owned), Some(&mut main), 200);
+    assert!(!shared.state.lock().unwrap().page.document_loaded);
 }
 
 #[tokio::test]

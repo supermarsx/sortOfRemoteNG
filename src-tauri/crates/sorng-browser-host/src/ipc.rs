@@ -831,6 +831,7 @@ pub struct OriginBrowserPageState<'a> {
     pub url: &'a str,
     pub title: &'a str,
     pub loading: bool,
+    pub document_loaded: bool,
     pub can_go_back: bool,
     pub can_go_forward: bool,
 }
@@ -851,6 +852,7 @@ pub struct OriginBrowserSnapshot {
     display_url: String,
     title: String,
     loading: bool,
+    document_loaded: bool,
     can_go_back: bool,
     can_go_forward: bool,
 }
@@ -913,6 +915,7 @@ impl OriginBrowserSnapshot {
             display_url,
             title,
             loading: page.loading,
+            document_loaded: page.document_loaded && matches!(phase, OriginBrowserPhase::Attached),
             can_go_back: page.can_go_back,
             can_go_forward: page.can_go_forward,
         })
@@ -939,6 +942,9 @@ impl OriginBrowserSnapshot {
     /// A failed document can still have a live browser. Host failures and
     /// closed attempts use the separate terminal failure reason instead.
     pub fn set_load_failure(&mut self, failure: Option<crate::native_navigation::LoadFailure>) {
+        if failure.is_some() {
+            self.document_loaded = false;
+        }
         self.load_failure = failure
             .filter(|_| matches!(self.phase, OriginBrowserPhase::Attached))
             .map(Into::into);
@@ -953,6 +959,7 @@ impl OriginBrowserSnapshot {
         self.display_url.clear();
         self.title.clear();
         self.loading = false;
+        self.document_loaded = false;
         self.can_go_back = false;
         self.can_go_forward = false;
     }

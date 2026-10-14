@@ -1128,7 +1128,12 @@ impl BrowserEventSink for Sink {
         }
         let mut finished_load = false;
         if let Ok(mut watch) = self.attempt.address_watch.lock() {
-            watch.observe(url::Url::parse(&event.display.url).is_ok_and(|url| matches!(url.scheme(), "http" | "https") && url.host_str().is_some() && url.username().is_empty() && url.password().is_none()));
+            // A provisional HTTP address does not prove a working upstream.
+            // Keep the saved initial-document deadline until native MainFrame
+            // OnLoadEnd confirms the admitted document, including fast loads.
+            watch.observe_document(
+                url::Url::parse(&event.display.url).is_ok_and(|url| matches!(url.scheme(), "http" | "https") && url.host_str().is_some() && url.username().is_empty() && url.password().is_none()),
+                event.state.document_loaded && event.state.load_failure.is_none());
         }
         if let Ok(mut started) = self.attempt.load_started.lock() {
             if event.state.loading {
@@ -1195,6 +1200,7 @@ impl BrowserEventSink for Sink {
             },
             title: &event.display.title,
             loading: event.state.loading,
+            document_loaded: event.state.document_loaded,
             can_go_back: event.state.can_go_back,
             can_go_forward: event.state.can_go_forward,
         };
@@ -1388,6 +1394,7 @@ async fn create_document(
                     url: "",
                     title: "",
                     loading: false,
+                    document_loaded: false,
                     can_go_back: false,
                     can_go_forward: false,
                 },

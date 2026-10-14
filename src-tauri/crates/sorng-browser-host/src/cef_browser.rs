@@ -155,6 +155,8 @@ pub struct BrowserState {
     pub url: RedactedUrl,
     pub title: RedactedTitle,
     pub loading: bool,
+    /// Verified admitted main-document completion, cleared on new navigation.
+    pub document_loaded: bool,
     pub can_go_back: bool,
     pub can_go_forward: bool,
     pub fault: Option<BrowserFault>,
@@ -861,6 +863,7 @@ impl CleanupOwner {
             let _ = state.control.fault(&self.identity);
             state.page.fault = Some(BrowserFault::NativeSurface);
             state.page.loading = false;
+            state.page.document_loaded = false;
             state.page.can_go_back = false;
             state.page.can_go_forward = false;
             true
@@ -2025,6 +2028,7 @@ impl Shared {
             let _ = state.control.fault(&self.identity);
             state.page.fault = Some(reason);
             state.page.loading = false;
+            state.page.document_loaded = false;
             state.page.can_go_back = false;
             state.page.can_go_forward = false;
         }
@@ -2302,6 +2306,7 @@ impl<'a> CefBrowserHost<'a> {
                     can_go_forward: false,
                     fault: None,
                     load_failure: None,
+                    document_loaded: false,
                 },
             })),
         });
@@ -2632,7 +2637,7 @@ impl<'a> CefBrowserHost<'a> {
         browser.stop_load();
         self.visibility(identity, false)?;
         self.shared.navigation_status(NativeNavigationStatus::LoadError { code: -118, main_frame: true });
-        self.shared.update(Some(&browser), |page| { page.load_failure = crate::native_navigation::classify_load_error(-118, true); page.loading = false; });
+        self.shared.update(Some(&browser), |page| { page.load_failure = crate::native_navigation::classify_load_error(-118, true); page.loading = false; page.document_loaded = false; });
         Ok(())
     }
 
@@ -2706,6 +2711,8 @@ impl<'a> CefBrowserHost<'a> {
             .navigation_status(NativeNavigationStatus::Requested);
         // Observers cannot keep a revoked attempt alive, including when a
         // callback panics or the owner locks during the notification.
+        self.check(identity)?;
+        self.shared.update(Some(&browser), |page| page.document_loaded = false);
         self.check(identity)?;
         frame.load_url(Some(&CefString::from(url)));
         Ok(())
@@ -3081,7 +3088,10 @@ wrap_request_handler! {
             }
             let decision = self.inner.on_before_browse(browser.as_deref_mut(), frame, request, user_gesture, is_redirect);
             if main_frame && decision == 0 && website_navigation {
-                self.shared.update(browser.as_deref(), |page| page.load_failure = None);
+                self.shared.update(browser.as_deref(), |page| {
+                    page.load_failure = None;
+                    page.document_loaded = false;
+                });
             }
             if main_frame && decision != 0 {
                 self.shared.automation.lock().unwrap_or_else(|error| error.into_inner()).navigating = false;
@@ -3256,6 +3266,7 @@ wrap_life_span_handler! {
                 let _ = state.control.closed(&self.shared.identity);
                 state.cleanup = CleanupProgress::Complete;
                 state.page.loading = false;
+                state.page.document_loaded = false;
                 state.page.can_go_back = false;
                 state.page.can_go_forward = false;
             }
@@ -4509,6 +4520,7 @@ mod tests {
                     can_go_forward: false,
                     fault: None,
                     load_failure: None,
+                    document_loaded: false,
                 },
             })),
         }

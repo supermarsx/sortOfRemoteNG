@@ -156,6 +156,7 @@ fn inventory(view: &View) -> Result<Value, String> {
                         url: &child.display.url,
                         title: &child.display.title,
                         loading: state.loading,
+                        document_loaded: state.document_loaded,
                         can_go_back: state.can_go_back,
                         can_go_forward: state.can_go_forward,
                     },

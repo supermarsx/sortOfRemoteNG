@@ -21,6 +21,7 @@ fn private_page() -> OriginBrowserPageState<'static> {
         url: "https://fixture.test/private?token=synthetic-secret#sensitive-fragment",
         title: "Synthetic private title",
         loading: true,
+        document_loaded: false,
         can_go_back: true,
         can_go_forward: true,
     }
@@ -35,6 +36,35 @@ fn retained(identity: &BrowserIdentity) -> Mutex<OriginBrowserSnapshot> {
 
 fn wire(snapshot: &OriginBrowserSnapshot) -> serde_json::Value {
     serde_json::to_value(snapshot).unwrap()
+}
+
+#[test]
+fn native_document_completion_survives_retained_status_without_a_loading_edge() {
+    let identity = identity();
+    let snapshot = retained(&identity);
+    assert_eq!(wire(&snapshot.lock().unwrap())["documentLoaded"], false);
+    assert_eq!(
+        publish(
+            &snapshot,
+            &identity,
+            2,
+            OriginBrowserPhase::Attached,
+            OriginBrowserPageState {
+                loading: false,
+                document_loaded: true,
+                ..private_page()
+            },
+            || true,
+            |event| {
+                assert_eq!(wire(&event)["documentLoaded"], true);
+                true
+            }
+        ),
+        Publication::Published
+    );
+    assert_eq!(wire(&snapshot.lock().unwrap())["documentLoaded"], true);
+    scrub_retained(&snapshot);
+    assert_eq!(wire(&snapshot.lock().unwrap())["documentLoaded"], false);
 }
 
 #[test]

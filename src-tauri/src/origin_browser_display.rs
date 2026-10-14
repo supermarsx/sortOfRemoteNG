@@ -80,6 +80,7 @@ pub(super) fn publish_with_load_failure(
             url: "",
             title: "",
             loading: false,
+            document_loaded: false,
             can_go_back: false,
             can_go_forward: false,
         }

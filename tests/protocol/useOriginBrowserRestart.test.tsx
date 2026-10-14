@@ -80,6 +80,7 @@ function snapshot(
     displayUrl: "https://fixture.invalid/login",
     title: "Fixture",
     loading: false,
+    documentLoaded: true,
     canGoBack: false,
     canGoForward: false,
     ...overrides,
@@ -2527,6 +2528,69 @@ describe("one retry for a rejected presentation or control IPC (1.7)", () => {
 describe("a Chromium proxy binding failure", () => {
   const failed = (serial: number, sequence = 1, code = -130) =>
     snapshot(serial, { sequence, loadFailure: { code, category: "proxy" } });
+  it.each([-111, -130])(
+    "keeps fresh relay recovery pending until navigation, then preserves failure %s without another automatic loop",
+    async (code) => {
+      const t = await attached();
+      t.transport.create.mockImplementationOnce(async (request) => ({
+        requestId: request.requestId,
+        snapshot: snapshot(2, { loading: true, documentLoaded: false }),
+      }));
+      t.transport.status.mockResolvedValueOnce({
+        capability: { availability: "available" },
+        snapshot: snapshot(2, { loading: true, documentLoaded: false }),
+      });
+      t.emit(failed(1));
+      await waitFor(() =>
+        expect(t.shell.browser.state.snapshot?.identity.attemptId).toBe(
+          "native-attempt-2",
+        ),
+      );
+      expect(t.shell.browser.state.restart).toBe("proxy-unreachable");
+      expect(t.shell.browser.connectionStatus).toBe("reconnecting");
+      t.emit(
+        snapshot(2, { sequence: 1, displayUrl: "about:blank", loading: false }),
+      );
+      expect(t.shell.browser.state.restart).toBe("proxy-unreachable");
+      t.emit(failed(2, 2, code));
+      expect(t.shell.browser.state.phase).toBe("error");
+      expect(t.shell.browser.state.restart).toBeNull();
+      t.emit(snapshot(1, { sequence: 999, loading: false }));
+      t.emit(failed(2, 3));
+      await turns();
+      expect(t.transport.create).toHaveBeenCalledTimes(2);
+      expect(t.shell.browser.state.phase).toBe("error");
+      expect(t.shell.browser.connectionStatus).toBe("error");
+    },
+  );
+  it("completes fresh relay recovery only for the current completed HTTP page, without reopening it for later navigation", async () => {
+    const t = await attached();
+    t.transport.create.mockImplementationOnce(async (request) => ({
+      requestId: request.requestId,
+      snapshot: snapshot(2, { loading: false, documentLoaded: false }),
+    }));
+    t.transport.status.mockResolvedValueOnce({
+      capability: { availability: "available" },
+      snapshot: snapshot(2, { loading: false, documentLoaded: false }),
+    });
+    t.emit(failed(1));
+    await waitFor(() =>
+      expect(t.shell.browser.state.snapshot?.identity.attemptId).toBe(
+        "native-attempt-2",
+      ),
+    );
+    expect(t.shell.browser.state.restart).toBe("proxy-unreachable");
+    t.emit(snapshot(1, { sequence: 999, loading: false }));
+    expect(t.shell.browser.state.restart).toBe("proxy-unreachable");
+    t.emit(snapshot(2, { sequence: 1, loading: false, documentLoaded: false }));
+    expect(t.shell.browser.state.restart).toBe("proxy-unreachable");
+    t.emit(snapshot(2, { sequence: 2, loading: false, documentLoaded: true }));
+    expect(t.shell.browser.state.restart).toBeNull();
+    expect(t.shell.browser.connectionStatus).toBe("connected");
+    t.emit(snapshot(2, { sequence: 3, loading: true, documentLoaded: false }));
+    expect(t.shell.browser.state.restart).toBeNull();
+    expect(t.shell.browser.connectionStatus).toBe("connected");
+  });
   it("replaces the authenticated relay once and keeps a repeated failure visible", async () => {
     const t = await attached();
     t.emit(failed(1));

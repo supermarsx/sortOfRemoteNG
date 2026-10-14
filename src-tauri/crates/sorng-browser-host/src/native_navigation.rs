@@ -55,6 +55,12 @@ impl FirstAddressWatch {
     pub fn observe(&mut self, website_address: bool) {
         if website_address { self.started = None; }
     }
+    /// A provisional address or stopped-loading event is not completion proof.
+    /// The app passes verified native main-document completion independently
+    /// of whether its consumer observed the earlier loading transition.
+    pub fn observe_document(&mut self, website_address: bool, document_loaded: bool) {
+        self.observe(website_address && document_loaded);
+    }
     pub fn take_expired(&mut self, now: std::time::Instant, limit: std::time::Duration) -> bool {
         if self.started.is_some_and(|start| now.checked_duration_since(start).is_some_and(|elapsed| elapsed >= limit)) { self.started = None; true } else { false }
     }
@@ -92,6 +98,25 @@ pub fn classify_load_error(code: i32, main_frame: bool) -> Option<LoadFailure> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn initial_document_deadline_requires_admitted_completion_and_survives_provisional_addresses() {
+        use std::time::{Duration, Instant};
+        let start = Instant::now();
+        let limit = Duration::from_secs(30);
+        for (address, completed) in [(true, false), (false, true), (false, false)] {
+            let mut watch = FirstAddressWatch::default();
+            watch.start(start);
+            watch.observe_document(address, completed);
+            watch.start(start + Duration::from_secs(25));
+            watch.observe_document(address, completed);
+            assert!(!watch.take_expired(start + Duration::from_secs(29), limit));
+            assert!(watch.take_expired(start + Duration::from_secs(30), limit));
+        }
+        let mut fast = FirstAddressWatch::default();
+        fast.start(start);
+        fast.observe_document(true, true);
+        assert!(!fast.take_expired(start + Duration::from_secs(31), limit));
+    }
     #[test]
     fn first_address_wait_is_bounded_and_blank_observations_cannot_restart_or_clear_it() {
         use std::time::{Duration, Instant};

@@ -238,6 +238,7 @@ fn child_shared(
                 can_go_forward: false,
                 fault: None,
                 load_failure: None,
+                document_loaded: false,
             },
         })),
     })

@@ -344,6 +344,97 @@ async fn recheck(f: &Fixture, authorized: &NativeAuthorizedBrowser) -> Result<()
 }
 
 #[tokio::test]
+async fn recovery_reauthorizes_the_current_selected_upstream_and_never_reuses_failed_route_or_goes_direct(
+) {
+    let _serial = SERIAL.lock().await;
+    let tripwire = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let destination = tripwire.local_addr().unwrap();
+    let broken = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let healthy = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let mut row = connection();
+    row["hostname"] = format!("https://{destination}/login").into();
+    row["port"] = destination.port().into();
+    row["proxyProfileId"] = "outer".into();
+    let mut f = Fixture::new(row).await;
+    f.request.initial_url = format!("https://{destination}/login");
+    manage_catalog(&f, &catalog(broken.local_addr().unwrap().port()));
+    let old = f.authorize().await.unwrap();
+    let rejected = tokio::spawn(async move {
+        let (mut socket, _) = broken.accept().await.unwrap();
+        let mut header = Vec::new();
+        while !header.ends_with(b"\r\n\r\n") {
+            header.push(socket.read_u8().await.unwrap());
+        }
+        assert!(String::from_utf8(header)
+            .unwrap()
+            .starts_with(&format!("CONNECT {destination} HTTP/1.1\r\n")));
+        socket
+            .write_all(
+                b"HTTP/1.1 502 Bad Gateway\r\nContent-Length: 0\r\nConnection: close\r\n\r\n",
+            )
+            .await
+            .unwrap();
+    });
+    assert!(tokio::time::timeout(
+        Duration::from_secs(5),
+        old.route
+            .dial(Authority::parse(&destination.to_string()).unwrap())
+    )
+    .await
+    .unwrap()
+    .is_err());
+    rejected.await.unwrap();
+    assert!(
+        tokio::time::timeout(Duration::from_millis(50), tripwire.accept())
+            .await
+            .is_err()
+    );
+    write_catalog(&f, &catalog(healthy.local_addr().unwrap().port()));
+    assert_eq!(recheck(&f, &old).await, Err(RecheckFailure::SourceChanged));
+    assert!(old
+        .route
+        .dial(Authority::parse(&destination.to_string()).unwrap())
+        .await
+        .is_err());
+    let fresh = f.authorize().await.unwrap();
+    assert!(fresh.policy.identity() != old.policy.identity());
+    let accepted = tokio::spawn(async move {
+        let (mut socket, _) = healthy.accept().await.unwrap();
+        let mut header = Vec::new();
+        while !header.ends_with(b"\r\n\r\n") {
+            header.push(socket.read_u8().await.unwrap());
+        }
+        assert!(String::from_utf8(header)
+            .unwrap()
+            .starts_with(&format!("CONNECT {destination} HTTP/1.1\r\n")));
+        socket
+            .write_all(b"HTTP/1.1 200 Connection established\r\n\r\n")
+            .await
+            .unwrap();
+        assert_eq!(socket.read_u8().await.unwrap(), 42);
+        socket.write_u8(84).await.unwrap();
+    });
+    let mut stream = tokio::time::timeout(
+        Duration::from_secs(5),
+        fresh
+            .route
+            .dial(Authority::parse(&destination.to_string()).unwrap()),
+    )
+    .await
+    .unwrap()
+    .unwrap();
+    stream.write_u8(42).await.unwrap();
+    assert_eq!(stream.read_u8().await.unwrap(), 84);
+    drop(stream);
+    accepted.await.unwrap();
+    assert!(
+        tokio::time::timeout(Duration::from_millis(50), tripwire.accept())
+            .await
+            .is_err()
+    );
+}
+
+#[tokio::test]
 async fn edited_saved_proxy_profile_ends_the_attempt_as_a_source_change() {
     let _serial = SERIAL.lock().await;
     let mut row = connection();

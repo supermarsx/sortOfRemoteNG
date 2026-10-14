@@ -28,6 +28,12 @@ wrap_load_handler! {
             // an internal error document after OnLoadError: never erase it here.
             let failed = self.shared.state.lock().map_or(true, |state| state.page.load_failure.is_some());
             self.shared.automation.lock().unwrap_or_else(|error| error.into_inner()).navigating = failed;
+            let address = CefString::from(&frame.url()).to_string();
+            let completed = !failed
+                && address == CefString::from(&main.url()).to_string()
+                && self.shared.session.lock().is_ok_and(|session|
+                    navigation_allowed(&session, &self.shared.identity, &self.shared.permissions, &address, true));
+            self.shared.update(Some(browser), |page| page.document_loaded = completed);
         }
         fn on_load_error(&self, browser: Option<&mut Browser>, frame: Option<&mut Frame>,
             error_code: Errorcode, _error_text: Option<&CefString>, _failed_url: Option<&CefString>) {
@@ -59,6 +65,7 @@ wrap_load_handler! {
                 self.shared.update(browser.as_deref(), |page| {
                     page.load_failure = Some(failure);
                     page.loading = false;
+                    page.document_loaded = false;
                 });
             }
         }
