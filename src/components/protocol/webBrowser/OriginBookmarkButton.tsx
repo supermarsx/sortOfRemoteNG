@@ -6,6 +6,7 @@ import type {
 } from "../../../types/connection/connection";
 import {
   cloneOriginBookmarks,
+  originBookmarkSessionScope,
   useOriginBookmarks,
   type BookmarkPath,
   type OriginBookmarkReview,
@@ -74,6 +75,7 @@ export default function OriginBookmarkButton({
     assertOwner,
     bookmarks,
   );
+  const sessionScope = originBookmarkSessionScope(session);
   const [review, setReview] = useState<Review | null>(null);
   const currentReview = useRef(review);
   currentReview.current = review;
@@ -104,7 +106,7 @@ export default function OriginBookmarkButton({
     setReview(null);
     setError(false);
     onOverlayChange(false);
-  }, [eligible, temporary, session, currentUrl, onOverlayChange]);
+  }, [eligible, temporary, sessionScope, currentUrl, onOverlayChange]);
   const close = () => {
     currentReview.current = null;
     setReview(null);

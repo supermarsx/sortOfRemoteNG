@@ -172,6 +172,52 @@ describe("native bookmark tree editing", () => {
 });
 
 describe("native bookmark owner transactions", () => {
+  it.each([
+    { id: "other-tab" },
+    { connectionId: "other-connection" },
+    { ownerDatabaseId: "other-owner" },
+    { protocol: "http" },
+    { hostname: "other.invalid" },
+    { backendSessionId: "other-backend" },
+    { lifecycleActorGeneration: 2 },
+    { lifecycleActorReservationId: 2 },
+    { layout: { windowId: "detached", isDetached: true } },
+  ] as Partial<ConnectionSession>[])(
+    "does not revive a review after a session scope change: %j",
+    async (patch) => {
+      let currentSession = session;
+      const hook = renderHook(() =>
+        useOriginBookmarks(currentSession, true, owner),
+      );
+      const review = hook.result.current();
+      currentSession = { ...session, ...patch };
+      hook.rerender();
+      currentSession = session;
+      hook.rerender();
+      await expect(review.commit({ kind: "clear" })).rejects.toThrow();
+      expect(f.context.dispatchAndFlush).not.toHaveBeenCalled();
+    },
+  );
+
+  it("keeps a name edit valid across display-only session updates", async () => {
+    let currentSession = session;
+    const hook = renderHook(() =>
+      useOriginBookmarks(currentSession, true, owner),
+    );
+    const review = hook.result.current();
+    currentSession = {
+      ...session,
+      status: "connected",
+      lastActivity: new Date(),
+    };
+    hook.rerender();
+    await review.commit({ kind: "save", parent: [], item: link("Renamed") });
+    expect(f.context.state.connections[0].httpBookmarks).toEqual([
+      link("Renamed"),
+    ]);
+    expect(f.context.dispatchAndFlush).toHaveBeenCalledOnce();
+  });
+
   it("never revives a review after becoming ineligible and eligible again", async () => {
     let eligible = true;
     const hook = renderHook(() => useOriginBookmarks(session, eligible, owner));

@@ -121,6 +121,37 @@ describe("native toolbar bookmark", () => {
       },
     ]);
   });
+  it("preserves a renamed bookmark draft when the session status refreshes", async () => {
+    const p = props();
+    f.context.state.connections[0].httpBookmarks = [
+      { name: "Old name", path: p.currentUrl },
+    ];
+    p.bookmarks = f.context.state.connections[0].httpBookmarks;
+    const view = render(<OriginBookmarkButton {...p} />);
+    fireEvent.click(
+      screen.getByRole("button", { name: "Edit bookmark for this page" }),
+    );
+    fireEvent.change(screen.getByRole("textbox", { name: "Bookmark name" }), {
+      target: { value: "Renamed website" },
+    });
+    view.rerender(
+      <OriginBookmarkButton
+        {...p}
+        session={{ ...session, status: "connected", lastActivity: new Date() }}
+      />,
+    );
+    expect(screen.getByRole("textbox", { name: "Bookmark name" })).toHaveValue(
+      "Renamed website",
+    );
+    save();
+    await waitFor(() =>
+      expect(f.context.dispatchAndFlush).toHaveBeenCalledOnce(),
+    );
+    expect(f.context.state.connections[0].httpBookmarks[0].name).toBe(
+      "Renamed website",
+    );
+  });
+
   it("disables temporary sessions with an explanation and never captures a database grant", () => {
     render(
       <OriginBookmarkButton

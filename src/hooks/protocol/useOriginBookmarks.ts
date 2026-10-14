@@ -7,6 +7,20 @@ import type {
 import { captureSessionDatabaseAccess } from "../../utils/session/sessionDatabaseOwnership";
 
 export type BookmarkPath = number[];
+/** Session display updates do not replace its database or native actor. */
+export const originBookmarkSessionScope = (session: ConnectionSession) =>
+  JSON.stringify([
+    session.id,
+    session.connectionId,
+    session.ownerDatabaseId,
+    session.protocol,
+    session.hostname,
+    session.backendSessionId,
+    session.lifecycleActorGeneration,
+    session.lifecycleActorReservationId,
+    session.layout?.windowId,
+    session.layout?.isDetached,
+  ]);
 export const bookmarkPathKey = (path: BookmarkPath) => path.join(".");
 export const bookmarkContains = (parent: BookmarkPath, child: BookmarkPath) =>
   parent.length <= child.length &&
@@ -134,6 +148,7 @@ export function useOriginBookmarks(
   renderedBookmarks?: HttpBookmarkItem[],
 ) {
   const context = useConnections();
+  const sessionScope = originBookmarkSessionScope(session);
   const live = useRef({ context, session, eligible, assertOwner });
   const mounted = useRef(false);
   const saving = useRef(false);
@@ -141,7 +156,7 @@ export function useOriginBookmarks(
   useLayoutEffect(() => {
     scopeEpoch.current++;
   }, [
-    session,
+    sessionScope,
     eligible,
     context.databaseAvailability?.status,
     context.databaseAvailability?.databaseId,
@@ -170,7 +185,7 @@ export function useOriginBookmarks(
         scopeEpoch.current !== epoch ||
         !eligible ||
         !current.eligible ||
-        current.session !== session ||
+        originBookmarkSessionScope(current.session) !== sessionScope ||
         !databaseId ||
         availability?.status !== "ready" ||
         availability.databaseId !== databaseId ||
