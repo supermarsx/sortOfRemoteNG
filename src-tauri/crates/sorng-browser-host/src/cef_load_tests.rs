@@ -71,7 +71,7 @@ async fn provisional_tunnel_failure_survives_error_document_and_loading_stopped(
         Errorcode::TUNNEL_CONNECTION_FAILED, Some(&CefString::from("SECRET")),
         Some(&CefString::from("https://redirect.invalid/?token=SECRET")));
     assert!(shared.current());
-    assert_eq!(shared.state.lock().unwrap().control.lifecycle(), Lifecycle::Attached);
+    assert_eq!(shared.state.lock().unwrap().control.lifecycle(), Lifecycle::Hidden);
     let failure = shared.state.lock().unwrap().page.load_failure.unwrap();
     assert_eq!(failure.code, -111);
     assert_eq!(failure.category.as_str(), "proxy");

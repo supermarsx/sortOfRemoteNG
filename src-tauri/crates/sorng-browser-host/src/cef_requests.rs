@@ -341,6 +341,16 @@ fn resolve_resource(
     url: &str,
 ) -> EffectiveWebsitePermission {
     let class = native_request_class(scope.kind).unwrap_or("");
+    // Local media has no socket or proxy bypass. Bind blob ownership and the
+    // native initiator to an admitted document and its image/media permission;
+    // local scripts, workers, frames and navigations remain denied.
+    if let Some(origin) = local_media_origin(scope, url) {
+        let admitted = session.authorize_navigation(identity, &origin).is_ok();
+        return permissions.resolve(WebsitePermissionQuery {
+            website_origin: session.policy().source_origin(), destination_origin: &origin,
+            request_class: "image-media", native_denied: !admitted,
+        });
+    }
     let destination = session.authorize_navigation(identity, url).ok();
     let destination_origin = destination
         .as_ref()
@@ -382,6 +392,17 @@ fn resolve_resource(
         request_class: class,
         native_denied: destination.is_none() || !initiator_allowed || !worker_allowed,
     })
+}
+
+fn local_media_origin(scope: &ResourceScope, address: &str) -> Option<String> {
+    if scope.worker_context || scope.navigation_factory || !matches!(scope.kind, ResourceType::MEDIA | ResourceType::IMAGE) || address.len() > 16_384 || address.chars().any(char::is_control) { return None; }
+    let initiator = scope.initiator.as_ref()?;
+    let url = url::Url::parse(address).ok()?;
+    match url.scheme() {
+        "blob" if url.origin().ascii_serialization() == *initiator => Some(initiator.clone()),
+        "data" if scope.kind == ResourceType::MEDIA && (address.starts_with("data:audio/") || address.starts_with("data:video/")) && address.contains(',') => Some(initiator.clone()),
+        _ => None,
+    }
 }
 
 fn scoped_request_allowed(
@@ -2778,6 +2799,24 @@ mod tests {
             &identity,
             "https://fixture.invalid/"
         ));
+    }
+
+    #[tokio::test]
+    async fn local_media_requires_live_native_origin_and_media_permission_without_enabling_local_scripts() {
+        let (session, identity) = session().await;
+        report_synthetic_ready(&mut session.lock().unwrap(), &identity);
+        let session = session.lock().unwrap();
+        let allowed = allow_classes(&[WebsiteRequestClass::ImageMedia]);
+        let denied = allow_classes(&[WebsiteRequestClass::Script]);
+        for address in ["blob:https://fixture.invalid/asset", "data:audio/wav;base64,AAAA", "data:video/mp4;base64,AAAA"] {
+            let scope = first_party_scope(ResourceType::MEDIA);
+            assert_eq!(resolve_resource(&session, &identity, &allowed, &scope, address).decision, WebsitePermissionDecision::Allow);
+            assert_eq!(resolve_resource(&session, &identity, &denied, &scope, address).decision, WebsitePermissionDecision::Deny);
+            assert_eq!(resolve_resource(&session, &identity, &allowed, &first_party_scope(ResourceType::SCRIPT), address).decision, WebsitePermissionDecision::Deny);
+        }
+        for address in ["blob:https://other.invalid/asset", "blob:null/asset", "data:text/html,<script></script>", "data:application/javascript,alert(1)"] {
+            assert_eq!(resolve_resource(&session, &identity, &allowed, &first_party_scope(ResourceType::MEDIA), address).decision, WebsitePermissionDecision::Deny);
+        }
     }
 
     #[tokio::test]

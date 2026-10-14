@@ -147,6 +147,7 @@ struct Attempt {
     retention: Option<Arc<retention::NativeCookieRetention>>,
     ordinary_close: AtomicBool,
     load_started: Mutex<Option<Instant>>,
+    address_watch: Mutex<sorng_browser_host::native_navigation::FirstAddressWatch>,
     closed: close_ack::CloseSignal,
 }
 
@@ -1126,6 +1127,9 @@ impl BrowserEventSink for Sink {
             }
         }
         let mut finished_load = false;
+        if let Ok(mut watch) = self.attempt.address_watch.lock() {
+            watch.observe(url::Url::parse(&event.display.url).is_ok_and(|url| matches!(url.scheme(), "http" | "https") && url.host_str().is_some() && url.username().is_empty() && url.password().is_none()));
+        }
         if let Ok(mut started) = self.attempt.load_started.lock() {
             if event.state.loading {
                 started.get_or_insert_with(Instant::now);
@@ -1407,6 +1411,7 @@ async fn create_document(
         retention,
         ordinary_close: AtomicBool::new(false),
         load_started: Mutex::new(None),
+        address_watch: Mutex::new(Default::default()),
         closed: close_ack::CloseSignal::default(),
     });
     let abandoned = attempt.clone();
@@ -1657,6 +1662,7 @@ async fn operate(
                                 view_failure(Failure::InitialZoom, ZOOM_FAILED)
                             })?;
                         attempt.navigation_submitted.store(true, Ordering::Release);
+                        attempt.address_watch.lock().unwrap_or_else(|error| error.into_inner()).start(Instant::now());
                         view.host.navigate(id, &url).map_err(|error| {
                             log::error!("Native browser stage=initial-navigation error={error}");
                             view_failure(Failure::InitialNavigation, NAVIGATION_FAILED)
@@ -2280,6 +2286,12 @@ pub(crate) fn tick() {
                 let _ = view.host.poll_session_health();
             }
             popups::poll(view);
+            let address_expired = view.attempt.address_watch.lock().unwrap_or_else(|error| error.into_inner())
+                .take_expired(Instant::now(), Duration::from_secs(view.attempt.preferences.document_ready_timeout_seconds));
+            if address_expired && view.attempt.current() {
+                let _ = view.host.address_timeout(&view.attempt.identity);
+                let _ = view.window.emit("origin-browser-notice", serde_json::json!({"identity": OriginBrowserIdentity::from_native(&view.attempt.identity), "kind": "document-load-timeout"}));
+            }
             if let Some(retention) = &view.attempt.retention {
                 view.checkpoint
                     .tick(&view.host, retention, view.attempt.current());

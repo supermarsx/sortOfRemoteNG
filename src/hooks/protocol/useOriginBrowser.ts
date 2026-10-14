@@ -132,6 +132,7 @@ const restartReasons = [
   "source-changed",
   /** A live tab's private relay ended; a fresh attempt gets a fresh relay. */
   "relay-ended",
+  "proxy-unreachable",
 ] as const;
 /** Why the tab is being replaced in place. Fixed values, safe to display. */
 export type OriginBrowserRestartReason = (typeof restartReasons)[number];
@@ -599,6 +600,7 @@ export function useOriginBrowser(options: UseOriginBrowserOptions) {
   } | null>(null);
   // When each automatic restart for a saved change began, oldest first.
   const savedChanges = useRef<number[]>([]);
+  const proxyRepairOwner = useRef<string | null>(null);
   const presentation = useRef({
     active: false,
     dialogOpen: true,
@@ -937,6 +939,14 @@ export function useOriginBrowser(options: UseOriginBrowserOptions) {
           !sameIdentity(value.identity, attempt.identity)
         )
           return;
+        if (
+          attempt.loadFailed &&
+          !value.loadFailure &&
+          (value.loading ||
+            value.displayUrl === "about:blank" ||
+            value.displayUrl.startsWith("chrome-error:"))
+        )
+          return;
         const snapshot = shellSnapshot(value);
         if (!snapshot) {
           attempt.fail();
@@ -952,6 +962,30 @@ export function useOriginBrowser(options: UseOriginBrowserOptions) {
         }
         if (snapshot.sequence <= attempt.sequence) return;
         attempt.sequence = snapshot.sequence;
+        // One fresh authenticated relay can repair Chromium's stale binding.
+        // A second failure stays on the themed diagnostics until explicit Retry.
+        if (
+          snapshot.phase === "attached" &&
+          snapshot.loadFailure?.code === -130 &&
+          proxyRepairOwner.current !== ownerKey &&
+          !restartCycle.current &&
+          presentation.current.ownerAvailable
+        ) {
+          proxyRepairOwner.current = ownerKey;
+          void closeAttempt(attempt);
+          void beginRestart("proxy-unreachable", true);
+          return;
+        }
+        // Chromium's interim blank/error document cannot erase the failure UI.
+        // A completed real page (or a fresh attempt) can make the child visible.
+        if (
+          attempt.loadFailed &&
+          !snapshot.loadFailure &&
+          (snapshot.loading ||
+            snapshot.displayUrl === "about:blank" ||
+            snapshot.displayUrl.startsWith("chrome-error:"))
+        )
+          return;
         // A fresh attempt repairs two causes: the saved connection changed, or
         // a live tab's private relay ended (native ends it on purpose, so that
         // its successor binds a new port with new credentials). Every other
@@ -1805,6 +1839,7 @@ export function useOriginBrowser(options: UseOriginBrowserOptions) {
       endStartPause();
       relayRun.current = null;
       savedChanges.current = [];
+      proxyRepairOwner.current = null;
       cleanupRetryRequested.current = true;
       setGeneration((value) => value + 1);
     }
@@ -1827,9 +1862,14 @@ export function useOriginBrowser(options: UseOriginBrowserOptions) {
       const safe = restartReasons.includes(reason) ? reason : "requested";
       // The shell acting on a cause that is counted is not a user action;
       // every other reason is something the user asked for.
-      if (safe !== "source-changed" && safe !== "relay-ended") {
+      if (
+        safe !== "source-changed" &&
+        safe !== "relay-ended" &&
+        safe !== "proxy-unreachable"
+      ) {
         relayRun.current = null;
         savedChanges.current = [];
+        proxyRepairOwner.current = null;
       }
       return beginRestart(safe, false, beforeCreate);
     },

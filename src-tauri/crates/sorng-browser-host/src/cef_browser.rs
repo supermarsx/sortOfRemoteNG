@@ -2623,6 +2623,19 @@ impl<'a> CefBrowserHost<'a> {
         Ok(())
     }
 
+    /// A current attached view never produced its first website address.
+    pub fn address_timeout(&self, identity: &BrowserIdentity) -> Result<(), BrowserError> {
+        let browser = self.check(identity)?;
+        self.shared.automation.lock().unwrap_or_else(|error| error.into_inner()).navigating = true;
+        self.shared.clear_automation();
+        self.shared.cancel_certificate(None);
+        browser.stop_load();
+        self.visibility(identity, false)?;
+        self.shared.navigation_status(NativeNavigationStatus::LoadError { code: -118, main_frame: true });
+        self.shared.update(Some(&browser), |page| { page.load_failure = crate::native_navigation::classify_load_error(-118, true); page.loading = false; });
+        Ok(())
+    }
+
     fn check(&self, identity: &BrowserIdentity) -> Result<Browser, BrowserError> {
         ui_thread()?;
         if identity != self.identity() {
@@ -2687,6 +2700,7 @@ impl<'a> CefBrowserHost<'a> {
             return Err(ControlError::NavigationUnavailable.into());
         }
         let browser = self.authorize(identity, url)?;
+        if let Some(context) = &self._context { context.reassert_browser_proxy(&browser)?; }
         let frame = browser.main_frame().ok_or(BrowserError::StateUnavailable)?;
         self.shared
             .navigation_status(NativeNavigationStatus::Requested);
@@ -2721,7 +2735,9 @@ impl<'a> CefBrowserHost<'a> {
     }
 
     pub fn reload(&self, identity: &BrowserIdentity) -> Result<(), BrowserError> {
-        self.authorize_current(identity)?.reload();
+        let browser = self.authorize_current(identity)?;
+        if let Some(context) = &self._context { context.reassert_browser_proxy(&browser)?; }
+        browser.reload();
         Ok(())
     }
 
@@ -3058,12 +3074,13 @@ wrap_request_handler! {
                     .cancel_frame(&CefString::from(&frame.identifier()).to_string());
             }
             let main_frame = frame.as_ref().is_some_and(|frame| frame.is_main() == 1);
+            let website_navigation = request.as_ref().is_some_and(|request| browser_origin(&CefString::from(&request.url()).to_string()).is_some());
             if main_frame {
                 self.shared.automation.lock().unwrap_or_else(|error| error.into_inner()).navigating = true;
                 self.shared.cancel_certificate(None); self.shared.clear_automation();
             }
             let decision = self.inner.on_before_browse(browser.as_deref_mut(), frame, request, user_gesture, is_redirect);
-            if main_frame && decision == 0 {
+            if main_frame && decision == 0 && website_navigation {
                 self.shared.update(browser.as_deref(), |page| page.load_failure = None);
             }
             if main_frame && decision != 0 {

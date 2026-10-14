@@ -227,6 +227,13 @@ fn verify_native_browser_binding(
     Ok(())
 }
 
+fn reassert_native_browser_proxy(browser: &Browser, retained: &mut RequestContext, endpoint: std::net::SocketAddr) -> Result<(), ContextError> {
+    let actual = browser.host().and_then(|host| host.request_context()).ok_or(ContextError::SharedContext)?;
+    if actual.is_same(Some(retained)) != 1 || !CefPreferences(&actual).is_private() { return Err(ContextError::SharedContext); }
+    proxy_config::install(&mut CefPreferences(&actual), endpoint)?;
+    verify_native_browser_binding(browser, retained, endpoint)
+}
+
 impl ProxyPreferences for CefPreferences<'_> {
     fn is_private(&self) -> bool {
         self.0.is_global() == 0 && CefString::from(&self.0.cache_path()).to_string().is_empty()
@@ -701,6 +708,21 @@ impl PrivateRequestContext {
         }
         self.preparation
             .verify_browser_binding(browser, &mut self.context.clone())
+    }
+
+    /// Reassert the attempt's exact retained relay before a new navigation.
+    /// A freshly created Chromium context can inherit the global deny proxy;
+    /// rewriting the private preference also notifies its Network Service.
+    pub(crate) fn reassert_browser_proxy(&self, browser: &Browser) -> Result<(), ContextError> {
+        if currently_on(ThreadId::UI) != 1 { return Err(ContextError::WrongThread); }
+        if !self.browser_claimed || self.status() != PreparationStatus::ProxyConfigured { return Err(ContextError::SessionUnavailable); }
+        let endpoint = {
+            let session = lock_session(&self.preparation.session, &self.preparation.identity)?;
+            if session.policy().identity() != &self.preparation.identity { return Err(ContextError::SessionUnavailable); }
+            session.proxy_endpoint()
+        };
+        reassert_native_browser_proxy(browser, &mut self.context.clone(), endpoint)?;
+        self.verify_browser_binding(browser)
     }
 }
 

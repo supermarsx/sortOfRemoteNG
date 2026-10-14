@@ -492,12 +492,29 @@ describe("real-origin connection-tab integration", () => {
     );
     expect(f.context.dispatch).toHaveBeenLastCalledWith({
       type: "UPDATE_SESSION",
-      payload: { id: session.id, status: "connected", errorMessage: undefined },
+      payload: {
+        id: session.id,
+        status: "error",
+        errorMessage: expect.stringContaining("DNS"),
+      },
     });
     act(() =>
       f.snapshotListener?.({
         payload: snapshot("attempt-1", {
           sequence: 3,
+          loading: false,
+          displayUrl: "https://fixture.invalid/recovered",
+        }),
+      }),
+    );
+    expect(f.context.dispatch).toHaveBeenLastCalledWith({
+      type: "UPDATE_SESSION",
+      payload: { id: session.id, status: "connected", errorMessage: undefined },
+    });
+    act(() =>
+      f.snapshotListener?.({
+        payload: snapshot("attempt-1", {
+          sequence: 4,
           phase: "failed",
           failureReason: "renderer",
         }),
@@ -515,7 +532,7 @@ describe("real-origin connection-tab integration", () => {
     );
     f.context.dispatch.mockClear();
     act(() =>
-      f.snapshotListener?.({ payload: snapshot("attempt-1", { sequence: 4 }) }),
+      f.snapshotListener?.({ payload: snapshot("attempt-1", { sequence: 5 }) }),
     );
     expect(f.context.dispatch).not.toHaveBeenCalled();
   });

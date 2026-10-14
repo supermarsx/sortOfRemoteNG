@@ -109,9 +109,18 @@ fn context(state: ContextState) -> RequestContext {
             .map(Into::into)
             .unwrap_or_default()
     }
+    extern "C" fn can_set(_: *mut _cef_preference_manager_t, _: *const cef_string_t) -> i32 { 1 }
+    extern "C" fn set_preference(this: *mut _cef_preference_manager_t, _: *const cef_string_t, value: *mut _cef_value_t, _: *mut cef_string_t) -> i32 {
+        if value.is_null() { return 0; }
+        let supplied: Value = value.wrap_result();
+        let stored = RcImpl::<_cef_request_context_t, ContextState>::get(this.cast()).interface.preference.as_ref();
+        stored.and_then(|stored| supplied.dictionary().map(|mut dict| stored.set_dictionary(Some(&mut dict)))).unwrap_or(0)
+    }
     let raw = _cef_request_context_t {
         base: _cef_preference_manager_t {
             get_preference: Some(preference),
+            can_set_preference: Some(can_set),
+            set_preference: Some(set_preference),
             // SAFETY: Unused CEF vtable entries are nullable. RcImpl installs
             // the common base reference-counting callbacks before wrapping.
             ..unsafe { std::mem::zeroed() }
@@ -244,6 +253,22 @@ fn browser_binding_reads_returned_context_proxy_not_the_factory_argument() {
             Err(ContextError::ProxyMismatch)
         );
     }
+}
+
+#[test]
+fn reassertion_repairs_deny_or_stale_proxy_only_in_the_exact_owned_private_context() {
+    select_api();
+    let endpoint = ENDPOINT.parse().unwrap();
+    let mut retained = private_context(1, Some(expected_proxy(endpoint)));
+    for server in ["http://sorng-unowned-context.invalid:9", "http://127.0.0.1:18081"] {
+        let actual = private_context(1, Some(proxy("fixed_servers", server, "<-loopback>")));
+        let browser = browser(Some(host(Some(actual))));
+        assert_eq!(verify_native_browser_binding(&browser, &mut retained, endpoint), Err(ContextError::ProxyMismatch));
+        assert_eq!(reassert_native_browser_proxy(&browser, &mut retained, endpoint), Ok(()));
+        assert_eq!(verify_native_browser_binding(&browser, &mut retained, endpoint), Ok(()));
+    }
+    let other = private_context(2, Some(proxy("fixed_servers", "http://127.0.0.1:18081", "<-loopback>")));
+    assert_eq!(reassert_native_browser_proxy(&browser(Some(host(Some(other)))), &mut retained, endpoint), Err(ContextError::SharedContext));
 }
 
 #[test]

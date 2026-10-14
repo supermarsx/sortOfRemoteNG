@@ -1,6 +1,8 @@
 "use client";
 
 import { useLayoutEffect, useRef, useState } from "react";
+import { getInvoke } from "../../../utils/tauri/invoke";
+import { parseNativeBrowserDiagnostics } from "../../../types/network/nativeBrowserDiagnostics";
 import { Bug, Copy, Info, Microscope, ShieldAlert } from "lucide-react";
 import { APP_VERSION } from "../../../generated/version";
 import type { OriginBrowserState } from "../../../hooks/protocol/useOriginBrowser";
@@ -29,6 +31,7 @@ export interface OriginBrowserFailureDiagnosticsProps {
   /** Recheck the live owner before actions that require database access. */
   assertOwner: () => void;
   onOpenDevTools?: () => Promise<boolean>;
+  onRestartProxy?: () => Promise<boolean>;
   /** The shell opens the appropriate editor without changing saved settings. */
   onRecover?: (action: BrowserRecoveryAction) => void;
   recoveryAllowed?: boolean;
@@ -285,6 +288,7 @@ export function OriginBrowserFailureDiagnostics({
   ownerAvailable,
   assertOwner,
   onOpenDevTools,
+  onRestartProxy,
   onRecover,
   recoveryAllowed = false,
 }: OriginBrowserFailureDiagnosticsProps) {
@@ -307,6 +311,35 @@ export function OriginBrowserFailureDiagnostics({
     snapshot?.failureReason,
   );
   const nativeAvailable = snapshot?.phase === "attached";
+  const [relayHealth, setRelayHealth] = useState("Not observed");
+  useLayoutEffect(() => {
+    let current = true;
+    setRelayHealth("Not observed");
+    if (active && ownerAvailable && snapshot) {
+      void (async () => {
+        const invoke = await getInvoke();
+        if (!invoke || !current) return;
+        assertOwner();
+        const data = parseNativeBrowserDiagnostics(
+          await invoke("origin_browser_session_diagnostics"),
+        );
+        if (!current) return;
+        assertOwner();
+        const relay = data.sessions.find(
+          (item) => item.identity.attemptId === snapshot.identity.attemptId,
+        )?.proxy;
+        if (relay)
+          setRelayHealth(
+            `${relay.state}; accepted connections: ${relay.acceptedConnections}; upstream failures: ${relay.upstreamFailures}`,
+          );
+      })().catch(() => {
+        if (current) setRelayHealth("Unavailable");
+      });
+    }
+    return () => {
+      current = false;
+    };
+  }, [active, ownerAvailable, snapshot, assertOwner]);
   // Identity is used only to fence asynchronous UI feedback; it is never copied.
   const scope = JSON.stringify([
     snapshot?.identity.ownerDatabaseId,
@@ -330,6 +363,7 @@ export function OriginBrowserFailureDiagnostics({
     assertOwner,
   });
   const facts: [string, string][] = [
+    ["Private proxy health", relayHealth],
     ["Browser engine", "Native CEF"],
     ["App version", APP_VERSION],
     ["Website origin", target],
@@ -603,6 +637,46 @@ export function OriginBrowserFailureDiagnostics({
           ))}
         </ul>
         <div className="mt-4 flex flex-wrap gap-2">
+          {onRestartProxy && (
+            <button
+              type="button"
+              className="sor-btn sor-btn-secondary"
+              disabled={!active || !ownerAvailable || busy !== null}
+              onClick={() => {
+                if (
+                  pending.current ||
+                  !mounted.current ||
+                  !active ||
+                  !ownerAvailable
+                )
+                  return;
+                try {
+                  assertOwner();
+                } catch {
+                  return;
+                }
+                pending.current = true;
+                setBusy("devtools");
+                const generation = epoch.current;
+                void Promise.resolve()
+                  .then(() => onRestartProxy())
+                  .catch(() => false)
+                  .then((success) => {
+                    if (!mounted.current || generation !== epoch.current)
+                      return;
+                    setFeedback(
+                      success
+                        ? "This tab is reconnecting with a new internal proxy."
+                        : "The internal proxy could not be restarted. Check database access and retry.",
+                    );
+                    pending.current = false;
+                    setBusy(null);
+                  });
+              }}
+            >
+              Restart internal proxy
+            </button>
+          )}
           <button
             type="button"
             className="sor-btn sor-btn-secondary"

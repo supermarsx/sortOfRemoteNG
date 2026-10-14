@@ -44,6 +44,22 @@ pub struct LoadFailure {
     pub category: LoadFailureCategory,
 }
 
+/// Tracks the first real address after attachment, independently of loading
+/// callbacks (which can stop while Chromium still exposes about:blank).
+#[derive(Default)]
+pub struct FirstAddressWatch { started: Option<std::time::Instant> }
+impl FirstAddressWatch {
+    pub fn start(&mut self, now: std::time::Instant) { self.started.get_or_insert(now); }
+    /// The owner passes its native HTTP(S) address admission result. Keeping
+    /// this timer std-only also permits deterministic engine-free fixtures.
+    pub fn observe(&mut self, website_address: bool) {
+        if website_address { self.started = None; }
+    }
+    pub fn take_expired(&mut self, now: std::time::Instant, limit: std::time::Duration) -> bool {
+        if self.started.is_some_and(|start| now.checked_duration_since(start).is_some_and(|elapsed| elapsed >= limit)) { self.started = None; true } else { false }
+    }
+}
+
 /// CEF net_error_list.h numeric values. Cancellations, downloads and superseded
 /// navigations use ABORTED; IO_PENDING is not a completed failure. A subframe
 /// error must never replace the main document's state. No result retries a
@@ -76,6 +92,21 @@ pub fn classify_load_error(code: i32, main_frame: bool) -> Option<LoadFailure> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn first_address_wait_is_bounded_and_blank_observations_cannot_restart_or_clear_it() {
+        use std::time::{Duration, Instant};
+        let start = Instant::now();
+        let mut watch = FirstAddressWatch::default();
+        watch.start(start);
+        watch.observe(false); watch.observe(false); watch.observe(false);
+        watch.start(start + Duration::from_secs(25));
+        assert!(!watch.take_expired(start + Duration::from_secs(29), Duration::from_secs(30)));
+        assert!(watch.take_expired(start + Duration::from_secs(30), Duration::from_secs(30)));
+        assert!(!watch.take_expired(start + Duration::from_secs(31), Duration::from_secs(30)));
+        watch.start(start);
+        watch.observe(true);
+        assert!(!watch.take_expired(start + Duration::from_secs(31), Duration::from_secs(30)));
+    }
 
     #[test]
     fn cancelled_download_and_subframe_callbacks_do_not_fail_the_tab() {

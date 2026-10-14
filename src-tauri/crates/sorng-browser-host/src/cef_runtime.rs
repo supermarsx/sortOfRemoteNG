@@ -265,6 +265,12 @@ wrap_app! {
                 // Set before profile/renderer creation. Chromium propagates
                 // this browser-process preference to its renderer command line.
                 if process_type.is_none_or(|process| process.to_string().is_empty()) {
+                    if let Some(path) = std::env::var_os("SORNG_CEF_NETLOG").filter(|path| std::path::Path::new(path).is_absolute()) {
+                        if let Some(path) = path.to_str().filter(|path| !path.chars().any(char::is_control)) {
+                            command_line.append_switch_with_value(Some(&CefString::from("log-net-log")), Some(&CefString::from(path)));
+                            command_line.append_switch_with_value(Some(&CefString::from("net-log-capture-mode")), Some(&CefString::from("Default")));
+                        }
+                    }
                     command_line.append_switch(Some(&CefString::from(
                         startup_features::DISABLE_PRINT_PREVIEW,
                     )));

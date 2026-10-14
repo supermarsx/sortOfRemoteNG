@@ -46,6 +46,16 @@ wrap_load_handler! {
                 self.shared.automation.lock().unwrap_or_else(|error| error.into_inner()).navigating = true;
                 self.shared.clear_automation();
                 self.shared.cancel_certificate(None);
+                // Hide synchronously on the CEF callback thread, before the
+                // shell event is delivered. Chromium's provisional error/blank
+                // surface cannot paint over the shell's themed diagnostics.
+                if let Some(host) = browser.as_ref().and_then(|browser| browser.host()) {
+                    host.set_focus(0);
+                    let _ = native_surface::visible(host.window_handle(), false);
+                }
+                if let Ok(mut state) = self.shared.state.lock() {
+                    let _ = state.control.hide(&self.shared.identity);
+                }
                 self.shared.update(browser.as_deref(), |page| {
                     page.load_failure = Some(failure);
                     page.loading = false;

@@ -369,12 +369,21 @@ describe("origin browser attempt controller", () => {
     expect(f.result.current.connectionStatus).toBe("error");
     expect(f.result.current.state.error).toContain("DNS");
     f.emit(snapshot({ sequence: 2, loading: true }));
+    expect(f.result.current.connectionStatus).toBe("error");
+    expect(f.result.current.state.error).toContain("DNS");
+    f.emit(
+      snapshot({
+        sequence: 3,
+        loading: false,
+        displayUrl: "https://fixture.invalid/recovered",
+      }),
+    );
     expect(f.result.current.connectionStatus).toBe("connected");
     f.emit(
-      snapshot({ sequence: 3, phase: "failed", failureReason: "renderer" }),
+      snapshot({ sequence: 4, phase: "failed", failureReason: "renderer" }),
     );
     expect(f.result.current.connectionStatus).toBe("error");
-    f.emit(snapshot({ sequence: 4 }));
+    f.emit(snapshot({ sequence: 5 }));
     expect(f.result.current.connectionStatus).toBe("error");
   });
 
@@ -1701,6 +1710,15 @@ describe("origin browser attempt controller", () => {
     ).toBe(true);
     expect(f.transport.create).toHaveBeenCalledOnce();
     f.emit(snapshot({ sequence: 3, loading: true }));
+    expect(f.result.current.state.phase).toBe("error");
+    expect(f.result.current.state.error).toContain("network changed");
+    f.emit(
+      snapshot({
+        sequence: 4,
+        loading: false,
+        displayUrl: "https://fixture.invalid/next",
+      }),
+    );
     expect(f.result.current.state.phase).toBe("attached");
     expect(f.result.current.state.error).toBeNull();
     expect(f.transport.control).toHaveBeenLastCalledWith({
@@ -1708,7 +1726,7 @@ describe("origin browser attempt controller", () => {
       action: expect.objectContaining({ kind: "presentation", visible: true }),
     });
     f.emit(
-      snapshot({ sequence: 4, phase: "failed", failureReason: "renderer" }),
+      snapshot({ sequence: 5, phase: "failed", failureReason: "renderer" }),
     );
     expect(f.transport.close).toHaveBeenCalledExactlyOnceWith({ identity });
   });

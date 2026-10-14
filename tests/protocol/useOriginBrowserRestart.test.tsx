@@ -2524,3 +2524,39 @@ describe("one retry for a rejected presentation or control IPC (1.7)", () => {
     expect(t.shell.browser.state.phase).toBe("attached");
   });
 });
+describe("a Chromium proxy binding failure", () => {
+  const failed = (serial: number, sequence = 1, code = -130) =>
+    snapshot(serial, { sequence, loadFailure: { code, category: "proxy" } });
+  it("replaces the authenticated relay once and keeps a repeated failure visible", async () => {
+    const t = await attached();
+    t.emit(failed(1));
+    expect(t.shell.browser.state.restart).toBe("proxy-unreachable");
+    await reattached(t, 2);
+    t.emit(failed(2));
+    await waitFor(() => expect(t.shell.browser.state.phase).toBe("error"));
+    expect(t.transport.create).toHaveBeenCalledTimes(2);
+    expect(t.shell.browser.state.snapshot?.loadFailure?.code).toBe(-130);
+    act(() => t.shell.browser.reconnect());
+    await reattached(t, 3);
+    t.emit(failed(3));
+    await reattached(t, 4);
+  });
+  it("does not repair other proxy errors or expose an interim blank/error surface", async () => {
+    const t = await attached();
+    t.emit(failed(1, 1, -131));
+    await waitFor(() => expect(t.shell.browser.state.phase).toBe("error"));
+    t.emit(
+      snapshot(1, { sequence: 2, displayUrl: "about:blank", loading: true }),
+    );
+    expect(t.shell.browser.state.phase).toBe("error");
+    expect(t.transport.create).toHaveBeenCalledOnce();
+    t.emit(
+      snapshot(1, {
+        sequence: 3,
+        displayUrl: "https://fixture.invalid/ready",
+        loading: false,
+      }),
+    );
+    await waitFor(() => expect(t.shell.browser.state.phase).toBe("attached"));
+  });
+});

@@ -922,3 +922,44 @@ describe("native browser failure diagnostics", () => {
     assertNoSecrets(screen.getByRole("status").textContent ?? "");
   });
 });
+
+describe("internal proxy recovery action", () => {
+  it("rechecks owner access and runs one fresh-proxy restart per click sequence", async () => {
+    const p = props();
+    const task = deferred<boolean>();
+    p.onRestartProxy = vi.fn(() => task.promise);
+    render(<OriginBrowserFailureDiagnostics {...p} />);
+    const button = screen.getByRole("button", {
+      name: "Restart internal proxy",
+    });
+    accessible = false;
+    fireEvent.click(button);
+    expect(p.onRestartProxy).not.toHaveBeenCalled();
+    accessible = true;
+    fireEvent.click(button);
+    fireEvent.click(button);
+    await waitFor(() => expect(p.onRestartProxy).toHaveBeenCalledOnce());
+    await act(async () => {
+      task.resolve(true);
+      await task.promise;
+    });
+    expect(screen.getByRole("status")).toHaveTextContent("new internal proxy");
+    assertNoSecrets(screen.getByRole("status").textContent ?? "");
+  });
+  it("redacts a synchronous restart failure", async () => {
+    const p = props();
+    p.onRestartProxy = vi.fn(() => {
+      throw new Error("OWNER_SECRET");
+    });
+    render(<OriginBrowserFailureDiagnostics {...p} />);
+    fireEvent.click(
+      screen.getByRole("button", { name: "Restart internal proxy" }),
+    );
+    await waitFor(() =>
+      expect(screen.getByRole("status")).toHaveTextContent(
+        "could not be restarted",
+      ),
+    );
+    assertNoSecrets(screen.getByRole("status").textContent ?? "");
+  });
+});
