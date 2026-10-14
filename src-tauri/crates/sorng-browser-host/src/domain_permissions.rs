@@ -12,6 +12,10 @@ use std::marker::PhantomData;
 use std::sync::LazyLock;
 use url::Url;
 
+#[path = "domain_resource_defaults.rs"]
+mod resource_defaults;
+pub use resource_defaults::WebsiteResourceDomainDefault;
+
 pub const MAX_WEBSITE_PERMISSION_WEBSITES: usize = 64;
 pub const MAX_WEBSITE_PERMISSION_DESTINATIONS: usize = 32;
 pub const MAX_WEBSITE_PERMISSION_TOTAL_DESTINATIONS: usize = 256;
@@ -342,6 +346,8 @@ pub struct WebsitePermissionQuery<'a> {
 pub struct WebsiteNetworkPolicy {
     pub source_origin: String,
     pub destination_defaults: BTreeMap<String, WebsitePermissionApplicationDefaults>,
+    /// Native application resources only; never a navigation or login grant.
+    pub resource_domain_defaults: Vec<WebsiteResourceDomainDefault>,
     pub allow_all_requests: bool,
     pub allow_all_scripts: bool,
     pub https_only: bool,
@@ -407,6 +413,7 @@ impl WebsitePermissionEngine {
     ) -> Result<Self, DomainPermissionError> {
         if self.temporary_http_source.is_some()
             || policy.destination_defaults.len() > MAX_WEBSITE_PERMISSION_DESTINATIONS
+            || policy.resource_domain_defaults.len() > MAX_WEBSITE_PERMISSION_DESTINATIONS
         {
             return Err(DomainPermissionError);
         }
@@ -419,6 +426,13 @@ impl WebsitePermissionEngine {
             }
         }
         policy.destination_defaults = destinations;
+        let mut resource_domains = HashSet::new();
+        for rule in &policy.resource_domain_defaults {
+            rule.validate()?;
+            if !resource_domains.insert(&rule.domain) {
+                return Err(DomainPermissionError);
+            }
+        }
         self.network_policy = Some(policy);
         Ok(self)
     }
@@ -486,6 +500,7 @@ impl WebsitePermissionEngine {
                     && matches!(class, WebsiteRequestClass::Navigation | WebsiteRequestClass::Frame)
                 || !policy.destination_defaults.contains_key(&destination)
                     && (!broad_class || !broad_request_destination(&destination))
+                    && !policy.resource_domain_defaults.iter().any(|rule| rule.permits(&destination, class))
             {
                 return EffectiveWebsitePermission::denied(NativeConstraint);
             }
@@ -528,6 +543,12 @@ impl WebsitePermissionEngine {
             {
                 return EffectiveWebsitePermission {
                     decision: *decision,
+                    source: ApplicationDefault,
+                };
+            }
+            if policy.resource_domain_defaults.iter().any(|rule| rule.permits(&destination, class)) {
+                return EffectiveWebsitePermission {
+                    decision: WebsitePermissionDecision::Allow,
                     source: ApplicationDefault,
                 };
             }
@@ -585,6 +606,10 @@ pub fn resolve_website_request_permission(
 #[cfg(test)]
 #[path = "domain_network_policy_tests.rs"]
 mod network_policy_tests;
+
+#[cfg(test)]
+#[path = "domain_resource_defaults_tests.rs"]
+mod resource_default_tests;
 
 #[cfg(test)]
 mod tests {

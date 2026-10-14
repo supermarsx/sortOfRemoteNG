@@ -1828,6 +1828,7 @@ fn saved_permissions_inner(
     let network = WebsiteNetworkPolicy {
         source_origin: origin.clone(),
         destination_defaults: candidates.clone(),
+        resource_domain_defaults: Vec::new(),
         allow_all_requests: option("allowAllRequests"),
         // Legacy normalization stores false even without an explicit choice.
         // It means no extra connection opt-in, not revocation of an origin-bound
