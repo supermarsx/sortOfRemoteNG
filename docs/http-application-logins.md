@@ -21,6 +21,39 @@ API tokens, agent credentials, remote desktop passwords, and native integration
 sessions are not interchangeable with website authentication. A failed login is
 not automatically retried. Custom forms can require reviewed selector overrides.
 
+Reviewed multi-step sign-in is available in the native browser. Each credential
+step is restricted to the saved connection or a reviewed sign-in origin, path,
+and frame. The legacy browser refuses these multi-step profiles rather than
+guessing another form. **Manual browsing** retains saved credentials for the
+**Type username** and **Type password** actions without sending them automatically.
+Escape during assisted typing cancels it and clears the values that assistance
+entered.
+
+The right side of the status bar shows the active native tab's login stage,
+elapsed time and concurrent login count. Open it for details. **Login submitted**
+reports submission, not confirmation that the website accepted the account.
+Cloudflare security pages pause credential delivery for a bounded wait. An
+incompatible-network page may be refreshed once; CAPTCHA and approval remain
+interactive.
+
+For **Drone CI**, save the Git provider and its HTTPS sign-in origin on the Drone
+connection. Credentials go only to that reviewed provider; the Gogs flow uses
+Drone's own reviewed form. Gitea authenticator codes require explicit setup, and
+automatic application consent also requires the saved OAuth client ID and the
+exact Drone callback. Unreviewed providers remain interactive.
+
+**TP-Link EAP** covers the reviewed standalone EAP225 v3 login widget and uses
+native key input so the website performs its own password hashing. It does not
+claim Omada controller or first-time setup support. **Time4VPS** opens its observed
+Client Area address but remains manual until its login and two-factor forms can
+be reviewed. Public form reads were blocked or showed maintenance, and no
+authenticated site login is claimed by these fixture checks.
+
+When a private proxy fails, the browser can replace the attempt once and then
+shows the app's diagnostics. **Restart internal proxy** rebuilds that tab's
+owned relay and browser context. The diagnostic copy includes fixed failure and
+proxy-health facts, with credentials and private URL components removed.
+
 | Application                 | Reviewed password form                                                     | Automatic authenticator challenge                                                                                                            |
 | --------------------------- | -------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
 | Tactical RMM                | Dashboard `/login`, reviewed against web v0.101.64                         | Separate authenticator dialog at `/login`                                                                                                    |
@@ -313,14 +346,14 @@ the tests capture the specific controls reviewed, not their entire implementatio
 
 ## Git, CI, hosted business login and Microsoft portals
 
-| Application                       | Password stage                                                                           | Second factor and compatibility                                                                                                  |
-| --------------------------------- | ---------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
-| GitHub                            | Reviewed public `github.com/login` form; preset pins `https://github.com:443`            | Interactive TOTP, SMS, GitHub Mobile, SSO or passkey; GitHub Enterprise requires a separate custom profile                       |
-| Gitea                             | Reviewed v1.27.3 `/user/login` form                                                      | Optional linked TOTP at `/user/two_factor`; scratch codes, enrollment, subpath/custom forms and external providers remain manual |
-| Brevo                             | Reviewed public `login.brevo.com` email/password controls; preset pins that HTTPS origin | Authenticator/SMS and Google/Apple/SAML remain manual; separate application origins may require the system browser               |
-| Drone CI                          | Interactive configured Git-provider OAuth                                                | No universal Drone password form; provider MFA and cross-origin callbacks may need the system browser                            |
-| Exchange Admin Center / ECP       | Manual by default; opt-in reviewed OWA forms login for on-premises `/ecp/`                 | Windows authentication, ADFS, MFA and customized forms remain interactive; timeout advises manual sign-in without inferring MFA. Not Exchange Online. |
-| Windows RemoteApp / RD Web Access | Interactive `/RDWeb/` entry                                                              | Legacy portal, HTML5 client, gateway and Entra preauthentication differ; this does not configure or launch a native RemoteApp    |
+| Application                       | Password stage                                                                           | Second factor and compatibility                                                                                                                       |
+| --------------------------------- | ---------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
+| GitHub                            | Reviewed public `github.com/login` form; preset pins `https://github.com:443`            | Interactive TOTP, SMS, GitHub Mobile, SSO or passkey; GitHub Enterprise requires a separate custom profile                                            |
+| Gitea                             | Reviewed v1.27.3 `/user/login` form                                                      | Optional linked TOTP at `/user/two_factor`; scratch codes, enrollment, subpath/custom forms and external providers remain manual                      |
+| Brevo                             | Reviewed public `login.brevo.com` email/password controls; preset pins that HTTPS origin | Authenticator/SMS and Google/Apple/SAML remain manual; separate application origins may require the system browser                                    |
+| Drone CI                          | Interactive configured Git-provider OAuth                                                | No universal Drone password form; provider MFA and cross-origin callbacks may need the system browser                                                 |
+| Exchange Admin Center / ECP       | Manual by default; opt-in reviewed OWA forms login for on-premises `/ecp/`               | Windows authentication, ADFS, MFA and customized forms remain interactive; timeout advises manual sign-in without inferring MFA. Not Exchange Online. |
+| Windows RemoteApp / RD Web Access | Interactive `/RDWeb/` entry                                                              | Legacy portal, HTML5 client, gateway and Entra preauthentication differ; this does not configure or launch a native RemoteApp                         |
 
 GitHub and Brevo selection does not overwrite the current address. Their explicit
 **Use login address** action sets the reviewed hosted authority without changing
