@@ -1,5 +1,11 @@
 import React, { useContext, useEffect, useMemo, useState } from "react";
-import { Copy, NotebookText, RefreshCw, Search } from "lucide-react";
+import {
+  ChevronRight,
+  Copy,
+  NotebookText,
+  RefreshCw,
+  Search,
+} from "lucide-react";
 import { useApplicationLogs } from "../../hooks/monitoring/useApplicationLogs";
 import type { ApplicationLogSource } from "../../types/monitoring/applicationLogs";
 import { ConnectionContext } from "../../contexts/ConnectionContextTypes";
@@ -345,45 +351,72 @@ export function ApplicationLogTimelineView({
             tabIndex={0}
             role="region"
             aria-label="Log content"
-            className="min-h-0 min-w-0 flex-1 overflow-auto rounded border border-[var(--color-border)] bg-[var(--color-background)] text-[var(--color-text)]"
+            className="@container min-h-0 min-w-0 flex-1 overflow-auto rounded border border-[var(--color-border)] bg-[var(--color-background)] text-[var(--color-text)]"
           >
             {displayedRows.length ? (
               <ol className="divide-y divide-[var(--color-border)]">
                 {displayedRows.map((row) => (
-                  <li key={row.id} className="space-y-1 p-3">
-                    <div className="flex flex-wrap gap-x-3 text-xs text-[var(--color-textMuted)]">
-                      <span>
-                        {row.timestampMs === null
-                          ? `Recorded order ${row.sequence + 1} (no wall timestamp)`
-                          : new Date(row.timestampMs).toLocaleString()}
-                      </span>
-                      <span>{logCategories[row.category]}</span>
-                      <span
-                        className={
-                          row.level === "ERROR"
-                            ? "rounded bg-error/10 px-1.5 text-error"
-                            : row.level === "WARN"
-                              ? "rounded bg-warning/10 px-1.5 text-warning"
-                              : "rounded bg-[var(--color-surface)] px-1.5"
-                        }
-                      >
-                        {row.level}
-                      </span>
-                    </div>
-                    <p className="select-text whitespace-pre-wrap break-words text-sm">
-                      {row.message}
-                    </p>
-                    {row.details && (
-                      <p className="select-text whitespace-pre-wrap break-words font-mono text-xs text-[var(--color-textSecondary)]">
-                        {row.details}
-                      </p>
-                    )}
-                    <p className="break-all text-xs text-[var(--color-textMuted)]">
-                      {row.source === "browser"
-                        ? "Browser journal"
-                        : "Application file"}{" "}
-                      · {row.file}
-                    </p>
+                  <li key={row.id}>
+                    <details className="group">
+                      <summary className="flex min-w-0 cursor-pointer list-none items-center gap-2 whitespace-nowrap px-3 py-1.5 text-xs hover:bg-[var(--color-surfaceHover)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-primary [&::-webkit-details-marker]:hidden">
+                        <ChevronRight
+                          size={12}
+                          aria-hidden="true"
+                          className="shrink-0 transition-transform group-open:rotate-90"
+                        />
+                        <span
+                          className="w-24 min-w-0 shrink truncate tabular-nums text-[var(--color-textMuted)] @2xl:w-40"
+                          title={
+                            row.timestampMs === null
+                              ? `Recorded order ${row.sequence + 1} (no wall timestamp)`
+                              : new Date(row.timestampMs).toLocaleString()
+                          }
+                        >
+                          {row.timestampMs === null
+                            ? `Recorded order ${row.sequence + 1}`
+                            : new Date(row.timestampMs).toLocaleString()}
+                        </span>
+                        <span
+                          className="hidden w-36 shrink-0 truncate text-[var(--color-textMuted)] @2xl:block"
+                          title={logCategories[row.category]}
+                        >
+                          {logCategories[row.category]}
+                        </span>
+                        <span
+                          className={`w-12 shrink-0 rounded px-1.5 text-center ${row.level === "ERROR" ? "bg-error/10 text-error" : row.level === "WARN" ? "bg-warning/10 text-warning" : "bg-[var(--color-surface)] text-[var(--color-textMuted)]"}`}
+                        >
+                          {row.level}
+                        </span>
+                        <span
+                          className="min-w-0 flex-1 truncate"
+                          title={row.message}
+                        >
+                          {row.message.replace(/\s+/g, " ")}
+                        </span>
+                      </summary>
+                      <div className="space-y-2 border-t border-[var(--color-border)] bg-[var(--color-surface)] px-4 py-3">
+                        <p className="select-text text-xs text-[var(--color-textMuted)]">
+                          {row.timestampMs === null
+                            ? `Recorded order ${row.sequence + 1} (no wall timestamp)`
+                            : new Date(row.timestampMs).toLocaleString()}{" "}
+                          · {logCategories[row.category]} · {row.level}
+                        </p>
+                        <p className="select-text whitespace-pre-wrap break-words text-sm">
+                          {row.message}
+                        </p>
+                        {row.details && (
+                          <p className="select-text whitespace-pre-wrap break-words font-mono text-xs text-[var(--color-textSecondary)]">
+                            {row.details}
+                          </p>
+                        )}
+                        <p className="break-all text-xs text-[var(--color-textMuted)]">
+                          {row.source === "browser"
+                            ? "Browser journal"
+                            : "Application file"}{" "}
+                          · {row.file}
+                        </p>
+                      </div>
+                    </details>
                   </li>
                 ))}
               </ol>
