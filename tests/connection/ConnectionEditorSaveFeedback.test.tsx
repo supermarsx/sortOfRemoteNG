@@ -26,6 +26,7 @@ vi.mock("../../src/utils/connection/databaseManager", () => {
     registerBeforeDatabaseTransition: () => () => {},
     captureCurrentDatabaseDataTarget: () => ({
       databaseId: "fixture-db",
+      assertAccessible: () => {},
       load: fixture.load,
       save: fixture.save,
     }),
@@ -215,3 +216,195 @@ describe("live connection editor save feedback", () => {
     expect(onClose).not.toHaveBeenCalled();
   });
 });
+
+describe("pending bookmark connection save", () => {
+  it("persists a name-only bookmark draft through the main Save without a nested save", async () => {
+    fixture.load.mockResolvedValue({
+      connections: [
+        { ...initial, httpBookmarks: [{ name: "Status", path: "/status" }] },
+      ],
+      settings: {},
+      timestamp: 0,
+      tabGroups: [],
+    });
+    mountEditor();
+    await screen.findByDisplayValue(initial.name);
+    fireEvent.click(screen.getByTestId("connection-editor-tab-protocol"));
+    fireEvent.click(
+      screen.getByTestId("connection-editor-protocol-subtab-favorites"),
+    );
+    fireEvent.click(
+      screen.getByRole("button", { name: "Edit bookmark Status" }),
+    );
+    fireEvent.change(screen.getByLabelText("Bookmark name"), {
+      target: { value: "New status" },
+    });
+    fireEvent.click(screen.getByTestId("editor-save"));
+    await waitFor(() => expect(fixture.save).toHaveBeenCalledTimes(1));
+    expect(fixture.save.mock.calls[0][0].connections[0].httpBookmarks).toEqual([
+      { name: "New status", path: "/status" },
+    ]);
+    expect(fixture.toast.info).not.toHaveBeenCalledWith("No changes to save");
+  });
+});
+
+async function openBookmarkDraft() {
+  fixture.load.mockResolvedValue({
+    connections: [
+      {
+        ...initial,
+        httpBookmarks: [
+          {
+            name: "Status",
+            path: "/status",
+            customMetadata: { color: "green" },
+          },
+        ],
+      },
+    ],
+    settings: {},
+    timestamp: 0,
+    tabGroups: [],
+  });
+  mountEditor();
+  await screen.findByDisplayValue(initial.name);
+  fireEvent.click(screen.getByTestId("connection-editor-tab-protocol"));
+  fireEvent.click(
+    screen.getByTestId("connection-editor-protocol-subtab-favorites"),
+  );
+  fireEvent.click(screen.getByRole("button", { name: "Edit bookmark Status" }));
+}
+
+describe("main Save bookmark validation and cancellation", () => {
+  it.each([
+    ["Bookmark name", "   "],
+    ["Bookmark URL or path", ""],
+    ["Bookmark URL or path", "javascript:alert(1)"],
+    ["Bookmark URL or path", "https://user:password@fixture.example/"],
+  ])(
+    "blocks invalid %s (%s) without saving another changed field",
+    async (label, value) => {
+      await openBookmarkDraft();
+      fireEvent.change(screen.getByLabelText(label), { target: { value } });
+      fireEvent.click(screen.getByTestId("connection-editor-tab-general"));
+      fireEvent.change(screen.getByDisplayValue(initial.name), {
+        target: { value: "Other change" },
+      });
+      fireEvent.click(screen.getByTestId("editor-save"));
+      await waitFor(() => expect(fixture.toast.error).toHaveBeenCalledTimes(1));
+      expect(fixture.save).not.toHaveBeenCalled();
+      expect(fixture.toast.success).not.toHaveBeenCalled();
+      fireEvent.click(screen.getByTestId("connection-editor-tab-protocol"));
+      expect(screen.getByRole("alert")).toBeInTheDocument();
+      expect(screen.getByLabelText(label)).toHaveValue(value);
+    },
+  );
+  it("cancels the local name and saves an unrelated edit with the original tree", async () => {
+    await openBookmarkDraft();
+    fireEvent.change(screen.getByLabelText("Bookmark name"), {
+      target: { value: "Discard me" },
+    });
+    fireEvent.click(
+      screen.getByRole("button", { name: "Cancel bookmark edit" }),
+    );
+    fireEvent.click(screen.getByTestId("connection-editor-tab-general"));
+    fireEvent.change(screen.getByDisplayValue(initial.name), {
+      target: { value: "Other change" },
+    });
+    fireEvent.click(screen.getByTestId("editor-save"));
+    await waitFor(() => expect(fixture.save).toHaveBeenCalledTimes(1));
+    expect(fixture.save.mock.calls[0][0].connections[0].httpBookmarks).toEqual([
+      { name: "Status", path: "/status", customMetadata: { color: "green" } },
+    ]);
+  });
+  it("retains the pending bookmark across tabs and failed durable saves for retry", async () => {
+    await openBookmarkDraft();
+    fireEvent.change(screen.getByLabelText("Bookmark name"), {
+      target: { value: "Renamed" },
+    });
+    fireEvent.click(screen.getByTestId("connection-editor-tab-general"));
+    fixture.save.mockRejectedValueOnce(new Error("disk unavailable"));
+    fireEvent.click(screen.getByTestId("editor-save"));
+    await waitFor(() => expect(fixture.toast.error).toHaveBeenCalled());
+    expect(fixture.toast.success).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByTestId("connection-editor-tab-protocol"));
+    expect(screen.getByLabelText("Bookmark name")).toHaveValue("Renamed");
+    fireEvent.click(screen.getByTestId("editor-save"));
+    await waitFor(() => expect(fixture.toast.success).toHaveBeenCalledTimes(1));
+    expect(
+      fixture.save.mock.calls[fixture.save.mock.calls.length - 1][0]
+        .connections[0].httpBookmarks,
+    ).toEqual([
+      { name: "Renamed", path: "/status", customMetadata: { color: "green" } },
+    ]);
+    expect(screen.queryByLabelText("Bookmark name")).not.toBeInTheDocument();
+  });
+});
+
+it("clears a bookmark error when correcting the field before main Save", async () => {
+  await openBookmarkDraft();
+  fireEvent.change(screen.getByLabelText("Bookmark URL or path"), {
+    target: { value: "" },
+  });
+  fireEvent.click(screen.getByTestId("editor-save"));
+  await screen.findByRole("alert");
+  fireEvent.change(screen.getByLabelText("Bookmark URL or path"), {
+    target: { value: "/fixed" },
+  });
+  expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  fireEvent.click(screen.getByTestId("editor-save"));
+  await waitFor(() => expect(fixture.toast.success).toHaveBeenCalledTimes(1));
+  expect(
+    fixture.save.mock.calls[0][0].connections[0].httpBookmarks[0].path,
+  ).toBe("/fixed");
+});
+
+it.each([false, true])(
+  "combines removal and pending rename (earlier removal saved=%s)",
+  async (saveRemovalFirst) => {
+    fixture.load.mockResolvedValue({
+      connections: [
+        {
+          ...initial,
+          httpBookmarks: [
+            { name: "Remove", path: "/remove" },
+            { name: "Keep", path: "/keep" },
+          ],
+        },
+      ],
+      settings: {},
+      timestamp: 0,
+      tabGroups: [],
+    });
+    mountEditor();
+    await screen.findByDisplayValue(initial.name);
+    fireEvent.click(screen.getByTestId("connection-editor-tab-protocol"));
+    fireEvent.click(
+      screen.getByTestId("connection-editor-protocol-subtab-favorites"),
+    );
+    fireEvent.click(
+      screen.getByRole("button", { name: "Remove bookmark Remove" }),
+    );
+    if (saveRemovalFirst) {
+      fireEvent.click(screen.getByTestId("editor-save"));
+      await waitFor(() =>
+        expect(fixture.toast.success).toHaveBeenCalledTimes(1),
+      );
+    }
+    fireEvent.click(screen.getByRole("button", { name: "Edit bookmark Keep" }));
+    fireEvent.change(screen.getByLabelText("Bookmark name"), {
+      target: { value: "Renamed survivor" },
+    });
+    fireEvent.click(screen.getByTestId("editor-save"));
+    await waitFor(() =>
+      expect(fixture.toast.success).toHaveBeenCalledTimes(
+        saveRemovalFirst ? 2 : 1,
+      ),
+    );
+    expect(fixture.save).toHaveBeenCalledTimes(saveRemovalFirst ? 2 : 1);
+    expect(
+      fixture.save.mock.calls[saveRemovalFirst ? 1 : 0][0].connections[0]
+        .httpBookmarks,
+    ).toEqual([{ name: "Renamed survivor", path: "/keep" }]);
+  },
+);

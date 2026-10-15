@@ -70,6 +70,7 @@ const ProtocolSubtabContent: React.FC<{
   if (subtabId === "favorites")
     return (
       <ConnectionFavoritesSection
+        bookmarkDraft={mgr.bookmarkDraft}
         formData={mgr.formData}
         setFormData={mgr.setFormData}
       />

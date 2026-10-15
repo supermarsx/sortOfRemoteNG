@@ -1,4 +1,16 @@
-import { useState, useEffect, useRef, useCallback, useMemo } from "react";
+import {
+  applyBookmarkDraft,
+  type BookmarkDraft,
+} from "../../utils/connection/bookmarkDraft";
+import {
+  useState,
+  useEffect,
+  useRef,
+  useCallback,
+  useMemo,
+  type Dispatch,
+  type SetStateAction,
+} from "react";
 import { normalizeConnectionCredentialSource } from "../../utils/security/databaseCredentialVault";
 import {
   Monitor,
@@ -888,6 +900,45 @@ export function useConnectionEditor(
   } = useIntegrationConfigStore();
 
   const [formData, setFormData] = useState<Partial<Connection>>(DEFAULT_FORM);
+  const bookmarkLifecycleRef = useRef({});
+  const editorBookmarkTreesRef = useRef(new Set<string | undefined>());
+  const acknowledgedBookmarkTreeRef = useRef<string | undefined>(undefined);
+  const bookmarkSaveScopeRef = useRef<{
+    ownerScope: string;
+    databaseId?: string;
+    generation?: number;
+    connectionId?: string;
+    trees: Set<string | undefined>;
+  } | null>(null);
+  const [bookmarkEdit, setBookmarkEditState] = useState<BookmarkDraft | null>(
+    null,
+  );
+  const setBookmarkEdit: Dispatch<SetStateAction<BookmarkDraft | null>> =
+    useCallback((update) => {
+      const owner = noteEditorScopeRef.current;
+      const ownerScope = JSON.stringify([
+        owner?.databaseId,
+        owner?.generation,
+        owner?.status,
+      ]);
+      // Starting a review captures its owner and live-tree proof. Clearing the
+      // child editor must not remove that proof before the editor is reopened.
+      if (
+        update &&
+        typeof update !== "function" &&
+        !bookmarkSaveScopeRef.current
+      )
+        bookmarkSaveScopeRef.current = {
+          ownerScope,
+          databaseId: owner?.databaseId,
+          generation: owner?.generation,
+          connectionId: update.connectionId,
+          trees: new Set(editorBookmarkTreesRef.current),
+        };
+      setBookmarkEditState(update);
+    }, []);
+
+  const renderedBookmarkDraftRef = useRef<BookmarkDraft | null>(null);
   const [expandedSections, setExpandedSections] = useState({
     advanced: false,
   });
@@ -1126,9 +1177,11 @@ export function useConnectionEditor(
   ]);
   const renderedEditorSnapshot = buildEditorSnapshot(formData);
   if (
+    renderedBookmarkDraftRef.current !== bookmarkEdit ||
     editorIdentityRef.current !== editorIdentity ||
     renderedEditorSnapshotRef.current !== renderedEditorSnapshot
   ) {
+    renderedBookmarkDraftRef.current = bookmarkEdit;
     editorIdentityRef.current = editorIdentity;
     renderedEditorSnapshotRef.current = renderedEditorSnapshot;
     editorRevisionRef.current += 1;
@@ -1140,6 +1193,15 @@ export function useConnectionEditor(
     // optimistic, not-yet-persisted saves and must not reset the draft/baseline.
     // Switching connection or closing/reopening starts a fresh editing session.
     const connection = incomingConnectionRef.current;
+    bookmarkLifecycleRef.current = {};
+    bookmarkSaveScopeRef.current = null;
+    acknowledgedBookmarkTreeRef.current = JSON.stringify(
+      connection?.httpBookmarks,
+    );
+    editorBookmarkTreesRef.current = new Set([
+      acknowledgedBookmarkTreeRef.current,
+    ]);
+    setBookmarkEdit(null);
     noteEditorScopeRef.current = noteDatabaseRef.current
       ? { ...noteDatabaseRef.current }
       : null;
@@ -1249,6 +1311,7 @@ export function useConnectionEditor(
     initialParentId,
     hydrateManagedSshSecrets,
     sanitizeSshConnectionOverride,
+    setBookmarkEdit,
   ]);
 
   useEffect(() => {
@@ -1288,10 +1351,10 @@ export function useConnectionEditor(
   }, [clearManagedSshSecrets, invalidatePendingSaveRequests]);
 
   const buildConnectionData = useCallback(
-    (includeIntegrationSecrets = false): Connection => {
+    (includeIntegrationSecrets = false, data = formData): Connection => {
       const now = new Date().toISOString();
       const normalizedFormData = normalizeCloudConnectionForPersistence(
-        normalizeIntegrationFields(mergeManagedSshSecrets(formData)),
+        normalizeIntegrationFields(mergeManagedSshSecrets(data)),
       );
       const effectiveFormData = normalizeAdvancedProtocolConnection(
         includeIntegrationSecrets
@@ -1538,6 +1601,43 @@ export function useConnectionEditor(
     [],
   );
 
+  const assertBookmarkScope = useCallback(
+    (scope = bookmarkSaveScopeRef.current) => {
+      if (!scope) return;
+      const current = noteDatabaseRef.current;
+      if (
+        scope.ownerScope !==
+        JSON.stringify([
+          current?.databaseId,
+          current?.generation,
+          current?.status,
+        ])
+      )
+        throw new Error(
+          "The owning database changed. Reopen this connection editor before saving.",
+        );
+      if (
+        scope.databaseId &&
+        scope.generation !== undefined &&
+        scope.connectionId &&
+        currentConnectionsReaderRef.current
+      ) {
+        const latest = currentConnectionsReaderRef
+          .current({
+            databaseId: scope.databaseId,
+            generation: scope.generation,
+          })
+          .find((row) => row.id === scope.connectionId);
+        if (!latest || !scope.trees.has(JSON.stringify(latest.httpBookmarks)))
+          throw new Error(
+            "The bookmarks changed elsewhere. Reopen this connection editor before saving.",
+          );
+        return JSON.stringify(latest.httpBookmarks);
+      }
+    },
+    [],
+  );
+
   const enqueueConnectionSave = useCallback(
     (request: EditorSaveRequest): Promise<EditorSaveOutcome> => {
       if (!isCurrentEditorRevision(request.revision)) {
@@ -1546,6 +1646,8 @@ export function useConnectionEditor(
       hasUnconfirmedSaveRef.current = true;
       lastEnqueuedRevisionRef.current = request.revision;
       lastEnqueuedSnapshotRef.current = renderedEditorSnapshotRef.current;
+      const bookmarkScope = bookmarkSaveScopeRef.current;
+      const bookmarkLifecycle = bookmarkLifecycleRef.current;
       const requestId = ++saveRequestSequenceRef.current;
       latestSaveRequestRef.current = requestId;
 
@@ -1586,6 +1688,7 @@ export function useConnectionEditor(
 
         try {
           assertNotesOwner();
+          assertBookmarkScope(bookmarkScope);
           // Integration secrets must reach the vault before the connection
           // record can durably reference them.
           const prepared = await prepareConnectionForPersistence(
@@ -1595,16 +1698,44 @@ export function useConnectionEditor(
             return { status: "superseded" };
           }
 
+          const previousBookmarkTree = assertBookmarkScope(bookmarkScope);
           const shouldPersist = request.shouldPersist?.(prepared) ?? true;
           if (shouldPersist) {
             assertNotesOwner();
+            // A rejected durable write may leave our own optimistic reducer
+            // update visible. Recognize only trees submitted by this editor.
+            const submittedTree = JSON.stringify(
+              prepared.persistentConnection.httpBookmarks,
+            );
+            const uncertainTrees = new Set([
+              bookmarkScope
+                ? previousBookmarkTree
+                : acknowledgedBookmarkTreeRef.current,
+              submittedTree,
+            ]);
+            editorBookmarkTreesRef.current = uncertainTrees;
+            if (bookmarkScope) bookmarkScope.trees = uncertainTrees;
             await dispatchAndFlush({
               type: request.actionType,
               payload: prepared.persistentConnection,
             });
-            if (!isCurrent()) {
-              return { status: "superseded" };
+            if (bookmarkScope && !bookmarkScope.connectionId)
+              bookmarkScope.connectionId = prepared.persistentConnection.id;
+            const publishedTree = assertBookmarkScope(bookmarkScope);
+            if (bookmarkScope && publishedTree !== submittedTree)
+              throw new Error(
+                "The bookmarks changed elsewhere. Reopen this connection editor before saving.",
+              );
+            // A confirmed publish advances the source proof even if a newer
+            // UI revision superseded this request while durability awaited.
+            if (bookmarkLifecycleRef.current === bookmarkLifecycle) {
+              acknowledgedBookmarkTreeRef.current = submittedTree;
+              editorBookmarkTreesRef.current = new Set([submittedTree]);
+              if (bookmarkSaveScopeRef.current)
+                bookmarkSaveScopeRef.current.trees = new Set([submittedTree]);
             }
+            if (bookmarkScope) bookmarkScope.trees = new Set([submittedTree]);
+            if (!isCurrent()) return { status: "superseded" };
           }
 
           return {
@@ -1628,13 +1759,38 @@ export function useConnectionEditor(
     },
     [
       dispatchAndFlush,
+      assertBookmarkScope,
       isCurrentEditorRevision,
       prepareConnectionForPersistence,
     ],
   );
 
+  // Database changes invalidate a child draft even when another database has
+  // a connection with the same ID. The editor itself must be reopened there.
+  useEffect(() => {
+    setBookmarkEdit(null);
+  }, [
+    databaseAvailability?.databaseId,
+    databaseAvailability?.generation,
+    databaseAvailability?.status,
+    setBookmarkEdit,
+  ]);
+
+  const resolveBookmarkDraft = useCallback(() => {
+    try {
+      assertBookmarkScope();
+      return applyBookmarkDraft(formData, bookmarkEdit);
+    } catch (error) {
+      const message = (error as Error).message;
+      setBookmarkEdit((edit) => (edit ? { ...edit, error: message } : null));
+      toast.error(message);
+      return null;
+    }
+  }, [formData, bookmarkEdit, toast, assertBookmarkScope, setBookmarkEdit]);
+
   // Auto-save effect
   useEffect(() => {
+    if (bookmarkEdit) return;
     if (!settings.autoSaveEnabled) {
       lastEnqueuedRevisionRef.current = null;
       return;
@@ -1704,6 +1860,7 @@ export function useConnectionEditor(
     };
   }, [
     formData,
+    bookmarkEdit,
     connection,
     settings.autoSaveEnabled,
     buildConnectionData,
@@ -1722,6 +1879,8 @@ export function useConnectionEditor(
   const handleSubmit = useCallback(
     async (e: React.FormEvent) => {
       e.preventDefault();
+      const submittedFormData = resolveBookmarkDraft();
+      if (!submittedFormData) return;
       if (
         !connection &&
         formData.parentId &&
@@ -1746,7 +1905,7 @@ export function useConnectionEditor(
       // Detect whether anything actually changed
       const hasChanges =
         hasUnconfirmedSaveRef.current ||
-        buildEditorSnapshot(formData) !== originalDataRef.current;
+        buildEditorSnapshot(submittedFormData) !== originalDataRef.current;
       const needsIntegrationInstance =
         isIntegrationConnectionProtocol(formData.protocol) &&
         !(formData.integration as IntegrationConnectionSettings | undefined)
@@ -1760,7 +1919,7 @@ export function useConnectionEditor(
       }
 
       const revision = editorRevisionRef.current;
-      const runtimeConnection = buildConnectionData(true);
+      const runtimeConnection = buildConnectionData(true, submittedFormData);
       const outcome = await enqueueConnectionSave({
         revision,
         runtimeConnection,
@@ -1778,11 +1937,15 @@ export function useConnectionEditor(
         return;
       }
 
+      if (bookmarkEdit) {
+        setFormData(submittedFormData);
+        setBookmarkEdit(null);
+      }
       syncPersistedIntegrationForm(outcome.prepared.persistentConnection);
       // Compare against the submitted editor shape, not storage-only fields
       // (timestamps/defaults) that do not change the still-open draft.
       originalDataRef.current = persistedEditorSnapshot(
-        formData,
+        submittedFormData,
         outcome.prepared.persistentConnection,
       );
       lastEnqueuedSnapshotRef.current = originalDataRef.current;
@@ -1800,6 +1963,9 @@ export function useConnectionEditor(
       connection,
       enqueueConnectionSave,
       formData,
+      bookmarkEdit,
+      resolveBookmarkDraft,
+      setBookmarkEdit,
       isCurrentEditorRevision,
       onClose,
       persistedEditorSnapshot,
@@ -1817,6 +1983,8 @@ export function useConnectionEditor(
    */
   const saveNow = useCallback(async (): Promise<Connection | null> => {
     if (!connection) return null;
+    const submittedFormData = resolveBookmarkDraft();
+    if (!submittedFormData) return null;
     if (autoSaveTimerRef.current) {
       clearTimeout(autoSaveTimerRef.current);
       autoSaveTimerRef.current = null;
@@ -1827,13 +1995,13 @@ export function useConnectionEditor(
     }
 
     const revision = editorRevisionRef.current;
-    const runtimeConnection = buildConnectionData(true);
+    const runtimeConnection = buildConnectionData(true, submittedFormData);
     const isIntegration = isIntegrationConnectionProtocol(
       runtimeConnection.protocol,
     );
     const hasChanges =
       hasUnconfirmedSaveRef.current ||
-      buildEditorSnapshot(formData) !== originalDataRef.current;
+      buildEditorSnapshot(submittedFormData) !== originalDataRef.current;
 
     if (!isIntegration && !hasChanges) {
       return runtimeConnection;
@@ -1859,15 +2027,19 @@ export function useConnectionEditor(
       return null;
     }
 
+    if (bookmarkEdit) {
+      setFormData(submittedFormData);
+      setBookmarkEdit(null);
+    }
     if (outcome.persisted) {
       if (isIntegration) {
         syncPersistedIntegrationForm(outcome.prepared.persistentConnection);
         originalDataRef.current = persistedEditorSnapshot(
-          formData,
+          submittedFormData,
           outcome.prepared.persistentConnection,
         );
       } else {
-        originalDataRef.current = buildEditorSnapshot(formData);
+        originalDataRef.current = buildEditorSnapshot(submittedFormData);
       }
       lastEnqueuedSnapshotRef.current = originalDataRef.current;
     }
@@ -1878,7 +2050,9 @@ export function useConnectionEditor(
     buildEditorSnapshot,
     connection,
     enqueueConnectionSave,
-    formData,
+    bookmarkEdit,
+    resolveBookmarkDraft,
+    setBookmarkEdit,
     isCurrentEditorRevision,
     persistedEditorSnapshot,
     persistenceErrorMessage,
@@ -1893,6 +2067,7 @@ export function useConnectionEditor(
 
   const handleProtocolChange = useCallback(
     (protocol: string) => {
+      setBookmarkEdit(null);
       if (isBrowserProtocol(formData.protocol) && isBrowserProtocol(protocol)) {
         setFormData((prev) => changeBrowserProtocol(prev, protocol));
         return;
@@ -1985,6 +2160,7 @@ export function useConnectionEditor(
       formData,
       hydrateManagedSshSecrets,
       sanitizeSshConnectionOverride,
+      setBookmarkEdit,
     ],
   );
 
@@ -2096,6 +2272,7 @@ export function useConnectionEditor(
         }
       },
     },
+    bookmarkDraft: { edit: bookmarkEdit, setEdit: setBookmarkEdit },
     expandedSections,
     autoSaveStatus,
     allTags,

@@ -1,13 +1,18 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { ChevronDown, ChevronUp, Pencil, Trash2 } from "lucide-react";
 import type {
   Connection,
   HttpBookmarkItem,
 } from "../../types/connection/connection";
 import { SessionQuickActionsSection } from "./SessionQuickActionsSection";
-import { resolveHttpBookmarkUrl } from "../../utils/protocol/httpBookmarkUrl";
+import {
+  applyBookmarkDraft,
+  type BookmarkDraft,
+  type BookmarkDraftControl,
+} from "../../utils/connection/bookmarkDraft";
 
 interface Props {
+  bookmarkDraft?: BookmarkDraftControl;
   formData: Partial<Connection>;
   setFormData: React.Dispatch<React.SetStateAction<Partial<Connection>>>;
 }
@@ -27,17 +32,47 @@ function updateBranch(
   );
 }
 
-export function ConnectionFavoritesSection({ formData, setFormData }: Props) {
-  const [edit, setEdit] = useState<{
-    source: Props["formData"]["httpBookmarks"];
-    connectionId: string | undefined;
-    protocol: Connection["protocol"] | undefined;
-    parents: number[];
-    index: number | null;
-    item: HttpBookmarkItem;
-    name: string;
-    path: string;
+export function ConnectionFavoritesSection({
+  formData,
+  setFormData,
+  bookmarkDraft,
+}: Props) {
+  const [localEdit, setLocalEdit] = useState<BookmarkDraft | null>(null);
+  const { edit, setEdit } = bookmarkDraft ?? {
+    edit: localEdit,
+    setEdit: setLocalEdit,
+  };
+  const [pendingApply, setPendingApply] = useState<{
+    edit: BookmarkDraft;
+    tree: string;
   } | null>(null);
+  useEffect(() => {
+    if (!pendingApply) return;
+    const applied =
+      formData.id === pendingApply.edit.connectionId &&
+      formData.protocol === pendingApply.edit.protocol &&
+      JSON.stringify(formData.httpBookmarks) === pendingApply.tree;
+    // Confirm the actual parent update before dismissing the review. A queued
+    // competing tree may make the functional update reject its source proof.
+    setEdit((previous) =>
+      previous !== pendingApply.edit
+        ? previous
+        : applied
+          ? null
+          : {
+              ...previous,
+              error:
+                "The bookmarks changed. Reopen this bookmark before saving.",
+            },
+    );
+    setPendingApply(null);
+  }, [
+    pendingApply,
+    formData.id,
+    formData.protocol,
+    formData.httpBookmarks,
+    setEdit,
+  ]);
   const supported =
     !formData.isGroup &&
     ["ssh", "http", "https"].includes(formData.protocol ?? "");
@@ -47,7 +82,7 @@ export function ConnectionFavoritesSection({ formData, setFormData }: Props) {
   const bookmarks = source ?? [];
   const currentEdit =
     edit &&
-    edit.source === source &&
+    (edit.source === source || bookmarkDraft) &&
     edit.connectionId === formData.id &&
     edit.protocol === formData.protocol
       ? edit
@@ -251,7 +286,11 @@ export function ConnectionFavoritesSection({ formData, setFormData }: Props) {
                   maxLength={1024}
                   value={currentEdit.name}
                   onChange={(event) =>
-                    setEdit({ ...currentEdit, name: event.target.value })
+                    setEdit({
+                      ...currentEdit,
+                      name: event.target.value,
+                      error: undefined,
+                    })
                   }
                 />
               </label>
@@ -263,10 +302,19 @@ export function ConnectionFavoritesSection({ formData, setFormData }: Props) {
                     maxLength={8192}
                     value={currentEdit.path}
                     onChange={(event) =>
-                      setEdit({ ...currentEdit, path: event.target.value })
+                      setEdit({
+                        ...currentEdit,
+                        path: event.target.value,
+                        error: undefined,
+                      })
                     }
                   />
                 </label>
+              )}
+              {currentEdit.error && (
+                <p role="alert" className="text-sm text-error">
+                  {currentEdit.error}
+                </p>
               )}
               <div className="flex gap-2">
                 <button
@@ -284,29 +332,25 @@ export function ConnectionFavoritesSection({ formData, setFormData }: Props) {
                     (!currentEdit.item.isFolder && !currentEdit.path.trim())
                   }
                   onClick={() => {
-                    let path = currentEdit.path.trim();
-                    // A validation-only base equal to the value checks that it is absolute.
-                    if (
-                      !path.startsWith("/") &&
-                      !resolveHttpBookmarkUrl(path, path)
-                    ) {
-                      path = `/${path}`;
+                    try {
+                      const next = applyBookmarkDraft(formData, currentEdit);
+                      setFormData((previous) => {
+                        try {
+                          return applyBookmarkDraft(previous, currentEdit);
+                        } catch {
+                          return previous;
+                        }
+                      });
+                      setPendingApply({
+                        edit: currentEdit,
+                        tree: JSON.stringify(next.httpBookmarks),
+                      });
+                    } catch (error) {
+                      setEdit({
+                        ...currentEdit,
+                        error: (error as Error).message,
+                      });
                     }
-                    const replacement: HttpBookmarkItem = currentEdit.item
-                      .isFolder
-                      ? { ...currentEdit.item, name: currentEdit.name.trim() }
-                      : {
-                          ...currentEdit.item,
-                          name: currentEdit.name.trim(),
-                          path,
-                        };
-                    change(currentEdit.parents, (items) =>
-                      currentEdit.index === null
-                        ? [...items, replacement]
-                        : items.map((item, index) =>
-                            index === currentEdit.index ? replacement : item,
-                          ),
-                    );
                   }}
                 >
                   Save bookmark draft

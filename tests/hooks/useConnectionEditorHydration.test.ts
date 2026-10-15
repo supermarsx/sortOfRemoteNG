@@ -807,3 +807,423 @@ describe("connection editor draft ownership", () => {
     ]);
   });
 });
+
+describe("pending bookmark save coordination", () => {
+  function startDraft(result: { current: Editor }, name = "Renamed") {
+    const data = result.current.formData;
+    mocks.state.connections = [data as Connection];
+    mocks.flush.mockImplementation(async (action) => {
+      mocks.state.connections = [action.payload];
+    });
+    const item = data.httpBookmarks![0];
+    act(() =>
+      result.current.bookmarkDraft.setEdit({
+        source: data.httpBookmarks,
+        connectionId: data.id,
+        protocol: data.protocol,
+        parents: [],
+        index: 0,
+        item,
+        name,
+        path: item.isFolder ? "" : item.path,
+      }),
+    );
+  }
+  const web = {
+    ...connectionA,
+    protocol: "https" as const,
+    httpBookmarks: [{ name: "Status", path: "/status" }],
+  };
+  it("saveNow includes a pending name-only draft", async () => {
+    const { result } = editor(web);
+    await advance(20);
+    startDraft(result);
+    await act(async () => {
+      expect((await result.current.saveNow())?.httpBookmarks?.[0].name).toBe(
+        "Renamed",
+      );
+    });
+    expect(mocks.flush.mock.calls[0][0].payload.httpBookmarks[0].name).toBe(
+      "Renamed",
+    );
+    expect(result.current.bookmarkDraft.edit).toBeNull();
+  });
+  it("refuses stale tree replacement before requesting persistence", async () => {
+    const { result } = editor(web);
+    await advance(20);
+    startDraft(result);
+    act(() =>
+      result.current.setFormData((data) => ({
+        ...data,
+        httpBookmarks: [{ name: "Concurrent", path: "/other" }],
+      })),
+    );
+    await act(async () => {
+      expect(await result.current.saveNow()).toBeNull();
+    });
+    expect(mocks.flush).not.toHaveBeenCalled();
+    expect(result.current.formData.httpBookmarks?.[0].name).toBe("Concurrent");
+  });
+  it("does not let an older save clear a name typed while persistence waits", async () => {
+    const { result } = editor(web);
+    await advance(20);
+    startDraft(result, "First");
+    const pending = deferred();
+    mocks.flush.mockReturnValueOnce(pending.promise);
+    let save: Promise<Connection | null>;
+    act(() => {
+      save = result.current.saveNow();
+    });
+    await act(async () => {
+      await Promise.resolve();
+    });
+    act(() =>
+      result.current.bookmarkDraft.setEdit((edit) =>
+        edit ? { ...edit, name: "Latest" } : null,
+      ),
+    );
+    await act(async () => {
+      pending.resolve();
+      await save;
+    });
+    expect(result.current.bookmarkDraft.edit?.name).toBe("Latest");
+    expect(mocks.toast.success).not.toHaveBeenCalled();
+  });
+  it("waits for the pending bookmark review before autosaving unrelated edits", async () => {
+    const { result } = editor(web);
+    await advance(20);
+    startDraft(result, "");
+    mocks.settings.autoSaveEnabled = true;
+    edit(result, "other.example");
+    await advance(2000);
+    expect(mocks.flush).not.toHaveBeenCalled();
+    act(() => result.current.bookmarkDraft.setEdit(null));
+    await advance(1200);
+    expect(mocks.flush).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("pending bookmark editor lifetime", () => {
+  it.each(["close", "owner"])(
+    "discards the pending bookmark after %s changes",
+    async (kind) => {
+      const web = {
+        ...connectionA,
+        protocol: "https" as const,
+        httpBookmarks: [{ name: "Old", path: "/old" }],
+      };
+      const { result, rerender } = editor(web);
+      await advance(20);
+      const data = result.current.formData;
+      act(() =>
+        result.current.bookmarkDraft.setEdit({
+          source: data.httpBookmarks,
+          connectionId: data.id,
+          protocol: data.protocol,
+          parents: [],
+          index: 0,
+          item: data.httpBookmarks![0],
+          name: "Discard",
+          path: "/old",
+        }),
+      );
+      if (kind === "owner")
+        mocks.databaseAvailability = {
+          status: "ready",
+          databaseId: "db-b",
+          generation: 2,
+        };
+      rerender({ connection: web, open: kind !== "close" });
+      expect(result.current.bookmarkDraft.edit).toBeNull();
+      expect(mocks.flush).not.toHaveBeenCalled();
+      if (kind === "close") {
+        rerender({ connection: web, open: true });
+        expect(result.current.bookmarkDraft.edit).toBeNull();
+      }
+    },
+  );
+});
+
+describe("pending bookmark live ownership proof", () => {
+  const web = {
+    ...connectionA,
+    protocol: "https" as const,
+    httpBookmarks: [{ name: "Status", path: "/status" }],
+  };
+  async function begin() {
+    mocks.state.connections = [web];
+    mocks.flush.mockImplementation(async (action) => {
+      mocks.state.connections = [action.payload];
+    });
+    const hook = editor(web);
+    await advance(20);
+    const data = hook.result.current.formData;
+    act(() =>
+      hook.result.current.bookmarkDraft.setEdit({
+        source: data.httpBookmarks,
+        connectionId: data.id,
+        protocol: data.protocol,
+        parents: [],
+        index: 0,
+        item: data.httpBookmarks![0],
+        name: "New name",
+        path: "/status",
+      }),
+    );
+    return hook;
+  }
+  it("retains the owner fence after clearing the child draft and blocks dirty-field autosave and main Save", async () => {
+    const { result, rerender } = await begin();
+    edit(result, "unsaved.example");
+    mocks.settings.autoSaveEnabled = true;
+    mocks.databaseAvailability = {
+      status: "ready",
+      databaseId: "db-b",
+      generation: 2,
+    };
+    rerender({ connection: web, open: true });
+    expect(result.current.bookmarkDraft.edit).toBeNull();
+    await advance(2000);
+    await act(async () => {
+      await result.current.handleSubmit(submitEvent());
+    });
+    expect(mocks.flush).not.toHaveBeenCalled();
+    expect(mocks.toast.error).toHaveBeenCalled();
+  });
+  it("does not overwrite a live same-ID bookmark edit absent from the local editor draft", async () => {
+    const { result, rerender } = await begin();
+    const foreign = {
+      ...web,
+      httpBookmarks: [{ name: "Other editor", path: "/other" }],
+    };
+    mocks.state.connections = [foreign];
+    rerender({ connection: foreign, open: true });
+    await act(async () => {
+      expect(await result.current.saveNow()).toBeNull();
+    });
+    expect(mocks.flush).not.toHaveBeenCalled();
+    expect(mocks.state.connections[0].httpBookmarks?.[0].name).toBe(
+      "Other editor",
+    );
+  });
+  it("rechecks ownership immediately before dispatch after async preparation", async () => {
+    const { result } = await begin();
+    // Resolve-time and pre-prepare proofs succeed; the post-await proof sees
+    // the provider transition before React can publish it.
+    mocks.getCurrentConnections
+      .mockImplementationOnce(() => [web])
+      .mockImplementationOnce(() => [web])
+      .mockImplementation(() => {
+        throw new Error("owner changed");
+      });
+    await act(async () => {
+      expect(await result.current.saveNow()).toBeNull();
+    });
+    expect(mocks.getCurrentConnections).toHaveBeenCalledTimes(3);
+    expect(mocks.flush).not.toHaveBeenCalled();
+  });
+});
+
+it.each(["external", "original"])(
+  "retains a pending bookmark when the %s tree arrives during storage flush",
+  async (treeKind) => {
+    const web = {
+      ...connectionA,
+      protocol: "https" as const,
+      httpBookmarks: [{ name: "Old", path: "/old" }],
+    };
+    mocks.state.connections = [web];
+    const { result } = editor(web);
+    await advance(20);
+    const data = result.current.formData;
+    act(() =>
+      result.current.bookmarkDraft.setEdit({
+        source: data.httpBookmarks,
+        connectionId: data.id,
+        protocol: data.protocol,
+        parents: [],
+        index: 0,
+        item: data.httpBookmarks![0],
+        name: "Pending name",
+        path: "/old",
+      }),
+    );
+    const pending = deferred();
+    mocks.flush.mockReturnValueOnce(pending.promise);
+    let save: Promise<Connection | null>;
+    act(() => {
+      save = result.current.saveNow();
+    });
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(mocks.flush).toHaveBeenCalledTimes(1);
+    const other =
+      treeKind === "original"
+        ? web
+        : { ...web, httpBookmarks: [{ name: "External", path: "/external" }] };
+    mocks.state.connections = [other];
+    await act(async () => {
+      pending.resolve();
+      expect(await save).toBeNull();
+    });
+    expect(result.current.bookmarkDraft.edit?.name).toBe("Pending name");
+    expect(mocks.state.connections[0].httpBookmarks?.[0].name).toBe(
+      other.httpBookmarks[0].name,
+    );
+    expect(mocks.toast.error).toHaveBeenCalled();
+  },
+);
+
+it("does not replace another editor lifecycle's bookmark source after an older flush settles", async () => {
+  const a = {
+    ...connectionA,
+    protocol: "https" as const,
+    httpBookmarks: [{ name: "A bookmark", path: "/a" }],
+  };
+  const b = {
+    ...connectionB,
+    protocol: "https" as const,
+    httpBookmarks: [{ name: "B bookmark", path: "/b" }],
+  };
+  mocks.state.connections = [a, b];
+  const { result, rerender } = editor(a);
+  await advance(20);
+  const setName = (name: string) => {
+    const data = result.current.formData;
+    act(() =>
+      result.current.bookmarkDraft.setEdit({
+        source: data.httpBookmarks,
+        connectionId: data.id,
+        protocol: data.protocol,
+        parents: [],
+        index: 0,
+        item: data.httpBookmarks![0],
+        name,
+        path: (data.httpBookmarks![0] as { path: string }).path,
+      }),
+    );
+  };
+  setName("A saved");
+  const pending = deferred();
+  mocks.flush.mockImplementationOnce((action) => {
+    mocks.state.connections = [action.payload, b];
+    return pending.promise;
+  });
+  let old: Promise<Connection | null>;
+  act(() => {
+    old = result.current.saveNow();
+  });
+  await act(async () => {
+    await Promise.resolve();
+  });
+  expect(mocks.flush).toHaveBeenCalledTimes(1);
+  rerender({ connection: b, open: true });
+  await advance(20);
+  await act(async () => {
+    pending.resolve();
+    await old;
+  });
+  mocks.flush.mockImplementation(async (action) => {
+    mocks.state.connections = mocks.state.connections.map((row) =>
+      row.id === action.payload.id ? action.payload : row,
+    );
+  });
+  setName("B saved");
+  await act(async () => {
+    expect((await result.current.saveNow())?.httpBookmarks?.[0].name).toBe(
+      "B saved",
+    );
+  });
+  expect(mocks.flush).toHaveBeenCalledTimes(2);
+});
+
+it("prunes a first bookmark review opened while an earlier local edit save waits", async () => {
+  const web = {
+    ...connectionA,
+    protocol: "https" as const,
+    httpBookmarks: [
+      { name: "Remove", path: "/remove" },
+      { name: "Keep", path: "/keep" },
+    ],
+  };
+  mocks.state.connections = [web];
+  const { result } = editor(web);
+  await advance(20);
+  act(() =>
+    result.current.setFormData((data) => ({
+      ...data,
+      httpBookmarks: [web.httpBookmarks[1]],
+    })),
+  );
+  const pending = deferred();
+  mocks.flush.mockImplementationOnce((action) => {
+    mocks.state.connections = [action.payload];
+    return pending.promise;
+  });
+  let old: Promise<Connection | null>;
+  act(() => {
+    old = result.current.saveNow();
+  });
+  await act(async () => {
+    await Promise.resolve();
+  });
+  expect(mocks.flush).toHaveBeenCalledTimes(1);
+  const data = result.current.formData;
+  act(() =>
+    result.current.bookmarkDraft.setEdit({
+      source: data.httpBookmarks,
+      connectionId: data.id,
+      protocol: data.protocol,
+      parents: [],
+      index: 0,
+      item: data.httpBookmarks![0],
+      name: "Pending rename",
+      path: "/keep",
+    }),
+  );
+  await act(async () => {
+    pending.resolve();
+    await old;
+  });
+  mocks.state.connections = [web];
+  await act(async () => {
+    expect(await result.current.saveNow()).toBeNull();
+  });
+  expect(mocks.flush).toHaveBeenCalledTimes(1);
+  expect(result.current.bookmarkDraft.edit?.name).toBe("Pending rename");
+});
+
+it("does not adopt another owner when the first bookmark review opens after switching databases", async () => {
+  const web = {
+    ...connectionA,
+    protocol: "https" as const,
+    httpBookmarks: [{ name: "Old owner bookmark", path: "/old" }],
+  };
+  mocks.state.connections = [web];
+  const { result, rerender } = editor(web);
+  await advance(20);
+  mocks.databaseAvailability = {
+    status: "ready",
+    databaseId: "db-b",
+    generation: 2,
+  };
+  rerender({ connection: web, open: true });
+  const data = result.current.formData;
+  act(() =>
+    result.current.bookmarkDraft.setEdit({
+      source: data.httpBookmarks,
+      connectionId: data.id,
+      protocol: data.protocol,
+      parents: [],
+      index: 0,
+      item: data.httpBookmarks![0],
+      name: "Wrong owner rename",
+      path: "/old",
+    }),
+  );
+  await act(async () => {
+    expect(await result.current.saveNow()).toBeNull();
+  });
+  expect(mocks.flush).not.toHaveBeenCalled();
+});

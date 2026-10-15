@@ -326,3 +326,56 @@ describe("connection draft Favorites", () => {
     expect(draft().httpBookmarks).toBeUndefined();
   });
 });
+
+it("retains a controlled review when its actual parent update rejects a queued competing tree", () => {
+  const original = {
+    id: "same",
+    protocol: "http" as const,
+    httpBookmarks: [{ name: "Old", path: "/old" }],
+  };
+  const foreign = {
+    ...original,
+    httpBookmarks: [{ name: "External", path: "/external" }],
+  };
+  function ConcurrentHarness() {
+    const [draft, setDraft] = useState(original);
+    const [edit, setEdit] = useState<
+      import("../../src/utils/connection/bookmarkDraft").BookmarkDraft | null
+    >(null);
+    return (
+      <>
+        <ConnectionFavoritesSection
+          formData={draft}
+          bookmarkDraft={{ edit, setEdit }}
+          setFormData={(update) =>
+            setDraft((previous) =>
+              typeof update === "function"
+                ? (update(foreign) as typeof original)
+                : previous,
+            )
+          }
+        />
+        <output data-testid="concurrent-tree">
+          {JSON.stringify(draft.httpBookmarks)}
+        </output>
+      </>
+    );
+  }
+  render(<ConcurrentHarness />);
+  fireEvent.click(screen.getByRole("button", { name: "Edit bookmark Old" }));
+  fireEvent.change(screen.getByLabelText("Bookmark name"), {
+    target: { value: "Unsaved" },
+  });
+  fireEvent.click(screen.getByRole("button", { name: "Save bookmark draft" }));
+  expect(screen.getByLabelText("Bookmark name")).toHaveValue("Unsaved");
+  expect(screen.getByRole("alert")).toBeInTheDocument();
+  expect(screen.getByTestId("concurrent-tree")).toHaveTextContent('"External"');
+  fireEvent.change(screen.getByLabelText("Bookmark name"), {
+    target: { value: "Still unsaved" },
+  });
+  expect(
+    screen.getByRole("button", { name: "Cancel bookmark edit" }),
+  ).toBeInTheDocument();
+  fireEvent.click(screen.getByRole("button", { name: "Cancel bookmark edit" }));
+  expect(screen.queryByLabelText("Bookmark name")).not.toBeInTheDocument();
+});
