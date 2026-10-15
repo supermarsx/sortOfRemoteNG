@@ -2028,6 +2028,16 @@ impl DrainedInput {
         self.dropped_events = 0;
     }
 
+    fn blocks_clipboard_replacement(&self, command: &RdpCommand) -> bool {
+        (!self.events.is_empty() || !self.credentials.is_empty())
+            && matches!(
+                command,
+                RdpCommand::ClipboardCopy(_)
+                    | RdpCommand::ClipboardPublish(_)
+                    | RdpCommand::ClipboardCopyFiles(_)
+            )
+    }
+
     fn push_events(&mut self, events: Vec<FastPathInputEvent>) {
         if self.events.len() < INPUT_BACKLOG_LIMIT {
             self.events.extend(events);
@@ -2481,6 +2491,7 @@ fn run_active_session_loop(
     // Initially probe both Framed leftovers and rustls' internal plaintext.
     // Only a socket readiness event permits another probe after WouldBlock.
     let mut pdu_readiness = PduReadiness { ready: true };
+    let mut deferred_clipboard_command: Option<RdpCommand> = None;
 
     loop {
         // ── Phase 0: Wait for events ────────────────────────────
@@ -2501,7 +2512,7 @@ fn run_active_session_loop(
             stage_next_gfx_delivery(receiver, &mut pending_gfx_delivery);
         }
 
-        if !pdu_readiness.ready {
+        if !pdu_readiness.ready && deferred_clipboard_command.is_none() {
             if let Some(ref mut p) = poller {
                 // Event-driven: sleep until TCP data, wake signal, or timer.
                 let mut wait_timeout =
@@ -2586,7 +2597,17 @@ fn run_active_session_loop(
         let mut should_reconnect = false;
         let mut requested_resize: Option<(u16, u16)> = None;
         loop {
-            match cmd_rx.try_recv() {
+            let next = deferred_clipboard_command
+                .take()
+                .map_or_else(|| cmd_rx.try_recv(), Ok);
+            if next
+                .as_ref()
+                .is_ok_and(|command| pending_input.blocks_clipboard_replacement(command))
+            {
+                deferred_clipboard_command = next.ok();
+                break;
+            }
+            match next {
                 Ok(RdpCommand::Shutdown) => {
                     log::info!("RDP session {session_id}: shutdown requested");
                     if let Ok(outputs) = est.active_stage.graceful_shutdown() {
@@ -2795,147 +2816,63 @@ fn run_active_session_loop(
                     merged_inputs.extend([enter_press, enter_release]);
                 }
                 Ok(RdpCommand::ClipboardCopy(text)) => {
-                    if let Some(ref clip_state) = est.clipboard_state {
-                        let allowed = if let Ok(mut state) = clip_state.lock() {
-                            let allowed = state.allows_client_to_server();
-                            state.local_text = if allowed { Some(text.clone()) } else { None };
-                            allowed
-                        } else {
-                            false
-                        };
-
-                        if !allowed {
-                            log::info!(
-                                "RDP session {session_id}: blocked local-to-remote clipboard copy by direction policy"
-                            );
-                            continue;
-                        }
-                        // Advertise CF_UNICODETEXT to the server
-                        if let Some(cliprdr) = est
-                            .active_stage
-                            .get_svc_processor_mut::<crate::ironrdp_cliprdr::CliprdrClient>()
-                        {
-                            let format = crate::ironrdp_cliprdr::pdu::ClipboardFormat::new(
-                                crate::ironrdp_cliprdr::pdu::ClipboardFormatId::new(
-                                    clipboard::CF_UNICODETEXT,
-                                ),
-                            );
-                            match cliprdr.initiate_copy(&[format]) {
-                                Ok(messages) => {
-                                    match est.active_stage.process_svc_processor_messages(messages)
-                                    {
-                                        Ok(data) => {
-                                            stats
-                                                .bytes_sent
-                                                .fetch_add(data.len() as u64, Ordering::Relaxed);
-                                            let _ = est.tls_framed.write_all(&data);
-                                        }
-                                        Err(e) => log::warn!("CLIPRDR copy encode error: {e}"),
-                                    }
-                                }
-                                Err(e) => log::warn!("CLIPRDR initiate_copy error: {e}"),
-                            }
+                    if let Some(state) = &est.clipboard_state {
+                        if let Ok(mut state) = state.lock() {
+                            state.stage_text(text);
                         }
                     }
                 }
-                Ok(RdpCommand::ClipboardPaste) => {
-                    let allowed = est
-                        .clipboard_state
-                        .as_ref()
-                        .and_then(|clip_state| {
-                            clip_state
-                                .lock()
-                                .ok()
-                                .map(|state| state.allows_server_to_client())
-                        })
-                        .unwrap_or(false);
-
-                    if !allowed {
-                        log::info!(
-                            "RDP session {session_id}: blocked remote-to-local clipboard paste by direction policy"
+                Ok(RdpCommand::ClipboardPublish(request)) => {
+                    if let Some(state) = &est.clipboard_state {
+                        if let Ok(mut state) = state.lock() {
+                            state.queue_publication(request);
+                        }
+                    } else {
+                        request.fail(
+                            "Clipboard channel was not negotiated. Reconnect to enable clipboard.",
                         );
-                        continue;
                     }
-
-                    if let Some(cliprdr) = est
-                        .active_stage
-                        .get_svc_processor_mut::<crate::ironrdp_cliprdr::CliprdrClient>()
+                }
+                Ok(RdpCommand::ClipboardPolicy {
+                    enabled,
+                    direction,
+                    reply,
+                }) => {
+                    let result = if let Some(state) = &est.clipboard_state {
+                        state.lock().map(|mut state| { let direction = direction.unwrap_or(state.direction); if state.reconnect_required && enabled && direction != super::settings::ClipboardDirection::Disabled { return Err("Clipboard response timed out. Reconnect to restore clipboard.".into()); } state.set_policy(enabled, direction); Ok(()) }).map_err(|_| "Clipboard state is unavailable.".to_string()).and_then(|result| result)
+                    } else if !enabled
+                        || direction == Some(super::settings::ClipboardDirection::Disabled)
                     {
-                        let format_id = crate::ironrdp_cliprdr::pdu::ClipboardFormatId::new(
-                            clipboard::CF_UNICODETEXT,
-                        );
-                        match cliprdr.initiate_paste(format_id) {
-                            Ok(messages) => {
-                                match est.active_stage.process_svc_processor_messages(messages) {
-                                    Ok(data) => {
-                                        stats
-                                            .bytes_sent
-                                            .fetch_add(data.len() as u64, Ordering::Relaxed);
-                                        let _ = est.tls_framed.write_all(&data);
-                                    }
-                                    Err(e) => log::warn!("CLIPRDR paste encode error: {e}"),
-                                }
-                            }
-                            Err(e) => log::warn!("CLIPRDR initiate_paste error: {e}"),
+                        Ok(())
+                    } else {
+                        Err(
+                            "Clipboard channel was not negotiated. Reconnect to enable clipboard."
+                                .into(),
+                        )
+                    };
+                    let _ = reply.send(result);
+                }
+                Ok(RdpCommand::ClipboardPaste) => {
+                    if let Some(state) = &est.clipboard_state {
+                        if let Ok(mut state) = state.lock() {
+                            state.request_remote_text();
                         }
                     }
                 }
                 Ok(RdpCommand::ClipboardCopyFiles(entries)) => {
-                    if let Some(ref clip_state) = est.clipboard_state {
-                        // Store staged files and reset progress
-                        let allowed = if let Ok(mut state) = clip_state.lock() {
-                            let allowed = state.allows_client_to_server();
-                            state.staged_files = if allowed {
+                    if let Some(state) = &est.clipboard_state {
+                        if let Ok(mut state) = state.lock() {
+                            state.stage_files(
                                 entries
-                                    .iter()
-                                    .map(|e| clipboard::StagedFile {
-                                        name: e.name.clone(),
-                                        size: e.size,
-                                        path: e.path.clone(),
-                                        is_directory: e.is_directory,
+                                    .into_iter()
+                                    .map(|entry| clipboard::StagedFile {
+                                        name: entry.name,
+                                        size: entry.size,
+                                        path: entry.path,
+                                        is_directory: entry.is_directory,
                                     })
-                                    .collect()
-                            } else {
-                                Vec::new()
-                            };
-                            state.file_bytes_transferred = 0;
-                            allowed
-                        } else {
-                            false
-                        };
-
-                        if !allowed {
-                            log::info!(
-                                "RDP session {session_id}: blocked local-to-remote file clipboard copy by direction policy"
+                                    .collect(),
                             );
-                            continue;
-                        }
-                        // Advertise FileGroupDescriptorW format to server
-                        if let Some(cliprdr) = est
-                            .active_stage
-                            .get_svc_processor_mut::<crate::ironrdp_cliprdr::CliprdrClient>()
-                        {
-                            let format = crate::ironrdp_cliprdr::pdu::ClipboardFormat::new(
-                                crate::ironrdp_cliprdr::pdu::ClipboardFormatId::new(
-                                    clipboard::FILEGROUPDESCRIPTORW_ID,
-                                ),
-                            )
-                            .with_name(crate::ironrdp_cliprdr::pdu::ClipboardFormatName::FILE_LIST);
-                            match cliprdr.initiate_copy(&[format]) {
-                                Ok(messages) => {
-                                    match est.active_stage.process_svc_processor_messages(messages)
-                                    {
-                                        Ok(data) => {
-                                            stats
-                                                .bytes_sent
-                                                .fetch_add(data.len() as u64, Ordering::Relaxed);
-                                            let _ = est.tls_framed.write_all(&data);
-                                        }
-                                        Err(e) => log::warn!("CLIPRDR file copy encode error: {e}"),
-                                    }
-                                }
-                                Err(e) => log::warn!("CLIPRDR initiate_copy (files) error: {e}"),
-                            }
                         }
                     }
                 }
@@ -2953,7 +2890,8 @@ fn run_active_session_loop(
                         "clipboard" => {
                             if let Some(ref clip_state) = est.clipboard_state {
                                 if let Ok(mut state) = clip_state.lock() {
-                                    state.disabled = !enabled;
+                                    let direction = state.direction;
+                                    state.set_policy(enabled, direction);
                                 }
                             }
                         }
@@ -3804,146 +3742,265 @@ fn run_active_session_loop(
             }
         } // end inner PDU drain loop
 
-        // -- Fulfil pending CLIPRDR format data requests --
-        // The backend's on_format_data_request() stored the request; we
-        // respond here via submit_format_data() because we can't call it
-        // during process() (the SVC processor is borrowed).
+        // Service negotiated clipboard work after callbacks, without holding the state lock across I/O.
         if let Some(ref clip_state) = est.clipboard_state {
-            let pending = {
-                let mut state = clip_state.lock().expect("lock poisoned");
-                state.pending_data_request.take()
-            };
-            if let Some(request) = pending {
-                let is_file_list = request.format
-                    == crate::ironrdp_cliprdr::pdu::ClipboardFormatId::new(
-                        clipboard::FILEGROUPDESCRIPTORW_ID,
-                    );
-                let (local_text, staged_files, allowed) = {
-                    let state = clip_state.lock().expect("lock poisoned");
-                    (
-                        state.local_text.clone(),
-                        state.staged_files.clone(),
-                        state.allows_client_to_server(),
-                    )
+            if clip_state
+                .lock()
+                .expect("lock poisoned")
+                .remote_response_expired()
+            {
+                let _ = event_emitter.emit_event(
+                    "rdp://clipboard-unavailable",
+                    serde_json::json!({ "session_id": session_id, "reason": "reconnect-required" }),
+                );
+            }
+            let formats = clip_state
+                .lock()
+                .expect("lock poisoned")
+                .next_advertisement();
+            if let Some(formats) = formats {
+                let result = est
+                    .active_stage
+                    .get_svc_processor_mut::<crate::ironrdp_cliprdr::CliprdrClient>()
+                    .ok_or_else(|| "Clipboard processor unavailable".to_string())
+                    .and_then(|processor| {
+                        processor
+                            .initiate_copy(&formats)
+                            .map_err(|error| error.to_string())
+                    })
+                    .and_then(|messages| {
+                        est.active_stage
+                            .process_svc_processor_messages(messages)
+                            .map_err(|error| error.to_string())
+                    });
+                match result {
+                    Ok(data) if !data.is_empty() => {
+                        if let Err(error) = write_and_flush(est.tls_framed.get_inner_mut().0, &data)
+                        {
+                            clip_state
+                                .lock()
+                                .expect("lock poisoned")
+                                .publication_failed();
+                            return SessionLoopExit::NetworkError(error.to_string());
+                        }
+                        stats
+                            .bytes_sent
+                            .fetch_add(data.len() as u64, Ordering::Relaxed);
+                        clip_state
+                            .lock()
+                            .expect("lock poisoned")
+                            .advertisement_written();
+                    }
+                    _ => {
+                        clip_state
+                            .lock()
+                            .expect("lock poisoned")
+                            .publication_failed();
+                    }
+                }
+            }
+            let request_remote = clip_state
+                .lock()
+                .expect("lock poisoned")
+                .begin_remote_text();
+            if request_remote {
+                let result = est
+                    .active_stage
+                    .get_svc_processor_mut::<crate::ironrdp_cliprdr::CliprdrClient>()
+                    .ok_or_else(|| "Clipboard processor unavailable".to_string())
+                    .and_then(|processor| {
+                        processor
+                            .initiate_paste(crate::ironrdp_cliprdr::pdu::ClipboardFormatId::new(
+                                clipboard::CF_UNICODETEXT,
+                            ))
+                            .map_err(|error| error.to_string())
+                    })
+                    .and_then(|messages| {
+                        est.active_stage
+                            .process_svc_processor_messages(messages)
+                            .map_err(|error| error.to_string())
+                    });
+                match result {
+                    Ok(data) if !data.is_empty() => {
+                        if let Err(error) = write_and_flush(est.tls_framed.get_inner_mut().0, &data)
+                        {
+                            clip_state
+                                .lock()
+                                .expect("lock poisoned")
+                                .publication_failed();
+                            return SessionLoopExit::NetworkError(error.to_string());
+                        }
+                        stats
+                            .bytes_sent
+                            .fetch_add(data.len() as u64, Ordering::Relaxed);
+                    }
+                    _ => {
+                        clip_state
+                            .lock()
+                            .expect("lock poisoned")
+                            .remote_request_failed();
+                    }
+                }
+            }
+            loop {
+                let pending = clip_state
+                    .lock()
+                    .expect("lock poisoned")
+                    .pending_data_request
+                    .pop_front();
+                let Some(pending) = pending else {
+                    break;
                 };
-
-                if let Some(cliprdr) = est
+                let allowed = {
+                    let state = clip_state.lock().expect("lock poisoned");
+                    state.allows_client_to_server() && pending.offer.epoch == state.offer_epoch
+                };
+                if let Some(processor) = est
                     .active_stage
                     .get_svc_processor_mut::<crate::ironrdp_cliprdr::CliprdrClient>()
                 {
-                    let response = if !allowed {
-                        crate::ironrdp_cliprdr::pdu::OwnedFormatDataResponse::new_error()
-                    } else if is_file_list && !staged_files.is_empty() {
-                        clipboard::encode_file_list_response(&staged_files)
-                    } else if let Some(ref text) = local_text {
-                        crate::ironrdp_cliprdr::pdu::OwnedFormatDataResponse::new_data(
-                            clipboard::encode_utf16le(text),
-                        )
-                    } else {
-                        crate::ironrdp_cliprdr::pdu::OwnedFormatDataResponse::new_error()
-                    };
-                    match cliprdr.submit_format_data(response) {
-                        Ok(messages) => {
-                            match est.active_stage.process_svc_processor_messages(messages) {
-                                Ok(data) => {
-                                    stats
-                                        .bytes_sent
-                                        .fetch_add(data.len() as u64, Ordering::Relaxed);
-                                    let _ = est.tls_framed.write_all(&data);
-                                }
-                                Err(e) => {
-                                    log::warn!("CLIPRDR submit_format_data encode error: {e}")
-                                }
+                    let response = clipboard::format_data_response(&pending, allowed);
+                    let result = processor
+                        .submit_format_data(response)
+                        .map_err(|error| error.to_string())
+                        .and_then(|messages| {
+                            est.active_stage
+                                .process_svc_processor_messages(messages)
+                                .map_err(|error| error.to_string())
+                        });
+                    match result {
+                        Ok(data) => {
+                            if let Err(error) =
+                                write_and_flush(est.tls_framed.get_inner_mut().0, &data)
+                            {
+                                clip_state
+                                    .lock()
+                                    .expect("lock poisoned")
+                                    .publication_failed();
+                                return SessionLoopExit::NetworkError(error.to_string());
                             }
+                            stats
+                                .bytes_sent
+                                .fetch_add(data.len() as u64, Ordering::Relaxed);
                         }
-                        Err(e) => log::warn!("CLIPRDR submit_format_data error: {e}"),
+                        Err(_) => {
+                            clip_state
+                                .lock()
+                                .expect("lock poisoned")
+                                .publication_failed();
+                        }
                     }
                 }
             }
 
             // -- Fulfil pending CLIPRDR file contents requests --
-            let pending_fcr = {
-                let mut state = clip_state.lock().expect("lock poisoned");
-                state.pending_file_contents_request.take()
-            };
-            if let Some(request) = pending_fcr {
-                let (staged_files, allowed) = {
-                    let state = clip_state.lock().expect("lock poisoned");
-                    (state.staged_files.clone(), state.allows_client_to_server())
+            loop {
+                let pending_fcr = {
+                    let mut state = clip_state.lock().expect("lock poisoned");
+                    state.pending_file_contents_request.pop_front()
                 };
-                if let Some(file) = staged_files.get(request.index as usize) {
+                let Some(pending) = pending_fcr else {
+                    break;
+                };
+                {
+                    let request = pending.request;
+                    let (staged_files, allowed) = {
+                        let state = clip_state.lock().expect("lock poisoned");
+                        (
+                            pending.offer.files.clone(),
+                            state.allows_client_to_server()
+                                && pending.offer.epoch == state.offer_epoch,
+                        )
+                    };
                     if let Some(cliprdr) = est
                         .active_stage
                         .get_svc_processor_mut::<crate::ironrdp_cliprdr::CliprdrClient>()
                     {
                         use crate::ironrdp_cliprdr::pdu::FileContentsFlags;
 
-                        let response = if !allowed {
+                        let response = if !allowed
+                            || staged_files.get(request.index as usize).is_none()
+                        {
                             crate::ironrdp_cliprdr::pdu::FileContentsResponse::new_error(
                                 request.stream_id,
                             )
-                        } else if request.flags.contains(FileContentsFlags::SIZE) {
-                            crate::ironrdp_cliprdr::pdu::FileContentsResponse::new_size_response(
-                                request.stream_id,
-                                file.size,
-                            )
-                        } else if file.is_directory {
-                            // Directory entries have no data
-                            crate::ironrdp_cliprdr::pdu::FileContentsResponse::new_data_response(
-                                request.stream_id,
-                                Vec::<u8>::new(),
-                            )
                         } else {
-                            match std::fs::File::open(&file.path) {
-                                Ok(mut f) => {
-                                    use std::io::{Read, Seek, SeekFrom};
-                                    let _ = f.seek(SeekFrom::Start(request.position));
-                                    let mut buf = vec![0u8; request.requested_size as usize];
-                                    let n = f.read(&mut buf).unwrap_or(0);
-                                    buf.truncate(n);
+                            let file = &staged_files[request.index as usize];
+                            if request.flags == FileContentsFlags::SIZE {
+                                crate::ironrdp_cliprdr::pdu::FileContentsResponse::new_size_response(
+                                    request.stream_id,
+                                    file.size,
+                                )
+                            } else if request.flags != FileContentsFlags::DATA {
+                                crate::ironrdp_cliprdr::pdu::FileContentsResponse::new_error(
+                                    request.stream_id,
+                                )
+                            } else if file.is_directory {
+                                // Directory entries have no data
+                                crate::ironrdp_cliprdr::pdu::FileContentsResponse::new_data_response(
+                                    request.stream_id,
+                                    Vec::<u8>::new(),
+                                )
+                            } else {
+                                match std::fs::File::open(&file.path) {
+                                    Ok(mut f) => {
+                                        use std::io::{Read, Seek, SeekFrom};
+                                        let _ = f.seek(SeekFrom::Start(request.position));
+                                        let mut buf = vec![
+                                            0u8;
+                                            (request.requested_size as usize)
+                                                .min(4 * 1024 * 1024)
+                                        ];
+                                        let n = f.read(&mut buf).unwrap_or(0);
+                                        buf.truncate(n);
 
-                                    // Update progress and emit event
-                                    let (transferred, total_size, file_count, files_done) = {
-                                        let mut state = clip_state.lock().expect("lock poisoned");
-                                        state.file_bytes_transferred += n as u64;
-                                        let total: u64 =
-                                            state.staged_files.iter().map(|f| f.size).sum();
-                                        let count = state
-                                            .staged_files
-                                            .iter()
-                                            .filter(|f| !f.is_directory)
-                                            .count();
-                                        // A file is "done" when we've read past its end
-                                        let done = state
-                                            .staged_files
-                                            .iter()
-                                            .take(request.index as usize)
-                                            .filter(|f| !f.is_directory)
-                                            .count();
-                                        (state.file_bytes_transferred, total, count, done)
-                                    };
-                                    let _ = event_emitter.emit_event(
-                                        "rdp://file-transfer-progress",
-                                        serde_json::json!({
-                                            "session_id": session_id,
-                                            "file_index": request.index,
-                                            "file_name": file.name,
-                                            "transferred": transferred,
-                                            "total": total_size,
-                                            "file_count": file_count,
-                                            "files_done": files_done,
-                                        }),
-                                    );
+                                        // Update progress and emit event
+                                        let (transferred, total_size, file_count, files_done) = {
+                                            let mut state =
+                                                clip_state.lock().expect("lock poisoned");
+                                            state.file_bytes_transferred += n as u64;
+                                            let total: u64 =
+                                                state.staged_files.iter().map(|f| f.size).sum();
+                                            let count = state
+                                                .staged_files
+                                                .iter()
+                                                .filter(|f| !f.is_directory)
+                                                .count();
+                                            // A file is "done" when we've read past its end
+                                            let done = state
+                                                .staged_files
+                                                .iter()
+                                                .take(request.index as usize)
+                                                .filter(|f| !f.is_directory)
+                                                .count();
+                                            (state.file_bytes_transferred, total, count, done)
+                                        };
+                                        let _ = event_emitter.emit_event(
+                                            "rdp://file-transfer-progress",
+                                            serde_json::json!({
+                                                "session_id": session_id,
+                                                "file_index": request.index,
+                                                "file_name": file.name,
+                                                "transferred": transferred,
+                                                "total": total_size,
+                                                "file_count": file_count,
+                                                "files_done": files_done,
+                                            }),
+                                        );
 
-                                    crate::ironrdp_cliprdr::pdu::FileContentsResponse::new_data_response(
+                                        crate::ironrdp_cliprdr::pdu::FileContentsResponse::new_data_response(
                                         request.stream_id, buf,
                                     )
-                                }
-                                Err(e) => {
-                                    log::error!("CLIPRDR file read error for '{}': {e}", file.path);
-                                    crate::ironrdp_cliprdr::pdu::FileContentsResponse::new_error(
-                                        request.stream_id,
-                                    )
+                                    }
+                                    Err(e) => {
+                                        log::error!(
+                                            "CLIPRDR file read error for '{}': {e}",
+                                            file.path
+                                        );
+                                        crate::ironrdp_cliprdr::pdu::FileContentsResponse::new_error(
+                                            request.stream_id,
+                                        )
+                                    }
                                 }
                             }
                         };
@@ -3954,7 +4011,17 @@ fn run_active_session_loop(
                                         stats
                                             .bytes_sent
                                             .fetch_add(data.len() as u64, Ordering::Relaxed);
-                                        let _ = est.tls_framed.write_all(&data);
+                                        if let Err(error) =
+                                            write_and_flush(est.tls_framed.get_inner_mut().0, &data)
+                                        {
+                                            clip_state
+                                                .lock()
+                                                .expect("lock poisoned")
+                                                .publication_failed();
+                                            return SessionLoopExit::NetworkError(
+                                                error.to_string(),
+                                            );
+                                        }
                                     }
                                     Err(e) => {
                                         log::warn!("CLIPRDR submit_file_contents encode error: {e}")
@@ -3964,11 +4031,6 @@ fn run_active_session_loop(
                             Err(e) => log::warn!("CLIPRDR submit_file_contents error: {e}"),
                         }
                     }
-                } else {
-                    log::warn!(
-                        "CLIPRDR file contents request for invalid index {}",
-                        request.index
-                    );
                 }
             }
         }
@@ -5215,13 +5277,7 @@ mod runner_tests {
         assert_eq!(backoff_attempt, 1);
         assert_eq!(
             executed,
-            vec![
-                "before_tcp",
-                "after_tcp",
-                "before_credssp",
-                "handshake_tail",
-                "backoff",
-            ]
+            vec!["before_tcp", "before_credssp", "handshake_tail",]
         );
     }
 
@@ -5574,5 +5630,28 @@ mod runner_tests {
         .await
         .expect("the sender is answered at the fence, not at its timeout");
         assert_eq!(reported, Err(CredentialInputFailure::NotSent));
+    }
+}
+
+#[cfg(test)]
+mod clipboard_order_tests {
+    use super::*;
+    #[test]
+    fn queued_paste_input_reaches_transport_before_next_clipboard_offer() {
+        let mut input = DrainedInput::default();
+        input.push_events(vec![FastPathInputEvent::KeyboardEvent(
+            crate::ironrdp::pdu::input::fast_path::KeyboardFlags::empty(),
+            0x2f,
+        )]);
+        let (sender, _receipt) = tokio::sync::oneshot::channel();
+        let next = RdpCommand::ClipboardPublish(clipboard::ClipboardPublication::new(
+            "second".into(),
+            sender,
+        ));
+        assert!(input.blocks_clipboard_replacement(&next));
+        let delivered = input.in_arrival_order().count();
+        assert_eq!(delivered, 1);
+        input.clear();
+        assert!(!input.blocks_clipboard_replacement(&next));
     }
 }

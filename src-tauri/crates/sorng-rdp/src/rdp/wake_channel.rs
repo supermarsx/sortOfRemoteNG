@@ -90,6 +90,11 @@ fn count_transient_input(command: &RdpCommand, report: &mut CheckpointReport) ->
             report.dropped_credential_inputs = report.dropped_credential_inputs.saturating_add(1);
             true
         }
+        RdpCommand::ClipboardCopy(_)
+        | RdpCommand::ClipboardPublish(_)
+        | RdpCommand::ClipboardPolicy { .. }
+        | RdpCommand::ClipboardCopyFiles(_)
+        | RdpCommand::ClipboardPaste => true,
         _ => false,
     }
 }
@@ -103,6 +108,7 @@ fn regular_command_byte_weight(command: &RdpCommand) -> usize {
             .unit_count()
             .saturating_mul(std::mem::size_of::<u16>()),
         RdpCommand::ClipboardCopy(text) => text.len(),
+        RdpCommand::ClipboardPublish(request) => request.text.len(),
         RdpCommand::ClipboardCopyFiles(entries) => entries.iter().fold(
             entries
                 .len()
@@ -465,10 +471,6 @@ mod tests {
         assert!(matches!(receiver.try_recv(), Ok(RdpCommand::DetachViewer)));
         assert!(matches!(
             receiver.try_recv(),
-            Ok(RdpCommand::ClipboardPaste)
-        ));
-        assert!(matches!(
-            receiver.try_recv(),
             Ok(RdpCommand::ToggleFeature {
                 feature,
                 enabled: false
@@ -588,10 +590,6 @@ mod tests {
         assert!(matches!(receiver.try_recv(), Ok(RdpCommand::Reconnect)));
         assert!(matches!(
             receiver.try_recv(),
-            Ok(RdpCommand::ClipboardPaste)
-        ));
-        assert!(matches!(
-            receiver.try_recv(),
             Err(mpsc::error::TryRecvError::Empty)
         ));
     }
@@ -628,10 +626,6 @@ mod tests {
         // The credential is gone for good: a later checkpoint or the live loop
         // can never replay it against a different remote screen.
         assert!(matches!(receiver.try_recv(), Ok(RdpCommand::Reconnect)));
-        assert!(matches!(
-            receiver.try_recv(),
-            Ok(RdpCommand::ClipboardPaste)
-        ));
         assert!(matches!(
             receiver.try_recv(),
             Err(mpsc::error::TryRecvError::Empty)

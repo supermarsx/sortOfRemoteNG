@@ -612,6 +612,12 @@ pub enum RdpCommand {
     Reconnect,
     /// Advertise local clipboard text to the remote server (CF_UNICODETEXT).
     ClipboardCopy(String),
+    ClipboardPublish(super::clipboard::ClipboardPublication),
+    ClipboardPolicy {
+        enabled: bool,
+        direction: Option<super::settings::ClipboardDirection>,
+        reply: tokio::sync::oneshot::Sender<Result<(), String>>,
+    },
     /// Request clipboard text from the remote server.
     ClipboardPaste,
     /// Stage local files for CLIPRDR file transfer and advertise FileGroupDescriptorW.

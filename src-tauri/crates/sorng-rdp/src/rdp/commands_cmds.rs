@@ -887,8 +887,8 @@ pub async fn rdp_cert_trust_respond(payload: RdpCertTrustResponsePayload) -> Res
 }
 
 /// Advertise local clipboard text to the remote RDP session via CLIPRDR.
-/// The text is stored and will be sent to the server when it requests
-/// the clipboard contents.
+/// Wait for this connection attempt to publish it through an initialized
+/// channel. Success does not confirm that a remote application pasted it.
 #[tauri::command]
 pub async fn rdp_clipboard_copy(
     state: tauri::State<'_, RdpServiceState>,
@@ -897,12 +897,29 @@ pub async fn rdp_clipboard_copy(
 ) -> Result<(), String> {
     validate_rdp_clipboard_text(&text)?;
 
-    let service = state.lock().await;
-    if let Some(conn) = service.connections.get(&session_id) {
-        enqueue_session_command(&conn.cmd_tx, RdpCommand::ClipboardCopy(text))?;
-        Ok(())
-    } else {
-        Err(format!("RDP session {session_id} not found"))
+    let (reply, receipt) = tokio::sync::oneshot::channel();
+    {
+        let service = state.lock().await;
+        let conn = service
+            .connections
+            .get(&session_id)
+            .ok_or_else(|| format!("RDP session {session_id} not found"))?;
+        enqueue_session_command(
+            &conn.cmd_tx,
+            RdpCommand::ClipboardPublish(crate::rdp::clipboard::ClipboardPublication::new(
+                text, reply,
+            )),
+        )?;
+    }
+    // Never hold the service lock while the actor initializes/publishes.
+    // Dropping a timed-out receiver withdraws an offer not yet published.
+    match tokio::time::timeout(Duration::from_secs(5), receipt).await {
+        Ok(Ok(result)) => result,
+        Ok(Err(_)) => Err("Clipboard publication ended with its connection attempt.".into()),
+        Err(_) => Err(
+            "Clipboard publication timed out; delivery may have occurred. Check the remote session before retrying."
+                .into(),
+        ),
     }
 }
 
@@ -958,7 +975,39 @@ pub async fn rdp_toggle_feature(
     session_id: String,
     feature: String,
     enabled: bool,
+    direction: Option<crate::rdp::settings::ClipboardDirection>,
 ) -> Result<(), String> {
+    if feature == "clipboard" {
+        let (reply, receipt) = tokio::sync::oneshot::channel();
+        {
+            let service = state.lock().await;
+            let conn = service
+                .connections
+                .get(&session_id)
+                .ok_or_else(|| format!("RDP session {session_id} not found"))?;
+            enqueue_session_command(
+                &conn.cmd_tx,
+                RdpCommand::ClipboardPolicy {
+                    enabled,
+                    direction,
+                    reply,
+                },
+            )?;
+        }
+        return match tokio::time::timeout(Duration::from_secs(5), receipt).await {
+            Ok(Ok(result)) => result,
+            Ok(Err(_)) => Err(
+                "Clipboard settings ended with their connection attempt. Reconnect this session."
+                    .into(),
+            ),
+            Err(_) => {
+                Err("Clipboard settings could not be confirmed. Reconnect this session.".into())
+            }
+        };
+    }
+    if direction.is_some() {
+        return Err("Clipboard direction is only valid for the clipboard feature.".into());
+    }
     let service = state.lock().await;
     if let Some(conn) = service.connections.get(&session_id) {
         enqueue_session_command(&conn.cmd_tx, RdpCommand::ToggleFeature { feature, enabled })?;
