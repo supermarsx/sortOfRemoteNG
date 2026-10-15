@@ -87,6 +87,46 @@ afterEach(() => {
 });
 
 describe("Application logs", () => {
+  it("renders encrypted tracing events separately with newest-first session filtering", async () => {
+    mocks.invoke.mockImplementation(async (command, args) =>
+      command === "application_logs_list"
+        ? {
+            files:
+              args.source === "application"
+                ? [{ ...files[0], name: "encrypted-2026-10-15.log.enc" }]
+                : [],
+            truncated: false,
+          }
+        : {
+            text: [
+              "2026-10-15T10:53:03.615315Z  INFO connect_begin: ironrdp_blocking::connector: Begin connection procedure",
+              "2026-10-15T10:53:04.194821Z  INFO connect_finalize: ironrdp_blocking::connector: Connected with success",
+              '2026-10-15T10:53:04.803993Z  DEBUG initialize_security_context{protocol="NTLM"}: sspi::negotiate::client: Authenticator result',
+            ].join("\n"),
+            truncated: false,
+          },
+    );
+    render(<ApplicationLogsView isActive />);
+    const region = await screen.findByRole("region", { name: "Log content" });
+    await waitFor(() => expect(region.querySelectorAll("li")).toHaveLength(3));
+    expect(region.querySelectorAll("li")[0]).toHaveTextContent(
+      "Authenticator result",
+    );
+    expect(region).not.toHaveTextContent("no wall timestamp");
+    expect(region).toHaveTextContent(
+      "Application file · encrypted-2026-10-15.log.enc",
+    );
+    fireEvent.click(screen.getByRole("combobox", { name: "Log category" }));
+    fireEvent.mouseDown(
+      screen.getByRole("option", { name: "Application sessions" }),
+    );
+    const rows = region.querySelectorAll("li");
+    expect(rows).toHaveLength(2);
+    expect(rows[0]).toHaveTextContent("Connected with success");
+    expect(rows[1]).toHaveTextContent("Begin connection procedure");
+    expect(region).not.toHaveTextContent("Authenticator result");
+  });
+
   it("converges both sources newest first and filters parsed categories without raw journal fields", async () => {
     mocks.invoke.mockImplementation(async (command, args) =>
       command === "application_logs_list"

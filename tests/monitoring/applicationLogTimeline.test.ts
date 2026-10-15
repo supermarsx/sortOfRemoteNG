@@ -14,6 +14,110 @@ const file = {
 const browser = (row: unknown) =>
   parseLogTimeline(JSON.stringify(row), "browser", file)[0];
 describe("bounded application log timeline", () => {
+  it("splits encrypted tracing RDP events, reads fractional dates and keeps real multiline blocks", () => {
+    const rows = parseLogTimeline(
+      [
+        "2026-10-15T10:53:03.615315Z  INFO connect_begin: ironrdp_blocking::connector: Begin connection procedure",
+        "2026-10-15T10:53:03.798477Z  INFO connect_finalize: ironrdp_blocking::connector: CredSSP: starting perform_credssp_step",
+        '2026-10-15T10:53:03.803993Z  INFO connect_finalize:initialize_security_context{protocol="NTLM"}: sspi::negotiate::client: return=Ok(ContinueNeeded)',
+        "2026-10-15T10:56:38.710581Z  INFO ironrdp_cliprdr: CLIPRDR(clipboard) virtual channel has been initialized",
+        "2026-10-15T10:57:08.666816Z  WARN ironrdp_cliprdr: clipboard response",
+        "  continuation with diagnostic details",
+      ].join("\r\n"),
+      "application",
+      { ...file, name: "encrypted-2026-10-15.log.enc", encrypted: true },
+    );
+    expect(rows).toHaveLength(5);
+    expect(rows[0]).toMatchObject({
+      timestampMs: Date.parse("2026-10-15T10:53:03.615Z"),
+      level: "INFO",
+      category: "sessions",
+      message: "Begin connection procedure",
+    });
+    expect(rows[0].details).toContain("Span: connect_begin");
+    expect(rows[2]).toMatchObject({
+      category: "security",
+      message: "return=Ok(ContinueNeeded)",
+    });
+    expect(rows[2].details).toContain(
+      'initialize_security_context{protocol="NTLM"}',
+    );
+    const sorted = newestLogRows(rows);
+    expect(sorted[0]).toMatchObject({
+      level: "WARN",
+      message: "clipboard response",
+    });
+    expect(sorted[0].details).toContain("continuation with diagnostic details");
+    expect(logRowsText(sorted)).not.toContain("Recorded order");
+    expect(logRowsText(sorted)).toContain("[Application sessions] [WARN]");
+  });
+
+  it("handles colored headers, nanosecond fractions, offsets and colon-rich span fields", () => {
+    const esc = String.fromCharCode(27);
+    const rows = parseLogTimeline(
+      [
+        `${esc}[2m2026-10-15T11:53:03.615315999+01:00${esc}[0m ${esc}[33m WARN${esc}[0m request{url="https://[::1]:443/path", value="escaped\\\"}:field"}:connect_begin: ironrdp_session::x224: sspi::message: body stays a message`,
+        "[2026-10-15T10:53:03.616253Z][DEBUG][sorng_ssh] bracketed microseconds",
+        "INFO existing level-only entry",
+      ].join("\n"),
+      "application",
+      file,
+    );
+    expect(rows).toHaveLength(3);
+    expect(rows[0]).toMatchObject({
+      timestampMs: Date.parse("2026-10-15T10:53:03.615Z"),
+      level: "WARN",
+      category: "sessions",
+      message: "sspi::message: body stays a message",
+    });
+    expect(rows[0].details).toContain('url="https://[::1]:443/path"');
+    expect(logRowsText(rows)).not.toContain(esc);
+    expect(rows[1].timestampMs).toBe(Date.parse("2026-10-15T10:53:03.616Z"));
+    expect(rows[2]).toMatchObject({ timestampMs: null, level: "INFO" });
+  });
+
+  it("keeps malformed times and leading tail fragments untimed without swallowing the next tracing event", () => {
+    const rows = parseLogTimeline(
+      [
+        "tail fragment from an earlier record",
+        "2026-99-15T10:53:03.615315Z INFO other_module: invalid date",
+        "2026-10-15T10:53:04.615315Z DEBUG ironrdp_dvc::client: DVC Create Request",
+        "  PRIVATE INFO continuation, not another header",
+      ].join("\n"),
+      "application",
+      file,
+    );
+    expect(rows).toHaveLength(3);
+    expect(rows[0].timestampMs).toBeNull();
+    expect(rows[1]).toMatchObject({
+      timestampMs: null,
+      category: "application",
+      level: "INFO",
+    });
+    expect(rows[2]).toMatchObject({
+      category: "sessions",
+      level: "DEBUG",
+      message: "DVC Create Request",
+    });
+    expect(rows[2].details).toContain("PRIVATE INFO continuation");
+  });
+
+  it.each(["other_module", "tokio"])(
+    "does not promote module-looking message text over the real %s target",
+    (target) => {
+      const row = parseLogTimeline(
+        `2026-10-15T10:53:03.615315Z INFO ${target}: sspi::message: sorng_ssh: message stays intact`,
+        "application",
+        file,
+      )[0];
+      expect(row.category).toBe("application");
+      expect(row.message).toBe(
+        "sspi::message: sorng_ssh: message stays intact",
+      );
+      expect(row.details).toBe(`Module: ${target}`);
+    },
+  );
+
   it("renders fixed journal events without unknown account/page/URL fields", () => {
     const row = browser({
       version: 1,

@@ -425,6 +425,56 @@ function nativeTiming(
   return null;
 }
 
+const wallTimestamp =
+  /^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d(?:\.\d{1,9})?(?:Z|[+-]\d\d:\d\d)$/;
+const ansiStyle = new RegExp(`${String.fromCharCode(27)}\\[[0-9;:]*m`, "g");
+// Known connection spans omit fields. Other bare tokens stay targets so
+// module-looking message text cannot select its own category.
+const connectionSpans = new Set(["connect_begin", "connect_finalize"]);
+
+/** Tracing's span fields may contain quoted colons, URLs and nested braces. */
+function tracingMessage(body: string): {
+  message: string;
+  target?: string;
+  scope?: string;
+} {
+  let offset = 0;
+  while (offset < body.length) {
+    const start = offset;
+    const name = /^[a-zA-Z_][a-zA-Z0-9_]*(?:::[a-zA-Z_][a-zA-Z0-9_]*)*/.exec(
+      body.slice(offset),
+    )?.[0];
+    if (!name) break;
+    offset += name.length;
+    const fields = body[offset] === "{";
+    if (fields) {
+      let depth = 0;
+      let quoted = false;
+      let escaped = false;
+      do {
+        const character = body[offset++];
+        if (escaped) escaped = false;
+        else if (quoted && character === "\\") escaped = true;
+        else if (character === '"') quoted = !quoted;
+        else if (!quoted && character === "{") depth++;
+        else if (!quoted && character === "}") depth--;
+      } while (offset < body.length && (depth > 0 || quoted));
+      if (depth !== 0 || quoted) break;
+    }
+    if (body[offset] !== ":") break;
+    offset++;
+    const nestedSpan = body[offset] !== " ";
+    while (body[offset] === " ") offset++;
+    if (!fields && !nestedSpan && !connectionSpans.has(name))
+      return {
+        target: name,
+        message: body.slice(offset),
+        scope: body.slice(0, start).replace(/:\s*$/, ""),
+      };
+  }
+  return { message: body };
+}
+
 export function parseLogTimeline(
   text: string,
   source: ApplicationLogSource,
@@ -433,7 +483,9 @@ export function parseLogTimeline(
   // The reader already bounds files; retain a separate presentation bound.
   const lines = text.slice(-262144).split(/\r?\n/).slice(-2000);
   const result: LogTimelineRow[] = [];
-  lines.forEach((line, sequence) => {
+  lines.forEach((rawLine, sequence) => {
+    const line =
+      source === "application" ? rawLine.replace(ansiStyle, "") : rawLine;
     if (!line.trim()) return;
     const base = {
       id: `${source}:${file.id}:${sequence}`,
@@ -462,25 +514,26 @@ export function parseLogTimeline(
         line,
       );
     const simple = /^(ERROR|WARN|INFO|DEBUG|TRACE)\s+(.*)$/.exec(line);
-    if (!structured && !simple && result.length) {
+    const traced =
+      /^(\d{4}-\d\d-\d\dT\S+)\s+(ERROR|WARN|INFO|DEBUG|TRACE)\s+(.*)$/.exec(
+        line,
+      );
+    if (!structured && !simple && !traced && result.length) {
       result[result.length - 1].details +=
         `${result[result.length - 1].details ? "\n" : ""}${line}`;
       return;
     }
+    const time = structured?.[1] ?? traced?.[1];
     const parsedTime =
-      structured &&
-      /^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d(?:\.\d{1,3})?(?:Z|[+-]\d\d:\d\d)$/.test(
-        structured[1],
-      )
-        ? Date.parse(structured[1])
-        : NaN;
+      time && wallTimestamp.test(time) ? Date.parse(time) : NaN;
     const timestampMs =
       Number.isSafeInteger(parsedTime) && Math.abs(parsedTime) <= 8.64e15
         ? parsedTime
         : null;
-    const message = structured?.[4] ?? simple?.[2] ?? line;
+    const tracing = traced ? tracingMessage(traced[3]) : null;
+    const message = structured?.[4] ?? simple?.[2] ?? tracing?.message ?? line;
     const pretty = nativeTiming(message);
-    const target = structured?.[3];
+    const target = structured?.[3] ?? tracing?.target;
     const moduleName =
       target && /^[a-zA-Z_][a-zA-Z0-9_:]{0,160}$/.test(target) ? target : null;
     const inModule = (names: string[]) =>
@@ -494,9 +547,10 @@ export function parseLogTimeline(
       "sorng_protocols::private_forward_proxy",
     ])
       ? "network"
-      : inModule(["sorng_encryption", "sorng_tls_trust"])
+      : inModule(["sorng_encryption", "sorng_tls_trust", "sspi"])
         ? "security"
-        : inModule(["sorng_rdp", "sorng_serial"])
+        : inModule(["sorng_rdp", "sorng_serial", "ironrdp"]) ||
+            (moduleName !== null && moduleName.startsWith("ironrdp_"))
           ? "sessions"
           : "application";
     result.push({
@@ -504,13 +558,13 @@ export function parseLogTimeline(
       category,
       timestampMs,
       orderMs: timestampMs ?? base.orderMs,
-      level: structured?.[2] ?? simple?.[1] ?? "LOG",
+      level: structured?.[2] ?? simple?.[1] ?? traced?.[2] ?? "LOG",
       message,
       details: "",
       ...pretty,
       ...(moduleName
         ? {
-            details: `${pretty?.details ? `${pretty.details}\n` : ""}Module: ${moduleName}`,
+            details: `${pretty?.details ? `${pretty.details}\n` : ""}Module: ${moduleName}${tracing?.scope ? `\nSpan: ${tracing.scope}` : ""}`,
           }
         : {}),
     });
