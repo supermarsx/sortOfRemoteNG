@@ -1729,13 +1729,254 @@ fn validate_script_execution_id(execution_id: Option<String>) -> Result<String, 
     }
 }
 
+enum ShellIoTick<'a> {
+    Close,
+    Paused,
+    Ready(std::sync::MutexGuard<'a, ()>),
+}
+fn shell_io_tick<'a>(
+    close: impl Fn() -> bool,
+    suspended: &AtomicUsize,
+    native_io: &'a StdMutex<()>,
+) -> Result<ShellIoTick<'a>, String> {
+    if close() {
+        return Ok(ShellIoTick::Close);
+    }
+    if suspended.load(Ordering::Acquire) > 0 {
+        return Ok(ShellIoTick::Paused);
+    }
+    let guard = match native_io.try_lock() {
+        Ok(guard) => guard,
+        Err(std::sync::TryLockError::WouldBlock) => return Ok(ShellIoTick::Paused),
+        Err(std::sync::TryLockError::Poisoned(_)) => {
+            return Err("SSH shell I/O is unavailable; reconnect this session".into())
+        }
+    };
+    if close() {
+        return Ok(ShellIoTick::Close);
+    }
+    if suspended.load(Ordering::Acquire) > 0 {
+        return Ok(ShellIoTick::Paused);
+    }
+    Ok(ShellIoTick::Ready(guard))
+}
+
+/// An original-actor-bound script operation. Preparation performs no SSH I/O.
+/// The per-session permit and shell pause remain owned until all worker cleanup.
+pub(crate) struct ScriptExecutionJob {
+    session: Session,
+    operation: SessionOperation,
+    shell_pause: ShellIoPause,
+    native_io: Arc<StdMutex<()>>,
+    script: String,
+    interpreter: String,
+    remote_path: String,
+    deadline: Instant,
+}
+
+struct ScriptSessionMode {
+    session: Session,
+    blocking: bool,
+    timeout: u32,
+}
+impl ScriptSessionMode {
+    fn enter(session: &Session) -> Self {
+        let restore = Self {
+            session: session.clone(),
+            blocking: session.is_blocking(),
+            timeout: session.timeout(),
+        };
+        session.set_blocking(true);
+        restore
+    }
+}
+impl Drop for ScriptSessionMode {
+    fn drop(&mut self) {
+        self.session.set_timeout(self.timeout);
+        self.session.set_blocking(self.blocking);
+    }
+}
+
+struct ScriptRemoteCleanup<'a> {
+    session: &'a Session,
+    operation: &'a SessionOperation,
+    path: &'a str,
+}
+impl Drop for ScriptRemoteCleanup<'_> {
+    fn drop(&mut self) {
+        self.session.set_blocking(true);
+        remove_remote_script(self.session, self.operation, self.path);
+    }
+}
+
+fn script_timeout_ms(deadline: Instant, now: Instant) -> Result<u32, String> {
+    let remaining = deadline.saturating_duration_since(now);
+    if remaining.is_zero() {
+        return Err(
+            "Remote script deployment timed out before execution; no automatic retry".into(),
+        );
+    }
+    Ok(remaining.as_millis().clamp(1, u32::MAX as u128) as u32)
+}
+fn set_script_io_deadline(session: &Session, deadline: Instant) -> Result<(), String> {
+    session.set_timeout(script_timeout_ms(deadline, Instant::now())?);
+    Ok(())
+}
+
+impl ScriptExecutionJob {
+    pub(crate) fn run(self) -> Result<super::types::ScriptExecutionResult, String> {
+        let Self {
+            session,
+            operation,
+            shell_pause: _shell_pause,
+            native_io,
+            script,
+            interpreter,
+            remote_path,
+            deadline,
+        } = self;
+        let _native_io = native_io
+            .lock()
+            .map_err(|_| "SSH shell I/O is unavailable; reconnect this session".to_string())?;
+        let _mode = ScriptSessionMode::enter(&session);
+        set_script_io_deadline(&session, deadline)?;
+        let cleanup = ScriptRemoteCleanup {
+            session: &session,
+            operation: &operation,
+            path: &remote_path,
+        };
+        let result = (|| {
+            upload_script_via_scp(
+                &session,
+                &operation,
+                &remote_path,
+                &script,
+                &interpreter,
+                deadline,
+            )?;
+            // ── 2. Execute the script file ──────────────────────────────
+            //   Run it and capture exit code separately so we always get
+            //   the real exit code even if the script outputs nothing.
+            let exec_command = wrap_script_invocation_with_exit_sentinel(&build_script_invocation(
+                &remote_path,
+                &interpreter,
+            ));
+
+            (|| -> Result<_, String> {
+                set_script_io_deadline(&session, deadline)?;
+                let mut exec_ch = operation
+                    .native_open(|| session.channel_session())
+                    .map_err(|e| format!("Failed to create exec channel: {}", e))?;
+
+                set_script_io_deadline(&session, deadline)?;
+                exec_ch
+                    .exec(&exec_command)
+                    .map_err(|e| format!("Failed to execute script: {}", e))?;
+                let _ = exec_ch.send_eof();
+
+                // A blocking read of stdout before stderr can deadlock when the
+                // remote process fills its stderr window. Drain both SSH
+                // streams concurrently in nonblocking mode under one atomic
+                // byte budget instead.
+                session.set_blocking(false);
+                let cancellation = Arc::new(AtomicBool::new(false));
+                let output_result = read_script_output_bounded(
+                    exec_ch.stream(0),
+                    exec_ch.stderr(),
+                    SCRIPT_OUTPUT_LIMIT_BYTES,
+                    deadline,
+                    cancellation,
+                );
+                session.set_blocking(true);
+
+                if output_result.is_err() || Instant::now() >= deadline {
+                    session.set_timeout(SCRIPT_CHANNEL_CLEANUP_TIMEOUT_MS);
+                    let _ = exec_ch.close();
+                    let _ = exec_ch.wait_close();
+                } else {
+                    let remaining_ms = deadline
+                        .saturating_duration_since(Instant::now())
+                        .as_millis()
+                        .clamp(1, u32::MAX as u128) as u32;
+                    session.set_timeout(remaining_ms);
+                    if exec_ch.wait_close().is_err() {
+                        let _ = exec_ch.close();
+                        session.set_timeout(SCRIPT_CHANNEL_CLEANUP_TIMEOUT_MS);
+                        let _ = exec_ch.wait_close();
+                    }
+                }
+
+                let raw_exit = exec_ch.exit_status().unwrap_or(-1);
+                let (stdout_buf, stderr_buf) =
+                    output_result.map_err(|error| error.user_message().to_string())?;
+                let raw_stdout = String::from_utf8_lossy(&stdout_buf).to_string();
+                let stderr = String::from_utf8_lossy(&stderr_buf).to_string();
+
+                // Parse the sentinel to extract the real exit code and clean stdout
+                let (stdout, exit_code) = parse_script_stdout_and_exit(&raw_stdout, raw_exit);
+
+                Ok(super::types::ScriptExecutionResult {
+                    stdout,
+                    stderr,
+                    exit_code,
+                    remote_path: remote_path.clone(),
+                })
+            })()
+        })();
+        drop(cleanup);
+        result
+    }
+}
+
+/// No SSH I/O or worker await may retain the global service registry guard.
+pub async fn execute_script_on_state(
+    state: &SshServiceState,
+    session_id: &str,
+    script: &str,
+    interpreter: Option<&str>,
+) -> Result<super::types::ScriptExecutionResult, String> {
+    execute_script_with_worker(
+        state,
+        session_id,
+        script,
+        interpreter,
+        ScriptExecutionJob::run,
+    )
+    .await
+}
+
+async fn execute_script_with_worker<F>(
+    state: &SshServiceState,
+    session_id: &str,
+    script: &str,
+    interpreter: Option<&str>,
+    worker: F,
+) -> Result<super::types::ScriptExecutionResult, String>
+where
+    F: FnOnce(ScriptExecutionJob) -> Result<super::types::ScriptExecutionResult, String>
+        + Send
+        + 'static,
+{
+    let job = {
+        let mut service = state.lock().await;
+        service.prepare_script_execution(session_id, script, interpreter)?
+    };
+    tokio::task::spawn_blocking(move || worker(job))
+        .await
+        .map_err(|_| {
+            "Remote script worker ended unexpectedly; execution may have started".to_string()
+        })?
+}
+
 fn upload_script_via_scp(
     session: &Session,
     operation: &SessionOperation,
     remote_path: &str,
     script: &str,
     interpreter: &str,
+    deadline: Instant,
 ) -> Result<(), String> {
+    set_script_io_deadline(session, deadline)?;
     let full_script = prepare_uploaded_script(script, interpreter);
     let script_bytes = full_script.as_bytes();
     let mut channel = operation
@@ -1748,16 +1989,27 @@ fn upload_script_via_scp(
             )
         })
         .map_err(|e| format!("Failed to open SCP channel for script upload: {}", e))?;
-    channel
-        .write_all(script_bytes)
-        .map_err(|e| format!("Failed to write script to remote: {}", e))?;
+    let mut remaining = script_bytes;
+    while !remaining.is_empty() {
+        set_script_io_deadline(session, deadline)?;
+        match channel.write(remaining) {
+            Ok(0) => return Err("SCP script upload stopped before all bytes were accepted".into()),
+            Ok(count) => remaining = &remaining[count..],
+            Err(error) if error.kind() == ErrorKind::Interrupted => continue,
+            Err(error) => return Err(format!("Failed to write script to remote: {error}")),
+        }
+    }
+    set_script_io_deadline(session, deadline)?;
     channel
         .send_eof()
         .map_err(|e| format!("SCP send_eof: {}", e))?;
+    set_script_io_deadline(session, deadline)?;
     channel
         .wait_eof()
         .map_err(|e| format!("SCP wait_eof: {}", e))?;
+    set_script_io_deadline(session, deadline)?;
     channel.close().map_err(|e| format!("SCP close: {}", e))?;
+    set_script_io_deadline(session, deadline)?;
     channel
         .wait_close()
         .map_err(|e| format!("SCP wait_close: {}", e))?;
@@ -6664,6 +6916,8 @@ impl SshService {
         let emitter = event_emitter.clone();
         let suspend_count = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
         let shell_suspend_count = std::sync::Arc::clone(&suspend_count);
+        let native_io = Arc::new(StdMutex::new(()));
+        let shell_native_io = Arc::clone(&native_io);
         let shell_admission = Arc::clone(&self.shell_admission);
         let completion_for_thread = Arc::clone(&completion);
 
@@ -6695,13 +6949,30 @@ impl SshService {
                 const IDLE_THRESHOLD: u32 = 10;
 
                 while running {
-                    if rx.close_requested() {
-                        close_reason = SshShellCloseReason::Requested;
-                        close_message = None;
-                        let _ = channel.close();
-                        let _ = channel.wait_close();
-                        break;
-                    }
+                    let native_tick = match shell_io_tick(
+                        || rx.close_requested(),
+                        &shell_suspend_count,
+                        &shell_native_io,
+                    ) {
+                        Ok(ShellIoTick::Ready(guard)) => guard,
+                        Ok(ShellIoTick::Close) => {
+                            close_reason = SshShellCloseReason::Requested;
+                            close_message = None;
+                            let _ = channel.close();
+                            let _ = channel.wait_close();
+                            break;
+                        }
+                        Ok(ShellIoTick::Paused) => {
+                            idle_count = 0;
+                            std::thread::sleep(Duration::from_millis(MAX_SLEEP_MS));
+                            continue;
+                        }
+                        Err(message) => {
+                            close_reason = SshShellCloseReason::TransportError;
+                            close_message = Some(message);
+                            break;
+                        }
+                    };
 
                     if let Some((cols, rows)) = rx.take_latest_resize() {
                         record_resize(&session_id_owned, cols, rows);
@@ -6758,12 +7029,6 @@ impl SshService {
                         break;
                     }
 
-                    if shell_suspend_count.load(std::sync::atomic::Ordering::Acquire) > 0 {
-                        idle_count = 0;
-                        std::thread::sleep(Duration::from_millis(MAX_SLEEP_MS));
-                        continue;
-                    }
-
                     match channel.read(&mut buffer) {
                         Ok(bytes) if bytes > 0 => {
                             idle_count = 0;
@@ -6798,6 +7063,7 @@ impl SshService {
                         running = false;
                     }
 
+                    drop(native_tick);
                     let sleep_ms = if idle_count > IDLE_THRESHOLD {
                         MAX_SLEEP_MS
                     } else {
@@ -6846,6 +7112,7 @@ impl SshService {
                 sender: tx,
                 thread,
                 suspend_count,
+                native_io,
                 completion,
                 generation: shell_generation,
             },
@@ -7785,175 +8052,52 @@ impl SshService {
     /// Execute a script on the remote server by writing it to a temp file,
     /// making it executable, running it, capturing stdout/stderr/exit-code,
     /// and cleaning up.
+    pub(crate) fn prepare_script_execution(
+        &mut self,
+        session_id: &str,
+        script: &str,
+        interpreter: Option<&str>,
+    ) -> Result<ScriptExecutionJob, String> {
+        let operation = self
+            .sessions
+            .get(session_id)
+            .ok_or("Session not found")?
+            .channel_open
+            .operation()?;
+        let shell_pause = ShellIoPause(self.pause_shell_io(session_id));
+        let native_io = self
+            .shells
+            .get(session_id)
+            .map(|shell| Arc::clone(&shell.native_io))
+            .unwrap_or_default();
+        let entry = self
+            .sessions
+            .get_mut(session_id)
+            .ok_or("Session not found")?;
+        entry.last_activity = Utc::now();
+        Ok(ScriptExecutionJob {
+            session: entry.session.clone(),
+            operation,
+            shell_pause,
+            native_io,
+            script: script.to_owned(),
+            interpreter: interpreter.unwrap_or("bash").to_owned(),
+            remote_path: format!(
+                "/tmp/.sorng_script_{}",
+                &Uuid::new_v4().simple().to_string()[..16]
+            ),
+            deadline: Instant::now() + SCRIPT_EXECUTION_TIMEOUT,
+        })
+    }
+
     pub async fn execute_script(
         &mut self,
         session_id: &str,
         script: &str,
         interpreter: Option<&str>,
     ) -> Result<super::types::ScriptExecutionResult, String> {
-        use std::io::Write;
-        use uuid::Uuid;
-
-        let interpreter = interpreter.unwrap_or("bash");
-        let script_id = Uuid::new_v4().to_string().replace('-', "");
-        // Use /tmp with a recognisable prefix so admins can identify stale files
-        let remote_path = format!("/tmp/.sorng_script_{}", &script_id[..16]);
-
-        if !self.sessions.contains_key(session_id) {
-            return Err("Session not found".to_string());
-        }
-
-        let _session_operation = self
-            .sessions
-            .get(session_id)
-            .ok_or("Session not found")?
-            .channel_open
-            .operation()?;
-        let shell_pause = self.pause_shell_io(session_id);
-
-        let session = self
-            .sessions
-            .get_mut(session_id)
-            .ok_or("Session not found")?;
-
-        session.last_activity = chrono::Utc::now();
-
-        let was_blocking = session.session.is_blocking();
-        if !was_blocking {
-            session.session.set_blocking(true);
-        }
-
-        let result = (|| -> Result<super::types::ScriptExecutionResult, String> {
-            // ── 1. Write the script to a temp file via SCP ──────────────
-            let full_script = prepare_uploaded_script(script, interpreter);
-            let script_bytes = full_script.as_bytes();
-
-            let mut channel = _session_operation
-                .native_open(|| {
-                    session.session.scp_send(
-                        std::path::Path::new(&remote_path),
-                        0o700,
-                        script_bytes.len() as u64,
-                        None,
-                    )
-                })
-                .map_err(|e| format!("Failed to open SCP channel for script upload: {}", e))?;
-
-            channel
-                .write_all(script_bytes)
-                .map_err(|e| format!("Failed to write script to remote: {}", e))?;
-
-            channel
-                .send_eof()
-                .map_err(|e| format!("SCP send_eof: {}", e))?;
-            channel
-                .wait_eof()
-                .map_err(|e| format!("SCP wait_eof: {}", e))?;
-            channel.close().map_err(|e| format!("SCP close: {}", e))?;
-            channel
-                .wait_close()
-                .map_err(|e| format!("SCP wait_close: {}", e))?;
-
-            // ── 2. Execute the script file ──────────────────────────────
-            //   Run it and capture exit code separately so we always get
-            //   the real exit code even if the script outputs nothing.
-            let exec_command = wrap_script_invocation_with_exit_sentinel(&build_script_invocation(
-                &remote_path,
-                interpreter,
-            ));
-
-            let execution_result = (|| -> Result<_, String> {
-                let mut exec_ch = _session_operation
-                    .native_open(|| session.session.channel_session())
-                    .map_err(|e| format!("Failed to create exec channel: {}", e))?;
-                let deadline = Instant::now() + SCRIPT_EXECUTION_TIMEOUT;
-
-                session
-                    .session
-                    .set_timeout(SCRIPT_EXECUTION_TIMEOUT.as_millis() as u32);
-                exec_ch
-                    .exec(&exec_command)
-                    .map_err(|e| format!("Failed to execute script: {}", e))?;
-                let _ = exec_ch.send_eof();
-
-                // A blocking read of stdout before stderr can deadlock when the
-                // remote process fills its stderr window. Drain both SSH
-                // streams concurrently in nonblocking mode under one atomic
-                // byte budget instead.
-                session.session.set_blocking(false);
-                let cancellation = Arc::new(AtomicBool::new(false));
-                let output_result = read_script_output_bounded(
-                    exec_ch.stream(0),
-                    exec_ch.stderr(),
-                    SCRIPT_OUTPUT_LIMIT_BYTES,
-                    deadline,
-                    cancellation,
-                );
-                session.session.set_blocking(true);
-
-                if output_result.is_err() || Instant::now() >= deadline {
-                    session
-                        .session
-                        .set_timeout(SCRIPT_CHANNEL_CLEANUP_TIMEOUT_MS);
-                    let _ = exec_ch.close();
-                    let _ = exec_ch.wait_close();
-                } else {
-                    let remaining_ms = deadline
-                        .saturating_duration_since(Instant::now())
-                        .as_millis()
-                        .clamp(1, u32::MAX as u128) as u32;
-                    session.session.set_timeout(remaining_ms);
-                    if exec_ch.wait_close().is_err() {
-                        let _ = exec_ch.close();
-                        session
-                            .session
-                            .set_timeout(SCRIPT_CHANNEL_CLEANUP_TIMEOUT_MS);
-                        let _ = exec_ch.wait_close();
-                    }
-                }
-
-                let raw_exit = exec_ch.exit_status().unwrap_or(-1);
-                let (stdout_buf, stderr_buf) =
-                    output_result.map_err(|error| error.user_message().to_string())?;
-                let raw_stdout = String::from_utf8_lossy(&stdout_buf).to_string();
-                let stderr = String::from_utf8_lossy(&stderr_buf).to_string();
-
-                // Parse the sentinel to extract the real exit code and clean stdout
-                let (stdout, exit_code) = parse_script_stdout_and_exit(&raw_stdout, raw_exit);
-
-                Ok(super::types::ScriptExecutionResult {
-                    stdout,
-                    stderr,
-                    exit_code,
-                    remote_path: remote_path.clone(),
-                })
-            })();
-
-            // ── 3. Clean up the temp file, including failure paths ──────
-            session
-                .session
-                .set_timeout(SCRIPT_CHANNEL_CLEANUP_TIMEOUT_MS);
-            if let Ok(mut rm_ch) =
-                _session_operation.native_open(|| session.session.channel_session())
-            {
-                let rm_cmd = format!("rm -f {}", shell_escape::escape(remote_path.clone().into()));
-                let _ = rm_ch.exec(&rm_cmd);
-                let _ = rm_ch.send_eof();
-                let _ = rm_ch.close();
-                let _ = rm_ch.wait_close();
-            }
-
-            execution_result
-        })();
-
-        // Restore previous session state
-        if !was_blocking {
-            session.session.set_blocking(false);
-        }
-        session.session.set_timeout(0);
-        Self::resume_shell_io(shell_pause);
-
-        result
+        self.prepare_script_execution(session_id, script, interpreter)?
+            .run()
     }
 
     /// Streaming variant of [`SshService::execute_script`]. Uploads and starts
@@ -8020,6 +8164,7 @@ impl SshService {
                     &remote_path,
                     script,
                     interpreter,
+                    started + SCRIPT_EXECUTION_TIMEOUT,
                 )?;
                 let exec_command = wrap_script_invocation_with_exit_sentinel(
                     &build_script_invocation(&remote_path, interpreter),
@@ -10686,6 +10831,209 @@ mod tests {
     use crate::ssh::types::ScriptExecutionResult;
     use serde_json::json;
 
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn script_job_blocked_worker_releases_global_service_but_keeps_session_operation() {
+        let state = Arc::new(tokio::sync::Mutex::new(empty_test_service()));
+        let id = connect_fake_service_session(&state).await;
+        let gate = Arc::clone(&state.lock().await.sessions[&id].channel_open);
+        let (started_tx, started_rx) = tokio::sync::oneshot::channel();
+        let (release_tx, release_rx) = std::sync::mpsc::channel();
+        let working = Arc::clone(&state);
+        let task = tokio::spawn(async move {
+            execute_script_with_worker(&working, &id, "unused", None, move |job| {
+                let _ = started_tx.send(());
+                release_rx.recv_timeout(Duration::from_secs(2)).unwrap();
+                drop(job);
+                Ok(ScriptExecutionResult {
+                    stdout: String::new(),
+                    stderr: String::new(),
+                    exit_code: 0,
+                    remote_path: String::new(),
+                })
+            })
+            .await
+        });
+        started_rx.await.unwrap();
+        let lock = tokio::time::timeout(Duration::from_millis(250), state.lock()).await;
+        let conflict = gate.operation().is_err();
+        release_tx.send(()).unwrap();
+        assert!(
+            lock.is_ok(),
+            "blocked remote worker retained global SSH service guard"
+        );
+        assert!(
+            conflict,
+            "same-session native operations must remain serialized"
+        );
+        drop(lock);
+        task.await.unwrap().unwrap();
+        assert!(gate.operation().is_ok());
+    }
+
+    #[tokio::test]
+    async fn script_job_dropped_unrun_preserves_mode_timeout_pause_and_original_actor() {
+        let state = Arc::new(tokio::sync::Mutex::new(empty_test_service()));
+        let id = connect_fake_service_session(&state).await;
+        let mut service = state.lock().await;
+        let session = service.sessions[&id].session.clone();
+        let gate = Arc::clone(&service.sessions[&id].channel_open);
+        session.set_blocking(false);
+        session.set_timeout(1234);
+        let mut job = service
+            .prepare_script_execution(&id, "unused", None)
+            .unwrap();
+        let pause = Arc::new(AtomicUsize::new(1));
+        job.shell_pause = ShellIoPause(Some(Arc::clone(&pause)));
+        assert!(gate.operation().is_err());
+        assert!(!session.is_blocking());
+        assert_eq!(session.timeout(), 1234);
+        // Removing the service map entry must not retarget or release the old
+        // operation before its original worker/job is dropped.
+        service.sessions.remove(&id);
+        assert!(gate.operation().is_err());
+        drop(job);
+        assert_eq!(pause.load(Ordering::Acquire), 0);
+        assert!(!session.is_blocking());
+        assert_eq!(session.timeout(), 1234);
+        assert!(gate.operation().is_ok());
+    }
+
+    #[test]
+    fn script_job_mode_timeout_restore_on_success_and_unwind() {
+        for panic in [false, true] {
+            let session = Session::new().unwrap();
+            session.set_blocking(false);
+            session.set_timeout(4321);
+            let outcome = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                let _restore = ScriptSessionMode::enter(&session);
+                assert!(session.is_blocking());
+                session.set_timeout(17);
+                assert!(session.clone().is_blocking());
+                if panic {
+                    panic!("synthetic worker failure");
+                }
+            }));
+            assert_eq!(outcome.is_err(), panic);
+            assert!(!session.is_blocking());
+            assert_eq!(session.timeout(), 4321);
+        }
+    }
+
+    #[tokio::test]
+    async fn script_job_expired_before_upload_does_not_open_native_channel() {
+        let state = Arc::new(tokio::sync::Mutex::new(empty_test_service()));
+        let id = connect_fake_service_session(&state).await;
+        let mut service = state.lock().await;
+        let session = service.sessions[&id].session.clone();
+        let gate = Arc::clone(&service.sessions[&id].channel_open);
+        session.set_blocking(false);
+        session.set_timeout(71);
+        let mut job = service
+            .prepare_script_execution(&id, "unused", None)
+            .unwrap();
+        job.deadline = Instant::now() - Duration::from_secs(1);
+        assert!(job
+            .run()
+            .unwrap_err()
+            .contains("timed out before execution"));
+        assert!(!session.is_blocking());
+        assert_eq!(session.timeout(), 71);
+        assert!(
+            gate.operation().is_ok(),
+            "expired queue entry opened/poisoned a native channel"
+        );
+    }
+
+    #[test]
+    fn script_job_pause_retains_queued_shell_input_and_resize_but_close_wins() {
+        let (sender, mut receiver) = shell_mailbox(ShellMailboxLimits::default());
+        sender
+            .send(SshShellCommand::Input("queued".into()))
+            .unwrap();
+        sender.send(SshShellCommand::Resize(100, 30)).unwrap();
+        let suspended = AtomicUsize::new(1);
+        let barrier = StdMutex::new(());
+        assert!(matches!(
+            shell_io_tick(|| receiver.close_requested(), &suspended, &barrier).unwrap(),
+            ShellIoTick::Paused
+        ));
+        suspended.store(0, Ordering::Release);
+        let tick = shell_io_tick(|| receiver.close_requested(), &suspended, &barrier).unwrap();
+        assert!(matches!(tick, ShellIoTick::Ready(_)));
+        assert_eq!(receiver.take_latest_resize(), Some((100, 30)));
+        assert_eq!(receiver.drain_input_tick(1, 128).len(), 1);
+        drop(tick);
+        let held = barrier.lock().unwrap();
+        sender.send(SshShellCommand::Close).unwrap();
+        suspended.store(1, Ordering::Release);
+        assert!(matches!(
+            shell_io_tick(|| receiver.close_requested(), &suspended, &barrier).unwrap(),
+            ShellIoTick::Close
+        ));
+        drop(held);
+    }
+
+    #[test]
+    fn script_job_worker_waits_for_native_shell_tick_before_changing_shared_mode() {
+        let session = Session::new().unwrap();
+        session.set_blocking(false);
+        session.set_timeout(321);
+        let barrier = Arc::new(StdMutex::new(()));
+        let suspended = Arc::new(AtomicUsize::new(0));
+        let active_tick = shell_io_tick(|| false, &suspended, &barrier).unwrap();
+        assert!(matches!(active_tick, ShellIoTick::Ready(_)));
+        suspended.store(1, Ordering::Release);
+        let worker_session = session.clone();
+        let worker_barrier = Arc::clone(&barrier);
+        let (started_tx, started_rx) = std::sync::mpsc::channel();
+        let (release_tx, release_rx) = std::sync::mpsc::channel();
+        let worker = std::thread::spawn(move || {
+            let _barrier = worker_barrier.lock().unwrap();
+            let _mode = ScriptSessionMode::enter(&worker_session);
+            worker_session.set_timeout(77);
+            started_tx.send(()).unwrap();
+            release_rx.recv_timeout(Duration::from_secs(2)).unwrap();
+        });
+        assert!(started_rx.try_recv().is_err());
+        assert!(
+            !session.is_blocking(),
+            "worker changed mode while shell tick owned native I/O"
+        );
+        assert_eq!(session.timeout(), 321);
+        drop(active_tick);
+        started_rx.recv_timeout(Duration::from_secs(1)).unwrap();
+        assert!(session.is_blocking());
+        assert!(matches!(
+            shell_io_tick(|| false, &suspended, &barrier).unwrap(),
+            ShellIoTick::Paused
+        ));
+        release_tx.send(()).unwrap();
+        worker.join().unwrap();
+        assert!(!session.is_blocking());
+        assert_eq!(session.timeout(), 321);
+        suspended.store(0, Ordering::Release);
+        assert!(matches!(
+            shell_io_tick(|| false, &suspended, &barrier).unwrap(),
+            ShellIoTick::Ready(_)
+        ));
+    }
+
+    #[test]
+    fn script_job_upload_timeout_uses_remaining_absolute_deadline() {
+        let now = Instant::now();
+        let deadline = now + Duration::from_secs(5);
+        assert_eq!(script_timeout_ms(deadline, now).unwrap(), 5000);
+        assert_eq!(
+            script_timeout_ms(deadline, now + Duration::from_secs(4)).unwrap(),
+            1000
+        );
+        assert!(script_timeout_ms(deadline, deadline).is_err());
+        assert_eq!(
+            script_timeout_ms(deadline, deadline - Duration::from_nanos(1)).unwrap(),
+            1
+        );
+    }
+
     #[tokio::test]
     async fn forward_relay_poisoned_session_rejects_every_public_runtime_opener() {
         let state = Arc::new(tokio::sync::Mutex::new(empty_test_service()));
@@ -10797,6 +11145,7 @@ mod tests {
                 sender,
                 thread: std::thread::spawn(|| {}),
                 suspend_count: Arc::new(std::sync::atomic::AtomicUsize::new(0)),
+                native_io: Arc::default(),
                 completion: ShellCompletion::new(),
                 generation: 1,
             },
@@ -11576,6 +11925,7 @@ mod tests {
                 sender,
                 thread,
                 suspend_count: Arc::new(AtomicUsize::new(0)),
+                native_io: Arc::default(),
                 completion,
                 generation,
             },
@@ -12629,6 +12979,7 @@ mod tests {
                 sender,
                 thread,
                 suspend_count: Arc::new(std::sync::atomic::AtomicUsize::new(0)),
+                native_io: Arc::default(),
                 completion,
                 generation,
             },
@@ -12669,6 +13020,7 @@ mod tests {
                 sender,
                 thread,
                 suspend_count: Arc::new(std::sync::atomic::AtomicUsize::new(0)),
+                native_io: Arc::default(),
                 completion,
                 generation,
             },

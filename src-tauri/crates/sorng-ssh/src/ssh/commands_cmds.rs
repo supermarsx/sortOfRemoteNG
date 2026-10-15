@@ -217,10 +217,14 @@ pub async fn execute_script(
     script: String,
     interpreter: Option<String>,
 ) -> Result<super::types::ScriptExecutionResult, String> {
-    let mut ssh = state.lock().await;
     redact_result(
-        ssh.execute_script(&session_id, &script, interpreter.as_deref())
-            .await,
+        super::service::execute_script_on_state(
+            state.inner(),
+            &session_id,
+            &script,
+            interpreter.as_deref(),
+        )
+        .await,
     )
 }
 

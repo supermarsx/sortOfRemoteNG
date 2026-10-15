@@ -603,6 +603,7 @@ pub struct SshShellHandle {
     pub sender: ShellMailboxSender,
     pub thread: std::thread::JoinHandle<()>,
     pub suspend_count: std::sync::Arc<std::sync::atomic::AtomicUsize>,
+    pub(crate) native_io: std::sync::Arc<std::sync::Mutex<()>>,
     pub(crate) completion: std::sync::Arc<super::shell_runtime::ShellCompletion>,
     pub(crate) generation: u64,
 }
