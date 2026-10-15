@@ -2624,3 +2624,137 @@ describe("a Chromium proxy binding failure", () => {
     await waitFor(() => expect(t.shell.browser.state.phase).toBe("attached"));
   });
 });
+
+describe("independent private-proxy recovery failures", () => {
+  const proxyFailure = (serial: number, sequence = 1) =>
+    snapshot(serial, {
+      sequence,
+      documentLoaded: false,
+      loadFailure: { code: -130, category: "proxy" },
+    });
+  it("repairs a proxy failure after an earlier settings restart already completed", async () => {
+    const t = await attached();
+    let requested!: Promise<boolean>;
+    act(() => {
+      requested = t.shell.browser.restart("settings-saved");
+    });
+    await reattached(t, 2);
+    expect(await requested).toBe(true);
+    t.emit(proxyFailure(2));
+    await reattached(t, 3);
+    expect(t.transport.create).toHaveBeenCalledTimes(3);
+  });
+  it("repairs a later independent failure after a genuinely completed page has stayed healthy", async () => {
+    let now = 100000;
+    const clock = vi.spyOn(Date, "now").mockImplementation(() => now);
+    try {
+      const t = await attached();
+      t.emit(proxyFailure(1));
+      await reattached(t, 2);
+      now += 10001;
+      t.emit(
+        snapshot(2, { sequence: 1, loading: true, documentLoaded: false }),
+      );
+      t.emit(proxyFailure(2, 2));
+      await reattached(t, 3);
+      expect(t.transport.create).toHaveBeenCalledTimes(3);
+    } finally {
+      clock.mockRestore();
+    }
+  });
+  it("bounds independent repairs and only resets the run after ten healthy minutes", async () => {
+    let now = 100000;
+    const clock = vi.spyOn(Date, "now").mockImplementation(() => now);
+    try {
+      const t = await attached();
+      for (let serial = 1; serial <= 3; serial++) {
+        t.emit(proxyFailure(serial));
+        await reattached(t, serial + 1);
+        now += ORIGIN_BROWSER_LIFECYCLE.proxyRepairQuietMs + 1;
+      }
+      t.emit(proxyFailure(4));
+      await turns();
+      expect(t.transport.create).toHaveBeenCalledTimes(4);
+      expect(t.shell.browser.state.phase).toBe("error");
+      // A later actual completed document begins a new healthy interval.
+      t.emit(snapshot(4, { sequence: 2 }));
+      now += ORIGIN_BROWSER_LIFECYCLE.proxyRepairRunResetMs + 1;
+      t.emit(proxyFailure(4, 3));
+      await reattached(t, 5);
+      expect(t.transport.create).toHaveBeenCalledTimes(5);
+    } finally {
+      clock.mockRestore();
+    }
+  });
+  it("does not count a provisional navigation as a healthy quiet period", async () => {
+    let now = 100000;
+    const clock = vi.spyOn(Date, "now").mockImplementation(() => now);
+    try {
+      const t = await attached();
+      t.emit(proxyFailure(1));
+      await reattached(t, 2);
+      now += 1000;
+      t.emit(
+        snapshot(2, { sequence: 1, loading: true, documentLoaded: false }),
+      );
+      now += ORIGIN_BROWSER_LIFECYCLE.proxyRepairRunResetMs + 1;
+      t.emit(proxyFailure(2, 2));
+      await turns();
+      expect(t.transport.create).toHaveBeenCalledTimes(2);
+      expect(t.shell.browser.state.phase).toBe("error");
+    } finally {
+      clock.mockRestore();
+    }
+  });
+  it.each([
+    { documentLoaded: false },
+    { loading: true, documentLoaded: false },
+    { displayUrl: "about:blank" },
+  ])("does not rearm from an incomplete replacement %j", async (incomplete) => {
+    let now = 100000;
+    const clock = vi.spyOn(Date, "now").mockImplementation(() => now);
+    try {
+      const t = await attached();
+      const create = t.transport.create.getMockImplementation()!;
+      t.transport.create.mockImplementation(async (...args) => {
+        const result = await create(...args);
+        return { ...result, snapshot: { ...result.snapshot, ...incomplete } };
+      });
+      const status = t.transport.status.getMockImplementation()!;
+      t.transport.status.mockImplementation(async (...args) => {
+        const result = await status(...args);
+        return result.snapshot
+          ? { ...result, snapshot: { ...result.snapshot, ...incomplete } }
+          : result;
+      });
+      t.emit(proxyFailure(1));
+      await turns();
+      now += ORIGIN_BROWSER_LIFECYCLE.proxyRepairRunResetMs + 1;
+      t.emit(proxyFailure(2));
+      await turns();
+      expect(t.transport.create).toHaveBeenCalledTimes(2);
+      expect(t.shell.browser.state.phase).toBe("error");
+    } finally {
+      clock.mockRestore();
+    }
+  });
+  it("does not automatically replay a load timeout, and manual Retry creates a fresh attempt", async () => {
+    const t = await attached({}, Visible);
+    t.emit(
+      snapshot(1, {
+        sequence: 1,
+        documentLoaded: false,
+        loadFailure: { code: -118, category: "timeout" },
+      }),
+    );
+    await turns();
+    expect(t.transport.create).toHaveBeenCalledTimes(1);
+    expect(t.shell.browser.state.snapshot?.loadFailure?.code).toBe(-118);
+    fireEvent.click(screen.getByRole("button", { name: "Retry browser" }));
+    await reattached(t, 2);
+    expect(t.transport.create.mock.calls[1][0].initialUrl).toBe(
+      t.options.initialUrl,
+    );
+    expect(t.transport.navigate).not.toHaveBeenCalled();
+  });
+});

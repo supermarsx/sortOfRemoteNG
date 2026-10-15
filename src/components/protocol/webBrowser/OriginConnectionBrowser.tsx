@@ -548,6 +548,19 @@ export default function OriginConnectionBrowser({
     toastedProxyRecovery.current = lastRestart.serial;
     toast.success(RESTART_NOTICES["proxy-unreachable"].done);
   }, [lastRestart, restartStage, restarting, phase, rootSnapshot, toast]);
+  const toastedProxyFailure = useRef<number | null>(null);
+  useEffect(() => {
+    if (
+      lastRestart?.reason !== "proxy-unreachable" ||
+      restartStage !== "failed" ||
+      restarting ||
+      !["error", "unavailable"].includes(phase) ||
+      toastedProxyFailure.current === lastRestart.serial
+    )
+      return;
+    toastedProxyFailure.current = lastRestart.serial;
+    toast.error(RESTART_NOTICES["proxy-unreachable"].failed);
+  }, [lastRestart, restartStage, restarting, phase, toast]);
   const [repairedMfaFailure, setRepairedMfaFailure] =
     useState<typeof startupFailure>(null);
   const [devtoolsError, setDevtoolsError] = useState(false);
@@ -1533,7 +1546,8 @@ export default function OriginConnectionBrowser({
       {restartNotice &&
         lastRestart &&
         !(
-          lastRestart.reason === "proxy-unreachable" && restartStage === "done"
+          lastRestart.reason === "proxy-unreachable" &&
+          (restartStage === "done" || restartStage === "failed")
         ) && (
           // In the layout flow: a native child surface paints above DOM overlays.
           <div

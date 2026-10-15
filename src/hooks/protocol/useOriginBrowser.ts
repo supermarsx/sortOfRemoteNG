@@ -108,6 +108,10 @@ export const ORIGIN_BROWSER_LIFECYCLE = Object.freeze({
   relayEndedRunLimit: 3,
   /** A replacement that stayed up this long ends the relay's run. */
   relayEndedRunResetMs: 600_000,
+  /** A completed page must remain healthy before another independent repair. */
+  proxyRepairQuietMs: 10_000,
+  proxyRepairRunLimit: 3,
+  proxyRepairRunResetMs: 600_000,
   /** Automatic restarts for a saved change within sourceChangedBudgetMs. A
    * saved change is not a failure, so each one is followed however soon it
    * comes after the last: the editor saves a second after every pause in
@@ -607,7 +611,13 @@ export function useOriginBrowser(options: UseOriginBrowserOptions) {
   } | null>(null);
   // When each automatic restart for a saved change began, oldest first.
   const savedChanges = useRef<number[]>([]);
-  const proxyRepairOwner = useRef<string | null>(null);
+  const proxyRepairRun = useRef<{
+    ownerKey: string;
+    count: number;
+    healthySince: number | null;
+    healthyElapsed: number;
+    healthyAttemptId: string | null;
+  } | null>(null);
   const presentation = useRef({
     active: false,
     dialogOpen: true,
@@ -981,19 +991,71 @@ export function useOriginBrowser(options: UseOriginBrowserOptions) {
         }
         if (snapshot.sequence <= attempt.sequence) return;
         attempt.sequence = snapshot.sequence;
-        // One fresh authenticated relay can repair Chromium's stale binding.
-        // A second failure stays on the themed diagnostics until explicit Retry.
+        // Repair an independent proxy failure only after a completed owned
+        // page has stayed healthy. Immediate failures cannot form a retry loop.
+        const previousRun = proxyRepairRun.current;
+        const run = previousRun?.ownerKey === ownerKey ? previousRun : null;
+        const healthyFor =
+          run && run.healthyAttemptId === attempt.identity?.attemptId
+            ? run.healthySince !== null
+              ? Math.max(0, Date.now() - run.healthySince)
+              : run.healthyElapsed
+            : 0;
+        const count =
+          healthyFor >= ORIGIN_BROWSER_LIFECYCLE.proxyRepairRunResetMs
+            ? 0
+            : (run?.count ?? 0);
         if (
           snapshot.phase === "attached" &&
           snapshot.loadFailure?.code === -130 &&
-          proxyRepairOwner.current !== ownerKey &&
-          !restartCycle.current &&
+          (!count ||
+            (healthyFor >= ORIGIN_BROWSER_LIFECYCLE.proxyRepairQuietMs &&
+              count < ORIGIN_BROWSER_LIFECYCLE.proxyRepairRunLimit)) &&
+          (!restartCycle.current || restartCycle.current.ended) &&
           presentation.current.ownerAvailable
         ) {
-          proxyRepairOwner.current = ownerKey;
+          proxyRepairRun.current = {
+            ownerKey,
+            count: count + 1,
+            healthySince: null,
+            healthyElapsed: 0,
+            healthyAttemptId: null,
+          };
           void closeAttempt(attempt);
           void beginRestart("proxy-unreachable", true);
           return;
+        }
+        if (run) {
+          if (
+            snapshot.loadFailure ||
+            ["failed", "closing", "closed"].includes(snapshot.phase)
+          ) {
+            run.healthySince = null;
+            run.healthyElapsed = 0;
+            run.healthyAttemptId = null;
+          } else if (
+            snapshot.phase === "attached" &&
+            snapshot.documentLoaded === true &&
+            !snapshot.loading &&
+            /^https?:\/\//i.test(snapshot.displayUrl) &&
+            (run.healthyAttemptId !== attempt.identity?.attemptId ||
+              run.healthySince === null)
+          ) {
+            run.healthySince = Date.now();
+            run.healthyElapsed = 0;
+            run.healthyAttemptId = attempt.identity?.attemptId ?? null;
+          } else if (
+            (snapshot.phase !== "attached" ||
+              snapshot.loading ||
+              snapshot.documentLoaded !== true ||
+              !/^https?:\/\//i.test(snapshot.displayUrl)) &&
+            run.healthySince !== null
+          ) {
+            // Preserve earned quiet time for the next navigation, but a pending
+            // load cannot mature a short healthy interval or reset the budget.
+            run.healthyElapsed = healthyFor;
+            run.healthySince = null;
+          }
         }
         // Chromium's interim blank/error document cannot erase the failure UI.
         // A completed real page (or a fresh attempt) can make the child visible.
@@ -1874,7 +1936,7 @@ export function useOriginBrowser(options: UseOriginBrowserOptions) {
       endStartPause();
       relayRun.current = null;
       savedChanges.current = [];
-      proxyRepairOwner.current = null;
+      proxyRepairRun.current = null;
       cleanupRetryRequested.current = true;
       setGeneration((value) => value + 1);
     }
@@ -1904,7 +1966,7 @@ export function useOriginBrowser(options: UseOriginBrowserOptions) {
       ) {
         relayRun.current = null;
         savedChanges.current = [];
-        proxyRepairOwner.current = null;
+        proxyRepairRun.current = null;
       }
       return beginRestart(safe, false, beforeCreate);
     },

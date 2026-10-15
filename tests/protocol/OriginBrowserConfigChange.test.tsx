@@ -1233,6 +1233,9 @@ describe("a saved connection edited while its tab is open (K2)", () => {
       }),
     );
     await waitFor(() => expect(calls("origin_browser_create")).toHaveLength(2));
+    expect(
+      screen.queryByText(/fresh private proxy could not load the website/),
+    ).toBeNull();
     await emit(
       snapshot("attempt-2", {
         sequence: 5,
@@ -1243,9 +1246,18 @@ describe("a saved connection edited while its tab is open (K2)", () => {
     expect(
       screen.queryByText("This tab reconnected with a fresh private proxy."),
     ).toBeNull();
-    expect(
-      screen.getByText(/fresh private proxy could not load the website/),
-    ).toBeInTheDocument();
+    const message = /fresh private proxy could not load the website/;
+    expect(screen.getAllByText(message)).toHaveLength(1);
+    expect(screen.getByText(message).closest('[role="status"]')).not.toBeNull();
+    expect(notice()).toBeNull();
+    await emit(
+      snapshot("attempt-2", {
+        sequence: 6,
+        loadFailure: { code: -130, category: "proxy" },
+      }),
+    );
+    await settle();
+    expect(screen.getAllByText(message)).toHaveLength(1);
   });
 
   it("says so in plain words when the tab reconnects because its private proxy stopped", async () => {
