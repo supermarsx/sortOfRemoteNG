@@ -23,6 +23,8 @@ impl NativeLoginConsentVerifier for Consent {
 
 fn empresas() -> Value {
     let mut row = connection();
+    // These cases prove the finite reviewed routing when normal broad browsing is opted out.
+    row["httpProxyPolicy"] = json!({"nativeBrowsingMode":"restricted"});
     row["hostname"] = "https://cliente-empresas.meo.pt/Pages/Dashboard/Dashboard.aspx".into();
     row["httpApplication"] = json!({"version":1,"id":"meo-empresas","loginMode":"manual"});
     row

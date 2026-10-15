@@ -1,0 +1,727 @@
+[
+  {
+    "name": "missing policy",
+    "standard": true
+  },
+  {
+    "name": "empty policy",
+    "policy": {},
+    "standard": true
+  },
+  {
+    "name": "old fully normalized default",
+    "policy": {
+      "version": 1,
+      "pageScripts": "allow",
+      "allowAllScripts": false,
+      "allowAllRequests": false,
+      "httpsOnly": false,
+      "sameOriginOnly": false,
+      "allowExternalFonts": true,
+      "externalFontOrigins": [
+        "https://fonts.googleapis.com",
+        "https://fonts.gstatic.com",
+        "https://cdnjs.cloudflare.com",
+        "https://cdn.jsdelivr.net"
+      ],
+      "externalResourceOrigins": [
+        {
+          "origin": "https://js.stripe.com",
+          "kinds": ["script"]
+        },
+        {
+          "origin": "https://www.paypal.com",
+          "kinds": ["script"]
+        },
+        {
+          "origin": "https://js.braintreegateway.com",
+          "kinds": ["script"]
+        },
+        {
+          "origin": "https://ajax.googleapis.com",
+          "kinds": ["script"]
+        },
+        {
+          "origin": "https://apis.google.com",
+          "kinds": ["script"]
+        },
+        {
+          "origin": "https://cdnjs.cloudflare.com",
+          "kinds": ["script", "stylesheet"]
+        },
+        {
+          "origin": "https://cdn.jsdelivr.net",
+          "kinds": ["script", "stylesheet"]
+        }
+      ],
+      "allowCrossOriginRedirects": false,
+      "allowHttpDowngradeRedirects": false,
+      "cacheMode": "normal",
+      "queryParameters": []
+    },
+    "standard": true
+  },
+  {
+    "name": "explicit restricted",
+    "policy": {
+      "version": 1,
+      "pageScripts": "allow",
+      "allowAllScripts": false,
+      "allowAllRequests": false,
+      "httpsOnly": false,
+      "sameOriginOnly": false,
+      "allowExternalFonts": true,
+      "externalFontOrigins": [
+        "https://fonts.googleapis.com",
+        "https://fonts.gstatic.com",
+        "https://cdnjs.cloudflare.com",
+        "https://cdn.jsdelivr.net"
+      ],
+      "externalResourceOrigins": [
+        {
+          "origin": "https://js.stripe.com",
+          "kinds": ["script"]
+        },
+        {
+          "origin": "https://www.paypal.com",
+          "kinds": ["script"]
+        },
+        {
+          "origin": "https://js.braintreegateway.com",
+          "kinds": ["script"]
+        },
+        {
+          "origin": "https://ajax.googleapis.com",
+          "kinds": ["script"]
+        },
+        {
+          "origin": "https://apis.google.com",
+          "kinds": ["script"]
+        },
+        {
+          "origin": "https://cdnjs.cloudflare.com",
+          "kinds": ["script", "stylesheet"]
+        },
+        {
+          "origin": "https://cdn.jsdelivr.net",
+          "kinds": ["script", "stylesheet"]
+        }
+      ],
+      "allowCrossOriginRedirects": false,
+      "allowHttpDowngradeRedirects": false,
+      "cacheMode": "normal",
+      "queryParameters": [],
+      "nativeBrowsingMode": "restricted"
+    },
+    "standard": false
+  },
+  {
+    "name": "explicit standard with custom blocks retained separately",
+    "policy": {
+      "version": 1,
+      "pageScripts": "allow",
+      "allowAllScripts": false,
+      "allowAllRequests": false,
+      "httpsOnly": false,
+      "sameOriginOnly": true,
+      "allowExternalFonts": true,
+      "externalFontOrigins": [
+        "https://fonts.googleapis.com",
+        "https://fonts.gstatic.com",
+        "https://cdnjs.cloudflare.com",
+        "https://cdn.jsdelivr.net"
+      ],
+      "externalResourceOrigins": [
+        {
+          "origin": "https://js.stripe.com",
+          "kinds": ["script"]
+        },
+        {
+          "origin": "https://www.paypal.com",
+          "kinds": ["script"]
+        },
+        {
+          "origin": "https://js.braintreegateway.com",
+          "kinds": ["script"]
+        },
+        {
+          "origin": "https://ajax.googleapis.com",
+          "kinds": ["script"]
+        },
+        {
+          "origin": "https://apis.google.com",
+          "kinds": ["script"]
+        },
+        {
+          "origin": "https://cdnjs.cloudflare.com",
+          "kinds": ["script", "stylesheet"]
+        },
+        {
+          "origin": "https://cdn.jsdelivr.net",
+          "kinds": ["script", "stylesheet"]
+        }
+      ],
+      "allowCrossOriginRedirects": false,
+      "allowHttpDowngradeRedirects": false,
+      "cacheMode": "normal",
+      "queryParameters": [],
+      "nativeBrowsingMode": "standard"
+    },
+    "standard": true
+  },
+  {
+    "name": "page scripts blocked",
+    "policy": {
+      "version": 1,
+      "pageScripts": "block",
+      "allowAllScripts": false,
+      "allowAllRequests": false,
+      "httpsOnly": false,
+      "sameOriginOnly": false,
+      "allowExternalFonts": true,
+      "externalFontOrigins": [
+        "https://fonts.googleapis.com",
+        "https://fonts.gstatic.com",
+        "https://cdnjs.cloudflare.com",
+        "https://cdn.jsdelivr.net"
+      ],
+      "externalResourceOrigins": [
+        {
+          "origin": "https://js.stripe.com",
+          "kinds": ["script"]
+        },
+        {
+          "origin": "https://www.paypal.com",
+          "kinds": ["script"]
+        },
+        {
+          "origin": "https://js.braintreegateway.com",
+          "kinds": ["script"]
+        },
+        {
+          "origin": "https://ajax.googleapis.com",
+          "kinds": ["script"]
+        },
+        {
+          "origin": "https://apis.google.com",
+          "kinds": ["script"]
+        },
+        {
+          "origin": "https://cdnjs.cloudflare.com",
+          "kinds": ["script", "stylesheet"]
+        },
+        {
+          "origin": "https://cdn.jsdelivr.net",
+          "kinds": ["script", "stylesheet"]
+        }
+      ],
+      "allowCrossOriginRedirects": false,
+      "allowHttpDowngradeRedirects": false,
+      "cacheMode": "normal",
+      "queryParameters": []
+    },
+    "standard": false
+  },
+  {
+    "name": "inline only",
+    "policy": {
+      "version": 1,
+      "pageScripts": "inline-only",
+      "allowAllScripts": false,
+      "allowAllRequests": false,
+      "httpsOnly": false,
+      "sameOriginOnly": false,
+      "allowExternalFonts": true,
+      "externalFontOrigins": [
+        "https://fonts.googleapis.com",
+        "https://fonts.gstatic.com",
+        "https://cdnjs.cloudflare.com",
+        "https://cdn.jsdelivr.net"
+      ],
+      "externalResourceOrigins": [
+        {
+          "origin": "https://js.stripe.com",
+          "kinds": ["script"]
+        },
+        {
+          "origin": "https://www.paypal.com",
+          "kinds": ["script"]
+        },
+        {
+          "origin": "https://js.braintreegateway.com",
+          "kinds": ["script"]
+        },
+        {
+          "origin": "https://ajax.googleapis.com",
+          "kinds": ["script"]
+        },
+        {
+          "origin": "https://apis.google.com",
+          "kinds": ["script"]
+        },
+        {
+          "origin": "https://cdnjs.cloudflare.com",
+          "kinds": ["script", "stylesheet"]
+        },
+        {
+          "origin": "https://cdn.jsdelivr.net",
+          "kinds": ["script", "stylesheet"]
+        }
+      ],
+      "allowCrossOriginRedirects": false,
+      "allowHttpDowngradeRedirects": false,
+      "cacheMode": "normal",
+      "queryParameters": []
+    },
+    "standard": false
+  },
+  {
+    "name": "same origin only",
+    "policy": {
+      "version": 1,
+      "pageScripts": "allow",
+      "allowAllScripts": false,
+      "allowAllRequests": false,
+      "httpsOnly": false,
+      "sameOriginOnly": true,
+      "allowExternalFonts": true,
+      "externalFontOrigins": [
+        "https://fonts.googleapis.com",
+        "https://fonts.gstatic.com",
+        "https://cdnjs.cloudflare.com",
+        "https://cdn.jsdelivr.net"
+      ],
+      "externalResourceOrigins": [
+        {
+          "origin": "https://js.stripe.com",
+          "kinds": ["script"]
+        },
+        {
+          "origin": "https://www.paypal.com",
+          "kinds": ["script"]
+        },
+        {
+          "origin": "https://js.braintreegateway.com",
+          "kinds": ["script"]
+        },
+        {
+          "origin": "https://ajax.googleapis.com",
+          "kinds": ["script"]
+        },
+        {
+          "origin": "https://apis.google.com",
+          "kinds": ["script"]
+        },
+        {
+          "origin": "https://cdnjs.cloudflare.com",
+          "kinds": ["script", "stylesheet"]
+        },
+        {
+          "origin": "https://cdn.jsdelivr.net",
+          "kinds": ["script", "stylesheet"]
+        }
+      ],
+      "allowCrossOriginRedirects": false,
+      "allowHttpDowngradeRedirects": false,
+      "cacheMode": "normal",
+      "queryParameters": []
+    },
+    "standard": false
+  },
+  {
+    "name": "custom resource allowlist",
+    "policy": {
+      "version": 1,
+      "pageScripts": "allow",
+      "allowAllScripts": false,
+      "allowAllRequests": false,
+      "httpsOnly": false,
+      "sameOriginOnly": false,
+      "allowExternalFonts": true,
+      "externalFontOrigins": [
+        "https://fonts.googleapis.com",
+        "https://fonts.gstatic.com",
+        "https://cdnjs.cloudflare.com",
+        "https://cdn.jsdelivr.net"
+      ],
+      "externalResourceOrigins": [],
+      "allowCrossOriginRedirects": false,
+      "allowHttpDowngradeRedirects": false,
+      "cacheMode": "normal",
+      "queryParameters": []
+    },
+    "standard": false
+  },
+  {
+    "name": "custom font allowlist",
+    "policy": {
+      "version": 1,
+      "pageScripts": "allow",
+      "allowAllScripts": false,
+      "allowAllRequests": false,
+      "httpsOnly": false,
+      "sameOriginOnly": false,
+      "allowExternalFonts": true,
+      "externalFontOrigins": [],
+      "externalResourceOrigins": [
+        {
+          "origin": "https://js.stripe.com",
+          "kinds": ["script"]
+        },
+        {
+          "origin": "https://www.paypal.com",
+          "kinds": ["script"]
+        },
+        {
+          "origin": "https://js.braintreegateway.com",
+          "kinds": ["script"]
+        },
+        {
+          "origin": "https://ajax.googleapis.com",
+          "kinds": ["script"]
+        },
+        {
+          "origin": "https://apis.google.com",
+          "kinds": ["script"]
+        },
+        {
+          "origin": "https://cdnjs.cloudflare.com",
+          "kinds": ["script", "stylesheet"]
+        },
+        {
+          "origin": "https://cdn.jsdelivr.net",
+          "kinds": ["script", "stylesheet"]
+        }
+      ],
+      "allowCrossOriginRedirects": false,
+      "allowHttpDowngradeRedirects": false,
+      "cacheMode": "normal",
+      "queryParameters": []
+    },
+    "standard": false
+  },
+  {
+    "name": "fonts explicitly blocked",
+    "policy": {
+      "version": 1,
+      "pageScripts": "allow",
+      "allowAllScripts": false,
+      "allowAllRequests": false,
+      "httpsOnly": false,
+      "sameOriginOnly": false,
+      "allowExternalFonts": false,
+      "externalFontOrigins": [
+        "https://fonts.googleapis.com",
+        "https://fonts.gstatic.com",
+        "https://cdnjs.cloudflare.com",
+        "https://cdn.jsdelivr.net"
+      ],
+      "externalResourceOrigins": [
+        {
+          "origin": "https://js.stripe.com",
+          "kinds": ["script"]
+        },
+        {
+          "origin": "https://www.paypal.com",
+          "kinds": ["script"]
+        },
+        {
+          "origin": "https://js.braintreegateway.com",
+          "kinds": ["script"]
+        },
+        {
+          "origin": "https://ajax.googleapis.com",
+          "kinds": ["script"]
+        },
+        {
+          "origin": "https://apis.google.com",
+          "kinds": ["script"]
+        },
+        {
+          "origin": "https://cdnjs.cloudflare.com",
+          "kinds": ["script", "stylesheet"]
+        },
+        {
+          "origin": "https://cdn.jsdelivr.net",
+          "kinds": ["script", "stylesheet"]
+        }
+      ],
+      "allowCrossOriginRedirects": false,
+      "allowHttpDowngradeRedirects": false,
+      "cacheMode": "normal",
+      "queryParameters": []
+    },
+    "standard": false
+  },
+  {
+    "name": "script only explicit optin",
+    "policy": {
+      "version": 1,
+      "pageScripts": "allow",
+      "allowAllScripts": true,
+      "allowAllRequests": false,
+      "httpsOnly": false,
+      "sameOriginOnly": false,
+      "allowExternalFonts": true,
+      "externalFontOrigins": [
+        "https://fonts.googleapis.com",
+        "https://fonts.gstatic.com",
+        "https://cdnjs.cloudflare.com",
+        "https://cdn.jsdelivr.net"
+      ],
+      "externalResourceOrigins": [
+        {
+          "origin": "https://js.stripe.com",
+          "kinds": ["script"]
+        },
+        {
+          "origin": "https://www.paypal.com",
+          "kinds": ["script"]
+        },
+        {
+          "origin": "https://js.braintreegateway.com",
+          "kinds": ["script"]
+        },
+        {
+          "origin": "https://ajax.googleapis.com",
+          "kinds": ["script"]
+        },
+        {
+          "origin": "https://apis.google.com",
+          "kinds": ["script"]
+        },
+        {
+          "origin": "https://cdnjs.cloudflare.com",
+          "kinds": ["script", "stylesheet"]
+        },
+        {
+          "origin": "https://cdn.jsdelivr.net",
+          "kinds": ["script", "stylesheet"]
+        }
+      ],
+      "allowCrossOriginRedirects": false,
+      "allowHttpDowngradeRedirects": false,
+      "cacheMode": "normal",
+      "queryParameters": []
+    },
+    "standard": false
+  },
+  {
+    "name": "invalid mode",
+    "policy": {
+      "version": 1,
+      "pageScripts": "allow",
+      "allowAllScripts": false,
+      "allowAllRequests": false,
+      "httpsOnly": false,
+      "sameOriginOnly": false,
+      "allowExternalFonts": true,
+      "externalFontOrigins": [
+        "https://fonts.googleapis.com",
+        "https://fonts.gstatic.com",
+        "https://cdnjs.cloudflare.com",
+        "https://cdn.jsdelivr.net"
+      ],
+      "externalResourceOrigins": [
+        {
+          "origin": "https://js.stripe.com",
+          "kinds": ["script"]
+        },
+        {
+          "origin": "https://www.paypal.com",
+          "kinds": ["script"]
+        },
+        {
+          "origin": "https://js.braintreegateway.com",
+          "kinds": ["script"]
+        },
+        {
+          "origin": "https://ajax.googleapis.com",
+          "kinds": ["script"]
+        },
+        {
+          "origin": "https://apis.google.com",
+          "kinds": ["script"]
+        },
+        {
+          "origin": "https://cdnjs.cloudflare.com",
+          "kinds": ["script", "stylesheet"]
+        },
+        {
+          "origin": "https://cdn.jsdelivr.net",
+          "kinds": ["script", "stylesheet"]
+        }
+      ],
+      "allowCrossOriginRedirects": false,
+      "allowHttpDowngradeRedirects": false,
+      "cacheMode": "normal",
+      "queryParameters": [],
+      "nativeBrowsingMode": "normal"
+    },
+    "standard": false
+  },
+  {
+    "name": "canonical resource object keys reordered",
+    "policy": {
+      "version": 1,
+      "pageScripts": "allow",
+      "allowAllScripts": false,
+      "allowAllRequests": false,
+      "httpsOnly": false,
+      "sameOriginOnly": false,
+      "allowExternalFonts": true,
+      "externalFontOrigins": [
+        "https://fonts.googleapis.com",
+        "https://fonts.gstatic.com",
+        "https://cdnjs.cloudflare.com",
+        "https://cdn.jsdelivr.net"
+      ],
+      "externalResourceOrigins": [
+        {
+          "kinds": ["script"],
+          "origin": "https://js.stripe.com"
+        },
+        {
+          "kinds": ["script"],
+          "origin": "https://www.paypal.com"
+        },
+        {
+          "kinds": ["script"],
+          "origin": "https://js.braintreegateway.com"
+        },
+        {
+          "kinds": ["script"],
+          "origin": "https://ajax.googleapis.com"
+        },
+        {
+          "kinds": ["script"],
+          "origin": "https://apis.google.com"
+        },
+        {
+          "kinds": ["script", "stylesheet"],
+          "origin": "https://cdnjs.cloudflare.com"
+        },
+        {
+          "kinds": ["script", "stylesheet"],
+          "origin": "https://cdn.jsdelivr.net"
+        }
+      ],
+      "allowCrossOriginRedirects": false,
+      "allowHttpDowngradeRedirects": false,
+      "cacheMode": "normal",
+      "queryParameters": []
+    },
+    "standard": true
+  },
+  {
+    "name": "independent caching and query preferences",
+    "policy": {
+      "version": 1,
+      "pageScripts": "allow",
+      "allowAllScripts": false,
+      "allowAllRequests": false,
+      "httpsOnly": false,
+      "sameOriginOnly": false,
+      "allowExternalFonts": true,
+      "externalFontOrigins": [
+        "https://fonts.googleapis.com",
+        "https://fonts.gstatic.com",
+        "https://cdnjs.cloudflare.com",
+        "https://cdn.jsdelivr.net"
+      ],
+      "externalResourceOrigins": [
+        {
+          "origin": "https://js.stripe.com",
+          "kinds": ["script"]
+        },
+        {
+          "origin": "https://www.paypal.com",
+          "kinds": ["script"]
+        },
+        {
+          "origin": "https://js.braintreegateway.com",
+          "kinds": ["script"]
+        },
+        {
+          "origin": "https://ajax.googleapis.com",
+          "kinds": ["script"]
+        },
+        {
+          "origin": "https://apis.google.com",
+          "kinds": ["script"]
+        },
+        {
+          "origin": "https://cdnjs.cloudflare.com",
+          "kinds": ["script", "stylesheet"]
+        },
+        {
+          "origin": "https://cdn.jsdelivr.net",
+          "kinds": ["script", "stylesheet"]
+        }
+      ],
+      "allowCrossOriginRedirects": false,
+      "allowHttpDowngradeRedirects": false,
+      "cacheMode": "bypass",
+      "queryParameters": [
+        {
+          "name": "display",
+          "value": "compact"
+        }
+      ]
+    },
+    "standard": true
+  },
+  {
+    "name": "independent HTTPS requirement",
+    "policy": {
+      "version": 1,
+      "pageScripts": "allow",
+      "allowAllScripts": false,
+      "allowAllRequests": false,
+      "httpsOnly": true,
+      "sameOriginOnly": false,
+      "allowExternalFonts": true,
+      "externalFontOrigins": [
+        "https://fonts.googleapis.com",
+        "https://fonts.gstatic.com",
+        "https://cdnjs.cloudflare.com",
+        "https://cdn.jsdelivr.net"
+      ],
+      "externalResourceOrigins": [
+        {
+          "origin": "https://js.stripe.com",
+          "kinds": ["script"]
+        },
+        {
+          "origin": "https://www.paypal.com",
+          "kinds": ["script"]
+        },
+        {
+          "origin": "https://js.braintreegateway.com",
+          "kinds": ["script"]
+        },
+        {
+          "origin": "https://ajax.googleapis.com",
+          "kinds": ["script"]
+        },
+        {
+          "origin": "https://apis.google.com",
+          "kinds": ["script"]
+        },
+        {
+          "origin": "https://cdnjs.cloudflare.com",
+          "kinds": ["script", "stylesheet"]
+        },
+        {
+          "origin": "https://cdn.jsdelivr.net",
+          "kinds": ["script", "stylesheet"]
+        }
+      ],
+      "allowCrossOriginRedirects": false,
+      "allowHttpDowngradeRedirects": false,
+      "cacheMode": "normal",
+      "queryParameters": []
+    },
+    "standard": true
+  }
+]

@@ -67,11 +67,31 @@ fn default_external_resource_origins() -> Vec<ExternalResourceOrigin> {
     .unwrap_or_default()
 }
 
+/// Native browser content defaults only; legacy transport ignores this marker.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum NativeBrowsingMode {
+    Standard,
+    Restricted,
+}
+
+fn deserialize_native_browsing_mode<'de, D: serde::Deserializer<'de>>(
+    deserializer: D,
+) -> Result<Option<NativeBrowsingMode>, D::Error> {
+    NativeBrowsingMode::deserialize(deserializer).map(Some)
+}
+
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct HttpProxyPolicy {
     pub version: u8,
     pub page_scripts: PageScripts,
+    #[serde(
+        default,
+        deserialize_with = "deserialize_native_browsing_mode",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub native_browsing_mode: Option<NativeBrowsingMode>,
     pub https_only: bool,
     pub same_origin_only: bool,
     /// Connection-scoped permissive script grant; restrictive controls win.
@@ -138,6 +158,7 @@ impl Default for HttpProxyPolicy {
         Self {
             version: 1,
             page_scripts: PageScripts::Allow,
+            native_browsing_mode: None,
             https_only: false,
             same_origin_only: false,
             allow_all_scripts: false,
@@ -354,6 +375,31 @@ pub fn validate_custom_headers(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn native_browsing_mode_is_metadata_only_for_legacy_requests() {
+        let absent = serde_json::to_value(HttpProxyPolicy::default()).unwrap();
+        assert!(absent.get("nativeBrowsingMode").is_none());
+        let restored: HttpProxyPolicy = serde_json::from_value(absent).unwrap();
+        assert!(restored.native_browsing_mode.is_none());
+        for mode in ["standard", "restricted"] {
+            let mut value = serde_json::to_value(HttpProxyPolicy::default()).unwrap();
+            value["nativeBrowsingMode"] = mode.into();
+            let policy: HttpProxyPolicy = serde_json::from_value(value).unwrap();
+            assert!(!policy.allows_all_requests());
+            assert!(!policy.allows_all_scripts());
+        }
+        for mode in [
+            serde_json::json!("normal"),
+            serde_json::json!(true),
+            serde_json::json!(9),
+            serde_json::Value::Null,
+        ] {
+            let mut value = serde_json::to_value(HttpProxyPolicy::default()).unwrap();
+            value["nativeBrowsingMode"] = mode;
+            assert!(serde_json::from_value::<HttpProxyPolicy>(value).is_err());
+        }
+    }
+
     #[test]
     fn strict_shape_bounds_and_https_refusal() {
         assert!(serde_json::from_str::<HttpProxyPolicy>(r#"{"version":1}"#).is_err());

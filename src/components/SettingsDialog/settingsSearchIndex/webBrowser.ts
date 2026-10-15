@@ -9,6 +9,29 @@ import type { SettingSearchEntry } from "./types";
  */
 export const WEB_BROWSER_SEARCH_ENTRIES: SettingSearchEntry[] = [
   {
+    key: "webBrowser.defaultPolicy.nativeBrowsingMode",
+    label: "Browsing mode",
+    description:
+      "Standard browsing loads website scripts and content normally through the private proxy. Restricted browsing uses approved sources and preserves saved website blocks.",
+    tags: [
+      "standard",
+      "restricted",
+      "scripts",
+      "content",
+      "CEF",
+      "normal",
+      "security",
+    ],
+    values: [
+      "standard",
+      "Standard browsing",
+      "restricted",
+      "Restricted browsing",
+    ],
+    section: "webBrowser",
+    sectionLabel: "Web Browser",
+  },
+  {
     key: "webBrowser.idlePrewarmEnabled",
     label: "Prewarm browser while idle",
     description:
@@ -159,7 +182,14 @@ export const WEB_BROWSER_SEARCH_ENTRIES: SettingSearchEntry[] = [
     label: "Enable XSLT",
     description:
       "Allow native browser XML stylesheet transformations, including legacy portals. Restart the app after changing this global engine setting.",
-    tags: ["xslt", "xml", "stylesheet", "transformation", "rdweb", "compatibility"],
+    tags: [
+      "xslt",
+      "xml",
+      "stylesheet",
+      "transformation",
+      "rdweb",
+      "compatibility",
+    ],
     section: "webBrowser",
     sectionLabel: "Web Browser",
   },

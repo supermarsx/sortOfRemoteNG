@@ -20,6 +20,8 @@ export const DEFAULT_EXTERNAL_RESOURCE_ORIGINS: readonly HttpExternalResourceOri
 export interface HttpProxyPolicy {
   version: 1;
   pageScripts: "allow" | "inline-only" | "block";
+  /** Native CEF content defaults only. Legacy proxy routing ignores this mode. */
+  nativeBrowsingMode?: "standard" | "restricted";
   /** Per-connection trust for all HTTPS script sources through the app proxy.
    * Legacy mode also overrides script CSP; native mode preserves website CSP.
    * pageScripts restrictions and sameOriginOnly still take precedence. */

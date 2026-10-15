@@ -11,7 +11,7 @@ const fixes: Record<string, string> = {
   minimumFormFillDelayMs: "Enter an integer from 0 to 30,000 milliseconds.",
   minimumFormSubmitDelayMs: "Enter an integer from 0 to 30,000 milliseconds.",
   defaultPolicy:
-    "Repair the internal proxy defaults: use version 1 and supported field values. Global defaults cannot grant all requests, all scripts, redirects, HTTP downgrades or query-parameter rewrites; those grants require per-connection review.",
+    "Repair the website settings: choose Standard browsing or Restricted browsing and supported field values. Legacy broad flags, redirects, HTTP downgrades and query changes require per-connection review.",
   domainPermissions:
     "Repair the shared website rules: use version 1, a websites array, unique exact HTTPS origins and inherit/allow/deny decisions. Maximums are 64 websites, 32 destinations per website and 256 destinations overall.",
   sessionRetention:

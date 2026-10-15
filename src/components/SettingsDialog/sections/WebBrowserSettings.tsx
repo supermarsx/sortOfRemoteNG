@@ -15,6 +15,7 @@ import {
   DEFAULT_EXTERNAL_FONT_ORIGINS,
   type HttpProxyPolicy,
 } from "../../../types/connection/httpProxyPolicy";
+import { nativeBrowsingMode } from "../../../utils/connection/nativeBrowsingDefaults";
 import { normalizeWebBrowserSettings } from "../../../utils/settings/webBrowserSettings";
 import { MAX_BROWSER_FORM_COMBINED_DELAY_MS } from "../../../utils/connection/httpFormAutomation";
 import { normalizeExternalFontOrigins } from "../../../utils/connection/httpProxyPolicy";
@@ -365,6 +366,24 @@ function WebBrowserSettingsContent({
             Save settings, then close and reopen the browser tab to apply policy
             changes. Existing tabs keep their original policy.
           </p>
+          <BrowserSelectRow
+            settingKey="webBrowser.defaultPolicy.nativeBrowsingMode"
+            label="Browsing mode"
+            value={nativeBrowsingMode(policy)}
+            description="Load websites normally, including scripts, media and embedded content. Your custom site blocks still apply. Restricted browsing limits external content to the sources you choose below."
+            disabled={config.engine === "legacy"}
+            onChange={(value) =>
+              updatePolicy({
+                nativeBrowsingMode: value as "standard" | "restricted",
+                allowAllScripts: false,
+                allowAllRequests: false,
+              })
+            }
+            options={[
+              { value: "standard", label: "Standard browsing" },
+              { value: "restricted", label: "Restricted browsing" },
+            ]}
+          />
           <BrowserSelectRow
             settingKey="webBrowser.defaultPolicy.pageScripts"
             label="Page scripts"

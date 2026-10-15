@@ -63,6 +63,11 @@ mod meo_defaults;
 #[cfg(test)]
 #[path = "origin_browser_meo_defaults_tests.rs"]
 mod meo_defaults_tests;
+#[path = "origin_browser_browsing_defaults.rs"]
+mod browsing_defaults;
+#[cfg(test)]
+#[path = "origin_browser_browsing_defaults_tests.rs"]
+mod browsing_defaults_tests;
 #[path = "origin_browser_social_script_defaults.rs"]
 mod social_script_defaults;
 #[cfg(test)]
@@ -1848,6 +1853,10 @@ fn saved_permissions_inner(
         return Err(invalid("effective", "combined destinations must contain at most 32 entries"));
     }
     let option = |field| policy.and_then(|p| p.get(field)).and_then(Value::as_bool).unwrap_or(false);
+    let standard_browsing = browsing_defaults::standard(policy);
+    let implicit_profile_defaults = policy
+        .and_then(|p| p.get("nativeBrowsingMode"))
+        .and_then(Value::as_str) != Some("restricted") && standard_browsing;
     let network = WebsiteNetworkPolicy {
         source_origin: origin.clone(),
         destination_defaults: candidates.clone(),
@@ -1856,13 +1865,13 @@ fn saved_permissions_inner(
         } else {
             meo_defaults::resource_domain_defaults(connection, &origin)
         },
-        allow_all_requests: option("allowAllRequests")
-            || social_script_defaults::requests_enabled(connection, &origin),
+        allow_all_requests: option("allowAllRequests") || standard_browsing
+            || (implicit_profile_defaults && social_script_defaults::requests_enabled(connection, &origin)),
         // Legacy normalization stores false even without an explicit choice.
         // It means no extra connection opt-in, not revocation of an origin-bound
         // application default. Explicit class/destination denies still win.
-        allow_all_scripts: option("allowAllScripts")
-            || social_script_defaults::enabled(connection, &origin),
+        allow_all_scripts: option("allowAllScripts") || standard_browsing
+            || (implicit_profile_defaults && social_script_defaults::enabled(connection, &origin)),
         https_only: option("httpsOnly"),
         same_origin_only: same_origin,
         allow_http_downgrade: option("allowHttpDowngradeRedirects"),
@@ -2742,6 +2751,7 @@ mod tests {
         for (id, origin) in GOOGLE_ROUTES["profiles"].as_object().unwrap() {
             let origin = origin.as_str().unwrap();
             let mut row = connection();
+            row["httpProxyPolicy"] = json!({"nativeBrowsingMode":"restricted"});
             row["hostname"] = origin.into();
             row["httpApplication"] = json!({"version":1,"id":id,"loginMode":"form"});
             let source = saved_source(&row).unwrap();
@@ -2932,6 +2942,7 @@ mod tests {
     #[test]
     fn destination_grants_preserve_class_scope_and_connection_denials() {
         let mut row = connection();
+        row["httpProxyPolicy"] = json!({"nativeBrowsingMode":"restricted"});
         row["httpTrustedRedirectDestinations"] =
             json!({"version":1,"origins":["https://login.example"]});
         row["websiteDomainPermissions"] = json!({"version":1,"websites":[{"origin":"https://source.example",

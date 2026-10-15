@@ -138,7 +138,9 @@ fn saved_http_cannot_reuse_https_domain_grants_or_bypass_https_only() {
             "origin":"https://other.example", "requestClasses":{"navigation":"allow"}
         }]
     }]}}});
-    let (engine, _) = saved_permissions_inner(&connection(), &settings, &source, true).unwrap();
+    let mut restricted = connection();
+    restricted["httpProxyPolicy"] = json!({"nativeBrowsingMode":"restricted"});
+    let (engine, _) = saved_permissions_inner(&restricted, &settings, &source, true).unwrap();
     assert!(engine.permits_network_origin("http://router.example:8080", "http://router.example:8080"));
     assert!(!engine.permits_network_origin("http://router.example:8080", "https://other.example"));
     for shared in [true, false] {

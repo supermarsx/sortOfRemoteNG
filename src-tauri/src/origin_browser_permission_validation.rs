@@ -290,6 +290,8 @@ pub(super) fn validate_proxy_policy(
         "must be an object"
     } else if policy.get("version").is_some_and(|v| v != &Value::from(1)) {
         "version must be 1 when present"
+    } else if policy.get("nativeBrowsingMode").is_some_and(|v| !matches!(v.as_str(), Some("standard" | "restricted"))) {
+        "nativeBrowsingMode must be standard or restricted when present"
     } else if policy.get("pageScripts").is_some_and(|v| v != "allow") {
         "pageScripts must be allow when present"
     } else if policy

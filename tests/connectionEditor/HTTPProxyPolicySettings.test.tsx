@@ -85,9 +85,7 @@ describe("Internal proxy controls", () => {
       });
       expect(checkbox).toBeChecked();
       expect(
-        screen.getByText(
-          /This application's native browser allows all HTTPS script sources by default/,
-        ),
+        screen.getByText(/Allow website scripts to load normally/),
       ).toBeVisible();
       expect(draft()).toEqual(initial);
       fireEvent.click(checkbox);
@@ -121,25 +119,8 @@ describe("Internal proxy controls", () => {
     fireEvent.click(toggle());
     expect(toggle()).not.toBeChecked();
     expect(draft().httpProxyPolicy.allowAllRequests).toBe(false);
-    expect(
-      draft().websiteDomainPermissions.websites[0].requestClasses.navigation,
-    ).toBe("deny");
-    expect(
-      draft().websiteDomainPermissions.websites[0].destinations,
-    ).toContainEqual({
-      origin: "https://zoom.us",
-      requestClasses: {
-        script: "allow",
-        stylesheet: "allow",
-        font: "allow",
-        "image-media": "allow",
-        "fetch-xhr": "allow",
-        frame: "allow",
-        worker: "allow",
-        websocket: "allow",
-        navigation: "allow",
-      },
-    });
+    expect(draft().httpProxyPolicy.nativeBrowsingMode).toBe("restricted");
+    expect(draft().websiteDomainPermissions).toBeUndefined();
     const saved = draft();
     view.unmount();
     render(<Fixture initial={saved} />);
@@ -174,7 +155,7 @@ describe("Internal proxy controls", () => {
       ).not.toBeChecked();
     },
   );
-  it("keeps the Zoom draft unchanged and explains a full destination list when opting out", () => {
+  it("persists restricted mode without adding destination rules to a full list", () => {
     const initial: Partial<Connection> = {
       id: "zoom-full",
       protocol: "https",
@@ -199,12 +180,71 @@ describe("Internal proxy controls", () => {
     fireEvent.click(
       screen.getByRole("checkbox", { name: /^Allow all website requests/ }),
     );
+    expect(draft().websiteDomainPermissions).toEqual(
+      initial.websiteDomainPermissions,
+    );
+    expect(draft().httpProxyPolicy.nativeBrowsingMode).toBe("restricted");
+  });
+  it.each(["mode", "requests"])(
+    "preserves inherited restrictions when changing native %s",
+    (control) => {
+      const inherited = {
+        ...DEFAULT_HTTP_PROXY_POLICY,
+        sameOriginOnly: true,
+        externalResourceOrigins: [],
+        externalFontOrigins: [],
+        nativeBrowsingMode: "restricted" as const,
+      };
+      shared.settings = { webBrowser: { defaultPolicy: inherited } };
+      render(
+        <Fixture
+          initial={{
+            id: "ordinary",
+            protocol: "https",
+            hostname: "ordinary.example",
+          }}
+        />,
+      );
+      if (control === "mode") {
+        fireEvent.click(
+          screen.getByRole("combobox", { name: "Browsing mode" }),
+        );
+        fireEvent.mouseDown(
+          screen.getByRole("option", { name: "Standard browsing" }),
+        );
+      } else
+        fireEvent.click(
+          screen.getByRole("checkbox", { name: /^Allow all website requests/ }),
+        );
+      expect(draft().httpProxyPolicy).toMatchObject({
+        sameOriginOnly: true,
+        externalResourceOrigins: [],
+        externalFontOrigins: [],
+        nativeBrowsingMode: "standard",
+      });
+      expect(
+        screen.getByRole("checkbox", { name: /^Allow all website requests/ }),
+      ).not.toBeChecked();
+    },
+  );
+  it("defaults an ordinary native website to normal content and persists a restricted opt-out", () => {
+    const initial = {
+      id: "ordinary",
+      protocol: "https" as const,
+      hostname: "ordinary.example",
+    };
+    const view = render(<Fixture initial={initial} />);
+    const toggle = () =>
+      screen.getByRole("checkbox", { name: /^Allow all website requests/ });
+    expect(toggle()).toBeChecked();
     expect(draft()).toEqual(initial);
-    expect(
-      screen.getByText(
-        /remove an unused destination if the 32-destination limit/,
-      ),
-    ).toBeVisible();
+    fireEvent.click(toggle());
+    expect(toggle()).not.toBeChecked();
+    const saved = draft();
+    expect(saved.httpProxyPolicy.nativeBrowsingMode).toBe("restricted");
+    view.unmount();
+    render(<Fixture initial={saved} />);
+    expect(toggle()).not.toBeChecked();
   });
   it("keeps social-app explicit destination and other-class denials when enabling the default", () => {
     render(
@@ -306,7 +346,8 @@ describe("Internal proxy controls", () => {
       },
     });
   });
-  it("enables, persists and revokes all-request trust for only this connection across remount", () => {
+  it("enables, persists and revokes legacy all-request trust for only this connection across remount", () => {
+    shared.settings = { webBrowser: { engine: "legacy" } };
     const initial: Partial<Connection> = {
       ...fontOptOut(),
       httpProxyPolicy: {
@@ -428,7 +469,8 @@ describe("Internal proxy controls", () => {
       expect(toggle).not.toBeChecked();
     },
   );
-  it("saves and revokes all-script trust per connection, including after remount", () => {
+  it("saves and revokes legacy all-script trust per connection, including after remount", () => {
+    shared.settings = { webBrowser: { engine: "legacy" } };
     const initial = fontOptOut();
     const view = render(<Fixture initial={initial} />);
     const toggle = () =>

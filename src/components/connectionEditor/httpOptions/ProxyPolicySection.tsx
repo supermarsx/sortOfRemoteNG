@@ -25,6 +25,11 @@ import {
   setApplicationRequestPermission,
 } from "../../../utils/connection/applicationRequestDefaults";
 
+import {
+  nativeBrowsingMode,
+  nativeBrowserContentAllowed,
+} from "../../../utils/connection/nativeBrowsingDefaults";
+
 /** Draft-only editor. Native validation is repeated before opening a proxy. */
 export default function ProxyPolicySection({ mgr }: { mgr: Mgr }) {
   const id = useId();
@@ -40,7 +45,7 @@ export default function ProxyPolicySection({ mgr }: { mgr: Mgr }) {
   } catch {
     return (
       <section className="sor-settings-card space-y-3">
-        <h3 className="font-medium">Internal proxy controls</h3>
+        <h3 className="font-medium">Website content and security</h3>
         <p role="alert" className="text-sm text-error">
           The saved proxy policy is invalid. Opening this connection is blocked
           until it is corrected.
@@ -62,7 +67,14 @@ export default function ProxyPolicySection({ mgr }: { mgr: Mgr }) {
   }
   const update = (change: Partial<HttpProxyPolicy>) => {
     try {
-      const next = normalizeHttpProxyPolicy({ ...policy, ...change });
+      const base =
+        change.nativeBrowsingMode !== undefined
+          ? normalizeHttpProxyPolicy(
+              mgr.formData.httpProxyPolicy ??
+                settings.webBrowser?.defaultPolicy,
+            )
+          : policy;
+      const next = normalizeHttpProxyPolicy({ ...base, ...change });
       mgr.setFormData((previous) => ({ ...previous, httpProxyPolicy: next }));
       setError("");
       return true;
@@ -106,9 +118,37 @@ export default function ProxyPolicySection({ mgr }: { mgr: Mgr }) {
       appEffectivePolicy,
       settings.webBrowser?.domainPermissions,
     );
-  const requestsAllowed = appRequestOrigin
-    ? appRequestsAllowed
-    : policy.allowAllRequests === true && !policy.sameOriginOnly;
+  const native = settings.webBrowser?.engine !== "legacy";
+  const effectiveReady =
+    !!appEffectivePolicy &&
+    settingsReady !== false &&
+    (mgr.formData.browserSession?.crossOriginRequestsEnabled ??
+      settings.webBrowser?.crossOriginRequestsEnabled ??
+      true);
+  const requestsAllowed = native
+    ? !!effectiveReady &&
+      nativeBrowserContentAllowed(
+        mgr.formData,
+        appEffectivePolicy ?? policy,
+        settings.webBrowser?.domainPermissions,
+      )
+    : appRequestOrigin
+      ? appRequestsAllowed
+      : policy.allowAllRequests === true && !policy.sameOriginOnly;
+  const scriptsAllowed = native
+    ? !!effectiveReady &&
+      nativeBrowserContentAllowed(
+        mgr.formData,
+        appEffectivePolicy ?? policy,
+        settings.webBrowser?.domainPermissions,
+        true,
+      )
+    : (appScriptOrigin
+        ? appScriptsAllowed
+        : policy.allowAllScripts === true ||
+          policy.allowAllRequests === true) &&
+      policy.pageScripts === "allow" &&
+      !policy.sameOriginOnly;
   const fontsDisabled = policy.sameOriginOnly || !policy.allowExternalFonts;
   const updateFontOrigins = (origins: string[]) => {
     try {
@@ -126,12 +166,41 @@ export default function ProxyPolicySection({ mgr }: { mgr: Mgr }) {
   return (
     <section className="sor-settings-card space-y-4">
       <div>
-        <h3 className="font-medium">Internal proxy controls</h3>
+        <h3 className="font-medium">Website content and security</h3>
         <p className="text-xs text-[var(--color-textMuted)] mt-1">
           Changes start a fresh proxy session. Credentials remain bound to the
           configured origin, and certificate trust is still checked.
         </p>
       </div>
+      {native && (
+        <div className="space-y-2">
+          <label htmlFor={`${id}-browsing-mode`} className="block text-sm">
+            Browsing mode
+          </label>
+          <Select
+            disabled={!appEffectivePolicy || settingsReady === false}
+            id={`${id}-browsing-mode`}
+            value={nativeBrowsingMode(appEffectivePolicy ?? policy)}
+            variant="form"
+            onChange={(value) =>
+              update({
+                nativeBrowsingMode: value as "standard" | "restricted",
+                allowAllRequests: false,
+                allowAllScripts: false,
+              })
+            }
+            options={[
+              { value: "standard", label: "Standard browsing" },
+              { value: "restricted", label: "Restricted browsing" },
+            ]}
+          />
+          <p className="text-xs text-[var(--color-textMuted)]">
+            Load websites normally, including scripts, media and embedded
+            content. Your custom site blocks still apply. Restricted browsing
+            limits external content to the sources you choose below.
+          </p>
+        </div>
+      )}
       <div className="flex flex-wrap gap-4">
         <div className="w-64 max-w-full">
           <label htmlFor={`${id}-scripts`} className="block text-sm mb-2">
@@ -145,6 +214,9 @@ export default function ProxyPolicySection({ mgr }: { mgr: Mgr }) {
                 pageScripts: pageScripts as HttpProxyPolicy["pageScripts"],
                 allowAllScripts: false,
                 allowAllRequests: false,
+                ...(native
+                  ? { nativeBrowsingMode: "restricted" as const }
+                  : {}),
               })
             }
             variant="form"
@@ -200,6 +272,7 @@ export default function ProxyPolicySection({ mgr }: { mgr: Mgr }) {
             sameOriginOnly,
             allowAllScripts: false,
             allowAllRequests: false,
+            ...(native ? { nativeBrowsingMode: "restricted" as const } : {}),
           })
         }
         label="Same-origin resources and forms"
@@ -209,54 +282,65 @@ export default function ProxyPolicySection({ mgr }: { mgr: Mgr }) {
       <div className="rounded-lg border border-[var(--color-border)] p-4 space-y-3">
         <CheckboxField
           disabled={
-            !!appRequestOrigin &&
+            (native || !!appRequestOrigin) &&
             (!appEffectivePolicy || settingsReady === false)
           }
           checked={requestsAllowed}
           onChange={(allowAllRequests) =>
-            appRequestOrigin
-              ? mgr.setFormData((previous) => {
-                  if (
-                    previous.id !== mgr.formData.id ||
-                    applicationRequestDefaultOrigin(previous) !==
-                      appRequestOrigin
-                  )
-                    return previous;
-                  try {
-                    return {
-                      ...previous,
-                      websiteDomainPermissions: setApplicationRequestPermission(
-                        previous,
-                        allowAllRequests,
-                        settings.webBrowser?.domainPermissions,
-                      ),
-                      httpProxyPolicy: normalizeHttpProxyPolicy({
-                        ...normalizeHttpProxyPolicy(
-                          previous.httpProxyPolicy ??
-                            settings.webBrowser?.defaultPolicy,
-                        ),
-                        allowAllRequests,
-                      }),
-                    };
-                  } catch {
-                    setError(
-                      "Website request permissions could not be updated. Review invalid permissions or remove an unused destination if the 32-destination limit is reached.",
-                    );
-                    return previous;
-                  }
-                })
-              : update({
+            native
+              ? update({
+                  nativeBrowsingMode: allowAllRequests
+                    ? "standard"
+                    : "restricted",
                   allowAllRequests,
-                  ...(allowAllRequests
-                    ? { pageScripts: "allow", sameOriginOnly: false }
-                    : {}),
+                  allowAllScripts: false,
                 })
+              : appRequestOrigin
+                ? mgr.setFormData((previous) => {
+                    if (
+                      previous.id !== mgr.formData.id ||
+                      applicationRequestDefaultOrigin(previous) !==
+                        appRequestOrigin
+                    )
+                      return previous;
+                    try {
+                      return {
+                        ...previous,
+                        websiteDomainPermissions:
+                          setApplicationRequestPermission(
+                            previous,
+                            allowAllRequests,
+                            settings.webBrowser?.domainPermissions,
+                          ),
+                        httpProxyPolicy: normalizeHttpProxyPolicy({
+                          ...normalizeHttpProxyPolicy(
+                            previous.httpProxyPolicy ??
+                              settings.webBrowser?.defaultPolicy,
+                          ),
+                          allowAllRequests,
+                        }),
+                      };
+                    } catch {
+                      setError(
+                        "Website request permissions could not be updated. Review invalid permissions or remove an unused destination if the 32-destination limit is reached.",
+                      );
+                      return previous;
+                    }
+                  })
+                : update({
+                    allowAllRequests,
+                    ...(allowAllRequests
+                      ? { pageScripts: "allow", sameOriginOnly: false }
+                      : {}),
+                  })
           }
           label="Allow all website requests"
           description={
-            appRequestOrigin
-              ? "This application's native browser allows supported website request classes by default. Turn off to deny unlisted destinations while keeping currently permitted requests to the website itself. Individual destination rules remain in force."
-              : "Trust current and future destinations for this saved connection, including website resources, API requests and navigation. Enables website scripts and turns off same-origin-only restrictions."
+            native
+              ? "Load website scripts, media and embedded content normally. Your custom site blocks still apply. Turn off to use approved sources only."
+              : appRequestOrigin
+                ? "This application's native browser allows supported website request classes by default. Turn off to deny unlisted destinations while keeping currently permitted requests to the website itself. Individual destination rules remain in force."
+                : "Trust current and future destinations for this saved connection, including website resources, API requests and navigation. Enables website scripts and turns off same-origin-only restrictions."
           }
           variant="form"
         />
@@ -286,17 +370,10 @@ export default function ProxyPolicySection({ mgr }: { mgr: Mgr }) {
       <div className="rounded-lg border border-[var(--color-border)] p-4 space-y-3">
         <CheckboxField
           disabled={
-            !!appScriptOrigin &&
+            (native || !!appScriptOrigin) &&
             (!appEffectivePolicy || settingsReady === false)
           }
-          checked={
-            (appScriptOrigin
-              ? appScriptsAllowed
-              : policy.allowAllScripts === true ||
-                policy.allowAllRequests === true) &&
-            policy.pageScripts === "allow" &&
-            !policy.sameOriginOnly
-          }
+          checked={scriptsAllowed}
           onChange={(allowAllScripts) =>
             appScriptOrigin
               ? mgr.setFormData((previous) => {
@@ -319,6 +396,9 @@ export default function ProxyPolicySection({ mgr }: { mgr: Mgr }) {
                         ),
                         allowAllScripts,
                         allowAllRequests: false,
+                        ...(native
+                          ? { nativeBrowsingMode: "restricted" as const }
+                          : {}),
                       }),
                     };
                   } catch {
@@ -331,6 +411,9 @@ export default function ProxyPolicySection({ mgr }: { mgr: Mgr }) {
               : update({
                   allowAllScripts,
                   allowAllRequests: false,
+                  ...(native
+                    ? { nativeBrowsingMode: "restricted" as const }
+                    : {}),
                   ...(allowAllScripts
                     ? { pageScripts: "allow", sameOriginOnly: false }
                     : {}),
@@ -338,9 +421,11 @@ export default function ProxyPolicySection({ mgr }: { mgr: Mgr }) {
           }
           label="Allow all website scripts"
           description={
-            appScriptOrigin
-              ? "This application's native browser allows all HTTPS script sources by default. Turn off to deny this website's script requests in request permissions. Individual destination blocks remain in force."
-              : "Trust current and future HTTPS script sources for this saved connection. Enables website scripts and turns off same-origin-only restrictions."
+            native
+              ? "Allow website scripts to load normally. Custom website blocks still apply. Turn off to use approved script sources only."
+              : appScriptOrigin
+                ? "This application's native browser allows all HTTPS script sources by default. Turn off to deny this website's script requests in request permissions. Individual destination blocks remain in force."
+                : "Trust current and future HTTPS script sources for this saved connection. Enables website scripts and turns off same-origin-only restrictions."
           }
           variant="form"
         />

@@ -19,14 +19,14 @@ fn social(id: &str, origin: &str) -> Value {
     let mut row = connection();
     row["hostname"] = format!("{origin}/login").into();
     row["httpApplication"] = json!({"version":1,"id":id,"loginMode":"manual"});
-    // Ordinary persisted policies carry these normalization-produced defaults.
+    // Explicit script-only permission in Restricted browsing remains narrow.
     row["httpProxyPolicy"] =
-        json!({"version":1,"pageScripts":"allow","allowAllScripts":false,"allowAllRequests":false});
+        json!({"version":1,"pageScripts":"allow","nativeBrowsingMode":"restricted","allowAllScripts":true,"allowAllRequests":false});
     row
 }
 
 #[tokio::test]
-async fn social_apps_allow_https_script_sources_without_granting_other_requests_or_credentials() {
+async fn social_apps_explicit_script_permission_keeps_other_requests_and_credentials_restricted() {
     const CDN: &str = "https://unlisted-script-cdn.example";
     for (id, origin) in [
         ("instagram", "https://www.instagram.com"),

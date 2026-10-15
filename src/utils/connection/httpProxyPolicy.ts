@@ -108,6 +108,7 @@ export function normalizeHttpProxyPolicy(value: unknown): HttpProxyPolicy {
         ![
           "version",
           "pageScripts",
+          "nativeBrowsingMode",
           "allowAllScripts",
           "allowAllRequests",
           "httpsOnly",
@@ -125,6 +126,9 @@ export function normalizeHttpProxyPolicy(value: unknown): HttpProxyPolicy {
     return invalid();
   if (
     value.version !== 1 ||
+    (value.nativeBrowsingMode !== undefined &&
+      value.nativeBrowsingMode !== "standard" &&
+      value.nativeBrowsingMode !== "restricted") ||
     typeof value.pageScripts !== "string" ||
     !["allow", "inline-only", "block"].includes(value.pageScripts) ||
     typeof value.httpsOnly !== "boolean" ||
@@ -169,6 +173,12 @@ export function normalizeHttpProxyPolicy(value: unknown): HttpProxyPolicy {
   return {
     version: 1,
     pageScripts: value.pageScripts as HttpProxyPolicy["pageScripts"],
+    ...(value.nativeBrowsingMode === undefined
+      ? {}
+      : {
+          nativeBrowsingMode: value.nativeBrowsingMode as
+            "standard" | "restricted",
+        }),
     allowAllScripts: value.allowAllScripts === true,
     allowAllRequests: value.allowAllRequests === true,
     httpsOnly: value.httpsOnly,

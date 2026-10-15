@@ -149,17 +149,17 @@ impl NativeBrowserPreferences {
         let result = Self {
             appearance: appearance_config::from_saved(connection, settings)?,
             // This is global saved policy, not a renderer flag or a connection
-            // capability default. Missing legacy settings remain disabled.
+            // capability default. Missing settings allow normal downloads.
             allow_downloads: globals
                 .get("allowDownloads")
                 .map(|value| value.as_bool().ok_or(()))
                 .transpose()?
-                .unwrap_or(false),
+                .unwrap_or(true),
             allow_page_dialogs: globals
                 .get("allowPageDialogs")
                 .map(|value| value.as_bool().ok_or(()))
                 .transpose()?
-                .unwrap_or(false),
+                .unwrap_or(true),
             capabilities: NativeBrowserCapabilities {
                 local_storage_enabled: enabled("localStorageEnabled"),
                 databases_enabled: enabled("databasesEnabled"),
@@ -301,11 +301,11 @@ mod tests {
     }
 
     #[test]
-    fn dialogs_require_explicit_valid_saved_global_permission() {
+    fn dialogs_default_on_and_preserve_explicit_saved_global_restrictions() {
         for (settings, expected) in [
-            (Value::Null, false),
-            (json!({}), false),
-            (json!({"webBrowser":{}}), false),
+            (Value::Null, true),
+            (json!({}), true),
+            (json!({"webBrowser":{}}), true),
             (json!({"webBrowser":{"allowPageDialogs":false}}), false),
             (json!({"webBrowser":{"allowPageDialogs":true}}), true),
         ] {
@@ -356,10 +356,10 @@ mod tests {
     }
 
     #[test]
-    fn downloads_require_explicit_valid_saved_global_permission() {
+    fn downloads_default_on_and_preserve_explicit_saved_global_restrictions() {
         for (settings, expected) in [
-            (json!({}), false),
-            (json!({"webBrowser":{}}), false),
+            (json!({}), true),
+            (json!({"webBrowser":{}}), true),
             (json!({"webBrowser":{"allowDownloads":false}}), false),
             (json!({"webBrowser":{"allowDownloads":true}}), true),
         ] {

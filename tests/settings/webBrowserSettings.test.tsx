@@ -86,6 +86,38 @@ function number(label: string, value: string) {
 }
 
 describe("Web Browser settings", () => {
+  it("shows Standard browsing by default and persists an explicit Restricted choice", () => {
+    const { update } = setup();
+    const toggle = screen.getByRole("combobox", { name: "Browsing mode" });
+    expect(toggle).toHaveTextContent("Standard browsing");
+    expect(update).not.toHaveBeenCalled();
+    choose("Browsing mode", "Restricted browsing");
+    expect(update.mock.lastCall?.[0].webBrowser.defaultPolicy).toMatchObject({
+      nativeBrowsingMode: "restricted",
+      allowAllRequests: false,
+      allowAllScripts: false,
+    });
+    choose("Browsing mode", "Standard browsing");
+    expect(
+      update.mock.lastCall?.[0].webBrowser.defaultPolicy.nativeBrowsingMode,
+    ).toBe("standard");
+  });
+  it("allows downloads by default in the native browser while preserving explicit saved blocks", () => {
+    expect(normalizeWebBrowserSettings(undefined).allowDownloads).toBe(true);
+    expect(normalizeWebBrowserSettings(undefined).allowPageDialogs).toBe(true);
+    expect(
+      normalizeWebBrowserSettings({ allowPageDialogs: false }).allowPageDialogs,
+    ).toBe(false);
+    expect(
+      normalizeWebBrowserSettings({ engine: "legacy" }).allowPageDialogs,
+    ).toBe(false);
+    expect(
+      normalizeWebBrowserSettings({ allowDownloads: false }).allowDownloads,
+    ).toBe(false);
+    expect(
+      normalizeWebBrowserSettings({ engine: "legacy" }).allowDownloads,
+    ).toBe(false);
+  });
   it.each([undefined, true, false])(
     "preserves saved cookie restoration %s and changes it only through the themed toggle",
     (restoreCookies) => {
@@ -794,7 +826,7 @@ describe("Web Browser settings", () => {
   });
 
   it.each(["real-origin", "legacy"] as const)(
-    "keeps dialogs off by default and persists both choices for %s",
+    "uses native-on and legacy-off dialog defaults and persists both choices for %s",
     (engine) => {
       const { update } = setup("browser", {
         webBrowser: normalizeWebBrowserSettings({ engine }),
@@ -803,9 +835,13 @@ describe("Web Browser settings", () => {
         name: /^Allow website dialogs/,
       });
       expect(dialogs).toBeEnabled();
-      expect(dialogs).not.toBeChecked();
+      expect((dialogs as HTMLInputElement).checked).toBe(
+        engine === "real-origin",
+      );
       expect(update).not.toHaveBeenCalled();
-      for (const expected of [true, false]) {
+      for (const expected of engine === "real-origin"
+        ? [false, true]
+        : [true, false]) {
         fireEvent.click(dialogs);
         expect(update.mock.lastCall?.[0].webBrowser.allowPageDialogs).toBe(
           expected,
