@@ -81,6 +81,12 @@ export interface HttpApplicationProfile {
     sourceOrigin: string;
     allowAllScripts: true;
   }>;
+  /** Native website request defaults bound to the exact saved HTTPS origin.
+   * Resource/navigation permissions do not authorize credential delivery. */
+  requestDefaults?: Readonly<{
+    sourceOrigin: string;
+    allowAllRequests: true;
+  }>;
   /** Safe source-reviewed path for an explicit external-browser handoff. */
   loginPath?: string;
   loginModes?: readonly HttpApplicationSettings["loginMode"][];

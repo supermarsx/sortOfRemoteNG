@@ -206,13 +206,20 @@ export const HOSTED_DASHBOARD_PROFILES: readonly HttpApplicationProfile[] = [
     "business",
     "YouTube website with Google Account sign-in; Google can reject embedded browsers.",
   ),
-  hosted(
-    "zoom",
-    "Zoom web portal",
-    "https://zoom.us/signin",
-    "business",
-    "Zoom web account portal, not native meeting-client embedding. Organization SSO and verification stay interactive.",
-  ),
+  {
+    ...hosted(
+      "zoom",
+      "Zoom web portal",
+      "https://zoom.us/signin",
+      "business",
+      "Zoom web account portal, not native meeting-client embedding. Organization SSO and verification stay interactive.",
+    ),
+    scriptDefaults: { sourceOrigin: "https://zoom.us", allowAllScripts: true },
+    requestDefaults: {
+      sourceOrigin: "https://zoom.us",
+      allowAllRequests: true,
+    },
+  },
   hosted(
     "icloud",
     "iCloud",

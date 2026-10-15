@@ -19,6 +19,12 @@ import {
   setApplicationScriptPermission,
 } from "../../../utils/connection/applicationScriptDefaults";
 
+import {
+  applicationRequestDefaultOrigin,
+  applicationRequestsAllowed,
+  setApplicationRequestPermission,
+} from "../../../utils/connection/applicationRequestDefaults";
+
 /** Draft-only editor. Native validation is repeated before opening a proxy. */
 export default function ProxyPolicySection({ mgr }: { mgr: Mgr }) {
   const id = useId();
@@ -69,6 +75,7 @@ export default function ProxyPolicySection({ mgr }: { mgr: Mgr }) {
   };
   const fontOrigins = policy.externalFontOrigins ?? [];
   const appScriptOrigin = applicationScriptDefaultOrigin(mgr.formData);
+  const appRequestOrigin = applicationRequestDefaultOrigin(mgr.formData);
   let appEffectivePolicy: HttpProxyPolicy | null = null;
   try {
     appEffectivePolicy = normalizeHttpProxyPolicy(
@@ -88,6 +95,20 @@ export default function ProxyPolicySection({ mgr }: { mgr: Mgr }) {
     (mgr.formData.browserSession?.crossOriginRequestsEnabled ??
       settings.webBrowser?.crossOriginRequestsEnabled ??
       true);
+  const appRequestsAllowed =
+    !!appEffectivePolicy &&
+    settingsReady !== false &&
+    (mgr.formData.browserSession?.crossOriginRequestsEnabled ??
+      settings.webBrowser?.crossOriginRequestsEnabled ??
+      true) &&
+    applicationRequestsAllowed(
+      mgr.formData,
+      appEffectivePolicy,
+      settings.webBrowser?.domainPermissions,
+    );
+  const requestsAllowed = appRequestOrigin
+    ? appRequestsAllowed
+    : policy.allowAllRequests === true && !policy.sameOriginOnly;
   const fontsDisabled = policy.sameOriginOnly || !policy.allowExternalFonts;
   const updateFontOrigins = (origins: string[]) => {
     try {
@@ -187,17 +208,56 @@ export default function ProxyPolicySection({ mgr }: { mgr: Mgr }) {
       />
       <div className="rounded-lg border border-[var(--color-border)] p-4 space-y-3">
         <CheckboxField
-          checked={policy.allowAllRequests === true && !policy.sameOriginOnly}
+          disabled={
+            !!appRequestOrigin &&
+            (!appEffectivePolicy || settingsReady === false)
+          }
+          checked={requestsAllowed}
           onChange={(allowAllRequests) =>
-            update({
-              allowAllRequests,
-              ...(allowAllRequests
-                ? { pageScripts: "allow", sameOriginOnly: false }
-                : {}),
-            })
+            appRequestOrigin
+              ? mgr.setFormData((previous) => {
+                  if (
+                    previous.id !== mgr.formData.id ||
+                    applicationRequestDefaultOrigin(previous) !==
+                      appRequestOrigin
+                  )
+                    return previous;
+                  try {
+                    return {
+                      ...previous,
+                      websiteDomainPermissions: setApplicationRequestPermission(
+                        previous,
+                        allowAllRequests,
+                        settings.webBrowser?.domainPermissions,
+                      ),
+                      httpProxyPolicy: normalizeHttpProxyPolicy({
+                        ...normalizeHttpProxyPolicy(
+                          previous.httpProxyPolicy ??
+                            settings.webBrowser?.defaultPolicy,
+                        ),
+                        allowAllRequests,
+                      }),
+                    };
+                  } catch {
+                    setError(
+                      "Website request permissions could not be updated. Review invalid permissions or remove an unused destination if the 32-destination limit is reached.",
+                    );
+                    return previous;
+                  }
+                })
+              : update({
+                  allowAllRequests,
+                  ...(allowAllRequests
+                    ? { pageScripts: "allow", sameOriginOnly: false }
+                    : {}),
+                })
           }
           label="Allow all website requests"
-          description="Trust current and future destinations for this saved connection, including website resources, API requests and navigation. Enables website scripts and turns off same-origin-only restrictions."
+          description={
+            appRequestOrigin
+              ? "This application's native browser allows supported website request classes by default. Turn off to deny unlisted destinations while keeping currently permitted requests to the website itself. Individual destination rules remain in force."
+              : "Trust current and future destinations for this saved connection, including website resources, API requests and navigation. Enables website scripts and turns off same-origin-only restrictions."
+          }
           variant="form"
         />
         <p className="text-xs leading-relaxed text-warning">
@@ -214,7 +274,7 @@ export default function ProxyPolicySection({ mgr }: { mgr: Mgr }) {
           disable the website's CSP, CORS, or the browser sandbox. Legacy mode
           retains its anonymous-request and supported-transport restrictions.
         </p>
-        {policy.allowAllRequests && !policy.sameOriginOnly && (
+        {requestsAllowed && (
           <p role="status" className="text-xs text-[var(--color-textMuted)]">
             All-request trust is active for this connection only. Individual
             script, stylesheet and font source lists below are overridden but
@@ -289,7 +349,7 @@ export default function ProxyPolicySection({ mgr }: { mgr: Mgr }) {
           enter. External scripts still load through the proxy; this does not
           grant saved credentials, login consent, other network resources or
           browser sandbox access. Invalid URLs remain blocked.
-          {!policy.allowAllRequests && " External HTTP scripts remain blocked."}
+          {!requestsAllowed && " External HTTP scripts remain blocked."}
         </p>
         <p className="text-xs leading-relaxed text-[var(--color-textMuted)]">
           Native browser: permits external script sources through the app's

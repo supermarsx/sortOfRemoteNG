@@ -68,6 +68,9 @@ mod social_script_defaults;
 #[cfg(test)]
 #[path = "origin_browser_social_script_defaults_tests.rs"]
 mod social_script_defaults_tests;
+#[cfg(test)]
+#[path = "origin_browser_zoom_defaults_tests.rs"]
+mod zoom_defaults_tests;
 #[path = "origin_browser_drone_scm.rs"]
 mod drone_scm;
 #[path = "origin_browser_automation_authority.rs"]
@@ -1853,7 +1856,8 @@ fn saved_permissions_inner(
         } else {
             meo_defaults::resource_domain_defaults(connection, &origin)
         },
-        allow_all_requests: option("allowAllRequests"),
+        allow_all_requests: option("allowAllRequests")
+            || social_script_defaults::requests_enabled(connection, &origin),
         // Legacy normalization stores false even without an explicit choice.
         // It means no extra connection opt-in, not revocation of an origin-bound
         // application default. Explicit class/destination denies still win.

@@ -22,6 +22,7 @@ describe("origin-bound application script defaults", () => {
   it.each([
     ["instagram", "www.instagram.com"],
     ["linkedin", "www.linkedin.com"],
+    ["zoom", "zoom.us"],
   ])(
     "applies %s before normalization-produced false can hide the default",
     (id, hostname) => {
@@ -48,6 +49,8 @@ describe("origin-bound application script defaults", () => {
       row("linkedin", "www.instagram.com"),
       { ...row(), protocol: "http" as const },
       { ...row(), port: 8443 },
+      { ...row(), port: 0 },
+      { ...row(), port: NaN },
       { ...row(), isGroup: true },
       { ...row(), hostname: "https://www.instagram.com:8443/login" },
       {

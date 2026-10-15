@@ -55,6 +55,7 @@ test("native profile snapshot exactly matches all reviewed legacy defaults", asy
           selectors: profile.selectors,
           sameOriginLoginFrames: profile.sameOriginLoginFrames,
           scriptDefaults: profile.scriptDefaults,
+          requestDefaults: profile.requestDefaults,
         },
       ]),
     ),

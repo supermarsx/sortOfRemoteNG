@@ -214,6 +214,7 @@ export function renderNativeLoginCatalog({
               selectors: profile.selectors,
               sameOriginLoginFrames: profile.sameOriginLoginFrames,
               scriptDefaults: profile.scriptDefaults,
+              requestDefaults: profile.requestDefaults,
               declarativeLogin: file && {
                 mode: modeOf(profile),
                 credentialOrigins: file.credentialOrigins,

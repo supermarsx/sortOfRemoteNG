@@ -67,6 +67,7 @@ describe("Internal proxy controls", () => {
   it.each([
     ["instagram", "www.instagram.com"],
     ["linkedin", "www.linkedin.com"],
+    ["zoom", "zoom.us"],
   ])(
     "shows %s's effective native script default and turns off through explicit website permissions",
     (id, hostname) => {
@@ -103,6 +104,108 @@ describe("Internal proxy controls", () => {
       ).toBe("allow");
     },
   );
+  it("shows Zoom's effective request default and persists a source-bound opt-out across remount", () => {
+    const initial: Partial<Connection> = {
+      id: "zoom-connection",
+      protocol: "https",
+      hostname: "zoom.us",
+      port: 443,
+      httpApplication: { version: 1, id: "zoom", loginMode: "manual" },
+      httpProxyPolicy: { ...DEFAULT_HTTP_PROXY_POLICY },
+    };
+    const view = render(<Fixture initial={initial} />);
+    const toggle = () =>
+      screen.getByRole("checkbox", { name: /^Allow all website requests/ });
+    expect(toggle()).toBeChecked();
+    expect(draft()).toEqual(initial);
+    fireEvent.click(toggle());
+    expect(toggle()).not.toBeChecked();
+    expect(draft().httpProxyPolicy.allowAllRequests).toBe(false);
+    expect(
+      draft().websiteDomainPermissions.websites[0].requestClasses.navigation,
+    ).toBe("deny");
+    expect(
+      draft().websiteDomainPermissions.websites[0].destinations,
+    ).toContainEqual({
+      origin: "https://zoom.us",
+      requestClasses: {
+        script: "allow",
+        stylesheet: "allow",
+        font: "allow",
+        "image-media": "allow",
+        "fetch-xhr": "allow",
+        frame: "allow",
+        worker: "allow",
+        websocket: "allow",
+        navigation: "allow",
+      },
+    });
+    const saved = draft();
+    view.unmount();
+    render(<Fixture initial={saved} />);
+    expect(toggle()).not.toBeChecked();
+    fireEvent.click(toggle());
+    expect(toggle()).toBeChecked();
+  });
+  it.each([
+    { defaultPolicy: { ...DEFAULT_HTTP_PROXY_POLICY, sameOriginOnly: true } },
+    { defaultPolicy: { ...DEFAULT_HTTP_PROXY_POLICY, pageScripts: "block" } },
+    { crossOriginRequestsEnabled: false },
+  ])(
+    "shows Zoom restrictions rather than a false full-access state: %j",
+    (webBrowser) => {
+      shared.settings = { webBrowser };
+      render(
+        <Fixture
+          initial={{
+            id: "zoom",
+            protocol: "https",
+            hostname: "zoom.us",
+            port: 443,
+            httpApplication: { version: 1, id: "zoom", loginMode: "manual" },
+          }}
+        />,
+      );
+      expect(
+        screen.getByRole("checkbox", { name: /^Allow all website requests/ }),
+      ).not.toBeChecked();
+      expect(
+        screen.getByRole("checkbox", { name: /^Allow all website scripts/ }),
+      ).not.toBeChecked();
+    },
+  );
+  it("keeps the Zoom draft unchanged and explains a full destination list when opting out", () => {
+    const initial: Partial<Connection> = {
+      id: "zoom-full",
+      protocol: "https",
+      hostname: "zoom.us",
+      port: 443,
+      httpApplication: { version: 1, id: "zoom", loginMode: "manual" },
+      websiteDomainPermissions: {
+        version: 1,
+        websites: [
+          {
+            origin: "https://zoom.us",
+            requestClasses: {},
+            destinations: Array.from({ length: 32 }, (_, i) => ({
+              origin: `https://asset${i}.example`,
+              requestClasses: { script: "deny" as const },
+            })),
+          },
+        ],
+      },
+    };
+    render(<Fixture initial={initial} />);
+    fireEvent.click(
+      screen.getByRole("checkbox", { name: /^Allow all website requests/ }),
+    );
+    expect(draft()).toEqual(initial);
+    expect(
+      screen.getByText(
+        /remove an unused destination if the 32-destination limit/,
+      ),
+    ).toBeVisible();
+  });
   it("keeps social-app explicit destination and other-class denials when enabling the default", () => {
     render(
       <Fixture

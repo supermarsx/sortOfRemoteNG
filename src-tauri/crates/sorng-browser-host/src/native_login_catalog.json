@@ -674,6 +674,14 @@
     },
     "zoom": {
       "capability": "manual",
+      "scriptDefaults": {
+        "sourceOrigin": "https://zoom.us",
+        "allowAllScripts": true
+      },
+      "requestDefaults": {
+        "sourceOrigin": "https://zoom.us",
+        "allowAllRequests": true
+      },
       "declarativeLogin": {
         "mode": "exclusive",
         "credentialOrigins": [],

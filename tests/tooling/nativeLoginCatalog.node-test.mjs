@@ -35,6 +35,7 @@ const PROFILE_FIELDS = [
   "selectors",
   "sameOriginLoginFrames",
   "scriptDefaults",
+  "requestDefaults",
 ];
 
 /** A reviewed two-origin, identifier-first login with a frame-free pre-step. */

@@ -23,7 +23,11 @@ export function applicationScriptDefaultOrigin(
     )
       return null;
     const app = normalizeHttpApplicationSettings(connection.httpApplication);
-    if (!app || app.invalid || !["instagram", "linkedin"].includes(app.id))
+    if (
+      !app ||
+      app.invalid ||
+      !["instagram", "linkedin", "zoom"].includes(app.id)
+    )
       return null;
     const defaults = getHttpApplicationProfile(app.id)?.scriptDefaults;
     if (defaults?.allowAllScripts !== true) return null;
@@ -31,7 +35,7 @@ export function applicationScriptDefaultOrigin(
     if (source.sourceScheme && source.sourceScheme !== "https") return null;
     if (source.port && connection.port && source.port !== connection.port)
       return null;
-    const port = connection.port || source.port || 443;
+    const port = connection.port ?? source.port ?? 443;
     if (!Number.isInteger(port) || port < 1 || port > 65535) return null;
     const url = new URL(`https://${source.hostname}/`);
     url.port = port === 443 ? "" : String(port);
