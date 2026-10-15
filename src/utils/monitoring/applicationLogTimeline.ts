@@ -231,7 +231,7 @@ function journal(
     category: "startup" as const,
     message: "Unrecognized browser journal record",
     details: "Unsupported or incomplete record; raw fields are not displayed.",
-    timestampMs: null,
+    timestampMs,
     level: "LOG",
   };
   if (!value) return unknown;
@@ -256,7 +256,7 @@ function journal(
       category: "timing",
       message: `${kind} timing: ${outcome}`,
       details: `${number(value.total_us) ? `Total ${duration(value.total_us)}. ` : ""}${timingDetails(value)}`,
-      timestampMs: null,
+      timestampMs,
       level: value.outcome === 0 ? "WARN" : "INFO",
     };
   }

@@ -86,6 +86,10 @@ pub(crate) enum TimingStage {
 #[derive(Clone, Debug, serde::Serialize)]
 struct TimingSnapshot {
     timing_version: u8,
+    // Event observation time, captured before asynchronous queueing/buffering.
+    // Older journals omit this field; monotonic phase durations stay unchanged.
+    #[serde(rename = "timestampUnixMs", skip_serializing_if = "Option::is_none")]
+    timestamp_unix_ms: Option<u64>,
     sample: u32,
     kind: u8,
     stage: u8,
@@ -208,6 +212,7 @@ impl ActiveTiming {
             &self.sender,
             Message::Timing(Box::new(TimingSnapshot {
                 timing_version: 1,
+                timestamp_unix_ms: timestamp_unix_ms(SystemTime::now()),
                 sample: self.sample,
                 kind: self.kind,
                 stage,
@@ -236,6 +241,13 @@ impl ActiveTiming {
             self.send(TIMING_SLOTS as u8, outcome);
         }
     }
+}
+
+fn timestamp_unix_ms(timestamp: SystemTime) -> Option<u64> {
+    timestamp
+        .duration_since(UNIX_EPOCH)
+        .ok()
+        .and_then(|elapsed| u64::try_from(elapsed.as_millis()).ok())
 }
 
 impl Drop for ActiveTiming {
@@ -693,6 +705,53 @@ mod tests {
             .collect()
     }
 
+    #[test]
+    fn timing_timestamp_is_captured_before_delivery_and_preserved_by_early_buffer() {
+        let before = timestamp_unix_ms(SystemTime::now()).unwrap();
+        let (sender, receiver) = mpsc::sync_channel(32);
+        let _trace = Trace::sampled(&AtomicU32::new(0), 1, &sender);
+        let mut early = snapshots(&receiver);
+        let after = timestamp_unix_ms(SystemTime::now()).unwrap();
+        let observed = early[0].timestamp_unix_ms.unwrap();
+        assert!((before..=after).contains(&observed));
+
+        // A delayed flush must retain the observation time rather than stamp
+        // the worker's current clock. Fixed time makes this deterministic.
+        early[0].timestamp_unix_ms = Some(1_700_000_000_123);
+        let temp = tempfile::tempdir().unwrap();
+        let mut journal = open_journal(temp.path()).unwrap();
+        flush_early_timing(&mut journal, &mut early).unwrap();
+        drop(journal);
+        let path = fs::read_dir(temp.path())
+            .unwrap()
+            .next()
+            .unwrap()
+            .unwrap()
+            .path();
+        let row: serde_json::Value =
+            serde_json::from_str(fs::read_to_string(path).unwrap().trim()).unwrap();
+        assert_eq!(row["timestampUnixMs"], 1_700_000_000_123_u64);
+        assert_eq!(row["timing_version"], 1);
+        assert_eq!(row["elapsed_us"].as_array().unwrap().len(), TIMING_SLOTS);
+        assert!(early.is_empty());
+    }
+
+    #[test]
+    fn invalid_wall_clock_is_not_replaced_with_a_fabricated_epoch_timestamp() {
+        assert_eq!(
+            timestamp_unix_ms(UNIX_EPOCH - std::time::Duration::from_millis(1)),
+            None
+        );
+        assert_eq!(timestamp_unix_ms(UNIX_EPOCH), Some(0));
+        let (sender, receiver) = mpsc::sync_channel(32);
+        let _trace = Trace::sampled(&AtomicU32::new(0), 1, &sender);
+        let mut snapshot = snapshots(&receiver).pop().unwrap();
+        snapshot.timestamp_unix_ms = None;
+        let row = serde_json::to_value(snapshot).unwrap();
+        assert!(row.get("timestampUnixMs").is_none());
+        assert_eq!(row["timing_version"], 1);
+    }
+
     fn relay_fixture() -> PrivateProxyDiagnostics {
         PrivateProxyDiagnostics {
             state: sorng_protocols::private_forward_proxy::PrivateProxyState::Listening,
@@ -796,7 +855,7 @@ mod tests {
         );
         assert!(last.total_us >= 3_000);
         let value = serde_json::to_value(last).unwrap();
-        assert_eq!(value.as_object().unwrap().len(), 8);
+        assert_eq!(value.as_object().unwrap().len(), 9);
         assert!(value.as_object().unwrap().values().all(|value| {
             value.is_u64()
                 || value

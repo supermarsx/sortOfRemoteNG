@@ -228,7 +228,7 @@ impl EncryptedLogAdapter {
                                     // logging itself failing must not crash the
                                     // app.
                                     if let Err(e) = sink.flush().await {
-                                        eprintln!("encrypted log flush failed: {}", e);
+                                        eprintln!("{}", format_flush_failure(&e));
                                     }
                                 }
                             }
@@ -248,7 +248,7 @@ impl EncryptedLogAdapter {
                             ));
                         }
                         if let Err(e) = sink.flush().await {
-                            eprintln!("encrypted log flush failed: {}", e);
+                            eprintln!("{}", format_flush_failure(&e));
                         }
                     }
                 }
@@ -306,6 +306,16 @@ fn format_record(record: &Record) -> String {
     )
 }
 
+// Sink failures must bypass the logger to avoid recursive flush failures, but
+// still use the same timestamped line shape as normal application records.
+fn format_flush_failure(error: &impl std::fmt::Display) -> String {
+    format!(
+        "[{}][ERROR][sorng-encryption::log] encrypted log flush failed: {}",
+        now_iso_8601(),
+        error
+    )
+}
+
 fn now_iso_8601() -> String {
     let secs = SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -349,6 +359,19 @@ mod tests {
     use crate::log_sink::EncryptedLogSink;
     use std::sync::Arc;
     use tempfile::tempdir;
+
+    #[test]
+    fn emergency_flush_failures_keep_a_timestamp_without_using_the_logger() {
+        let before = now_iso_8601();
+        let line =
+            format_flush_failure(&std::io::Error::from(std::io::ErrorKind::PermissionDenied));
+        let after = now_iso_8601();
+        let (timestamp, detail) = line.strip_prefix('[').unwrap().split_once(']').unwrap();
+        assert!(timestamp >= before.as_str() && timestamp <= after.as_str());
+        assert_eq!(timestamp.len(), 20);
+        assert!(timestamp.ends_with('Z'));
+        assert!(detail.starts_with("[ERROR][sorng-encryption::log] encrypted log flush failed: "));
+    }
 
     async fn unlocked_state(seed: u8) -> Arc<EncryptionState> {
         let s = EncryptionState::new();

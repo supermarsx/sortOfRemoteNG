@@ -194,6 +194,63 @@ describe("bounded application log timeline", () => {
     );
     expect(logRowsText([row])).toContain("Recorded order");
   });
+  it("orders timestamped native timing with lifecycle records by event time, not file modification time", () => {
+    const rows = parseLogTimeline(
+      [
+        {
+          timing_version: 1,
+          timestampUnixMs: 1000,
+          kind: 2,
+          outcome: 255,
+          reached: 1,
+          elapsed_us: Array(31).fill(0),
+        },
+        { version: 1, timestampUnixMs: 2000, stage: "ready" },
+      ]
+        .map((record) => JSON.stringify(record))
+        .join("\n"),
+      "browser",
+      { ...file, modifiedUnixMs: 9000 },
+    );
+    expect(rows[0]).toMatchObject({
+      category: "timing",
+      timestampMs: 1000,
+      orderMs: 1000,
+    });
+    expect(newestLogRows(rows).map((row) => row.timestampMs)).toEqual([
+      2000, 1000,
+    ]);
+    expect(logRowsText(rows)).toContain("1970-01-01T00:00:01.000Z");
+    expect(logRowsText(rows)).not.toContain("Recorded order");
+  });
+
+  it.each([undefined, -1, 1.5, "2000", Number.MAX_SAFE_INTEGER])(
+    "keeps missing or invalid timing timestamps %s untimed",
+    (timestampUnixMs) => {
+      const row = browser({ timing_version: 1, timestampUnixMs });
+      expect(row.timestampMs).toBeNull();
+      expect(row.orderMs).toBe(file.modifiedUnixMs);
+      expect(logRowsText([row])).toContain("Recorded order");
+    },
+  );
+
+  it("retains only a validated wall timestamp for unrecognized browser records", () => {
+    const row = browser({
+      version: 42,
+      timestampUnixMs: 2000,
+      stage: "PRIVATE_STAGE",
+      url: "PRIVATE_URL",
+      message: "PRIVATE_MESSAGE",
+    });
+    expect(row).toMatchObject({
+      timestampMs: 2000,
+      orderMs: 2000,
+      message: "Unrecognized browser journal record",
+    });
+    expect(logRowsText([row])).toContain("1970-01-01T00:00:02.000Z");
+    expect(logRowsText([row])).not.toContain("PRIVATE_");
+  });
+
   it("decodes the distinct16slot owner recheck schema instead of journal prewarm", () => {
     const elapsed = Array(16).fill(0);
     elapsed[0] = 1000;
@@ -233,17 +290,13 @@ describe("bounded application log timeline", () => {
       expect(row.details).toMatch(/not recognized|not displayed/);
     },
   );
-  it("keeps unsupported versions and overflowing journal timestamps in fixed fallback order", () => {
+  it("keeps overflowing journal timestamps in fixed fallback order", () => {
     expect(
       parseLogTimeline(
         "[1][INFO][sorng_ssh] No valid wall timestamp",
         "application",
         file,
       )[0].timestampMs,
-    ).toBeNull();
-    expect(
-      browser({ version: 42, timestampUnixMs: 2000, stage: "ready" })
-        .timestampMs,
     ).toBeNull();
     expect(
       browser({
