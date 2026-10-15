@@ -129,10 +129,9 @@ vi.mock("../../src/types/integrations/registry", () => ({
 }));
 
 // Mock ToastContext (useConnectionEditor depends on it)
-vi.mock("../../src/contexts/ToastContext", () => ({
-  useToastContext: () => ({
-    toast: toastMocks,
-  }),
+vi.mock("../../src/contexts/ToastContext", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../src/contexts/ToastContext")>()),
+  useToastContext: () => ({ toast: toastMocks }),
 }));
 
 // Override the global SettingsContext mock so a single test can flip
@@ -182,12 +181,25 @@ vi.mock("../../src/components/connectionEditor/SSHOptions", () => ({
     ) : null,
 }));
 
-vi.mock("../../src/components/connectionEditor/HTTPOptions", () => ({
-  default: ({ formData }: any) =>
-    ["http", "https"].includes(formData.protocol) ? (
-      <div data-testid="http-options">HTTP Options</div>
-    ) : null,
-}));
+const actualHttpOptions = vi.hoisted(() => ({ enabled: false }));
+vi.mock(
+  "../../src/components/connectionEditor/HTTPOptions",
+  async (importOriginal) => {
+    const actual =
+      await importOriginal<
+        typeof import("../../src/components/connectionEditor/HTTPOptions")
+      >();
+    return {
+      ...actual,
+      default: (props: React.ComponentProps<typeof actual.default>) =>
+        actualHttpOptions.enabled ? (
+          <actual.default {...props} />
+        ) : ["http", "https"].includes(props.formData.protocol ?? "") ? (
+          <div data-testid="http-options">HTTP Options</div>
+        ) : null,
+    };
+  },
+);
 
 vi.mock("../../src/components/connectionEditor/CloudProviderOptions", () => ({
   default: () => <div data-testid="cloud-options">Cloud Options</div>,
@@ -365,6 +377,7 @@ describe("ConnectionEditor", () => {
   let integrationConfigRaw: string | null = null;
 
   beforeEach(() => {
+    actualHttpOptions.enabled = false;
     vi.clearAllMocks();
     integrationConfigRaw = null;
     resetIntegrationConfigStoreForTests();
@@ -514,14 +527,19 @@ describe("ConnectionEditor", () => {
           ).toHaveAttribute("aria-selected", "true"),
         );
         expect(
-          screen.getByTestId("connection-editor-tab-protocol"),
+          screen.getByTestId(
+            subtab === "authentication"
+              ? "connection-editor-tab-authentication"
+              : "connection-editor-tab-protocol",
+          ),
         ).toHaveAttribute("aria-selected", "true");
         expect(onClose).not.toHaveBeenCalled();
       },
     );
     it.each(["http", "https"] as const)(
-      "redirects %s application credentials from Basics to the Application subtab",
+      "opens %s website passwords and authenticators in Authentication",
       async (protocol) => {
+        actualHttpOptions.enabled = true;
         renderWithProviders({
           connection: {
             ...mockConnection,
@@ -537,18 +555,45 @@ describe("ConnectionEditor", () => {
         });
         expect(
           await screen.findByTestId("http-application-credentials-notice"),
-        ).toHaveTextContent("configured in Application settings");
+        ).toHaveTextContent("Authentication");
         expect(screen.queryByTestId("editor-username")).not.toBeInTheDocument();
         expect(screen.queryByTestId("editor-password")).not.toBeInTheDocument();
         fireEvent.click(
-          screen.getByRole("button", { name: "Open Application settings" }),
+          screen.getByRole("button", { name: "Open Authentication settings" }),
         );
         expect(
-          screen.getByTestId("connection-editor-tab-protocol"),
+          screen.getByTestId("connection-editor-tab-authentication"),
         ).toHaveAttribute("aria-selected", "true");
+        expect(screen.getByRole("tab", { name: "Sign-in" })).toHaveAttribute(
+          "aria-selected",
+          "true",
+        );
+        expect(screen.getByLabelText("Website password")).toHaveValue(
+          "testpass",
+        );
+        fireEvent.change(screen.getByLabelText("Website password"), {
+          target: { value: "edited-password" },
+        });
+        fireEvent.click(screen.getByRole("tab", { name: "Recovery" }));
+        fireEvent.click(screen.getByRole("button", { name: /2FA \/ TOTP/ }));
+        fireEvent.click(
+          screen.getByRole("button", { name: "Add TOTP configuration" }),
+        );
+        fireEvent.change(
+          screen.getByPlaceholderText("Account name (e.g. admin@server)"),
+          { target: { value: "Website account" } },
+        );
+        fireEvent.change(
+          screen.getByPlaceholderText("Secret key (auto-generated if empty)"),
+          { target: { value: "JBSWY3DPEHPK3PXP" } },
+        );
         expect(
-          screen.getByRole("tab", { name: "Application" }),
-        ).toHaveAttribute("aria-selected", "true");
+          screen.getByPlaceholderText("Secret key (auto-generated if empty)"),
+        ).toHaveValue("JBSWY3DPEHPK3PXP");
+        fireEvent.click(screen.getByRole("tab", { name: "Sign-in" }));
+        expect(screen.getByLabelText("Website password")).toHaveValue(
+          "edited-password",
+        );
       },
     );
 
@@ -558,6 +603,9 @@ describe("ConnectionEditor", () => {
         isOpen: true,
         onClose: vi.fn(),
       });
+      fireEvent.click(
+        screen.getByTestId("connection-editor-tab-authentication"),
+      );
       expect(await screen.findByTestId("editor-username")).toHaveValue(
         "testuser",
       );
@@ -898,7 +946,9 @@ describe("ConnectionEditor", () => {
 
       const nameInput = screen.getByTestId("editor-name");
       expect(nameInput).toHaveValue("");
-      expect(screen.getByTestId("editor-protocol")).toHaveTextContent("Browser");
+      expect(screen.getByTestId("editor-protocol")).toHaveTextContent(
+        "Browser",
+      );
       expect(screen.getByTestId("editor-port")).toHaveValue(443);
     });
 
@@ -994,6 +1044,7 @@ describe("ConnectionEditor", () => {
       expect(screen.getByLabelText("Username")).toHaveValue("postgres");
       expect(screen.getByLabelText("Password")).toBeInTheDocument();
 
+      fireEvent.click(screen.getByTestId("connection-editor-tab-protocol"));
       fireEvent.click(screen.getByRole("tab", { name: "Security" }));
       expect(
         screen.getByRole("combobox", { name: "SSL mode" }),
@@ -2025,14 +2076,14 @@ describe("ConnectionEditor", () => {
       fireEvent.change(search, { target: { value: "Known Hosts Path" } });
       expect(
         screen.getByRole("option", {
-          name: /Protocol \/ Protocol Options.*Known Hosts Path/i,
+          name: /Authentication \/ Protocol Options.*Known Hosts Path/i,
         }),
       ).toBeInTheDocument();
 
       fireEvent.keyDown(search, { key: "Enter" });
       await waitFor(() => {
         expect(
-          screen.getByTestId("connection-editor-tab-protocol"),
+          screen.getByTestId("connection-editor-tab-authentication"),
         ).toHaveAttribute("aria-selected", "true");
         expect(
           screen.getByTestId(
@@ -2189,9 +2240,10 @@ describe("ConnectionEditor", () => {
       expect(
         screen.getByRole("tablist", { name: "Protocol settings sections" }),
       ).toBeInTheDocument();
-      expect(
-        screen.getByRole("tab", { name: "Authentication" }),
-      ).toHaveAttribute("aria-selected", "true");
+      expect(screen.getByRole("tab", { name: "Terminal" })).toHaveAttribute(
+        "aria-selected",
+        "true",
+      );
       expect(screen.getByRole("tab", { name: "Terminal" })).toBeInTheDocument();
       fireEvent.click(screen.getByRole("tab", { name: "Favorites" }));
       expect(screen.getByLabelText("Connection favorites")).toBeInTheDocument();

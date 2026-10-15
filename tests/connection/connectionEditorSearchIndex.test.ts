@@ -935,3 +935,28 @@ describe("connection editor search index", () => {
     expect(first[0].snippet.toLocaleLowerCase()).toContain("production");
   });
 });
+
+it("routes website password and authenticator search to Authentication without indexing secrets", () => {
+  const index = buildIndex({
+    protocol: "https",
+    isGroup: false,
+    hostname: "site.example",
+    httpApplication: { version: 1, id: "portainer", loginMode: "manual" },
+    password: "NEVER_INDEX_PASSWORD",
+  });
+  for (const fieldId of [
+    "http-application-login",
+    "http-application-mfa",
+    "two-factor",
+  ]) {
+    expect(index.find((entry) => entry.fieldId === fieldId)).toMatchObject({
+      tabId: "authentication",
+    });
+  }
+  expect(searchConnectionEditorIndex(index, "NEVER_INDEX_PASSWORD")).toEqual(
+    [],
+  );
+  expect(
+    index.find((entry) => entry.fieldId === "http-application"),
+  ).toMatchObject({ tabId: "protocol", protocolSubtabId: "application" });
+});

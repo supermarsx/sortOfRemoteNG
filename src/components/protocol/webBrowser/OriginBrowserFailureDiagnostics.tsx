@@ -205,7 +205,7 @@ const probeTrust =
 const recoveryLabels: Record<BrowserRecoveryAction, string> = {
   connection: "Review connection settings",
   application: "Review application settings",
-  credentials: "Review website credentials",
+  credentials: "Review Authentication settings",
   permissions: "Review website permissions",
   network: "Review network route",
   "browser-session": "Review browser session settings",

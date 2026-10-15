@@ -178,15 +178,23 @@ export function buildConnectionEditorSearchIndex({
   const entries: ConnectionEditorSearchIndexEntry[] = [];
 
   for (const descriptor of descriptors) {
-    const tabLabel = tabLabels.get(descriptor.tabId);
-    if (!tabLabel) continue;
-
     const fields = [
       ...descriptor.fields,
       ...(descriptor.dynamicFields?.(formData) ?? []),
     ];
     for (const field of fields) {
       if (!isConnectionEditorSearchFieldApplicable(field, formData)) continue;
+      const protocolSubtabId = getConnectionEditorProtocolSubtabId(
+        field,
+        formData,
+      );
+      const authField =
+        ["authentication", "recovery"].includes(protocolSubtabId ?? "") ||
+        (["username", "password", "credential-source"].includes(field.id) &&
+          !String(formData.protocol).startsWith("integration:"));
+      const tabId = authField ? "authentication" : descriptor.tabId;
+      const tabLabel = tabLabels.get(tabId);
+      if (!tabLabel) continue;
 
       const values = getSafeConnectionEditorSearchValues(
         formData,
@@ -211,14 +219,14 @@ export function buildConnectionEditorSearchIndex({
 
       entries.push({
         id: `${descriptor.id}:${field.id}`,
-        tabId: descriptor.tabId,
+        tabId,
         tabLabel,
         sectionId: descriptor.id,
         sectionLabel: descriptor.label,
         fieldId: field.id,
         focusId: field.focusId ?? field.id,
         fieldLabel: field.label,
-        protocolSubtabId: getConnectionEditorProtocolSubtabId(field, formData),
+        protocolSubtabId,
         breadcrumb: `${tabLabel} / ${descriptor.label}`,
         segments,
       });

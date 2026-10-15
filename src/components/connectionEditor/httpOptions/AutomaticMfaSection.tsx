@@ -168,9 +168,9 @@ export default function AutomaticMfaSection({
         <>
           {!vault && !configs.length && (
             <p className="text-sm text-[var(--color-textSecondary)]">
-              Configure an authenticator under Protocol → Recovery → 2FA / TOTP
-              first. Use a secret already enrolled with this website; this does
-              not enroll or reset an account.
+              Configure an authenticator under Authentication → Recovery → 2FA /
+              TOTP first. Use a secret already enrolled with this website; this
+              does not enroll or reset an account.
             </p>
           )}
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">

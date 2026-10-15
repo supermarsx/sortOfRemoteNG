@@ -302,7 +302,7 @@ export default function WebTotpPanel({
               <p className="text-sm">
                 No saved authenticator configurations. Use your existing
                 authenticator, or configure an already-enrolled secret in this
-                connection’s Protocol → Recovery settings.
+                connection’s Authentication → Recovery settings.
               </p>
             )}
             {configs.slice(0, 64).map((config, index) => {

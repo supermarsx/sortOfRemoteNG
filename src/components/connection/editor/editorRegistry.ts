@@ -1,6 +1,7 @@
 import {
   Cloud,
   FileText,
+  KeyRound,
   Settings2,
   Tag,
   Zap,
@@ -18,7 +19,7 @@ import {
 } from "../../../utils/connection/httpApplicationProfiles";
 
 export type ConnectionEditorTabId =
-  "general" | "protocol" | "behavior" | "organize" | "notes";
+  "general" | "authentication" | "protocol" | "behavior" | "organize" | "notes";
 
 export type ConnectionEditorExpandableSectionId = "advanced";
 
@@ -88,6 +89,12 @@ export interface ConnectionEditorSearchNavigationHandlers {
 
 export const CONNECTION_EDITOR_TABS = [
   { id: "general", label: "Basics", icon: Settings2 },
+  {
+    id: "authentication",
+    label: "Authentication",
+    icon: KeyRound,
+    connectionOnly: true,
+  },
   { id: "protocol", label: "Protocol", icon: Cloud, connectionOnly: true },
   { id: "behavior", label: "Behavior", icon: Zap, connectionOnly: true },
   { id: "organize", label: "Organize", icon: Tag },
@@ -114,8 +121,8 @@ export const PROTOCOL_SEARCH_FIELD_SUBTABS: Readonly<
   "http-custom-headers": "authentication",
   "http-tls": "security",
   "http-trust-policy": "security",
-  "http-auto-login": "advanced",
-  "http-auto-login-selectors": "advanced",
+  "http-auto-login": "authentication",
+  "http-auto-login-selectors": "authentication",
   "http-bookmarks": "favorites",
   "session-favorites": "favorites",
   "rdp-target-os": "connection",
@@ -2496,25 +2503,42 @@ export const CONNECTION_EDITOR_SEARCH_DESCRIPTORS = [
           ...Object.values(HTTP_APPLICATION_CATEGORIES),
         ],
         copy: [
-          "Manual browsing",
-          "Automatic form login",
-          "HTTP Basic",
-          "Application login mode",
-          "Website username",
-          "Website password",
-          "Account realm",
           "MeshCentral origin",
           "Secondary mailbox",
           "Delegated mailbox SMTP address",
-          "Selector overrides",
         ],
         valuePaths: [
           "httpApplication.id",
-          "httpApplication.loginMode",
-          "httpApplication.realm",
           "httpApplication.meshOrigin",
           "httpApplication.exchangeOwaMailbox",
         ],
+      },
+      {
+        id: "http-application-login",
+        focusId: "http-application-mode",
+        label: "Website sign-in and credentials",
+        protocols: ["http", "https"],
+        protocolSubtabId: "authentication",
+        visibleWhen: (data) => data.httpApplication !== undefined,
+        keywords: [
+          "password",
+          "username",
+          "email",
+          "login",
+          "authentication",
+          "automatic sign-in",
+          "manual sign-in",
+          "vault",
+        ],
+      },
+      {
+        id: "http-application-mfa",
+        focusId: "protocol-options",
+        label: "Website authenticator and automatic two-factor sign-in",
+        protocols: ["http", "https"],
+        protocolSubtabId: "authentication",
+        visibleWhen: (data) => data.httpApplication !== undefined,
+        keywords: ["authenticator", "totp", "2fa", "mfa", "one-time code"],
       },
       {
         id: "http-authentication",

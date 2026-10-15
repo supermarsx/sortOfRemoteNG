@@ -206,20 +206,20 @@ const startupDetails: Record<
   "login-unsupported": [
     "Application automatic-login configuration",
     "The saved automatic-login configuration is not supported by the native browser.",
-    "Review Application login settings. Choose a supported configuration, or explicitly choose manual login and save the connection.",
-    "application",
+    "Review Authentication settings. Choose a supported configuration, or explicitly choose manual login and save the connection.",
+    "credentials",
   ],
   "login-not-authorized": [
     "Website login consent",
     "Website login was not authorized. No saved credentials were sent.",
-    "Reopen the website to review consent, or explicitly choose manual login in Application settings and save the connection.",
-    "application",
+    "Reopen the website to review consent, or explicitly choose manual login in Authentication and save the connection.",
+    "credentials",
   ],
   "login-consent-pending": [
     "Website login consent",
     "An existing website login consent dialog must finish first.",
-    "Finish the pending consent dialog before retrying. Review Application login settings if you intend to change the login mode.",
-    "application",
+    "Finish the pending consent dialog before retrying. Review Authentication settings if you intend to change the login mode.",
+    "credentials",
   ],
   "credentials-unavailable": [
     "Website credential source",
@@ -230,7 +230,7 @@ const startupDetails: Record<
   "credentials-incomplete": [
     "Website login credentials",
     "Automatic login requires complete saved credentials, but the saved credential source is incomplete.",
-    "Complete this connection's username and password or linked vault entry, or explicitly choose manual login in Application settings. Save and reopen the tab.",
+    "Complete this connection's username and password or linked vault entry, or explicitly choose manual login in Authentication. Save and reopen the tab.",
     "credentials",
   ],
   "login-destinations": [
@@ -278,8 +278,8 @@ const startupDetails: Record<
   "mfa-origin-mismatch": [
     "Application automatic two-factor consent",
     "Saved automatic two-factor consent does not match the reviewed login origin.",
-    "In Application settings, review the authenticator and HTTPS login origin, re-enable automatic codes, and save the connection. The password and authenticator remain unchanged.",
-    "application",
+    "In Authentication, review the authenticator and HTTPS login origin, re-enable automatic codes, and save the connection. The password and authenticator remain unchanged.",
+    "credentials",
   ],
   "application-unsupported": [
     "Application entry or login route",

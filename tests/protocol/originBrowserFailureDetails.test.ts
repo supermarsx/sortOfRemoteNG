@@ -639,7 +639,7 @@ describe("fixed actionable native failure details", () => {
     expect(details.map(({ code, action }) => [code, action])).toEqual([
       ["url-credentials", "connection"],
       ["expectedSecurityRevision:missing", "database"],
-      ["consent-kind", "application"],
+      ["consent-kind", "credentials"],
     ]);
     expect(JSON.stringify(details)).not.toContain("SECRET");
   });
@@ -940,7 +940,7 @@ describe("fixed actionable native failure details", () => {
       reason: "mfa-origin-mismatch",
     } as const;
     const [detail] = getOriginBrowserFailureDetails(state({ startupFailure }));
-    expect(detail.action).toBe("application");
+    expect(detail.action).toBe("credentials");
     expect(detail.nextStep).toContain("re-enable automatic codes");
     for (const stage of [
       "listen",

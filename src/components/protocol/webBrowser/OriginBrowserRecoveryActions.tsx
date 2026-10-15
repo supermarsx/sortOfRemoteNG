@@ -5,7 +5,7 @@ import type { BrowserRecoveryAction } from "../../../hooks/protocol/originBrowse
 const labels: Record<BrowserRecoveryAction, string> = {
   connection: "Edit website address",
   application: "Review application settings",
-  credentials: "Review website credentials",
+  credentials: "Review Authentication settings",
   permissions: "Review website permissions",
   network: "Review proxy and tunnel settings",
   "browser-session": "Review browser session settings",

@@ -38,7 +38,9 @@ function withTrustDevice(
 export default function SynologyOptions({
   formData,
   setFormData,
+  section = "all",
 }: {
+  section?: "all" | "connection" | "authentication";
   formData: Partial<Connection>;
   setFormData: React.Dispatch<React.SetStateAction<Partial<Connection>>>;
 }) {
@@ -80,239 +82,263 @@ export default function SynologyOptions({
       className="space-y-3 rounded-lg border border-[var(--color-border)] p-3"
       data-setting-key="synology-access"
     >
-      <h3 className="text-sm font-medium">Synology access</h3>
-      <label className="block text-sm">
-        Access mode
-        <Select
-          label="Synology access mode"
-          value={native ? "native" : "website"}
-          options={[
-            { value: "native", label: "Synology NAS API" },
-            { value: "website", label: "Website — DSM in browser" },
-          ]}
-          onChange={(value) =>
-            setFormData((previous) =>
-              setSynologyAccessMode(
-                { ...previous, synologySettings: settings },
-                value === "native" ? "native" : "website",
-              ),
-            )
-          }
-        />
-      </label>
-      {website && (
-        <div className="space-y-2">
-          <CheckboxField
-            variant="form"
-            label="Allow reviewed redirects to another address"
-            aria-label="Allow reviewed redirects to another address"
-            checked={proxyPolicy?.allowCrossOriginRedirects === true}
-            disabled={!proxyPolicy}
-            description="Off by default. Review up to five website handoffs individually, with fresh HTTPS trust checks. This does not enable HTTP downgrades or saved-login forwarding. The same setting is available in Advanced."
-            onChange={(allowCrossOriginRedirects) =>
-              setFormData((previous) => {
-                if (
-                  isSynologyFileConnection(previous) ||
-                  !["http", "https"].includes(previous.protocol ?? "") ||
-                  previous.httpApplication?.id !== "synology-dsm"
+      <h3 className="text-sm font-medium">
+        {section === "authentication" ? "Synology sign-in" : "Synology access"}
+      </h3>
+      {section !== "authentication" && (
+        <>
+          <label className="block text-sm">
+            Access mode
+            <Select
+              label="Synology access mode"
+              value={native ? "native" : "website"}
+              options={[
+                { value: "native", label: "Synology NAS API" },
+                { value: "website", label: "Website — DSM in browser" },
+              ]}
+              onChange={(value) =>
+                setFormData((previous) =>
+                  setSynologyAccessMode(
+                    { ...previous, synologySettings: settings },
+                    value === "native" ? "native" : "website",
+                  ),
                 )
-                  return previous;
-                try {
-                  const current = normalizeHttpProxyPolicy(
-                    previous.httpProxyPolicy,
-                  );
-                  return {
-                    ...previous,
-                    httpProxyPolicy: { ...current, allowCrossOriginRedirects },
-                  };
-                } catch {
-                  return previous;
+              }
+            />
+          </label>
+          {website && (
+            <div className="space-y-2">
+              <CheckboxField
+                variant="form"
+                label="Allow reviewed redirects to another address"
+                aria-label="Allow reviewed redirects to another address"
+                checked={proxyPolicy?.allowCrossOriginRedirects === true}
+                disabled={!proxyPolicy}
+                description="Off by default. Review up to five website handoffs individually, with fresh HTTPS trust checks. This does not enable HTTP downgrades or saved-login forwarding. The same setting is available in Advanced."
+                onChange={(allowCrossOriginRedirects) =>
+                  setFormData((previous) => {
+                    if (
+                      isSynologyFileConnection(previous) ||
+                      !["http", "https"].includes(previous.protocol ?? "") ||
+                      previous.httpApplication?.id !== "synology-dsm"
+                    )
+                      return previous;
+                    try {
+                      const current = normalizeHttpProxyPolicy(
+                        previous.httpProxyPolicy,
+                      );
+                      return {
+                        ...previous,
+                        httpProxyPolicy: {
+                          ...current,
+                          allowCrossOriginRedirects,
+                        },
+                      };
+                    } catch {
+                      return previous;
+                    }
+                  })
                 }
-              })
-            }
-          />
-          <CheckboxField
-            variant="form"
-            label="Allow insecure redirects — review each HTTPS-to-HTTP handoff"
-            aria-label="Allow insecure redirects"
-            checked={proxyPolicy?.allowHttpDowngradeRedirects === true}
-            disabled={!proxyPolicy || proxyPolicy.httpsOnly}
-            onChange={(enabled) =>
-              setFormData((previous) => {
-                if (
-                  isSynologyFileConnection(previous) ||
-                  !["http", "https"].includes(previous.protocol ?? "") ||
-                  previous.httpApplication?.id !== "synology-dsm"
-                )
-                  return previous;
-                try {
-                  const current = normalizeHttpProxyPolicy(
-                    previous.httpProxyPolicy,
-                  );
-                  if (enabled && current.httpsOnly) return previous;
-                  return {
+              />
+              <CheckboxField
+                variant="form"
+                label="Allow insecure redirects — review each HTTPS-to-HTTP handoff"
+                aria-label="Allow insecure redirects"
+                checked={proxyPolicy?.allowHttpDowngradeRedirects === true}
+                disabled={!proxyPolicy || proxyPolicy.httpsOnly}
+                onChange={(enabled) =>
+                  setFormData((previous) => {
+                    if (
+                      isSynologyFileConnection(previous) ||
+                      !["http", "https"].includes(previous.protocol ?? "") ||
+                      previous.httpApplication?.id !== "synology-dsm"
+                    )
+                      return previous;
+                    try {
+                      const current = normalizeHttpProxyPolicy(
+                        previous.httpProxyPolicy,
+                      );
+                      if (enabled && current.httpsOnly) return previous;
+                      return {
+                        ...previous,
+                        httpProxyPolicy: {
+                          ...current,
+                          allowHttpDowngradeRedirects: enabled,
+                          allowCrossOriginRedirects:
+                            enabled ||
+                            current.allowCrossOriginRedirects === true,
+                        },
+                      };
+                    } catch {
+                      return previous;
+                    }
+                  })
+                }
+              />
+              <p className="text-xs text-[var(--color-textSecondary)]">
+                DSM website only. Also enables reviewed cross-origin redirects
+                in Advanced. Every handoff still requires your approval;
+                continue in this tab or open an anonymous HTTP tab.
+                Authentication is stripped unless saved-login forwarding is
+                separately enabled and approved in Advanced. Cookies, form
+                bodies, custom headers and query parameters are not carried
+                over. Leave this off unless an HTTP reverse-proxy handoff is
+                necessary.
+              </p>
+              {!proxyPolicy ? (
+                <p role="alert" className="text-xs text-error">
+                  The saved proxy controls are invalid. Review Advanced →
+                  Internal proxy controls before changing redirect permissions.
+                </p>
+              ) : proxyPolicy.httpsOnly ? (
+                <p role="status" className="text-xs text-warning">
+                  Require HTTPS upstream in Advanced blocks insecure redirects
+                  and takes precedence. This checkbox does not turn that
+                  protection off.
+                </p>
+              ) : proxyPolicy.allowHttpDowngradeRedirects &&
+                !proxyPolicy.allowCrossOriginRedirects ? (
+                <p role="status" className="text-xs text-warning">
+                  Reviewed cross-origin redirects are currently off, so insecure
+                  handoffs remain blocked. Enable reviewed redirects to another
+                  address above before reviewing a handoff.
+                </p>
+              ) : null}
+            </div>
+          )}
+          {native && (
+            <label className="block text-sm">
+              Transport
+              <Select
+                label="Synology transport"
+                value={settings.useHttps ? "https" : "http"}
+                options={[
+                  {
+                    value: "https",
+                    label: "HTTPS — verified system certificates",
+                  },
+                  {
+                    value: "http",
+                    label: "HTTP — unencrypted (trusted networks only)",
+                  },
+                ]}
+                onChange={(value) =>
+                  setFormData((previous) => ({
                     ...previous,
-                    httpProxyPolicy: {
-                      ...current,
-                      allowHttpDowngradeRedirects: enabled,
-                      allowCrossOriginRedirects:
-                        enabled || current.allowCrossOriginRedirects === true,
+                    protocol: value === "https" ? "https" : "http",
+                    synologySettings: {
+                      version: 1,
+                      useHttps: value === "https",
+                      accessMode: "native",
+                      ...(previous.synologySettings?.trustDevice === true
+                        ? { trustDevice: true }
+                        : {}),
+                      ...(isValidSynologyOtpAuthenticatorId(
+                        previous.synologySettings?.otpAuthenticatorId,
+                      )
+                        ? {
+                            otpAuthenticatorId:
+                              previous.synologySettings.otpAuthenticatorId,
+                          }
+                        : {}),
                     },
-                  };
-                } catch {
-                  return previous;
+                    port:
+                      previous.port === 5000 ||
+                      previous.port === 5001 ||
+                      !previous.port
+                        ? value === "https"
+                          ? 5001
+                          : 5000
+                        : previous.port,
+                  }))
                 }
-              })
-            }
-          />
-          <p className="text-xs text-[var(--color-textSecondary)]">
-            DSM website only. Also enables reviewed cross-origin redirects in
-            Advanced. Every handoff still requires your approval; continue in
-            this tab or open an anonymous HTTP tab. Authentication is stripped
-            unless saved-login forwarding is separately enabled and approved in
-            Advanced. Cookies, form bodies, custom headers and query parameters
-            are not carried over. Leave this off unless an HTTP reverse-proxy
-            handoff is necessary.
-          </p>
-          {!proxyPolicy ? (
-            <p role="alert" className="text-xs text-error">
-              The saved proxy controls are invalid. Review Advanced → Internal
-              proxy controls before changing redirect permissions.
-            </p>
-          ) : proxyPolicy.httpsOnly ? (
-            <p role="status" className="text-xs text-warning">
-              Require HTTPS upstream in Advanced blocks insecure redirects and
-              takes precedence. This checkbox does not turn that protection off.
-            </p>
-          ) : proxyPolicy.allowHttpDowngradeRedirects &&
-            !proxyPolicy.allowCrossOriginRedirects ? (
-            <p role="status" className="text-xs text-warning">
-              Reviewed cross-origin redirects are currently off, so insecure
-              handoffs remain blocked. Enable reviewed redirects to another
-              address above before reviewing a handoff.
-            </p>
-          ) : null}
-        </div>
+              />
+            </label>
+          )}
+        </>
       )}
-      {native && (
-        <label className="block text-sm">
-          Transport
-          <Select
-            label="Synology transport"
-            value={settings.useHttps ? "https" : "http"}
-            options={[
-              { value: "https", label: "HTTPS — verified system certificates" },
-              {
-                value: "http",
-                label: "HTTP — unencrypted (trusted networks only)",
-              },
-            ]}
-            onChange={(value) =>
-              setFormData((previous) => ({
-                ...previous,
-                protocol: value === "https" ? "https" : "http",
-                synologySettings: {
-                  version: 1,
-                  useHttps: value === "https",
-                  accessMode: "native",
-                  ...(previous.synologySettings?.trustDevice === true
-                    ? { trustDevice: true }
-                    : {}),
-                  ...(isValidSynologyOtpAuthenticatorId(
-                    previous.synologySettings?.otpAuthenticatorId,
-                  )
-                    ? {
-                        otpAuthenticatorId:
-                          previous.synologySettings.otpAuthenticatorId,
-                      }
-                    : {}),
-                },
-                port:
-                  previous.port === 5000 ||
-                  previous.port === 5001 ||
-                  !previous.port
-                    ? value === "https"
-                      ? 5001
-                      : 5000
-                    : previous.port,
-              }))
-            }
-          />
-        </label>
-      )}
-      {native && (
-        <div className="grid max-w-2xl gap-4 md:grid-cols-2">
-          <label className="space-y-1 text-sm">
-            DSM username
-            <input
-              aria-label="DSM API username"
-              className="sor-form-input"
-              autoComplete="off"
-              value={credentials?.username ?? ""}
-              onChange={(event) =>
-                setFormData((previous) => ({
-                  ...previous,
-                  basicAuthUsername: event.target.value,
-                  basicAuthPassword: credentials?.password ?? "",
-                }))
+      {section !== "connection" && (
+        <>
+          {native && (
+            <div className="grid max-w-2xl gap-4 md:grid-cols-2">
+              <label className="space-y-1 text-sm">
+                DSM username
+                <input
+                  aria-label="DSM API username"
+                  className="sor-form-input"
+                  autoComplete="off"
+                  value={credentials?.username ?? ""}
+                  onChange={(event) =>
+                    setFormData((previous) => ({
+                      ...previous,
+                      basicAuthUsername: event.target.value,
+                      basicAuthPassword: credentials?.password ?? "",
+                    }))
+                  }
+                />
+              </label>
+              <label className="space-y-1 text-sm">
+                DSM password
+                <PasswordInput
+                  aria-label="DSM API password"
+                  className="sor-form-input"
+                  autoComplete="new-password"
+                  value={credentials?.password ?? ""}
+                  onChange={(event) =>
+                    setFormData((previous) => ({
+                      ...previous,
+                      basicAuthUsername: credentials?.username ?? "",
+                      basicAuthPassword: event.target.value,
+                    }))
+                  }
+                />
+              </label>
+            </div>
+          )}
+          {native && (
+            <SynologyAuthenticatorSection
+              formData={formData}
+              setFormData={setFormData}
+            />
+          )}
+          {native && (
+            <CheckboxField
+              variant="form"
+              label="Trust this device after a successful two-factor sign-in"
+              aria-label="Trust this device after a successful two-factor sign-in"
+              checked={vault && settings.trustDevice === true}
+              disabled={!vault}
+              description={
+                vault
+                  ? "Off by default. When DSM accepts a one-time code, including one from a vault authenticator, it remembers this computer so later NAS API sign-ins skip the code. The device token is kept in this connection's vault entry and can be forgotten from the session or the vault entry. The code prompt can still change this for one sign-in."
+                  : DEVICE_TRUST_VAULT_REQUIRED_MESSAGE
+              }
+              onChange={(trustDevice) =>
+                setFormData((previous) =>
+                  withTrustDevice(previous, trustDevice),
+                )
               }
             />
-          </label>
-          <label className="space-y-1 text-sm">
-            DSM password
-            <PasswordInput
-              aria-label="DSM API password"
-              className="sor-form-input"
-              autoComplete="new-password"
-              value={credentials?.password ?? ""}
-              onChange={(event) =>
-                setFormData((previous) => ({
-                  ...previous,
-                  basicAuthUsername: credentials?.username ?? "",
-                  basicAuthPassword: event.target.value,
-                }))
-              }
-            />
-          </label>
-        </div>
+          )}
+        </>
       )}
-      {native && (
-        <SynologyAuthenticatorSection
-          formData={formData}
-          setFormData={setFormData}
-        />
+      {section !== "authentication" && (
+        <p className="text-xs text-[var(--color-textSecondary)]">
+          Synology NAS API provides File Station and supported NAS
+          administration tools, subject to account permissions and installed
+          packages. It uses the saved username/password. After DSM asks for a
+          code, the app generates one from the selected authenticator and
+          submits it once; if it&apos;s rejected, or no authenticator is
+          selected, you&apos;re asked to type a code. One-time codes are never
+          saved; the authenticator secret is stored with this connection&apos;s
+          credentials like the DSM password, and database exports remove it.
+          Native proxy/VPN routes and browser certificate overrides are not
+          supported; configured overrides are refused, not ignored. Website
+          sign-in does not unlock the native API. The website redirect exception
+          does not apply to the NAS API; it never forwards an authenticated API
+          request to an insecure redirect.
+        </p>
       )}
-      {native && (
-        <CheckboxField
-          variant="form"
-          label="Trust this device after a successful two-factor sign-in"
-          aria-label="Trust this device after a successful two-factor sign-in"
-          checked={vault && settings.trustDevice === true}
-          disabled={!vault}
-          description={
-            vault
-              ? "Off by default. When DSM accepts a one-time code, including one from a vault authenticator, it remembers this computer so later NAS API sign-ins skip the code. The device token is kept in this connection's vault entry and can be forgotten from the session or the vault entry. The code prompt can still change this for one sign-in."
-              : DEVICE_TRUST_VAULT_REQUIRED_MESSAGE
-          }
-          onChange={(trustDevice) =>
-            setFormData((previous) => withTrustDevice(previous, trustDevice))
-          }
-        />
-      )}
-      <p className="text-xs text-[var(--color-textSecondary)]">
-        Synology NAS API provides File Station and supported NAS administration
-        tools, subject to account permissions and installed packages. It uses
-        the saved username/password. After DSM asks for a code, the app
-        generates one from the selected authenticator and submits it once; if
-        it&apos;s rejected, or no authenticator is selected, you&apos;re asked
-        to type a code. One-time codes are never saved; the authenticator secret
-        is stored with this connection&apos;s credentials like the DSM password,
-        and database exports remove it. Native proxy/VPN routes and browser
-        certificate overrides are not supported; configured overrides are
-        refused, not ignored. Website sign-in does not unlock the native API.
-        The website redirect exception does not apply to the NAS API; it never
-        forwards an authenticated API request to an insecure redirect.
-      </p>
     </section>
   );
 }

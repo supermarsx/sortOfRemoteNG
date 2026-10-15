@@ -408,7 +408,7 @@ function LocalAuthenticator({
         authenticator and submits it once. Choose the authenticator enrolled for
         this DSM account or add its secret. The secret is stored with this
         connection&apos;s credentials like the DSM password, is listed under
-        Protocol → Recovery → 2FA / TOTP, and database exports remove it.
+        Authentication → Recovery → 2FA / TOTP, and database exports remove it.
       </p>
       <label className="block text-sm">
         Authenticator

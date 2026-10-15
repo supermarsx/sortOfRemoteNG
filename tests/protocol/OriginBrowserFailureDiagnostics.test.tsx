@@ -305,7 +305,7 @@ describe("native browser failure diagnostics", () => {
     ).toBeEnabled();
     expect(
       within(details).getByRole("button", {
-        name: "Review application settings",
+        name: "Review Authentication settings",
       }),
     ).toBeEnabled();
     assertNoSecrets(document.body.textContent ?? "");
@@ -662,6 +662,9 @@ describe("native browser failure diagnostics", () => {
         reason: "mfa-origin-mismatch",
       },
     };
+    const onRecover = vi.fn().mockReturnValue(true);
+    p.onRecover = onRecover;
+    p.recoveryAllowed = true;
     render(
       <div role="alert">
         <button>Repair two-factor authentication</button>
@@ -676,6 +679,11 @@ describe("native browser failure diagnostics", () => {
     expect(screen.getByRole("alert")).toHaveTextContent(
       "Retry browser explicitly",
     );
+    fireEvent.click(
+      screen.getByRole("button", { name: "Review Authentication settings" }),
+    );
+    expect(onRecover).toHaveBeenCalledWith("credentials");
+
     expect(
       screen.getByRole("button", { name: "Inspect failed page" }),
     ).toBeDisabled();

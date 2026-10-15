@@ -983,7 +983,7 @@ export function useWebBrowser(
       return {
         login: null,
         error:
-          "Review this connection's Application settings: the profile, login mode, website credentials, or selectors are invalid.",
+          "Review Protocol → Application for the website profile, and Authentication for the login mode, saved credentials or selectors.",
       };
     }
   }, [connection]);

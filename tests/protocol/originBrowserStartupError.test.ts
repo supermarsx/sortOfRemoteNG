@@ -17,6 +17,10 @@ const authority = readFileSync(
 const mfaOriginFailure = authority.match(
   /#\[error\("([^"\n]+)"\)\]\s*MfaOriginMismatch,/,
 )?.[1];
+const mfaOriginAuthenticationDisplay = mfaOriginFailure?.replace(
+  "In Application settings,",
+  "In Authentication,",
+);
 const names = [
   ["PROXY_FAILED", "private-proxy"],
   ["CONTEXT_FAILED", "private-context"],
@@ -64,14 +68,19 @@ describe("native browser per-view startup diagnostics", () => {
   );
   it("surfaces the exact native MFA origin mismatch with review/re-enable/save guidance", () => {
     expect(mfaOriginFailure).toBeTruthy();
-    for (const error of [mfaOriginFailure, new Error(mfaOriginFailure)]) {
+    for (const error of [
+      mfaOriginFailure,
+      new Error(mfaOriginFailure),
+      mfaOriginAuthenticationDisplay,
+      new Error(mfaOriginAuthenticationDisplay),
+    ]) {
       const result = originBrowserStartupError("create", error);
       expect(result).toEqual({
         stage: "create",
         category: "connection",
         code: "mfa-origin-mismatch",
         reason: "mfa-origin-mismatch",
-        message: `Native browser startup failed (create). ${mfaOriginFailure}`,
+        message: `Native browser startup failed (create). ${mfaOriginAuthenticationDisplay}`,
       });
       expect(result.message).toContain("re-enable automatic codes");
       expect(result.message).toContain("save the connection");
@@ -100,8 +109,11 @@ describe("native browser per-view startup diagnostics", () => {
     expect(mfaOriginFailure).toBeTruthy();
     for (const error of [
       `${mfaOriginFailure} https://user:secret@example.test/?token=secret`,
+      `${mfaOriginAuthenticationDisplay} https://user:secret@example.test/?token=secret`,
       new Error(`${mfaOriginFailure}\nstack with SYNTHETIC-SEED`),
+      new Error(`${mfaOriginAuthenticationDisplay}\nstack with SYNTHETIC-SEED`),
       { message: mfaOriginFailure },
+      { message: mfaOriginAuthenticationDisplay },
       {
         get message() {
           throw new Error("must not read a getter");

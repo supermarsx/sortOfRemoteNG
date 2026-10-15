@@ -21,6 +21,7 @@ describe("connection editor registry", () => {
   it("registers the stable editor tab order and filters connection-only tabs", () => {
     expect(CONNECTION_EDITOR_TABS.map((tab) => tab.id)).toEqual([
       "general",
+      "authentication",
       "protocol",
       "behavior",
       "organize",
@@ -28,6 +29,7 @@ describe("connection editor registry", () => {
     ]);
     expect(getConnectionEditorTabs(false).map((tab) => tab.id)).toEqual([
       "general",
+      "authentication",
       "protocol",
       "behavior",
       "organize",

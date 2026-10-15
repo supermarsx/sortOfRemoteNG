@@ -36,7 +36,7 @@ interface Options {
   synologyMfa?: SynologyMfaCapability;
 }
 const failure =
-  "Automatic 2FA stopped. Use Credentials & 2FA manually or review the saved Application settings.";
+  "Automatic 2FA stopped. Use Credentials & 2FA manually or review the saved Authentication settings.";
 const sameDocument = (
   a: WebAutomationDocument | null,
   b: WebAutomationDocument,

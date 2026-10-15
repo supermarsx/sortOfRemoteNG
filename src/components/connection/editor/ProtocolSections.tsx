@@ -39,6 +39,7 @@ interface ProtocolSectionsProps {
   mgr: ConnectionEditorMgr;
   activeSubtabId?: ProtocolSubtabId;
   onActiveSubtabChange?: (subtabId: ProtocolSubtabId) => void;
+  category?: "protocol" | "authentication";
 }
 
 const RecoverySections: React.FC<{ mgr: ConnectionEditorMgr }> = ({ mgr }) => (
@@ -65,7 +66,13 @@ const ProtocolSubtabContent: React.FC<{
   if (subtabId === "recovery") return <RecoverySections mgr={mgr} />;
   if (protocol === "synology")
     return (
-      <SynologyOptions formData={mgr.formData} setFormData={mgr.setFormData} />
+      <SynologyOptions
+        section={
+          subtabId === "authentication" ? "authentication" : "connection"
+        }
+        formData={mgr.formData}
+        setFormData={mgr.setFormData}
+      />
     );
   if (subtabId === "favorites")
     return (
@@ -400,6 +407,7 @@ const ProtocolSubtabContent: React.FC<{
     }
     return (
       <HTTPOptions
+        credentialSourceManaged
         formData={mgr.formData}
         setFormData={mgr.setFormData}
         sections={[
@@ -438,9 +446,15 @@ export const ProtocolSections: React.FC<ProtocolSectionsProps> = ({
   mgr,
   activeSubtabId,
   onActiveSubtabChange,
+  category,
 }) => {
   const protocolKey = mgr.formData.protocol ?? "";
-  const subtabs = getProtocolSubtabs(mgr.formData);
+  const subtabs = getProtocolSubtabs(mgr.formData).filter(
+    (subtab) =>
+      !category ||
+      (category === "authentication") ===
+        ["authentication", "recovery"].includes(subtab.id),
+  );
   const [activeByProtocol, setActiveByProtocol] = useState<
     Partial<Record<string, ProtocolSubtabId>>
   >({});
@@ -482,6 +496,7 @@ export const ProtocolSections: React.FC<ProtocolSectionsProps> = ({
     selectSubtab(subtabs[nextIndex].id, true);
   };
 
+  if (!activeSubtab) return null;
   const ActiveIcon = activeSubtab.icon;
 
   return (
@@ -497,14 +512,18 @@ export const ProtocolSections: React.FC<ProtocolSectionsProps> = ({
         >
           This connection uses a database vault reference. Local username,
           password, key and TOTP values below are preserved but ignored. Change
-          Credential source in General to use them; independent
+          Credential source in Authentication to use them; independent
           provider-specific tokens are not vault password/key facets.
         </p>
       )}
       <div className="-mx-1 overflow-x-auto px-1 pb-1">
         <div
           role="tablist"
-          aria-label="Protocol settings sections"
+          aria-label={
+            category === "authentication"
+              ? "Authentication settings sections"
+              : "Protocol settings sections"
+          }
           aria-orientation="horizontal"
           className="flex min-w-max items-center gap-1 rounded-lg border border-[var(--color-border)] bg-[var(--color-surfaceHover)]/35 p-1"
         >
@@ -534,7 +553,9 @@ export const ProtocolSections: React.FC<ProtocolSectionsProps> = ({
                 }`}
               >
                 <Icon size={13} aria-hidden="true" />
-                {subtab.label}
+                {category === "authentication" && subtab.id === "authentication"
+                  ? "Sign-in"
+                  : subtab.label}
               </button>
             );
           })}
@@ -558,7 +579,10 @@ export const ProtocolSections: React.FC<ProtocolSectionsProps> = ({
           />
           <div>
             <h3 className="text-sm font-semibold text-[var(--color-text)]">
-              {activeSubtab.label}
+              {category === "authentication" &&
+              activeSubtab.id === "authentication"
+                ? "Sign-in"
+                : activeSubtab.label}
             </h3>
             <p className="mt-0.5 text-xs text-[var(--color-textMuted)]">
               {activeSubtab.description}

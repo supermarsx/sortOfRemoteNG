@@ -55,7 +55,7 @@ function Fixture({ value = initial }: { value?: Partial<Connection> }) {
       <HTTPOptions
         formData={formData}
         setFormData={setFormData}
-        sections={["application"]}
+        sections={["application", "authentication"]}
       />
       <output data-testid="value">{JSON.stringify(formData)}</output>
     </>
@@ -121,7 +121,7 @@ it("warns for legacy HTTP auto-login without changing its opt-in", () => {
     <HTTPOptions
       formData={formData}
       setFormData={() => {}}
-      sections={["advanced"]}
+      sections={["authentication"]}
     />,
   );
   expect(
@@ -131,7 +131,7 @@ it("warns for legacy HTTP auto-login without changing its opt-in", () => {
     <HTTPOptions
       formData={{ ...formData, protocol: "https" }}
       setFormData={() => {}}
-      sections={["advanced"]}
+      sections={["authentication"]}
     />,
   );
   expect(
@@ -465,7 +465,7 @@ describe("HTTP Application subtab", () => {
           <HTTPOptions
             formData={formData}
             setFormData={setFormData}
-            sections={["application"]}
+            sections={["application", "authentication"]}
           />
           <button
             onClick={() =>
@@ -767,8 +767,6 @@ describe("HTTP Application subtab", () => {
     choose("Website application", "Generic website — existing HTTP settings");
     expect(value().httpApplication).toBeUndefined();
     expect(value().password).toBe("old-secret");
-    expect(
-      screen.getByText(/existing Authentication and Advanced/),
-    ).toBeInTheDocument();
+    expect(screen.getByText(/Authentication tab/)).toBeInTheDocument();
   });
 });

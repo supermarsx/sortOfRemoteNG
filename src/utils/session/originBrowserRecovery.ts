@@ -74,14 +74,7 @@ export function browserRecoveryEditorTarget(
     case "application":
       return { tab: "protocol", subtab: "application" };
     case "credentials":
-      return connection.credentialSource?.kind === "vault"
-        ? { tab: "general" }
-        : {
-            tab: "protocol",
-            subtab: connection.httpApplication
-              ? "application"
-              : "authentication",
-          };
+      return { tab: "authentication", subtab: "authentication" };
     case "network":
       return { tab: "protocol", subtab: "network-path" };
     case "browser-session":

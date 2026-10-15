@@ -2,6 +2,7 @@ import React, { useState } from "react";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
 import type { Connection } from "../../src/types/connection/connection";
+import SynologyOptions from "../../src/components/connectionEditor/SynologyOptions";
 import HTTPOptions from "../../src/components/connectionEditor/HTTPOptions";
 import { DEFAULT_HTTP_PROXY_POLICY } from "../../src/types/connection/httpProxyPolicy";
 import { normalizeHttpProxyPolicy } from "../../src/utils/connection/httpProxyPolicy";
@@ -32,7 +33,11 @@ function Editor({
       <HTTPOptions
         formData={data}
         setFormData={setData}
-        sections={advanced ? ["application", "advanced"] : ["application"]}
+        sections={
+          advanced
+            ? ["application", "authentication", "advanced"]
+            : ["application", "authentication"]
+        }
       />
       <output data-testid="saved-shape">{JSON.stringify(data)}</output>
     </>
@@ -577,4 +582,39 @@ describe("Synology NAS API trusted-device preference", () => {
       }),
     ).not.toBeInTheDocument();
   });
+});
+
+it("keeps NAS passwords and authenticators in Authentication while transport stays in Protocol", () => {
+  const data: Partial<Connection> = {
+    protocol: "synology",
+    hostname: "nas.example.test",
+    synologySettings: { version: 1, accessMode: "native", useHttps: true },
+    basicAuthUsername: "nas-user",
+    basicAuthPassword: "saved-password",
+  };
+  const { rerender } = render(
+    <SynologyOptions
+      section="connection"
+      formData={data}
+      setFormData={() => {}}
+    />,
+  );
+  expect(
+    screen.getByRole("combobox", { name: "Synology access mode" }),
+  ).toBeInTheDocument();
+  expect(screen.queryByLabelText("DSM API password")).not.toBeInTheDocument();
+  rerender(
+    <SynologyOptions
+      section="authentication"
+      formData={data}
+      setFormData={() => {}}
+    />,
+  );
+  expect(screen.getByLabelText("DSM API password")).toHaveValue(
+    "saved-password",
+  );
+  expect(
+    screen.queryByRole("combobox", { name: "Synology access mode" }),
+  ).not.toBeInTheDocument();
+  expect(screen.getAllByText(/authenticator/i).length).toBeGreaterThan(0);
 });

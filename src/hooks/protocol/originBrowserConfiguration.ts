@@ -124,8 +124,8 @@ export function originBrowserConfigurationDetails(
         field: "Website login consent",
         problem: "The login consent mode is not supported.",
         nextStep:
-          "Review the connection's application login settings and reopen its tab to obtain a fresh login grant.",
-        action: "application",
+          "Review the connection's Authentication settings and reopen its tab to obtain a fresh login grant.",
+        action: "credentials",
       });
     } else {
       // Whitelist both halves even if an untyped caller provides arbitrary data.

@@ -1735,7 +1735,8 @@ const IntegrationConnectionFields: React.FC<{ mgr: ConnectionEditorMgr }> = ({
 const ConnectionFields: React.FC<{
   mgr: ConnectionEditorMgr;
   onOpenApplication: () => void;
-}> = ({ mgr, onOpenApplication }) => {
+  section?: "connection" | "authentication";
+}> = ({ mgr, onOpenApplication, section = "connection" }) => {
   const { t } = useTranslation();
   const p = mgr.formData.protocol || "";
   const hasHttpApplication =
@@ -1746,7 +1747,9 @@ const ConnectionFields: React.FC<{
       mgr.formData.httpApplication?.id,
     ) !== undefined;
   if (isIntegrationConnectionProtocol(p)) {
-    return <IntegrationConnectionFields mgr={mgr} />;
+    return section === "connection" ? (
+      <IntegrationConnectionFields mgr={mgr} />
+    ) : null;
   }
   if (
     p === "rustdesk" ||
@@ -1759,72 +1762,75 @@ const ConnectionFields: React.FC<{
   return (
     <div className="space-y-2">
       {/* Hostname + Port row */}
-      <div className="grid grid-cols-[1fr_100px] gap-2">
-        <div>
-          <label className="block text-xs font-medium text-[var(--color-textSecondary)] mb-1">
-            {t(
-              "connectionEditor.connectionFields.hostnameOrIp",
-              "Hostname / IP",
-            )}{" "}
-            <span className="text-error">*</span>
-          </label>
-          <input
-            type="text"
-            required
-            data-testid="editor-hostname"
-            value={mgr.formData.hostname || ""}
-            onChange={(e) =>
-              mgr.setFormData({ ...mgr.formData, hostname: e.target.value })
-            }
-            className="sor-form-input text-sm font-mono"
-            placeholder={
-              p === "http" || p === "https"
-                ? "example.com"
-                : p === "ssh"
-                  ? "192.168.1.100 or server.example.com"
-                  : "192.168.1.100"
-            }
-          />
+      {section === "connection" && (
+        <div className="grid grid-cols-[1fr_100px] gap-2">
+          <div>
+            <label className="block text-xs font-medium text-[var(--color-textSecondary)] mb-1">
+              {t(
+                "connectionEditor.connectionFields.hostnameOrIp",
+                "Hostname / IP",
+              )}{" "}
+              <span className="text-error">*</span>
+            </label>
+            <input
+              type="text"
+              required
+              data-testid="editor-hostname"
+              value={mgr.formData.hostname || ""}
+              onChange={(e) =>
+                mgr.setFormData({ ...mgr.formData, hostname: e.target.value })
+              }
+              className="sor-form-input text-sm font-mono"
+              placeholder={
+                p === "http" || p === "https"
+                  ? "example.com"
+                  : p === "ssh"
+                    ? "192.168.1.100 or server.example.com"
+                    : "192.168.1.100"
+              }
+            />
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-[var(--color-textSecondary)] mb-1">
+              {t("connectionEditor.connectionFields.port", "Port")}
+            </label>
+            <NumberInput
+              value={mgr.formData.port || 0}
+              onChange={(v: number) =>
+                mgr.setFormData({
+                  ...mgr.formData,
+                  port: v,
+                })
+              }
+              variant="form"
+              min={1}
+              max={65535}
+              data-testid="editor-port"
+            />
+          </div>
         </div>
-        <div>
-          <label className="block text-xs font-medium text-[var(--color-textSecondary)] mb-1">
-            {t("connectionEditor.connectionFields.port", "Port")}
-          </label>
-          <NumberInput
-            value={mgr.formData.port || 0}
-            onChange={(v: number) =>
-              mgr.setFormData({
-                ...mgr.formData,
-                port: v,
-              })
-            }
-            variant="form"
-            min={1}
-            max={65535}
-            data-testid="editor-port"
-          />
-        </div>
-      </div>
-      {hasHttpApplication && (
+      )}
+      {section === "connection" && hasHttpApplication && (
         <div
           className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surfaceHover)] p-3 text-sm"
           data-testid="http-application-credentials-notice"
         >
           <p>
-            Website credentials and login mode are configured in Application
-            settings. Existing saved credentials are preserved; manual browsing
-            sends none.
+            Website passwords, sign-in and authenticators are in Authentication.
+            Existing saved credentials are preserved; manual browsing sends
+            none.
           </p>
           <button
             type="button"
             className="sor-option-chip mt-2"
             onClick={onOpenApplication}
           >
-            Open Application settings
+            Open Authentication settings
           </button>
         </div>
       )}
-      {!hasHttpApplication &&
+      {section === "authentication" &&
+        !hasHttpApplication &&
         ![
           "ssh",
           "raw",
@@ -2113,12 +2119,16 @@ export const ConnectionEditor: React.FC<ConnectionEditorProps> = ({
     Partial<Record<string, ConnectionEditorProtocolSubtabId>>
   >({});
   const protocolKey = mgr.formData.protocol ?? "";
-  const activeProtocolSubtabId = protocolSubtabsByProtocol[protocolKey];
+  const activeProtocolSubtabId =
+    protocolSubtabsByProtocol[
+      `${protocolKey}:${activeTab === "authentication" ? "authentication" : "protocol"}`
+    ];
   const activateProtocolSubtab = useCallback(
     (subtabId: ConnectionEditorProtocolSubtabId) => {
       setProtocolSubtabsByProtocol((previous) => ({
         ...previous,
-        [protocolKey]: subtabId,
+        [`${protocolKey}:${["authentication", "recovery"].includes(subtabId) ? "authentication" : "protocol"}`]:
+          subtabId,
       }));
     },
     [protocolKey],
@@ -2196,7 +2206,11 @@ export const ConnectionEditor: React.FC<ConnectionEditorProps> = ({
     )
       return;
     recoveryApplied.current = recoveryNavigation.requestId;
-    setActiveTab(recoveryNavigation.tab);
+    setActiveTab(
+      ["authentication", "recovery"].includes(recoveryNavigation.subtab ?? "")
+        ? "authentication"
+        : recoveryNavigation.tab,
+    );
     if (recoveryNavigation.subtab)
       activateProtocolSubtab(recoveryNavigation.subtab);
   }, [
@@ -2270,16 +2284,11 @@ export const ConnectionEditor: React.FC<ConnectionEditorProps> = ({
                 {!mgr.formData.isGroup && (
                   <>
                     <ProtocolGrid mgr={mgr} />
-                    <CredentialSourceSection
-                      formData={mgr.formData}
-                      setFormData={mgr.setFormData}
-                      credentialConversion={mgr.credentialConversion}
-                    />
                     <ConnectionFields
                       mgr={mgr}
                       onOpenApplication={() => {
-                        activateProtocolSubtab("application");
-                        setActiveTab("protocol");
+                        activateProtocolSubtab("authentication");
+                        setActiveTab("authentication");
                       }}
                     />
                   </>
@@ -2287,8 +2296,29 @@ export const ConnectionEditor: React.FC<ConnectionEditorProps> = ({
               </>
             )}
 
+            {activeTab === "authentication" && !mgr.formData.isGroup && (
+              <>
+                <CredentialSourceSection
+                  formData={mgr.formData}
+                  setFormData={mgr.setFormData}
+                  credentialConversion={mgr.credentialConversion}
+                />
+                <ConnectionFields
+                  mgr={mgr}
+                  section="authentication"
+                  onOpenApplication={() => {}}
+                />
+                <ProtocolSections
+                  category="authentication"
+                  mgr={mgr}
+                  activeSubtabId={activeProtocolSubtabId}
+                  onActiveSubtabChange={activateProtocolSubtab}
+                />
+              </>
+            )}
             {activeTab === "protocol" && !mgr.formData.isGroup && (
               <ProtocolSections
+                category="protocol"
                 mgr={mgr}
                 activeSubtabId={activeProtocolSubtabId}
                 onActiveSubtabChange={activateProtocolSubtab}

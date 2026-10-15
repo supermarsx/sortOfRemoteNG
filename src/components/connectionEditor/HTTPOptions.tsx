@@ -1,4 +1,5 @@
 import React from "react";
+import { isSynologyFileConnection } from "../../types/protocols/synology";
 import { useHTTPOptions } from "../../hooks/connection/useHTTPOptions";
 import { HTTPOptionsProps } from "./httpOptions/types";
 import AuthTypeSection from "./httpOptions/AuthTypeSection";
@@ -21,6 +22,7 @@ export const HTTPOptions: React.FC<HTTPOptionsProps> = ({
   setFormData,
   sections,
   retentionCapabilities,
+  credentialSourceManaged = false,
 }) => {
   const mgr = useHTTPOptions(formData, setFormData);
   const shows = (section: NonNullable<HTTPOptionsProps["sections"]>[number]) =>
@@ -30,23 +32,40 @@ export const HTTPOptions: React.FC<HTTPOptionsProps> = ({
 
   return (
     <>
-      {shows("application") && <ApplicationSection mgr={mgr} />}
+      {shows("application") && (
+        <ApplicationSection mgr={mgr} view="application" />
+      )}
       {shows("application") &&
         formData.httpApplication?.id === "synology-dsm" && (
-          <SynologyOptions formData={formData} setFormData={setFormData} />
+          <SynologyOptions
+            section="connection"
+            formData={formData}
+            setFormData={setFormData}
+          />
         )}
       {shows("authentication") &&
         (formData.httpApplication !== undefined ? (
-          <p className="text-sm text-[var(--color-textSecondary)]">
-            This website profile uses the login mode and credentials in the
-            Application subtab. TLS and trust remain in Security.
-          </p>
+          <>
+            <ApplicationSection
+              mgr={mgr}
+              view="authentication"
+              showCredentialSource={!credentialSourceManaged}
+            />
+            {isSynologyFileConnection(formData) && (
+              <SynologyOptions
+                section="authentication"
+                formData={formData}
+                setFormData={setFormData}
+              />
+            )}
+          </>
         ) : (
           <>
             <AuthTypeSection mgr={mgr} />
             <BasicAuthFields mgr={mgr} />
             <CustomHeadersSection mgr={mgr} />
             <HeaderModal mgr={mgr} />
+            <AutoLoginSection mgr={mgr} />
           </>
         ))}
       {shows("security") && (
@@ -69,9 +88,6 @@ export const HTTPOptions: React.FC<HTTPOptionsProps> = ({
             formData={formData}
             setFormData={setFormData}
           />
-          {formData.httpApplication === undefined && (
-            <AutoLoginSection mgr={mgr} />
-          )}
         </>
       )}
       {!sections && (

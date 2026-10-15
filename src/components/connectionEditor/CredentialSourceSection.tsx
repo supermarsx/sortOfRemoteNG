@@ -601,8 +601,8 @@ export default function CredentialSourceSection({
                 Optional and never selected automatically. SSH and Synology use
                 this authenticator only when the server requests a code.
                 Websites additionally require explicit automatic 2FA consent in
-                Application settings. All vault authenticators remain available
-                for manual generation.
+                Authentication settings. All vault authenticators remain
+                available for manual generation.
               </p>
               {authenticators.error && (
                 <p role="alert" className="text-xs text-error">

@@ -66,6 +66,8 @@ const certificatePolicyFailure =
 const certificateBridgeFailure =
   "The loaded CEF runtime does not provide the required app certificate-verifier bridge. Install or rebuild the patched browser runtime; the saved trust policy was not changed.";
 const mfaOriginFailure =
+  "Saved automatic two-factor authentication consent does not match the reviewed login origin. In Authentication, review the authenticator and HTTPS login origin, re-enable automatic codes, and save the connection. Your password and authenticator are unchanged.";
+const nativeLegacyMfaOriginFailure =
   "Saved automatic two-factor authentication consent does not match the reviewed login origin. In Application settings, review the authenticator and HTTPS login origin, re-enable automatic codes, and save the connection. Your password and authenticator are unchanged.";
 
 // Every native policy message is assembled from these fixed literals. Never
@@ -81,6 +83,11 @@ const proxyRules = {
     "version must be 1 when present",
     "version",
     "Use policy version 1 when the version field is present.",
+  ],
+  "native-browsing-mode": [
+    "nativeBrowsingMode must be standard or restricted when present",
+    "nativeBrowsingMode",
+    "Choose Standard or Restricted in the native browsing controls, then save the connection.",
   ],
   "page-scripts": [
     "pageScripts must be allow when present",
@@ -859,6 +866,7 @@ const knownFailures = new Map([
   ),
   known(certificateBridgeFailure, "certificate-bridge"),
   known(mfaOriginFailure, "mfa-origin-mismatch"),
+  known(nativeLegacyMfaOriginFailure, "mfa-origin-mismatch", mfaOriginFailure),
   known(
     "Saved application entry or login route has no native translation",
     "application-unsupported",
@@ -957,7 +965,9 @@ export function originBrowserStartupError(
   // The same text from another stage cannot establish that runtime prerequisite.
   const certificateFailure = candidate === certificatePolicyFailure;
   const bridgeFailure = candidate === certificateBridgeFailure;
-  const mfaFailure = candidate === mfaOriginFailure;
+  const mfaFailure =
+    candidate === mfaOriginFailure ||
+    candidate === nativeLegacyMfaOriginFailure;
   const policyFailure =
     stage === "create" && typeof candidate === "string"
       ? policyFailureMessages.get(candidate)

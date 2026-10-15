@@ -12,6 +12,7 @@ export interface HTTPOptionsProps {
   setFormData: React.Dispatch<React.SetStateAction<Partial<Connection>>>;
   sections?: readonly HTTPOptionsSection[];
   retentionCapabilities?: BrowserSessionRetentionCapabilities;
+  credentialSourceManaged?: boolean;
 }
 
 /* ------------------------------------------------------------------ */

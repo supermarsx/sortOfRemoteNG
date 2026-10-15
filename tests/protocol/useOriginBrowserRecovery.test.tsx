@@ -92,7 +92,7 @@ describe("native browser recovery destinations", () => {
   it.each([
     ["connection", "general", undefined],
     ["application", "protocol", "application"],
-    ["credentials", "protocol", "authentication"],
+    ["credentials", "authentication", "authentication"],
     ["trust", "protocol", "security"],
     ["network", "protocol", "network-path"],
     ["browser-session", "protocol", "advanced"],
@@ -121,7 +121,7 @@ describe("native browser recovery destinations", () => {
       expect(fxt.openQuickConnect).not.toHaveBeenCalled();
     },
   );
-  it("uses the Application login fields for a profile and Basics for a linked vault source", () => {
+  it("opens Authentication for both application login and linked vault credentials", () => {
     fixture();
     f.context.state.connections = [
       { ...row, httpApplication: { id: "synology-dsm" } },
@@ -131,7 +131,7 @@ describe("native browser recovery destinations", () => {
     });
     expect(
       f.context.dispatch.mock.lastCall[0].payload.browserRecoveryNavigation,
-    ).toMatchObject({ tab: "protocol", subtab: "application" });
+    ).toMatchObject({ tab: "authentication", subtab: "authentication" });
     f.context.state.connections = [
       { ...row, credentialSource: { kind: "vault" } },
     ];
@@ -140,7 +140,7 @@ describe("native browser recovery destinations", () => {
     });
     expect(
       f.context.dispatch.mock.lastCall[0].payload.browserRecoveryNavigation,
-    ).toMatchObject({ tab: "general" });
+    ).toMatchObject({ tab: "authentication", subtab: "authentication" });
   });
   it("focuses the same owner's existing editor and updates the requested tab", () => {
     const editor = {
