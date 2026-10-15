@@ -53,6 +53,9 @@ export default function RDPClientHeader(p: RDPClientHeaderProps) {
         <div className="w-px h-4 bg-[var(--color-border)] mx-1" />
         <ClipboardButtons
           isConnected={mgr.isConnected}
+          canCopy={p.clipboardCanReceiveFromRemote}
+          canPaste={p.clipboardCanSendToRemote}
+          policyStatus={p.clipboardPolicyStatus}
           onCopy={p.handleCopyToClipboard}
           onPaste={p.handlePasteFromClipboard}
         />

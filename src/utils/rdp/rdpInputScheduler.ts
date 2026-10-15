@@ -25,6 +25,11 @@ export class RdpInputScheduler {
   private possiblyPressed = new Map<string, RdpInputEvent>();
   private pressedBytes = 0;
   private releasesSent = false;
+  private idleWaiters = new Set<{
+    resolve: () => void;
+    reject: (error: unknown) => void;
+  }>();
+  private idleError: unknown;
   private static readonly MAX_EVENTS = 512;
   private static readonly MAX_BYTES = 64 * 1024;
 
@@ -39,6 +44,7 @@ export class RdpInputScheduler {
 
   setSession(sessionId: string | null): void {
     if (this.sessionId === sessionId) return;
+    this.settleIdle(new Error("RDP input session changed."));
     this.generation++;
     if (this.timer !== null) clearTimeout(this.timer);
     this.timer = null;
@@ -53,6 +59,29 @@ export class RdpInputScheduler {
     this.urgent = false;
     this.inFlight = false;
     this.sessionId = sessionId;
+  }
+
+  /** Browser input queue receipt, not confirmation that a remote app pasted. */
+  waitForIdle(): Promise<void> {
+    if (!this.canAcceptInput())
+      return Promise.reject(new RdpInputBackpressureError());
+    if (!this.inFlight && this.pending.length === 0) return Promise.resolve();
+    return new Promise((resolve, reject) =>
+      this.idleWaiters.add({ resolve, reject }),
+    );
+  }
+
+  canAcceptInput(): boolean {
+    return !!this.sessionId && !this.terminal;
+  }
+
+  private settleIdle(error = this.idleError): void {
+    for (const waiter of this.idleWaiters) {
+      if (error === undefined) waiter.resolve();
+      else waiter.reject(error);
+    }
+    this.idleWaiters.clear();
+    this.idleError = undefined;
   }
 
   enqueue(events: RdpInputEvent[], immediate = false): void {
@@ -154,18 +183,25 @@ export class RdpInputScheduler {
         if (generation !== this.generation || this.terminal) return;
         for (const event of events) {
           const key = this.pressKey(event);
-          if (key && event.pressed === false) {
+          if (key && (event.pressed === false || event.pressed === true)) {
             const previous = this.possiblyPressed.get(key);
             if (previous)
               this.pressedBytes = Math.max(
                 0,
                 this.pressedBytes - JSON.stringify(previous).length * 2,
               );
-            this.possiblyPressed.delete(key);
+            if (event.pressed === true) {
+              const release = { ...event, pressed: false };
+              this.possiblyPressed.set(key, release);
+              this.pressedBytes += JSON.stringify(release).length * 2;
+            } else this.possiblyPressed.delete(key);
           }
         }
       })
-      .catch(this.onError)
+      .catch((error) => {
+        if (generation === this.generation) this.idleError = error;
+        this.onError(error);
+      })
       .finally(() => {
         if (generation !== this.generation) return;
         if (this.timeout !== null) clearTimeout(this.timeout);
@@ -174,6 +210,7 @@ export class RdpInputScheduler {
         if (this.terminal) this.releaseAfterFault();
         else if (this.urgent) this.flush();
         else this.scheduleMove();
+        if (!this.inFlight && this.pending.length === 0) this.settleIdle();
       });
   }
 
@@ -188,6 +225,7 @@ export class RdpInputScheduler {
   private fail(): void {
     if (this.terminal) return;
     this.terminal = true;
+    this.settleIdle(new RdpInputBackpressureError());
     this.pending = [];
     this.pendingBytes = 0;
     if (this.timer !== null) clearTimeout(this.timer);

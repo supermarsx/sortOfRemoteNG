@@ -191,3 +191,146 @@ describe("RDP input scheduling", () => {
     expect(onError).toHaveBeenCalledWith(failure);
   });
 });
+
+describe("RDP input idle receipts", () => {
+  it("waits for prior and queued paste input before allowing the next publication", async () => {
+    vi.useFakeTimers();
+    let first!: () => void;
+    let second!: () => void;
+    const sender = vi
+      .fn()
+      .mockImplementationOnce(
+        () =>
+          new Promise<void>((resolve) => {
+            first = resolve;
+          }),
+      )
+      .mockImplementationOnce(
+        () =>
+          new Promise<void>((resolve) => {
+            second = resolve;
+          }),
+      );
+    const scheduler = new RdpInputScheduler(sender);
+    scheduler.setSession("one");
+    scheduler.enqueue([button(true)], true);
+    scheduler.enqueue([button(false)], true);
+    const done = vi.fn();
+    const receipt = scheduler.waitForIdle().then(done);
+    expect(done).not.toHaveBeenCalled();
+    first();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(sender).toHaveBeenCalledTimes(2);
+    expect(done).not.toHaveBeenCalled();
+    second();
+    await receipt;
+    expect(done).toHaveBeenCalledTimes(1);
+  });
+  it("rejects an old session receipt without settling a replacement receipt", async () => {
+    vi.useFakeTimers();
+    let old!: () => void;
+    let latest!: () => void;
+    const sender = vi
+      .fn()
+      .mockImplementationOnce(
+        () =>
+          new Promise<void>((resolve) => {
+            old = resolve;
+          }),
+      )
+      .mockImplementationOnce(
+        () =>
+          new Promise<void>((resolve) => {
+            latest = resolve;
+          }),
+      );
+    const scheduler = new RdpInputScheduler(sender);
+    scheduler.setSession("old");
+    scheduler.enqueue([button(true)], true);
+    const rejected = scheduler.waitForIdle().catch((error) => error);
+    scheduler.setSession("new");
+    expect(await rejected).toBeInstanceOf(Error);
+    scheduler.enqueue([button(false)], true);
+    const done = vi.fn();
+    const receipt = scheduler.waitForIdle().then(done);
+    old();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(done).not.toHaveBeenCalled();
+    latest();
+    await receipt;
+    expect(done).toHaveBeenCalledTimes(1);
+  });
+  it("reports a failed input batch only after the remaining queue settles", async () => {
+    vi.useFakeTimers();
+    let reject!: (error: Error) => void;
+    let complete!: () => void;
+    const sender = vi
+      .fn()
+      .mockImplementationOnce(
+        () =>
+          new Promise<void>((_, no) => {
+            reject = no;
+          }),
+      )
+      .mockImplementationOnce(
+        () =>
+          new Promise<void>((yes) => {
+            complete = yes;
+          }),
+      );
+    const scheduler = new RdpInputScheduler(sender);
+    scheduler.setSession("one");
+    scheduler.enqueue([button(true)], true);
+    scheduler.enqueue([button(false)], true);
+    const done = vi.fn();
+    const receipt = scheduler.waitForIdle().catch(done);
+    reject(new Error("synthetic failure"));
+    await vi.advanceTimersByTimeAsync(0);
+    expect(done).not.toHaveBeenCalled();
+    complete();
+    await receipt;
+    expect(done).toHaveBeenCalledTimes(1);
+  });
+  it("rejects pending receipts and future admission after the stalled queue times out", async () => {
+    vi.useFakeTimers();
+    const scheduler = new RdpInputScheduler(() => new Promise(() => {}));
+    scheduler.setSession("one");
+    scheduler.enqueue([button(true)], true);
+    const receipt = scheduler.waitForIdle().catch((error) => error);
+    await vi.advanceTimersByTimeAsync(10000);
+    expect(await receipt).toBeInstanceOf(RdpInputBackpressureError);
+    expect(scheduler.canAcceptInput()).toBe(false);
+  });
+});
+
+it("retains the final restored modifier after ACK so queue-fault cleanup can release it", async () => {
+  vi.useFakeTimers();
+  let finish!: () => void;
+  const sender = vi
+    .fn()
+    .mockResolvedValueOnce(undefined)
+    .mockImplementationOnce(
+      () =>
+        new Promise<void>((yes) => {
+          finish = yes;
+        }),
+    )
+    .mockResolvedValue(undefined);
+  const scheduler = new RdpInputScheduler(sender);
+  const ctrl = (pressed: boolean) => ({
+    type: "KeyboardKey",
+    scancode: 0x1d,
+    extended: false,
+    pressed,
+  });
+  scheduler.setSession("one");
+  scheduler.enqueue([ctrl(false), ctrl(true), ctrl(false), ctrl(true)], true);
+  await vi.advanceTimersByTimeAsync(0);
+  scheduler.enqueue([move(1)], true);
+  for (let n = 0; n < 600; n++)
+    scheduler.enqueue([{ type: "Wheel", delta: 120, x: 1, y: 1 }], true);
+  finish();
+  await vi.advanceTimersByTimeAsync(0);
+  expect(sender).toHaveBeenCalledTimes(3);
+  expect(sender.mock.calls[2]).toEqual(["one", [ctrl(false)]]);
+});

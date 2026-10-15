@@ -31,6 +31,9 @@ export interface RDPClientHeaderProps {
   resumeRecording: () => void;
   handleReconnect: () => void;
   handleDisconnect: () => void;
+  clipboardCanSendToRemote?: boolean;
+  clipboardCanReceiveFromRemote?: boolean;
+  clipboardPolicyStatus?: "pending" | "ready" | "error";
   handleCopyToClipboard: () => void;
   handlePasteFromClipboard: () => void;
   handleSendKeys: (combo: string) => void;

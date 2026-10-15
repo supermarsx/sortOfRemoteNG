@@ -121,3 +121,62 @@ describe("RDPClientHeader", () => {
     ).not.toBeInTheDocument();
   });
 });
+
+describe("RDP clipboard direction controls", () => {
+  it.each([
+    [true, false],
+    [false, true],
+    [false, false],
+  ] as const)(
+    "exposes receive=%s send=%s and honors each direction",
+    (receive, send) => {
+      const { props } = buildProps();
+      render(
+        <RDPClientHeader
+          {...props}
+          clipboardCanSendToRemote={send}
+          clipboardCanReceiveFromRemote={receive}
+          clipboardPolicyStatus="ready"
+        />,
+      );
+      const copy = screen.getByRole("button", {
+        name: "Copy remote clipboard",
+      });
+      const paste = screen.getByRole("button", {
+        name: "Paste from clipboard",
+      });
+      expect(copy.hasAttribute("disabled")).toBe(!receive);
+      expect(paste.hasAttribute("disabled")).toBe(!send);
+      fireEvent.click(copy);
+      fireEvent.click(paste);
+      expect(props.handleCopyToClipboard).toHaveBeenCalledTimes(
+        receive ? 1 : 0,
+      );
+      expect(props.handlePasteFromClipboard).toHaveBeenCalledTimes(
+        send ? 1 : 0,
+      );
+    },
+  );
+  it.each(["pending", "error"] as const)(
+    "shows why clipboard controls are unavailable (%s)",
+    (status) => {
+      const { props } = buildProps();
+      render(
+        <RDPClientHeader
+          {...props}
+          clipboardCanSendToRemote={false}
+          clipboardCanReceiveFromRemote={false}
+          clipboardPolicyStatus={status}
+        />,
+      );
+      expect(
+        screen.getByRole("button", { name: "Paste from clipboard" }),
+      ).toHaveAttribute(
+        "data-tooltip",
+        status === "pending"
+          ? "Applying RDP clipboard settings…"
+          : "Reconnect this session to apply clipboard settings.",
+      );
+    },
+  );
+});

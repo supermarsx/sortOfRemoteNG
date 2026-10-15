@@ -630,6 +630,214 @@ export function useRDPClient(session: ConnectionSession) {
     [],
   );
 
+  const clipboardOwnerGenerationRef = useRef(0);
+  const clipboardRenderActiveRef = useRef(isRenderActive);
+  if (clipboardRenderActiveRef.current !== isRenderActive)
+    clipboardOwnerGenerationRef.current++;
+  clipboardRenderActiveRef.current = isRenderActive;
+  const clipboardLifetimeRef = useRef(0);
+  const clipboardMountedRef = useRef(false);
+  const clipboardPolicyTailRef = useRef<Promise<void>>(Promise.resolve());
+  const clipboardPolicyRef = useRef({ key: "", generation: 0 });
+  const clipboardPolicyKey = `${clipboardEnabled}:${clipboardDirection}`;
+  if (clipboardPolicyRef.current.key !== clipboardPolicyKey)
+    clipboardPolicyRef.current = {
+      key: clipboardPolicyKey,
+      generation: clipboardPolicyRef.current.generation + 1,
+    };
+  type ClipboardActor = NonNullable<typeof rdpStatusAuthorityRef.current>;
+  const clipboardAppliedRef = useRef<{
+    actor: ClipboardActor;
+    generation: number;
+  } | null>(null);
+  const [clipboardPolicyStatus, setClipboardPolicyStatus] = useState<
+    "pending" | "ready" | "error"
+  >("pending");
+  const [clipboardPasteBusy, setClipboardPasteBusy] = useState(false);
+  const clipboardPasteRef = useRef<{
+    actor: ClipboardActor;
+    inputQueued: boolean;
+  } | null>(null);
+  const clipboardWriteTailRef = useRef<Promise<void>>(Promise.resolve());
+  const remoteClipboardRef = useRef<{
+    actor: ClipboardActor;
+    generation: number;
+    requested: number;
+  } | null>(null);
+  const clipboardSuppressedKeysRef = useRef(new Set<string>());
+  const clipboardPhysicalModifiersRef = useRef(
+    new Map<string, { scancode: number; extended: boolean }>(),
+  );
+  const clipboardModifierActorRef = useRef<ClipboardActor | null>(null);
+  const isClipboardActorCurrent = useCallback((actor: ClipboardActor) => {
+    const current = sessionRef.current;
+    return (
+      clipboardMountedRef.current &&
+      sessionIdRef.current === actor.backendSessionId &&
+      rdpStatusAuthorityRef.current === actor &&
+      current.backendSessionId === actor.backendSessionId &&
+      current.status === "connected" &&
+      getSessionLifecycleActorGeneration(current) === actor.generation &&
+      getSessionLifecycleWriterId(current) === actor.writerId
+    );
+  }, []);
+  const releaseClipboardModifiers = useCallback(() => {
+    const held = [...clipboardPhysicalModifiersRef.current.values()];
+    clipboardPhysicalModifiersRef.current.clear();
+    const actor = rdpStatusAuthorityRef.current;
+    if (
+      held.length &&
+      actor &&
+      clipboardModifierActorRef.current === actor &&
+      isClipboardActorCurrent(actor)
+    )
+      inputSchedulerRef.current?.enqueue(
+        held.map((key) => ({
+          type: "KeyboardKey",
+          scancode: key.scancode,
+          extended: key.extended,
+          pressed: false,
+        })),
+        true,
+      );
+  }, [isClipboardActorCurrent]);
+  useEffect(() => {
+    clipboardMountedRef.current = true;
+    const lifetime = ++clipboardLifetimeRef.current;
+    const changed = (event: Event) => {
+      clipboardOwnerGenerationRef.current++;
+      if (event.type === "blur") releaseClipboardModifiers();
+    };
+    window.addEventListener("blur", changed);
+    window.addEventListener("focus", changed);
+    return () => {
+      releaseClipboardModifiers();
+      clipboardMountedRef.current = false;
+      window.removeEventListener("blur", changed);
+      window.removeEventListener("focus", changed);
+      clipboardLifetimeRef.current = lifetime + 1;
+      clipboardPasteRef.current = null;
+    };
+  }, [releaseClipboardModifiers]);
+  const clipboardHasActiveOwner = useCallback(
+    () =>
+      clipboardRenderActiveRef.current &&
+      document.visibilityState !== "hidden" &&
+      document.hasFocus(),
+    [],
+  );
+  const isClipboardAllowed = useCallback(
+    (direction: ClipboardDirection, actor: ClipboardActor) =>
+      isClipboardActorCurrent(actor) &&
+      clipboardHasActiveOwner() &&
+      isClipboardDirectionEnabled(direction) &&
+      clipboardAppliedRef.current?.actor === actor &&
+      clipboardAppliedRef.current.generation ===
+        clipboardPolicyRef.current.generation,
+    [
+      isClipboardActorCurrent,
+      clipboardHasActiveOwner,
+      isClipboardDirectionEnabled,
+    ],
+  );
+
+  useEffect(() => {
+    clipboardAppliedRef.current = null;
+    setClipboardPolicyStatus("pending");
+    const actor = rdpStatusAuthorityRef.current;
+    const pendingPaste = clipboardPasteRef.current;
+    // Once paste keys entered the scheduler, hold singleflight until they
+    // settle. A policy flip must not let a new offer overtake those keys.
+    if (
+      !pendingPaste?.inputQueued ||
+      pendingPaste.actor !== actor ||
+      !isConnected
+    ) {
+      clipboardPasteRef.current = null;
+      setClipboardPasteBusy(false);
+    }
+    if (!isConnected || clipboardModifierActorRef.current !== actor) {
+      clipboardPhysicalModifiersRef.current.clear();
+      clipboardModifierActorRef.current = actor;
+    }
+    if (!isConnected || !actor || !isClipboardActorCurrent(actor)) return;
+    const generation = clipboardPolicyRef.current.generation;
+    let disposed = false;
+    const applied = clipboardPolicyTailRef.current.then(async () => {
+      if (
+        disposed ||
+        !isClipboardActorCurrent(actor) ||
+        generation !== clipboardPolicyRef.current.generation
+      )
+        return;
+      await invoke("rdp_toggle_feature", {
+        sessionId: actor.backendSessionId,
+        feature: "clipboard",
+        enabled: clipboardEnabled,
+        direction: clipboardDirection,
+      });
+    });
+    clipboardPolicyTailRef.current = applied.catch(() => {});
+    void applied
+      .then(() => {
+        if (
+          disposed ||
+          !isClipboardActorCurrent(actor) ||
+          generation !== clipboardPolicyRef.current.generation
+        )
+          return;
+        clipboardAppliedRef.current = { actor, generation };
+        setClipboardPolicyStatus("ready");
+      })
+      .catch(() => {
+        if (
+          disposed ||
+          !isClipboardActorCurrent(actor) ||
+          generation !== clipboardPolicyRef.current.generation
+        )
+          return;
+        setClipboardPolicyStatus("error");
+        toast.warning(
+          "RDP clipboard settings could not be applied. Reconnect this session.",
+        );
+      });
+    return () => {
+      disposed = true;
+    };
+  }, [
+    isConnected,
+    rdpSessionId,
+    clipboardEnabled,
+    clipboardDirection,
+    isClipboardActorCurrent,
+    toast,
+  ]);
+
+  const refreshRemoteClipboard = useCallback(() => {
+    const actor = rdpStatusAuthorityRef.current;
+    if (!actor || !isClipboardAllowed("server-to-client", actor)) return;
+    void invoke("rdp_clipboard_paste", {
+      sessionId: actor.backendSessionId,
+    }).catch(() => {
+      if (isClipboardAllowed("server-to-client", actor))
+        toast.warning("Remote clipboard could not be requested.");
+    });
+  }, [isClipboardAllowed, toast]);
+  useEffect(() => {
+    refreshRemoteClipboard();
+    window.addEventListener("focus", refreshRemoteClipboard);
+    document.addEventListener("visibilitychange", refreshRemoteClipboard);
+    return () => {
+      window.removeEventListener("focus", refreshRemoteClipboard);
+      document.removeEventListener("visibilitychange", refreshRemoteClipboard);
+    };
+  }, [
+    isRenderActive,
+    rdpSessionId,
+    clipboardPolicyStatus,
+    refreshRemoteClipboard,
+  ]);
+
   const releaseVpnLeaseOwner = useCallback(
     async (ownerId: string): Promise<boolean> => {
       const existing = vpnLeaseReleasesRef.current.get(ownerId);
@@ -961,59 +1169,103 @@ export function useRDPClient(session: ConnectionSession) {
   }, [clearH264RecoveryTimers, publishSessionUpdate, settleVpnLeaseOwner]);
 
   const handleCopyToClipboard = useCallback(async () => {
-    // If CLIPRDR is active, request clipboard text from the remote session.
-    // The response arrives as an rdp://clipboard-data event which writes to
-    // navigator.clipboard automatically.  Fall back to screenshot capture.
-    if (isConnected && sessionIdRef.current && clipboardCanReceiveFromRemote) {
-      try {
-        await invoke("rdp_clipboard_paste", {
-          sessionId: sessionIdRef.current,
-        });
-        return;
-      } catch {
-        // CLIPRDR not available — fall back to screenshot
-      }
-    }
-    await handleScreenshotToClipboard();
-  }, [handleScreenshotToClipboard, isConnected, clipboardCanReceiveFromRemote]);
-
-  const handlePasteFromClipboard = useCallback(async () => {
-    if (!isConnected || !sessionIdRef.current) return;
-    if (!clipboardCanSendToRemote) return;
+    const actor = rdpStatusAuthorityRef.current;
+    if (!actor || !isClipboardAllowed("server-to-client", actor)) return;
     try {
-      const text = await navigator.clipboard.readText();
-      if (!text) return;
+      await invoke("rdp_clipboard_paste", {
+        sessionId: actor.backendSessionId,
+      });
+    } catch {
+      if (isClipboardAllowed("server-to-client", actor))
+        toast.error("Remote clipboard could not be requested.");
+    }
+  }, [isClipboardAllowed, toast]);
 
-      // Use CLIPRDR protocol when available (proper clipboard redirection)
-      if (clipboardCanSendToRemote) {
-        try {
-          await invoke("rdp_clipboard_copy", {
-            sessionId: sessionIdRef.current,
-            text,
-          });
-          return;
-        } catch {
-          // CLIPRDR not available — fall back to Unicode keyboard injection
+  const handlePasteFromClipboard = useCallback(
+    async (shortcut: "ctrl-v" | "shift-insert" = "ctrl-v") => {
+      const actor = rdpStatusAuthorityRef.current;
+      if (
+        !actor ||
+        !isClipboardAllowed("client-to-server", actor) ||
+        rdpSettingsRef.current.input?.keyboardEnabled === false ||
+        clipboardPasteRef.current ||
+        !inputSchedulerRef.current?.canAcceptInput()
+      )
+        return;
+      const operation = { actor, inputQueued: false };
+      clipboardPasteRef.current = operation;
+      setClipboardPasteBusy(true);
+      const generation = clipboardPolicyRef.current.generation;
+      const lifetime = clipboardLifetimeRef.current;
+      const ownership = clipboardOwnerGenerationRef.current;
+      const current = () =>
+        clipboardPasteRef.current === operation &&
+        lifetime === clipboardLifetimeRef.current &&
+        ownership === clipboardOwnerGenerationRef.current &&
+        generation === clipboardPolicyRef.current.generation &&
+        isClipboardAllowed("client-to-server", actor) &&
+        rdpSettingsRef.current.input?.keyboardEnabled !== false &&
+        inputSchedulerRef.current?.canAcceptInput();
+      try {
+        const text = await navigator.clipboard.readText();
+        if (!current()) return;
+        // Native resolves only after this exact actor has published the offer
+        // through negotiated CLIPRDR. Rejection must never become key injection.
+        await invoke("rdp_clipboard_copy", {
+          sessionId: actor.backendSessionId,
+          text,
+        });
+        if (!current()) return;
+        const keys =
+          shortcut === "shift-insert"
+            ? [
+                { scancode: 0x2a, extended: false },
+                { scancode: 0x52, extended: true },
+              ]
+            : [
+                { scancode: 0x1d, extended: false },
+                { scancode: 0x2f, extended: false },
+              ];
+        function pasteKeyEvent(
+          key: { scancode: number; extended: boolean },
+          pressed: boolean,
+        ) {
+          return {
+            type: "KeyboardKey",
+            scancode: key.scancode,
+            extended: key.extended,
+            pressed,
+          };
+        }
+        const held = [...clipboardPhysicalModifiersRef.current.values()];
+        const events = [
+          ...held.map((key) => pasteKeyEvent(key, false)),
+          ...keys.map((key) => pasteKeyEvent(key, true)),
+          ...keys
+            .slice()
+            .reverse()
+            .map((key) => pasteKeyEvent(key, false)),
+          ...held.map((key) => pasteKeyEvent(key, true)),
+        ];
+        inputSchedulerRef.current?.setSession(actor.backendSessionId);
+        operation.inputQueued = true;
+        inputSchedulerRef.current?.enqueue(events, true);
+        await inputSchedulerRef.current?.waitForIdle();
+      } catch {
+        if (current())
+          toast.error(
+            "Clipboard text could not be pasted into this RDP session.",
+          );
+      } finally {
+        if (clipboardPasteRef.current === operation) {
+          clipboardPasteRef.current = null;
+          if (lifetime === clipboardLifetimeRef.current)
+            setClipboardPasteBusy(false);
         }
       }
-
-      // Fallback: inject text as Unicode keyboard events
-      const events: Record<string, unknown>[] = [];
-      for (let i = 0; i < text.length; i++) {
-        const code = text.charCodeAt(i);
-        events.push({ type: "Unicode", code, pressed: true });
-        events.push({ type: "Unicode", code, pressed: false });
-      }
-      if (events.length > 0) {
-        await invoke("rdp_send_input", {
-          sessionId: sessionIdRef.current,
-          events,
-        });
-      }
-    } catch (e) {
-      console.error("Paste from clipboard failed:", e);
-    }
-  }, [isConnected, clipboardCanSendToRemote]);
+    },
+    [isClipboardAllowed, toast],
+  );
 
   const handleSendKeys = useCallback(
     (combo: string) => {
@@ -2209,9 +2461,14 @@ export function useRDPClient(session: ConnectionSession) {
   useEffect(() => {
     const updateActivity = () => {
       const active = isRenderActive && document.visibilityState !== "hidden";
+      if (effectiveRenderActivityRef.current !== active)
+        clipboardOwnerGenerationRef.current++;
       effectiveRenderActivityRef.current = active;
       const pipeline = pipelineRef.current;
-      if (!active) clearH264RecoveryTimers();
+      if (!active) {
+        clearH264RecoveryTimers();
+        releaseClipboardModifiers();
+      }
       pipeline?.setVisibility(active);
 
       if (!rdpSessionId || !isConnected) {
@@ -2259,6 +2516,7 @@ export function useRDPClient(session: ConnectionSession) {
     clearH264RecoveryTimers,
     isConnected,
     isRenderActive,
+    releaseClipboardModifiers,
     rdpSessionId,
     setNativeSessionActivity,
   ]);
@@ -3062,35 +3320,120 @@ export function useRDPClient(session: ConnectionSession) {
       ),
     );
 
-    // CLIPRDR: when remote copies text, auto-request it
     track(
-      listen<{ session_id: string; has_text: boolean }>(
-        "rdp://clipboard-formats",
+      listen<{ session_id: string; reason: "reconnect-required" }>(
+        "rdp://clipboard-unavailable",
         (event) => {
-          const cf = event.payload;
-          if (cf.session_id !== sessionIdRef.current) return;
-          if (cf.has_text && isClipboardDirectionEnabled("server-to-client")) {
-            // Auto-request the text data from the remote clipboard
-            invoke("rdp_clipboard_paste", { sessionId: cf.session_id }).catch(
-              (e) => console.error("RDP clipboard paste failed:", e),
-            );
-          }
+          const actor = rdpStatusAuthorityRef.current;
+          if (
+            cleaned ||
+            !actor ||
+            event.payload.session_id !== actor.backendSessionId ||
+            event.payload.reason !== "reconnect-required" ||
+            !isClipboardActorCurrent(actor)
+          )
+            return;
+          clipboardAppliedRef.current = null;
+          clipboardPolicyRef.current = {
+            ...clipboardPolicyRef.current,
+            generation: clipboardPolicyRef.current.generation + 1,
+          };
+          clipboardPasteRef.current = null;
+          setClipboardPasteBusy(false);
+          setClipboardPolicyStatus("error");
+          toast.warning(
+            "RDP clipboard is unavailable. Reconnect this session.",
+          );
         },
       ),
     );
 
-    // CLIPRDR: when remote clipboard data arrives, write to local clipboard
+    // Clipboard events belong only to the active actor and remote snapshot.
     track(
-      listen<{ session_id: string; text: string }>(
+      listen<{ session_id: string; has_text: boolean; generation: number }>(
+        "rdp://clipboard-formats",
+        (event) => {
+          const cf = event.payload;
+          const actor = rdpStatusAuthorityRef.current;
+          if (
+            cleaned ||
+            !actor ||
+            cf.session_id !== actor.backendSessionId ||
+            !isClipboardActorCurrent(actor) ||
+            !Number.isSafeInteger(cf.generation) ||
+            cf.generation < 0
+          )
+            return;
+          let remote = remoteClipboardRef.current;
+          if (remote?.actor !== actor) {
+            remote = { actor, generation: -1, requested: -1 };
+            remoteClipboardRef.current = remote;
+          }
+          if (cf.generation < remote.generation) return;
+          remote.generation = cf.generation;
+          if (
+            !isClipboardAllowed("server-to-client", actor) ||
+            !cf.has_text ||
+            remote.requested === cf.generation
+          )
+            return;
+          remote.requested = cf.generation;
+          void invoke("rdp_clipboard_paste", {
+            sessionId: actor.backendSessionId,
+          }).catch(() => {
+            if (!cleaned && isClipboardAllowed("server-to-client", actor))
+              toast.warning("Remote clipboard could not be requested.");
+          });
+        },
+      ),
+    );
+    track(
+      listen<{ session_id: string; text: string; generation: number }>(
         "rdp://clipboard-data",
         (event) => {
           const cd = event.payload;
-          if (cd.session_id !== sessionIdRef.current) return;
-          if (cd.text && isClipboardDirectionEnabled("server-to-client")) {
-            navigator.clipboard.writeText(cd.text).catch((e) => {
-              console.warn("Failed to write remote clipboard to local:", e);
-            });
+          const actor = rdpStatusAuthorityRef.current;
+          if (
+            cleaned ||
+            !actor ||
+            cd.session_id !== actor.backendSessionId ||
+            typeof cd.text !== "string" ||
+            !Number.isSafeInteger(cd.generation) ||
+            cd.generation < 0 ||
+            !isClipboardActorCurrent(actor)
+          )
+            return;
+          let remote = remoteClipboardRef.current;
+          if (remote?.actor !== actor) {
+            remote = { actor, generation: -1, requested: -1 };
+            remoteClipboardRef.current = remote;
           }
+          if (cd.generation < remote.generation) return;
+          remote.generation = cd.generation;
+          if (!isClipboardAllowed("server-to-client", actor)) return;
+          const ownership = clipboardOwnerGenerationRef.current;
+          const policyGeneration = clipboardPolicyRef.current.generation;
+          clipboardWriteTailRef.current = clipboardWriteTailRef.current.then(
+            async () => {
+              if (
+                cleaned ||
+                ownership !== clipboardOwnerGenerationRef.current ||
+                policyGeneration !== clipboardPolicyRef.current.generation ||
+                remoteClipboardRef.current?.actor !== actor ||
+                remoteClipboardRef.current.generation !== cd.generation ||
+                !isClipboardAllowed("server-to-client", actor)
+              )
+                return;
+              try {
+                await navigator.clipboard.writeText(cd.text);
+              } catch {
+                if (!cleaned && isClipboardAllowed("server-to-client", actor))
+                  toast.warning(
+                    "Remote clipboard could not be copied to this device.",
+                  );
+              }
+            },
+          );
         },
       ),
     );
@@ -3196,7 +3539,14 @@ export function useRDPClient(session: ConnectionSession) {
         audioCtx = null;
       }
     };
-  }, [cleanup, dispatch, isClipboardDirectionEnabled, publishSessionUpdate]);
+  }, [
+    cleanup,
+    dispatch,
+    isClipboardAllowed,
+    isClipboardActorCurrent,
+    publishSessionUpdate,
+    toast,
+  ]);
 
   // ─── Connect on mount, disconnect on unmount ───────────────────────
 
@@ -3709,8 +4059,30 @@ export function useRDPClient(session: ConnectionSession) {
       }
       if (!isConnected || !keyboardEnabled) return;
       e.preventDefault();
+      const key = e.nativeEvent;
+      const scan = keyToScancode(key);
+      if (scan && /^(Control|Shift|Alt|Meta)(Left|Right)$/.test(key.code))
+        clipboardPhysicalModifiersRef.current.set(key.code, scan);
+      const pasteShortcut =
+        key.ctrlKey &&
+        !key.shiftKey &&
+        !key.altKey &&
+        !key.metaKey &&
+        key.code === "KeyV"
+          ? "ctrl-v"
+          : key.shiftKey &&
+              !key.ctrlKey &&
+              !key.altKey &&
+              !key.metaKey &&
+              key.code === "Insert"
+            ? "shift-insert"
+            : null;
+      if (pasteShortcut && isClipboardDirectionEnabled("client-to-server")) {
+        clipboardSuppressedKeysRef.current.add(key.code);
+        if (!key.repeat) void handlePasteFromClipboard(pasteShortcut);
+        return;
+      }
 
-      const scan = keyToScancode(e.nativeEvent);
       if (scan) {
         sendInput(
           [
@@ -3725,13 +4097,27 @@ export function useRDPClient(session: ConnectionSession) {
         );
       }
     },
-    [isCanvasReleaseCombo, isConnected, keyboardEnabled, sendInput],
+    [
+      isCanvasReleaseCombo,
+      isConnected,
+      keyboardEnabled,
+      sendInput,
+      isClipboardDirectionEnabled,
+      handlePasteFromClipboard,
+    ],
   );
 
   const handleKeyUp = useCallback(
     (e: React.KeyboardEvent) => {
+      if (clipboardSuppressedKeysRef.current.delete(e.nativeEvent.code)) {
+        e.preventDefault();
+        return;
+      }
       if (isCanvasReleaseCombo(e.nativeEvent)) return;
-      if (!isConnected || !keyboardEnabled) return;
+      const wasModifier = clipboardPhysicalModifiersRef.current.delete(
+        e.nativeEvent.code,
+      );
+      if (!isConnected || (!keyboardEnabled && !wasModifier)) return;
       e.preventDefault();
 
       const scan = keyToScancode(e.nativeEvent);
@@ -3938,6 +4324,14 @@ export function useRDPClient(session: ConnectionSession) {
     perfLabel,
     audioEnabled,
     clipboardEnabled,
+    clipboardCanSendToRemote:
+      clipboardCanSendToRemote &&
+      keyboardEnabled &&
+      clipboardPolicyStatus === "ready" &&
+      !clipboardPasteBusy,
+    clipboardCanReceiveFromRemote:
+      clipboardCanReceiveFromRemote && clipboardPolicyStatus === "ready",
+    clipboardPolicyStatus,
     colorDepth,
     settings,
     // Recording

@@ -6,8 +6,9 @@ import {
   screen,
   waitFor,
 } from "@testing-library/react";
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { useSyncExternalStore } from "react";
+import { SessionRenderActivityContext } from "../../src/contexts/SessionRenderActivityContext";
 import RDPClient from "../../src/components/rdp/RDPClient";
 import {
   ConnectionSession,
@@ -3492,6 +3493,10 @@ describe("RDPClient", () => {
     });
 
     it("debounces adaptive resize requests and waits for negotiated status dimensions", async () => {
+      const resizeCalls = () =>
+        mockInvoke.mock.calls.filter(
+          ([name]) => name === "rdp_set_desktop_size",
+        );
       renderWithProviders(mockSession);
 
       await waitFor(() => {
@@ -3522,7 +3527,7 @@ describe("RDPClient", () => {
           vi.advanceTimersByTime(1);
           await Promise.resolve();
         });
-        expect(mockInvoke).toHaveBeenCalledTimes(1);
+        expect(resizeCalls()).toHaveLength(1);
         expect(mockInvoke).toHaveBeenCalledWith("rdp_set_desktop_size", {
           sessionId: "rdp-session-123",
           width: 1280,
@@ -3546,6 +3551,10 @@ describe("RDPClient", () => {
     });
 
     it("serializes a corrective fixed resize behind an in-flight adaptive request", async () => {
+      const resizeCalls = () =>
+        mockInvoke.mock.calls.filter(
+          ([name]) => name === "rdp_set_desktop_size",
+        );
       const view = renderWithProviders(mockSession);
 
       await waitFor(() => {
@@ -3582,12 +3591,15 @@ describe("RDPClient", () => {
           vi.advanceTimersByTime(150);
           await Promise.resolve();
         });
-        expect(mockInvoke).toHaveBeenCalledTimes(1);
-        expect(mockInvoke).toHaveBeenNthCalledWith(1, "rdp_set_desktop_size", {
-          sessionId: "rdp-session-123",
-          width: 1200,
-          height: 700,
-        });
+        expect(resizeCalls()).toHaveLength(1);
+        expect(resizeCalls()[0]).toEqual([
+          "rdp_set_desktop_size",
+          {
+            sessionId: "rdp-session-123",
+            width: 1200,
+            height: 700,
+          },
+        ]);
 
         (mockConnection as any).rdpSettings = {
           performance: { frontendRenderer: "canvas2d" },
@@ -3610,18 +3622,21 @@ describe("RDPClient", () => {
         });
 
         // Fixed is queued, not sent concurrently with the adaptive request.
-        expect(mockInvoke).toHaveBeenCalledTimes(1);
+        expect(resizeCalls()).toHaveLength(1);
         await act(async () => {
           resolveAdaptive();
           await Promise.resolve();
           await Promise.resolve();
           await Promise.resolve();
         });
-        expect(mockInvoke).toHaveBeenNthCalledWith(2, "rdp_set_desktop_size", {
-          sessionId: "rdp-session-123",
-          width: 1600,
-          height: 900,
-        });
+        expect(resizeCalls()[1]).toEqual([
+          "rdp_set_desktop_size",
+          {
+            sessionId: "rdp-session-123",
+            width: 1600,
+            height: 900,
+          },
+        ]);
         expect(screen.getByTestId("rdp-canvas-viewport")).toHaveAttribute(
           "data-resolution-mode",
           "fixed",
@@ -3649,11 +3664,14 @@ describe("RDPClient", () => {
           await Promise.resolve();
           await Promise.resolve();
         });
-        expect(mockInvoke).toHaveBeenNthCalledWith(3, "rdp_set_desktop_size", {
-          sessionId: "rdp-session-123",
-          width: 1366,
-          height: 768,
-        });
+        expect(resizeCalls()[2]).toEqual([
+          "rdp_set_desktop_size",
+          {
+            sessionId: "rdp-session-123",
+            width: 1366,
+            height: 768,
+          },
+        ]);
       } finally {
         vi.useRealTimers();
       }
@@ -4747,6 +4765,728 @@ describe("RDPClient", () => {
         "detach_rdp_session",
         expect.any(Object),
       );
+    });
+  });
+  describe("clipboard publication and ownership", () => {
+    const clipboard = { readText: vi.fn(), writeText: vi.fn() };
+    let renderActive = true;
+    let original: PropertyDescriptor | undefined;
+    let focus: ReturnType<typeof vi.spyOn>;
+    beforeEach(() => {
+      renderActive = true;
+      original = Object.getOwnPropertyDescriptor(navigator, "clipboard");
+      Object.defineProperty(navigator, "clipboard", {
+        configurable: true,
+        value: clipboard,
+      });
+      clipboard.readText.mockReset().mockResolvedValue("synthetic clipboard");
+      clipboard.writeText.mockReset().mockResolvedValue(undefined);
+      focus = vi.spyOn(document, "hasFocus").mockReturnValue(true);
+    });
+    afterEach(() => {
+      if (original) Object.defineProperty(navigator, "clipboard", original);
+      else Reflect.deleteProperty(navigator, "clipboard");
+      focus.mockRestore();
+    });
+    async function connected() {
+      const hook = renderHook(
+        (props?: { session: ConnectionSession }) =>
+          useRDPClient(props?.session ?? mockSession),
+        {
+          initialProps: { session: mockSession },
+          wrapper: ({ children }) => (
+            <SessionRenderActivityContext.Provider
+              value={{ isActive: renderActive }}
+            >
+              {hookWrapper({ children })}
+            </SessionRenderActivityContext.Provider>
+          ),
+        },
+      );
+      await waitFor(() =>
+        expect(hook.result.current.rdpSessionId).toBe("rdp-session-123"),
+      );
+      emitStatus("connected", "Connected");
+      await waitFor(() =>
+        expect(hook.result.current.clipboardPolicyStatus).toBe("ready"),
+      );
+      return hook;
+    }
+    const inputs = () =>
+      mockInvoke.mock.calls
+        .filter(([name]) => name === "rdp_send_input")
+        .flatMap(
+          ([, args]) => (args as { events: Record<string, unknown>[] }).events,
+        );
+    const clipboardCalls = () =>
+      mockInvoke.mock.calls.filter(([name]) => name === "rdp_clipboard_copy");
+    function key(
+      code: string,
+      name: string,
+      modifiers: KeyboardEventInit = {},
+    ) {
+      const nativeEvent = new KeyboardEvent("keydown", {
+        code,
+        key: name,
+        ...modifiers,
+      });
+      return {
+        nativeEvent,
+        preventDefault: vi.fn(),
+      } as unknown as React.KeyboardEvent;
+    }
+    function deferred<T>() {
+      let resolve!: (value: T) => void;
+      let reject!: (error: Error) => void;
+      const promise = new Promise<T>((yes, no) => {
+        resolve = yes;
+        reject = no;
+      });
+      return { promise, resolve, reject };
+    }
+    function currentSession() {
+      return connectionContextMocks.dispatch.mock.calls.reduce(
+        (current, [action]) =>
+          action.type === "UPDATE_SESSION" &&
+          action.payload.id === mockSession.id
+            ? action.payload
+            : current,
+        mockSession,
+      );
+    }
+    function direction(value: string, enabled = true) {
+      (mockConnection as any).rdpSettings = {
+        ...mockConnection.rdpSettings,
+        deviceRedirection: { clipboard: enabled, clipboardDirection: value },
+      };
+    }
+    it("publishes local text before sending a balanced remote paste chord", async () => {
+      const { result } = await connected();
+      mockInvoke.mockClear();
+      await act(async () => {
+        await result.current.handlePasteFromClipboard();
+      });
+      const copy = mockInvoke.mock.calls.findIndex(
+        ([name]) => name === "rdp_clipboard_copy",
+      );
+      const keys = mockInvoke.mock.calls.findIndex(
+        ([name]) => name === "rdp_send_input",
+      );
+      expect(copy).toBeGreaterThanOrEqual(0);
+      expect(keys).toBeGreaterThan(copy);
+      expect(mockInvoke.mock.calls[keys][1]).toMatchObject({
+        sessionId: "rdp-session-123",
+        events: [
+          {
+            type: "KeyboardKey",
+            scancode: 0x1d,
+            pressed: true,
+            extended: false,
+          },
+          {
+            type: "KeyboardKey",
+            scancode: 0x2f,
+            pressed: true,
+            extended: false,
+          },
+          {
+            type: "KeyboardKey",
+            scancode: 0x2f,
+            pressed: false,
+            extended: false,
+          },
+          {
+            type: "KeyboardKey",
+            scancode: 0x1d,
+            pressed: false,
+            extended: false,
+          },
+        ],
+      });
+    });
+    it("does not publish text after direction is revoked during the asynchronous clipboard read", async () => {
+      const { result, rerender } = await connected();
+      let release!: (value: string) => void;
+      clipboard.readText.mockReturnValueOnce(
+        new Promise<string>((resolve) => {
+          release = resolve;
+        }),
+      );
+      let paste: Promise<void>;
+      act(() => {
+        paste = result.current.handlePasteFromClipboard();
+      });
+      direction("server-to-client");
+      rerender();
+      mockInvoke.mockClear();
+      await act(async () => {
+        release("synthetic private text");
+        await paste;
+      });
+      expect(
+        mockInvoke.mock.calls.filter(
+          ([name]) =>
+            name === "rdp_clipboard_copy" || name === "rdp_send_input",
+        ),
+      ).toEqual([]);
+    });
+    it("applies an empty remote clipboard instead of retaining stale local text", async () => {
+      await connected();
+      await act(async () => {
+        mockListeners["rdp://clipboard-data"]({
+          payload: { session_id: "rdp-session-123", text: "", generation: 1 },
+        });
+      });
+      expect(clipboard.writeText).toHaveBeenCalledWith("");
+    });
+    it.each([
+      ["bidirectional", true, true, true],
+      ["client-to-server", true, true, false],
+      ["server-to-client", true, false, true],
+      ["disabled", true, false, false],
+      ["bidirectional", false, false, false],
+    ] as const)(
+      "enforces %s clipboard enabled=%s in both directions",
+      async (value, enabled, send, receive) => {
+        direction(value, enabled);
+        const { result } = await connected();
+        mockInvoke.mockClear();
+        expect(result.current.clipboardCanSendToRemote).toBe(send);
+        expect(result.current.clipboardCanReceiveFromRemote).toBe(receive);
+        await act(async () => {
+          await result.current.handlePasteFromClipboard();
+          await result.current.handleCopyToClipboard();
+          mockListeners["rdp://clipboard-formats"]({
+            payload: {
+              session_id: "rdp-session-123",
+              has_text: true,
+              generation: 4,
+            },
+          });
+          mockListeners["rdp://clipboard-data"]({
+            payload: {
+              session_id: "rdp-session-123",
+              text: "remote synthetic",
+              generation: 4,
+            },
+          });
+        });
+        expect(clipboard.readText).toHaveBeenCalledTimes(send ? 1 : 0);
+        expect(clipboardCalls()).toHaveLength(send ? 1 : 0);
+        expect(clipboard.writeText).toHaveBeenCalledTimes(receive ? 1 : 0);
+        expect(
+          mockInvoke.mock.calls.filter(
+            ([name]) => name === "rdp_clipboard_paste",
+          ),
+        ).toHaveLength(receive ? 2 : 0);
+      },
+    );
+    it("waits for native publication ACK and never injects on rejection", async () => {
+      const { result } = await connected();
+      const ack = deferred<void>();
+      const originalInvoke = mockInvoke.getMockImplementation()!;
+      mockInvoke.mockImplementation((name, args) =>
+        name === "rdp_clipboard_copy"
+          ? ack.promise
+          : originalInvoke(name, args),
+      );
+      mockInvoke.mockClear();
+      let paste!: Promise<void>;
+      act(() => {
+        paste = result.current.handlePasteFromClipboard();
+      });
+      await waitFor(() => expect(clipboardCalls()).toHaveLength(1));
+      expect(inputs()).toEqual([]);
+      await act(async () => {
+        ack.reject(new Error("clipboard direction denied"));
+        await paste;
+      });
+      expect(inputs()).toEqual([]);
+    });
+    it.each(["read", "publication"])(
+      "fences direction ABA during pending %s",
+      async (stage) => {
+        const { result, rerender } = await connected();
+        const pending = deferred<string | void>();
+        const originalInvoke = mockInvoke.getMockImplementation()!;
+        if (stage === "read")
+          clipboard.readText.mockReturnValueOnce(pending.promise);
+        else
+          mockInvoke.mockImplementation((name, args) =>
+            name === "rdp_clipboard_copy"
+              ? pending.promise
+              : originalInvoke(name, args),
+          );
+        let paste!: Promise<void>;
+        act(() => {
+          paste = result.current.handlePasteFromClipboard();
+        });
+        await waitFor(() =>
+          expect(
+            stage === "read"
+              ? clipboard.readText
+              : () => clipboardCalls().length,
+          ).toBeDefined(),
+        );
+        await act(async () => {
+          await Promise.resolve();
+        });
+        direction("server-to-client");
+        rerender();
+        await waitFor(() =>
+          expect(result.current.clipboardPolicyStatus).toBe("ready"),
+        );
+        direction("bidirectional");
+        rerender();
+        await waitFor(() =>
+          expect(result.current.clipboardPolicyStatus).toBe("ready"),
+        );
+        mockInvoke.mockClear();
+        await act(async () => {
+          pending.resolve(stage === "read" ? "must not send" : undefined);
+          await paste;
+        });
+        expect(clipboardCalls()).toEqual([]);
+        expect(inputs()).toEqual([]);
+      },
+    );
+    it.each(["actor", "unmount", "background", "focus"])(
+      "rejects a pending clipboard read after %s ownership is lost",
+      async (kind) => {
+        const hook = await connected();
+        const pending = deferred<string>();
+        clipboard.readText.mockReturnValueOnce(pending.promise);
+        let paste!: Promise<void>;
+        act(() => {
+          paste = hook.result.current.handlePasteFromClipboard();
+        });
+        const stale = hook.result.current.handlePasteFromClipboard;
+        if (kind === "actor")
+          hook.rerender({
+            session: {
+              ...currentSession(),
+              backendSessionId: "replacement-actor",
+              lifecycleActorGeneration: 999,
+            },
+          });
+        if (kind === "unmount") hook.unmount();
+        if (kind === "background") {
+          renderActive = false;
+          hook.rerender();
+        }
+        if (kind === "focus") {
+          focus.mockReturnValue(false);
+          window.dispatchEvent(new Event("blur"));
+        }
+        mockInvoke.mockClear();
+        await act(async () => {
+          pending.resolve("must not send");
+          await paste;
+        });
+        expect(clipboardCalls()).toEqual([]);
+        expect(inputs()).toEqual([]);
+        if (kind === "unmount") {
+          const previousReads = clipboard.readText.mock.calls.length;
+          await stale();
+          expect(clipboard.readText).toHaveBeenCalledTimes(previousReads);
+        }
+      },
+    );
+    it("keeps a status-only session refresh valid while reading", async () => {
+      const { result, rerender } = await connected();
+      const pending = deferred<string>();
+      clipboard.readText.mockReturnValueOnce(pending.promise);
+      let paste!: Promise<void>;
+      act(() => {
+        paste = result.current.handlePasteFromClipboard();
+      });
+      rerender({
+        session: {
+          ...currentSession(),
+          name: "Updated tab label",
+          lastActivity: new Date(),
+        },
+      });
+      mockInvoke.mockClear();
+      await act(async () => {
+        pending.resolve("current actor text");
+        await paste;
+      });
+      expect(clipboardCalls()).toHaveLength(1);
+      expect(inputs()).toHaveLength(4);
+    });
+    it.each(["ctrl-v", "shift-insert"])(
+      "intercepts %s once and balances keys after user releases the modifier",
+      async (shortcut) => {
+        const { result } = await connected();
+        const pending = deferred<void>();
+        const originalInvoke = mockInvoke.getMockImplementation()!;
+        mockInvoke.mockImplementation((name, args) =>
+          name === "rdp_clipboard_copy"
+            ? pending.promise
+            : originalInvoke(name, args),
+        );
+        mockInvoke.mockClear();
+        const ctrl = shortcut === "ctrl-v";
+        const modifier = key(
+          ctrl ? "ControlLeft" : "ShiftLeft",
+          ctrl ? "Control" : "Shift",
+          ctrl ? { ctrlKey: true } : { shiftKey: true },
+        );
+        const paste = key(
+          ctrl ? "KeyV" : "Insert",
+          ctrl ? "v" : "Insert",
+          ctrl ? { ctrlKey: true } : { shiftKey: true },
+        );
+        act(() => {
+          result.current.handleKeyDown(modifier);
+          result.current.handleKeyDown(paste);
+          result.current.handleKeyDown(
+            key(
+              ctrl ? "KeyV" : "Insert",
+              ctrl ? "v" : "Insert",
+              ctrl
+                ? { ctrlKey: true, repeat: true }
+                : { shiftKey: true, repeat: true },
+            ),
+          );
+          result.current.handleKeyUp(paste);
+          result.current.handleKeyUp(
+            key(ctrl ? "ControlLeft" : "ShiftLeft", ctrl ? "Control" : "Shift"),
+          );
+        });
+        await waitFor(() => expect(clipboardCalls()).toHaveLength(1));
+        expect(clipboard.readText).toHaveBeenCalledTimes(1);
+        expect(
+          inputs().some((event) => event.scancode === (ctrl ? 0x2f : 0x52)),
+        ).toBe(false);
+        await act(async () => {
+          pending.resolve();
+          await Promise.resolve();
+        });
+        await waitFor(() =>
+          expect(
+            inputs().filter((event) => event.scancode === (ctrl ? 0x2f : 0x52)),
+          ).toHaveLength(2),
+        );
+        const all = inputs();
+        const code = ctrl ? 0x1d : 0x2a;
+        expect(
+          all.filter((event) => event.scancode === code && event.pressed),
+        ).toHaveLength(
+          all.filter((event) => event.scancode === code && !event.pressed)
+            .length,
+        );
+      },
+    );
+    it("suppresses overlapping toolbar pastes during one read/publication", async () => {
+      const { result } = await connected();
+      const pending = deferred<string>();
+      clipboard.readText.mockReturnValueOnce(pending.promise);
+      let first!: Promise<void>;
+      act(() => {
+        first = result.current.handlePasteFromClipboard();
+      });
+      await result.current.handlePasteFromClipboard();
+      expect(clipboard.readText).toHaveBeenCalledTimes(1);
+      await act(async () => {
+        pending.resolve("only once");
+        await first;
+      });
+      expect(clipboardCalls()).toHaveLength(1);
+    });
+    it("serializes remote writes and drops snapshots superseded while queued", async () => {
+      await connected();
+      const pending = deferred<void>();
+      clipboard.writeText.mockReturnValueOnce(pending.promise);
+      const data = (generation: number, text: string) =>
+        mockListeners["rdp://clipboard-data"]({
+          payload: { session_id: "rdp-session-123", generation, text },
+        });
+      await act(async () => {
+        data(1, "first");
+      });
+      expect(clipboard.writeText).toHaveBeenCalledTimes(1);
+      await act(async () => {
+        data(2, "superseded");
+        data(3, "latest");
+      });
+      expect(clipboard.writeText).toHaveBeenCalledTimes(1);
+      await act(async () => {
+        pending.resolve();
+        await pending.promise;
+      });
+      expect(clipboard.writeText.mock.calls.map(([text]) => text)).toEqual([
+        "first",
+        "latest",
+      ]);
+    });
+    it("does not write or request a background/unfocused remote clipboard and tracks newer generations", async () => {
+      const { rerender } = await connected();
+      renderActive = false;
+      rerender();
+      mockInvoke.mockClear();
+      await act(async () => {
+        mockListeners["rdp://clipboard-formats"]({
+          payload: {
+            session_id: "rdp-session-123",
+            has_text: true,
+            generation: 9,
+          },
+        });
+        mockListeners["rdp://clipboard-data"]({
+          payload: {
+            session_id: "rdp-session-123",
+            text: "background",
+            generation: 9,
+          },
+        });
+      });
+      expect(clipboard.writeText).not.toHaveBeenCalled();
+      expect(
+        mockInvoke.mock.calls.filter(
+          ([name]) => name === "rdp_clipboard_paste",
+        ),
+      ).toEqual([]);
+      renderActive = true;
+      rerender();
+      await act(async () => {
+        mockListeners["rdp://clipboard-data"]({
+          payload: {
+            session_id: "rdp-session-123",
+            text: "stale",
+            generation: 8,
+          },
+        });
+      });
+      expect(clipboard.writeText).not.toHaveBeenCalled();
+      focus.mockReturnValue(false);
+      await act(async () => {
+        mockListeners["rdp://clipboard-data"]({
+          payload: {
+            session_id: "rdp-session-123",
+            text: "unfocused",
+            generation: 10,
+          },
+        });
+      });
+      expect(clipboard.writeText).not.toHaveBeenCalled();
+    });
+    it("fails closed when native policy ACK rejects and exposes reconnect feedback", async () => {
+      const originalInvoke = mockInvoke.getMockImplementation()!;
+      mockInvoke.mockImplementation((name, args) =>
+        name === "rdp_toggle_feature"
+          ? Promise.reject(new Error("reconnect required"))
+          : originalInvoke(name, args),
+      );
+      const hook = renderHook(() => useRDPClient(mockSession), {
+        wrapper: hookWrapper,
+      });
+      await waitFor(() =>
+        expect(hook.result.current.rdpSessionId).toBe("rdp-session-123"),
+      );
+      emitStatus("connected", "Connected");
+      await waitFor(() =>
+        expect(hook.result.current.clipboardPolicyStatus).toBe("error"),
+      );
+      await hook.result.current.handlePasteFromClipboard();
+      expect(clipboard.readText).not.toHaveBeenCalled();
+      expect(hook.result.current.clipboardCanSendToRemote).toBe(false);
+    });
+    it("recovers remote formats received before initial policy acknowledgment", async () => {
+      const ack = deferred<void>();
+      const originalInvoke = mockInvoke.getMockImplementation()!;
+      mockInvoke.mockImplementation((name, args) =>
+        name === "rdp_toggle_feature"
+          ? ack.promise
+          : originalInvoke(name, args),
+      );
+      const hook = renderHook(() => useRDPClient(mockSession), {
+        wrapper: hookWrapper,
+      });
+      await waitFor(() =>
+        expect(hook.result.current.rdpSessionId).toBe("rdp-session-123"),
+      );
+      emitStatus("connected", "Connected");
+      await act(async () => {
+        mockListeners["rdp://clipboard-formats"]({
+          payload: {
+            session_id: "rdp-session-123",
+            has_text: true,
+            generation: 1,
+          },
+        });
+      });
+      expect(
+        mockInvoke.mock.calls.filter(
+          ([name]) => name === "rdp_clipboard_paste",
+        ),
+      ).toHaveLength(0);
+      await act(async () => {
+        ack.resolve();
+      });
+      await waitFor(() =>
+        expect(
+          mockInvoke.mock.calls.filter(
+            ([name]) => name === "rdp_clipboard_paste",
+          ),
+        ).toHaveLength(1),
+      );
+    });
+    it("requests the current remote clipboard when its background tab becomes active", async () => {
+      renderActive = false;
+      const { rerender } = await connected();
+      mockInvoke.mockClear();
+      await act(async () => {
+        mockListeners["rdp://clipboard-formats"]({
+          payload: {
+            session_id: "rdp-session-123",
+            has_text: true,
+            generation: 2,
+          },
+        });
+      });
+      expect(
+        mockInvoke.mock.calls.filter(
+          ([name]) => name === "rdp_clipboard_paste",
+        ),
+      ).toHaveLength(0);
+      renderActive = true;
+      rerender();
+      await waitFor(() =>
+        expect(
+          mockInvoke.mock.calls.filter(
+            ([name]) => name === "rdp_clipboard_paste",
+          ),
+        ).toHaveLength(1),
+      );
+    });
+    it("keeps the physical modifier down after paste until the real keyup", async () => {
+      const { result } = await connected();
+      mockInvoke.mockClear();
+      act(() => {
+        result.current.handleKeyDown(
+          key("ControlLeft", "Control", { ctrlKey: true }),
+        );
+        result.current.handleKeyDown(key("KeyV", "v", { ctrlKey: true }));
+        result.current.handleKeyUp(key("KeyV", "v", { ctrlKey: true }));
+      });
+      await waitFor(() =>
+        expect(result.current.clipboardCanSendToRemote).toBe(true),
+      );
+      await waitFor(() =>
+        expect(inputs().some((event) => event.scancode === 0x2f)).toBe(true),
+      );
+      let controlDown = false;
+      for (const event of inputs())
+        if (event.scancode === 0x1d) controlDown = event.pressed === true;
+      expect(controlDown).toBe(true);
+      act(() => {
+        result.current.handleKeyDown(key("KeyC", "c", { ctrlKey: true }));
+        result.current.handleKeyUp(key("KeyC", "c", { ctrlKey: true }));
+        result.current.handleKeyUp(key("ControlLeft", "Control"));
+      });
+      await waitFor(() =>
+        expect(
+          inputs()
+            .filter((event) => event.scancode === 0x1d)
+            .slice(-1)[0]?.pressed,
+        ).toBe(false),
+      );
+    });
+    it("keeps paste singleflight until queued paste input is acknowledged", async () => {
+      const { result } = await connected();
+      const input = deferred<void>();
+      const originalInvoke = mockInvoke.getMockImplementation()!;
+      mockInvoke.mockImplementation((name, args) =>
+        name === "rdp_send_input" ? input.promise : originalInvoke(name, args),
+      );
+      mockInvoke.mockClear();
+      let first!: Promise<void>;
+      act(() => {
+        first = result.current.handlePasteFromClipboard();
+      });
+      await waitFor(() => expect(inputs()).toHaveLength(4));
+      await result.current.handlePasteFromClipboard();
+      expect(clipboard.readText).toHaveBeenCalledTimes(1);
+      await act(async () => {
+        input.resolve();
+        await first;
+      });
+      expect(result.current.clipboardCanSendToRemote).toBe(true);
+    });
+    it("shows reconnect feedback when the native clipboard read becomes unavailable", async () => {
+      const { result } = await connected();
+      await act(async () => {
+        mockListeners["rdp://clipboard-unavailable"]({
+          payload: {
+            session_id: "rdp-session-123",
+            reason: "reconnect-required",
+          },
+        });
+      });
+      expect(result.current.clipboardPolicyStatus).toBe("error");
+      expect(result.current.clipboardCanSendToRemote).toBe(false);
+      await result.current.handlePasteFromClipboard();
+      expect(clipboard.readText).not.toHaveBeenCalled();
+    });
+    it("does not let a policy ABA release singleflight while paste input is still queued", async () => {
+      const { result, rerender } = await connected();
+      const input = deferred<void>();
+      const originalInvoke = mockInvoke.getMockImplementation()!;
+      mockInvoke.mockImplementation((name, args) =>
+        name === "rdp_send_input" ? input.promise : originalInvoke(name, args),
+      );
+      let paste!: Promise<void>;
+      act(() => {
+        paste = result.current.handlePasteFromClipboard();
+      });
+      await waitFor(() => expect(inputs()).toHaveLength(4));
+      direction("server-to-client");
+      rerender();
+      await waitFor(() =>
+        expect(result.current.clipboardPolicyStatus).toBe("ready"),
+      );
+      direction("bidirectional");
+      rerender();
+      await waitFor(() =>
+        expect(result.current.clipboardPolicyStatus).toBe("ready"),
+      );
+      await result.current.handlePasteFromClipboard();
+      expect(clipboard.readText).toHaveBeenCalledTimes(1);
+      await act(async () => {
+        input.resolve();
+        await paste;
+      });
+      expect(result.current.clipboardCanSendToRemote).toBe(true);
+    });
+    it("releases and forgets physical modifiers on focus loss before a later toolbar paste", async () => {
+      const { result } = await connected();
+      mockInvoke.mockClear();
+      act(() =>
+        result.current.handleKeyDown(
+          key("ControlLeft", "Control", { ctrlKey: true }),
+        ),
+      );
+      act(() => window.dispatchEvent(new Event("blur")));
+      await waitFor(() =>
+        expect(
+          inputs()
+            .filter((event) => event.scancode === 0x1d)
+            .slice(-1)[0]?.pressed,
+        ).toBe(false),
+      );
+      act(() => window.dispatchEvent(new Event("focus")));
+      mockInvoke.mockClear();
+      await act(async () => {
+        await result.current.handlePasteFromClipboard();
+      });
+      expect(inputs()).toHaveLength(4);
+      expect(
+        inputs()
+          .filter((event) => event.scancode === 0x1d)
+          .map((event) => event.pressed),
+      ).toEqual([true, false]);
     });
   });
 });

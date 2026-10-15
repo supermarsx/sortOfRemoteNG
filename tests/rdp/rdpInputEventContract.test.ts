@@ -68,6 +68,16 @@ function hookInputEvents(): SentEvent[] {
     for (const literal of call[1].matchAll(/\{[^{}]*\}/g))
       literals.push({ index: call.index, text: literal[0] });
 
+  // Clipboard paste uses one explicit wire-shape factory for release, chord
+  // and modifier restoration. Inspect its literal at every construction site.
+  const pasteFactory = hook.match(
+    /function pasteKeyEvent\([\s\S]*?\)\s*\{\s*return\s*(\{[^{}]*\})/,
+  );
+  if (pasteFactory) {
+    for (const call of hook.matchAll(/pasteKeyEvent\(key,\s*(?:true|false)\)/g))
+      literals.push({ index: call.index, text: pasteFactory[1] });
+  }
+
   return literals.map(({ index, text }) => {
     const properties = propertyNames(text);
     return {
