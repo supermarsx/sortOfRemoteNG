@@ -58,12 +58,21 @@ impl FirstAddressWatch {
     /// A provisional address or stopped-loading event is not completion proof.
     /// The app passes verified native main-document completion independently
     /// of whether its consumer observed the earlier loading transition.
+    /// A terminal native error settles this initial-load deadline. Later blank
+    /// callbacks must not replace its concrete failure with a synthetic timeout.
+    pub fn observe_failure(&mut self) { self.started = None; }
     pub fn observe_document(&mut self, website_address: bool, document_loaded: bool) {
         self.observe(website_address && document_loaded);
     }
     pub fn take_expired(&mut self, now: std::time::Instant, limit: std::time::Duration) -> bool {
         if self.started.is_some_and(|start| now.checked_duration_since(start).is_some_and(|elapsed| elapsed >= limit)) { self.started = None; true } else { false }
     }
+}
+
+/// Decide whether the initial-document watchdog still describes an unresolved
+/// load. A concrete CEF failure or completed document wins over a stale timer.
+pub fn initial_document_timeout_failure(existing: Option<LoadFailure>, document_loaded: bool) -> Option<LoadFailure> {
+    if existing.is_some() || document_loaded { None } else { classify_load_error(-118, true) }
 }
 
 /// CEF net_error_list.h numeric values. Cancellations, downloads and superseded
@@ -98,6 +107,23 @@ pub fn classify_load_error(code: i32, main_frame: bool) -> Option<LoadFailure> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn initial_watchdog_preserves_terminal_native_failure_and_completed_document() {
+        use std::time::{Duration, Instant};
+        for code in [-130, -111, -118, -105] {
+            let failure = classify_load_error(code, true).unwrap();
+            assert_eq!(initial_document_timeout_failure(Some(failure), false), None);
+            let start = Instant::now();
+            let mut watch = FirstAddressWatch::default();
+            watch.start(start);
+            watch.observe_failure();
+            watch.observe_document(false, false);
+            watch.observe_document(true, false);
+            assert!(!watch.take_expired(start + Duration::from_secs(31), Duration::from_secs(30)));
+        }
+        assert_eq!(initial_document_timeout_failure(None, true), None);
+        assert_eq!(initial_document_timeout_failure(None, false).unwrap().code, -118);
+    }
     #[test]
     fn initial_document_deadline_requires_admitted_completion_and_survives_provisional_addresses() {
         use std::time::{Duration, Instant};

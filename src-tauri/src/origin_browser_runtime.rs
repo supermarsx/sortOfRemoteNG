@@ -1128,12 +1128,24 @@ impl BrowserEventSink for Sink {
         }
         let mut finished_load = false;
         if let Ok(mut watch) = self.attempt.address_watch.lock() {
-            // A provisional HTTP address does not prove a working upstream.
-            // Keep the saved initial-document deadline until native MainFrame
-            // OnLoadEnd confirms the admitted document, including fast loads.
-            watch.observe_document(
-                url::Url::parse(&event.display.url).is_ok_and(|url| matches!(url.scheme(), "http" | "https") && url.host_str().is_some() && url.username().is_empty() && url.password().is_none()),
-                event.state.document_loaded && event.state.load_failure.is_none());
+            // A terminal native failure is already the document outcome.
+            // Do not let the startup deadline replace it with a timeout later.
+            if event.state.load_failure.is_some() {
+                watch.observe_failure();
+            } else {
+                // A provisional HTTP address does not prove a working upstream.
+                // Keep the saved initial-document deadline until native MainFrame
+                // OnLoadEnd confirms the admitted document, including fast loads.
+                watch.observe_document(
+                    url::Url::parse(&event.display.url).is_ok_and(|url| {
+                        matches!(url.scheme(), "http" | "https")
+                            && url.host_str().is_some()
+                            && url.username().is_empty()
+                            && url.password().is_none()
+                    }),
+                    event.state.document_loaded,
+                );
+            }
         }
         if let Ok(mut started) = self.attempt.load_started.lock() {
             if event.state.loading {
@@ -2295,9 +2307,17 @@ pub(crate) fn tick() {
             popups::poll(view);
             let address_expired = view.attempt.address_watch.lock().unwrap_or_else(|error| error.into_inner())
                 .take_expired(Instant::now(), Duration::from_secs(view.attempt.preferences.document_ready_timeout_seconds));
-            if address_expired && view.attempt.current() {
-                let _ = view.host.address_timeout(&view.attempt.identity);
-                let _ = view.window.emit("origin-browser-notice", serde_json::json!({"identity": OriginBrowserIdentity::from_native(&view.attempt.identity), "kind": "document-load-timeout"}));
+            if address_expired
+                && view.attempt.current()
+                && matches!(view.host.address_timeout(&view.attempt.identity), Ok(true))
+            {
+                let _ = view.window.emit(
+                    "origin-browser-notice",
+                    serde_json::json!({
+                        "identity": OriginBrowserIdentity::from_native(&view.attempt.identity),
+                        "kind": "document-load-timeout",
+                    }),
+                );
             }
             if let Some(retention) = &view.attempt.retention {
                 view.checkpoint

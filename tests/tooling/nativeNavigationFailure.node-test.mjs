@@ -96,8 +96,27 @@ test("CEF callback uses recoverable classification, fences the browser and never
   );
   assert.match(
     browse,
-    /if main_frame && decision == 0 && website_navigation\s*\{\s*self\.shared\.update\(browser\.as_deref\(\), \|page\| page\.load_failure = None\)/,
+    /if main_frame && decision == 0 && website_navigation\s*\{\s*self\.shared\.update\(browser\.as_deref\(\), \|page\|\s*\{\s*page\.load_failure = None;\s*page\.document_loaded = false;/,
   );
+});
+
+test("initial document timeout preserves native failure and publishes no fabricated CEF callback", async () => {
+  const source = await readFile(new URL("cef_browser.rs", host), "utf8");
+  const timeout = source.slice(
+    source.indexOf("pub fn address_timeout"),
+    source.indexOf("fn check(", source.indexOf("pub fn address_timeout")),
+  );
+  assert.match(
+    timeout,
+    /initial_document_timeout_failure\(state\.page\.load_failure, state\.page\.document_loaded\)/,
+  );
+  assert.match(
+    timeout,
+    /let Some\(failure\) = failure else \{ return Ok\(false\); \}/,
+  );
+  assert.match(timeout, /clear_automation\(\)/);
+  assert.match(timeout, /page\.load_failure = Some\(failure\)/);
+  assert.doesNotMatch(timeout, /NativeNavigationStatus::LoadError/);
 });
 
 test("owner-window IPC retains only fixed load evidence and does not count failed requests as completed documents", async () => {

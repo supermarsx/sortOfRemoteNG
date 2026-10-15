@@ -2629,16 +2629,20 @@ impl<'a> CefBrowserHost<'a> {
     }
 
     /// A current attached view never produced its first website address.
-    pub fn address_timeout(&self, identity: &BrowserIdentity) -> Result<(), BrowserError> {
+    pub fn address_timeout(&self, identity: &BrowserIdentity) -> Result<bool, BrowserError> {
         let browser = self.check(identity)?;
+        let failure = {
+            let state = self.shared.state.lock().map_err(|_| BrowserError::StateUnavailable)?;
+            crate::native_navigation::initial_document_timeout_failure(state.page.load_failure, state.page.document_loaded)
+        };
+        let Some(failure) = failure else { return Ok(false); };
         self.shared.automation.lock().unwrap_or_else(|error| error.into_inner()).navigating = true;
         self.shared.clear_automation();
         self.shared.cancel_certificate(None);
         browser.stop_load();
         self.visibility(identity, false)?;
-        self.shared.navigation_status(NativeNavigationStatus::LoadError { code: -118, main_frame: true });
-        self.shared.update(Some(&browser), |page| { page.load_failure = crate::native_navigation::classify_load_error(-118, true); page.loading = false; page.document_loaded = false; });
-        Ok(())
+        self.shared.update(Some(&browser), |page| { page.load_failure = Some(failure); page.loading = false; page.document_loaded = false; });
+        Ok(true)
     }
 
     fn check(&self, identity: &BrowserIdentity) -> Result<Browser, BrowserError> {
