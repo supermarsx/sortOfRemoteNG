@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { StrictMode, useEffect } from "react";
+import { ToastContext } from "../../src/contexts/ToastContext";
 import { act, render, renderHook } from "@testing-library/react";
 import { useScriptRun } from "../../src/hooks/ssh/useScriptRun";
 import type {
@@ -14,6 +15,15 @@ const mocks = vi.hoisted(() => {
   const listeners = new Map<string, Set<Handler>>();
   return {
     listeners,
+    toast: {
+      loading: vi.fn(() => "ssh-run-toast"),
+      update: vi.fn(),
+      remove: vi.fn(),
+      success: vi.fn(),
+      error: vi.fn(),
+      info: vi.fn(),
+      warning: vi.fn(),
+    },
     invoke: vi.fn(
       async (_cmd: string, _args?: Record<string, unknown>) =>
         undefined as unknown,
@@ -100,18 +110,201 @@ async function startRun(result: { current: ScriptRunApi }): Promise<string> {
 }
 
 beforeEach(() => {
+  for (const spy of Object.values(mocks.toast)) spy.mockClear();
   mocks.listeners.clear();
   mocks.invoke.mockReset();
   mocks.invoke.mockImplementation(
     async (cmd: string, args?: Record<string, unknown>) => {
       if (cmd === "execute_script_stream") return args?.executionId as string;
+      if (cmd === "cancel_script_execution") return true;
       return undefined;
     },
   );
   mocks.listen.mockClear();
 });
 
+function toastWrapper({ children }: { children: React.ReactNode }) {
+  return (
+    <ToastContext.Provider value={{ toast: mocks.toast, removeAll: vi.fn() }}>
+      {children}
+    </ToastContext.Provider>
+  );
+}
+
 describe("useScriptRun", () => {
+  it("immediately shows deployment progress but waits for matching exit evidence before success", async () => {
+    const wrapper = ({ children }: { children: React.ReactNode }) => (
+      <ToastContext.Provider value={{ toast: mocks.toast, removeAll: vi.fn() }}>
+        {children}
+      </ToastContext.Provider>
+    );
+    const { result } = renderHook(() => useScriptRun(), { wrapper });
+    let accepted!: (value: unknown) => void;
+    mocks.invoke.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          accepted = resolve;
+        }),
+    );
+    let starting!: Promise<string>;
+    act(() => {
+      starting = result.current.start("sess-1", "echo hi", "bash");
+    });
+    expect(mocks.toast.loading).toHaveBeenCalledOnce();
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    await act(async () => {
+      accepted(result.current.executionId);
+      await starting;
+    });
+    expect(
+      mocks.toast.update.mock.calls.filter(([, patch]) => patch.type),
+    ).toHaveLength(0);
+    act(() =>
+      finished(result.current.executionId!, { session_id: "other-session" }),
+    );
+    expect(result.current.status).toBe("running");
+    act(() => finished(result.current.executionId!));
+    expect(mocks.toast.update).toHaveBeenLastCalledWith(
+      "ssh-run-toast",
+      expect.objectContaining({ type: "success" }),
+    );
+  });
+
+  it.each([
+    [{ exit_code: 9, error: null }, "error"],
+    [{ exit_code: null, error: "private diagnostic output" }, "error"],
+    [{ exit_code: null, error: null }, "info"],
+  ] as const)(
+    "uses the final exit evidence %j without exposing backend error prose",
+    async (receipt, type) => {
+      const { result } = renderHook(() => useScriptRun(), {
+        wrapper: toastWrapper,
+      });
+      const id = await startRun(result);
+      act(() => finished(id, receipt));
+      expect(mocks.toast.update).toHaveBeenLastCalledWith(
+        "ssh-run-toast",
+        expect.objectContaining({ type }),
+      );
+      expect(JSON.stringify(mocks.toast.update.mock.calls)).not.toContain(
+        "private diagnostic output",
+      );
+      expect(JSON.stringify(mocks.toast.update.mock.calls)).not.toContain(
+        "echo hi",
+      );
+      act(() => finished(id));
+      expect(
+        mocks.toast.update.mock.calls.filter(([, patch]) => patch.type),
+      ).toHaveLength(1);
+    },
+  );
+  it.each(["reset", "unmount"] as const)(
+    "removes progress on %s and ignores the old completion",
+    async (end) => {
+      const view = renderHook(() => useScriptRun(), { wrapper: toastWrapper });
+      const id = await startRun(view.result);
+      if (end === "reset") act(() => view.result.current.reset());
+      else view.unmount();
+      expect(mocks.toast.remove).toHaveBeenCalledWith("ssh-run-toast");
+      act(() => finished(id));
+      expect(
+        mocks.toast.update.mock.calls.filter(([, patch]) => patch.type),
+      ).toHaveLength(0);
+    },
+  );
+  it("leaves cancellation pending until the matching execution ends", async () => {
+    const { result } = renderHook(() => useScriptRun(), {
+      wrapper: toastWrapper,
+    });
+    const id = await startRun(result);
+    await act(async () => result.current.cancel());
+    expect(
+      mocks.toast.update.mock.calls.filter(([, patch]) => patch.type),
+    ).toHaveLength(0);
+    act(() => finished(id, { exit_code: 130 }));
+    expect(mocks.toast.update).toHaveBeenLastCalledWith(
+      "ssh-run-toast",
+      expect.objectContaining({
+        type: "info",
+        message: expect.stringMatching(/cancellation requested/),
+      }),
+    );
+  });
+  it("does not convert a successful finish into cancellation after a false cancellation receipt", async () => {
+    const { result } = renderHook(() => useScriptRun(), {
+      wrapper: toastWrapper,
+    });
+    const id = await startRun(result);
+    mocks.invoke.mockResolvedValueOnce(false);
+    await act(async () => result.current.cancel());
+    expect(
+      mocks.toast.update.mock.calls.filter(([, patch]) => patch.type),
+    ).toHaveLength(0);
+    act(() => finished(id));
+    expect(result.current.status).toBe("finished");
+    expect(mocks.toast.update).toHaveBeenLastCalledWith(
+      "ssh-run-toast",
+      expect.objectContaining({ type: "success" }),
+    );
+  });
+  it("does not claim cancellation when the request was rejected", async () => {
+    const { result } = renderHook(() => useScriptRun(), {
+      wrapper: toastWrapper,
+    });
+    const id = await startRun(result);
+    mocks.invoke.mockRejectedValueOnce(
+      new Error("private cancellation failure"),
+    );
+    await act(async () => {
+      await expect(result.current.cancel()).rejects.toThrow(
+        "private cancellation failure",
+      );
+    });
+    expect(
+      mocks.toast.update.mock.calls.filter(([, patch]) => patch.type),
+    ).toHaveLength(0);
+    act(() => finished(id));
+    expect(result.current.status).toBe("finished");
+    expect(mocks.toast.update).toHaveBeenLastCalledWith(
+      "ssh-run-toast",
+      expect.objectContaining({ type: "success" }),
+    );
+  });
+  it("shows a safe failed-start notification and does not duplicate active runs", async () => {
+    const { result } = renderHook(() => useScriptRun(), {
+      wrapper: toastWrapper,
+    });
+    await startRun(result);
+    await act(async () => {
+      await expect(
+        result.current.start("sess-1", "private script body"),
+      ).rejects.toThrow(/already running/);
+    });
+    expect(mocks.toast.loading).toHaveBeenCalledOnce();
+    act(() => result.current.reset());
+    mocks.invoke.mockRejectedValueOnce(new Error("private upload diagnostic"));
+    await act(async () => {
+      await expect(
+        result.current.start("sess-1", "private script body"),
+      ).rejects.toThrow();
+    });
+    expect(mocks.toast.update).toHaveBeenLastCalledWith(
+      "ssh-run-toast",
+      expect.objectContaining({
+        type: "error",
+        message: expect.stringMatching(/may already have run/),
+      }),
+    );
+    expect(JSON.stringify(mocks.toast.update.mock.calls)).not.toContain(
+      "private upload diagnostic",
+    );
+    expect(JSON.stringify(mocks.toast.update.mock.calls)).not.toContain(
+      "private script body",
+    );
+  });
   it("starts via execute_script_stream and subscribes before invoking", async () => {
     const { result } = renderHook(() => useScriptRun());
     expect(result.current.status).toBe("idle");

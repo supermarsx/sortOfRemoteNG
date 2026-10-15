@@ -76,6 +76,12 @@ function fixture(
   const confirm = vi.fn(async (_review: unknown) => true);
   const nativeConfirm = vi.spyOn(window, "confirm").mockReturnValue(true);
   const toastError = vi.fn();
+  const scriptDeploymentToastRef = {
+    current: null as {
+      id: string;
+      toast: { remove: (id: string) => void };
+    } | null,
+  };
   const closeScriptSelector = vi.fn();
   const closeScriptSelectorForRun = vi.fn();
   const setShowMacroList = vi.fn();
@@ -85,6 +91,13 @@ function fixture(
     isSshReady: { current: true },
     isConnecting: { current: false },
     scriptRunBusyRef: { current: false },
+    scriptDeploymentToastRef,
+    removeScriptDeploymentToast: () => {
+      const pending = scriptDeploymentToastRef.current;
+      scriptDeploymentToastRef.current = null;
+      pending?.toast.remove(pending.id);
+    },
+    isDisposed: { current: false },
     macroReplayBusyRef: { current: false },
     replayAbortRef: { current: null },
     sessionRef,
@@ -113,7 +126,14 @@ function fixture(
     termRef: { current: null },
     safeWrite: vi.fn(),
     formatErrorDetails: () => ({ message: "PRIVATE_ERROR" }),
-    toastRef: { current: { error: toastError } },
+    toastRef: {
+      current: {
+        error: toastError,
+        loading: vi.fn(() => "script-deployment"),
+        update: vi.fn(),
+        remove: vi.fn(),
+      },
+    },
     setShowMacroList,
     setReplayingMacro: vi.fn(),
   };

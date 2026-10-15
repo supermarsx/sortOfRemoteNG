@@ -331,6 +331,7 @@ describe("ScriptDetailView", () => {
           "backend-1",
           expect.stringContaining("echo Hello World"),
           "bash",
+          script.name,
         );
       });
     });
@@ -359,6 +360,7 @@ describe("ScriptDetailView", () => {
           "backend-1",
           "echo hello",
           "bash",
+          script.name,
         );
       });
     });
@@ -435,6 +437,7 @@ describe("ScriptDetailView", () => {
           "backend-2",
           expect.any(String),
           "bash",
+          script.name,
         );
       });
     });
@@ -691,6 +694,7 @@ describe("ScriptDetailView", () => {
           expect.any(String),
           expect.any(String),
           "sh",
+          makeScript().name,
         );
       });
     });
@@ -707,6 +711,7 @@ describe("ScriptDetailView", () => {
           expect.any(String),
           expect.any(String),
           "powershell",
+          makeScript().name,
         );
       });
     });
@@ -723,6 +728,7 @@ describe("ScriptDetailView", () => {
           expect.any(String),
           expect.any(String),
           "bash",
+          makeScript().name,
         );
       });
     });

@@ -60,7 +60,7 @@ function ScriptDetailView({ mgr }: { mgr: ScriptManagerMgr }) {
       const content = lines.join("\n");
 
       try {
-        await startRun(backendSessionId, content, interpreter);
+        await startRun(backendSessionId, content, interpreter, script.name);
       } catch {
         // The hook already surfaces the rejection as status "failed" + error.
       }

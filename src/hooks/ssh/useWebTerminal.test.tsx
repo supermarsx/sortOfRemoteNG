@@ -166,6 +166,9 @@ const mocks = vi.hoisted(() => {
       info: vi.fn(),
       success: vi.fn(),
       warning: vi.fn(),
+      loading: vi.fn(() => "ssh-deployment-toast"),
+      update: vi.fn(),
+      remove: vi.fn(),
     });
   const toast = createToast();
   const toastContext = { current: toast };
@@ -433,6 +436,9 @@ beforeEach(() => {
   mocks.toast.info.mockClear();
   mocks.toast.success.mockClear();
   mocks.toast.warning.mockClear();
+  mocks.toast.loading.mockClear();
+  mocks.toast.update.mockClear();
+  mocks.toast.remove.mockClear();
   mocks.toastContext.current = mocks.toast;
   mocks.clipboard.readText.mockReset();
   mocks.clipboard.readText.mockResolvedValue("");
@@ -3705,6 +3711,130 @@ describe("useWebTerminal run prompts", () => {
     await waitFor(() => expect(terminal.element).not.toBeNull());
     return { view, model: () => model as unknown as WebTerminalMgr, terminal };
   };
+
+  it.each([0, 7])(
+    "shows deployment progress until remote script exit %s",
+    async (exitCode) => {
+      mocks.settingsContext.settings.sessionQuickActions = {
+        confirmBeforeScriptRun: false,
+      };
+      const base = mocks.invoke.getMockImplementation()!;
+      let finish!: (result: unknown) => void;
+      mocks.invoke.mockImplementation((command: string, args?: unknown) =>
+        command === "execute_script"
+          ? new Promise((resolve) => {
+              finish = resolve;
+            })
+          : base(command, args),
+      );
+      const t = await mountTerminal();
+      let running!: Promise<void>;
+      act(() => {
+        running = t
+          .model()
+          .runScript(promptScript({ script: "echo one\necho two" }));
+      });
+      await waitFor(() => expect(finish).toBeTypeOf("function"));
+      expect(mocks.toast.loading).toHaveBeenCalledWith(
+        expect.stringContaining("Disk usage"),
+      );
+      expect(
+        mocks.toast.update.mock.calls.some(([, patch]) => patch.type),
+      ).toBe(false);
+      await act(async () => {
+        finish({ stdout: "private-output", stderr: "private-error", exitCode });
+        await running;
+      });
+      expect(mocks.toast.update).toHaveBeenLastCalledWith(
+        "ssh-deployment-toast",
+        expect.objectContaining({
+          type: exitCode === 0 ? "success" : "error",
+          message:
+            exitCode === 0
+              ? expect.stringContaining("completed successfully")
+              : expect.stringContaining("exit code 7"),
+        }),
+      );
+      expect(JSON.stringify(mocks.toast.update.mock.calls)).not.toMatch(
+        /private-output|private-error/,
+      );
+      t.view.unmount();
+    },
+  );
+
+  it("reports a one-line script as submitted rather than completed", async () => {
+    mocks.settingsContext.settings.sessionQuickActions = {
+      confirmBeforeScriptRun: false,
+    };
+    const t = await mountTerminal();
+    await act(() => t.model().runScript(promptScript()));
+    expect(mocks.toast.update).toHaveBeenLastCalledWith(
+      "ssh-deployment-toast",
+      expect.objectContaining({
+        type: "info",
+        message: expect.stringContaining("Completion is not confirmed"),
+      }),
+    );
+    t.view.unmount();
+  });
+
+  it("reports a rejected shell submission without claiming nothing ran", async () => {
+    mocks.settingsContext.settings.sessionQuickActions = {
+      confirmBeforeScriptRun: false,
+    };
+    const base = mocks.invoke.getMockImplementation()!;
+    mocks.invoke.mockImplementation((command: string, args?: unknown) =>
+      command === "send_ssh_input"
+        ? Promise.reject(new Error("private-dispatch-error"))
+        : base(command, args),
+    );
+    const t = await mountTerminal();
+    await act(() => t.model().runScript(promptScript()));
+    expect(mocks.toast.update).toHaveBeenLastCalledWith(
+      "ssh-deployment-toast",
+      expect.objectContaining({
+        type: "error",
+        message: expect.stringContaining("submission could not be confirmed"),
+      }),
+    );
+    expect(JSON.stringify(mocks.toast.update.mock.calls)).not.toContain(
+      "private-dispatch-error",
+    );
+    t.view.unmount();
+  });
+
+  it("removes pending deployment feedback on unmount and suppresses a late result", async () => {
+    mocks.settingsContext.settings.sessionQuickActions = {
+      confirmBeforeScriptRun: false,
+    };
+    const base = mocks.invoke.getMockImplementation()!;
+    let finish!: (result: unknown) => void;
+    mocks.invoke.mockImplementation((command: string, args?: unknown) =>
+      command === "execute_script"
+        ? new Promise((resolve) => {
+            finish = resolve;
+          })
+        : base(command, args),
+    );
+    const t = await mountTerminal();
+    let running!: Promise<void>;
+    act(() => {
+      running = t
+        .model()
+        .runScript(promptScript({ script: "echo one\necho two" }));
+    });
+    await waitFor(() => expect(finish).toBeTypeOf("function"));
+    t.view.unmount();
+    expect(mocks.toast.remove).toHaveBeenCalledWith("ssh-deployment-toast");
+    await act(async () => {
+      finish({ stdout: "", stderr: "", exitCode: 0 });
+      await running;
+    });
+    expect(mocks.toast.update.mock.calls.some(([, patch]) => patch.type)).toBe(
+      false,
+    );
+    expect(mocks.toast.error).not.toHaveBeenCalled();
+  });
 
   type Kind = "script" | "macro" | "paste";
   const KINDS: Kind[] = ["script", "macro", "paste"];

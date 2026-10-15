@@ -624,6 +624,27 @@ export function useWebTerminal(
   // between, so a second trigger must not start a second replay.
   const macroReplayBusyRef = useRef(false);
   const scriptRunBusyRef = useRef(false);
+  const scriptDeploymentToastRef = useRef<{
+    id: string;
+    toast: typeof toast;
+    assertCurrent: () => void;
+  } | null>(null);
+  const removeScriptDeploymentToast = useCallback(() => {
+    const pending = scriptDeploymentToastRef.current;
+    scriptDeploymentToastRef.current = null;
+    if (pending) pending.toast.remove(pending.id);
+  }, []);
+  useEffect(
+    () => () => removeScriptDeploymentToast(),
+    [removeScriptDeploymentToast],
+  );
+  useEffect(() => {
+    try {
+      scriptDeploymentToastRef.current?.assertCurrent();
+    } catch {
+      removeScriptDeploymentToast();
+    }
+  }, [session, status, removeScriptDeploymentToast]);
   const macroListRef = useRef<HTMLDivElement>(null);
 
   /* ── Run prompts: script run, macro replay, risky paste ── */
@@ -3024,6 +3045,27 @@ export function useWebTerminal(
       let activityContext: SessionActivityContext | undefined;
       let activityStarted = false;
       let activityFinished = false;
+      let deploymentStarted = false;
+      let assertDeploymentCurrent: (() => void) | undefined;
+      const label = `SSH script “${script.name.replace(/\s+/g, " ").trim().slice(0, 80)}”`;
+      const finishDeployment = (
+        type: "success" | "error" | "info",
+        message: string,
+      ) => {
+        const pending = scriptDeploymentToastRef.current;
+        if (!pending) return;
+        try {
+          pending.assertCurrent();
+          scriptDeploymentToastRef.current = null;
+          pending.toast.update(pending.id, {
+            type,
+            message,
+            duration: type === "error" ? 8000 : 5000,
+          });
+        } catch {
+          removeScriptDeploymentToast();
+        }
+      };
       const activityStart = performance.now();
       const activityResult = (code: "dispatched" | "completed" | "failed") => {
         if (!activityStarted || activityFinished) return;
@@ -3034,6 +3076,7 @@ export function useWebTerminal(
       };
       try {
         const assertCurrent = captureQuickActionSession();
+        assertDeploymentCurrent = assertCurrent;
         const reviewed = structuredClone(script);
         const assertLibrary = assertReviewed ?? reviewScript(reviewed);
         // Built before the review: the text that is shown is the text sent.
@@ -3053,6 +3096,13 @@ export function useWebTerminal(
         )
           return;
         assertCurrent();
+        const runToast = toastRef.current;
+        scriptDeploymentToastRef.current = {
+          id: runToast.loading(`Verifying ${label}…`),
+          toast: runToast,
+          assertCurrent,
+        };
+        deploymentStarted = true;
         await assertLibrary();
         assertCurrent();
         // The run goes ahead: the picker makes way for the terminal before
@@ -3071,6 +3121,13 @@ export function useWebTerminal(
         activityStarted = true;
         recordSessionActivity(activityContext, "ssh_script", "started");
         const isSingleLine = lines.length === 1;
+        const pending = scriptDeploymentToastRef.current;
+        if (pending)
+          pending.toast.update(pending.id, {
+            message: isSingleLine
+              ? `Submitting ${label} to the shell…`
+              : `Deploying and running ${label}…`,
+          });
         const recordExecution = (
           execution: Omit<
             CommandExecution,
@@ -3100,6 +3157,10 @@ export function useWebTerminal(
               data: command + "\n",
             });
             activityResult("dispatched");
+            finishDeployment(
+              "info",
+              `${label} submitted to the shell. Completion is not confirmed.`,
+            );
             recordExecution({
               status: "pending",
               evidence: "dispatch-accepted",
@@ -3108,6 +3169,10 @@ export function useWebTerminal(
           } catch (dispatchError) {
             activityResult("failed");
             assertCurrent();
+            finishDeployment(
+              "error",
+              `${label} submission could not be confirmed. It was not retried; check the remote shell before running it again.`,
+            );
             recordExecution({
               status: "cancelled",
               evidence: "dispatch-failed",
@@ -3137,6 +3202,12 @@ export function useWebTerminal(
             });
             activityResult(result.exitCode === 0 ? "completed" : "failed");
             assertCurrent();
+            finishDeployment(
+              result.exitCode === 0 ? "success" : "error",
+              result.exitCode === 0
+                ? `${label} completed successfully.`
+                : `${label} failed with exit code ${result.exitCode}. Review the terminal output.`,
+            );
             const completedAt = new Date().toISOString();
             recordExecution({
               status: result.exitCode === 0 ? "success" : "error",
@@ -3176,6 +3247,7 @@ export function useWebTerminal(
                 "Execution could not be confirmed; the script was not retried.",
               executedAt: new Date().toISOString(),
             });
+            removeScriptDeploymentToast();
             toastRef.current.error(
               "Script execution could not be confirmed. It was not retried; inspect the remote state before running it again.",
             );
@@ -3183,10 +3255,18 @@ export function useWebTerminal(
         }
       } catch {
         activityResult("failed");
+        removeScriptDeploymentToast();
+        try {
+          if (deploymentStarted) assertDeploymentCurrent?.();
+          if (isDisposed.current) return;
+        } catch {
+          return;
+        }
         toastRef.current.error(
           "The SSH action was cancelled or its session is no longer ready. No automatic retry was performed.",
         );
       } finally {
+        removeScriptDeploymentToast();
         scriptRunBusyRef.current = false;
       }
     },
@@ -3199,6 +3279,7 @@ export function useWebTerminal(
       safeWrite,
       captureQuickActionSession,
       reviewScript,
+      removeScriptDeploymentToast,
     ],
   );
 

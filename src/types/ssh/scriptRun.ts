@@ -45,11 +45,7 @@ export interface ScriptFinishedEventPayload {
 }
 
 export type ScriptRunStatus =
-  | "idle"
-  | "running"
-  | "finished"
-  | "failed"
-  | "cancelled";
+  "idle" | "running" | "finished" | "failed" | "cancelled";
 
 export interface ScriptRunChunk {
   stream: ScriptRunStream;
@@ -80,6 +76,8 @@ export interface ScriptRunApi extends ScriptRunState {
     sessionId: string,
     script: string,
     interpreter?: string | null,
+    /** Display only; never sent as script content or execution authority. */
+    displayName?: string,
   ) => Promise<string>;
   /** Ask the backend to cancel the in-flight run (status flips on `finished`). */
   cancel: () => Promise<void>;

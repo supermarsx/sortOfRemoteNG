@@ -1,4 +1,6 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useContext, useEffect, useRef, useState } from "react";
+import { ToastContext } from "../../contexts/ToastContext";
+import type { ToastUpdate } from "../../components/ui/dialogs/Toast";
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import {
@@ -56,6 +58,13 @@ function cancelFrame(handle: FrameHandle): void {
 /** Mutable accumulator for the in-flight run; never read by React directly. */
 interface RunBuffer {
   executionId: string;
+  sessionId: string;
+  notification: {
+    id: string;
+    label: string;
+    update: (id: string, patch: ToastUpdate) => void;
+    remove: (id: string) => void;
+  } | null;
   chunks: ScriptRunChunk[];
   text: string;
   stderrText: string;
@@ -84,6 +93,7 @@ interface RunBuffer {
  */
 export function useScriptRun(): ScriptRunApi {
   const [state, setState] = useState<ScriptRunState>(IDLE_STATE);
+  const notifications = useContext(ToastContext)?.toast;
   const bufferRef = useRef<RunBuffer | null>(null);
   const unlistenRef = useRef<UnlistenFn[]>([]);
   /** Bumped on every teardown so a `listen()` that resolves late is undone. */
@@ -102,6 +112,10 @@ export function useScriptRun(): ScriptRunApi {
       }
     }
     const buf = bufferRef.current;
+    if (buf?.notification) {
+      buf.notification.remove(buf.notification.id);
+      buf.notification = null;
+    }
     if (buf?.frame) {
       cancelFrame(buf.frame);
       buf.frame = null;
@@ -202,6 +216,32 @@ export function useScriptRun(): ScriptRunApi {
 
   const finish = useCallback(
     (buf: RunBuffer, payload: ScriptFinishedEventPayload) => {
+      const notification = buf.notification;
+      if (notification) {
+        buf.notification = null;
+        const cancelled = buf.cancelRequested;
+        const success = !payload.error && payload.exit_code === 0;
+        const failed =
+          !!payload.error ||
+          (typeof payload.exit_code === "number" && payload.exit_code !== 0);
+        notification.update(notification.id, {
+          type: cancelled
+            ? "info"
+            : success
+              ? "success"
+              : failed
+                ? "error"
+                : "info",
+          message: cancelled
+            ? `${notification.label}: cancellation requested. Review the final script output before running again.`
+            : success
+              ? `${notification.label} completed successfully (exit 0).`
+              : failed
+                ? `${notification.label} failed${typeof payload.exit_code === "number" ? ` (exit ${payload.exit_code})` : ""}. Review the script output before retrying.`
+                : `${notification.label} ended without a confirmed exit status. Review the script output before retrying.`,
+          duration: failed ? 7000 : 5000,
+        });
+      }
       teardown();
       // Release the buffer so a new start() is allowed; late events for this
       // execution are ignored because they no longer match bufferRef.
@@ -229,13 +269,21 @@ export function useScriptRun(): ScriptRunApi {
       const [offOutput, offFinished] = await Promise.all([
         listen<ScriptOutputEventPayload>(SCRIPT_OUTPUT_EVENT, (event) => {
           if (bufferRef.current !== buf) return;
-          if (event.payload.execution_id !== buf.executionId) return;
+          if (
+            event.payload.execution_id !== buf.executionId ||
+            event.payload.session_id !== buf.sessionId
+          )
+            return;
           appendChunk(buf, event.payload);
           scheduleFlush(buf);
         }),
         listen<ScriptFinishedEventPayload>(SCRIPT_FINISHED_EVENT, (event) => {
           if (bufferRef.current !== buf) return;
-          if (event.payload.execution_id !== buf.executionId) return;
+          if (
+            event.payload.execution_id !== buf.executionId ||
+            event.payload.session_id !== buf.sessionId
+          )
+            return;
           finish(buf, event.payload);
         }),
       ]);
@@ -251,14 +299,28 @@ export function useScriptRun(): ScriptRunApi {
   );
 
   const start = useCallback<ScriptRunApi["start"]>(
-    async (sessionId, script, interpreter) => {
+    async (sessionId, script, interpreter, displayName) => {
       if (bufferRef.current) {
         throw new Error("A script is already running");
       }
       teardown();
       const executionId = newExecutionId();
+      const name =
+        typeof displayName === "string"
+          ? displayName.replace(/\s+/g, " ").trim().slice(0, 80)
+          : "";
+      const label = `SSH script${name ? ` “${name}”` : ""}`;
       const buf: RunBuffer = {
         executionId,
+        sessionId,
+        notification: notifications
+          ? {
+              id: notifications.loading(`Preparing ${label}…`),
+              label,
+              update: notifications.update,
+              remove: notifications.remove,
+            }
+          : null,
         chunks: [],
         text: "",
         stderrText: "",
@@ -281,6 +343,9 @@ export function useScriptRun(): ScriptRunApi {
         if (bufferRef.current !== buf) {
           throw new Error("Script run aborted before start");
         }
+        buf.notification?.update(buf.notification.id, {
+          message: `Uploading and starting ${label}…`,
+        });
         const accepted = await invoke<string | null | undefined>(
           EXECUTE_SCRIPT_STREAM_COMMAND,
           {
@@ -301,9 +366,21 @@ export function useScriptRun(): ScriptRunApi {
             setState((prev) => ({ ...prev, executionId: finalId }));
           }
         }
+        if (bufferRef.current === buf && buf.notification)
+          buf.notification.update(buf.notification.id, {
+            message: `${label} accepted. Waiting for remote completion…`,
+          });
         return finalId;
       } catch (err) {
         if (bufferRef.current === buf) {
+          if (buf.notification) {
+            buf.notification.update(buf.notification.id, {
+              type: "error",
+              message: `${label} could not be confirmed started. It may already have run; check the terminal before retrying.`,
+              duration: 7000,
+            });
+            buf.notification = null;
+          }
           bufferRef.current = null;
           teardown();
           const message = err instanceof Error ? err.message : String(err);
@@ -314,16 +391,32 @@ export function useScriptRun(): ScriptRunApi {
         throw err;
       }
     },
-    [subscribe, teardown],
+    [notifications, subscribe, teardown],
   );
 
   const cancel = useCallback<ScriptRunApi["cancel"]>(async () => {
     const buf = bufferRef.current;
     if (!buf) return;
-    buf.cancelRequested = true;
-    await invoke(CANCEL_SCRIPT_EXECUTION_COMMAND, {
-      executionId: buf.executionId,
-    });
+    try {
+      const accepted = await invoke<boolean>(CANCEL_SCRIPT_EXECUTION_COMMAND, {
+        executionId: buf.executionId,
+      });
+      if (bufferRef.current === buf) {
+        if (accepted === true) buf.cancelRequested = true;
+        buf.notification?.update(buf.notification.id, {
+          message:
+            accepted === true
+              ? `${buf.notification.label}: cancellation requested; waiting for the remote execution to end…`
+              : `${buf.notification.label}: cancellation was not accepted. Waiting for the final execution result…`,
+        });
+      }
+    } catch (error) {
+      if (bufferRef.current === buf && buf.notification)
+        buf.notification.update(buf.notification.id, {
+          message: `${buf.notification.label}: cancellation could not be confirmed. The script may still be running.`,
+        });
+      throw error;
+    }
   }, []);
 
   const reset = useCallback(() => {
