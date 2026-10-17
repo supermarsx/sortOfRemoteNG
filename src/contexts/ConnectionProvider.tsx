@@ -13,6 +13,10 @@ import {
 } from "../utils/connection/databaseManager";
 import { registerCloudSyncDatabaseBarrier } from "../utils/services/cloudSyncDatabaseBarrier";
 import {
+  assertArchiveDependencyRefresh,
+  mergeArchiveDependencyRows,
+} from "../utils/connection/archiveDependencyRefresh";
+import {
   applyBrowserSessionProjection,
   browserSessionProjectionKey,
 } from "../utils/connection/browserSessionProjection";
@@ -492,6 +496,7 @@ export const ConnectionProvider: React.FC<{ children: React.ReactNode }> = ({
   }> | null>(null);
   const automationBusyRef = useRef(false);
   const cloudSyncBusyRef = useRef(false);
+  const dependencyRepairRef = useRef<Promise<void> | null>(null);
   const automationFaultRef = useRef(false);
   const documentsBusyRef = useRef(false);
   const documentsFaultRef = useRef(false);
@@ -840,7 +845,8 @@ export const ConnectionProvider: React.FC<{ children: React.ReactNode }> = ({
       const currentState = stateRef.current;
       const nextState = connectionReducer(currentState, action);
       if (
-        (databaseRowsRevokedRef.current || cloudSyncBusyRef.current) &&
+        (databaseRowsRevokedRef.current ||
+          (cloudSyncBusyRef.current && !dependencyRepairRef.current)) &&
         (nextState.connections !== currentState.connections ||
           nextState.tabGroups !== currentState.tabGroups ||
           nextState.recycleBinData !== currentState.recycleBinData ||
@@ -1015,6 +1021,7 @@ export const ConnectionProvider: React.FC<{ children: React.ReactNode }> = ({
       clearTimeout(saveTimerRef.current);
       saveTimerRef.current = null;
     }
+    if (dependencyRepairRef.current) await dependencyRepairRef.current;
 
     // A projection refresh never flushes drafts. Saves wait until its narrow
     // baseline advance and pending-snapshot patch have completed instead.
@@ -1367,7 +1374,7 @@ export const ConnectionProvider: React.FC<{ children: React.ReactNode }> = ({
 
   useLayoutEffect(
     () =>
-      registerCloudSyncDatabaseBarrier(async (ids, restore) => {
+      registerCloudSyncDatabaseBarrier(async (ids, restore, intent) => {
         const owner = databaseManager.getCurrentDatabase()?.id;
         if (!owner || !ids.includes(owner)) return async () => {};
         if (
@@ -1390,9 +1397,12 @@ export const ConnectionProvider: React.FC<{ children: React.ReactNode }> = ({
         const target = activeDatabaseTargetRef.current;
         const generation = loadGenerationRef.current;
         const stillOwnsBarrier = () =>
+          mountedRef.current &&
           databaseManager.getCurrentDatabase()?.id === owner &&
           activeDatabaseTargetRef.current === target &&
           loadGenerationRef.current === generation;
+        let settleRepair: (() => void) | undefined;
+        let repairWait: Promise<void> | undefined;
         if (restore) {
           databaseRowsRevokedRef.current = true;
           recycleLoadingRef.current = true;
@@ -1402,7 +1412,67 @@ export const ConnectionProvider: React.FC<{ children: React.ReactNode }> = ({
         const release = async () => {
           try {
             if (!stillOwnsBarrier()) return;
-            if (restore) {
+            if (intent?.kind === "dependency-repair") {
+              try {
+                target?.assertAccessible?.();
+                if (intent.uncertain)
+                  throw new Error("Dependency repair outcome is uncertain.");
+                if (intent.receipt) {
+                  const { before, after } = intent.receipt;
+                  assertArchiveDependencyRefresh(owner, before, after);
+                  const rows = mergeArchiveDependencyRows(
+                    before,
+                    after,
+                    connectionsRef.current,
+                  );
+                  const pending = pendingSnapshotRef.current;
+                  const pendingRows =
+                    pending?.target === target
+                      ? mergeArchiveDependencyRows(
+                          before,
+                          after,
+                          pending.data.connections,
+                        )
+                      : undefined;
+                  if (!target?.adoptDependencyRepair)
+                    throw new Error(
+                      "Dependency repair refresh is unavailable.",
+                    );
+                  const committed = target.adoptDependencyRepair(before, after);
+                  // Only the proven fields advance. Session state and access generations stay live.
+                  loadedStorageRef.current = {
+                    ...loadedStorageRef.current!,
+                    automationLibrary: committed.automationLibrary,
+                    recordMetadata: committed.recordMetadata,
+                  };
+                  connectionsRef.current = rows;
+                  stateRef.current = { ...stateRef.current, connections: rows };
+                  if (pending?.target === target && pendingRows)
+                    pendingSnapshotRef.current = {
+                      ...pending,
+                      data: {
+                        ...pending.data,
+                        connections: pendingRows,
+                        automationLibrary: committed.automationLibrary,
+                        recordMetadata: committed.recordMetadata,
+                      },
+                    };
+                  baseDispatch({ type: "SET_CONNECTIONS", payload: rows });
+                  setAutomationChangeRevision((value) => value + 1);
+                }
+              } catch {
+                automationFaultRef.current = true;
+                setPersistence((current) => ({
+                  ...current,
+                  saving: false,
+                  error:
+                    "Dependency copies may have been saved, but the editor could not refresh safely. Reload before saving.",
+                }));
+                throw new Error(
+                  "Dependency repair refresh could not be verified. Reload before saving.",
+                );
+              }
+            } else if (restore) {
               if (!(await loadData(owner)))
                 throw new Error("Cloud restore refresh was superseded.");
             } else {
@@ -1421,6 +1491,9 @@ export const ConnectionProvider: React.FC<{ children: React.ReactNode }> = ({
               }
             }
           } finally {
+            if (dependencyRepairRef.current === repairWait)
+              dependencyRepairRef.current = null;
+            settleRepair?.();
             cloudSyncBusyRef.current = false;
           }
         };
@@ -1428,6 +1501,12 @@ export const ConnectionProvider: React.FC<{ children: React.ReactNode }> = ({
           await flushPendingSave();
           if (!stillOwnsBarrier())
             throw new Error("Database changed while preparing cloud sync.");
+          if (intent?.kind === "dependency-repair") {
+            repairWait = new Promise<void>((resolve) => {
+              settleRepair = resolve;
+            });
+            dependencyRepairRef.current = repairWait;
+          }
           return release;
         } catch (error) {
           cloudSyncBusyRef.current = false;

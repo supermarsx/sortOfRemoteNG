@@ -37,6 +37,7 @@ vi.mock("../../src/utils/connection/databaseManager", () => ({
   DatabaseManager: {
     getInstance: () => ({
       getCurrentDatabase: () => ({ id: "source-db" }),
+      captureDatabaseRepairGuard: () => () => {},
       getExportableDatabases: async () => [
         {
           id: "source-db",
@@ -49,6 +50,11 @@ vi.mock("../../src/utils/connection/databaseManager", () => ({
       restoreCloudSyncArchive: state.restore,
     }),
   },
+}));
+// These scenarios exercise diagnostics that remain unresolved after a safe
+// repair pass. Actual copying/CAS and retries have dedicated integration tests.
+vi.mock("../../src/utils/services/cloudSyncDependencyRepair", () => ({
+  repairCloudSyncArchiveDependencies: async () => 0,
 }));
 vi.mock("../../src/utils/tauri/invoke", () => ({
   getInvoke: async () => state.invoke,

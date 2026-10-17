@@ -1,4 +1,5 @@
 import { acquireCloudSyncDatabaseBarrier } from "../services/cloudSyncDatabaseBarrier";
+import { assertArchiveDependencyRefresh } from "./archiveDependencyRefresh";
 import {
   Connection,
   ConnectionDatabase,
@@ -398,6 +399,11 @@ export interface DatabaseDataTarget {
   verifyCurrent?: () => Promise<void>;
   /** Lease-checked read without advancing any writer's persisted CAS baseline. */
   readCurrent?: () => Promise<StorageData | null>;
+  /** Adopt only an exact owned dependency-repair CAS, retaining this access lease. */
+  adoptDependencyRepair?: (
+    before: StorageData,
+    after: StorageData,
+  ) => StorageData;
   /** Native-only descriptor refresh; never adopts external edits or creates ledger history. */
   refreshBrowserSessionProjection?: () => Promise<
     Pick<StorageData, "browserSessions" | "recordMetadata">
@@ -1318,6 +1324,17 @@ export class DatabaseManager {
     }
   }
   private readonly loadedRepresentations = new WeakMap<StorageData, unknown>();
+  private readonly dependencyRepairCommits = new WeakMap<
+    StorageData,
+    {
+      databaseId: string;
+      before: StorageData;
+      after: StorageData;
+      reviewedBefore: StorageData;
+      reviewedAfter: StorageData;
+      ledger: RecordLedger;
+    }
+  >();
   private readonly latestLoadedRepresentations = new Map<string, unknown>();
   private readonly loadedRecordBaselines = new WeakMap<
     StorageData,
@@ -1892,6 +1909,17 @@ export class DatabaseManager {
       revision === this.operationSelectionRevision;
   }
 
+  /** Observation fence only: does not load, unlock or grant database access. */
+  captureDatabaseRepairGuard(databaseId: string): () => void {
+    const selectionCurrent = this.captureStartupRestoreGuard();
+    const epoch = this.captureDatabaseEpoch(databaseId);
+    return () => {
+      if (!selectionCurrent())
+        throw new Error("Database selection changed during sync preparation.");
+      this.assertDatabaseEpoch(databaseId, epoch);
+    };
+  }
+
   /** Reuses normal access/CAS checks without switching the tree for side databases. */
   async restoreDatabase(
     id: string,
@@ -2248,6 +2276,41 @@ export class DatabaseManager {
           expectedData = this.loadedRepresentations.get(data);
           recordBaseline = this.loadedRecordBaselines.get(data);
         });
+      },
+      adoptDependencyRepair: (before, after) => {
+        resolvePassword();
+        const receipt = this.dependencyRepairCommits.get(after);
+        const source = receipt?.before;
+        const committed = receipt?.after;
+        const ledger = receipt?.ledger;
+        if (
+          receipt?.databaseId !== databaseId ||
+          !source ||
+          !committed ||
+          !ledger ||
+          stableJsonStringify(source) !== stableJsonStringify(expectedData)
+        )
+          throw new Error(
+            "The dependency repair writer baseline changed. Reload before saving.",
+          );
+        if (
+          stableJsonStringify(before) !==
+            stableJsonStringify(receipt.reviewedBefore) ||
+          stableJsonStringify(after) !==
+            stableJsonStringify(receipt.reviewedAfter)
+        )
+          throw new Error(
+            "The dependency repair receipt was modified. Reload before saving.",
+          );
+        if (
+          stableJsonStringify(this.loadedRepresentations.get(before)) !==
+          stableJsonStringify(source)
+        )
+          throw new Error("The dependency repair source receipt changed.");
+        assertArchiveDependencyRefresh(databaseId, source, committed);
+        expectedData = structuredClone(committed);
+        recordBaseline = ledger;
+        return structuredClone(committed) as StorageData;
       },
     };
   }
@@ -3897,6 +3960,8 @@ export class DatabaseManager {
     expected: StorageData,
     replacement: StorageData,
   ): Promise<void> {
+    const reviewedBefore = structuredClone(expected);
+    const reviewedAfter = structuredClone(replacement);
     const baseline = this.loadedRepresentations.get(expected);
     if (baseline === undefined)
       throw new Error(
@@ -3913,6 +3978,17 @@ export class DatabaseManager {
       { expectedData: baseline },
     );
     this.assertDatabaseEpoch(collectionId, epoch);
+    const committed = this.loadedRepresentations.get(replacement);
+    const ledger = this.loadedRecordBaselines.get(replacement);
+    if (committed && ledger)
+      this.dependencyRepairCommits.set(replacement, {
+        databaseId: collectionId,
+        before: structuredClone(baseline) as StorageData,
+        after: structuredClone(committed) as StorageData,
+        reviewedBefore,
+        reviewedAfter,
+        ledger,
+      });
     try {
       SettingsManager.getInstance().logAction(
         "info",

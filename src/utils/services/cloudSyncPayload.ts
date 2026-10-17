@@ -509,6 +509,20 @@ function excluded(id: string, label: string, config: CloudSyncConfig): boolean {
   });
 }
 
+/** Reuse capture's exact selection and exclusion rules before local repairs. */
+export function canRepairCloudSyncDatabase(
+  config: CloudSyncConfig,
+  database: string,
+  inventory: readonly CloudSyncItem[],
+): boolean {
+  const id = `database:${database}`;
+  const ids = selected(config);
+  const item = inventory.find((candidate) => candidate.id === id);
+  return (
+    ids.has(id) && item?.available === true && !excluded(id, item.label, config)
+  );
+}
+
 async function readItem(
   id: string,
   browserSessionsPassword?: string,
@@ -564,6 +578,11 @@ export interface CloudSyncCaptureOptions {
   assertCurrent?: () => void;
   /** Explicit restore keeps exact transport bytes; never grants hash equivalence. */
   sessionTransferPurpose?: "atomic-restore";
+  /** Actual sync only: preserve the failed local capture's owner/access fence. */
+  onArchiveDependency?: (
+    error: FullDatabaseArchiveError,
+    assertCaptureCurrent: () => void,
+  ) => void;
 }
 
 /** Unlike an export guard, this permits initially locked/nonresident sources. */
@@ -786,7 +805,32 @@ export async function captureCloudSyncPayload(
           `${subject} is unavailable for cloud sync. ${item?.unavailableReason ?? "Review What to sync and select an existing, unlocked artifact."}`,
         );
       }
-      sections[id] = await readItem(id, config.syncEncryptionPassword);
+      // Retain the pre-read access/selection epoch even if normal capture does
+      // not use automatic unlock. A later same-ID unlock must not bless repair.
+      const dependencyGuard =
+        options.onArchiveDependency && databaseId(id)
+          ? manager.captureDatabaseRepairGuard(databaseId(id)!)
+          : undefined;
+      try {
+        sections[id] = await readItem(id, config.syncEncryptionPassword);
+      } catch (error) {
+        assertCurrent();
+        if (
+          options.onArchiveDependency &&
+          databaseId(id) !== undefined &&
+          error instanceof FullDatabaseArchiveError &&
+          error.code === "dependencies" &&
+          error.diagnostics?.databaseId === databaseId(id)
+        ) {
+          const assertDependencyCurrent = () => {
+            assertCurrent();
+            dependencyGuard?.();
+          };
+          assertDependencyCurrent();
+          options.onArchiveDependency?.(error, assertDependencyCurrent);
+        }
+        throw error;
+      }
       assertCurrent();
     }
     const payload = await upgradeCloudSyncPayload(

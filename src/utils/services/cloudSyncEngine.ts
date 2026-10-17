@@ -4,13 +4,18 @@ import type {
 } from "../../types/settings/cloudSyncSettings";
 import { IndexedDbService } from "../storage/indexedDbService";
 import { getInvoke } from "../tauri/invoke";
-import { fullDatabaseArchiveErrorDetail } from "../connection/fullDatabaseArchive";
+import {
+  FullDatabaseArchiveError,
+  fullDatabaseArchiveErrorDetail,
+} from "../connection/fullDatabaseArchive";
+import { repairCloudSyncArchiveDependencies } from "./cloudSyncDependencyRepair";
 import { cloudSyncTargetIdentity } from "./cloudSyncActivity";
 import {
   captureCloudSyncPayload,
   applyCloudSyncPayload,
   upgradeCloudSyncPayload,
   discoverCloudSyncItems,
+  canRepairCloudSyncDatabase,
   type CloudSyncPayload,
 } from "./cloudSyncPayload";
 import {
@@ -62,6 +67,17 @@ class LocalSyncEdit extends CloudSyncConflict {
   }
 }
 
+// Only the initial local capture may request repair. The same archive error
+// during remote validation or comparison must never cause a local mutation.
+class LocalArchiveDependency extends Error {
+  constructor(
+    readonly archiveError: FullDatabaseArchiveError,
+    readonly assertCaptureCurrent: () => void,
+  ) {
+    super(archiveError.message);
+  }
+}
+
 /** Serialize application mutations across providers, and across desktop windows. */
 let queue: Promise<unknown> = Promise.resolve();
 export function serializeCloudSync<T>(operation: () => Promise<T>): Promise<T> {
@@ -108,6 +124,7 @@ async function readSyncState(
   readOnly = false,
   identity = cloudSyncTargetIdentity(target.id),
   allowAutoUnlock = !readOnly,
+  allowDependencyRepair = false,
 ) {
   const ensureIdentity = () => {
     if (identity !== cloudSyncTargetIdentity(target.id))
@@ -132,6 +149,24 @@ async function readSyncState(
   const original = await captureCloudSyncPayload(config, {
     allowAutoUnlock,
     assertCurrent: ensureIdentity,
+    ...(allowDependencyRepair && !readOnly
+      ? {
+          onArchiveDependency: (
+            error: FullDatabaseArchiveError,
+            assertCaptureCurrent: () => void,
+          ) => {
+            const diagnostics = error.diagnostics!;
+            if (
+              diagnostics.totalIssues <= diagnostics.issues.length &&
+              !diagnostics.issues.some(
+                (issue) => issue.reason === "external-script",
+              )
+            )
+              return;
+            throw new LocalArchiveDependency(error, assertCaptureCurrent);
+          },
+        }
+      : {}),
   });
   ensureIdentity();
   if (!Object.keys(original.sections).length)
@@ -440,6 +475,7 @@ async function syncAttempt(
   resolution?: CloudSyncReviewedResolution,
   requestIdentity = cloudSyncTargetIdentity(target.id),
   allowAutoUnlock = true,
+  allowDependencyRepair = false,
 ): Promise<string> {
   const state = await readSyncState(
     target,
@@ -447,6 +483,7 @@ async function syncAttempt(
     false,
     requestIdentity,
     allowAutoUnlock && !resolution,
+    allowDependencyRepair && !resolution,
   );
   const {
     invoke,
@@ -620,20 +657,115 @@ export async function runCloudSync(
   resolution?: CloudSyncReviewedResolution,
   requestIdentity = cloudSyncTargetIdentity(target.id),
 ): Promise<string> {
-  // A normal edit during a slow read is not a data conflict. Re-capture and
-  // re-plan once, but never replay explicit review decisions or partial writes.
-  for (let attempt = 0; ; attempt++) {
+  const repairedDatabases = new Set<string>();
+  let repaired = 0;
+  let localEditRetries = 0;
+  let firstAttempt = true;
+  const configSnapshot = canonicalSyncJson(config);
+  const assertCurrent = () => {
+    if (
+      requestIdentity !== cloudSyncTargetIdentity(target.id) ||
+      configSnapshot !== canonicalSyncJson(config)
+    )
+      throw new CloudSyncConflict(
+        "Sync settings changed during dependency repair. Retry with the current settings.",
+      );
+  };
+  const repairSummary = () =>
+    `Automatically copied and rebound ${repaired} script or macro ${repaired === 1 ? "reference" : "references"} in the owning database. `;
+  // Each selected database gets at most one local transaction. A normal edit
+  // may separately re-plan once; explicit review decisions are never replayed.
+  for (;;) {
     try {
-      return await syncAttempt(
+      const result = await syncAttempt(
         target,
         config,
         resolution,
         requestIdentity,
-        attempt === 0,
+        firstAttempt,
+        !resolution,
       );
+      return repaired ? repairSummary() + result : result;
     } catch (error) {
-      if (!(error instanceof LocalSyncEdit) || resolution || attempt >= 1)
-        throw error;
+      firstAttempt = false;
+      let failure: unknown = error;
+      try {
+        if (error instanceof LocalArchiveDependency) {
+          failure = error.archiveError;
+          const databaseId = error.archiveError.diagnostics?.databaseId;
+          if (!databaseId) throw error.archiveError;
+          if (!resolution && !repairedDatabases.has(databaseId)) {
+            const assertRepairCurrent = () => {
+              assertCurrent();
+              error.assertCaptureCurrent();
+            };
+            assertRepairCurrent();
+            const inventory = await discoverCloudSyncItems({
+              includeSizes: false,
+            });
+            assertRepairCurrent();
+            if (canRepairCloudSyncDatabase(config, databaseId, inventory)) {
+              repairedDatabases.add(databaseId);
+              const count = await repairCloudSyncArchiveDependencies(
+                databaseId,
+                assertRepairCurrent,
+              );
+              repaired += count;
+              assertRepairCurrent();
+              if (count > 0) continue;
+            }
+          }
+        } else if (
+          error instanceof LocalSyncEdit &&
+          !resolution &&
+          localEditRetries++ < 1
+        )
+          continue;
+      } catch (repairError) {
+        failure =
+          error instanceof LocalArchiveDependency
+            ? Object.assign(
+                new Error(
+                  (repairError instanceof Error
+                    ? repairError.message
+                    : "Automatic dependency repair did not finish.") +
+                    fullDatabaseArchiveErrorDetail(error.archiveError),
+                ),
+                {
+                  cause: error.archiveError,
+                  ...(repairError instanceof Error && "kind" in repairError
+                    ? { kind: repairError.kind }
+                    : {}),
+                },
+              )
+            : repairError;
+        if (
+          repairError instanceof Error &&
+          "repairedCount" in repairError &&
+          Number.isSafeInteger(repairError.repairedCount) &&
+          Number(repairError.repairedCount) > 0
+        )
+          repaired += Number(repairError.repairedCount);
+      }
+      if (repaired) {
+        const message =
+          failure instanceof Error ? failure.message : "Sync did not finish.";
+        throw Object.assign(
+          new Error(
+            repairSummary() +
+              "Local repairs were saved, but sync did not complete. " +
+              message,
+          ),
+          {
+            kind:
+              failure instanceof Error && "kind" in failure
+                ? failure.kind
+                : "partial",
+            cause: failure,
+          },
+        );
+      }
+      throw failure;
     }
   }
 }

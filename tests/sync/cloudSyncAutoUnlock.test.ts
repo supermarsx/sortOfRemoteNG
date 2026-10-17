@@ -42,6 +42,17 @@ vi.mock("../../src/utils/connection/databaseManager", () => ({
         const generation = fixture.generation;
         return () => generation === fixture.generation;
       },
+      captureDatabaseRepairGuard: (id: string) => {
+        const generation = fixture.generation;
+        const epoch = fixture.states.get(id)?.accessEpoch;
+        return () => {
+          if (
+            generation !== fixture.generation ||
+            epoch !== fixture.states.get(id)?.accessEpoch
+          )
+            throw new Error("Database access changed during cloud capture");
+        };
+      },
       onDatabaseAccessChange: (
         listener: (state: DatabaseAccessState) => void,
       ) => {

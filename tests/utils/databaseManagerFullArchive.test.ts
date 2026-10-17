@@ -202,6 +202,145 @@ async function openPlainDatabase() {
 }
 
 describe("full database manager archive boundary", () => {
+  it("captures a sync repair fence without loading or granting an unopened database", () => {
+    const manager = DatabaseManager.getInstance();
+    const load = vi.spyOn(manager, "loadDatabaseData");
+    const guard = manager.captureDatabaseRepairGuard(collection.id);
+    expect(() => guard()).not.toThrow();
+    expect(load).not.toHaveBeenCalled();
+    expect(manager.isDatabaseUnlocked(collection.id)).toBe(false);
+    expect(() =>
+      manager.captureDatabaseOperationGuard([collection.id]),
+    ).toThrow("no longer available");
+  });
+  it("expires the original repair fence across a managed lock and same-database unlock", async () => {
+    const manager = DatabaseManager.getInstance();
+    const previous = bridge.invoke.getMockImplementation()!;
+    bridge.invoke.mockImplementation(async (command, args) =>
+      command === "database_protection_lock"
+        ? { locked: true, notificationPending: false, warnings: [] }
+        : previous(command, args),
+    );
+    await manager.unlockManagedDatabase(
+      collection.id,
+      "password-slot",
+      "source-unlock",
+    );
+    const guard = manager.captureDatabaseRepairGuard(collection.id);
+    await manager.lockDatabase(collection.id);
+    await manager.unlockManagedDatabase(
+      collection.id,
+      "password-slot",
+      "source-unlock",
+    );
+    expect(manager.isDatabaseUnlocked(collection.id)).toBe(true);
+    expect(() => guard()).toThrow(/access expired/);
+  });
+  it("expires the repair fence when the same database is closed and selected again", async () => {
+    const manager = await openPlainDatabase();
+    const guard = manager.captureDatabaseRepairGuard(collection.id);
+    await manager.closeDatabase(collection.id);
+    await manager.selectDatabase(collection.id);
+    expect(manager.getCurrentDatabase()?.id).toBe(collection.id);
+    expect(() => guard()).toThrow(/selection changed/);
+  });
+  it("automatically repairs a readable foreign quick action through the real sync, archive and database CAS boundaries", async () => {
+    const manager = DatabaseManager.getInstance();
+    const foreignId = "dependency-library";
+    const source = await fullData();
+    const script = source.automationLibrary!.terminalScripts.customScripts[0];
+    script.id = "foreign-shared-script";
+    script.script = "echo portable-dependency";
+    rows.push({
+      ...structuredClone(collection),
+      id: foreignId,
+      name: "Library",
+      securityRevision: "library-revision",
+    });
+    privateData.set(foreignId, source);
+    payloads.set(
+      foreignId,
+      JSON.stringify({
+        format: "sorng-db",
+        version: 1,
+        ciphertext: "opaque-library",
+      }),
+    );
+    const local = privateData.get(collection.id)!;
+    local.connections[1].sshQuickActions = {
+      version: 1,
+      items: [
+        {
+          kind: "script",
+          id: script.id,
+          scope: { kind: "database", databaseId: foreignId },
+        },
+      ],
+    };
+    await manager.unlockManagedDatabase(
+      foreignId,
+      "password-slot",
+      "library-unlock",
+    );
+    await manager.unlockManagedDatabase(
+      collection.id,
+      "password-slot",
+      "source-unlock",
+    );
+    await manager.selectDatabase(collection.id);
+    const sourceBefore = structuredClone(privateData.get(foreignId));
+    const vaultBefore = structuredClone(
+      privateData.get(collection.id)!.credentialVault,
+    );
+    const previous = bridge.invoke.getMockImplementation()!;
+    bridge.invoke.mockImplementation(async (command, args) => {
+      if (command === "cloud_sync_read") return { data: null, revision: null };
+      if (command === "cloud_sync_write") return { revision: "uploaded" };
+      return previous(command, args);
+    });
+    const result = await runCloudSync(
+      {
+        id: "automatic-dependencies",
+        label: "Fixture",
+        enabled: true,
+        provider: "nextcloud",
+      },
+      {
+        ...defaultCloudSyncConfig,
+        selectedItems: [`database:${collection.id}`],
+        encryptBeforeSync: true,
+        syncEncryptionPassword: PASSWORD,
+        compressionEnabled: false,
+      },
+    );
+    expect(result).toMatch(
+      /Automatically copied and rebound 1.*uploaded and verified/,
+    );
+    const repaired = privateData.get(collection.id)!;
+    const reference = repaired.connections[1].sshQuickActions!.items[0];
+    expect(reference.scope).toEqual({
+      kind: "database",
+      databaseId: collection.id,
+    });
+    expect(reference.id).not.toBe(script.id);
+    expect(
+      repaired.automationLibrary!.terminalScripts.customScripts.find(
+        (item) => item.id === reference.id,
+      )?.script,
+    ).toBe(script.script);
+    expect(repaired.credentialVault).toEqual(vaultBefore);
+    expect(privateData.get(foreignId)).toEqual(sourceBefore);
+    expect(
+      bridge.invoke.mock.calls.filter(
+        ([command]) => command === "cloud_sync_write",
+      ),
+    ).toHaveLength(1);
+    expect(
+      bridge.invoke.mock.calls.filter(
+        ([command]) => command === "trust_import_database",
+      ),
+    ).toHaveLength(0);
+  });
   it("commits dependency repairs atomically and undo rejects a concurrent database edit", async () => {
     const manager = DatabaseManager.getInstance();
     await manager.unlockManagedDatabase(

@@ -7,11 +7,14 @@ import {
   captureCloudSyncPayload,
   discoverCloudSyncItems,
   validateCloudSyncPayload,
+  canRepairCloudSyncDatabase,
 } from "../../src/utils/services/cloudSyncPayload";
+import { FullDatabaseArchiveError } from "../../src/utils/connection/fullDatabaseArchive";
 
 const state = vi.hoisted(() => ({
   raw: new Map<string, string>(),
   owner: "db1",
+  accessEpoch: 0,
   update: vi.fn(),
   restore: vi.fn(),
   read: vi.fn(),
@@ -23,6 +26,13 @@ vi.mock("../../src/utils/connection/databaseManager", () => ({
   DatabaseManager: {
     getInstance: () => ({
       getCurrentDatabase: () => ({ id: state.owner }),
+      captureDatabaseRepairGuard: () => {
+        const epoch = state.accessEpoch;
+        return () => {
+          if (epoch !== state.accessEpoch)
+            throw new Error("Database access epoch changed");
+        };
+      },
       getExportableDatabases: async () => state.databases,
       readFullDatabaseArchive: state.read,
       restoreCloudSyncArchive: state.restore,
@@ -92,9 +102,124 @@ const config = {
   encryptBeforeSync: true,
 };
 
+describe("automatic dependency repair selection", () => {
+  const selectedDatabase = { ...config, selectedItems: ["database:db1"] };
+  const inventory = [
+    {
+      id: "database:db1",
+      label: "Private database",
+      kind: "database",
+      available: true,
+    },
+  ];
+  it("requires a selected available database and encrypted sync", () => {
+    expect(canRepairCloudSyncDatabase(selectedDatabase, "db1", inventory)).toBe(
+      true,
+    );
+    expect(
+      canRepairCloudSyncDatabase(selectedDatabase, "other", inventory),
+    ).toBe(false);
+    expect(
+      canRepairCloudSyncDatabase(selectedDatabase, "db1", [
+        { ...inventory[0], available: false },
+      ]),
+    ).toBe(false);
+    expect(() =>
+      canRepairCloudSyncDatabase(
+        { ...selectedDatabase, encryptBeforeSync: false },
+        "db1",
+        inventory,
+      ),
+    ).toThrow("encrypted cloud sync");
+  });
+  it.each(["database:db1", "database/db1.json", "Private *"])(
+    "honors the existing exclusion %s",
+    (pattern) => {
+      expect(
+        canRepairCloudSyncDatabase(
+          { ...selectedDatabase, excludePatterns: [pattern] },
+          "db1",
+          inventory,
+        ),
+      ).toBe(false);
+    },
+  );
+  it("passes a matching initial local dependency failure with a retained owner fence", async () => {
+    const error = new FullDatabaseArchiveError("dependencies", {
+      databaseId: "db1",
+      totalIssues: 1,
+      issues: [],
+    });
+    state.read.mockRejectedValueOnce(error);
+    const callback = vi.fn();
+    await expect(
+      captureCloudSyncPayload(selectedDatabase, {
+        onArchiveDependency: callback,
+      }),
+    ).rejects.toBe(error);
+    expect(callback).toHaveBeenCalledOnce();
+    expect(callback.mock.calls[0][0]).toBe(error);
+    const guard = callback.mock.calls[0][1];
+    expect(() => guard()).not.toThrow();
+    state.owner = "other";
+    expect(() => guard()).toThrow("Database selection changed");
+  });
+  it("does not grant repair authority for a mismatched archive owner", async () => {
+    const error = new FullDatabaseArchiveError("dependencies", {
+      databaseId: "other",
+      totalIssues: 1,
+      issues: [],
+    });
+    state.read.mockRejectedValueOnce(error);
+    const callback = vi.fn();
+    await expect(
+      captureCloudSyncPayload(selectedDatabase, {
+        onArchiveDependency: callback,
+      }),
+    ).rejects.toBe(error);
+    expect(callback).not.toHaveBeenCalled();
+  });
+  it("retains the original access epoch after a same-database lock/unlock with auto-unlock disabled", async () => {
+    const error = new FullDatabaseArchiveError("dependencies", {
+      databaseId: "db1",
+      totalIssues: 1,
+      issues: [],
+    });
+    state.read.mockRejectedValueOnce(error);
+    const callback = vi.fn();
+    await expect(
+      captureCloudSyncPayload(
+        { ...selectedDatabase, autoUnlockOsVaultDatabases: false },
+        { allowAutoUnlock: false, onArchiveDependency: callback },
+      ),
+    ).rejects.toBe(error);
+    const guard = callback.mock.calls[0][1];
+    state.accessEpoch++;
+    expect(() => guard()).toThrow("Database access epoch changed");
+  });
+  it("does not authorize repair if access changed during the initial failing database read", async () => {
+    state.read.mockImplementationOnce(async () => {
+      state.accessEpoch++;
+      throw new FullDatabaseArchiveError("dependencies", {
+        databaseId: "db1",
+        totalIssues: 1,
+        issues: [],
+      });
+    });
+    const callback = vi.fn();
+    await expect(
+      captureCloudSyncPayload(selectedDatabase, {
+        onArchiveDependency: callback,
+      }),
+    ).rejects.toThrow("Database access epoch changed");
+    expect(callback).not.toHaveBeenCalled();
+  });
+});
+
 beforeEach(() => {
   vi.clearAllMocks();
   state.owner = "db1";
+  state.accessEpoch = 0;
   state.settingsReadFails = false;
   state.settingsWriteFails = false;
   state.databases = [

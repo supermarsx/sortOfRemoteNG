@@ -1,6 +1,16 @@
+import type { StorageData } from "../storage/storage";
+
+export interface CloudSyncDependencyRepairIntent {
+  kind: "dependency-repair";
+  /** Exact loaded source and exact object committed by the repair CAS. */
+  receipt?: { before: StorageData; after: StorageData };
+  uncertain?: boolean;
+}
+
 type CloudSyncBarrier = (
   ids: readonly string[],
   restore: boolean,
+  intent?: CloudSyncDependencyRepairIntent,
 ) => Promise<() => Promise<void>>;
 const barriers = new Set<CloudSyncBarrier>();
 
@@ -17,6 +27,7 @@ export function registerCloudSyncDatabaseBarrier(
 export async function acquireCloudSyncDatabaseBarrier(
   ids: readonly string[],
   restore = false,
+  intent?: CloudSyncDependencyRepairIntent,
 ): Promise<() => Promise<void>> {
   const releases: Array<() => Promise<void>> = [];
   const release = async () => {
@@ -32,7 +43,8 @@ export async function acquireCloudSyncDatabaseBarrier(
       );
   };
   try {
-    for (const barrier of barriers) releases.push(await barrier(ids, restore));
+    for (const barrier of barriers)
+      releases.push(await barrier(ids, restore, intent));
     return release;
   } catch (error) {
     await release();
