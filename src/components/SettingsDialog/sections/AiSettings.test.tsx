@@ -98,23 +98,22 @@ describe("AiSettings (LLM router fold)", () => {
     );
     expect(
       container.querySelectorAll(".sor-settings-section-header"),
-    ).toHaveLength(1);
+    ).toHaveLength(5);
     expect(container.querySelectorAll(".sor-settings-card")).toHaveLength(5);
     expect(container.querySelector(".sor-settings-collapsible")).toBeNull();
 
     expect(
-      screen.getByRole("heading", { name: "1. Connect your providers" }),
+      screen.getByRole("heading", { name: "Connect your providers" }),
     ).toHaveClass("sor-settings-section-header");
     for (const name of [
-      "2. Routing & defaults",
+      "Routing & defaults",
       "Model catalog",
       "Usage & cache",
       "Test your setup",
     ]) {
-      const disclosure = screen.getByText(name).closest("details");
-      expect(disclosure).not.toHaveAttribute("open");
-      expect(disclosure?.querySelector(".sor-settings-card")).not.toBeNull();
+      expect(screen.getByRole("heading", { name })).toBeVisible();
     }
+    expect(container.querySelector("details, summary")).toBeNull();
   });
 
   it("adds a provider through the form, mapping to llm_add_provider with a snake_case config", async () => {

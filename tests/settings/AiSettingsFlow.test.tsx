@@ -114,7 +114,7 @@ beforeEach(() => {
 });
 async function ready() {
   const view = render(<AiSettings />);
-  await screen.findByRole("heading", { name: "1. Connect your providers" });
+  await screen.findByRole("heading", { name: "Connect your providers" });
   return view;
 }
 function field(key: string) {
@@ -169,7 +169,6 @@ describe("AI setup workflow", () => {
   it("preserves a newly selected default provider when applying an existing routing draft", async () => {
     providers = [provider()];
     await ready();
-    fireEvent.click(screen.getByText("2. Routing & defaults"));
     set("llm.router.defaultModel", "draft-model");
     fireEvent.click(screen.getByRole("button", { name: "Set default" }));
     await waitFor(() =>
@@ -241,9 +240,7 @@ describe("AI setup workflow", () => {
         "settings-search-highlight",
       ),
     );
-    expect(field("llm.cache.ttlSeconds").closest("details")).toHaveAttribute(
-      "open",
-    );
+    expect(field("llm.cache.ttlSeconds")).toBeVisible();
     expect(warning).not.toHaveBeenCalled();
     warning.mockRestore();
   });
@@ -272,7 +269,7 @@ describe("AI setup workflow", () => {
     expect(screen.queryByRole("button", { name: "Save provider" })).toBeNull();
     mocks.invoke.mockImplementation(implementation);
     fireEvent.click(screen.getByRole("button", { name: "Retry AI setup" }));
-    await screen.findByRole("heading", { name: "1. Connect your providers" });
+    await screen.findByRole("heading", { name: "Connect your providers" });
     expect(mocks.read).toHaveBeenCalledOnce();
     expect(
       document.querySelectorAll(".sor-settings-card").length,
@@ -283,7 +280,6 @@ describe("AI setup workflow", () => {
   });
   it("keeps routing edits local and preserves the draft after an apply failure", async () => {
     await ready();
-    fireEvent.click(screen.getByText("2. Routing & defaults"));
     set("llm.router.defaultModel", "one");
     set("llm.router.defaultModel", "two");
     expect(
@@ -358,33 +354,23 @@ describe("AI setup workflow", () => {
       /could not be saved for restart.*Credential storage locked/,
     );
     expect(field("llm.provider.apiKey")).toHaveValue("new-secret");
-    expect(field("llm.provider.type").closest("details")).toHaveAttribute(
-      "open",
-    );
+    expect(field("llm.provider.type")).toBeVisible();
     expect(mocks.invoke).toHaveBeenCalledWith("llm_add_provider", {
       config: expect.objectContaining({ max_retries: 0 }),
     });
   });
-  it("reveals nested search anchors without resetting drafts", async () => {
+  it("keeps settings and search anchors visible without resetting drafts", async () => {
     await ready();
     const anchor = field("llm.provider.maxRetries");
     set("llm.provider.maxRetries", "7");
     act(() => anchor.setAttribute("data-testid", "settings-search-highlight"));
-    await waitFor(() =>
-      expect(anchor.closest("details")).toHaveAttribute("open"),
-    );
-    expect(
-      anchor.closest("details")?.parentElement?.closest("details"),
-    ).toHaveAttribute("open");
+    expect(anchor).toBeVisible();
+    expect(anchor.closest("details")).toBeNull();
     expect(anchor).toHaveValue("7");
     const cache = field("llm.cache.ttlSeconds");
     act(() => cache.setAttribute("data-testid", "settings-search-highlight"));
-    await waitFor(() =>
-      expect(cache.closest("details")).toHaveAttribute("open"),
-    );
-    expect(
-      cache.closest("details")?.parentElement?.closest("details"),
-    ).toHaveAttribute("open");
+    expect(cache).toBeVisible();
+    expect(cache.closest("details")).toBeNull();
   });
   it("keeps provider removal named and test actions explicit", async () => {
     savedProvider();

@@ -28,7 +28,6 @@ import {
   RefreshCw,
   Server,
   Trash2,
-  ChevronDown,
   CheckCircle2,
 } from "lucide-react";
 import { useTranslation } from "react-i18next";
@@ -90,14 +89,14 @@ function Labeled({
 
 const JsonView: React.FC<{ value: unknown }> = ({ value }) =>
   value == null ? null : (
-    <details className="mt-3 rounded-md border border-[var(--color-border)] p-3">
-      <summary className="cursor-pointer text-xs font-medium text-[var(--color-textSecondary)]">
+    <section className="mt-3 rounded-md border border-[var(--color-border)] p-3">
+      <h5 className="text-xs font-medium text-[var(--color-textSecondary)]">
         Technical details (JSON)
-      </summary>
+      </h5>
       <pre className="mt-2 max-h-72 overflow-auto whitespace-pre-wrap break-all rounded bg-[var(--color-surface)] p-2 font-mono text-xs text-[var(--color-textSecondary)]">
         {JSON.stringify(value, null, 2)}
       </pre>
-    </details>
+    </section>
   );
 
 // ─── Store <-> provider persistence helpers ──────────────────────────────────
@@ -403,10 +402,8 @@ const ProviderForm: React.FC<{
             />
           </Labeled>
         </div>
-        <details className="rounded-md border border-[var(--color-border)] p-3">
-          <summary className="cursor-pointer text-xs font-medium">
-            Advanced provider options
-          </summary>
+        <section className="rounded-md border border-[var(--color-border)] p-3">
+          <h5 className="text-xs font-medium">Advanced provider options</h5>
           <p className="my-3 text-xs text-[var(--color-textMuted)]">
             Optional organization, routing priority and request limits. Most
             providers work with these defaults.
@@ -462,7 +459,7 @@ const ProviderForm: React.FC<{
               />
             </Labeled>
           </div>
-        </details>
+        </section>
         <Toggle
           settingKey="llm.provider.enabled"
           label={t("integrations.llm.enabled", "Enabled")}
@@ -505,7 +502,6 @@ const ProvidersPanel: React.FC<{
   store: IntegrationConfigStore;
 }> = ({ mgr, store }) => {
   const { t } = useTranslation();
-  const [showForm, setShowForm] = useState(false);
   const [editing, setEditing] = useState<ProviderConfig | undefined>();
   const [formVersion, setFormVersion] = useState(0);
   const [health, setHealth] = useState<Record<string, ProviderHealth>>({});
@@ -578,7 +574,6 @@ const ProvidersPanel: React.FC<{
           onClick={() => {
             setEditing(undefined);
             setFormVersion((value) => value + 1);
-            setShowForm(true);
           }}
         >
           <Plus size={12} />
@@ -602,28 +597,23 @@ const ProvidersPanel: React.FC<{
         </button>
       </div>
 
-      <details
-        open={showForm}
-        onToggle={(event) => setShowForm(event.currentTarget.open)}
-        className="rounded-lg border border-[var(--color-border)]"
-      >
-        <summary className="cursor-pointer px-4 py-3 text-sm font-medium">
+      <section className="rounded-lg border border-[var(--color-border)]">
+        <h4 className="px-4 py-3 text-sm font-medium">
           {editing
             ? `Edit ${editing.display_name || editing.id}`
             : "Provider connection details"}
-        </summary>
+        </h4>
         <ProviderForm
           key={`${editing?.id ?? "new"}-${formVersion}`}
           mgr={mgr}
           store={store}
           editing={editing}
           onDone={() => {
-            setShowForm(false);
             setEditing(undefined);
             setFormVersion((value) => value + 1);
           }}
         />
-      </details>
+      </section>
 
       <div className="overflow-x-auto">
         <table className="w-full min-w-[36rem] text-left text-sm">
@@ -718,7 +708,6 @@ const ProvidersPanel: React.FC<{
                         className={btn}
                         onClick={() => {
                           setEditing(p);
-                          setShowForm(true);
                         }}
                       >
                         {t("integrations.llm.edit", "Edit")}
@@ -877,10 +866,10 @@ const RouterPanel: React.FC<{ mgr: LlmManager }> = ({ mgr }) => {
           />
         </section>
 
-        <details className={card}>
-          <summary className="cursor-pointer text-sm font-medium">
+        <section className={card}>
+          <h5 className="text-sm font-medium">
             {t("integrations.llm.cache", "Response cache")}
-          </summary>
+          </h5>
           <div className="space-y-3">
             <Toggle
               settingKey="llm.cache.enabled"
@@ -917,12 +906,10 @@ const RouterPanel: React.FC<{ mgr: LlmManager }> = ({ mgr }) => {
               How long a response stays in the cache before it expires.
             </p>
           </div>
-        </details>
+        </section>
 
-        <details className={card}>
-          <summary className="cursor-pointer text-sm font-medium">
-            Compatibility settings
-          </summary>
+        <section className={card}>
+          <h5 className="text-sm font-medium">Compatibility settings</h5>
           <p className="text-xs text-[var(--color-textMuted)]">
             These values are retained in configuration but are not currently
             applied by the router. Health checks run only when requested;
@@ -966,7 +953,7 @@ const RouterPanel: React.FC<{ mgr: LlmManager }> = ({ mgr }) => {
               }))
             }
           />
-        </details>
+        </section>
       </fieldset>
       <div className="flex flex-wrap items-center gap-3">
         <button
@@ -1548,7 +1535,7 @@ const PlaygroundPanel: React.FC<{ mgr: LlmManager }> = ({ mgr }) => {
 
 // ─── Section root ────────────────────────────────────────────────────────────
 
-function AiDisclosure({
+function AiSection({
   title,
   description,
   icon,
@@ -1560,22 +1547,14 @@ function AiDisclosure({
   children: React.ReactNode;
 }) {
   return (
-    <details className="group min-w-0 space-y-3">
-      <summary className="flex cursor-pointer list-none items-center gap-3 rounded-md p-1 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary [&::-webkit-details-marker]:hidden">
-        <span className="text-primary">{icon}</span>
-        <span className="min-w-0 flex-1">
-          <span className="block text-sm font-semibold">{title}</span>
-          <span className="mt-1 block text-xs text-[var(--color-textMuted)]">
-            {description}
-          </span>
-        </span>
-        <ChevronDown
-          aria-hidden="true"
-          className="h-4 w-4 shrink-0 transition-transform group-open:rotate-180 motion-reduce:transition-none"
-        />
-      </summary>
+    <section className="min-w-0 space-y-3">
+      <SectionHeader
+        title={title}
+        icon={<span className="text-primary">{icon}</span>}
+      />
+      <p className="text-xs text-[var(--color-textMuted)]">{description}</p>
       <Card>{children}</Card>
-    </details>
+    </section>
   );
 }
 
@@ -1591,44 +1570,7 @@ const AiSettings: React.FC<{ highlightKey?: string | null }> = ({
   const [ready, setReady] = useState(false);
   const [booting, setBooting] = useState(true);
   const [bootError, setBootError] = useState<string | null>(null);
-  const root = useRef<HTMLDivElement>(null);
   useSettingHighlight(ready ? highlightKey : null);
-
-  useEffect(() => {
-    const element = root.current;
-    if (!element) return;
-    let frame = 0;
-    // Settings search tags the exact anchor. Reveal only its local ancestors;
-    // all controls stay mounted so drafts and search anchors survive disclosure.
-    const observer = new MutationObserver((records) => {
-      for (const record of records) {
-        const target = record.target;
-        if (
-          !(target instanceof HTMLElement) ||
-          target.dataset.testid !== "settings-search-highlight"
-        )
-          continue;
-        let parent = target.parentElement;
-        while (parent && parent !== element) {
-          if (parent instanceof HTMLDetailsElement) parent.open = true;
-          parent = parent.parentElement;
-        }
-        cancelAnimationFrame(frame);
-        frame = requestAnimationFrame(() =>
-          target.scrollIntoView({ block: "center", behavior: "smooth" }),
-        );
-      }
-    });
-    observer.observe(element, {
-      attributes: true,
-      subtree: true,
-      attributeFilter: ["data-testid"],
-    });
-    return () => {
-      observer.disconnect();
-      cancelAnimationFrame(frame);
-    };
-  }, []);
 
   useEffect(() => {
     if (store.isLoading) return;
@@ -1703,7 +1645,6 @@ const AiSettings: React.FC<{ highlightKey?: string | null }> = ({
   };
   return (
     <div
-      ref={root}
       className="space-y-6 min-w-0 [&_input[type=checkbox]]:accent-primary"
       data-testid="section-ai"
     >
@@ -1780,41 +1721,41 @@ const AiSettings: React.FC<{ highlightKey?: string | null }> = ({
           )}
           <div className="space-y-3">
             <SectionHeader
-              title="1. Connect your providers"
+              title="Connect your providers"
               icon={<Server className="h-4 w-4 text-primary" />}
             />
             <Card>
               <ProvidersPanel mgr={mgr} store={store} />
             </Card>
           </div>
-          <AiDisclosure
-            title="2. Routing & defaults"
+          <AiSection
+            title="Routing & defaults"
             description="Default model, failover and response caching. Changes apply to this app session."
             icon={<CircuitBoard className="h-4 w-4" />}
           >
             <RouterPanel mgr={mgr} />
-          </AiDisclosure>
-          <AiDisclosure
+          </AiSection>
+          <AiSection
             title="Model catalog"
             description="Browse models and inspect their context limits, capabilities and pricing metadata."
             icon={<Cpu className="h-4 w-4" />}
           >
             <ModelsPanel mgr={mgr} />
-          </AiDisclosure>
-          <AiDisclosure
+          </AiSection>
+          <AiSection
             title="Usage & cache"
             description="Inspect request totals, cost estimates and the response cache."
             icon={<Gauge className="h-4 w-4" />}
           >
             <UsagePanel mgr={mgr} />
-          </AiDisclosure>
-          <AiDisclosure
+          </AiSection>
+          <AiSection
             title="Test your setup"
             description="Send a chat request, create embeddings or estimate tokens. Provider requests may incur charges."
             icon={<BrainCircuit className="h-4 w-4" />}
           >
             <PlaygroundPanel mgr={mgr} />
-          </AiDisclosure>
+          </AiSection>
         </>
       )}
     </div>
