@@ -276,8 +276,12 @@ const present = (value: unknown): boolean =>
 
 function collectClosure(
   archive: FullDatabaseArchive,
+  maximumIssues?: number,
 ): ArchiveDependencyDiagnostics {
-  const collector = new ArchiveDependencyCollector(archive.collection.id);
+  const collector = new ArchiveDependencyCollector(
+    archive.collection.id,
+    maximumIssues,
+  );
   const rows = [
     ...archive.connections.map((row, index) => ({
       row,
@@ -591,12 +595,16 @@ function validateClosure(archive: FullDatabaseArchive): void {
 export function inspectDatabaseArchiveDependencies(
   databaseId: string,
   data: StorageData,
+  options: { maximumIssues?: number } = {},
 ): ArchiveDependencyDiagnostics {
   const normalized = materializeDatabaseArchiveDefaults(data);
-  return collectClosure({
-    ...normalized,
-    collection: { id: databaseId },
-  } as FullDatabaseArchive);
+  return collectClosure(
+    {
+      ...normalized,
+      collection: { id: databaseId },
+    } as FullDatabaseArchive,
+    options.maximumIssues,
+  );
 }
 
 /** Normalize and verify the entire closure; credentials never pass generic redaction. */

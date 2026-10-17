@@ -31,6 +31,7 @@ export interface ArchiveDependencyDiagnostics {
 }
 
 export const MAX_ARCHIVE_DEPENDENCY_ISSUES = 12;
+export const MAX_ARCHIVE_DEPENDENCY_SCAN_ISSUES = 4096;
 
 // Only identifier fields may be quoted. Never render names, connection bodies,
 // script contents, URLs, file paths, header values or credential material.
@@ -82,8 +83,19 @@ export function archiveDependencyRemedy(
 
 export class ArchiveDependencyCollector {
   readonly diagnostics: ArchiveDependencyDiagnostics;
+  private readonly maximumIssues: number;
 
-  constructor(databaseId: string) {
+  constructor(
+    databaseId: string,
+    maximumIssues = MAX_ARCHIVE_DEPENDENCY_ISSUES,
+  ) {
+    if (
+      !Number.isInteger(maximumIssues) ||
+      maximumIssues < 1 ||
+      maximumIssues > MAX_ARCHIVE_DEPENDENCY_SCAN_ISSUES
+    )
+      throw new Error("Invalid archive dependency diagnostic limit.");
+    this.maximumIssues = maximumIssues;
     this.diagnostics = {
       databaseId: safeId(databaseId),
       issues: [],
@@ -98,7 +110,7 @@ export class ArchiveDependencyCollector {
     targetId?: unknown,
   ): void {
     this.diagnostics.totalIssues++;
-    if (this.diagnostics.issues.length < MAX_ARCHIVE_DEPENDENCY_ISSUES)
+    if (this.diagnostics.issues.length < this.maximumIssues)
       this.diagnostics.issues.push({
         recordId: safeId(recordId),
         path,
@@ -112,15 +124,16 @@ export function formatArchiveDependencyDiagnostics(
   diagnostics: ArchiveDependencyDiagnostics,
 ): string {
   const { databaseId, issues, totalIssues } = diagnostics;
+  const visibleIssues = issues.slice(0, MAX_ARCHIVE_DEPENDENCY_ISSUES);
   return [
     `Database ${databaseId ? `"${databaseId}"` : "archive"}: ${totalIssues} unresolved archive ${totalIssues === 1 ? "dependency" : "dependencies"}.`,
-    ...issues.map(
+    ...visibleIssues.map(
       (issue, index) =>
         `${index + 1}. ${issue.path}${issue.recordId ? ` (record "${issue.recordId}")` : ""}${issue.targetId ? ` → "${issue.targetId}"` : ""}: ${remedies[issue.reason]}`,
     ),
-    ...(totalIssues > issues.length
+    ...(totalIssues > visibleIssues.length
       ? [
-          `${totalIssues - issues.length} more issues. Repair the listed references and retry to see the remaining issues.`,
+          `${totalIssues - visibleIssues.length} more issues. Repair the listed references and retry to see the remaining issues.`,
         ]
       : []),
     "For recycleBin entries, restore the record from Recycle Bin before editing it. No unresolved records or references were removed.",

@@ -7,6 +7,11 @@ import type {
 } from "../../types/recording/automationLibrary";
 import type { ArchiveDependencyIssue } from "./archiveDependencyDiagnostics";
 import { archiveDependencyPath } from "./archiveDependencyDiagnostics";
+import { MAX_ARCHIVE_DEPENDENCY_SCAN_ISSUES } from "./archiveDependencyDiagnostics";
+import {
+  normalizeQuickActionReferences,
+  quickActionReferenceKey,
+} from "./sessionQuickActions";
 import { normalizeDatabaseDocuments } from "../documents/validation";
 import {
   inspectDatabaseArchiveDependencies,
@@ -43,7 +48,8 @@ export interface ArchiveDependencyRepairReview {
 type Candidate = {
   entry?: AutomationEntry;
   field?: "sshQuickActions" | "httpAutomation";
-  index?: number;
+  indices?: number[];
+  referenceKey?: string;
   mutation?: "totp" | "legacy" | "document" | "document-folder";
 };
 
@@ -158,12 +164,42 @@ export async function prepareArchiveDependencyRepair(
   source: StorageData,
   readSource: ReadSource,
 ): Promise<ArchiveDependencyRepairReview> {
+  return prepareRepair(databaseId, source, readSource, true);
+}
+
+async function prepareRepair(
+  databaseId: string,
+  source: StorageData,
+  readSource: ReadSource,
+  readRecycledSources: boolean,
+): Promise<ArchiveDependencyRepairReview> {
   const data = structuredClone(materializeDatabaseArchiveDefaults(source));
-  const diagnostics = inspectDatabaseArchiveDependencies(databaseId, data);
+  // In-memory callers can share nested objects between active/recycled rows.
+  // Editing one owner must never repair another owner through an alias.
+  data.connections = data.connections.map((row) => structuredClone(row));
+  data.recycleBin!.entries = data.recycleBin!.entries.map((entry) =>
+    structuredClone(entry),
+  );
+  const diagnostics = inspectDatabaseArchiveDependencies(
+    databaseId,
+    data,
+    readRecycledSources
+      ? {}
+      : { maximumIssues: MAX_ARCHIVE_DEPENDENCY_SCAN_ISSUES },
+  );
   const candidates = new Map<string, Candidate>();
   const issues: ArchiveDependencyRepairIssue[] = [];
   for (const [i, issue] of diagnostics.issues.entries()) {
     const recycled = issue.path.startsWith("recycleBin.");
+    if (
+      !readRecycledSources &&
+      (recycled || issue.reason !== "external-script")
+    ) {
+      const id = `repair-${i}`;
+      candidates.set(id, {});
+      issues.push({ id, issue, action: "manual", safe: false, recycled });
+      continue;
+    }
     const row = recycled
       ? data.recycleBin!.entries.find(
           (item) => item.connection.id === issue.recordId,
@@ -178,11 +214,20 @@ export async function prepareArchiveDependencyRepair(
     if (row && match && ["script", "external-script"].includes(issue.reason)) {
       const field = match[1] as "sshQuickActions" | "httpAutomation",
         index = Number(match[2]);
-      const ref = row[field]?.items[index];
+      const items = row[field]?.items;
+      const ref = items && normalizeQuickActionReferences(items)[index];
       if (ref && ref.id === issue.targetId) {
         candidate.field = field;
-        candidate.index = index;
-        if (issue.reason === "external-script") {
+        candidate.referenceKey = quickActionReferenceKey(ref);
+        candidate.indices = items!.flatMap((item, index) =>
+          quickActionReferenceKey(item) === candidate.referenceKey
+            ? [index]
+            : [],
+        );
+        if (
+          issue.reason === "external-script" &&
+          (!recycled || readRecycledSources)
+        ) {
           try {
             const entry = await readSource(
               ref.scope ?? { kind: "app" },
@@ -194,7 +239,9 @@ export async function prepareArchiveDependencyRepair(
               entry.family === family(field, ref.kind) &&
               entry.payload.id === ref.id
             )
-              candidate.entry = normalizeAutomationEntry(entry);
+              candidate.entry = structuredClone(
+                normalizeAutomationEntry(entry),
+              );
           } catch {
             /* Locked/unavailable source remains an explicit choice to remove. */
           }
@@ -208,7 +255,7 @@ export async function prepareArchiveDependencyRepair(
       issue.path.endsWith(".parentId")
     ) {
       action = "move-to-root";
-      safe = !recycled;
+      safe = issue.reason === "folder" && !recycled;
     } else if (
       row &&
       issue.reason === "totp" &&
@@ -243,7 +290,14 @@ export async function prepareArchiveDependencyRepair(
           /* Required/unsupported structures remain manual. */
         }
       }
-    } else if (row && issue.reason === "tab-group") {
+    } else if (
+      row &&
+      issue.reason === "tab-group" &&
+      issue.path ===
+        (recycled
+          ? `recycleBin.entries[${data.recycleBin!.entries.findIndex((item) => item.connection === row)}].connection.defaultTabGroupId`
+          : `connections[${data.connections.indexOf(row)}].defaultTabGroupId`)
+    ) {
       action = "reset-tab-group";
       safe = !recycled;
     }
@@ -259,6 +313,66 @@ export async function prepareArchiveDependencyRepair(
     issues: stableJsonStringify(issues),
   });
   return review;
+}
+
+/** One automatic pass only copies readable live automation references. Callers
+ * own source/access revalidation and the destination database CAS. Bounded
+ * diagnostics may leave further issues; this never claims full closure. */
+export async function repairSafeArchiveDependencies(
+  databaseId: string,
+  source: StorageData,
+  readSource: ReadSource,
+) {
+  const original = structuredClone(source);
+  const review = await prepareRepair(databaseId, original, readSource, false);
+  const selected = review.issues
+    .filter(
+      (item) =>
+        item.safe && !item.recycled && item.action === "copy-and-rebind",
+    )
+    .map((item) => item.id);
+  if (!selected.length)
+    return {
+      data: original,
+      remaining: inspectDatabaseArchiveDependencies(databaseId, review.data),
+      repaired: 0,
+    };
+  const applied = applyArchiveDependencyRepair(review, selected, {
+    restoreRecycled: false,
+  });
+  // Review normalization is for validation, not permission to persist unrelated
+  // archive defaults. Rebase only copied library content and active references.
+  const data = original;
+  data.connections = data.connections.map((row, index) => {
+    const replacement = structuredClone(row);
+    for (const field of ["sshQuickActions", "httpAutomation"] as const) {
+      const before = review.data.connections[index][field]?.items;
+      const after = applied.data.connections[index][field]?.items;
+      if (
+        stableJsonStringify(before ?? null) ===
+        stableJsonStringify(after ?? null)
+      )
+        continue;
+      const config = replacement[field];
+      if (!config || !after)
+        throw new Error("The quick action changed. Review it again.");
+      const items = structuredClone(after);
+      if (field === "sshQuickActions")
+        replacement.sshQuickActions = {
+          ...replacement.sshQuickActions!,
+          items,
+        };
+      else
+        replacement.httpAutomation = { ...replacement.httpAutomation!, items };
+    }
+    return replacement;
+  });
+  data.automationLibrary = applied.data.automationLibrary;
+  return {
+    data,
+    repaired: applied.repaired,
+    remaining: inspectDatabaseArchiveDependencies(databaseId, data),
+  };
 }
 
 /** Produces one complete replacement; callers commit it with a database CAS. */
@@ -368,11 +482,20 @@ export function applyArchiveDependencyRepair(
     else if (fix.action === "reset-tab-group") delete row.defaultTabGroupId;
     else {
       const items = row[candidate.field!]?.items;
-      const ref = items?.[candidate.index!];
-      if (!items || !ref || ref.id !== fix.issue.targetId)
+      const indices = candidate.indices!;
+      const ref = items?.[indices[0]];
+      if (
+        !items ||
+        !ref ||
+        indices.some(
+          (index) =>
+            !items[index] ||
+            quickActionReferenceKey(items[index]) !== candidate.referenceKey,
+        )
+      )
         throw new Error("The quick action changed. Review it again.");
       if (fix.action === "remove-reference")
-        removed.set(items, [...(removed.get(items) ?? []), candidate.index!]);
+        removed.set(items, [...(removed.get(items) ?? []), ...indices]);
       else {
         const entry = candidate.entry!;
         const existing = payloads(library, entry.family).find(
@@ -405,11 +528,12 @@ export function applyArchiveDependencyRepair(
             library.provenance[`${copied.family}:${id}`] = copied.provenance;
           libraryChanged = true;
         }
-        items[candidate.index!] = {
-          ...ref,
-          id,
-          scope: { kind: "database", databaseId: review.databaseId },
-        };
+        for (const index of indices)
+          items[index] = {
+            ...items[index],
+            id,
+            scope: { kind: "database", databaseId: review.databaseId },
+          };
       }
     }
   }
