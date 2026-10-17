@@ -39,6 +39,7 @@ import { PasswordInput } from "../../ui/forms/PasswordInput";
 import {
   Card,
   SettingsSectionHeader as SectionHeader,
+  Toggle,
 } from "../../ui/settings/SettingsPrimitives";
 import { useLlm, type LlmManager } from "../../../hooks/integration/useLlm";
 import {
@@ -462,18 +463,13 @@ const ProviderForm: React.FC<{
             </Labeled>
           </div>
         </details>
-        <div className="mt-3 flex flex-wrap items-center gap-4">
-          <label className="flex items-center gap-2 text-xs text-[var(--color-textSecondary)]">
-            <input
-              data-setting-key="llm.provider.enabled"
-              type="checkbox"
-              className="sor-settings-checkbox"
-              checked={form.enabled}
-              onChange={(e) => set("enabled", e.target.checked)}
-            />
-            {t("integrations.llm.enabled", "Enabled")}
-          </label>
-        </div>
+        <Toggle
+          settingKey="llm.provider.enabled"
+          label={t("integrations.llm.enabled", "Enabled")}
+          description="Make this provider available to the router."
+          checked={form.enabled}
+          onChange={(value) => set("enabled", value)}
+        />
       </fieldset>
       <div className="mt-3 flex flex-wrap items-center gap-2">
         <button
@@ -817,27 +813,31 @@ const RouterPanel: React.FC<{ mgr: LlmManager }> = ({ mgr }) => {
   }
 
   return (
-    <div className="flex flex-col gap-3">
+    <div className="flex min-w-0 flex-col gap-4">
       <p className="text-sm text-[var(--color-textMuted)]">
         Choose how requests use your providers. Apply changes explicitly;
         routing and cache configuration are for the current app session and are
         not restored after restart.
       </p>
-      <p className="text-xs text-[var(--color-textMuted)]">
-        Compatibility fields: default model, sticky sessions and embedding
-        caching are retained in configuration but are not currently applied by
-        the router. Least-cost routing currently uses priority instead. Health
-        checks run only when requested; scheduled checks and cost-alert actions
-        are not active.
-      </p>
       <fieldset
         disabled={saving || mgr.isLoading}
-        className="min-w-0 space-y-4"
+        className="min-w-0 space-y-5"
       >
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-          <Labeled
-            label={t("integrations.llm.balancerStrategy", "Balancer strategy")}
-          >
+        <section aria-label="Routing behavior" className="space-y-3">
+          <h5 className="flex items-center gap-2 text-sm font-medium">
+            <CircuitBoard size={16} className="text-primary" />
+            Routing behavior
+          </h5>
+          <div className="sor-settings-select-row flex-wrap gap-3">
+            <div className="min-w-0">
+              <p className="sor-settings-row-label">
+                {t("integrations.llm.balancerStrategy", "Balancer strategy")}
+              </p>
+              <p className="text-xs text-[var(--color-textSecondary)]">
+                Choose how the router selects a configured provider. Least-cost
+                currently uses provider priority.
+              </p>
+            </div>
             <Select
               settingKey="llm.router.balancerStrategy"
               label="Balancer strategy"
@@ -851,114 +851,54 @@ const RouterPanel: React.FC<{ mgr: LlmManager }> = ({ mgr }) => {
                 ),
               }))}
             />
-          </Labeled>
-          <Labeled label={t("integrations.llm.defaultModel", "Default model")}>
-            <input
-              className={field}
-              data-setting-key="llm.router.defaultModel"
-              value={cfg.default_model ?? ""}
-              onChange={(e) =>
-                void patch((c) => ({
-                  ...c,
-                  default_model: e.target.value || null,
-                }))
-              }
-              placeholder="gpt-4o"
-            />
-          </Labeled>
-        </div>
-
-        <div className="flex flex-wrap items-center gap-4">
-          <label className="flex items-center gap-2 text-xs text-[var(--color-textSecondary)]">
-            <input
-              type="checkbox"
-              data-setting-key="llm.router.failoverEnabled"
-              checked={cfg.balancer.failover_enabled}
-              onChange={(e) =>
-                void patch((c) => ({
-                  ...c,
-                  balancer: {
-                    ...c.balancer,
-                    failover_enabled: e.target.checked,
-                  },
-                }))
-              }
-            />
-            {t("integrations.llm.failover", "Failover enabled")}
-          </label>
-          <label className="flex items-center gap-2 text-xs text-[var(--color-textSecondary)]">
-            <input
-              type="checkbox"
-              data-setting-key="llm.router.stickySessions"
-              checked={cfg.balancer.sticky_sessions}
-              onChange={(e) =>
-                void patch((c) => ({
-                  ...c,
-                  balancer: {
-                    ...c.balancer,
-                    sticky_sessions: e.target.checked,
-                  },
-                }))
-              }
-            />
-            {t("integrations.llm.stickySessions", "Sticky sessions")}
-          </label>
-          <label className="flex items-center gap-2 text-xs text-[var(--color-textSecondary)]">
-            <input
-              type="checkbox"
-              data-setting-key="llm.router.usageTracking"
-              checked={cfg.usage_tracking_enabled}
-              onChange={(e) =>
-                void patch((c) => ({
-                  ...c,
-                  usage_tracking_enabled: e.target.checked,
-                }))
-              }
-            />
-            {t("integrations.llm.usageTracking", "Usage tracking")}
-          </label>
-        </div>
+          </div>
+          <Toggle
+            settingKey="llm.router.failoverEnabled"
+            icon={<RefreshCw size={16} />}
+            label={t("integrations.llm.failover", "Failover enabled")}
+            description="Try another available provider when a request fails."
+            checked={cfg.balancer.failover_enabled}
+            onChange={(value) =>
+              patch((c) => ({
+                ...c,
+                balancer: { ...c.balancer, failover_enabled: value },
+              }))
+            }
+          />
+          <Toggle
+            settingKey="llm.router.usageTracking"
+            icon={<Gauge size={16} />}
+            label={t("integrations.llm.usageTracking", "Usage tracking")}
+            description="Collect request and token totals for the Usage & cache section."
+            checked={cfg.usage_tracking_enabled}
+            onChange={(value) =>
+              patch((c) => ({ ...c, usage_tracking_enabled: value }))
+            }
+          />
+        </section>
 
         <details className={card}>
           <summary className="cursor-pointer text-sm font-medium">
-            Advanced routing and response cache
-          </summary>
-          <h4 className="mb-2 text-xs font-semibold text-[var(--color-text)]">
             {t("integrations.llm.cache", "Response cache")}
-          </h4>
-          <div className="flex flex-wrap items-center gap-4">
-            <label className="flex items-center gap-2 text-xs text-[var(--color-textSecondary)]">
-              <input
-                type="checkbox"
-                data-setting-key="llm.cache.enabled"
-                checked={cfg.cache.enabled}
-                onChange={(e) =>
-                  void patch((c) => ({
-                    ...c,
-                    cache: { ...c.cache, enabled: e.target.checked },
-                  }))
-                }
-              />
-              {t("integrations.llm.cacheEnabled", "Cache enabled")}
-            </label>
-            <label className="flex items-center gap-2 text-xs text-[var(--color-textSecondary)]">
-              <input
-                type="checkbox"
-                data-setting-key="llm.cache.embeddings"
-                checked={cfg.cache.cache_embeddings}
-                onChange={(e) =>
-                  void patch((c) => ({
-                    ...c,
-                    cache: { ...c.cache, cache_embeddings: e.target.checked },
-                  }))
-                }
-              />
-              {t("integrations.llm.cacheEmbeddings", "Cache embeddings")}
-            </label>
+          </summary>
+          <div className="space-y-3">
+            <Toggle
+              settingKey="llm.cache.enabled"
+              icon={<Server size={16} />}
+              label={t("integrations.llm.cacheEnabled", "Cache enabled")}
+              description="Reuse cached responses for matching requests."
+              checked={cfg.cache.enabled}
+              onChange={(value) =>
+                patch((c) => ({
+                  ...c,
+                  cache: { ...c.cache, enabled: value },
+                }))
+              }
+            />
             <Labeled label={t("integrations.llm.cacheTtl", "TTL (seconds)")}>
               <input
                 className={field}
-                style={{ width: 120 }}
+                style={{ width: 160, maxWidth: "100%" }}
                 inputMode="numeric"
                 data-setting-key="llm.cache.ttlSeconds"
                 value={String(cfg.cache.ttl_seconds)}
@@ -973,7 +913,59 @@ const RouterPanel: React.FC<{ mgr: LlmManager }> = ({ mgr }) => {
                 }
               />
             </Labeled>
+            <p className="text-xs text-[var(--color-textSecondary)]">
+              How long a response stays in the cache before it expires.
+            </p>
           </div>
+        </details>
+
+        <details className={card}>
+          <summary className="cursor-pointer text-sm font-medium">
+            Compatibility settings
+          </summary>
+          <p className="text-xs text-[var(--color-textMuted)]">
+            These values are retained in configuration but are not currently
+            applied by the router. Health checks run only when requested;
+            scheduled checks and cost-alert actions are not active.
+          </p>
+          <Labeled label={t("integrations.llm.defaultModel", "Default model")}>
+            <input
+              className={field}
+              data-setting-key="llm.router.defaultModel"
+              value={cfg.default_model ?? ""}
+              onChange={(e) =>
+                void patch((c) => ({
+                  ...c,
+                  default_model: e.target.value || null,
+                }))
+              }
+              placeholder="gpt-4o"
+            />
+          </Labeled>
+          <Toggle
+            settingKey="llm.router.stickySessions"
+            label={t("integrations.llm.stickySessions", "Sticky sessions")}
+            description="Compatibility value; provider stickiness is not active."
+            checked={cfg.balancer.sticky_sessions}
+            onChange={(value) =>
+              patch((c) => ({
+                ...c,
+                balancer: { ...c.balancer, sticky_sessions: value },
+              }))
+            }
+          />
+          <Toggle
+            settingKey="llm.cache.embeddings"
+            label={t("integrations.llm.cacheEmbeddings", "Cache embeddings")}
+            description="Compatibility value; embedding responses are not cached."
+            checked={cfg.cache.cache_embeddings}
+            onChange={(value) =>
+              patch((c) => ({
+                ...c,
+                cache: { ...c.cache, cache_embeddings: value },
+              }))
+            }
+          />
         </details>
       </fieldset>
       <div className="flex flex-wrap items-center gap-3">
@@ -1335,11 +1327,11 @@ const Stat: React.FC<{ label: string; value: React.ReactNode }> = ({
   label,
   value,
 }) => (
-  <div className="rounded bg-[var(--color-surface)] p-2">
+  <div className="min-w-0 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] p-3">
     <div className="text-[10px] uppercase tracking-wide text-[var(--color-textMuted)]">
       {label}
     </div>
-    <div className="text-sm font-semibold text-[var(--color-text)]">
+    <div className="break-words text-sm font-semibold text-[var(--color-text)]">
       {value}
     </div>
   </div>
@@ -1568,8 +1560,8 @@ function AiDisclosure({
   children: React.ReactNode;
 }) {
   return (
-    <details className="group rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)]">
-      <summary className="flex cursor-pointer list-none items-center gap-3 p-4 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary rounded-xl">
+    <details className="group min-w-0 space-y-3">
+      <summary className="flex cursor-pointer list-none items-center gap-3 rounded-md p-1 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary [&::-webkit-details-marker]:hidden">
         <span className="text-primary">{icon}</span>
         <span className="min-w-0 flex-1">
           <span className="block text-sm font-semibold">{title}</span>
@@ -1582,9 +1574,7 @@ function AiDisclosure({
           className="h-4 w-4 shrink-0 transition-transform group-open:rotate-180 motion-reduce:transition-none"
         />
       </summary>
-      <div className="border-t border-[var(--color-border)] p-4">
-        <Card>{children}</Card>
-      </div>
+      <Card>{children}</Card>
     </details>
   );
 }
@@ -1714,7 +1704,7 @@ const AiSettings: React.FC<{ highlightKey?: string | null }> = ({
   return (
     <div
       ref={root}
-      className="space-y-5 min-w-0 [&_input[type=checkbox]]:accent-primary"
+      className="space-y-6 min-w-0 [&_input[type=checkbox]]:accent-primary"
       data-testid="section-ai"
     >
       <SectionHeading
