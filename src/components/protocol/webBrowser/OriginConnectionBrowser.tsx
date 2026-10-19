@@ -324,7 +324,10 @@ export default function OriginConnectionBrowser({
             connection?.security?.tunnelChain?.some(
               (layer) =>
                 layer.enabled &&
-                ["ssh-tunnel", "local-forward"].includes(layer.type),
+                ["ssh-tunnel", "local-forward", "ssh-jump"].includes(
+                  layer.type,
+                ) &&
+                layer.sshTunnel?.forwardType === "local",
             )
             ? 180_000
             : 0,

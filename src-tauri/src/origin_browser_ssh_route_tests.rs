@@ -12,6 +12,68 @@ fn modern() -> Value {
             "remoteHost":"127.0.0.1","remotePort":10000}}]}})
 }
 
+fn editor_ssh_jump() -> Value {
+    json!({"security":{"tunnelChain":[{
+    "id":"connection-inline-ssh","type":"ssh-jump","enabled":true,
+    "name":"Per-connection SSH","sshTunnel":{
+        "forwardType":"local","port":22,"authMethod":"password",
+        "host":"bastion.example.test","username":"operator","password":"fixture"
+    }}]}})
+}
+
+#[test]
+fn ssh_editor_single_jump_representation_uses_the_original_website_destination() {
+    // Exact setInlineSsh/SshSourceFields representation: no remoteHost or
+    // remotePort is materialized by the per-connection editor.
+    let original = editor_ssh_jump();
+    for method in [None, Some("proxyjump"), Some("local-forward")] {
+        let mut config = original.clone();
+        if let Some(method) = method {
+            config["security"]["tunnelChain"][0]["sshChainingMethod"] = method.into();
+        }
+        let selected = selected(&config, &target()).unwrap().unwrap();
+        assert_eq!(selected.remote, target());
+        assert_eq!(selected.ssh["host"], "bastion.example.test");
+        assert_eq!(selected.ssh["forwardType"], "local");
+    }
+    let mut linked = original.clone();
+    linked["security"]["tunnelChain"][0]["sshTunnel"] = json!({
+        "connectionId":"saved-ssh","ownerDatabaseId":"db","forwardType":"local"});
+    let selected = selected(&linked, &target()).unwrap().unwrap();
+    assert_eq!(selected.remote, target());
+    assert_eq!(selected.ssh["connectionId"], "saved-ssh");
+    assert_eq!(original, editor_ssh_jump());
+}
+
+#[test]
+fn ssh_editor_single_jump_does_not_admit_other_mechanisms_or_multiple_hops() {
+    for method in [
+        json!("proxycommand"),
+        json!("nested-ssh"),
+        json!("dynamic-socks"),
+        json!("stdio"),
+        json!("agent-forward"),
+        Value::Null,
+        json!(false),
+    ] {
+        let mut config = editor_ssh_jump();
+        config["security"]["tunnelChain"][0]["sshChainingMethod"] = method;
+        assert!(selected(&config, &target()).is_err());
+    }
+    for forward in ["remote", "dynamic"] {
+        let mut config = editor_ssh_jump();
+        config["security"]["tunnelChain"][0]["sshTunnel"]["forwardType"] = forward.into();
+        assert!(selected(&config, &target()).is_err());
+    }
+    let mut config = editor_ssh_jump();
+    let extra = config["security"]["tunnelChain"][0].clone();
+    config["security"]["tunnelChain"]
+        .as_array_mut()
+        .unwrap()
+        .push(extra);
+    assert!(selected(&config, &target()).is_err());
+}
+
 #[test]
 fn ssh_local_route_preserves_alias_and_separates_remote_destination() {
     let config = modern();
@@ -206,6 +268,64 @@ async fn ssh_source_and_selected_vault_are_bound_to_the_encrypted_owner_lease() 
     f.replace_totp_fixture_data(&data);
     assert!(authorized.lease.recheck(&f.window, &f.state).await.is_err());
     assert!(!authorized.lease.is_current());
+}
+
+#[tokio::test]
+async fn ssh_editor_jump_resolves_its_saved_source_and_refuses_real_nested_hops() {
+    use crate::origin_browser_authority::tests::{connection, Fixture};
+    let website = connection();
+    let mut f = Fixture::new(website.clone()).await;
+    f.replace_totp_fixture_data(&json!({"connections":[website.clone(),{
+        "id":"saved-ssh","protocol":"ssh","hostname":"saved-bastion.example.test",
+        "port":22,"username":"saved-operator","password":"fixture"}],"settings":{}}));
+    let authorized = f.authorize().await.unwrap();
+    let mut editor = editor_ssh_jump();
+    let standalone = selected(&editor, &target()).unwrap().unwrap();
+    let config = super::super::ssh_config::resolve(
+        &f.window,
+        &f.state,
+        &authorized.lease,
+        &website,
+        &standalone.ssh,
+    )
+    .await
+    .unwrap();
+    assert_eq!(config.host, "bastion.example.test");
+    assert!(config.jump_hosts.is_empty());
+    assert!(config.proxy_command.is_none());
+    editor["security"]["tunnelChain"][0]["sshTunnel"] = json!({
+        "connectionId":"saved-ssh","ownerDatabaseId":"db","forwardType":"local"});
+    let linked = selected(&editor, &target()).unwrap().unwrap();
+    let config = super::super::ssh_config::resolve(
+        &f.window,
+        &f.state,
+        &authorized.lease,
+        &website,
+        &linked.ssh,
+    )
+    .await
+    .unwrap();
+    assert_eq!(config.host, "saved-bastion.example.test");
+    assert_eq!(config.username, "saved-operator");
+    for extra in [
+        json!({"jumpHosts":[{"host":"another-hop.example.test"}]}),
+        json!({"proxyCommand":{"command":"nc %h %p"}}),
+        json!({"jumpTargetHost":"different.example.test"}),
+    ] {
+        let mut spec = linked.ssh.clone();
+        for (key, value) in extra.as_object().unwrap() {
+            spec[key] = value.clone();
+        }
+        assert!(super::super::ssh_config::resolve(
+            &f.window,
+            &f.state,
+            &authorized.lease,
+            &website,
+            &spec
+        )
+        .await
+        .is_err());
+    }
 }
 
 #[tokio::test]

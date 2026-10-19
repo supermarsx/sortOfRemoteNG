@@ -1,4 +1,5 @@
 import React from "react";
+import { setInlineSsh } from "../../src/components/connection/editor/networkPathModel";
 import {
   act,
   cleanup,
@@ -410,20 +411,14 @@ async function attached() {
 describe("real-origin connection-tab integration", () => {
   it("registers SSH host-key verification before creating a tunneled Webmin tab and preserves its website origin", async () => {
     f.context.state.connections = [
-      {
-        ...connection,
-        hostname: "127.0.10.14",
-        port: 10000,
-        security: {
-          sshTunnel: {
-            enabled: true,
-            connectionId: "ssh-host",
-            localPort: 10000,
-            remoteHost: "localhost",
-            remotePort: 10000,
-          },
+      setInlineSsh(
+        { ...connection, hostname: "127.0.10.14", port: 10000 },
+        {
+          forwardType: "local",
+          connectionId: "ssh-host",
+          ownerDatabaseId: "database-1",
         },
-      },
+      ),
       {
         id: "ssh-host",
         protocol: "ssh",

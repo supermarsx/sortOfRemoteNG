@@ -53,7 +53,7 @@ function source(options: NativeBrowserSshTrustOptions) {
     row?.security?.tunnelChain?.filter((layer) => layer.enabled !== false) ??
     [];
   const modern = layers.filter((layer) =>
-    ["ssh-tunnel", "local-forward"].includes(layer.type),
+    ["ssh-tunnel", "local-forward", "ssh-jump"].includes(layer.type),
   );
   const needed = legacy?.enabled === true || modern.length > 0;
   const spec =

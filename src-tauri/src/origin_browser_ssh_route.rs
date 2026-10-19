@@ -54,7 +54,7 @@ fn selected(
     let has_ssh = active.iter().any(|layer| {
         matches!(
             layer.get("type").and_then(Value::as_str),
-            Some("ssh-tunnel" | "local-forward")
+            Some("ssh-tunnel" | "local-forward" | "ssh-jump")
         )
     });
     if !legacy_enabled && !has_ssh {
@@ -99,9 +99,18 @@ fn selected(
             return Err(UNSUPPORTED);
         }
         let layer = active[0];
-        if ["tunnelProfileId", "nodeChainConfig", "sshChainingMethod"]
+        if ["tunnelProfileId", "nodeChainConfig"]
             .iter()
             .any(|key| layer.get(key).is_some())
+        {
+            return Err(UNSUPPORTED);
+        }
+        // The connection editor labels a single direct-tcpip hop ssh-jump.
+        // ProxyJump and local-forward are equivalent for this one-hop case;
+        // other mechanisms need a separate adapter and must not be ignored.
+        if layer
+            .get("sshChainingMethod")
+            .is_some_and(|method| !matches!(method.as_str(), Some("proxyjump" | "local-forward")))
         {
             return Err(UNSUPPORTED);
         }

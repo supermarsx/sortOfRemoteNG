@@ -1,6 +1,7 @@
 import { act, cleanup, renderHook, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Connection } from "../../src/types/connection/connection";
+import { setInlineSsh } from "../../src/components/connection/editor/networkPathModel";
 import {
   useOriginBrowserSshTrust,
   type NativeBrowserSshTrustOptions,
@@ -105,6 +106,28 @@ afterEach(() => {
 });
 
 describe("native browser SSH host-key trust", () => {
+  it("verifies the saved SSH source selected through the connection editor", async () => {
+    const props = options();
+    props.connection = setInlineSsh(
+      { ...website, security: undefined },
+      { forwardType: "local", connectionId: "ssh", ownerDatabaseId: "db" },
+    ) as Connection;
+    expect(props.connection.security?.tunnelChain?.[0].type).toBe("ssh-jump");
+    await start(props);
+    expect(h.listen).toHaveBeenCalledTimes(1);
+    await emit();
+    expect(h.verify).toHaveBeenCalledWith(
+      "ssh.test",
+      22,
+      "ssh",
+      expect.any(Object),
+      "ssh",
+    );
+    expect(h.invoke).toHaveBeenCalledWith("ssh_respond_to_host_key_prompt", {
+      sessionId: "backend",
+      decision: "accept_and_save",
+    });
+  });
   it("matches the native unbracketed IPv6 endpoint without changing its port", async () => {
     const props = options();
     props.connections = [{ ...ssh, hostname: "[::1]", port: 2222 }];
