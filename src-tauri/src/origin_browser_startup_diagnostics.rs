@@ -419,6 +419,65 @@ enum Message {
     Timing(Box<TimingSnapshot>),
 }
 
+/// The encrypted application sink receives the same fixed failure evidence as
+/// the browser journal, even when that journal is unavailable or at its cap.
+fn application_navigation_failure(status: &Navigation) -> Option<(&'static str, String)> {
+    let target = match status {
+        Navigation::LoadError {
+            code,
+            main_frame: true,
+        } if *code < 0 && *code != -3 => {
+            if matches!(*code, -130 | -111 | -115) {
+                "native_browser::proxy"
+            } else {
+                "native_browser::navigation"
+            }
+        }
+        Navigation::PrivateRelay { .. } => "native_browser::proxy",
+        Navigation::SessionFailed { .. } => "native_browser::session",
+        Navigation::TlsDenied | Navigation::TlsFailed | Navigation::TlsBridgeFailed { .. } => {
+            "native_browser::tls"
+        }
+        _ => return None,
+    };
+    // Navigation has only enums, booleans and bounded scalar counters. It has
+    // no URL, title, owner ID, endpoint, certificate or arbitrary error field.
+    Some((target, serde_json::to_string(status).ok()?))
+}
+
+pub(crate) fn authority_failure(
+    error: sorng_commands_core::origin_browser_authority::NativeAuthorityError,
+) {
+    use sorng_commands_core::origin_browser_authority::NativeAuthorityError as E;
+    let (target, code) = match error {
+        E::RouteUnsupported => ("native_browser::proxy", "network-route"),
+        E::SshRouteUnavailable { stage } => (
+            "native_browser::proxy",
+            match stage {
+                "service" => "ssh-route-service",
+                "connect" => "ssh-route-connect",
+                "forward" => "ssh-route-forward",
+                "owner" => "ssh-route-owner",
+                _ => "ssh-route-unavailable",
+            },
+        ),
+        E::InvalidRequest => ("native_browser::startup", "request-invalid"),
+        E::OwnerUnavailable => ("native_browser::startup", "owner-unavailable"),
+        E::SourceMismatch => ("native_browser::startup", "source-mismatch"),
+        E::PolicyUnsupported | E::PolicyInvalid { .. } => {
+            ("native_browser::startup", "permissions-invalid")
+        }
+        E::SettingsUnavailable => ("native_browser::startup", "settings-unavailable"),
+        E::PreferencesInvalid => ("native_browser::startup", "preferences-invalid"),
+        E::CapabilitiesInvalid => ("native_browser::startup", "capabilities-invalid"),
+        E::CertificatePolicyUnsupported => ("native_browser::tls", "certificate-policy"),
+        E::ApplicationUnsupported => ("native_browser::startup", "application-unsupported"),
+        E::CredentialUnavailable => ("native_browser::startup", "credential-reference"),
+        E::MfaOriginMismatch => ("native_browser::startup", "mfa-origin-mismatch"),
+    };
+    log::error!(target: target, "Native browser failure: source=native stage=authorize code={code}");
+}
+
 fn dispatcher() -> Option<&'static SyncSender<Message>> {
     static WORKER: OnceLock<Option<SyncSender<Message>>> = OnceLock::new();
     WORKER.get_or_init(|| {
@@ -449,7 +508,7 @@ fn dispatcher() -> Option<&'static SyncSender<Message>> {
                 }
                 Message::Record(stage, failure, timestamp) => {
                     if failure.is_some() {
-                        log::error!("Native browser lifecycle: stage={stage:?} failure={failure:?}");
+                        log::error!(target: "native_browser::startup", "Native browser failure: timestampUnixMs={} source=native stage={stage:?} failure={failure:?}", timestamp.duration_since(UNIX_EPOCH).unwrap_or_default().as_millis());
                     } else {
                         log::info!("Native browser lifecycle: stage={stage:?}");
                     }
@@ -461,6 +520,9 @@ fn dispatcher() -> Option<&'static SyncSender<Message>> {
                     }
                 }
                 Message::Navigation(status, timestamp) => {
+                    if let Some((target, detail)) = application_navigation_failure(&status) {
+                        log::error!(target: target, "Native browser failure: timestampUnixMs={} source=native {detail}", timestamp.duration_since(UNIX_EPOCH).unwrap_or_default().as_millis());
+                    }
                     if let Some(opened) = journal.as_mut() {
                         if let Err(error) = opened.navigation(status, timestamp) {
                             log::warn!("Native browser diagnostic write failed (IO kind {:?})", error.kind());

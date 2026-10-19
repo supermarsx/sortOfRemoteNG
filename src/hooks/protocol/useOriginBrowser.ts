@@ -16,6 +16,7 @@ import {
   originBrowserSourceChangesExhausted,
 } from "./originBrowserSessionError";
 import { getOriginBrowserRuntimeFailureDetail } from "./originBrowserFailureDetails";
+import { useOriginBrowserFailureLog } from "./useOriginBrowserFailureLog";
 import {
   originBrowserStartRetriesExhausted,
   originBrowserStartTimeout,
@@ -556,6 +557,14 @@ export function useOriginBrowser(options: UseOriginBrowserOptions) {
   const consentKind = consent.kind;
   const grantId = consent.kind === "existing-grant" ? consent.grantId : null;
   const [state, setState] = useState<OriginBrowserState>(initialState);
+  useOriginBrowserFailureLog(
+    state,
+    JSON.stringify([
+      options.owner.ownerDatabaseId,
+      options.owner.connectionId,
+      options.owner.sessionId,
+    ]),
+  );
   const [generation, setGeneration] = useState(0);
   const commandScope = JSON.stringify([
     ownerDatabaseId,

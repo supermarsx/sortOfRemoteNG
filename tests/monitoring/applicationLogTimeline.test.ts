@@ -14,6 +14,38 @@ const file = {
 const browser = (row: unknown) =>
   parseLogTimeline(JSON.stringify(row), "browser", file)[0];
 describe("bounded application log timeline", () => {
+  it("keeps persistent browser failures filterable and preserves observed time across queued logging", () => {
+    const rows = parseLogTimeline(
+      [
+        '[2026-10-19T12:01:00Z][ERROR][native_browser::proxy] Native browser failure: timestampUnixMs=1792411200000 source=native {"event":"load-error","code":-130,"main_frame":true}',
+        "[2026-10-19T12:01:00Z][ERROR][native_browser::startup] Native browser client failure: timestampUnixMs=1792411200001 source=frontend sample=4 stage=Create category=Runtime",
+        "[2026-10-19T12:01:00Z][ERROR][other_module] Native browser failure: timestampUnixMs=1 ordinary message",
+        "[2026-10-19T12:01:00Z][ERROR][native_browser::tls] Native browser failure: timestampUnixMs=9999999999999999 invalid time",
+      ].join("\n"),
+      "application",
+      file,
+    );
+    expect(rows[0]).toMatchObject({
+      source: "application",
+      category: "proxy",
+      timestampMs: 1792411200000,
+      level: "ERROR",
+    });
+    expect(rows[1]).toMatchObject({
+      category: "startup",
+      timestampMs: 1792411200001,
+    });
+    expect(rows[2]).toMatchObject({
+      category: "application",
+      timestampMs: Date.parse("2026-10-19T12:01:00Z"),
+    });
+    expect(rows[3]).toMatchObject({
+      category: "tls",
+      timestampMs: Date.parse("2026-10-19T12:01:00Z"),
+    });
+    expect(logRowsText(rows)).toContain("[Browser proxy]");
+    expect(logRowsText(rows)).toContain('"code":-130');
+  });
   it("splits encrypted tracing RDP events, reads fractional dates and keeps real multiline blocks", () => {
     const rows = parseLogTimeline(
       [

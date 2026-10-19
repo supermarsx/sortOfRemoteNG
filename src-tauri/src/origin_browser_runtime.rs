@@ -1294,7 +1294,10 @@ async fn create_document(
     let authorized =
         origin_browser_authority::authorize_create_with_certificate_hooks(&window, state, &request)
             .await
-            .map_err(|e| e.to_string())?;
+            .map_err(|e| {
+                diagnostics::authority_failure(e);
+                e.to_string()
+            })?;
     timing.mark(TimingStage::Authorized);
     let preparing_lease = authorized.lease.clone();
     let owner_setup = flow::RevokeOnDrop::new(move || preparing_lease.revoke());

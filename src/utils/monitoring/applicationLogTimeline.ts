@@ -532,6 +532,11 @@ export function parseLogTimeline(
         : null;
     const tracing = traced ? tracingMessage(traced[3]) : null;
     const message = structured?.[4] ?? simple?.[2] ?? tracing?.message ?? line;
+    const failureTime =
+      /^Native browser (?:client )?failure: timestampUnixMs=(\d{1,16}) /.exec(
+        message,
+      );
+    const observedTime = failureTime ? Number(failureTime[1]) : NaN;
     const pretty = nativeTiming(message);
     const target = structured?.[3] ?? tracing?.target;
     const moduleName =
@@ -541,23 +546,35 @@ export function parseLogTimeline(
       names.some(
         (name) => moduleName === name || moduleName.startsWith(`${name}::`),
       );
-    const category: LogCategory = inModule([
-      "sorng_ssh",
-      "sorng_socket_transport",
-      "sorng_protocols::private_forward_proxy",
-    ])
-      ? "network"
-      : inModule(["sorng_encryption", "sorng_tls_trust", "sspi"])
-        ? "security"
-        : inModule(["sorng_rdp", "sorng_serial", "ironrdp"]) ||
-            (moduleName !== null && moduleName.startsWith("ironrdp_"))
-          ? "sessions"
-          : "application";
+    const browserCategory = (
+      ["startup", "navigation", "tls", "proxy", "session"] as const
+    ).find((category) => inModule([`native_browser::${category}`]));
+    const eventTimestamp =
+      browserCategory &&
+      Number.isSafeInteger(observedTime) &&
+      observedTime > 0 &&
+      observedTime <= 8_640_000_000_000_000
+        ? observedTime
+        : timestampMs;
+    const category: LogCategory =
+      browserCategory ??
+      (inModule([
+        "sorng_ssh",
+        "sorng_socket_transport",
+        "sorng_protocols::private_forward_proxy",
+      ])
+        ? "network"
+        : inModule(["sorng_encryption", "sorng_tls_trust", "sspi"])
+          ? "security"
+          : inModule(["sorng_rdp", "sorng_serial", "ironrdp"]) ||
+              (moduleName !== null && moduleName.startsWith("ironrdp_"))
+            ? "sessions"
+            : "application");
     result.push({
       ...base,
       category,
-      timestampMs,
-      orderMs: timestampMs ?? base.orderMs,
+      timestampMs: eventTimestamp,
+      orderMs: eventTimestamp ?? base.orderMs,
       level: structured?.[2] ?? simple?.[1] ?? traced?.[2] ?? "LOG",
       message,
       details: "",

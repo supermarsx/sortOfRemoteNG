@@ -16,6 +16,7 @@ pub(crate) fn build() -> InvokeHandler {
     let application_log_handler = erase_handler(tauri::generate_handler![
         crate::application_log_commands::application_logs_list,
         crate::application_log_commands::application_logs_read,
+        crate::application_log_commands::application_logs_browser_failure,
     ]);
     let tray_handler = erase_handler(tauri::generate_handler![crate::tray::set_tray_icon_visible]);
     let web_guard_handler = erase_handler(tauri::generate_handler![

@@ -1,11 +1,24 @@
-//! Read-only application diagnostics for trusted app windows, never CEF pages.
+//! Application diagnostics for trusted app windows, never CEF pages.
 use crate::application_log_files::{self as files, LogList, LogRead, LogSource};
 use sorng_encryption::EncryptionState;
 use std::path::PathBuf;
 use tauri::{Manager, State, WebviewWindow};
 
+#[path = "application_browser_failure.rs"]
+mod browser_failure;
+
 pub(crate) fn is_command(command: &str) -> bool {
-    matches!(command, "application_logs_list" | "application_logs_read")
+    matches!(command, "application_logs_list" | "application_logs_read" | "application_logs_browser_failure")
+}
+
+#[tauri::command]
+pub(crate) fn application_logs_browser_failure(
+    window: WebviewWindow,
+    event: browser_failure::BrowserFailureEvent,
+) -> Result<(), String> {
+    require_shell(&window)?;
+    log::error!(target: "native_browser::startup", "{}", event.message());
+    Ok(())
 }
 
 pub(crate) fn require_shell(window: &WebviewWindow) -> Result<(), String> {
