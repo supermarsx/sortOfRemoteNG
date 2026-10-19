@@ -47,6 +47,31 @@ const startup = (message: string) =>
 
 describe("fixed actionable native failure details", () => {
   it.each([
+    ["service", "SSH route service", "SSH service"],
+    ["connect", "SSH route connection", "authentication and host-key trust"],
+    ["forward", "SSH route forwarding", "forwarding mode"],
+    ["owner", "SSH route database ownership", "Unlock the owning database"],
+  ])(
+    "explains the fixed SSH %s stage without blaming website credentials",
+    (stage, field, guidance) => {
+      const [detail] = getOriginBrowserFailureDetails(
+        startup(
+          `Saved browser SSH route is unavailable (${stage}); review its saved SSH connection and tunnel settings; no direct fallback`,
+        ),
+      );
+      expect(detail).toMatchObject({
+        code: `ssh-route-${stage}`,
+        field,
+        action: "network",
+      });
+      expect(detail.nextStep).toContain(guidance);
+      expect(JSON.stringify(detail)).not.toContain("SECRET");
+      expect(detail.problem).not.toContain("website password");
+      if (stage === "connect")
+        expect(detail.nextStep).toContain("Do not disable host-key checks");
+    },
+  );
+  it.each([
     "cookie-restore",
     "cookie-rejected",
     "cookie-restore-timeout",

@@ -103,6 +103,55 @@ afterEach(() => {
 });
 
 describe("native browser failure diagnostics", () => {
+  it("shows saved connection/application/SSH route types in the UI and copied diagnostics, without claiming execution", async () => {
+    const options = props();
+    options.state = {
+      ...options.state,
+      snapshot: null,
+      startupFailure: originBrowserStartupError(
+        "create",
+        "Saved browser network route is invalid or unsupported; no direct fallback",
+      ),
+    };
+    options.connection = {
+      protocol: "https",
+      hostname: "PRIVATE_ROUTE_ADDRESS",
+      httpApplication: { version: 1, id: "webmin", loginMode: "manual" },
+      security: {
+        sshTunnel: {
+          enabled: true,
+          connectionId: "PRIVATE_ROUTE_ID",
+          localPort: 10000,
+          remoteHost: "PRIVATE_REMOTE_ADDRESS",
+          remotePort: 10000,
+        },
+      },
+    };
+    render(<OriginBrowserFailureDiagnostics {...options} />);
+    expect(screen.getByText("Saved connection type")).toBeVisible();
+    expect(screen.getByText("HTTPS")).toBeVisible();
+    expect(screen.getByText("Webmin")).toBeVisible();
+    expect(screen.getByText("ssh-tunnel")).toBeVisible();
+    expect(screen.getByText("local (legacy)")).toBeVisible();
+    expect(
+      screen.getByText("Not confirmed; saved configuration only"),
+    ).toBeVisible();
+    fireEvent.click(screen.getByRole("button", { name: "Copy diagnostics" }));
+    await waitFor(() => expect(writeText).toHaveBeenCalledTimes(1));
+    const copied = writeText.mock.calls[0][0] as string;
+    expect(copied).toContain("Saved connection type: HTTPS");
+    expect(copied).toContain("Browser application: Webmin");
+    expect(copied).toContain("Configured route kinds: ssh-tunnel");
+    expect(copied).toContain("SSH forwarding modes: local (legacy)");
+    expect(copied).toContain(
+      "Route execution: Not confirmed; saved configuration only",
+    );
+    expect(copied).toContain("Startup stage: create");
+    expect(copied).toContain("Native lifecycle: Not reported");
+    expect(copied).not.toContain("PRIVATE_ROUTE");
+    expect(copied).not.toContain("PRIVATE_REMOTE");
+    assertNoSecrets(copied);
+  });
   it("shows and copies the safe engine failure and startup stage with recovery, without issuing a website probe", async () => {
     const p = props();
     p.state = {

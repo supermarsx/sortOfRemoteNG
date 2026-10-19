@@ -38,6 +38,10 @@ export type OriginBrowserKnownStartupFailureCode =
   | "mfa-origin-mismatch"
   | "application-unsupported"
   | "network-route"
+  | "ssh-route-service"
+  | "ssh-route-connect"
+  | "ssh-route-forward"
+  | "ssh-route-owner"
   | "credential-reference"
   | "owner-proof"
   | "session-stale"
@@ -69,6 +73,18 @@ const mfaOriginFailure =
   "Saved automatic two-factor authentication consent does not match the reviewed login origin. In Authentication, review the authenticator and HTTPS login origin, re-enable automatic codes, and save the connection. Your password and authenticator are unchanged.";
 const nativeLegacyMfaOriginFailure =
   "Saved automatic two-factor authentication consent does not match the reviewed login origin. In Application settings, review the authenticator and HTTPS login origin, re-enable automatic codes, and save the connection. Your password and authenticator are unchanged.";
+
+// Expand only fixed native stages into exact messages. Never parse a received
+// prefix/suffix or retain arbitrary SSH errors, hostnames or credentials.
+const sshRouteFailures = new Map(
+  (["service", "connect", "forward", "owner"] as const).map((stage) => [
+    `Saved browser SSH route is unavailable (${stage}); review its saved SSH connection and tunnel settings; no direct fallback`,
+    {
+      code: `ssh-route-${stage}` as const,
+      message: `The saved SSH route could not complete its ${stage} stage. Review its saved SSH connection and tunnel settings; no direct fallback was used.`,
+    },
+  ]),
+);
 
 // Every native policy message is assembled from these fixed literals. Never
 // split a received message into a scope/rule, interpolate saved values, or use
@@ -993,6 +1009,17 @@ export function originBrowserStartupError(
       message: `Native browser startup failed (${stage}). ${runtimeWording[code] ?? candidate}`,
     };
   }
+  const sshRoute =
+    stage === "create" && typeof candidate === "string"
+      ? sshRouteFailures.get(candidate)
+      : undefined;
+  if (sshRoute)
+    return {
+      stage,
+      category: "connection",
+      code: sshRoute.code,
+      message: `Native browser startup failed (${stage}). ${sshRoute.message}`,
+    };
   const guidance =
     typeof candidate === "string" &&
     (!(certificateFailure || bridgeFailure || mfaFailure) || stage === "create")

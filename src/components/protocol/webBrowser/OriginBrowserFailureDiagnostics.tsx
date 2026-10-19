@@ -5,6 +5,8 @@ import { getInvoke } from "../../../utils/tauri/invoke";
 import { parseNativeBrowserDiagnostics } from "../../../types/network/nativeBrowserDiagnostics";
 import { Bug, Copy, Info, Microscope, ShieldAlert } from "lucide-react";
 import { APP_VERSION } from "../../../generated/version";
+import type { Connection } from "../../../types/connection/connection";
+import { browserConnectionDiagnosticFacts } from "../../../utils/protocol/browserConnectionDiagnostics";
 import type { OriginBrowserState } from "../../../hooks/protocol/useOriginBrowser";
 import { nativeProxyConnectionFailure } from "../../../hooks/protocol/originBrowserSessionError";
 import {
@@ -24,6 +26,7 @@ import {
 
 export interface OriginBrowserFailureDiagnosticsProps {
   state: OriginBrowserState;
+  connection?: Partial<Connection>;
   /** Only the HTTP(S) origin is displayed or copied; paths can contain tokens. */
   targetUrl: string;
   active: boolean;
@@ -283,6 +286,7 @@ function presentationFor(
  * Never instantiate the legacy web hook or stringify native errors/snapshots. */
 export function OriginBrowserFailureDiagnostics({
   state,
+  connection,
   targetUrl,
   active,
   ownerAvailable,
@@ -365,6 +369,7 @@ export function OriginBrowserFailureDiagnostics({
   const facts: [string, string][] = [
     ["Private proxy health", relayHealth],
     ["Browser engine", "Native CEF"],
+    ...browserConnectionDiagnosticFacts(connection),
     ["App version", APP_VERSION],
     ["Website origin", target],
     [

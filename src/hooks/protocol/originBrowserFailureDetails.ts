@@ -293,6 +293,30 @@ const startupDetails: Record<
     "Review and correct the connection's proxy or tunnel configuration, save the intended route, then reopen the tab.",
     "network",
   ],
+  "ssh-route-service": [
+    "SSH route service",
+    "The app's SSH service was unavailable while preparing the saved browser route.",
+    "Review the saved SSH source in this connection's network route. Retry after the SSH service is available; no direct connection was substituted.",
+    "network",
+  ],
+  "ssh-route-connect": [
+    "SSH route connection",
+    "The saved SSH route could not establish its SSH connection. The report does not distinguish reachability, authentication or host-key trust.",
+    "Review the route's saved SSH connection, authentication and host-key trust. Confirm that SSH source can connect, then retry the website through the saved route. Do not disable host-key checks to bypass this failure.",
+    "network",
+  ],
+  "ssh-route-forward": [
+    "SSH route forwarding",
+    "The SSH route could not prepare the requested port forward.",
+    "Review the saved SSH tunnel's forwarding mode and destination, SSH server forwarding permissions, and local listener availability. Correct the saved route before retrying; no direct fallback was used.",
+    "network",
+  ],
+  "ssh-route-owner": [
+    "SSH route database ownership",
+    "The saved SSH source or its owning database became unavailable while preparing the route.",
+    "Unlock the owning database and review the route's selected SSH source. Reopen the website from that database after confirming access; no different SSH source or direct route was substituted.",
+    "network",
+  ],
   "credential-reference": [
     "Website credential reference",
     "The credential reference is unavailable or invalid in the owning database.",

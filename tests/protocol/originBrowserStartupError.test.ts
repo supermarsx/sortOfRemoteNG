@@ -37,6 +37,53 @@ const names = [
 ];
 
 describe("native browser per-view startup diagnostics", () => {
+  it.each(["service", "connect", "forward", "owner"] as const)(
+    "recognizes only the exact fixed native SSH %s failure",
+    (stage) => {
+      const native = `Saved browser SSH route is unavailable (${stage}); review its saved SSH connection and tunnel settings; no direct fallback`;
+      expect(authority).toContain(
+        "Saved browser SSH route is unavailable ({stage}); review its saved SSH connection and tunnel settings; no direct fallback",
+      );
+      for (const input of [native, new Error(native)]) {
+        const result = originBrowserStartupError("create", input);
+        expect(result).toMatchObject({
+          category: "connection",
+          code: `ssh-route-${stage}`,
+        });
+        expect(result.message).toContain("no direct fallback");
+        expect(originBrowserStartupRetryable(result)).toBe(false);
+      }
+      for (const message of [
+        `${native} SECRET_SSH_PASSWORD`,
+        `SECRET_HOST ${native}`,
+        `${native}\nSECRET_PRIVATE_KEY`,
+      ]) {
+        const result = originBrowserStartupError("create", message);
+        expect(result.code).toBeUndefined();
+        expect(result.message).not.toContain("SECRET");
+      }
+      for (const startupStage of [
+        "listen",
+        "status",
+        "owner-check",
+        "resync",
+      ] as const) {
+        const result = originBrowserStartupError(startupStage, native);
+        expect(result.code).toBeUndefined();
+        expect(result.message).not.toContain(
+          `SSH route could not complete its ${stage}`,
+        );
+      }
+    },
+  );
+  it("does not accept an unknown SSH stage as a diagnostic or expose its value", () => {
+    const result = originBrowserStartupError(
+      "create",
+      "Saved browser SSH route is unavailable (SECRET_STAGE); review its saved SSH connection and tunnel settings; no direct fallback",
+    );
+    expect(result.code).toBeUndefined();
+    expect(result.message).not.toContain("SECRET_STAGE");
+  });
   it.each([
     [
       "cookie-rejected",
