@@ -861,6 +861,25 @@ describe("database-owned trusted HTTP redirect preferences", () => {
       ),
     ).toMatchObject({ trusted: true, defaultTrusted: false });
   });
+  it("compares the effective inline-port origin without mutating remembered redirect consent", () => {
+    const inline = { ...source, hostname: "nas.example:8443", port: 443 };
+    const split = { ...source, hostname: "nas.example", port: 8443 };
+    const remembered = structuredClone(inline.httpTrustedRedirectDestinations);
+    expect(httpRedirectTrustIdentity(inline)).toBe(
+      httpRedirectTrustIdentity(split),
+    );
+    expect(inline.httpTrustedRedirectDestinations).toEqual(remembered);
+    expect(httpRedirectTrustIdentity(inline)).not.toBe(
+      httpRedirectTrustIdentity({
+        ...source,
+        hostname: "nas.example",
+        port: 443,
+      }),
+    );
+    expect(() => httpRedirectTrustIdentity({ ...inline, port: 9443 })).toThrow(
+      /port/,
+    );
+  });
   it("matches hydrated creation timestamps without dropping creation identity or invalid distinctions", () => {
     const original = httpRedirectTrustIdentity(source);
     for (const createdAt of [

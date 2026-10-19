@@ -11,6 +11,7 @@ import {
   getVaultRuntimeUnsupportedMessage,
   resolveRuntimeVaultCredential,
   runtimeCredentialTargetKey,
+  synologyDeviceTrustTarget,
   withoutConnectionLocalCredentials,
 } from "../../src/utils/security/runtimeCredentialVault";
 import { resolveHttpApplicationLogin } from "../../src/utils/auth/httpApplicationLogin";
@@ -637,6 +638,38 @@ describe("runtime database vault boundary", () => {
     ]);
   });
   describe("trusted NAS device intent", () => {
+    it("derives trust from the effective saved port without changing existing trusted-device records", () => {
+      const connection = {
+        protocol: "https" as const,
+        hostname: "nas.example:5001",
+        port: 443,
+        httpApplication: {
+          version: 1 as const,
+          id: "synology-dsm",
+          loginMode: "manual" as const,
+        },
+        synologySettings: {
+          version: 1 as const,
+          useHttps: true,
+          accessMode: "native" as const,
+        },
+      };
+      expect(synologyDeviceTrustTarget(connection)).toBe(
+        "https://nas.example:5001",
+      );
+      expect(
+        synologyDeviceTrustTarget({
+          ...connection,
+          protocol: "http",
+          hostname: "nas.example:5000",
+          port: 80,
+        }),
+      ).toBe("http://nas.example:5000");
+      for (const port of [5002, 80, 0, NaN])
+        expect(() =>
+          synologyDeviceTrustTarget({ ...connection, port }),
+        ).toThrow();
+    });
     const DEVICE_ID = "PRIVATE_DEVICE_TOKEN_did";
     const device = {
       id: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",

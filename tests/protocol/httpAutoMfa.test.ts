@@ -14,6 +14,31 @@ const enabled = {
   origin: "https://nas.example",
 };
 describe("reference-only automatic MFA configuration", () => {
+  it("proposes the actual inline-port HTTPS origin without rewriting saved MFA consent", () => {
+    const connection = {
+      protocol: "https" as const,
+      hostname: "nas.example:8443",
+      port: 443,
+    };
+    const saved = normalizeHttpAutoMfa(enabled);
+    expect(getHttpAutoMfaOrigin(connection)).toBe("https://nas.example:8443");
+    expect(saved.origin).toBe("https://nas.example");
+    expect(getHttpAutoMfaOrigin({ ...connection, port: 8443 })).toBe(
+      "https://nas.example:8443",
+    );
+  });
+  it.each([9443, 80, 0, NaN, -1, 65536])(
+    "refuses conflicting or malformed configured MFA port %s",
+    (port) => {
+      expect(() =>
+        getHttpAutoMfaOrigin({
+          protocol: "https",
+          hostname: "nas.example:8443",
+          port,
+        }),
+      ).toThrow();
+    },
+  );
   it.each(Object.entries(googleRoutes.profiles))(
     "pins %s consent to the native-reviewed Google authenticator origin, not its product origin",
     (id, source) => {
@@ -129,12 +154,12 @@ describe("reference-only automatic MFA configuration", () => {
         port: 80,
       }),
     ).toThrow("requires HTTPS");
-    expect(() =>
+    expect(
       getHttpAutoMfaOrigin({
         protocol: "https",
         hostname: "nas.example:81",
         port: 443,
       }),
-    ).toThrow();
+    ).toBe("https://nas.example:81");
   });
 });

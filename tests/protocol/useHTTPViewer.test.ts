@@ -386,7 +386,6 @@ describe("useHTTPViewer", () => {
 
   it.each([
     "http://secure.example.com/login",
-    "https://secure.example.com:8443/login",
     "https://user:password@secure.example.com/login",
   ])(
     "refuses full URL authority conflicts before native startup: %s",
@@ -410,6 +409,23 @@ describe("useHTTPViewer", () => {
       }
     },
   );
+
+  it("opens an address port when the separate field retains its HTTPS default", async () => {
+    const connection = useConnections().state.connections[1];
+    const original = { hostname: connection.hostname, port: connection.port };
+    connection.hostname = "https://secure.example.com:8443/login";
+    connection.port = 443;
+    try {
+      const { result, unmount } =
+        await renderConnectedHTTPViewer(makeHttpsSession());
+      expect(result.current.buildTargetUrl()).toBe(
+        "https://secure.example.com:8443/login",
+      );
+      unmount();
+    } finally {
+      Object.assign(connection, original);
+    }
+  });
 
   it("resolveCredentials returns basic auth credentials", async () => {
     const { result, unmount } = await renderConnectedHTTPViewer();

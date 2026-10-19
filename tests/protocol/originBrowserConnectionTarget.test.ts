@@ -67,6 +67,35 @@ describe("native connection target", () => {
       originBrowserConnectionTarget({ ...connection, port: 8443 }, session),
     ).toBe("https://fixture.invalid:8443/");
   });
+  it.each([
+    ["https", 443, "192.0.2.10:8443", "https://192.0.2.10:8443/"],
+    ["http", 80, "192.0.2.10:8080", "http://192.0.2.10:8080/"],
+    ["https", 443, "[2001:db8::1]:8443", "https://[2001:db8::1]:8443/"],
+    [
+      "https",
+      443,
+      "https://fixture.invalid:8443/login?next=%2F#signin",
+      "https://fixture.invalid:8443/login?next=%2F#signin",
+    ],
+  ] as const)(
+    "opens %s address %s despite a saved default port",
+    (protocol, port, hostname, expected) => {
+      expect(
+        originBrowserConnectionTarget(
+          { ...connection, protocol, port },
+          { ...session, protocol, hostname },
+        ),
+      ).toBe(expected);
+    },
+  );
+  it("rejects an embedded port that conflicts with a separate custom port", () => {
+    expect(() =>
+      originBrowserConnectionTarget(
+        { ...connection, port: 9443 },
+        { ...session, hostname: "fixture.invalid:8443" },
+      ),
+    ).toThrow(/conflicts/);
+  });
   it.each([undefined, "shared@example.test"])(
     "builds the configured HTTP OWA source with mailbox %s",
     (exchangeOwaMailbox) => {
@@ -93,7 +122,6 @@ describe("native connection target", () => {
   );
   it.each([
     "http://fixture.invalid",
-    "https://fixture.invalid:8443",
     "https://user:secret@fixture.invalid",
     "javascript:alert(1)",
   ])("rejects conflicting or unsafe saved targets: %s", (hostname) => {

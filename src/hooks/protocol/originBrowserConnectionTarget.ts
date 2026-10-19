@@ -2,7 +2,10 @@ import type {
   Connection,
   ConnectionSession,
 } from "../../types/connection/connection";
-import { parseCanonicalWebAuthority } from "../../utils/connection/sanitizeHostname";
+import {
+  parseCanonicalWebAuthority,
+  resolveCanonicalWebPort,
+} from "../../utils/connection/sanitizeHostname";
 import {
   getFirstPartyGoogleHostedApplicationUrl,
   getHttpApplicationProfile,
@@ -42,11 +45,11 @@ export function originBrowserConnectionTarget(
   const configuredPort = canonical
     ? Number(google.port || defaultPort)
     : connection.port || undefined;
-  if (authority.port && configuredPort && authority.port !== configuredPort)
-    throw new Error("Conflicting port");
-  const port = configuredPort ?? authority.port ?? defaultPort;
-  if (!Number.isInteger(port) || port < 1 || port > 65535)
-    throw new Error("Invalid port");
+  const port = resolveCanonicalWebPort(
+    authority.port,
+    configuredPort,
+    defaultPort,
+  );
   let target = canonical
     ? new URL(google.href)
     : new URL(`${protocol}://${authority.hostname}/`);

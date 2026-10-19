@@ -9,7 +9,10 @@ import {
   normalizeWebsiteDomainPermissions,
   resolveWebsiteRequestClassDefault,
 } from "../settings/websiteDomainPermissions";
-import { parseCanonicalWebAuthority } from "./sanitizeHostname";
+import {
+  parseCanonicalWebAuthority,
+  resolveCanonicalWebPort,
+} from "./sanitizeHostname";
 
 /** Old normalized false flags have no user-choice provenance. Only the ordinary
  * default-shaped policy adopts normal native browsing; custom restrictions stay. */
@@ -80,17 +83,11 @@ export function nativeBrowserContentAllowed(
     const source = parseCanonicalWebAuthority(connection.hostname);
     if (source.sourceScheme && source.sourceScheme !== connection.protocol)
       return false;
-    if (
-      source.port !== undefined &&
-      connection.port !== undefined &&
-      source.port !== connection.port
-    )
-      return false;
-    const port =
-      connection.port ??
-      source.port ??
-      (connection.protocol === "https" ? 443 : 80);
-    if (!Number.isInteger(port) || port < 1 || port > 65535) return false;
+    const port = resolveCanonicalWebPort(
+      source.port,
+      connection.port,
+      connection.protocol === "https" ? 443 : 80,
+    );
     const url = new URL(`${connection.protocol}://${source.hostname}/`);
     url.port = String(port);
     return (scriptsOnly ? ["script" as const] : WEBSITE_REQUEST_CLASSES).every(

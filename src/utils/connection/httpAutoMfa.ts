@@ -2,7 +2,10 @@ import type {
   Connection,
   HttpAutoMfaSettings,
 } from "../../types/connection/connection";
-import { parseCanonicalWebAuthority } from "./sanitizeHostname";
+import {
+  parseCanonicalWebAuthority,
+  resolveCanonicalWebPort,
+} from "./sanitizeHostname";
 import googleRoutes from "../protocol/googleHostedRoutes.json";
 
 const invalid = () =>
@@ -70,10 +73,12 @@ export function getHttpAutoMfaOrigin(
   const authority = parseCanonicalWebAuthority(connection.hostname);
   if (authority.sourceScheme && authority.sourceScheme !== "https")
     throw invalid();
-  if (authority.port && connection.port && authority.port !== connection.port)
+  let port: number;
+  try {
+    port = resolveCanonicalWebPort(authority.port, connection.port, 443);
+  } catch {
     throw invalid();
-  const port = connection.port || authority.port || 443;
-  if (!Number.isInteger(port) || port < 1 || port > 65535) throw invalid();
+  }
   const source = new URL(`https://${authority.hostname}:${port}`).origin;
   if (connection.httpApplication?.invalid) throw invalid();
   const profileId = connection.httpApplication?.id;

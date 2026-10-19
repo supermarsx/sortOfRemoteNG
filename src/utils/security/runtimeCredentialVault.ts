@@ -21,7 +21,10 @@ import {
   normalizeSynologySettings,
 } from "../../types/protocols/synology";
 import { stableJsonStringify } from "../core/stableJsonStringify";
-import { parseCanonicalWebAuthority } from "../connection/sanitizeHostname";
+import {
+  parseCanonicalWebAuthority,
+  resolveCanonicalWebPort,
+} from "../connection/sanitizeHostname";
 import { normalizeHttpRedirectOrigin } from "../protocol/httpTrustedRedirectDestinations";
 import {
   getHttpApplicationProfile,
@@ -398,11 +401,11 @@ export function synologyDeviceTrustTarget(
     const authority = parseCanonicalWebAuthority(connection.hostname ?? "");
     if (authority.sourceScheme && authority.sourceScheme !== scheme)
       throw failure();
-    if (authority.port && connection.port && authority.port !== connection.port)
-      throw failure();
-    const port =
-      connection.port || authority.port || (scheme === "https" ? 443 : 80);
-    if (!Number.isInteger(port) || port < 1 || port > 65535) throw failure();
+    const port = resolveCanonicalWebPort(
+      authority.port,
+      connection.port,
+      scheme === "https" ? 443 : 80,
+    );
     const url = new URL(`${scheme}://${authority.hostname}/`);
     url.port = String(port);
     return normalizeHttpRedirectOrigin(url.origin);

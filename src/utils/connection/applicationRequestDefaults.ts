@@ -9,7 +9,10 @@ import {
   getHttpApplicationProfile,
   normalizeHttpApplicationSettings,
 } from "./httpApplicationProfiles";
-import { parseCanonicalWebAuthority } from "./sanitizeHostname";
+import {
+  parseCanonicalWebAuthority,
+  resolveCanonicalWebPort,
+} from "./sanitizeHostname";
 import {
   normalizeWebsiteDomainPermissions,
   resolveWebsiteRequestClassDefault,
@@ -33,10 +36,7 @@ export function applicationRequestDefaultOrigin(
     if (defaults?.allowAllRequests !== true) return null;
     const source = parseCanonicalWebAuthority(connection.hostname);
     if (source.sourceScheme && source.sourceScheme !== "https") return null;
-    if (source.port && connection.port && source.port !== connection.port)
-      return null;
-    const port = connection.port ?? source.port ?? 443;
-    if (!Number.isInteger(port) || port < 1 || port > 65535) return null;
+    const port = resolveCanonicalWebPort(source.port, connection.port, 443);
     const url = new URL(`https://${source.hostname}/`);
     url.port = port === 443 ? "" : String(port);
     return url.origin === defaults.sourceOrigin ? url.origin : null;

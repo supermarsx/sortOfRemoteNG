@@ -23,6 +23,31 @@ describe("origin-bound application script defaults", () => {
     ["instagram", "www.instagram.com"],
     ["linkedin", "www.linkedin.com"],
     ["zoom", "zoom.us"],
+  ])("preserves exact %s origin pins with inline ports", (id, host) => {
+    expect(
+      applicationScriptDefaultOrigin({
+        ...row(id, host),
+        hostname: `${host}:443`,
+      }),
+    ).toBe(`https://${host}`);
+    expect(
+      applicationScriptDefaultOrigin({
+        ...row(id, host),
+        hostname: `${host}:8443`,
+      }),
+    ).toBeNull();
+    expect(
+      applicationScriptDefaultOrigin({
+        ...row(id, host),
+        hostname: `${host}:443`,
+        port: 8443,
+      }),
+    ).toBeNull();
+  });
+  it.each([
+    ["instagram", "www.instagram.com"],
+    ["linkedin", "www.linkedin.com"],
+    ["zoom", "zoom.us"],
   ])(
     "applies %s before normalization-produced false can hide the default",
     (id, hostname) => {

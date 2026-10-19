@@ -97,7 +97,10 @@ import {
   type CertIdentity,
   type TrustVerifyResult,
 } from "../../utils/auth/trustStore";
-import { parseCanonicalWebAuthority } from "../../utils/connection/sanitizeHostname";
+import {
+  parseCanonicalWebAuthority,
+  resolveCanonicalWebPort,
+} from "../../utils/connection/sanitizeHostname";
 import {
   getRuntimeWebNavigation,
   registerRuntimeConnection,
@@ -868,19 +871,11 @@ export function useWebBrowser(
           ? Number(canonicalGoogle.port)
           : defaultPort
         : connection?.port || undefined;
-      if (
-        authority.port &&
-        configuredPort &&
-        authority.port !== configuredPort
-      ) {
-        throw new Error(
-          "Saved hostname port conflicts with the connection port.",
-        );
-      }
-      const port = configuredPort ?? authority.port ?? defaultPort;
-      if (!Number.isInteger(port) || port < 1 || port > 65535) {
-        throw new Error("Saved connection contains an invalid web port.");
-      }
+      const port = resolveCanonicalWebPort(
+        authority.port,
+        configuredPort,
+        defaultPort,
+      );
 
       let target = useCanonicalGoogle
         ? new URL(canonicalGoogle.href)

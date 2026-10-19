@@ -1370,10 +1370,14 @@ fn saved_source(connection: &Value) -> Result<Url, NativeAuthorityError> {
             .and_then(|p| u16::try_from(p).ok())
             .filter(|p| *p != 0)
             .ok_or(error)?;
-        if explicit_port.is_some_and(|old| old != port) {
+        // A pasted address may carry a port while the separate editor field
+        // still contains its protocol default. Keep explicit nondefault
+        // conflicts rejected rather than silently changing a saved authority.
+        let default_port = if protocol == "https" { 443 } else { 80 };
+        if port != default_port && explicit_port.is_some_and(|old| old != port) {
             return Err(error);
         }
-        url.set_port(Some(port)).map_err(|_| error)?;
+        url.set_port(Some(explicit_port.unwrap_or(port))).map_err(|_| error)?;
     }
     if url.port() == Some(0) {
         return Err(error);
@@ -2480,6 +2484,65 @@ mod tests {
         let mut group = connection();
         group["isGroup"] = true.into();
         assert!(saved_source(&group).is_err());
+    }
+
+    #[test]
+    fn embedded_saved_port_overrides_only_the_matching_protocol_default() {
+        for (protocol, host, port, expected) in [
+            (
+                "https",
+                "source.example:8443",
+                443,
+                Some("https://source.example:8443/"),
+            ),
+            (
+                "https",
+                "192.0.2.10:9443",
+                443,
+                Some("https://192.0.2.10:9443/"),
+            ),
+            (
+                "https",
+                "[2001:db8::1]:8443",
+                443,
+                Some("https://[2001:db8::1]:8443/"),
+            ),
+            (
+                "https",
+                "https://source.example:8443/login?q=fixture#step",
+                443,
+                Some("https://source.example:8443/login?q=fixture#step"),
+            ),
+            (
+                "http",
+                "source.example:8080",
+                80,
+                Some("http://source.example:8080/"),
+            ),
+            (
+                "http",
+                "http://source.example:8080/page?q=fixture#step",
+                80,
+                Some("http://source.example:8080/page?q=fixture#step"),
+            ),
+            ("https", "source.example:8443", 9443, None),
+            ("http", "source.example:8080", 8888, None),
+            ("https", "source.example:8443", 80, None),
+            ("http", "source.example:8080", 443, None),
+            ("https", "https://source.example:443/", 8443, None),
+            ("https", "http://source.example:8443/", 443, None),
+            ("http", "https://source.example:8080/", 80, None),
+        ] {
+            let mut row = connection();
+            row["protocol"] = protocol.into();
+            row["hostname"] = host.into();
+            row["port"] = port.into();
+            assert_eq!(
+                saved_source(&row).ok().as_ref().map(Url::as_str),
+                expected,
+                "{protocol}/{host}/{port}"
+            );
+        }
     }
 
     #[tokio::test]

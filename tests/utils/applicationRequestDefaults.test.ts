@@ -19,6 +19,21 @@ const defaults = Object.fromEntries(
   WEBSITE_REQUEST_CLASSES.map((key) => [key, "allow"]),
 );
 describe("Zoom origin-bound request defaults", () => {
+  it("keeps exact app-origin pins when inline ports override default editor ports", () => {
+    expect(
+      applicationRequestDefaultOrigin({ ...row, hostname: "zoom.us:443" }),
+    ).toBe(origin);
+    expect(
+      applicationRequestDefaultOrigin({ ...row, hostname: "zoom.us:8443" }),
+    ).toBeNull();
+    expect(
+      applicationRequestDefaultOrigin({
+        ...row,
+        hostname: "zoom.us:443",
+        port: 8443,
+      }),
+    ).toBeNull();
+  });
   it("previews all actual request classes without mutating normalized or persisted false", () => {
     const connection = {
       ...row,

@@ -37,7 +37,10 @@ import {
   normalizeHttpApplicationSettings,
 } from "../../utils/connection/httpApplicationProfiles";
 import { resolveExchangeOwaInitialUrl } from "../../utils/connection/exchangeOwaProfile";
-import { parseCanonicalWebAuthority } from "../../utils/connection/sanitizeHostname";
+import {
+  parseCanonicalWebAuthority,
+  resolveCanonicalWebPort,
+} from "../../utils/connection/sanitizeHostname";
 import {
   googleAccountsEntryFor,
   validateGoogleProxyRoutes,
@@ -131,16 +134,12 @@ export function useHTTPViewer(session: ConnectionSession) {
     try {
       const authority = parseCanonicalWebAuthority(rawHost);
       const configuredPort = connection.port || undefined;
-      const port = configuredPort ?? authority.port ?? defaultPort;
-      if (
-        (authority.sourceScheme && authority.sourceScheme !== protocol) ||
-        (authority.port &&
-          configuredPort &&
-          authority.port !== configuredPort) ||
-        !Number.isSafeInteger(port) ||
-        port < 1 ||
-        port > 65_535
-      )
+      const port = resolveCanonicalWebPort(
+        authority.port,
+        configuredPort,
+        defaultPort,
+      );
+      if (authority.sourceScheme && authority.sourceScheme !== protocol)
         return "";
       const target = new URL(`${protocol}://${authority.hostname}/`);
       target.port = port === defaultPort ? "" : String(port);

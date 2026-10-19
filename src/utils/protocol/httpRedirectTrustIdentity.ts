@@ -1,5 +1,8 @@
 import type { Connection } from "../../types/connection/connection";
-import { parseCanonicalWebAuthority } from "../connection/sanitizeHostname";
+import {
+  parseCanonicalWebAuthority,
+  resolveCanonicalWebPort,
+} from "../connection/sanitizeHostname";
 import { normalizeHttpRedirectOrigin } from "./httpTrustedRedirectDestinations";
 import { stableJsonStringify } from "../core/stableJsonStringify";
 import { normalizeAdvancedProtocolConnection } from "../connection/normalizeAdvancedProtocolConnection";
@@ -13,19 +16,18 @@ export function httpRedirectConnectionOrigin(connection: Connection): string {
     throw new Error(
       "The saved web origin must be reviewed before remembering redirects.",
     );
-  const port =
-    connection.port ??
-    authority.port ??
-    (connection.protocol === "https" ? 443 : 80);
-  if (
-    !Number.isInteger(port) ||
-    port < 1 ||
-    port > 65535 ||
-    (authority.port && authority.port !== port)
-  )
+  let port: number;
+  try {
+    port = resolveCanonicalWebPort(
+      authority.port,
+      connection.port,
+      connection.protocol === "https" ? 443 : 80,
+    );
+  } catch {
     throw new Error(
       "The saved web port must be reviewed before remembering redirects.",
     );
+  }
   const url = new URL(`${connection.protocol}://${authority.hostname}/`);
   url.port = String(port);
   return normalizeHttpRedirectOrigin(url.origin);

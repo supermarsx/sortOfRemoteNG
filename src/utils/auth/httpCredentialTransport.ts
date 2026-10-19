@@ -1,5 +1,8 @@
 import type { Connection } from "../../types/connection/connection";
-import { parseCanonicalWebAuthority } from "../connection/sanitizeHostname";
+import {
+  parseCanonicalWebAuthority,
+  resolveCanonicalWebPort,
+} from "../connection/sanitizeHostname";
 
 /** Saved HTTP authority only; a redirect or live page cannot grant this scope. */
 export function configuredHttpCredentialOrigin(
@@ -10,11 +13,7 @@ export function configuredHttpCredentialOrigin(
     const authority = parseCanonicalWebAuthority(connection.hostname ?? "");
     if (authority.sourceScheme && authority.sourceScheme !== "http")
       return null;
-    const configuredPort = connection.port ?? undefined;
-    if (authority.port && configuredPort && authority.port !== configuredPort)
-      return null;
-    const port = configuredPort ?? authority.port ?? 80;
-    if (!Number.isInteger(port) || port < 1 || port > 65535) return null;
+    const port = resolveCanonicalWebPort(authority.port, connection.port, 80);
     return new URL(`http://${authority.hostname}:${port}`).origin;
   } catch {
     return null;

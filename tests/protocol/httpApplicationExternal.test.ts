@@ -23,6 +23,30 @@ const connection = (
   password: "fixture-password",
 });
 describe("safe true-origin browser handoff", () => {
+  it("uses the effective inline port for custom handoff while rejecting stale targets and custom conflicts", () => {
+    const saved = {
+      ...connection("generic-form", "192.0.2.10:8443"),
+      port: 443,
+    };
+    expect(
+      getHttpApplicationExternalTarget(saved, "https://192.0.2.10:8443/")?.url,
+    ).toBe("https://192.0.2.10:8443/");
+    expect(
+      getHttpApplicationExternalTarget(saved, "https://192.0.2.10/"),
+    ).toBeNull();
+    expect(
+      getHttpApplicationExternalTarget(
+        { ...saved, port: 9443 },
+        "https://192.0.2.10:8443/",
+      ),
+    ).toBeNull();
+    expect(
+      getHttpApplicationExternalTarget(
+        connection("cloudflare", "dash.cloudflare.com:8443"),
+        "https://dash.cloudflare.com:8443/",
+      ),
+    ).toBeNull();
+  });
   it.each(["zabbix", "wazuh", "zulip", "uptime-kuma", "opnsense", "rdweb"])(
     "preserves %s's configured deployment path, never transaction parameters",
     (id) => {

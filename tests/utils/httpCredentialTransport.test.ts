@@ -26,6 +26,7 @@ describe("configured HTTP credential transport", () => {
     ["mail.example.test", undefined, "http://mail.example.test"],
     ["mail.example.test", 8080, "http://mail.example.test:8080"],
     ["mail.example.test:8080", undefined, "http://mail.example.test:8080"],
+    ["192.0.2.10:8080", 80, "http://192.0.2.10:8080"],
     ["http://mail.example.test:80/login", 80, "http://mail.example.test"],
     [
       "http://mail.example.test:8080/login?q=private#step",
@@ -43,6 +44,7 @@ describe("configured HTTP credential transport", () => {
     { protocol: "https" },
     { hostname: "https://mail.example.test:8080/" },
     { hostname: "http://mail.example.test:8081/" },
+    { hostname: "mail.example.test:80" },
     { hostname: "http://user:secret@mail.example.test:8080/" },
     { hostname: "http://mail.example.test%2fattacker/" },
     { hostname: "//mail.example.test" },

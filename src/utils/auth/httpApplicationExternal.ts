@@ -4,7 +4,10 @@ import {
   getHttpApplicationProfile,
   normalizeHttpApplicationSettings,
 } from "../connection/httpApplicationProfiles";
-import { parseCanonicalWebAuthority } from "../connection/sanitizeHostname";
+import {
+  parseCanonicalWebAuthority,
+  resolveCanonicalWebPort,
+} from "../connection/sanitizeHostname";
 import { validateHttpApplicationTarget } from "./httpApplicationLogin";
 import { resolveExchangeOwaInitialUrl } from "../connection/exchangeOwaProfile";
 
@@ -42,14 +45,7 @@ export function getHttpApplicationExternalTarget(
     const authority = parseCanonicalWebAuthority(connection.hostname ?? "");
     if (authority.sourceScheme && authority.sourceScheme !== "https")
       return null;
-    if (
-      authority.port &&
-      connection.port !== undefined &&
-      authority.port !== connection.port
-    )
-      return null;
-    const port = connection.port ?? authority.port ?? 443;
-    if (!Number.isInteger(port) || port < 1 || port > 65535) return null;
+    const port = resolveCanonicalWebPort(authority.port, connection.port, 443);
     const savedOrigin = new URL(`https://${authority.hostname}:${port}`).origin;
     const target = new URL(sessionTarget);
     if (target.origin !== savedOrigin || target.username || target.password)

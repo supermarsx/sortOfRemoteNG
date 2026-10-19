@@ -294,15 +294,37 @@ const AUTHORITY_WHITESPACE_OR_CONTROL_RE = {
 };
 const DNS_LABEL_RE = /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/iu;
 
+/** Resolve an address port without silently replacing a conflicting custom port. */
+export function resolveCanonicalWebPort(
+  authorityPort: number | undefined,
+  configuredPort: number | undefined,
+  defaultPort: number,
+): number {
+  // Older records retain a separate protocol-default port even when the user
+  // wrote a port in the address. A custom conflicting port is still ambiguous.
+  for (const port of [authorityPort, configuredPort, defaultPort]) {
+    if (
+      port !== undefined &&
+      (!Number.isInteger(port) || port < 1 || port > 65535)
+    )
+      throw new Error("Saved connection contains an invalid web port.");
+  }
+  if (
+    authorityPort !== undefined &&
+    configuredPort !== undefined &&
+    configuredPort !== defaultPort &&
+    authorityPort !== configuredPort
+  )
+    throw new Error("Saved hostname port conflicts with the connection port.");
+  return authorityPort ?? configuredPort ?? defaultPort;
+}
+
 /**
  * Parse a saved web hostname as one canonical URL authority, optionally with
  * the initial navigation components from a full HTTP(S) URL.
- *
- * Unlike the permissive editor sanitiser above, this is a credential boundary.
- * Full URLs may contribute a path, query, and fragment, but never a different
- * authority: userinfo, encoded authority delimiters, backslashes, whitespace,
- * invalid ports, and non-HTTP(S) schemes remain rejected before a saved
- * credential can be attached to a proxy request.
+ * Unlike the permissive sanitiser above, this is a credential boundary:
+ * userinfo, encoded delimiters, backslashes, whitespace, invalid ports and
+ * non-HTTP(S) schemes remain rejected before credentials can be attached.
  */
 export function parseCanonicalWebAuthority(raw: string): CanonicalWebAuthority {
   if (!raw) {

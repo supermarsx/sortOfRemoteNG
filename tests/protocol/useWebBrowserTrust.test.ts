@@ -1864,7 +1864,6 @@ describe("HTTPS certificate and native trust stages", () => {
 
   it.each([
     "http://10.10.10.2/pt/Account/Login",
-    "https://10.10.10.2:8443/pt/Account/Login",
     "https://user:password@10.10.10.2/pt/Account/Login",
   ])(
     "refuses an ambiguous full saved URL before releasing credentials: %s",
@@ -1885,7 +1884,7 @@ describe("HTTPS certificate and native trust stages", () => {
 
   it("inspects, verifies, pins and navigates on the port embedded in the hostname", async () => {
     mocks.policy = "always-ask";
-    mocks.credentialOverrides = { port: undefined };
+    mocks.credentialOverrides = { port: 443 };
     mocks.verify.mockResolvedValue({
       status: "first-use",
       identity: cert,

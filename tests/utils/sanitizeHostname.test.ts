@@ -13,10 +13,37 @@
 import { describe, it, expect } from "vitest";
 import {
   parseCanonicalWebAuthority,
+  resolveCanonicalWebPort,
   sanitizeHostname,
   schemeToProtocol,
   stripSchemePrefix,
 } from "../../src/utils/connection/sanitizeHostname";
+
+describe("resolveCanonicalWebPort", () => {
+  it.each([
+    [8443, 443, 443, 8443],
+    [8080, 80, 80, 8080],
+    [80, 443, 443, 80],
+    [8443, 8443, 443, 8443],
+    [undefined, 8443, 443, 8443],
+    [undefined, undefined, 443, 443],
+  ])(
+    "resolves address %s and configured %s with default %s",
+    (inline, saved, fallback, expected) => {
+      expect(resolveCanonicalWebPort(inline, saved, fallback!)).toBe(expected);
+    },
+  );
+  it("rejects conflicting custom ports", () => {
+    expect(() => resolveCanonicalWebPort(8443, 9443, 443)).toThrow(/conflicts/);
+  });
+  it.each([0, -1, 65536, 1.5, NaN, Infinity])(
+    "rejects invalid port %s",
+    (port) => {
+      expect(() => resolveCanonicalWebPort(port, 443, 443)).toThrow();
+      expect(() => resolveCanonicalWebPort(8443, port, 443)).toThrow();
+    },
+  );
+});
 
 describe("sanitizeHostname", () => {
   it("leaves a bare hostname untouched", () => {

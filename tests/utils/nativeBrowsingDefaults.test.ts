@@ -16,6 +16,60 @@ const connection = {
   port: 443,
 };
 describe("normal native browsing defaults", () => {
+  it.each([
+    {
+      protocol: "https" as const,
+      hostname: "ordinary.example:8443",
+      port: 443,
+      origin: "https://ordinary.example:8443",
+    },
+    {
+      protocol: "https" as const,
+      hostname: "192.0.2.10:8080",
+      port: 443,
+      origin: "https://192.0.2.10:8080",
+    },
+  ])(
+    "uses the inline port instead of the protocol default for policy lookup: $origin",
+    (row) => {
+      expect(
+        nativeBrowserContentAllowed(row, DEFAULT_HTTP_PROXY_POLICY, undefined),
+      ).toBe(true);
+      expect(
+        nativeBrowserContentAllowed(
+          {
+            ...row,
+            websiteDomainPermissions: {
+              version: 1,
+              websites: [
+                {
+                  origin: row.origin,
+                  requestClasses: { script: "deny" },
+                  destinations: [],
+                },
+              ],
+            },
+          },
+          DEFAULT_HTTP_PROXY_POLICY,
+          undefined,
+        ),
+      ).toBe(false);
+    },
+  );
+  it.each([
+    { hostname: "ordinary.example:8443", port: 9443 },
+    { hostname: "ordinary.example:8443", port: 80 },
+    { hostname: "ordinary.example:8443", port: 0 },
+    { hostname: "ordinary.example:8443", port: NaN },
+  ])("rejects malformed ports or conflicting custom ports %j", (change) => {
+    expect(
+      nativeBrowserContentAllowed(
+        { ...connection, ...change },
+        DEFAULT_HTTP_PROXY_POLICY,
+        undefined,
+      ),
+    ).toBe(false);
+  });
   it.each(fixtures)("matches the native parity case: $name", (fixture) => {
     expect(
       nativeBrowsingMode(
