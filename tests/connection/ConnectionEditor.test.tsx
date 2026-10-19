@@ -1572,6 +1572,9 @@ describe("ConnectionEditor", () => {
       fireEvent.change(screen.getByTestId("editor-name"), {
         target: { value: "Documented Server" },
       });
+      fireEvent.change(screen.getByTestId("editor-hostname"), {
+        target: { value: "documented.example.test" },
+      });
       fireEvent.click(screen.getByTestId("connection-editor-tab-notes"));
 
       const description = screen.getByTestId("editor-description");
@@ -3455,6 +3458,10 @@ describe("ConnectionEditor", () => {
 
       const nameInput = screen.getByTestId("editor-name");
       fireEvent.change(nameInput, { target: { value: "Test" } });
+
+      fireEvent.change(screen.getByTestId("editor-hostname"), {
+        target: { value: "close-test.example.test" },
+      });
 
       const form = container.querySelector("form")!;
       fireEvent.submit(form);

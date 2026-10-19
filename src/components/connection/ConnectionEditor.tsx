@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from "react";
 import { useTranslation } from "react-i18next";
 import { isEndpointFreeGoogleService } from "../../utils/connection/googleServiceAddressPolicy";
+import { changeEditorAddressPort } from "../../utils/connection/normalizeEditorAddress";
 import { getFirstPartyGoogleHostedApplicationUrl } from "../../utils/connection/httpApplicationProfiles";
 import { useSessionRenderActivity } from "../../contexts/SessionRenderActivityContext";
 import {
@@ -1765,25 +1766,35 @@ const ConnectionFields: React.FC<{
       {section === "connection" && (
         <div className="grid grid-cols-[1fr_100px] gap-2">
           <div>
-            <label className="block text-xs font-medium text-[var(--color-textSecondary)] mb-1">
-              {t(
-                "connectionEditor.connectionFields.hostnameOrIp",
-                "Hostname / IP",
-              )}{" "}
+            <label
+              htmlFor="connection-editor-hostname"
+              className="block text-xs font-medium text-[var(--color-textSecondary)] mb-1"
+            >
+              {isBrowserProtocol(p)
+                ? t(
+                    "connectionEditor.connectionFields.hostnameOrIpOrUrl",
+                    "Hostname / IP / URL",
+                  )
+                : t(
+                    "connectionEditor.connectionFields.hostnameOrIp",
+                    "Hostname / IP",
+                  )}{" "}
               <span className="text-error">*</span>
             </label>
             <input
               type="text"
               required
+              id="connection-editor-hostname"
               data-testid="editor-hostname"
               value={mgr.formData.hostname || ""}
               onChange={(e) =>
                 mgr.setFormData({ ...mgr.formData, hostname: e.target.value })
               }
+              onBlur={mgr.handleAddressBlur}
               className="sor-form-input text-sm font-mono"
               placeholder={
                 p === "http" || p === "https"
-                  ? "example.com"
+                  ? "example.com:8443 or https://example.com/dashboard"
                   : p === "ssh"
                     ? "192.168.1.100 or server.example.com"
                     : "192.168.1.100"
@@ -1797,10 +1808,9 @@ const ConnectionFields: React.FC<{
             <NumberInput
               value={mgr.formData.port || 0}
               onChange={(v: number) =>
-                mgr.setFormData({
-                  ...mgr.formData,
-                  port: v,
-                })
+                mgr.setFormData((current) =>
+                  changeEditorAddressPort(current, v),
+                )
               }
               variant="form"
               min={1}

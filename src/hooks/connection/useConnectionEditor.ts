@@ -13,6 +13,10 @@ import {
 } from "react";
 import { normalizeConnectionCredentialSource } from "../../utils/security/databaseCredentialVault";
 import {
+  EDITOR_WEB_ADDRESS_ERROR,
+  normalizeEditorAddress,
+} from "../../utils/connection/normalizeEditorAddress";
+import {
   Monitor,
   Terminal,
   Globe,
@@ -1354,7 +1358,9 @@ export function useConnectionEditor(
     (includeIntegrationSecrets = false, data = formData): Connection => {
       const now = new Date().toISOString();
       const normalizedFormData = normalizeCloudConnectionForPersistence(
-        normalizeIntegrationFields(mergeManagedSshSecrets(data)),
+        normalizeIntegrationFields(
+          mergeManagedSshSecrets(normalizeEditorAddress(data, connection)),
+        ),
       );
       const effectiveFormData = normalizeAdvancedProtocolConnection(
         includeIntegrationSecrets
@@ -1779,14 +1785,34 @@ export function useConnectionEditor(
   const resolveBookmarkDraft = useCallback(() => {
     try {
       assertBookmarkScope();
-      return applyBookmarkDraft(formData, bookmarkEdit);
+      return normalizeEditorAddress(
+        applyBookmarkDraft(formData, bookmarkEdit),
+        connection,
+      );
     } catch (error) {
       const message = (error as Error).message;
       setBookmarkEdit((edit) => (edit ? { ...edit, error: message } : null));
       toast.error(message);
       return null;
     }
-  }, [formData, bookmarkEdit, toast, assertBookmarkScope, setBookmarkEdit]);
+  }, [
+    formData,
+    connection,
+    bookmarkEdit,
+    toast,
+    assertBookmarkScope,
+    setBookmarkEdit,
+  ]);
+
+  const handleAddressBlur = useCallback(() => {
+    if (!formData.hostname) return;
+    try {
+      const normalized = normalizeEditorAddress(formData, connection);
+      if (normalized !== formData) setFormData(normalized);
+    } catch {
+      toast.error(EDITOR_WEB_ADDRESS_ERROR);
+    }
+  }, [formData, connection, toast]);
 
   // Auto-save effect
   useEffect(() => {
@@ -1818,7 +1844,16 @@ export function useConnectionEditor(
 
     autoSaveTimerRef.current = window.setTimeout(() => {
       autoSaveTimerRef.current = null;
-      const runtimeConnection = buildConnectionData(true);
+      let normalizedDraft: Partial<Connection>;
+      let runtimeConnection: Connection;
+      try {
+        normalizedDraft = normalizeEditorAddress(formData, connection);
+        runtimeConnection = buildConnectionData(true, normalizedDraft);
+      } catch {
+        setAutoSaveStatus("idle");
+        toast.error(EDITOR_WEB_ADDRESS_ERROR);
+        return;
+      }
       void enqueueConnectionSave({
         revision,
         runtimeConnection,
@@ -1829,9 +1864,13 @@ export function useConnectionEditor(
         }
 
         if (outcome.status === "saved") {
+          if (normalizedDraft !== formData)
+            setFormData((current) =>
+              current === formData ? normalizedDraft : current,
+            );
           syncPersistedIntegrationForm(outcome.prepared.persistentConnection);
           originalDataRef.current = persistedEditorSnapshot(
-            formData,
+            normalizedDraft,
             outcome.prepared.persistentConnection,
           );
           lastEnqueuedSnapshotRef.current = originalDataRef.current;
@@ -1937,8 +1976,10 @@ export function useConnectionEditor(
         return;
       }
 
-      if (bookmarkEdit) {
-        setFormData(submittedFormData);
+      if (bookmarkEdit || submittedFormData !== formData) {
+        setFormData((current) =>
+          current === formData ? submittedFormData : current,
+        );
         setBookmarkEdit(null);
       }
       syncPersistedIntegrationForm(outcome.prepared.persistentConnection);
@@ -2027,8 +2068,10 @@ export function useConnectionEditor(
       return null;
     }
 
-    if (bookmarkEdit) {
-      setFormData(submittedFormData);
+    if (bookmarkEdit || submittedFormData !== formData) {
+      setFormData((current) =>
+        current === formData ? submittedFormData : current,
+      );
       setBookmarkEdit(null);
     }
     if (outcome.persisted) {
@@ -2050,6 +2093,7 @@ export function useConnectionEditor(
     buildEditorSnapshot,
     connection,
     enqueueConnectionSave,
+    formData,
     bookmarkEdit,
     resolveBookmarkDraft,
     setBookmarkEdit,
@@ -2069,7 +2113,16 @@ export function useConnectionEditor(
     (protocol: string) => {
       setBookmarkEdit(null);
       if (isBrowserProtocol(formData.protocol) && isBrowserProtocol(protocol)) {
-        setFormData((prev) => changeBrowserProtocol(prev, protocol));
+        setFormData((prev) => {
+          try {
+            return changeBrowserProtocol(
+              normalizeEditorAddress(prev),
+              protocol,
+            );
+          } catch {
+            return changeBrowserProtocol(prev, protocol);
+          }
+        });
         return;
       }
       const nextProtocol = protocol as Connection["protocol"];
@@ -2282,6 +2335,7 @@ export function useConnectionEditor(
     settings,
     connection,
     handleSubmit,
+    handleAddressBlur,
     saveNow,
     handleTagsChange,
     handleProtocolChange,

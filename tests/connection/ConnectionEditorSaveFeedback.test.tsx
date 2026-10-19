@@ -111,6 +111,10 @@ async function editName(name = "Edited connection") {
   fireEvent.change(input, { target: { value: name } });
   return input;
 }
+async function readyAddress() {
+  await screen.findByDisplayValue(initial.name);
+  return screen.getByTestId("editor-hostname");
+}
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -129,6 +133,141 @@ afterEach(() => {
 });
 
 describe("live connection editor save feedback", () => {
+  it("refuses an unrelated edit on a conflicting saved URL until its port is corrected", async () => {
+    const conflicting = {
+      ...initial,
+      protocol: "https" as const,
+      hostname: "https://example.test:8443/page",
+      port: 9443,
+    };
+    fixture.load.mockResolvedValue({
+      connections: [conflicting],
+      settings: {},
+      timestamp: 0,
+      tabGroups: [],
+    });
+    mountEditor();
+    const name = await screen.findByDisplayValue(initial.name);
+    fireEvent.change(name, { target: { value: "Only name changed" } });
+    fireEvent.click(screen.getByTestId("editor-save"));
+    await waitFor(() =>
+      expect(fixture.toast.error).toHaveBeenCalledWith(
+        expect.stringContaining("unrelated edits cannot change"),
+      ),
+    );
+    expect(fixture.save).not.toHaveBeenCalled();
+    const address = screen.getByTestId("editor-hostname");
+    fireEvent.blur(address);
+    expect(screen.getByTestId("editor-port")).toHaveValue(9443);
+    fireEvent.change(screen.getByTestId("editor-port"), {
+      target: { value: "8443" },
+    });
+    fireEvent.click(screen.getByTestId("editor-save"));
+    await waitFor(() => expect(fixture.save).toHaveBeenCalled());
+    expect(fixture.save.mock.lastCall![0].connections[0]).toMatchObject({
+      hostname: conflicting.hostname,
+      port: 8443,
+    });
+  });
+  it("keeps an unchanged valid URL's custom port when the address is focused and blurred", async () => {
+    const saved = {
+      ...initial,
+      protocol: "https" as const,
+      hostname: "https://example.test/login",
+      port: 8443,
+    };
+    fixture.load.mockResolvedValue({
+      connections: [saved],
+      settings: {},
+      timestamp: 0,
+      tabGroups: [],
+    });
+    mountEditor();
+    const address = await readyAddress();
+    fireEvent.focus(address);
+    fireEvent.blur(address);
+    expect(address).toHaveValue(saved.hostname);
+    expect(screen.getByTestId("editor-port")).toHaveValue(8443);
+    await editName("Only name changed");
+    fireEvent.click(screen.getByTestId("editor-save"));
+    await waitFor(() => expect(fixture.save).toHaveBeenCalled());
+    expect(fixture.save.mock.lastCall![0].connections[0]).toMatchObject({
+      hostname: saved.hostname,
+      protocol: "https",
+      port: 8443,
+    });
+  });
+  it("normalizes a pasted website URL on blur and saves its exact destination", async () => {
+    mountEditor();
+    const address = await readyAddress();
+    const hostname = "https://example.test:8443/dashboard?next=one%2Ftwo#panel";
+    expect(screen.getByText("Hostname / IP / URL")).toBeInTheDocument();
+    fireEvent.change(address, { target: { value: hostname } });
+    fireEvent.blur(address);
+    expect(screen.getByTestId("editor-port")).toHaveValue(8443);
+    fireEvent.submit(address.closest("form")!);
+    await waitFor(() => expect(fixture.save).toHaveBeenCalled());
+    expect(fixture.save.mock.lastCall![0].connections[0]).toMatchObject({
+      hostname,
+      protocol: "https",
+      port: 8443,
+    });
+  });
+
+  it("normalizes explicit URL transport and default port when saving without blur", async () => {
+    mountEditor();
+    const address = await readyAddress();
+    const hostname = "https://example.test/login?x=1#two";
+    fireEvent.change(address, { target: { value: hostname } });
+    fireEvent.submit(address.closest("form")!);
+    await waitFor(() =>
+      expect(
+        fixture.save.mock.calls.length + fixture.toast.error.mock.calls.length,
+      ).toBeGreaterThan(0),
+    );
+    expect(fixture.toast.error.mock.calls).toEqual([]);
+    await waitFor(() => expect(fixture.save).toHaveBeenCalled());
+    expect(fixture.save.mock.lastCall![0].connections[0]).toMatchObject({
+      hostname,
+      protocol: "https",
+      port: 443,
+    });
+  });
+
+  it("retains an unsafe URL on blur and refuses to persist it on submit", async () => {
+    mountEditor();
+    const address = await readyAddress();
+    const hostname = "https://user:PRIVATE@example.test/path";
+    fireEvent.change(address, { target: { value: hostname } });
+    fireEvent.blur(address);
+    expect(address).toHaveValue(hostname);
+    fireEvent.submit(address.closest("form")!);
+    await waitFor(() => expect(fixture.toast.error).toHaveBeenCalled());
+    expect(fixture.save).not.toHaveBeenCalled();
+    expect(JSON.stringify(fixture.toast.error.mock.calls)).not.toContain(
+      "PRIVATE",
+    );
+  });
+
+  it("preserves newer draft edits when a normalized-address save completes later", async () => {
+    const pending = deferred();
+    fixture.save.mockImplementationOnce(() => pending.promise);
+    mountEditor();
+    const address = await readyAddress();
+    fireEvent.change(address, {
+      target: { value: "https://example.test/page" },
+    });
+    fireEvent.submit(address.closest("form")!);
+    await waitFor(() => expect(fixture.save).toHaveBeenCalled());
+    const name = await screen.findByDisplayValue(initial.name);
+    fireEvent.change(name, { target: { value: "Newer retained draft" } });
+    await act(async () => {
+      pending.resolve();
+      await pending.promise;
+    });
+    expect(name).toHaveValue("Newer retained draft");
+  });
+
   it("reports success exactly once only after the real provider flush finishes", async () => {
     const pending = deferred();
     fixture.save.mockImplementationOnce(() => pending.promise);
