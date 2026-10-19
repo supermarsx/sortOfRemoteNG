@@ -1,0 +1,276 @@
+use super::*;
+use serde_json::json;
+
+fn target() -> Authority {
+    Authority::parse("127.0.10.14:10000").unwrap()
+}
+
+fn modern() -> Value {
+    json!({"security":{"tunnelChain":[{"enabled":true,"type":"ssh-tunnel",
+        "localBindHost":"127.0.10.14","localBindPort":10000,
+        "sshTunnel":{"connectionId":"saved-ssh","forwardType":"local",
+            "remoteHost":"127.0.0.1","remotePort":10000}}]}})
+}
+
+#[test]
+fn ssh_local_route_preserves_alias_and_separates_remote_destination() {
+    let config = modern();
+    let selected = selected(&config, &target()).unwrap().unwrap();
+    assert_eq!(target().host(), "127.0.10.14");
+    assert_eq!(selected.remote.to_string(), "127.0.0.1:10000");
+    assert_eq!(selected.ssh["connectionId"], "saved-ssh");
+    assert_eq!(config, modern());
+    let legacy = json!({"security":{"sshTunnel":{"enabled":true,
+        "connectionId":"saved-ssh","localPort":10000,"remoteHost":"localhost","remotePort":10000}}});
+    let selected = super::selected(&legacy, &target()).unwrap().unwrap();
+    assert_eq!(selected.remote.to_string(), "localhost:10000");
+    assert_eq!(selected.ssh["forwardType"], "local");
+}
+
+#[test]
+fn ssh_local_route_explicit_missing_remote_defaults_and_ipv6_are_unambiguous() {
+    let mut config = modern();
+    let ssh = config
+        .pointer_mut("/security/tunnelChain/0/sshTunnel")
+        .unwrap()
+        .as_object_mut()
+        .unwrap();
+    ssh.remove("remoteHost");
+    ssh.remove("remotePort");
+    assert_eq!(
+        selected(&config, &target()).unwrap().unwrap().remote,
+        target()
+    );
+    config["security"]["tunnelChain"][0]["sshTunnel"]["remoteHost"] = "::1".into();
+    config["security"]["tunnelChain"][0]["sshTunnel"]["remotePort"] = 8443.into();
+    assert_eq!(
+        selected(&config, &target())
+            .unwrap()
+            .unwrap()
+            .remote
+            .to_string(),
+        "[::1]:8443"
+    );
+    for (key, value) in [
+        ("remoteHost", json!("")),
+        ("remoteHost", json!("https://host")),
+        ("remoteHost", json!("user@host")),
+        ("remoteHost", json!("[[::1]]")),
+        ("remoteHost", json!("[localhost]")),
+        ("remotePort", json!(0)),
+        ("remotePort", json!(65536)),
+        ("remotePort", json!("10000")),
+    ] {
+        let mut invalid = modern();
+        invalid["security"]["tunnelChain"][0]["sshTunnel"][key] = value;
+        assert!(selected(&invalid, &target()).is_err(), "{key}");
+    }
+}
+
+#[test]
+fn ssh_local_route_never_silently_drops_other_route_layers_or_selectors() {
+    for key in [
+        "proxyProfileId",
+        "proxyChainId",
+        "tunnelProfileId",
+        "tunnelChainId",
+        "connectionChainId",
+    ] {
+        let mut config = modern();
+        config[key] = "selected".into();
+        assert!(selected(&config, &target()).is_err(), "{key}");
+    }
+    for extra in [
+        json!({"enabled":true,"type":"proxy"}),
+        json!({"enabled":true,"type":"ssh-jump"}),
+        json!({"type":"ssh-tunnel"}),
+    ] {
+        let mut config = modern();
+        config["security"]["tunnelChain"]
+            .as_array_mut()
+            .unwrap()
+            .push(extra);
+        assert!(selected(&config, &target()).is_err());
+    }
+    for field in ["proxy", "openvpn", "sshTunnel"] {
+        let mut config = modern();
+        config["security"][field] = json!({"enabled":true});
+        assert!(selected(&config, &target()).is_err());
+    }
+    let mut config = modern();
+    config["security"]["tunnelChain"]
+        .as_array_mut()
+        .unwrap()
+        .push(json!({"enabled":false,"type":"proxy"}));
+    assert!(selected(&config, &target()).unwrap().is_some());
+}
+
+#[test]
+fn ssh_local_route_rejects_remote_dynamic_and_unsafe_bind_configuration() {
+    for forward in ["dynamic", "remote", "", "localForward"] {
+        let mut config = modern();
+        config["security"]["tunnelChain"][0]["sshTunnel"]["forwardType"] = forward.into();
+        assert!(selected(&config, &target()).is_err());
+    }
+    for (key, value) in [
+        ("localBindHost", json!("0.0.0.0")),
+        ("localBindHost", json!("192.0.2.1")),
+        ("localBindPort", json!(-1)),
+        ("localBindPort", json!(65536)),
+        ("tunnelProfileId", json!("profile")),
+        ("nodeChainConfig", json!({})),
+        ("sshChainingMethod", json!("native")),
+    ] {
+        let mut config = modern();
+        config["security"]["tunnelChain"][0][key] = value;
+        assert!(selected(&config, &target()).is_err(), "{key}");
+    }
+    assert!(selected(&json!({}), &target()).unwrap().is_none());
+    assert!(selected(
+        &json!({"security":{"sshTunnel":{"enabled":false}}}),
+        &target()
+    )
+    .unwrap()
+    .is_none());
+}
+
+#[tokio::test]
+async fn ssh_route_dial_uses_only_attested_listener_and_postchecks_before_delivery() {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let endpoint = listener.local_addr().unwrap();
+    let calls = AtomicUsize::new(0);
+    let stream = dial_verified(|| {
+        calls.fetch_add(1, Ordering::SeqCst);
+        std::future::ready(Ok(endpoint))
+    })
+    .await
+    .unwrap();
+    assert_eq!(calls.load(Ordering::SeqCst), 2);
+    let (mut accepted, _) = listener.accept().await.unwrap();
+    let mut stream = stream;
+    stream.write_all(b"fixture").await.unwrap();
+    let mut bytes = [0; 7];
+    accepted.read_exact(&mut bytes).await.unwrap();
+    assert_eq!(&bytes, b"fixture");
+    let calls = AtomicUsize::new(0);
+    assert!(dial_verified(|| {
+        let check = calls.fetch_add(1, Ordering::SeqCst);
+        std::future::ready(if check == 0 {
+            Ok(endpoint)
+        } else {
+            Err(route_error())
+        })
+    })
+    .await
+    .is_err());
+    let (mut accepted, _) = listener.accept().await.unwrap();
+    assert_eq!(accepted.read(&mut [0u8; 1]).await.unwrap(), 0);
+    assert!(dial_verified(|| std::future::ready(Err(route_error())))
+        .await
+        .is_err());
+    assert!(
+        tokio::time::timeout(Duration::from_millis(20), listener.accept())
+            .await
+            .is_err()
+    );
+}
+
+#[tokio::test]
+async fn ssh_source_and_selected_vault_are_bound_to_the_encrypted_owner_lease() {
+    use crate::origin_browser_authority::tests::{connection, Fixture};
+    use secrecy::ExposeSecret;
+    let website = connection();
+    let vault_id = "550e8400-e29b-41d4-a716-446655440000";
+    let ssh = json!({"id":"saved-ssh","protocol":"ssh","hostname":"ssh.example.test",
+        "port":22,"username":"local-fallback","password":"local-fallback",
+        "credentialSource":{"kind":"vault","credentialId":vault_id}});
+    let mut data = json!({"connections":[website.clone(),ssh],"settings":{},
+        "credentialVault":{"version":1,"revision":1,"entries":[{"id":vault_id,
+            "facets":{"username":"selected-account","password":"selected-fixture"}}]}});
+    let mut f = Fixture::new(website.clone()).await;
+    f.replace_totp_fixture_data(&data);
+    let authorized = f.authorize().await.unwrap();
+    let spec = json!({"connectionId":"saved-ssh","ownerDatabaseId":"db","forwardType":"local"});
+    let config =
+        super::super::ssh_config::resolve(&f.window, &f.state, &authorized.lease, &website, &spec)
+            .await
+            .unwrap();
+    assert_eq!(config.username, "selected-account");
+    assert_eq!(
+        config.password.as_ref().unwrap().expose_secret(),
+        "selected-fixture"
+    );
+    assert!(authorized.lease.recheck(&f.window, &f.state).await.is_ok());
+    data["credentialVault"]["entries"][0]["facets"]["password"] = "changed".into();
+    f.replace_totp_fixture_data(&data);
+    assert!(authorized.lease.recheck(&f.window, &f.state).await.is_err());
+    assert!(!authorized.lease.is_current());
+}
+
+#[tokio::test]
+async fn ssh_reference_missing_foreign_or_changed_source_never_uses_inline_fallback() {
+    use crate::origin_browser_authority::tests::{connection, Fixture};
+    let website = connection();
+    for spec in [
+        json!({"connectionId":"absent","forwardType":"local"}),
+        json!({"connectionId":"saved-ssh","ownerDatabaseId":"other","forwardType":"local"}),
+        json!({"connectionId":"","host":"inline.example","username":"inline","password":"fixture","forwardType":"local"}),
+    ] {
+        let f = Fixture::new(website.clone()).await;
+        let authorized = f.authorize().await.unwrap();
+        assert!(super::super::ssh_config::resolve(
+            &f.window,
+            &f.state,
+            &authorized.lease,
+            &website,
+            &spec
+        )
+        .await
+        .is_err());
+    }
+    let mut f = Fixture::new(website.clone()).await;
+    let mut data = json!({"connections":[website.clone(),{"id":"saved-ssh","protocol":"ssh",
+        "hostname":"ssh.example.test","port":22,"username":"fixture","password":"fixture"}],"settings":{}});
+    f.replace_totp_fixture_data(&data);
+    let authorized = f.authorize().await.unwrap();
+    let spec = json!({"connectionId":"saved-ssh","forwardType":"local"});
+    super::super::ssh_config::resolve(&f.window, &f.state, &authorized.lease, &website, &spec)
+        .await
+        .unwrap();
+    data["connections"][1]["hostname"] = "different.example.test".into();
+    f.replace_totp_fixture_data(&data);
+    assert!(authorized.lease.recheck(&f.window, &f.state).await.is_err());
+}
+
+#[tokio::test]
+async fn ssh_cleanup_revocation_preempts_retained_owner_and_thread_drop_is_supported() {
+    use std::sync::atomic::{AtomicBool, Ordering};
+    let current = Arc::new(AtomicBool::new(true));
+    let observed = current.clone();
+    let (retained_owner, released) = tokio::sync::oneshot::channel();
+    let mut cleanup = tokio::spawn(async move {
+        wait_for_actor_release(released, || observed.load(Ordering::SeqCst)).await;
+    });
+    assert!(
+        tokio::time::timeout(Duration::from_millis(20), &mut cleanup)
+            .await
+            .is_err()
+    );
+    current.store(false, Ordering::SeqCst);
+    tokio::time::timeout(Duration::from_secs(1), cleanup)
+        .await
+        .unwrap()
+        .unwrap();
+    // The retained route sender never had to drop for revocation cleanup.
+    assert!(retained_owner.is_closed());
+    let (owner, released) = tokio::sync::oneshot::channel();
+    let cleanup = tokio::spawn(async move {
+        wait_for_actor_release(released, || true).await;
+    });
+    std::thread::spawn(move || drop(owner)).join().unwrap();
+    tokio::time::timeout(Duration::from_secs(1), cleanup)
+        .await
+        .unwrap()
+        .unwrap();
+}

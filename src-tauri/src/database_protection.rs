@@ -1173,6 +1173,11 @@ pub mod native_browser_owner {
             &self.0.root
         }
 
+        /// Native setup only: compare saved dependency owners without granting access.
+        pub(crate) fn database_id(&self) -> &str {
+            &self.0.database
+        }
+
         /// Command/setup path only. Verifies the current native caller and
         /// on-disk security revision AND selected saved connection. Never
         /// renews a revoked lease; changed owners require a fresh create.

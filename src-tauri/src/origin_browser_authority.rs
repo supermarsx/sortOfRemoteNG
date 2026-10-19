@@ -94,6 +94,10 @@ mod login_steps;
 pub use basic_auth::NativeBasicAuth;
 #[path = "origin_browser_routes.rs"]
 mod routes;
+#[path = "origin_browser_ssh_config.rs"]
+mod ssh_config;
+#[path = "origin_browser_ssh_route.rs"]
+mod ssh_route;
 pub use routes::NativeBrowserRouteServices;
 #[cfg(test)]
 #[path = "origin_browser_route_tests.rs"]
@@ -147,6 +151,8 @@ pub enum NativeAuthorityError {
     ApplicationUnsupported,
     #[error("Saved browser network route is invalid or unsupported; no direct fallback")]
     RouteUnsupported,
+    #[error("Saved browser SSH route is unavailable ({stage}); review its saved SSH connection and tunnel settings; no direct fallback")]
+    SshRouteUnavailable { stage: &'static str },
     #[error("Saved website credentials are unavailable or invalid in the owning database; review its credential reference")]
     CredentialUnavailable,
     #[error("Saved automatic two-factor authentication consent does not match the reviewed login origin. In Application settings, review the authenticator and HTTPS login origin, re-enable automatic codes, and save the connection. Your password and authenticator are unchanged.")]
@@ -1175,21 +1181,41 @@ async fn authorize_create_inner<R: Runtime>(
     .with_network_origin_grant(request_network_grant(
         permissions.clone(), initial_url.origin().ascii_serialization(),
     ));
-    let expanded_route = routes::expand(window, state, &connection, &lease).await?;
-    let hops = Arc::new(saved_route(&expanded_route)?);
+    let ssh_route = ssh_route::prepare(
+        window,
+        state,
+        &connection,
+        &lease,
+        &initial_url,
+        &request.owner.session_id,
+    )
+    .await?;
+    let hops = if ssh_route.is_some() {
+        Arc::new(Vec::new())
+    } else {
+        let expanded_route = routes::expand(window, state, &connection, &lease).await?;
+        Arc::new(saved_route(&expanded_route)?)
+    };
     let route_lease = lease.clone();
     let grant = policy.destination_grant();
     let route: Arc<dyn RouteDialer> = Arc::new(move |target: Authority| -> DialFuture {
         let hops = hops.clone();
         let lease = route_lease.clone();
+        let ssh_route = ssh_route.clone();
         let granted = grant(&target);
         Box::pin(async move {
             if !granted || !lease.is_current() {
                 return Err(route_error());
             }
-            let stream = tokio::time::timeout(Duration::from_secs(30), dial_route(&hops, &target))
-                .await
-                .map_err(|_| route_error())??;
+            let stream = tokio::time::timeout(Duration::from_secs(30), async {
+                if let Some(route) = ssh_route {
+                    route.dial(&target).await
+                } else {
+                    dial_route(&hops, &target).await
+                }
+            })
+            .await
+            .map_err(|_| route_error())??;
             if !lease.is_current() {
                 return Err(route_error());
             }

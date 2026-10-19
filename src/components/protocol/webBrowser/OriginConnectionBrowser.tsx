@@ -38,6 +38,7 @@ import {
   originBrowserSessionError,
 } from "../../../hooks/protocol/originBrowserSessionError";
 import { useOriginBrowserOwner } from "../../../hooks/protocol/useOriginBrowserOwner";
+import { useOriginBrowserSshTrust } from "../../../hooks/protocol/useOriginBrowserSshTrust";
 import { useOriginQuickConnection } from "../../../hooks/protocol/useOriginQuickConnection";
 import { useOriginBrowserOverlays } from "../../../hooks/protocol/useOriginBrowserOverlays";
 import {
@@ -282,7 +283,18 @@ export default function OriginConnectionBrowser({
     recordingOpen ||
     overlayOpen;
   const popupBridge = useNativeOriginPopupBridge();
-  const browser = useOriginBrowser({
+  const sshStarting = useRef(true);
+  const sshTrust = useOriginBrowserSshTrust({
+    sessionId: session.id,
+    ownerDatabaseId,
+    proof: proof ?? null,
+    connection,
+    connections: context.state.connections,
+    settings,
+    enabled: ownerAvailable && settingsReady !== false,
+    isPending: () => sshStarting.current,
+  });
+  const nativeBrowser = useOriginBrowser({
     transport: popupBridge.browserTransport,
     owner: {
       ownerDatabaseId,
@@ -293,7 +305,7 @@ export default function OriginConnectionBrowser({
     sourceSessionId: proof?.sourceSessionId ?? "",
     initialUrl,
     enabled: settingsReady !== false && !globalBrowserConfigInvalid,
-    ownerAvailable,
+    ownerAvailable: ownerAvailable && sshTrust.ready,
     active: isActive,
     dialogOpen,
     preserveRenderingUnderOverlays: true,
@@ -304,10 +316,40 @@ export default function OriginConnectionBrowser({
     authoritySignature: source.authoritySignature,
     startTimeoutMs: browserConfigInvalid
       ? undefined
-      : (browserConfig.initialLoadTimeoutSeconds +
-          NATIVE_START_MARGIN_SECONDS) *
-        1000,
+      : Math.max(
+          (browserConfig.initialLoadTimeoutSeconds +
+            NATIVE_START_MARGIN_SECONDS) *
+            1000,
+          connection?.security?.sshTunnel?.enabled ||
+            connection?.security?.tunnelChain?.some(
+              (layer) =>
+                layer.enabled &&
+                ["ssh-tunnel", "local-forward"].includes(layer.type),
+            )
+            ? 180_000
+            : 0,
+        ),
   });
+  sshStarting.current =
+    nativeBrowser.state.phase === "starting" ||
+    nativeBrowser.state.phase === "idle";
+  const browser = sshTrust.failed
+    ? {
+        ...nativeBrowser,
+        state: {
+          ...nativeBrowser.state,
+          phase: "error" as const,
+          error: sshTrust.error ?? "SSH host-key verification could not start.",
+          unavailableReason: null,
+          startupFailure: {
+            stage: "listen" as const,
+            category: "ipc" as const,
+          },
+        },
+        connectionStatus: "error" as const,
+        reconnect: sshTrust.retry,
+      }
+    : nativeBrowser;
   const { close, navigate: nativeNavigate } = browser;
   useLayoutEffect(() => {
     closeRef.current = close;
@@ -1619,6 +1661,7 @@ export default function OriginConnectionBrowser({
         errorDetails={
           <OriginBrowserFailureDiagnostics
             key={`diagnostics:${identity}`}
+            connection={connection}
             state={viewportState}
             targetUrl={
               snapshot?.displayUrl || (selectedPopupId ? "" : initialUrl)

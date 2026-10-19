@@ -62,6 +62,12 @@ vi.mock("../../src/contexts/SessionRenderActivityContext", () => ({
   useSessionRenderActivity: () => ({ isActive: true }),
 }));
 vi.mock("../../src/utils/connection/databaseManager", () => ({
+  onCurrentDatabaseChange: (
+    callback: (change: CurrentDatabaseChange) => void,
+  ) => {
+    f.currentListeners.add(callback);
+    return () => f.currentListeners.delete(callback);
+  },
   onDatabaseAccessChange: (
     callback: (event: { databaseId: string }) => void,
   ) => {

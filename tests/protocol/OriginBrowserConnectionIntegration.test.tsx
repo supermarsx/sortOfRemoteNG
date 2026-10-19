@@ -109,6 +109,14 @@ vi.mock("../../src/contexts/SessionRenderActivityContext", () => ({
   useSessionRenderActivity: () => ({ isActive: f.active }),
 }));
 vi.mock("../../src/utils/connection/databaseManager", () => ({
+  onCurrentDatabaseChange: (listener: (change: any) => void) => {
+    f.currentListeners.push(listener);
+    return () => {
+      f.currentListeners = f.currentListeners.filter(
+        (item) => item !== listener,
+      );
+    };
+  },
   DatabaseManager: { getInstance: () => f.manager },
   onDatabaseAccessChange: (listener: (event: any) => void) =>
     f.manager.onDatabaseAccessChange(listener),
@@ -400,6 +408,53 @@ async function attached() {
 }
 
 describe("real-origin connection-tab integration", () => {
+  it("registers SSH host-key verification before creating a tunneled Webmin tab and preserves its website origin", async () => {
+    f.context.state.connections = [
+      {
+        ...connection,
+        hostname: "127.0.10.14",
+        port: 10000,
+        security: {
+          sshTunnel: {
+            enabled: true,
+            connectionId: "ssh-host",
+            localPort: 10000,
+            remoteHost: "localhost",
+            remotePort: 10000,
+          },
+        },
+      },
+      {
+        id: "ssh-host",
+        protocol: "ssh",
+        hostname: "server.example.test",
+        port: 22,
+      },
+    ];
+    const originalListen = f.listen.getMockImplementation()!;
+    let release!: () => void;
+    const registration = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    f.listen.mockImplementation(async (name, callback) => {
+      if (name === "ssh://host-key-prompt") await registration;
+      return originalListen(name, callback);
+    });
+    render(<WebBrowser session={session} />);
+    await waitFor(() =>
+      expect(
+        f.listen.mock.calls.some(
+          ([event]) => event === "ssh://host-key-prompt",
+        ),
+      ).toBe(true),
+    );
+    expect(calls("origin_browser_create")).toHaveLength(0);
+    await act(async () => release());
+    await waitFor(() => expect(calls("origin_browser_create")).toHaveLength(1));
+    expect(f.hookOptions.initialUrl).toBe("https://127.0.10.14:10000/");
+    expect(f.hookOptions.startTimeoutMs).toBeGreaterThanOrEqual(180_000);
+  });
+
   it("publishes connected session status before login consent or automation readiness and while subresources load", async () => {
     enableAutomation();
     f.context.state.sessions = [{ ...session, status: "connecting" }];
@@ -784,7 +839,9 @@ describe("real-origin connection-tab integration", () => {
     expect(
       screen.queryByRole("button", { name: "Review MFA origin repair" }),
     ).toBeNull();
-    expect(screen.getByRole("alert")).toHaveTextContent(mfaMismatch);
+    expect(screen.getByRole("alert")).toHaveTextContent(
+      mfaMismatch.replace("In Application settings", "In Authentication"),
+    );
     expect(screen.getByRole("button", { name: "Retry browser" })).toBeEnabled();
     expect(calls("origin_browser_create")).toHaveLength(1);
     expect(calls("origin_browser_login")).toHaveLength(0);
