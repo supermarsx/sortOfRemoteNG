@@ -24,11 +24,19 @@ const fixtures = JSON.parse(
 const base = "src-tauri/crates/sorng-protocols/src/";
 const assets = `<script>${["bitwarden_autologin_client.js", "synology_autologin_client.js"].map((path) => readFileSync(base + path, "utf8")).join("")}${loadAutologinClient()}</script>`;
 const native = readFileSync(base + "themed_autologin.rs", "utf8");
-const template = native.match(
-  /r#"(<script>\(function\(\)\{\{\n'use strict';\nvar NONCE=[\s\S]*?<\/script>)"#/u,
-)?.[1];
-if (!template)
-  throw new Error("Native automatic-login bootstrap fixture is unavailable");
+function extractBootstrap(source: string) {
+  // Git's Windows checkout can use CRLF; the Rust raw string has the same
+  // JavaScript semantics with either line ending.
+  const template = source
+    .replace(/\r\n/g, "\n")
+    .match(
+      /r#"(<script>\(function\(\)\{\{\n'use strict';\nvar NONCE=[\s\S]*?<\/script>)"#/u,
+    )?.[1];
+  if (!template)
+    throw new Error("Native automatic-login bootstrap fixture is unavailable");
+  return template;
+}
+const template = extractBootstrap(native);
 const bootstrap = template
   .replace("{nonce:?}", JSON.stringify("a".repeat(32)))
   .replace("{selectors_json}", "null")
@@ -59,6 +67,18 @@ function close(dom: InstanceType<typeof JSDOM>) {
   dom.window.close();
 }
 describe("executable page-login injection fixtures shared with the native inserter", () => {
+  it.each(["\n", "\r\n"])(
+    "extracts the exact executable bootstrap with %j checkout line endings",
+    (lineEnding) => {
+      const checkedOut = native.replace(/\r?\n/g, lineEnding);
+      expect(extractBootstrap(checkedOut)).toBe(template);
+    },
+  );
+  it("refuses a missing native bootstrap instead of skipping the execution fixtures", () => {
+    expect(() => extractBootstrap("// no bootstrap")).toThrow(
+      "Native automatic-login bootstrap fixture is unavailable",
+    );
+  });
   it("reproduces the old literal-closing-body bug: username input exists but login assets never execute", async () => {
     const fixture = fixtures.find(
       (value) => value.name === "commented closing body",
