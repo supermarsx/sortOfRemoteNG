@@ -39,6 +39,8 @@ export interface UseOriginWebsiteAutomationOptions extends Omit<
   navigationKey?: string;
   /** Optional native receipt supplied by a caller that already fetched it. */
   document?: OriginAutomationDocument | null;
+  /** Authoritative native main-document completion, independent of loading. */
+  documentReady: boolean;
   assertOwner: () => void;
   transport?: OriginAutomationTransport;
 }
@@ -72,6 +74,7 @@ export function useOriginWebsiteAutomation(
     options.scopeKey,
     options.ownerDatabaseId,
     options.settingsReady,
+    options.documentReady,
     receiptNeeded,
     refresh,
   ]);
@@ -105,6 +108,7 @@ export function useOriginWebsiteAutomation(
     const current = latest.current;
     if (
       !document ||
+      !current.documentReady ||
       document.identity.ownerDatabaseId !== current.ownerDatabaseId ||
       document.identity.connectionId !== current.connection?.id
     )
@@ -127,6 +131,7 @@ export function useOriginWebsiteAutomation(
     const current = latest.current;
     if (
       current.blocked ||
+      !current.documentReady ||
       !current.settingsReady ||
       !current.scopeKey ||
       !current.connection ||
@@ -141,6 +146,7 @@ export function useOriginWebsiteAutomation(
     if (
       options.document !== undefined ||
       !options.identity ||
+      !options.documentReady ||
       options.blocked ||
       !options.settingsReady ||
       !options.scopeKey ||
@@ -233,11 +239,18 @@ export function useOriginWebsiteAutomation(
   useLayoutEffect(() => {
     bridge.cancel();
   }, [bridge, documentEpoch, options.blocked]);
+  const documentUnavailable =
+    fetched?.epoch === documentEpoch && fetched.failed;
+  const documentFailureReason =
+    "Native page automation could not be initialized. HTTPS is required. Use Refresh automation document after the page loads, or reconnect if its owner changed.";
   const automation = useWebAutomation({
     ...options,
     bridge,
     nativeAppearance: true,
-    blocked: options.blocked || !activeDocument,
+    blocked: options.blocked || !options.documentReady || !activeDocument,
+    documentUnavailableReason: documentUnavailable
+      ? documentFailureReason
+      : undefined,
     navigationKey: JSON.stringify([documentKey, activeDocument]),
     getDocument: () => {
       const document = currentDocument();
@@ -257,8 +270,6 @@ export function useOriginWebsiteAutomation(
       };
     },
   });
-  const documentUnavailable =
-    fetched?.epoch === documentEpoch && fetched.failed;
   return {
     ...automation,
     documentUnavailable,
@@ -266,8 +277,6 @@ export function useOriginWebsiteAutomation(
       automation.cancel();
       setRefresh((value) => value + 1);
     },
-    error: documentUnavailable
-      ? "Native automation needs a ready HTTPS document. Refresh after loading, or reconnect if the owner changed."
-      : automation.error,
+    error: documentUnavailable ? documentFailureReason : automation.error,
   };
 }

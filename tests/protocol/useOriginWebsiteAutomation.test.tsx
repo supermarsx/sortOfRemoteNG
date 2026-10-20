@@ -95,6 +95,7 @@ function Fixture({
   identity,
   blocked = false,
   settingsReady = true,
+  documentReady = true,
   scopeKey = "db:unlock-1",
 }: {
   doc?: OriginAutomationDocument | null;
@@ -103,6 +104,7 @@ function Fixture({
   identity?: OriginAutomationDocument["identity"] | null;
   blocked?: boolean;
   settingsReady?: boolean;
+  documentReady?: boolean;
   scopeKey?: string;
 }) {
   current = useOriginWebsiteAutomation({
@@ -110,6 +112,7 @@ function Fixture({
     ownerDatabaseId: "db",
     settings,
     settingsReady,
+    documentReady,
     scopeKey,
     blocked,
     document: fetchNative ? undefined : doc,
@@ -225,6 +228,59 @@ beforeEach(() => {
 });
 afterEach(cleanup);
 describe("native automation hook and reused controls", () => {
+  it("waits for native document completion even when loading and URL are unchanged", async () => {
+    const view = render(<Fixture fetchNative documentReady={false} />);
+    await waitFor(() => expect(current.libraryReady).toBe(true));
+    expect(documentReads()).toHaveLength(0);
+    expect(screen.getByRole("button", { name: "Record macro" })).toBeDisabled();
+    view.rerender(<Fixture fetchNative documentReady />);
+    await waitFor(() => expect(current.pageReady).toBe(true));
+    expect(documentReads()).toHaveLength(1);
+    expect(screen.getByRole("button", { name: "Record macro" })).toBeEnabled();
+    await act(async () => {
+      await current.startRecording();
+    });
+    expect(
+      request.mock.calls.find(
+        ([value]) => value.operation.action === "recordStart",
+      )?.[0].operation,
+    ).toMatchObject({ documentToken: "doc-1" });
+    expect(current.recording).toBe(true);
+  });
+  it("does not revive an old receipt across document readiness loss and completion", async () => {
+    const old = deferredDocument();
+    request.mockImplementationOnce(() => old.promise);
+    const view = render(<Fixture fetchNative />);
+    view.rerender(<Fixture fetchNative documentReady={false} />);
+    await act(async () => old.resolve("obsolete-document"));
+    expect(current.pageReady).toBe(false);
+    expect(documentReads()).toHaveLength(1);
+    view.rerender(<Fixture fetchNative />);
+    await waitFor(() => expect(current.pageReady).toBe(true));
+    expect(documentReads()).toHaveLength(2);
+    await act(async () => {
+      await current.startRecording();
+    });
+    expect(
+      request.mock.calls.find(
+        ([value]) => value.operation.action === "recordStart",
+      )?.[0].operation,
+    ).toMatchObject({ documentToken: "doc-1" });
+  });
+  it("explains a rejected HTTP document instead of permanently asking the user to wait", async () => {
+    request.mockResolvedValueOnce({
+      status: "document",
+      documentToken: "http-doc",
+      origin: "http://example.test",
+    });
+    render(<Fixture fetchNative />);
+    await waitFor(() => expect(current.documentUnavailable).toBe(true));
+    expect(
+      screen.getByRole("button", { name: "Record macro" }),
+    ).toHaveAttribute("title", expect.stringContaining("HTTPS"));
+    expect(current.recordingUnavailableReason).not.toMatch(/^Wait/);
+    expect(documentReads()).toHaveLength(1);
+  });
   it.each(["connection", "global"])(
     "does not read native receipts for appearance-only or disabled %s automation",
     async (level) => {

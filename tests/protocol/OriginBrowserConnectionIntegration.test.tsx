@@ -184,6 +184,7 @@ const snapshot = (
   displayUrl: "https://fixture.invalid/",
   title: "Fixture native",
   loading: false,
+  documentLoaded: true,
   canGoBack: false,
   canGoForward: false,
   ...overrides,
@@ -1804,6 +1805,48 @@ describe("real-origin connection-tab integration", () => {
       );
     },
   );
+  it("enables macro recording only after authoritative completion without a loading or URL change", async () => {
+    enableAutomation();
+    const native = f.invoke.getMockImplementation()!;
+    f.invoke.mockImplementation(async (command, args) => {
+      const result = await native(command, args);
+      return command === "origin_browser_create"
+        ? { ...result, snapshot: { ...result.snapshot, documentLoaded: false } }
+        : result;
+    });
+    await attached();
+    const record = screen.getByRole("button", { name: "Record macro" });
+    expect(record).toBeDisabled();
+    expect(
+      calls("origin_browser_automation").filter(
+        ([, args]) => args.request.operation.action === "document",
+      ),
+    ).toHaveLength(0);
+    await act(async () =>
+      f.snapshotListener?.({
+        payload: snapshot("attempt-1", { sequence: 1, documentLoaded: true }),
+      }),
+    );
+    await waitFor(() => expect(record).toBeEnabled());
+    fireEvent.click(record);
+    await waitFor(() =>
+      expect(
+        calls("origin_browser_automation").some(
+          ([, args]) => args.request.operation.action === "recordStart",
+        ),
+      ).toBe(true),
+    );
+    await waitFor(() =>
+      expect(
+        screen.getByRole("button", { name: "Stop recording and review macro" }),
+      ).toBeEnabled(),
+    );
+    expect(
+      calls("origin_browser_automation").filter(
+        ([, args]) => args.request.operation.action === "document",
+      ),
+    ).toHaveLength(1);
+  });
   it.each([true, false])(
     "mounts actual native automation with bookmarks visible=%s and preserves confirmation across its own overlay",
     async (showBookmarksBar) => {

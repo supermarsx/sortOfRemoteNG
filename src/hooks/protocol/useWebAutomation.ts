@@ -64,6 +64,8 @@ export interface WebAutomationOptions {
   bridge?: WebAutomationTransport;
   /** Native CEF owns appearance; do not run the legacy dark-mode extension. */
   nativeAppearance?: boolean;
+  /** Fixed transport-specific guidance after document initialization fails. */
+  documentUnavailableReason?: string;
   getDocument: () => WebAutomationDocument | null;
   updateConnection: (connection: Connection) => Promise<void>;
 }
@@ -628,7 +630,10 @@ export function useWebAutomation(options: Options) {
             databaseLibraryError ??
             "Website macro library is not ready. Reload the library.");
     if (options.blocked || !options.getDocument())
-      return "Wait for the current page to become ready and complete any certificate review.";
+      return (
+        options.documentUnavailableReason ??
+        "Wait for the current page to become ready and complete any certificate review."
+      );
     if (busy) return "Wait for the current website action or save to finish.";
     return null;
   })();

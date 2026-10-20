@@ -862,6 +862,7 @@ export default function OriginConnectionBrowser({
       credentialsOpen ||
       recordingOpen,
     identity: snapshot?.identity ?? null,
+    documentReady: snapshot?.documentLoaded === true && !snapshot?.loadFailure,
     navigationKey: JSON.stringify([
       snapshot?.loading,
       snapshot?.currentUrl ?? snapshot?.displayUrl,
