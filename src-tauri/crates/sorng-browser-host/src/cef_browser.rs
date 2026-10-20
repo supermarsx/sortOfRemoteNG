@@ -4394,6 +4394,8 @@ mod tests {
 
     #[tokio::test]
     async fn native_certificate_wrapper_denies_missing_owner_and_cancels_pending_once() {
+        #[cfg(target_os = "macos")]
+        crate::platform::test_runtime::ensure_loaded();
         let shared = Arc::new(fixture(Arc::new(Sink(Mutex::new(Vec::new())))).await);
         let inner = request_handler_with_lifecycle(
             shared.session.clone(),

@@ -330,6 +330,8 @@ mod tests {
     }
 
     fn info() -> DictionaryValue {
+        #[cfg(target_os = "macos")]
+        crate::platform::test_runtime::ensure_loaded();
         let _ = cef::api_hash(cef::sys::CEF_API_VERSION_LAST, 0);
         let info = dictionary_value_create().unwrap();
         info.set_string(
