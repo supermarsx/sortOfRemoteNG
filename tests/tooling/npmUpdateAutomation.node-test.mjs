@@ -31,6 +31,30 @@ const ARTIFACTS = [
   "src-tauri/crates/sorng-about/src/js_deps.rs",
 ];
 
+test("actual npm lock peer graph resolves the local security override without invalid nested links", () => {
+  const bundled = path.join(
+    path.dirname(process.execPath),
+    "node_modules",
+    "npm",
+    "bin",
+    "npm-cli.js",
+  );
+  const cli = [process.env.npm_execpath, bundled].find(
+    (candidate) =>
+      typeof candidate === "string" &&
+      path.basename(candidate).toLowerCase() === "npm-cli.js" &&
+      fs.existsSync(candidate),
+  );
+  const args = ["ls", "--package-lock-only", "--all", "--json"];
+  const result = spawnSync(
+    cli ? process.execPath : "npm",
+    cli ? [cli, ...args] : args,
+    { cwd: REPOSITORY_ROOT, encoding: "utf8", maxBuffer: 64 * 1024 * 1024 },
+  );
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  assert.deepEqual(JSON.parse(result.stdout).problems ?? [], []);
+});
+
 function fixtureManifest() {
   return {
     name: "fixture",
