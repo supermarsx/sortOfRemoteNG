@@ -4651,6 +4651,11 @@ describe("useWebTerminal run prompts", () => {
     let runningB!: Promise<void>;
     act(() => {
       runningA = models.a!.runScript(promptScript());
+    });
+    // The review includes asynchronous trust reads. Establish which identical
+    // prompt belongs to A before starting B; both stay open before any answer.
+    await waitFor(() => expect(open).toHaveLength(1));
+    act(() => {
       runningB = models.b!.runScript(promptScript());
     });
     await waitFor(() => expect(open).toHaveLength(2));
