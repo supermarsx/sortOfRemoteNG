@@ -253,8 +253,27 @@ describe("exportEncryption", () => {
       (globalThis as any).__TAURI__ = undefined;
     });
 
-    it("throws wrong-password DecryptError on AES-CBC bad password", async () => {
-      const envelope = await encryptLegacyAesCbcEnvelope("payload", "real");
+    it("classifies known invalid AES-CBC padding with a wrong-password DecryptError", async () => {
+      // Fixed PBKDF2/AES-CBC vector: "real" decrypts to "payload", while
+      // "fake" produces invalid PKCS#7 padding. Random ciphertext cannot
+      // guarantee rejection under a wrong key: legacy CBC is unauthenticated.
+      const envelope = utf8Encode(
+        JSON.stringify({
+          version: 1,
+          algorithm: "AES-256-CBC",
+          kdf: {
+            name: "PBKDF2",
+            hash: "SHA-256",
+            iterations: 600_000,
+            salt: "AQEBAQEBAQEBAQEBAQEBAQ==",
+          },
+          iv: "AgICAgICAgICAgICAgICAg==",
+          ciphertext: "+bhV+KMiwi/AIvk06EQ8xw==",
+        }),
+      );
+      expect(utf8Decode(await decryptAesCbcEnvelope(envelope, "real"))).toBe(
+        "payload",
+      );
       let caught: unknown;
       try {
         await decryptAesCbcEnvelope(envelope, "fake");
