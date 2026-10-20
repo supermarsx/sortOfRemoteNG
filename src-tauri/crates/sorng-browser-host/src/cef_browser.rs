@@ -4534,6 +4534,8 @@ mod tests {
     async fn challenge_reload_is_native_origin_fenced_and_once_for_the_whole_attempt() {
         use cef::rc::{ConvertParam, ConvertReturnValue, RcImpl};
         use cef::sys::{_cef_browser_t, _cef_frame_t};
+        #[cfg(target_os = "macos")]
+        crate::platform::test_runtime::ensure_loaded();
         crate::bootstrap_platform::select_pinned_api().unwrap();
         fn text(value: &str) -> cef::sys::cef_string_userfree_t {
             let value = value.encode_utf16().collect::<Vec<_>>();
