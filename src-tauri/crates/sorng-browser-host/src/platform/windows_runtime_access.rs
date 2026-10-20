@@ -993,11 +993,21 @@ mod tests {
             }
         };
         let children_before = (snapshot(&child), snapshot(&data));
+        // Hosted Windows temp roots need not mark newly created directories as
+        // auto-inherited. Seed this disposable directory explicitly, preserving
+        // its ACEs, and verify the bit before testing the first repair write.
+        let initial = Security::read(&writable).unwrap();
+        write_dacl(
+            &writable,
+            &Acl::from_aces(&initial.aces().unwrap(), false).unwrap(),
+            initial.control().unwrap() | SE_DACL_AUTO_INHERITED,
+        )
+        .unwrap();
         let before = Security::read(&writable).unwrap();
         assert_ne!(
             before.control().unwrap() & SE_DACL_AUTO_INHERITED,
             0,
-            "fresh fixture must exercise the cold auto-inherited DACL"
+            "seeded fixture must exercise the auto-inherited DACL"
         );
         let mut seeded = before.aces().unwrap();
         let mut inherited_candidate = allow_ace(1);
@@ -1011,12 +1021,12 @@ mod tests {
         )
         .unwrap();
         // A high-level tree update would propagate that old ACE to the child.
-        // Check the FIRST write too: the original test read a new baseline here,
-        // hiding NtSetSecurityObject clearing SE_DACL_AUTO_INHERITED in setup.
+        // Check the FIRST repair write too: reading a new baseline here would
+        // hide NtSetSecurityObject clearing SE_DACL_AUTO_INHERITED in setup.
         assert_eq!(
             Security::read(&writable).unwrap().control().unwrap(),
             before.control().unwrap(),
-            "first write must preserve the freshly inherited directory control"
+            "first repair write must preserve the inherited directory control"
         );
         let before = Security::read(&writable).unwrap();
         let access = PackageAccess::new().unwrap();
