@@ -106,15 +106,27 @@ fn moved_registrar_inventory_is_complete_and_feature_sensitive() {
 }
 
 #[test]
-fn root_registry_only_orchestrates_external_registrars_in_original_order() {
+fn root_registry_orchestrates_external_registrars_and_its_owned_route_adapter_in_order() {
     let root_lib = include_str!("../src/lib.rs");
     let root_registry = include_str!("../src/state_registry.rs");
     assert!(!root_lib.contains(".manage("));
-    assert!(!root_registry.contains(".manage("));
+    // The native route adapter binds already-registered infrastructure services
+    // to the verified app profile. Domain service registrations remain external.
+    let (before_routes, routes_and_after) = root_registry
+        .split_once("mod native_browser_routes {")
+        .expect("native browser route adapter module");
+    let (routes, after_routes) = routes_and_after
+        .split_once("/// The Wake-on-LAN scheduler.")
+        .expect("end of native browser route adapter module");
+    assert!(!before_routes.contains(".manage("));
+    assert!(!after_routes.contains(".manage("));
+    assert_eq!(routes.matches(".manage(").count(), 1);
+    assert!(routes.contains("if !app.manage(routes)"));
 
     let ordered_calls = [
         "register_infrastructure_prefix(",
         "sorng_app_startup_connectivity::register(",
+        "native_browser_routes::bind(",
         "register_security_data(",
         "register_access(",
         "register_platform(",
@@ -339,6 +351,11 @@ fn ops_startup_state_registrar_is_exported_by_the_domain_crate() {
     );
     assert_eq!(
         sorng_app_domains::ops_startup_state::MANAGED_STATE_REGISTRATIONS,
-        74
+        73
+    );
+    let source = include_str!("../src/state_registry/ops.rs");
+    assert_eq!(
+        source.matches("app.manage(").count(),
+        sorng_app_domains::ops_startup_state::MANAGED_STATE_REGISTRATIONS
     );
 }
