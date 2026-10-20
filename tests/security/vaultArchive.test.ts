@@ -175,7 +175,10 @@ describe("encrypted credential vault archives", () => {
     );
     const outer = JSON.parse(file),
       inner = JSON.parse(outer.payload);
-    inner.ciphertext = "A" + inner.ciphertext.slice(1);
+    const originalCiphertext = inner.ciphertext;
+    inner.ciphertext =
+      (originalCiphertext[0] === "A" ? "B" : "A") + originalCiphertext.slice(1);
+    expect(inner.ciphertext).not.toBe(originalCiphertext);
     outer.payload = JSON.stringify(inner);
     await expect(
       decryptVaultArchive(JSON.stringify(outer), "separate archive password"),
