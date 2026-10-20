@@ -1951,46 +1951,32 @@ mod tests {
         )
         .unwrap();
 
-        // Hold the transaction mutex while deterministically queuing the
-        // ordinary writer first and the migration reader second. Before the
-        // secure read took this mutex up front, it could capture the stale
+        // Poll both operations while an exclusive transition blocks them.
+        // Routine transactions acquire a shared barrier before the write
+        // mutex, so waking separately spawned tasks would not guarantee their
+        // order at that second mutex. Keep both futures here and drive the
+        // writer first once the barrier opens. The reader has already been
+        // polled against the old file, so this still rejects capturing before
+        // the transaction lock. Previously the secure read could capture the stale
         // `enabled: false` object here, queue its migration behind the writer,
         // and replay that stale object after the writer committed `true`.
         let guard = sorng_encryption::settings_coordinator::lock().await;
 
-        let (writer_started_tx, writer_started_rx) = tokio::sync::oneshot::channel();
-        let writer_dir = dir.clone();
-        let writer_state = state.clone();
-        let writer = tokio::spawn(async move {
-            let write = write_app_settings_inner(
-                &writer_dir,
-                &writer_state,
-                serde_json::json!({ "restApi": { "enabled": true } }),
-            );
-            tokio::pin!(write);
-            assert_queued_on_settings_coordinator(write.as_mut(), "writer").await;
-            let _ = writer_started_tx.send(());
-            write.await
-        });
-        writer_started_rx.await.unwrap();
-        assert!(!writer.is_finished());
+        let write = write_app_settings_inner(
+            &dir,
+            &state,
+            serde_json::json!({ "restApi": { "enabled": true } }),
+        );
+        tokio::pin!(write);
+        assert_queued_on_settings_coordinator(write.as_mut(), "writer").await;
 
-        let (reader_started_tx, reader_started_rx) = tokio::sync::oneshot::channel();
-        let reader_dir = dir.clone();
-        let reader_state = state.clone();
-        let reader = tokio::spawn(async move {
-            let read = read_app_settings_secure_inner(&reader_dir, &reader_state);
-            tokio::pin!(read);
-            assert_queued_on_settings_coordinator(read.as_mut(), "reader").await;
-            let _ = reader_started_tx.send(());
-            read.await
-        });
-        reader_started_rx.await.unwrap();
-        assert!(!reader.is_finished());
+        let read = read_app_settings_secure_inner(&dir, &state);
+        tokio::pin!(read);
+        assert_queued_on_settings_coordinator(read.as_mut(), "reader").await;
 
         drop(guard);
-        writer.await.unwrap().unwrap();
-        let observed = reader.await.unwrap().unwrap().unwrap();
+        write.await.unwrap();
+        let observed = read.await.unwrap().unwrap();
 
         assert_eq!(observed["restApi"]["enabled"], true);
         assert!(observed["restApi"].get("apiKey").is_none());
