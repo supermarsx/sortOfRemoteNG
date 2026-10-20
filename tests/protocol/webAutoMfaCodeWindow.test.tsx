@@ -58,7 +58,7 @@ import type { RuntimeVaultTotpController } from "../../src/hooks/security/useRun
 import { generateTotpCode } from "../../src/utils/security/totpCode";
 
 const failure =
-  "Automatic 2FA stopped. Use Credentials & 2FA manually or review the saved Application settings.";
+  "Automatic 2FA stopped. Use Credentials & 2FA manually or review the saved Authentication settings.";
 const at = (iso: string) => new Date(`2026-09-10T${iso}Z`).getTime();
 
 let vaultTotp: RuntimeVaultTotpController | undefined;

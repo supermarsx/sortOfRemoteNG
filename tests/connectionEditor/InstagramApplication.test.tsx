@@ -84,7 +84,7 @@ describe("Instagram reviewed frontend profile", () => {
             <HTTPOptions
               formData={formData}
               setFormData={setFormData}
-              sections={["application"]}
+              sections={["application", "authentication"]}
             />
             <output data-testid="value">{JSON.stringify(formData)}</output>
           </>

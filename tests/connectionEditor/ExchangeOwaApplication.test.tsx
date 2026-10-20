@@ -42,7 +42,7 @@ function MailboxFixture({
       <HTTPOptions
         formData={formData}
         setFormData={setFormData}
-        sections={["application"]}
+        sections={["application", "authentication"]}
       />
       <output data-testid="mailbox-value">{JSON.stringify(formData)}</output>
     </>
@@ -205,7 +205,7 @@ describe("on-premises Exchange OWA application", () => {
           <HTTPOptions
             formData={formData}
             setFormData={setFormData}
-            sections={["application"]}
+            sections={["application", "authentication"]}
           />
           <output data-testid="value">{JSON.stringify(formData)}</output>
         </>

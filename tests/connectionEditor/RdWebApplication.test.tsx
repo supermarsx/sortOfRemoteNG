@@ -35,7 +35,7 @@ function Fixture({ initial }: { initial: Partial<Connection> }) {
       <HTTPOptions
         formData={formData}
         setFormData={setFormData}
-        sections={["application"]}
+        sections={["application", "authentication"]}
       />
       <output data-testid="rdweb-record">{JSON.stringify(formData)}</output>
     </>

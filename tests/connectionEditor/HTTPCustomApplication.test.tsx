@@ -84,7 +84,7 @@ function Fixture() {
       <HTTPOptions
         formData={formData}
         setFormData={setFormData}
-        sections={["application"]}
+        sections={["application", "authentication"]}
       />
       <output data-testid="custom-form-data">{JSON.stringify(formData)}</output>
     </>
@@ -193,7 +193,7 @@ describe("Custom HTTP application", () => {
       };
       const { result } = renderHook(() => useWebBrowser(session));
       await waitFor(() =>
-        expect(result.current.loadError).toMatch(/Application settings/),
+        expect(result.current.loadError).toMatch(/Authentication.*selectors/),
       );
       expect(
         mocks.invoke.mock.calls.some(

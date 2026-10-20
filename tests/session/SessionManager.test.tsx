@@ -86,7 +86,7 @@ type InvokeOverride =
   unknown | ((command: string) => unknown | Promise<unknown>);
 
 function mockInvoke(overrides: Record<string, InvokeOverride> = {}) {
-  vi.mocked(invoke).mockImplementation(async (cmd: string) => {
+  vi.mocked(invoke).mockImplementation(async (cmd: string, args) => {
     if (cmd in overrides) {
       const override = overrides[cmd];
       return (
@@ -120,7 +120,17 @@ function mockInvoke(overrides: Record<string, InvokeOverride> = {}) {
           truncated: false,
         } as never;
       case "application_logs_read":
-        return { text: "Native log fixture", truncated: false } as never;
+        return {
+          text:
+            (args as { source?: string })?.source === "browser"
+              ? JSON.stringify({
+                  version: 1,
+                  stage: "ready",
+                  timestampUnixMs: 1791558000000,
+                })
+              : "Native log fixture",
+          truncated: false,
+        } as never;
       case "disconnect_rdp":
       case "detach_rdp_session":
       case "rdp_sign_out":
@@ -532,7 +542,7 @@ describe("SessionManager (unified RDP + internal proxy)", () => {
     expect(
       await screen.findByRole("region", { name: "Application logs" }),
     ).toBeVisible();
-    expect(await screen.findByText("Native log fixture")).toBeVisible();
+    expect((await screen.findAllByText("Native log fixture"))[0]).toBeVisible();
     expect(invoke).toHaveBeenCalledWith("application_logs_list", {
       source: "application",
     });
@@ -554,7 +564,9 @@ describe("SessionManager (unified RDP + internal proxy)", () => {
     expect(
       await screen.findByRole("region", { name: "Browser startup journal" }),
     ).toBeVisible();
-    expect(await screen.findByText("Native log fixture")).toBeVisible();
+    expect(
+      (await screen.findAllByText("Native browser ready"))[0],
+    ).toBeVisible();
     expect(invoke).toHaveBeenCalledWith("application_logs_list", {
       source: "browser",
     });

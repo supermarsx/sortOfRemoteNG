@@ -1779,7 +1779,7 @@ describe("real WebBrowser iframe and website automation integration", () => {
     expect(document.body).toContainElement(popover);
     expect(container).not.toContainElement(popover);
     expect(button.parentElement).not.toContainElement(popover);
-    expect(screen.getByText(/Protocol → Recovery/)).toBeInTheDocument();
+    expect(screen.getByText(/Authentication → Recovery/)).toBeInTheDocument();
     expect(
       screen.queryByRole("button", {
         name: /generate.*backup|export.*secret|auto.?type/i,

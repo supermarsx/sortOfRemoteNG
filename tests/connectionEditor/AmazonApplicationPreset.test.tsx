@@ -23,7 +23,7 @@ function Fixture({ initial }: { initial: Partial<Connection> }) {
       <HTTPOptions
         formData={formData}
         setFormData={setFormData}
-        sections={["application"]}
+        sections={["application", "authentication"]}
       />
       <output data-testid="amazon-record">{JSON.stringify(formData)}</output>
     </>

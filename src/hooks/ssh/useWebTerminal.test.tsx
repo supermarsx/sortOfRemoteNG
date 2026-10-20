@@ -290,7 +290,8 @@ vi.mock("../../contexts/useConnections", () => ({
 vi.mock("../../contexts/SettingsContext", () => ({
   useSettings: () => mocks.settingsContext,
 }));
-vi.mock("../../contexts/ToastContext", () => ({
+vi.mock("../../contexts/ToastContext", async (original) => ({
+  ...(await original<typeof import("../../contexts/ToastContext")>()),
   useToastContext: () => ({ toast: mocks.toastContext.current }),
 }));
 vi.mock("../recording/useTerminalRecorder", () => ({

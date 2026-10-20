@@ -293,7 +293,9 @@ describe("useWebBrowser — web auto-login invoke mapping (t20)", () => {
         const { result } = renderHook(() => useWebBrowser(owaSession));
         await act(async () => {});
         expect(result.current.buildTargetUrl()).toBe("");
-        expect(result.current.loadError).toMatch(/invalid/i);
+        expect(result.current.loadError).toMatch(
+          /needs review|review.*application/i,
+        );
         expect(lastProxyConfig()).toBeUndefined();
       });
     },

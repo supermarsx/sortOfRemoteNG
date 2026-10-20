@@ -130,7 +130,7 @@ describe("saved Synology schema and access modes", () => {
     });
     expect(
       getProtocolSubtabs({ protocol: "synology" }).map((tab) => tab.id),
-    ).toEqual(["connection", "recovery"]);
+    ).toEqual(["connection", "authentication", "recovery"]);
     expect(
       getRuntimeProtocolUnavailableMessage("synology", {
         ...UNAVAILABLE_RUNTIME_CAPABILITIES,

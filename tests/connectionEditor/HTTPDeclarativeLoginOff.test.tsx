@@ -46,7 +46,7 @@ const formLabel = "Automatic form login — explicitly opt in";
 
 function Fixture({
   value = initial,
-  sections = ["application"] as const,
+  sections = ["application", "authentication"] as const,
 }: {
   value?: Partial<Connection>;
   sections?: readonly ("application" | "advanced")[];

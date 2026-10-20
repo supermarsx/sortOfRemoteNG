@@ -30,7 +30,7 @@ function Fixture({ value = initial }: { value?: Partial<Connection> }) {
       <HTTPOptions
         formData={formData}
         setFormData={setFormData}
-        sections={["application"]}
+        sections={["application", "authentication"]}
       />
       <button
         onClick={() =>

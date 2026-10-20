@@ -89,7 +89,7 @@ describe.each(["chatgpt", "claude"])("%s bounded hosted assistance", (id) => {
             <HTTPOptions
               formData={formData}
               setFormData={setFormData}
-              sections={["application"]}
+              sections={["application", "authentication"]}
             />
             <output data-testid="state">{JSON.stringify(formData)}</output>
           </>

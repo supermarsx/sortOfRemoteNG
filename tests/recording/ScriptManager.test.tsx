@@ -143,7 +143,8 @@ vi.mock("@tauri-apps/api/core", () => ({
   invoke: vi.fn(),
 }));
 
-vi.mock("../../src/contexts/ToastContext", () => ({
+vi.mock("../../src/contexts/ToastContext", async (original) => ({
+  ...(await original<typeof import("../../src/contexts/ToastContext")>()),
   useToastContext: () => ({
     toast: toastContextMocks.toast,
     removeAll: toastContextMocks.removeAll,

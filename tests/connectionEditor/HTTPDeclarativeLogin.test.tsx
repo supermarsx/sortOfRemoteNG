@@ -94,10 +94,10 @@ const formLabel = "Automatic form login — explicitly opt in";
 
 function Fixture({
   value = initial,
-  sections = ["application"] as const,
+  sections = ["application", "authentication"] as const,
 }: {
   value?: Partial<Connection>;
-  sections?: readonly ("application" | "advanced")[];
+  sections?: readonly ("application" | "authentication" | "advanced")[];
 }) {
   const [formData, setFormData] = React.useState(value);
   return (
@@ -280,7 +280,7 @@ describe("steps-based logins in the connection editor", () => {
   });
 
   it("points a generic website at the Custom application for frame, password-only and pre-step logins", () => {
-    render(<Fixture sections={["advanced"]} />);
+    render(<Fixture sections={["authentication"]} />);
     expect(
       screen.getByText(
         /a login form inside a frame, a password-only device or a control to click first/,
