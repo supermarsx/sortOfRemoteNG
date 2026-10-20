@@ -487,35 +487,44 @@ test(
   },
 );
 
-test("Cargo version/feature alignment rejects newer sys bindings and disabled sandbox", async () => {
-  const lock = await readFile(path.join(repo, "src-tauri/Cargo.lock"), "utf8");
-  const host = await readFile(
-    path.join(repo, "src-tauri/crates/sorng-browser-host/Cargo.toml"),
-    "utf8",
-  );
-  assert.equal(inspectBindingAlignment(lock, host).ok, true);
-  assert.equal(
-    inspectBindingAlignment(
-      lock.replace(
-        'name = "cef-dll-sys"\nversion = "154.3.0+154.0.32"',
-        'name = "cef-dll-sys"\nversion = "154.4.0+154.0.33"',
-      ),
-      host,
-    ).ok,
-    false,
-  );
-  assert.equal(
-    inspectBindingAlignment(lock, host.replace('"sandbox", ', "")).ok,
-    false,
-  );
-  assert.equal(
-    inspectBindingAlignment(
-      `${lock}\n[[package]]\nname = "cef"\nversion = "154.3.0+154.0.32"\n`,
-      host,
-    ).ok,
-    false,
-  );
-});
+for (const [checkout, lineEnding] of [
+  ["LF", "\n"],
+  ["CRLF", "\r\n"],
+]) {
+  test(`Cargo version/feature alignment rejects newer sys bindings and disabled sandbox from ${checkout} checkout`, async () => {
+    const lock = (
+      await readFile(path.join(repo, "src-tauri/Cargo.lock"), "utf8")
+    )
+      .replace(/\r?\n/g, lineEnding)
+      .replace(/\r\n/g, "\n");
+    const host = await readFile(
+      path.join(repo, "src-tauri/crates/sorng-browser-host/Cargo.toml"),
+      "utf8",
+    );
+    assert.equal(inspectBindingAlignment(lock, host).ok, true);
+    const incompatibleLock = lock.replace(
+      'name = "cef-dll-sys"\nversion = "154.3.0+154.0.32"',
+      'name = "cef-dll-sys"\nversion = "154.4.0+154.0.33"',
+    );
+    assert.notEqual(
+      incompatibleLock,
+      lock,
+      "the fixture must change the pinned binding",
+    );
+    assert.equal(inspectBindingAlignment(incompatibleLock, host).ok, false);
+    assert.equal(
+      inspectBindingAlignment(lock, host.replace('"sandbox", ', "")).ok,
+      false,
+    );
+    assert.equal(
+      inspectBindingAlignment(
+        `${lock}\n[[package]]\nname = "cef"\nversion = "154.3.0+154.0.32"\n`,
+        host,
+      ).ok,
+      false,
+    );
+  });
+}
 
 test("a fabricated complete runtime cannot pass archive or release acceptance", async (t) => {
   const { root, bundle, temporaryRoot } = await fixture(t);
