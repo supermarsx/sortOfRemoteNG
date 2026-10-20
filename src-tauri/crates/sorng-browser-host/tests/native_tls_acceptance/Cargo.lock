@@ -4736,7 +4736,7 @@ dependencies = [
 
 [[package]]
 name = "sorng-biometrics"
-version = "26.50.0"
+version = "26.51.0"
 dependencies = [
  "base64 0.23.1",
  "chrono",
@@ -4760,7 +4760,7 @@ dependencies = [
 
 [[package]]
 name = "sorng-browser-host"
-version = "26.50.0"
+version = "26.51.0"
 dependencies = [
  "cc",
  "cef",
@@ -4793,7 +4793,7 @@ dependencies = [
 
 [[package]]
 name = "sorng-core"
-version = "26.50.0"
+version = "26.51.0"
 dependencies = [
  "log",
  "serde",
@@ -4802,7 +4802,7 @@ dependencies = [
 
 [[package]]
 name = "sorng-encryption"
-version = "26.50.0"
+version = "26.51.0"
 dependencies = [
  "aes-gcm",
  "argon2",
@@ -4829,7 +4829,7 @@ dependencies = [
 
 [[package]]
 name = "sorng-protocols"
-version = "26.50.0"
+version = "26.51.0"
 dependencies = [
  "axum",
  "base64 0.23.1",
@@ -4873,7 +4873,7 @@ dependencies = [
 
 [[package]]
 name = "sorng-quickconnect"
-version = "26.50.0"
+version = "26.51.0"
 dependencies = [
  "hex",
  "md-5",
@@ -4883,7 +4883,7 @@ dependencies = [
 
 [[package]]
 name = "sorng-socket-transport"
-version = "26.50.0"
+version = "26.51.0"
 dependencies = [
  "serde",
  "socket2",
@@ -4894,7 +4894,7 @@ dependencies = [
 
 [[package]]
 name = "sorng-storage"
-version = "26.50.0"
+version = "26.51.0"
 dependencies = [
  "aes-gcm",
  "base64 0.23.1",
@@ -4916,7 +4916,7 @@ dependencies = [
 
 [[package]]
 name = "sorng-tls-trust"
-version = "26.50.0"
+version = "26.51.0"
 dependencies = [
  "base64 0.23.1",
  "chrono",
@@ -4932,7 +4932,7 @@ dependencies = [
 
 [[package]]
 name = "sorng-vault"
-version = "26.50.0"
+version = "26.51.0"
 dependencies = [
  "aes-gcm",
  "argon2",
@@ -4959,14 +4959,14 @@ dependencies = [
 
 [[package]]
 name = "sorng-vault-windows"
-version = "26.50.0"
+version = "26.51.0"
 dependencies = [
  "windows 0.62.2",
 ]
 
 [[package]]
 name = "sorng-voip-phone"
-version = "26.50.0"
+version = "26.51.0"
 dependencies = [
  "aes",
  "async-trait",
