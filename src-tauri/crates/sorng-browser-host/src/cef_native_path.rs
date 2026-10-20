@@ -277,7 +277,6 @@ mod tests {
     #[cfg(unix)]
     #[test]
     fn non_windows_preserves_native_spelling_even_for_windows_special_names() {
-        use std::os::unix::ffi::OsStringExt;
         let root = std::env::temp_dir().join(format!("cef-native-path-{}", std::process::id()));
         std::fs::create_dir(&root).unwrap();
         let unusual = root.join(r"CON\cache:stream. ");
@@ -285,11 +284,35 @@ mod tests {
         assert_eq!(text(&unusual, false).as_deref(), unusual.to_str());
         let dotted = root.join("./CON\\cache:stream. ");
         assert_eq!(text(&dotted, false).as_deref(), dotted.to_str());
-        let invalid = root.join(std::ffi::OsString::from_vec(vec![0xff]));
-        std::fs::create_dir(&invalid).unwrap();
-        assert_eq!(text(&invalid, false), None);
-        std::fs::remove_dir(&invalid).unwrap();
         std::fs::remove_dir(&unusual).unwrap();
+        std::fs::remove_dir(&root).unwrap();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn non_utf8_native_paths_never_cross_the_cef_string_boundary() {
+        use std::os::unix::ffi::OsStringExt;
+        let root = std::env::temp_dir().join(format!("cef-non-utf8-path-{}", std::process::id()));
+        std::fs::create_dir(&root).unwrap();
+        let invalid = root.join(std::ffi::OsString::from_vec(vec![0xff]));
+        assert!(invalid.to_str().is_none());
+        match std::fs::create_dir(&invalid) {
+            Ok(()) => {
+                // Filesystems permitting raw byte names must still not expose
+                // a lossy or substituted path to CEF.
+                assert!(invalid.is_dir());
+                assert_eq!(text(&invalid, false), None);
+                std::fs::remove_dir(&invalid).unwrap();
+            }
+            // Darwin/APFS rejects invalid filename encoding itself (EILSEQ).
+            // Keep the boundary assertion without requiring that filesystem
+            // to materialize an unrepresentable filename.
+            #[cfg(target_os = "macos")]
+            Err(error) if error.raw_os_error() == Some(92) => {
+                assert_eq!(text(&invalid, false), None);
+            }
+            Err(error) => panic!("could not create native path fixture: {error}"),
+        }
         std::fs::remove_dir(&root).unwrap();
     }
 
