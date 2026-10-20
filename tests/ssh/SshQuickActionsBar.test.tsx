@@ -7,6 +7,7 @@ import {
 } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import SshQuickActionsBar from "../../src/components/ssh/webTerminal/SshQuickActionsBar";
+import { useTooltipSystem } from "../../src/hooks/window/useTooltipSystem";
 import type { useSshQuickActions } from "../../src/hooks/ssh/useSshQuickActions";
 vi.mock("../../src/components/recording/ScriptManager", () => ({
   ScriptManager: () => <div>Script library manager</div>,
@@ -40,6 +41,35 @@ const actions = (): ReturnType<typeof useSshQuickActions> => ({
   refresh: vi.fn(),
 });
 describe("SSH favorites bar", () => {
+  it.each(["script", "macro"] as const)(
+    "shows the %s favorite in a single themed tooltip even when execution is disabled",
+    (kind) => {
+      const model = actions();
+      model.canRun = false;
+      model.favorites = [{ ...item, kind }];
+      model.visibleFavorites = model.favorites;
+      function Fixture() {
+        useTooltipSystem();
+        return (
+          <SshQuickActionsBar
+            actions={model}
+            replaying={false}
+            onStopReplay={vi.fn()}
+          />
+        );
+      }
+      render(<Fixture />);
+      const chip = screen.getByRole("button", { name: `Run ${kind} Inspect` });
+      expect(chip).toBeDisabled();
+      expect(chip).not.toHaveAttribute("title");
+      fireEvent.mouseOver(chip.parentElement!);
+      const tooltip = document.querySelector(".app-tooltip");
+      expect(tooltip).toBeVisible();
+      expect(tooltip).toHaveTextContent(`Inspect · App-wide · ${kind}`);
+      fireEvent.focusIn(chip.parentElement!);
+      expect(tooltip).toHaveTextContent(`Inspect · App-wide · ${kind}`);
+    },
+  );
   it.each(["script", "macro"] as const)(
     "assigns only %s choices from the empty-space context menu without running",
     (kind) => {
@@ -334,12 +364,12 @@ describe("SSH favorites bar", () => {
       name: "Run script Inspect",
     });
     expect(choices).toHaveLength(2);
-    expect(choices[0]).toHaveAttribute(
-      "title",
+    expect(choices[0].parentElement).toHaveAttribute(
+      "data-tooltip",
       expect.stringContaining("App-wide"),
     );
-    expect(choices[1]).toHaveAttribute(
-      "title",
+    expect(choices[1].parentElement).toHaveAttribute(
+      "data-tooltip",
       expect.stringContaining("Database"),
     );
     fireEvent.click(choices[1]);

@@ -9,6 +9,28 @@ function Fixture({ label }: { label?: string }) {
 
 describe("application tooltips", () => {
   it.each(["hover", "focus"])(
+    "clears a previous control's tooltip on %s of a control without one",
+    (mode) => {
+      render(
+        <>
+          <Fixture label="Database unavailable" />
+          <button>Script action</button>
+        </>,
+      );
+      const previous = screen.getByRole("button", { name: "Page action" });
+      const next = screen.getByRole("button", { name: "Script action" });
+      if (mode === "hover") fireEvent.mouseOver(previous);
+      else fireEvent.focusIn(previous);
+      expect(document.querySelector(".app-tooltip")).toHaveTextContent(
+        "Database unavailable",
+      );
+      // A replaced or removed control need not deliver mouseout/focusout.
+      if (mode === "hover") fireEvent.mouseOver(next);
+      else fireEvent.focusIn(next);
+      expect(document.querySelector(".app-tooltip")).not.toBeVisible();
+    },
+  );
+  it.each(["hover", "focus"])(
     "updates a visible %s tooltip when the action changes without a duplicate label",
     async (mode) => {
       const view = render(<Fixture label="Refresh" />);

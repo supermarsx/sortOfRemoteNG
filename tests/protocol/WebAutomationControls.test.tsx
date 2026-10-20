@@ -314,6 +314,11 @@ describe("mounted website automation controls and ownership", () => {
     await mount();
     const chip = screen.getByRole("button", { name: "Demo script" });
     expect(chip).toBeDisabled();
+    expect(chip).not.toHaveAttribute("title");
+    expect(chip.parentElement).toHaveAttribute(
+      "data-tooltip",
+      "Run JavaScript: Demo script · App-wide",
+    );
     const bubble = vi.fn();
     document.body.addEventListener("contextmenu", bubble);
     fireEvent.contextMenu(chip.parentElement!, { clientX: 15, clientY: 20 });

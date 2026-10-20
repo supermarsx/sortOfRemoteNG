@@ -614,6 +614,7 @@ export function WebAutomationFavoriteChips({
         <span
           key={quickActionReferenceKey(item)}
           className="inline-flex shrink-0"
+          data-tooltip={`${item.kind === "script" ? "Run JavaScript" : "Replay macro"}: ${item.name} · ${quickActionScopeLabel(item)}`}
           tabIndex={canManage && !canRun(item) ? 0 : undefined}
           aria-label={
             !canRun(item) ? `Manage favorite ${item.name}` : undefined
@@ -637,7 +638,6 @@ export function WebAutomationFavoriteChips({
         >
           <button
             className="sor-option-chip shrink-0 text-xs max-w-40"
-            title={`${item.kind === "script" ? "Run JavaScript" : "Replay macro"}: ${item.name} · ${quickActionScopeLabel(item)}`}
             disabled={!canRun(item)}
             style={!canRun(item) ? { pointerEvents: "none" } : undefined}
             onClick={() => automation.requestRun(item)}

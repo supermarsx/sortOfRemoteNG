@@ -220,6 +220,7 @@ export default function SshQuickActionsBar({
               <span
                 key={quickActionReferenceKey(favorite)}
                 className="shrink-0"
+                data-tooltip={`${favorite.name} · ${quickActionScopeLabel(favorite)} · ${favorite.kind}${favorite.missing ? " · unavailable" : ""}`}
                 role="group"
                 aria-label={`${favorite.kind} ${favorite.name} favorite`}
                 tabIndex={
@@ -255,7 +256,6 @@ export default function SshQuickActionsBar({
                 <button
                   type="button"
                   className="app-bar-button flex shrink-0 items-center gap-1 rounded px-2 py-1 text-xs"
-                  title={`${favorite.name} · ${quickActionScopeLabel(favorite)} · ${favorite.kind}${favorite.missing ? " · unavailable" : ""}`}
                   aria-label={`Run ${favorite.kind} ${favorite.name}`}
                   disabled={!actions.canRun || favorite.missing || replaying}
                   onClick={() => {

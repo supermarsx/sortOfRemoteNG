@@ -83,7 +83,12 @@ export function useTooltipSystem(): void {
       const target = (event.target as HTMLElement | null)?.closest<HTMLElement>(
         "[data-tooltip]",
       );
-      if (!target) return;
+      if (!target) {
+        activeTarget = null;
+        activeObserver.disconnect();
+        hideTooltip();
+        return;
+      }
       if (activeTarget === target) return;
       activateTarget(target);
     };
@@ -103,7 +108,12 @@ export function useTooltipSystem(): void {
       const target = (event.target as HTMLElement | null)?.closest<HTMLElement>(
         "[data-tooltip]",
       );
-      if (!target) return;
+      if (!target) {
+        activeTarget = null;
+        activeObserver.disconnect();
+        hideTooltip();
+        return;
+      }
       activateTarget(target);
     };
 
