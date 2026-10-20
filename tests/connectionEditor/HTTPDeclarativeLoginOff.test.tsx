@@ -49,7 +49,7 @@ function Fixture({
   sections = ["application", "authentication"] as const,
 }: {
   value?: Partial<Connection>;
-  sections?: readonly ("application" | "advanced")[];
+  sections?: readonly ("application" | "authentication" | "advanced")[];
 }) {
   const [formData, setFormData] = React.useState(value);
   return (
