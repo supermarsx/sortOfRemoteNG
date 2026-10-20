@@ -55,7 +55,7 @@ pub(crate) async fn operate(
     // exactly one response; no application lock is held while CEF calls back.
     let sender = Arc::new(Mutex::new(Some(sender)));
     window.run_on_main_thread(move || {
-        if sender.lock().map_or(true, |s| s.as_ref().is_none_or(|s| s.is_closed())) { return; }
+        if sender.lock().map_or(true, |s| s.as_ref().map_or(true, |s| s.is_closed())) { return; }
         let reply = sender.clone();
         let result = UI.with(|slot| {
             let slot = slot.borrow();

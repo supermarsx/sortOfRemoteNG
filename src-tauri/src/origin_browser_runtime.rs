@@ -500,7 +500,7 @@ async fn ensure_runtime(
                                     && queued_document.current()
                                     && Instant::now() < deadline
                                     && queued_lease.is_current()
-                                    && prewarm_gate.is_none_or(|gate| gate.current())
+                                    && prewarm_gate.map_or(true, |gate| gate.current())
                                     && !shared().admission.revoked()
                                     && {
                                         // Linearize entry against the caller ending. A caller

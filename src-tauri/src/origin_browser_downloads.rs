@@ -79,14 +79,12 @@ impl NativeDownloadDelegate for DownloadOwner {
     fn blocked(&self, notice: DownloadBlockedNotice) {
         if self.is_current(&self.identity)
             && notice.identity.validate_matches(&self.identity).is_ok()
-        {
-            if self
+            && self
                 .window
                 .emit(ORIGIN_BROWSER_DOWNLOAD_BLOCKED_EVENT, notice)
                 .is_err()
-            {
-                self.revoke();
-            }
+        {
+            self.revoke();
         }
     }
     fn pool(&self) -> Arc<DownloadPool> {

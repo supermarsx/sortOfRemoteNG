@@ -58,11 +58,9 @@ pub(crate) async fn operate(
     if matches!(
         &request.operation,
         Operation::Start { .. } | Operation::Export { .. }
-    ) {
-        if attempt.lease.recheck(&window, state).await.is_err() {
-            revoke(&attempt.identity);
-            return Err(STALE.into());
-        }
+    ) && attempt.lease.recheck(&window, state).await.is_err() {
+        revoke(&attempt.identity);
+        return Err(STALE.into());
     }
     let current = || {
         if attempt.current() && shared().admission.ready() {

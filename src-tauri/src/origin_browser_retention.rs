@@ -267,7 +267,7 @@ impl NativeCookieRetention {
             let stamp = now();
             snapshot.cookies.retain(|c| {
                 c.expires
-                    .is_none_or(|e| e > cef_time(stamp).unwrap_or(i64::MAX))
+                    .map_or(true, |e| e > cef_time(stamp).unwrap_or(i64::MAX))
             });
             validate_cookies(&snapshot.cookies, &snapshot.origins, stamp)?;
             self.restore_origins(&snapshot.origins)?;
@@ -293,7 +293,7 @@ impl NativeCookieRetention {
         let stamp = now();
         record.cookies.retain(|c| {
             c.expires
-                .is_none_or(|e| e > cef_time(stamp).unwrap_or(i64::MAX))
+                .map_or(true, |e| e > cef_time(stamp).unwrap_or(i64::MAX))
         });
         validate_cookies(&record.cookies, &record.origins, stamp)?;
         self.restore_origins(&record.origins)?;
@@ -369,7 +369,7 @@ impl NativeCookieRetention {
         }
         cookies.retain(|c| {
             c.expires
-                .is_none_or(|e| e > cef_time(stamp).unwrap_or(i64::MAX))
+                .map_or(true, |e| e > cef_time(stamp).unwrap_or(i64::MAX))
         });
         let origins = self.origins()?;
         validate_cookies(&cookies, &origins, stamp)?;

@@ -55,6 +55,8 @@ pub(super) fn publish_with_reason(
     publish_with_load_failure(snapshot, identity, sequence, phase_and_reason, None, page, current, emit)
 }
 
+// Snapshot identity, page state and fixed failure evidence publish atomically.
+#[allow(clippy::too_many_arguments)]
 pub(super) fn publish_with_load_failure(
     snapshot: &Mutex<OriginBrowserSnapshot>,
     identity: &BrowserIdentity,

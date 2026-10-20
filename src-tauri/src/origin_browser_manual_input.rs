@@ -81,7 +81,7 @@ pub(crate) async fn operate(
         if typing
             && pending
                 .lock()
-                .map_or(true, |s| s.as_ref().is_none_or(|s| s.is_closed()))
+                .map_or(true, |s| s.as_ref().map_or(true, |s| s.is_closed()))
         {
             return false;
         }
@@ -105,7 +105,7 @@ pub(crate) async fn operate(
         })
     });
     window.run_on_main_thread(move || {
-        if sender.lock().map_or(true,|s|s.as_ref().is_none_or(|s|s.is_closed())) {return;}
+        if sender.lock().map_or(true,|s|s.as_ref().map_or(true,|s|s.is_closed())) {return;}
         let reply=sender.clone();
         let result=UI.with(|slot| {
             let slot=slot.borrow();
