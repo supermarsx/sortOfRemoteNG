@@ -2655,7 +2655,7 @@ mod tests {
         let authorized = authorize_create_with_certificate_hooks(&f.window, &f.state, &f.request).await.unwrap();
         assert!(!authorized.lease.is_temporary());
         assert!(!authorized.login.enabled());
-        assert_eq!(authorized.policy.allowed_origins(), &[origin.clone()]);
+        assert_eq!(authorized.policy.allowed_origins(), std::slice::from_ref(&origin));
         let route = authorized.route.clone();
         let mut session = OriginBrowserSession::start(authorized.policy, route.clone(), ProxyLimits::default()).await.unwrap();
         let credentials = session.with_proxy_credentials(|user, password| {

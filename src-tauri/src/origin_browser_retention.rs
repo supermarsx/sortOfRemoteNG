@@ -265,9 +265,10 @@ impl NativeCookieRetention {
                 serde_json::from_slice(&bytes).map_err(|_| RetentionError::Invalid)?;
             *self.created.lock().map_err(failure)? = snapshot.created;
             let stamp = now();
-            snapshot.cookies.retain(|c| {
-                c.expires
-                    .map_or(true, |e| e > cef_time(stamp).unwrap_or(i64::MAX))
+            // Also compiled by the app's Rust 1.77.2 MSRV, before Option::is_none_or.
+            snapshot.cookies.retain(|c| match c.expires {
+                Some(expiry) => expiry > cef_time(stamp).unwrap_or(i64::MAX),
+                None => true,
             });
             validate_cookies(&snapshot.cookies, &snapshot.origins, stamp)?;
             self.restore_origins(&snapshot.origins)?;
@@ -291,9 +292,9 @@ impl NativeCookieRetention {
         *self.created.lock().map_err(failure)? = record.created;
         self.touch(record.created, Some(record.revision.clone()))?;
         let stamp = now();
-        record.cookies.retain(|c| {
-            c.expires
-                .map_or(true, |e| e > cef_time(stamp).unwrap_or(i64::MAX))
+        record.cookies.retain(|c| match c.expires {
+            Some(expiry) => expiry > cef_time(stamp).unwrap_or(i64::MAX),
+            None => true,
         });
         validate_cookies(&record.cookies, &record.origins, stamp)?;
         self.restore_origins(&record.origins)?;
@@ -367,9 +368,9 @@ impl NativeCookieRetention {
             self.clear_database()?;
             return Err(RetentionError::Expired);
         }
-        cookies.retain(|c| {
-            c.expires
-                .map_or(true, |e| e > cef_time(stamp).unwrap_or(i64::MAX))
+        cookies.retain(|c| match c.expires {
+            Some(expiry) => expiry > cef_time(stamp).unwrap_or(i64::MAX),
+            None => true,
         });
         let origins = self.origins()?;
         validate_cookies(&cookies, &origins, stamp)?;
