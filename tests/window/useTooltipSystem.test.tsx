@@ -13,7 +13,7 @@ describe("application tooltips", () => {
     (mode) => {
       render(
         <>
-          <Fixture label="Database unavailable" />
+          <Fixture label="Unavailable library entry" />
           <button>Script action</button>
         </>,
       );
@@ -22,7 +22,7 @@ describe("application tooltips", () => {
       if (mode === "hover") fireEvent.mouseOver(previous);
       else fireEvent.focusIn(previous);
       expect(document.querySelector(".app-tooltip")).toHaveTextContent(
-        "Database unavailable",
+        "Unavailable library entry",
       );
       // A replaced or removed control need not deliver mouseout/focusout.
       if (mode === "hover") fireEvent.mouseOver(next);

@@ -1,4 +1,5 @@
 import {
+  act,
   fireEvent,
   render,
   screen,
@@ -41,6 +42,40 @@ const actions = (): ReturnType<typeof useSshQuickActions> => ({
   refresh: vi.fn(),
 });
 describe("SSH favorites bar", () => {
+  it("replaces an unavailable library entry tooltip when its saved script finishes loading", async () => {
+    const model = actions();
+    model.canRun = false;
+    model.visibleFavorites = [
+      { ...item, name: "Unavailable library entry", missing: true },
+    ];
+    function Fixture() {
+      useTooltipSystem();
+      return (
+        <SshQuickActionsBar
+          actions={model}
+          replaying={false}
+          onStopReplay={vi.fn()}
+        />
+      );
+    }
+    const view = render(<Fixture />);
+    fireEvent.mouseOver(
+      screen.getByRole("group", {
+        name: "script Unavailable library entry favorite",
+      }),
+    );
+    const tooltip = document.querySelector(".app-tooltip");
+    expect(tooltip).toHaveTextContent("Unavailable library entry");
+    model.canRun = true;
+    model.visibleFavorites = [item];
+    await act(async () => view.rerender(<Fixture />));
+    expect(tooltip).toBeVisible();
+    expect(tooltip).toHaveTextContent("Inspect · App-wide · script");
+    expect(tooltip).not.toHaveTextContent("Unavailable library entry");
+    expect(
+      screen.getByRole("button", { name: "Run script Inspect" }),
+    ).not.toHaveAttribute("title");
+  });
   it.each(["script", "macro"] as const)(
     "shows the %s favorite in a single themed tooltip even when execution is disabled",
     (kind) => {
