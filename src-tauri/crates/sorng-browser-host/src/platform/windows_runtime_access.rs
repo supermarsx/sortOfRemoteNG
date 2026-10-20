@@ -993,6 +993,19 @@ mod tests {
             }
         };
         let children_before = (snapshot(&child), snapshot(&data));
+        let stage = |name: &str| {
+            let parent = Security::read(&writable).unwrap();
+            let child_state = Security::read(&child).unwrap();
+            eprintln!(
+                "stage={name} root_control={:04x} child_control={:04x} child_ace_flags={:?} child_unchanged={} data_unchanged={}",
+                parent.control().unwrap(),
+                child_state.control().unwrap(),
+                child_state.aces().unwrap().iter().map(|ace| ace[1]).collect::<Vec<_>>(),
+                snapshot(&child) == children_before.0,
+                snapshot(&data) == children_before.1,
+            );
+        };
+        stage("before-root-seed");
         // Hosted Windows temp roots need not mark newly created directories as
         // auto-inherited. Seed this disposable directory explicitly, preserving
         // its ACEs, and verify the bit before testing the first repair write.
@@ -1003,6 +1016,7 @@ mod tests {
             initial.control().unwrap() | SE_DACL_AUTO_INHERITED,
         )
         .unwrap();
+        stage("after-root-seed");
         let before = Security::read(&writable).unwrap();
         assert_ne!(
             before.control().unwrap() & SE_DACL_AUTO_INHERITED,
@@ -1020,6 +1034,7 @@ mod tests {
             before.control().unwrap(),
         )
         .unwrap();
+        stage("after-inheritable-ace-write");
         // A high-level tree update would propagate that old ACE to the child.
         // Check the FIRST repair write too: reading a new baseline here would
         // hide NtSetSecurityObject clearing SE_DACL_AUTO_INHERITED in setup.
@@ -1038,6 +1053,7 @@ mod tests {
             before.control().unwrap(),
         )
         .unwrap();
+        stage("after-package-grant-write");
         let after = Security::read(&writable).unwrap();
         assert_eq!(after.aces().unwrap(), proposed);
         assert_eq!(after.control().unwrap(), before.control().unwrap());

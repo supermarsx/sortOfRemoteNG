@@ -2,7 +2,7 @@ name: Backend Coverage
 
 on:
   push:
-    branches: ["**"]
+    branches: [main]
   pull_request:
     branches: ["**"]
 
