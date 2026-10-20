@@ -4474,6 +4474,10 @@ mod tests {
     }
 
     pub(super) async fn fixture(sink: Arc<dyn BrowserEventSink>) -> Shared {
+        // Even browserless cleanup calls CEF's currently_on thread check.
+        // Every owner must wait for the dynamic loader before it can revoke.
+        #[cfg(target_os = "macos")]
+        crate::platform::test_runtime::ensure_loaded();
         let policy =
             OriginBrowserPolicy::new("owner", "connection", "tab", "https://fixture.invalid")
                 .unwrap();
