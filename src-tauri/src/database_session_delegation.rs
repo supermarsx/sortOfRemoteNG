@@ -28,6 +28,12 @@ fn trusted_app_location(label: &str, url: &url::Url, dev_url: Option<&url::Url>)
     // application window, nor is a local arbitrary auxiliary page.
     let route = if label == "main" {
         matches!(url.path(), "/" | "/index.html")
+            // Tauri's non-Windows App(index.html) base URL is canonical
+            // tauri://localhost, whose custom-scheme pathname may be empty.
+            || (url.path().is_empty()
+                && url.scheme() == "tauri"
+                && url.host_str() == Some("localhost")
+                && url.port().is_none())
     } else if detached_label(label) {
         matches!(
             url.path(),

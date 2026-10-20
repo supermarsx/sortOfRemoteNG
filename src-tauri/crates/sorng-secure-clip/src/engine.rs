@@ -3,6 +3,7 @@ use zeroize::Zeroizing;
 
 /// Backends enforce the absolute ceiling; each copy enforces its configured limit.
 /// UTF-16 can use at most two bytes per UTF-8 byte, plus its terminator.
+#[cfg(any(target_os = "windows", test))]
 const MAX_CLIPBOARD_UTF16_BYTES: usize = (MAX_CLIPBOARD_BYTES + 1) * 2;
 
 #[cfg(unix)]

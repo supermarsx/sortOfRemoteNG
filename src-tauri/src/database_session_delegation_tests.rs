@@ -18,6 +18,10 @@ fn only_known_local_shell_locations_can_delegate_or_receive() {
         );
     }
     for (label, location) in [
+        ("main", "tauri://localhost:4444"),
+        ("main", "tauri://user@localhost"),
+        ("main", "tauri://website.example"),
+        ("detached-one", "tauri://localhost"),
         ("splash", "http://tauri.localhost/"),
         ("other", "http://tauri.localhost/detached"),
         ("detached-", "http://tauri.localhost/detached"),
@@ -45,6 +49,11 @@ fn only_known_local_shell_locations_can_delegate_or_receive() {
     assert!(trusted_app_location(
         "main",
         &"http://tauri.localhost/".parse().unwrap(),
+        None
+    ));
+    assert!(trusted_app_location(
+        "main",
+        &"tauri://localhost".parse().unwrap(),
         None
     ));
 }

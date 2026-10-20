@@ -193,6 +193,8 @@ mod tests {
         let now = Instant::now();
         for case in 0..7 {
             let request = NativeLoginRequest {
+                path: "/",
+                frame: None,
                 identity: if case == 0 {
                     other.identity()
                 } else {
