@@ -23,6 +23,8 @@ export const nativeLoginReasonCodes = [
   "challenge-timeout",
   "grant-rejected",
   "attempt-stopped",
+  "user-cancelled",
+  "attempt-timeout",
 ] as const;
 export type NativeLoginReasonCode = (typeof nativeLoginReasonCodes)[number];
 export interface NativeLoginActivity {

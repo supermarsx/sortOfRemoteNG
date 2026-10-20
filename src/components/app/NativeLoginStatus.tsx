@@ -11,6 +11,7 @@ import {
   type NativeLoginReasonCode,
 } from "../../hooks/protocol/useNativeLoginActivity";
 import { Modal, ModalFooter } from "../ui/overlays/Modal";
+import { useNativeLoginCancellation } from "../../hooks/protocol/useNativeLoginCancellation";
 
 const nativeLoginStageLabels: Record<NativeLoginStage, string> = {
   "waiting-page": "Waiting for page",
@@ -39,6 +40,10 @@ const reasonLabels: Record<NativeLoginReasonCode, string> = {
     "The native browser did not authorize credential delivery for this login step. Review the selected saved login and its permissions before retrying.",
   "attempt-stopped":
     "This tab's automatic-login attempt was stopped or replaced. Reopen the connection when you are ready to retry.",
+  "user-cancelled":
+    "You cancelled this automatic-login attempt. You can continue signing in manually; the saved login settings were not changed.",
+  "attempt-timeout":
+    "Automatic login expired after 3600 seconds. This attempt was stopped and will not retry automatically. You can continue signing in manually.",
 };
 
 export function NativeLoginStatus({
@@ -62,6 +67,19 @@ export function NativeLoginStatus({
   const activity = session && activities[session.id];
   const running =
     activity && !["completed", "cancelled", "stopped"].includes(activity.stage);
+  const cancellation = useNativeLoginCancellation(
+    running &&
+      activity &&
+      session?.ownerDatabaseId &&
+      connection?.id === activity.connectionId
+      ? {
+          ownerDatabaseId: session.ownerDatabaseId,
+          connectionId: activity.connectionId,
+          sessionId: activity.sessionId,
+          attemptId: activity.attemptId,
+        }
+      : null,
+  );
   const [clock, setClock] = useState(() => performance.now());
   useEffect(() => {
     if (!running) return;
@@ -167,6 +185,22 @@ export function NativeLoginStatus({
           </p>
         </div>
         <ModalFooter>
+          {running && (
+            <button
+              type="button"
+              className="sor-btn sor-btn-secondary"
+              disabled={!cancellation.available || cancellation.busy}
+              aria-busy={cancellation.busy}
+              onClick={() => void cancellation.cancel()}
+            >
+              {t("statusBar.cancelAutoLogin", "Cancel automatic login")}
+            </button>
+          )}
+          {cancellation.message && (
+            <p role="status" className="text-xs">
+              {cancellation.message}
+            </p>
+          )}
           <button
             type="button"
             className="sor-btn sor-btn-primary min-w-24"

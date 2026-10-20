@@ -129,7 +129,42 @@ pub(crate) fn is_command(command: &str) -> bool {
             | "origin_browser_appearance"
             | "origin_browser_diagnose"
             | "origin_browser_manual_input"
+            | "origin_browser_cancel_login"
     )
+}
+
+#[derive(serde::Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub(crate) enum LoginCancelReason { UserCancelled, AttemptTimeout }
+
+pub(crate) struct CancelLoginRequest {
+    pub identity: OriginBrowserIdentity,
+    pub reason: LoginCancelReason,
+}
+
+impl<'de> serde::Deserialize<'de> for CancelLoginRequest {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        #[derive(serde::Deserialize)]
+        #[serde(rename_all = "camelCase", deny_unknown_fields)]
+        struct Wire { identity: OriginBrowserIdentity, reason: LoginCancelReason }
+        let wire = <Wire as serde::Deserialize>::deserialize(deserializer)
+            .map_err(|_| serde::de::Error::custom("Browser login cancellation request is invalid"))?;
+        wire.identity.validate()
+            .map_err(|_| serde::de::Error::custom("Browser login cancellation request is invalid"))?;
+        Ok(Self { identity: wire.identity, reason: wire.reason })
+    }
+}
+
+#[tauri::command]
+pub(crate) async fn origin_browser_cancel_login(
+    window: WebviewWindow,
+    request: CancelLoginRequest,
+) -> Result<bool, String> {
+    request.identity.validate().map_err(|_| "Browser login cancellation request is invalid".to_owned())?;
+    #[cfg(feature = "native-browser")]
+    { crate::origin_browser_runtime::cancel_login(window, request) }
+    #[cfg(not(feature = "native-browser"))]
+    { let _ = (window, request.identity, request.reason); Err(UNAVAILABLE.into()) }
 }
 
 #[tauri::command]
@@ -508,6 +543,7 @@ mod tests {
             "origin_browser_extensions",
             "origin_browser_diagnose",
             "origin_browser_manual_input",
+            "origin_browser_cancel_login",
         ] {
             assert!(is_command(command));
         }
@@ -521,5 +557,22 @@ mod tests {
         ] {
             assert!(!is_command(command));
         }
+    }
+
+    #[test]
+    fn login_cancellation_accepts_only_exact_identity_and_fixed_reasons() {
+        let request = serde_json::json!({"identity":{"ownerDatabaseId":"db","connectionId":"connection",
+            "sessionId":"tab","attemptId":"550e8400-e29b-41d4-a716-446655440000"},"reason":"user-cancelled"});
+        assert!(serde_json::from_value::<CancelLoginRequest>(request.clone()).is_ok());
+        let mut timeout = request.clone(); timeout["reason"] = "attempt-timeout".into();
+        assert!(serde_json::from_value::<CancelLoginRequest>(timeout).is_ok());
+        for (pointer,value) in [("/reason",serde_json::json!("untrusted-private-text")),
+            ("/identity/attemptId",serde_json::json!("bad")),("/identity/ownerDatabaseId",serde_json::json!(""))] {
+            let mut invalid = request.clone(); *invalid.pointer_mut(pointer).unwrap() = value;
+            let error = serde_json::from_value::<CancelLoginRequest>(invalid).err().unwrap().to_string();
+            assert!(!error.contains("untrusted-private-text"));
+        }
+        let mut extra = request; extra["url"] = "https://private.invalid".into();
+        assert!(serde_json::from_value::<CancelLoginRequest>(extra).is_err());
     }
 }

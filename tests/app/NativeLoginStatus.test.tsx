@@ -13,9 +13,11 @@ import type {
 import { NativeLoginStatus } from "../../src/components/app/NativeLoginStatus";
 
 const events = vi.hoisted(() => ({
+  invoke: vi.fn(),
   listener: undefined as undefined | ((event: { payload: unknown }) => void),
   stop: vi.fn(),
 }));
+vi.mock("@tauri-apps/api/core", () => ({ invoke: events.invoke }));
 vi.mock("@tauri-apps/api/event", () => ({
   listen: vi.fn(async (_name, listener) => {
     events.listener = listener;
@@ -46,8 +48,8 @@ const connections = [
   },
 ] as Connection[];
 const sessions = [
-  { id: "s1", connectionId: "c1" },
-  { id: "s2", connectionId: "c2" },
+  { id: "s1", connectionId: "c1", ownerDatabaseId: "db" },
+  { id: "s2", connectionId: "c2", ownerDatabaseId: "db" },
 ] as ConnectionSession[];
 const emit = (
   sessionId: string,
@@ -72,8 +74,96 @@ const emit = (
 beforeEach(() => {
   events.listener = undefined;
   events.stop.mockClear();
+  events.invoke.mockReset().mockResolvedValue(true);
 });
 describe("active native login status", () => {
+  it("clears its elapsed display timer when the attempt completes and on unmount", async () => {
+    const interval = vi.spyOn(globalThis, "setInterval");
+    const clear = vi.spyOn(globalThis, "clearInterval");
+    const view = render(
+      <NativeLoginStatus
+        connections={connections}
+        sessions={sessions}
+        activeSessionId="s1"
+      />,
+    );
+    await waitFor(() => expect(events.listener).toBeDefined());
+    emit("s1", "c1", "waiting-page");
+    const runningTimer =
+      interval.mock.results[interval.mock.results.length - 1].value;
+    emit("s1", "c1", "completed", 200);
+    expect(clear).toHaveBeenCalledWith(runningTimer);
+    emit("s1", "c1", "waiting-2fa", 300);
+    const resumedTimer =
+      interval.mock.results[interval.mock.results.length - 1].value;
+    view.unmount();
+    expect(clear).toHaveBeenCalledWith(resumedTimer);
+    interval.mockRestore();
+    clear.mockRestore();
+  });
+  it("offers actual attempt cancellation in running details while Close only dismisses the popup", async () => {
+    render(
+      <NativeLoginStatus
+        connections={connections}
+        sessions={sessions}
+        activeSessionId="s1"
+      />,
+    );
+    await waitFor(() => expect(events.listener).toBeDefined());
+    emit("s1", "c1", "waiting-page");
+    fireEvent.click(screen.getByRole("button", { name: /^Portainer:/ }));
+    fireEvent.click(screen.getByRole("button", { name: "Close" }));
+    expect(events.invoke).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: /^Portainer:/ }));
+    fireEvent.click(
+      screen.getByRole("button", { name: "Cancel automatic login" }),
+    );
+    await waitFor(() =>
+      expect(events.invoke).toHaveBeenCalledWith(
+        "origin_browser_cancel_login",
+        {
+          request: {
+            identity: {
+              ownerDatabaseId: "db",
+              connectionId: "c1",
+              sessionId: "s1",
+              attemptId: "a-s1",
+            },
+            reason: "user-cancelled",
+          },
+        },
+      ),
+    );
+    emit("s1", "c1", "cancelled", 200, { reasonCode: "user-cancelled" });
+    expect(screen.getByRole("dialog")).toHaveTextContent(
+      "You cancelled this automatic-login attempt",
+    );
+    expect(
+      screen.queryByRole("button", { name: "Cancel automatic login" }),
+    ).toBeNull();
+  });
+  it("explains the native 3600-second expiry and never retries it", async () => {
+    render(
+      <NativeLoginStatus
+        connections={connections}
+        sessions={sessions}
+        activeSessionId="s1"
+      />,
+    );
+    await waitFor(() => expect(events.listener).toBeDefined());
+    emit("s1", "c1", "cancelled", 100, {
+      reasonCode: "attempt-timeout",
+      elapsedMs: 3600000,
+    });
+    fireEvent.click(screen.getByRole("button", { name: /^Portainer:/ }));
+    expect(screen.getByRole("dialog")).toHaveTextContent(
+      "expired after 3600 seconds",
+    );
+    expect(screen.getByRole("dialog")).toHaveTextContent(
+      "will not retry automatically",
+    );
+    expect(events.invoke).not.toHaveBeenCalled();
+  });
   it("focuses the Close action and restores the details trigger on keyboard dismissal", async () => {
     render(
       <NativeLoginStatus

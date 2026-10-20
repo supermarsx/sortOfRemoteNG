@@ -29,6 +29,16 @@ describe("native login activity projection", () => {
       expect(parseNativeLoginActivity({ ...event, ...patch })).toBeNull();
   });
   it("accepts only fixed cancellation codes and never arbitrary cancellation details", () => {
+    for (const reasonCode of ["user-cancelled", "attempt-timeout"]) {
+      expect(
+        parseNativeLoginActivity({
+          ...event,
+          stage: "cancelled",
+          reasonCode,
+          reason: "PRIVATE_REASON",
+        }),
+      ).toEqual({ ...event, stage: "cancelled", reasonCode });
+    }
     expect(
       parseNativeLoginActivity({
         ...event,

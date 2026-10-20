@@ -1,9 +1,56 @@
 #[path = "../../../src/origin_browser_login_consent.rs"]
 mod consent;
+#[path = "../../../src/origin_browser_login_lifetime.rs"]
+mod lifetime;
 
 use consent::AttemptConsent;
 use sorng_protocols::origin_browser::{BrowserIdentity, OriginBrowserPolicy};
 use std::time::{Duration, Instant};
+
+#[test]
+fn cancelling_waits_for_borrowed_delivery_and_blocks_every_later_key_grant() {
+    use std::sync::{mpsc, Arc};
+    let owner = identity("db", "tab");
+    let now = Instant::now();
+    let consent = Arc::new(AttemptConsent::approved(
+        owner.clone(),
+        vec!["https://login.example".into()],
+        now + Duration::from_secs(600),
+        true,
+    ));
+    let lifetime = Arc::new(lifetime::LoginLifetime::new(now));
+    let (entered_tx, entered) = mpsc::channel();
+    let (release, release_rx) = mpsc::channel();
+    let current = consent.clone();
+    let current_owner = owner.clone();
+    let delivery = std::thread::spawn(move || {
+        current.with_current(&current_owner, "https://login.example", now, &mut |_, _| {
+            entered_tx.send(()).unwrap();
+            release_rx.recv().unwrap();
+        })
+    });
+    entered.recv().unwrap();
+    let current = consent.clone();
+    let current_lifetime = lifetime.clone();
+    let (cancelled_tx, cancelled) = mpsc::channel();
+    let cancel = std::thread::spawn(move || {
+        assert_eq!(
+            current_lifetime.cancel(lifetime::CancelReason::UserCancelled, now),
+            Some(lifetime::CancelReason::UserCancelled)
+        );
+        current.revoke();
+        cancelled_tx.send(()).unwrap();
+    });
+    assert!(cancelled.recv_timeout(Duration::from_millis(20)).is_err());
+    release.send(()).unwrap();
+    delivery.join().unwrap();
+    cancelled.recv_timeout(Duration::from_secs(1)).unwrap();
+    cancel.join().unwrap();
+    assert!(!lifetime.active(now));
+    consent.with_current(&owner, "https://login.example", now, &mut |_, _| {
+        panic!("cancelled attempt disclosed another key")
+    });
+}
 
 fn identity(database: &str, session: &str) -> BrowserIdentity {
     OriginBrowserPolicy::new(database, "connection", session, "https://login.example")

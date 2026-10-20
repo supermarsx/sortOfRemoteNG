@@ -38,6 +38,7 @@ pub(crate) fn build() -> InvokeHandler {
         crate::origin_browser_commands::origin_browser_certificate_review,
         crate::origin_browser_commands::origin_browser_page_menu,
         crate::origin_browser_commands::origin_browser_manual_input,
+        crate::origin_browser_commands::origin_browser_cancel_login,
         crate::origin_browser_recording::origin_browser_recording,
         crate::origin_browser_commands::origin_browser_appearance,
         crate::origin_browser_commands::origin_browser_diagnose,

@@ -1065,6 +1065,21 @@ fn lookup(
     Ok(attempt.clone())
 }
 
+pub(crate) fn cancel_login(
+    window: WebviewWindow,
+    request: crate::origin_browser_commands::CancelLoginRequest,
+) -> Result<bool, String> {
+    let attempt = lookup(&window, &request.identity)?;
+    if !attempt.current() { return Err(STALE.to_owned()); }
+    // Restrictive cleanup grants no capability and must not wait on database
+    // decryption/barriers while another character is being typed.
+    let reason = match request.reason {
+        crate::origin_browser_commands::LoginCancelReason::UserCancelled => login::CancelReason::UserCancelled,
+        crate::origin_browser_commands::LoginCancelReason::AttemptTimeout => login::CancelReason::AttemptTimeout,
+    };
+    Ok(attempt.login.cancel(&attempt.identity, reason))
+}
+
 pub(crate) fn status(
     window: &WebviewWindow,
     request: &OriginBrowserStatusRequest,

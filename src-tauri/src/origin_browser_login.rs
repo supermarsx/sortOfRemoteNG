@@ -23,6 +23,10 @@ use tauri::{Emitter, WebviewWindow};
 #[path = "origin_browser_login_consent.rs"]
 mod consent;
 use consent::AttemptConsent;
+#[path = "origin_browser_login_lifetime.rs"]
+mod lifetime;
+pub(crate) use lifetime::CancelReason;
+use lifetime::LoginLifetime;
 #[path = "origin_browser_login_delivery.rs"]
 mod delivery;
 
@@ -82,6 +86,9 @@ impl MediaOwner {
 
 pub(crate) struct LoginHooks {
     started: Instant,
+    lifetime: LoginLifetime,
+    activity_lock: std::sync::Mutex<()>,
+    cancel_lock: std::sync::Mutex<()>,
     observations: super::diagnostics::ObservationGate,
     appearance: std::sync::Mutex<sorng_browser_host::native_appearance::AppearanceConfig>,
     window: WebviewWindow,
@@ -101,6 +108,12 @@ impl LoginHooks {
         self.activity_with_reason(stage, None);
     }
     fn activity_with_reason(&self, stage: &'static str, reason_code: Option<&'static str>) {
+        let Ok(_activity) = self.activity_lock.lock() else { return; };
+        if !self.lifetime.active(Instant::now()) { return; }
+        self.lifetime.observe_activity(stage == "completed");
+        self.emit_activity(stage, reason_code);
+    }
+    fn emit_activity(&self, stage: &'static str, reason_code: Option<&'static str>) {
         if !self.media_owner.current(&self.media_owner.identity, || self.lease.is_current()) { return; }
         let identity = &self.media_owner.identity;
         // Trusted shell event only: no URL, fields, credentials or page strings.
@@ -111,6 +124,41 @@ impl LoginHooks {
             "elapsedMs": self.started.elapsed().as_millis() as u64,
             "reasonCode": reason_code
         }));
+    }
+    pub(crate) fn cancel(&self, identity: &BrowserIdentity, reason: CancelReason) -> bool {
+        // A duplicate cancellation cannot acknowledge "already ended" before
+        // the first caller has finished revoking the borrowed-delivery grant.
+        let Ok(_cancel) = self.cancel_lock.lock() else { return false; };
+        if self.consent.is_none()
+            || !self.media_owner.current(identity, || self.lease.is_current()) { return false; }
+        let Some(reason) = self.lifetime.cancel(reason, Instant::now()) else { return false; };
+        // Revoke the same lock-held verifier used by every native key grant.
+        // Once this returns no queued credential/TOTP callback can disclose.
+        if let Some(consent) = &self.consent { consent.revoke(); }
+        self.authority.revoke_totp();
+        if let Ok(_activity) = self.activity_lock.lock() {
+            if reason != CancelReason::AttemptTimeout || self.lifetime.report_timeout() {
+                self.emit_activity("cancelled", Some(reason.code()));
+            }
+        }
+        true
+    }
+    fn login_current(&self) -> bool {
+        let now = Instant::now();
+        if self.lifetime.expired(now) {
+            self.cancel(&self.media_owner.identity, CancelReason::AttemptTimeout);
+        }
+        self.lifetime.active(now)
+    }
+    fn arm_deadline(hooks: &Arc<Self>) {
+        let deadline = hooks.lifetime.deadline();
+        let hooks = Arc::downgrade(hooks);
+        tokio::spawn(async move {
+            tokio::time::sleep_until(deadline.into()).await;
+            if let Some(hooks) = hooks.upgrade() {
+                hooks.cancel(&hooks.media_owner.identity, CancelReason::AttemptTimeout);
+            }
+        });
     }
     fn stage_activity(&self, stage: NativeLoginStage) {
         self.activity(match stage {
@@ -140,9 +188,13 @@ impl LoginHooks {
         lease: NativeOwnerLease,
         basic_auth: Option<Arc<NativeBasicAuth>>,
     ) -> Result<Arc<Self>, String> {
+        let started = Instant::now();
         if !authority.enabled() {
             return Ok(Arc::new(Self {
-                started: Instant::now(),
+                started,
+                lifetime: LoginLifetime::new(started),
+                activity_lock: Default::default(),
+                cancel_lock: Default::default(),
                 observations: Default::default(),
                 appearance: std::sync::Mutex::new(Default::default()),
                 window: window.clone(),
@@ -186,8 +238,11 @@ impl LoginHooks {
             Instant::now() + CONSENT_LIFETIME,
             authority.auto_submit_allowed(),
         );
-        Ok(Arc::new(Self {
-            started: Instant::now(),
+        let hooks = Arc::new(Self {
+            started,
+            lifetime: LoginLifetime::new(started),
+            activity_lock: Default::default(),
+            cancel_lock: Default::default(),
             observations: Default::default(),
             appearance: std::sync::Mutex::new(Default::default()),
             window: window.clone(),
@@ -197,11 +252,14 @@ impl LoginHooks {
             adapter,
             consent: Some(consent),
             basic_auth,
-        }))
+        });
+        Self::arm_deadline(&hooks);
+        Ok(hooks)
     }
 
     pub(crate) fn revoke(&self) {
         self.activity_with_reason("stopped", Some("attempt-stopped"));
+        self.lifetime.stop();
         self.media_owner.revoke();
         self.authority.revoke_totp();
         if let Some(basic_auth) = &self.basic_auth {
@@ -231,6 +289,7 @@ impl LoginHooks {
         deliver: &mut dyn FnMut(NativeLoginCredentials<'_>, Option<&str>),
     ) {
         if request.adapter != self.adapter
+            || !self.login_current()
             || self.adapter != NativeLoginAdapter::ModularForm
             || !self.adapter.accepts_stage(request.stage)
             || !self.lease.is_current()
@@ -285,7 +344,7 @@ impl NativeLoginConsentVerifier for LoginHooks {
         _requested_grant_id: Option<&str>,
         deliver: &mut dyn FnMut(Instant, bool),
     ) {
-        if self.lease.is_current() {
+        if self.lease.is_current() && self.login_current() {
             if let Some(consent) = &self.consent {
                 consent.with_current(identity, origin, Instant::now(), deliver);
             }
@@ -349,7 +408,7 @@ impl NativeDocumentHooks for LoginHooks {
     }
     fn with_totp(&self, request: &sorng_browser_host::native_totp::NativeTotpRequest<'_>,
         deliver: &mut dyn FnMut(sorng_browser_host::native_totp::NativeTotpCode<'_>)) -> Option<Duration> {
-        if !self.media_owner.current(request.identity, || self.lease.is_current()) { return None; }
+        if !self.login_current() || !self.media_owner.current(request.identity, || self.lease.is_current()) { return None; }
         self.activity("waiting-2fa");
         self.authority.with_totp(request, self, &mut |code| {
             self.activity("typing-code");
@@ -358,7 +417,7 @@ impl NativeDocumentHooks for LoginHooks {
     }
 
     fn totp_current(&self, request: &sorng_browser_host::native_totp::NativeTotpRequest<'_>, submit: bool) -> bool {
-        self.media_owner.current(request.identity, || self.lease.is_current())
+        self.login_current() && self.media_owner.current(request.identity, || self.lease.is_current())
             && self.authority.totp_current(request, self, submit)
     }
 
@@ -470,6 +529,7 @@ impl NativeDocumentHooks for LoginHooks {
         deliver: &mut dyn FnMut(NativeLoginCredentials<'_>),
     ) {
         if request.adapter != self.adapter
+            || !self.login_current()
             || !self.adapter.accepts_stage(request.stage)
             || !self.lease.is_current()
             || !steps_permit(&self.authority, request)
