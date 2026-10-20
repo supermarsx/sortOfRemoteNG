@@ -76,6 +76,9 @@ vi.mock("../../src/contexts/SessionRenderActivityContext", () => ({
 }));
 vi.mock("../../src/utils/connection/databaseManager", () => ({
   DatabaseManager: { getInstance: () => h.manager },
+  // This fixture keeps the current database fixed; trustStore also subscribes
+  // at module scope, before the per-test manager has been initialized.
+  onCurrentDatabaseChange: () => vi.fn(),
   onDatabaseAccessChange: (listener: (event: any) => void) =>
     h.manager.onDatabaseAccessChange(listener),
 }));
