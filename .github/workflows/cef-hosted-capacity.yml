@@ -25,6 +25,7 @@ jobs:
         with:
           workspaces: src-tauri
           shared-key: browser-transport-contracts
+          save-if: ${{ always() }}
       - name: Observe filesystem types
         shell: pwsh
         run: |

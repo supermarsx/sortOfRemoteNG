@@ -942,8 +942,6 @@ mod tests {
                 .duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos()
         )));
         fs::create_dir(&fixture.0).unwrap();
-        fs::create_dir(fixture.0.join("profile")).unwrap();
-        fs::write(fixture.0.join("profile/database.fixture"), b"").unwrap();
         let root = fixture.0.canonicalize().unwrap();
         let _cwd_pin = PinnedFile::open(&root, true, FILE_GENERIC_EXECUTE).unwrap();
         let selected = PinnedFile::open(&root, true, READ_CONTROL | FILE_READ_ATTRIBUTES).unwrap();
@@ -969,43 +967,6 @@ mod tests {
         assert_eq!(old_error, 32); // The former MAXIMUM_ALLOWED sharing conflict.
         let writable = PinnedFile::open(&root, true, REPAIR_ACCESS).unwrap();
         assert!(selected.same_file(&writable));
-        let child = PinnedFile::open(
-            &root.join("profile"),
-            true,
-            READ_CONTROL | FILE_READ_ATTRIBUTES,
-        )
-        .unwrap();
-        let data = PinnedFile::open(
-            &root.join("profile").join("database.fixture"),
-            false,
-            READ_CONTROL | FILE_READ_ATTRIBUTES,
-        )
-        .unwrap();
-        let snapshot = |file: &PinnedFile| {
-            let security = Security::read(file).unwrap();
-            unsafe {
-                std::slice::from_raw_parts(
-                    security.descriptor.cast::<u8>(),
-                    windows_sys::Win32::Security::GetSecurityDescriptorLength(security.descriptor)
-                        as usize,
-                )
-                .to_vec()
-            }
-        };
-        let children_before = (snapshot(&child), snapshot(&data));
-        let stage = |name: &str| {
-            let parent = Security::read(&writable).unwrap();
-            let child_state = Security::read(&child).unwrap();
-            eprintln!(
-                "stage={name} root_control={:04x} child_control={:04x} child_ace_flags={:?} child_unchanged={} data_unchanged={}",
-                parent.control().unwrap(),
-                child_state.control().unwrap(),
-                child_state.aces().unwrap().iter().map(|ace| ace[1]).collect::<Vec<_>>(),
-                snapshot(&child) == children_before.0,
-                snapshot(&data) == children_before.1,
-            );
-        };
-        stage("before-root-seed");
         // Hosted Windows temp roots need not mark newly created directories as
         // auto-inherited. Seed this disposable directory explicitly, preserving
         // its ACEs, and verify the bit before testing the first repair write.
@@ -1016,7 +977,6 @@ mod tests {
             initial.control().unwrap() | SE_DACL_AUTO_INHERITED,
         )
         .unwrap();
-        stage("after-root-seed");
         let before = Security::read(&writable).unwrap();
         assert_ne!(
             before.control().unwrap() & SE_DACL_AUTO_INHERITED,
@@ -1034,16 +994,58 @@ mod tests {
             before.control().unwrap(),
         )
         .unwrap();
-        stage("after-inheritable-ace-write");
-        // A high-level tree update would propagate that old ACE to the child.
-        // Check the FIRST repair write too: reading a new baseline here would
-        // hide NtSetSecurityObject clearing SE_DACL_AUTO_INHERITED in setup.
         assert_eq!(
             Security::read(&writable).unwrap().control().unwrap(),
             before.control().unwrap(),
-            "first repair write must preserve the inherited directory control"
+            "fixture setup must preserve the inherited directory control"
         );
         let before = Security::read(&writable).unwrap();
+        fs::create_dir(root.join("profile")).unwrap();
+        {
+            // A deliberately customized, unprotected child must not be
+            // re-inherited by the parent's package grant. A recursive
+            // SetSecurityInfo write would restore this old package ACE.
+            let child = PinnedFile::open(&root.join("profile"), true, REPAIR_ACCESS).unwrap();
+            let security = Security::read(&child).unwrap();
+            let package = allow_ace(1);
+            let mut aces = security.aces().unwrap();
+            assert!(aces.iter().any(|ace| ace[8..] == package[8..]));
+            aces.retain(|ace| ace[8..] != package[8..]);
+            write_dacl(
+                &child,
+                &Acl::from_aces(&aces, false).unwrap(),
+                security.control().unwrap() & !(SE_DACL_AUTO_INHERITED | SE_DACL_PROTECTED),
+            )
+            .unwrap();
+            let custom = Security::read(&child).unwrap();
+            assert_eq!(custom.control().unwrap() & SE_DACL_PROTECTED, 0);
+            assert_eq!(custom.aces().unwrap(), aces);
+        }
+        fs::write(root.join("profile/database.fixture"), b"").unwrap();
+        let child = PinnedFile::open(
+            &root.join("profile"),
+            true,
+            READ_CONTROL | FILE_READ_ATTRIBUTES,
+        )
+        .unwrap();
+        let data = PinnedFile::open(
+            &root.join("profile/database.fixture"),
+            false,
+            READ_CONTROL | FILE_READ_ATTRIBUTES,
+        )
+        .unwrap();
+        let snapshot = |file: &PinnedFile| {
+            let security = Security::read(file).unwrap();
+            unsafe {
+                std::slice::from_raw_parts(
+                    security.descriptor.cast::<u8>(),
+                    windows_sys::Win32::Security::GetSecurityDescriptorLength(security.descriptor)
+                        as usize,
+                )
+                .to_vec()
+            }
+        };
+        let children_before = (snapshot(&child), snapshot(&data));
         let access = PackageAccess::new().unwrap();
         let missing = access.missing(&before, &seeded).unwrap();
         let proposed = appended_aces(&seeded, missing);
@@ -1053,7 +1055,6 @@ mod tests {
             before.control().unwrap(),
         )
         .unwrap();
-        stage("after-package-grant-write");
         let after = Security::read(&writable).unwrap();
         assert_eq!(after.aces().unwrap(), proposed);
         assert_eq!(after.control().unwrap(), before.control().unwrap());
@@ -1066,6 +1067,9 @@ mod tests {
             0
         );
         assert_eq!(access.missing(&after, &proposed).unwrap(), [false, false]);
-        assert_eq!((snapshot(&child), snapshot(&data)), children_before);
+        assert!(
+            (snapshot(&child), snapshot(&data)) == children_before,
+            "package repair must preserve both descendant security descriptors"
+        );
     }
 }
