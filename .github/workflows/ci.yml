@@ -517,9 +517,17 @@ jobs:
       - name: Real-origin host lifecycle and permission contracts
         run: node scripts/native-build-env.mjs cargo test --manifest-path src-tauri/Cargo.toml -p sorng-browser-host --lib --test ipc_contract --locked
       - name: Platform-native CEF host contracts
+        id: cef_host_contracts
         # All three OS adapters are mandatory. These are not browser-launch,
         # sandbox, network-containment or live-provider acceptance results.
         run: node scripts/native-build-env.mjs cargo test --manifest-path src-tauri/Cargo.toml -p sorng-browser-host --features cef-host --lib --locked
+      - name: Capture native macOS CEF failure stacks
+        if: failure() && runner.os == 'macOS' && steps.cef_host_contracts.outcome == 'failure'
+        shell: bash
+        run: |
+          mkdir -p .artifacts
+          node scripts/native-build-env.mjs cargo test --manifest-path src-tauri/Cargo.toml -p sorng-browser-host --features cef-host --lib --locked --no-run --message-format=json > .artifacts/macos-cef-test-artifacts.jsonl
+          node scripts/ci/diagnose-macos-cef-tests.mjs .artifacts/macos-cef-test-artifacts.jsonl
       - name: Runtime package layout and whole-matrix contract
         run: node --test tests/tooling/browserRuntimePackage.node-test.mjs
       - name: Upload sanitized fixture results
@@ -527,7 +535,9 @@ jobs:
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         with:
           name: browser-transport-contracts-${{ runner.os }}
-          path: .artifacts/browser-readiness-${{ runner.os }}.json
+          path: |
+            .artifacts/browser-readiness-${{ runner.os }}.json
+            .artifacts/macos-cef-*-lldb.log
           if-no-files-found: warn
 
   # ── t8-e19 + t8-e21: wrapped OPKSSH contract + optional staging gate ──
