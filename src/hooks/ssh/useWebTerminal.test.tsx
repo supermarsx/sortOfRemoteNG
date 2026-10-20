@@ -3410,6 +3410,26 @@ describe("useWebTerminal input lifecycle", () => {
 });
 
 describe("useWebTerminal pre-open writes, post-open fit, and scrollOnOutput", () => {
+  const holdRuntimePath = () => {
+    let release!: () => void;
+    const pathReady = new Promise<
+      Awaited<ReturnType<typeof resolveRuntimeNetworkPath>>
+    >((resolve) => {
+      release = () => resolve(mocks.runtimePath);
+    });
+    mockedResolveRuntimeNetworkPath.mockReturnValueOnce(pathReady);
+    return release;
+  };
+  const waitForSshReady = (read: () => WebTerminalMgr | null) =>
+    vi.waitFor(
+      async () => {
+        await act(async () => {});
+        expect(read()?.status).toBe("connected");
+      },
+      // vi.waitFor normally advances fake time by its polling interval. Keep
+      // that clock frozen while the real async SSH setup and React settle.
+      { interval: 0 },
+    );
   const sshOutputPayload = (data: string, start: number) => ({
     session_id: "backend-ssh-1",
     data,
@@ -3455,6 +3475,7 @@ describe("useWebTerminal pre-open writes, post-open fit, and scrollOnOutput", ()
   });
 
   it("writes ssh-output after open without any resize or ResizeObserver trigger (lazy core)", async () => {
+    const releasePath = holdRuntimePath();
     mocks.MockTerminal.lazyCore = true;
     const originalResizeObserver = (window as any).ResizeObserver;
     (window as any).ResizeObserver = undefined;
@@ -3472,6 +3493,9 @@ describe("useWebTerminal pre-open writes, post-open fit, and scrollOnOutput", ()
       // strictly less than the 50ms fallback fit timer.
       await act(async () => vi.advanceTimersByTimeAsync(40));
       expect(terminal.element).not.toBeNull();
+      expect((model as WebTerminalMgr | null)?.status).toBe("connecting");
+      await act(async () => releasePath());
+      await waitForSshReady(() => model);
       expect((model as WebTerminalMgr | null)?.status).toBe("connected");
       expect(mocks.listeners.has("ssh-output")).toBe(true);
 
@@ -3584,50 +3608,64 @@ describe("useWebTerminal pre-open writes, post-open fit, and scrollOnOutput", ()
     expect(terminal.writeParsedDisposeCount).toBe(1);
   });
 
-  it("falls back to a one-shot onRender fit once the retry budget is exhausted", async () => {
-    mocks.MockTerminal.lazyCore = true;
-    let model: WebTerminalMgr | null = null;
-    const Harness = () => {
-      model = useWebTerminal(session);
-      return <div ref={model.containerRef} />;
-    };
+  it.each([0, 1_500])(
+    "falls back to a one-shot onRender fit once the retry budget is exhausted, with SSH setup delayed %sms",
+    async (setupDelay) => {
+      const releasePath = holdRuntimePath();
+      mocks.MockTerminal.lazyCore = true;
+      let model: WebTerminalMgr | null = null;
+      const Harness = () => {
+        model = useWebTerminal(session);
+        return <div ref={model.containerRef} />;
+      };
 
-    vi.useFakeTimers();
-    const view = render(<Harness />);
-    const terminal = mocks.MockTerminal.instances[0];
-    // Keep the render service dimension-less even after open() so every fit
-    // attempt fails and the retry budget (20 x 50ms) runs out.
-    const core = terminal.rawCore;
-    const dimensions = core.renderService.dimensions;
-    core.renderService.dimensions = undefined;
+      vi.useFakeTimers();
+      const view = render(<Harness />);
+      const terminal = mocks.MockTerminal.instances[0];
+      // Keep the render service dimension-less even after open() so every fit
+      // attempt fails and the retry budget (20 x 50ms) runs out.
+      const core = terminal.rawCore;
+      const dimensions = core.renderService.dimensions;
+      core.renderService.dimensions = undefined;
 
-    const resizeCalls = () =>
-      mocks.invoke.mock.calls.filter(
-        ([command]) => command === "resize_ssh_shell",
-      );
+      const resizeCalls = () =>
+        mocks.invoke.mock.calls.filter(
+          ([command]) => command === "resize_ssh_shell",
+        );
 
-    await act(async () => vi.advanceTimersByTimeAsync(40));
-    expect(terminal.element).not.toBeNull();
-    expect(terminal.renderHandlerCount).toBe(0);
-    await act(async () => vi.advanceTimersByTimeAsync(1_200));
-    expect((model as WebTerminalMgr | null)?.status).toBe("connected");
-    // Budget spent: no fit ever succeeded, and a single onRender fallback is
-    // now armed instead of giving up for good.
-    expect(resizeCalls()).toHaveLength(0);
-    expect(terminal.renderHandlerCount).toBe(1);
+      await act(async () => vi.advanceTimersByTimeAsync(40));
+      expect(terminal.element).not.toBeNull();
+      expect(terminal.renderHandlerCount).toBe(0);
+      if (setupDelay) {
+        // Fitting can exhaust its virtual budget while asynchronous SSH setup
+        // is still pending. Advancing that clock is not a connection receipt.
+        await act(async () => vi.advanceTimersByTimeAsync(setupDelay));
+        expect((model as WebTerminalMgr | null)?.status).toBe("connecting");
+        expect(terminal.renderHandlerCount).toBe(1);
+        expect(resizeCalls()).toHaveLength(0);
+      }
+      await act(async () => releasePath());
+      await waitForSshReady(() => model);
+      await act(async () => vi.advanceTimersByTimeAsync(1_200));
+      expect((model as WebTerminalMgr | null)?.status).toBe("connected");
+      // Budget spent: no fit ever succeeded, and a single onRender fallback is
+      // now armed instead of giving up for good.
+      expect(resizeCalls()).toHaveLength(0);
+      expect(terminal.renderHandlerCount).toBe(1);
 
-    // Once the renderer reports in, the fallback fires exactly once, disposes
-    // itself, and re-arms a fit that now succeeds.
-    core.renderService.dimensions = dimensions;
-    act(() => terminal.emitRender());
-    expect(terminal.renderHandlerCount).toBe(0);
-    expect(terminal.renderDisposeCount).toBe(1);
-    await act(async () => vi.advanceTimersByTimeAsync(40));
-    expect(resizeCalls()).toHaveLength(1);
-    expect(resizeCalls()[0][1]).toMatchObject({ sessionId: "backend-ssh-1" });
+      // Once the renderer reports in, the fallback fires exactly once, disposes
+      // itself, and re-arms a fit that now succeeds.
+      core.renderService.dimensions = dimensions;
+      act(() => terminal.emitRender());
+      expect(terminal.renderHandlerCount).toBe(0);
+      expect(terminal.renderDisposeCount).toBe(1);
+      await act(async () => vi.advanceTimersByTimeAsync(40));
+      expect(resizeCalls()).toHaveLength(1);
+      expect(resizeCalls()[0][1]).toMatchObject({ sessionId: "backend-ssh-1" });
 
-    view.unmount();
-  });
+      view.unmount();
+    },
+  );
 });
 
 describe("useWebTerminal run prompts", () => {
