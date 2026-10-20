@@ -25,6 +25,7 @@ members = [
   "crates/sorng-compression-vendor",
   "crates/sorng-file-viewer-host",
   "crates/sorng-browser-host",
+  "crates/sorng-opkssh",
   "crates/sorng-opkssh-vendor",
   "crates/sorng-protocols",
   "crates/sorng-socket-transport",

@@ -99,6 +99,21 @@ test("version planning preserves standalone acceptance versions and only updates
   }
 });
 
+test("release planning updates the OPKSSH workspace dependency in Cargo.lock", () => {
+  const plan = buildPlan("99.1");
+  const lock = plan.changes.find(
+    (change) => change.relativePath === "src-tauri/Cargo.lock",
+  );
+  const opkssh = lock.expected
+    .split(/(?=^\[\[package\]\])/m)
+    .find((block) => /^name = "sorng-opkssh"\r?$/m.test(block));
+  assert.ok(
+    opkssh,
+    "the first-party OPKSSH package must remain in the lockfile",
+  );
+  assert.match(opkssh, /^version = "99\.1\.0"\r?$/m);
+});
+
 test("projects the public YY.N version to machine-only SemVer", () => {
   assert.deepEqual(projectVersion("26.1"), {
     publicVersion: "26.1",

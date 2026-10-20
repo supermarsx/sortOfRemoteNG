@@ -12008,7 +12008,7 @@ dependencies = [
 
 [[package]]
 name = "sorng-opkssh"
-version = "26.50.0"
+version = "26.51.0"
 dependencies = [
  "chrono",
  "dirs 6.0.0",
