@@ -152,6 +152,7 @@
     "@wdio/types": "^9.31.2",
     "@webgpu/types": "^0.1.72",
     "autoprefixer": "^10.5.5",
+    "braces": "file:vendor/braces-depth-guard",
     "eslint": "^10.10.0",
     "eslint-plugin-react-hooks": "^7.1.1",
     "eslint-plugin-react-refresh": "^0.5.6",
@@ -176,10 +177,11 @@
     "ip-address": "10.3.1",
     "lodash-es": "4.18.1",
     "nanoid": "3.3.18",
-    "postcss": "^8.5.28",
+    "postcss": "$postcss",
     "sharp": "0.35.5",
     "serialize-javascript": "^7.0.7",
     "socket.io-parser": "4.2.7",
-    "uuid": "11.1.1"
+    "uuid": "11.1.1",
+    "braces": "$braces"
   }
 }

@@ -43,7 +43,7 @@ const PRODUCTION_DEPS: &[(&str, &str, &str, &str)] = &[
     ("jsqr", "1.4.0", "Apache-2.0", "Cryptography & Auth"),
     ("lucide-react", "1.35.0", "ISC", "React & UI"),
     ("mermaid", "12.0.0", "MIT", "Other"),
-    ("next", "16.3.4", "MIT", "Next.js"),
+    ("next", "16.3.8", "MIT", "Next.js"),
     ("pdfjs-dist", "6.3.289", "Apache-2.0", "Other"),
     ("prettier", "3.9.6", "MIT", "Formatting"),
     ("qrcode", "1.5.4", "MIT", "Cryptography & Auth"),
@@ -58,7 +58,7 @@ const PRODUCTION_DEPS: &[(&str, &str, &str, &str)] = &[
 #[rustfmt::skip]
 const DEV_DEPS: &[(&str, &str, &str, &str)] = &[
     ("@eslint/js", "10.0.1", "MIT", "Linting"),
-    ("@next/eslint-plugin-next", "16.3.4", "MIT", "Next.js"),
+    ("@next/eslint-plugin-next", "16.3.8", "MIT", "Next.js"),
     ("@tailwindcss/postcss", "4.3.3", "MIT", "CSS & Styling"),
     ("@tauri-apps/cli", "2.11.4", "Apache-2.0 OR MIT", "Tauri Integration"),
     ("@testing-library/dom", "10.4.1", "MIT", "Testing"),
@@ -78,6 +78,7 @@ const DEV_DEPS: &[(&str, &str, &str, &str)] = &[
     ("@wdio/types", "9.31.2", "MIT", "Testing"),
     ("@webgpu/types", "0.1.72", "BSD-3-Clause", "TypeScript"),
     ("autoprefixer", "10.5.5", "MIT", "CSS & Styling"),
+    ("braces", "3.0.3-patch.0", "MIT", "Vendored Security Patch"),
     ("eslint", "10.10.0", "MIT", "Linting"),
     ("eslint-plugin-react-hooks", "7.1.1", "MIT", "Linting"),
     ("eslint-plugin-react-refresh", "0.5.6", "MIT", "Linting"),

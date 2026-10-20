@@ -3,6 +3,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { resolvedNpmPackage } from "./ci/check-js-lock-parity.mjs";
 
 const REPOSITORY_ROOT = fileURLToPath(new URL("../", import.meta.url));
 const CATALOG_PATH = path.join(
@@ -152,7 +153,11 @@ export function collectDirectDependencies(packageJson, packageLock) {
           );
         }
 
-        const lockedPackage = packageLock.packages[`node_modules/${name}`];
+        const lockedPackage = resolvedNpmPackage(
+          packageLock,
+          name,
+          manifestSpec,
+        );
         if (!isRecord(lockedPackage)) fail(`${name} has no root lock package`);
         if (
           typeof lockedPackage.version !== "string" ||
@@ -171,7 +176,9 @@ export function collectDirectDependencies(packageJson, packageLock) {
           name,
           version: lockedPackage.version,
           license: lockedPackage.license,
-          category: categorizeJsDependency(name),
+          category: manifestSpec.startsWith("file:")
+            ? "Vendored Security Patch"
+            : categorizeJsDependency(name),
         };
       });
   }

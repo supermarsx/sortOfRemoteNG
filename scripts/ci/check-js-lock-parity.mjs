@@ -12,6 +12,40 @@ export const JAVASCRIPT_UPDATE_HOLDS = Object.freeze({
   vitest: "4.1.11",
 });
 
+// A genuine local security patch, never a blanket allowance for file packages.
+export const REVIEWED_LOCAL_DEPENDENCIES = Object.freeze({
+  braces: Object.freeze({
+    spec: "file:vendor/braces-depth-guard",
+    name: "@sortofremoteng/braces-depth-guard",
+    version: "3.0.3-patch.0",
+    license: "MIT",
+  }),
+});
+
+export function resolvedNpmPackage(lock, name, spec) {
+  const entry = lock?.packages?.[`node_modules/${name}`];
+  if (spec?.startsWith("file:")) {
+    const reviewed = REVIEWED_LOCAL_DEPENDENCIES[name];
+    if (
+      !reviewed ||
+      spec !== reviewed.spec ||
+      entry?.link !== true ||
+      entry.resolved !== spec.slice(5)
+    )
+      fail(`${name} has an unreviewed local package resolution`);
+    const actual = lock.packages[entry.resolved];
+    if (
+      !actual ||
+      actual.name !== reviewed.name ||
+      actual.version !== reviewed.version ||
+      actual.license !== reviewed.license
+    )
+      fail(`${name} reviewed local package metadata changed`);
+    return actual;
+  }
+  return entry;
+}
+
 const defineCompatibleHold = ({ spec, allowedVersions, reason, sources }) =>
   Object.freeze({
     spec,
@@ -124,12 +158,22 @@ function assertSameKeys(expected, actual, label) {
   }
 }
 
-function bunResolvedVersion(packages, name) {
+function bunResolvedVersion(packages, name, spec) {
   const entry = packages[name];
   if (!Array.isArray(entry) || typeof entry[0] !== "string") {
     fail(`${name} has no direct bun.lock package entry`);
   }
   const prefix = `${name}@`;
+  if (spec?.startsWith("file:")) {
+    const reviewed = REVIEWED_LOCAL_DEPENDENCIES[name];
+    if (
+      !reviewed ||
+      spec !== reviewed.spec ||
+      entry[0] !== `${reviewed.name}@${spec}`
+    )
+      fail(`${name} has an unreviewed Bun local package resolution`);
+    return reviewed.version;
+  }
   if (!entry[0].startsWith(prefix) || entry[0].length === prefix.length) {
     fail(`${name} has an unsupported bun.lock resolution`, entry[0]);
   }
@@ -175,11 +219,22 @@ export function inspectJsLockParity({
         });
       }
 
-      const npmPackage = packageLock.packages[`node_modules/${name}`];
+      const npmPackage = resolvedNpmPackage(packageLock, name, spec);
       if (!isRecord(npmPackage) || typeof npmPackage.version !== "string") {
         fail(`${name} has no exact package-lock.json resolution`);
       }
-      const bunVersionResolved = bunResolvedVersion(bunLock.packages, name);
+      const bunVersionResolved = bunResolvedVersion(
+        bunLock.packages,
+        name,
+        spec,
+      );
+      if (
+        spec.startsWith("file:") &&
+        packageJson.overrides?.[name] !== `$${name}`
+      )
+        fail(
+          `${name} local override is not anchored to its reviewed direct dependency`,
+        );
       if (bunVersionResolved !== npmPackage.version) {
         fail(`${name} resolves differently between npm and Bun`, {
           npm: npmPackage.version,

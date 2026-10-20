@@ -37,6 +37,40 @@ async function readJson(relativePath) {
   );
 }
 
+test("catalog exposes the exact reviewed local security package version and license", () => {
+  const manifest = {
+    dependencies: {},
+    devDependencies: { braces: "file:vendor/braces-depth-guard" },
+  };
+  const lock = {
+    packages: {
+      "": manifest,
+      "node_modules/braces": {
+        link: true,
+        resolved: "vendor/braces-depth-guard",
+      },
+      "vendor/braces-depth-guard": {
+        name: "@sortofremoteng/braces-depth-guard",
+        version: "3.0.3-patch.0",
+        license: "MIT",
+      },
+    },
+  };
+  assert.deepEqual(collectDirectDependencies(manifest, lock).development, [
+    {
+      name: "braces",
+      version: "3.0.3-patch.0",
+      license: "MIT",
+      category: "Vendored Security Patch",
+    },
+  ]);
+  lock.packages["vendor/braces-depth-guard"].license = "UNKNOWN";
+  assert.throws(
+    () => collectDirectDependencies(manifest, lock),
+    /metadata changed/,
+  );
+});
+
 function parseGeneratedEntries(source) {
   return [
     ...source.matchAll(

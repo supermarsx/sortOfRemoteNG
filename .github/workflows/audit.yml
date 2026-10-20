@@ -78,6 +78,8 @@ jobs:
           node-version-file: ".node-version"
           cache: "npm"
       - run: npm ci --ignore-scripts
+      - name: Verify local braces security backport
+        run: node --test tests/tooling/bracesDepthGuard.node-test.mjs
       # Production dependencies must remain fully clean. The checker permits
       # exactly GHSA-mh99-v99m-4gvg in dev-only nested brace-expansion copies
       # that cannot yet consume the patched major, and fails closed when the

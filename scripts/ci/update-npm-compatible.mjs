@@ -10,6 +10,8 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import {
   JAVASCRIPT_COMPATIBLE_UPDATE_HOLDS,
   JAVASCRIPT_UPDATE_HOLDS,
+  REVIEWED_LOCAL_DEPENDENCIES,
+  resolvedNpmPackage,
   checkJsLockParity,
 } from "./check-js-lock-parity.mjs";
 
@@ -141,6 +143,15 @@ export function buildCompatibleUpdatePolicy(manifest) {
   for (const group of dependencyGroups(manifest)) {
     for (const [name, spec] of Object.entries(manifest[group])) {
       const classification = classifyDependencySpec(spec);
+      if (REVIEWED_LOCAL_DEPENDENCIES[name]) {
+        if (
+          spec !== REVIEWED_LOCAL_DEPENDENCIES[name].spec ||
+          manifest.overrides?.[name] !== `$${name}`
+        )
+          fail(`${name} reviewed local security dependency changed`);
+        exactHolds.push(name);
+        continue;
+      }
       if (
         classification.kind === "invalid" ||
         classification.kind === "unsupported"
@@ -219,7 +230,13 @@ export function assertCompatibleManifestUpdate(before, after) {
       const classification = classifyDependencySpec(beforeSpec);
       const afterClassification = classifyDependencySpec(afterSpec);
       const explicitHold = compatibleUpdateHold(name);
+      if (
+        REVIEWED_LOCAL_DEPENDENCIES[name] &&
+        beforeSpec !== REVIEWED_LOCAL_DEPENDENCIES[name].spec
+      )
+        fail(`${name} reviewed local security dependency changed`);
       const held =
+        REVIEWED_LOCAL_DEPENDENCIES[name] ||
         classification.kind === "exact" ||
         isManualCrossGraphHold(name) ||
         explicitHold;
@@ -271,8 +288,13 @@ export function assertCompatibleManifestUpdate(before, after) {
   return changes;
 }
 
-function resolvedDirectVersion(lock, name) {
-  const value = lock?.packages?.[`node_modules/${name}`]?.version;
+function resolvedDirectVersion(lock, name, spec) {
+  const value = resolvedNpmPackage(lock, name, spec)?.version;
+  if (
+    REVIEWED_LOCAL_DEPENDENCIES[name] &&
+    spec === REVIEWED_LOCAL_DEPENDENCIES[name].spec
+  )
+    return value;
   if (!parseStableSemVer(value))
     fail(`${name} has no stable direct npm resolution`, value);
   return value;
@@ -300,13 +322,22 @@ export function assertCompatibleLockUpdate({
     }
 
     for (const [name, beforeSpec] of Object.entries(beforeManifest[group])) {
-      const beforeVersionText = resolvedDirectVersion(beforeLock, name);
-      const afterVersionText = resolvedDirectVersion(afterLock, name);
+      const beforeVersionText = resolvedDirectVersion(
+        beforeLock,
+        name,
+        beforeSpec,
+      );
+      const afterVersionText = resolvedDirectVersion(
+        afterLock,
+        name,
+        afterManifest[group][name],
+      );
       const beforeVersion = parseStableSemVer(beforeVersionText);
       const afterVersion = parseStableSemVer(afterVersionText);
       const classification = classifyDependencySpec(beforeSpec);
       const explicitHold = compatibleUpdateHold(name);
       const held =
+        REVIEWED_LOCAL_DEPENDENCIES[name] ||
         classification.kind === "exact" ||
         isManualCrossGraphHold(name) ||
         explicitHold;
@@ -490,6 +521,7 @@ function canonicalizeBunLock(
         path.join(temporaryRoot, name),
       );
     }
+    copyReviewedLocalDependencies(repositoryRoot, temporaryRoot);
     const manifestHash = fileHash(path.join(temporaryRoot, "package.json"));
     const npmLockHash = fileHash(path.join(temporaryRoot, "package-lock.json"));
     const passHashes = [];
@@ -554,6 +586,53 @@ function canonicalizeBunLock(
         }`,
       );
     }
+  }
+}
+
+/** Bun's isolated lock generation must include the exact reviewed local source. */
+export function copyReviewedLocalDependencies(repositoryRoot, temporaryRoot) {
+  const manifest = JSON.parse(
+    fs.readFileSync(path.join(repositoryRoot, "package.json"), "utf8"),
+  );
+  for (const [name, reviewed] of Object.entries(REVIEWED_LOCAL_DEPENDENCIES)) {
+    const spec = manifest.devDependencies?.[name];
+    if (spec === undefined) continue;
+    if (spec !== reviewed.spec || manifest.overrides?.[name] !== `$${name}`)
+      fail(`${name} reviewed local security dependency changed`);
+    const relative = reviewed.spec.slice(5);
+    const source = path.join(repositoryRoot, relative);
+    const destination = path.join(temporaryRoot, relative);
+    let ancestor = repositoryRoot;
+    for (const segment of [...relative.split("/"), "package.json"]) {
+      ancestor = path.join(ancestor, segment);
+      if (fs.lstatSync(ancestor).isSymbolicLink())
+        fail(
+          `${name} reviewed local source contains an unsupported filesystem entry`,
+        );
+    }
+    const local = JSON.parse(
+      fs.readFileSync(path.join(source, "package.json"), "utf8"),
+    );
+    if (
+      local.name !== reviewed.name ||
+      local.version !== reviewed.version ||
+      local.license !== reviewed.license
+    )
+      fail(`${name} reviewed local source metadata changed`);
+    fs.mkdirSync(path.dirname(destination), { recursive: true });
+    fs.cpSync(source, destination, {
+      recursive: true,
+      force: false,
+      errorOnExist: true,
+      filter(file) {
+        const stat = fs.lstatSync(file);
+        if (stat.isSymbolicLink() || (!stat.isDirectory() && !stat.isFile()))
+          fail(
+            `${name} reviewed local source contains an unsupported filesystem entry`,
+          );
+        return true;
+      },
+    });
   }
 }
 

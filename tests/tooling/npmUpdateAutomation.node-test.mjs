@@ -18,6 +18,7 @@ import {
   assertCompatibleLockUpdate,
   assertCompatibleManifestUpdate,
   buildCompatibleUpdatePolicy,
+  copyReviewedLocalDependencies,
   dryRunCompatibleUpdate,
   writeCompatibleUpdate,
 } from "../../scripts/ci/update-npm-compatible.mjs";
@@ -144,6 +145,115 @@ function fixtureBunLock(
 function clone(value) {
   return JSON.parse(JSON.stringify(value));
 }
+
+test("reviewed local security packages retain exact file identity and cannot be updated or redirected", () => {
+  const manifest = fixtureManifest();
+  manifest.devDependencies.braces = "file:vendor/braces-depth-guard";
+  manifest.overrides.braces = "$braces";
+  const npm = fixtureNpmLock(manifest);
+  npm.packages["node_modules/braces"] = {
+    link: true,
+    resolved: "vendor/braces-depth-guard",
+  };
+  npm.packages["vendor/braces-depth-guard"] = {
+    name: "@sortofremoteng/braces-depth-guard",
+    version: "3.0.3-patch.0",
+    license: "MIT",
+  };
+  const bun = fixtureBunLock(manifest);
+  bun.packages.braces = [
+    "@sortofremoteng/braces-depth-guard@file:vendor/braces-depth-guard",
+    {},
+  ];
+  const inspect = (m = manifest, n = npm, b = bun) =>
+    inspectJsLockParity({
+      packageJson: m,
+      packageLock: n,
+      bunLock: b,
+      bunVersion: "1.3.11",
+    });
+  assert.equal(
+    inspect().direct.find((row) => row.name === "braces").version,
+    "3.0.3-patch.0",
+  );
+  assert.ok(
+    buildCompatibleUpdatePolicy(manifest).exactHolds.includes("braces"),
+  );
+  assert.doesNotThrow(() =>
+    assertCompatibleManifestUpdate(manifest, clone(manifest)),
+  );
+  assert.doesNotThrow(() =>
+    assertCompatibleLockUpdate({
+      beforeManifest: manifest,
+      afterManifest: clone(manifest),
+      beforeLock: npm,
+      afterLock: clone(npm),
+    }),
+  );
+  const moved = clone(npm);
+  moved.packages["node_modules/braces"].resolved = "../outside";
+  assert.throws(() => inspect(manifest, moved), /unreviewed local/);
+  const changed = clone(npm);
+  changed.packages["vendor/braces-depth-guard"].version = "3.0.3";
+  assert.throws(() => inspect(manifest, changed), /metadata changed/);
+  const wrongBun = clone(bun);
+  wrongBun.packages.braces[0] = "braces@3.0.3";
+  assert.throws(() => inspect(manifest, npm, wrongBun), /unreviewed Bun/);
+  const redirected = clone(manifest);
+  redirected.devDependencies.braces = "file:../outside";
+  assert.throws(
+    () => buildCompatibleUpdatePolicy(redirected),
+    /security dependency changed/,
+  );
+  assert.throws(
+    () => assertCompatibleManifestUpdate(manifest, redirected),
+    /held.*moved/,
+  );
+});
+
+test("isolated Bun generation copies reviewed vendor bytes and rejects redirected filesystem entries", () => {
+  const root = fs.mkdtempSync(
+    path.join(os.tmpdir(), "sorng-reviewed-local-test-"),
+  );
+  const target = path.join(root, "destination");
+  fs.mkdirSync(target);
+  try {
+    writeJson(path.join(root, "package.json"), {
+      devDependencies: { braces: "file:vendor/braces-depth-guard" },
+      overrides: { braces: "$braces" },
+    });
+    const source = path.join(root, "vendor/braces-depth-guard");
+    writeJson(path.join(source, "package.json"), {
+      name: "@sortofremoteng/braces-depth-guard",
+      version: "3.0.3-patch.0",
+      license: "MIT",
+    });
+    fs.writeFileSync(path.join(source, "guard.js"), "reviewed fixture bytes");
+    copyReviewedLocalDependencies(root, target);
+    assert.equal(
+      fs.readFileSync(
+        path.join(target, "vendor/braces-depth-guard/guard.js"),
+        "utf8",
+      ),
+      "reviewed fixture bytes",
+    );
+    const outside = path.join(root, "outside");
+    fs.mkdirSync(outside);
+    fs.symlinkSync(
+      outside,
+      path.join(source, "redirect"),
+      process.platform === "win32" ? "junction" : "dir",
+    );
+    const second = path.join(root, "second");
+    fs.mkdirSync(second);
+    assert.throws(
+      () => copyReviewedLocalDependencies(root, second),
+      /unsupported filesystem entry/,
+    );
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
 
 function hash(contents) {
   return createHash("sha256").update(contents).digest("hex");
@@ -626,6 +736,8 @@ test("real-repository dry-run is read-only and reports the complete direct graph
     "@univerjs/themes",
     // Lockstep with vitest (JAVASCRIPT_UPDATE_HOLDS).
     "@vitest/coverage-v8",
+    // Reviewed local security patch until braces publishes a fixed release.
+    "braces",
     // Sanitizes rendered Mermaid SVG (diagramSafety.ts).
     "dompurify",
     // Parses untrusted XLSX imports (spreadsheetFiles.ts).

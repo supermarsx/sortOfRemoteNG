@@ -40,6 +40,8 @@ export default tseslint.config(
       ".cache/**",
       ".copilot/**",
       ".orchestration/**",
+      "src-tauri/vendor/tauri-plugin-updater/**",
+      "vendor/braces-depth-guard/**",
     ],
   },
   {

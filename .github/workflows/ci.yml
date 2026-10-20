@@ -499,6 +499,9 @@ jobs:
           targets: x86_64-pc-windows-msvc
       - name: Native browser std-only contracts (Node + rustc)
         run: node --test tests/tooling/nativeWarmStartup.node-test.mjs tests/tooling/nativeCredentialFocus.node-test.mjs tests/tooling/nativeNavigationFailure.node-test.mjs tests/tooling/nativeLoginDiagnostics.node-test.mjs tests/tooling/cefStartupFieldTrials.node-test.mjs tests/tooling/nativeOriginProbe.node-test.mjs tests/tooling/appStartupSteps.node-test.mjs tests/tooling/nativeEngineFailure.node-test.mjs tests/tooling/secureClipboardExit.node-test.mjs tests/tooling/webNetworkGuardLatch.node-test.mjs tests/tooling/tauriEventListenerCleanup.node-test.mjs
+      - name: Verify Windows updater archive security backport
+        if: runner.os == 'Windows'
+        run: cargo test --manifest-path src-tauri/Cargo.toml --locked --package tauri-plugin-updater --lib archive_
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: src-tauri

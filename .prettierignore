@@ -38,3 +38,7 @@ src-tauri/crates/sorng-protocols/src/vendor/darkreader/
 
 # Pinned framework bytes; the documented event patch and integrity manifest are checked separately.
 src-tauri/patches/tauri-event-cleanup/
+
+# Reviewed security backports retain upstream source/license bytes.
+src-tauri/vendor/tauri-plugin-updater/
+vendor/braces-depth-guard/
