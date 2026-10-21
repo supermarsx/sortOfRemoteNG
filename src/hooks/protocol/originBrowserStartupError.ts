@@ -21,13 +21,13 @@ export const originBrowserSshConnectFailures = {
     "SSH route host-key verification",
     "SSH host-key verification or trust-store access failed.",
     "Review the SSH host key and known-hosts path. Verify any changed fingerprint before approval, correct unreadable or unwritable trust storage, then retry with host-key checks enabled.",
-    "trust",
+    "network",
   ],
   "ssh-route-connect-authentication": [
     "SSH route authentication",
     "The SSH server did not accept the configured authentication.",
     "Review the saved SSH source username, password or private key, and any selected vault entry. Confirm that the same saved SSH source connects normally, then retry.",
-    "credentials",
+    "network",
   ],
   "ssh-route-connect-timeout": [
     "SSH route connection deadline",
