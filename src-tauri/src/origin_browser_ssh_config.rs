@@ -122,10 +122,16 @@ fn build(
         None | Some(Value::Null) => 22,
         Some(v) => v.as_u64().filter(|v| *v > 0 && *v <= 65535).ok_or(ERROR)?,
     };
-    let auth = source
-        .get(if inline { "authMethod" } else { "authType" })
-        .and_then(Value::as_str)
-        .unwrap_or("password");
+    let saved_auth = text(source, if inline { "authMethod" } else { "authType" })?;
+    let auth = if saved_auth.is_empty() {
+        if vault.is_none() && !text(source, "privateKey")?.is_empty() {
+            "key"
+        } else {
+            "password"
+        }
+    } else {
+        saved_auth
+    };
     if !matches!(auth, "password" | "key" | "totp") {
         return Err(ERROR);
     }
@@ -208,6 +214,11 @@ fn build(
             config[native] = value.clone();
         }
     }
+    // The editor's empty default means the verified platform known_hosts path,
+    // not a literal empty filesystem path. Normalize after override precedence.
+    if config.get("known_hosts_path").and_then(Value::as_str) == Some("") {
+        config["known_hosts_path"] = Value::Null;
+    }
     let totp_id = source
         .pointer("/credentialSource/totpId")
         .and_then(Value::as_str);
@@ -282,6 +293,102 @@ mod tests {
         assert!(config.strict_host_key_checking);
         assert!(!config.accept_new_host_keys);
         assert!(!config.allow_agent_auth);
+    }
+    #[test]
+    fn omitted_local_auth_type_preserves_saved_private_key_authentication() {
+        for inline in [false, true] {
+            let mut source = row();
+            if inline {
+                source["host"] = source["hostname"].clone();
+            }
+            source["privateKey"] = "fixture-key-path".into();
+            let selector = if inline { "authMethod" } else { "authType" };
+            for value in [None, Some(Value::Null), Some(json!(""))] {
+                source.as_object_mut().unwrap().remove(selector);
+                if let Some(value) = value {
+                    source[selector] = value;
+                }
+                let config = build(&source, None, inline).unwrap();
+                assert_eq!(config.private_key_path.as_deref(), Some("fixture-key-path"));
+                assert!(config.strict_host_key_checking);
+                assert!(!config.accept_new_host_keys);
+            }
+            for value in [json!(false), json!(23), json!({}), json!("unsupported")] {
+                source[selector] = value;
+                assert!(build(&source, None, inline).is_err());
+            }
+        }
+    }
+    #[test]
+    fn empty_known_hosts_path_uses_the_normal_verified_default() {
+        let mut source = row();
+        source["sshKnownHostsPath"] = "".into();
+        assert!(build(&source, None, false)
+            .unwrap()
+            .known_hosts_path
+            .is_none());
+        source["sshKnownHostsPath"] = "fixture-known-hosts".into();
+        assert_eq!(
+            build(&source, None, false)
+                .unwrap()
+                .known_hosts_path
+                .as_deref(),
+            Some("fixture-known-hosts")
+        );
+        source.as_object_mut().unwrap().remove("sshKnownHostsPath");
+        source["sshConnectionConfigOverride"] = json!({"knownHostsPath":""});
+        assert!(build(&source, None, false)
+            .unwrap()
+            .known_hosts_path
+            .is_none());
+        source["sshConnectionConfigOverride"]["knownHostsPath"] = "fixture-override".into();
+        assert_eq!(
+            build(&source, None, false)
+                .unwrap()
+                .known_hosts_path
+                .as_deref(),
+            Some("fixture-override")
+        );
+        source["sshKnownHostsPath"] = "".into();
+        assert!(build(&source, None, false)
+            .unwrap()
+            .known_hosts_path
+            .is_none());
+        source["sshKnownHostsPath"] = false.into();
+        assert!(build(&source, None, false).is_err());
+        source.as_object_mut().unwrap().remove("sshKnownHostsPath");
+        source["sshConnectionConfigOverride"]["knownHostsPath"] = false.into();
+        assert!(build(&source, None, false).is_err());
+    }
+    #[test]
+    fn local_key_inference_never_overrides_explicit_auth_or_vault_selection() {
+        for inline in [false, true] {
+            let mut source = row();
+            if inline {
+                source["host"] = source["hostname"].clone();
+            }
+            source["privateKey"] = "fixture-key-path".into();
+            source[if inline { "authMethod" } else { "authType" }] = "password".into();
+            let config = build(&source, None, inline).unwrap();
+            assert!(config.private_key_path.is_none());
+            assert!(!config.allow_agent_auth);
+            source
+                .as_object_mut()
+                .unwrap()
+                .remove(if inline { "authMethod" } else { "authType" });
+            let vault = json!({"facets":{"username":"vault-account","password":"vault-password"}});
+            let config = build(&source, Some(&vault), inline).unwrap();
+            assert!(config.private_key_path.is_none());
+            assert!(config.private_key_content.is_none());
+            assert!(!config.allow_agent_auth);
+            assert_eq!(config.username, "vault-account");
+            assert!(build(
+                &source,
+                Some(&json!({"facets":{"username":"vault-account","privateKey":"vault-key"}})),
+                inline
+            )
+            .is_err());
+        }
     }
     #[test]
     fn vault_is_exclusive_and_private_key_material_is_not_a_file_path() {
