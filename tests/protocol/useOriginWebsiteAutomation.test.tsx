@@ -277,7 +277,7 @@ describe("native automation hook and reused controls", () => {
     await waitFor(() => expect(current.documentUnavailable).toBe(true));
     expect(
       screen.getByRole("button", { name: "Record macro" }),
-    ).toHaveAttribute("title", expect.stringContaining("HTTPS"));
+    ).toHaveAttribute("data-tooltip", expect.stringContaining("HTTPS"));
     expect(current.recordingUnavailableReason).not.toMatch(/^Wait/);
     expect(documentReads()).toHaveLength(1);
   });

@@ -67,6 +67,7 @@ vi.mock("../../src/utils/recording/webAutomationLibrary", async (original) => ({
 import { useWebAutomation } from "../../src/hooks/protocol/useWebAutomation";
 import { WebAutomationControls } from "../../src/components/protocol/webBrowser/WebAutomationControls";
 import WebAutomationNotice from "../../src/components/protocol/webBrowser/WebAutomationNotice";
+import { useTooltipSystem } from "../../src/hooks/window/useTooltipSystem";
 
 const script: BrowserScript = {
   kind: "script",
@@ -97,6 +98,7 @@ function Fixture({
   scope?: string;
   navigation?: string;
 }) {
+  useTooltipSystem();
   const iframe = useRef<HTMLIFrameElement>(null);
   current = useWebAutomation({
     connection,
@@ -223,15 +225,38 @@ describe("mounted website automation controls and ownership", () => {
     );
     render(<Fixture />);
     expect(screen.queryByText("Loading website macro library…")).toBeNull();
-    expect(
-      screen.getByRole("button", { name: "Record macro" }),
-    ).toHaveAttribute("title", "Loading website macro library…");
-    expect(screen.getByRole("button", { name: "Record macro" })).toBeDisabled();
+    const record = screen.getByRole("button", { name: "Record macro" });
+    expect(record).toHaveAttribute(
+      "data-tooltip",
+      "Loading website macro library…",
+    );
+    expect(record).not.toHaveAttribute("title");
+    expect(record).toHaveAccessibleDescription(
+      "Loading website macro library…",
+    );
+    expect(record).toBeDisabled();
+    fireEvent.mouseOver(record);
+    expect(document.querySelectorAll(".app-tooltip.is-visible")).toHaveLength(
+      1,
+    );
+    expect(document.querySelector(".app-tooltip.is-visible")).toHaveTextContent(
+      "Loading website macro library…",
+    );
     expect(screen.queryByText(/Unlock its storage/)).toBeNull();
     expect(current.libraryReady).toBe(false);
     await act(async () => finish({ value: library }));
     expect(current.libraryReady).toBe(true);
     expect(current.recordingUnavailableReason).toBeNull();
+    await waitFor(() =>
+      expect(
+        document.querySelector(".app-tooltip.is-visible"),
+      ).toHaveTextContent("Record clicks and field locations"),
+    );
+    expect(record).not.toHaveAttribute("title");
+    expect(record).toBeEnabled();
+    expect(document.querySelectorAll(".app-tooltip.is-visible")).toHaveLength(
+      1,
+    );
     expect(screen.queryByText("Loading website macro library…")).toBeNull();
   });
   it("preserves a safe specific storage failure and offers explicit reload without replay", async () => {
@@ -498,11 +523,23 @@ describe("mounted website automation controls and ownership", () => {
       stepNumber: 1,
       step: { kind: "fill", selector: "html > body > input:nth-of-type(1)" },
     });
-    fireEvent.click(
-      screen.getByRole("button", { name: "Stop recording and review macro" }),
+    const stop = screen.getByRole("button", {
+      name: "Stop recording and review macro",
+    });
+    expect(stop).not.toHaveAttribute("title");
+    fireEvent.focusIn(stop);
+    expect(document.querySelector(".app-tooltip.is-visible")).toHaveTextContent(
+      "Stop recording and review macro",
     );
+    fireEvent.click(stop);
     acknowledge(sent("recordStop")[0]);
     await screen.findByRole("dialog", { name: "Website automation library" });
+    const recordNew = screen.getByRole("button", { name: "Record new macro" });
+    expect(recordNew).not.toHaveAttribute("title");
+    expect(recordNew).toHaveAttribute("data-tooltip");
+    expect(recordNew).toHaveAccessibleDescription(
+      recordNew.getAttribute("data-tooltip")!,
+    );
     expect(screen.getByText(/Structural positions/)).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Save macro" }));
     await waitFor(() => expect(boundary.save).toHaveBeenCalledOnce());

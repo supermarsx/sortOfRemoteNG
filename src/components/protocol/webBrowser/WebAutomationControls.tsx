@@ -151,6 +151,9 @@ function AutomationLibrary({
     automation.favorites.some(
       (ref) => quickActionReferenceKey(ref) === quickActionReferenceKey(item),
     );
+  const recordingTooltip =
+    automation.recordingUnavailableReason ??
+    "Record interactions on the current website";
   return (
     <>
       <Modal
@@ -236,10 +239,8 @@ function AutomationLibrary({
                     (!automation.canEnableMacroRecording &&
                       !!automation.recordingUnavailableReason)
                   }
-                  title={
-                    automation.recordingUnavailableReason ??
-                    "Record interactions on the current website"
-                  }
+                  data-tooltip={recordingTooltip}
+                  aria-description={recordingTooltip}
                   onClick={() => guardDraft(onRecord)}
                 >
                   <Circle size={14} />
@@ -755,6 +756,9 @@ export function WebAutomationControls({
     (item.kind === "script"
       ? automation.permissions?.scriptInjectionEnabled
       : automation.permissions?.interactionMacrosEnabled);
+  const recordingTooltip =
+    automation.recordingUnavailableReason ??
+    "Record clicks and field locations, not typed values. Separate from HAR/video.";
   return (
     <>
       {(automation.permissions?.showActionBar ||
@@ -783,7 +787,7 @@ export function WebAutomationControls({
             {automation.recording ? (
               <button
                 className="sor-option-chip shrink-0 h-7 text-error text-xs"
-                title="Stop recording and review macro"
+                data-tooltip="Stop recording and review macro"
                 aria-label="Stop recording and review macro"
                 disabled={automation.recordingPending}
                 onClick={() => void automation.stopRecording()}
@@ -804,10 +808,8 @@ export function WebAutomationControls({
             ) : (
               <button
                 className="sor-option-chip shrink-0 h-7 text-xs"
-                title={
-                  automation.recordingUnavailableReason ??
-                  "Record clicks and field locations, not typed values. Separate from HAR/video."
-                }
+                data-tooltip={recordingTooltip}
+                aria-description={recordingTooltip}
                 disabled={
                   automation.busy ||
                   automation.recordingPending ||
