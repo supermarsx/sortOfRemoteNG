@@ -141,6 +141,7 @@ pub struct ReleaseVpnLeasesResult {
 
 #[derive(Debug, Default)]
 pub struct VpnLeaseRegistry {
+    observation_generation: Arc<()>,
     entries: HashMap<VpnLeaseKey, VpnLeaseEntry>,
     /// Exact registry snapshots displaced by a partial provider start whose
     /// compensating teardown also failed. A later release retries teardown and
@@ -181,7 +182,84 @@ pub struct VpnLeaseUsage {
     pub cleanup_pending: bool,
 }
 
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct VpnOwnedLeaseObservation {
+    pub vpn_type: String,
+    pub connection_id: String,
+    pub lease_owned: bool,
+    pub cleanup_pending: bool,
+    pub provider_state: VpnObservedProviderState,
+    pub observed_at_unix_ms: Option<u64>,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub enum VpnObservedProviderState {
+    Connected,
+    Disconnected,
+    Unknown,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct VpnOwnerLeaseObservation {
+    pub owner_id: String,
+    pub leases: Vec<VpnOwnedLeaseObservation>,
+    pub truncated: bool,
+}
+
 impl VpnLeaseRegistry {
+    /// Logical ownership only: never invokes a provider or claims connectivity.
+    /// The session consumer must correlate these opaque owners with its exact
+    /// current actor before displaying any observations.
+    pub fn observe_owners(
+        &self,
+        owners: &[String],
+    ) -> Result<Vec<VpnOwnerLeaseObservation>, String> {
+        if owners.len() > 32
+            || owners.iter().any(|owner| {
+                owner.is_empty()
+                    || owner.len() > 256
+                    || owner.trim() != owner
+                    || owner.chars().any(char::is_control)
+            })
+            || owners.iter().collect::<HashSet<_>>().len() != owners.len()
+        {
+            return Err(
+                "VPN observation requires at most 32 distinct valid owner identifiers".into(),
+            );
+        }
+        Ok(owners
+            .iter()
+            .map(|owner| {
+                let mut owned: Vec<_> = self
+                    .entries
+                    .iter()
+                    .filter(|(_, entry)| entry.owners.contains(owner))
+                    .collect();
+                owned.sort_by_key(|(left, _)| *left);
+                let truncated = owned.len() > 32;
+                let leases = owned
+                    .into_iter()
+                    .take(32)
+                    .map(|(key, entry)| VpnOwnedLeaseObservation {
+                        vpn_type: key.vpn_type.as_str().into(),
+                        connection_id: key.connection_id.clone(),
+                        lease_owned: true,
+                        cleanup_pending: entry.cleanup_pending,
+                        provider_state: VpnObservedProviderState::Unknown,
+                        observed_at_unix_ms: None,
+                    })
+                    .collect();
+                VpnOwnerLeaseObservation {
+                    owner_id: owner.clone(),
+                    leases,
+                    truncated,
+                }
+            })
+            .collect())
+    }
     pub fn usage(&self, key: &VpnLeaseKey) -> Option<VpnLeaseUsage> {
         self.entries.get(key).map(|entry| VpnLeaseUsage {
             owner_count: entry.owners.len(),
@@ -220,6 +298,81 @@ impl VpnLeaseRegistry {
 
         Ok(())
     }
+}
+
+/// Observe only existing owned resources. Provider probes may reconcile cached
+/// status, but never acquire, connect, disconnect or change machine configuration.
+pub async fn observe_owned_vpn_health<R: VpnRuntime>(
+    state: &VpnLeaseServiceState,
+    owners: &[String],
+    runtime: &mut R,
+) -> Result<Vec<VpnOwnerLeaseObservation>, String> {
+    let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(5);
+    let (initial, generation) = {
+        let registry = tokio::time::timeout_at(deadline, state.lock())
+            .await
+            .map_err(|_| "VPN ownership observation timed out".to_string())?;
+        (
+            registry.observe_owners(owners)?,
+            registry.observation_generation.clone(),
+        )
+    };
+    let mut observations = HashMap::new();
+    for lease in initial.iter().flat_map(|owner| &owner.leases) {
+        let key = VpnLeaseKey {
+            vpn_type: RuntimeVpnType::parse(&lease.vpn_type)?,
+            connection_id: lease.connection_id.clone(),
+        };
+        if lease.cleanup_pending || observations.contains_key(&key) {
+            continue;
+        }
+        if observations.len() == 32 || tokio::time::Instant::now() >= deadline {
+            break;
+        }
+        // Never retain the registry mutex while waiting for a provider mutex or OS query.
+        let Ok(registry) = tokio::time::timeout_at(deadline, state.lock()).await else {
+            break;
+        };
+        let current = Arc::ptr_eq(&registry.observation_generation, &generation);
+        drop(registry);
+        if !current {
+            break;
+        }
+        let probe_deadline =
+            deadline.min(tokio::time::Instant::now() + std::time::Duration::from_secs(2));
+        let result = tokio::time::timeout_at(probe_deadline, runtime.probe_active(&key)).await;
+        let status = match result {
+            Ok(Ok(true)) => VpnObservedProviderState::Connected,
+            Ok(Ok(false)) => VpnObservedProviderState::Disconnected,
+            _ => VpnObservedProviderState::Unknown,
+        };
+        let observed_at = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .ok()
+            .and_then(|duration| u64::try_from(duration.as_millis()).ok());
+        observations.insert(key, (status, observed_at));
+    }
+    let registry = tokio::time::timeout_at(deadline, state.lock())
+        .await
+        .map_err(|_| "VPN ownership observation timed out".to_string())?;
+    let mut current = registry.observe_owners(owners)?;
+    // Any intervening lifecycle operation invalidates the whole observation,
+    // including release/reacquire ABA with identical owner and profile strings.
+    if Arc::ptr_eq(&registry.observation_generation, &generation) {
+        for lease in current.iter_mut().flat_map(|owner| &mut owner.leases) {
+            if !lease.cleanup_pending {
+                let key = VpnLeaseKey {
+                    vpn_type: RuntimeVpnType::parse(&lease.vpn_type)?,
+                    connection_id: lease.connection_id.clone(),
+                };
+                if let Some((status, observed_at)) = observations.get(&key) {
+                    lease.provider_state = *status;
+                    lease.observed_at_unix_ms = *observed_at;
+                }
+            }
+        }
+    }
+    Ok(current)
 }
 
 fn validate_owner(owner_id: &str) -> Result<String, String> {
@@ -270,6 +423,7 @@ pub async fn acquire_session_vpn_leases<R: VpnRuntime>(
     requests: Vec<VpnLeaseRequest>,
     runtime: &mut R,
 ) -> Result<AcquireVpnLeasesResult, String> {
+    registry.observation_generation = Arc::new(());
     let owner_id = validate_owner(owner_id)?;
     // Validate the complete path before connecting its first layer.  An
     // unsupported/malformed later layer must not leave a partial VPN path.
@@ -420,6 +574,7 @@ pub async fn release_session_vpn_leases<R: VpnRuntime>(
     owner_id: &str,
     runtime: &mut R,
 ) -> Result<ReleaseVpnLeasesResult, String> {
+    registry.observation_generation = Arc::new(());
     let owner_id = validate_owner(owner_id)?;
     let mut keys = registry
         .entries
@@ -730,6 +885,230 @@ async fn release_key<R: VpnRuntime>(
 
 #[cfg(test)]
 mod tests {
+    struct ObservationRuntime {
+        state: VpnLeaseServiceState,
+        calls: usize,
+        outcome: Result<bool, String>,
+        replace_generation: bool,
+        pending: bool,
+    }
+
+    impl VpnRuntime for ObservationRuntime {
+        async fn probe_active(&mut self, _: &VpnLeaseKey) -> Result<bool, String> {
+            self.calls += 1;
+            if self.replace_generation {
+                // Same owner/key after an intervening lifecycle mutation is ABA.
+                let mut registry = self.state.lock().await;
+                let keys: HashSet<_> = registry.entries.keys().cloned().collect();
+                let requests = keys
+                    .iter()
+                    .map(|key| VpnLeaseRequest {
+                        vpn_type: key.vpn_type.as_str().into(),
+                        connection_id: key.connection_id.clone(),
+                        auto_connect: false,
+                    })
+                    .collect();
+                let mut lifecycle = MockRuntime {
+                    active: keys,
+                    ..Default::default()
+                };
+                release_session_vpn_leases(&mut registry, "owner", &mut lifecycle)
+                    .await
+                    .unwrap();
+                acquire_session_vpn_leases(&mut registry, "owner", requests, &mut lifecycle)
+                    .await
+                    .unwrap();
+            }
+            if self.pending {
+                std::future::pending::<()>().await;
+            }
+            self.outcome.clone()
+        }
+        async fn connect(&mut self, _: &VpnLeaseKey) -> Result<(), String> {
+            panic!("health must never connect")
+        }
+        async fn disconnect(&mut self, _: &VpnLeaseKey) -> Result<(), String> {
+            panic!("health must never disconnect")
+        }
+    }
+
+    #[tokio::test]
+    async fn owner_observation_status_is_bounded_and_rejects_lifecycle_aba() {
+        let state = new_vpn_lease_service_state();
+        for n in 0..33 {
+            state.lock().await.entries.insert(
+                VpnLeaseKey {
+                    vpn_type: RuntimeVpnType::OpenVpn,
+                    connection_id: format!("profile-{n:02}"),
+                },
+                VpnLeaseEntry {
+                    owners: ["owner".into()].into(),
+                    ..Default::default()
+                },
+            );
+        }
+        let mut runtime = ObservationRuntime {
+            state: state.clone(),
+            calls: 0,
+            outcome: Ok(true),
+            replace_generation: false,
+            pending: false,
+        };
+        let rows =
+            observe_owned_vpn_health(&state, &["owner".into(), "foreign".into()], &mut runtime)
+                .await
+                .unwrap();
+        assert_eq!(runtime.calls, 32);
+        assert!(rows[0].truncated);
+        assert!(rows[1].leases.is_empty());
+        assert!(rows[0].leases.iter().all(|lease| lease.provider_state
+            == VpnObservedProviderState::Connected
+            && lease.observed_at_unix_ms.is_some()));
+        runtime.replace_generation = true;
+        runtime.calls = 0;
+        let rows = observe_owned_vpn_health(&state, &["owner".into()], &mut runtime)
+            .await
+            .unwrap();
+        assert_eq!(runtime.calls, 1);
+        assert!(rows[0].leases.iter().all(|lease| lease.provider_state
+            == VpnObservedProviderState::Unknown
+            && lease.observed_at_unix_ms.is_none()));
+    }
+
+    #[tokio::test]
+    async fn owner_observation_status_distinguishes_disconnected_errors_timeout_and_cleanup() {
+        let state = new_vpn_lease_service_state();
+        let key = VpnLeaseKey {
+            vpn_type: RuntimeVpnType::OpenVpn,
+            connection_id: "profile".into(),
+        };
+        state.lock().await.entries.insert(
+            key.clone(),
+            VpnLeaseEntry {
+                owners: ["owner".into()].into(),
+                ..Default::default()
+            },
+        );
+        let mut runtime = ObservationRuntime {
+            state: state.clone(),
+            calls: 0,
+            outcome: Ok(false),
+            replace_generation: false,
+            pending: false,
+        };
+        let rows = observe_owned_vpn_health(&state, &["owner".into()], &mut runtime)
+            .await
+            .unwrap();
+        assert_eq!(
+            rows[0].leases[0].provider_state,
+            VpnObservedProviderState::Disconnected
+        );
+        runtime.outcome = Err("secret diagnostic must not escape".into());
+        let rows = observe_owned_vpn_health(&state, &["owner".into()], &mut runtime)
+            .await
+            .unwrap();
+        assert_eq!(
+            rows[0].leases[0].provider_state,
+            VpnObservedProviderState::Unknown
+        );
+        assert!(!serde_json::to_string(&rows).unwrap().contains("secret"));
+        runtime.pending = true;
+        let rows = observe_owned_vpn_health(&state, &["owner".into()], &mut runtime)
+            .await
+            .unwrap();
+        assert_eq!(
+            rows[0].leases[0].provider_state,
+            VpnObservedProviderState::Unknown
+        );
+        runtime.calls = 0;
+        state
+            .lock()
+            .await
+            .entries
+            .get_mut(&key)
+            .unwrap()
+            .cleanup_pending = true;
+        let rows = observe_owned_vpn_health(&state, &["owner".into()], &mut runtime)
+            .await
+            .unwrap();
+        assert_eq!(runtime.calls, 0);
+        assert!(rows[0].leases[0].cleanup_pending);
+        assert_eq!(rows[0].leases[0].observed_at_unix_ms, None);
+    }
+
+    #[test]
+    fn owner_observation_is_exact_read_only_and_does_not_claim_provider_health() {
+        use super::*;
+        let mut registry = VpnLeaseRegistry::default();
+        let key = VpnLeaseKey {
+            vpn_type: RuntimeVpnType::WireGuard,
+            connection_id: "profile-a".into(),
+        };
+        registry.entries.insert(
+            key.clone(),
+            VpnLeaseEntry {
+                owners: ["actor-a:lease".into()].into(),
+                started_by_lifecycle: true,
+                cleanup_pending: false,
+            },
+        );
+        let before = registry.entries.clone();
+        let rows = registry
+            .observe_owners(&["actor-a:lease".into(), "actor-b:lease".into()])
+            .unwrap();
+        assert_eq!(rows[0].leases.len(), 1);
+        assert!(rows[0].leases[0].lease_owned);
+        assert!(!rows[0].leases[0].cleanup_pending);
+        assert!(rows[1].leases.is_empty());
+        assert_eq!(registry.entries, before);
+        let serialized = serde_json::to_string(&rows).unwrap();
+        assert!(!serialized.contains("connected"));
+        assert!(!serialized.contains("healthy"));
+        registry.entries.get_mut(&key).unwrap().cleanup_pending = true;
+        assert!(
+            registry.observe_owners(&["actor-a:lease".into()]).unwrap()[0].leases[0]
+                .cleanup_pending
+        );
+        registry.entries.remove(&key);
+        assert!(
+            registry.observe_owners(&["actor-a:lease".into()]).unwrap()[0]
+                .leases
+                .is_empty()
+        );
+    }
+
+    #[test]
+    fn owner_observation_rejects_invalid_batches_and_marks_bounded_results() {
+        use super::*;
+        let mut registry = VpnLeaseRegistry::default();
+        for owners in [
+            vec!["".into()],
+            vec![" leading".into()],
+            vec!["line\nbreak".into()],
+            vec!["x".repeat(257)],
+            vec!["same".into(), "same".into()],
+            (0..33).map(|n| format!("owner-{n}")).collect(),
+        ] {
+            assert!(registry.observe_owners(&owners).is_err());
+        }
+        assert!(registry.observe_owners(&[]).unwrap().is_empty());
+        for n in 0..33 {
+            registry.entries.insert(
+                VpnLeaseKey {
+                    vpn_type: RuntimeVpnType::OpenVpn,
+                    connection_id: format!("profile-{n:02}"),
+                },
+                VpnLeaseEntry {
+                    owners: ["owner".into()].into(),
+                    ..Default::default()
+                },
+            );
+        }
+        let observed = registry.observe_owners(&["owner".into()]).unwrap();
+        assert_eq!(observed[0].leases.len(), 32);
+        assert!(observed[0].truncated);
+        assert_eq!(observed[0].leases[0].connection_id, "profile-00");
+    }
     use super::*;
 
     #[derive(Debug, Default)]

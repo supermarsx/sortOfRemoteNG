@@ -236,6 +236,9 @@
       "path": "tailscale_commands::get_tailscale_status"
     },
     {
+      "path": "chaining_commands::get_vpn_owner_lease_observations"
+    },
+    {
       "path": "chaining_commands::get_vpn_runtime_capabilities"
     },
     {

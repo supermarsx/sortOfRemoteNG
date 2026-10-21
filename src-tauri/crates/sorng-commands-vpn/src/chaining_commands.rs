@@ -7,6 +7,36 @@ use std::collections::BTreeSet;
 const WINDOWS_IPSEC_SESSION_UNSUPPORTED_REASON: &str =
     "Legacy IPsec session associations are unavailable on Windows because the current RAS path does not safely implement the profile authentication contract; use IKEv2 or run IPsec on Linux.";
 
+/// Existing owner-scoped resources only; provider status queries never establish VPNs.
+#[tauri::command]
+#[allow(clippy::too_many_arguments)]
+pub async fn get_vpn_owner_lease_observations(
+    owner_ids: Vec<String>,
+    vpn_lease_state: tauri::State<'_, VpnLeaseServiceState>,
+    openvpn_state: tauri::State<'_, super::openvpn::OpenVPNServiceState>,
+    wireguard_state: tauri::State<'_, super::wireguard::WireGuardServiceState>,
+    tailscale_state: tauri::State<'_, super::tailscale::TailscaleServiceState>,
+    zerotier_state: tauri::State<'_, super::zerotier::ZeroTierServiceState>,
+    pptp_state: tauri::State<'_, super::pptp::PPTPServiceState>,
+    l2tp_state: tauri::State<'_, super::l2tp::L2TPServiceState>,
+    ikev2_state: tauri::State<'_, super::ikev2::IKEv2ServiceState>,
+    ipsec_state: tauri::State<'_, super::ipsec::IPsecServiceState>,
+    sstp_state: tauri::State<'_, super::sstp::SSTPServiceState>,
+) -> Result<Vec<VpnOwnerLeaseObservation>, String> {
+    let mut runtime = tauri_vpn_runtime(
+        &openvpn_state,
+        &wireguard_state,
+        &tailscale_state,
+        &zerotier_state,
+        &pptp_state,
+        &l2tp_state,
+        &ikev2_state,
+        &ipsec_state,
+        &sstp_state,
+    );
+    observe_owned_vpn_health(vpn_lease_state.inner(), &owner_ids, &mut runtime).await
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct VpnRuntimeCapability {
