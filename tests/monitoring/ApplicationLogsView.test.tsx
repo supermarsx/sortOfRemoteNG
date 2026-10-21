@@ -322,10 +322,34 @@ describe("Application logs", () => {
 
   it("reports clipboard failure and never auto-copies on view change", async () => {
     mocks.clipboard.mockRejectedValue(new Error("denied"));
+    const originalInvoke = mocks.invoke.getMockImplementation()!;
+    let finishBrowser!: (content: { text: string; truncated: boolean }) => void;
+    mocks.invoke.mockImplementation((command, args) =>
+      command === "application_logs_read" && args.source === "browser"
+        ? new Promise((resolve) => {
+            finishBrowser = resolve;
+          })
+        : originalInvoke(command, args),
+    );
     const view = render(<ApplicationLogsView isActive />);
     await screen.findByRole("region", { name: "Log content" });
-    fireEvent.click(screen.getByRole("button", { name: "Copy displayed log" }));
-    fireEvent.click(screen.getByRole("button", { name: "Copy log text" }));
+    const copyButton = screen.getByRole("button", {
+      name: "Copy displayed log",
+    });
+    // The application tail can render while the other selected source is loading.
+    expect(copyButton).toBeDisabled();
+    await waitFor(() => expect(finishBrowser).toBeTypeOf("function"));
+    await act(async () =>
+      finishBrowser({
+        text: '{"version":1,"stage":"ready"}',
+        truncated: false,
+      }),
+    );
+    await waitFor(() => expect(copyButton).toBeEnabled());
+    fireEvent.click(copyButton);
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Copy log text" }),
+    );
     expect(await screen.findByText(/Could not copy the log/)).toBeVisible();
     view.rerender(<ApplicationLogsView isActive source="browser" />);
     expect(screen.queryByRole("dialog")).toBeNull();
