@@ -524,10 +524,8 @@ afterEach(() => {
   // Unmount first: a failed check below must not leave this test's terminal
   // mounted for the next one.
   cleanup();
-  // No terminal prompt may fall back to the webview's blocking box. The one
-  // native confirm left is the synchronous guard on an OSC 8 link.
-  for (const [message] of mocks.nativeConfirm.mock.calls)
-    expect(message).toContain("Open this terminal link in your browser?");
+  // Terminal confirmations all use the window's themed prompt host.
+  expect(mocks.nativeConfirm).not.toHaveBeenCalled();
 });
 
 describe("useWebTerminal SSH link security", () => {
@@ -1004,41 +1002,78 @@ describe("useWebTerminal input lifecycle", () => {
     view.unmount();
   });
 
-  it("shows a persisted connected SSH session immediately while validating its backend actor", async () => {
-    const fallbackInvoke = mocks.invoke.getMockImplementation();
-    const pendingValidation = new Promise<boolean>(() => undefined);
-    mocks.invoke.mockImplementation((command: string, args?: unknown) => {
-      if (command === "is_session_alive") return pendingValidation;
-      return fallbackInvoke?.(command, args);
-    });
-    const persistedSession: ConnectionSession = {
-      ...session,
-      status: "connected",
-      backendSessionId: "backend-persisted-1",
-      shellId: "shell-persisted-1",
-    };
-    let model: WebTerminalMgr | null = null;
-    const Harness = () => {
-      model = useWebTerminal(persistedSession);
-      return <div ref={model.containerRef} />;
-    };
+  it.each(["completed", "unmounted"] as const)(
+    "shows a persisted connected SSH session while validation is pending, then releases the %s reservation",
+    async (outcome) => {
+      const fallbackInvoke = mocks.invoke.getMockImplementation();
+      // A distinct session avoids aliasing a prior fixture's late cleanup after
+      // beforeEach resets the process-local allocator's reservation IDs.
+      const persistedSession: ConnectionSession = {
+        ...session,
+        id: `persisted-validation-${outcome}`,
+        status: "connected",
+        backendSessionId: "backend-persisted-1",
+        shellId: "shell-persisted-1",
+      };
+      let finishValidation!: (alive: boolean) => void;
+      const pendingValidation = new Promise<boolean>((resolve) => {
+        finishValidation = resolve;
+      });
+      let validationStarted!: () => void;
+      const started = new Promise<void>((resolve) => {
+        validationStarted = resolve;
+      });
+      let reservedAtValidation = false;
+      mocks.invoke.mockImplementation((command: string, args?: unknown) => {
+        if (command === "is_session_alive") {
+          reservedAtValidation = hasSessionLifecycleActorAttempt(
+            persistedSession.id,
+          );
+          validationStarted();
+          return pendingValidation;
+        }
+        if (command === "get_shell_info")
+          return Promise.resolve("shell-persisted-1");
+        return fallbackInvoke?.(command, args);
+      });
+      let model: WebTerminalMgr | null = null;
+      const Harness = () => {
+        model = useWebTerminal(persistedSession);
+        return <div ref={model.containerRef} />;
+      };
 
-    const view = render(<Harness />);
+      const view = render(<Harness />);
 
-    expect((model as WebTerminalMgr | null)?.status).toBe("connected");
-    await waitFor(() =>
+      expect((model as WebTerminalMgr | null)?.status).toBe("connected");
+      await act(async () => started);
       expect(mocks.invoke).toHaveBeenCalledWith("is_session_alive", {
         sessionId: "backend-persisted-1",
-      }),
-    );
-    expect((model as WebTerminalMgr | null)?.status).toBe("connected");
-    expect(hasSessionLifecycleActorAttempt(persistedSession.id)).toBe(true);
+      });
+      expect(reservedAtValidation).toBe(true);
+      expect((model as WebTerminalMgr | null)?.status).toBe("connected");
+      expect(hasSessionLifecycleActorAttempt(persistedSession.id)).toBe(true);
 
-    view.unmount();
-    await waitFor(() =>
-      expect(hasSessionLifecycleActorAttempt(persistedSession.id)).toBe(false),
-    );
-  });
+      if (outcome === "unmounted") view.unmount();
+      await act(async () => finishValidation(true));
+      await waitFor(() =>
+        expect(hasSessionLifecycleActorAttempt(persistedSession.id)).toBe(
+          false,
+        ),
+      );
+      if (outcome === "completed") {
+        expect((model as WebTerminalMgr | null)?.status).toBe("connected");
+        expect(mocks.invoke).toHaveBeenCalledWith("get_shell_info", {
+          sessionId: "backend-persisted-1",
+        });
+        view.unmount();
+      } else {
+        expect(mocks.invoke).not.toHaveBeenCalledWith(
+          "get_shell_info",
+          expect.anything(),
+        );
+      }
+    },
+  );
 
   it("unmounts a live persisted viewer without disconnecting its actor and remounts from replay", async () => {
     const backendActors = new Set(["backend-persisted-1"]);

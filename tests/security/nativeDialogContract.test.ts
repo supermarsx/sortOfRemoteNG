@@ -1,17 +1,27 @@
 import { readFileSync } from "node:fs";
+import { createElement } from "react";
+import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { invoke, isTauri } from "@tauri-apps/api/core";
 // Bypass the application's test alias: exercise the installed public package.
 import { confirm as pluginConfirm } from "../../node_modules/@tauri-apps/plugin-dialog/dist-js/index.js";
 import { openTerminalLink } from "../../src/utils/ssh/terminalLinks";
+import { PromptHost } from "../../src/components/ui/dialogs/PromptHost";
+import { resetPromptQueueForTests } from "../../src/utils/prompts/promptQueue";
+import { trustedClick } from "../helpers/trustedClick";
 
 vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn(), isTauri: vi.fn() }));
 beforeEach(() => {
   vi.clearAllMocks();
+  resetPromptQueueForTests();
   vi.mocked(isTauri).mockReturnValue(true);
   vi.mocked(invoke).mockResolvedValue(undefined);
 });
-afterEach(() => vi.restoreAllMocks());
+afterEach(() => {
+  cleanup();
+  resetPromptQueueForTests();
+  vi.restoreAllMocks();
+});
 
 describe("native dialog compatibility boundary", () => {
   it("registers the adapter globally without changing the dialog plugin identity or bypassing native commands", () => {
@@ -43,17 +53,36 @@ describe("native dialog compatibility boundary", () => {
   });
 
   it.each([false, true])(
-    "keeps a real synchronous application guard gated by browser choice %s",
+    "gates terminal links through the actual themed application dialog for choice %s",
     async (choice) => {
       const confirm = vi.spyOn(window, "confirm").mockReturnValue(choice);
-      await openTerminalLink(
-        "https://dialog-fixture.invalid/",
-        "osc8",
-        () => true,
-        vi.fn(),
+      render(createElement(PromptHost));
+      let pending!: Promise<void>;
+      act(() => {
+        pending = openTerminalLink(
+          "https://dialog-fixture.invalid/",
+          "osc8",
+          () => true,
+          vi.fn(),
+        );
+      });
+      expect(
+        screen.getByRole("dialog", {
+          name: "Open this terminal link in your browser?",
+        }),
+      ).toBeVisible();
+      expect(screen.getByText("https://dialog-fixture.invalid/")).toBeVisible();
+      await waitFor(() =>
+        expect(screen.getByRole("button", { name: "Cancel" })).toHaveFocus(),
       );
-      expect(confirm).toHaveBeenCalledOnce();
-      expect(confirm.mock.results[0].value).toBe(choice);
+      expect(invoke).not.toHaveBeenCalled();
+      const now = performance.now();
+      vi.spyOn(performance, "now").mockReturnValue(now + 500);
+      trustedClick(
+        screen.getByRole("button", { name: choice ? "Open link" : "Cancel" }),
+      );
+      await pending;
+      expect(confirm).not.toHaveBeenCalled();
       if (choice)
         expect(invoke).toHaveBeenCalledWith("open_url_external", {
           url: "https://dialog-fixture.invalid/",
