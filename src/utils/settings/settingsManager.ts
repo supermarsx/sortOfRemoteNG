@@ -1,4 +1,8 @@
 import {
+  emit as emitTauriEvent,
+  listen as listenTauriEvent,
+} from "@tauri-apps/api/event";
+import {
   GlobalSettings,
   ToolDisplayModes,
   ActionLogEntry,
@@ -64,8 +68,18 @@ let _windowLabel: string | null = null;
 async function getWindowLabel(): Promise<string> {
   if (_windowLabel) return _windowLabel;
   try {
-    const { getCurrentWindow } = await import("@tauri-apps/api/window");
-    _windowLabel = getCurrentWindow().label;
+    // Same injected metadata read as Tauri's getCurrentWindow().label, without
+    // importing its window/DPI graph from a long-lived HMR callback. Merely
+    // reading this label never opens a window or invokes the native runtime.
+    const label = (
+      window as unknown as {
+        __TAURI_INTERNALS__?: {
+          metadata?: { currentWindow?: { label?: unknown } };
+        };
+      }
+    ).__TAURI_INTERNALS__?.metadata?.currentWindow?.label;
+    _windowLabel =
+      typeof label === "string" && label.length > 0 ? label : "main";
   } catch {
     _windowLabel = "main";
   }
@@ -240,12 +254,10 @@ export class SettingsSyncRevisionTracker {
 const defaultSettingsSyncRuntime: SettingsSyncRuntime = {
   getSource: getWindowLabel,
   async emit(payload) {
-    const { emit } = await import("@tauri-apps/api/event");
-    await emit(SETTINGS_SYNC_EVENT, payload);
+    await emitTauriEvent(SETTINGS_SYNC_EVENT, payload);
   },
   async listen(handler) {
-    const { listen } = await import("@tauri-apps/api/event");
-    return listen<unknown>(SETTINGS_SYNC_EVENT, (event) => {
+    return listenTauriEvent<unknown>(SETTINGS_SYNC_EVENT, (event) => {
       void handler(event.payload).catch((error) => {
         console.error("Failed to apply synchronized settings:", error);
       });

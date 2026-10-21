@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { renderHook, act } from "@testing-library/react";
+import { renderHook, act, waitFor } from "@testing-library/react";
 import React from "react";
 
 // Undo the global useSettings mock from vitest.setup — this test exercises the real module.
@@ -316,11 +316,11 @@ describe("SettingsContext", () => {
 
   it("cleans up the cross-window listener", async () => {
     const view = renderHook(() => useSettings(), { wrapper });
-    await vi.waitFor(() => expect(eventMocks.listener).toBeTypeOf("function"));
+    await waitFor(() => expect(eventMocks.listener).toBeTypeOf("function"));
 
     view.unmount();
 
-    expect(eventMocks.unlisten).toHaveBeenCalledOnce();
+    await waitFor(() => expect(eventMocks.unlisten).toHaveBeenCalledOnce());
   });
 
   it("throws when used without provider", () => {

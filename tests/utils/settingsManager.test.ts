@@ -651,3 +651,24 @@ describe("SettingsManager.benchmarkKeyDerivation", () => {
     nowSpy.mockRestore();
   });
 });
+
+describe("runtime window label metadata", () => {
+  it.each([
+    { label: "detached-session-7", expected: "detached-session-7" },
+    { label: undefined, expected: "main" },
+    { label: "", expected: "main" },
+    { label: 42, expected: "main" },
+  ])(
+    "retains the actual injected label or uses the normal-browser fallback ($label)",
+    async ({ label, expected }) => {
+      Object.defineProperty(window, "__TAURI_INTERNALS__", {
+        configurable: true,
+        value: { metadata: { currentWindow: { label } } },
+      });
+      vi.resetModules();
+      const { SettingsManager: FreshManager } =
+        await import("../../src/utils/settings/settingsManager");
+      expect(await FreshManager.getInstance().getWindowLabel()).toBe(expected);
+    },
+  );
+});
