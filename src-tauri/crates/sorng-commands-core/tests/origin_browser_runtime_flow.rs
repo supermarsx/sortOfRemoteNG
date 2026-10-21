@@ -415,10 +415,13 @@ fn startup_dispatch_captures_before_spawn_and_async_runtime_never_recaptures() {
         .find("capture_startup_document(window.label())")
         .unwrap();
     let spawns: Vec<_> = dispatch
-        .match_indices("resolver.respond_async(async move")
+        .match_indices(
+            "resolver.respond_async(crate::origin_browser_startup_task::task(move || async move",
+        )
         .collect();
     assert_eq!(spawns.len(), 2);
     assert!(spawns.iter().all(|(position, _)| *position > capture));
+    assert!(!dispatch.contains("resolver.respond_async(async move"));
     assert!(dispatch.contains("WebviewWindow::from_command(CommandItem"));
     assert!(dispatch.contains("<$ty>::from_command(CommandItem"));
     assert_eq!(dispatch.matches("acl: &acl").count(), 4);
