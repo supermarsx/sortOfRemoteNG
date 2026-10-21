@@ -128,7 +128,7 @@ const evidenceNote = () => screen.queryByTestId("login-steps-evidence");
 afterEach(cleanup);
 
 describe("steps-based logins in the connection editor", () => {
-  it("shows the unverified-layout note for a class B application before automatic login is chosen", () => {
+  it("offers automatic login without internal research notes", () => {
     render(<Fixture />);
     choose("Website application", "Zulip (organization / self-hosted)");
     expect(value().httpApplication).toEqual({
@@ -136,16 +136,13 @@ describe("steps-based logins in the connection editor", () => {
       id: "zulip",
       loginMode: "manual",
     });
-    // Still manual: the note is there to be read before opting in.
     expect(screen.getByLabelText("Application login mode")).toHaveTextContent(
       manualLabel,
     );
-    const note = evidenceNote()!;
-    expect(note).toHaveAttribute("role", "note");
-    expect(note).toHaveTextContent(
-      "Unverified layout. The login steps for Zulip (organization / self-hosted) are an informed guess from public material, recorded on 2026-10-12; nobody has confirmed them with a real sign-in. If the page differs, nothing is typed and you sign in by hand.",
-    );
-    expect(note.textContent).not.toMatch(/\breviewed\b|\bverified\b/i);
+    expect(evidenceNote()).not.toBeInTheDocument();
+    expect(
+      screen.queryByText(/informed guess|cited source|2026-10-12/i),
+    ).not.toBeInTheDocument();
     expect(modes()).toEqual([manualLabel, formLabel]);
     choose("Application login mode", formLabel);
     expect(value().httpApplication).toEqual({
@@ -153,7 +150,7 @@ describe("steps-based logins in the connection editor", () => {
       id: "zulip",
       loginMode: "form",
     });
-    expect(evidenceNote()).toHaveTextContent("Unverified layout.");
+    expect(evidenceNote()).not.toBeInTheDocument();
     expect(screen.getByLabelText("Website username")).toHaveValue(
       "fixture-user",
     );
@@ -171,14 +168,13 @@ describe("steps-based logins in the connection editor", () => {
     });
   });
 
-  it("says a class A layout was taken from a cited source, without the unverified note", () => {
+  it("offers a reviewed preset without exposing its research metadata", () => {
     render(<Fixture />);
     choose("Website application", "Uptime Kuma (self-hosted)");
-    const note = evidenceNote()!;
-    expect(note).toHaveTextContent(
-      "Reviewed layout. Every control in the login steps for Uptime Kuma (self-hosted) was taken from a cited source, reviewed on 2026-10-12. If the page differs, nothing is typed and you sign in by hand.",
-    );
-    expect(note).not.toHaveTextContent(/unverified|guess/i);
+    expect(evidenceNote()).not.toBeInTheDocument();
+    expect(
+      screen.queryByText(/reviewed layout|cited source|2026-10-12/i),
+    ).not.toBeInTheDocument();
     expect(modes()).toEqual([manualLabel, formLabel]);
   });
 
@@ -203,9 +199,7 @@ describe("steps-based logins in the connection editor", () => {
         "Optional generic login-form detection; no application-specific browser sign-in has been verified.",
       ),
     ).toBeInTheDocument();
-    expect(evidenceNote()).toHaveTextContent(
-      "Unverified layout. The login steps for Dell iDRAC are an informed guess from public material, recorded on 2026-10-12; nobody has confirmed them with a real sign-in. They only add to what Dell iDRAC already does: where they find nothing to act on, generic form detection signs in as before.",
-    );
+    expect(evidenceNote()).not.toBeInTheDocument();
     expect(modes()).toHaveLength(4);
     choose("Application login mode", formLabel);
     expect(

@@ -41,12 +41,15 @@ The application's steps live elsewhere, in `src/data/loginSteps/<family>/<id>.js
 | Class | Meaning                                                                                                                                    | Result                                                 |
 | ----- | ------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------ |
 | **A** | Every selector was **observed** in an **authoritative** source.                                                                            | Reviewed login.                                        |
-| **B** | At least one selector is inferred, or comes from an anonymous capture or secondary material. An informed guess until the user confirms it. | Selectable, shown with an "unverified layout" note.    |
+| **B** | At least one selector is inferred, or comes from an anonymous capture or secondary material. An informed guess until the user confirms it. | Selectable; evidence stays in the engineering corpus.  |
 | **C** | Nothing to build from: no saved-password form as far as the evidence shows, or the page cannot be reached anonymously.                     | Evidence only: no selectors, no fixture, no steps file |
 
 Class is decided by the evidence, not chosen. The check refuses class A when any selector is
 `inferred`, cites a source that is not authoritative, or when a fixture is derived from one.
 Labelling something B that could be A is allowed; the check prints a note.
+
+Evidence classes, source citations and review dates are engineering metadata. The connection
+editor shows login settings and operating guidance without displaying research-history notices.
 
 ### What counts as a source
 

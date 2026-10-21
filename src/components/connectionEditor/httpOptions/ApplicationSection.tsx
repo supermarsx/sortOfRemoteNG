@@ -33,7 +33,6 @@ import AmazonMarketplaceFields from "./AmazonMarketplaceFields";
 import { resolveHttpApplicationEmail } from "../../../utils/auth/httpApplicationLogin";
 import HttpCredentialWarning from "../../security/HttpCredentialWarning";
 import { DECLARATIVE_LOGIN_SUPPORTED } from "../../../utils/connection/declarativeLoginSupport";
-import { isUnverifiedHttpLoginSteps } from "../../../utils/connection/httpLoginSteps";
 
 const MODE_LABELS = {
   manual: "Manual browsing — no saved credentials sent",
@@ -635,33 +634,6 @@ export default function ApplicationSection({
                     disabled={settings?.invalid}
                     variant="form"
                   />
-                  {declarativeLogin && (
-                    <p
-                      role="note"
-                      data-testid="login-steps-evidence"
-                      className="mt-2 text-xs text-[var(--color-textSecondary)]"
-                    >
-                      {isUnverifiedHttpLoginSteps(declarativeLogin) ? (
-                        <>
-                          <strong>Unverified layout.</strong> The login steps
-                          for {profile.label} are an informed guess from public
-                          material, recorded on{" "}
-                          {declarativeLogin.evidence.reviewed}; nobody has
-                          confirmed them with a real sign-in.
-                        </>
-                      ) : (
-                        <>
-                          <strong>Reviewed layout.</strong> Every control in the
-                          login steps for {profile.label} was taken from a cited
-                          source, reviewed on{" "}
-                          {declarativeLogin.evidence.reviewed}.
-                        </>
-                      )}{" "}
-                      {additiveSteps
-                        ? `They only add to what ${profile.label} already does: where they find nothing to act on, generic form detection signs in as before.`
-                        : "If the page differs, nothing is typed and you sign in by hand."}
-                    </p>
-                  )}
                   {stepsEntryPage && (
                     <p
                       data-testid="login-steps-entry"
