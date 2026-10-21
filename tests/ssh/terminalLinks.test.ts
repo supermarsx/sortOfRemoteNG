@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { invoke, isTauri } from "@tauri-apps/api/core";
+import { requestPrompt } from "../../src/utils/prompts/promptQueue";
 import {
   canOpenTerminalLink,
   normalizeTerminalLink,
@@ -9,6 +10,9 @@ import {
 vi.mock("@tauri-apps/api/core", () => ({
   invoke: vi.fn(),
   isTauri: vi.fn(),
+}));
+vi.mock("../../src/utils/prompts/promptQueue", () => ({
+  requestPrompt: vi.fn(),
 }));
 
 describe("terminal link security", () => {
@@ -21,6 +25,10 @@ describe("terminal link security", () => {
     enabled = false;
     vi.mocked(isTauri).mockReturnValue(true);
     vi.mocked(invoke).mockResolvedValue(undefined);
+    vi.mocked(requestPrompt).mockResolvedValue({
+      confirmed: true,
+      remember: false,
+    });
     vi.spyOn(window, "open").mockReturnValue(null);
     vi.spyOn(window, "confirm").mockReturnValue(true);
   });
@@ -87,18 +95,31 @@ describe("terminal link security", () => {
 
   it("confirms the actual OSC8 destination and respects cancellation", async () => {
     enabled = true;
-    vi.mocked(window.confirm).mockReturnValue(false);
+    vi.mocked(requestPrompt).mockResolvedValue({
+      confirmed: false,
+      remember: false,
+    });
     await openTerminalLink(
       "https://destination.test/path",
       "osc8",
       allowed,
       onError,
     );
-    expect(window.confirm).toHaveBeenCalledWith(
-      expect.stringContaining("https://destination.test/path"),
+    expect(requestPrompt).toHaveBeenCalledWith(
+      expect.objectContaining({
+        defaultAction: "cancel",
+        preview: {
+          label: "Destination",
+          text: "https://destination.test/path",
+        },
+      }),
+      { signal: undefined },
     );
     expect(invoke).not.toHaveBeenCalled();
-    vi.mocked(window.confirm).mockReturnValue(true);
+    vi.mocked(requestPrompt).mockResolvedValue({
+      confirmed: true,
+      remember: false,
+    });
     await openTerminalLink(
       "https://destination.test/path",
       "osc8",
@@ -112,9 +133,9 @@ describe("terminal link security", () => {
 
   it("rechecks the current opt-in after destination confirmation", async () => {
     enabled = true;
-    vi.mocked(window.confirm).mockImplementation(() => {
+    vi.mocked(requestPrompt).mockImplementation(async () => {
       enabled = false;
-      return true;
+      return { confirmed: true, remember: false };
     });
     await openTerminalLink("https://example.test/", "osc8", allowed, onError);
     expect(invoke).not.toHaveBeenCalled();
@@ -161,7 +182,39 @@ describe("terminal link security", () => {
       () => canOpenTerminalLink("telnet", false),
       onError,
     );
-    expect(window.confirm).toHaveBeenCalledOnce();
+    expect(requestPrompt).toHaveBeenCalledOnce();
+    expect(window.confirm).not.toHaveBeenCalled();
     expect(invoke).toHaveBeenCalledOnce();
+  });
+
+  it("fails closed without a prompt host and never uses a native dialog", async () => {
+    enabled = true;
+    vi.mocked(requestPrompt).mockRejectedValue(new Error("host unavailable"));
+    await openTerminalLink("https://example.test/", "osc8", allowed, onError);
+    expect(invoke).not.toHaveBeenCalled();
+    expect(window.open).not.toHaveBeenCalled();
+    expect(window.confirm).not.toHaveBeenCalled();
+    expect(onError).toHaveBeenCalledWith(
+      "Unable to open the terminal link in your browser.",
+    );
+  });
+
+  it("does not open after its owner aborts while confirmation is pending", async () => {
+    enabled = true;
+    const controller = new AbortController();
+    vi.mocked(requestPrompt).mockImplementation(async () => {
+      controller.abort();
+      return { confirmed: true, remember: false };
+    });
+    await openTerminalLink(
+      "https://example.test/",
+      "osc8",
+      allowed,
+      onError,
+      controller.signal,
+    );
+    expect(invoke).not.toHaveBeenCalled();
+    expect(window.open).not.toHaveBeenCalled();
+    expect(onError).not.toHaveBeenCalled();
   });
 });

@@ -1,4 +1,5 @@
 import { invoke, isTauri } from "@tauri-apps/api/core";
+import { requestPrompt } from "../prompts/promptQueue";
 
 /** Global SSH policy only; other terminal protocols retain their link behavior. */
 export function canOpenTerminalLink(
@@ -38,24 +39,30 @@ export async function openTerminalLink(
   source: "detected" | "osc8",
   canOpen: () => boolean,
   onError: (message: string) => void,
+  signal?: AbortSignal,
 ): Promise<void> {
-  if (!canOpen()) return;
+  if (signal?.aborted || !canOpen()) return;
   const url = normalizeTerminalLink(value);
   if (!url) return;
 
-  // OSC8 visible text can conceal a completely different destination. Preserve
-  // xterm's confirmation, showing the validated actual URL instead of its label.
-  if (
-    source === "osc8" &&
-    !window.confirm(
-      `Open this terminal link in your browser?\n\n${url}\n\nThe displayed terminal text may disguise the destination. Only continue if you trust this URL.`,
-    )
-  ) {
-    return;
-  }
-  if (!canOpen()) return;
-
   try {
+    // OSC8 labels can conceal another destination. Use the window's themed
+    // prompt, displaying the actual validated URL and failing closed if absent.
+    if (source === "osc8") {
+      const decision = await requestPrompt(
+        {
+          title: "Open this terminal link in your browser?",
+          message:
+            "The displayed terminal text may disguise the destination. Only continue if you trust this URL.",
+          confirmLabel: "Open link",
+          defaultAction: "cancel",
+          preview: { label: "Destination", text: url },
+        },
+        { signal },
+      );
+      if (!decision.confirmed) return;
+    }
+    if (signal?.aborted || !canOpen()) return;
     if (isTauri()) {
       // A rejected native opener must never fall through to a browser opener.
       await invoke("open_url_external", { url });
@@ -63,6 +70,7 @@ export async function openTerminalLink(
       window.open(url, "_blank", "noopener,noreferrer");
     }
   } catch {
+    if (signal?.aborted || !canOpen()) return;
     // Native errors can contain the destination; do not expose URL secrets.
     onError("Unable to open the terminal link in your browser.");
   }

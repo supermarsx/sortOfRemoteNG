@@ -729,7 +729,7 @@ describe("useWebTerminal SSH link security", () => {
         { start: { x: 1, y: 1 }, end: { x: 4, y: 1 } },
       );
     };
-    activate();
+    await act(async () => activate());
     expect(mocks.invoke).not.toHaveBeenCalledWith(
       "open_url_external",
       expect.anything(),
@@ -750,9 +750,16 @@ describe("useWebTerminal SSH link security", () => {
     expect(mocks.invoke).toHaveBeenCalledWith("open_url_external", {
       url: "https://example.test/",
     });
-    expect(mocks.nativeConfirm).toHaveBeenCalledWith(
-      expect.stringContaining("https://actual-destination.test/"),
+    expect(mocks.requestPrompt).toHaveBeenCalledWith(
+      expect.objectContaining({
+        preview: {
+          label: "Destination",
+          text: "https://actual-destination.test/",
+        },
+      }),
+      expect.objectContaining({ signal: expect.any(AbortSignal) }),
     );
+    expect(mocks.nativeConfirm).not.toHaveBeenCalled();
 
     mocks.settingsContext.settings = { allowSshExternalLinks: false };
     view.rerender(<Harness />);
@@ -767,6 +774,60 @@ describe("useWebTerminal SSH link security", () => {
     expect(mocks.MockTerminal.instances).toEqual([terminal]);
     view.unmount();
   });
+
+  it.each(["unmount", "actor replacement"] as const)(
+    "does not open an approved OSC8 link after %s and suppresses duplicate prompts",
+    async (change) => {
+      mocks.nativeLinks = true;
+      mocks.settingsContext.settings = { allowSshExternalLinks: true };
+      SettingsManager.getInstance().applyInMemory({
+        allowSshExternalLinks: true,
+      });
+      let target = { ...session };
+      const Harness = () => {
+        const model = useWebTerminal(target);
+        return <div ref={model.containerRef} />;
+      };
+      const view = render(<Harness />);
+      let approve!: (decision: {
+        confirmed: boolean;
+        remember: boolean;
+      }) => void;
+      mocks.requestPrompt.mockImplementation(
+        () =>
+          new Promise((resolve) => {
+            approve = resolve;
+          }),
+      );
+      const osc8 = mocks.MockTerminal.instances[0].options
+        .linkHandler as ILinkHandler;
+      const activate = () =>
+        osc8.activate(new MouseEvent("click"), "https://actual.test/", {
+          start: { x: 1, y: 1 },
+          end: { x: 4, y: 1 },
+        });
+      activate();
+      activate();
+      expect(mocks.requestPrompt).toHaveBeenCalledOnce();
+      const signal = mocks.requestPrompt.mock.calls[0][1]!.signal!;
+      if (change === "unmount") view.unmount();
+      else {
+        target = {
+          ...target,
+          lifecycleActorGeneration: (target.lifecycleActorGeneration ?? 0) + 1,
+        };
+        view.rerender(<Harness />);
+      }
+      await act(async () => approve({ confirmed: true, remember: false }));
+      if (change === "unmount") expect(signal.aborted).toBe(true);
+      expect(mocks.invoke).not.toHaveBeenCalledWith(
+        "open_url_external",
+        expect.anything(),
+      );
+      expect(mocks.nativeConfirm).not.toHaveBeenCalled();
+      if (change !== "unmount") view.unmount();
+    },
+  );
 
   it("surfaces native link failures through the existing toast without leaking destinations", async () => {
     mocks.nativeLinks = true;
@@ -866,7 +927,7 @@ describe("useWebTerminal SSH link security", () => {
     view.unmount();
   });
 
-  it("rechecks the live manager after OSC8 confirmation and at global lock", () => {
+  it("rechecks the live manager after OSC8 confirmation and at global lock", async () => {
     mocks.nativeLinks = true;
     mocks.settingsContext.settings = { allowSshExternalLinks: true };
     const manager = SettingsManager.getInstance();
@@ -883,12 +944,13 @@ describe("useWebTerminal SSH link security", () => {
         start: { x: 1, y: 1 },
         end: { x: 4, y: 1 },
       });
-    mocks.nativeConfirm.mockImplementation(() => {
+    mocks.requestPrompt.mockImplementation(async () => {
       manager.applyInMemory({ allowSshExternalLinks: false });
-      return true;
+      return { confirmed: true, remember: false };
     });
     activate();
-    expect(mocks.nativeConfirm).toHaveBeenCalledOnce();
+    await waitFor(() => expect(mocks.requestPrompt).toHaveBeenCalledOnce());
+    expect(mocks.nativeConfirm).not.toHaveBeenCalled();
     expect(mocks.invoke).not.toHaveBeenCalledWith(
       "open_url_external",
       expect.anything(),

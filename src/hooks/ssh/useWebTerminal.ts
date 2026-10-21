@@ -3318,11 +3318,28 @@ export function useWebTerminal(
       ? { cols: sshTerminalConfig.columns, rows: sshTerminalConfig.rows }
       : {};
 
+    const linkPromptAbort = new AbortController();
+    let linkPromptPending = false;
     const activateLink = (uri: string, source: "detected" | "osc8") => {
+      if (source === "osc8" && linkPromptPending) return;
+      const actor = sessionRef.current;
+      const backendId = sshSessionId.current;
+      if (source === "osc8") linkPromptPending = true;
       void openTerminalLink(
         uri,
         source,
         () => {
+          const current = sessionRef.current;
+          if (
+            linkPromptAbort.signal.aborted ||
+            current.id !== actor.id ||
+            current.ownerDatabaseId !== actor.ownerDatabaseId ||
+            current.lifecycleActorGeneration !==
+              actor.lifecycleActorGeneration ||
+            current.lifecycleWriterId !== actor.lifecycleWriterId ||
+            sshSessionId.current !== backendId
+          )
+            return false;
           const protocol = sessionRef.current.protocol;
           return (
             canOpenTerminalLink(
@@ -3337,7 +3354,10 @@ export function useWebTerminal(
           );
         },
         (message) => toastRef.current.error(message, 3000),
-      );
+        linkPromptAbort.signal,
+      ).finally(() => {
+        if (source === "osc8") linkPromptPending = false;
+      });
     };
     const term = new Terminal({
       theme: getTerminalTheme(),
@@ -3931,6 +3951,7 @@ export function useWebTerminal(
     const sshAttemptWatchdogTimers = sshAttemptWatchdogTimersRef.current;
 
     return () => {
+      linkPromptAbort.abort();
       // Supersede in-flight connection attempts. Their own continuation owns
       // cleanup of attempt-local SSH and VPN resources.
       // eslint-disable-next-line react-hooks/exhaustive-deps, react/exhaustive-deps -- intentionally invalidate the latest shared generation
