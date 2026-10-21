@@ -1,6 +1,64 @@
+export const originBrowserSshConnectFailures = {
+  "ssh-route-connect-dns": [
+    "SSH route hostname resolution",
+    "The SSH endpoint hostname could not be resolved.",
+    "Review the saved SSH source hostname and its DNS/network configuration, then retry.",
+    "network",
+  ],
+  "ssh-route-connect-transport": [
+    "SSH route TCP connection",
+    "The TCP connection to the SSH endpoint failed.",
+    "Review the saved SSH source host, port, firewall and network route. Confirm the endpoint is reachable, then retry.",
+    "network",
+  ],
+  "ssh-route-connect-handshake": [
+    "SSH route handshake",
+    "The SSH protocol handshake failed.",
+    "Review the saved SSH source's protocol, port and algorithm settings, and the SSH server logs, then retry.",
+    "network",
+  ],
+  "ssh-route-connect-host-key": [
+    "SSH route host-key verification",
+    "SSH host-key verification or trust-store access failed.",
+    "Review the SSH host key and known-hosts path. Verify any changed fingerprint before approval, correct unreadable or unwritable trust storage, then retry with host-key checks enabled.",
+    "trust",
+  ],
+  "ssh-route-connect-authentication": [
+    "SSH route authentication",
+    "The SSH server did not accept the configured authentication.",
+    "Review the saved SSH source username, password or private key, and any selected vault entry. Confirm that the same saved SSH source connects normally, then retry.",
+    "credentials",
+  ],
+  "ssh-route-connect-timeout": [
+    "SSH route connection deadline",
+    "SSH connection setup timed out. The backend did not identify the stage that exceeded the deadline.",
+    "Check SSH endpoint availability, the configured route and any pending host-key confirmation, then retry.",
+    "network",
+  ],
+  "ssh-route-connect-capacity": [
+    "SSH route connection capacity",
+    "The SSH connection or handshake capacity limit was reached.",
+    "Close unused SSH sessions or wait for pending connections to finish, then retry. Review connection limits if the problem persists.",
+    "network",
+  ],
+  "ssh-route-connect-cancelled": [
+    "SSH route connection cancellation",
+    "The SSH connection attempt was cancelled before completion.",
+    "Confirm the owning database and saved SSH source are still available, then reopen the website when ready.",
+    "network",
+  ],
+  "ssh-route-connect-unknown": [
+    "SSH route connection",
+    "SSH setup failed with a cause that this diagnostic version could not classify.",
+    "Review the application SSH logs and confirm the same saved SSH source can connect normally, then retry.",
+    "network",
+  ],
+} as const;
+
 export type OriginBrowserStartupStage =
   "listen" | "status" | "owner-check" | "create" | "resync";
 export type OriginBrowserKnownStartupFailureCode =
+  | keyof typeof originBrowserSshConnectFailures
   | "working-data"
   | "runtime-package"
   | "runtime-timeout"
@@ -76,7 +134,10 @@ const nativeLegacyMfaOriginFailure =
 
 // Expand only fixed native stages into exact messages. Never parse a received
 // prefix/suffix or retain arbitrary SSH errors, hostnames or credentials.
-const sshRouteFailures = new Map(
+const sshRouteFailures = new Map<
+  string,
+  { code: OriginBrowserKnownStartupFailureCode; message: string }
+>(
   (["service", "connect", "forward", "owner"] as const).map((stage) => [
     `Saved browser SSH route is unavailable (${stage}); review its saved SSH connection and tunnel settings; no direct fallback`,
     {
@@ -85,6 +146,19 @@ const sshRouteFailures = new Map(
     },
   ]),
 );
+
+for (const [code, [, problem, nextStep]] of Object.entries(
+  originBrowserSshConnectFailures,
+)) {
+  const stage = code.slice("ssh-route-".length);
+  sshRouteFailures.set(
+    `Saved browser SSH route is unavailable (${stage}); review its saved SSH connection and tunnel settings; no direct fallback`,
+    {
+      code: code as OriginBrowserKnownStartupFailureCode,
+      message: `${problem} ${nextStep}`,
+    },
+  );
+}
 
 // Every native policy message is assembled from these fixed literals. Never
 // split a received message into a scope/rule, interpolate saved values, or use

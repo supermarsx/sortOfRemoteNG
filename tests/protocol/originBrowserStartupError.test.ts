@@ -76,6 +76,32 @@ describe("native browser per-view startup diagnostics", () => {
       }
     },
   );
+  it.each([
+    "dns",
+    "transport",
+    "handshake",
+    "host-key",
+    "authentication",
+    "timeout",
+    "capacity",
+    "cancelled",
+    "unknown",
+  ])(
+    "preserves the fixed SSH connection %s cause only at browser creation",
+    (reason) => {
+      const native = `Saved browser SSH route is unavailable (connect-${reason}); review its saved SSH connection and tunnel settings; no direct fallback`;
+      expect(originBrowserStartupError("create", native)).toMatchObject({
+        category: "connection",
+        code: `ssh-route-connect-${reason}`,
+      });
+      for (const received of [`${native}: SECRET`, `SECRET ${native}`]) {
+        const failure = originBrowserStartupError("create", received);
+        expect(failure.code).toBeUndefined();
+        expect(failure.message).not.toContain("SECRET");
+      }
+      expect(originBrowserStartupError("resync", native).code).toBeUndefined();
+    },
+  );
   it("does not accept an unknown SSH stage as a diagnostic or expose its value", () => {
     const result = originBrowserStartupError(
       "create",

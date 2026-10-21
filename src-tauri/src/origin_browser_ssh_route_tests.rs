@@ -1,6 +1,69 @@
 use super::*;
 use serde_json::json;
 
+#[test]
+fn ssh_connect_failures_preserve_only_known_fixed_reason_codes() {
+    for (error, expected) in [
+        ("Failed to resolve SSH establishment endpoint", "connect-dns"),
+        ("SSH establishment resolver returned no addresses", "connect-dns"),
+        ("Failed to connect to SSH establishment endpoint: private-detail", "connect-transport"),
+        ("SSH handshake failed: private-detail", "connect-handshake"),
+        ("Host key verification failed for private-host: key rejected by user", "connect-host-key"),
+        ("Host key verification timed out for private-host after waiting for user confirmation", "connect-host-key"),
+        ("Failed to write known_hosts file: private-path", "connect-host-key"),
+        ("No event emitter configured for host-key verification", "connect-host-key"),
+        ("SSH_TRUST_UNAVAILABLE[private-detail]: private-host", "connect-host-key"),
+        ("All authentication methods failed", "connect-authentication"),
+        ("SSH_CONNECTION_TIMEOUT: SSH establishment phase 'overall' exceeded its 30000 ms deadline", "connect-timeout"),
+        ("SSH_SESSION_CAPACITY: private-detail", "connect-capacity"),
+        ("SSH_HANDSHAKE_CAPACITY: private-detail", "connect-capacity"),
+        ("SSH_CONFIG_CAPACITY: private-detail", "connect-capacity"),
+        ("SSH connection cancelled", "connect-cancelled"),
+    ] {
+        let NativeAuthorityError::SshRouteUnavailable { stage } = connect_error(error) else {
+            panic!("expected fixed SSH route diagnostic");
+        };
+        assert_eq!(stage, expected);
+    }
+}
+
+#[test]
+fn ssh_connect_unknown_errors_and_private_details_are_never_reflected() {
+    for error in [
+        "private-account private-password private-host private-path",
+        "remote banner: All authentication methods failed",
+        "SSH_CONNECTION_TIMEOUT_LOOKALIKE: private-password",
+        "SSH_SESSION_CAPACITY_LOOKALIKE: private-password",
+        "SSH connection cancelled private-password",
+        "Failed to resolve SSH establishment endpoint private-password",
+        "\nSSH handshake failed: private-password",
+    ] {
+        let result = connect_error(error);
+        assert!(matches!(
+            result,
+            NativeAuthorityError::SshRouteUnavailable {
+                stage: "connect-unknown"
+            }
+        ));
+        let message = result.to_string();
+        assert!(!message.contains("private-"));
+        assert!(!message.contains(error));
+    }
+    for prefix in [
+        "SSH handshake failed:",
+        "Failed to connect to SSH establishment endpoint:",
+        "Failed to write known_hosts file:",
+    ] {
+        let message = connect_error(&format!(
+            "{prefix} private-password private-account private-host private-path\nforged-log-line"
+        ))
+        .to_string();
+        assert!(!message.contains("private-"));
+        assert!(!message.contains("forged-log-line"));
+        assert!(!message.contains('\n'));
+    }
+}
+
 fn target() -> Authority {
     Authority::parse("127.0.10.14:10000").unwrap()
 }

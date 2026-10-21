@@ -1,6 +1,7 @@
 import type { OriginBrowserState } from "./useOriginBrowser";
 import {
   originBrowserPolicyFailures,
+  originBrowserSshConnectFailures,
   type OriginBrowserKnownStartupFailureCode,
 } from "./originBrowserStartupError";
 import { originBrowserConfigurationDetails } from "./originBrowserConfiguration";
@@ -53,6 +54,7 @@ const startupDetails: Record<
   OriginBrowserKnownStartupFailureCode,
   Explanation
 > = {
+  ...originBrowserSshConnectFailures,
   "settings-unavailable": [
     "Saved application settings",
     "The native browser could not read saved application settings.",

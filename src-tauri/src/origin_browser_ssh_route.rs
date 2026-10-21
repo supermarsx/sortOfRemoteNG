@@ -11,6 +11,67 @@ fn unavailable(stage: &'static str) -> NativeAuthorityError {
     NativeAuthorityError::SshRouteUnavailable { stage }
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum ConnectFailure {
+    Dns,
+    Transport,
+    Handshake,
+    HostKey,
+    Authentication,
+    Timeout,
+    Capacity,
+    Cancelled,
+    Unknown,
+}
+
+impl ConnectFailure {
+    fn classify(error: &str) -> Self {
+        if error == "SSH connection cancelled" {
+            Self::Cancelled
+        } else if error.starts_with("SSH_CONNECTION_TIMEOUT:") {
+            Self::Timeout
+        } else if ["SSH_SESSION_CAPACITY:", "SSH_HANDSHAKE_CAPACITY:", "SSH_CONFIG_CAPACITY:"]
+            .iter().any(|prefix| error.starts_with(prefix)) {
+            Self::Capacity
+        } else if matches!(error, "Failed to resolve SSH establishment endpoint" | "SSH establishment resolver returned no addresses") {
+            Self::Dns
+        } else if error.starts_with("Failed to connect to SSH establishment endpoint:") {
+            Self::Transport
+        } else if error.starts_with("SSH handshake failed:") {
+            Self::Handshake
+        } else if error == "All authentication methods failed" {
+            Self::Authentication
+        } else if error == "No event emitter configured for host-key verification"
+            || error == "Host key verification failed: unable to determine the home directory for known_hosts"
+            || ["SSH_TRUST_UNAVAILABLE[", "Host key verification failed for ", "Host key verification timed out for ", "Failed to create known_hosts handle:", "Failed to lock host-key prompt map:", "Failed to serialize host-key prompt payload:", "Failed to enumerate known_hosts entries:", "Failed to replace existing known_hosts entry:", "Failed to add host key to known_hosts:", "Failed to create known_hosts directory:", "Failed to write known_hosts file:"]
+                .iter().any(|prefix| error.starts_with(prefix)) {
+            Self::HostKey
+        } else {
+            Self::Unknown
+        }
+    }
+
+    fn stage(self) -> &'static str {
+        match self {
+            Self::Dns => "connect-dns",
+            Self::Transport => "connect-transport",
+            Self::Handshake => "connect-handshake",
+            Self::HostKey => "connect-host-key",
+            Self::Authentication => "connect-authentication",
+            Self::Timeout => "connect-timeout",
+            Self::Capacity => "connect-capacity",
+            Self::Cancelled => "connect-cancelled",
+            Self::Unknown => "connect-unknown",
+        }
+    }
+}
+
+fn connect_error(error: &str) -> NativeAuthorityError {
+    let stage = ConnectFailure::classify(error).stage();
+    log::warn!(target: "native_browser::session", "Native browser SSH route failed: reason={stage}; review the saved SSH connection, authentication and host-key confirmation; no direct fallback");
+    unavailable(stage)
+}
+
 struct LocalSpec {
     ssh: Value,
     remote: Authority,
@@ -282,7 +343,7 @@ pub(super) async fn prepare<R: Runtime>(
         .map_err(|_| unavailable("owner"))?;
     let id = connect_ssh_on_state(&service, config)
         .await
-        .map_err(|_| unavailable("connect"))?;
+        .map_err(|error| connect_error(&error))?;
     // Installed before any later await, including the owner postflight.
     let actor = Actor::new(service, id, lease.clone());
     lease

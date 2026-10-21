@@ -47,6 +47,38 @@ const startup = (message: string) =>
 
 describe("fixed actionable native failure details", () => {
   it.each([
+    ["dns", "SSH route hostname resolution", "network"],
+    ["transport", "SSH route TCP connection", "network"],
+    ["handshake", "SSH route handshake", "network"],
+    ["host-key", "SSH route host-key verification", "trust"],
+    ["authentication", "SSH route authentication", "credentials"],
+    ["timeout", "SSH route connection deadline", "network"],
+    ["capacity", "SSH route connection capacity", "network"],
+    ["cancelled", "SSH route connection cancellation", "network"],
+    ["unknown", "SSH route connection", "network"],
+  ])(
+    "explains the classified SSH %s failure without inspecting raw errors",
+    (reason, field, action) => {
+      const [detail] = getOriginBrowserFailureDetails(
+        startup(
+          `Saved browser SSH route is unavailable (connect-${reason}); review its saved SSH connection and tunnel settings; no direct fallback`,
+        ),
+      );
+      expect(detail).toMatchObject({
+        code: `ssh-route-connect-${reason}`,
+        field,
+        action,
+      });
+      expect(JSON.stringify(detail)).not.toContain("SECRET");
+      if (reason === "host-key")
+        expect(detail.nextStep).toContain("host-key checks enabled");
+      if (reason === "authentication")
+        expect(detail.nextStep).toContain("saved SSH source");
+      if (reason === "timeout")
+        expect(detail.problem).toContain("did not identify the stage");
+    },
+  );
+  it.each([
     ["service", "SSH route service", "SSH service"],
     ["connect", "SSH route connection", "authentication and host-key trust"],
     ["forward", "SSH route forwarding", "forwarding mode"],
