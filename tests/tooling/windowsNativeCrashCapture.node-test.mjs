@@ -150,11 +150,13 @@ test("wrapper preserves target arguments, environment and working directory", as
     assert.match(script, /sxe -c .* -c2 .* sov/);
     assert.match(script, /\.lastevent/);
     assert.match(script, /sxi ibp/);
+    assert.ok(!script.includes("$><"));
+    assert.equal((script.match(/\$</g) ?? []).length, 3);
     const handler = await readFile(
       path.join(prepared.directory, "fatal.txt"),
       "utf8",
     );
-    assert.match(handler, /\.ecxr\n~\*kb/);
+    assert.match(handler, /\.ecxr\n~\*k\n/);
     assert.match(handler, /\.dump \/m /);
     assert.ok(!handler.includes("/ma"));
     assert.match(handler, /\nq\n$/);
@@ -163,6 +165,9 @@ test("wrapper preserves target arguments, environment and working directory", as
       "utf8",
     );
     assert.match(firstOverflow, /sxd -c "" -c2 .* sov/);
+    assert.ok(!firstOverflow.includes("$><"));
+    assert.match(firstOverflow, /-c2 "\$</);
+    assert.match(firstOverflow, /\.ecxr\n~\*k\n/);
     assert.match(firstOverflow, /\ngn\n$/);
   }));
 

@@ -130,22 +130,24 @@ export async function prepareWindowsNativeCrashCapture({
   const commandPath = path.join(directory, "commands.txt");
   // Keep nested command quoting out of the exception action: CDB reads a
   // separate script, and that script quotes the local minidump destination.
+  // Execute lines separately: condensed scripts can lose the command after
+  // a quoted dump path. Plain k also avoids a stray b on thread iteration.
   const escapedHandler = handlerPath.replaceAll("\\", "/");
   const escapedFirstOverflow = firstOverflowPath.replaceAll("\\", "/");
   await writeFile(
     handlerPath,
-    `.echo ${CRASH_MARKER}\n.exr -1\n.ecxr\n~*kb\n.dump /m "${dumpPath}"\nq\n`,
+    `.echo ${CRASH_MARKER}\n.exr -1\n.ecxr\n~*k\n.dump /m "${dumpPath}"\nq\n`,
   );
   // Save only the first observed overflow before Chromium's own exception
   // handler can consume it. Passing it through preserves target behavior;
   // recovery with main exit zero is not labelled a fatal crash.
   await writeFile(
     firstOverflowPath,
-    `.echo SORNG_NATIVE_FIRST_STACK_OVERFLOW_V1\n.exr -1\n.ecxr\n~*kb\n.dump /m "${firstOverflowDump}"\nsxd -c "" -c2 "$><${escapedHandler}" sov\ngn\n`,
+    `.echo SORNG_NATIVE_FIRST_STACK_OVERFLOW_V1\n.exr -1\n.ecxr\n~*k\n.dump /m "${firstOverflowDump}"\nsxd -c "" -c2 "$<${escapedHandler}" sov\ngn\n`,
   );
   await writeFile(
     commandPath,
-    `r @$t0 = @$tpid\n.printf "${MAIN_MARKER}%x\\n", @$tpid\nsxi ibp\nsxd -c2 "$><${escapedHandler}" av\nsxe -c "$><${escapedFirstOverflow}" -c2 "$><${escapedHandler}" sov\nsxe -c ".lastevent; .if (@$tpid == @$t0) {q} .else {g}" epr\ng\n`,
+    `r @$t0 = @$tpid\n.printf "${MAIN_MARKER}%x\\n", @$tpid\nsxi ibp\nsxd -c2 "$<${escapedHandler}" av\nsxe -c "$<${escapedFirstOverflow}" -c2 "$<${escapedHandler}" sov\nsxe -c ".lastevent; .if (@$tpid == @$t0) {q} .else {g}" epr\ng\n`,
   );
   return {
     command,
