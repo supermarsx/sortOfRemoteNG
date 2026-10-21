@@ -10111,6 +10111,7 @@ dependencies = [
  "cc",
  "cef",
  "cef-dll-sys",
+ "log",
  "raw-window-handle",
  "regex",
  "serde",

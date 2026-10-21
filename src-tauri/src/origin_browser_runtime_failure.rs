@@ -6,6 +6,36 @@ use sorng_browser_host::ipc::{
     OriginBrowserRuntimeFailureStage as Stage,
 };
 use std::sync::Mutex;
+use std::time::{SystemTime, UNIX_EPOCH};
+
+fn report_failure(failure: RuntimeFailure) {
+    // Only closed native enums enter this record. Never log while holding the
+    // store mutex: an application logger may itself inspect native status.
+    let timestamp = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .ok()
+        .map(|duration| duration.as_millis());
+    let code = match failure.code {
+        Code::DataDirectory => "data-directory",
+        Code::RuntimePackage => "runtime-package",
+        Code::StartupProvider => "startup-provider",
+        Code::CertificateBridge => "certificate-bridge",
+        Code::RuntimePolicy => "runtime-policy",
+        Code::StartupTimeout => "startup-timeout",
+        Code::UiDispatch => "ui-dispatch",
+        Code::RuntimeInitialization => "runtime-initialization",
+    };
+    let stage = match failure.stage {
+        Stage::Preparing => "preparing",
+        Stage::Initializing => "initializing",
+        Stage::PolicyReadback => "policy-readback",
+    };
+    if let Some(timestamp) = timestamp {
+        log::error!(target: "native_browser::startup::runtime", "Native browser runtime failure: timestampUnixMs={timestamp} source=native code={code} stage={stage}");
+    } else {
+        log::error!(target: "native_browser::startup::runtime", "Native browser runtime failure: timestamp=unavailable source=native code={code} stage={stage}");
+    }
+}
 
 struct State {
     generation: u64,
@@ -59,7 +89,12 @@ impl RuntimeFailureStore {
     pub(crate) fn record_current(&self, code: Code) {
         let mut state = self.0.lock().unwrap_or_else(|error| error.into_inner());
         let stage = state.stage;
-        state.failure.get_or_insert(RuntimeFailure { code, stage });
+        let first = state.failure.is_none();
+        let failure = *state.failure.get_or_insert(RuntimeFailure { code, stage });
+        drop(state);
+        if first {
+            report_failure(failure);
+        }
     }
 
     pub(crate) fn snapshot(&self) -> Option<RuntimeFailure> {
@@ -88,9 +123,11 @@ impl StartupFailureScope<'_> {
             .0
             .lock()
             .unwrap_or_else(|error| error.into_inner());
-        if state.generation == self.generation {
+        if state.generation == self.generation && state.failure.is_none() {
             let stage = state.stage;
-            state.failure.get_or_insert(RuntimeFailure { code, stage });
+            let failure = *state.failure.get_or_insert(RuntimeFailure { code, stage });
+            drop(state);
+            report_failure(failure);
         }
     }
 }
