@@ -73,7 +73,7 @@ pub(crate) fn dispatch_startup(invoke: tauri::ipc::Invoke) -> bool {
     }
     if name == "origin_browser_create" {
         let request = request!(OriginBrowserCreateRequest);
-        resolver.respond_async(async move {
+        resolver.respond_async(crate::origin_browser_startup_task::task(move || async move {
             let state: State<'_, EncryptionState> = State::from_command(CommandItem {
                 plugin: None,
                 name,
@@ -84,10 +84,10 @@ pub(crate) fn dispatch_startup(invoke: tauri::ipc::Invoke) -> bool {
             origin_browser_create(window, state, request, document)
                 .await
                 .map_err(Into::into)
-        });
+        }));
     } else {
         let request = request!(PrewarmRequest);
-        resolver.respond_async(async move {
+        resolver.respond_async(crate::origin_browser_startup_task::task(move || async move {
             let state: State<'_, EncryptionState> = State::from_command(CommandItem {
                 plugin: None,
                 name,
@@ -98,7 +98,7 @@ pub(crate) fn dispatch_startup(invoke: tauri::ipc::Invoke) -> bool {
             origin_browser_prewarm(window, state, request, document)
                 .await
                 .map_err(Into::into)
-        });
+        }));
     }
     true
 }

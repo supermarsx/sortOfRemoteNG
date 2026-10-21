@@ -65,6 +65,7 @@ mod origin_browser_network_probe;
 mod origin_browser_runtime;
 #[cfg(feature = "native-browser")]
 mod origin_browser_startup_diagnostics;
+mod origin_browser_startup_task;
 mod splash;
 mod state_registry;
 mod tray;

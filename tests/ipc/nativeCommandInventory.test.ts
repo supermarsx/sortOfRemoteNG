@@ -73,6 +73,14 @@ describe("native command inventory", () => {
     expect([
       ...extractNativeCommandNames(
         source.replace(
+          "resolver.respond_async(async move { startup_real(window, request).await });",
+          "resolver.respond_async(crate::origin_browser_startup_task::task(move || async move { startup_real(window, request).await }));",
+        ),
+      ),
+    ]).toEqual(["startup_real"]);
+    expect([
+      ...extractNativeCommandNames(
+        source.replace(
           "startup_real(window, request).await",
           "startup_missing(window, request).await",
         ),

@@ -97,7 +97,7 @@ export function extractNativeCommandNames(input: string): Set<string> {
     ).body;
     const implementations = new Set<string>();
     for (const response of code.matchAll(
-      /resolver\.respond_async\(async\s+move\s*\{/g,
+      /resolver\.respond_async\(\s*(?:crate::origin_browser_startup_task::task\(move\s*\|\|\s*)?async\s+move\s*\{/g,
     )) {
       const task = balanced(
         code,
