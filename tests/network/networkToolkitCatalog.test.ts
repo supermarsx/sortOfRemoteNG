@@ -7,6 +7,28 @@ import {
 } from "../../src/utils/network/networkToolkitCatalog";
 
 describe("network toolkit request catalog", () => {
+  it.each(["mail.example.test", "192.0.2.10", "2001:db8::10"])(
+    "accepts %s for an IP blocklist lookup with an explicit resolver",
+    (target) => {
+      const tool = catalog.find((tool) => tool.id === "rbl")!;
+      expect(
+        buildToolkitRequest(tool, {
+          ...createToolkitDraft(tool),
+          target,
+          route: "direct",
+          options: {
+            resolver: "192.0.2.53",
+            zones: "rbl.example.test",
+            transport: "udp",
+          },
+        }),
+      ).toMatchObject({
+        tool: "rbl",
+        target,
+        options: { resolver: "192.0.2.53", zones: "rbl.example.test" },
+      });
+    },
+  );
   it("covers each native tool once and has no implicit network routes", () => {
     expect(catalog.map((tool) => tool.id).sort()).toEqual(
       [...NETWORK_TOOL_IDS].sort(),

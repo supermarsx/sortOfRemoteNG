@@ -260,9 +260,9 @@ export const NETWORK_TOOLKIT_CATALOG: readonly ToolkitTool[] = [
     label: "IP blocklist (RBL)",
     group: "DNS",
     description:
-      "Check an IP address against DNS-based blocklists. Replies are not a guarantee of abuse or safety.",
-    target: "ip",
-    targetLabel: "IP address",
+      "Resolve a hostname or check an IP address against DNS-based blocklists using your selected resolver. Each resolved address is checked separately.",
+    target: "host",
+    targetLabel: "Hostname or IP address",
     route: "direct",
     fields: [dnsResolver, dnsZones, dnsTransport],
   },

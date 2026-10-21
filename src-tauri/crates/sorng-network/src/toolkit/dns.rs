@@ -389,6 +389,178 @@ fn listing_status(reply: &Value, query_name: &str) -> &'static str {
     }
 }
 
+const MAX_RBL_ADDRESSES: usize = 16;
+const MAX_RBL_ALIASES: usize = 8;
+
+/// Follow only answer-section CNAMEs rooted in the question. Unrelated records
+/// and additional-section addresses never become blocklist targets.
+fn rbl_addresses(
+    reply: &Value,
+    question: &str,
+    kind: u16,
+) -> Result<(Vec<IpAddr>, Option<String>), String> {
+    if reply["rcode"] != 0 {
+        return Err(if reply["rcode"] == 3 {
+            "Hostname does not exist"
+        } else {
+            "Resolver returned a DNS error"
+        }
+        .into());
+    }
+    let answers = reply["answers"]
+        .as_array()
+        .ok_or("Resolver answer section is unavailable")?;
+    let mut current = question.to_owned();
+    let mut seen = std::collections::HashSet::new();
+    for _ in 0..=MAX_RBL_ALIASES {
+        if !seen.insert(current.clone()) {
+            return Err("Hostname CNAME loop detected".into());
+        }
+        let mut addresses = Vec::new();
+        let mut aliases = std::collections::BTreeSet::new();
+        for answer in answers
+            .iter()
+            .filter(|answer| answer["name"].as_str() == Some(current.as_str()))
+        {
+            if answer["typeCode"] == kind {
+                if let Some(ip) = answer["data"]["address"]
+                    .as_str()
+                    .and_then(|v| v.parse::<IpAddr>().ok())
+                {
+                    if ((kind == 1 && ip.is_ipv4()) || (kind == 28 && ip.is_ipv6()))
+                        && !addresses.contains(&ip)
+                    {
+                        addresses.push(ip);
+                    }
+                }
+            } else if answer["typeCode"] == 5 {
+                aliases.insert(name(
+                    answer["data"]["target"]
+                        .as_str()
+                        .ok_or("Malformed CNAME answer")?,
+                )?);
+            }
+        }
+        if aliases.len() > 1 || (!aliases.is_empty() && !addresses.is_empty()) {
+            return Err("Ambiguous hostname CNAME answers".into());
+        }
+        if !addresses.is_empty() {
+            return Ok((addresses, None));
+        }
+        if let Some(alias) = aliases.into_iter().next() {
+            current = alias;
+        } else {
+            return Ok((Vec::new(), (current != question).then_some(current)));
+        }
+    }
+    Err("Hostname CNAME chain exceeds the lookup limit".into())
+}
+
+async fn rbl_lookup(
+    request: &ToolkitRequest,
+    server: SocketAddr,
+    transport: &str,
+) -> Result<Value, String> {
+    // Validate all explicit provider zones before resolving or contacting any.
+    let zones = list(
+        request
+            .option("zones")
+            .ok_or("Specify DNSBL zones explicitly; provider access rules and return codes vary")?,
+        32,
+    )?
+    .into_iter()
+    .map(name)
+    .collect::<Result<Vec<_>, _>>()?;
+    let literal = request.target.parse::<IpAddr>().ok();
+    let hostname = if literal.is_none() {
+        Some(name(&request.target)?)
+    } else {
+        None
+    };
+    let mut addresses = literal.into_iter().collect::<Vec<_>>();
+    let mut resolution = Vec::new();
+    let mut partial = false;
+    let mut truncated = false;
+    if let Some(hostname) = &hostname {
+        for kind in [DnsRecordType::A, DnsRecordType::AAAA] {
+            let mut current = hostname.clone();
+            let mut seen = std::collections::HashSet::new();
+            for depth in 0..=MAX_RBL_ALIASES {
+                if !seen.insert(current.clone()) || depth == MAX_RBL_ALIASES {
+                    partial = true;
+                    resolution.push(json!({"recordType":kind.as_str(),"query":current,"status":"error","error":"Hostname CNAME loop or lookup limit reached"}));
+                    break;
+                }
+                match query(server, &current, kind, transport, request.timeout_ms).await {
+                    Ok(reply) => match rbl_addresses(&reply, &current, kind.type_code()) {
+                        Ok((found, next)) => {
+                            let status = if next.is_some() {
+                                "alias"
+                            } else if found.is_empty() {
+                                "noData"
+                            } else {
+                                "resolved"
+                            };
+                            resolution.push(json!({"recordType":kind.as_str(),"query":current,"status":status,"response":reply}));
+                            for ip in found {
+                                if !addresses.contains(&ip) {
+                                    if addresses.len() < MAX_RBL_ADDRESSES {
+                                        addresses.push(ip);
+                                    } else {
+                                        truncated = true;
+                                        partial = true;
+                                    }
+                                }
+                            }
+                            if let Some(next) = next {
+                                current = next;
+                            } else {
+                                break;
+                            }
+                        }
+                        Err(error) => {
+                            partial = true;
+                            resolution.push(json!({"recordType":kind.as_str(),"query":current,"status":"error","error":error,"response":reply}));
+                            break;
+                        }
+                    },
+                    Err(error) => {
+                        partial = true;
+                        resolution.push(json!({"recordType":kind.as_str(),"query":current,"status":"error","error":error}));
+                        break;
+                    }
+                }
+            }
+        }
+    }
+    let mut queries = Vec::new();
+    for ip in &addresses {
+        let reversed = wire::reverse_dns_name(&ip.to_string()).ok_or("Invalid IP reverse name")?;
+        let prefix = reversed
+            .strip_suffix(".in-addr.arpa")
+            .or_else(|| reversed.strip_suffix(".ip6.arpa"))
+            .ok_or("Invalid reverse name")?;
+        for zone in &zones {
+            queries.push((*ip, zone.clone(), name(&format!("{prefix}.{zone}"))?));
+        }
+    }
+    let mut results = Vec::new();
+    for (ip, zone, query_name) in queries {
+        match query(server, &query_name, DnsRecordType::A, transport, request.timeout_ms).await {
+            Ok(reply) => results.push(json!({"ip":ip.to_string(),"zone":zone,"query":query_name,"status":listing_status(&reply,&query_name),"response":reply})),
+            Err(error) => results.push(json!({"ip":ip.to_string(),"zone":zone,"query":query_name,"status":"error","error":error})),
+        }
+    }
+    Ok(
+        json!({"target":request.target,"inputKind":if hostname.is_some(){"hostname"}else{"ip"},"resolvedAddresses":addresses.iter().map(ToString::to_string).collect::<Vec<_>>(),"resolution":resolution,"partial":partial,"truncated":truncated,"results":results,
+        "scope":"A/AAAA and blocklist queries use only the selected explicit resolver. At most 16 addresses and 32 zones (512 checks). Empty or failed resolution is not a clean blocklist result. Only configured DNSBL zones; conventional 127.0.0.2–255 replies require provider interpretation. No global reputation/security verdict."}),
+    )
+}
+
+#[cfg(test)]
+#[path = "dns_rbl_tests.rs"]
+mod rbl_tests;
+
 pub async fn run(request: &ToolkitRequest) -> Result<Value, String> {
     if request.route != "direct" || request.proxy_url.as_deref().is_some_and(|v| !v.is_empty()) {
         return Err(
@@ -449,19 +621,10 @@ pub async fn run(request: &ToolkitRequest) -> Result<Value, String> {
                 "scope": "Point-in-time responses from the selected resolvers only; not proof of global propagation or DNSSEC validation"}),
             )
         }
-        "rbl" | "dnsBlocklist" => {
+        "rbl" => rbl_lookup(request, resolver(resolver_option?)?, transport).await,
+        "dnsBlocklist" => {
             let server = resolver(resolver_option?)?;
-            let prefix = if request.tool == "rbl" {
-                let reversed = wire::reverse_dns_name(&request.target)
-                    .ok_or("IP DNSBL lookup requires an IP address")?;
-                reversed
-                    .strip_suffix(".in-addr.arpa")
-                    .or_else(|| reversed.strip_suffix(".ip6.arpa"))
-                    .ok_or("Invalid reverse name")?
-                    .to_string()
-            } else {
-                name(&request.target)?
-            };
+            let prefix = name(&request.target)?;
             let zones = list(
                 request.option("zones").ok_or(
                     "Specify DNSBL zones explicitly; provider access rules and return codes vary",
