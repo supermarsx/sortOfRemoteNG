@@ -92,7 +92,7 @@ const DEV_DEPS: &[(&str, &str, &str, &str)] = &[
     ("turbo", "2.10.12", "MIT", "Monorepo"),
     ("typescript", "6.0.3", "Apache-2.0", "TypeScript"),
     ("typescript-eslint", "8.70.0", "MIT", "TypeScript"),
-    ("vite", "8.3.0", "MIT", "Build Tooling"),
+    ("vite", "8.3.3", "MIT", "Build Tooling"),
     ("vitest", "4.1.11", "MIT", "Testing"),
     ("webdriverio", "9.31.4", "MIT", "Testing"),
 ];
