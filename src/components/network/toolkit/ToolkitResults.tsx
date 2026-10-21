@@ -1,6 +1,11 @@
 import React, { useState } from "react";
 import type { ToolkitReport } from "../../../types/network/networkToolkit";
 import { Select } from "../../ui/forms/Select";
+import {
+  presentToolkitReport,
+  toolkitCell,
+  toolkitLabel,
+} from "../../../utils/network/networkToolkitPresentation";
 
 const PREVIEW_LIMIT = 128 * 1024;
 function text(value: unknown): string {
@@ -85,7 +90,7 @@ function StructuredTable({ data }: { data: unknown }) {
 }
 
 export function ToolkitResults({ report }: { report: ToolkitReport | null }) {
-  const [format, setFormat] = useState("table");
+  const [format, setFormat] = useState("summary");
   const [feedback, setFeedback] = useState("");
   const json = report ? JSON.stringify(report, null, 2) : "";
   const plain = report
@@ -144,6 +149,7 @@ export function ToolkitResults({ report }: { report: ToolkitReport | null }) {
           }}
           variant="form-sm"
           options={[
+            { value: "summary", label: "Readable results" },
             { value: "table", label: "Table" },
             { value: "json", label: "JSON" },
             { value: "text", label: "Text" },
@@ -182,7 +188,9 @@ export function ToolkitResults({ report }: { report: ToolkitReport | null }) {
             {report.tool} · {report.durationMs} ms · {report.route} ·{" "}
             {report.startedAt}
           </p>
-          {format === "table" ? (
+          {format === "summary" ? (
+            <ReadableResults report={report} />
+          ) : format === "table" ? (
             <StructuredTable data={report.data} />
           ) : (
             <>
@@ -202,5 +210,73 @@ export function ToolkitResults({ report }: { report: ToolkitReport | null }) {
         </>
       )}
     </section>
+  );
+}
+
+function ReadableResults({ report }: { report: ToolkitReport }) {
+  const parsed = presentToolkitReport(report);
+  return (
+    <div aria-label="Readable diagnostic results" className="space-y-4">
+      <h4 className="text-sm font-medium">{parsed.title}</h4>
+      {parsed.summary && <p className="text-sm">{parsed.summary}</p>}
+      {parsed.notes.map((note, index) => (
+        <p key={index} className="text-xs text-[var(--color-textSecondary)]">
+          {note}
+        </p>
+      ))}
+      {parsed.sections.map((section, index) => (
+        <section key={index} aria-label={section.title} className="space-y-1">
+          <h5 className="text-sm font-medium">{section.title}</h5>
+          {(section.rows.length > 100 || section.columns.length > 16) && (
+            <p className="text-xs">
+              Preview limited to 100 rows and 16 columns. Copy or download JSON
+              for the complete report.
+            </p>
+          )}
+          <div className="overflow-auto">
+            <table
+              className="w-full text-left text-xs"
+              aria-label={section.title}
+            >
+              <thead>
+                <tr>
+                  {section.columns.slice(0, 16).map((column) => (
+                    <th
+                      key={column}
+                      scope="col"
+                      className="border-b border-[var(--color-border)] p-2 font-medium"
+                    >
+                      {toolkitLabel(column)}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {section.rows.slice(0, 100).map((row, rowIndex) => (
+                  <tr
+                    key={rowIndex}
+                    className="border-b border-[var(--color-border)]"
+                  >
+                    {section.columns.slice(0, 16).map((column) => {
+                      const value = toolkitCell(row[column]);
+                      return (
+                        <td
+                          key={column}
+                          className="max-w-xl whitespace-pre-wrap break-words p-2 align-top"
+                        >
+                          {value.slice(0, 4096)}
+                          {value.length > 4096 &&
+                            "… (preview shortened; export for full value)"}
+                        </td>
+                      );
+                    })}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      ))}
+    </div>
   );
 }

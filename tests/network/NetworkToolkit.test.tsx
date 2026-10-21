@@ -517,6 +517,7 @@ describe("Network Toolkit UI", () => {
       { response: '<img src="https://evil.invalid" onerror="alert(1)">' },
     ]);
     const { container } = setup();
+    choose("Result format", "Table");
     expect(
       screen.getByRole("table", { name: "Diagnostic result data" }),
     ).toBeVisible();
@@ -611,6 +612,7 @@ describe("Network Toolkit UI", () => {
     }));
     mock.state.report = report("bounded", rows);
     const view = setup();
+    choose("Result format", "Table");
     expect(
       screen.getByText(/Table preview is bounded to 100 rows and 16 columns/),
     ).toBeVisible();
