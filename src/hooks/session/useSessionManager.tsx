@@ -1796,6 +1796,14 @@ export const useSessionManager = () => {
 
     if (preserveRdpBackend) {
       return runBoundedSessionCleanup(attempt, async () => {
+        const beforeDetach = stateRef.current.sessions.find(
+          (candidate) => candidate.id === sessionId,
+        );
+        if (
+          !beforeDetach ||
+          !isSameSessionCloseActor(attempt.originalActor, beforeDetach)
+        )
+          return false;
         try {
           await invoke("detach_rdp_session", {
             ...(session.backendSessionId
@@ -1814,11 +1822,16 @@ export const useSessionManager = () => {
           if (latest && isTerminalRdpActor(latest)) {
             return waitForTerminalRdpSettlement(sessionId, attempt);
           }
-          if (!isCurrentCloseAttempt(attempt)) return false;
+          if (
+            !isCurrentCloseAttempt(attempt) ||
+            !latest ||
+            !isSameSessionCloseActor(attempt.originalActor, latest)
+          )
+            return false;
           const message = `RDP detach failed: ${sanitizeBehaviorText(error) || "Unknown error"}`;
           dispatch({
             type: "UPDATE_SESSION",
-            payload: { ...session, status: "error", errorMessage: message },
+            payload: { id: sessionId, status: "error", errorMessage: message },
           });
           return false;
         }
@@ -1833,17 +1846,24 @@ export const useSessionManager = () => {
           return waitForTerminalRdpSettlement(sessionId, attempt);
         }
 
-        if (!isCurrentCloseAttempt(attempt)) return false;
+        if (
+          !isCurrentCloseAttempt(attempt) ||
+          !latest ||
+          !isSameSessionCloseActor(attempt.originalActor, latest)
+        )
+          return false;
         dispatch({
           type: "UPDATE_SESSION",
           payload: {
-            ...session,
+            // This is a local presentation update, not a replay of the
+            // unchanged lifecycle revision captured before confirmation.
+            id: sessionId,
             layout: {
-              x: session.layout?.x ?? 0,
-              y: session.layout?.y ?? 0,
-              width: session.layout?.width ?? 100,
-              height: session.layout?.height ?? 100,
-              zIndex: session.layout?.zIndex ?? 1,
+              x: latest.layout?.x ?? 0,
+              y: latest.layout?.y ?? 0,
+              width: latest.layout?.width ?? 100,
+              height: latest.layout?.height ?? 100,
+              zIndex: latest.layout?.zIndex ?? 1,
               isDetached: true,
               windowId: undefined,
             },

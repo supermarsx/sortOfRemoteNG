@@ -5,15 +5,26 @@
  * logged + alerted but never keep the tab. Live sessions keep the existing
  * fail-closed semantics (negative controls at the bottom).
  */
-import { act, renderHook } from "@testing-library/react";
+import {
+  act,
+  fireEvent,
+  render,
+  renderHook,
+  waitFor,
+} from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type {
   Connection,
   ConnectionSession,
 } from "../../src/types/connection/connection";
+import {
+  advanceSessionLifecycleAuthority,
+  mergeLocalSessionUpdate,
+} from "../../src/utils/session/sessionLifecycle";
 
 const mocks = vi.hoisted(() => {
   const holder = {
+    useProductionSessionMerge: false,
     state: {
       connections: [] as Connection[],
       sessions: [] as ConnectionSession[],
@@ -27,7 +38,11 @@ const mocks = vi.hoisted(() => {
         holder.state = {
           ...state,
           sessions: state.sessions.map((session) =>
-            session.id === updated.id ? { ...session, ...updated } : session,
+            session.id === updated.id
+              ? holder.useProductionSessionMerge
+                ? mergeLocalSessionUpdate(session, updated)
+                : { ...session, ...updated }
+              : session,
           ),
         };
       } else if (action.type === "REMOVE_SESSION") {
@@ -224,6 +239,7 @@ const closeOrPending = async (
 };
 
 beforeEach(() => {
+  mocks.holder.useProductionSessionMerge = false;
   mocks.dispatch.mockClear();
   mocks.invoke.mockReset();
   mocks.invoke.mockResolvedValue(undefined);
@@ -237,6 +253,186 @@ beforeEach(() => {
   mocks.settings.warnOnClose = true;
   mocks.settings.rdpSessionClosePolicy = "detach";
   seed([], []);
+});
+
+describe("confirmed RDP tab detach with production lifecycle merging", () => {
+  it.each(["ask", "detach"] as const)(
+    "closes the confirmed %s tab while retaining its live backend",
+    async (policy) => {
+      mocks.settings.rdpSessionClosePolicy = policy;
+      mocks.holder.useProductionSessionMerge = true;
+      const connection = makeConnection("rdp-confirm", {
+        protocol: "rdp",
+        port: 3389,
+      });
+      const session = makeSession("rdp-confirm-tab", connection.id, {
+        protocol: "rdp",
+        status: "connected",
+        backendSessionId: "native-rdp-preserved",
+        lifecycleRevision: 4,
+        lifecycleActorGeneration: 2,
+        lifecycleWriterId: "main",
+      });
+      seed([connection], [session]);
+      let close!: Promise<boolean>;
+      function Harness() {
+        const manager = useSessionManager();
+        return (
+          <>
+            <button onClick={() => manager.setActiveSessionId(session.id)}>
+              Activate
+            </button>
+            <button
+              onClick={() => {
+                close = manager.handleSessionClose(session.id);
+              }}
+            >
+              Close tab
+            </button>
+            <span data-testid="visible-tabs">
+              {sessions().filter((row) => !row.layout?.isDetached).length}
+            </span>
+            {manager.confirmDialog}
+          </>
+        );
+      }
+      const view = render(<Harness />);
+      fireEvent.click(view.getByText("Activate"));
+      fireEvent.click(view.getByText("Close tab"));
+      expect(
+        view.getByText(/The session will keep running in the background/),
+      ).toBeTruthy();
+      fireEvent.click(view.getByTestId("confirm-yes"));
+      await waitFor(() =>
+        expect(view.getByTestId("visible-tabs").textContent).toBe("0"),
+      );
+      await expect(close).resolves.toBe(true);
+      expect(sessions()).toHaveLength(1);
+      expect(sessions()[0]).toMatchObject({
+        backendSessionId: "native-rdp-preserved",
+        status: "connected",
+        lifecycleActorGeneration: 2,
+        layout: { isDetached: true },
+      });
+      expect(mocks.invoke).toHaveBeenCalledWith("detach_rdp_session", {
+        sessionId: "native-rdp-preserved",
+      });
+      expect(invokedCommands()).not.toContain("disconnect_rdp");
+      expect(removeDispatched(session.id)).toBe(false);
+      expect(mocks.emitEnded).not.toHaveBeenCalled();
+      // The existing reattach path advances authority before restoring layout.
+      act(() =>
+        mocks.dispatch({
+          type: "UPDATE_SESSION",
+          payload: advanceSessionLifecycleAuthority(
+            {
+              ...sessions()[0],
+              layout: { ...sessions()[0].layout!, isDetached: false },
+              reattachOnly: true,
+            },
+            "main",
+          ),
+        }),
+      );
+      view.rerender(<Harness />);
+      expect(view.getByTestId("visible-tabs").textContent).toBe("1");
+      expect(sessions()[0].backendSessionId).toBe("native-rdp-preserved");
+      view.unmount();
+    },
+  );
+  it.each(["confirmation", "native-detach"] as const)(
+    "does not hide a replacement actor during %s",
+    async (phase) => {
+      mocks.settings.rdpSessionClosePolicy = "ask";
+      mocks.holder.useProductionSessionMerge = true;
+      const connection = makeConnection("rdp-race", { protocol: "rdp" });
+      const session = makeSession("rdp-race-tab", connection.id, {
+        protocol: "rdp",
+        status: "connected",
+        backendSessionId: "native-old",
+        lifecycleRevision: 4,
+        lifecycleActorGeneration: 2,
+        lifecycleWriterId: "main",
+      });
+      seed([connection], [session]);
+      let finish!: () => void;
+      mocks.invoke.mockImplementation(
+        () =>
+          new Promise<void>((resolve) => {
+            finish = resolve;
+          }),
+      );
+      const view = renderHook(() => useSessionManager());
+      let close!: Promise<boolean>;
+      act(() => {
+        close = view.result.current.handleSessionClose(session.id);
+      });
+      const replace = () => {
+        mocks.holder.state = {
+          ...mocks.holder.state,
+          sessions: [
+            {
+              ...session,
+              backendSessionId: "native-new",
+              lifecycleActorGeneration: 3,
+              lifecycleRevision: 5,
+            },
+          ],
+        };
+        view.rerender();
+      };
+      if (phase === "confirmation") replace();
+      act(() => view.result.current.confirmDialog?.props.onConfirm());
+      if (phase === "native-detach") {
+        await waitFor(() =>
+          expect(mocks.invoke).toHaveBeenCalledWith("detach_rdp_session", {
+            sessionId: "native-old",
+          }),
+        );
+        replace();
+        await act(async () => finish());
+      }
+      await expect(close).resolves.toBe(false);
+      expect(sessions()[0]).toMatchObject({
+        backendSessionId: "native-new",
+        lifecycleActorGeneration: 3,
+      });
+      expect(sessions()[0].layout?.isDetached).not.toBe(true);
+      if (phase === "confirmation") expect(mocks.invoke).not.toHaveBeenCalled();
+      expect(invokedCommands()).not.toContain("disconnect_rdp");
+      view.unmount();
+    },
+  );
+  it("shows a detach failure under production merging without terminating the session", async () => {
+    mocks.settings.rdpSessionClosePolicy = "detach";
+    mocks.settings.confirmCloseActiveTab = false;
+    mocks.holder.useProductionSessionMerge = true;
+    const connection = makeConnection("rdp-fail", { protocol: "rdp" });
+    const session = makeSession("rdp-fail-tab", connection.id, {
+      protocol: "rdp",
+      status: "connected",
+      backendSessionId: "native-preserved",
+      lifecycleRevision: 4,
+      lifecycleActorGeneration: 2,
+      lifecycleWriterId: "main",
+    });
+    seed([connection], [session]);
+    mocks.invoke.mockRejectedValue(new Error("Queue unavailable"));
+    const view = renderHook(() => useSessionManager());
+    let result!: boolean;
+    await act(async () => {
+      result = await view.result.current.handleSessionClose(session.id);
+    });
+    expect(result).toBe(false);
+    expect(sessions()[0]).toMatchObject({
+      status: "error",
+      backendSessionId: "native-preserved",
+      errorMessage: expect.stringContaining("RDP detach failed"),
+    });
+    expect(sessions()[0].layout?.isDetached).not.toBe(true);
+    expect(invokedCommands()).not.toContain("disconnect_rdp");
+    view.unmount();
+  });
 });
 
 describe("RDP close recovery and one-minute deadline", () => {
