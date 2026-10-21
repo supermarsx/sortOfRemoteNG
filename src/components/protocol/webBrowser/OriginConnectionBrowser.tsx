@@ -101,6 +101,8 @@ import {
 import { requestOriginBrowserRecovery } from "../../../utils/session/originBrowserRecovery";
 import { getQuickConnectConnection } from "../../../utils/session/runtimeConnectionRegistry";
 import OriginBrowserRecoveryActions from "./OriginBrowserRecoveryActions";
+import OriginConnectionHealthControl from "./OriginConnectionHealthControl";
+import { useOriginConnectionHealth } from "../../../hooks/protocol/useOriginConnectionHealth";
 
 /** Native answers a create within its 20 s engine wait plus the saved initial
  * load timeout and 5 s. The rest is the slack the hook's own default leaves. */
@@ -231,6 +233,7 @@ export default function OriginConnectionBrowser({
   const [moreOpen, setMoreOpen] = useState(false);
   const [bookmarksOpen, setBookmarksOpen] = useState(false);
   const [credentialsOpen, setCredentialsOpen] = useState(false);
+  const [healthOpen, setHealthOpen] = useState(false);
   const [recordingOpen, setRecordingOpen] = useState(false);
   const addressRef = useRef<HTMLInputElement>(null);
   // Native builds a saved tab's source from the saved row alone, so the
@@ -280,6 +283,7 @@ export default function OriginConnectionBrowser({
     moreOpen ||
     bookmarksOpen ||
     credentialsOpen ||
+    healthOpen ||
     recordingOpen ||
     overlayOpen;
   const popupBridge = useNativeOriginPopupBridge();
@@ -632,6 +636,13 @@ export default function OriginConnectionBrowser({
       throw new Error("Browser owner changed.");
     proof.assertCurrent();
   };
+  const connectionHealth = useOriginConnectionHealth({
+    connection,
+    connections: context.state.connections,
+    state: browser.state,
+    enabled: isActive && ownerAvailable,
+    assertOwner: assertShellOwner,
+  });
   const restartEphemeralContext = async () => {
     assertShellOwner();
     // Close, then create, inside the hook: the tab never reads as ended, and
@@ -860,6 +871,7 @@ export default function OriginConnectionBrowser({
       moreOpen ||
       bookmarksOpen ||
       credentialsOpen ||
+      healthOpen ||
       recordingOpen,
     identity: snapshot?.identity ?? null,
     documentReady: snapshot?.documentLoaded === true && !snapshot?.loadFailure,
@@ -1263,6 +1275,13 @@ export default function OriginConnectionBrowser({
           controller={downloads}
           allowed={browserConfig.allowDownloads}
           onOpenSettings={() => onOpenSettings?.("webBrowser")}
+        />
+        <OriginConnectionHealthControl
+          health={connectionHealth}
+          eligible={isActive && ownerAvailable}
+          scope={`health:${session.id}:${ownerDatabaseId}:${rootSnapshot?.identity.attemptId ?? "starting"}`}
+          assertOwner={assertShellOwner}
+          onOverlayChange={setHealthOpen}
         />
         {!isTemporary && connection && (
           <OriginCredentialControls
