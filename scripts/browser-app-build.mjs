@@ -11,10 +11,12 @@ import {
   mkdir,
   mkdtemp,
   readFile,
+  readlink,
   readdir,
   realpath,
   rename,
   stat,
+  symlink,
   writeFile,
 } from "node:fs/promises";
 import path from "node:path";
@@ -437,7 +439,7 @@ export function parseArguments(
 export async function backUpPublished(file, plan) {
   const root = await realpath(plan.publicTarget);
   const parent = await realpath(path.dirname(file));
-  const relative = path.relative(root, file);
+  const relative = path.relative(root, path.join(parent, path.basename(file)));
   const parentRelative = path.relative(root, parent);
   if (
     !relative ||
@@ -705,6 +707,11 @@ async function copyTreeEntriesExclusive(source, destination) {
         path.join(source, name),
         path.join(destination, name),
       );
+  } else if (sourceInfo.isSymbolicLink() && process.platform !== "win32") {
+    // fs.cp may reuse an existing symlink on some platforms. Create the link
+    // itself exclusively so matching and dangling destinations still reject.
+    // Keep Windows' existing junction-aware copy behavior unchanged.
+    await symlink(await readlink(source), destination);
   } else {
     await cp(source, destination, {
       force: false,

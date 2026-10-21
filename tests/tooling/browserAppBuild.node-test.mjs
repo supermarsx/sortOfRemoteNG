@@ -744,6 +744,62 @@ test("publication backs up only its exact file and refuses an outside target", a
   );
 });
 
+test("publication accepts canonical directory aliases but rejects an escaping parent", async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "cef-publish-alias-"));
+  const actual = path.join(root, "actual");
+  const alias = path.join(root, "alias");
+  await mkdir(path.join(actual, "target"), { recursive: true });
+  await symlink(
+    actual,
+    alias,
+    process.platform === "win32" ? "junction" : "dir",
+  );
+  const publicTarget = path.join(alias, "target");
+  const artifact = path.join(publicTarget, "app.exe");
+  await writeFile(artifact, "previous executable");
+  await writeFile(path.join(publicTarget, "neighbor"), "untouched neighbor");
+  await backUpPublished(artifact, { root, publicTarget });
+  assert.equal(
+    await readFile(path.join(root, "previous-output", "app.exe"), "utf8"),
+    "previous executable",
+  );
+  assert.equal(
+    await readFile(path.join(actual, "target", "neighbor"), "utf8"),
+    "untouched neighbor",
+  );
+  const outside = path.join(root, "outside");
+  await mkdir(outside);
+  await writeFile(path.join(outside, "app.exe"), "untouched outside");
+  await symlink(
+    outside,
+    path.join(publicTarget, "escape"),
+    process.platform === "win32" ? "junction" : "dir",
+  );
+  await assert.rejects(
+    backUpPublished(path.join(publicTarget, "escape", "app.exe"), {
+      root,
+      publicTarget,
+    }),
+    /escapes/,
+  );
+  assert.equal(
+    await readFile(path.join(outside, "app.exe"), "utf8"),
+    "untouched outside",
+  );
+  // A final component that is a directory junction/symlink is never an artifact.
+  const leafLink = path.join(publicTarget, "linked.exe");
+  await symlink(
+    outside,
+    leafLink,
+    process.platform === "win32" ? "junction" : "dir",
+  );
+  await assert.rejects(
+    backUpPublished(leafLink, { root, publicTarget }),
+    /non-file/,
+  );
+  assert.ok((await lstat(leafLink)).isSymbolicLink());
+});
+
 test("dev payload merges pre-created directories without overwriting real files", async () => {
   const root = await mkdtemp(path.join(os.tmpdir(), "cef-dev-copy-"));
   const payload = path.join(root, "payload");
@@ -913,6 +969,29 @@ test(
         path.join(destination, "binary"),
       ),
     );
+    assert.equal(
+      await readlink(path.join(destination, "binary")),
+      "Versions/Current/binary",
+    );
+    const occupied = path.join(destination, "occupied");
+    await writeFile(occupied, "must not overwrite");
+    await assert.rejects(
+      copyTreeExclusive(path.join(source, "binary"), occupied),
+    );
+    assert.equal(await readFile(occupied, "utf8"), "must not overwrite");
+    const different = path.join(destination, "different");
+    await symlink("other-target", different);
+    await assert.rejects(
+      copyTreeExclusive(path.join(source, "binary"), different),
+    );
+    assert.equal(await readlink(different), "other-target");
+    const dangling = path.join(source, "dangling");
+    const copiedDangling = path.join(destination, "dangling");
+    await symlink("not-created", dangling);
+    await copyTreeExclusive(dangling, copiedDangling);
+    assert.equal(await readlink(copiedDangling), "not-created");
+    await assert.rejects(copyTreeExclusive(dangling, copiedDangling));
+    assert.equal(await readlink(copiedDangling), "not-created");
   },
 );
 
