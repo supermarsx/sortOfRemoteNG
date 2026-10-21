@@ -207,12 +207,11 @@ describe("visible website macro recording facilities", () => {
       render(<WebAutomationControls automation={actions} />);
       expect(screen.queryByRole("status")).toBeNull();
       expect(screen.queryByText(reason)).toBeNull();
-      expect(
-        screen.getByRole("button", { name: "Record macro" }),
-      ).toHaveAttribute("title", reason);
-      expect(
-        screen.getByRole("button", { name: "Record macro" }),
-      ).toBeDisabled();
+      const record = screen.getByRole("button", { name: "Record macro" });
+      expect(record).toHaveAttribute("data-tooltip", reason);
+      expect(record).not.toHaveAttribute("title");
+      expect(record).toHaveAccessibleDescription(reason);
+      expect(record).toBeDisabled();
       expect(actions.startRecording).not.toHaveBeenCalled();
     },
   );
