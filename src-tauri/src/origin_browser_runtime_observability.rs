@@ -30,6 +30,7 @@ pub(crate) fn snapshot(window: &WebviewWindow) -> Result<SessionDiagnosticsRespo
                 .ok()
                 .map(|session| session.proxy_diagnostics());
             SessionDiagnostics {
+                route_health: (attempt.route_health)(attempt.identity.session_id()),
                 identity: SessionIdentity {
                     connection_id: attempt.identity.connection_id().to_owned(),
                     session_id: attempt.identity.session_id().to_owned(),

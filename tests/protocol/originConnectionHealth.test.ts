@@ -8,6 +8,7 @@ import {
   summarizedOriginRouteHops,
 } from "../../src/utils/protocol/originConnectionHealth";
 import { resolveNetworkPath } from "../../src/utils/network/resolveNetworkPath";
+import { parseSessionRouteHealth } from "../../src/types/network/sessionRouteHealth";
 
 const connection = {
   id: "web",
@@ -83,6 +84,67 @@ const health = (
   });
 
 describe("observed connection health", () => {
+  it("shows the full actual native route once, with separate current and historical evidence", () => {
+    const routeHealth = parseSessionRouteHealth(
+      {
+        sessionId: "tab",
+        observedAtUnixMs: 1700000001000,
+        hops: [
+          {
+            index: 0,
+            kind: "private-relay",
+            state: "connected",
+            evidence: "runtime-active",
+            stage: "relay",
+            updatedAtUnixMs: 1700000001000,
+          },
+          {
+            index: 1,
+            kind: "proxy",
+            state: "connected",
+            evidence: "negotiated",
+            stage: "proxy-negotiation",
+            updatedAtUnixMs: 1700000000000,
+          },
+          {
+            index: 2,
+            kind: "ssh-jump",
+            state: "disconnected",
+            evidence: "runtime-ended",
+            stage: "channel-open",
+            updatedAtUnixMs: 1700000001000,
+          },
+        ],
+      },
+      "tab",
+    );
+    const value = health({ observation: { ...observation(), routeHealth } });
+    expect(value.hops.map((hop) => hop.label)).toEqual([
+      "Private proxy · component 1",
+      "Proxy · component 2",
+      "SSH jump · component 3",
+      "Website",
+    ]);
+    expect(value.hops.map((hop) => hop.status)).toEqual([
+      "healthy",
+      "unknown",
+      "disconnected",
+      "healthy",
+    ]);
+    expect(value.status).toBe("degraded");
+    expect(value.hops[1].detail).toContain(
+      "Negotiation succeeded during setup",
+    );
+    expect(
+      health({
+        observation: {
+          ...observation(),
+          identity: { ...observation().identity, attemptId: "old" },
+          routeHealth,
+        },
+      }).hops.some((hop) => hop.kind === "Runtime route stage"),
+    ).toBe(false);
+  });
   it("shows a saved SSH source name without exposing its connection credentials", () => {
     const selected = {
       id: "gateway",
@@ -259,5 +321,22 @@ describe("observed connection health", () => {
       label: "Unresolved route details",
     });
     expect(rows[rows.length - 1].detail).toContain("partial route");
+  });
+  it("clears route metadata and retained observations when owner eligibility is disabled", () => {
+    const value = health({
+      enabled: false,
+      routeHops: [
+        {
+          key: "p",
+          label: "PRIVATE_ROUTE_NAME",
+          kind: "Configured SSH",
+          status: "unknown",
+          detail: "PRIVATE_DETAILS",
+        },
+      ],
+    });
+    expect(value.visible).toBe(false);
+    expect(value.hops).toEqual([]);
+    expect(JSON.stringify(value)).not.toContain("PRIVATE");
   });
 });

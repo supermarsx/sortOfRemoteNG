@@ -152,6 +152,7 @@ impl ConnectionPhase {
 
 #[derive(Debug)]
 pub struct RdpSessionStats {
+    pub route_health: sorng_core::route_health::RouteHealth,
     pub connected_at: Instant,
     pub bytes_received: AtomicU64,
     pub bytes_sent: AtomicU64,
@@ -212,6 +213,7 @@ impl RdpSessionStats {
     pub fn new() -> Self {
         let now = Instant::now();
         Self {
+            route_health: Default::default(),
             connected_at: now,
             bytes_received: AtomicU64::new(0),
             bytes_sent: AtomicU64::new(0),
@@ -255,6 +257,47 @@ impl RdpSessionStats {
 
     /// Set the phase directly from a typed `ConnectionPhase`.
     pub fn set_phase_typed(&self, phase: ConnectionPhase) {
+        use sorng_core::route_health::{HopEvidence, HopKind, HopStage, HopState};
+        let (stage, state, evidence) = match phase {
+            ConnectionPhase::TcpConnect => {
+                (HopStage::Tcp, HopState::Waiting, HopEvidence::Negotiating)
+            }
+            ConnectionPhase::TlsHandshake
+            | ConnectionPhase::CredSSP
+            | ConnectionPhase::CapabilityExchange
+            | ConnectionPhase::Negotiating => (
+                HopStage::RdpHandshake,
+                HopState::Waiting,
+                HopEvidence::Negotiating,
+            ),
+            ConnectionPhase::Active => (
+                HopStage::Transport,
+                HopState::Connected,
+                HopEvidence::RuntimeActive,
+            ),
+            ConnectionPhase::Error => (
+                HopStage::Transport,
+                HopState::Failed,
+                HopEvidence::NegotiationFailed,
+            ),
+            ConnectionPhase::Disconnected | ConnectionPhase::Terminated => (
+                HopStage::Transport,
+                HopState::Disconnected,
+                HopEvidence::RuntimeEnded,
+            ),
+            ConnectionPhase::Reactivating | ConnectionPhase::Reconnecting => (
+                HopStage::Transport,
+                HopState::Waiting,
+                HopEvidence::Negotiating,
+            ),
+            ConnectionPhase::Initializing => (
+                HopStage::Transport,
+                HopState::Unknown,
+                HopEvidence::NotObserved,
+            ),
+        };
+        self.route_health
+            .record(0, HopKind::Rdp, stage, state, evidence);
         if let Ok(mut p) = self.phase.lock() {
             *p = phase;
         }
@@ -618,6 +661,26 @@ mod tests {
         assert!(stats.alive.load(Ordering::Relaxed));
         assert_eq!(stats.consecutive_zero_reads.load(Ordering::Relaxed), 0);
         assert_eq!(stats.consecutive_pdu_errors.load(Ordering::Relaxed), 0);
+    }
+
+    #[test]
+    fn route_health_tracks_native_phase_without_raw_error_text() {
+        use sorng_core::route_health::{HopEvidence, HopState};
+        let stats = RdpSessionStats::new();
+        stats.set_phase_typed(ConnectionPhase::TcpConnect);
+        assert_eq!(
+            stats.route_health.snapshot("actor").hops[0].state,
+            HopState::Waiting
+        );
+        stats.set_phase_typed(ConnectionPhase::Active);
+        assert_eq!(
+            stats.route_health.snapshot("actor").hops[0].evidence,
+            HopEvidence::RuntimeActive
+        );
+        stats.set_phase_typed(ConnectionPhase::Error);
+        let snapshot = stats.route_health.snapshot("actor");
+        assert_eq!(snapshot.hops[0].state, HopState::Failed);
+        assert!(snapshot.hops[0].updated_at_unix_ms.is_some());
     }
 
     #[test]

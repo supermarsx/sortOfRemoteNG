@@ -78,4 +78,40 @@ describe("SSH and RDP connection health popup", () => {
     );
     await waitFor(() => expect(view.queryByRole("region")).toBeNull());
   });
+  it("shows setup success separately from current health and VPN prerequisites outside the ordered chain", async () => {
+    const view = render(
+      <SessionConnectionHealthControl
+        scope="actor"
+        health={{
+          ...health,
+          hops: [
+            {
+              key: "proxy",
+              label: "Proxy · proxy.actual.test:1080",
+              kind: "Runtime component",
+              status: "unknown",
+              stateLabel: "Setup succeeded",
+              detail: "Current reachability is not checked.",
+            },
+          ],
+          prerequisites: [
+            {
+              key: "vpn",
+              label: "WireGuard lease",
+              kind: "Owned VPN prerequisite",
+              status: "healthy",
+              stateLabel: "Connected",
+              detail: "Sampled provider status.",
+            },
+          ],
+        }}
+      />,
+    );
+    fireEvent.click(view.getByRole("button", { name: /Connection health:/ }));
+    await view.findByRole("region", { name: "Connection health details" });
+    expect(view.getByText("Setup succeeded")).toBeTruthy();
+    expect(view.getByText("Owned VPN prerequisites")).toBeTruthy();
+    expect(view.getByText("Connected")).toBeTruthy();
+    expect(view.getByText("Proxy · proxy.actual.test:1080")).toBeTruthy();
+  });
 });

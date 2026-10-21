@@ -122,6 +122,7 @@ fn view_failure(failure: Failure, message: &'static str) -> String {
 }
 
 struct Attempt {
+    route_health: sorng_core::route_health::RouteHealthReader,
     timing: Trace,
     navigation_submitted: AtomicBool,
     identity: BrowserIdentity,
@@ -1439,6 +1440,7 @@ async fn create_document(
         failure,
         failure_reported: AtomicBool::new(false),
         permissions: authorized.permissions.clone(),
+        route_health: authorized.route_health,
         diagnostics_busy: AtomicBool::new(false),
         cancelled: AtomicBool::new(false),
         revocation_complete: AtomicBool::new(false),

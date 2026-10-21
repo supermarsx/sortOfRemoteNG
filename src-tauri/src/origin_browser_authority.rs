@@ -162,6 +162,7 @@ pub enum NativeAuthorityError {
 /// Native-only immutable snapshot, intentionally without Debug/serde/Clone.
 /// This grants network access only, never login submission or credential consent.
 pub struct NativeAuthorizedBrowser {
+    pub route_health: sorng_core::route_health::RouteHealthReader,
     pub basic_auth: Option<Arc<NativeBasicAuth>>,
     pub policy: OriginBrowserPolicy,
     pub permissions: Arc<WebsitePermissionEngine>,
@@ -1197,11 +1198,29 @@ async fn authorize_create_inner<R: Runtime>(
         Arc::new(saved_route(&expanded_route)?)
     };
     let route_lease = lease.clone();
+    let health = sorng_core::route_health::RouteHealth::default();
+    for (index, hop) in hops.iter().enumerate() {
+        use sorng_core::route_health::*;
+        health.record(index, HopKind::Proxy, HopStage::Transport, HopState::Unknown, HopEvidence::NotObserved);
+        health.set_endpoint(index, HopEndpoint::new(hop.endpoint.host(), hop.endpoint.port(), match hop.kind {
+            ProxyKind::Http => HopProtocol::HttpConnect, ProxyKind::Https => HopProtocol::HttpsConnect,
+            ProxyKind::Socks4 => HopProtocol::Socks4, ProxyKind::Socks5 => HopProtocol::Socks5,
+        }));
+    }
+    let snapshot_health = health.clone();
+    let snapshot_ssh = ssh_route.clone();
+    let route_health: sorng_core::route_health::RouteHealthReader = Arc::new(move |session_id| {
+        snapshot_ssh
+            .as_ref()
+            .and_then(|route| route.health(session_id))
+            .unwrap_or_else(|| snapshot_health.snapshot(session_id))
+    });
     let grant = policy.destination_grant();
     let route: Arc<dyn RouteDialer> = Arc::new(move |target: Authority| -> DialFuture {
         let hops = hops.clone();
         let lease = route_lease.clone();
         let ssh_route = ssh_route.clone();
+        let health = health.clone();
         let granted = grant(&target);
         Box::pin(async move {
             if !granted || !lease.is_current() {
@@ -1211,7 +1230,7 @@ async fn authorize_create_inner<R: Runtime>(
                 if let Some(route) = ssh_route {
                     route.dial(&target).await
                 } else {
-                    dial_route(&hops, &target).await
+                    dial_route_observed(&hops, &target, &health).await
                 }
             })
             .await
@@ -1253,6 +1272,7 @@ async fn authorize_create_inner<R: Runtime>(
         None => NativeBasicAuth::saved(&connection, &policy, &lease, window, state).await?,
     };
     Ok(NativeAuthorizedBrowser {
+        route_health,
         basic_auth,
         automation: Arc::new(NativeAutomationAuthority::new(
             &connection,
@@ -2116,7 +2136,17 @@ fn route_error() -> io::Error {
     io::Error::other("Browser route unavailable; no direct fallback")
 }
 
+#[cfg(test)]
 async fn dial_route(hops: &[ProxyHop], target: &Authority) -> io::Result<BoxedStream> {
+    dial_route_observed(hops, target, &Default::default()).await
+}
+
+async fn dial_route_observed(
+    hops: &[ProxyHop],
+    target: &Authority,
+    health: &sorng_core::route_health::RouteHealth,
+) -> io::Result<BoxedStream> {
+    use sorng_core::route_health::{HopKind, HopStage};
     if let Some(hop) = hops
         .first()
         .filter(|hop| matches!(hop.kind, ProxyKind::Https))
@@ -2139,18 +2169,24 @@ async fn dial_route(hops: &[ProxyHop], target: &Authority) -> io::Result<BoxedSt
         let route =
             sorng_protocols::private_forward_route::NativeForwardRoute::http_connect(proxy.into())
                 .map_err(|_| route_error())?;
-        let mut stream = route
+        let observation = health.begin(0, HopKind::Proxy, HopStage::ProxyNegotiation);
+        let result = route
             .dial(destination.clone())
             .await
-            .map_err(|_| route_error())?;
+            .map_err(|_| route_error());
+        observation.finish(result.is_ok());
+        let mut stream = result?;
         for (index, hop) in hops.iter().enumerate().skip(1) {
             let destination = hops
                 .get(index + 1)
                 .map(|hop| &hop.endpoint)
                 .unwrap_or(target);
-            proxy_handshake(&mut stream, hop, destination)
+            let observation = health.begin(index, HopKind::Proxy, HopStage::ProxyNegotiation);
+            let result = proxy_handshake(&mut stream, hop, destination)
                 .await
-                .map_err(|_| route_error())?;
+                .map_err(|_| route_error());
+            observation.finish(result.is_ok());
+            result?;
         }
         return Ok(stream);
     }
@@ -2158,20 +2194,36 @@ async fn dial_route(hops: &[ProxyHop], target: &Authority) -> io::Result<BoxedSt
     // DNS and direct TCP belong only to the configured first hop. Subsequent
     // destination names travel inside CONNECT/SOCKS, never local lookup.
     let host = first.host().trim_start_matches('[').trim_end_matches(']');
-    let mut stream = SocketConnector::new()
+    let observation = health.begin(
+        0,
+        if hops.is_empty() {
+            HopKind::PrivateRelay
+        } else {
+            HopKind::Proxy
+        },
+        if hops.is_empty() { HopStage::Transport } else { HopStage::Tcp },
+    );
+    if hops.is_empty() {
+        observation.set_endpoint(sorng_core::route_health::HopEndpoint::new(first.host(), first.port(), sorng_core::route_health::HopProtocol::Tcp));
+    }
+    let result = SocketConnector::new()
         .connect_tcp(
             &SocketTarget::new(host, first.port()),
             Route::Direct,
             TcpOptions::default(),
         )
         .await
-        .map_err(|_| route_error())?
-        .into_stream();
+        .map_err(|_| route_error());
+    observation.finish(result.is_ok());
+    let mut stream = result?.into_stream();
     for (index, hop) in hops.iter().enumerate() {
         let destination = hops.get(index + 1).map(|h| &h.endpoint).unwrap_or(target);
-        proxy_handshake(&mut stream, hop, destination)
+        let observation = health.begin(index, HopKind::Proxy, HopStage::ProxyNegotiation);
+        let result = proxy_handshake(&mut stream, hop, destination)
             .await
-            .map_err(|_| route_error())?;
+            .map_err(|_| route_error());
+        observation.finish(result.is_ok());
+        result?;
     }
     Ok(Box::new(stream))
 }

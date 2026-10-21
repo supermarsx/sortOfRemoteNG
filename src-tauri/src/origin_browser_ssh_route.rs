@@ -314,6 +314,18 @@ pub(super) struct SshRoute {
 }
 
 impl SshRoute {
+    pub(super) fn health(
+        &self,
+        session_id: &str,
+    ) -> Option<sorng_core::route_health::RouteHealthSnapshot> {
+        if !self.lease.is_current() {
+            return None;
+        }
+        let service = self.actor.service.try_lock().ok()?;
+        let mut snapshot = service.route_health(&self.actor.id).ok()?;
+        snapshot.session_id = session_id.to_owned();
+        Some(snapshot)
+    }
     async fn checked_endpoint(&self, target: &Authority) -> io::Result<std::net::SocketAddr> {
         if target != &self.target || !self.lease.is_current() {
             return Err(route_error());

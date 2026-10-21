@@ -20,6 +20,7 @@ pub use sorng_opkssh as opkssh;
 pub mod connection_clone_cmds;
 pub mod browser_data_commands;
 mod discovery_commands;
+mod route_health_commands;
 
 #[path = "../../../src/agent_commands.rs"]
 mod agent_commands;

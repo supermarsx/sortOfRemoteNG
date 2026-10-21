@@ -557,6 +557,8 @@ pub struct SshSessionInfo {
 }
 
 pub struct SshSession {
+    pub route_health: sorng_core::route_health::RouteHealth,
+    pub(crate) selected_health_proxy_index: usize,
     pub id: String,
     pub session: Session,
     /// Shared by every channel creator and relay using this native session.

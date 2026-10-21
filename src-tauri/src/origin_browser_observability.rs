@@ -14,6 +14,7 @@ pub(crate) struct SessionIdentity {
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct SessionDiagnostics {
+    pub route_health: sorng_core::route_health::RouteHealthSnapshot,
     pub identity: SessionIdentity,
     /// None means a busy/poisoned snapshot, not a fabricated lifecycle state.
     pub phase: Option<OriginBrowserPhase>,

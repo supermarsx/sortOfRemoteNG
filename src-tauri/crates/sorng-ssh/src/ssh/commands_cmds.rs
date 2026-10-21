@@ -202,6 +202,15 @@ pub async fn get_session_info(
     redact_result(ssh.get_session_info(&session_id).await)
 }
 
+/// Passive owned-actor observations; does not return configuration or probe peers.
+#[tauri::command]
+pub async fn get_ssh_route_health(
+    state: tauri::State<'_, SshServiceState>,
+    session_id: String,
+) -> Result<sorng_core::route_health::RouteHealthSnapshot, String> {
+    state.lock().await.route_health(&session_id)
+}
+
 #[tauri::command]
 pub async fn list_sessions(
     state: tauri::State<'_, SshServiceState>,

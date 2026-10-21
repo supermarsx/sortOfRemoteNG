@@ -67,3 +67,4 @@ pub use tunnels::*;
 #[allow(unused_imports)]
 pub use service::generate_totp_code;
 pub use service::SshService;
+pub(crate) mod route_health;

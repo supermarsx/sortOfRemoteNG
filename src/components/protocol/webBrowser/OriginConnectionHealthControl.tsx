@@ -83,34 +83,44 @@ export default function OriginConnectionHealthControl({
                 </div>
               ))}
             </dl>
-            {health.hops.length > 0 && (
-              <div className="mt-4">
-                <h3 className="mb-2 text-sm font-medium">Connection route</h3>
-                <ul className="space-y-2">
-                  {health.hops.map((hop) => (
-                    <li
-                      key={hop.key}
-                      className="rounded border border-[var(--color-border)] p-2 text-xs"
-                    >
-                      <div className="flex items-center gap-2">
-                        <span
-                          aria-hidden="true"
-                          className={`h-2 w-2 shrink-0 rounded-full ${statusColors[hop.status]}`}
-                        />
-                        <span className="font-medium">{hop.label}</span>
-                        <span className="ml-auto capitalize text-[var(--color-textSecondary)]">
-                          {hop.status}
-                        </span>
-                      </div>
-                      <p className="mt-1 text-[var(--color-textSecondary)]">
-                        {hop.kind}
-                      </p>
-                      <p className="mt-1 break-words">{hop.detail}</p>
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            )}
+            {[
+              { label: "Connection route", hops: health.hops },
+              {
+                label: "Owned VPN prerequisites",
+                hops: health.prerequisites ?? [],
+              },
+            ]
+              .filter((section) => section.hops.length > 0)
+              .map((section) => (
+                <div key={section.label} className="mt-4">
+                  <h3 className="mb-2 text-sm font-medium">{section.label}</h3>
+                  <ul className="space-y-2">
+                    {section.hops.map((hop) => (
+                      <li
+                        key={hop.key}
+                        className="rounded border border-[var(--color-border)] p-2 text-xs"
+                      >
+                        <div className="flex items-center gap-2">
+                          <span
+                            aria-hidden="true"
+                            className={`h-2 w-2 shrink-0 rounded-full ${statusColors[hop.status]}`}
+                          />
+                          <span className="min-w-0 break-words font-medium">
+                            {hop.label}
+                          </span>
+                          <span className="ml-auto shrink-0 capitalize text-[var(--color-textSecondary)]">
+                            {hop.stateLabel ?? hop.status}
+                          </span>
+                        </div>
+                        <p className="mt-1 text-[var(--color-textSecondary)]">
+                          {hop.kind}
+                        </p>
+                        <p className="mt-1 break-words">{hop.detail}</p>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              ))}
           </section>
         </PopoverSurface>
       )}

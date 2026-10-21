@@ -1,4 +1,10 @@
+import { VPN_PROVIDER_CATALOG } from "../network/vpnProviderCatalog";
 import type { Connection } from "../../types/connection/connection";
+import type {
+  SessionRouteHealth,
+  VpnLeaseObservation,
+} from "../../types/network/sessionRouteHealth";
+import { observedSessionRouteHops } from "./sessionRouteHealth";
 import type {
   RDPLifecycleEvent,
   RDPStatsEvent,
@@ -11,20 +17,31 @@ import {
 export interface SessionConnectionHealthInput {
   protocol: "ssh" | "rdp";
   status: string;
+  sourceName?: string;
   backendSessionId?: string | null;
   connection?: Connection;
   accessible: boolean;
   alive?: boolean | null;
   stats?: RDPStatsEvent | null;
   lifecycle?: RDPLifecycleEvent | null;
+  routeHealth?: SessionRouteHealth | null;
+  vpnLeases?: VpnLeaseObservation[] | null;
 }
 
 /** A backend observation is not a remote reachability probe. Never expose raw
- * errors, endpoint identifiers or credential-bearing configuration here. */
+ * errors, full URLs or credential-bearing configuration here. */
 export function deriveSessionConnectionHealth(
   input: SessionConnectionHealthInput,
 ): OriginConnectionHealth {
   const protocol = input.protocol.toUpperCase();
+  const suppliedRoute = input.routeHealth;
+  const runtimeRoute =
+    input.accessible &&
+    suppliedRoute &&
+    suppliedRoute.sessionId === input.backendSessionId &&
+    (suppliedRoute.hops.length > 0 || suppliedRoute.truncated)
+      ? suppliedRoute
+      : null;
   const result: OriginConnectionHealth = {
     visible: true,
     status: "unknown",
@@ -32,12 +49,86 @@ export function deriveSessionConnectionHealth(
     summary:
       "Current backend health is unavailable. No network probe was performed.",
     details: [["Protocol", protocol]],
-    hops: configuredOriginRouteHops(input.connection),
+    hops: !input.accessible
+      ? []
+      : runtimeRoute
+        ? observedSessionRouteHops(runtimeRoute, {
+            sourceProtocol: input.protocol,
+            sourceName: input.sourceName,
+          })
+        : configuredOriginRouteHops(input.connection),
   };
+  if (input.accessible && input.vpnLeases) {
+    const leaseHops: OriginConnectionHealth["hops"] = [];
+    input.vpnLeases.forEach((owner, ownerIndex) => {
+      owner.leases.forEach((lease, leaseIndex) =>
+        leaseHops.push({
+          key: `vpn-lease-${ownerIndex}-${leaseIndex}`,
+          label: `${VPN_PROVIDER_CATALOG.find((provider) => provider.type === lease.vpnType)?.label ?? "VPN"} · owned lease ${leaseHops.length + 1}`,
+          kind: "Owned VPN prerequisite; route position is not attested",
+          stateLabel: lease.cleanupPending
+            ? "Cleanup pending"
+            : lease.observedAtUnixMs !== null &&
+                lease.providerState === "connected"
+              ? "Connected"
+              : lease.observedAtUnixMs !== null &&
+                  lease.providerState === "disconnected"
+                ? "Disconnected"
+                : lease.observedAtUnixMs !== null
+                  ? "Could not confirm"
+                  : "Owned",
+          status:
+            !lease.cleanupPending &&
+            lease.observedAtUnixMs !== null &&
+            lease.providerState === "connected"
+              ? "healthy"
+              : !lease.cleanupPending &&
+                  lease.observedAtUnixMs !== null &&
+                  lease.providerState === "disconnected"
+                ? "degraded"
+                : "unknown",
+          detail: lease.cleanupPending
+            ? "The session owns this VPN lease, but cleanup is pending. Provider connectivity is not confirmed."
+            : lease.observedAtUnixMs !== null &&
+                lease.providerState !== "unknown"
+              ? `The session owns this VPN lease. Provider status was ${lease.providerState} at ${new Date(lease.observedAtUnixMs).toISOString()}; this is a sampled provider observation, not a reachability probe.`
+              : lease.observedAtUnixMs !== null
+                ? `The session owns this VPN lease, but provider connectivity could not be confirmed at ${new Date(lease.observedAtUnixMs).toISOString()}.`
+                : "The session owns this VPN lease. This confirms logical ownership only; provider connectivity has not been checked.",
+        }),
+      );
+      if (!owner.leases.length)
+        leaseHops.push({
+          key: `vpn-lease-${ownerIndex}`,
+          label: "VPN lease unavailable",
+          kind: "Owned VPN prerequisite; route position is not attested",
+          stateLabel: "Could not confirm",
+          status: "unknown",
+          detail:
+            "No owned lease was found for the current session binding. Provider connectivity has not been checked.",
+        });
+      if (owner.truncated)
+        leaseHops.push({
+          key: `vpn-lease-limit-${ownerIndex}`,
+          label: "Additional VPN leases",
+          kind: "Telemetry limit",
+          status: "unknown",
+          detail: "Some VPN leases were omitted by the telemetry limit.",
+        });
+    });
+    result.prerequisites = leaseHops;
+  }
   result.details.push([
     "Route",
-    result.hops.length ? "Saved connection route" : `Direct ${protocol}`,
+    runtimeRoute
+      ? "Observed runtime route"
+      : result.hops.length
+        ? "Saved connection route"
+        : `Direct ${protocol}`,
   ]);
+  const routeFailed = [...result.hops, ...(result.prerequisites ?? [])].some(
+    (hop) => hop.status === "degraded" || hop.status === "disconnected",
+  );
   if (!input.accessible) return result;
   if (input.status === "connecting" || input.status === "reconnecting") {
     result.status = "connecting";
@@ -78,6 +169,12 @@ export function deriveSessionConnectionHealth(
       "Traffic counters",
       "Not available from this SSH observation",
     ]);
+    if (result.status === "healthy" && routeFailed) {
+      result.status = "degraded";
+      result.label = "Route component needs attention";
+      result.summary =
+        "The backend actor is available, but a current route component reports a failure. Review the component evidence below.";
+    }
     return result;
   }
   const stats =
@@ -161,5 +258,11 @@ export function deriveSessionConnectionHealth(
       ["Historical recovered errors", stats.errors_recovered],
     ] as const)
       if (count(value)) result.details.push([label, String(value)]);
+  if (result.status === "healthy" && routeFailed) {
+    result.status = "degraded";
+    result.label = "Route component needs attention";
+    result.summary =
+      "The backend actor is available, but a current route component reports a failure. Review the component evidence below.";
+  }
   return result;
 }

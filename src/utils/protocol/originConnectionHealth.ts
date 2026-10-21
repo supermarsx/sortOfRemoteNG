@@ -2,6 +2,7 @@ import type { Connection } from "../../types/connection/connection";
 import type { OriginBrowserState } from "../../hooks/protocol/useOriginBrowser";
 import type { NativeBrowserSessionDiagnostics } from "../../types/network/nativeBrowserDiagnostics";
 import { browserConnectionDiagnosticFacts } from "./browserConnectionDiagnostics";
+import { observedSessionRouteHops } from "./sessionRouteHealth";
 import type { NetworkPathSummary } from "../network/resolveNetworkPath";
 
 export type OriginConnectionHealthStatus =
@@ -12,10 +13,21 @@ export interface OriginConnectionHealth {
   label: string;
   summary: string;
   details: [string, string][];
+  prerequisites?: OriginConnectionHealth["hops"];
   hops: {
     key: string;
     label: string;
     kind: string;
+    stateLabel?:
+      | "Setup succeeded"
+      | "Active"
+      | "Waiting"
+      | "Failed"
+      | "Disconnected"
+      | "Connected"
+      | "Owned"
+      | "Cleanup pending"
+      | "Could not confirm";
     status: OriginConnectionHealthStatus;
     detail: string;
   }[];
@@ -224,6 +236,15 @@ export function deriveOriginConnectionHealth(options: {
   enabled: boolean;
 }): OriginConnectionHealth {
   const { connection, state, enabled } = options;
+  if (!enabled)
+    return {
+      visible: false,
+      status: "unknown",
+      label: "Health unknown",
+      summary: "No current runtime health observation is available.",
+      details: [["Browser", "Not observed"]],
+      hops: [],
+    };
   const configured = configuredOriginRouteHops(connection, options.connections);
   const snapshot = state.snapshot;
   const candidate = options.observation;
@@ -312,6 +333,26 @@ export function deriveOriginConnectionHealth(options: {
       ["Upstream failures this attempt", String(proxy.upstreamFailures)],
       ["Destination denials this attempt", String(proxy.destinationDenials)],
     );
+  const runtimeHops =
+    enabled &&
+    observation?.routeHealth &&
+    (observation.routeHealth.hops.length || observation.routeHealth.truncated)
+      ? observedSessionRouteHops(observation.routeHealth)
+      : null;
+  const runtimeHasRelay =
+    !!runtimeHops &&
+    observation?.routeHealth?.hops.some((hop) => hop.kind === "private-relay");
+  if (
+    runtimeHops?.some(
+      (hop) => hop.status === "degraded" || hop.status === "disconnected",
+    ) &&
+    status === "healthy"
+  ) {
+    status = "degraded";
+    label = "Route component needs attention";
+    summary =
+      "The last document loaded, but a current route component reports a failure. Review its stage evidence below.";
+  }
   return {
     visible: configured.length > 0,
     status,
@@ -319,18 +360,23 @@ export function deriveOriginConnectionHealth(options: {
     summary,
     details,
     hops: [
-      {
-        key: "private-proxy",
-        label: "Private proxy",
-        kind: "Runtime observation",
-        status: relayStatus,
-        detail: proxy
-          ? proxy.state === "listening"
-            ? "Listener is running; this alone does not confirm upstream connectivity."
-            : "The proxy listener is unavailable."
-          : "No current proxy observation.",
-      },
-      ...(options.routeHops?.length ? options.routeHops : configured),
+      ...(!runtimeHasRelay
+        ? [
+            {
+              key: "private-proxy",
+              label: "Private proxy",
+              kind: "Runtime observation",
+              status: relayStatus,
+              detail: proxy
+                ? proxy.state === "listening"
+                  ? "Listener is running; this alone does not confirm upstream connectivity."
+                  : "The proxy listener is unavailable."
+                : "No current proxy observation.",
+            },
+          ]
+        : []),
+      ...(runtimeHops ??
+        (options.routeHops?.length ? options.routeHops : configured)),
       {
         key: "website",
         label: "Website",

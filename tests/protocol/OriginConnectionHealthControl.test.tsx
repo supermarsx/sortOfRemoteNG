@@ -148,4 +148,19 @@ describe("native browser connection health control", () => {
     );
     expect(view.queryByRole("button")).toBeNull();
   });
+  it("presents historical setup success without replacing its conservative health color", async () => {
+    const value = health();
+    value.hops[0] = {
+      ...value.hops[0],
+      stateLabel: "Setup succeeded",
+      detail:
+        "Negotiation succeeded during setup; current reachability is not checked.",
+    };
+    const view = render(<OriginConnectionHealthControl {...props(value)} />);
+    fireEvent.click(view.getByRole("button", { name: /Connection health:/ }));
+    await view.findByRole("region", { name: "Connection health details" });
+    expect(view.getByText("Setup succeeded")).toBeTruthy();
+    expect(view.getByText(value.hops[0].detail)).toBeTruthy();
+    expect(value.hops[0].status).toBe("unknown");
+  });
 });

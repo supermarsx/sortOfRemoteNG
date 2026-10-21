@@ -2231,6 +2231,9 @@ fn shutdown_establishment_sockets(sockets: &StdMutex<Vec<TcpStream>>) {
 }
 
 struct SshEstablishmentControl {
+    health: sorng_core::route_health::RouteHealth,
+    health_final_index: AtomicUsize,
+    health_proxy_index: AtomicUsize,
     deadline: Instant,
     overall_timeout: Duration,
     cancellation: Arc<PendingSshConnection>,
@@ -2245,10 +2248,15 @@ impl SshEstablishmentControl {
         config: &SshConnectionConfig,
         cancellation: Arc<PendingSshConnection>,
     ) -> Result<Arc<Self>, String> {
-        Self::new_with_timeout(
+        let control = Self::new_with_timeout(
             clamped_ssh_establishment_timeout(config.connect_timeout),
             cancellation,
-        )
+        )?;
+        control.health_final_index.store(
+            super::route_health::initialize(config, &control.health),
+            Ordering::Relaxed,
+        );
+        Ok(control)
     }
 
     fn new_with_timeout(
@@ -2297,6 +2305,9 @@ impl SshEstablishmentControl {
         });
 
         Ok(Arc::new(Self {
+            health: Default::default(),
+            health_final_index: AtomicUsize::new(0),
+            health_proxy_index: AtomicUsize::new(0),
             deadline,
             overall_timeout,
             cancellation,
@@ -2383,8 +2394,14 @@ impl SshEstablishmentControl {
     where
         F: Future<Output = Result<T, String>>,
     {
+        let observation = super::route_health::phase_operation(
+            &self.health,
+            phase,
+            self.health_final_index.load(Ordering::Relaxed),
+            self.health_proxy_index.load(Ordering::Relaxed),
+        );
         tokio::pin!(future);
-        tokio::select! {
+        let result = tokio::select! {
             biased;
             _ = self.cancellation.cancelled() => {
                 self.trigger(ESTABLISHMENT_CANCELLED);
@@ -2395,7 +2412,11 @@ impl SshEstablishmentControl {
                 Err(self.timeout_error(phase, effective))
             }
             result = &mut future => result,
+        };
+        if let Some(observation) = observation {
+            observation.finish(result.is_ok());
         }
+        result
     }
 
     async fn run_isolated_local_phase<T, F>(
@@ -2604,9 +2625,19 @@ impl SshEstablishmentControl {
     where
         F: FnOnce(&SshBlockingPhaseGuard) -> Result<T, String>,
     {
+        let observation = super::route_health::phase_operation(
+            &self.health,
+            phase,
+            self.health_final_index.load(Ordering::Relaxed),
+            self.health_proxy_index.load(Ordering::Relaxed),
+        );
         let guard = self.arm_blocking_phase(phase, requested)?;
         let result = operation(&guard);
-        guard.finish(result)
+        let result = guard.finish(result);
+        if let Some(observation) = observation {
+            observation.finish(result.is_ok());
+        }
+        result
     }
 }
 
@@ -4359,6 +4390,8 @@ impl SshService {
         let (intermediate_sessions, bridge_handles) = bridge_cleanup.take_parts();
 
         let mut session = SshSession {
+            route_health: control.health.clone(),
+            selected_health_proxy_index: control.health_proxy_index.load(Ordering::Relaxed),
             id: session_id.clone(),
             session: sess,
             channel_open: Arc::new(ChannelOpenGate::default()),
@@ -4993,7 +5026,8 @@ impl SshService {
     ) -> Result<TcpStream, String> {
         let mut last_error = String::from("No proxies available");
 
-        for proxy in &chain_config.proxies {
+        for (index, proxy) in chain_config.proxies.iter().enumerate() {
+            control.health_proxy_index.store(index, Ordering::Relaxed);
             match self
                 .establish_proxy_connection_with_control(config, proxy, control, hop_timeout)
                 .await
@@ -5032,6 +5066,7 @@ impl SshService {
         };
 
         let proxy = &chain_config.proxies[index];
+        control.health_proxy_index.store(index, Ordering::Relaxed);
         self.establish_proxy_connection_with_control(config, proxy, control, hop_timeout)
             .await
     }
@@ -8001,6 +8036,20 @@ impl SshService {
         })
     }
 
+    pub fn route_health(
+        &self,
+        session_id: &str,
+    ) -> Result<sorng_core::route_health::RouteHealthSnapshot, String> {
+        let session = self
+            .sessions
+            .get(session_id)
+            .ok_or("SSH route actor is unavailable")?;
+        Ok(super::route_health::snapshot(
+            session,
+            self.is_session_alive(session_id),
+        ))
+    }
+
     pub async fn list_sessions(&self) -> Vec<SshSessionInfo> {
         self.sessions
             .values()
@@ -8937,6 +8986,50 @@ mod connection_admission_tests {
         .expect("valid SSH admission test config")
     }
 
+    #[tokio::test]
+    async fn route_health_control_records_actual_loopback_transport_phase() {
+        use sorng_core::route_health::{HopEvidence, HopStage, HopState};
+        let listener = TokioTcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let mut config = config();
+        config.port = address.port();
+        let control =
+            SshEstablishmentControl::new(&config, Arc::new(PendingSshConnection::new())).unwrap();
+        let service = SshService::new();
+        let stream = service
+            .lock()
+            .await
+            .connect_establishment_addresses(
+                vec![address],
+                &control,
+                "direct-tcp-connect",
+                Duration::from_secs(1),
+            )
+            .await
+            .unwrap();
+        assert_eq!(stream.peer_addr().unwrap(), address);
+        let snapshot = control.health.snapshot("actor");
+        assert_eq!(snapshot.hops[0].stage, HopStage::Tcp);
+        assert_eq!(snapshot.hops[0].state, HopState::Waiting);
+        assert_eq!(
+            snapshot.hops[0].endpoint.as_ref().unwrap().port,
+            address.port()
+        );
+        let result: Result<(), String> = control
+            .run_async_phase("final-ssh-authentication", Duration::from_secs(1), async {
+                Err("fixture-only".into())
+            })
+            .await;
+        assert!(result.is_err());
+        assert_eq!(
+            control.health.snapshot("actor").hops[0].evidence,
+            HopEvidence::NegotiationFailed
+        );
+        assert!(!serde_json::to_string(&control.health.snapshot("actor"))
+            .unwrap()
+            .contains("fixture-only"));
+    }
+
     fn limits(max_sessions: usize, max_handshakes: usize) -> SshConnectionAdmissionLimits {
         SshConnectionAdmissionLimits {
             max_sessions,
@@ -9803,6 +9896,8 @@ mod connection_admission_tests {
         EstablishedSshConnection {
             session_id: session_id.clone(),
             session: Some(SshSession {
+                route_health: Default::default(),
+                selected_health_proxy_index: 0,
                 id: session_id,
                 session,
                 channel_open: Arc::new(ChannelOpenGate::default()),
@@ -11957,6 +12052,8 @@ mod tests {
                 Ok(EstablishedSshConnection {
                     session_id: session_id.clone(),
                     session: Some(SshSession {
+                        route_health: Default::default(),
+                        selected_health_proxy_index: 0,
                         id: session_id,
                         session,
                         channel_open: Arc::new(ChannelOpenGate::default()),

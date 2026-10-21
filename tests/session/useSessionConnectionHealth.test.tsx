@@ -47,6 +47,8 @@ const props = () => ({
   backendSessionId: "actor-a",
   session,
 });
+const aliveCalls = () =>
+  h.invoke.mock.calls.filter(([command]) => command === "is_session_alive");
 const flush = async () => {
   await act(async () => {
     await Promise.resolve();
@@ -59,7 +61,26 @@ beforeEach(() => {
   h.valid = true;
   h.current.clear();
   h.access.clear();
-  h.invoke.mockReset().mockResolvedValue(true);
+  h.invoke
+    .mockReset()
+    .mockImplementation(async (command: string, args: { sessionId: string }) =>
+      command === "is_session_alive"
+        ? true
+        : {
+            sessionId: args.sessionId,
+            observedAtUnixMs: Date.now(),
+            hops: [
+              {
+                index: 0,
+                kind: command === "get_rdp_route_health" ? "rdp" : "ssh",
+                state: "connected",
+                evidence: "runtime-active",
+                stage: "transport",
+                updatedAtUnixMs: Date.now(),
+              },
+            ],
+          },
+    );
   h.capture.mockReset().mockImplementation(() => {
     if (!h.valid) throw new Error("locked");
     return () => {
@@ -86,9 +107,9 @@ describe("scoped passive SSH health observations", () => {
       session: { ...session, lastActivity: new Date() },
     });
     await flush();
-    expect(h.invoke).toHaveBeenCalledTimes(1);
+    expect(aliveCalls()).toHaveLength(1);
     await act(async () => vi.advanceTimersByTimeAsync(10000));
-    expect(h.invoke).toHaveBeenCalledTimes(2);
+    expect(aliveCalls()).toHaveLength(2);
   });
   it("expires a pending check without overlapping it or accepting its late green result", async () => {
     let finish!: (value: boolean) => void;
@@ -104,7 +125,7 @@ describe("scoped passive SSH health observations", () => {
     await flush();
     await act(async () => vi.advanceTimersByTimeAsync(60000));
     expect(view.result.current.status).toBe("unknown");
-    expect(h.invoke).toHaveBeenCalledTimes(1);
+    expect(aliveCalls()).toHaveLength(1);
     await act(async () => finish(true));
     expect(view.result.current.status).toBe("unknown");
   });
@@ -127,11 +148,11 @@ describe("scoped passive SSH health observations", () => {
     });
     await flush();
     expect(view.result.current.status).toBe("unknown");
-    expect(h.invoke).toHaveBeenCalledTimes(1);
+    expect(aliveCalls()).toHaveLength(1);
     await act(async () => finish(false));
     await flush();
     expect(view.result.current.status).toBe("healthy");
-    expect(h.invoke).toHaveBeenCalledTimes(2);
+    expect(aliveCalls()).toHaveLength(2);
     h.active = false;
     view.rerender({ ...props(), backendSessionId: "actor-b" });
     expect(view.result.current.status).toBe("unknown");
@@ -149,19 +170,22 @@ describe("scoped passive SSH health observations", () => {
     act(() => h.access.forEach((callback) => callback({ databaseId: "db" })));
     expect(view.result.current.status).toBe("unknown");
     await act(async () => vi.advanceTimersByTimeAsync(60000));
-    expect(h.invoke).toHaveBeenCalledTimes(1);
+    expect(aliveCalls()).toHaveLength(1);
     h.valid = true;
     h.invoke.mockResolvedValueOnce(false);
     act(() => h.access.forEach((callback) => callback({ databaseId: "db" })));
     await flush();
     expect(view.result.current.status).toBe("disconnected");
   });
-  it("does not poll RDP or unresolved SSH actors, and unsubscribes on unmount", async () => {
+  it("uses the RDP route command without SSH checks and unsubscribes on unmount", async () => {
     const view = renderHook(useSessionConnectionHealth, {
       initialProps: { ...props(), protocol: "rdp" as "ssh" | "rdp" },
     });
     await flush();
-    expect(h.invoke).not.toHaveBeenCalled();
+    expect(aliveCalls()).toHaveLength(0);
+    expect(h.invoke).toHaveBeenCalledWith("get_rdp_route_health", {
+      sessionId: "actor-a",
+    });
     view.unmount();
     expect(h.current.size).toBe(0);
     expect(h.access.size).toBe(0);
@@ -192,7 +216,7 @@ describe("scoped passive SSH health observations", () => {
     expect(view.result.current.status).toBe("healthy");
     view.rerender({ ...initial, stats: { ...stats, phase: "initializing" } });
     expect(view.result.current.status).toBe("connecting");
-    expect(h.invoke).not.toHaveBeenCalled();
+    expect(aliveCalls()).toHaveLength(0);
   });
   it("invalidates a green observation when the session actor generation changes", async () => {
     const view = renderHook(useSessionConnectionHealth, {
@@ -262,5 +286,256 @@ describe("scoped passive SSH health observations", () => {
     h.valid = true;
     view.rerender({ ...initial, lifecycle: { ...lifecycle } });
     expect(view.result.current.status).toBe("unknown");
+  });
+  it.each(["owner", "actor", "timeout"])(
+    "fences a late route receipt after %s changes",
+    async (change) => {
+      let finish!: (value: unknown) => void;
+      h.invoke.mockImplementation(async (command: string) =>
+        command === "is_session_alive"
+          ? true
+          : new Promise((resolve) => {
+              finish = resolve;
+            }),
+      );
+      const view = renderHook(useSessionConnectionHealth, {
+        initialProps: props(),
+      });
+      await flush();
+      expect(h.invoke).toHaveBeenCalledWith("get_ssh_route_health", {
+        sessionId: "actor-a",
+      });
+      if (change === "owner") h.valid = false;
+      if (change === "actor")
+        view.rerender({
+          ...props(),
+          backendSessionId: "actor-b",
+          session: { ...session, backendSessionId: "actor-b" },
+        });
+      if (change === "timeout")
+        await act(async () => vi.advanceTimersByTimeAsync(5000));
+      await act(async () =>
+        finish({
+          sessionId: "actor-a",
+          observedAtUnixMs: null,
+          hops: [
+            {
+              index: 0,
+              kind: "proxy",
+              state: "failed",
+              evidence: "negotiation-failed",
+              stage: "tcp",
+              updatedAtUnixMs: null,
+            },
+          ],
+        }),
+      );
+      expect(
+        view.result.current.hops.some((hop) => hop.key === "runtime-0"),
+      ).toBe(false);
+    },
+  );
+  it("reads only active VPN bindings for the current actor and projects logical ownership without provider health", async () => {
+    const native = h.invoke.getMockImplementation()!;
+    h.invoke.mockImplementation(async (command: string, args: any) =>
+      command === "get_vpn_owner_lease_observations"
+        ? [
+            {
+              ownerId: "owned",
+              truncated: false,
+              leases: [
+                {
+                  vpnType: "wireguard",
+                  connectionId: "PRIVATE_ID",
+                  leaseOwned: true,
+                  providerState: "unknown",
+                  observedAtUnixMs: null,
+                  cleanupPending: true,
+                },
+              ],
+            },
+          ]
+        : native(command, args),
+    );
+    const view = renderHook(useSessionConnectionHealth, {
+      initialProps: {
+        ...props(),
+        session: {
+          ...session,
+          vpnLeaseBindings: [
+            {
+              ownerId: "owned",
+              backendSessionId: "actor-a",
+              protocol: "ssh",
+              status: "active",
+            },
+            {
+              ownerId: "foreign",
+              backendSessionId: "actor-b",
+              protocol: "ssh",
+              status: "active",
+            },
+            {
+              ownerId: "closed",
+              backendSessionId: "actor-a",
+              protocol: "ssh",
+              status: "backend-closed",
+            },
+            {
+              ownerId: "rdp",
+              backendSessionId: "actor-a",
+              protocol: "rdp",
+              status: "active",
+            },
+          ],
+        },
+      },
+    });
+    await flush();
+    expect(h.invoke).toHaveBeenCalledWith("get_vpn_owner_lease_observations", {
+      ownerIds: ["owned"],
+    });
+    const hop = view.result.current.prerequisites?.find((hop) =>
+      hop.kind.startsWith("Owned VPN prerequisite"),
+    );
+    expect(hop).toMatchObject({ status: "unknown" });
+    expect(hop?.detail).toContain("cleanup is pending");
+    expect(JSON.stringify(view.result.current)).not.toContain("PRIVATE_ID");
+  });
+  it("drops a late VPN lease response after owner revocation without a render", async () => {
+    const native = h.invoke.getMockImplementation()!;
+    let finish!: (value: unknown) => void;
+    h.invoke.mockImplementation(async (command: string, args: any) =>
+      command === "get_vpn_owner_lease_observations"
+        ? new Promise((resolve) => {
+            finish = resolve;
+          })
+        : native(command, args),
+    );
+    const view = renderHook(useSessionConnectionHealth, {
+      initialProps: {
+        ...props(),
+        session: {
+          ...session,
+          vpnLeaseBindings: [
+            {
+              ownerId: "owned",
+              backendSessionId: "actor-a",
+              protocol: "ssh",
+              status: "active",
+            },
+          ],
+        },
+      },
+    });
+    await flush();
+    expect(h.invoke).toHaveBeenCalledWith("get_vpn_owner_lease_observations", {
+      ownerIds: ["owned"],
+    });
+    h.valid = false;
+    await act(async () =>
+      finish([
+        {
+          ownerId: "owned",
+          truncated: false,
+          leases: [
+            {
+              vpnType: "wireguard",
+              connectionId: "PRIVATE",
+              leaseOwned: true,
+              providerState: "unknown",
+              observedAtUnixMs: null,
+              cleanupPending: false,
+            },
+          ],
+        },
+      ]),
+    );
+    expect(view.result.current.status).toBe("unknown");
+    expect(
+      (view.result.current.prerequisites ?? []).some((hop) =>
+        hop.kind.startsWith("Owned VPN prerequisite"),
+      ),
+    ).toBe(false);
+  });
+  it("times out only VPN evidence first and independently expires actor evidence during a hung serialized provider read", async () => {
+    const native = h.invoke.getMockImplementation()!;
+    h.invoke.mockImplementation(async (command: string, args: any) =>
+      command === "get_vpn_owner_lease_observations"
+        ? new Promise(() => {})
+        : native(command, args),
+    );
+    const view = renderHook(useSessionConnectionHealth, {
+      initialProps: {
+        ...props(),
+        session: {
+          ...session,
+          vpnLeaseBindings: [
+            {
+              ownerId: "owned",
+              backendSessionId: "actor-a",
+              protocol: "ssh",
+              status: "active",
+            },
+          ],
+        },
+      },
+    });
+    await flush();
+    expect(view.result.current.status).toBe("healthy");
+    await act(async () => vi.advanceTimersByTimeAsync(6000));
+    expect(view.result.current.status).toBe("healthy");
+    expect(
+      (view.result.current.prerequisites ?? []).some((hop) =>
+        hop.kind.startsWith("Owned VPN prerequisite"),
+      ),
+    ).toBe(false);
+    await act(async () => vi.advanceTimersByTimeAsync(9000));
+    expect(view.result.current.status).toBe("unknown");
+    expect(aliveCalls()).toHaveLength(1);
+  });
+  it("expires accepted provider status independently while a later poll is blocked", async () => {
+    const native = h.invoke.getMockImplementation()!;
+    h.invoke.mockImplementation(async (command: string, args: any) =>
+      command === "get_vpn_owner_lease_observations"
+        ? [
+            {
+              ownerId: "owned",
+              truncated: false,
+              leases: [
+                {
+                  vpnType: "wireguard",
+                  connectionId: "private",
+                  leaseOwned: true,
+                  cleanupPending: false,
+                  providerState: "connected",
+                  observedAtUnixMs: Date.now(),
+                },
+              ],
+            },
+          ]
+        : native(command, args),
+    );
+    const view = renderHook(useSessionConnectionHealth, {
+      initialProps: {
+        ...props(),
+        session: {
+          ...session,
+          vpnLeaseBindings: [
+            {
+              ownerId: "owned",
+              backendSessionId: "actor-a",
+              protocol: "ssh",
+              status: "active",
+            },
+          ],
+        },
+      },
+    });
+    await flush();
+    expect(view.result.current.prerequisites?.[0].status).toBe("healthy");
+    h.invoke.mockImplementation(() => new Promise(() => {}));
+    await act(async () => vi.advanceTimersByTimeAsync(15000));
+    expect(view.result.current.prerequisites).toBeUndefined();
   });
 });

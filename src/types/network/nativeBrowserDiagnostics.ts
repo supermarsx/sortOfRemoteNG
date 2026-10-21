@@ -3,6 +3,10 @@ import {
   type OriginBrowserFailureReason,
   type OriginBrowserSnapshot,
 } from "../protocols/originBrowser";
+import {
+  parseSessionRouteHealth,
+  type SessionRouteHealth,
+} from "./sessionRouteHealth";
 
 export interface NativeProxyDiagnostics {
   state:
@@ -23,6 +27,7 @@ export interface NativeBrowserSessionDiagnostics {
   failureReason?: OriginBrowserFailureReason | "redirect-denied";
   /** Null means no nonblocking relay snapshot was available. */
   proxy: NativeProxyDiagnostics | null;
+  routeHealth?: SessionRouteHealth | null;
 }
 
 export interface NativeBrowserDiagnostics {
@@ -119,6 +124,17 @@ export function parseNativeBrowserDiagnostics(
         phase,
         ...(failureReason ? { failureReason } : {}),
         proxy: proxySnapshot(row.proxy),
+        ...(row.routeHealth !== undefined
+          ? {
+              routeHealth:
+                row.routeHealth === null
+                  ? null
+                  : parseSessionRouteHealth(
+                      row.routeHealth,
+                      identity.sessionId,
+                    ),
+            }
+          : {}),
       };
     }),
   };
