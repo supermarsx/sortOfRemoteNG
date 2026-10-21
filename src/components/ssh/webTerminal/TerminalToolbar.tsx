@@ -4,6 +4,8 @@ import MacroRecordButton from "./MacroRecordButton";
 import MacroReplayPopover from "./MacroReplayPopover";
 import HostKeyPopover from "./HostKeyPopover";
 import TotpPopover from "./TotpPopover";
+import SessionConnectionHealthControl from "../../session/SessionConnectionHealthControl";
+import { useSessionConnectionHealth } from "../../../hooks/session/useSessionConnectionHealth";
 import {
   Clipboard,
   Copy,
@@ -19,6 +21,14 @@ import {
 } from "lucide-react";
 
 function TerminalToolbar({ mgr }: { mgr: WebTerminalMgr }) {
+  const health = useSessionConnectionHealth({
+    protocol: "ssh",
+    status: mgr.status,
+    session: mgr.session,
+    backendSessionId: mgr.session.backendSessionId,
+    connection: mgr.connection,
+    enabled: mgr.isSsh,
+  });
   return (
     <div className="flex items-center gap-2" data-testid="terminal-toolbar">
       <button
@@ -97,6 +107,16 @@ function TerminalToolbar({ mgr }: { mgr: WebTerminalMgr }) {
           <MacroRecordButton mgr={mgr} />
           <MacroReplayPopover mgr={mgr} />
           <HostKeyPopover mgr={mgr} />
+          <SessionConnectionHealthControl
+            health={health}
+            scope={JSON.stringify([
+              mgr.session.id,
+              mgr.session.ownerDatabaseId,
+              mgr.session.backendSessionId,
+              mgr.session.lifecycleActorGeneration,
+              mgr.session.lifecycleWriterId,
+            ])}
+          />
         </>
       )}
       <TotpPopover mgr={mgr} />

@@ -17,6 +17,7 @@ import { useRDPClient, type RDPClientMgr } from "../../hooks/rdp/useRDPClient";
 import { useNonPassiveWheel } from "../../hooks/window/useNonPassiveWheel";
 import { SessionFullscreenExitControl } from "../session/SessionFullscreenExitControl";
 import { useRDPInternalsBridge } from "../../hooks/rdp/useRDPInternalsBridge";
+import { useSessionConnectionHealth } from "../../hooks/session/useSessionConnectionHealth";
 
 // ─── Props ───────────────────────────────────────────────────────────
 
@@ -757,6 +758,15 @@ const RDPClient: React.FC<RDPClientProps> = ({
   onClose,
 }) => {
   const mgr = useRDPClient(session);
+  const connectionHealth = useSessionConnectionHealth({
+    protocol: "rdp",
+    session,
+    status: mgr.connectionStatus,
+    backendSessionId: mgr.rdpSessionId,
+    connection: mgr.connection,
+    stats: mgr.stats,
+    lifecycle: mgr.lifecycle,
+  });
   const openInternals = useRDPInternalsBridge(session, mgr, onActivateSession);
 
   // Display rotation state. Seeded from `rdpSettings.display.autoRotate` once
@@ -791,6 +801,14 @@ const RDPClient: React.FC<RDPClientProps> = ({
           sessionName={session.name}
           sessionHostname={session.hostname}
           connectionStatus={mgr.connectionStatus}
+          connectionHealth={connectionHealth}
+          connectionHealthScope={JSON.stringify([
+            session.id,
+            session.ownerDatabaseId,
+            mgr.rdpSessionId,
+            session.lifecycleActorGeneration,
+            session.lifecycleWriterId,
+          ])}
           statusMessage={mgr.statusMessage}
           desktopSize={mgr.desktopSize}
           colorDepth={mgr.colorDepth}

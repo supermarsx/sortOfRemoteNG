@@ -10,6 +10,7 @@ import HostInfoPopover from "./rdpClientHeader/HostInfoPopover";
 import TotpButton from "./rdpClientHeader/TotpButton";
 import ToolbarButtons from "./rdpClientHeader/ToolbarButtons";
 import RecordingControls from "./rdpClientHeader/RecordingControls";
+import SessionConnectionHealthControl from "../session/SessionConnectionHealthControl";
 
 export default function RDPClientHeader(p: RDPClientHeaderProps) {
   const mgr = useRDPClientHeader({
@@ -62,6 +63,12 @@ export default function RDPClientHeader(p: RDPClientHeaderProps) {
         <div className="w-px h-4 bg-[var(--color-border)] mx-1" />
         <SendKeysPopover mgr={mgr} handleSendKeys={p.handleSendKeys} />
         <HostInfoPopover mgr={mgr} p={p} />
+        {p.connectionHealth && (
+          <SessionConnectionHealthControl
+            health={p.connectionHealth}
+            scope={p.connectionHealthScope ?? p.sessionId}
+          />
+        )}
         <TotpButton mgr={mgr} p={p} />
         <div className="w-px h-4 bg-[var(--color-border)] mx-1" />
         <ToolbarButtons p={p} />

@@ -7,6 +7,8 @@ export interface RDPClientHeaderProps {
   sessionName: string;
   sessionHostname: string;
   connectionStatus: string;
+  connectionHealth?: import("../../../utils/protocol/originConnectionHealth").OriginConnectionHealth;
+  connectionHealthScope?: string;
   statusMessage: string;
   desktopSize: { width: number; height: number };
   colorDepth: number;
