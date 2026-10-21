@@ -46,6 +46,25 @@ const text = (value: unknown, maximum: number): value is string =>
       character.charCodeAt(0) < 32 || character.charCodeAt(0) === 127,
   );
 
+function endpointHost(value: unknown): string | undefined {
+  if (!text(value, 253) || /[\s/\\@?#]/u.test(value)) return;
+  let host = value;
+  if (host.startsWith("[") || host.endsWith("]")) {
+    if (!host.startsWith("[") || !host.endsWith("]")) return;
+    host = host.slice(1, -1);
+    if (!host.includes(":")) return;
+  }
+  if (host.includes(":")) {
+    try {
+      // Validate IPv6 without canonicalizing the native prompt's literal.
+      new URL(`http://[${host}]/`);
+    } catch {
+      return;
+    }
+  }
+  return host;
+}
+
 function source(options: NativeBrowserSshTrustOptions) {
   const row = options.connection;
   const legacy = row?.security?.sshTunnel;
@@ -92,9 +111,22 @@ function source(options: NativeBrowserSshTrustOptions) {
       port: "port" in spec ? (spec.port ?? 22) : 22,
     } as Connection;
   }
+  let hostname: unknown = selected?.hostname;
+  if (selected && spec.connectionId) {
+    const integrationHost: unknown = selected.integration?.host;
+    if (
+      integrationHost !== undefined &&
+      integrationHost !== null &&
+      integrationHost !== ""
+    ) {
+      if (typeof integrationHost !== "string") return { needed: true };
+      hostname = integrationHost;
+    }
+  }
+  const host = endpointHost(hostname);
   if (
     !selected ||
-    !text(selected.hostname, 255) ||
+    !host ||
     !Number.isInteger(selected.port ?? 22) ||
     (selected.port ?? 22) < 1 ||
     (selected.port ?? 22) > 65535
@@ -102,12 +134,13 @@ function source(options: NativeBrowserSshTrustOptions) {
     return { needed: true };
   return {
     needed: true,
-    host: selected.hostname.replace(/^\[([0-9a-fA-F:.]+)\]$/, "$1"),
+    host,
     port: selected.port ?? 22,
     connectionId: spec.connectionId,
     identity: stableJsonStringify([
       tunnelSourceIdentity(row),
       tunnelSourceIdentity(selected),
+      host,
     ]),
     policy: resolveEffectiveTrustPolicy(
       selected.sshTrustPolicy,

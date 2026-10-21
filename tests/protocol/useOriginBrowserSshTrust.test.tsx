@@ -106,6 +106,152 @@ afterEach(() => {
 });
 
 describe("native browser SSH host-key trust", () => {
+  it("binds a linked source to the same integration hostname as ordinary SSH", async () => {
+    const props = options();
+    props.connections = [
+      { ...ssh, integration: { host: "selected.test" } } as Connection,
+    ];
+    await start(props);
+    await emit(prompt({ host: "selected.test" }));
+    expect(h.verify).toHaveBeenCalledWith(
+      "selected.test",
+      22,
+      "ssh",
+      expect.anything(),
+      "ssh",
+    );
+    expect(h.invoke).toHaveBeenCalledWith(expect.anything(), {
+      sessionId: "backend",
+      decision: "accept_and_save",
+    });
+    await emit(prompt({ session_id: "stale-host", host: "ssh.test" }));
+    expect(h.verify).toHaveBeenCalledTimes(1);
+    expect(h.invoke).toHaveBeenLastCalledWith(expect.anything(), {
+      sessionId: "stale-host",
+      decision: "reject",
+    });
+  });
+  it.each([undefined, null, ""])(
+    "falls back to the saved hostname for integration host %s",
+    async (host) => {
+      const props = options();
+      props.connections = [
+        { ...ssh, integration: { host } } as unknown as Connection,
+      ];
+      await start(props);
+      await emit();
+      expect(h.verify).toHaveBeenCalledWith(
+        "ssh.test",
+        22,
+        "ssh",
+        expect.anything(),
+        "ssh",
+      );
+    },
+  );
+  it.each([
+    false,
+    23,
+    {},
+    "bad host",
+    "https://ssh.test",
+    "user@ssh.test",
+    "[invalid]",
+    "ssh.test:22",
+  ])(
+    "rejects malformed integration host %s without trust lookup",
+    async (host) => {
+      const props = options();
+      props.connections = [
+        { ...ssh, integration: { host } } as unknown as Connection,
+      ];
+      await start(props);
+      await emit();
+      expect(h.verify).not.toHaveBeenCalled();
+      expect(h.invoke).toHaveBeenLastCalledWith(expect.anything(), {
+        sessionId: "backend",
+        decision: "reject",
+      });
+    },
+  );
+  it("invalidates pending trust when the effective integration hostname changes", async () => {
+    let finish!: (value: unknown) => void;
+    h.verify.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          finish = resolve;
+        }),
+    );
+    const props = options();
+    props.connections = [
+      { ...ssh, integration: { host: "selected.test" } } as Connection,
+    ];
+    const view = await start(props);
+    let pending!: Promise<void>;
+    await act(async () => {
+      pending = h.callbacks[0]({ payload: prompt({ host: "selected.test" }) });
+      await Promise.resolve();
+    });
+    expect(h.verify).toHaveBeenCalledOnce();
+    view.rerender({
+      ...props,
+      connections: [
+        { ...ssh, integration: { host: "replacement.test" } } as Connection,
+      ],
+    });
+    await act(async () => {
+      finish({ status: "trusted" });
+      await pending;
+    });
+    expect(h.invoke).toHaveBeenCalledWith(expect.anything(), {
+      sessionId: "backend",
+      decision: "reject",
+    });
+    expect(h.invoke).not.toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ decision: "accept_and_save" }),
+    );
+    expect(h.trust).not.toHaveBeenCalled();
+  });
+  it("validates a selected integration IPv6 literal while retaining its saved port", async () => {
+    const props = options();
+    props.connections = [
+      { ...ssh, port: 2222, integration: { host: "[::1]" } } as Connection,
+    ];
+    await start(props);
+    await emit(prompt({ host: "::1", port: 2222 }));
+    expect(h.verify).toHaveBeenCalledWith(
+      "::1",
+      2222,
+      "ssh",
+      expect.anything(),
+      "ssh",
+    );
+    expect(h.invoke).toHaveBeenLastCalledWith(expect.anything(), {
+      sessionId: "backend",
+      decision: "accept_and_save",
+    });
+  });
+  it.each([0, -1, 65536, "22"])(
+    "rejects invalid linked endpoint port %s before trust lookup",
+    async (port) => {
+      const props = options();
+      props.connections = [
+        {
+          ...ssh,
+          port,
+          integration: { host: "selected.test" },
+        } as unknown as Connection,
+      ];
+      await start(props);
+      await emit(prompt({ host: "selected.test" }));
+      expect(h.verify).not.toHaveBeenCalled();
+      expect(h.invoke).toHaveBeenLastCalledWith(expect.anything(), {
+        sessionId: "backend",
+        decision: "reject",
+      });
+    },
+  );
   it("verifies the saved SSH source selected through the connection editor", async () => {
     const props = options();
     props.connection = setInlineSsh(
@@ -360,6 +506,9 @@ describe("native browser SSH host-key trust", () => {
   });
   it("supports an inline local-forward source without importing its password into trust calls", async () => {
     const props = options();
+    props.connections = [
+      { ...ssh, integration: { host: "unselected.test" } } as Connection,
+    ];
     props.connection = {
       ...website,
       security: {

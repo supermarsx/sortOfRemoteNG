@@ -97,7 +97,24 @@ fn build(
     {
         return Err(ERROR);
     }
-    let host = text(source, if inline { "host" } else { "hostname" })?;
+    // Ordinary SSH sessions use integration.host || hostname. Read the same
+    // endpoint from this immutable saved dependency, rather than dialing a
+    // different machine when an older record retains an integration endpoint.
+    // Inline routes own their explicit host and never inherit this metadata.
+    let host = if inline {
+        text(source, "host")?
+    } else {
+        let integration_host = match source.get("integration") {
+            None | Some(Value::Null) => "",
+            Some(value) if value.is_object() => text(value, "host")?,
+            _ => return Err(ERROR),
+        };
+        if integration_host.is_empty() {
+            text(source, "hostname")?
+        } else {
+            integration_host
+        }
+    };
     if host.is_empty()
         || host.len() > 253
         || host.chars().any(|c| c.is_whitespace() || c.is_control())
@@ -293,6 +310,54 @@ mod tests {
         assert!(config.strict_host_key_checking);
         assert!(!config.accept_new_host_keys);
         assert!(!config.allow_agent_auth);
+    }
+    #[test]
+    fn linked_ssh_uses_the_same_effective_endpoint_as_an_ordinary_terminal() {
+        let mut source = row();
+        source["hostname"] = "127.0.0.1".into();
+        source["port"] = 2222.into();
+        source["integration"] = json!({"host":"actual-ssh.example.test", "port":10000});
+        let config = build(&source, None, false).unwrap();
+        assert_eq!(config.host, "actual-ssh.example.test");
+        assert_eq!(config.port, 2222);
+        assert!(config.strict_host_key_checking);
+        // Choosing a vault changes credentials, never the saved endpoint.
+        let vault = json!({"facets":{"username":"vault-account","password":"vault-password"}});
+        assert_eq!(
+            build(&source, Some(&vault), false).unwrap().host,
+            config.host
+        );
+        // Explicit inline routes do not borrow a linked-record compatibility host.
+        source["host"] = "inline-ssh.example.test".into();
+        assert_eq!(
+            build(&source, None, true).unwrap().host,
+            "inline-ssh.example.test"
+        );
+        for integration in [
+            Value::Null,
+            json!({}),
+            json!({"host":null}),
+            json!({"host":""}),
+        ] {
+            source["integration"] = integration;
+            assert_eq!(build(&source, None, false).unwrap().host, "127.0.0.1");
+        }
+    }
+    #[test]
+    fn malformed_effective_ssh_endpoints_do_not_fall_back_to_another_machine() {
+        for integration in [
+            json!(false),
+            json!("not-an-object"),
+            json!({"host":false}),
+            json!({"host":"https://ssh.example.test"}),
+            json!({"host":"user@ssh.example.test"}),
+            json!({"host":"ssh.example.test:22"}),
+            json!({"host":"ssh.example.test\n"}),
+        ] {
+            let mut source = row();
+            source["integration"] = integration;
+            assert!(build(&source, None, false).is_err());
+        }
     }
     #[test]
     fn omitted_local_auth_type_preserves_saved_private_key_authentication() {
