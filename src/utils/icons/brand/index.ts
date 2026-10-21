@@ -4,6 +4,10 @@ import { GENERATED_BRAND_ICONS } from "./generatedBrandIcons";
 import { putty } from "./puttyBrandIcon";
 import { noip } from "./noipBrandIcon";
 import { tacticalrmm } from "./tacticalRmmBrandIcon";
+import {
+  STANDARD_NOTES_BRAND_ICONS,
+  type StandardNotesBrandIconName,
+} from "./standardNotesBrandIcons";
 import { vscode } from "./developerPublisherBrandIcons";
 import {
   RETRACED_PROVIDER_BRAND_ICONS,
@@ -73,6 +77,7 @@ export * from "./hostingPublisherBrandIcons";
 export { putty } from "./puttyBrandIcon";
 export { noip } from "./noipBrandIcon";
 export { tacticalrmm } from "./tacticalRmmBrandIcon";
+export * from "./standardNotesBrandIcons";
 export { vscode } from "./developerPublisherBrandIcons";
 export * from "./messagingPublisherBrandIcons";
 export * from "./hostingHistoricalBrandIcons";
@@ -88,6 +93,7 @@ export type BrandIconName =
   | "noip"
   | "tacticalrmm"
   | "vscode"
+  | StandardNotesBrandIconName
   | DashboardBrandIconName
   | RetracedProviderBrandIconName
   | BrandIconSlug
@@ -110,6 +116,7 @@ export const BRAND_ICONS: Readonly<Record<BrandIconName, LucideIcon>> = {
   noip,
   tacticalrmm,
   vscode,
+  ...STANDARD_NOTES_BRAND_ICONS,
   ...DASHBOARD_BRAND_ICONS,
   ...RETRACED_PROVIDER_BRAND_ICONS,
   ...GENERATED_BRAND_ICONS,

@@ -1,0 +1,164 @@
+{
+  "$schema": "../evidence.schema.json",
+  "version": 1,
+  "id": "standard-red-notes",
+  "class": "A",
+  "source": "https://github.com/supermarsx/standard-red-notes/blob/7c2d6e2e4d7a19a2f6ff55b1bad5b6836e11484e/app/packages/web/src/javascripts/Components/AccountMenu/SignIn.tsx",
+  "reviewed": "2026-10-21",
+  "mechanism": "form",
+  "summary": "Account email and password sign-in in a same-origin, script-driven pane. The settings=account query opens sign-in while signed out. Registration, local unlock and recovery use different markup.",
+  "sources": [
+    {
+      "id": "sign-in",
+      "kind": "public-source",
+      "title": "Account email and password sign-in pane",
+      "url": "https://github.com/supermarsx/standard-red-notes/blob/7c2d6e2e4d7a19a2f6ff55b1bad5b6836e11484e/app/packages/web/src/javascripts/Components/AccountMenu/SignIn.tsx",
+      "commit": "7c2d6e2e4d7a19a2f6ff55b1bad5b6836e11484e",
+      "retrieved": "2026-10-21"
+    },
+    {
+      "id": "menu",
+      "kind": "public-source",
+      "title": "Account menu DOM scope",
+      "url": "https://github.com/supermarsx/standard-red-notes/blob/7c2d6e2e4d7a19a2f6ff55b1bad5b6836e11484e/app/packages/web/src/javascripts/Components/AccountMenu/AccountMenu.tsx",
+      "commit": "7c2d6e2e4d7a19a2f6ff55b1bad5b6836e11484e",
+      "retrieved": "2026-10-21"
+    },
+    {
+      "id": "input",
+      "kind": "public-source",
+      "title": "Native email input markup",
+      "url": "https://github.com/supermarsx/standard-red-notes/blob/7c2d6e2e4d7a19a2f6ff55b1bad5b6836e11484e/app/packages/web/src/javascripts/Components/Input/DecoratedInput.tsx",
+      "commit": "7c2d6e2e4d7a19a2f6ff55b1bad5b6836e11484e",
+      "retrieved": "2026-10-21"
+    },
+    {
+      "id": "password",
+      "kind": "public-source",
+      "title": "Password input markup",
+      "url": "https://github.com/supermarsx/standard-red-notes/blob/7c2d6e2e4d7a19a2f6ff55b1bad5b6836e11484e/app/packages/web/src/javascripts/Components/Input/DecoratedPasswordInput.tsx",
+      "commit": "7c2d6e2e4d7a19a2f6ff55b1bad5b6836e11484e",
+      "retrieved": "2026-10-21"
+    },
+    {
+      "id": "button",
+      "kind": "public-source",
+      "title": "Native button markup",
+      "url": "https://github.com/supermarsx/standard-red-notes/blob/7c2d6e2e4d7a19a2f6ff55b1bad5b6836e11484e/app/packages/web/src/javascripts/Components/Button/Button.tsx",
+      "commit": "7c2d6e2e4d7a19a2f6ff55b1bad5b6836e11484e",
+      "retrieved": "2026-10-21"
+    },
+    {
+      "id": "entry",
+      "kind": "public-source",
+      "title": "Settings query opens sign-in for a signed-out account",
+      "url": "https://github.com/supermarsx/standard-red-notes/blob/7c2d6e2e4d7a19a2f6ff55b1bad5b6836e11484e/app/packages/web/src/javascripts/Event/ApplicationEventObserver.ts",
+      "commit": "7c2d6e2e4d7a19a2f6ff55b1bad5b6836e11484e",
+      "retrieved": "2026-10-21"
+    },
+    {
+      "id": "route",
+      "kind": "public-source",
+      "title": "HTML entry paths and settings query parsing",
+      "url": "https://github.com/supermarsx/standard-red-notes/blob/7c2d6e2e4d7a19a2f6ff55b1bad5b6836e11484e/app/packages/ui-services/src/Route/RouteParser.ts",
+      "commit": "7c2d6e2e4d7a19a2f6ff55b1bad5b6836e11484e",
+      "retrieved": "2026-10-21"
+    },
+    {
+      "id": "checkbox",
+      "kind": "public-source",
+      "title": "Native checkbox name and disabled state",
+      "url": "https://github.com/supermarsx/standard-red-notes/blob/7c2d6e2e4d7a19a2f6ff55b1bad5b6836e11484e/app/packages/web/src/javascripts/Components/Checkbox/Checkbox.tsx",
+      "commit": "7c2d6e2e4d7a19a2f6ff55b1bad5b6836e11484e",
+      "retrieved": "2026-10-21"
+    }
+  ],
+  "selectors": [
+    {
+      "selector": "#account-menu > div:has(> div > input[type=\"email\"]):has(input[name=\"is-ephemeral\"]:not(:disabled)) > div > input[type=\"email\"]",
+      "role": "username",
+      "source": "sign-in",
+      "basis": "observed",
+      "locator": "SignIn pane structure; menu/input/password/button sources supply native controls. The is-ephemeral checkbox is disabled during recovery-code sign-in."
+    },
+    {
+      "selector": "#account-menu > div:has(> div > input[type=\"email\"]):has(input[name=\"is-ephemeral\"]:not(:disabled)) > div > input[type=\"password\"]",
+      "role": "password",
+      "source": "sign-in",
+      "basis": "observed",
+      "locator": "SignIn pane structure; menu/input/password/button sources supply native controls. The is-ephemeral checkbox is disabled during recovery-code sign-in."
+    },
+    {
+      "selector": "#account-menu > div:has(> div > input[type=\"email\"]):has(input[name=\"is-ephemeral\"]:not(:disabled)) > button[type=\"button\"]",
+      "role": "control",
+      "source": "sign-in",
+      "basis": "observed",
+      "locator": "SignIn pane structure; menu/input/password/button sources supply native controls. The is-ephemeral checkbox is disabled during recovery-code sign-in."
+    }
+  ],
+  "fixtures": [
+    {
+      "file": "fixture.html",
+      "path": "/",
+      "derivedFrom": [
+        "sign-in",
+        "menu",
+        "input",
+        "password",
+        "button",
+        "checkbox"
+      ]
+    },
+    {
+      "file": "fixture.index.html",
+      "path": "/index.html",
+      "derivedFrom": [
+        "sign-in",
+        "menu",
+        "input",
+        "password",
+        "button",
+        "checkbox"
+      ]
+    },
+    {
+      "file": "fixture.popup.html",
+      "path": "/popup.html",
+      "derivedFrom": [
+        "sign-in",
+        "menu",
+        "input",
+        "password",
+        "button",
+        "checkbox"
+      ]
+    }
+  ],
+  "staysInteractive": [
+    {
+      "kind": "captcha",
+      "note": "Complete any human verification in the website."
+    },
+    {
+      "kind": "totp",
+      "note": "The generic challenge cannot reliably distinguish an authenticator token from an email code, so codes remain interactive."
+    },
+    {
+      "kind": "email-code",
+      "note": "Complete email challenges in the website."
+    },
+    {
+      "kind": "security-key",
+      "note": "Security keys remain interactive."
+    },
+    {
+      "kind": "device-approval",
+      "note": "Device approval remains interactive."
+    },
+    {
+      "kind": "other",
+      "note": "Account recovery, local unlock and optional nondefault workspace selection remain interactive."
+    }
+  ],
+  "notes": "Controls were read from pinned application source. Synthetic fixtures contain no vendor scripts or account data. This records selector provenance, not a real authenticated sign-in. No additional credential origins or automatic-code grant are introduced."
+}

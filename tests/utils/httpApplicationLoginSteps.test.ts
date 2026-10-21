@@ -257,13 +257,13 @@ describe("declarative login steps in the application catalog", () => {
     const eligible = base.HTTP_APPLICATION_PROFILES.filter(
       base.acceptsHttpLoginSteps,
     );
-    // 57 manual profiles and the 14 named applications on the generic heuristic.
-    expect(eligible).toHaveLength(71);
+    // 60 manual profiles and the 14 named applications on the generic heuristic.
+    expect(eligible).toHaveLength(74);
     const off = await load(
       { native: false },
       eligible.map(({ id }) => [id, steps(id)] as const),
     );
-    expect(off.HTTP_APPLICATION_LOGIN_STEPS.size).toBe(71);
+    expect(off.HTTP_APPLICATION_LOGIN_STEPS.size).toBe(74);
     expect(off.HTTP_APPLICATION_LOGIN_STEPS_PROBLEMS).toEqual([]);
     expect(off.HTTP_APPLICATION_PROFILES).toEqual(
       base.HTTP_APPLICATION_PROFILES,
@@ -407,7 +407,7 @@ describe("declarative login steps in the application catalog", () => {
         );
       }
     }
-    expect(modes).toEqual({ additive: 14, exclusive: 57 });
+    expect(modes).toEqual({ additive: 14, exclusive: 60 });
   });
 
   it("only adds coverage to an application that signs in automatically today: iLO keeps what it does and its steps are additive", async () => {
@@ -653,7 +653,7 @@ describe("declarative login steps in the application catalog", () => {
     expect(
       on.HTTP_APPLICATION_PROFILES.filter((profile) => profile.declarativeLogin)
         .length,
-    ).toBe(71);
+    ).toBe(74);
     // The exact wording for one profile of each shared sentence.
     expect(on.getHttpApplicationProfile("namecheap")!.description).toBe(
       "Domain registrar account dashboard, not a hosted website's control-panel account. Optional automatic sign-in types the saved username and password into the site's own sign-in pages, following the login steps recorded for this application, and stops at CAPTCHA, device approval, passkeys, SMS codes, security keys and any page it does not recognize. API keys are not website passwords. Use Open original sign-in for SSO or unsupported embedded-browser sign-in. The system browser has separate cookies and uses the operating system network route.",

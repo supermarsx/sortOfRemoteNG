@@ -25,6 +25,9 @@ import stepsOsticket from "../../data/loginSteps/self-hosted/osticket.json";
 import stepsOutlookOnline from "../../data/loginSteps/enterprise-identity/outlook-online.json";
 import stepsPypi from "../../data/loginSteps/self-hosted/pypi.json";
 import stepsSegurancaSocialDireta from "../../data/loginSteps/portuguese-portals/seguranca-social-direta.json";
+import stepsStandardNotes from "../../data/loginSteps/self-hosted/standard-notes.json";
+import stepsStandardNotesSelfHosted from "../../data/loginSteps/self-hosted/standard-notes-self-hosted.json";
+import stepsStandardRedNotes from "../../data/loginSteps/self-hosted/standard-red-notes.json";
 import stepsStrapi from "../../data/loginSteps/self-hosted/strapi.json";
 import stepsSupermicro from "../../data/loginSteps/appliances/supermicro.json";
 import stepsTime4vps from "../../data/loginSteps/hosted/time4vps.json";
@@ -63,6 +66,9 @@ export const HTTP_LOGIN_STEPS_FILES: readonly (readonly [
   ["outlook-online", stepsOutlookOnline],
   ["pypi", stepsPypi],
   ["seguranca-social-direta", stepsSegurancaSocialDireta],
+  ["standard-notes", stepsStandardNotes],
+  ["standard-notes-self-hosted", stepsStandardNotesSelfHosted],
+  ["standard-red-notes", stepsStandardRedNotes],
   ["strapi", stepsStrapi],
   ["supermicro", stepsSupermicro],
   ["time4vps", stepsTime4vps],

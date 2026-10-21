@@ -131,7 +131,7 @@ const ON = { declarativeLoginSupported: true };
 test("the committed native catalog and steps registry are what the generator produces", async () => {
   const result = await generateNativeLoginCatalog({ check: true });
   assert.deepEqual(result.stale, []);
-  assert.equal(result.profiles, 153);
+  assert.equal(result.profiles, 156);
 });
 
 test("--check passes on the tree and the command line takes nothing else", () => {
@@ -144,7 +144,7 @@ test("--check passes on the tree and the command line takes nothing else", () =>
   assert.equal(checked.status, 0, checked.stderr);
   assert.match(
     checked.stdout,
-    /^Checked the native login catalog: 153 profiles; \d+ login steps files validated, \d+ emitted/u,
+    /^Checked the native login catalog: 156 profiles; \d+ login steps files validated, \d+ emitted/u,
   );
   for (const args of [["--force"], ["--check", "extra"]]) {
     const refused = run(...args);
@@ -160,7 +160,7 @@ test("switched off, a steps file is validated and nothing of it is emitted", asy
   const empty = workspace(t);
   assert.deepEqual(await generateNativeLoginCatalog({ ...empty, ...OFF }), {
     stale: [],
-    profiles: 153,
+    profiles: 156,
     steps: 0,
     emitted: 0,
   });
@@ -170,7 +170,7 @@ test("switched off, a steps file is validated and nothing of it is emitted", asy
   });
   assert.deepEqual(await generateNativeLoginCatalog({ ...scratch, ...OFF }), {
     stale: [],
-    profiles: 153,
+    profiles: 156,
     steps: 2,
     emitted: 0,
   });
@@ -204,7 +204,7 @@ test("switched off, a steps file is validated and nothing of it is emitted", asy
     ...OFF,
     check: true,
   });
-  assert.deepEqual(checked, { stale: [], profiles: 153, steps: 2, emitted: 0 });
+  assert.deepEqual(checked, { stale: [], profiles: 156, steps: 2, emitted: 0 });
 
   // Still validated: a file the catalog cannot use fails the check.
   land(scratch, "self-hosted/zulip.json", {
@@ -234,7 +234,7 @@ test("switched on, the generated catalog equals the TypeScript catalog plus the 
     "appliances/idrac.json": passwordOnlyFile("idrac"),
   });
   const result = await generateNativeLoginCatalog({ ...scratch, ...ON });
-  assert.deepEqual(result, { stale: [], profiles: 153, steps: 2, emitted: 2 });
+  assert.deepEqual(result, { stale: [], profiles: 156, steps: 2, emitted: 2 });
   const empty = workspace(t);
   await generateNativeLoginCatalog({ ...empty, ...OFF });
   const before = JSON.parse(read(empty.catalogPath));

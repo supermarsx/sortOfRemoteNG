@@ -484,6 +484,82 @@
         "submitSelector": "form.login-form[name=\"login\"] button[type=\"submit\"]"
       }
     },
+    "standard-notes": {
+      "capability": "manual",
+      "declarativeLogin": {
+        "mode": "exclusive",
+        "credentialOrigins": ["https://app.standardnotes.com"],
+        "passwordOnly": false,
+        "loginSteps": [
+          {
+            "kind": "form",
+            "origin": "https://app.standardnotes.com",
+            "paths": ["/", "/index.html", "/popup.html"],
+            "selectors": {
+              "username": "#account-menu > div:has(> div > input[type=\"email\"]):has(input[name=\"is-ephemeral\"]:not(:disabled)) > div > input[type=\"email\"]",
+              "password": "#account-menu > div:has(> div > input[type=\"email\"]):has(input[name=\"is-ephemeral\"]:not(:disabled)) > div > input[type=\"password\"]"
+            }
+          },
+          {
+            "kind": "submit",
+            "submission": "spa",
+            "selectors": {
+              "control": "#account-menu > div:has(> div > input[type=\"email\"]):has(input[name=\"is-ephemeral\"]:not(:disabled)) > button[type=\"button\"]"
+            }
+          }
+        ]
+      }
+    },
+    "standard-notes-self-hosted": {
+      "capability": "manual",
+      "declarativeLogin": {
+        "mode": "exclusive",
+        "credentialOrigins": [],
+        "passwordOnly": false,
+        "loginSteps": [
+          {
+            "kind": "form",
+            "paths": ["/", "/index.html", "/popup.html"],
+            "selectors": {
+              "username": "#account-menu > div:has(> div > input[type=\"email\"]):has(input[name=\"is-ephemeral\"]:not(:disabled)) > div > input[type=\"email\"]",
+              "password": "#account-menu > div:has(> div > input[type=\"email\"]):has(input[name=\"is-ephemeral\"]:not(:disabled)) > div > input[type=\"password\"]"
+            }
+          },
+          {
+            "kind": "submit",
+            "submission": "spa",
+            "selectors": {
+              "control": "#account-menu > div:has(> div > input[type=\"email\"]):has(input[name=\"is-ephemeral\"]:not(:disabled)) > button[type=\"button\"]"
+            }
+          }
+        ]
+      }
+    },
+    "standard-red-notes": {
+      "capability": "manual",
+      "declarativeLogin": {
+        "mode": "exclusive",
+        "credentialOrigins": [],
+        "passwordOnly": false,
+        "loginSteps": [
+          {
+            "kind": "form",
+            "paths": ["/", "/index.html", "/popup.html"],
+            "selectors": {
+              "username": "#account-menu > div:has(> div > input[type=\"email\"]):has(input[name=\"is-ephemeral\"]:not(:disabled)) > div > input[type=\"email\"]",
+              "password": "#account-menu > div:has(> div > input[type=\"email\"]):has(input[name=\"is-ephemeral\"]:not(:disabled)) > div > input[type=\"password\"]"
+            }
+          },
+          {
+            "kind": "submit",
+            "submission": "spa",
+            "selectors": {
+              "control": "#account-menu > div:has(> div > input[type=\"email\"]):has(input[name=\"is-ephemeral\"]:not(:disabled)) > button[type=\"button\"]"
+            }
+          }
+        ]
+      }
+    },
     "namecheap": {
       "capability": "manual"
     },

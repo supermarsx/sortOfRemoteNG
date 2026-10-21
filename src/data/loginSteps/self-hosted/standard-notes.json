@@ -1,0 +1,29 @@
+{
+  "$schema": "../../../types/connection/httpLoginSteps.schema.json",
+  "version": 1,
+  "id": "standard-notes",
+  "evidence": {
+    "class": "A",
+    "source": "https://github.com/standardnotes/app/blob/8929036bd13900789528f6b00ecedecf1b3c7652/packages/web/src/javascripts/Components/AccountMenu/SignIn.tsx",
+    "reviewed": "2026-10-21"
+  },
+  "credentialOrigins": ["https://app.standardnotes.com"],
+  "loginSteps": [
+    {
+      "kind": "form",
+      "paths": ["/", "/index.html", "/popup.html"],
+      "selectors": {
+        "username": "#account-menu > div:has(> div > input[type=\"email\"]):has(input[name=\"is-ephemeral\"]:not(:disabled)) > div > input[type=\"email\"]",
+        "password": "#account-menu > div:has(> div > input[type=\"email\"]):has(input[name=\"is-ephemeral\"]:not(:disabled)) > div > input[type=\"password\"]"
+      },
+      "origin": "https://app.standardnotes.com"
+    },
+    {
+      "kind": "submit",
+      "submission": "spa",
+      "selectors": {
+        "control": "#account-menu > div:has(> div > input[type=\"email\"]):has(input[name=\"is-ephemeral\"]:not(:disabled)) > button[type=\"button\"]"
+      }
+    }
+  ]
+}

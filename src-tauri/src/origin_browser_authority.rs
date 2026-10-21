@@ -1486,6 +1486,20 @@ fn saved_source(connection: &Value) -> Result<Url, NativeAuthorityError> {
         if profile.get("loginFlow").and_then(Value::as_str) == Some("bitwarden") {
             url.set_fragment(Some("/login"));
         }
+        if matches!(
+            id,
+            "standard-notes" | "standard-notes-self-hosted" | "standard-red-notes"
+        ) && application.get("loginMode").and_then(Value::as_str) == Some("form")
+            && matches!(url.path(), "/" | "/index.html" | "/popup.html")
+        {
+            let mut query: Vec<(String, String)> = url
+                .query_pairs()
+                .filter(|(name, _)| name != "settings")
+                .map(|(name, value)| (name.into_owned(), value.into_owned()))
+                .collect();
+            query.push(("settings".into(), "account".into()));
+            url.query_pairs_mut().clear().extend_pairs(query);
+        }
         if id == "exchange-owa" {
             apply_owa_mailbox(&mut url, application.get("exchangeOwaMailbox"))?;
         }
@@ -2532,6 +2546,70 @@ mod tests {
                 &serde_json::to_vec(&self.envelope.value().unwrap()).unwrap(),
             ).unwrap();
         }
+    }
+
+    #[test]
+    fn standard_notes_saved_entry_opens_only_the_account_sign_in_pane() {
+        for id in [
+            "standard-notes",
+            "standard-notes-self-hosted",
+            "standard-red-notes",
+        ] {
+            let hosted = id == "standard-notes";
+            for mode in ["manual", "form"] {
+                let mut row = connection();
+                row["hostname"] = if hosted {
+                    "app.standardnotes.com"
+                } else {
+                    "127.0.0.1:3001"
+                }
+                .into();
+                row["port"] = if hosted { 443 } else { 3001 }.into();
+                row["httpApplication"] = json!({"version":1,"id":id,"loginMode":mode});
+                let expected = format!(
+                    "https://{}/{}",
+                    if hosted {
+                        "app.standardnotes.com"
+                    } else {
+                        "127.0.0.1:3001"
+                    },
+                    if mode == "form" {
+                        "?settings=account"
+                    } else {
+                        ""
+                    }
+                );
+                assert_eq!(
+                    saved_source(&row).unwrap().as_str(),
+                    expected,
+                    "{id}/{mode}"
+                );
+            }
+        }
+        let mut row = connection();
+        row["protocol"] = "http".into();
+        row["port"] = 3001.into();
+        row["hostname"] = "http://127.0.0.1:3001/index.html?theme=dark&settings=old".into();
+        row["httpApplication"] = json!({"version":1,"id":"standard-red-notes","loginMode":"form"});
+        assert_eq!(
+            saved_source(&row).unwrap().as_str(),
+            "http://127.0.0.1:3001/index.html?theme=dark&settings=account"
+        );
+        for query in [
+            "?settings=old&theme=dark",
+            "?settings=old&theme=dark&settings=other",
+        ] {
+            row["hostname"] = format!("http://127.0.0.1:3001/{query}").into();
+            assert_eq!(
+                saved_source(&row).unwrap().as_str(),
+                "http://127.0.0.1:3001/?theme=dark&settings=account"
+            );
+        }
+        row["hostname"] = "http://127.0.0.1:3001/shared?settings=old".into();
+        assert_eq!(
+            saved_source(&row).unwrap().as_str(),
+            "http://127.0.0.1:3001/shared?settings=old"
+        );
     }
 
     #[test]

@@ -12,6 +12,7 @@ import {
   normalizeHttpApplicationSettings,
 } from "../../utils/connection/httpApplicationProfiles";
 import { resolveExchangeOwaInitialUrl } from "../../utils/connection/exchangeOwaProfile";
+import { applyStandardNotesSignInEntry } from "../../utils/connection/standardNotesProfiles";
 
 /** A requested source only: native must independently validate the saved target. */
 export function originBrowserConnectionTarget(
@@ -78,6 +79,7 @@ export function originBrowserConnectionTarget(
   )
     target.pathname = "/login";
   if (profile?.loginFlow === "bitwarden") target.hash = "/login";
+  applyStandardNotesSignInEntry(target, app?.id, app?.loginMode);
   if (app?.id === "exchange-owa")
     target = new URL(
       resolveExchangeOwaInitialUrl(target.href, app.exchangeOwaMailbox),

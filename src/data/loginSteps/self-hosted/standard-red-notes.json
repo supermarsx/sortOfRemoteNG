@@ -1,0 +1,28 @@
+{
+  "$schema": "../../../types/connection/httpLoginSteps.schema.json",
+  "version": 1,
+  "id": "standard-red-notes",
+  "evidence": {
+    "class": "A",
+    "source": "https://github.com/supermarsx/standard-red-notes/blob/7c2d6e2e4d7a19a2f6ff55b1bad5b6836e11484e/app/packages/web/src/javascripts/Components/AccountMenu/SignIn.tsx",
+    "reviewed": "2026-10-21"
+  },
+  "credentialOrigins": [],
+  "loginSteps": [
+    {
+      "kind": "form",
+      "paths": ["/", "/index.html", "/popup.html"],
+      "selectors": {
+        "username": "#account-menu > div:has(> div > input[type=\"email\"]):has(input[name=\"is-ephemeral\"]:not(:disabled)) > div > input[type=\"email\"]",
+        "password": "#account-menu > div:has(> div > input[type=\"email\"]):has(input[name=\"is-ephemeral\"]:not(:disabled)) > div > input[type=\"password\"]"
+      }
+    },
+    {
+      "kind": "submit",
+      "submission": "spa",
+      "selectors": {
+        "control": "#account-menu > div:has(> div > input[type=\"email\"]):has(input[name=\"is-ephemeral\"]:not(:disabled)) > button[type=\"button\"]"
+      }
+    }
+  ]
+}

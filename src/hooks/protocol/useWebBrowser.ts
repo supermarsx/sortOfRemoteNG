@@ -6,6 +6,7 @@ import {
   useCallback,
   useMemo,
 } from "react";
+import { applyStandardNotesSignInEntry } from "../../utils/connection/standardNotesProfiles";
 import {
   captureCredentialFocus,
   typingUnavailable,
@@ -907,6 +908,11 @@ export function useWebBrowser(
       // Enter the reviewed SPA route directly. An empty hash would let initial
       // router startup look like a navigation revocation between the two grants.
       if (profile?.loginFlow === "bitwarden") target.hash = "/login";
+      applyStandardNotesSignInEntry(
+        target,
+        profileSettings?.id,
+        profileSettings?.loginMode,
+      );
       if (profileSettings?.id === "exchange-owa") {
         if (profileSettings.invalid)
           throw new Error("The Exchange OWA application settings are invalid.");

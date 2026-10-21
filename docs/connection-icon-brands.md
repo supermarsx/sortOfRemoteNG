@@ -6,7 +6,7 @@ permalink: /connection-icon-brands/
 ---
 
 The picker stores stable catalog keys, not SVG payloads. All icons render locally
-on the same 24×24 grid and inherit the connection color. No image CDN, web font,
+on the same 24×24 grid and inherit the connection color; documented publisher-color accents may be retained. No image CDN, web font,
 runtime Simple Icons import, or new dependency is used. A server/database/NAS/AP/
 switch/cloud variant combines its mark with the app's corresponding role frame;
 these composites are app UI symbols, not official alternate brand logos.
@@ -972,3 +972,10 @@ icon-library export/import at 16/24/32/96px in both themes; it also requires an
 identifier to say it is not an official logo and to stay out of `BRAND_ICONS`.
 `tests/connectionEditor/HTTPApplicationIconSuggestion.test.tsx` pins the 29
 suggestions above and that a saved icon is never replaced.
+
+## Standard Notes and Standard Red Notes
+
+The stable picker keys are `standard-notes` and `standard-red-notes`. Hosted and self-hosted Standard Notes presets share the former; the independently branded fork uses the latter. These marks are local passive vector geometry with no raster or runtime network dependency.
+
+- **Standard Notes:** exact even-odd rounded-square/n glyph from the publisher's [pinned app source](https://github.com/standardnotes/app/blob/8929036bd13900789528f6b00ecedecf1b3c7652/packages/icons/src/Icons/ic-standard-notes.svg), source SVG SHA-256 `1cc3f9b4b1abdc4ce9d9ddd30918d731911c6d980847aa0026c65ecd3877ca6b`. Uniform 1.2 scale converts its 20-unit viewBox to 24; foreground follows the connection color. The [official press page](https://standardnotes.com/press) identifies the publisher's branding source. The source repository's [AGPL-3.0 license](https://github.com/standardnotes/app/blob/8929036bd13900789528f6b00ecedecf1b3c7652/LICENSE) is recorded without claiming unrestricted trademark rights.
+- **Standard Red Notes:** all ten shapes from the fork's [pinned icon](https://github.com/supermarsx/standard-red-notes/blob/198d4c8159e713b73d8faf4dee283d2bd591ef7c/docs/assets/icon.svg), verified against the local project `docs/assets/icon.svg`, source SVG SHA-256 `6d8c4c1c9521086a46a6093d05905b4988262f44a8164396c3ab76ae241c6418`. Uniform 24/512 normalization preserves the red tile, off-white paper, folded corner, three red lines, and original translucent shading. The outer edge alone follows the connection color for theme contrast; this is a documented adaptation of project-owned branding rather than an unrelated generic note icon. Fork app license: [AGPL-3.0](https://github.com/supermarsx/standard-red-notes/blob/198d4c8159e713b73d8faf4dee283d2bd591ef7c/app/LICENSE).

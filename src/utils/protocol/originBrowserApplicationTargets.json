@@ -171,6 +171,15 @@
     "nextcloud": {
       "loginPath": "/login"
     },
+    "standard-notes": {
+      "hostedLoginUrl": "https://app.standardnotes.com/"
+    },
+    "standard-notes-self-hosted": {
+      "loginPath": "/"
+    },
+    "standard-red-notes": {
+      "loginPath": "/"
+    },
     "namecheap": {
       "hostedLoginUrl": "https://www.namecheap.com/myaccount/login/"
     },

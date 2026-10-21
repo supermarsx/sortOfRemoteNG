@@ -29,11 +29,11 @@ mode, and you turn automatic login on per connection.
 | HTTP authentication, no page form                                            | 7            |
 | Configured by you                                                            | 2            |
 | No web login                                                                 | 8            |
-| Login steps written, class A: every selector seen in an authoritative source | 14           |
+| Login steps written, class A: every selector seen in an authoritative source | 17           |
 | Login steps written, class B: unverified layout                              | 18           |
 | Evidence, but no steps file                                                  | 3            |
 | Nothing to build from (class C)                                              | 36           |
-| Total                                                                        | 153          |
+| Total                                                                        | 156          |
 
 Of the 65 that sign in automatically, 38 use reviewed form selectors and 27 keep a hand-written
 adapter (`adobe` 1, `bitwarden` 2, `chatgpt` 1, `claude` 1, `cloudflare` 1, `google` 19,
@@ -259,45 +259,48 @@ Native integration entries with no web login page.
 | PHP runtime                 | `php`           | `none`             | -     | -         | -          | No web login page |
 | VMware Workstation / Fusion | `vmwareDesktop` | `none`             | -     | -         | -          | No web login page |
 
-### Login steps written (32)
+### Login steps written (35)
 
 A steps file exists under `src/data/loginSteps/`. Class A: every selector was seen in an
 authoritative source. Class B: the layout is unverified until someone signs in with it.
 
-| Application                                 | Id                        | Catalog capability | Class | Mechanism | Steps file                                        | Note                 |
-| ------------------------------------------- | ------------------------- | ------------------ | ----- | --------- | ------------------------------------------------- | -------------------- |
-| Amazon Shopping                             | `amazon-shopping`         | `manual`           | B     | `form`    | `commerce-social-developer/amazon-shopping.json`  | Unverified layout    |
-| Autoridade Tributária — Portal das Finanças | `autoridade-tributaria`   | `manual`           | B     | `form`    | `portuguese-portals/autoridade-tributaria.json`   | Unverified layout    |
-| Budibase                                    | `budibase`                | `generic-form`     | A     | `form`    | `self-hosted/budibase.json`                       | Authoritative source |
-| Contabo customer panel                      | `contabo`                 | `manual`           | B     | `form`    | `registrars-hosting/contabo.json`                 | Unverified layout    |
-| Dell iDRAC                                  | `idrac`                   | `generic-form`     | B     | `form`    | `appliances/idrac.json`                           | Unverified layout    |
-| DIGI — Portugal (My DIGI)                   | `digi-portugal`           | `manual`           | B     | `form`    | `portuguese-portals/digi-portugal.json`           | Unverified layout    |
-| DrayTek                                     | `draytek`                 | `generic-form`     | B     | `form`    | `appliances/draytek.json`                         | Unverified layout    |
-| Ghost Admin                                 | `ghost`                   | `manual`           | A     | `form`    | `self-hosted/ghost.json`                          | Authoritative source |
-| GitLab.com                                  | `gitlab-com`              | `manual`           | B     | `form`    | `self-hosted/gitlab-com.json`                     | Unverified layout    |
-| Grafana                                     | `grafana`                 | `generic-form`     | A     | `form`    | `self-hosted/grafana.json`                        | Authoritative source |
-| HP / HPE iLO                                | `ilo`                     | `generic-form`     | A     | `form`    | `appliances/ilo.json`                             | Authoritative source |
-| HPE GreenLake dashboard                     | `hpe-greenlake`           | `manual`           | B     | `form`    | `enterprise-identity/hpe-greenlake.json`          | Unverified layout    |
-| Jira                                        | `jira`                    | `generic-form`     | B     | `form`    | `appliances/jira.json`                            | Unverified layout    |
-| Mailcow                                     | `mailcow`                 | `generic-form`     | A     | `form`    | `self-hosted/mailcow.json`                        | Authoritative source |
-| MEO — Empresas                              | `meo-empresas`            | `manual`           | B     | `form`    | `portuguese-portals/meo-empresas.json`            | Unverified layout    |
-| MEO — Particulares (my MEO)                 | `meo-particulares`        | `manual`           | B     | `form`    | `portuguese-portals/meo-particulares.json`        | Unverified layout    |
-| NetBox                                      | `netbox`                  | `generic-form`     | A     | `form`    | `self-hosted/netbox.json`                         | Authoritative source |
-| No-IP account                               | `no-ip`                   | `manual`           | B     | `form`    | `registrars-hosting/no-ip.json`                   | Unverified layout    |
-| osTicket                                    | `osticket`                | `generic-form`     | A     | `form`    | `self-hosted/osticket.json`                       | Authoritative source |
-| Outlook Online (Microsoft 365)              | `outlook-online`          | `manual`           | B     | `form`    | `enterprise-identity/outlook-online.json`         | Unverified layout    |
-| PyPI                                        | `pypi`                    | `manual`           | A     | `form`    | `self-hosted/pypi.json`                           | Authoritative source |
-| Segurança Social Direta                     | `seguranca-social-direta` | `manual`           | B     | `form`    | `portuguese-portals/seguranca-social-direta.json` | Unverified layout    |
-| Strapi Admin                                | `strapi`                  | `manual`           | B     | `form`    | `self-hosted/strapi.json`                         | Unverified layout    |
-| Supermicro BMC                              | `supermicro`              | `generic-form`     | B     | `form`    | `appliances/supermicro.json`                      | Unverified layout    |
-| Time4VPS dashboard                          | `time4vps`                | `manual`           | A     | `form`    | `hosted/time4vps.json`                            | Authoritative source |
-| TP-Link managed switch                      | `tplink-switch`           | `generic-form`     | A     | `form`    | `appliances/tplink-switch.json`                   | Authoritative source |
-| Uptime Kuma (self-hosted)                   | `uptime-kuma`             | `manual`           | A     | `form`    | `self-hosted/uptime-kuma.json`                    | Authoritative source |
-| VMware vSphere                              | `vmware`                  | `generic-form`     | B     | `form`    | `appliances/vmware.json`                          | Unverified layout    |
-| Wazuh dashboard (self-hosted)               | `wazuh`                   | `manual`           | A     | `form`    | `self-hosted/wazuh.json`                          | Authoritative source |
-| Zabbix frontend (self-hosted)               | `zabbix`                  | `manual`           | A     | `form`    | `self-hosted/zabbix.json`                         | Authoritative source |
-| Zoom web portal                             | `zoom`                    | `manual`           | B     | `form`    | `enterprise-identity/zoom.json`                   | Unverified layout    |
-| Zulip (organization / self-hosted)          | `zulip`                   | `manual`           | A     | `form`    | `self-hosted/zulip.json`                          | Authoritative source |
+| Application                                 | Id                           | Catalog capability | Class | Mechanism | Steps file                                        | Note                 |
+| ------------------------------------------- | ---------------------------- | ------------------ | ----- | --------- | ------------------------------------------------- | -------------------- |
+| Amazon Shopping                             | `amazon-shopping`            | `manual`           | B     | `form`    | `commerce-social-developer/amazon-shopping.json`  | Unverified layout    |
+| Autoridade Tributária — Portal das Finanças | `autoridade-tributaria`      | `manual`           | B     | `form`    | `portuguese-portals/autoridade-tributaria.json`   | Unverified layout    |
+| Budibase                                    | `budibase`                   | `generic-form`     | A     | `form`    | `self-hosted/budibase.json`                       | Authoritative source |
+| Contabo customer panel                      | `contabo`                    | `manual`           | B     | `form`    | `registrars-hosting/contabo.json`                 | Unverified layout    |
+| Dell iDRAC                                  | `idrac`                      | `generic-form`     | B     | `form`    | `appliances/idrac.json`                           | Unverified layout    |
+| DIGI — Portugal (My DIGI)                   | `digi-portugal`              | `manual`           | B     | `form`    | `portuguese-portals/digi-portugal.json`           | Unverified layout    |
+| DrayTek                                     | `draytek`                    | `generic-form`     | B     | `form`    | `appliances/draytek.json`                         | Unverified layout    |
+| Ghost Admin                                 | `ghost`                      | `manual`           | A     | `form`    | `self-hosted/ghost.json`                          | Authoritative source |
+| GitLab.com                                  | `gitlab-com`                 | `manual`           | B     | `form`    | `self-hosted/gitlab-com.json`                     | Unverified layout    |
+| Grafana                                     | `grafana`                    | `generic-form`     | A     | `form`    | `self-hosted/grafana.json`                        | Authoritative source |
+| HP / HPE iLO                                | `ilo`                        | `generic-form`     | A     | `form`    | `appliances/ilo.json`                             | Authoritative source |
+| HPE GreenLake dashboard                     | `hpe-greenlake`              | `manual`           | B     | `form`    | `enterprise-identity/hpe-greenlake.json`          | Unverified layout    |
+| Jira                                        | `jira`                       | `generic-form`     | B     | `form`    | `appliances/jira.json`                            | Unverified layout    |
+| Mailcow                                     | `mailcow`                    | `generic-form`     | A     | `form`    | `self-hosted/mailcow.json`                        | Authoritative source |
+| MEO — Empresas                              | `meo-empresas`               | `manual`           | B     | `form`    | `portuguese-portals/meo-empresas.json`            | Unverified layout    |
+| MEO — Particulares (my MEO)                 | `meo-particulares`           | `manual`           | B     | `form`    | `portuguese-portals/meo-particulares.json`        | Unverified layout    |
+| NetBox                                      | `netbox`                     | `generic-form`     | A     | `form`    | `self-hosted/netbox.json`                         | Authoritative source |
+| No-IP account                               | `no-ip`                      | `manual`           | B     | `form`    | `registrars-hosting/no-ip.json`                   | Unverified layout    |
+| osTicket                                    | `osticket`                   | `generic-form`     | A     | `form`    | `self-hosted/osticket.json`                       | Authoritative source |
+| Outlook Online (Microsoft 365)              | `outlook-online`             | `manual`           | B     | `form`    | `enterprise-identity/outlook-online.json`         | Unverified layout    |
+| PyPI                                        | `pypi`                       | `manual`           | A     | `form`    | `self-hosted/pypi.json`                           | Authoritative source |
+| Segurança Social Direta                     | `seguranca-social-direta`    | `manual`           | B     | `form`    | `portuguese-portals/seguranca-social-direta.json` | Unverified layout    |
+| Standard Notes                              | `standard-notes`             | `manual`           | A     | `form`    | `self-hosted/standard-notes.json`                 | Authoritative source |
+| Standard Notes (self-hosted)                | `standard-notes-self-hosted` | `manual`           | A     | `form`    | `self-hosted/standard-notes-self-hosted.json`     | Authoritative source |
+| Standard Red Notes                          | `standard-red-notes`         | `manual`           | A     | `form`    | `self-hosted/standard-red-notes.json`             | Authoritative source |
+| Strapi Admin                                | `strapi`                     | `manual`           | B     | `form`    | `self-hosted/strapi.json`                         | Unverified layout    |
+| Supermicro BMC                              | `supermicro`                 | `generic-form`     | B     | `form`    | `appliances/supermicro.json`                      | Unverified layout    |
+| Time4VPS dashboard                          | `time4vps`                   | `manual`           | A     | `form`    | `hosted/time4vps.json`                            | Authoritative source |
+| TP-Link managed switch                      | `tplink-switch`              | `generic-form`     | A     | `form`    | `appliances/tplink-switch.json`                   | Authoritative source |
+| Uptime Kuma (self-hosted)                   | `uptime-kuma`                | `manual`           | A     | `form`    | `self-hosted/uptime-kuma.json`                    | Authoritative source |
+| VMware vSphere                              | `vmware`                     | `generic-form`     | B     | `form`    | `appliances/vmware.json`                          | Unverified layout    |
+| Wazuh dashboard (self-hosted)               | `wazuh`                      | `manual`           | A     | `form`    | `self-hosted/wazuh.json`                          | Authoritative source |
+| Zabbix frontend (self-hosted)               | `zabbix`                     | `manual`           | A     | `form`    | `self-hosted/zabbix.json`                         | Authoritative source |
+| Zoom web portal                             | `zoom`                       | `manual`           | B     | `form`    | `enterprise-identity/zoom.json`                   | Unverified layout    |
+| Zulip (organization / self-hosted)          | `zulip`                      | `manual`           | A     | `form`    | `self-hosted/zulip.json`                          | Authoritative source |
 
 ### Evidence, but no steps file (3)
 

@@ -10,6 +10,7 @@ import {
 } from "../connection/sanitizeHostname";
 import { validateHttpApplicationTarget } from "./httpApplicationLogin";
 import { resolveExchangeOwaInitialUrl } from "../connection/exchangeOwaProfile";
+import { applyStandardNotesSignInEntry } from "../connection/standardNotesProfiles";
 
 export interface HttpApplicationExternalTarget {
   label: string;
@@ -83,11 +84,19 @@ export function getHttpApplicationExternalTarget(
     ) {
       external.pathname = authority.initialPathname;
     }
+    applyStandardNotesSignInEntry(external, settings?.id, settings?.loginMode);
+    const notesEntry = new URL(external);
+    notesEntry.search = "";
+    applyStandardNotesSignInEntry(
+      notesEntry,
+      settings?.id,
+      settings?.loginMode,
+    );
     if (
       external.origin !== savedOrigin ||
       external.username ||
       external.password ||
-      external.search ||
+      external.search !== notesEntry.search ||
       external.hash
     )
       return null;
