@@ -1,6 +1,113 @@
 use super::*;
 use serde_json::json;
 
+struct ConnectDropProbe(Arc<std::sync::atomic::AtomicBool>);
+
+impl Drop for ConnectDropProbe {
+    fn drop(&mut self) {
+        self.0.store(true, std::sync::atomic::Ordering::SeqCst);
+    }
+}
+
+#[tokio::test]
+async fn ssh_pending_connect_owner_revocation_drops_original_work_before_forwarding() {
+    use std::sync::atomic::{AtomicBool, Ordering};
+    let current = Arc::new(AtomicBool::new(true));
+    let observed = current.clone();
+    let dropped = Arc::new(AtomicBool::new(false));
+    let worker_drop = dropped.clone();
+    let (started, entered) = tokio::sync::oneshot::channel();
+    let forward_started = Arc::new(AtomicBool::new(false));
+    let forwarded = forward_started.clone();
+    let worker = tokio::spawn(async move {
+        let result = connect_while_current(
+            async {
+                let _original_attempt = ConnectDropProbe(worker_drop);
+                let _ = started.send(());
+                std::future::pending::<Result<(), NativeAuthorityError>>().await
+            },
+            || observed.load(Ordering::SeqCst),
+        )
+        .await;
+        if result.is_ok() {
+            forwarded.store(true, Ordering::SeqCst);
+        }
+        result
+    });
+    entered.await.unwrap();
+    current.store(false, Ordering::SeqCst);
+    let result = tokio::time::timeout(Duration::from_secs(1), worker)
+        .await
+        .unwrap()
+        .unwrap();
+    assert!(matches!(
+        result,
+        Err(NativeAuthorityError::SshRouteUnavailable { stage: "owner" })
+    ));
+    assert!(dropped.load(Ordering::SeqCst));
+    assert!(!forward_started.load(Ordering::SeqCst));
+}
+
+#[tokio::test]
+async fn ssh_revoked_owner_never_polls_connect_and_wins_a_success_race() {
+    use std::sync::atomic::{AtomicBool, Ordering};
+    let polled = AtomicBool::new(false);
+    let result = connect_while_current(
+        async {
+            polled.store(true, Ordering::SeqCst);
+            Ok(())
+        },
+        || false,
+    )
+    .await;
+    assert!(matches!(
+        result,
+        Err(NativeAuthorityError::SshRouteUnavailable { stage: "owner" })
+    ));
+    assert!(!polled.load(Ordering::SeqCst));
+
+    let current = AtomicBool::new(true);
+    let dropped = Arc::new(AtomicBool::new(false));
+    let result = connect_while_current(
+        async {
+            // Simulate a returned actor whose owner was revoked during handshake.
+            let owned_actor = ConnectDropProbe(dropped.clone());
+            current.store(false, Ordering::SeqCst);
+            Ok(owned_actor)
+        },
+        || current.load(Ordering::SeqCst),
+    )
+    .await;
+    assert!(matches!(
+        result,
+        Err(NativeAuthorityError::SshRouteUnavailable { stage: "owner" })
+    ));
+    assert!(dropped.load(Ordering::SeqCst));
+}
+
+#[tokio::test]
+async fn ssh_current_connect_keeps_the_original_owned_result_and_error() {
+    use std::sync::atomic::{AtomicBool, Ordering};
+    let dropped = Arc::new(AtomicBool::new(false));
+    let owned = connect_while_current(async { Ok(ConnectDropProbe(dropped.clone())) }, || true)
+        .await
+        .unwrap();
+    assert!(!dropped.load(Ordering::SeqCst));
+    drop(owned);
+    assert!(dropped.load(Ordering::SeqCst));
+    let result = connect_while_current(
+        async { Err::<(), _>(unavailable("connect-authentication")) },
+        || true,
+    )
+    .await;
+    assert!(matches!(
+        result,
+        Err(NativeAuthorityError::SshRouteUnavailable {
+            stage: "connect-authentication"
+        })
+    ));
+}
+
 #[test]
 fn ssh_connect_failures_preserve_only_known_fixed_reason_codes() {
     for (error, expected) in [

@@ -258,6 +258,30 @@ async fn wait_for_actor_release(
     }
 }
 
+async fn connect_while_current<T>(
+    work: impl std::future::Future<Output = Result<T, NativeAuthorityError>>,
+    current: impl Fn() -> bool,
+) -> Result<T, NativeAuthorityError> {
+    if !current() {
+        return Err(unavailable("owner"));
+    }
+    let mut check = tokio::time::interval(Duration::from_millis(250));
+    tokio::pin!(work);
+    loop {
+        tokio::select! {
+            biased;
+            _ = check.tick() => {
+                if !current() { return Err(unavailable("owner")); }
+            }
+            result = &mut work => {
+                // A successful result already owns its cleanup guard. If owner
+                // revocation raced completion, dropping it closes that actor.
+                return if current() { result } else { Err(unavailable("owner")) };
+            }
+        }
+    }
+}
+
 pub(super) struct SshRoute {
     actor: Actor,
     forward: String,
@@ -341,11 +365,18 @@ pub(super) async fn prepare<R: Runtime>(
         .recheck(window, state)
         .await
         .map_err(|_| unavailable("owner"))?;
-    let id = connect_ssh_on_state(&service, config)
-        .await
-        .map_err(|error| connect_error(&error))?;
-    // Installed before any later await, including the owner postflight.
-    let actor = Actor::new(service, id, lease.clone());
+    let actor = connect_while_current(
+        async {
+            let id = connect_ssh_on_state(&service, config)
+                .await
+                .map_err(|error| connect_error(&error))?;
+            // Arm cleanup synchronously before returning success to the lease
+            // race. No actor ID may be discarded without its cleanup guard.
+            Ok(Actor::new(service, id, lease.clone()))
+        },
+        || lease.is_current(),
+    )
+    .await?;
     lease
         .recheck(window, state)
         .await
