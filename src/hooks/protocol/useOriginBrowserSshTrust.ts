@@ -12,6 +12,7 @@ import {
 } from "../../utils/auth/trustStore";
 import { tunnelSourceIdentity } from "../../utils/ssh/sshTunnelSourceIdentity";
 import { stableJsonStringify } from "../../utils/core/stableJsonStringify";
+import { connectionEndpointHost } from "../../utils/connection/connectionEndpointHost";
 
 export interface NativeBrowserSshTrustOptions {
   sessionId: string;
@@ -111,19 +112,9 @@ function source(options: NativeBrowserSshTrustOptions) {
       port: "port" in spec ? (spec.port ?? 22) : 22,
     } as Connection;
   }
-  let hostname: unknown = selected?.hostname;
-  if (selected && spec.connectionId) {
-    const integrationHost: unknown = selected.integration?.host;
-    if (
-      integrationHost !== undefined &&
-      integrationHost !== null &&
-      integrationHost !== ""
-    ) {
-      if (typeof integrationHost !== "string") return { needed: true };
-      hostname = integrationHost;
-    }
-  }
-  const host = endpointHost(hostname);
+  const host = endpointHost(
+    selected ? connectionEndpointHost(selected) : undefined,
+  );
   if (
     !selected ||
     !host ||

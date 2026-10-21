@@ -106,15 +106,15 @@ afterEach(() => {
 });
 
 describe("native browser SSH host-key trust", () => {
-  it("binds a linked source to the same integration hostname as ordinary SSH", async () => {
+  it("binds a linked SSH source to its canonical hostname despite retained integration settings", async () => {
     const props = options();
     props.connections = [
       { ...ssh, integration: { host: "selected.test" } } as Connection,
     ];
     await start(props);
-    await emit(prompt({ host: "selected.test" }));
+    await emit(prompt({ host: "ssh.test" }));
     expect(h.verify).toHaveBeenCalledWith(
-      "selected.test",
+      "ssh.test",
       22,
       "ssh",
       expect.anything(),
@@ -124,7 +124,7 @@ describe("native browser SSH host-key trust", () => {
       sessionId: "backend",
       decision: "accept_and_save",
     });
-    await emit(prompt({ session_id: "stale-host", host: "ssh.test" }));
+    await emit(prompt({ session_id: "stale-host", host: "selected.test" }));
     expect(h.verify).toHaveBeenCalledTimes(1);
     expect(h.invoke).toHaveBeenLastCalledWith(expect.anything(), {
       sessionId: "stale-host",
@@ -159,7 +159,7 @@ describe("native browser SSH host-key trust", () => {
     "[invalid]",
     "ssh.test:22",
   ])(
-    "rejects malformed integration host %s without trust lookup",
+    "ignores unrelated integration host %s when verifying SSH",
     async (host) => {
       const props = options();
       props.connections = [
@@ -167,14 +167,20 @@ describe("native browser SSH host-key trust", () => {
       ];
       await start(props);
       await emit();
-      expect(h.verify).not.toHaveBeenCalled();
+      expect(h.verify).toHaveBeenCalledWith(
+        "ssh.test",
+        22,
+        "ssh",
+        expect.anything(),
+        "ssh",
+      );
       expect(h.invoke).toHaveBeenLastCalledWith(expect.anything(), {
         sessionId: "backend",
-        decision: "reject",
+        decision: "accept_and_save",
       });
     },
   );
-  it("invalidates pending trust when the effective integration hostname changes", async () => {
+  it("invalidates pending trust when the selected saved source changes", async () => {
     let finish!: (value: unknown) => void;
     h.verify.mockImplementationOnce(
       () =>
@@ -189,7 +195,7 @@ describe("native browser SSH host-key trust", () => {
     const view = await start(props);
     let pending!: Promise<void>;
     await act(async () => {
-      pending = h.callbacks[0]({ payload: prompt({ host: "selected.test" }) });
+      pending = h.callbacks[0]({ payload: prompt({ host: "ssh.test" }) });
       await Promise.resolve();
     });
     expect(h.verify).toHaveBeenCalledOnce();
@@ -213,10 +219,15 @@ describe("native browser SSH host-key trust", () => {
     );
     expect(h.trust).not.toHaveBeenCalled();
   });
-  it("validates a selected integration IPv6 literal while retaining its saved port", async () => {
+  it("validates the saved SSH IPv6 literal while retaining its saved port", async () => {
     const props = options();
     props.connections = [
-      { ...ssh, port: 2222, integration: { host: "[::1]" } } as Connection,
+      {
+        ...ssh,
+        hostname: "[::1]",
+        port: 2222,
+        integration: { host: "unrelated.test" },
+      } as Connection,
     ];
     await start(props);
     await emit(prompt({ host: "::1", port: 2222 }));

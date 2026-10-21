@@ -1,5 +1,6 @@
 import type { DatabaseAvailability } from "../../contexts/ConnectionContextTypes";
 import type { Connection } from "../../types/connection/connection";
+import { connectionEndpointHost } from "../connection/connectionEndpointHost";
 import {
   digestConnectionEndpoint,
   isScriptTrustId,
@@ -31,10 +32,6 @@ export interface ScriptTrustBindingSession {
   hostname: string;
   ownerDatabaseId?: string;
 }
-
-/** The host a session is opened to, as the session manager derives it. */
-const hostOf = (row: Connection): string =>
-  row.integration?.host || row.hostname;
 
 /**
  * The one saved SSH row with this id in the ready database, or null. Only
@@ -71,7 +68,7 @@ const bind = async (
   databaseId: string,
   row: Connection,
 ): Promise<ScriptTrustConnectionBinding | null> => {
-  const host = hostOf(row);
+  const host = connectionEndpointHost(row);
   if (
     typeof host !== "string" ||
     !host ||
@@ -132,7 +129,7 @@ export async function resolveScriptTrustBinding(
       session.ownerDatabaseId,
       session.connectionId,
     );
-    if (!row || session.hostname !== hostOf(row)) return null;
+    if (!row || session.hostname !== connectionEndpointHost(row)) return null;
     return await bind(session.ownerDatabaseId, row);
   } catch {
     return null;

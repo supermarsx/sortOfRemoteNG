@@ -97,24 +97,9 @@ fn build(
     {
         return Err(ERROR);
     }
-    // Ordinary SSH sessions use integration.host || hostname. Read the same
-    // endpoint from this immutable saved dependency, rather than dialing a
-    // different machine when an older record retains an integration endpoint.
-    // Inline routes own their explicit host and never inherit this metadata.
-    let host = if inline {
-        text(source, "host")?
-    } else {
-        let integration_host = match source.get("integration") {
-            None | Some(Value::Null) => "",
-            Some(value) if value.is_object() => text(value, "host")?,
-            _ => return Err(ERROR),
-        };
-        if integration_host.is_empty() {
-            text(source, "hostname")?
-        } else {
-            integration_host
-        }
-    };
+    // Integration endpoints belong to integration:* protocols. Retained panel
+    // metadata must never redirect a saved SSH connection's credentials.
+    let host = text(source, if inline { "host" } else { "hostname" })?;
     if host.is_empty()
         || host.len() > 253
         || host.chars().any(|c| c.is_whitespace() || c.is_control())
@@ -318,7 +303,7 @@ mod tests {
         source["port"] = 2222.into();
         source["integration"] = json!({"host":"actual-ssh.example.test", "port":10000});
         let config = build(&source, None, false).unwrap();
-        assert_eq!(config.host, "actual-ssh.example.test");
+        assert_eq!(config.host, "127.0.0.1");
         assert_eq!(config.port, 2222);
         assert!(config.strict_host_key_checking);
         // Choosing a vault changes credentials, never the saved endpoint.
@@ -344,7 +329,7 @@ mod tests {
         }
     }
     #[test]
-    fn malformed_effective_ssh_endpoints_do_not_fall_back_to_another_machine() {
+    fn retained_integration_metadata_cannot_redirect_a_saved_ssh_endpoint() {
         for integration in [
             json!(false),
             json!("not-an-object"),
@@ -356,7 +341,10 @@ mod tests {
         ] {
             let mut source = row();
             source["integration"] = integration;
-            assert!(build(&source, None, false).is_err());
+            assert_eq!(
+                build(&source, None, false).unwrap().host,
+                "ssh.example.test"
+            );
         }
     }
     #[test]

@@ -112,10 +112,10 @@ describe("the binding of a session's saved connection", () => {
     ).not.toBeNull();
   });
 
-  it("uses the integration host when the row has one, as the session does", async () => {
+  it("binds SSH to its canonical saved hostname despite stale integration metadata", async () => {
     const integration = row({
-      hostname: "ignored.example",
-      integration: { descriptorKey: "x", host: "host-a.example" },
+      hostname: "host-a.example",
+      integration: { descriptorKey: "x", host: "stale-integration.example" },
     } as Partial<Connection>);
     const binding = await resolveScriptTrustBinding(
       context([integration]),
@@ -137,8 +137,30 @@ describe("the binding of a session's saved connection", () => {
     expect(
       await resolveScriptTrustBinding(
         context([integration]),
-        session({ hostname: "ignored.example" }),
+        session({ hostname: "stale-integration.example" }),
       ),
+    ).toBeNull();
+  });
+  it("does not grant SSH script trust to an integration protocol using its integration endpoint", async () => {
+    const integration = row({
+      protocol: "integration:example",
+      hostname: "canonical.example",
+      integration: { descriptorKey: "example", host: "integration.example" },
+    } as Partial<Connection>);
+    expect(
+      await resolveScriptTrustBinding(
+        context([integration]),
+        session({
+          protocol: "integration:example",
+          hostname: "integration.example",
+        }),
+      ),
+    ).toBeNull();
+    expect(
+      await resolveSavedConnectionTrustBinding(context([integration]), {
+        databaseId: "db-1",
+        connectionId: integration.id,
+      }),
     ).toBeNull();
   });
 

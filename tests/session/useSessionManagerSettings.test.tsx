@@ -1386,6 +1386,56 @@ describe("useSessionManager settings effects", () => {
     });
   });
 
+  it.each([
+    ["ssh", "ssh-new.example.test"],
+    ["rdp", "ssh-new.example.test"],
+    ["integration:grafana", "panel.example.test"],
+  ] as const)(
+    "uses the same saved endpoint for fresh and restored %s sessions",
+    async (protocol, expectedHost) => {
+      const connection = makeConnection({
+        protocol,
+        integration: {
+          descriptorKey: "grafana",
+          instanceId: "panel-instance",
+          host: "panel.example.test",
+        },
+      });
+      const { result } = renderHook(() => useSessionManager());
+
+      await act(async () => {
+        await result.current.handleConnect(connection);
+      });
+      expect(connectionMocks.dispatch).toHaveBeenCalledWith({
+        type: "ADD_SESSION",
+        payload: expect.objectContaining({ hostname: expectedHost, protocol }),
+      });
+
+      connectionMocks.dispatch.mockClear();
+      await act(async () => {
+        await result.current.restoreSession(
+          {
+            id: "restored-endpoint-session",
+            connectionId: connection.id,
+            name: connection.name,
+            protocol,
+            hostname: "stale-session.example.test",
+            status: "connected",
+          },
+          connection,
+        );
+      });
+      expect(connectionMocks.dispatch).toHaveBeenCalledWith({
+        type: "ADD_SESSION",
+        payload: expect.objectContaining({
+          id: "restored-endpoint-session",
+          hostname: expectedHost,
+          protocol,
+        }),
+      });
+    },
+  );
+
   it("restores sessions with the connection's canonical protocol", async () => {
     const connection = makeConnection({ protocol: "ssh" });
     const { result } = renderHook(() => useSessionManager());

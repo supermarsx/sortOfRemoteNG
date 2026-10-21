@@ -5,6 +5,7 @@ import { getCredentialVaultDraft } from "../../utils/security/credentialVaultDra
 import { invoke } from "@tauri-apps/api/core";
 import { useConnections } from "../../contexts/useConnections";
 import { DatabaseManager } from "../../utils/connection/databaseManager";
+import { connectionEndpointHost } from "../../utils/connection/connectionEndpointHost";
 import {
   getVaultRuntimeUnsupportedMessage,
   resolveRuntimeVaultCredential,
@@ -1177,7 +1178,7 @@ export const useSessionManager = () => {
       protocol: isSynologyFileConnection(connection)
         ? "synology"
         : connection.protocol,
-      hostname: connection.integration?.host || connection.hostname,
+      hostname: connectionEndpointHost(connection),
       backendSessionId: isIntegrationSession
         ? connection.integration?.instanceId
         : undefined,
@@ -2679,7 +2680,7 @@ export const useSessionManager = () => {
         ? new Date(sessionData.startTime)
         : new Date(),
       protocol: restoredProtocol,
-      hostname: connection.hostname,
+      hostname: connectionEndpointHost(connection),
       reconnectAttempts: 0,
       maxReconnectAttempts: resolveConnectionRetryAttempts(
         connection.retryAttempts,
