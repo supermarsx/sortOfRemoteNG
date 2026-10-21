@@ -25,7 +25,7 @@ const containsEmbeddedCredential = (value: string): boolean =>
 
 describe("default bulk SSH script catalog", () => {
   it("has stable, unique, complete catalog records", () => {
-    expect(defaultBulkScripts).toHaveLength(159);
+    expect(defaultBulkScripts).toHaveLength(166);
 
     const ids = defaultBulkScripts.map((script) => script.id);
     expect(new Set(ids).size).toBe(ids.length);

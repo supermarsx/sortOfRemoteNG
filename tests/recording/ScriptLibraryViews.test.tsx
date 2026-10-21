@@ -134,7 +134,7 @@ describe("default script catalog UI", () => {
     expect(h.cancelEdit).not.toHaveBeenCalled();
     fireEvent.click(screen.getByRole("tab", { name: "Browse scripts" }));
     fireEvent.click(screen.getByRole("button", { name: "Discard draft" }));
-    await screen.findByText(/191 bundled entries/);
+    await screen.findByText(/210 bundled entries/);
     expect(h.cancelEdit).toHaveBeenCalledOnce();
     expect(screen.getByRole("tab", { name: "Browse scripts" })).toHaveClass(
       "sor-tab-trigger-active",
@@ -143,7 +143,7 @@ describe("default script catalog UI", () => {
   it("opens Browse scripts as an embedded subtab, not a modal", async () => {
     render(<ScriptManager isOpen onClose={vi.fn()} />);
     fireEvent.click(screen.getByRole("tab", { name: "Browse scripts" }));
-    await screen.findByText(/191 bundled entries/);
+    await screen.findByText(/210 bundled entries/);
     expect(screen.getByRole("tab", { name: "Browse scripts" })).toHaveAttribute(
       "aria-selected",
       "true",
@@ -158,7 +158,7 @@ describe("default script catalog UI", () => {
     await act(async () => undefined);
     expect(container.querySelectorAll("[data-catalog-key]")).toHaveLength(50);
     fireEvent.click(screen.getByRole("button", { name: "Next page" }));
-    expect(screen.getByText("Page 2 of 4")).toBeInTheDocument();
+    expect(screen.getByText("Page 2 of 5")).toBeInTheDocument();
     fireEvent.click(screen.getByLabelText("Browse script platform"));
     fireEvent.change(screen.getByPlaceholderText("Search platforms…"), {
       target: { value: "arista" },

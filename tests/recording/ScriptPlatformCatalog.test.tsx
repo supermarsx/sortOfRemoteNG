@@ -84,7 +84,7 @@ describe("canonical automation platforms", () => {
   );
 
   it("does not retag bundled entries with unsupported distro claims", () => {
-    expect(bundledScriptCatalog).toHaveLength(191);
+    expect(bundledScriptCatalog).toHaveLength(210);
     expect(
       bundledScriptCatalog.some((entry) => entry.platforms.includes("ubuntu")),
     ).toBe(false);

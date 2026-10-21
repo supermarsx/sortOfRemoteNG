@@ -6,10 +6,27 @@ import { OS_TAG_LABELS } from "../../src/components/recording/scriptManager/shar
 import { isDestructiveBulkScript } from "../../src/hooks/ssh/bulkScriptLibrary";
 
 describe("bundled script browse bridge", () => {
-  it("exposes all191 templates without rewriting original IDs, content or source order", () => {
-    expect(bundledScriptCatalog).toHaveLength(191);
+  it("annotates the interactive AI CLI companions without treating PowerShell syntax as POSIX", () => {
+    const entries = bundledScriptCatalog.filter(
+      (entry) => entry.source === "bulk" && entry.payload.category === "AI CLI",
+    );
+    expect(entries).toHaveLength(7);
+    for (const entry of entries) {
+      expect(entry.context).toBe("interactive-shell");
+      expect(entry.language).toBe("terminal-input");
+      expect(entry.platforms).toEqual(
+        entry.payload.id.endsWith("windows")
+          ? ["windows"]
+          : entry.payload.id.endsWith("posix")
+            ? ["linux", "macos"]
+            : ["linux", "macos", "windows"],
+      );
+    }
+  });
+  it("exposes all210 templates without rewriting original IDs, content or source order", () => {
+    expect(bundledScriptCatalog).toHaveLength(210);
     expect(new Set(bundledScriptCatalog.map((entry) => entry.key)).size).toBe(
-      191,
+      210,
     );
     expect(
       bundledScriptCatalog

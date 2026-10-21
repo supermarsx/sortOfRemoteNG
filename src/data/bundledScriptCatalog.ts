@@ -21,6 +21,7 @@ export interface BundledScriptEntry {
 // Reviewed platform metadata, keyed by canonical shipped ID. These annotations
 // never alter command content or infer compatibility from arbitrary user code.
 const windows = new Set([
+  "default-ai-claude-sandbox-windows",
   "default-package-update-choco",
   "default-package-update-winget",
   "default-network-diagnostics-windows",
@@ -51,6 +52,7 @@ const linux = new Set([
   "default-virtualization-linux",
 ]);
 const posix = new Set([
+  "default-ai-claude-sandbox-posix",
   "default-1",
   "default-2",
   "default-3",
@@ -78,6 +80,16 @@ const posix = new Set([
   "default-vpn-inventory-posix",
 ]);
 function bulkPlatforms(id: string): readonly OSTag[] {
+  if (
+    [
+      "default-ai-claude",
+      "default-ai-claude-bypass",
+      "default-ai-codex",
+      "default-ai-codex-workspace-auto",
+      "default-ai-codex-bypass",
+    ].includes(id)
+  )
+    return ["linux", "macos", "windows"];
   if (id.startsWith("default-arista-eos-")) return ["arista-eos"];
   if (id.startsWith("default-cisco-ios-")) return ["cisco-ios"];
   if (id.startsWith("default-hpe-comware-")) return ["hpe-comware"];

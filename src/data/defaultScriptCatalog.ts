@@ -15,6 +15,7 @@ export const SCRIPT_CATEGORY_SUGGESTIONS = [
   "Packages / macOS",
   "Packages / Windows",
   "Packages / Development",
+  "Development / AI",
   "Custom",
 ];
 const timestamp = "2026-09-09T00:00:00.000Z";
@@ -37,6 +38,78 @@ const template = (
   createdAt: timestamp,
   updatedAt: timestamp,
 });
+
+const aiLaunchers = [
+  [
+    "claude",
+    "Claude — Interactive",
+    "claude",
+    "Use Claude's configured permissions and account.",
+  ],
+  [
+    "claude-bypass",
+    "Claude — Permission Bypass",
+    "claude --dangerously-skip-permissions",
+    "Bypass Claude permission prompts.",
+  ],
+  [
+    "claude-sandbox",
+    "Claude — Sandbox Flag + Permission Bypass",
+    "IS_SANDBOX=1 claude --dangerously-skip-permissions",
+    "Set IS_SANDBOX=1 for Claude and bypass permission prompts; this flag does not create an OS sandbox.",
+  ],
+  [
+    "codex",
+    "Codex — Interactive",
+    "codex",
+    "Use Codex's configured permissions and account.",
+  ],
+  [
+    "codex-workspace-auto",
+    "Codex — Workspace Automation",
+    "codex --sandbox workspace-write --ask-for-approval never",
+    "Use workspace-write sandboxing without approval prompts.",
+  ],
+  [
+    "codex-bypass",
+    "Codex — Full Permission Bypass",
+    "codex --dangerously-bypass-approvals-and-sandbox",
+    "Bypass Codex approval prompts and sandbox restrictions.",
+  ],
+] as const;
+
+const aiLauncherTemplates: ManagedScript[] = aiLaunchers.flatMap(
+  ([id, name, command, mode]) => {
+    const description = `${mode} Requires the installed CLI and an interactive terminal in the intended working directory. Import and edit this script, then run it in your SSH terminal; the Script Manager output runner does not provide interactive input.`;
+    return [
+      {
+        ...template(
+          `ai-${id}-posix`,
+          `${name} (Linux / macOS)`,
+          "Development / AI",
+          "linux",
+          `#!/bin/sh\n[ -t 0 ] && [ -t 1 ] || { printf '%s\\n' 'Run this launcher in an interactive SSH terminal.' >&2; exit 2; }\n${command}`,
+        ),
+        osTags: ["linux", "macos"] as OSTag[],
+        description,
+      },
+      {
+        ...template(
+          `ai-${id}-windows`,
+          `${name} (PowerShell)`,
+          "Development / AI",
+          "windows",
+          "if ([Console]::IsInputRedirected -or [Console]::IsOutputRedirected) { throw 'Run this launcher in an interactive SSH terminal.' }\n" +
+            (id === "claude-sandbox"
+              ? "& { $claudeSandboxPrevious = $env:IS_SANDBOX; try { $env:IS_SANDBOX = '1'; claude --dangerously-skip-permissions } finally { if ($null -eq $claudeSandboxPrevious) { Remove-Item Env:IS_SANDBOX -ErrorAction SilentlyContinue } else { $env:IS_SANDBOX = $claudeSandboxPrevious } } }"
+              : command),
+          "powershell",
+        ),
+        description,
+      },
+    ];
+  },
+);
 
 /** Catalog-only additions: explicit import creates independent custom IDs. */
 export const optionalScriptTemplates: ManagedScript[] = [
@@ -209,6 +282,7 @@ export const optionalScriptTemplates: ManagedScript[] = [
     "macos",
     "networksetup -listallhardwareports",
   ),
+  ...aiLauncherTemplates,
 ];
 export const defaultScriptCatalog = [
   ...defaultScripts,

@@ -33,6 +33,54 @@ beforeEach(() => {
   });
 });
 describe("reviewed default script catalog", () => {
+  it("offers twelve editable AI CLI scripts with explicit modes and interactive terminal requirements", async () => {
+    const launchers = optionalScriptTemplates.filter(
+      (entry) => entry.category === "Development / AI",
+    );
+    expect(launchers).toHaveLength(12);
+    for (const entry of launchers) {
+      expect(entry.description).toContain("interactive terminal");
+      expect(entry.description).not.toContain("Read-only diagnostic");
+      expect(entry.script).toContain(
+        "Run this launcher in an interactive SSH terminal.",
+      );
+      expect(entry.script).not.toContain("--full-auto");
+      expect(entry.script).not.toMatch(/npm install|curl|https?:\/\//);
+      expect(entry.language).toBe(
+        entry.osTags.includes("windows") ? "powershell" : "sh",
+      );
+    }
+    const find = (id: string) =>
+      launchers.find((entry) => entry.id === `catalog-ai-${id}`)!;
+    expect(find("claude-posix").script).toMatch(/\nclaude$/);
+    expect(find("codex-posix").script).toMatch(/\ncodex$/);
+    expect(find("claude-bypass-posix").script).toContain(
+      "claude --dangerously-skip-permissions",
+    );
+    expect(find("claude-sandbox-posix").script).toContain(
+      "IS_SANDBOX=1 claude --dangerously-skip-permissions",
+    );
+    expect(find("claude-sandbox-windows").script).toContain("finally");
+    expect(find("claude-sandbox-windows").script).toContain(
+      "$env:IS_SANDBOX = $claudeSandboxPrevious",
+    );
+    expect(find("codex-workspace-auto-posix").script).toContain(
+      "codex --sandbox workspace-write --ask-for-approval never",
+    );
+    expect(find("codex-bypass-posix").script).toContain(
+      "codex --dangerously-bypass-approvals-and-sandbox",
+    );
+    const result = await applyDefaultScriptSelection(
+      [find("claude-posix").id],
+      null,
+      false,
+    );
+    expect(result.value.customScripts).toHaveLength(1);
+    expect(result.value.customScripts[0].id).not.toBe(find("claude-posix").id);
+    expect(result.value.customScripts[0].script).toBe(
+      find("claude-posix").script,
+    );
+  });
   it("starts empty and explicitly imported originals survive save/reload without materializing siblings", async () => {
     expect(resolveManagedScripts(defaultScripts, null)).toEqual([]);
     expect(
@@ -55,14 +103,14 @@ describe("reviewed default script catalog", () => {
       resolveManagedScripts(defaultScripts, JSON.parse(JSON.stringify(saved))),
     ).toEqual([defaultScripts[0]]);
   });
-  it("ships 32 stable credential-free templates without force-installing the 24 additions", () => {
+  it("ships 44 stable credential-free templates without force-installing the 36 additions", () => {
     expect(defaultScripts).toHaveLength(8);
-    expect(optionalScriptTemplates).toHaveLength(24);
-    expect(defaultScriptCatalog).toHaveLength(32);
+    expect(optionalScriptTemplates).toHaveLength(36);
+    expect(defaultScriptCatalog).toHaveLength(44);
     expect(defaultScripts.map((item) => item.id)).toEqual(
       Array.from({ length: 8 }, (_, i) => `default-${i + 1}`),
     );
-    expect(new Set(defaultScriptCatalog.map((item) => item.id)).size).toBe(32);
+    expect(new Set(defaultScriptCatalog.map((item) => item.id)).size).toBe(44);
     assertManagedScriptsAreSecretFree(defaultScriptCatalog);
     expect(SCRIPT_CATEGORY_SUGGESTIONS).toContain("Packages / Development");
     for (const item of defaultScriptCatalog) {

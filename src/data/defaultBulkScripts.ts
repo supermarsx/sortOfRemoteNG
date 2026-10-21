@@ -17,6 +17,55 @@ export type { SavedBulkScript };
  */
 export const defaultBulkScripts: SavedBulkScript[] = [
   defineDefaultScript(
+    "default-ai-claude",
+    "Claude — Interactive",
+    "Start the installed Claude CLI in the current directory using its configured permissions and account",
+    "AI CLI",
+    "claude",
+  ),
+  defineDefaultScript(
+    "default-ai-claude-bypass",
+    "Claude — Permission Bypass",
+    "Start Claude with permission prompts bypassed, using the current directory and CLI configuration",
+    "AI CLI",
+    "claude --dangerously-skip-permissions",
+  ),
+  defineDefaultScript(
+    "default-ai-claude-sandbox-posix",
+    "Claude — Sandbox Flag + Permission Bypass (POSIX)",
+    "Set IS_SANDBOX=1 for this Claude process and bypass permission prompts; the flag does not create an operating-system sandbox",
+    "AI CLI",
+    "IS_SANDBOX=1 claude --dangerously-skip-permissions",
+  ),
+  defineDefaultScript(
+    "default-ai-claude-sandbox-windows",
+    "Claude — Sandbox Flag + Permission Bypass (PowerShell)",
+    "Temporarily set IS_SANDBOX=1 for Claude with permission prompts bypassed, then restore the prior environment value",
+    "AI CLI",
+    "& { $claudeSandboxPrevious = $env:IS_SANDBOX; try { $env:IS_SANDBOX = '1'; claude --dangerously-skip-permissions } finally { if ($null -eq $claudeSandboxPrevious) { Remove-Item Env:IS_SANDBOX -ErrorAction SilentlyContinue } else { $env:IS_SANDBOX = $claudeSandboxPrevious } } }",
+  ),
+  defineDefaultScript(
+    "default-ai-codex",
+    "Codex — Interactive",
+    "Start the installed Codex CLI in the current directory using its configured permissions and account",
+    "AI CLI",
+    "codex",
+  ),
+  defineDefaultScript(
+    "default-ai-codex-workspace-auto",
+    "Codex — Workspace Automation",
+    "Start Codex with workspace-write sandboxing and no approval prompts in the current directory",
+    "AI CLI",
+    "codex --sandbox workspace-write --ask-for-approval never",
+  ),
+  defineDefaultScript(
+    "default-ai-codex-bypass",
+    "Codex — Full Permission Bypass",
+    "Start Codex with approval prompts and sandbox restrictions bypassed, using the current directory and CLI configuration",
+    "AI CLI",
+    "codex --dangerously-bypass-approvals-and-sandbox",
+  ),
+  defineDefaultScript(
     "default-1",
     "System Info",
     "Show Linux or macOS kernel and operating-system details",
