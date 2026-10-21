@@ -11,6 +11,42 @@ export const originBrowserSshConnectFailures = {
     "Review the saved SSH source host, port, firewall and network route. Confirm the endpoint is reachable, then retry.",
     "network",
   ],
+  "ssh-route-connect-refused": [
+    "SSH route TCP connection",
+    "The last TCP connection attempt to the SSH endpoint was refused. SSH authentication did not start.",
+    "Check that the selected SSH source uses the intended host and SSH port, and that its server is listening. Compare a fresh terminal connection to the same saved SSH source, then retry.",
+    "network",
+  ],
+  "ssh-route-connect-network-unreachable": [
+    "SSH route TCP connection",
+    "The network was unreachable on the last TCP connection attempt to the SSH endpoint. SSH authentication did not start.",
+    "Check the selected SSH source's network route and any required VPN or upstream proxy, then retry. No direct fallback was used.",
+    "network",
+  ],
+  "ssh-route-connect-host-unreachable": [
+    "SSH route TCP connection",
+    "The host was unreachable on the last TCP connection attempt to the SSH endpoint. SSH authentication did not start.",
+    "Check reachability of the selected SSH source and its configured route. Compare a fresh terminal connection to the same saved SSH source, then retry.",
+    "network",
+  ],
+  "ssh-route-connect-denied": [
+    "SSH route TCP connection",
+    "The operating system denied the last TCP connection attempt to the SSH endpoint. SSH authentication did not start.",
+    "Review local firewall or application network permissions for this connection, then retry.",
+    "network",
+  ],
+  "ssh-route-connect-address-unavailable": [
+    "SSH route TCP connection",
+    "The address was unavailable on the last TCP connection attempt to the SSH endpoint. SSH authentication did not start.",
+    "Review the selected SSH source's address and the active network interfaces, then retry.",
+    "network",
+  ],
+  "ssh-route-connect-transport-timeout": [
+    "SSH route TCP connection",
+    "The last TCP connection attempt to the SSH endpoint timed out before SSH authentication started.",
+    "Check the selected SSH source's availability, SSH port and network route, then retry.",
+    "network",
+  ],
   "ssh-route-connect-handshake": [
     "SSH route handshake",
     "The SSH protocol handshake failed.",

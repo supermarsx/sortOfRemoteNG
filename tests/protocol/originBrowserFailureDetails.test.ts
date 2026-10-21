@@ -49,6 +49,12 @@ describe("fixed actionable native failure details", () => {
   it.each([
     ["dns", "SSH route hostname resolution", "network"],
     ["transport", "SSH route TCP connection", "network"],
+    ["refused", "SSH route TCP connection", "network"],
+    ["network-unreachable", "SSH route TCP connection", "network"],
+    ["host-unreachable", "SSH route TCP connection", "network"],
+    ["denied", "SSH route TCP connection", "network"],
+    ["address-unavailable", "SSH route TCP connection", "network"],
+    ["transport-timeout", "SSH route TCP connection", "network"],
     ["handshake", "SSH route handshake", "network"],
     ["host-key", "SSH route host-key verification", "network"],
     ["authentication", "SSH route authentication", "network"],
@@ -76,6 +82,21 @@ describe("fixed actionable native failure details", () => {
         expect(detail.nextStep).toContain("saved SSH source");
       if (reason === "timeout")
         expect(detail.problem).toContain("did not identify the stage");
+      if (
+        [
+          "refused",
+          "network-unreachable",
+          "host-unreachable",
+          "denied",
+          "address-unavailable",
+          "transport-timeout",
+        ].includes(reason)
+      ) {
+        expect(detail.problem).toContain("last TCP connection attempt");
+        expect(detail.problem).toMatch(
+          /authentication (did not start|started)/,
+        );
+      }
     },
   );
   it.each([

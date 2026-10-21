@@ -57,6 +57,40 @@ const SCRIPT_OUTPUT_LIMIT_BYTES: usize = 4 * 1024 * 1024;
 const SCRIPT_OUTPUT_LIMIT_ERROR: &str = "Remote script output exceeded the 4 MiB safety limit";
 const SCRIPT_OUTPUT_READ_POLL_INTERVAL: Duration = Duration::from_millis(2);
 
+fn establishment_transport_cause(error: &std::io::Error) -> &'static str {
+    // Preserve the application's Rust 1.77 source compatibility: these two
+    // ErrorKind variants were stabilized later. Match only known OS codes.
+    #[cfg(windows)]
+    let unreachable = (10051, 10065);
+    #[cfg(target_os = "linux")]
+    let unreachable = (101, 113);
+    #[cfg(target_os = "macos")]
+    let unreachable = (51, 65);
+    #[cfg(any(windows, target_os = "linux", target_os = "macos"))]
+    if let Some(code) = error.raw_os_error() {
+        if code == unreachable.0 {
+            return "network-unreachable";
+        }
+        if code == unreachable.1 {
+            return "host-unreachable";
+        }
+    }
+    match error.kind() {
+        ErrorKind::ConnectionRefused => "connection-refused",
+        ErrorKind::PermissionDenied => "permission-denied",
+        ErrorKind::TimedOut => "timed-out",
+        ErrorKind::AddrNotAvailable => "address-unavailable",
+        _ => "other",
+    }
+}
+
+fn establishment_transport_error(error: &std::io::Error) -> String {
+    format!(
+        "Failed to connect to SSH establishment endpoint: [{}] {error}",
+        establishment_transport_cause(error)
+    )
+}
+
 /// Hard process-wide ceiling for SSH sessions that are either establishing or
 /// retained. This is intentionally aligned with the native shell ceiling: a
 /// connection without a shell is cheaper, but it still owns sockets, libssh2
@@ -3925,9 +3959,7 @@ impl SshService {
                     }
                 }
                 Err(match last_error {
-                    Some(error) => {
-                        format!("Failed to connect to SSH establishment endpoint: {error}")
-                    }
+                    Some(error) => establishment_transport_error(&error),
                     None => "SSH establishment resolver returned no addresses".to_string(),
                 })
             })
@@ -10830,6 +10862,54 @@ mod tests {
     };
     use crate::ssh::types::ScriptExecutionResult;
     use serde_json::json;
+
+    #[test]
+    fn transport_cause_markers_are_fixed_and_preserve_the_existing_error_prefix() {
+        for (kind, cause) in [
+            (ErrorKind::ConnectionRefused, "connection-refused"),
+            (ErrorKind::PermissionDenied, "permission-denied"),
+            (ErrorKind::TimedOut, "timed-out"),
+            (ErrorKind::AddrNotAvailable, "address-unavailable"),
+            (ErrorKind::Other, "other"),
+        ] {
+            let error = std::io::Error::new(kind, "private-endpoint-and-detail");
+            assert_eq!(establishment_transport_cause(&error), cause);
+            assert_eq!(
+                establishment_transport_error(&error),
+                format!("Failed to connect to SSH establishment endpoint: [{cause}] private-endpoint-and-detail")
+            );
+            assert!(!establishment_transport_cause(&error).contains("private"));
+        }
+    }
+
+    #[test]
+    fn transport_unreachable_markers_use_only_this_platforms_known_codes() {
+        #[cfg(windows)]
+        let codes = (10051, 10065);
+        #[cfg(target_os = "linux")]
+        let codes = (101, 113);
+        #[cfg(target_os = "macos")]
+        let codes = (51, 65);
+        #[cfg(any(windows, target_os = "linux", target_os = "macos"))]
+        {
+            assert_eq!(
+                establishment_transport_cause(&std::io::Error::from_raw_os_error(codes.0)),
+                "network-unreachable"
+            );
+            assert_eq!(
+                establishment_transport_cause(&std::io::Error::from_raw_os_error(codes.1)),
+                "host-unreachable"
+            );
+        }
+        assert_eq!(
+            establishment_transport_cause(&std::io::Error::new(
+                ErrorKind::Other,
+                "[network-unreachable] private-host"
+            )),
+            "other",
+            "free text must never select the marker"
+        );
+    }
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
     async fn script_job_blocked_worker_releases_global_service_but_keeps_session_operation() {

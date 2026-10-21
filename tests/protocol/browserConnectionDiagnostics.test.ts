@@ -38,7 +38,7 @@ describe("fixed saved browser connection diagnostics", () => {
     expect(facts).toMatchObject({
       "Saved connection type": "HTTPS",
       "Browser application": "Webmin",
-      "Saved route references": "Saved tunnel profile",
+      "Saved route references": "Saved tunnel profile, Saved SSH connection",
       "Configured route kinds": "ssh-tunnel",
       "SSH forwarding modes": "local",
       "Route execution": "Not confirmed; saved configuration only",
@@ -47,6 +47,30 @@ describe("fixed saved browser connection diagnostics", () => {
     expect(connection.security!.tunnelChain![0].sshTunnel!.connectionId).toBe(
       "PRIVATE_SSH_ID",
     );
+  });
+  it("reports a selected SSH connection rather than no saved route reference", () => {
+    for (const security of [
+      { sshTunnel: { enabled: true, connectionId: "PRIVATE_SSH_ID" } },
+      {
+        tunnelChain: [
+          {
+            enabled: true,
+            type: "ssh-jump",
+            sshTunnel: { forwardType: "local", connectionId: "PRIVATE_SSH_ID" },
+          },
+        ],
+      },
+    ]) {
+      const facts = Object.fromEntries(
+        browserConnectionDiagnosticFacts({
+          protocol: "https",
+          security,
+        } as unknown as Connection),
+      );
+      expect(facts["Saved route references"]).toBe("Saved SSH connection");
+      expect(JSON.stringify(facts)).not.toContain("PRIVATE_");
+      expect(facts["Route execution"]).toContain("Not confirmed");
+    }
   });
   it.each(["local", "remote", "dynamic"])(
     "reports the fixed %s forwarding mode",

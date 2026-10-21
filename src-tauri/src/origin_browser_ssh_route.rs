@@ -15,6 +15,12 @@ fn unavailable(stage: &'static str) -> NativeAuthorityError {
 enum ConnectFailure {
     Dns,
     Transport,
+    Refused,
+    NetworkUnreachable,
+    HostUnreachable,
+    Denied,
+    AddressUnavailable,
+    TransportTimeout,
     Handshake,
     HostKey,
     Authentication,
@@ -35,8 +41,18 @@ impl ConnectFailure {
             Self::Capacity
         } else if matches!(error, "Failed to resolve SSH establishment endpoint" | "SSH establishment resolver returned no addresses") {
             Self::Dns
-        } else if error.starts_with("Failed to connect to SSH establishment endpoint:") {
-            Self::Transport
+        } else if let Some(detail) = error.strip_prefix("Failed to connect to SSH establishment endpoint:") {
+            // Only first-party fixed markers survive into renderer diagnostics.
+            // Never infer a category from localized OS text or a remote banner.
+            match detail.strip_prefix(" [").and_then(|s| s.split_once("] ")).map(|(code, _)| code) {
+                Some("connection-refused") => Self::Refused,
+                Some("network-unreachable") => Self::NetworkUnreachable,
+                Some("host-unreachable") => Self::HostUnreachable,
+                Some("permission-denied") => Self::Denied,
+                Some("address-unavailable") => Self::AddressUnavailable,
+                Some("timed-out") => Self::TransportTimeout,
+                _ => Self::Transport,
+            }
         } else if error.starts_with("SSH handshake failed:") {
             Self::Handshake
         } else if error == "All authentication methods failed" {
@@ -55,6 +71,12 @@ impl ConnectFailure {
         match self {
             Self::Dns => "connect-dns",
             Self::Transport => "connect-transport",
+            Self::Refused => "connect-refused",
+            Self::NetworkUnreachable => "connect-network-unreachable",
+            Self::HostUnreachable => "connect-host-unreachable",
+            Self::Denied => "connect-denied",
+            Self::AddressUnavailable => "connect-address-unavailable",
+            Self::TransportTimeout => "connect-transport-timeout",
             Self::Handshake => "connect-handshake",
             Self::HostKey => "connect-host-key",
             Self::Authentication => "connect-authentication",

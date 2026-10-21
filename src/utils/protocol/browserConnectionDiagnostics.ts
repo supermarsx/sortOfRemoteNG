@@ -79,6 +79,15 @@ export function browserConnectionDiagnosticFacts(
   const proxies = new Set<string>();
   const forwarding = new Set<string>();
   const references: string[] = [];
+  const sshSourceReference = (value: unknown) => {
+    const id = object(value).connectionId;
+    if (
+      typeof id === "string" &&
+      id !== "" &&
+      !references.includes("Saved SSH connection")
+    )
+      references.push("Saved SSH connection");
+  };
   for (const [key, label] of [
     ["proxyProfileId", "Saved proxy profile"],
     ["tunnelProfileId", "Saved tunnel profile"],
@@ -97,6 +106,7 @@ export function browserConnectionDiagnosticFacts(
   if (object(security.sshTunnel).enabled === true) {
     kinds.add("ssh-tunnel");
     forwarding.add("local (legacy)");
+    sshSourceReference(security.sshTunnel);
   }
   const layers = Array.isArray(security.tunnelChain)
     ? security.tunnelChain
@@ -122,7 +132,8 @@ export function browserConnectionDiagnosticFacts(
         "ssh-proxycmd",
         "ssh-stdio",
       ].includes(kind)
-    )
+    ) {
+      sshSourceReference(layer.sshTunnel);
       forwarding.add(
         fixed(object(layer.sshTunnel).forwardType, [
           "local",
@@ -130,6 +141,7 @@ export function browserConnectionDiagnosticFacts(
           "dynamic",
         ]),
       );
+    }
   }
   if (layers.length > 64) kinds.add("Additional layers omitted");
   return [

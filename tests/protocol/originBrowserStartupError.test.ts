@@ -79,6 +79,12 @@ describe("native browser per-view startup diagnostics", () => {
   it.each([
     "dns",
     "transport",
+    "refused",
+    "network-unreachable",
+    "host-unreachable",
+    "denied",
+    "address-unavailable",
+    "transport-timeout",
     "handshake",
     "host-key",
     "authentication",
