@@ -34,6 +34,10 @@ use super::shell_runtime::{
 use super::types::*;
 use super::PENDING_HOST_KEY_PROMPTS;
 
+#[cfg(test)]
+#[path = "proxy_chain_contract_tests.rs"]
+mod proxy_chain_contract_tests;
+
 #[path = "forward_relay.rs"]
 mod forward_relay;
 pub(crate) use forward_relay::ChannelOpenGate;
@@ -165,6 +169,45 @@ where
 }
 
 struct ZeroingCommandInput(Vec<u8>);
+
+const HTTPS_SSH_PROXY_UNSUPPORTED: &str =
+    "HTTPS proxy TLS transport is not supported for this SSH route";
+
+fn require_supported_ssh_proxy(proxy: &ProxyConfig) -> Result<(), String> {
+    if matches!(proxy.proxy_type, ProxyType::Https) {
+        return Err(HTTPS_SSH_PROXY_UNSUPPORTED.into());
+    }
+    Ok(())
+}
+
+fn split_ssh_proxy_target(target: &str) -> Result<(String, u16), String> {
+    let (host, port) = target.rsplit_once(':').ok_or("Invalid proxy target")?;
+    let host = if host.starts_with('[') || host.ends_with(']') {
+        host.strip_prefix('[')
+            .and_then(|host| host.strip_suffix(']'))
+            .ok_or("Invalid proxy target")?
+    } else {
+        host
+    };
+    let port: u16 = port.parse().map_err(|_| "Invalid proxy target port")?;
+    if host.is_empty()
+        || host.len() > 255
+        || port == 0
+        || host.chars().any(|c| c.is_control() || c.is_whitespace())
+        || host.contains(['/', '\\', '@', '?', '#', '[', ']', '"', '\''])
+        || (host.contains(':') && host.parse::<std::net::Ipv6Addr>().is_err())
+    {
+        return Err("Invalid proxy target".into());
+    }
+    Ok((host.into(), port))
+}
+
+fn async_proxy_stream(stream: TcpStream) -> Result<AsyncTcpStream, String> {
+    stream
+        .set_nonblocking(true)
+        .map_err(|_| "Failed to configure proxy stream")?;
+    AsyncTcpStream::from_std(stream).map_err(|_| "Failed to configure proxy stream".into())
+}
 
 impl Drop for ZeroingCommandInput {
     fn drop(&mut self) {
@@ -4513,6 +4556,7 @@ impl SshService {
         control: &Arc<SshEstablishmentControl>,
         phase_timeout: Duration,
     ) -> Result<TcpStream, String> {
+        require_supported_ssh_proxy(proxy_config)?;
         let proxy_addresses = self
             .resolve_establishment_addresses(
                 proxy_config.host.clone(),
@@ -4568,128 +4612,20 @@ impl SshService {
 
     async fn connect_through_socks5(
         &self,
-        mut stream: AsyncTcpStream,
+        stream: AsyncTcpStream,
         target: &str,
         proxy_config: &ProxyConfig,
     ) -> Result<TcpStream, String> {
-        use tokio::io::{AsyncReadExt, AsyncWriteExt};
-
-        let auth_required = proxy_config.username.is_some();
-        let greeting = if auth_required {
-            vec![0x05, 0x02, 0x00, 0x02]
-        } else {
-            vec![0x05, 0x01, 0x00]
-        };
-
-        stream
-            .write_all(&greeting)
-            .await
-            .map_err(|e| format!("Failed to send SOCKS5 greeting: {}", e))?;
-
-        let mut response = [0u8; 2];
-        stream
-            .read_exact(&mut response)
-            .await
-            .map_err(|e| format!("Failed to read SOCKS5 greeting response: {}", e))?;
-
-        if response[0] != 0x05 {
-            return Err("Invalid SOCKS5 response version".to_string());
-        }
-
-        if response[1] == 0x02 {
-            let username = proxy_config.username.as_deref().unwrap_or("");
-            let password = proxy_config
-                .password
-                .as_ref()
-                .map(|secret| secret.expose_secret())
-                .unwrap_or("");
-
-            let mut auth_request = vec![0x01];
-            auth_request.push(username.len() as u8);
-            auth_request.extend_from_slice(username.as_bytes());
-            auth_request.push(password.len() as u8);
-            auth_request.extend_from_slice(password.as_bytes());
-
-            stream
-                .write_all(&auth_request)
-                .await
-                .map_err(|e| format!("Failed to send SOCKS5 auth: {}", e))?;
-
-            let mut auth_response = [0u8; 2];
-            stream
-                .read_exact(&mut auth_response)
-                .await
-                .map_err(|e| format!("Failed to read SOCKS5 auth response: {}", e))?;
-
-            if auth_response[1] != 0x00 {
-                return Err("SOCKS5 authentication failed".to_string());
-            }
-        } else if response[1] != 0x00 {
-            return Err(format!(
-                "SOCKS5 server requires unsupported auth method: {}",
-                response[1]
-            ));
-        }
-
-        let parts: Vec<&str> = target.split(':').collect();
-        if parts.len() != 2 {
-            return Err("Invalid target address format".to_string());
-        }
-        let host = parts[0];
-        let port: u16 = parts[1]
-            .parse()
-            .map_err(|_| "Invalid port number".to_string())?;
-
-        let mut request = vec![0x05, 0x01, 0x00];
-
-        if let Ok(ip) = host.parse::<std::net::Ipv4Addr>() {
-            request.push(0x01);
-            request.extend_from_slice(&ip.octets());
-        } else if let Ok(ip) = host.parse::<std::net::Ipv6Addr>() {
-            request.push(0x04);
-            request.extend_from_slice(&ip.octets());
-        } else {
-            request.push(0x03);
-            request.push(host.len() as u8);
-            request.extend_from_slice(host.as_bytes());
-        }
-
-        request.extend_from_slice(&port.to_be_bytes());
-
-        stream
-            .write_all(&request)
-            .await
-            .map_err(|e| format!("Failed to send SOCKS5 connect request: {}", e))?;
-
-        let mut connect_response = [0u8; 10];
-        stream
-            .read_exact(&mut connect_response)
-            .await
-            .map_err(|e| format!("Failed to read SOCKS5 connect response: {}", e))?;
-
-        if connect_response[1] != 0x00 {
-            let error_msg = match connect_response[1] {
-                0x01 => "General SOCKS server failure",
-                0x02 => "Connection not allowed by ruleset",
-                0x03 => "Network unreachable",
-                0x04 => "Host unreachable",
-                0x05 => "Connection refused",
-                0x06 => "TTL expired",
-                0x07 => "Command not supported",
-                0x08 => "Address type not supported",
-                _ => "Unknown SOCKS5 error",
-            };
-            return Err(format!("SOCKS5 connect failed: {}", error_msg));
-        }
-
-        let std_stream = stream
+        let (stream, ()) = self
+            .socks5_connect_internal(stream, target, proxy_config)
+            .await?;
+        let stream = stream
             .into_std()
-            .map_err(|e| format!("Failed to convert stream: {}", e))?;
-        std_stream
+            .map_err(|_| "Failed to convert proxy stream")?;
+        stream
             .set_nonblocking(false)
-            .map_err(|e| format!("Failed to set blocking mode: {}", e))?;
-
-        Ok(std_stream)
+            .map_err(|_| "Failed to configure proxy stream")?;
+        Ok(stream)
     }
 
     async fn connect_through_socks4(
@@ -4700,14 +4636,14 @@ impl SshService {
     ) -> Result<TcpStream, String> {
         use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
-        let parts: Vec<&str> = target.split(':').collect();
-        if parts.len() != 2 {
-            return Err("Invalid target address format".to_string());
+        let (host, port) = split_ssh_proxy_target(target)?;
+        if proxy_config
+            .username
+            .as_ref()
+            .is_some_and(|username| username.contains('\0'))
+        {
+            return Err("Invalid SOCKS4 user ID".into());
         }
-        let host = parts[0];
-        let port: u16 = parts[1]
-            .parse()
-            .map_err(|_| "Invalid port number".to_string())?;
 
         let ip: std::net::Ipv4Addr = host
             .parse()
@@ -4733,7 +4669,7 @@ impl SshService {
             .await
             .map_err(|e| format!("Failed to read SOCKS4 response: {}", e))?;
 
-        if response[1] != 0x5A {
+        if response[0] != 0 || response[1] != 0x5A {
             let error_msg = match response[1] {
                 0x5B => "Request rejected or failed",
                 0x5C => "Request failed (no identd)",
@@ -4761,6 +4697,12 @@ impl SshService {
     ) -> Result<TcpStream, String> {
         use tokio::io::BufReader;
 
+        let (host, port) = split_ssh_proxy_target(target)?;
+        let target = if host.contains(':') {
+            format!("[{host}]:{port}")
+        } else {
+            format!("{host}:{port}")
+        };
         let mut request = format!("CONNECT {} HTTP/1.1\r\nHost: {}\r\n", target, target);
 
         if let (Some(username), Some(password)) = (&proxy_config.username, &proxy_config.password) {
@@ -4776,14 +4718,14 @@ impl SshService {
             .await
             .map_err(|e| format!("Failed to send HTTP CONNECT: {}", e))?;
 
-        let mut reader = BufReader::new(&mut stream);
+        let mut reader = BufReader::with_capacity(1, &mut stream);
         let mut consumed_header_bytes = 0_usize;
         let response_line =
             read_bounded_http_proxy_line(&mut reader, &mut consumed_header_bytes).await?;
         let response_line = std::str::from_utf8(&response_line)
             .map_err(|_| "Invalid HTTP proxy response".to_string())?;
         let mut parts = response_line.split_whitespace();
-        let _version = parts
+        let version = parts
             .next()
             .ok_or_else(|| "Invalid HTTP proxy response".to_string())?;
         let status_code: u16 = parts
@@ -4792,6 +4734,9 @@ impl SshService {
             .parse()
             .map_err(|_| "Invalid HTTP status code".to_string())?;
 
+        if !matches!(version, "HTTP/1.0" | "HTTP/1.1") {
+            return Err("Invalid HTTP proxy response version".into());
+        }
         if status_code != 200 {
             return Err(format!("HTTP proxy returned status {}", status_code));
         }
@@ -4856,6 +4801,9 @@ impl SshService {
         control: &Arc<SshEstablishmentControl>,
         hop_timeout: Duration,
     ) -> Result<TcpStream, String> {
+        for proxy in &chain_config.proxies {
+            require_supported_ssh_proxy(proxy)?;
+        }
         if chain_config.proxies.len() == 1 {
             return self
                 .establish_proxy_connection_with_control(
@@ -4887,43 +4835,50 @@ impl SshService {
             )
             .await?;
 
-        for (i, proxy) in chain_config.proxies.iter().skip(1).enumerate() {
-            let target = if i == chain_config.proxies.len() - 2 {
-                format!("{}:{}", config.host, config.port)
+        for (index, proxy) in chain_config.proxies.iter().enumerate() {
+            let (host, port) = chain_config
+                .proxies
+                .get(index + 1)
+                .map(|next| (next.host.as_str(), next.port))
+                .unwrap_or((config.host.as_str(), config.port));
+            let target = format!("{host}:{port}");
+            let phase = if index + 1 == chain_config.proxies.len() {
+                "proxy-chain-final-negotiation".to_owned()
             } else {
-                format!("{}:{}", proxy.host, proxy.port)
+                format!("proxy-chain-hop-{}-negotiation", index + 1)
             };
-
-            let phase = format!("proxy-chain-hop-{}-negotiation", i + 1);
             current_stream = control
-                .run_async_phase(
-                    &phase,
-                    hop_timeout,
-                    self.socks5_connect_internal(current_stream, &target, first_proxy),
-                )
+                .run_async_phase(&phase, hop_timeout, async {
+                    match proxy.proxy_type {
+                        ProxyType::Socks5 => self
+                            .socks5_connect_internal(current_stream, &target, proxy)
+                            .await
+                            .map(|result| result.0),
+                        ProxyType::Socks4 => async_proxy_stream(
+                            self.connect_through_socks4(current_stream, &target, proxy)
+                                .await?,
+                        ),
+                        ProxyType::Http => async_proxy_stream(
+                            self.connect_through_http_proxy(current_stream, &target, proxy)
+                                .await?,
+                        ),
+                        ProxyType::Https => Err(HTTPS_SSH_PROXY_UNSUPPORTED.into()),
+                    }
+                })
                 .await
                 .map_err(|error| {
                     contextualize_ssh_connection_error(
-                        &format!("Chain hop {} failed", i + 1),
+                        &format!("Chain hop {} failed", index + 1),
                         error,
                     )
-                })?
-                .0;
+                })?;
         }
-
-        let final_target = format!("{}:{}", config.host, config.port);
-        let last_proxy = chain_config
-            .proxies
-            .last()
-            .expect("chain_config.proxies checked non-empty");
-
-        let std_stream = control
-            .run_async_phase(
-                "proxy-chain-final-negotiation",
-                hop_timeout,
-                self.connect_through_socks5(current_stream, &final_target, last_proxy),
-            )
-            .await?;
+        let std_stream = current_stream
+            .into_std()
+            .map_err(|_| "Failed to convert proxy stream")?;
+        std_stream
+            .set_nonblocking(false)
+            .map_err(|_| "Failed to configure proxy stream")?;
         control.track_blocking_socket(&std_stream, "proxy-chain-final-negotiation")?;
         Ok(std_stream)
     }
@@ -4934,86 +4889,108 @@ impl SshService {
         target: &str,
         proxy_config: &ProxyConfig,
     ) -> Result<(AsyncTcpStream, ()), String> {
-        use tokio::io::{AsyncReadExt, AsyncWriteExt};
-
+        let (host, port) = split_ssh_proxy_target(target)?;
         let auth_required = proxy_config.username.is_some();
-        let greeting = if auth_required {
-            vec![0x05, 0x02, 0x00, 0x02]
+        let username = proxy_config.username.as_deref().unwrap_or("");
+        let password = proxy_config
+            .password
+            .as_ref()
+            .map(|secret| secret.expose_secret())
+            .unwrap_or("");
+        if auth_required
+            && (username.is_empty()
+                || username.len() > 255
+                || password.is_empty()
+                || password.len() > 255)
+        {
+            return Err("Invalid SOCKS5 credential lengths".into());
+        }
+        let greeting: &[u8] = if auth_required {
+            &[5, 2, 0, 2]
         } else {
-            vec![0x05, 0x01, 0x00]
+            &[5, 1, 0]
         };
-
         stream
-            .write_all(&greeting)
+            .write_all(greeting)
             .await
-            .map_err(|e| format!("SOCKS5 greeting failed: {}", e))?;
-
-        let mut response = [0u8; 2];
+            .map_err(|e| format!("SOCKS5 greeting failed: {e}"))?;
+        let mut response = [0; 2];
         stream
             .read_exact(&mut response)
             .await
-            .map_err(|e| format!("SOCKS5 response failed: {}", e))?;
-
-        if response[0] != 0x05 {
-            return Err("Invalid SOCKS5 version".to_string());
+            .map_err(|e| format!("SOCKS5 response failed: {e}"))?;
+        if response[0] != 5 {
+            return Err("Invalid SOCKS5 version".into());
         }
-
-        if response[1] == 0x02 {
-            let username = proxy_config.username.as_deref().unwrap_or("");
-            let password = proxy_config
-                .password
-                .as_ref()
-                .map(|secret| secret.expose_secret())
-                .unwrap_or("");
-
-            let mut auth = vec![0x01];
-            auth.push(username.len() as u8);
-            auth.extend_from_slice(username.as_bytes());
-            auth.push(password.len() as u8);
-            auth.extend_from_slice(password.as_bytes());
-
-            stream
-                .write_all(&auth)
-                .await
-                .map_err(|e| format!("Auth failed: {}", e))?;
-
-            let mut auth_resp = [0u8; 2];
-            stream
-                .read_exact(&mut auth_resp)
-                .await
-                .map_err(|e| format!("Auth response failed: {}", e))?;
-
-            if auth_resp[1] != 0x00 {
-                return Err("SOCKS5 auth rejected".to_string());
+        match response[1] {
+            0 => {}
+            2 if auth_required => {
+                let mut auth = vec![1, username.len() as u8];
+                auth.extend_from_slice(username.as_bytes());
+                auth.push(password.len() as u8);
+                auth.extend_from_slice(password.as_bytes());
+                let auth = ZeroingCommandInput(auth);
+                stream
+                    .write_all(&auth.0)
+                    .await
+                    .map_err(|e| format!("SOCKS5 authentication write failed: {e}"))?;
+                stream
+                    .read_exact(&mut response)
+                    .await
+                    .map_err(|e| format!("SOCKS5 authentication response failed: {e}"))?;
+                if response != [1, 0] {
+                    return Err("SOCKS5 authentication failed".into());
+                }
             }
-        } else if response[1] != 0x00 {
-            return Err("Unsupported auth method".to_string());
+            _ => return Err("SOCKS5 selected an unsupported authentication method".into()),
         }
-
-        let parts: Vec<&str> = target.split(':').collect();
-        let host = parts[0];
-        let port: u16 = parts[1].parse().unwrap_or(22);
-
-        let mut request = vec![0x05, 0x01, 0x00, 0x03];
-        request.push(host.len() as u8);
-        request.extend_from_slice(host.as_bytes());
+        let mut request = vec![5, 1, 0];
+        if let Ok(ip) = host.parse::<std::net::Ipv4Addr>() {
+            request.push(1);
+            request.extend_from_slice(&ip.octets());
+        } else if let Ok(ip) = host.parse::<std::net::Ipv6Addr>() {
+            request.push(4);
+            request.extend_from_slice(&ip.octets());
+        } else {
+            request.extend_from_slice(&[3, host.len() as u8]);
+            request.extend_from_slice(host.as_bytes());
+        }
         request.extend_from_slice(&port.to_be_bytes());
-
         stream
             .write_all(&request)
             .await
-            .map_err(|e| format!("Connect request failed: {}", e))?;
-
-        let mut resp = [0u8; 10];
+            .map_err(|e| format!("SOCKS5 connect write failed: {e}"))?;
+        let mut response = [0; 4];
         stream
-            .read_exact(&mut resp)
+            .read_exact(&mut response)
             .await
-            .map_err(|e| format!("Connect response failed: {}", e))?;
-
-        if resp[1] != 0x00 {
-            return Err(format!("SOCKS5 connect failed with code {}", resp[1]));
+            .map_err(|e| format!("SOCKS5 connect response failed: {e}"))?;
+        if response[0] != 5 || response[2] != 0 {
+            return Err("Invalid SOCKS5 connect response".into());
         }
-
+        if response[1] != 0 {
+            return Err(format!("SOCKS5 connect failed with code {}", response[1]));
+        }
+        let address_length = match response[3] {
+            1 => 4,
+            4 => 16,
+            3 => {
+                let length = stream
+                    .read_u8()
+                    .await
+                    .map_err(|_| "Truncated SOCKS5 bound address")?;
+                if length == 0 {
+                    return Err("Invalid SOCKS5 bound address".into());
+                }
+                usize::from(length)
+            }
+            _ => return Err("Invalid SOCKS5 bound address type".into()),
+        };
+        let mut bound_address_and_port = vec![0; address_length + 2];
+        stream
+            .read_exact(&mut bound_address_and_port)
+            .await
+            .map_err(|_| "Truncated SOCKS5 bound address")?;
         Ok((stream, ()))
     }
 
@@ -5299,6 +5276,11 @@ impl SshService {
     ) -> Result<(TcpStream, Vec<Session>, Vec<std::thread::JoinHandle<()>>), String> {
         if chain.hops.is_empty() {
             return Err("Mixed chain has no hops".to_string());
+        }
+        for hop in &chain.hops {
+            if let ChainHop::Proxy(proxy) = hop {
+                require_supported_ssh_proxy(proxy)?;
+            }
         }
         let control = self.establishment_control(config)?;
         let hop_timeout = clamped_ssh_hop_timeout(chain.hop_timeout_ms);
