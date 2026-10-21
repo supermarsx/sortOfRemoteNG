@@ -10902,8 +10902,7 @@ mod tests {
             );
         }
         assert_eq!(
-            establishment_transport_cause(&std::io::Error::new(
-                ErrorKind::Other,
+            establishment_transport_cause(&std::io::Error::other(
                 "[network-unreachable] private-host"
             )),
             "other",
