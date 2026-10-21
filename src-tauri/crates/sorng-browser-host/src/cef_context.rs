@@ -323,7 +323,7 @@ wrap_request_context_handler! {
                 return Some(handler);
             }
             // Workers can have no browser/frame. Never drop their admission hook.
-            let navigation_frame = crate::cef_requests::verified_request_frame(browser.as_deref(), frame.as_deref(), request.as_deref(), is_navigation, is_download);
+            let navigation_frame = crate::cef_requests::request_frame_proof(browser.as_deref(), frame.as_deref(), request.as_deref(), is_navigation, is_download);
             Some(crate::cef_requests::context_resource_handler(
                 self.preparation.session.clone(), self.preparation.identity.clone(),
                 self.preparation.permissions.clone(), request.as_deref(), is_navigation, is_download,

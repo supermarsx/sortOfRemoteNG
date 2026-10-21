@@ -123,9 +123,11 @@ pub(crate) fn context_resource_handler(
     is_download: c_int,
     request_initiator: Option<&CefString>,
     worker_context: bool,
-    verified_factory_frame: bool,
+    verified_factory_frame: impl Into<NativeRequestFrameProof>,
     disable_default_handling: Option<&mut c_int>,
 ) -> ResourceRequestHandler {
+    let frame_proof = verified_factory_frame.into();
+    let verified_factory_frame = frame_proof.verified_navigation;
     // CEF's download loader reports a main/subframe request with navigation=0,
     // download=1 and an opaque "null" initiator. Normalize that native factory
     // only after its matching browser/frame ownership has been verified. This
@@ -140,7 +142,7 @@ pub(crate) fn context_resource_handler(
                 ResourceType::MAIN_FRAME | ResourceType::SUB_FRAME
             )
         });
-    let scope = request.and_then(|request| {
+    let mut scope = request.and_then(|request| {
         ResourceScope::from_native(
             request.resource_type(),
             if download_factory { 1 } else { is_navigation },
@@ -149,6 +151,21 @@ pub(crate) fn context_resource_handler(
             verified_factory_frame,
         )
     });
+    if let Some(scope) = scope.as_mut() {
+        if scope.kind == ResourceType::SUB_FRAME && is_navigation == 1 && is_download == 0 {
+            if let Some(origin) = frame_proof.blob_subframe_creator {
+                if scope
+                    .initiator
+                    .as_ref()
+                    .is_none_or(|initiator| initiator == &origin)
+                {
+                    scope.initiator = Some(origin.clone());
+                    scope.blob_subframe_creator = Some(origin);
+                    scope.navigation_factory = false;
+                }
+            }
+        }
+    }
     let allowed =
         scoped_request_allowed(&session, &identity, &permissions, scope.as_ref(), request);
     // Download navigation still needs the same origin/class/route approval.
@@ -280,6 +297,109 @@ struct ResourceScope {
     // CEF's navigation-loader factory uses an opaque origin, not the
     // requesting document's origin. Never treat it as a first-party origin.
     navigation_factory: bool,
+    blob_subframe_creator: Option<String>,
+}
+
+pub(crate) struct NativeRequestFrameProof {
+    verified_navigation: bool,
+    blob_subframe_creator: Option<String>,
+}
+
+impl From<bool> for NativeRequestFrameProof {
+    fn from(verified_navigation: bool) -> Self {
+        Self {
+            verified_navigation,
+            blob_subframe_creator: None,
+        }
+    }
+}
+
+fn blob_creator_origin(address: &str) -> Option<String> {
+    if address.len() > 16_384 || address.chars().any(char::is_control) {
+        return None;
+    }
+    let url = url::Url::parse(address).ok()?;
+    if url.scheme() != "blob" {
+        return None;
+    }
+    let creator = url::Url::parse(url.path()).ok()?;
+    if !matches!(creator.scheme(), "http" | "https")
+        || !creator.username().is_empty()
+        || creator.password().is_some()
+        || creator.host_str().is_none()
+    {
+        return None;
+    }
+    canonical_browser_request_origin(&creator.origin().ascii_serialization()).ok()
+}
+
+/// Only a native same-browser parent can supply a local subframe's creator.
+/// This proof is never used as script or worker provenance.
+fn native_blob_subframe_creator(
+    browser: Option<&Browser>,
+    frame: Option<&Frame>,
+    address: &str,
+) -> Option<String> {
+    let creator = blob_creator_origin(address)?;
+    let (browser, frame) = (browser?, frame?);
+    if browser.is_valid() != 1
+        || browser.identifier() <= 0
+        || frame.is_valid() != 1
+        || frame.is_main() != 0
+        || !frame.browser().is_some_and(|owner| {
+            owner.is_valid() == 1 && owner.identifier() == browser.identifier()
+        })
+    {
+        return None;
+    }
+    let parent = frame.parent()?;
+    if parent.is_valid() != 1
+        || !matches!(parent.is_main(), 0 | 1)
+        || !parent.browser().is_some_and(|owner| {
+            owner.is_valid() == 1 && owner.identifier() == browser.identifier()
+        })
+    {
+        return None;
+    }
+    let address = CefString::from(&parent.url()).to_string();
+    let parent_origin = url::Url::parse(&address)
+        .ok()
+        .filter(|url| {
+            matches!(url.scheme(), "http" | "https")
+                && url.username().is_empty()
+                && url.password().is_none()
+        })
+        .and_then(|url| canonical_browser_request_origin(&url.origin().ascii_serialization()).ok())
+        .or_else(|| blob_creator_origin(&address))?;
+    (parent_origin == creator).then_some(creator)
+}
+
+pub(crate) fn request_frame_proof(
+    browser: Option<&Browser>,
+    frame: Option<&Frame>,
+    request: Option<&Request>,
+    is_navigation: c_int,
+    is_download: c_int,
+) -> NativeRequestFrameProof {
+    let verified_navigation =
+        verified_request_frame(browser, frame, request, is_navigation, is_download);
+    let blob_subframe_creator = if verified_navigation && is_navigation == 1 && is_download == 0 {
+        request
+            .filter(|request| request.resource_type() == ResourceType::SUB_FRAME)
+            .and_then(|request| {
+                native_blob_subframe_creator(
+                    browser,
+                    frame,
+                    &CefString::from(&request.url()).to_string(),
+                )
+            })
+    } else {
+        None
+    };
+    NativeRequestFrameProof {
+        verified_navigation,
+        blob_subframe_creator,
+    }
 }
 
 pub(crate) fn verified_navigation_frame(
@@ -359,6 +479,7 @@ impl ResourceScope {
             initiator,
             worker_context,
             navigation_factory,
+            blob_subframe_creator: None,
         })
     }
 }
@@ -371,16 +492,25 @@ fn resolve_resource(
     url: &str,
 ) -> EffectiveWebsitePermission {
     let class = native_request_class(scope.kind).unwrap_or("");
-    // Local media has no socket or proxy bypass. Bind blob ownership and the
-    // native initiator to an admitted document and its image/media permission;
-    // local scripts, workers, frames and navigations remain denied.
-    if let Some(origin) = local_media_origin(scope, url) {
+    // Local object URLs have no socket or proxy bypass. Keep their creator and
+    // native initiator bound to this live attempt and their exact resource class.
+    if let Some(origin) = local_resource_origin(scope, url) {
         let admitted = session.authorize_navigation(identity, &origin).is_ok();
+        let worker_allowed = !(scope.worker_context || class == "worker")
+            || permissions
+                .resolve(WebsitePermissionQuery {
+                    website_origin: session.policy().source_origin(),
+                    destination_origin: &origin,
+                    request_class: "worker",
+                    native_denied: !admitted,
+                })
+                .decision
+                == WebsitePermissionDecision::Allow;
         return permissions.resolve(WebsitePermissionQuery {
             website_origin: session.policy().source_origin(),
             destination_origin: &origin,
-            request_class: "image-media",
-            native_denied: !admitted,
+            request_class: class,
+            native_denied: !admitted || !worker_allowed,
         });
     }
     let destination = session.authorize_navigation(identity, url).ok();
@@ -426,10 +556,22 @@ fn resolve_resource(
     })
 }
 
-fn local_media_origin(scope: &ResourceScope, address: &str) -> Option<String> {
-    if scope.worker_context
-        || scope.navigation_factory
-        || !matches!(scope.kind, ResourceType::MEDIA | ResourceType::IMAGE)
+fn local_resource_origin(scope: &ResourceScope, address: &str) -> Option<String> {
+    if scope.navigation_factory
+        || !matches!(
+            scope.kind,
+            ResourceType::SCRIPT
+                | ResourceType::WORKER
+                | ResourceType::SHARED_WORKER
+                | ResourceType::SUB_FRAME
+                | ResourceType::STYLESHEET
+                | ResourceType::FONT_RESOURCE
+                | ResourceType::XHR
+                | ResourceType::SUB_RESOURCE
+                | ResourceType::MEDIA
+                | ResourceType::IMAGE
+                | ResourceType::FAVICON
+        )
         || address.len() > 16_384
         || address.chars().any(char::is_control)
     {
@@ -438,16 +580,52 @@ fn local_media_origin(scope: &ResourceScope, address: &str) -> Option<String> {
     let initiator = scope.initiator.as_ref()?;
     let url = url::Url::parse(address).ok()?;
     match url.scheme() {
-        "blob" if url.origin().ascii_serialization() == *initiator => Some(initiator.clone()),
+        "blob"
+            if blob_creator_origin(address).as_ref() == Some(initiator)
+                && (scope.kind != ResourceType::SUB_FRAME
+                    || !scope.worker_context
+                        && scope.blob_subframe_creator.as_ref() == Some(initiator)) =>
+        {
+            Some(initiator.clone())
+        }
         "data"
-            if scope.kind == ResourceType::MEDIA
-                && (address.starts_with("data:audio/") || address.starts_with("data:video/"))
-                && address.contains(',') =>
+            if address.split_once(',').is_some_and(|(metadata, _)| {
+                let mime = metadata
+                    .get(5..)
+                    .unwrap_or("")
+                    .split(';')
+                    .next()
+                    .unwrap_or("")
+                    .to_ascii_lowercase();
+                matches!(scope.kind, ResourceType::IMAGE | ResourceType::FAVICON)
+                    && mime.starts_with("image/")
+                    || scope.kind == ResourceType::MEDIA
+                        && (mime.starts_with("audio/") || mime.starts_with("video/"))
+            }) =>
         {
             Some(initiator.clone())
         }
         _ => None,
     }
+}
+
+fn blob_subframe_navigation_allowed(
+    session: &OriginBrowserSession,
+    identity: &BrowserIdentity,
+    permissions: &WebsitePermissionEngine,
+    address: &str,
+    creator: Option<String>,
+) -> bool {
+    let scope = ResourceScope {
+        kind: ResourceType::SUB_FRAME,
+        initiator: creator.clone(),
+        worker_context: false,
+        navigation_factory: false,
+        blob_subframe_creator: creator,
+    };
+    local_resource_origin(&scope, address).is_some()
+        && resolve_resource(session, identity, permissions, &scope, address).decision
+            == WebsitePermissionDecision::Allow
 }
 
 fn scoped_request_allowed(
@@ -769,8 +947,10 @@ wrap_request_handler! {
             {
                 return 1;
             }
+            let local_creator = native_blob_subframe_creator(Some(browser), Some(frame), &url);
             c_int::from(!lock_attempt(&self.session, &self.identity).is_some_and(|session| {
                 navigation_allowed(&session, &self.identity, &self.permissions, &url, frame.is_main() == 1)
+                    || blob_subframe_navigation_allowed(&session, &self.identity, &self.permissions, &url, local_creator)
             }))
         }
 
@@ -785,7 +965,7 @@ wrap_request_handler! {
             disable_default_handling: Option<&mut c_int>,
         ) -> Option<ResourceRequestHandler> {
             // Never return None: that would opt into default/context handling.
-            let navigation_frame = verified_request_frame(browser.as_deref(), frame.as_deref(), request.as_deref(), is_navigation, is_download);
+            let navigation_frame = request_frame_proof(browser.as_deref(), frame.as_deref(), request.as_deref(), is_navigation, is_download);
             Some(context_resource_handler(
                 self.session.clone(), self.identity.clone(), self.permissions.clone(), request.as_deref(),
                 is_navigation, is_download, request_initiator, browser.is_none() || frame.is_none(), navigation_frame, disable_default_handling,
@@ -1037,6 +1217,7 @@ mod tests {
             initiator: Some("https://fixture.invalid".into()),
             worker_context: false,
             navigation_factory: false,
+            blob_subframe_creator: None,
         }
     }
 
@@ -1384,7 +1565,23 @@ mod tests {
             main_value: c_int,
             owner: Option<Browser>,
         ) -> Frame {
-            type State = (c_int, c_int, Option<Browser>);
+            frame_with_parent_and_url(
+                valid_value,
+                main_value,
+                owner,
+                None,
+                "https://fixture.invalid/",
+            )
+        }
+
+        pub(super) fn frame_with_parent_and_url(
+            valid_value: c_int,
+            main_value: c_int,
+            owner: Option<Browser>,
+            parent_value: Option<Frame>,
+            address: &'static str,
+        ) -> Frame {
+            type State = (c_int, c_int, Option<Browser>, Option<Frame>, &'static str);
             extern "C" fn valid(this: *mut _cef_frame_t) -> c_int {
                 RcImpl::<_cef_frame_t, State>::get(this).interface.0
             }
@@ -1399,19 +1596,44 @@ mod tests {
                     .map(Into::into)
                     .unwrap_or_default()
             }
-            fn wrap(valid_value: c_int, main_value: c_int, owner: Option<Browser>) -> Frame {
-                let raw = _cef_frame_t {
-                    is_valid: Some(valid),
-                    is_main: Some(main),
-                    get_browser: Some(browser),
-                    // SAFETY: Nullable unused entries; RcImpl supplies ownership.
-                    ..unsafe { std::mem::zeroed() }
-                };
-                let raw: *mut _cef_frame_t =
-                    RcImpl::new(raw, (valid_value, main_value, owner)).cast();
-                raw.wrap_result()
+            extern "C" fn parent(this: *mut _cef_frame_t) -> *mut _cef_frame_t {
+                RcImpl::<_cef_frame_t, State>::get(this)
+                    .interface
+                    .3
+                    .clone()
+                    .map(Into::into)
+                    .unwrap_or_default()
             }
-            wrap(valid_value, main_value, owner)
+            extern "C" fn url(this: *mut _cef_frame_t) -> cef::sys::cef_string_userfree_t {
+                userfree_string(RcImpl::<_cef_frame_t, State>::get(this).interface.4)
+            }
+            let raw = _cef_frame_t {
+                is_valid: Some(valid),
+                is_main: Some(main),
+                get_browser: Some(browser),
+                get_parent: Some(parent),
+                get_url: Some(url),
+                // SAFETY: unused entries are nullable; RcImpl supplies ownership.
+                ..unsafe { std::mem::zeroed() }
+            };
+            let raw: *mut _cef_frame_t =
+                RcImpl::new(raw, (valid_value, main_value, owner, parent_value, address)).cast();
+            raw.wrap_result()
+        }
+
+        fn userfree_string(value: &str) -> cef::sys::cef_string_userfree_t {
+            let text: Vec<u16> = value.encode_utf16().collect();
+            // SAFETY: use the same CEF allocator/destructor contract as Request::url.
+            unsafe {
+                let output = cef::sys::cef_string_userfree_utf16_alloc();
+                if !output.is_null()
+                    && cef::sys::cef_string_utf16_set(text.as_ptr(), text.len(), output, 1) == 0
+                {
+                    cef::sys::cef_string_userfree_utf16_free(output);
+                    return std::ptr::null_mut();
+                }
+                output
+            }
         }
 
         pub(super) fn request(resource_kind: ResourceType) -> Request {
@@ -2387,6 +2609,7 @@ mod tests {
             initiator: None,
             worker_context: false,
             navigation_factory: false,
+            blob_subframe_creator: None,
         };
         let engine = allow_classes(&[WebsiteRequestClass::Navigation]);
         assert_eq!(
@@ -3027,6 +3250,354 @@ mod tests {
             &identity,
             "https://fixture.invalid/"
         ));
+    }
+
+    #[tokio::test]
+    async fn creator_owned_blob_scripts_and_workers_use_their_exact_permissions() {
+        let (session, identity) = session().await;
+        report_synthetic_ready(&mut session.lock().unwrap(), &identity);
+        let session = session.lock().unwrap();
+        for (kind, class) in [
+            (ResourceType::SCRIPT, WebsiteRequestClass::Script),
+            (ResourceType::WORKER, WebsiteRequestClass::Worker),
+            (ResourceType::SHARED_WORKER, WebsiteRequestClass::Worker),
+            (ResourceType::STYLESHEET, WebsiteRequestClass::Stylesheet),
+            (ResourceType::FONT_RESOURCE, WebsiteRequestClass::Font),
+            (ResourceType::XHR, WebsiteRequestClass::FetchXhr),
+        ] {
+            let scope = first_party_scope(kind);
+            assert_eq!(
+                resolve_resource(
+                    &session,
+                    &identity,
+                    &allow_classes(&[class]),
+                    &scope,
+                    "blob:https://fixture.invalid/creator-owned"
+                )
+                .decision,
+                WebsitePermissionDecision::Allow,
+                "normal creator-owned blob class {class:?}"
+            );
+            assert_eq!(
+                resolve_resource(
+                    &session,
+                    &identity,
+                    &allow_classes(&[]),
+                    &scope,
+                    "blob:https://fixture.invalid/creator-owned"
+                )
+                .decision,
+                WebsitePermissionDecision::Deny
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn local_blob_grants_do_not_override_worker_denials_or_expired_identity() {
+        let (session, identity) = session().await;
+        report_synthetic_ready(&mut session.lock().unwrap(), &identity);
+        let allow = allow_classes(&[
+            WebsiteRequestClass::Script,
+            WebsiteRequestClass::Worker,
+            WebsiteRequestClass::Frame,
+            WebsiteRequestClass::ImageMedia,
+        ]);
+        let mut worker_script = first_party_scope(ResourceType::SCRIPT);
+        worker_script.worker_context = true;
+        let only_script = allow_classes(&[WebsiteRequestClass::Script]);
+        let address = "blob:https://fixture.invalid/creator-owned";
+        assert_eq!(
+            resolve_resource(
+                &session.lock().unwrap(),
+                &identity,
+                &only_script,
+                &worker_script,
+                address
+            )
+            .decision,
+            WebsitePermissionDecision::Deny
+        );
+        assert_eq!(
+            resolve_resource(
+                &session.lock().unwrap(),
+                &identity,
+                &allow,
+                &worker_script,
+                address
+            )
+            .decision,
+            WebsitePermissionDecision::Allow
+        );
+        let denied = WebsitePermissionEngine::new(
+            None,
+            Some(&script_policy(
+                WebsitePermissionSetting::Deny,
+                WebsitePermissionSetting::Inherit,
+            )),
+            &[(
+                WebsiteRequestClass::Script,
+                WebsitePermissionDecision::Allow,
+            )]
+            .into(),
+        )
+        .unwrap();
+        assert_eq!(
+            resolve_resource(
+                &session.lock().unwrap(),
+                &identity,
+                &denied,
+                &first_party_scope(ResourceType::SCRIPT),
+                address
+            )
+            .decision,
+            WebsitePermissionDecision::Deny
+        );
+        for bad in [
+            "blob:https://foreign.invalid/asset",
+            "blob:null/asset",
+            "blob:https://user:pass@fixture.invalid/asset",
+            "blob:broken",
+            "data:text/javascript,alert(1)",
+            "data:text/html,<script></script>",
+        ] {
+            for kind in [
+                ResourceType::SCRIPT,
+                ResourceType::WORKER,
+                ResourceType::SUB_FRAME,
+            ] {
+                assert_eq!(
+                    resolve_resource(
+                        &session.lock().unwrap(),
+                        &identity,
+                        &allow,
+                        &first_party_scope(kind),
+                        bad
+                    )
+                    .decision,
+                    WebsitePermissionDecision::Deny
+                );
+            }
+        }
+        let mut opaque = first_party_scope(ResourceType::WORKER);
+        opaque.initiator = None;
+        assert_eq!(
+            resolve_resource(
+                &session.lock().unwrap(),
+                &identity,
+                &allow,
+                &opaque,
+                address
+            )
+            .decision,
+            WebsitePermissionDecision::Deny
+        );
+        for kind in [ResourceType::MAIN_FRAME, ResourceType::SERVICE_WORKER] {
+            assert_eq!(
+                resolve_resource(
+                    &session.lock().unwrap(),
+                    &identity,
+                    &allow,
+                    &first_party_scope(kind),
+                    address
+                )
+                .decision,
+                WebsitePermissionDecision::Deny
+            );
+        }
+        session.lock().unwrap().revoke(&identity).unwrap();
+        assert_eq!(
+            resolve_resource(
+                &session.lock().unwrap(),
+                &identity,
+                &allow,
+                &first_party_scope(ResourceType::SCRIPT),
+                address
+            )
+            .decision,
+            WebsitePermissionDecision::Deny
+        );
+    }
+
+    #[tokio::test]
+    async fn local_data_images_keep_class_and_live_origin_constraints() {
+        let (session, identity) = session().await;
+        report_synthetic_ready(&mut session.lock().unwrap(), &identity);
+        let images = allow_classes(&[WebsiteRequestClass::ImageMedia]);
+        for kind in [ResourceType::IMAGE, ResourceType::FAVICON] {
+            assert_eq!(
+                resolve_resource(
+                    &session.lock().unwrap(),
+                    &identity,
+                    &images,
+                    &first_party_scope(kind),
+                    "data:image/png;base64,AAAA"
+                )
+                .decision,
+                WebsitePermissionDecision::Allow
+            );
+        }
+        for (kind, address) in [
+            (ResourceType::SCRIPT, "data:image/svg+xml,<svg/>"),
+            (ResourceType::SUB_FRAME, "data:image/svg+xml,<svg/>"),
+            (ResourceType::IMAGE, "data:text/html,<script></script>"),
+            (ResourceType::IMAGE, "data:application/javascript,alert(1)"),
+        ] {
+            assert_eq!(
+                resolve_resource(
+                    &session.lock().unwrap(),
+                    &identity,
+                    &images,
+                    &first_party_scope(kind),
+                    address
+                )
+                .decision,
+                WebsitePermissionDecision::Deny
+            );
+        }
+        let mut opaque = first_party_scope(ResourceType::IMAGE);
+        opaque.initiator = None;
+        assert_eq!(
+            resolve_resource(
+                &session.lock().unwrap(),
+                &identity,
+                &images,
+                &opaque,
+                "data:image/png;base64,AAAA"
+            )
+            .decision,
+            WebsitePermissionDecision::Deny
+        );
+        session.lock().unwrap().revoke(&identity).unwrap();
+        assert_eq!(
+            resolve_resource(
+                &session.lock().unwrap(),
+                &identity,
+                &images,
+                &first_party_scope(ResourceType::IMAGE),
+                "data:image/png;base64,AAAA"
+            )
+            .decision,
+            WebsitePermissionDecision::Deny
+        );
+    }
+
+    #[tokio::test]
+    async fn native_blob_subframe_requires_same_browser_parent_and_exact_frame_permission() {
+        #[cfg(target_os = "macos")]
+        crate::platform::test_runtime::ensure_loaded();
+        let (session, identity) = session().await;
+        let session = Arc::new(session);
+        report_synthetic_ready(&mut session.lock().unwrap(), &identity);
+        let owner = navigation_mocks::browser(1, 41);
+        let foreign = navigation_mocks::browser(1, 42);
+        let parent = navigation_mocks::frame_with_parent_and_url(
+            1,
+            1,
+            Some(owner.clone()),
+            None,
+            "https://fixture.invalid/document/path?private=not-retained#fragment",
+        );
+        let frame = navigation_mocks::frame_with_parent_and_url(
+            1,
+            0,
+            Some(owner.clone()),
+            Some(parent),
+            "about:blank",
+        );
+        let address = "blob:https://fixture.invalid/creator-owned";
+        let request = navigation_mocks::request_url(ResourceType::SUB_FRAME, address);
+        let creator = native_blob_subframe_creator(Some(&owner), Some(&frame), address);
+        assert_eq!(creator.as_deref(), Some("https://fixture.invalid"));
+        let allow = allow_classes(&[WebsiteRequestClass::Frame]);
+        assert!(blob_subframe_navigation_allowed(
+            &session.lock().unwrap(),
+            &identity,
+            &allow,
+            address,
+            creator
+        ));
+        assert!(!blob_subframe_navigation_allowed(
+            &session.lock().unwrap(),
+            &identity,
+            &allow_classes(&[]),
+            address,
+            Some("https://fixture.invalid".into())
+        ));
+        let opaque = CefString::from("null");
+        let mut disable = 0;
+        let _handler = context_resource_handler(
+            session.clone(),
+            identity.clone(),
+            Arc::new(allow.clone()),
+            Some(&request),
+            1,
+            0,
+            Some(&opaque),
+            false,
+            request_frame_proof(Some(&owner), Some(&frame), Some(&request), 1, 0),
+            Some(&mut disable),
+        );
+        assert_eq!(
+            disable, 0,
+            "actual native parent proof must survive the resource factory"
+        );
+        for bad_parent in [
+            navigation_mocks::frame(0, 1, Some(owner.clone())),
+            navigation_mocks::frame(1, 1, Some(foreign)),
+            navigation_mocks::frame(1, 1, Some(navigation_mocks::browser(0, 41))),
+            navigation_mocks::frame_with_parent_and_url(
+                1,
+                1,
+                Some(owner.clone()),
+                None,
+                "https://foreign.invalid/",
+            ),
+            navigation_mocks::frame_with_parent_and_url(
+                1,
+                1,
+                Some(owner.clone()),
+                None,
+                "data:text/html,opaque",
+            ),
+        ] {
+            let frame = navigation_mocks::frame_with_parent_and_url(
+                1,
+                0,
+                Some(owner.clone()),
+                Some(bad_parent),
+                "about:blank",
+            );
+            assert!(native_blob_subframe_creator(Some(&owner), Some(&frame), address).is_none());
+            let mut disable = 0;
+            let _handler = context_resource_handler(
+                session.clone(),
+                identity.clone(),
+                Arc::new(allow.clone()),
+                Some(&request),
+                1,
+                0,
+                Some(&opaque),
+                false,
+                request_frame_proof(Some(&owner), Some(&frame), Some(&request), 1, 0),
+                Some(&mut disable),
+            );
+            assert_eq!(disable, 1);
+        }
+        let foreign_initiator = CefString::from("https://foreign.invalid");
+        let mut disable = 0;
+        let _handler = context_resource_handler(
+            session.clone(),
+            identity.clone(),
+            Arc::new(allow),
+            Some(&request),
+            1,
+            0,
+            Some(&foreign_initiator),
+            false,
+            request_frame_proof(Some(&owner), Some(&frame), Some(&request), 1, 0),
+            Some(&mut disable),
+        );
+        assert_eq!(disable, 1);
     }
 
     #[tokio::test]
