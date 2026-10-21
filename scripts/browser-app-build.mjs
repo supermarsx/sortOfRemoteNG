@@ -30,6 +30,7 @@ import {
   verifyArtifact,
 } from "./browser-runtime-package.mjs";
 import { buildNativeChildEnvironment } from "./lib/native-child-env.mjs";
+import { prepareWindowsNativeCrashCapture } from "./lib/windows-native-crash-capture.mjs";
 import {
   stageWindowsNativeRuntime,
   runtimeDllsForArchitecture,
@@ -997,12 +998,40 @@ export async function runCargo(
       bundle: path.dirname(executable),
       appName: plan.appName,
     });
-  await run(
+  const launchEnvironment = { ...env, GDK_BACKEND: "x11" };
+  const capture = await prepareWindowsNativeCrashCapture({
     executable,
-    commands.runArgs,
-    { ...env, GDK_BACKEND: "x11" },
-    path.dirname(executable),
-  );
+    args: commands.runArgs,
+    env: launchEnvironment,
+    cwd: path.dirname(executable),
+    outputRoot: path.join(plan.root, "native-crashes"),
+  });
+  if (capture)
+    console.error(
+      `[browser-app-build] Native crash capture enabled; local reports: ${capture.directory}`,
+    );
+  let launchFailure;
+  try {
+    await run(
+      capture?.command ?? executable,
+      capture?.args ?? commands.runArgs,
+      capture?.env ?? launchEnvironment,
+      capture?.cwd ?? path.dirname(executable),
+    );
+  } catch (error) {
+    launchFailure = error;
+  }
+  try {
+    await capture?.afterRun();
+  } catch (error) {
+    if (launchFailure)
+      throw new AggregateError(
+        [launchFailure, error],
+        `Native launch failed: ${launchFailure instanceof Error ? launchFailure.message : String(launchFailure)}; crash capture: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    throw error;
+  }
+  if (launchFailure) throw launchFailure;
   return { payload, productionReady: false };
 }
 
