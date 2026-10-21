@@ -968,12 +968,18 @@ export function useOriginBrowser(options: UseOriginBrowserOptions) {
           !sameIdentity(value.identity, attempt.identity)
         )
           return;
+        const completedDocument = (snapshot: OriginBrowserSnapshot) =>
+          snapshot.phase === "attached" &&
+          snapshot.documentLoaded === true &&
+          snapshot.loading === false &&
+          /^https?:\/\//i.test(snapshot.displayUrl);
+        const terminal = (snapshot: OriginBrowserSnapshot) =>
+          ["failed", "closing", "closed"].includes(snapshot.phase);
         if (
           attempt.loadFailed &&
           !value.loadFailure &&
-          (value.loading ||
-            value.displayUrl === "about:blank" ||
-            value.displayUrl.startsWith("chrome-error:"))
+          !terminal(value) &&
+          !completedDocument(value)
         )
           return;
         if (
@@ -1000,6 +1006,13 @@ export function useOriginBrowser(options: UseOriginBrowserOptions) {
         }
         if (snapshot.sequence <= attempt.sequence) return;
         attempt.sequence = snapshot.sequence;
+        if (snapshot.loadFailure) {
+          // Hide the failed child before repair cancels this attempt and waits
+          // for close. Native also clamps visibility while failure is latched.
+          attempt.attached = snapshot.phase === "attached";
+          attempt.loadFailed = true;
+          present();
+        }
         // Repair an independent proxy failure only after a completed owned
         // page has stayed healthy. Immediate failures cannot form a retry loop.
         const previousRun = proxyRepairRun.current;
@@ -1071,9 +1084,8 @@ export function useOriginBrowser(options: UseOriginBrowserOptions) {
         if (
           attempt.loadFailed &&
           !snapshot.loadFailure &&
-          (snapshot.loading ||
-            snapshot.displayUrl === "about:blank" ||
-            snapshot.displayUrl.startsWith("chrome-error:"))
+          !terminal(snapshot) &&
+          !completedDocument(snapshot)
         )
           return;
         // A fresh attempt repairs two causes: the saved connection changed, or

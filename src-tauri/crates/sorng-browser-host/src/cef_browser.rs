@@ -463,6 +463,23 @@ impl CleanupStage {
 }
 
 impl State {
+    fn presentation_visibility(
+        &mut self,
+        identity: &BrowserIdentity,
+        requested: bool,
+    ) -> Result<bool, ControlError> {
+        // A presentation queued before OnLoadError must not reveal Chromium's
+        // error document over the shell diagnostics. A fresh admitted main
+        // navigation clears the document failure through OnBeforeBrowse.
+        let visible = requested && self.page.load_failure.is_none();
+        if visible {
+            self.control.show(identity)?;
+        } else {
+            self.control.hide(identity)?;
+        }
+        Ok(visible)
+    }
+
     fn cleanup_matches(&self, identity: &BrowserIdentity, browser_id: i32) -> bool {
         self.control.identity() == identity
             && self.browser_id == Some(browser_id)
@@ -2839,18 +2856,14 @@ impl<'a> CefBrowserHost<'a> {
 
     fn visibility(&self, identity: &BrowserIdentity, visible: bool) -> Result<(), BrowserError> {
         let browser = self.check(identity)?;
-        {
+        let visible = {
             let mut state = self
                 .shared
                 .state
                 .lock()
                 .map_err(|_| BrowserError::StateUnavailable)?;
-            if visible {
-                state.control.show(identity)?;
-            } else {
-                state.control.hide(identity)?;
-            }
-        }
+            state.presentation_visibility(identity, visible)?
+        };
         let host = self.native_host(&browser)?;
         if !visible {
             host.close_dev_tools();

@@ -50,6 +50,7 @@ fn apply_presentation(
     let resize = bounds.filter(|bounds| view.presentation_bounds != Some((*bounds, scale)));
     let was_visible = view.visible;
     let result = with_target(view, view.popups.selected.as_deref(), |host| {
+        let was_visible = was_visible && host.lifecycle() == Lifecycle::Attached;
         if let Some(bounds) = resize {
             host.resize(id, bounds.to_native().map_err(|e| e.to_string())?, scale)
                 .map_err(|_| UNAVAILABLE)?;
@@ -75,17 +76,23 @@ fn apply_presentation(
                     .map_err(|_| UNAVAILABLE)?;
             }
         }
-        Ok(())
+        // A native load error can suppress a stale show request. Cache the
+        // selected host's effective state, so the next successful document can
+        // be shown even when the earlier request wanted it visible already.
+        Ok(visible && host.lifecycle() == Lifecycle::Attached)
     });
-    if result.is_err() {
-        hide_selected(view);
-        view.visible = false;
-        return result;
-    }
+    let effective_visible = match result {
+        Ok(visible) => visible,
+        Err(error) => {
+            hide_selected(view);
+            view.visible = false;
+            return Err(error);
+        }
+    };
     if let Some(bounds) = bounds {
         view.presentation_bounds = Some((bounds, scale));
     }
-    view.visible = visible;
+    view.visible = effective_visible;
     view.input_blocked = input_blocked;
     view.popups.occlusions = occlusions.to_vec();
     Ok(())

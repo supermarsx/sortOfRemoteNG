@@ -182,7 +182,9 @@ test("hidden diagnostic presentations synchronize input fencing without showing 
   );
   const hidden = presentation.slice(
     presentation.indexOf("} else {"),
-    presentation.indexOf("        Ok(())"),
+    presentation.indexOf(
+      "        Ok(visible && host.lifecycle() == Lifecycle::Attached)",
+    ),
   );
   assert.match(hidden, /host\.hide\(id\)/);
   assert.match(hidden, /bounds\.or\(view\.presentation_bounds/);
@@ -191,6 +193,12 @@ test("hidden diagnostic presentations synchronize input fencing without showing 
     /host\.occlude\(id, bounds, occlusions, scale, input_blocked\)/,
   );
   assert.doesNotMatch(hidden, /\.show\(|\.focus\(/);
+  assert.match(
+    presentation,
+    /let was_visible = was_visible && host\.lifecycle\(\) == Lifecycle::Attached/,
+  );
+  assert.match(presentation, /view\.visible = effective_visible/);
+  assert.match(presentation, /let effective_visible = match result/);
   const devtoolsStart = runtime.search(
     /OriginBrowserAction::Devtools\s*\{\s*presentation_revision\s*,?\s*\}\s*=>/,
   );

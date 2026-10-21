@@ -72,6 +72,18 @@ fn browser(main: Frame) -> Browser {
     raw.wrap_result()
 }
 
+fn navigation_request(address: &'static str) -> Request {
+    extern "C" fn url(this: *mut cef::sys::_cef_request_t) -> cef_string_userfree_t {
+        string(RcImpl::<cef::sys::_cef_request_t, &'static str>::get(this).interface)
+    }
+    let raw = cef::sys::_cef_request_t {
+        get_url: Some(url),
+        ..unsafe { std::mem::zeroed() }
+    };
+    let raw: *mut cef::sys::_cef_request_t = RcImpl::new(raw, address).cast();
+    raw.wrap_result()
+}
+
 async fn fixture() -> (Arc<Shared>, Arc<Events>, Browser, LoadHandler) {
     #[cfg(target_os = "macos")]
     crate::platform::test_runtime::ensure_loaded();
@@ -133,6 +145,113 @@ async fn provisional_tunnel_failure_survives_error_document_and_loading_stopped(
 }
 
 #[tokio::test]
+async fn late_presentation_cannot_reveal_proxy_error_and_fresh_navigation_can_restore() {
+    let (shared, events, mut browser, handler) = fixture().await;
+    let mut main = browser.main_frame().unwrap();
+    handler.on_load_error(
+        Some(&mut browser),
+        Some(&mut main),
+        Errorcode::PROXY_CONNECTION_FAILED,
+        None,
+        None,
+    );
+    let failure = shared.state.lock().unwrap().page.load_failure.unwrap();
+    assert_eq!(failure.code, -130);
+    // This is the production transition used by CefBrowserHost::visibility,
+    // including the effective bool passed to native_surface::visible.
+    for status in [0, 200] {
+        handler.on_load_end(Some(&mut browser), Some(&mut main), status);
+        handler.on_loading_state_change(Some(&mut browser), 0, 0, 0);
+        let mut state = shared.state.lock().unwrap();
+        assert!(!state
+            .presentation_visibility(&shared.identity, true)
+            .unwrap());
+        assert_eq!(state.control.lifecycle(), Lifecycle::Hidden);
+        assert_eq!(state.page.load_failure, Some(failure));
+        assert!(!state.page.document_loaded);
+    }
+    let foreign = sorng_protocols::origin_browser::OriginBrowserPolicy::new(
+        "owner",
+        "connection",
+        "other-tab",
+        "https://fixture.invalid",
+    )
+    .unwrap()
+    .identity()
+    .clone();
+    assert!(shared
+        .state
+        .lock()
+        .unwrap()
+        .presentation_visibility(&foreign, true)
+        .is_err());
+
+    // Exercise the real admitted-navigation callback rather than manually
+    // clearing the failure. Internal error documents cannot use this reset.
+    let inner = request_handler_with_lifecycle(
+        shared.session.clone(),
+        shared.identity.clone(),
+        shared.permissions.clone(),
+        Some(shared.clone()),
+    );
+    let requests = NativeRequests::new(shared.clone(), inner);
+    for address in [
+        "chrome-error://chromewebdata/",
+        "about:blank",
+        "https://attacker.invalid/",
+    ] {
+        let mut request = navigation_request(address);
+        assert_eq!(
+            requests.on_before_browse(
+                Some(&mut browser),
+                Some(&mut main),
+                Some(&mut request),
+                1,
+                0
+            ),
+            1
+        );
+        let mut state = shared.state.lock().unwrap();
+        assert_eq!(state.page.load_failure, Some(failure));
+        assert!(!state
+            .presentation_visibility(&shared.identity, true)
+            .unwrap());
+    }
+    let mut request = navigation_request("https://fixture.invalid/ready");
+    assert_eq!(
+        requests.on_before_browse(
+            Some(&mut browser),
+            Some(&mut main),
+            Some(&mut request),
+            1,
+            0
+        ),
+        0
+    );
+    assert!(shared.state.lock().unwrap().page.load_failure.is_none());
+    handler.on_load_end(Some(&mut browser), Some(&mut main), 200);
+    assert!(
+        events
+            .0
+            .lock()
+            .unwrap()
+            .last()
+            .unwrap()
+            .state
+            .document_loaded
+    );
+    let mut state = shared.state.lock().unwrap();
+    assert!(state
+        .presentation_visibility(&shared.identity, true)
+        .unwrap());
+    assert_eq!(state.control.lifecycle(), Lifecycle::Attached);
+    assert!(!state
+        .presentation_visibility(&shared.identity, false)
+        .unwrap());
+    assert_eq!(state.control.lifecycle(), Lifecycle::Hidden);
+}
+
+#[tokio::test]
 async fn subframe_missing_frame_and_cancelled_loads_do_not_replace_the_main_document() {
     let (shared, _, mut browser, handler) = fixture().await;
     let mut child = frame(false, "child");
@@ -150,7 +269,9 @@ async fn subframe_missing_frame_and_cancelled_loads_do_not_replace_the_main_docu
 async fn http_error_content_remains_a_loaded_document() {
     let (shared, _, mut browser, handler) = fixture().await;
     let mut main = frame(true, "committed-main");
-    for status in [200, 301, 401, 403, 404, 407, 500, 502, 503] {
+    // Pinned CEF's successful BackForwardCache restore explicitly emits
+    // OnLoadEnd(..., 0); status alone cannot distinguish its error documents.
+    for status in [0, 200, 301, 401, 403, 404, 407, 500, 502, 503] {
         shared.automation.lock().unwrap().navigating = true;
         handler.on_load_end(Some(&mut browser), Some(&mut main), status);
         assert!(shared.state.lock().unwrap().page.load_failure.is_none());

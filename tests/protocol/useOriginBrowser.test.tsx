@@ -376,6 +376,7 @@ describe("origin browser attempt controller", () => {
         sequence: 3,
         loading: false,
         displayUrl: "https://fixture.invalid/recovered",
+        documentLoaded: true,
       }),
     );
     expect(f.result.current.connectionStatus).toBe("connected");
@@ -1717,6 +1718,7 @@ describe("origin browser attempt controller", () => {
         sequence: 4,
         loading: false,
         displayUrl: "https://fixture.invalid/next",
+        documentLoaded: true,
       }),
     );
     expect(f.result.current.state.phase).toBe("attached");
@@ -1753,7 +1755,7 @@ describe("origin browser attempt controller", () => {
       snapshot({ sequence: 8, identity: { ...identity, attemptId: "old" } }),
     );
     expect(f.result.current.state.phase).toBe("error");
-    f.emit(snapshot({ sequence: 3 }));
+    f.emit(snapshot({ sequence: 3, documentLoaded: true }));
     expect(f.result.current.state.phase).toBe("attached");
     expect(f.transport.close).not.toHaveBeenCalled();
   });
@@ -1813,7 +1815,7 @@ describe("origin browser attempt controller", () => {
       expect(await f.result.current.back()).toBe(true);
       expect(await f.result.current.openDevTools()).toBe(true);
       expect(f.transport.create).toHaveBeenCalledOnce();
-      f.emit(snapshot({ sequence: 3 }));
+      f.emit(snapshot({ sequence: 3, documentLoaded: true }));
       expect(f.result.current.state.phase).toBe("attached");
       expect(f.transport.control).toHaveBeenLastCalledWith({
         identity,
@@ -2188,5 +2190,62 @@ describe("Tauri transport naming and envelope", () => {
     );
     ipc.listen.mock.calls[0][1]({ payload: snapshot() });
     expect(listener).toHaveBeenCalledWith(snapshot());
+  });
+});
+
+describe("failed native document visibility", () => {
+  it.each([false, undefined])(
+    "keeps diagnostics exposed without successful document proof (%s)",
+    async (documentLoaded) => {
+      const f = await mounted();
+      f.emit(
+        snapshot({ sequence: 1, loadFailure: { code: -105, category: "dns" } }),
+      );
+      f.transport.control.mockClear();
+      f.emit(snapshot({ sequence: 2, documentLoaded, loading: false }));
+      expect(f.result.current.state.phase).toBe("error");
+      expect(f.result.current.state.snapshot?.loadFailure?.code).toBe(-105);
+      expect(
+        f.transport.control.mock.calls.some(
+          ([request]) =>
+            request.action.kind === "presentation" && request.action.visible,
+        ),
+      ).toBe(false);
+      f.emit(snapshot({ sequence: 3, documentLoaded: true, loading: true }));
+      expect(f.result.current.state.phase).toBe("error");
+      f.emit(
+        snapshot({
+          sequence: 4,
+          documentLoaded: true,
+          displayUrl: "about:blank",
+        }),
+      );
+      expect(f.result.current.state.phase).toBe("error");
+      f.emit(snapshot({ sequence: 5, documentLoaded: true, loading: false }));
+      expect(f.result.current.state.phase).toBe("attached");
+      expect(f.result.current.state.error).toBeNull();
+      expect(f.transport.control).toHaveBeenLastCalledWith({
+        identity,
+        action: expect.objectContaining({
+          kind: "presentation",
+          visible: true,
+        }),
+      });
+    },
+  );
+  it("hides the failed surface before automatic proxy repair waits for close", async () => {
+    const f = await mounted();
+    const closed = deferred<void>();
+    f.transport.close.mockReturnValueOnce(closed.promise);
+    f.transport.control.mockClear();
+    f.emit(
+      snapshot({ sequence: 1, loadFailure: { code: -130, category: "proxy" } }),
+    );
+    expect(f.transport.close).toHaveBeenCalledWith({ identity });
+    expect(f.transport.control).toHaveBeenCalledWith({
+      identity,
+      action: expect.objectContaining({ kind: "presentation", visible: false }),
+    });
+    await act(async () => closed.resolve());
   });
 });
