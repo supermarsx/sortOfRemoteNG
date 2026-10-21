@@ -4,6 +4,7 @@ import type {
   Connection,
   ConnectionSession,
 } from "../../types/connection/connection";
+import { mergeLocalSessionUpdate } from "../../utils/session/sessionLifecycle";
 
 const mocks = vi.hoisted(() => {
   const state = {
@@ -15,7 +16,9 @@ const mocks = vi.hoisted(() => {
       if (action.type === "UPDATE_SESSION") {
         const updated = action.payload as ConnectionSession;
         state.sessions = state.sessions.map((session) =>
-          session.id === updated.id ? updated : session,
+          session.id === updated.id
+            ? mergeLocalSessionUpdate(session, updated)
+            : session,
         );
       } else if (action.type === "REMOVE_SESSION") {
         state.sessions = state.sessions.filter(
@@ -242,6 +245,9 @@ describe("useSessionManager VPN cleanup", () => {
       ...session("frontend-rdp", rdpConnection.id, "owner-current"),
       protocol: "rdp",
       backendSessionId: "native-rdp",
+      lifecycleRevision: 4,
+      lifecycleActorGeneration: 2,
+      lifecycleWriterId: "main",
       vpnLeaseOwnerIds: ["owner-previous", "owner-current"],
       vpnLeaseBindings: [
         {
@@ -284,8 +290,10 @@ describe("useSessionManager VPN cleanup", () => {
       expect.objectContaining({
         id: rdpSession.id,
         backendSessionId: "native-rdp",
+        lifecycleActorGeneration: 2,
         vpnLeaseOwnerId: "owner-current",
         vpnLeaseOwnerIds: ["owner-previous", "owner-current"],
+        vpnLeaseBindings: rdpSession.vpnLeaseBindings,
         layout: expect.objectContaining({
           isDetached: true,
           windowId: undefined,
