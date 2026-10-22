@@ -886,6 +886,10 @@ const runtimeFailures = new Map<string, OriginBrowserStartupFailureCode>([
     "renderer-setup",
   ],
   [
+    "Native browser renderer readiness timed out. Reopen the tab and check the native startup diagnostics; the website was not navigated.",
+    "renderer-setup",
+  ],
+  [
     "Native browser initial zoom setup failed. Reopen the tab and check the native startup diagnostics; the website was not navigated.",
     "initial-zoom",
   ],

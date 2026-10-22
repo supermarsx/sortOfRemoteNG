@@ -52,6 +52,9 @@ mod tls;
 #[path = "origin_browser_certificate_review.rs"]
 pub(crate) mod certificate_review;
 
+#[path = "origin_browser_renderer_deadline.rs"]
+mod renderer_deadline;
+
 #[path = "origin_browser_runtime_flow.rs"]
 mod flow;
 #[path = "origin_browser_runtime_failure.rs"]
@@ -111,6 +114,7 @@ fn cookie_restore_failure(error: sorng_browser_host::cef_session_retention::Rete
 }
 const VIEW_FAILED: &str = "Native browser embedded view creation failed. Reopen the tab and check the native startup diagnostics; this is not a website login failure.";
 const RENDERER_FAILED: &str = "Native browser renderer setup failed. Reopen the tab and check the native startup diagnostics; the website was not navigated.";
+const RENDERER_TIMED_OUT: &str = "Native browser renderer readiness timed out. Reopen the tab and check the native startup diagnostics; the website was not navigated.";
 const ZOOM_FAILED: &str = "Native browser initial zoom setup failed. Reopen the tab and check the native startup diagnostics; the website was not navigated.";
 const NAVIGATION_FAILED: &str = "Native browser first navigation failed. Review this connection's destination permissions and network route, and check the native startup diagnostics.";
 const VIEW_TIMED_OUT: &str = "Native browser tab preparation timed out. Reopen the tab and check the native startup diagnostics; the database was not locked by this timeout.";
@@ -2303,7 +2307,7 @@ pub(crate) fn tick() {
                             input_blocked: false,
                             presentation_bounds: None,
                             start: Some(Start {
-                                deadline: pending.deadline,
+                                deadline: renderer_deadline::deadline(Instant::now(), pending.deadline),
                                 response: pending.response,
                             }),
                             checkpoint: retention_flow::Checkpoint::new(),
@@ -2392,11 +2396,11 @@ pub(crate) fn tick() {
                 {
                     view.attempt.revoke();
                     let _ = start.response.send(Err(STALE.into()));
-                } else if Instant::now() >= start.deadline {
+                } else if renderer_deadline::expired(Instant::now(), start.deadline) {
                     view.attempt.revoke();
                     let _ = start
                         .response
-                        .send(Err(view_failure(Failure::Timeout, VIEW_TIMED_OUT)));
+                        .send(Err(view_failure(Failure::RendererSetup, RENDERER_TIMED_OUT)));
                 } else {
                     match view.host.features_ready(&view.attempt.identity) {
                         Ok(false) => view.start = Some(start),

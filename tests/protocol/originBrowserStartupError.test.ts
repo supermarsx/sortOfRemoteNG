@@ -27,6 +27,7 @@ const names = [
   ["COOKIE_RESTORE_FAILED", "cookie-restore"],
   ["VIEW_FAILED", "embedded-view"],
   ["RENDERER_FAILED", "renderer-setup"],
+  ["RENDERER_TIMED_OUT", "renderer-setup"],
   ["ZOOM_FAILED", "initial-zoom"],
   ["NAVIGATION_FAILED", "initial-navigation"],
   ["VIEW_TIMED_OUT", "tab-timeout"],
