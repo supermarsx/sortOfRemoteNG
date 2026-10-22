@@ -2,7 +2,7 @@
 use super::Result;
 use cef::{rc::ConvertReturnValue, *};
 use std::{
-    ffi::{c_char, c_void},
+    ffi::c_void,
     marker::PhantomData,
     sync::{
         atomic::{AtomicBool, AtomicUsize, Ordering},
@@ -37,11 +37,8 @@ type Create = unsafe extern "C" fn(
 ) -> *mut cef::sys::_cef_request_context_t;
 type Operation = unsafe extern "C" fn(u64, u64, u16) -> i32;
 type Revoke = unsafe extern "C" fn(u64, u64) -> i32;
-#[link(name = "kernel32")]
-unsafe extern "system" {
-    fn GetModuleHandleExW(flags: u32, address: *const u16, module: *mut *mut c_void) -> i32;
-    fn GetProcAddress(module: *mut c_void, name: *const c_char) -> *mut c_void;
-}
+#[path = "../../native_tls_acceptance/src/registry_retirement_fixture/loaded_module.rs"]
+mod loaded_module;
 struct Observation {
     token: u64,
     generation: u64,
@@ -140,17 +137,10 @@ pub fn run(pump: &mut impl FnMut() -> Result, port: u16) -> Result<serde_json::V
         return Err("owned port unavailable".into());
     }
     let anchor = unsafe { cef::sys::cef_api_hash(cef::sys::CEF_API_VERSION_LAST, 2) };
-    let mut module = std::ptr::null_mut();
-    if anchor.is_null() || unsafe { GetModuleHandleExW(6, anchor.cast(), &mut module) } == 0 {
-        return Err("loaded CEF image unavailable".into());
-    }
+    let module = unsafe { loaded_module::Module::from_address(anchor.cast()) }
+        .map_err(|_| "loaded CEF image unavailable")?;
     let resolve = |name: &std::ffi::CStr| -> Result<*mut c_void> {
-        let raw = unsafe { GetProcAddress(module, name.as_ptr()) };
-        if raw.is_null() {
-            Err("proxy ACK export unavailable".into())
-        } else {
-            Ok(raw)
-        }
+        unsafe { module.symbol(name) }.map_err(|_| "proxy ACK export unavailable".into())
     };
     let create: Create =
         unsafe { std::mem::transmute(resolve(c"cef_sorng_tls_create_context_v2")?) };

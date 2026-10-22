@@ -9,6 +9,7 @@ struct Live {
     closing: bool,
     page_baseline: usize,
     socket_baseline: usize,
+    before_context: serde_json::Value,
 }
 
 fn permissions(broad: bool) -> Result<Arc<WebsitePermissionEngine>> {
@@ -41,7 +42,9 @@ fn permissions(broad: bool) -> Result<Arc<WebsitePermissionEngine>> {
 }
 
 fn live(slot: Slot, broad: bool) -> Result<Live> {
+    let before_context = serde_json::json!(slot.session.lock().unwrap().proxy_diagnostics());
     Ok(Live {
+        before_context,
         slot,
         permissions: permissions(broad)?,
         closing: false,
@@ -268,6 +271,8 @@ pub(super) fn execute(bootstrap: &mut dyn RuntimeBootstrap, paths: &BundlePaths)
                         PreparationStatus::ProxyConfigured => {
                             if !context.proxy_application_verified() { return Err("churn actual proxy proof missing".into()); }
                             unit.slot.proxy_application_verified = true;
+                            unit.slot.proxy_before_host = serde_json::json!(unit.slot.session.lock().unwrap().proxy_diagnostics());
+                            unit.slot.proxy_before_host["upstreamDials"] = serde_json::json!(unit.slot.dials.load(Ordering::Relaxed));
                             unit.slot.host = Some(unsafe { CefBrowserHost::create_owned_engineering_probe(
                                 parent.clone(), unit.slot.context.take().unwrap(), unit.slot.session.clone(),
                                 unit.slot.identity.clone(), ViewportBounds::new(0., 0., 640., 480.)?, parent.scale_factor(),
@@ -371,7 +376,19 @@ pub(super) fn execute(bootstrap: &mut dyn RuntimeBootstrap, paths: &BundlePaths)
         .iter()
         .map(|u| u.slot.proxy_application_verified)
         .collect::<Vec<_>>();
-    let mut report = serde_json::json!({"probeKind":KIND,"runId":run_id,"mode":"permission-churn","ok":false,"clean":clean,
+    let proxy_ack_clean = units.iter().all(|unit| {
+        let after = &unit.slot.proxy_before_host;
+        let delta = |field: &str| after[field].as_u64().zip(unit.before_context[field].as_u64()).and_then(|(a,b)| a.checked_sub(b));
+        unit.slot.proxy_application_verified
+            && delta("acceptedConnections").is_some()
+            && delta("acceptedConnections") == delta("authenticationChallenges")
+            && after["authenticatedRequests"] == unit.before_context["authenticatedRequests"]
+            && after["upstreamDials"] == 0 && after["upstreamFailures"] == 0
+            && delta("requestRejections") == Some(0)
+            && delta("capacityRefusals") == Some(0)
+    });
+    let boundary_port = units[0].slot.session.lock().unwrap().proxy_endpoint().port();
+    let mut report = serde_json::json!({"probeKind":KIND,"runId":run_id,"patchId":bridge.patch_id(),"loadedBridgeVerified":true,"productionTlsFactory":true,"check":"permission-churn","expectedProtocol":"h2","proxyProofRequired":true,"proxyAckNoApplicationNetwork":proxy_ack_clean,"mode":"permission-churn","ok":false,"clean":clean,
         "globalPolicyChecks":checks,"phases":snapshots,"replacedOldContext":replacing,"sameRowFreshAttempt":same_row_fresh_attempt,
         "distinctEndpoints":distinct_endpoints,"distinctCredentials":distinct_credentials,"actualProxyProofs":proofs,
         "beforeAdmissionBytesZero":before_admission_zero,"closed":all_closed,"failures":failures,"productionReady":false});
@@ -390,12 +407,31 @@ pub(super) fn execute(bootstrap: &mut dyn RuntimeBootstrap, paths: &BundlePaths)
             failures.push(format!("after-release: {error}"));
         }
     }
+    let proxy_boundary = proxy_ack_fixture::run(&mut || {
+        registry_retirement_fixture::pump(&runtime, &mut events)?;
+        global(&runtime, &mut checks)
+    }, boundary_port);
+    report["proxyBoundaryCases"] = match proxy_boundary {
+        Ok(value) => value,
+        Err(error) => { failures.push(format!("proxy-boundary: {error}")); serde_json::json!({"ok":false}) }
+    };
+    let retirement = registry_retirement_fixture::run(&mut || {
+        registry_retirement_fixture::pump(&runtime, &mut events)?;
+        global(&runtime, &mut checks)
+    }, &root_der);
+    report["registrationRetirementCases"] = match retirement {
+        Ok(value) => value,
+        Err(error) => { failures.push(format!("registry-retirement: {error}")); serde_json::json!({"ok":false}) }
+    };
+    if !proxy_ack_clean { failures.push("churn pre-host proxy counters changed".into()); }
     report["globalPolicyChecks"] = checks.into();
     report["failures"] = serde_json::json!(failures);
     drop(bridge);
     unsafe {
         runtime.shutdown()?;
         cef_tls_bridge::after_cef_shutdown();
+        proxy_ack_fixture::after_shutdown();
+        registry_retirement_fixture::after_shutdown();
     }
     report["shutdownComplete"] = true.into();
     report["ok"] = (done

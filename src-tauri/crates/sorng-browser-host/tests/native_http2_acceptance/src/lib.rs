@@ -7,7 +7,7 @@ use sorng_browser_host::{
     cef_runtime::{self, CefRuntime},
     cef_tls_bridge::{
         self, NativeTlsBridge, NativeTlsCaMode, NativeTlsCompletion, NativeTlsConfig,
-        NativeTlsDecision, NativeTlsEvidence, NativeTlsHooks, HTTP2_PATCH_ID, LEGACY_PATCH_ID, PATCH_ID,
+        NativeTlsDecision, NativeTlsEvidence, NativeTlsHooks, HTTP2_PATCH_ID, LEGACY_PATCH_ID, PATCH_ID, PROXY_APPLIED_PATCH_ID,
     },
     control::{Lifecycle, ViewportBounds},
     domain_permissions::{WebsitePermissionDecision, WebsitePermissionEngine, WebsiteRequestClass},
@@ -117,6 +117,7 @@ mod proxy_ack_fixture;
 mod registry_retirement_fixture;
 mod permission_churn_fixture;
 mod websocket_fixture;
+#[cfg(windows)]
 #[no_mangle]
 pub unsafe extern "C" fn RunWinMain(
     instance: cef::sys::HINSTANCE,
@@ -130,7 +131,7 @@ pub unsafe extern "C" fn RunWinMain(
     })
     .unwrap_or(2)
 }
-fn run(bootstrap: &mut dyn RuntimeBootstrap, paths: &BundlePaths) -> i32 {
+pub fn run(bootstrap: &mut dyn RuntimeBootstrap, paths: &BundlePaths) -> i32 {
     match execute(bootstrap, paths) {
         Ok(()) => 0,
         Err(e) => {
@@ -195,6 +196,7 @@ struct TlsOwner {
     admitted: AtomicBool,
     before_admission_bytes: AtomicUsize,
     closed_connections: AtomicUsize,
+    minimum_admission_delay_ms: Mutex<Option<u128>>,
     pending: Mutex<Vec<(NativeTlsEvidence, NativeTlsCompletion, Instant)>>,
 }
 impl NativeTlsHooks for TlsOwner {
@@ -269,6 +271,7 @@ fn create_slot(
         admitted: AtomicBool::new(false),
         before_admission_bytes: AtomicUsize::new(0),
         closed_connections: AtomicUsize::new(0),
+        minimum_admission_delay_ms: Mutex::new(None),
         pending: Mutex::new(Vec::new()),
     });
     let server_owner = tls_owner.clone();
@@ -407,7 +410,7 @@ fn execute(bootstrap: &mut dyn RuntimeBootstrap, paths: &BundlePaths) -> Result 
     }
     let legacy = std::env::var("SORNG_CEF_HTTP2_EXPECT").as_deref() == Ok("legacy");
     let http2_revision = std::env::var("SORNG_CEF_HTTP2_EXPECT").as_deref() == Ok("h2");
-    if std::env::var("SORNG_CEF_HTTP2_EXPECT").is_ok_and(|mode| !["legacy", "h2", "proxy-ack"].contains(&mode.as_str())) {
+    if std::env::var("SORNG_CEF_HTTP2_EXPECT").is_ok_and(|mode| !["legacy", "h2", "proxy-ack", "retirement", "h1"].contains(&mode.as_str())) {
         return Err("unknown native fixture revision".into());
     }
     let visible = std::env::var_os("SORNG_PROBE_VISIBLE").is_some();
@@ -478,7 +481,7 @@ fn execute(bootstrap: &mut dyn RuntimeBootstrap, paths: &BundlePaths) -> Result 
     };
     let initialize_finished_ms = clock.elapsed().as_secs_f64() * 1000.0;
     let bridge =
-        unsafe { NativeTlsBridge::from_loaded(if legacy { LEGACY_PATCH_ID } else if http2_revision { HTTP2_PATCH_ID } else { PATCH_ID })? };
+        unsafe { NativeTlsBridge::from_loaded(if legacy { LEGACY_PATCH_ID } else if http2_revision { HTTP2_PATCH_ID } else if std::env::var("SORNG_CEF_HTTP2_EXPECT").as_deref() == Ok("proxy-ack") { PROXY_APPLIED_PATCH_ID } else { PATCH_ID })? };
     if bridge.supports_same_authority_http2() == legacy {
         return Err("HTTP/2-capable engine required".into());
     }
@@ -527,6 +530,11 @@ fn execute(bootstrap: &mut dyn RuntimeBootstrap, paths: &BundlePaths) -> Result 
                     let current=slot.tls_owner.current.load(Ordering::Acquire) && slot.session.lock().unwrap().status()!=sorng_protocols::origin_browser::BrowserSessionStatus::Revoked;
                     let exact=std::env::var("SORNG_CEF_HTTP2_CHECK").as_deref()!=Ok("deny") && current && e.hostname=="proxy-first.fixture.test" && e.port==443 && e.origin==ORIGIN && e.ca_mode==NativeTlsCaMode::CustomOnly && e.native_error==0 && e.certificate_status==0 && !e.fatal_error && e.peer_chain.first()==Some(&leaf_der);
                     if !exact {slot.tls_owner.denied.fetch_add(1,Ordering::Relaxed);}
+                    if exact && std::env::var("SORNG_CEF_HTTP2_CHECK").as_deref()==Ok("delay") {
+                        let observed=queued.elapsed().as_millis();
+                        let mut minimum=slot.tls_owner.minimum_admission_delay_ms.lock().unwrap();
+                        *minimum=Some(minimum.map_or(observed, |previous| previous.min(observed)));
+                    }
                     if exact {slot.tls_owner.admitted.store(true,Ordering::Release);}
                     c.complete(if exact {NativeTlsDecision::AdmitNative}else{NativeTlsDecision::Deny});
                 }
@@ -671,14 +679,14 @@ fn execute(bootstrap: &mut dyn RuntimeBootstrap, paths: &BundlePaths) -> Result 
             .as_ref()
             .is_some_and(|h| h.lifecycle() == Lifecycle::Closed)
     });
-    let rows:Vec<_>=slots.iter().map(|s|{let o=s.sink.0.lock().unwrap();serde_json::json!({"proxyApplicationVerified":s.proxy_application_verified,"proxyBeforeHost":s.proxy_before_host,"sessionStatus":format!("{:?}",s.session.lock().unwrap().status()),"sessionFailure":format!("{:?}",s.session.lock().unwrap().failure_reason()),"tlsCurrent":s.tls_owner.current.load(Ordering::Relaxed),"alpnObserved":*s.alpn_observed.lock().unwrap(),"beforeAdmissionBytes":s.tls_owner.before_admission_bytes.load(Ordering::Relaxed),"denied":s.tls_owner.denied.load(Ordering::Relaxed),"dials":s.dials.load(Ordering::Relaxed),"requests":*s.requests.lock().unwrap(),"cases":s.reports,"title":o.title,"nativeStates":o.native_states,"featureStates":o.feature_states,"errors":o.errors,"diagnostics":s.session.lock().unwrap().proxy_diagnostics()})}).collect();
+    let rows:Vec<_>=slots.iter().map(|s|{let o=s.sink.0.lock().unwrap();serde_json::json!({"proxyApplicationVerified":s.proxy_application_verified,"proxyBeforeHost":s.proxy_before_host,"sessionStatus":format!("{:?}",s.session.lock().unwrap().status()),"sessionFailure":format!("{:?}",s.session.lock().unwrap().failure_reason()),"tlsCurrent":s.tls_owner.current.load(Ordering::Relaxed),"alpnObserved":*s.alpn_observed.lock().unwrap(),"beforeAdmissionBytes":s.tls_owner.before_admission_bytes.load(Ordering::Relaxed),"minimumAdmissionDelayMs":*s.tls_owner.minimum_admission_delay_ms.lock().unwrap(),"denied":s.tls_owner.denied.load(Ordering::Relaxed),"dials":s.dials.load(Ordering::Relaxed),"requests":*s.requests.lock().unwrap(),"cases":s.reports,"title":o.title,"nativeStates":o.native_states,"featureStates":o.feature_states,"errors":o.errors,"diagnostics":s.session.lock().unwrap().proxy_diagnostics()})}).collect();
     let endpoints: Vec<_> = slots
         .iter()
         .map(|s| s.session.lock().unwrap().proxy_endpoint().to_string())
         .collect();
     pump_intervals.sort_by(f64::total_cmp);
     let pump_summary = serde_json::json!({"samples":pump_intervals.len(),"medianMs":pump_intervals.get(pump_intervals.len()/2),"p95Ms":pump_intervals.get(pump_intervals.len()*95/100),"maxMs":pump_intervals.last()});
-    let mut report = serde_json::json!({"probeKind":KIND,"runId":run_id,"ok":false,"clean":clean,"closed":closed,"rawTcpBefore":raw_before,"rawTcpAfterFailure":raw_after_failure,"ownedLoopbackEndpoints":endpoints,"baselineBeforeCef":baseline,"first":before,"initializeStartedMs":initialize_started_ms,"initializeFinishedMs":initialize_finished_ms,"matrixCases":CASES.len(),"productionTlsFactory":true,"fixtureTcpNoDelay":fixture_nodelay,"parentVisible":visible,"childShowRequested":visible,"advertisedAlpn":["h2","http/1.1"],"pumpIntervals":pump_summary,"slots":rows,"failures":failures,"productionReady":false});
+    let mut report = serde_json::json!({"probeKind":KIND,"runId":run_id,"patchId":bridge.patch_id(),"loadedBridgeVerified":true,"ok":false,"clean":clean,"closed":closed,"rawTcpBefore":raw_before,"rawTcpAfterFailure":raw_after_failure,"ownedLoopbackEndpoints":endpoints,"baselineBeforeCef":baseline,"first":before,"initializeStartedMs":initialize_started_ms,"initializeFinishedMs":initialize_finished_ms,"matrixCases":CASES.len(),"productionTlsFactory":true,"fixtureTcpNoDelay":fixture_nodelay,"parentVisible":visible,"childShowRequested":visible,"advertisedAlpn":["h2","http/1.1"],"pumpIntervals":pump_summary,"slots":rows,"failures":failures,"productionReady":false});
     if !closed {
         std::fs::write(
             output.join("native-report.json"),
@@ -843,6 +851,12 @@ fn execute(bootstrap: &mut dyn RuntimeBootstrap, paths: &BundlePaths) -> Result 
                         .any(|r| r["path"] == "/wss-ok" && r["alpn"] == "h2")
             }))
         .into();
+    }
+    if std::env::var("SORNG_CEF_HTTP2_CHECK").as_deref() == Ok("delay") {
+        let observed = slots.iter().all(|slot| slot.tls_owner.minimum_admission_delay_ms.lock().unwrap().is_some_and(|ms| ms >= 300));
+        if !observed { failures.push("admission delay was not observed".into()); }
+        report["ok"] = (report["ok"] == true && observed).into();
+        report["failures"] = serde_json::json!(failures);
     }
     report["advertisedAlpn"] = serde_json::json!(if h1_only() {
         vec!["http/1.1"]
