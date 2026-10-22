@@ -431,10 +431,34 @@ export function assessNativeHttp2Report(report, runId, expectedPatchId, check) {
                 Number.isFinite(c.loadMs) &&
                 c.loadMs >= 0 &&
                 Array.isArray(c.requests) &&
-                c.requests.length >= resources + 1 &&
+                c.requests.length >=
+                  (check === "cross-authority"
+                    ? Math.ceil(resources / 2)
+                    : resources) +
+                    1 &&
                 c.requests.every(
                   (r) => r?.alpn === protocol && r.written === true,
-                )
+                ) &&
+                (check !== "cross-authority" ||
+                  (() => {
+                    // Odd-numbered assets deliberately target the denied
+                    // authority. Their absence is required, not missing work.
+                    const expected = new Set([
+                      `/case-${index}`,
+                      ...Array.from(
+                        { length: Math.ceil(resources / 2) },
+                        (_, asset) => `/case-${index}/asset-${asset * 2}.svg`,
+                      ),
+                    ]);
+                    const observed = new Set(c.requests.map((r) => r.path));
+                    return (
+                      observed.size === expected.size &&
+                      [...expected].every((value) => observed.has(value)) &&
+                      c.requests.every(
+                        (r) => r.authority === "proxy-first.fixture.test",
+                      )
+                    );
+                  })())
               );
             }) &&
             Array.isArray(s.alpnObserved) &&

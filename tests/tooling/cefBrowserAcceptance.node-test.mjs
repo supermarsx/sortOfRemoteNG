@@ -440,10 +440,27 @@ function syntheticHttp2Report(check = "multiplex") {
       dialDelayMs,
       loadMs: 200,
       requestPeak: protocol === "h2" ? 32 : 6,
-      requests: Array.from({ length: resources + 1 }, () => ({
-        alpn: protocol,
-        written: true,
-      })),
+      requests: Array.from(
+        {
+          length:
+            (check === "cross-authority"
+              ? Math.ceil(resources / 2)
+              : resources) + 1,
+        },
+        (_, asset) => ({
+          alpn: protocol,
+          written: true,
+          ...(check === "cross-authority"
+            ? {
+                authority: "proxy-first.fixture.test",
+                path:
+                  asset === 0
+                    ? `/case-${index}`
+                    : `/case-${index}/asset-${(asset - 1) * 2}.svg`,
+              }
+            : {}),
+        }),
+      ),
     }),
   );
   return {
@@ -517,6 +534,37 @@ function syntheticHttp2Report(check = "multiplex") {
     revokeBaselineRequests: [1, 1],
   };
 }
+
+test("cross-authority assessment requires every allowed asset and no denied destination delivery", () => {
+  const assess = (report) =>
+    assessNativeHttp2Report(
+      report,
+      "synthetic-h2",
+      TLS_PATCH_ID,
+      "cross-authority",
+    );
+  assert.deepEqual(
+    assess(syntheticHttp2Report("cross-authority")).failures,
+    [],
+  );
+  for (const change of [
+    (report) => report.slots[0].cases[2].requests.pop(),
+    (report) => {
+      report.slots[0].cases[2].requests[1].path = "/case-2/asset-1.svg";
+    },
+    (report) => {
+      report.slots[0].cases[2].requests[1].authority = "alternate.fixture.test";
+    },
+    (report) => {
+      report.slots[0].cases[2].requests[1] =
+        report.slots[0].cases[2].requests[2];
+    },
+  ]) {
+    const report = syntheticHttp2Report("cross-authority");
+    change(report);
+    assert.equal(assess(report).ok, false);
+  }
+});
 
 test("every maintained run binds netlog to its fresh directory instead of inherited paths", () => {
   const inherited = {
