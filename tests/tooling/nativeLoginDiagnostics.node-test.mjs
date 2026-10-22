@@ -78,7 +78,7 @@ test("renderer evidence uses owner-fenced fixed checkpoints, never page or crede
   assert.match(journal, /observation_records >= 512/);
   assert.match(
     journal,
-    /!relay\s*&& !observation\s*&& !tls_failure\s*&& !session_failure\s*&& self\.navigation_records >= 128/,
+    /!relay\s*&& !observation\s*&& !tls_failure\s*&& !session_failure\s*&& !tls_timing\s*&& self\.navigation_records >= 128/,
   );
   assert.match(
     journal,
@@ -92,9 +92,11 @@ test("renderer evidence uses owner-fenced fixed checkpoints, never page or crede
     journal,
     /session_failure && self\.session_failure_records >= MAX_RECORDS/,
   );
+  assert.match(journal, /tls_timing && self\.tls_timing_records >= 1024/);
   for (const [kind, counter] of [
     ["tls_failure", "tls_failure_records"],
     ["session_failure", "session_failure_records"],
+    ["tls_timing", "tls_timing_records"],
     ["relay", "relay_records"],
     ["observation", "observation_records"],
   ]) {
