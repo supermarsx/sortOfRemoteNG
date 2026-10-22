@@ -8,6 +8,7 @@ import { createWriteStream } from "node:fs";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { nativeWindowsShell, probeFailure } from "./cef-hosted-bootstrap.mjs";
 import {
   applySourcePatches,
   assessWindowsEnginePrerequisites,
@@ -96,32 +97,59 @@ export function parseArguments(argv) {
   return result;
 }
 
-export async function inspectWindowsEnginePrerequisites(python) {
-  if (process.platform !== "win32")
+export async function inspectWindowsEnginePrerequisites(
+  python,
+  dependencies = {},
+) {
+  const platform = dependencies.platform ?? process.platform;
+  const architecture = dependencies.architecture ?? process.arch;
+  const environment = dependencies.environment ?? process.env;
+  const run = dependencies.exec ?? exec;
+  if (platform !== "win32")
     return {
       ok: false,
       blockers: ["Windows inventory must run on Windows"],
       productionReady: false,
     };
   const ps = String.raw`
-$vswhere = Join-Path ([Environment]::GetEnvironmentVariable('ProgramFiles(x86)')) 'Microsoft Visual Studio/Installer/vswhere.exe'
-$vs = if (Test-Path -LiteralPath $vswhere) { & $vswhere -all -products '*' -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 Microsoft.VisualStudio.Component.VC.ATLMFC -format json | ConvertFrom-Json } else { @() }
-$sdkRoot = Join-Path ([Environment]::GetEnvironmentVariable('ProgramFiles(x86)')) 'Windows Kits/10'
+$ErrorActionPreference='Stop'
+$programFilesX86=[Environment]::GetFolderPath('ProgramFilesX86')
+$vswhere = Join-Path $programFilesX86 'Microsoft Visual Studio/Installer/vswhere.exe'
+$vs = if (Test-Path -LiteralPath $vswhere) { & $vswhere -all -products '*' -requires Microsoft.VisualStudio.Workload.NativeDesktop Microsoft.VisualStudio.Component.VC.ATLMFC -format json | ConvertFrom-Json } else { @() }
+$sdkRoot = Join-Path $programFilesX86 'Windows Kits/10'
 $sdk = @(Get-ChildItem -LiteralPath (Join-Path $sdkRoot 'Include') -Directory -ErrorAction SilentlyContinue | ForEach-Object Name)
 $dbg = Join-Path $sdkRoot 'Debuggers/x64/dbghelp.dll'
 $debugger = if (Test-Path -LiteralPath $dbg) { (Get-Item -LiteralPath $dbg).VersionInfo.FileVersion.Split(' ')[0] } else { $null }
 [pscustomobject]@{visualStudioVersions=@($vs | ForEach-Object installationVersion);sdkVersions=$sdk;debuggerVersion=$debugger} | ConvertTo-Json -Compress
 `;
-  const { stdout } = await exec(
-    "powershell.exe",
-    ["-NoLogo", "-NoProfile", "-NonInteractive", "-Command", ps],
-    { windowsHide: true, timeout: 30_000 },
-  );
-  const measured = JSON.parse(stdout);
+  let measured;
+  try {
+    // Match the successful hosted observer: never select an emulated/PATH
+    // PowerShell on ARM or turn a missing native shell into a weaker check.
+    const shell = await (dependencies.nativeShell ?? nativeWindowsShell)(
+      environment,
+      architecture,
+    );
+    const { stdout } = await run(
+      shell,
+      ["-NoLogo", "-NoProfile", "-NonInteractive", "-Command", ps],
+      { env: environment, windowsHide: true, timeout: 30_000 },
+    );
+    measured = JSON.parse(stdout);
+  } catch (error) {
+    return {
+      ok: false,
+      blockers: ["Native Windows prerequisite inventory could not complete"],
+      probeFailure: probeFailure(error, "windows-inventory"),
+      documentedPrerequisitesOnly: true,
+      actualCompile: "not-tested",
+      productionReady: false,
+    };
+  }
   measured.nativePython = false;
   if (python) {
     try {
-      const checked = await exec(
+      const checked = await run(
         path.resolve(python),
         [
           "-c",

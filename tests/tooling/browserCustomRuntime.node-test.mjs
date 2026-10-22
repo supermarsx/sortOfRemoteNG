@@ -51,6 +51,7 @@ import {
   acquireSources,
   parseArguments,
   main,
+  inspectWindowsEnginePrerequisites,
 } from "../../scripts/cef-patched-runtime.mjs";
 import {
   parseArguments as parseAppArguments,
@@ -59,6 +60,92 @@ import {
   loadCustomRuntimeInputs,
 } from "../../scripts/browser-app-build.mjs";
 import { prepareWindowsInstallerBundles } from "../../scripts/lib/browser-installer-bundles.mjs";
+
+test("Windows prerequisite doctor uses the verified native ARM shell and the same desktop selector as hosted observation", async () => {
+  const calls = [];
+  const native = "C:\\Program Files\\PowerShell\\7\\pwsh.exe";
+  const environment = { SystemRoot: "C:\\Windows" };
+  const report = await inspectWindowsEnginePrerequisites(
+    "C:/reviewed/python.exe",
+    {
+      platform: "win32",
+      architecture: "arm64",
+      environment,
+      nativeShell: async (env, architecture) => {
+        assert.equal(env, environment);
+        assert.equal(architecture, "arm64");
+        return native;
+      },
+      exec: async (command, args, options) => {
+        calls.push(command);
+        if (command === native) {
+          assert.equal(options.timeout, 30_000);
+          assert.equal(options.windowsHide, true);
+          assert.match(
+            args.at(-1),
+            /Microsoft\.VisualStudio\.Workload\.NativeDesktop Microsoft\.VisualStudio\.Component\.VC\.ATLMFC/u,
+          );
+          assert.doesNotMatch(args.at(-1), /Component\.VC\.Tools\.x86\.x64/u);
+          assert.match(args.at(-1), /GetFolderPath\('ProgramFilesX86'\)/u);
+          return {
+            stdout: JSON.stringify({
+              visualStudioVersions: ["18.11.12306.390"],
+              sdkVersions: ["10.0.28000.0"],
+              debuggerVersion: "10.0.26100.6584",
+            }),
+          };
+        }
+        assert.equal(command, path.resolve("C:/reviewed/python.exe"));
+        assert.equal(options.timeout, 10_000);
+        return { stdout: "3.13.16" };
+      },
+    },
+  );
+  assert.equal(report.ok, true);
+  assert.equal(report.productionReady, false);
+  assert.deepEqual(calls, [native, path.resolve("C:/reviewed/python.exe")]);
+});
+
+test("Windows prerequisite inventory remains fail closed and reports fixed timeout or missing-native-shell metadata", async () => {
+  for (const [failure, expected] of [
+    [{ killed: true, signal: "SIGTERM" }, "timeout"],
+    [{ code: "NATIVE_SHELL_UNAVAILABLE" }, "native-shell-unavailable"],
+  ]) {
+    const report = await inspectWindowsEnginePrerequisites(undefined, {
+      platform: "win32",
+      architecture: "arm64",
+      nativeShell: async () => {
+        if (expected === "native-shell-unavailable")
+          throw Object.assign(new Error("secret native path"), failure);
+        return "verified-native-shell";
+      },
+      exec: async () => {
+        throw Object.assign(new Error("secret raw diagnostic"), failure);
+      },
+    });
+    assert.equal(report.ok, false);
+    assert.equal(report.probeFailure.kind, expected);
+    assert.equal(report.probeFailure.stage, "windows-inventory");
+    assert.doesNotMatch(JSON.stringify(report), /secret/u);
+    assert.equal(report.productionReady, false);
+  }
+});
+
+test("native doctor does not turn missing reviewed tool versions into a successful inventory", async () => {
+  const report = await inspectWindowsEnginePrerequisites(undefined, {
+    platform: "win32",
+    nativeShell: async () => "verified-native-shell",
+    exec: async () => ({
+      stdout: JSON.stringify({
+        visualStudioVersions: ["17.9"],
+        sdkVersions: ["10.0.26100.0"],
+        debuggerVersion: "10.0.1.0",
+      }),
+    }),
+  });
+  assert.equal(report.ok, false);
+  assert.equal(report.blockers.length, 4);
+});
 import {
   CEF_PIN,
   TARGETS,
