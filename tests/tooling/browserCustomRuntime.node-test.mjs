@@ -41,6 +41,7 @@ import {
   verifyToolchainFiles,
   verifySourceBuildIsolation,
   verifySourceCheckoutVersion,
+  sdkLinkTargetMatches,
 } from "../../scripts/lib/browser-custom-runtime.mjs";
 import {
   acquireSources,
@@ -559,6 +560,27 @@ test("external SDK directory junctions cannot escape", async (t) => {
     () => validateCustomRuntimeManifest(manifest, data.lock),
     /Unsafe relative path/,
   );
+});
+
+test("SDK link targets permit only Windows separator spelling differences", () => {
+  const target = "include/cef_sorng_tls_bridge.h";
+  assert.equal(
+    sdkLinkTargetMatches("include\\cef_sorng_tls_bridge.h", target, "win32"),
+    true,
+  );
+  assert.equal(
+    sdkLinkTargetMatches("include\\cef_sorng_tls_bridge.h", target, "linux"),
+    false,
+  );
+  for (const changed of [
+    "./" + target,
+    "include/../" + target,
+    "C:/" + target,
+    "/" + target,
+    target.toUpperCase(),
+  ]) {
+    assert.equal(sdkLinkTargetMatches(changed, target, "win32"), false);
+  }
 });
 
 test("relative framework-style leaf symlinks retain their exact target text", async (t) => {

@@ -547,7 +547,7 @@ export async function preflightCustomRuntime({
       const file = await checkedPath(sdkRoot, entry.path, { regular: false });
       if (
         !(await lstat(file)).isSymbolicLink() ||
-        (await readlink(file)) !== entry.target
+        !sdkLinkTargetMatches(await readlink(file), entry.target)
       )
         fail(`SDK symlink mismatch: ${entry.path}`);
     }
@@ -779,6 +779,19 @@ export function customRuntimeEnvironment(environment) {
   return result;
 }
 
+// Windows reports relative link separators using its native spelling. Preserve
+// every other byte: resolving or normalizing dot segments would hide changes
+// to the inventoried target, and Unix backslashes are literal filename bytes.
+export function sdkLinkTargetMatches(
+  actual,
+  expected,
+  platform = process.platform,
+) {
+  return (
+    (platform === "win32" ? actual.replaceAll("\\", "/") : actual) === expected
+  );
+}
+
 async function verifySdkInventory(root, entries) {
   if (
     JSON.stringify((await inventory(root)).sort()) !==
@@ -791,7 +804,7 @@ async function verifySdkInventory(root, entries) {
       const file = await checkedPath(root, entry.path, { regular: false });
       if (
         !(await lstat(file)).isSymbolicLink() ||
-        (await readlink(file)) !== entry.target
+        !sdkLinkTargetMatches(await readlink(file), entry.target)
       )
         fail("Prepared custom SDK link changed");
     }
