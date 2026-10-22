@@ -137,6 +137,9 @@ jobs:
           node-version-file: ".node-version"
           package-manager-cache: false
 
+      - name: Require all six reviewed browser runtimes before allocating a release tag
+        run: node scripts/ci/check-release-runtime-catalog.mjs
+
       - name: Reject rolling source version regression
         if: inputs.mode == 'rolling'
         run: npm run version:floor:check
