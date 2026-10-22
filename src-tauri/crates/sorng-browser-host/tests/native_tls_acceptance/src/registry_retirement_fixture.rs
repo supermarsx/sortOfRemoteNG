@@ -105,11 +105,49 @@ impl Drop for Owner {
 fn has(state: &Observation, value: u32) -> bool {
     state.states.lock().unwrap().contains(&value)
 }
-fn wait(pump: &mut impl FnMut() -> Result, ready: impl Fn() -> bool) -> Result {
+enum WaitPhase {
+    BaselineEmpty,
+    ContextReady,
+    TerminalAck,
+    Retired,
+}
+fn timeout_diagnostic(
+    phase: WaitPhase,
+    cycle: Option<u64>,
+    observed: Option<&Observation>,
+    stats: Option<Stats>,
+) -> String {
+    let phase = match phase {
+        WaitPhase::BaselineEmpty => "baseline-empty",
+        WaitPhase::ContextReady => "context-ready",
+        WaitPhase::TerminalAck => "terminal-ack",
+        WaitPhase::Retired => "retired",
+    };
+    serde_json::json!({
+        "failure":"registry-lifecycle-timeout",
+        "phase":phase,
+        "cycleIndex":cycle,
+        "initialized":observed.map(|o| o.initialized.load(Ordering::Acquire)),
+        "states":observed.and_then(|o| o.states.lock().ok().map(|s| s.clone())),
+        "registrations":stats.map(|s| s.registrations),
+        "retiring":stats.map(|s| s.retiring),
+        "rootBytes":stats.map(|s| s.root_bytes),
+        "tokenHighWater":stats.map(|s| s.token_high_water.to_string()),
+    })
+    .to_string()
+}
+fn wait(
+    pump: &mut impl FnMut() -> Result,
+    ready: impl Fn() -> bool,
+    phase: WaitPhase,
+    cycle: Option<u64>,
+    observed: Option<&Observation>,
+    api: &Api,
+) -> Result {
     let deadline = Instant::now() + Duration::from_secs(12);
     while !ready() {
         if Instant::now() >= deadline {
-            return Err("native registry lifecycle fixture timed out".into());
+            return Err(timeout_diagnostic(phase, cycle, observed, api.stats().ok()).into());
         }
         pump()?;
         std::thread::sleep(Duration::from_millis(2));
@@ -244,10 +282,17 @@ pub fn run(pump: &mut impl FnMut() -> Result, root: &[u8]) -> Result<serde_json:
         complete: unsafe { std::mem::transmute(resolve(c"cef_sorng_tls_complete_v2")?) },
         stats: unsafe { std::mem::transmute(resolve(c"cef_sorng_tls_registry_stats_v2")?) },
     };
-    wait(pump, || {
-        api.stats()
-            .is_ok_and(|s| s.registrations == 0 && s.root_bytes == 0)
-    })?;
+    wait(
+        pump,
+        || {
+            api.stats()
+                .is_ok_and(|s| s.registrations == 0 && s.root_bytes == 0)
+        },
+        WaitPhase::BaselineEmpty,
+        None,
+        None,
+        &api,
+    )?;
     let baseline = api.stats()?;
     let first = baseline
         .token_high_water
@@ -268,9 +313,14 @@ pub fn run(pump: &mut impl FnMut() -> Result, root: &[u8]) -> Result<serde_json:
         let token = first + index;
         let (owner, observed) = api.create(token, token, root, false);
         let owner = owner.ok_or("sequential context creation rejected")?;
-        wait(pump, || {
-            observed.initialized.load(Ordering::Acquire) && has(&observed, 1)
-        })?;
+        wait(
+            pump,
+            || observed.initialized.load(Ordering::Acquire) && has(&observed, 1),
+            WaitPhase::ContextReady,
+            Some(index),
+            Some(&observed),
+            &api,
+        )?;
         let live = api.stats()?;
         peak_registrations = peak_registrations.max(live.registrations);
         peak_root_bytes = peak_root_bytes.max(live.root_bytes);
@@ -282,7 +332,14 @@ pub fn run(pump: &mut impl FnMut() -> Result, root: &[u8]) -> Result<serde_json:
         }
         if index % 2 == 0 {
             unsafe { (api.revoke)(token, token) };
-            wait(pump, || has(&observed, 2))?;
+            wait(
+                pump,
+                || has(&observed, 2),
+                WaitPhase::TerminalAck,
+                Some(index),
+                Some(&observed),
+                &api,
+            )?;
             // A terminal ACK alone must NOT erase a still-attached registration.
             for _ in 0..3 {
                 pump()?;
@@ -294,12 +351,19 @@ pub fn run(pump: &mut impl FnMut() -> Result, root: &[u8]) -> Result<serde_json:
         // Odd iterations drop before pumping the revocation ACK; even iterations
         // release only after the ACK. Both orders must reach deferred retirement.
         drop(owner);
-        wait(pump, || {
-            has(&observed, 2)
-                && api
-                    .stats()
-                    .is_ok_and(|s| s.registrations == 0 && s.root_bytes == 0)
-        })?;
+        wait(
+            pump,
+            || {
+                has(&observed, 2)
+                    && api
+                        .stats()
+                        .is_ok_and(|s| s.registrations == 0 && s.root_bytes == 0)
+            },
+            WaitPhase::Retired,
+            Some(index),
+            Some(&observed),
+            &api,
+        )?;
         if !clean(&observed) {
             return Err("foreign/evidence/after-terminal callback".into());
         }
@@ -357,4 +421,56 @@ pub fn run(pump: &mut impl FnMut() -> Result, root: &[u8]) -> Result<serde_json:
 }
 pub fn after_shutdown() {
     retained().lock().unwrap().clear();
+}
+
+#[cfg(test)]
+mod diagnostics_tests {
+    use super::*;
+
+    #[test]
+    fn timeout_preserves_exact_phase_observation_and_lossless_high_water() {
+        let observed = Observation {
+            token: 123,
+            generation: 456,
+            initialized: AtomicBool::new(true),
+            states: Mutex::new(vec![1, 2]),
+            evidence: AtomicUsize::new(0),
+            foreign: AtomicUsize::new(0),
+            terminal: AtomicBool::new(true),
+            after_terminal: AtomicUsize::new(0),
+        };
+        let report: serde_json::Value = serde_json::from_str(&timeout_diagnostic(
+            WaitPhase::Retired,
+            Some(1024),
+            Some(&observed),
+            Some(Stats {
+                registrations: 1,
+                retiring: 1,
+                root_bytes: 379,
+                token_high_water: u64::MAX,
+                ..Default::default()
+            }),
+        ))
+        .unwrap();
+        assert_eq!(report["failure"], "registry-lifecycle-timeout");
+        assert_eq!(report["phase"], "retired");
+        assert_eq!(report["cycleIndex"], 1024);
+        assert_eq!(report["initialized"], true);
+        assert_eq!(report["states"], serde_json::json!([1, 2]));
+        assert_eq!(report["registrations"], 1);
+        assert_eq!(report["retiring"], 1);
+        assert_eq!(report["rootBytes"], 379);
+        assert_eq!(report["tokenHighWater"], u64::MAX.to_string());
+        assert_eq!(report.as_object().unwrap().len(), 9);
+        let unavailable: serde_json::Value = serde_json::from_str(&timeout_diagnostic(
+            WaitPhase::BaselineEmpty,
+            None,
+            None,
+            None,
+        ))
+        .unwrap();
+        assert_eq!(unavailable["phase"], "baseline-empty");
+        assert!(unavailable["states"].is_null());
+        assert!(unavailable["registrations"].is_null());
+    }
 }
