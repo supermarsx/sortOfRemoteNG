@@ -231,6 +231,12 @@ export function http2Environment(environment, suite, check) {
   return env;
 }
 
+export function acceptanceNetlogEnvironment(environment, run) {
+  if (!path.isAbsolute(run))
+    throw new Error("Absolute fresh run directory required for netlog");
+  return { ...environment, SORNG_CEF_NETLOG: path.join(run, "netlog.json") };
+}
+
 /** Validates fixture observations; execution and isolation are separate gates. */
 export function assessNativeHttp2Report(report, runId, expectedPatchId, check) {
   const failures = [];
@@ -2927,12 +2933,15 @@ export async function runAcceptance({
   await mkdir(output, { recursive: false });
   const run = await mkdtemp(path.join(output, "run-"));
   const runId = randomUUID();
-  const env = {
-    ...controlledEnvironment,
-    SORNG_CEF_ACCEPTANCE_OUTPUT: run,
-    SORNG_CEF_ACCEPTANCE_RUN_ID: runId,
-    SORNG_CEF_TLS_MANUAL: manual,
-  };
+  const env = acceptanceNetlogEnvironment(
+    {
+      ...controlledEnvironment,
+      SORNG_CEF_ACCEPTANCE_OUTPUT: run,
+      SORNG_CEF_ACCEPTANCE_RUN_ID: runId,
+      SORNG_CEF_TLS_MANUAL: manual,
+    },
+    run,
+  );
   // An inherited variable must never turn an acceptance run into measurements.
   for (const name of MEASUREMENT_VARIABLES) delete env[name];
   if (measurePlan) {

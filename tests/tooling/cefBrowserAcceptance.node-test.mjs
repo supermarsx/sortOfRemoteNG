@@ -13,6 +13,7 @@ import {
   assessRegistrationRetirement,
   assessNativeHttp2Report,
   http2Environment,
+  acceptanceNetlogEnvironment,
   HTTP2_CHECKS,
   REGISTRATION_RETIREMENT_CASES,
   assessTlsSocketLedger,
@@ -516,6 +517,51 @@ function syntheticHttp2Report(check = "multiplex") {
     revokeBaselineRequests: [1, 1],
   };
 }
+
+test("every maintained run binds netlog to its fresh directory instead of inherited paths", () => {
+  const inherited = {
+    KEEP: "yes",
+    SORNG_CEF_NETLOG: path.resolve("unrelated-private.json"),
+  };
+  const run = path.resolve("synthetic-fresh-run");
+  for (const suite of ["tls", "legacy", "menu", "measure", "http2"]) {
+    const env = acceptanceNetlogEnvironment(
+      http2Environment(
+        inherited,
+        suite,
+        suite === "http2" ? "multiplex" : undefined,
+      ),
+      run,
+    );
+    assert.equal(env.SORNG_CEF_NETLOG, path.join(run, "netlog.json"));
+    assert.equal(env.KEEP, "yes");
+    assert.notEqual(env.SORNG_CEF_NETLOG, inherited.SORNG_CEF_NETLOG);
+  }
+  assert.equal(
+    inherited.SORNG_CEF_NETLOG,
+    path.resolve("unrelated-private.json"),
+  );
+  assert.throws(
+    () => acceptanceNetlogEnvironment(inherited, "relative"),
+    /Absolute fresh run/,
+  );
+  const source = readFileSync(
+    new URL("../../scripts/cef-browser-acceptance.mjs", import.meta.url),
+    "utf8",
+  );
+  const runner = source.slice(
+    source.indexOf("export async function runAcceptance("),
+    source.indexOf("async function main(args)"),
+  );
+  assert.match(
+    runner,
+    /const run = await mkdtemp\(path\.join\(output, "run-"\)\)/,
+  );
+  assert.match(
+    runner,
+    /const env = acceptanceNetlogEnvironment\(\s*\{[\s\S]*?SORNG_CEF_ACCEPTANCE_OUTPUT: run,[\s\S]*?\},\s*run,?\s*\)/,
+  );
+});
 
 test("HTTP2 controls scrub inherited experiments and select only explicit revision-four checks", () => {
   const inherited = {
