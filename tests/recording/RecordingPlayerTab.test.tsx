@@ -101,7 +101,9 @@ describe("recording player tab", () => {
     );
     const view = render(tree(true));
     await screen.findByLabelText("Recording: Selected recording");
-    expect(HTMLMediaElement.prototype.play).toHaveBeenCalledTimes(1);
+    await waitFor(() =>
+      expect(HTMLMediaElement.prototype.play).toHaveBeenCalledTimes(1),
+    );
     view.rerender(tree(false));
     expect(HTMLMediaElement.prototype.pause).toHaveBeenCalledTimes(1);
     view.rerender(tree(true));
