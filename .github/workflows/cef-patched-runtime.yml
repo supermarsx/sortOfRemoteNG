@@ -7,6 +7,17 @@ name: Patched CEF engineering runtime
 on:
   workflow_dispatch:
     inputs:
+      mode:
+        description: Discover real standard-hosted prerequisites, or run the existing reviewed dedicated producer
+        required: true
+        default: build
+        type: choice
+        options: [build, discover]
+      discovery_cleanup_linux:
+        description: Explicitly remove only the reviewed expendable Linux SDK directories during discovery
+        required: true
+        default: false
+        type: boolean
       reviewed_inputs:
         description: Reviewed checkout-relative directory containing source-lock.json and its pinned inputs
         required: true
@@ -46,8 +57,68 @@ env:
   CEF_DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
 
 jobs:
+  discover:
+    if: inputs.mode == 'discover' && github.event_name == 'workflow_dispatch' && github.event.repository.visibility == 'public'
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - {
+              target: x86_64-pc-windows-msvc,
+              runner: windows-2025-vs2026,
+              platform: win32,
+            }
+          - {
+              target: aarch64-pc-windows-msvc,
+              runner: windows-11-arm,
+              platform: win32,
+            }
+          - {
+              target: x86_64-unknown-linux-gnu,
+              runner: ubuntu-24.04,
+              platform: linux,
+            }
+          - {
+              target: aarch64-unknown-linux-gnu,
+              runner: ubuntu-24.04-arm,
+              platform: linux,
+            }
+          - {
+              target: x86_64-apple-darwin,
+              runner: macos-15-intel,
+              platform: darwin,
+            }
+          - { target: aarch64-apple-darwin, runner: macos-15, platform: darwin }
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: ".node-version"
+          package-manager-cache: false
+      - name: Observe actual tools without granting build or publication authority
+        env:
+          CEF_TARGET: ${{ matrix.target }}
+          CEF_DISCOVERY_OUTPUT: ${{ runner.temp }}/cef-hosted-discovery
+          CEF_DISCOVERY_CLEANUP: ${{ matrix.platform == 'linux' && inputs.discovery_cleanup_linux }}
+          GITHUB_REPOSITORY_VISIBILITY: ${{ github.event.repository.visibility }}
+        run: |
+          cleanup=()
+          if [[ "$CEF_DISCOVERY_CLEANUP" == 'true' ]]; then cleanup+=(--cleanup); fi
+          node scripts/cef-hosted-bootstrap.mjs --target "$CEF_TARGET" --output "$CEF_DISCOVERY_OUTPUT" "${cleanup[@]}"
+      - name: Retain unreviewed prerequisite observations
+        if: always()
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        with:
+          name: cef-hosted-discovery-${{ matrix.target }}
+          path: ${{ runner.temp }}/cef-hosted-discovery
+          retention-days: 14
+          if-no-files-found: error
   plan:
-    if: github.event_name == 'workflow_dispatch' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
+    if: inputs.mode != 'discover' && github.event_name == 'workflow_dispatch' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
     runs-on: ubuntu-latest
     timeout-minutes: 10
     outputs:
@@ -68,7 +139,7 @@ jobs:
 
   build:
     needs: plan
-    if: github.event_name == 'workflow_dispatch' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
+    if: inputs.mode != 'discover' && github.event_name == 'workflow_dispatch' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
     strategy:
       fail-fast: false
       matrix: ${{ fromJSON(needs.plan.outputs.matrix) }}
@@ -110,7 +181,7 @@ jobs:
 
   publish:
     needs: [plan, build]
-    if: inputs.publish == true && github.event_name == 'workflow_dispatch' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
+    if: inputs.mode != 'discover' && inputs.publish == true && github.event_name == 'workflow_dispatch' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
     environment: cef-runtime-publish
     permissions:
       contents: write

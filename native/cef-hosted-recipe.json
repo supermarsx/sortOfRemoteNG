@@ -1,0 +1,61 @@
+{
+  "schemaVersion": 1,
+  "kind": "sorng-cef-hosted-discovery-recipe",
+  "chromiumCommit": "a654841425914cbb703a2931e07b70a83aedbafd",
+  "requirementsSources": [
+    "docs/windows_build_instructions.md",
+    "docs/linux/build_instructions.md",
+    "build/config/mac/mac_sdk_overrides.gni"
+  ],
+  "minimumPython": [3, 12],
+  "minimumWindowsVisualStudioMajor": 18,
+  "requiredWindowsSdk": "10.0.28000.0",
+  "minimumWindowsDebugger": [10, 0, 26100, 3323],
+  "minimumMacSdkMajor": 15,
+  "minimumFreeDiskGiB": 100,
+  "minimumMemoryGiB": 8,
+  "targets": [
+    {
+      "target": "x86_64-pc-windows-msvc",
+      "runner": "windows-2025-vs2026",
+      "platform": "win32",
+      "architecture": "x64"
+    },
+    {
+      "target": "aarch64-pc-windows-msvc",
+      "runner": "windows-11-arm",
+      "platform": "win32",
+      "architecture": "arm64"
+    },
+    {
+      "target": "x86_64-unknown-linux-gnu",
+      "runner": "ubuntu-24.04",
+      "platform": "linux",
+      "architecture": "x64"
+    },
+    {
+      "target": "aarch64-unknown-linux-gnu",
+      "runner": "ubuntu-24.04-arm",
+      "platform": "linux",
+      "architecture": "arm64"
+    },
+    {
+      "target": "x86_64-apple-darwin",
+      "runner": "macos-15-intel",
+      "platform": "darwin",
+      "architecture": "x64"
+    },
+    {
+      "target": "aarch64-apple-darwin",
+      "runner": "macos-15",
+      "platform": "darwin",
+      "architecture": "arm64"
+    }
+  ],
+  "linuxCleanupPaths": [
+    "/usr/local/lib/android",
+    "/usr/share/dotnet",
+    "/opt/ghc",
+    "/opt/hostedtoolcache/CodeQL"
+  ]
+}

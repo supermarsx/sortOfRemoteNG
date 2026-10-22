@@ -875,7 +875,13 @@ test("workflow has manual/default-branch guards, six targets, protected least-pr
   assert.equal(workflow.concurrency["cancel-in-progress"], false);
   for (const [name, job] of Object.entries(workflow.jobs)) {
     assert.match(job.if, /workflow_dispatch/);
-    assert.match(job.if, /default_branch/);
+    if (name === "discover") {
+      assert.match(job.if, /visibility == 'public'/);
+      assert.match(job.if, /mode == 'discover'/);
+    } else {
+      assert.match(job.if, /default_branch/);
+      assert.match(job.if, /mode != 'discover'/);
+    }
     if (name !== "publish") assert.notEqual(job.permissions?.contents, "write");
     for (const step of job.steps) {
       if (step.uses) assert.match(step.uses, /@[a-f0-9]{40}$/);
