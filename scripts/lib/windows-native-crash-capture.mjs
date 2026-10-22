@@ -127,6 +127,8 @@ export async function prepareWindowsNativeCrashCapture({
   const handlerPath = path.join(directory, "fatal.txt");
   const firstOverflowPath = path.join(directory, "first-overflow.txt");
   const firstOverflowDump = path.join(directory, "first-stack-overflow.dmp");
+  const firstBreakpointPath = path.join(directory, "first-breakpoint.txt");
+  const firstBreakpointDump = path.join(directory, "first-breakpoint.dmp");
   const commandPath = path.join(directory, "commands.txt");
   // Keep nested command quoting out of the exception action: CDB reads a
   // separate script, and that script quotes the local minidump destination.
@@ -134,6 +136,7 @@ export async function prepareWindowsNativeCrashCapture({
   // a quoted dump path. Plain k also avoids a stray b on thread iteration.
   const escapedHandler = handlerPath.replaceAll("\\", "/");
   const escapedFirstOverflow = firstOverflowPath.replaceAll("\\", "/");
+  const escapedFirstBreakpoint = firstBreakpointPath.replaceAll("\\", "/");
   await writeFile(
     handlerPath,
     `.echo ${CRASH_MARKER}\n.exr -1\n.ecxr\n~*k\n.dump /m "${dumpPath}"\nq\n`,
@@ -145,9 +148,18 @@ export async function prepareWindowsNativeCrashCapture({
     firstOverflowPath,
     `.echo SORNG_NATIVE_FIRST_STACK_OVERFLOW_V1\n.exr -1\n.ecxr\n~*k\n.dump /m "${firstOverflowDump}"\nsxd -c "" -c2 "$<${escapedHandler}" sov\ngn\n`,
   );
+  // Numeric exception filters and gn preserve the application's own handler.
+  // STATUS_BREAKPOINT is distinct from the ignored debugger initial breakpoint.
+  // https://learn.microsoft.com/windows-hardware/drivers/debugger/controlling-exceptions-and-events
+  // Capture once before Chromium can consume a fatal CHECK; recovered breaks
+  // remain evidence only and do not turn a successful target exit into failure.
+  await writeFile(
+    firstBreakpointPath,
+    `.echo SORNG_NATIVE_FIRST_BREAKPOINT_V1\n.exr -1\n.ecxr\n~*k\n.dump /m "${firstBreakpointDump}"\nsxd -c "" -c2 "$<${escapedHandler}" 0x80000003\ngn\n`,
+  );
   await writeFile(
     commandPath,
-    `r @$t0 = @$tpid\n.printf "${MAIN_MARKER}%x\\n", @$tpid\nsxi ibp\nsxd -c2 "$<${escapedHandler}" av\nsxe -c "$<${escapedFirstOverflow}" -c2 "$<${escapedHandler}" sov\nsxe -c ".lastevent; .if (@$tpid == @$t0) {q} .else {g}" epr\ng\n`,
+    `r @$t0 = @$tpid\n.printf "${MAIN_MARKER}%x\\n", @$tpid\nsxi ibp\nsxd -c2 "$<${escapedHandler}" av\nsxe -c "$<${escapedFirstOverflow}" -c2 "$<${escapedHandler}" sov\nsxe -c "$<${escapedFirstBreakpoint}" -c2 "$<${escapedHandler}" 0x80000003\nsxe -c ".lastevent; .if (@$tpid == @$t0) {q} .else {g}" epr\ng\n`,
   );
   return {
     command,

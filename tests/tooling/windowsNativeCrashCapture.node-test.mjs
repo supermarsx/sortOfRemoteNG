@@ -148,10 +148,11 @@ test("wrapper preserves target arguments, environment and working directory", as
     );
     assert.match(script, /sxd -c2 .* av/);
     assert.match(script, /sxe -c .* -c2 .* sov/);
+    assert.match(script, /sxe -c .* -c2 .* 0x80000003/);
     assert.match(script, /\.lastevent/);
     assert.match(script, /sxi ibp/);
     assert.ok(!script.includes("$><"));
-    assert.equal((script.match(/\$</g) ?? []).length, 3);
+    assert.equal((script.match(/\$</g) ?? []).length, 5);
     const handler = await readFile(
       path.join(prepared.directory, "fatal.txt"),
       "utf8",
@@ -169,6 +170,14 @@ test("wrapper preserves target arguments, environment and working directory", as
     assert.match(firstOverflow, /-c2 "\$</);
     assert.match(firstOverflow, /\.ecxr\n~\*k\n/);
     assert.match(firstOverflow, /\ngn\n$/);
+    const firstBreakpoint = await readFile(
+      path.join(prepared.directory, "first-breakpoint.txt"),
+      "utf8",
+    );
+    assert.match(firstBreakpoint, /^\.echo SORNG_NATIVE_FIRST_BREAKPOINT_V1\n/);
+    assert.match(firstBreakpoint, /\.exr -1\n\.ecxr\n~\*k\n/);
+    assert.match(firstBreakpoint, /\.dump \/m .*first-breakpoint\.dmp/);
+    assert.match(firstBreakpoint, /sxd -c "" -c2 .* 0x80000003\ngn\n$/);
   }));
 
 test("each capture has a unique report directory", async () =>
@@ -246,6 +255,34 @@ test("first-chance overflow evidence does not falsely fail a recovered target", 
       "SORNG_NATIVE_FIRST_STACK_OVERFLOW_V1\n" + normalExit("7"),
     );
     await assert.rejects(prepared.afterRun(), /Native target exited 7/);
+  }));
+
+test("first-chance breakpoint evidence preserves recovered success and nonzero failure", async () =>
+  fixture(async (options) => {
+    const prepared = await prepareWindowsNativeCrashCapture(options);
+    await writeFile(
+      path.join(prepared.directory, "first-breakpoint.dmp"),
+      "fixture first-chance breakpoint dump",
+    );
+    await writeFile(
+      prepared.logPath,
+      "SORNG_NATIVE_FIRST_BREAKPOINT_V1\n" + normalExit(),
+    );
+    await prepared.afterRun();
+    await writeFile(
+      prepared.logPath,
+      "SORNG_NATIVE_FIRST_BREAKPOINT_V1\n" + normalExit("80000003"),
+    );
+    await assert.rejects(
+      prepared.afterRun(),
+      /Native target exited 2147483651/,
+    );
+    await writeFile(
+      prepared.logPath,
+      "SORNG_NATIVE_FIRST_BREAKPOINT_V1\nSORNG_NATIVE_FATAL_V1\n" +
+        normalExit(),
+    );
+    await assert.rejects(prepared.afterRun(), /Native process crashed/);
   }));
 
 test("echoed filter text cannot fake a fatal record", async () =>
