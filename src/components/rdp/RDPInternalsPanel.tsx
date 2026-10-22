@@ -21,7 +21,7 @@ interface RDPInternalsPanelProps {
   activeFrontendRenderer: string;
   framePressureState?: RdpFramePressureState;
   frameBackpressureTelemetry?: RdpFrameBackpressureUpdate | null;
-  onClose: () => void;
+  onClose?: () => void;
 }
 
 export const RDPInternalsPanel: React.FC<RDPInternalsPanelProps> = ({
@@ -58,16 +58,21 @@ export const RDPInternalsPanel: React.FC<RDPInternalsPanelProps> = ({
           <Activity size={14} className="text-success" />
           {t("rdpInternals.title", "RDP Session Internals")}
         </h3>
-        <button
-          onClick={onClose}
-          className="text-[var(--color-textSecondary)] hover:text-[var(--color-text)]"
-          aria-label={t("common.close", "Close")}
-        >
-          <X size={14} />
-        </button>
+        {onClose && (
+          <button
+            onClick={onClose}
+            className="text-[var(--color-textSecondary)] hover:text-[var(--color-text)]"
+            aria-label={t("common.close", "Close")}
+          >
+            <X size={14} />
+          </button>
+        )}
       </div>
       {stats ? (
-        <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-3 text-xs">
+        <div className="grid min-w-0 grid-cols-1 gap-3 text-xs sm:grid-cols-2 lg:grid-cols-4 2xl:grid-cols-6">
+          <h4 className="col-span-full font-semibold text-[var(--color-textSecondary)]">
+            {t("rdpInternals.connectionState", "Connection state")}
+          </h4>
           <div className="bg-[var(--color-background)] rounded p-2">
             <div className="text-[var(--color-textMuted)] mb-1">
               {t("rdpInternals.phase", "Phase")}
@@ -121,6 +126,9 @@ export const RDPInternalsPanel: React.FC<RDPInternalsPanelProps> = ({
           )}
           {channelSummary && (
             <>
+              <h4 className="col-span-full mt-2 font-semibold text-[var(--color-textSecondary)]">
+                {t("rdpInternals.channels", "Channels")}
+              </h4>
               <div className="bg-[var(--color-background)] rounded p-2">
                 <div className="text-[var(--color-textMuted)] mb-1">
                   {t("rdpInternals.channelsEnabled", "Channels Enabled")}
@@ -154,6 +162,9 @@ export const RDPInternalsPanel: React.FC<RDPInternalsPanelProps> = ({
           )}
           {frameFlow && (
             <>
+              <h4 className="col-span-full mt-2 font-semibold text-[var(--color-textSecondary)]">
+                {t("rdpInternals.frameDelivery", "Frame delivery")}
+              </h4>
               <div className="bg-[var(--color-background)] rounded p-2">
                 <div className="text-[var(--color-textMuted)] mb-1">
                   {t("rdpInternals.framesQueued", "Frames Queued")}
@@ -210,6 +221,9 @@ export const RDPInternalsPanel: React.FC<RDPInternalsPanelProps> = ({
           )}
           {gfx && (
             <>
+              <h4 className="col-span-full mt-2 font-semibold text-[var(--color-textSecondary)]">
+                {t("rdpInternals.graphics", "Graphics")}
+              </h4>
               <div className="bg-[var(--color-background)] rounded p-2">
                 <div className="text-[var(--color-textMuted)] mb-1">
                   {t("rdpInternals.gfxCodec", "GFX Codec")}
@@ -223,6 +237,11 @@ export const RDPInternalsPanel: React.FC<RDPInternalsPanelProps> = ({
                   }
                 >
                   {gfx.codec ?? noValue}
+                  {typeof gfx.capVersion === "number" && (
+                    <span className="block break-all text-[var(--color-textMuted)]">
+                      capVersion 0x{gfx.capVersion.toString(16).toUpperCase()}
+                    </span>
+                  )}
                 </div>
               </div>
               <div className="bg-[var(--color-background)] rounded p-2">
@@ -257,9 +276,19 @@ export const RDPInternalsPanel: React.FC<RDPInternalsPanelProps> = ({
                   title={gfx.lastErrorClass ?? undefined}
                 >
                   {(gfx.pipelineErrors ?? 0).toLocaleString()}
+                  {gfx.lastErrorClass && (
+                    <span className="block break-words text-[var(--color-textMuted)]">
+                      {gfx.lastErrorClass}
+                    </span>
+                  )}
                 </div>
               </div>
             </>
+          )}
+          {(framePressureState || frameBackpressureTelemetry) && (
+            <h4 className="col-span-full mt-2 font-semibold text-[var(--color-textSecondary)]">
+              {t("rdpInternals.presentation", "Presentation")}
+            </h4>
           )}
           {framePressureState && (
             <div className="bg-[var(--color-background)] rounded p-2">
@@ -290,6 +319,9 @@ export const RDPInternalsPanel: React.FC<RDPInternalsPanelProps> = ({
               </div>
             </div>
           )}
+          <h4 className="col-span-full mt-2 font-semibold text-[var(--color-textSecondary)]">
+            {t("rdpInternals.sessionActivity", "Session activity")}
+          </h4>
           <div className="bg-[var(--color-background)] rounded p-2">
             <div className="text-[var(--color-textMuted)] mb-1">
               {t("rdpInternals.uptime", "Uptime")}
@@ -318,6 +350,9 @@ export const RDPInternalsPanel: React.FC<RDPInternalsPanelProps> = ({
               </span>
             </div>
           </div>
+          <h4 className="col-span-full mt-2 font-semibold text-[var(--color-textSecondary)]">
+            {t("rdpInternals.trafficAndInput", "Traffic and input")}
+          </h4>
           <div className="bg-[var(--color-background)] rounded p-2">
             <div className="text-[var(--color-textMuted)] mb-1">
               {t("rdpInternals.received", "Received")}
@@ -414,6 +449,12 @@ export const RDPInternalsPanel: React.FC<RDPInternalsPanelProps> = ({
                 : noValue}
             </div>
           </div>
+          <h4 className="col-span-full mt-2 font-semibold text-[var(--color-textSecondary)]">
+            {t(
+              "rdpInternals.renderingConfiguration",
+              "Rendering configuration",
+            )}
+          </h4>
           <div className="bg-[var(--color-background)] rounded p-2">
             <div className="text-[var(--color-textMuted)] mb-1">
               {t("rdpInternals.frameBatching", "Frame Batching")}
@@ -496,12 +537,12 @@ export const RDPInternalsPanel: React.FC<RDPInternalsPanelProps> = ({
             </div>
           </div>
           {stats.last_error && (
-            <div className="bg-[var(--color-background)] rounded p-2 col-span-2 md:col-span-4 lg:col-span-6">
+            <div className="col-span-full min-w-0 rounded bg-[var(--color-background)] p-2">
               <div className="text-[var(--color-textMuted)] mb-1">
                 {t("rdpInternals.lastError", "Last Error")}
               </div>
               <div
-                className="text-error font-mono truncate"
+                className="whitespace-pre-wrap break-words text-error font-mono select-text"
                 title={stats.last_error}
               >
                 {stats.last_error}

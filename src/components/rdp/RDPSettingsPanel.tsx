@@ -23,7 +23,7 @@ export function RDPSettingsPanel({
 }: RDPSettingsPanelProps) {
   return (
     <div className="bg-[var(--color-surface)] border-b border-[var(--color-border)] p-4">
-      <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4 text-sm">
+      <div className="grid min-w-0 grid-cols-1 gap-3 text-sm sm:grid-cols-2 lg:grid-cols-4 2xl:grid-cols-6">
         <div className="bg-[var(--color-background)] rounded p-2">
           <div className="text-[var(--color-textMuted)] text-xs mb-1">
             Current resolution
@@ -136,15 +136,15 @@ export function RDPSettingsPanel({
           </div>
         </div>
         {certFingerprint && (
-          <div className="bg-[var(--color-background)] rounded p-2 col-span-2">
+          <div className="col-span-full min-w-0 rounded bg-[var(--color-background)] p-2">
             <div className="text-[var(--color-textMuted)] text-xs mb-1">
               Server Certificate
             </div>
             <div
-              className="text-info text-xs font-mono truncate"
+              className="break-all text-info text-xs font-mono select-text"
               title={certFingerprint}
             >
-              SHA256:{certFingerprint.slice(0, 23)}…
+              SHA256:{certFingerprint}
             </div>
           </div>
         )}

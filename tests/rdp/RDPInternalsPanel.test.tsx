@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
-import { render, screen, within } from "@testing-library/react";
+import { fireEvent, render, screen, within } from "@testing-library/react";
 import { RDPInternalsPanel } from "../../src/components/rdp/RDPInternalsPanel";
 import type {
   RDPStatsEvent,
@@ -83,6 +83,48 @@ const gfx = (
 });
 
 describe("RDPInternalsPanel — RDPGFX row", () => {
+  it("keeps grouped diagnostics and full errors visible without nested disclosures", () => {
+    const error =
+      "First failure line\nSecond failure line with additional detail";
+    const view = render(
+      <RDPInternalsPanel
+        {...baseProps}
+        onClose={undefined}
+        stats={{
+          ...baseStats,
+          last_error: error,
+          gfx: gfx({ lastErrorClass: "h264_decode_error" }),
+        }}
+      />,
+    );
+    expect(
+      [...view.container.querySelectorAll("h4")].map(
+        (node) => node.textContent,
+      ),
+    ).toEqual([
+      "Connection state",
+      "Graphics",
+      "Session activity",
+      "Traffic and input",
+      "Rendering configuration",
+    ]);
+    expect(screen.getByText("capVersion 0xA0100")).toBeVisible();
+    expect(screen.getByText("h264_decode_error")).toBeVisible();
+    const errorBody = screen.getByText(/Second failure line/);
+    expect(errorBody.textContent).toBe(error);
+    expect(errorBody).toHaveClass("whitespace-pre-wrap");
+    expect(errorBody).not.toHaveClass("truncate");
+    expect(view.container.querySelector("details, [role=tablist]")).toBeNull();
+    expect(screen.queryByRole("button", { name: "Close" })).toBeNull();
+  });
+
+  it("preserves the close action when used with its own close control", () => {
+    const close = vi.fn();
+    render(<RDPInternalsPanel {...baseProps} onClose={close} />);
+    fireEvent.click(screen.getByRole("button", { name: "Close" }));
+    expect(close).toHaveBeenCalledOnce();
+  });
+
   it("distinguishes presented FPS from decoded updates and leaves idle FPS neutral", () => {
     const view = render(
       <RDPInternalsPanel

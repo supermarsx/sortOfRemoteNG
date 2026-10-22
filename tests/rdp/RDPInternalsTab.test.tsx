@@ -174,6 +174,39 @@ function Harness({
 }
 
 describe("session-scoped RDP Internals tabs", () => {
+  it.each(["Internals", "Settings"])(
+    "shows diagnostics and settings together when opened from %s",
+    (entry) => {
+      const fingerprint = "A1:B2:C3:D4:E5:F6:".repeat(6);
+      render(<Harness model={{ ...details, certFingerprint: fingerprint }} />);
+      fireEvent.click(screen.getByText(`${entry} desktop-one`));
+      const page = screen.getByTestId("rdp-internals-tab");
+      expect(
+        within(page).getByRole("region", { name: "Diagnostics" }),
+      ).toHaveTextContent("Waiting for session statistics...");
+      expect(
+        within(page).getByRole("region", { name: "Session settings" }),
+      ).toHaveTextContent("Current resolution");
+      expect(within(page).getByText("2560x1440")).toBeVisible();
+      const certificate = within(page).getByText(`SHA256:${fingerprint}`);
+      expect(certificate).toBeVisible();
+      expect(certificate).toHaveClass("break-all", "select-text");
+      expect(certificate).not.toHaveClass("truncate");
+      expect(certificate.closest(".grid")).toHaveClass(
+        "grid-cols-1",
+        "sm:grid-cols-2",
+        "lg:grid-cols-4",
+        "2xl:grid-cols-6",
+      );
+      expect(within(page).queryByRole("navigation")).toBeNull();
+      expect(within(page).queryByRole("tablist")).toBeNull();
+      expect(page.querySelector("details")).toBeNull();
+      expect(within(page).getAllByRole("button")).toHaveLength(1);
+      expect(page).toHaveClass("overflow-auto");
+      expect(page.querySelector('[class*="overflow-auto"]')).toBeNull();
+    },
+  );
+
   it("opens/reuses one tab for both buttons, survives close/reopen without replacing the desktop", async () => {
     const disposed = vi.fn();
     const mounted = vi.fn(() => disposed);

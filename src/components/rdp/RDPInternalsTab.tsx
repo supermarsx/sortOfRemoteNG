@@ -16,14 +16,13 @@ export function RDPInternalsTab({
   onClose: () => void;
 }) {
   const { t } = useTranslation();
-  const { state, dispatch } = useConnections();
+  const { state } = useConnections();
   const { isActive } = useSessionRenderActivity();
   const targetId = session.rdpInternals?.sessionId ?? "";
   const snapshot = useRdpInternalsSnapshot(targetId, isActive);
   const target = state.sessions.find(
     (candidate) => candidate.id === targetId && candidate.protocol === "rdp",
   );
-  const section = session.rdpInternals?.section ?? "diagnostics";
 
   return (
     <div
@@ -96,45 +95,7 @@ export function RDPInternalsTab({
               )}
             </p>
           )}
-          <nav
-            aria-label={t("rdpInternals.sections", "RDP Internals sections")}
-            className="flex gap-2 border-b border-[var(--color-border)] p-3"
-          >
-            {(["diagnostics", "settings"] as const).map((key) => (
-              <button
-                key={key}
-                type="button"
-                aria-pressed={section === key}
-                className={
-                  section === key ? "sor-btn-primary" : "sor-btn-secondary"
-                }
-                onClick={() =>
-                  dispatch({
-                    type: "UPDATE_SESSION",
-                    payload: {
-                      id: session.id,
-                      rdpInternals: { sessionId: targetId, section: key },
-                    },
-                  })
-                }
-              >
-                {key === "diagnostics"
-                  ? t("rdpInternals.diagnostics", "Diagnostics")
-                  : t("rdpInternals.settings", "Session settings")}
-              </button>
-            ))}
-          </nav>
-          {section === "settings" ? (
-            <RDPSettingsPanel
-              rdpSettings={snapshot.rdpSettings}
-              desktopSize={snapshot.desktopSize}
-              colorDepth={snapshot.colorDepth}
-              audioEnabled={snapshot.audioEnabled}
-              clipboardEnabled={snapshot.clipboardEnabled}
-              perfLabel={snapshot.perfLabel}
-              certFingerprint={snapshot.certFingerprint}
-            />
-          ) : (
+          <section aria-label={t("rdpInternals.diagnostics", "Diagnostics")}>
             <RDPInternalsPanel
               stats={snapshot.stats}
               lifecycle={snapshot.lifecycle}
@@ -144,9 +105,22 @@ export function RDPInternalsTab({
               activeFrontendRenderer={snapshot.activeFrontendRenderer}
               framePressureState={snapshot.framePressureState}
               frameBackpressureTelemetry={snapshot.frameBackpressureTelemetry}
-              onClose={onClose}
             />
-          )}
+          </section>
+          <section aria-label={t("rdpInternals.settings", "Session settings")}>
+            <h3 className="border-b border-[var(--color-border)] bg-[var(--color-surface)] px-4 py-3 text-sm font-semibold text-[var(--color-textSecondary)]">
+              {t("rdpInternals.settings", "Session settings")}
+            </h3>
+            <RDPSettingsPanel
+              rdpSettings={snapshot.rdpSettings}
+              desktopSize={snapshot.desktopSize}
+              colorDepth={snapshot.colorDepth}
+              audioEnabled={snapshot.audioEnabled}
+              clipboardEnabled={snapshot.clipboardEnabled}
+              perfLabel={snapshot.perfLabel}
+              certFingerprint={snapshot.certFingerprint}
+            />
+          </section>
         </>
       )}
     </div>
