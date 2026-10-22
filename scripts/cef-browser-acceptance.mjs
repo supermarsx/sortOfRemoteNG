@@ -19,6 +19,8 @@ import {
 import {
   stageCustomRuntimePackage,
   BRIDGE_PATCH_ID,
+  PROXY_APPLIED_BRIDGE_PATCH_ID,
+  HTTP2_BRIDGE_PATCH_ID,
   LEGACY_BRIDGE_PATCH_ID,
 } from "./lib/browser-custom-runtime.mjs";
 import { ensureBrowserSandboxAccess } from "./lib/browser-sandbox-access.mjs";
@@ -31,9 +33,15 @@ import {
 
 export const TLS_PATCH_ID = BRIDGE_PATCH_ID;
 export const TLS_LEGACY_PATCH_ID = LEGACY_BRIDGE_PATCH_ID;
+const TLS_SUPPORTED_PATCH_IDS = [
+  TLS_PATCH_ID,
+  PROXY_APPLIED_BRIDGE_PATCH_ID,
+  HTTP2_BRIDGE_PATCH_ID,
+  TLS_LEGACY_PATCH_ID,
+];
 function matchesTlsRevision(actual, expected) {
   return (
-    [TLS_PATCH_ID, TLS_LEGACY_PATCH_ID].includes(actual) &&
+    TLS_SUPPORTED_PATCH_IDS.includes(actual) &&
     (expected === undefined || actual === expected)
   );
 }
@@ -135,6 +143,58 @@ export function assessTlsSocketLedger(c) {
   return { ok: failures.length === 0, failures };
 }
 
+export const REGISTRATION_RETIREMENT_CASES = [
+  "sequential-1025",
+  "attached-revoked-retained",
+  "ack-before-detach",
+  "detach-before-ack",
+  "retired-operation-denial",
+  "token-replay-denial",
+  "out-of-order-denial",
+  "rejected-create-quiescent",
+  "root-storage-released",
+  "no-late-callbacks",
+];
+
+export function assessRegistrationRetirement(value) {
+  const failures = [];
+  const require = (ok, reason) => {
+    if (!ok) failures.push(reason);
+  };
+  require(value?.ok === true, "registration retirement did not complete");
+  require(Number.isSafeInteger(value?.sequentialContexts) &&
+    value.sequentialContexts >=
+      1025, "more than 1024 sequential native contexts required");
+  require(Number.isSafeInteger(value?.peakRegistrations) &&
+    value.peakRegistrations >= 1 &&
+    value.peakRegistrations <=
+      2, "bounded live registration observation missing");
+  require(Number.isSafeInteger(value?.peakRootBytes) &&
+    value.peakRootBytes > 0 &&
+    value.peakRootBytes <=
+      8 * 1024 * 1024, "bounded root-storage observation missing");
+  require(value?.finalRegistrations === 0 &&
+    value?.finalRootBytes ===
+      0, "native registrations or root storage were retained");
+  require(typeof value?.tokenHighWater === "string" &&
+    /^[1-9]\d{0,19}$/.test(value.tokenHighWater) &&
+    BigInt(value.tokenHighWater) <=
+      18446744073709551615n, "lossless native token high-water observation missing");
+  const cases = Array.isArray(value?.cases) ? value.cases : [];
+  require(cases.length === REGISTRATION_RETIREMENT_CASES.length &&
+    new Set(cases.map((row) => row?.case)).size === cases.length &&
+    REGISTRATION_RETIREMENT_CASES.every((name) =>
+      cases.some((row) => row?.case === name && row.ok === true),
+    ), "complete native registration retirement cases required");
+  require(value?.browserCreated === false &&
+    value?.networkProbe ===
+      false, "registration-only observation scope missing");
+  require(value?.factoryAbandonFaultInjected === false &&
+    value?.partitionRecreationFaultInjected ===
+      false, "registration fixture fault-injection limits must be explicit");
+  return { ok: failures.length === 0, failures, productionReady: false };
+}
+
 /** Validate observations, never turn a JSON document into execution provenance. */
 export function assessNativeTlsReport(report, runId, expectedPatchId) {
   const failures = [];
@@ -151,6 +211,13 @@ export function assessNativeTlsReport(report, runId, expectedPatchId) {
     report?.runId === runId, "fresh invocation correlation missing");
   require(matchesTlsRevision(report?.patchId, expectedPatchId) &&
     report?.loadedBridgeVerified === true, "frozen loaded V2 bridge missing");
+  if (report?.patchId === TLS_PATCH_ID) {
+    const retirement = assessRegistrationRetirement(
+      report.registrationRetirementCases,
+    );
+    for (const failure of retirement.failures)
+      failures.push(`registration retirement: ${failure}`);
+  }
   require(report?.productionReady === false &&
     report?.publicProviderAcceptance ===
       false, "fixture must not claim production or provider acceptance");
@@ -2524,7 +2591,9 @@ export async function runAcceptance({
   }
   // Two scenarios of at most five minutes each in the native client.
   if (suite === "menu") timeoutMs ??= 600000;
-  timeoutMs = Number(timeoutMs ?? (suite === "tls" ? 240000 : 90000));
+  // Revision-four TLS acceptance also exercises 1,025 context lifecycles.
+  // Keep a finite private-run bound without confusing it with page timeouts.
+  timeoutMs = Number(timeoutMs ?? (suite === "tls" ? 600000 : 90000));
   if (
     !Number.isSafeInteger(timeoutMs) ||
     timeoutMs < 1000 ||
@@ -2541,7 +2610,7 @@ export async function runAcceptance({
     );
     if (staging?.kind === "sorng-cef-custom-package") {
       expectedPatchId = staging.preflight?.bridge?.patchId;
-      if (![TLS_PATCH_ID, TLS_LEGACY_PATCH_ID].includes(expectedPatchId))
+      if (!TLS_SUPPORTED_PATCH_IDS.includes(expectedPatchId))
         throw new Error(
           "Staged custom runtime has no supported bridge revision pin",
         );

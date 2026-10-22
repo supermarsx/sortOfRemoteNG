@@ -10,6 +10,8 @@ import { Script } from "node:vm";
 import {
   assessNativeReport,
   assessNativeTlsReport,
+  assessRegistrationRetirement,
+  REGISTRATION_RETIREMENT_CASES,
   assessTlsSocketLedger,
   TLS_PATCH_ID,
   TLS_LEGACY_PATCH_ID,
@@ -46,6 +48,10 @@ import {
   readNativeCrashSummary,
   applyNativeCrashGate,
 } from "../../scripts/lib/cef-native-crash-summary.mjs";
+import {
+  HTTP2_BRIDGE_PATCH_ID,
+  PROXY_APPLIED_BRIDGE_PATCH_ID,
+} from "../../scripts/lib/browser-custom-runtime.mjs";
 
 test("acceptance metadata stays at the staged bundle root on all platforms", () => {
   const root = path.resolve("fixture-bundle");
@@ -382,6 +388,26 @@ test("speculative stream controllers are explicit and do not expose URL secrets"
 });
 
 // Deliberate validator input, never runtime evidence or a browser acceptance run.
+function syntheticRetirementReport() {
+  return {
+    ok: true,
+    sequentialContexts: 1025,
+    peakRegistrations: 1,
+    peakRootBytes: 1024,
+    finalRegistrations: 0,
+    finalRootBytes: 0,
+    tokenHighWater: "9007199254741999",
+    cases: REGISTRATION_RETIREMENT_CASES.map((name) => ({
+      case: name,
+      ok: true,
+    })),
+    browserCreated: false,
+    networkProbe: false,
+    factoryAbandonFaultInjected: false,
+    partitionRecreationFaultInjected: false,
+  };
+}
+
 function syntheticTlsReport() {
   const report = {
     schema: 2,
@@ -390,6 +416,7 @@ function syntheticTlsReport() {
     evidenceKind: "native-cef-local-fixture",
     runId: "validator-test-only",
     patchId: TLS_PATCH_ID,
+    registrationRetirementCases: syntheticRetirementReport(),
     loadedBridgeVerified: true,
     productionReady: false,
     publicProviderAcceptance: false,
@@ -558,7 +585,12 @@ test("a complete synthetic validator input never attests actual CEF or provider 
 });
 
 test("TLS reports preserve known legacy compatibility without substituting a staged revision", () => {
-  for (const actual of [TLS_PATCH_ID, TLS_LEGACY_PATCH_ID]) {
+  for (const actual of [
+    TLS_PATCH_ID,
+    PROXY_APPLIED_BRIDGE_PATCH_ID,
+    HTTP2_BRIDGE_PATCH_ID,
+    TLS_LEGACY_PATCH_ID,
+  ]) {
     const report = syntheticTlsReport();
     report.patchId = actual;
     assert.equal(assessNativeTlsReport(report, "validator-test-only").ok, true);
@@ -579,6 +611,82 @@ test("TLS reports preserve known legacy compatibility without substituting a sta
   const unknown = syntheticTlsReport();
   unknown.patchId = "sorng-tls-v2-unreviewed";
   assert.equal(assessNativeTlsReport(unknown, "validator-test-only").ok, false);
+});
+
+test("revision four requires bounded real-registry observations while older exact revisions remain compatible", () => {
+  const report = syntheticTlsReport();
+  delete report.registrationRetirementCases;
+  assert.equal(assessNativeTlsReport(report, "validator-test-only").ok, false);
+  for (const patchId of [
+    PROXY_APPLIED_BRIDGE_PATCH_ID,
+    HTTP2_BRIDGE_PATCH_ID,
+    TLS_LEGACY_PATCH_ID,
+  ]) {
+    assert.equal(
+      assessNativeTlsReport(
+        { ...report, patchId },
+        "validator-test-only",
+        patchId,
+      ).ok,
+      true,
+    );
+  }
+});
+
+test("retirement assessment rejects incomplete, unbounded or lossy native observations", () => {
+  assert.equal(
+    assessRegistrationRetirement(syntheticRetirementReport()).ok,
+    true,
+  );
+  const mutations = [
+    (value) => {
+      value.ok = false;
+    },
+    (value) => {
+      value.sequentialContexts = 1024;
+    },
+    (value) => {
+      value.peakRegistrations = 3;
+    },
+    (value) => {
+      value.peakRootBytes = 8 * 1024 * 1024 + 1;
+    },
+    (value) => {
+      value.finalRegistrations = 1;
+    },
+    (value) => {
+      value.finalRootBytes = 1;
+    },
+    (value) => {
+      value.tokenHighWater = 9007199254741999;
+    },
+    (value) => {
+      value.tokenHighWater = "18446744073709551616";
+    },
+    (value) => {
+      value.cases.pop();
+    },
+    (value) => {
+      value.cases[0].ok = false;
+    },
+    (value) => {
+      value.cases[0] = value.cases[1];
+    },
+    (value) => {
+      value.browserCreated = true;
+    },
+    (value) => {
+      value.networkProbe = true;
+    },
+    (value) => {
+      delete value.factoryAbandonFaultInjected;
+    },
+  ];
+  for (const mutate of mutations) {
+    const value = syntheticRetirementReport();
+    mutate(value);
+    assert.equal(assessRegistrationRetirement(value).ok, false);
+  }
 });
 
 test("a custom bundle with an unsupported bridge pin fails before launching or creating run output", async () => {
