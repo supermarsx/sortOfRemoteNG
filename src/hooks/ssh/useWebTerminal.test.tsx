@@ -1896,6 +1896,57 @@ describe("useWebTerminal input lifecycle", () => {
     expect(mocks.addHistoryEntry).not.toHaveBeenCalled();
   });
 
+  it.each(["success", "empty", "unavailable", "rejected", "throws"])(
+    "reports terminal selection copy outcome: %s",
+    async (outcome) => {
+      let model: WebTerminalMgr | null = null;
+      const Harness = () => {
+        model = useWebTerminal(session);
+        return <div ref={model.containerRef} />;
+      };
+      render(<Harness />);
+      await waitFor(() => expect(model?.status).toBe("connected"));
+      vi.spyOn(mocks.MockTerminal.instances[0], "getSelection").mockReturnValue(
+        outcome === "empty" ? "" : "  selected\nterminal text  ",
+      );
+      if (outcome === "unavailable") {
+        Object.defineProperty(navigator, "clipboard", { value: undefined });
+      } else if (outcome === "rejected") {
+        mocks.clipboard.writeText.mockRejectedValueOnce(new Error("denied"));
+      } else if (outcome === "throws") {
+        mocks.clipboard.writeText.mockImplementationOnce(() => {
+          throw new Error("unavailable");
+        });
+      }
+      await expect(model!.copySelection()).resolves.toBe(outcome === "success");
+      if (outcome === "success") {
+        expect(mocks.clipboard.writeText).toHaveBeenCalledWith(
+          "  selected\nterminal text  ",
+        );
+        expect(mocks.toast.success).toHaveBeenCalledWith(
+          "Copied to clipboard",
+          2000,
+        );
+      } else {
+        expect(mocks.toast.success).not.toHaveBeenCalled();
+        if (outcome === "empty") {
+          expect(mocks.toast.info).toHaveBeenCalledWith(
+            "Select terminal text to copy first",
+            3000,
+          );
+          expect(mocks.clipboard.writeText).not.toHaveBeenCalled();
+        } else {
+          expect(mocks.toast.error).toHaveBeenCalledWith(
+            outcome === "unavailable"
+              ? "Clipboard access is unavailable"
+              : "Failed to copy to clipboard",
+            3000,
+          );
+        }
+      }
+    },
+  );
+
   it("keeps clipboard callbacks stable while reporting through the latest toast", async () => {
     let model: WebTerminalMgr | null = null;
     const Harness = () => {
@@ -1906,6 +1957,7 @@ describe("useWebTerminal input lifecycle", () => {
     const view = render(<Harness />);
     await waitFor(() => expect(model?.status).toBe("connected"));
     expect(mocks.MockTerminal.instances).toHaveLength(1);
+    const originalCopy = model!.copySelection;
 
     const latestToast = mocks.createToast();
     mocks.toastContext.current = latestToast;
@@ -1913,6 +1965,12 @@ describe("useWebTerminal input lifecycle", () => {
     await act(async () => Promise.resolve());
 
     expect(mocks.MockTerminal.instances).toHaveLength(1);
+    expect(model!.copySelection).toBe(originalCopy);
+    await model!.copySelection();
+    expect(latestToast.info).toHaveBeenCalledWith(
+      "Select terminal text to copy first",
+      3000,
+    );
     mocks.clipboard.readText.mockRejectedValueOnce(new Error("read denied"));
     await expect(model!.pasteFromClipboard()).resolves.toBe(false);
     expect(latestToast.error).toHaveBeenCalledWith(

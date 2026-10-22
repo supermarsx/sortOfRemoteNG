@@ -32,6 +32,7 @@ function TerminalToolbar({ mgr }: { mgr: WebTerminalMgr }) {
   return (
     <div className="flex items-center gap-2" data-testid="terminal-toolbar">
       <button
+        onMouseDown={(event) => event.preventDefault()}
         onClick={mgr.copySelection}
         className="app-bar-button p-2"
         data-tooltip="Copy selection"

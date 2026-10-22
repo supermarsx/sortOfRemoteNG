@@ -4183,14 +4183,25 @@ export function useWebTerminal(
     }
   }, [canRender]);
 
-  const copySelection = useCallback(() => {
-    const selection = termRef.current?.getSelection();
-    if (!selection) return;
-    navigator.clipboard
-      .writeText(selection)
-      .then(() => toast.success("Copied to clipboard", 2000))
-      .catch(() => toast.error("Failed to copy to clipboard", 2000));
-  }, [toast]);
+  const copySelection = useCallback(async () => {
+    try {
+      const selection = termRef.current?.getSelection();
+      if (!selection) {
+        toastRef.current.info("Select terminal text to copy first", 3000);
+        return false;
+      }
+      if (!navigator.clipboard?.writeText) {
+        toastRef.current.error("Clipboard access is unavailable", 3000);
+        return false;
+      }
+      await navigator.clipboard.writeText(selection);
+      toastRef.current.success("Copied to clipboard", 2000);
+      return true;
+    } catch {
+      toastRef.current.error("Failed to copy to clipboard", 3000);
+      return false;
+    }
+  }, []);
 
   const sendCancel = useCallback(async () => {
     replayAbortRef.current?.abort();
