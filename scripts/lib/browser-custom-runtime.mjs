@@ -1606,8 +1606,9 @@ export function assessWindowsEnginePrerequisites({
 }
 
 /** Build inputs must be an explicit hash inventory, not a free-form version note.
- * This verifies installed tool bytes; it does not provision them or certify their
- * compatibility. Native prerequisite checks and actual compilation remain separate.
+ * This verifies installed tool bytes; hosted callers may separately verify the
+ * exact runner metadata pin from reviewed inputs without installing it. It does
+ * not provision tools or certify compatibility. Actual compilation is separate.
  */
 export async function verifyToolchainFiles({
   sourceLock,
@@ -1615,7 +1616,10 @@ export async function verifyToolchainFiles({
   inputsRoot,
   toolsRoot,
   python,
+  runnerMapFromInputs = false,
 }) {
+  if (typeof runnerMapFromInputs !== "boolean")
+    fail("runnerMapFromInputs must be an explicit boolean");
   validateSourceLock(sourceLock);
   target(selectedTarget);
   const build = sourceLock.builds.find(
@@ -1637,12 +1641,30 @@ export async function verifyToolchainFiles({
     "toolchain files",
   );
   let pythonVerified = false;
+  let runnerMapVerified = false;
+  const runnerMapName = `cef-ci-runner-${selectedTarget}.json`;
   for (const pin of lock.files) {
     filePin(pin, "toolchain file", true);
+    // Hosted runner metadata is checkout data, not an installed executable.
+    // No other inventory entry may use this alternative root.
+    if (runnerMapFromInputs && pin.path === runnerMapName) {
+      const file = await verifyFile(inputsRoot, pin);
+      const map = JSON.parse(await readFile(file, "utf8"));
+      if (
+        map?.schemaVersion !== 2 ||
+        map?.kind !== "sorng-cef-ci-runner" ||
+        map?.target !== selectedTarget
+      )
+        fail("Hosted runner map target/schema mismatch");
+      runnerMapVerified = true;
+      continue;
+    }
     const file = await verifyFile(toolsRoot, pin);
     if ((await realpath(file)) === (await realpath(python)))
       pythonVerified = true;
   }
+  if (runnerMapFromInputs && !runnerMapVerified)
+    fail("Hosted runner map is absent from pinned toolchain inventory");
   if (!pythonVerified)
     fail(
       "Selected Python executable is absent from pinned toolchain inventory",

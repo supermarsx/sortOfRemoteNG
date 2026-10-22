@@ -1,5 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { existsSync } from "node:fs";
 import { createHash } from "node:crypto";
 import {
   mkdtemp,
@@ -677,6 +678,109 @@ test("GN content/hash and toolchain inventory are mandatory before any build", a
       python: path.join(data.toolsRoot, "python-fixture"),
     }),
     /Digest\/size/,
+  );
+});
+
+test("hosted runner metadata is verified from reviewed inputs without provisioning the tools root", async (t) => {
+  const data = await diskFixture(t);
+  const build = data.sourceLock.builds.find(
+    (entry) => entry.target === data.target,
+  );
+  const mapName = `cef-ci-runner-${data.target}.json`;
+  const map = {
+    schemaVersion: 2,
+    kind: "sorng-cef-ci-runner",
+    target: data.target,
+    python: "python-fixture",
+    path: [],
+    syncJobs: 2,
+    buildJobs: 4,
+    environment: {},
+    hosted: {
+      runner: "windows-2025-vs2026",
+      imageOS: "win25-vs2026",
+      imageVersion: "fixture",
+      platform: "win32",
+      architecture: "x64",
+      acceptanceRunner: "windows-2025-vs2026",
+    },
+  };
+  const toolchain = JSON.parse(
+    await readFile(
+      path.join(data.inputsRoot, build.toolchainLock.path),
+      "utf8",
+    ),
+  );
+  const bindMap = async (value) => {
+    const bytes = json(value);
+    await writeFile(path.join(data.inputsRoot, mapName), bytes);
+    toolchain.files = toolchain.files.filter((entry) => entry.path !== mapName);
+    toolchain.files.push(pin(mapName, bytes));
+    const lockBytes = json(toolchain);
+    await writeFile(
+      path.join(data.inputsRoot, build.toolchainLock.path),
+      lockBytes,
+    );
+    build.toolchainLock.sha256 = hash(lockBytes);
+  };
+  await bindMap(map);
+  const options = {
+    ...data,
+    python: path.join(data.toolsRoot, "python-fixture"),
+  };
+  assert.equal(existsSync(path.join(data.toolsRoot, mapName)), false);
+  const result = await verifyToolchainFiles({
+    ...options,
+    runnerMapFromInputs: true,
+  });
+  assert.equal(result.filesVerified, 2);
+  assert.equal(result.toolchainBytesVerified, true);
+  assert.equal(existsSync(path.join(data.toolsRoot, mapName)), false);
+  // Dedicated verification still reads its map from the provisioned tools root.
+  await assert.rejects(verifyToolchainFiles(options), /ENOENT/);
+  await writeFile(path.join(data.toolsRoot, mapName), json(map));
+  assert.equal((await verifyToolchainFiles(options)).filesVerified, 2);
+  await rm(path.join(data.toolsRoot, mapName));
+  // A changed map must fail its digest even before its schema can be trusted.
+  await writeFile(
+    path.join(data.inputsRoot, mapName),
+    json({ ...map, buildJobs: 32 }),
+  );
+  await assert.rejects(
+    verifyToolchainFiles({ ...options, runnerMapFromInputs: true }),
+    /Digest\/size/,
+  );
+  for (const invalid of [
+    { ...map, schemaVersion: 1 },
+    { ...map, target: "aarch64-pc-windows-msvc" },
+    { ...map, kind: "executable" },
+  ]) {
+    await bindMap(invalid);
+    await assert.rejects(
+      verifyToolchainFiles({ ...options, runnerMapFromInputs: true }),
+      /runner map.*target\/schema/i,
+    );
+  }
+  await bindMap(map);
+  // The exception is for this exact derived metadata name, never executables.
+  await writeFile(path.join(data.inputsRoot, "python-fixture"), data.python);
+  await rm(path.join(data.toolsRoot, "python-fixture"));
+  await assert.rejects(
+    verifyToolchainFiles({ ...options, runnerMapFromInputs: true }),
+    /ENOENT/,
+  );
+  await writeFile(path.join(data.toolsRoot, "python-fixture"), data.python);
+  await assert.rejects(
+    verifyToolchainFiles({
+      ...options,
+      runnerMapFromInputs: true,
+      python: path.join(data.inputsRoot, "python-fixture"),
+    }),
+    /Selected Python executable/,
+  );
+  await assert.rejects(
+    verifyToolchainFiles({ ...options, runnerMapFromInputs: "true" }),
+    /runnerMapFromInputs/,
   );
 });
 

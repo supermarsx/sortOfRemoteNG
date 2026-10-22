@@ -854,41 +854,11 @@ export async function build(
       },
       map,
     );
-    const destination = path.join(toolsRoot, mapName(target));
-    if (await exists(destination)) {
-      const present = await measure(destination);
-      if (present.sha256 !== mapPin.sha256 || present.size !== mapPin.size)
-        fail(
-          "A different runner map already exists at the fixed tools-root location",
-        );
-    } else if (process.platform === "win32")
-      await copyFile(reviewedMap, destination, constants.COPYFILE_EXCL);
-    else
-      await run(
-        "sudo",
-        ["-n", "install", "-m", "0644", "--", reviewedMap, destination],
-        {
-          cwd: checkout,
-          env: buildEnvironment(
-            map,
-            {
-              toolsRoot,
-              source: toolsRoot,
-              depot: toolsRoot,
-              python: path.join(toolsRoot, map.python),
-            },
-            env,
-          ),
-          logs: preparationLogs,
-          name: "stage-reviewed-runner-map",
-          budget,
-        },
-      );
   }
   const runner = validateRunnerMap(
     await json(
       await pinned(
-        toolsRoot,
+        runnerMode === "hosted" ? inputsRoot : toolsRoot,
         toolchain.files.find((item) => item.path === mapName(target)),
       ),
     ),
@@ -905,6 +875,7 @@ export async function build(
     inputsRoot,
     toolsRoot,
     python,
+    runnerMapFromInputs: runnerMode === "hosted",
   });
   for (const entry of runner.path)
     if (!inside(toolsRoot, await realpath(path.join(toolsRoot, entry))))
