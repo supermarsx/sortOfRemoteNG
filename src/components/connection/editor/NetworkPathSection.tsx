@@ -1,3 +1,4 @@
+import { PasswordInput } from "../../ui/forms";
 import React, { useEffect, useMemo, useState } from "react";
 import {
   AlertTriangle,
@@ -572,9 +573,9 @@ export const NetworkPathSectionView: React.FC<NetworkPathSectionViewProps> = ({
             </label>
             <label className="min-w-0 sm:col-span-2 lg:col-span-3">
               <span className={labelClass}>Password (optional)</span>
-              <input
+              <PasswordInput
+                generateable
                 id="network-path-legacy-proxy-password"
-                type="password"
                 aria-label="Per-connection proxy password"
                 value={legacyProxy.password ?? ""}
                 onChange={(event) =>

@@ -777,6 +777,7 @@ export default function ApplicationSection({
                             : "Website password"}
                         </label>
                         <PasswordInput
+                          generateable
                           id="http-application-password"
                           className="sor-form-input"
                           autoComplete="new-password"

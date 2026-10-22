@@ -35,6 +35,7 @@ const BasicAuthFields: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
           {mode} Auth Password
         </label>
         <PasswordInput
+          generateable
           value={mgr.formData.basicAuthPassword || ""}
           onChange={(e) =>
             mgr.setFormData({

@@ -280,6 +280,7 @@ export default function SynologyOptions({
               <label className="space-y-1 text-sm">
                 DSM password
                 <PasswordInput
+                  generateable
                   aria-label="DSM API password"
                   className="sor-form-input"
                   autoComplete="new-password"

@@ -278,6 +278,7 @@ const RDPCredentials: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
           {t("quickConnect.passwordOptional", "Password (optional)")}
         </label>
         <PasswordInput
+          generateable
           id="rdp-password"
           value={mgr.password}
           onChange={(e) => mgr.setPassword(e.target.value)}
@@ -356,6 +357,7 @@ const SshCredentials: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
             {t("connection.password", "Password")}
           </label>
           <PasswordInput
+            generateable
             id="ssh-password"
             required
             value={mgr.password}
@@ -414,6 +416,7 @@ const VncCredentials: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
         {t("quickConnect.passwordOptional", "Password (optional)")}
       </label>
       <PasswordInput
+        generateable
         id="vnc-password"
         value={mgr.password}
         onChange={(e) => mgr.setPassword(e.target.value)}
@@ -458,6 +461,7 @@ const HttpCredentials: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
           )}
         </label>
         <PasswordInput
+          generateable
           id="http-password"
           value={mgr.basicAuthPassword}
           onChange={(e) => mgr.setBasicAuthPassword(e.target.value)}
@@ -516,6 +520,7 @@ const TelnetCredentials: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
           {t("quickConnect.passwordOptional", "Password (optional)")}
         </label>
         <PasswordInput
+          generateable
           id="telnet-password"
           value={mgr.password}
           onChange={(e) => mgr.setPassword(e.target.value)}

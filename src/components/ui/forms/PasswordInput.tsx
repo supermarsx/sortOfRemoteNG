@@ -1,9 +1,22 @@
-import React, { forwardRef, useState, useRef, useEffect, useCallback, useMemo, InputHTMLAttributes } from 'react';
-import { Eye, EyeOff, Lock } from 'lucide-react';
-import { useSettings } from '../../../contexts/SettingsContext';
+import React, {
+  forwardRef,
+  useState,
+  useRef,
+  useEffect,
+  useCallback,
+  useMemo,
+  InputHTMLAttributes,
+} from "react";
+import { Eye, EyeOff, Lock } from "lucide-react";
+import { useSettings } from "../../../contexts/SettingsContext";
+import { PasswordGenerator } from "./PasswordGenerator";
 
-export interface PasswordInputProps
-  extends Omit<InputHTMLAttributes<HTMLInputElement>, 'type'> {
+export interface PasswordInputProps extends Omit<
+  InputHTMLAttributes<HTMLInputElement>,
+  "type"
+> {
+  /** Opt in only for editable passwords, never tokens or authenticator codes. */
+  generateable?: boolean;
   /**
    * Override the global password-reveal enabled setting for this field.
    * When `false`, the eye icon is never shown regardless of global setting.
@@ -24,182 +37,222 @@ export interface PasswordInputProps
  * maskCharacter, lockSavedPasswords, etc.) but can be overridden
  * per-instance via the `revealable` and `isSaved` props.
  */
-export const PasswordInput = forwardRef<HTMLInputElement, PasswordInputProps>(({
-  revealable,
-  isSaved,
-  className,
-  style,
-  ...rest
-}, ref) => {
-  const { settings } = useSettings();
-  const pr = settings.passwordReveal ?? {
-    enabled: true,
-    mode: 'toggle' as const,
-    autoHideSeconds: 0,
-    showByDefault: false,
-    maskIcon: false,
-    maskCharacter: '',
-    lockSavedPasswords: false,
-  };
-
-  const isRevealable = revealable ?? pr.enabled;
-  const isLocked = !!(isSaved && pr.lockSavedPasswords);
-  const canReveal = isRevealable && !isLocked;
-
-  const [visible, setVisible] = useState(pr.showByDefault && canReveal);
-  const autoHideTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  // Clean up timer on unmount
-  useEffect(() => {
-    return () => {
-      if (autoHideTimer.current) clearTimeout(autoHideTimer.current);
+export const PasswordInput = forwardRef<HTMLInputElement, PasswordInputProps>(
+  (
+    { generateable = false, revealable, isSaved, className, style, ...rest },
+    ref,
+  ) => {
+    const inputRef = useRef<HTMLInputElement>(null);
+    const setInputRef = useCallback(
+      (node: HTMLInputElement | null) => {
+        inputRef.current = node;
+        if (typeof ref === "function") return ref(node);
+        if (ref) ref.current = node;
+      },
+      [ref],
+    );
+    const canGenerate =
+      generateable &&
+      !rest.disabled &&
+      !rest.readOnly &&
+      rest.autoComplete !== "one-time-code" &&
+      (rest.value === undefined || !!rest.onChange);
+    const { settings } = useSettings();
+    const pr = settings.passwordReveal ?? {
+      enabled: true,
+      mode: "toggle" as const,
+      autoHideSeconds: 0,
+      showByDefault: false,
+      maskIcon: false,
+      maskCharacter: "",
+      lockSavedPasswords: false,
     };
-  }, []);
 
-  // Reset visibility when global settings change or lock state changes
-  useEffect(() => {
-    if (!canReveal) setVisible(false);
-  }, [canReveal]);
+    const isRevealable = revealable ?? pr.enabled;
+    const isLocked = !!(isSaved && pr.lockSavedPasswords);
+    const canReveal = isRevealable && !isLocked;
 
-  const startAutoHide = useCallback(() => {
-    if (autoHideTimer.current) clearTimeout(autoHideTimer.current);
-    if (pr.autoHideSeconds > 0) {
-      autoHideTimer.current = setTimeout(() => {
-        setVisible(false);
-      }, pr.autoHideSeconds * 1000);
-    }
-  }, [pr.autoHideSeconds]);
+    const [visible, setVisible] = useState(pr.showByDefault && canReveal);
+    const autoHideTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // ── Toggle mode handlers ──────────────────────────────────────
-  const handleToggleClick = useCallback(() => {
-    if (pr.mode !== 'toggle' || isLocked) return;
-    const next = !visible;
-    setVisible(next);
-    if (next) {
-      startAutoHide();
-    } else if (autoHideTimer.current) {
-      clearTimeout(autoHideTimer.current);
-    }
-  }, [pr.mode, visible, startAutoHide, isLocked]);
+    // Clean up timer on unmount
+    useEffect(() => {
+      return () => {
+        if (autoHideTimer.current) clearTimeout(autoHideTimer.current);
+      };
+    }, []);
 
-  // ── Hold mode handlers ────────────────────────────────────────
-  const handlePointerDown = useCallback(() => {
-    if (pr.mode !== 'hold' || isLocked) return;
-    setVisible(true);
-  }, [pr.mode, isLocked]);
+    // Reset visibility when global settings change or lock state changes
+    useEffect(() => {
+      if (!canReveal) setVisible(false);
+    }, [canReveal]);
 
-  const handlePointerUp = useCallback(() => {
-    if (pr.mode !== 'hold') return;
-    setVisible(false);
-  }, [pr.mode]);
+    const startAutoHide = useCallback(() => {
+      if (autoHideTimer.current) clearTimeout(autoHideTimer.current);
+      if (pr.autoHideSeconds > 0) {
+        autoHideTimer.current = setTimeout(() => {
+          setVisible(false);
+        }, pr.autoHideSeconds * 1000);
+      }
+    }, [pr.autoHideSeconds]);
 
-  // Shared handler for mouse/pointer events on the button
-  const buttonHandlers =
-    pr.mode === 'hold' && !isLocked
-      ? {
-          onPointerDown: handlePointerDown,
-          onPointerUp: handlePointerUp,
-          onPointerLeave: handlePointerUp,
-          onPointerCancel: handlePointerUp,
-        }
-      : {
-          onClick: handleToggleClick,
-        };
+    // ── Toggle mode handlers ──────────────────────────────────────
+    const handleToggleClick = useCallback(() => {
+      if (pr.mode !== "toggle" || isLocked) return;
+      const next = !visible;
+      setVisible(next);
+      if (next) {
+        startAutoHide();
+      } else if (autoHideTimer.current) {
+        clearTimeout(autoHideTimer.current);
+      }
+    }, [pr.mode, visible, startAutoHide, isLocked]);
 
-  // ── Locked: hide real character count ─────────────────────────
-  // When locked, we replace the displayed value with a fixed-length
-  // placeholder so the actual password length is not leaked.
-  const LOCKED_PLACEHOLDER = '••••••••••';
-  const hasValue = typeof rest.value === 'string' && rest.value.length > 0;
-  const showLockedPlaceholder = isLocked && hasValue && !visible;
+    // ── Hold mode handlers ────────────────────────────────────────
+    const handlePointerDown = useCallback(() => {
+      if (pr.mode !== "hold" || isLocked) return;
+      setVisible(true);
+    }, [pr.mode, isLocked]);
 
-  // ── Custom mask character via CSS ─────────────────────────────
-  const maskChar = pr.maskCharacter;
-  const useCustomMask = !visible && !showLockedPlaceholder && !!maskChar;
+    const handlePointerUp = useCallback(() => {
+      if (pr.mode !== "hold") return;
+      setVisible(false);
+    }, [pr.mode]);
 
-  // Right-padding for the eye button needs to be enforced via inline
-  // style because the project's component CSS (`.sor-settings-input`,
-  // `.sor-form-input`, etc.) sets the `padding` shorthand and is
-  // emitted AFTER Tailwind utilities, so `pr-9` on the className gets
-  // overridden — leaving the eye icon visually overlapping the text.
-  const showButton = isRevealable || isLocked;
-  const IconComponent = isLocked ? Lock : visible ? EyeOff : Eye;
-  const iconOpacity = isLocked
-    ? 'opacity-40'
-    : !visible && pr.maskIcon
-      ? 'opacity-30'
-      : 'opacity-60';
+    // Shared handler for mouse/pointer events on the button
+    const buttonHandlers =
+      pr.mode === "hold" && !isLocked
+        ? {
+            onPointerDown: handlePointerDown,
+            onPointerUp: handlePointerUp,
+            onPointerLeave: handlePointerUp,
+            onPointerCancel: handlePointerUp,
+          }
+        : {
+            onClick: handleToggleClick,
+          };
 
-  const mergedStyle = useMemo(() => {
-    const base: React.CSSProperties = { ...style };
-    if (showButton) base.paddingRight = '2.25rem';
-    if (showLockedPlaceholder) {
-      base.color = 'transparent';
-      base.caretColor = 'transparent';
+    // ── Locked: hide real character count ─────────────────────────
+    // When locked, we replace the displayed value with a fixed-length
+    // placeholder so the actual password length is not leaked.
+    const LOCKED_PLACEHOLDER = "••••••••••";
+    const hasValue = typeof rest.value === "string" && rest.value.length > 0;
+    const showLockedPlaceholder = isLocked && hasValue && !visible;
+
+    // ── Custom mask character via CSS ─────────────────────────────
+    const maskChar = pr.maskCharacter;
+    const useCustomMask = !visible && !showLockedPlaceholder && !!maskChar;
+
+    // Right-padding for the eye button needs to be enforced via inline
+    // style because the project's component CSS (`.sor-settings-input`,
+    // `.sor-form-input`, etc.) sets the `padding` shorthand and is
+    // emitted AFTER Tailwind utilities, so `pr-9` on the className gets
+    // overridden — leaving the eye icon visually overlapping the text.
+    const showButton = isRevealable || isLocked;
+    const IconComponent = isLocked ? Lock : visible ? EyeOff : Eye;
+    const iconOpacity = isLocked
+      ? "opacity-40"
+      : !visible && pr.maskIcon
+        ? "opacity-30"
+        : "opacity-60";
+
+    const mergedStyle = useMemo(() => {
+      const base: React.CSSProperties = { ...style };
+      if (showButton || canGenerate)
+        base.paddingRight = showButton && canGenerate ? "4.25rem" : "2.25rem";
+      if (showLockedPlaceholder) {
+        base.color = "transparent";
+        base.caretColor = "transparent";
+        return base;
+      }
+      if (useCustomMask) {
+        (
+          base as React.CSSProperties & { WebkitTextSecurity?: string }
+        ).WebkitTextSecurity = "none";
+        base.color = "transparent";
+        base.caretColor = "var(--color-text)";
+      }
       return base;
-    }
-    if (useCustomMask) {
-      (base as React.CSSProperties & { WebkitTextSecurity?: string }).WebkitTextSecurity = 'none';
-      base.color = 'transparent';
-      base.caretColor = 'var(--color-text)';
-    }
-    return base;
-  }, [useCustomMask, showLockedPlaceholder, style, showButton]);
+    }, [useCustomMask, showLockedPlaceholder, style, showButton, canGenerate]);
 
-  // Build the masked overlay text
-  const maskedOverlay = showLockedPlaceholder
-    ? (maskChar || '•').repeat(LOCKED_PLACEHOLDER.length)
-    : useCustomMask && typeof rest.value === 'string'
-      ? maskChar.repeat(rest.value.length)
-      : null;
+    // Build the masked overlay text
+    const maskedOverlay = showLockedPlaceholder
+      ? (maskChar || "•").repeat(LOCKED_PLACEHOLDER.length)
+      : useCustomMask && typeof rest.value === "string"
+        ? maskChar.repeat(rest.value.length)
+        : null;
 
-  return (
-    <div className="relative w-full">
-      <input
-        {...rest}
-        ref={ref}
-        type={visible ? 'text' : 'password'}
-        className={`${className ?? ''} block`}
-        style={mergedStyle}
-      />
-      {/* Custom mask character overlay */}
-      {maskedOverlay != null && (
-        <div
-          className="absolute inset-0 flex items-center pointer-events-none overflow-hidden"
-          style={{
-            paddingLeft: 'inherit',
-            paddingRight: showButton ? '2.25rem' : undefined,
-          }}
-        >
-          <span
-            className="text-[var(--color-text)] font-mono text-sm truncate"
+    return (
+      <div className="relative w-full">
+        <input
+          {...rest}
+          ref={setInputRef}
+          type={visible ? "text" : "password"}
+          className={`${className ?? ""} block`}
+          style={mergedStyle}
+        />
+        {/* Custom mask character overlay */}
+        {maskedOverlay != null && (
+          <div
+            className="absolute inset-0 flex items-center pointer-events-none overflow-hidden"
             style={{
-              paddingLeft: (rest as any).style?.paddingLeft ?? '0.75rem',
-              letterSpacing: '0.1em',
+              paddingLeft: "inherit",
+              paddingRight:
+                showButton && canGenerate
+                  ? "4.25rem"
+                  : showButton || canGenerate
+                    ? "2.25rem"
+                    : undefined,
             }}
           >
-            {maskedOverlay}
-          </span>
-        </div>
-      )}
-      {showButton && (
-        <button
-          type="button"
-          tabIndex={-1}
-          aria-label={isLocked ? 'Password locked' : visible ? 'Hide password' : 'Show password'}
-          title={isLocked ? 'Saved passwords are locked (change in Settings → Security)' : undefined}
-          className={`absolute right-2 top-1/2 -translate-y-1/2 p-0.5 rounded
+            <span
+              className="text-[var(--color-text)] font-mono text-sm truncate"
+              style={{
+                paddingLeft: (rest as any).style?.paddingLeft ?? "0.75rem",
+                letterSpacing: "0.1em",
+              }}
+            >
+              {maskedOverlay}
+            </span>
+          </div>
+        )}
+        {showButton && (
+          <button
+            type="button"
+            tabIndex={-1}
+            aria-label={
+              isLocked
+                ? "Password locked"
+                : visible
+                  ? "Hide password"
+                  : "Show password"
+            }
+            title={
+              isLocked
+                ? "Saved passwords are locked (change in Settings → Security)"
+                : undefined
+            }
+            className={`absolute right-2 top-1/2 -translate-y-1/2 p-0.5 rounded
             text-[var(--color-textSecondary)] hover:text-[var(--color-text)] focus:outline-none transition-colors
-            ${iconOpacity} ${isLocked ? 'cursor-not-allowed' : ''}`}
-          {...(isLocked ? {} : buttonHandlers)}
-        >
-          <IconComponent size={16} strokeWidth={1.5} />
-        </button>
-      )}
-    </div>
-  );
-});
+            ${iconOpacity} ${isLocked ? "cursor-not-allowed" : ""}`}
+            {...(isLocked ? {} : buttonHandlers)}
+          >
+            <IconComponent size={16} strokeWidth={1.5} />
+          </button>
+        )}
+        {canGenerate && (
+          <PasswordGenerator
+            inputRef={inputRef}
+            besideReveal={showButton}
+            minLength={rest.minLength}
+            maxLength={rest.maxLength}
+          />
+        )}
+      </div>
+    );
+  },
+);
 
-PasswordInput.displayName = 'PasswordInput';
+PasswordInput.displayName = "PasswordInput";
 
 export default PasswordInput;

@@ -314,6 +314,7 @@ export const SSHOptions: React.FC<SSHOptionsProps> = ({
               </label>
               {usesManagedSshSecrets ? (
                 <PasswordInput
+                  generateable
                   ref={sshSecretManager.passwordInputRef}
                   data-testid={
                     formData.protocol === "ssh" ? "editor-password" : undefined
@@ -328,6 +329,7 @@ export const SSHOptions: React.FC<SSHOptionsProps> = ({
                 />
               ) : (
                 <PasswordInput
+                  generateable
                   data-testid={
                     formData.protocol === "ssh" ? "editor-password" : undefined
                   }

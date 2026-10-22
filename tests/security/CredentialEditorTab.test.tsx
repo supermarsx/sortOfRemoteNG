@@ -169,8 +169,8 @@ describe("separate private credential editor tab", () => {
     fireEvent.change(await screen.findByLabelText("Credential name"), {
       target: { value: "Renamed" },
     });
-    const reveal = screen.getByRole("button", { name: "Reveal password" });
-    expect(reveal).toHaveClass("absolute", "right-1");
+    const reveal = screen.getByRole("button", { name: "Show password" });
+    expect(reveal).toHaveAttribute("type", "button");
     expect(reveal.closest("label")).toBeNull();
     expect(
       screen.getByRole("group", { name: "Login details" }),

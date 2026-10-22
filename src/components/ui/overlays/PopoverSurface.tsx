@@ -23,6 +23,8 @@ interface PopoverSurfaceProps {
   closeOnOutside?: boolean;
   viewportPadding?: number;
   dataTestId?: string;
+  /** Keep nested dialogs inside their modal's accessible subtree. */
+  portalContainer?: HTMLElement | null;
 }
 
 interface PopoverPosition {
@@ -44,6 +46,7 @@ export const PopoverSurface: React.FC<PopoverSurfaceProps> = ({
   closeOnOutside = true,
   viewportPadding = 4,
   dataTestId,
+  portalContainer,
 }) => {
   const popoverRef = useRef<HTMLDivElement>(null);
   const [position, setPosition] = useState<PopoverPosition>({
@@ -153,7 +156,7 @@ export const PopoverSurface: React.FC<PopoverSurfaceProps> = ({
     >
       {children}
     </div>,
-    document.body,
+    portalContainer ?? document.body,
   );
 };
 

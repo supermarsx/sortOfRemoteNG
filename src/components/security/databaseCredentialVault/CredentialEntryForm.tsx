@@ -1,6 +1,6 @@
 import React, { useId, useState } from "react";
 import { Eye, EyeOff, Plus, Trash2 } from "lucide-react";
-import { Checkbox, Select } from "../../ui/forms";
+import { Checkbox, PasswordInput, Select } from "../../ui/forms";
 import type {
   DatabaseCredentialEntry,
   DatabaseCredentialFacet,
@@ -21,12 +21,14 @@ function SecretField({
   value,
   onChange,
   multiline = false,
+  generateable = false,
   disabled,
 }: {
   label: string;
   value: string;
   onChange: (value: string) => void;
   multiline?: boolean;
+  generateable?: boolean;
   disabled: boolean;
 }) {
   const [revealed, setRevealed] = useState(false);
@@ -37,7 +39,18 @@ function SecretField({
         {label}
       </label>
       <div className="relative">
-        {multiline && revealed ? (
+        {generateable ? (
+          <PasswordInput
+            generateable
+            id={id}
+            aria-label={label}
+            className="sor-form-input w-full"
+            autoComplete="new-password"
+            value={value}
+            disabled={disabled}
+            onChange={(event) => onChange(event.target.value)}
+          />
+        ) : multiline && revealed ? (
           <textarea
             id={id}
             aria-label={label}
@@ -62,17 +75,19 @@ function SecretField({
             onChange={(event) => onChange(event.target.value)}
           />
         )}
-        <button
-          type="button"
-          className="sor-btn-icon absolute right-1 top-1 !h-7 !w-7"
-          aria-label={`${revealed ? "Hide" : "Reveal"} ${label.toLowerCase()}`}
-          aria-pressed={revealed}
-          data-tooltip={`${revealed ? "Hide" : "Reveal"} ${label.toLowerCase()}`}
-          disabled={disabled}
-          onClick={() => setRevealed((value) => !value)}
-        >
-          {revealed ? <EyeOff size={16} /> : <Eye size={16} />}
-        </button>
+        {!generateable && (
+          <button
+            type="button"
+            className="sor-btn-icon absolute right-1 top-1 !h-7 !w-7"
+            aria-label={`${revealed ? "Hide" : "Reveal"} ${label.toLowerCase()}`}
+            aria-pressed={revealed}
+            data-tooltip={`${revealed ? "Hide" : "Reveal"} ${label.toLowerCase()}`}
+            disabled={disabled}
+            onClick={() => setRevealed((value) => !value)}
+          >
+            {revealed ? <EyeOff size={16} /> : <Eye size={16} />}
+          </button>
+        )}
       </div>
       {multiline && !revealed && (
         <span className="block text-xs text-[var(--color-textSecondary)]">
@@ -308,6 +323,7 @@ export default function CredentialEntryForm({
                       value={entry.facets[key]!}
                       onChange={(value) => setFacet(key, value)}
                       multiline={key === "privateKey"}
+                      generateable={key === "password"}
                       disabled={busy}
                     />
                   </div>

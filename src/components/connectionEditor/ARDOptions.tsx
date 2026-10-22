@@ -15,9 +15,7 @@ import {
 import { Checkbox, PasswordInput, Select } from "../ui/forms";
 
 export type ArdOptionsSection =
-  | "connection"
-  | "authentication"
-  | "display-input";
+  "connection" | "authentication" | "display-input";
 
 interface ARDOptionsProps {
   formData: Partial<Connection>;
@@ -225,6 +223,7 @@ export const ARDOptions: React.FC<ARDOptionsProps> = ({
               <label className="min-w-0">
                 <span className="sor-form-label">Remote Mac password</span>
                 <PasswordInput
+                  generateable
                   id="ard-password"
                   data-editor-search-field="ard-password"
                   value={formData.password ?? ""}
@@ -245,6 +244,7 @@ export const ARDOptions: React.FC<ARDOptionsProps> = ({
             <label className="block min-w-0">
               <span className="sor-form-label">VNC server password</span>
               <PasswordInput
+                generateable
                 id="ard-password"
                 data-editor-search-field="ard-password"
                 value={formData.password ?? ""}
@@ -376,6 +376,7 @@ export const ARDOptions: React.FC<ARDOptionsProps> = ({
                             Fallback remote Mac password
                           </span>
                           <PasswordInput
+                            generateable
                             id="ard-fallback-password"
                             data-editor-search-field="ard-fallback-password"
                             value={formData.password ?? ""}
@@ -396,6 +397,7 @@ export const ARDOptions: React.FC<ARDOptionsProps> = ({
                           Fallback VNC server password
                         </span>
                         <PasswordInput
+                          generateable
                           id="ard-fallback-password"
                           data-editor-search-field="ard-fallback-password"
                           value={formData.password ?? ""}

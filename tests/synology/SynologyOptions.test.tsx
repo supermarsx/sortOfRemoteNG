@@ -59,7 +59,10 @@ it("themes the DSM API password exactly like its username with protected reveal 
   );
   expect(password).toHaveAttribute("type", "password");
   expect(password).toHaveAttribute("autocomplete", "new-password");
-  expect(password).toHaveStyle({ paddingRight: "2.25rem" });
+  expect(password).toHaveStyle({ paddingRight: "4.25rem" });
+  expect(
+    screen.getByRole("button", { name: "Generate password" }),
+  ).toBeEnabled();
 });
 const savedShape = () =>
   JSON.parse(screen.getByTestId("saved-shape").textContent!);

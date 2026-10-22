@@ -1235,6 +1235,7 @@ const IntegrationConnectionFields: React.FC<{ mgr: ConnectionEditorMgr }> = ({
                   WebGUI password
                 </label>
                 <PasswordInput
+                  generateable
                   value={
                     pfsenseSecrets.webPassword || integration.password || ""
                   }
@@ -1506,6 +1507,7 @@ const IntegrationConnectionFields: React.FC<{ mgr: ConnectionEditorMgr }> = ({
                   {t("connectionEditor.integration.password", "Password")}
                 </label>
                 <PasswordInput
+                  generateable
                   data-testid="editor-exchange-password"
                   value={exchangeSecrets.password || ""}
                   onChange={(e) =>
@@ -1690,6 +1692,7 @@ const IntegrationConnectionFields: React.FC<{ mgr: ConnectionEditorMgr }> = ({
             {t("connectionEditor.integration.password", "Password")}
           </label>
           <PasswordInput
+            generateable
             data-testid="editor-password"
             value={integration.password || ""}
             onChange={(e) => updateIntegration({ password: e.target.value })}
@@ -1933,6 +1936,7 @@ const ConnectionFields: React.FC<{
                 />
               </label>
               <PasswordInput
+                generateable
                 data-testid="editor-password"
                 value={mgr.formData.password || ""}
                 onChange={(e) =>
