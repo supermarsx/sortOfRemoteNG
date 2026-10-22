@@ -1,4 +1,4 @@
-import React, { useEffect } from "react";
+import React, { useEffect, useState } from "react";
 import {
   act,
   cleanup,
@@ -17,16 +17,23 @@ const fixture = vi.hoisted(() => ({
   save: vi.fn(),
   load: vi.fn(),
   autoSaveEnabled: false,
+  accessible: true,
+  transitionFlush: undefined as undefined | (() => Promise<void>),
   toast: { success: vi.fn(), error: vi.fn(), info: vi.fn(), warning: vi.fn() },
 }));
 vi.mock("../../src/utils/connection/databaseManager", () => {
   const manager = {
     getCurrentDatabase: () => ({ id: "fixture-db" }),
     onCurrentDatabaseChange: () => () => {},
-    registerBeforeDatabaseTransition: () => () => {},
+    registerBeforeDatabaseTransition: (flush: () => Promise<void>) => {
+      fixture.transitionFlush = flush;
+      return () => {};
+    },
     captureCurrentDatabaseDataTarget: () => ({
       databaseId: "fixture-db",
-      assertAccessible: () => {},
+      assertAccessible: () => {
+        if (!fixture.accessible) throw new Error("Database access changed");
+      },
       load: fixture.load,
       save: fixture.save,
     }),
@@ -98,10 +105,68 @@ function LiveEditor({
     />
   ) : null;
 }
+function SaveActivity() {
+  const { state, dispatch, dispatchAndFlush, persistence } = useConnections();
+  const [directResult, setDirectResult] = useState("idle");
+  return (
+    <>
+      <button
+        onClick={() =>
+          dispatch({
+            type: "ADD_SESSION",
+            payload: {
+              id: "open-tab",
+              connectionId: initial.id,
+              ownerDatabaseId: "fixture-db",
+              name: initial.name,
+              protocol: "http",
+              hostname: initial.hostname,
+              status: "connected",
+              startTime: new Date(),
+              backendSessionId: "actor-original",
+            },
+          })
+        }
+      >
+        Open fixture tab
+      </button>
+      <button
+        onClick={() =>
+          dispatch({
+            type: "UPDATE_CONNECTION",
+            payload: {
+              ...state.connections[0],
+              description: "Later background edit",
+            },
+          })
+        }
+      >
+        Background edit
+      </button>
+      <button
+        onClick={() =>
+          void dispatchAndFlush({
+            type: "UPDATE_CONNECTION",
+            payload: initial,
+          }).then(
+            () => setDirectResult("saved"),
+            () => setDirectResult("refused"),
+          )
+        }
+      >
+        Save directly
+      </button>
+      <output data-testid="direct-save-result">{directResult}</output>
+      <output data-testid="saved-tab">{state.sessions[0]?.name}</output>
+      <output data-testid="persistence-error">{persistence.error}</output>
+    </>
+  );
+}
 function mountEditor(onClose = vi.fn()) {
   const view = render(
     <ConnectionProvider>
       <LiveEditor onClose={onClose} />
+      <SaveActivity />
     </ConnectionProvider>,
   );
   return { ...view, onClose };
@@ -119,6 +184,7 @@ async function readyAddress() {
 beforeEach(() => {
   vi.clearAllMocks();
   fixture.autoSaveEnabled = false;
+  fixture.accessible = true;
   fixture.save.mockReset().mockResolvedValue(undefined);
   fixture.load.mockResolvedValue({
     connections: [initial],
@@ -547,3 +613,85 @@ it.each([false, true])(
     ).toEqual([{ name: "Renamed survivor", path: "/keep" }]);
   },
 );
+
+it.each([false, true])(
+  "confirms its durable revision and tab title while a later save is pending (later failure=%s)",
+  async (laterFails) => {
+    const first = deferred();
+    const second = deferred();
+    fixture.save
+      .mockImplementationOnce(() => first.promise)
+      .mockImplementationOnce(() => second.promise);
+    mountEditor();
+    await editName("Saved new name");
+    fireEvent.click(screen.getByText("Open fixture tab"));
+    fireEvent.click(screen.getByTestId("editor-save"));
+    await waitFor(() => expect(fixture.save).toHaveBeenCalledTimes(1));
+    fireEvent.click(screen.getByText("Background edit"));
+    let transitionFinished = false;
+    const transition = fixture.transitionFlush!().then(
+      () => {
+        transitionFinished = true;
+      },
+      () => {},
+    );
+    expect(screen.getByTestId("saved-tab")).toHaveTextContent(initial.name);
+    expect(fixture.toast.success).not.toHaveBeenCalled();
+    await act(async () => {
+      first.resolve();
+      await first.promise;
+    });
+    await waitFor(() => expect(fixture.save).toHaveBeenCalledTimes(2));
+    await waitFor(() =>
+      expect(fixture.toast.success).toHaveBeenCalledWith(
+        '"Saved new name" saved',
+      ),
+    );
+    expect(screen.getByTestId("saved-tab")).toHaveTextContent("Saved new name");
+    expect(transitionFinished).toBe(false);
+    await act(async () => {
+      if (laterFails) second.reject(new Error("Later write failed"));
+      else second.resolve();
+      await second.promise.catch(() => {});
+    });
+    await transition;
+    if (laterFails)
+      expect(screen.getByTestId("persistence-error")).toHaveTextContent(
+        "Later write failed",
+      );
+    if (!laterFails) expect(transitionFinished).toBe(true);
+    expect(fixture.toast.success).toHaveBeenCalledTimes(1);
+    expect(fixture.toast.error).not.toHaveBeenCalled();
+  },
+);
+
+it("does not acknowledge or rename a committed write after its database access was revoked", async () => {
+  const pending = deferred();
+  fixture.save.mockImplementationOnce(() => pending.promise);
+  mountEditor();
+  await editName("Unconfirmed title");
+  fireEvent.click(screen.getByText("Open fixture tab"));
+  fireEvent.click(screen.getByTestId("editor-save"));
+  await waitFor(() => expect(fixture.save).toHaveBeenCalledTimes(1));
+  fixture.accessible = false;
+  await act(async () => {
+    pending.resolve();
+    await pending.promise;
+  });
+  await waitFor(() => expect(fixture.toast.error).toHaveBeenCalledTimes(1));
+  expect(fixture.toast.success).not.toHaveBeenCalled();
+  expect(screen.getByTestId("saved-tab")).toHaveTextContent(initial.name);
+});
+
+it("refuses a direct save before the owning database has loaded without leaving a pending acknowledgement", async () => {
+  fixture.load.mockImplementationOnce(() => new Promise(() => {}));
+  mountEditor();
+  fireEvent.click(screen.getByText("Save directly"));
+  await waitFor(() =>
+    expect(screen.getByTestId("direct-save-result")).toHaveTextContent(
+      "refused",
+    ),
+  );
+  expect(fixture.save).not.toHaveBeenCalled();
+  expect(fixture.toast.success).not.toHaveBeenCalled();
+});

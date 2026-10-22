@@ -15,19 +15,33 @@ import { ConnectionProvider } from "../../src/contexts/ConnectionContext";
 import { ToastProvider } from "../../src/contexts/ToastContext";
 import { useConnections } from "../../src/contexts/useConnections";
 
-// These component fixtures exercise a deliberately available synthetic database.
+// Reducer-only UI fixture: this suite has no database owner or storage. Its
+// in-memory acknowledgement exercises field/clone publication, not durability.
+// Real provider save barriers are covered by ConnectionEditorSaveFeedback.
 vi.mock("../../src/contexts/useConnections", async (importOriginal) => {
   const actual =
     await importOriginal<typeof import("../../src/contexts/useConnections")>();
+  const { useCallback } = await import("react");
   return {
-    useConnections: () => ({
-      ...actual.useConnections(),
-      databaseAvailability: {
-        status: "ready",
-        databaseId: "tree-fixture",
-        generation: 1,
-      },
-    }),
+    useConnections: () => {
+      const context = actual.useConnections();
+      const { dispatch } = context;
+      const publish = useCallback(
+        async (action: Parameters<typeof dispatch>[0]) => {
+          dispatch(action);
+        },
+        [dispatch],
+      );
+      return {
+        ...context,
+        dispatchAndFlush: publish,
+        databaseAvailability: {
+          status: "ready",
+          databaseId: "tree-fixture",
+          generation: 1,
+        },
+      };
+    },
   };
 });
 import { Connection } from "../../src/types/connection/connection";

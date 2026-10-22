@@ -240,6 +240,26 @@ export const connectionReducer = (
         ),
       };
     }
+    case "CONFIRM_CONNECTION_NAMES": {
+      const changes = new Map(
+        action.payload.changes.map((change) => [change.id, change]),
+      );
+      let renamed = false;
+      const sessions = state.sessions.map((session) => {
+        if (session.ownerDatabaseId !== action.payload.databaseId)
+          return session;
+        const change = changes.get(session.connectionId);
+        if (
+          !change ||
+          session.name !== change.previous ||
+          session.name === change.name
+        )
+          return session;
+        renamed = true;
+        return { ...session, name: change.name };
+      });
+      return renamed ? { ...state, sessions } : state;
+    }
     case "UPDATE_HTTP_TRUSTED_REDIRECTS":
       return {
         ...state,
@@ -486,6 +506,34 @@ export const ConnectionProvider: React.FC<{ children: React.ReactNode }> = ({
     () => {},
   );
   const saveGenerationRef = useRef(0);
+  const durableConnectionsRef = useRef<readonly Connection[]>([]);
+  const revisionWaitersRef = useRef(
+    new Set<{
+      generation: number;
+      revision: number;
+      resolve: () => void;
+      reject: (error: unknown) => void;
+    }>(),
+  );
+  const settleRevisionWaiters = useCallback((error?: unknown) => {
+    for (const waiter of revisionWaitersRef.current) {
+      if (waiter.generation !== saveGenerationRef.current) {
+        revisionWaitersRef.current.delete(waiter);
+        waiter.reject(
+          new Error(
+            "The owning database changed before this save was confirmed.",
+          ),
+        );
+      } else if (waiter.revision <= persistedRevisionRef.current) {
+        revisionWaitersRef.current.delete(waiter);
+        waiter.resolve();
+      } else if (error !== undefined) {
+        revisionWaitersRef.current.delete(waiter);
+        waiter.reject(error);
+      }
+    }
+  }, []);
+
   // Stable live snapshot used by logging and persistence callbacks.
   const stateRef = useRef(state);
   const connectionsRef = useRef(state.connections);
@@ -614,6 +662,8 @@ export const ConnectionProvider: React.FC<{ children: React.ReactNode }> = ({
     const lostUnsaved = dirtyRevisionRef.current > persistedRevisionRef.current;
     loadGenerationRef.current += 1;
     saveGenerationRef.current += 1;
+    settleRevisionWaiters();
+    durableConnectionsRef.current = [];
     setRecycleAccessGeneration((generation) => generation + 1);
     if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
     saveTimerRef.current = null;
@@ -657,7 +707,7 @@ export const ConnectionProvider: React.FC<{ children: React.ReactNode }> = ({
         : null,
     });
     publishDatabaseAvailability();
-  }, [publishDatabaseAvailability]);
+  }, [publishDatabaseAvailability, settleRevisionWaiters]);
 
   useLayoutEffect(() => {
     const unsubscribe = databaseManager.onCurrentDatabaseChange((change) => {
@@ -1082,6 +1132,8 @@ export const ConnectionProvider: React.FC<{ children: React.ReactNode }> = ({
 
         try {
           await snapshot.target.save(snapshot.data);
+          if (generation === saveGenerationRef.current)
+            snapshot.target.assertAccessible?.();
         } catch (error) {
           if (generation !== saveGenerationRef.current) throw error;
           const message =
@@ -1093,13 +1145,42 @@ export const ConnectionProvider: React.FC<{ children: React.ReactNode }> = ({
               error: message,
             });
           }
+          settleRevisionWaiters(error);
           console.error("Failed to save data:", error);
           throw error;
         }
 
         if (generation !== saveGenerationRef.current) return;
 
+        const previousNames = new Map(
+          durableConnectionsRef.current.map((row) => [row.id, row.name]),
+        );
+        const changes = snapshot.data.connections.flatMap((connection) => {
+          const previous = previousNames.get(connection.id);
+          return previous !== undefined && previous !== connection.name
+            ? [
+                {
+                  id: connection.id,
+                  previous,
+                  name: connection.name,
+                },
+              ]
+            : [];
+        });
+        durableConnectionsRef.current = snapshot.data.connections;
+        if (changes.length) {
+          const action: ConnectionAction = {
+            type: "CONFIRM_CONNECTION_NAMES",
+            payload: {
+              databaseId: snapshot.target.databaseId,
+              changes,
+            },
+          };
+          stateRef.current = connectionReducer(stateRef.current, action);
+          baseDispatch(action);
+        }
         persistedRevisionRef.current = targetRevision;
+        settleRevisionWaiters();
         if (pendingSnapshotRef.current === snapshot) {
           pendingSnapshotRef.current = null;
         }
@@ -1123,7 +1204,7 @@ export const ConnectionProvider: React.FC<{ children: React.ReactNode }> = ({
         saveLoopRef.current = null;
       }
     }
-  }, [buildStorageSnapshot]);
+  }, [buildStorageSnapshot, settleRevisionWaiters]);
 
   // Every DatabaseManager selection path (including import/restore callers)
   // must cross the same durable barrier before the mutable current database
@@ -1144,10 +1225,42 @@ export const ConnectionProvider: React.FC<{ children: React.ReactNode }> = ({
 
   const dispatchAndFlush = useCallback(
     async (action: ConnectionAction) => {
+      const target = activeDatabaseTargetRef.current;
+      if (
+        !hasLoadedRef.current ||
+        !target ||
+        databaseManager.getCurrentDatabase()?.id !== target.databaseId
+      )
+        throw new Error(
+          "The owning database is not loaded. Reopen this editor after the database is ready.",
+        );
+      target.assertAccessible?.();
       dispatch(action);
-      await flushPendingSave();
+      const revision = dirtyRevisionRef.current;
+      if (revision <= persistedRevisionRef.current) return;
+      let waiter!: {
+        generation: number;
+        revision: number;
+        resolve: () => void;
+        reject: (error: unknown) => void;
+      };
+      const committed = new Promise<void>((resolve, reject) => {
+        waiter = {
+          generation: saveGenerationRef.current,
+          revision,
+          resolve,
+          reject,
+        };
+        revisionWaitersRef.current.add(waiter);
+      });
+      // The full loop still drains for database transitions. This caller owns
+      // only its captured revision, not later edits queued during its write.
+      void flushPendingSave().catch((error) => {
+        if (revisionWaitersRef.current.delete(waiter)) waiter.reject(error);
+      });
+      await committed;
     },
-    [dispatch, flushPendingSave],
+    [databaseManager, dispatch, flushPendingSave],
   );
 
   const loadData = useCallback(
@@ -1219,6 +1332,7 @@ export const ConnectionProvider: React.FC<{ children: React.ReactNode }> = ({
           tabGroupsRef.current = tabGroups;
           recycleBinRef.current = recycleBin;
           loadedStorageRef.current = data;
+          durableConnectionsRef.current = connections;
           automationFaultRef.current = false;
           documentsFaultRef.current = false;
           databaseSettingsFaultRef.current = false;

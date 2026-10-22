@@ -581,3 +581,55 @@ describe("connectionReducer SET_SESSIONS scalability", () => {
     expect(operationCounts[2] / operationCounts[0]).toBe(10);
   });
 });
+
+describe("durable connection name projection", () => {
+  it("renames only automatic titles in the owning database without changing native actors", () => {
+    const owned = { ...session, ownerDatabaseId: "database-a" };
+    const custom = { ...owned, id: "custom", name: "My custom tab" };
+    const foreign = { ...owned, id: "foreign", ownerDatabaseId: "database-b" };
+    const unbound = { ...session, id: "unbound" };
+    const unrelated = { ...owned, id: "other", connectionId: "another" };
+    const before = {
+      ...state,
+      sessions: [owned, custom, foreign, unbound, unrelated],
+    };
+    const next = connectionReducer(before, {
+      type: "CONFIRM_CONNECTION_NAMES",
+      payload: {
+        databaseId: "database-a",
+        changes: [
+          {
+            id: session.connectionId,
+            previous: "Original",
+            name: "Saved title",
+          },
+        ],
+      },
+    });
+    expect(next.sessions[0]).toEqual({ ...owned, name: "Saved title" });
+    expect(next.sessions.slice(1)).toEqual(before.sessions.slice(1));
+    for (let i = 1; i < before.sessions.length; i++)
+      expect(next.sessions[i]).toBe(before.sessions[i]);
+    expect(next.connections).toBe(before.connections);
+  });
+});
+
+it("preserves state and session-array identity when a confirmed name changes no automatic title", () => {
+  const before = {
+    ...state,
+    sessions: [
+      { ...session, ownerDatabaseId: "database-a", name: "Custom title" },
+    ],
+  };
+  const after = connectionReducer(before, {
+    type: "CONFIRM_CONNECTION_NAMES",
+    payload: {
+      databaseId: "database-a",
+      changes: [
+        { id: session.connectionId, previous: "Original", name: "Saved title" },
+      ],
+    },
+  });
+  expect(after).toBe(before);
+  expect(after.sessions).toBe(before.sessions);
+});

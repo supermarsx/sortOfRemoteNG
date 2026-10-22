@@ -1,3 +1,26 @@
+// Reducer-only UI fixture: this suite has no database owner or storage. Its
+// in-memory acknowledgement exercises field/clone publication, not durability.
+// Real provider save barriers are covered by ConnectionEditorSaveFeedback.
+vi.mock("../../src/contexts/useConnections", async (importOriginal) => {
+  const actual =
+    await importOriginal<typeof import("../../src/contexts/useConnections")>();
+  const { useCallback } = await import("react");
+  return {
+    useConnections: () => {
+      const context = actual.useConnections();
+      const { dispatch } = context;
+      const publish = useCallback(
+        async (action: Parameters<typeof dispatch>[0]) => {
+          dispatch(action);
+        },
+        [dispatch],
+      );
+      return context.databaseAvailability?.databaseId
+        ? context
+        : { ...context, dispatchAndFlush: publish };
+    },
+  };
+});
 import React from "react";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { renderHook, act, waitFor } from "@testing-library/react";
@@ -60,7 +83,11 @@ describe("useBulkConnectionEditor — duplicateConnection (Clone)", () => {
   });
 
   it("calls clone_connection with includeCredentials=false by default and dispatches ADD_CONNECTION", async () => {
-    const cloned: Connection = { ...seedConnection, id: "c1-copy", password: undefined };
+    const cloned: Connection = {
+      ...seedConnection,
+      id: "c1-copy",
+      password: undefined,
+    };
     invokeMock.mockResolvedValueOnce(cloned);
 
     const { result } = renderHook(
@@ -72,7 +99,9 @@ describe("useBulkConnectionEditor — duplicateConnection (Clone)", () => {
       { wrapper: Wrapper },
     );
 
-    await waitFor(() => expect(result.current.state.connections.length).toBe(1));
+    await waitFor(() =>
+      expect(result.current.state.connections.length).toBe(1),
+    );
 
     let returned: Connection | undefined;
     await act(async () => {
@@ -87,7 +116,9 @@ describe("useBulkConnectionEditor — duplicateConnection (Clone)", () => {
     expect(returned).toEqual(cloned);
 
     await waitFor(() =>
-      expect(result.current.state.connections.some((c) => c.id === "c1-copy")).toBe(true),
+      expect(
+        result.current.state.connections.some((c) => c.id === "c1-copy"),
+      ).toBe(true),
     );
   });
 
@@ -95,12 +126,17 @@ describe("useBulkConnectionEditor — duplicateConnection (Clone)", () => {
     const cloned: Connection = { ...seedConnection, id: "c1-copy2" };
     invokeMock.mockResolvedValueOnce(cloned);
 
-    const { result } = renderHook(() => useBulkConnectionEditor(true, () => {}), {
-      wrapper: Wrapper,
-    });
+    const { result } = renderHook(
+      () => useBulkConnectionEditor(true, () => {}),
+      {
+        wrapper: Wrapper,
+      },
+    );
 
     await act(async () => {
-      await result.current.duplicateConnection(seedConnection, { includeCredentials: true });
+      await result.current.duplicateConnection(seedConnection, {
+        includeCredentials: true,
+      });
     });
 
     expect(invokeMock).toHaveBeenCalledWith("clone_connection", {
@@ -115,9 +151,12 @@ describe("useBulkConnectionEditor — duplicateConnection (Clone)", () => {
 
     const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
 
-    const { result } = renderHook(() => useBulkConnectionEditor(true, () => {}), {
-      wrapper: Wrapper,
-    });
+    const { result } = renderHook(
+      () => useBulkConnectionEditor(true, () => {}),
+      {
+        wrapper: Wrapper,
+      },
+    );
 
     let caught: unknown = null;
     await act(async () => {

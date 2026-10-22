@@ -1,3 +1,26 @@
+// Reducer-only UI fixture: this suite has no database owner or storage. Its
+// in-memory acknowledgement exercises field/clone publication, not durability.
+// Real provider save barriers are covered by ConnectionEditorSaveFeedback.
+vi.mock("../../src/contexts/useConnections", async (importOriginal) => {
+  const actual =
+    await importOriginal<typeof import("../../src/contexts/useConnections")>();
+  const { useCallback } = await import("react");
+  return {
+    useConnections: () => {
+      const context = actual.useConnections();
+      const { dispatch } = context;
+      const publish = useCallback(
+        async (action: Parameters<typeof dispatch>[0]) => {
+          dispatch(action);
+        },
+        [dispatch],
+      );
+      return context.databaseAvailability?.databaseId
+        ? context
+        : { ...context, dispatchAndFlush: publish };
+    },
+  };
+});
 import React, { useEffect } from "react";
 import {
   act,

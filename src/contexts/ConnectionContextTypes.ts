@@ -42,6 +42,13 @@ export type ConnectionAction =
   | { type: "ADD_CONNECTION"; payload: Connection }
   | { type: "UPDATE_CONNECTION"; payload: Connection }
   | {
+      type: "CONFIRM_CONNECTION_NAMES";
+      payload: {
+        databaseId: string;
+        changes: readonly { id: string; previous: string; name: string }[];
+      };
+    }
+  | {
       type: "UPDATE_HTTP_TRUSTED_REDIRECTS";
       payload: {
         databaseId: string;

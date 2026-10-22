@@ -1,5 +1,36 @@
+// Reducer-only UI fixture: this suite has no database owner or storage. Its
+// in-memory acknowledgement exercises field/clone publication, not durability.
+// Real provider save barriers are covered by ConnectionEditorSaveFeedback.
+vi.mock("../../src/contexts/useConnections", async (importOriginal) => {
+  const actual =
+    await importOriginal<typeof import("../../src/contexts/useConnections")>();
+  const { useCallback } = await import("react");
+  return {
+    useConnections: () => {
+      const context = actual.useConnections();
+      const { dispatch } = context;
+      const publish = useCallback(
+        async (action: Parameters<typeof dispatch>[0]) => {
+          dispatch(action);
+        },
+        [dispatch],
+      );
+      return context.databaseAvailability?.databaseId
+        ? context
+        : { ...context, dispatchAndFlush: publish };
+    },
+  };
+});
 import React from "react";
-import { describe, it, expect, vi, beforeEach, beforeAll, afterAll } from "vitest";
+import {
+  describe,
+  it,
+  expect,
+  vi,
+  beforeEach,
+  beforeAll,
+  afterAll,
+} from "vitest";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { BulkConnectionEditor } from "../../src/components/connection/BulkConnectionEditor";
 import { ConnectionProvider } from "../../src/contexts/ConnectionContext";
@@ -18,7 +49,8 @@ vi.mock("@tauri-apps/api/core", () => ({
 
 vi.mock("react-i18next", () => ({
   useTranslation: () => ({
-    t: (key: string, fallback?: string) => (typeof fallback === "string" ? fallback : key),
+    t: (key: string, fallback?: string) =>
+      typeof fallback === "string" ? fallback : key,
   }),
 }));
 
@@ -120,7 +152,9 @@ describe("BulkConnectionEditor — Clone", () => {
     const addedSpy = vi.fn();
     renderEditor(addedSpy);
 
-    const rowCloneCreds = await screen.findByTestId("row-clone-with-credentials");
+    const rowCloneCreds = await screen.findByTestId(
+      "row-clone-with-credentials",
+    );
     fireEvent.click(rowCloneCreds);
 
     await waitFor(() => expect(invokeMock).toHaveBeenCalled());
@@ -145,6 +179,8 @@ describe("BulkConnectionEditor — Clone", () => {
     await waitFor(() => expect(invokeMock).toHaveBeenCalled());
 
     // Toast renders the localized failure key (i18n mock echoes the key).
-    expect(await screen.findByText(/connections\.cloneFailed/i)).toBeInTheDocument();
+    expect(
+      await screen.findByText(/connections\.cloneFailed/i),
+    ).toBeInTheDocument();
   });
 });
