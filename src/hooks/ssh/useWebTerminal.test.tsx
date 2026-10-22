@@ -74,7 +74,9 @@ const mocks = vi.hoisted(() => {
       MockTerminal.instances.push(this);
     }
 
-    loadAddon(): void {}
+    loadAddon(addon: { activate?: (terminal: MockTerminal) => void }): void {
+      addon.activate?.(this);
+    }
     onBell(): void {}
     onData(handler: (data: string) => Promise<void> | void) {
       this.inputHandler = handler;
@@ -212,6 +214,8 @@ const mocks = vi.hoisted(() => {
 
   return {
     MockTerminal,
+    fitDimensions: undefined as
+      { cols: number; rows: number } | null | undefined,
     webLinksHandlers: [] as Array<(event: MouseEvent, uri: string) => void>,
     nativeLinks: false,
     connection,
@@ -266,7 +270,22 @@ vi.mock("../../utils/connection/databaseManager", () => ({
 }));
 vi.mock("@xterm/addon-fit", () => ({
   FitAddon: class {
-    fit(): void {}
+    terminal: InstanceType<typeof mocks.MockTerminal> | undefined;
+    activate(terminal: InstanceType<typeof mocks.MockTerminal>): void {
+      this.terminal = terminal;
+    }
+    proposeDimensions() {
+      return mocks.fitDimensions === undefined
+        ? { cols: this.terminal?.cols ?? 80, rows: this.terminal?.rows ?? 24 }
+        : (mocks.fitDimensions ?? undefined);
+    }
+    fit(): void {
+      const dimensions = this.proposeDimensions();
+      if (this.terminal && dimensions) {
+        this.terminal.cols = dimensions.cols;
+        this.terminal.rows = dimensions.rows;
+      }
+    }
   },
 }));
 vi.mock("@xterm/addon-web-links", () => ({
@@ -428,6 +447,7 @@ beforeEach(() => {
   mocks.webLinksHandlers.length = 0;
   mocks.nativeLinks = false;
   mocks.MockTerminal.lazyCore = false;
+  mocks.fitDimensions = undefined;
   mocks.context.dispatch.mockReset();
   mocks.invoke.mockReset();
   mocks.addHistoryEntry.mockReset();
@@ -3763,6 +3783,110 @@ describe("useWebTerminal pre-open writes, post-open fit, and scrollOnOutput", ()
       view.unmount();
     },
   );
+});
+
+describe("useWebTerminal layout ownership", () => {
+  const mountSized = async () => {
+    let model!: WebTerminalMgr;
+    const onResize = vi.fn();
+    const Harness = ({ active = true }: { active?: boolean }) => {
+      model = useWebTerminal(session, onResize, active);
+      return <div ref={model.containerRef} />;
+    };
+    const view = render(<Harness />);
+    await waitFor(() => expect(model.status).toBe("connected"));
+    await waitFor(() =>
+      expect(mocks.MockTerminal.instances[0].element).not.toBeNull(),
+    );
+    // Exhaust the initial 50ms fit fallback: no unrelated layout event rescues
+    // the explicit fullscreen/activation paths under test.
+    await act(async () => new Promise((resolve) => setTimeout(resolve, 120)));
+    mocks.invoke.mockClear();
+    onResize.mockClear();
+    return { view, Harness, onResize, model: () => model };
+  };
+  const resized = (cols: number, rows: number) =>
+    expect(mocks.invoke).toHaveBeenCalledWith("resize_ssh_shell", {
+      sessionId: "backend-ssh-1",
+      cols,
+      rows,
+    });
+
+  it("synchronizes measured fullscreen enter and exit dimensions to the PTY without observer events", async () => {
+    const t = await mountSized();
+    mocks.fitDimensions = { cols: 172, rows: 53 };
+    act(() => t.model().toggleFullscreen());
+    await waitFor(() => resized(172, 53));
+    expect(t.onResize).toHaveBeenLastCalledWith(172, 53);
+    mocks.invoke.mockClear();
+    mocks.fitDimensions = { cols: 94, rows: 29 };
+    act(() => t.model().toggleFullscreen());
+    await waitFor(() => resized(94, 29));
+  });
+
+  it("resynchronizes a reactivated terminal and never sends hidden default dimensions", async () => {
+    const t = await mountSized();
+    t.view.rerender(<t.Harness active={false} />);
+    mocks.fitDimensions = { cols: 140, rows: 47 };
+    act(() => window.dispatchEvent(new Event("resize")));
+    await act(async () => new Promise((resolve) => setTimeout(resolve, 60)));
+    expect(mocks.invoke).not.toHaveBeenCalledWith(
+      "resize_ssh_shell",
+      expect.anything(),
+    );
+    t.view.rerender(<t.Harness active />);
+    await waitFor(() => resized(140, 47));
+  });
+
+  it("waits for measurable font geometry and resizes on font/settings completion without observer events", async () => {
+    const original = Object.getOwnPropertyDescriptor(document, "fonts");
+    let finishFonts!: () => void;
+    const fonts = Object.assign(new EventTarget(), {
+      ready: new Promise<void>((resolve) => {
+        finishFonts = resolve;
+      }),
+    });
+    Object.defineProperty(document, "fonts", {
+      configurable: true,
+      value: fonts,
+    });
+    try {
+      const t = await mountSized();
+      mocks.fitDimensions = null;
+      act(() => window.dispatchEvent(new Event("settings-updated")));
+      await act(async () => new Promise((resolve) => setTimeout(resolve, 70)));
+      expect(mocks.invoke).not.toHaveBeenCalledWith(
+        "resize_ssh_shell",
+        expect.anything(),
+      );
+      mocks.fitDimensions = { cols: 153, rows: 49 };
+      act(() => fonts.dispatchEvent(new Event("loadingdone")));
+      await waitFor(() => resized(153, 49));
+      mocks.fitDimensions = { cols: 147, rows: 45 };
+      act(() => window.dispatchEvent(new Event("settings-updated")));
+      await waitFor(() => resized(147, 45));
+
+      // A pending font promise and fullscreen timer belong to the disposed
+      // terminal; neither may send PTY sizes or steal focus after unmount.
+      const terminal = mocks.MockTerminal.instances[0];
+      const focus = vi.spyOn(terminal, "focus");
+      act(() => t.model().toggleFullscreen());
+      t.view.unmount();
+      mocks.invoke.mockClear();
+      await act(async () => {
+        finishFonts();
+        await new Promise((resolve) => setTimeout(resolve, 120));
+      });
+      expect(mocks.invoke).not.toHaveBeenCalledWith(
+        "resize_ssh_shell",
+        expect.anything(),
+      );
+      expect(focus).not.toHaveBeenCalled();
+    } finally {
+      if (original) Object.defineProperty(document, "fonts", original);
+      else Reflect.deleteProperty(document, "fonts");
+    }
+  });
 });
 
 describe("useWebTerminal run prompts", () => {

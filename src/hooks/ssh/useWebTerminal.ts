@@ -461,6 +461,7 @@ export function useWebTerminal(
   /* ── terminal refs ── */
   const termRef = useRef<Terminal | null>(null);
   const fitRef = useRef<FitAddon | null>(null);
+  const requestFitRef = useRef<(() => void) | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
 
   /* ── SSH refs ── */
@@ -853,6 +854,7 @@ export function useWebTerminal(
       statusRef.current = next;
       isConnecting.current = next === "connecting" || next === "reconnecting";
       isSshReady.current = next === "connected";
+      if (next === "connected" && !wasSshReady) requestFitRef.current?.();
       if (next !== "connected") {
         replayAbortRef.current?.abort();
         // An open prompt and every "Don't ask again" belong to the session
@@ -3489,7 +3491,10 @@ export function useWebTerminal(
     fitRef.current = fit;
 
     let rafId = 0;
+    let fitRetryTimer: ReturnType<typeof setTimeout> | undefined;
     let initRetryCount = 0;
+    let lastPtySize: { actorId: string; cols: number; rows: number } | null =
+      null;
     let replayInFlightRevision: number | null = null;
     let renderFitDisposable: { dispose: () => void } | null = null;
     const maxInitRetries = 20;
@@ -3500,17 +3505,31 @@ export function useWebTerminal(
       const renderService = core?.renderService ?? core?._renderService;
       if (!renderService?.dimensions) return false;
       const dims = renderService.dimensions;
-      return (
-        typeof dims.css?.cell?.width === "number" && dims.css?.cell?.width > 0
-      );
+      try {
+        const proposed = fit.proposeDimensions();
+        return (
+          typeof dims.css?.cell?.width === "number" &&
+          dims.css?.cell?.width > 0 &&
+          proposed !== undefined &&
+          Number.isFinite(proposed.cols) &&
+          Number.isFinite(proposed.rows) &&
+          proposed.cols >= 2 &&
+          proposed.rows >= 1
+        );
+      } catch {
+        return false;
+      }
     };
 
     const doFit = () => {
+      fitRetryTimer = undefined;
       if (
         isDisposed.current ||
         !terminalActiveRef.current ||
-        !fitRef.current ||
-        !termRef.current
+        document.visibilityState === "hidden" ||
+        fitRef.current !== fit ||
+        termRef.current !== term ||
+        sessionRef.current.id !== mountedSessionId
       )
         return;
       if (!container.isConnected || !termRef.current.element?.isConnected)
@@ -3518,7 +3537,7 @@ export function useWebTerminal(
       if (!canFit()) {
         if (initRetryCount < maxInitRetries) {
           initRetryCount++;
-          setTimeout(doFit, 50);
+          fitRetryTimer = setTimeout(doFit, 50);
         } else if (!renderFitDisposable) {
           // Retry budget exhausted: let the renderer tell us when it has
           // dimensions instead of stalling output until the next resize.
@@ -3535,14 +3554,25 @@ export function useWebTerminal(
         return;
       }
       try {
-        fitRef.current.fit();
-        onResize?.(termRef.current.cols, termRef.current.rows);
-        if (isSsh && sshSessionId.current) {
+        fit.fit();
+        onResize?.(term.cols, term.rows);
+        const actorId = sshSessionId.current;
+        if (
+          isSsh &&
+          actorId &&
+          isSshReady.current &&
+          (lastPtySize?.actorId !== actorId ||
+            lastPtySize.cols !== term.cols ||
+            lastPtySize.rows !== term.rows)
+        ) {
+          lastPtySize = { actorId, cols: term.cols, rows: term.rows };
           invoke("resize_ssh_shell", {
-            sessionId: sshSessionId.current,
-            cols: termRef.current.cols,
-            rows: termRef.current.rows,
-          }).catch(() => undefined);
+            sessionId: actorId,
+            cols: term.cols,
+            rows: term.rows,
+          }).catch(() => {
+            lastPtySize = null;
+          });
         }
         if (replayInFlightRevision === null) {
           sshOutputRegistrationRef.current?.resume();
@@ -3553,11 +3583,13 @@ export function useWebTerminal(
     };
 
     const scheduleFit = () => {
-      if (isDisposed.current) return;
+      if (isDisposed.current || termRef.current !== term) return;
       initRetryCount = 0;
+      clearTimeout(fitRetryTimer);
       if (rafId) cancelAnimationFrame(rafId);
       rafId = requestAnimationFrame(doFit);
     };
+    requestFitRef.current = scheduleFit;
 
     const openTimer = requestAnimationFrame(() => {
       if (isDisposed.current) return;
@@ -3584,6 +3616,11 @@ export function useWebTerminal(
 
     const resizeTimer = setTimeout(scheduleFit, 50);
     window.addEventListener("resize", scheduleFit);
+    document.addEventListener("fullscreenchange", scheduleFit);
+    document.addEventListener("visibilitychange", scheduleFit);
+    const fonts = document.fonts;
+    fonts?.addEventListener("loadingdone", scheduleFit);
+    void fonts?.ready.then(scheduleFit, () => undefined);
     const resizeObserver =
       typeof ResizeObserver !== "undefined"
         ? new ResizeObserver(scheduleFit)
@@ -3982,9 +4019,14 @@ export function useWebTerminal(
       cancelAnimationFrame(openTimer);
       if (rafId) cancelAnimationFrame(rafId);
       clearTimeout(resizeTimer);
+      clearTimeout(fitRetryTimer);
+      if (requestFitRef.current === scheduleFit) requestFitRef.current = null;
       if (bellResetTimer) clearTimeout(bellResetTimer);
       if (bellSilenceTimer) clearTimeout(bellSilenceTimer);
       window.removeEventListener("resize", scheduleFit);
+      document.removeEventListener("fullscreenchange", scheduleFit);
+      document.removeEventListener("visibilitychange", scheduleFit);
+      fonts?.removeEventListener("loadingdone", scheduleFit);
       container.removeEventListener("paste", handleTerminalPaste, true);
       container.removeEventListener(
         "contextmenu",
@@ -4041,11 +4083,7 @@ export function useWebTerminal(
       return;
     }
     if (!wasActive) {
-      try {
-        fitRef.current?.fit();
-      } catch {
-        /* ResizeObserver / the next fit pass retries before draining output. */
-      }
+      requestFitRef.current?.();
     }
     void resumeSshOutputRef.current();
   }, [isTerminalActive]);
@@ -4056,6 +4094,7 @@ export function useWebTerminal(
     if (typeof window === "undefined") return;
     const handleSettingsUpdate = () => {
       applyTerminalTheme();
+      requestFitRef.current?.();
       const term = termRef.current;
       if (term && !isDisposed.current) {
         try {
@@ -4074,20 +4113,18 @@ export function useWebTerminal(
   /* ── Simple actions ── */
 
   const safeFit = useCallback(() => {
-    if (isDisposed.current || !fitRef.current || !termRef.current) return;
-    if (!termRef.current.element?.isConnected) return;
-    const core = (termRef.current as any)?._core;
-    const renderService = core?.renderService ?? core?._renderService;
-    if (!renderService?.dimensions) return;
-    try {
-      fitRef.current.fit();
-    } catch {
-      /* ignore */
-    }
+    requestFitRef.current?.();
   }, []);
 
   const reflowFullscreenTerminal = useCallback(() => {
+    const terminal = termRef.current;
     setTimeout(() => {
+      if (
+        isDisposed.current ||
+        termRef.current !== terminal ||
+        !terminalActiveRef.current
+      )
+        return;
       safeFit();
       // An open prompt keeps the keyboard until it is answered.
       if (!runPromptAbortRef.current) termRef.current?.focus();
