@@ -7,7 +7,7 @@ use crate::cef_session_retention::{
 };
 use crate::cef_tls_bridge::{
     NativeTlsBridge, NativeTlsCompletion, NativeTlsConfig, NativeTlsContext, NativeTlsEvidence,
-    NativeTlsHooks, NativeTlsStatus,
+    NativeTlsError, NativeTlsHooks, NativeTlsStatus,
 };
 use crate::domain_permissions::WebsitePermissionEngine;
 use crate::native_capabilities::NativeBrowserCapabilities;
@@ -53,6 +53,45 @@ fn lock_session<'a>(
 }
 
 impl Preparation {
+    fn prepare_owned_datagrams(
+        &self,
+        engine_supports_http3: bool,
+        configure: impl FnOnce(u16, &str) -> Result<bool, NativeTlsError>,
+    ) -> Result<bool, ContextError> {
+        if self.current_status() != PreparationStatus::ProxyConfigured {
+            return Err(ContextError::SessionUnavailable);
+        }
+        // Legacy engines and explicitly TCP-only routes retain their original
+        // routed H2 readiness; neither is represented as a datagram proof.
+        if !engine_supports_http3 {
+            return Ok(true);
+        }
+        let (port, password) = {
+            let session = lock_session(&self.session, &self.identity)?;
+            if session.policy().identity() != &self.identity
+                || !matches!(
+                    session.status(),
+                    BrowserSessionStatus::NotReady | BrowserSessionStatus::Ready
+                )
+            {
+                return Err(ContextError::SessionUnavailable);
+            }
+            if !session.supports_datagrams() {
+                return Ok(true);
+            }
+            let password = session
+                .with_proxy_credentials(|_, password| zeroize::Zeroizing::new(password.to_owned()))
+                .ok_or(ContextError::SessionUnavailable)?;
+            (session.proxy_endpoint().port(), password)
+        };
+        // Configure may invoke a native state callback synchronously. Never
+        // retain the session guard across FFI or store this borrowed secret.
+        let result = configure(port, &password);
+        if self.current_status() != PreparationStatus::ProxyConfigured {
+            return Err(ContextError::SessionUnavailable);
+        }
+        result.map_err(|_| ContextError::ProxyMismatch)
+    }
     fn verify_browser_binding(
         &self,
         browser: &Browser,
@@ -454,6 +493,17 @@ impl PrivateRequestContext {
                                 return PreparationStatus::Failed(ContextError::ProxyMismatch);
                             }
                         }
+                        match self.preparation.prepare_owned_datagrams(
+                            tls.supports_owned_http3(),
+                            |port, password| tls.prepare_datagrams(port, password),
+                        ) {
+                            Ok(true) => {}
+                            Ok(false) => return PreparationStatus::Initializing,
+                            Err(error) => {
+                                self.preparation.fail(error);
+                                return PreparationStatus::Failed(error);
+                            }
+                        }
                     }
                 }
                 NativeTlsStatus::Initializing => return PreparationStatus::Initializing,
@@ -579,6 +629,13 @@ impl PrivateRequestContext {
     /// Legacy preference-only readiness is intentionally not proof.
     pub fn proxy_application_verified(&self) -> bool {
         self.tls.as_ref().is_some_and(|tls| tls.proxy_applied())
+            && self.preparation.current_status() == PreparationStatus::ProxyConfigured
+    }
+
+    /// True only for this current r5 context's separate owned-UDP state6 ACK.
+    /// Legacy/H2-only routes never receive or imply this proof.
+    pub fn datagram_application_verified(&self) -> bool {
+        self.tls.as_ref().is_some_and(|tls| tls.datagrams_applied())
             && self.preparation.current_status() == PreparationStatus::ProxyConfigured
     }
 
@@ -868,6 +925,99 @@ mod tests {
             permissions: crate::cef_requests::deny_permissions(),
             status: Mutex::new(PreparationStatus::Initializing),
         }
+    }
+
+    async fn datagram_preparation() -> Preparation {
+        let policy =
+            OriginBrowserPolicy::new("owner", "datagram", "tab", "https://fixture.invalid")
+                .unwrap();
+        let identity = policy.identity().clone();
+        let session = OriginBrowserSession::start(
+            policy,
+            Arc::new(sorng_protocols::private_forward_route::NativeForwardRoute::direct()),
+            ProxyLimits::default(),
+        )
+        .await
+        .unwrap();
+        Preparation {
+            inspector_bootstrap: Arc::default(),
+            session: Arc::new(Mutex::new(session)),
+            identity,
+            permissions: crate::cef_requests::deny_permissions(),
+            status: Mutex::new(PreparationStatus::Initializing),
+        }
+    }
+
+    #[tokio::test]
+    async fn owned_datagram_preparation_is_route_and_engine_conditional_without_session_guard_across_native_call(
+    ) {
+        let tcp = preparation().await;
+        tcp.configure(&mut Preferences::default()).unwrap();
+        assert_eq!(
+            tcp.prepare_owned_datagrams(true, |_, _| panic!("TCP route must not configure UDP")),
+            Ok(true)
+        );
+        let udp = datagram_preparation().await;
+        assert_eq!(
+            udp.prepare_owned_datagrams(true, |_, _| panic!(
+                "proxy configuration must precede UDP"
+            )),
+            Err(ContextError::SessionUnavailable)
+        );
+        udp.configure(&mut Preferences::default()).unwrap();
+        assert_eq!(
+            udp.prepare_owned_datagrams(false, |_, _| panic!(
+                "legacy engine must not configure UDP"
+            )),
+            Ok(true)
+        );
+        let port = udp.session.lock().unwrap().proxy_endpoint().port();
+        assert_eq!(
+            udp.prepare_owned_datagrams(true, |actual, password| {
+                assert_eq!(actual, port);
+                assert_eq!(password.len(), 64);
+                assert!(password.bytes().all(|byte| byte.is_ascii_hexdigit()));
+                assert!(
+                    udp.session.try_lock().is_ok(),
+                    "native callback would deadlock on retained session guard"
+                );
+                Ok(false)
+            }),
+            Ok(false)
+        ); // Proxy/TLS ready does not imply separate state6 ACK.
+        assert_eq!(udp.prepare_owned_datagrams(true, |_, _| Ok(true)), Ok(true));
+        assert_eq!(
+            udp.session.lock().unwrap().status(),
+            BrowserSessionStatus::NotReady
+        );
+        tcp.revoke();
+        udp.revoke();
+    }
+
+    #[tokio::test]
+    async fn owned_datagram_preparation_rechecks_attempt_after_synchronous_native_callback() {
+        let old = datagram_preparation().await;
+        old.configure(&mut Preferences::default()).unwrap();
+        let successor = datagram_preparation().await;
+        let successor_identity = successor.identity.clone();
+        let successor_session = Arc::try_unwrap(successor.session)
+            .ok()
+            .unwrap()
+            .into_inner()
+            .unwrap();
+        assert_eq!(
+            old.prepare_owned_datagrams(true, |_, _| {
+                *old.session.lock().unwrap() = successor_session;
+                Ok(true)
+            }),
+            Err(ContextError::SessionUnavailable)
+        );
+        // The stale attempt's failure/cleanup cannot revoke the replacement.
+        old.fail(ContextError::SessionUnavailable);
+        let mut current = old.session.lock().unwrap();
+        assert!(current.policy().identity() == &successor_identity);
+        assert_eq!(current.status(), BrowserSessionStatus::NotReady);
+        current.revoke(&successor_identity).unwrap();
     }
 
     // These exercise native preparation identity/proxy ownership. Actual CEF

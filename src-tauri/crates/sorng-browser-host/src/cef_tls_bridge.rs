@@ -26,6 +26,7 @@ pub const LEGACY_PATCH_ID: &str = "sorng-tls-v2-682c378-1";
 pub const HTTP2_PATCH_ID: &str = "sorng-tls-v2-682c378-2";
 pub const PROXY_APPLIED_PATCH_ID: &str = "sorng-tls-v2-682c378-3";
 pub const PATCH_ID: &str = "sorng-tls-v2-682c378-4";
+pub const HTTP3_PATCH_ID: &str = "sorng-tls-v2-682c378-5";
 const ABI: u32 = 2;
 const SOCKET: u64 = 1;
 const REVOKE: u64 = 2;
@@ -34,6 +35,7 @@ const EXCEPTIONS: u64 = 8;
 const CUSTOM_CA: u64 = 16;
 const PRIVATE: u64 = 32;
 const SAME_AUTHORITY_HTTP2: u64 = 64;
+const OWNED_HTTP3: u64 = 1 << 7;
 const PROXY_APPLIED: u64 = 1 << 8;
 const BOUNDED_RETIREMENT: u64 = 1 << 9;
 const PROXY_TIMEOUT: Duration = Duration::from_secs(10);
@@ -201,12 +203,14 @@ type Create = unsafe extern "C" fn(
 type Complete = unsafe extern "C" fn(u64, u64, u64, u32, u32) -> i32;
 type Revoke = unsafe extern "C" fn(u64, u64) -> i32;
 type ApplyProxy = unsafe extern "C" fn(u64, u64, u16) -> i32;
+type ConfigureDatagrams = unsafe extern "C" fn(u64, u64, u16, *const u8, usize) -> i32;
 #[derive(Clone, Copy)]
 struct Functions {
     create: Create,
     complete: Complete,
     revoke: Revoke,
     apply_proxy: Option<ApplyProxy>,
+    configure_datagrams: Option<ConfigureDatagrams>,
     capabilities: u64,
 }
 
@@ -245,6 +249,7 @@ unsafe fn matches_bridge_revision(
         & !(REQUIRED
             | HTTP1
             | SAME_AUTHORITY_HTTP2
+            | OWNED_HTTP3
             | EXCEPTIONS
             | CUSTOM_CA
             | PROXY_APPLIED
@@ -254,6 +259,13 @@ unsafe fn matches_bridge_revision(
         return false;
     }
     let protocol = capabilities & (HTTP1 | SAME_AUTHORITY_HTTP2);
+    if capabilities & OWNED_HTTP3 != 0 {
+        return requested == HTTP3_PATCH_ID
+            && protocol == SAME_AUTHORITY_HTTP2
+            && capabilities & (PROXY_APPLIED | BOUNDED_RETIREMENT)
+                == (PROXY_APPLIED | BOUNDED_RETIREMENT)
+            && unsafe { matches_pin(actual, HTTP3_PATCH_ID) };
+    }
     let legacy = protocol == HTTP1
         && capabilities & (PROXY_APPLIED | BOUNDED_RETIREMENT) == 0
         && unsafe { matches_pin(actual, LEGACY_PATCH_ID) };
@@ -289,7 +301,8 @@ impl NativeTlsBridge {
     /// # Safety
     /// Same initialization and independent provenance requirements as `from_loaded`.
     pub unsafe fn from_loaded_supported() -> Result<Self, NativeTlsError> {
-        unsafe { Self::from_loaded(PATCH_ID) }
+        unsafe { Self::from_loaded(HTTP3_PATCH_ID) }
+            .or_else(|_| unsafe { Self::from_loaded(PATCH_ID) })
             .or_else(|_| unsafe { Self::from_loaded(PROXY_APPLIED_PATCH_ID) })
             .or_else(|_| unsafe { Self::from_loaded(HTTP2_PATCH_ID) })
             .or_else(|_| unsafe { Self::from_loaded(LEGACY_PATCH_ID) })
@@ -351,6 +364,15 @@ impl NativeTlsBridge {
                 } else {
                     None
                 },
+                configure_datagrams: if api.capabilities & OWNED_HTTP3 != 0 {
+                    Some(unsafe {
+                        std::mem::transmute::<*mut c_void, ConfigureDatagrams>(
+                            module.symbol(c"cef_sorng_tls_configure_datagrams_v2")?,
+                        )
+                    })
+                } else {
+                    None
+                },
                 capabilities: api.capabilities,
             },
             _ui: PhantomData,
@@ -368,7 +390,9 @@ impl NativeTlsBridge {
     }
     /// The actual loaded, validated revision, not a requested package label.
     pub fn patch_id(&self) -> &'static str {
-        if self.functions.capabilities & BOUNDED_RETIREMENT != 0 {
+        if self.functions.capabilities & OWNED_HTTP3 != 0 {
+            HTTP3_PATCH_ID
+        } else if self.functions.capabilities & BOUNDED_RETIREMENT != 0 {
             PATCH_ID
         } else if self.functions.capabilities & PROXY_APPLIED != 0 {
             PROXY_APPLIED_PATCH_ID
@@ -406,6 +430,9 @@ impl NativeTlsBridge {
                 revoke_sent: false,
                 proxy_requested: None,
                 proxy_applied: false,
+                proxy_port: None,
+                datagrams_requested: None,
+                datagrams_applied: false,
                 failure: None,
                 challenges: BTreeMap::new(),
                 seen: BTreeSet::new(),
@@ -525,6 +552,9 @@ struct Data {
     revoke_sent: bool,
     proxy_requested: Option<Instant>,
     proxy_applied: bool,
+    proxy_port: Option<u16>,
+    datagrams_requested: Option<Instant>,
+    datagrams_applied: bool,
     failure: Option<NativeTlsFailure>,
     challenges: BTreeMap<u64, Challenge>,
     seen: BTreeSet<u64>,
@@ -678,6 +708,11 @@ impl NativeTlsContext {
             if data.status != NativeTlsStatus::Installed {
                 return Err(NativeTlsError::Revoked);
             }
+            if data.proxy_port.is_some_and(|expected| expected != port) {
+                drop(data);
+                self.state.fail(NativeTlsFailure::ProxyConfiguration);
+                return Err(NativeTlsError::Invalid);
+            }
             if data.proxy_applied {
                 return Ok(true);
             }
@@ -691,6 +726,7 @@ impl NativeTlsContext {
             }
             if data.proxy_requested.is_none() {
                 data.proxy_requested = Some(Instant::now());
+                data.proxy_port = Some(port);
                 true
             } else {
                 false
@@ -703,6 +739,90 @@ impl NativeTlsContext {
             return Err(NativeTlsError::Revoked);
         }
         Ok(self.proxy_applied())
+    }
+    pub fn supports_owned_http3(&self) -> bool {
+        self.state.functions.capabilities & OWNED_HTTP3 != 0
+            && self.state.functions.configure_datagrams.is_some()
+    }
+    pub fn datagrams_applied(&self) -> bool {
+        self.supports_owned_http3()
+            && self.state.hooks.is_current()
+            && self.state.data.lock().is_ok_and(|data| {
+                data.status == NativeTlsStatus::Installed
+                    && data.proxy_applied
+                    && data.datagrams_applied
+            })
+    }
+    /// Native-only borrowed relay secret; the engine copies it before return.
+    /// A true return requires the separate exact-owner network acknowledgement.
+    pub fn prepare_datagrams(&self, port: u16, password: &str) -> Result<bool, NativeTlsError> {
+        on_ui()?;
+        let configure = self
+            .state
+            .functions
+            .configure_datagrams
+            .ok_or(NativeTlsError::Unavailable)?;
+        self.prepare_datagrams_inner(port, password, configure)
+    }
+    fn prepare_datagrams_inner(
+        &self,
+        port: u16,
+        password: &str,
+        configure: ConfigureDatagrams,
+    ) -> Result<bool, NativeTlsError> {
+        if !self.state.hooks.is_current() {
+            self.state.fail(NativeTlsFailure::OwnerUnavailable);
+            return Err(NativeTlsError::Revoked);
+        }
+        if port == 0 || password.len() != 64 || !password.bytes().all(|b| b.is_ascii_hexdigit()) {
+            self.state.fail(NativeTlsFailure::ProxyConfiguration);
+            return Err(NativeTlsError::Invalid);
+        }
+        let send = {
+            let mut data = self
+                .state
+                .data
+                .lock()
+                .map_err(|_| NativeTlsError::Revoked)?;
+            if data.status != NativeTlsStatus::Installed
+                || !data.proxy_applied
+                || data.proxy_port != Some(port)
+            {
+                return Err(NativeTlsError::Invalid);
+            }
+            if data.datagrams_applied {
+                return Ok(true);
+            }
+            if data
+                .datagrams_requested
+                .is_some_and(|since| since.elapsed() >= PROXY_TIMEOUT)
+            {
+                drop(data);
+                self.state.fail(NativeTlsFailure::ProxyConfiguration);
+                return Err(NativeTlsError::Revoked);
+            }
+            if data.datagrams_requested.is_none() {
+                data.datagrams_requested = Some(Instant::now());
+                true
+            } else {
+                false
+            }
+        };
+        if send
+            && unsafe {
+                configure(
+                    self.state.token,
+                    self.state.generation,
+                    port,
+                    password.as_ptr(),
+                    password.len(),
+                )
+            } != 1
+        {
+            self.state.fail(NativeTlsFailure::ProxyConfiguration);
+            return Err(NativeTlsError::Revoked);
+        }
+        Ok(self.datagrams_applied())
     }
     pub fn status(&self) -> NativeTlsStatus {
         self.state
@@ -914,7 +1034,7 @@ fn accept_state(
     if state.token != token || state.generation != generation {
         return Err(NativeTlsFailure::InvalidState);
     }
-    if matches!(status, 4 | 5) && !state.hooks.is_current() {
+    if matches!(status, 4..=6) && !state.hooks.is_current() {
         return Err(NativeTlsFailure::OwnerUnavailable);
     }
     let mut data = state
@@ -922,6 +1042,20 @@ fn accept_state(
         .lock()
         .map_err(|_| NativeTlsFailure::PoisonedState)?;
     match status {
+        6 if state.functions.capabilities & OWNED_HTTP3 != 0
+            && data.status == NativeTlsStatus::Installed
+            && data.proxy_applied
+            && data.datagrams_requested.is_some()
+            && !data.datagrams_applied =>
+        {
+            if data
+                .datagrams_requested
+                .is_some_and(|since| since.elapsed() >= PROXY_TIMEOUT)
+            {
+                return Err(NativeTlsFailure::ProxyConfiguration);
+            }
+            data.datagrams_applied = true;
+        }
         5 if state.functions.capabilities & PROXY_APPLIED != 0
             && data.status == NativeTlsStatus::Installed
             && data.proxy_requested.is_some() =>
@@ -1271,6 +1405,7 @@ mod tests {
                 complete,
                 revoke,
                 apply_proxy: None,
+                configure_datagrams: None,
                 capabilities: REQUIRED | EXCEPTIONS | CUSTOM_CA,
             },
             hooks: hooks.clone(),
@@ -1280,6 +1415,9 @@ mod tests {
                 revoke_sent: false,
                 proxy_requested: None,
                 proxy_applied: false,
+                proxy_port: None,
+                datagrams_requested: None,
+                datagrams_applied: false,
                 failure: None,
                 challenges: BTreeMap::new(),
                 seen: BTreeSet::new(),
@@ -1321,6 +1459,125 @@ mod tests {
             state,
             _ui: PhantomData,
         }
+    }
+    static DATAGRAM_CALLS: Mutex<Vec<(u64, u64, u16, usize)>> = Mutex::new(Vec::new());
+    unsafe extern "C" fn configure_datagrams(
+        t: u64,
+        g: u64,
+        p: u16,
+        _: *const u8,
+        length: usize,
+    ) -> i32 {
+        // Deliberately never retain or log the borrowed relay password.
+        DATAGRAM_CALLS.lock().unwrap().push((t, g, p, length));
+        1
+    }
+    fn datagram_fixture(token: u64, port: u16) -> NativeTlsContext {
+        let mut context = proxy_fixture(token);
+        let state = Arc::get_mut(&mut context.state).unwrap();
+        state.functions.capabilities |= OWNED_HTTP3 | BOUNDED_RETIREMENT;
+        state.functions.configure_datagrams = Some(configure_datagrams);
+        assert!(!context.prepare_proxy_inner(port, apply_proxy).unwrap());
+        accept_state(&context.state, token, token + 100, 4).unwrap();
+        context
+    }
+    #[test]
+    fn owned_datagrams_require_matching_proxy_and_separate_exact_owner_ack() {
+        let _lock = TEST_LOCK.lock().unwrap();
+        DATAGRAM_CALLS.lock().unwrap().clear();
+        let first = datagram_fixture(2101, 42001);
+        let second = datagram_fixture(2102, 42002);
+        let secret = "a".repeat(64);
+        assert!(!first.datagrams_applied());
+        assert!(!first
+            .prepare_datagrams_inner(42001, &secret, configure_datagrams)
+            .unwrap());
+        assert!(!second
+            .prepare_datagrams_inner(42002, &secret, configure_datagrams)
+            .unwrap());
+        assert!(!first
+            .prepare_datagrams_inner(42001, &secret, configure_datagrams)
+            .unwrap());
+        assert_eq!(
+            DATAGRAM_CALLS.lock().unwrap().as_slice(),
+            &[(2101, 2201, 42001, 64), (2102, 2202, 42002, 64)]
+        );
+        assert!(accept_state(&first.state, 2102, 2202, 6).is_err());
+        accept_state(&second.state, 2102, 2202, 6).unwrap();
+        assert!(second.datagrams_applied());
+        assert!(!first.datagrams_applied());
+        accept_state(&first.state, 2101, 2201, 6).unwrap();
+        assert!(first.datagrams_applied());
+        first.revoke();
+        assert!(!first.datagrams_applied());
+        assert!(second.datagrams_applied());
+    }
+    #[test]
+    fn datagram_ack_rejects_unsolicited_legacy_expired_and_revoked_configuration() {
+        let _lock = TEST_LOCK.lock().unwrap();
+        let (legacy, _) = fixture();
+        assert!(accept_state(&legacy, 71, 72, 6).is_err());
+        let context = datagram_fixture(2201, 42101);
+        assert!(accept_state(&context.state, 2201, 2301, 6).is_err());
+        assert!(context
+            .prepare_datagrams_inner(42102, &"a".repeat(64), configure_datagrams)
+            .is_err());
+        assert!(!context
+            .prepare_datagrams_inner(42101, &"a".repeat(64), configure_datagrams)
+            .unwrap());
+        context.state.data.lock().unwrap().datagrams_requested =
+            Some(Instant::now() - PROXY_TIMEOUT);
+        assert!(accept_state(&context.state, 2201, 2301, 6).is_err());
+        assert!(context
+            .prepare_datagrams_inner(42101, &"a".repeat(64), configure_datagrams)
+            .is_err());
+        let revoked = datagram_fixture(2202, 42102);
+        assert!(!revoked
+            .prepare_datagrams_inner(42102, &"b".repeat(64), configure_datagrams)
+            .unwrap());
+        revoked.revoke();
+        assert!(accept_state(&revoked.state, 2202, 2302, 6).is_err());
+        assert!(!revoked.datagrams_applied());
+    }
+    #[test]
+    fn invalid_datagram_credentials_never_reach_ffi_and_proxy_port_cannot_change() {
+        let _lock = TEST_LOCK.lock().unwrap();
+        for (index, invalid) in ["", "not a credential", &"z".repeat(64), &"a".repeat(65)]
+            .iter()
+            .enumerate()
+        {
+            let context = datagram_fixture(2300 + index as u64, 42201);
+            DATAGRAM_CALLS.lock().unwrap().clear();
+            assert!(context
+                .prepare_datagrams_inner(42201, invalid, configure_datagrams)
+                .is_err());
+            assert!(DATAGRAM_CALLS.lock().unwrap().is_empty());
+            assert!(!context.datagrams_applied());
+        }
+        let context = datagram_fixture(2310, 42202);
+        assert!(context.prepare_proxy_inner(42203, apply_proxy).is_err());
+        assert!(!context.proxy_applied());
+    }
+    #[test]
+    fn http3_revision_requires_complete_owned_transport_contract() {
+        let actual = std::ffi::CString::new(HTTP3_PATCH_ID).unwrap();
+        let capabilities =
+            REQUIRED | SAME_AUTHORITY_HTTP2 | OWNED_HTTP3 | PROXY_APPLIED | BOUNDED_RETIREMENT;
+        assert!(unsafe { matches_bridge_revision(actual.as_ptr(), HTTP3_PATCH_ID, capabilities) });
+        for bit in [
+            OWNED_HTTP3,
+            PROXY_APPLIED,
+            BOUNDED_RETIREMENT,
+            SAME_AUTHORITY_HTTP2,
+        ] {
+            assert!(!unsafe {
+                matches_bridge_revision(actual.as_ptr(), HTTP3_PATCH_ID, capabilities & !bit)
+            });
+        }
+        assert!(!unsafe { matches_bridge_revision(actual.as_ptr(), PATCH_ID, capabilities) });
+        assert!(!unsafe {
+            matches_bridge_revision(actual.as_ptr(), HTTP3_PATCH_ID, capabilities | HTTP1)
+        });
     }
     #[test]
     fn proxy_ack_is_separate_from_tls_and_reversed_context_acks_do_not_cross() {

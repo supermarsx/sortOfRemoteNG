@@ -594,6 +594,15 @@ impl OriginBrowserSession {
         self.proxy.local_addr()
     }
 
+    /// Native-only capability of this attempt's exact selected route. A TCP
+    /// tunnel or a revoked session never grants direct UDP as an alternative.
+    pub fn supports_datagrams(&self) -> bool {
+        matches!(
+            self.status(),
+            BrowserSessionStatus::NotReady | BrowserSessionStatus::Ready
+        ) && self.proxy.supports_datagrams()
+    }
+
     /// Native owner-fenced diagnostics only; never a readiness or route grant.
     pub fn proxy_diagnostics(&self) -> crate::private_forward_proxy::PrivateProxyDiagnostics {
         self.proxy.diagnostics()
@@ -830,6 +839,24 @@ mod tests {
     }
     async fn session() -> OriginBrowserSession {
         session_for_policy(policy("https://source.invalid")).await
+    }
+    #[tokio::test]
+    async fn datagram_capability_is_exact_route_only_and_disappears_on_revoke() {
+        let mut tcp = session().await;
+        assert!(!tcp.supports_datagrams());
+        let mut direct = OriginBrowserSession::start(
+            policy("https://source.invalid"),
+            Arc::new(crate::private_forward_route::NativeForwardRoute::direct()),
+            ProxyLimits::default(),
+        )
+        .await
+        .unwrap();
+        assert!(direct.supports_datagrams());
+        let identity = direct.policy().identity().clone();
+        direct.revoke(&identity).unwrap();
+        assert!(!direct.supports_datagrams());
+        stop(&mut tcp).await;
+        stop(&mut direct).await;
     }
     async fn session_for_policy(policy: OriginBrowserPolicy) -> OriginBrowserSession {
         tokio::time::timeout(
