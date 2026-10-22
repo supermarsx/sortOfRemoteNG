@@ -681,7 +681,7 @@ const CanvasArea: React.FC<{
         ref={mgr.canvasRef}
         data-testid="rdp-canvas"
         data-session-focus-target
-        className={`${mgr.isFullscreen ? "max-h-full max-w-full border-0" : "border border-[var(--color-border)]"} focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-black`}
+        className={`${mgr.isFullscreen ? `${resizeToWindow ? "" : "max-h-full max-w-full"} border-0` : "border border-[var(--color-border)]"} focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-black`}
         aria-label={canvasAriaLabel}
         aria-keyshortcuts="Control+Alt+End"
         style={{
@@ -689,20 +689,21 @@ const CanvasArea: React.FC<{
           imageRendering: "auto",
           boxSizing: "border-box",
           // Smart sizing: constrain canvas to container and scale with objectFit
-          ...((smartSizing && !resizeToWindow) || mgr.isFullscreen
+          ...((smartSizing && !resizeToWindow) ||
+          (mgr.isFullscreen && !resizeToWindow)
             ? {
                 maxWidth: "100%",
                 maxHeight: "100%",
                 objectFit: "contain" as const,
               }
             : {}),
-          // Resize to window: canvas IS the container size — no scaling
-          ...(resizeToWindow && !mgr.isFullscreen
+          // Dynamic resolution changes the remote desktop, not CSS scaling.
+          // Until server negotiation completes, retain the actual pixel size.
+          ...(resizeToWindow
             ? {
-                width: "100%",
-                height: "100%",
-                maxWidth: "100%",
-                maxHeight: "100%",
+                width: mgr.desktopSize.width,
+                height: mgr.desktopSize.height,
+                flexShrink: 0,
               }
             : {}),
           // Display rotation. Pure CSS transform — the underlying canvas pixel

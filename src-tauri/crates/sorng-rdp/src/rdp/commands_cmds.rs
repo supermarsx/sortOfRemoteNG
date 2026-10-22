@@ -669,22 +669,32 @@ pub async fn rdp_set_desktop_size(
 ) -> Result<RdpDesktopSizePayload, String> {
     let normalized = normalize_desktop_size(width, height);
 
-    let mut service = state.lock().await;
+    let (reply, receipt) = tokio::sync::oneshot::channel();
+    let service = state.lock().await;
     let conn = service
         .connections
-        .get_mut(&session_id)
+        .get(&session_id)
         .ok_or_else(|| format!("Session {session_id} not found"))?;
 
     enqueue_session_command(
         &conn.cmd_tx,
-        RdpCommand::SetDesktopSize {
-            width: normalized.width,
-            height: normalized.height,
-        },
+        RdpCommand::DesktopResize(
+            crate::rdp::types::desktop_resize::DesktopResizeRequest::new(
+                normalized.width,
+                normalized.height,
+                reply,
+            ),
+        ),
     )?;
 
-    conn.session.desktop_width = normalized.width;
-    conn.session.desktop_height = normalized.height;
+    drop(service);
+    tokio::time::timeout(
+        crate::rdp::types::desktop_resize::AVAILABILITY_LIMIT + std::time::Duration::from_secs(1),
+        receipt,
+    )
+    .await
+    .map_err(|_| "Remote desktop resize write could not be confirmed".to_owned())?
+    .map_err(|_| crate::rdp::types::desktop_resize::UNAVAILABLE.to_owned())??;
 
     Ok(normalized)
 }

@@ -2436,6 +2436,7 @@ fn run_active_session_loop(
             }
         };
 
+    let mut pending_desktop_resize = super::types::desktop_resize::PendingDesktopResize::default();
     let mut last_stats_emit = Instant::now();
     let stats_interval = settings.stats_interval;
     let max_consecutive_errors = settings.max_consecutive_errors;
@@ -2517,6 +2518,9 @@ fn run_active_session_loop(
                 // Event-driven: sleep until TCP data, wake signal, or timer.
                 let mut wait_timeout =
                     poll_timeout.min(stats_interval.saturating_sub(last_stats_emit.elapsed()));
+                if pending_desktop_resize.pending() {
+                    wait_timeout = wait_timeout.min(Duration::from_millis(100));
+                }
                 if activity_state.should_emit_output(viewer_detached, activity_control) {
                     let channel = attached_channel.as_ref().unwrap_or(frame_channel);
                     let gfx_priority = gfx_delivery_has_priority(
@@ -2595,7 +2599,6 @@ fn run_active_session_loop(
         pending_input.clear();
         let mut should_break = false;
         let mut should_reconnect = false;
-        let mut requested_resize: Option<(u16, u16)> = None;
         loop {
             let next = deferred_clipboard_command
                 .take()
@@ -2626,8 +2629,11 @@ fn run_active_session_loop(
                 Ok(RdpCommand::Input(events)) => pending_input.push_events(events),
                 Ok(RdpCommand::CredentialInput(request)) => pending_input.push_credential(request),
                 Ok(RdpCommand::SetDesktopSize { width, height }) => {
-                    requested_resize = Some((width, height));
+                    pending_desktop_resize.replace(
+                        super::types::desktop_resize::DesktopResizeRequest::legacy(width, height),
+                    );
                 }
+                Ok(RdpCommand::DesktopResize(request)) => pending_desktop_resize.replace(request),
                 Ok(RdpCommand::AttachViewer(new_channel)) => {
                     log::info!("RDP session {session_id}: viewer attached (new frame channel)");
                     // Viewer ownership and output activity are independent. A
@@ -2927,7 +2933,8 @@ fn run_active_session_loop(
             );
         }
 
-        if let Some((width, height)) = requested_resize {
+        if let Err(error) = pending_desktop_resize.advance(Instant::now(), |width, height| {
+            use super::types::desktop_resize::ResizeWriteError;
             match est.active_stage.encode_resize(
                 u32::from(width),
                 u32::from(height),
@@ -2948,16 +2955,18 @@ fn run_active_session_loop(
                             format!("Network error (will reconnect): {msg}"),
                             session_id,
                         );
-                        return SessionLoopExit::NetworkError(msg);
+                        return Some(Err(ResizeWriteError::Transport(msg)));
                     }
+                    Some(Ok(()))
                 }
                 Some(Err(e)) => {
                     log::warn!("RDP session {session_id}: display resize encode failed: {e}");
+                    Some(Err(ResizeWriteError::Encode))
                 }
-                None => {
-                    log::warn!("RDP session {session_id}: display resize unavailable (Display Control DVC not ready)");
-                }
+                None => None,
             }
+        }) {
+            return SessionLoopExit::NetworkError(error);
         }
 
         // Send the drained input in arrival order. A fast-path input PDU holds

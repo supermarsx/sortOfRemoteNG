@@ -446,22 +446,45 @@ export function useRDPClient(session: ConnectionSession) {
 
     const request = coordinator.pending;
     coordinator.pending = null;
+    if (
+      sessionIdRef.current !== request.backendSessionId ||
+      sessionRef.current.id !== request.logicalSessionId ||
+      desktopResizeEffectGenerationRef.current !== request.generation
+    )
+      return;
     coordinator.inFlight = request;
-    void invoke("rdp_set_desktop_size", {
+    void invoke<{ width: number; height: number }>("rdp_set_desktop_size", {
       sessionId: request.backendSessionId,
       width: request.width,
       height: request.height,
     })
-      .then(() => {
-        // The command only acknowledges queueing. A later connected status is
+      .then((written) => {
+        // The receipt confirms a Display Control transport write, not server
+        // negotiation. A later connected status is
         // authoritative for the dimensions negotiated during reactivation.
-        if (sessionIdRef.current === request.backendSessionId) {
-          desktopResizeCoordinatorRef.current.awaitingNegotiation = request;
+        if (
+          sessionIdRef.current === request.backendSessionId &&
+          sessionRef.current.id === request.logicalSessionId &&
+          desktopResizeEffectGenerationRef.current === request.generation &&
+          written
+        ) {
+          desktopResizeCoordinatorRef.current.awaitingNegotiation = {
+            ...request,
+            width: written.width,
+            height: written.height,
+          };
         }
       })
       .catch((error) => {
-        if (sessionIdRef.current === request.backendSessionId) {
+        if (
+          sessionIdRef.current === request.backendSessionId &&
+          sessionRef.current.id === request.logicalSessionId &&
+          desktopResizeEffectGenerationRef.current === request.generation
+        ) {
           debugLog(`Desktop resize sync error: ${error}`);
+          setStatusMessage(
+            "Remote desktop resize could not be confirmed. Showing the last negotiated resolution.",
+          );
         }
       })
       .finally(() => {
@@ -3642,6 +3665,9 @@ export function useRDPClient(session: ConnectionSession) {
       }
 
       return () => {
+        if (desktopResizeEffectGenerationRef.current === effectGeneration) {
+          desktopResizeEffectGenerationRef.current++;
+        }
         if (coordinator.pending?.generation === effectGeneration) {
           coordinator.pending = null;
         }
@@ -3717,6 +3743,9 @@ export function useRDPClient(session: ConnectionSession) {
 
     return () => {
       disposed = true;
+      if (desktopResizeEffectGenerationRef.current === effectGeneration) {
+        desktopResizeEffectGenerationRef.current++;
+      }
       observer.disconnect();
       if (resizeTimer) clearTimeout(resizeTimer);
       resizeTimer = null;

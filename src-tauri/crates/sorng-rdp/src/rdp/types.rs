@@ -588,6 +588,9 @@ mod activity_control_tests {
     }
 }
 
+#[path = "desktop_resize.rs"]
+pub mod desktop_resize;
+
 pub enum RdpCommand {
     Input(Vec<FastPathInputEvent>),
     /// Credential text to type as one uninterrupted run. Unlike `Input` it is
@@ -632,6 +635,8 @@ pub enum RdpCommand {
         width: u16,
         height: u16,
     },
+    /// Acknowledged only after the Display Control bytes reach the transport.
+    DesktopResize(desktop_resize::DesktopResizeRequest),
 }
 
 /// File entry for clipboard file transfer.

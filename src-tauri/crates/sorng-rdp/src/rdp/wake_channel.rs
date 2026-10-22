@@ -90,7 +90,8 @@ fn count_transient_input(command: &RdpCommand, report: &mut CheckpointReport) ->
             report.dropped_credential_inputs = report.dropped_credential_inputs.saturating_add(1);
             true
         }
-        RdpCommand::ClipboardCopy(_)
+        RdpCommand::DesktopResize(_)
+        | RdpCommand::ClipboardCopy(_)
         | RdpCommand::ClipboardPublish(_)
         | RdpCommand::ClipboardPolicy { .. }
         | RdpCommand::ClipboardCopyFiles(_)
@@ -588,6 +589,24 @@ mod tests {
         assert_eq!(report.status, CheckpointStatus::Continue);
         assert_eq!(report.dropped_input_events, 2);
         assert!(matches!(receiver.try_recv(), Ok(RdpCommand::Reconnect)));
+        assert!(matches!(
+            receiver.try_recv(),
+            Err(mpsc::error::TryRecvError::Empty)
+        ));
+    }
+
+    #[test]
+    fn checkpoint_drops_acknowledged_resize_and_fails_its_receipt_without_replay() {
+        let (sender, mut receiver) = create_wake_channel().expect("wake channel");
+        let (reply, mut receipt) = tokio::sync::oneshot::channel();
+        sender
+            .send(RdpCommand::DesktopResize(
+                crate::rdp::types::desktop_resize::DesktopResizeRequest::new(1400, 800, reply),
+            ))
+            .expect("resize");
+        receiver.preserve_pending_for_checkpoint();
+        assert!(receipt.try_recv().expect("receipt resolved").is_err());
+        receiver.preserve_pending_for_checkpoint();
         assert!(matches!(
             receiver.try_recv(),
             Err(mpsc::error::TryRecvError::Empty)

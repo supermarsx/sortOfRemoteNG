@@ -3257,6 +3257,14 @@ describe("RDPClient", () => {
     });
 
     it("rejects fullscreen letterbox input and maps every pointer handler to contained content", async () => {
+      (mockConnection as any).rdpSettings = {
+        display: {
+          width: 1920,
+          height: 1080,
+          resizeToWindow: false,
+          smartSizing: true,
+        },
+      };
       renderWithProviders(mockSession);
 
       await waitFor(() => {
@@ -3436,13 +3444,9 @@ describe("RDPClient", () => {
         expect(viewport).toHaveAttribute("data-resolution-mode", "adaptive");
         expect(viewport).toHaveClass("w-full", "min-w-0", "max-w-full");
         expect(viewport).toHaveStyle({ overflow: "hidden" });
-        expect(canvas).toHaveStyle({
-          width: "100%",
-          height: "100%",
-          maxWidth: "100%",
-          maxHeight: "100%",
-          boxSizing: "border-box",
-        });
+        expect(canvas.style.width).not.toBe("100%");
+        expect(canvas.style.height).not.toBe("100%");
+        expect(canvas).toHaveStyle({ boxSizing: "border-box" });
       } finally {
         widthSpy.mockRestore();
         heightSpy.mockRestore();
@@ -3534,148 +3538,227 @@ describe("RDPClient", () => {
           height: 720,
         });
 
-        // The command acknowledges queueing only. The canvas keeps the last
+        // A write receipt does not confirm negotiation. The canvas keeps the last
         // negotiated size until the backend completes RDP reactivation.
         expect(screen.getByTestId("rdp-canvas")).toHaveAttribute(
           "width",
           "1920",
         );
+        expect(screen.getByTestId("rdp-canvas")).toHaveStyle({
+          width: "1920px",
+          height: "1080px",
+        });
         emitStatus("connected", "Reconnected", "rdp-session-123", 1280, 720);
         expect(screen.getByTestId("rdp-canvas")).toHaveAttribute(
           "width",
           "1280",
         );
+        expect(screen.getByTestId("rdp-canvas")).toHaveStyle({
+          width: "1280px",
+          height: "720px",
+        });
       } finally {
         vi.useRealTimers();
       }
     });
 
-    it("serializes a corrective fixed resize behind an in-flight adaptive request", async () => {
-      const resizeCalls = () =>
-        mockInvoke.mock.calls.filter(
-          ([name]) => name === "rdp_set_desktop_size",
-        );
-      const view = renderWithProviders(mockSession);
-
-      await waitFor(() => {
+    it("keeps negotiated pixel geometry after unavailable resize and permits a later layout retry", async () => {
+      renderWithProviders(mockSession);
+      await waitFor(() =>
         expect(mockInvoke).toHaveBeenCalledWith(
           "connect_rdp",
           expect.any(Object),
-        );
-      });
+        ),
+      );
       emitStatus("connected", "Connected", "rdp-session-123", 1920, 1080);
-      await waitFor(() => {
-        expect(screen.getByText("connected")).toBeInTheDocument();
-      });
-      const fallbackInvoke = mockInvoke.getMockImplementation();
-      let resolveAdaptive!: () => void;
-      const adaptiveResize = new Promise<void>((resolve) => {
-        resolveAdaptive = resolve;
-      });
-      mockInvoke.mockImplementation((cmd: string, args?: InvokeArgs) => {
-        if (cmd === "rdp_set_desktop_size") {
-          const width = (args as { width: number }).width;
-          if (width === 1200) {
-            return adaptiveResize.then(() => ({ width: 1200, height: 700 }));
-          }
-          return Promise.resolve(args);
-        }
-        return fallbackInvoke!(cmd, args);
-      });
+      await waitFor(() =>
+        expect(screen.getByTestId("rdp-canvas")).toHaveAttribute(
+          "width",
+          "1920",
+        ),
+      );
+      const fallback = mockInvoke.getMockImplementation()!;
+      mockInvoke.mockImplementation((cmd, args) =>
+        cmd === "rdp_set_desktop_size"
+          ? Promise.reject(new Error("Display Control is not available"))
+          : fallback(cmd, args),
+      );
       mockInvoke.mockClear();
-      vi.useFakeTimers();
-
-      try {
-        await act(async () => {
-          MockResizeObserver.emitAll(1200, 700);
-          vi.advanceTimersByTime(150);
-          await Promise.resolve();
-        });
-        expect(resizeCalls()).toHaveLength(1);
-        expect(resizeCalls()[0]).toEqual([
-          "rdp_set_desktop_size",
-          {
-            sessionId: "rdp-session-123",
-            width: 1200,
-            height: 700,
-          },
-        ]);
-
-        (mockConnection as any).rdpSettings = {
-          performance: { frontendRenderer: "canvas2d" },
-          display: {
-            width: 1600,
-            height: 900,
-            resizeToWindow: false,
-            smartSizing: false,
-          },
-        };
-        await act(async () => {
-          view.rerender(
-            <ToastProvider>
-              <ConnectionProvider>
-                <RDPClient session={mockSession} />
-              </ConnectionProvider>
-            </ToastProvider>,
-          );
-          await Promise.resolve();
-        });
-
-        // Fixed is queued, not sent concurrently with the adaptive request.
-        expect(resizeCalls()).toHaveLength(1);
-        await act(async () => {
-          resolveAdaptive();
-          await Promise.resolve();
-          await Promise.resolve();
-          await Promise.resolve();
-        });
-        expect(resizeCalls()[1]).toEqual([
-          "rdp_set_desktop_size",
-          {
-            sessionId: "rdp-session-123",
-            width: 1600,
-            height: 900,
-          },
-        ]);
-        expect(screen.getByTestId("rdp-canvas-viewport")).toHaveAttribute(
-          "data-resolution-mode",
-          "fixed",
-        );
-
-        // Width/height changes in fixed mode are effect dependencies and queue
-        // a new fixed request without requiring a mode toggle.
-        (mockConnection as any).rdpSettings = {
-          performance: { frontendRenderer: "canvas2d" },
-          display: {
-            width: 1366,
-            height: 768,
-            resizeToWindow: false,
-            smartSizing: false,
-          },
-        };
-        await act(async () => {
-          view.rerender(
-            <ToastProvider>
-              <ConnectionProvider>
-                <RDPClient session={mockSession} />
-              </ConnectionProvider>
-            </ToastProvider>,
-          );
-          await Promise.resolve();
-          await Promise.resolve();
-        });
-        expect(resizeCalls()[2]).toEqual([
-          "rdp_set_desktop_size",
-          {
-            sessionId: "rdp-session-123",
-            width: 1366,
-            height: 768,
-          },
-        ]);
-      } finally {
-        vi.useRealTimers();
-      }
+      act(() => MockResizeObserver.emitAll(1280, 720));
+      await waitFor(() =>
+        expect(mockInvoke).toHaveBeenCalledWith("rdp_set_desktop_size", {
+          sessionId: "rdp-session-123",
+          width: 1280,
+          height: 720,
+        }),
+      );
+      await waitFor(() =>
+        expect(
+          screen.getByText(
+            "Remote desktop resize could not be confirmed. Showing the last negotiated resolution.",
+          ),
+        ).toBeInTheDocument(),
+      );
+      expect(screen.getByTestId("rdp-canvas")).toHaveStyle({
+        width: "1920px",
+        height: "1080px",
+      });
+      mockInvoke.mockImplementation(fallback);
+      mockInvoke.mockClear();
+      act(() => MockResizeObserver.emitAll(1280, 720));
+      await waitFor(() =>
+        expect(mockInvoke).toHaveBeenCalledWith("rdp_set_desktop_size", {
+          sessionId: "rdp-session-123",
+          width: 1280,
+          height: 720,
+        }),
+      );
+      // No server status yet: even a successful transport write cannot resize
+      // or stretch the old pixels to look like a completed desktop resize.
+      expect(screen.getByTestId("rdp-canvas")).toHaveStyle({
+        width: "1920px",
+        height: "1080px",
+      });
     });
+
+    it.each(["written", "unavailable"])(
+      "serializes a corrective fixed resize behind an adaptive request that becomes %s",
+      async (outcome) => {
+        const resizeCalls = () =>
+          mockInvoke.mock.calls.filter(
+            ([name]) => name === "rdp_set_desktop_size",
+          );
+        const view = renderWithProviders(mockSession);
+
+        await waitFor(() => {
+          expect(mockInvoke).toHaveBeenCalledWith(
+            "connect_rdp",
+            expect.any(Object),
+          );
+        });
+        emitStatus("connected", "Connected", "rdp-session-123", 1920, 1080);
+        await waitFor(() => {
+          expect(screen.getByText("connected")).toBeInTheDocument();
+        });
+        const fallbackInvoke = mockInvoke.getMockImplementation();
+        let resolveAdaptive!: () => void;
+        let rejectAdaptive!: (error: Error) => void;
+        const adaptiveResize = new Promise<void>((resolve, reject) => {
+          resolveAdaptive = resolve;
+          rejectAdaptive = reject;
+        });
+        mockInvoke.mockImplementation((cmd: string, args?: InvokeArgs) => {
+          if (cmd === "rdp_set_desktop_size") {
+            const width = (args as { width: number }).width;
+            if (width === 1200) {
+              return adaptiveResize.then(() => ({ width: 1200, height: 700 }));
+            }
+            return Promise.resolve(args);
+          }
+          return fallbackInvoke!(cmd, args);
+        });
+        mockInvoke.mockClear();
+        vi.useFakeTimers();
+
+        try {
+          await act(async () => {
+            MockResizeObserver.emitAll(1200, 700);
+            vi.advanceTimersByTime(150);
+            await Promise.resolve();
+          });
+          expect(resizeCalls()).toHaveLength(1);
+          expect(resizeCalls()[0]).toEqual([
+            "rdp_set_desktop_size",
+            {
+              sessionId: "rdp-session-123",
+              width: 1200,
+              height: 700,
+            },
+          ]);
+
+          (mockConnection as any).rdpSettings = {
+            performance: { frontendRenderer: "canvas2d" },
+            display: {
+              width: 1600,
+              height: 900,
+              resizeToWindow: false,
+              smartSizing: false,
+            },
+          };
+          await act(async () => {
+            view.rerender(
+              <ToastProvider>
+                <ConnectionProvider>
+                  <RDPClient session={mockSession} />
+                </ConnectionProvider>
+              </ToastProvider>,
+            );
+            await Promise.resolve();
+          });
+
+          // Fixed is queued, not sent concurrently with the adaptive request.
+          expect(resizeCalls()).toHaveLength(1);
+          await act(async () => {
+            if (outcome === "written") resolveAdaptive();
+            else
+              rejectAdaptive(new Error("old adaptive request is unavailable"));
+            await Promise.resolve();
+            await Promise.resolve();
+            await Promise.resolve();
+          });
+          expect(resizeCalls()[1]).toEqual([
+            "rdp_set_desktop_size",
+            {
+              sessionId: "rdp-session-123",
+              width: 1600,
+              height: 900,
+            },
+          ]);
+          expect(
+            screen.queryByText(
+              "Remote desktop resize could not be confirmed. Showing the last negotiated resolution.",
+            ),
+          ).not.toBeInTheDocument();
+          expect(screen.getByTestId("rdp-canvas-viewport")).toHaveAttribute(
+            "data-resolution-mode",
+            "fixed",
+          );
+
+          // Width/height changes in fixed mode are effect dependencies and queue
+          // a new fixed request without requiring a mode toggle.
+          (mockConnection as any).rdpSettings = {
+            performance: { frontendRenderer: "canvas2d" },
+            display: {
+              width: 1366,
+              height: 768,
+              resizeToWindow: false,
+              smartSizing: false,
+            },
+          };
+          await act(async () => {
+            view.rerender(
+              <ToastProvider>
+                <ConnectionProvider>
+                  <RDPClient session={mockSession} />
+                </ConnectionProvider>
+              </ToastProvider>,
+            );
+            await Promise.resolve();
+            await Promise.resolve();
+          });
+          expect(resizeCalls()[2]).toEqual([
+            "rdp_set_desktop_size",
+            {
+              sessionId: "rdp-session-123",
+              width: 1366,
+              height: 768,
+            },
+          ]);
+        } finally {
+          vi.useRealTimers();
+        }
+      },
+    );
 
     it("should release canvas focus on Ctrl+Alt+End without sending input", () => {
       renderWithProviders(mockSession);
@@ -3735,7 +3818,13 @@ describe("RDPClient", () => {
 
       const canvas = screen.getByTestId("rdp-canvas");
       await waitFor(() => {
-        expect(canvas).toHaveClass("max-h-full", "max-w-full", "border-0");
+        expect(canvas).toHaveClass("border-0");
+        expect(canvas).not.toHaveClass("max-h-full", "max-w-full");
+        expect(canvas).toHaveStyle({
+          width: "1920px",
+          height: "1080px",
+          flexShrink: 0,
+        });
         expect(canvas).not.toHaveClass("h-full", "w-full");
         expect(resizeListener).toHaveBeenCalledTimes(1);
       });
