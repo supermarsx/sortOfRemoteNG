@@ -343,3 +343,56 @@ async fn owner_changed_during_successful_open_discards_transport_and_reservation
     assert_eq!(proxy.slots.available_permits(), limits().max_flows);
     assert!(proxy.state.flows.lock().unwrap().is_empty());
 }
+
+#[tokio::test]
+async fn idle_watcher_has_no_periodic_owner_polls_and_new_flows_wake_it() {
+    let (_peer, dialer) = fixture().await;
+    let calls = Arc::new(AtomicUsize::new(0));
+    let owner = Arc::new(AtomicBool::new(true));
+    let observed = calls.clone();
+    let current = owner.clone();
+    let proxy = PrivateDatagramProxy::new(
+        Arc::new(move || {
+            observed.fetch_add(1, Ordering::SeqCst);
+            current.load(Ordering::SeqCst)
+        }),
+        Arc::new(|_| true),
+        dialer,
+        limits(),
+    )
+    .unwrap();
+    tokio::time::sleep(Duration::from_millis(35)).await;
+    assert_eq!(
+        calls.load(Ordering::SeqCst),
+        0,
+        "idle proxy polled its owner"
+    );
+    let first = proxy.open(authority()).await.unwrap();
+    let before = calls.load(Ordering::SeqCst);
+    tokio::time::timeout(Duration::from_millis(100), async {
+        while calls.load(Ordering::SeqCst) == before {
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .unwrap();
+    first.revoke();
+    let idle = calls.load(Ordering::SeqCst);
+    // Retain the closed handle: it must not keep the timer running.
+    tokio::time::sleep(Duration::from_millis(35)).await;
+    assert_eq!(
+        calls.load(Ordering::SeqCst),
+        idle,
+        "closed flow kept owner polling alive"
+    );
+    let next = proxy.open(authority()).await.unwrap();
+    let mut receive = Box::pin(next.recv());
+    assert!(futures_util::poll!(&mut receive).is_pending());
+    owner.store(false, Ordering::SeqCst);
+    assert_eq!(
+        tokio::time::timeout(Duration::from_millis(100), receive)
+            .await
+            .unwrap(),
+        Err(DatagramError::Unavailable)
+    );
+}

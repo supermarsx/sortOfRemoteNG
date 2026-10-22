@@ -116,6 +116,7 @@ struct ProxyState {
     grant: DestinationGrant,
     revoked: AtomicBool,
     stop: Notify,
+    changed: Arc<Notify>,
     flows: Mutex<HashMap<u64, Weak<FlowState>>>,
 }
 impl ProxyState {
@@ -125,6 +126,7 @@ impl ProxyState {
     fn revoke(&self) {
         self.revoked.store(true, Ordering::Release);
         self.stop.notify_waiters();
+        self.changed.notify_waiters();
         let flows: Vec<_> = self
             .flows
             .lock()
@@ -157,6 +159,9 @@ impl FlowState {
         let transport = self.transport.lock().unwrap().take();
         drop(transport);
         self.stop.notify_waiters();
+        if let Some(proxy) = self.proxy.upgrade() {
+            proxy.changed.notify_waiters();
+        }
     }
 }
 
@@ -185,33 +190,59 @@ impl PrivateDatagramProxy {
             grant,
             revoked: AtomicBool::new(false),
             stop: Notify::new(),
+            changed: Arc::new(Notify::new()),
             flows: Mutex::new(HashMap::new()),
         });
         let weak = Arc::downgrade(&state);
+        let changed = state.changed.clone();
         let watcher = tokio::spawn(async move {
             loop {
-                tokio::time::sleep(limits.owner_poll).await;
+                // Register before inspecting the registry; an insertion between
+                // the empty check and await must not strand a newly live flow.
+                let notified = changed.notified();
+                tokio::pin!(notified);
+                notified.as_mut().enable();
                 let Some(state) = weak.upgrade() else {
                     break;
                 };
                 if state.revoked.load(Ordering::Acquire) {
                     break;
                 }
-                if !(state.owner)() {
-                    state.revoke();
-                    break;
-                }
-                let flows: Vec<_> = state
+                let mut flows: Vec<_> = state
                     .flows
                     .lock()
                     .unwrap()
                     .values()
                     .filter_map(Weak::upgrade)
                     .collect();
-                for flow in flows {
+                flows.retain(|flow| flow.transport.lock().unwrap().is_some());
+                if flows.is_empty() {
+                    // Idle legacy/H2 tabs have no timer and retain no owner.
+                    drop(state);
+                    notified.await;
+                    continue;
+                }
+                if !(state.owner)() {
+                    state.revoke();
+                    break;
+                }
+                for flow in &flows {
                     if !flow.active() {
                         flow.close();
                     }
+                }
+                let live = flows
+                    .iter()
+                    .any(|flow| flow.transport.lock().unwrap().is_some());
+                drop(flows);
+                drop(state);
+                if live {
+                    tokio::select! {
+                        _ = &mut notified => {},
+                        _ = tokio::time::sleep(limits.owner_poll) => {},
+                    }
+                } else {
+                    notified.await;
                 }
             }
         });
@@ -270,6 +301,7 @@ impl PrivateDatagramProxy {
             .lock()
             .unwrap()
             .insert(id, Arc::downgrade(&state));
+        self.state.changed.notify_waiters();
         // Revocation may have raced the insertion; never publish a late flow.
         let flow = PrivateDatagramFlow {
             id,
@@ -376,6 +408,7 @@ impl Drop for PrivateDatagramFlow {
         self.state.close();
         if let Some(proxy) = self.state.proxy.upgrade() {
             proxy.flows.lock().unwrap().remove(&self.id);
+            proxy.changed.notify_waiters();
         }
     }
 }
