@@ -1,4 +1,5 @@
 /* eslint-disable react-refresh/only-export-components, react/only-export-components */
+import { normalizeCredentialVaultView } from "../utils/settings/credentialVaultView";
 import React, {
   createContext,
   useContext,
@@ -49,6 +50,7 @@ interface SettingsContextType {
 }
 
 export const defaultSettings: GlobalSettings = {
+  credentialVaultView: normalizeCredentialVaultView(undefined),
   webBrowser: normalizeWebBrowserSettings(undefined),
   internalProxy: normalizeInternalProxySettings(undefined),
   nasFileViewers: DEFAULT_NAS_FILE_VIEWERS,

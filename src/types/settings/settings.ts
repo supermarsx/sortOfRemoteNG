@@ -141,6 +141,7 @@ export const defaultExportSecuritySettings: ExportSecuritySettings = {
 };
 
 export interface GlobalSettings {
+  credentialVaultView?: import("../../utils/settings/credentialVaultView").CredentialVaultView;
   /** Validated custom vectors and personal catalog metadata; stored with global settings. */
   iconLibrary?: IconLibraryData;
   // General Settings

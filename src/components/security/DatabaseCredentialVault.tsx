@@ -13,6 +13,12 @@ import {
   ChevronLeft,
   ChevronRight,
 } from "lucide-react";
+import SettingsContext from "../../contexts/SettingsContext";
+import {
+  normalizeCredentialVaultView,
+  VAULT_COLUMNS,
+  type VaultColumn,
+} from "../../utils/settings/credentialVaultView";
 import { ConnectionContext } from "../../contexts/ConnectionContextTypes";
 import type { Connection } from "../../types/connection/connection";
 import type {
@@ -56,6 +62,32 @@ function VaultWorkspace({
   onEditConnection,
   onOpenEditor,
 }: Props & { api: DatabaseCredentialVaultApi }) {
+  const preferences = useContext(SettingsContext);
+  const view = normalizeCredentialVaultView(
+    preferences?.settings.credentialVaultView,
+  );
+  const [layoutError, setLayoutError] = useState(false);
+  const drag = useRef<{
+    id: VaultColumn;
+    x: number;
+    width: number;
+    latest: number;
+  } | null>(null);
+  const [dragWidth, setDragWidth] = useState<{
+    id: VaultColumn;
+    width: number;
+  } | null>(null);
+  const saveView = (patch: Partial<typeof view>) => {
+    setLayoutError(false);
+    void preferences
+      ?.updateSettings({
+        credentialVaultView: normalizeCredentialVaultView({
+          ...view,
+          ...patch,
+        }),
+      })
+      .catch(() => setLayoutError(true));
+  };
   const mgr = useDatabaseCredentialVault(api);
   const inventory = useConnectionCredentialInventory(
     api,
@@ -190,7 +222,31 @@ function VaultWorkspace({
           )
           .map((row) => ({ source: "connection" as const, row }))),
   ];
-  const pages = Math.max(1, Math.ceil(rows.length / 25)),
+  const scope = JSON.stringify([
+    credentialVaultScopeKey(api),
+    search,
+    source,
+    view.pageSize,
+    view.mode,
+  ]);
+  const scrollPane = useRef<HTMLDivElement>(null);
+  const [windowState, setWindowState] = useState({
+    scope,
+    count: view.pageSize as number,
+  });
+  useEffect(() => {
+    setWindowState({ scope, count: view.pageSize });
+    setPage(0);
+    if (scrollPane.current) scrollPane.current.scrollTop = 0;
+  }, [scope, view.pageSize]);
+  const visibleCount =
+    windowState.scope === scope ? windowState.count : view.pageSize;
+  const grow = () =>
+    setWindowState({
+      scope,
+      count: Math.min(rows.length, visibleCount + view.pageSize),
+    });
+  const pages = Math.max(1, Math.ceil(rows.length / view.pageSize)),
     currentPage = Math.min(page, pages - 1);
   return (
     <div className="flex h-full min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
@@ -302,6 +358,16 @@ function VaultWorkspace({
           scrollbarColor: "var(--color-border) var(--color-background)",
           scrollbarGutter: "stable",
         }}
+        ref={scrollPane}
+        onScroll={(event) => {
+          const pane = event.currentTarget;
+          if (
+            view.mode === "infinite" &&
+            pane.scrollHeight - pane.scrollTop - pane.clientHeight < 120 &&
+            visibleCount < rows.length
+          )
+            grow();
+        }}
         role="region"
         aria-label="Credential inventory"
         tabIndex={0}
@@ -341,36 +407,131 @@ function VaultWorkspace({
               />
             </div>
           </div>
+          {layoutError && (
+            <p role="alert">Could not save the credential list layout.</p>
+          )}
           <table
-            className="w-full min-w-[48rem] table-fixed text-left text-sm [&_td]:whitespace-nowrap [&_td]:px-2 [&_td]:py-1.5"
+            style={{
+              width: view.columns.reduce(
+                (sum, id) =>
+                  sum +
+                  (dragWidth?.id === id ? dragWidth.width : view.widths[id]),
+                0,
+              ),
+            }}
+            className="table-fixed text-left text-sm [&_td]:whitespace-nowrap [&_td]:px-2 [&_td]:py-1.5"
             aria-label="Database vault credentials"
             aria-busy={mgr.loading}
           >
+            <colgroup>
+              {view.columns.map((id) => (
+                <col
+                  key={id}
+                  style={{
+                    width:
+                      dragWidth?.id === id ? dragWidth.width : view.widths[id],
+                  }}
+                />
+              ))}
+            </colgroup>
             <thead>
               <tr className="border-b border-[var(--color-border)]">
-                <th className="w-1/4 p-2">Name</th>
-                <th className="w-32 p-2">Source</th>
-                <th className="w-1/4 p-2">Category tags</th>
-                <th
-                  scope="col"
-                  className="p-2 text-right"
-                  data-tooltip="Saved connection and application assignments in this database; not live sessions"
-                >
-                  Assigned to
-                </th>
-                <th className="w-20 p-2 text-right">Actions</th>
+                {VAULT_COLUMNS.filter((column) =>
+                  view.columns.includes(column.id),
+                ).map(({ id, label, min }) => (
+                  <th key={id} scope="col" className="relative truncate p-2">
+                    {label}
+                    <span
+                      role="separator"
+                      aria-label={`Resize ${label} column`}
+                      aria-orientation="vertical"
+                      aria-valuemin={min}
+                      aria-valuemax={640}
+                      aria-valuenow={
+                        dragWidth?.id === id ? dragWidth.width : view.widths[id]
+                      }
+                      tabIndex={preferences ? 0 : -1}
+                      className="absolute inset-y-0 right-0 w-2 cursor-col-resize touch-none border-r border-[var(--color-border)] focus-visible:outline focus-visible:outline-primary"
+                      onKeyDown={(event) => {
+                        if (
+                          event.key === "ArrowLeft" ||
+                          event.key === "ArrowRight"
+                        ) {
+                          event.preventDefault();
+                          saveView({
+                            widths: {
+                              ...view.widths,
+                              [id]:
+                                view.widths[id] +
+                                (event.key === "ArrowRight" ? 10 : -10),
+                            },
+                          });
+                        }
+                      }}
+                      onPointerDown={(event) => {
+                        if (!preferences) return;
+                        event.preventDefault();
+                        drag.current = {
+                          id,
+                          x: event.clientX,
+                          width: view.widths[id],
+                          latest: view.widths[id],
+                        };
+                        event.currentTarget.setPointerCapture(event.pointerId);
+                      }}
+                      onPointerMove={(event) => {
+                        if (drag.current?.id !== id) return;
+                        const width = Math.max(
+                          min,
+                          Math.min(
+                            640,
+                            drag.current.width + event.clientX - drag.current.x,
+                          ),
+                        );
+                        drag.current.latest = width;
+                        setDragWidth({ id, width });
+                      }}
+                      onPointerUp={(event) => {
+                        if (drag.current?.id !== id) return;
+                        const width = drag.current.latest;
+                        drag.current = null;
+                        setDragWidth(null);
+                        event.currentTarget.releasePointerCapture(
+                          event.pointerId,
+                        );
+                        saveView({ widths: { ...view.widths, [id]: width } });
+                      }}
+                      onLostPointerCapture={() => {
+                        drag.current = null;
+                        setDragWidth(null);
+                      }}
+                      onPointerCancel={() => {
+                        drag.current = null;
+                        setDragWidth(null);
+                      }}
+                    />
+                  </th>
+                ))}
               </tr>
             </thead>
             <tbody>
               {rows
-                .slice(currentPage * 25, currentPage * 25 + 25)
+                .slice(
+                  view.mode === "infinite" ? 0 : currentPage * view.pageSize,
+                  view.mode === "infinite"
+                    ? visibleCount
+                    : (currentPage + 1) * view.pageSize,
+                )
                 .map((item) =>
                   item.source === "connection" ? (
                     <tr
                       key={`connection:${item.row.id}`}
                       className="border-b border-[var(--color-border)]"
                     >
-                      <td className="p-2 font-medium">
+                      <td
+                        hidden={!view.columns.includes("name")}
+                        className="p-2 font-medium"
+                      >
                         <span className="flex min-w-0 items-center gap-2">
                           <span
                             className="truncate"
@@ -384,6 +545,7 @@ function VaultWorkspace({
                         </span>
                       </td>
                       <td
+                        hidden={!view.columns.includes("source")}
                         className="truncate text-xs"
                         data-tooltip={item.row.storage
                           .map(
@@ -406,6 +568,7 @@ function VaultWorkspace({
                         )}
                       </td>
                       <td
+                        hidden={!view.columns.includes("categories")}
                         className="truncate text-[var(--color-textSecondary)]"
                         data-tooltip={`Types: ${item.row.kinds.map((key) => CONNECTION_CREDENTIAL_LABELS[key]).join(", ")}`}
                       >
@@ -416,6 +579,7 @@ function VaultWorkspace({
                         </span>
                       </td>
                       <td
+                        hidden={!view.columns.includes("assigned")}
                         className="p-2 text-right text-[var(--color-textSecondary)]"
                         aria-label="Usage count not applicable to a connection-local row"
                       >
@@ -429,7 +593,10 @@ function VaultWorkspace({
                             : ""}
                         </span>
                       </td>
-                      <td className="p-2 text-right">
+                      <td
+                        hidden={!view.columns.includes("actions")}
+                        className="p-2 text-right"
+                      >
                         <div className="flex justify-end gap-2">
                           {inventory.migratable.has(item.row.id) && (
                             <button
@@ -472,13 +639,20 @@ function VaultWorkspace({
                       className="border-b border-[var(--color-border)]"
                     >
                       <td
+                        hidden={!view.columns.includes("name")}
                         className="truncate font-medium"
                         data-tooltip={item.row.name}
                       >
                         {item.row.name}
                       </td>
-                      <td className="p-2 text-xs">Reusable vault</td>
                       <td
+                        hidden={!view.columns.includes("source")}
+                        className="p-2 text-xs"
+                      >
+                        Reusable vault
+                      </td>
+                      <td
+                        hidden={!view.columns.includes("categories")}
                         className="truncate text-[var(--color-textSecondary)]"
                         data-tooltip={`${categoryLabels(item.row).join(", ")} · Types: ${item.row.availableFacets.map((key) => FACET_LABELS[key]).join(", ")}`}
                       >
@@ -487,6 +661,7 @@ function VaultWorkspace({
                         </span>
                       </td>
                       <td
+                        hidden={!view.columns.includes("assigned")}
                         className="p-2 text-right tabular-nums"
                         aria-label={
                           inventory.usage === null
@@ -510,7 +685,10 @@ function VaultWorkspace({
                           </span>
                         </span>
                       </td>
-                      <td className="p-2">
+                      <td
+                        hidden={!view.columns.includes("actions")}
+                        className="p-2"
+                      >
                         <div className="flex justify-end gap-2">
                           <button
                             type="button"
@@ -546,7 +724,7 @@ function VaultWorkspace({
               {!rows.length && (
                 <tr>
                   <td
-                    colSpan={5}
+                    colSpan={view.columns.length}
                     className="p-5 text-center text-[var(--color-textSecondary)]"
                   >
                     {mgr.loading
@@ -563,29 +741,64 @@ function VaultWorkspace({
           </table>
           <footer className="mt-3 flex items-center justify-between text-xs">
             <span>
-              {rows.length} results · Page {currentPage + 1} of {pages}
+              {rows.length} results ·{" "}
+              {view.mode === "infinite"
+                ? `Showing ${Math.min(visibleCount, rows.length)}`
+                : `Page ${currentPage + 1} of ${pages}`}
             </span>
-            <div className="flex gap-2">
-              <button
-                type="button"
-                className="sor-btn-icon"
-                aria-label="Previous"
-                data-tooltip="Previous page"
-                disabled={currentPage === 0}
-                onClick={() => setPage(currentPage - 1)}
-              >
-                <ChevronLeft size={15} />
-              </button>
-              <button
-                type="button"
-                className="sor-btn-icon"
-                aria-label="Next"
-                data-tooltip="Next page"
-                disabled={currentPage + 1 >= pages}
-                onClick={() => setPage(currentPage + 1)}
-              >
-                <ChevronRight size={15} />
-              </button>
+            <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2">
+                <span>Per page</span>
+                <Select
+                  label="Credentials per page"
+                  variant="form-sm"
+                  value={view.pageSize}
+                  disabled={!preferences}
+                  onChange={(value) => {
+                    setPage(0);
+                    saveView({
+                      pageSize: Number(value) as typeof view.pageSize,
+                    });
+                  }}
+                  options={[25, 50, 100, 250].map((size) => ({
+                    value: size,
+                    label: String(size),
+                  }))}
+                />
+              </div>
+              {view.mode === "infinite" ? (
+                <button
+                  type="button"
+                  className="sor-btn sor-btn-secondary"
+                  disabled={visibleCount >= rows.length}
+                  onClick={grow}
+                >
+                  Load more credentials
+                </button>
+              ) : (
+                <>
+                  <button
+                    type="button"
+                    className="sor-btn-icon"
+                    aria-label="Previous"
+                    data-tooltip="Previous page"
+                    disabled={currentPage === 0}
+                    onClick={() => setPage(currentPage - 1)}
+                  >
+                    <ChevronLeft size={15} />
+                  </button>
+                  <button
+                    type="button"
+                    className="sor-btn-icon"
+                    aria-label="Next"
+                    data-tooltip="Next page"
+                    disabled={currentPage + 1 >= pages}
+                    onClick={() => setPage(currentPage + 1)}
+                  >
+                    <ChevronRight size={15} />
+                  </button>
+                </>
+              )}
             </div>
           </footer>
         </>

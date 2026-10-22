@@ -1,3 +1,4 @@
+import { normalizeCredentialVaultView } from "./credentialVaultView";
 import {
   emit as emitTauriEvent,
   listen as listenTauriEvent,
@@ -546,6 +547,7 @@ const DEFAULT_SETTINGS: GlobalSettings = {
   showRecordingManagerIcon: true,
   sessionQuickActions: { ...DEFAULT_SESSION_QUICK_ACTIONS },
   websiteDarkMode: normalizeWebsiteDarkModeSettings(undefined),
+  credentialVaultView: normalizeCredentialVaultView(undefined),
   webBrowser: normalizeWebBrowserSettings(undefined),
   internalProxy: normalizeInternalProxySettings(undefined),
   macros: {
@@ -1233,6 +1235,9 @@ export class SettingsManager {
       websiteDarkMode: normalizeWebsiteDarkModeSettings(
         normalizedStored.websiteDarkMode,
       ),
+      credentialVaultView: normalizeCredentialVaultView(
+        normalizedStored.credentialVaultView,
+      ),
       webBrowser: normalizeWebBrowserSettings(normalizedStored.webBrowser),
       internalProxy: normalizeInternalProxySettings(
         normalizedStored.internalProxy,
@@ -1401,6 +1406,10 @@ export class SettingsManager {
     if ("websiteDarkMode" in safePatch)
       safePatch.websiteDarkMode = normalizeWebsiteDarkModeSettings(
         safePatch.websiteDarkMode,
+      );
+    if ("credentialVaultView" in safePatch)
+      safePatch.credentialVaultView = normalizeCredentialVaultView(
+        safePatch.credentialVaultView,
       );
     if ("webBrowser" in safePatch)
       safePatch.webBrowser = normalizeWebBrowserSettings(safePatch.webBrowser);

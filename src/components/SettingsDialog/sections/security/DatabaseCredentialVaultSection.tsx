@@ -1,3 +1,4 @@
+import VaultViewSettings from "./VaultViewSettings";
 import { KeyRound } from "lucide-react";
 
 /** Settings launches the same dedicated tool; it never mounts a second vault. */
@@ -32,6 +33,7 @@ export default function DatabaseCredentialVaultSection({
         protected database. Social sign-in and passkey bindings are descriptive,
         non-portable metadata only.
       </p>
+      <VaultViewSettings />
       {!onOpen && (
         <p className="text-xs text-[var(--color-textSecondary)]">
           Open the credential vault from the main application toolbar.
