@@ -11,6 +11,9 @@ import {
   assessNativeReport,
   assessNativeTlsReport,
   assessRegistrationRetirement,
+  assessNativeHttp2Report,
+  http2Environment,
+  HTTP2_CHECKS,
   REGISTRATION_RETIREMENT_CASES,
   assessTlsSocketLedger,
   TLS_PATCH_ID,
@@ -104,6 +107,10 @@ test("custom acceptance preserves the verified plan and changes only the client 
     acceptanceCustomPlan(plan, target, "sorng_cef_tls_acceptance"),
     { ...plan, appName: "sorng_cef_tls_acceptance" },
   );
+  assert.deepEqual(
+    acceptanceCustomPlan(plan, target, "sorng_cef_http2_acceptance"),
+    { ...plan, appName: "sorng_cef_http2_acceptance" },
+  );
   assert.equal(plan.appName, "sortOfRemoteNG");
   for (const invalid of [
     null,
@@ -157,6 +164,10 @@ test("Unix acceptance requires its real helper and macOS application metadata be
     );
     await assert.rejects(
       stageAcceptance({ customPlan: planFile, target }),
+      /requires --helper/,
+    );
+    await assert.rejects(
+      stageAcceptance({ customPlan: planFile, target, suite: "http2" }),
       /requires --helper/,
     );
     if (target.endsWith("apple-darwin")) {
@@ -407,6 +418,414 @@ function syntheticRetirementReport() {
     partitionRecreationFaultInjected: false,
   };
 }
+
+// Validator-only data: never a substitute for a native process receipt.
+function syntheticHttp2Report(check = "multiplex") {
+  const protocol = check === "h1-fallback" ? "http/1.1" : "h2";
+  const matrix = [
+    [0, 0, 0],
+    [8, 0, 0],
+    [32, 0, 0],
+    [0, 80, 0],
+    [8, 80, 0],
+    [32, 80, 0],
+    [32, 80, 80],
+  ];
+  const cases = matrix.map(
+    ([resources, responseDelayMs, dialDelayMs], index) => ({
+      case: index,
+      resources,
+      responseDelayMs,
+      dialDelayMs,
+      loadMs: 200,
+      requestPeak: protocol === "h2" ? 32 : 6,
+      requests: Array.from({ length: resources + 1 }, () => ({
+        alpn: protocol,
+        written: true,
+      })),
+    }),
+  );
+  return {
+    patchId: TLS_PATCH_ID,
+    loadedBridgeVerified: true,
+    runId: "synthetic-h2",
+    probeKind: "native-same-authority-http2",
+    check: check === "h1-fallback" ? "multiplex" : check,
+    expectedProtocol: protocol,
+    productionTlsFactory: true,
+    productionReady: false,
+    ok: true,
+    clean: true,
+    closed: true,
+    shutdownComplete: true,
+    failures: [],
+    matrixCases: 7,
+    proxyProofRequired: true,
+    proxyAckNoApplicationNetwork: true,
+    baselineBeforeCef: Array.from({ length: 2 }, () => ({
+      acceptedConnections: 1,
+      authenticationChallenges: 0,
+      authenticatedRequests: 0,
+      requestRejections: 1,
+      capacityRefusals: 0,
+    })),
+    registrationRetirementCases: syntheticRetirementReport(),
+    proxyBoundaryCases: {
+      ok: true,
+      networkProbe: false,
+      pacPreferenceTested: false,
+      cases: [
+        "wrong-port",
+        "direct",
+        "fallback",
+        "replace-during-ack",
+        "revoke-before-ack",
+      ].map((name) => ({
+        case: name,
+        ok: true,
+        browserCreated: false,
+        tlsEvidence: 0,
+        states: name === "revoke-before-ack" ? [1, 2] : [1, 5, 2],
+      })),
+    },
+    slots: Array.from({ length: 2 }, () => ({
+      beforeAdmissionBytes: 0,
+      proxyApplicationVerified: true,
+      proxyBeforeHost: {
+        acceptedConnections: 2,
+        authenticationChallenges: 1,
+        authenticatedRequests: 0,
+        requestRejections: 1,
+        capacityRefusals: 0,
+        upstreamDials: 0,
+        upstreamFailures: 0,
+      },
+      errors: [],
+      cases: structuredClone(cases),
+      alpnObserved: [protocol],
+      denied: 1,
+      minimumAdmissionDelayMs: 301,
+      tlsCurrent: false,
+      requests:
+        check === "deny"
+          ? []
+          : [{ authority: "proxy-first.fixture.test", alpn: protocol }],
+    })),
+    socketsClosedBeforeBrowserClose: [true, true],
+    revokedNavigationRejected: [true, true],
+    revokeBaselineRequests: [1, 1],
+  };
+}
+
+test("HTTP2 controls scrub inherited experiments and select only explicit revision-four checks", () => {
+  const inherited = {
+    KEEP: "yes",
+    SORNG_CEF_HTTP2_CHECK: "deny",
+    SORNG_CEF_HTTP2_EXPECT: "legacy",
+    SORNG_CEF_HTTP2_UNREVIEWED: "unsafe",
+    PROBE_VISIBLE: "1",
+    PROBE_FIXTURE_NODELAY: "1",
+    SORNG_PROBE_VISIBLE: "1",
+    SORNG_PROBE_FIXTURE_NODELAY: "1",
+  };
+  for (const suite of ["tls", "legacy", "menu", "measure"])
+    assert.deepEqual(http2Environment(inherited, suite), { KEEP: "yes" });
+  for (const check of HTTP2_CHECKS) {
+    const env = http2Environment(inherited, "http2", check);
+    assert.equal(
+      env.SORNG_CEF_HTTP2_CHECK,
+      check === "h1-fallback" ? "multiplex" : check,
+    );
+    assert.equal(
+      env.SORNG_CEF_HTTP2_EXPECT,
+      check === "h1-fallback" ? "h1" : "retirement",
+    );
+    assert.equal(env.PROBE_VISIBLE, undefined);
+    assert.equal(env.PROBE_FIXTURE_NODELAY, undefined);
+    assert.equal(env.SORNG_PROBE_VISIBLE, undefined);
+    assert.equal(env.SORNG_PROBE_FIXTURE_NODELAY, undefined);
+  }
+  assert.equal(inherited.PROBE_VISIBLE, "1");
+  assert.throws(
+    () => http2Environment({}, "http2", "unknown"),
+    /Unknown HTTP2/,
+  );
+  assert.throws(
+    () => http2Environment({}, "tls", "multiplex"),
+    /only to http2/,
+  );
+});
+
+test("HTTP2 assessor requires current execution correlation, full cases and admission/boundary observations", () => {
+  for (const check of [
+    "multiplex",
+    "delay",
+    "deny",
+    "cross-authority",
+    "h1-fallback",
+    "revoke",
+  ]) {
+    const report = syntheticHttp2Report(check);
+    const result = assessNativeHttp2Report(
+      report,
+      "synthetic-h2",
+      TLS_PATCH_ID,
+      check,
+    );
+    assert.deepEqual(result.failures, [], check);
+    assert.equal(result.productionReady, false);
+    assert.equal(result.actualCefAcceptance, false);
+  }
+  const mutations = [
+    (r) => {
+      r.slots.push(null);
+    },
+    (r) => {
+      r.slots = [null, null];
+    },
+    (r) => {
+      r.slots[0].requests = {};
+    },
+    (r) => {
+      r.patchId = PROXY_APPLIED_BRIDGE_PATCH_ID;
+    },
+    (r) => {
+      r.loadedBridgeVerified = false;
+    },
+    (r) => {
+      r.runId = "earlier-run";
+    },
+    (r) => {
+      r.check = "deny";
+    },
+    (r) => {
+      r.proxyAckNoApplicationNetwork = false;
+    },
+    (r) => {
+      r.slots[0].beforeAdmissionBytes = 1;
+    },
+    (r) => {
+      r.slots[0].proxyBeforeHost.upstreamDials = 1;
+    },
+    (r) => {
+      r.slots[0].proxyBeforeHost.authenticatedRequests = 1;
+    },
+    (r) => {
+      r.slots[0].proxyBeforeHost.acceptedConnections = 3;
+    },
+    (r) => {
+      r.slots[0].cases.pop();
+    },
+    (r) => {
+      r.slots[0].cases[5].requestPeak = 6;
+      r.slots[0].cases[6].requestPeak = 6;
+    },
+    (r) => {
+      r.slots[0].cases[0].requests[0].alpn = "http/1.1";
+    },
+    (r) => {
+      r.proxyBoundaryCases.cases[0] = r.proxyBoundaryCases.cases[1];
+    },
+    (r) => {
+      r.proxyBoundaryCases.cases[0].states = [1, 4, 2];
+    },
+    (r) => {
+      r.registrationRetirementCases.finalRegistrations = 1;
+    },
+    (r) => {
+      r.failures.push("failed");
+    },
+    (r) => {
+      r.shutdownComplete = false;
+    },
+  ];
+  for (const mutate of mutations) {
+    const report = syntheticHttp2Report();
+    mutate(report);
+    assert.equal(
+      assessNativeHttp2Report(report, "synthetic-h2", TLS_PATCH_ID, "multiplex")
+        .ok,
+      false,
+    );
+  }
+  assert.equal(
+    assessNativeHttp2Report(
+      undefined,
+      "synthetic-h2",
+      TLS_PATCH_ID,
+      "multiplex",
+    ).ok,
+    false,
+  );
+  assert.equal(
+    assessNativeHttp2Report(
+      syntheticHttp2Report(),
+      "synthetic-h2",
+      undefined,
+      "multiplex",
+    ).ok,
+    false,
+  );
+});
+
+test("HTTP2 mode negatives cannot borrow a multiplex success label", () => {
+  for (const [check, mutate] of [
+    [
+      "delay",
+      (r) => {
+        r.slots[0].minimumAdmissionDelayMs = 299;
+      },
+    ],
+    [
+      "deny",
+      (r) => {
+        r.slots[0].requests.push({});
+      },
+    ],
+    [
+      "revoke",
+      (r) => {
+        r.slots[0].requests.push({});
+      },
+    ],
+    [
+      "revoke",
+      (r) => {
+        r.revokedNavigationRejected[0] = false;
+      },
+    ],
+    [
+      "cross-authority",
+      (r) => {
+        r.slots[0].requests.push({ authority: "alternate.fixture.test" });
+      },
+    ],
+    [
+      "h1-fallback",
+      (r) => {
+        r.expectedProtocol = "h2";
+      },
+    ],
+    ["wss", () => {}],
+  ]) {
+    const report = syntheticHttp2Report(check);
+    mutate(report);
+    assert.equal(
+      assessNativeHttp2Report(report, "synthetic-h2", TLS_PATCH_ID, check).ok,
+      false,
+      check,
+    );
+  }
+  const wss = syntheticHttp2Report("wss");
+  for (const slot of wss.slots)
+    slot.requests = [
+      { websocket: true, alpn: "http/1.1" },
+      { path: "/wss-ok", alpn: "h2" },
+    ];
+  assert.equal(
+    assessNativeHttp2Report(wss, "synthetic-h2", TLS_PATCH_ID, "wss").ok,
+    true,
+  );
+});
+
+test("HTTP2 permission churn requires all owner-isolated phases and advancing survivor traffic", () => {
+  const report = syntheticHttp2Report("permission-churn");
+  Object.assign(report, {
+    mode: "permission-churn",
+    replacedOldContext: true,
+    sameRowFreshAttempt: true,
+    distinctEndpoints: true,
+    distinctCredentials: true,
+    beforeAdmissionBytesZero: true,
+    actualProxyProofs: [true, true, true, true],
+    globalPolicyChecks: 100,
+    phases: [
+      "before-change",
+      "after-old-close-before-new-contexts",
+      "fresh-contexts-operational",
+      "after-change",
+    ].map((phase, index) => ({
+      phase,
+      globalPolicy: true,
+      survivorIdentityAndEndpointUnchanged: true,
+      survivorCounts: [index + 1, index + 1],
+    })),
+  });
+  assert.equal(
+    assessNativeHttp2Report(
+      report,
+      "synthetic-h2",
+      TLS_PATCH_ID,
+      "permission-churn",
+    ).ok,
+    true,
+  );
+  for (const mutate of [
+    (r) => {
+      r.actualProxyProofs[3] = false;
+    },
+    (r) => {
+      r.distinctCredentials = false;
+    },
+    (r) => {
+      r.phases[3].survivorCounts[1] = 3;
+    },
+    (r) => {
+      r.phases[2].globalPolicy = false;
+    },
+    (r) => {
+      r.phases[1].survivorIdentityAndEndpointUnchanged = false;
+    },
+  ]) {
+    const invalid = structuredClone(report);
+    mutate(invalid);
+    assert.equal(
+      assessNativeHttp2Report(
+        invalid,
+        "synthetic-h2",
+        TLS_PATCH_ID,
+        "permission-churn",
+      ).ok,
+      false,
+    );
+  }
+});
+
+test("HTTP2 rejects missing/wrong staging pins and invalid/manual checks before output or launch", async (t) => {
+  const root = await mkdtemp(path.join(tmpdir(), "cef-http2-runner-"));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const options = {
+    executable: path.join(root, "never-launch.exe"),
+    output: path.join(root, "never-output"),
+    suite: "http2",
+  };
+  for (const extra of [
+    {},
+    { check: "typo" },
+    { check: "multiplex", manual: "true" },
+    { check: "multiplex", interactiveDesktop: "true" },
+  ])
+    await assert.rejects(
+      runAcceptance({ ...options, ...extra }),
+      /Unknown HTTP2|automated isolated/,
+    );
+  await assert.rejects(
+    runAcceptance({ ...options, check: "multiplex" }),
+    /exactly staged revision-four/,
+  );
+  await writeFile(
+    path.join(root, "acceptance-staging.json"),
+    JSON.stringify({
+      kind: "sorng-cef-custom-package",
+      preflight: { bridge: { patchId: PROXY_APPLIED_BRIDGE_PATCH_ID } },
+    }),
+  );
+  await assert.rejects(
+    runAcceptance({ ...options, check: "multiplex" }),
+    /exactly staged revision-four/,
+  );
+  assert.equal(existsSync(options.output), false);
+});
 
 function syntheticTlsReport() {
   const report = {
@@ -1533,7 +1952,7 @@ test("both runner suites apply the crash gate before their final acceptance verd
   assert.match(runner, /native-crash-summary\.json/);
   assert.match(
     runner,
-    /applyNativeCrashGate\(\s*suite === ["']tls["']\s*\? assessNativeTlsReport\(native,\s*runId,\s*expectedPatchId\)\s*:\s*assessNativeReport\(native,\s*expectedPatchId\),\s*nativeCrashSummary,?\s*\)/,
+    /applyNativeCrashGate\(\s*suite === ["']tls["']\s*\? assessNativeTlsReport\(native,\s*runId,\s*expectedPatchId\)\s*:\s*suite === ["']http2["']\s*\? assessNativeHttp2Report\(native,\s*runId,\s*expectedPatchId,\s*check\)\s*:\s*assessNativeReport\(native,\s*expectedPatchId\),\s*nativeCrashSummary,?\s*\)/,
   );
   assert.match(
     runner,
@@ -3815,7 +4234,9 @@ test("the desktop of whoever uses the machine is reached only through its own op
   );
   assert.equal(runner.match(/desktop === /g).length, 1);
   assert.equal(runner.match(/desktopFor\(/g).length, 1);
-  assert.equal(runner.match(/interactiveDesktop/g).length, 2);
+  // HTTP2 additionally rejects the explicit interactive override; the one
+  // desktopFor decision still controls every actual launch.
+  assert.equal(runner.match(/interactiveDesktop/g).length, 3);
   // The command line passes the opt-in on under its own name only.
   const main = source.slice(source.indexOf("async function main(args)"));
   assert.match(

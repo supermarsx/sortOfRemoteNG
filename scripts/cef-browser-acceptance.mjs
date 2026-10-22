@@ -195,6 +195,283 @@ export function assessRegistrationRetirement(value) {
   return { ok: failures.length === 0, failures, productionReady: false };
 }
 
+export const HTTP2_CHECKS = Object.freeze([
+  "multiplex",
+  "deny",
+  "delay",
+  "revoke",
+  "cross-authority",
+  "wss",
+  "h1-fallback",
+  "permission-churn",
+]);
+
+/** Scrub experiment controls even when launching another acceptance suite. */
+export function http2Environment(environment, suite, check) {
+  if (suite === "http2" && !HTTP2_CHECKS.includes(check))
+    throw new Error("Unknown HTTP2 check");
+  if (suite !== "http2" && check !== undefined)
+    throw new Error("check applies only to http2");
+  const env = { ...environment };
+  for (const name of Object.keys(env))
+    if (
+      name.startsWith("SORNG_CEF_HTTP2_") ||
+      [
+        "PROBE_VISIBLE",
+        "PROBE_FIXTURE_NODELAY",
+        "SORNG_PROBE_VISIBLE",
+        "SORNG_PROBE_FIXTURE_NODELAY",
+      ].includes(name)
+    )
+      delete env[name];
+  if (suite === "http2") {
+    env.SORNG_CEF_HTTP2_CHECK = check === "h1-fallback" ? "multiplex" : check;
+    env.SORNG_CEF_HTTP2_EXPECT = check === "h1-fallback" ? "h1" : "retirement";
+  }
+  return env;
+}
+
+/** Validates fixture observations; execution and isolation are separate gates. */
+export function assessNativeHttp2Report(report, runId, expectedPatchId, check) {
+  const failures = [];
+  const require = (ok, message) => {
+    if (!ok) failures.push(message);
+  };
+  const rows = (value, length) =>
+    Array.isArray(value) && value.length === length;
+  const pair = (value) => rows(value, 2) && value.every((v) => v === true);
+  require(HTTP2_CHECKS.includes(check), "known HTTP2 check required");
+  require(expectedPatchId === TLS_PATCH_ID &&
+    report?.patchId === expectedPatchId &&
+    report?.loadedBridgeVerified ===
+      true, "exact loaded revision-four bridge required");
+  require(typeof runId === "string" &&
+    runId.length > 0 &&
+    report?.runId === runId, "fresh HTTP2 invocation correlation missing");
+  require(report?.probeKind === "native-same-authority-http2" &&
+    report?.check ===
+      (check === "h1-fallback"
+        ? "multiplex"
+        : check), "actual requested HTTP2 fixture check required");
+  require(report?.ok === true &&
+    report?.productionReady === false &&
+    report?.productionTlsFactory ===
+      true, "production TLS fixture observations required");
+  require(report?.clean === true &&
+    report?.closed === true &&
+    report?.shutdownComplete ===
+      true, "clean closed HTTP2 fixture shutdown required");
+  require(Array.isArray(report?.failures) &&
+    report.failures.length ===
+      0, "HTTP2 native failure inventory must be empty");
+  const retirement = assessRegistrationRetirement(
+    report?.registrationRetirementCases,
+  );
+  for (const failure of retirement.failures)
+    failures.push(`registration retirement: ${failure}`);
+  const boundary = report?.proxyBoundaryCases;
+  const expectedBoundary = [
+    "wrong-port",
+    "direct",
+    "fallback",
+    "replace-during-ack",
+    "revoke-before-ack",
+  ];
+  require(boundary?.ok === true &&
+    boundary.networkProbe === false &&
+    boundary.pacPreferenceTested === false &&
+    rows(boundary.cases, 5) &&
+    new Set(boundary.cases.map((r) => r?.case)).size === 5 &&
+    expectedBoundary.every((name) =>
+      boundary.cases.some(
+        (r) =>
+          r?.case === name &&
+          r.ok === true &&
+          r.browserCreated === false &&
+          r.tlsEvidence === 0 &&
+          rows(r.states, name === "revoke-before-ack" ? 2 : 3) &&
+          r.states.every(
+            (s, i) =>
+              s === (name === "revoke-before-ack" ? [1, 2] : [1, 5, 2])[i],
+          ),
+      ),
+    ), "five actual proxy application boundary cases required");
+  require(report?.proxyProofRequired === true &&
+    report?.proxyAckNoApplicationNetwork ===
+      true, "proxy ACK before application networking required");
+  if (check === "permission-churn") {
+    require(report?.mode === "permission-churn" &&
+      report?.replacedOldContext === true &&
+      report?.sameRowFreshAttempt === true &&
+      report?.distinctEndpoints === true &&
+      report?.distinctCredentials === true &&
+      report?.beforeAdmissionBytesZero === true &&
+      rows(report?.actualProxyProofs, 4) &&
+      report.actualProxyProofs.every(
+        (v) => v === true,
+      ), "four independently admitted permission replacement contexts required");
+    const phases = [
+      "before-change",
+      "after-old-close-before-new-contexts",
+      "fresh-contexts-operational",
+      "after-change",
+    ];
+    require(Number.isSafeInteger(report?.globalPolicyChecks) &&
+      report.globalPolicyChecks > 0 &&
+      rows(report?.phases, 4) &&
+      phases.every((phase, index) => {
+        const row = report.phases[index];
+        return (
+          row?.phase === phase &&
+          row.globalPolicy === true &&
+          row.survivorIdentityAndEndpointUnchanged === true &&
+          rows(row.survivorCounts, 2) &&
+          row.survivorCounts.every(
+            (n) => Number.isSafeInteger(n) && n >= index + 1,
+          )
+        );
+      }), "unchanged survivor HTTP/WSS and global policy through replacement required");
+  } else {
+    const slots = Array.isArray(report?.slots)
+      ? report.slots.filter(
+          (s) => s && typeof s === "object" && Array.isArray(s.requests),
+        )
+      : [];
+    require(rows(report?.slots, 2) &&
+      rows(slots, 2) &&
+      slots.every(
+        (s) =>
+          s?.beforeAdmissionBytes === 0 &&
+          s.proxyApplicationVerified === true &&
+          Array.isArray(s.errors) &&
+          (check === "deny" || s.errors.length === 0) &&
+          Array.isArray(s.requests),
+      ), "two scoped contexts with zero pre-admission bytes required");
+    require(rows(report?.baselineBeforeCef, 2) &&
+      slots.length === 2 &&
+      slots.every((s, index) => {
+        const before = s.proxyBeforeHost,
+          baseline = report.baselineBeforeCef[index];
+        const delta = (field) =>
+          Number.isSafeInteger(before?.[field]) &&
+          Number.isSafeInteger(baseline?.[field]) &&
+          before[field] >= baseline[field]
+            ? before[field] - baseline[field]
+            : undefined;
+        return (
+          delta("acceptedConnections") !== undefined &&
+          delta("acceptedConnections") === delta("authenticationChallenges") &&
+          delta("authenticatedRequests") === 0 &&
+          delta("requestRejections") === 0 &&
+          delta("capacityRefusals") === 0 &&
+          before.upstreamDials === 0 &&
+          before.upstreamFailures === 0
+        );
+      }), "pre-host proxy counters must show no authenticated request or upstream dial");
+    const protocol = check === "h1-fallback" ? "http/1.1" : "h2";
+    require(report?.expectedProtocol ===
+      protocol, "requested ALPN mode required");
+    if (check === "deny") {
+      require(slots.length === 2 &&
+        slots.every(
+          (s) =>
+            Number.isSafeInteger(s.denied) &&
+            s.denied > 0 &&
+            s.requests?.length === 0,
+        ), "denied TLS must deliver no application requests");
+    } else if (check === "revoke") {
+      require(pair(report?.socketsClosedBeforeBrowserClose) &&
+        pair(report?.revokedNavigationRejected) &&
+        rows(report?.revokeBaselineRequests, 2) &&
+        slots.length === 2 &&
+        slots.every(
+          (s, i) =>
+            Number.isSafeInteger(report.revokeBaselineRequests[i]) &&
+            report.revokeBaselineRequests[i] > 0 &&
+            s.requests?.length === report.revokeBaselineRequests[i] &&
+            s.tlsCurrent === false,
+        ), "revocation must close sockets and prevent later requests/navigation");
+    } else if (check === "wss") {
+      require(slots.length === 2 &&
+        slots.every(
+          (s) =>
+            s.requests?.some(
+              (r) => r?.websocket === true && r.alpn === "http/1.1",
+            ) &&
+            s.requests.some((r) => r?.path === "/wss-ok" && r.alpn === "h2"),
+        ), "WSS upgrade plus HTTP2 marker required");
+    } else {
+      const matrix = [
+        [0, 0, 0],
+        [8, 0, 0],
+        [32, 0, 0],
+        [0, 80, 0],
+        [8, 80, 0],
+        [32, 80, 0],
+        [32, 80, 80],
+      ];
+      require(report?.matrixCases === 7 &&
+        slots.length === 2 &&
+        slots.every(
+          (s) =>
+            rows(s.cases, 7) &&
+            matrix.every(([resources, response, dial], index) => {
+              const c = s.cases[index];
+              return (
+                c?.case === index &&
+                c.resources === resources &&
+                c.responseDelayMs === response &&
+                c.dialDelayMs === dial &&
+                Number.isFinite(c.loadMs) &&
+                c.loadMs >= 0 &&
+                Array.isArray(c.requests) &&
+                c.requests.length >= resources + 1 &&
+                c.requests.every(
+                  (r) => r?.alpn === protocol && r.written === true,
+                )
+              );
+            }) &&
+            Array.isArray(s.alpnObserved) &&
+            s.alpnObserved.length > 0 &&
+            s.alpnObserved.every((v) => v === protocol) &&
+            s.cases.some(
+              (c) =>
+                c.resources === 32 &&
+                c.responseDelayMs === 80 &&
+                Number.isSafeInteger(c.requestPeak) &&
+                (protocol === "h2"
+                  ? c.requestPeak > 6
+                  : c.requestPeak > 0 && c.requestPeak <= 6),
+            ),
+        ), "complete seven-case native multiplex/fallback matrix required");
+      if (check === "delay")
+        require(slots.length === 2 &&
+          slots.every(
+            (s) =>
+              Number.isFinite(s.minimumAdmissionDelayMs) &&
+              s.minimumAdmissionDelayMs >= 300,
+          ), "actual withheld admission duration required");
+      if (check === "cross-authority")
+        require(slots.length === 2 &&
+          slots.every(
+            (s) =>
+              Number.isSafeInteger(s.denied) &&
+              s.denied > 0 &&
+              s.requests?.every(
+                (r) => r && r.authority !== "alternate.fixture.test",
+              ),
+          ), "cross-authority TLS denial without application delivery required");
+    }
+  }
+  return {
+    ok: failures.length === 0,
+    failures,
+    actualCefAcceptance: false,
+    publicProviderAcceptance: false,
+    productionReady: false,
+  };
+}
+
 /** Validate observations, never turn a JSON document into execution provenance. */
 export function assessNativeTlsReport(report, runId, expectedPatchId) {
   const failures = [];
@@ -2291,7 +2568,13 @@ export function acceptanceCustomPlan(plan, target, stem) {
     throw new Error(
       "Acceptance requires a matching prepared custom runtime plan",
     );
-  if (!["sorng_cef_acceptance", "sorng_cef_tls_acceptance"].includes(stem))
+  if (
+    ![
+      "sorng_cef_acceptance",
+      "sorng_cef_tls_acceptance",
+      "sorng_cef_http2_acceptance",
+    ].includes(stem)
+  )
     throw new Error("Unknown acceptance client");
   return { ...plan, appName: stem };
 }
@@ -2315,10 +2598,14 @@ export async function stageAcceptance({
   target,
   suite = "legacy",
 }) {
-  if (!["legacy", "tls"].includes(suite))
+  if (!["legacy", "tls", "http2"].includes(suite))
     throw new Error("Unknown acceptance suite");
   const stem =
-    suite === "tls" ? "sorng_cef_tls_acceptance" : "sorng_cef_acceptance";
+    suite === "tls"
+      ? "sorng_cef_tls_acceptance"
+      : suite === "http2"
+        ? "sorng_cef_http2_acceptance"
+        : "sorng_cef_acceptance";
   if (customPlan) {
     if (runtime) throw new Error("Choose --custom-plan or --runtime, not both");
     const plan = acceptanceCustomPlan(
@@ -2529,8 +2816,9 @@ export function assessPrivateDesktop(result) {
 }
 
 function observeWindowsSandbox({ pid, executable, output, suite }) {
-  const observerPath =
-    suite === "tls" ? "native_tls_acceptance" : "native_acceptance";
+  const observerPath = ["tls", "http2"].includes(suite)
+    ? "native_tls_acceptance"
+    : "native_acceptance";
   const observer = spawn(
     "pwsh",
     [
@@ -2572,9 +2860,16 @@ export async function runAcceptance({
   interactiveDesktop = "false",
   windowMs,
   only,
+  check,
 }) {
-  if (!["legacy", "tls", "measure", "menu"].includes(suite))
+  if (!["legacy", "tls", "http2", "measure", "menu"].includes(suite))
     throw new Error("Unknown acceptance suite");
+  const controlledEnvironment = http2Environment(process.env, suite, check);
+  if (
+    suite === "http2" &&
+    (manual !== "false" || interactiveDesktop !== "false")
+  )
+    throw new Error("HTTP2 acceptance requires automated isolated execution");
   if (!["true", "false"].includes(manual))
     throw new Error("--manual must be true or false");
   const desktop = desktopFor({
@@ -2593,7 +2888,9 @@ export async function runAcceptance({
   if (suite === "menu") timeoutMs ??= 600000;
   // Revision-four TLS acceptance also exercises 1,025 context lifecycles.
   // Keep a finite private-run bound without confusing it with page timeouts.
-  timeoutMs = Number(timeoutMs ?? (suite === "tls" ? 600000 : 90000));
+  timeoutMs = Number(
+    timeoutMs ?? (["tls", "http2"].includes(suite) ? 600000 : 90000),
+  );
   if (
     !Number.isSafeInteger(timeoutMs) ||
     timeoutMs < 1000 ||
@@ -2618,6 +2915,10 @@ export async function runAcceptance({
   } catch (error) {
     if (error?.code !== "ENOENT") throw error;
   }
+  if (suite === "http2" && expectedPatchId !== TLS_PATCH_ID)
+    throw new Error(
+      "HTTP2 acceptance requires an exactly staged revision-four runtime",
+    );
   await ensureBrowserSandboxAccess({
     bundle,
     appName: path.basename(executable, ".exe"),
@@ -2627,7 +2928,7 @@ export async function runAcceptance({
   const run = await mkdtemp(path.join(output, "run-"));
   const runId = randomUUID();
   const env = {
-    ...process.env,
+    ...controlledEnvironment,
     SORNG_CEF_ACCEPTANCE_OUTPUT: run,
     SORNG_CEF_ACCEPTANCE_RUN_ID: runId,
     SORNG_CEF_TLS_MANUAL: manual,
@@ -2891,7 +3192,9 @@ export async function runAcceptance({
   const assessed = applyNativeCrashGate(
     suite === "tls"
       ? assessNativeTlsReport(native, runId, expectedPatchId)
-      : assessNativeReport(native, expectedPatchId),
+      : suite === "http2"
+        ? assessNativeHttp2Report(native, runId, expectedPatchId, check)
+        : assessNativeReport(native, expectedPatchId),
     nativeCrashSummary,
   );
   if (exitCode !== 0 || timedOut)
@@ -2903,7 +3206,11 @@ export async function runAcceptance({
     assessed.failures.push(
       "native network log missing or unexpected DNS/socket path",
     );
-  if (suite === "tls" && process.platform === "win32" && sandbox?.ok !== true)
+  if (
+    ["tls", "http2"].includes(suite) &&
+    process.platform === "win32" &&
+    sandbox?.ok !== true
+  )
     assessed.failures.push(
       "native Windows renderer sandbox observation missing or rejected",
     );
@@ -2919,6 +3226,7 @@ export async function runAcceptance({
     run,
     runId,
     suite,
+    ...(suite === "http2" ? { check, expectedPatchId } : {}),
     exitCode,
     timedOut,
     desktop: desktopRecord,
@@ -2928,6 +3236,8 @@ export async function runAcceptance({
     nativeCrashSummary,
     platform: process.platform,
     nativeTlsFixtureAccepted: suite === "tls" && assessed.failures.length === 0,
+    nativeHttp2FixtureAccepted:
+      suite === "http2" && assessed.failures.length === 0,
     actualCefAcceptance: false,
     publicProviderAcceptance: false,
     productionReady: false,
@@ -2960,6 +3270,7 @@ async function main(args) {
   };
   if (command === "run") return launch(options.suite, options);
   if (command === "run-tls") return launch("tls", options);
+  if (command === "run-http2") return launch("http2", options);
   if (command === "measure") {
     const { "window-ms": windowMs, ...rest } = options;
     return launch("measure", { ...rest, windowMs });
@@ -2974,7 +3285,7 @@ async function main(args) {
     return result;
   }
   throw new Error(
-    "Usage: node scripts/cef-browser-acceptance.mjs stage (--custom-plan PREPARED_PLAN_JSON | --runtime OFFICIAL_SDK) --client NATIVE_CLIENT --output NEW_DIR --target TARGET [--helper UNIX_HELPER] [--app-plist MACOS_INFO_PLIST] [--suite tls] | run-tls --executable PACKAGED_EXECUTABLE --output NEW_DIR [--manual true] | run --executable LEGACY_EXECUTABLE --output NEW_DIR | measure --executable LEGACY_EXECUTABLE --output NEW_DIR [--window-ms 5000..40000] [--only SCENARIO_ID,...] | menu --executable LEGACY_EXECUTABLE --output NEW_DIR. On Windows every run starts the client on a private desktop; --use-interactive-desktop true puts its windows on the desktop of whoever is using the machine instead.",
+    "Usage: node scripts/cef-browser-acceptance.mjs stage (--custom-plan PREPARED_PLAN_JSON | --runtime OFFICIAL_SDK) --client NATIVE_CLIENT --output NEW_DIR --target TARGET [--helper UNIX_HELPER] [--app-plist MACOS_INFO_PLIST] [--suite tls|http2] | run-http2 --executable PACKAGED_EXECUTABLE --output NEW_DIR --check multiplex|deny|delay|revoke|cross-authority|wss|h1-fallback|permission-churn | run-tls --executable PACKAGED_EXECUTABLE --output NEW_DIR [--manual true] | run --executable LEGACY_EXECUTABLE --output NEW_DIR | measure --executable LEGACY_EXECUTABLE --output NEW_DIR [--window-ms 5000..40000] [--only SCENARIO_ID,...] | menu --executable LEGACY_EXECUTABLE --output NEW_DIR. On Windows every run starts the client on a private desktop; --use-interactive-desktop true puts its windows on the desktop of whoever is using the machine instead. HTTP2 runs are automated and reject the interactive override.",
   );
 }
 if (
