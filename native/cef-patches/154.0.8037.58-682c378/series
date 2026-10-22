@@ -9,3 +9,4 @@ chromium 0008-chromium-same-authority-http2.patch
 cef 0009-cef-http2-bridge-capability.patch
 chromium 0010-chromium-proxy-application-ack.patch
 cef 0011-cef-proxy-application-ack.patch
+cef 0012-cef-registration-retirement.patch

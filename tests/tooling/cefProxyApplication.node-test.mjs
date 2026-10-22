@@ -2,8 +2,8 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import {
-  BRIDGE_PATCH_ID,
-  BRIDGE_V2,
+  PROXY_APPLIED_BRIDGE_PATCH_ID as BRIDGE_PATCH_ID,
+  PROXY_APPLIED_BRIDGE_V2 as BRIDGE_V2,
   HTTP2_BRIDGE_PATCH_ID,
   HTTP2_BRIDGE_V2,
 } from "../../scripts/lib/browser-custom-runtime.mjs";
@@ -82,5 +82,46 @@ test("exact context proxy lookup rejects direct/fallback/foreign endpoint and st
   assert.doesNotMatch(
     code,
     /CreateURLLoader|CreateTCP|ResolveHost|ClearBadProxiesCache|CreateDirect/,
+  );
+});
+
+test("revision four retires only detached quiescent registrations with keyed deferred lookup", async () => {
+  const patch = await readFile(
+    new URL(
+      "154.0.8037.58-682c378/0012-cef-registration-retirement.patch",
+      root,
+    ),
+    "utf8",
+  );
+  const code = additions(patch);
+  assert.match(code, /CAP_BOUNDED_CONTEXT_RETIREMENT \(1ull << 9\)/);
+  assert.match(code, /static sorng_tls::TokenHighWater tokens/);
+  assert.match(code, /RegistrationTokens\(\)\.Reserve/);
+  assert.match(code, /RegistrationCallbackScope callback_scope\(lifetime_\)/);
+  assert.equal(
+    (code.match(/RegistrationCallbackScope callback_scope\(lifetime_\)/g) ?? [])
+      .length,
+    2,
+  );
+  assert.match(code, /callback_depth_ == 0/);
+  assert.match(code, /it->second->generation\(\) == generation/);
+  assert.match(code, /RetirementTaskReady\(\)/);
+  assert.match(code, /Registrations\(\)\.erase\(it\)/);
+  assert.doesNotMatch(
+    code,
+    /Unretained\(this\)|delete this|reinterpret_cast<uint64_t>/,
+  );
+  const host = await readFile(
+    new URL(
+      "../../src-tauri/crates/sorng-browser-host/src/cef_tls_bridge.rs",
+      import.meta.url,
+    ),
+    "utf8",
+  );
+  assert.match(host, /PROXY_APPLIED_PATCH_ID: &str = "sorng-tls-v2-682c378-3"/);
+  assert.match(host, /PATCH_ID: &str = "sorng-tls-v2-682c378-4"/);
+  assert.match(
+    host,
+    /capabilities & BOUNDED_RETIREMENT != 0[\s\S]*?remove\(&owner.state.token\)/,
   );
 });

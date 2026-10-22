@@ -113,6 +113,8 @@ fn case_index(path: &str) -> Option<usize> {
 const KIND: &str = "native-same-authority-http2";
 mod http2_fixture;
 mod proxy_ack_fixture;
+#[path = "../../native_tls_acceptance/src/registry_retirement_fixture.rs"]
+mod registry_retirement_fixture;
 mod permission_churn_fixture;
 mod websocket_fixture;
 #[no_mangle]
@@ -698,9 +700,7 @@ fn execute(bootstrap: &mut dyn RuntimeBootstrap, paths: &BundlePaths) -> Result 
     let proxy_boundary_port = slots[0].session.lock().unwrap().proxy_endpoint().port();
     let proxy_boundary = if !legacy && !http2_revision {
         match proxy_ack_fixture::run(&mut || {
-            runtime.work()?;
-            cef_tls_bridge::pump_tls()?;
-            Ok(())
+            registry_retirement_fixture::pump(&runtime, &mut events)
         }, proxy_boundary_port) {
             Ok(value) => value,
             Err(error) => {
@@ -711,6 +711,13 @@ fn execute(bootstrap: &mut dyn RuntimeBootstrap, paths: &BundlePaths) -> Result 
     } else {
         serde_json::json!({"required":false,"reason":"legacy-runtime-no-proxy-ack"})
     };
+    let retirement = if bridge.patch_id() == PATCH_ID {
+        match registry_retirement_fixture::run(&mut || registry_retirement_fixture::pump(&runtime, &mut events), &root_der) {
+            Ok(value) => value,
+            Err(error) => { failures.push(format!("registry-retirement: {error}")); serde_json::json!({"ok":false}) }
+        }
+    } else { serde_json::json!({"required":false}) };
+    report["registrationRetirementCases"] = retirement;
     report["proxyBoundaryCases"] = proxy_boundary;
     report["failures"] = serde_json::json!(failures);
     // Preserve completed assertions if an engine shutdown invariant aborts.
@@ -721,6 +728,7 @@ fn execute(bootstrap: &mut dyn RuntimeBootstrap, paths: &BundlePaths) -> Result 
         runtime.shutdown()?;
         sorng_browser_host::cef_tls_bridge::after_cef_shutdown();
         proxy_ack_fixture::after_shutdown();
+        registry_retirement_fixture::after_shutdown();
     }
     let counts = report["first"].as_array().is_some_and(|rows| {
         rows.len() == 2

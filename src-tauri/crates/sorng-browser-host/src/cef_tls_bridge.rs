@@ -24,7 +24,8 @@ pub const CEF_REVISION: &str = "682c378d70d5780061e96644dca16ddd8fd157a9";
 pub const CHROMIUM_VERSION: &str = "154.0.8037.58";
 pub const LEGACY_PATCH_ID: &str = "sorng-tls-v2-682c378-1";
 pub const HTTP2_PATCH_ID: &str = "sorng-tls-v2-682c378-2";
-pub const PATCH_ID: &str = "sorng-tls-v2-682c378-3";
+pub const PROXY_APPLIED_PATCH_ID: &str = "sorng-tls-v2-682c378-3";
+pub const PATCH_ID: &str = "sorng-tls-v2-682c378-4";
 const ABI: u32 = 2;
 const SOCKET: u64 = 1;
 const REVOKE: u64 = 2;
@@ -34,6 +35,7 @@ const CUSTOM_CA: u64 = 16;
 const PRIVATE: u64 = 32;
 const SAME_AUTHORITY_HTTP2: u64 = 64;
 const PROXY_APPLIED: u64 = 1 << 8;
+const BOUNDED_RETIREMENT: u64 = 1 << 9;
 const PROXY_TIMEOUT: Duration = Duration::from_secs(10);
 const REQUIRED: u64 = SOCKET | REVOKE | PRIVATE;
 const MAX_CHAIN: usize = 64;
@@ -240,23 +242,37 @@ unsafe fn matches_bridge_revision(
     capabilities: u64,
 ) -> bool {
     if capabilities
-        & !(REQUIRED | HTTP1 | SAME_AUTHORITY_HTTP2 | EXCEPTIONS | CUSTOM_CA | PROXY_APPLIED)
+        & !(REQUIRED
+            | HTTP1
+            | SAME_AUTHORITY_HTTP2
+            | EXCEPTIONS
+            | CUSTOM_CA
+            | PROXY_APPLIED
+            | BOUNDED_RETIREMENT)
         != 0
     {
         return false;
     }
     let protocol = capabilities & (HTTP1 | SAME_AUTHORITY_HTTP2);
-    let legacy = protocol == HTTP1 && unsafe { matches_pin(actual, LEGACY_PATCH_ID) };
+    let legacy = protocol == HTTP1
+        && capabilities & (PROXY_APPLIED | BOUNDED_RETIREMENT) == 0
+        && unsafe { matches_pin(actual, LEGACY_PATCH_ID) };
     let http2 = protocol == SAME_AUTHORITY_HTTP2
-        && capabilities & PROXY_APPLIED == 0
+        && capabilities & (PROXY_APPLIED | BOUNDED_RETIREMENT) == 0
         && unsafe { matches_pin(actual, HTTP2_PATCH_ID) };
-    let current = protocol == SAME_AUTHORITY_HTTP2
+    let proxy_applied = protocol == SAME_AUTHORITY_HTTP2
         && capabilities & PROXY_APPLIED != 0
+        && capabilities & BOUNDED_RETIREMENT == 0
+        && unsafe { matches_pin(actual, PROXY_APPLIED_PATCH_ID) };
+    let current = protocol == SAME_AUTHORITY_HTTP2
+        && capabilities & (PROXY_APPLIED | BOUNDED_RETIREMENT)
+            == (PROXY_APPLIED | BOUNDED_RETIREMENT)
         && unsafe { matches_pin(actual, PATCH_ID) };
     match requested {
         PATCH_ID => current,
+        PROXY_APPLIED_PATCH_ID => proxy_applied,
         HTTP2_PATCH_ID => http2,
-        LEGACY_PATCH_ID => legacy && capabilities & PROXY_APPLIED == 0,
+        LEGACY_PATCH_ID => legacy,
         _ => false,
     }
 }
@@ -274,6 +290,7 @@ impl NativeTlsBridge {
     /// Same initialization and independent provenance requirements as `from_loaded`.
     pub unsafe fn from_loaded_supported() -> Result<Self, NativeTlsError> {
         unsafe { Self::from_loaded(PATCH_ID) }
+            .or_else(|_| unsafe { Self::from_loaded(PROXY_APPLIED_PATCH_ID) })
             .or_else(|_| unsafe { Self::from_loaded(HTTP2_PATCH_ID) })
             .or_else(|_| unsafe { Self::from_loaded(LEGACY_PATCH_ID) })
     }
@@ -304,6 +321,9 @@ impl NativeTlsBridge {
             || !unsafe { matches_bridge_revision(api.patch_id, patch_id, api.capabilities) }
         {
             return Err(NativeTlsError::Incompatible);
+        }
+        if api.capabilities & BOUNDED_RETIREMENT != 0 {
+            module.symbol(c"cef_sorng_tls_registry_stats_v2")?;
         }
         Ok(Self {
             functions: Functions {
@@ -348,8 +368,10 @@ impl NativeTlsBridge {
     }
     /// The actual loaded, validated revision, not a requested package label.
     pub fn patch_id(&self) -> &'static str {
-        if self.functions.capabilities & PROXY_APPLIED != 0 {
+        if self.functions.capabilities & BOUNDED_RETIREMENT != 0 {
             PATCH_ID
+        } else if self.functions.capabilities & PROXY_APPLIED != 0 {
+            PROXY_APPLIED_PATCH_ID
         } else if self.supports_same_authority_http2() {
             HTTP2_PATCH_ID
         } else {
@@ -358,7 +380,8 @@ impl NativeTlsBridge {
     }
 
     /// Creates only a distinct, nonpersistent native context. Callback userdata
-    /// is registered before FFI and retained even if native creation fails.
+    /// is registered before FFI. Legacy failures retain it conservatively;
+    /// revision4 guarantees NULL has no future application callbacks.
     pub(crate) fn create_context(
         &self,
         config: &NativeTlsConfig,
@@ -426,12 +449,27 @@ impl NativeTlsBridge {
             state,
             _ui: PhantomData,
         };
-        if raw.is_null() {
-            owner.state.fail(NativeTlsFailure::ContextCreation);
-            return Err(NativeTlsError::Unavailable);
-        }
-        Ok((raw.wrap_result(), owner))
+        finish_context_creation(raw, owner)
     }
+}
+
+fn finish_context_creation(
+    raw: *mut cef::sys::_cef_request_context_t,
+    owner: NativeTlsContext,
+) -> Result<(RequestContext, NativeTlsContext), NativeTlsError> {
+    if raw.is_null() {
+        owner.state.fail(NativeTlsFailure::ContextCreation);
+        // Only the exact known cap9 revision promises post-NULL quiescence.
+        // Earlier engines may still issue state/evidence callbacks after NULL.
+        if owner.state.functions.capabilities & BOUNDED_RETIREMENT != 0 {
+            retained()
+                .lock()
+                .map_err(|_| NativeTlsError::Revoked)?
+                .remove(&owner.state.token);
+        }
+        return Err(NativeTlsError::Unavailable);
+    }
+    Ok((raw.wrap_result(), owner))
 }
 
 fn cookie_context_settings(cookies_enabled: bool) -> cef::RequestContextSettings {
@@ -1046,14 +1084,45 @@ mod tests {
         let legacy = std::ffi::CString::new(LEGACY_PATCH_ID).unwrap();
         let http2 = std::ffi::CString::new(HTTP2_PATCH_ID).unwrap();
         let current = std::ffi::CString::new(PATCH_ID).unwrap();
+        let proxy_applied = std::ffi::CString::new(PROXY_APPLIED_PATCH_ID).unwrap();
         let unknown = c"sorng-tls-v2-unreviewed";
         for (actual, requested, protocol, accepted) in [
             (legacy.as_c_str(), PATCH_ID, HTTP1, false),
             (
                 current.as_c_str(),
                 PATCH_ID,
+                SAME_AUTHORITY_HTTP2 | PROXY_APPLIED | BOUNDED_RETIREMENT,
+                true,
+            ),
+            (
+                proxy_applied.as_c_str(),
+                PROXY_APPLIED_PATCH_ID,
                 SAME_AUTHORITY_HTTP2 | PROXY_APPLIED,
                 true,
+            ),
+            (
+                proxy_applied.as_c_str(),
+                PATCH_ID,
+                SAME_AUTHORITY_HTTP2 | PROXY_APPLIED,
+                false,
+            ),
+            (
+                current.as_c_str(),
+                PROXY_APPLIED_PATCH_ID,
+                SAME_AUTHORITY_HTTP2 | PROXY_APPLIED | BOUNDED_RETIREMENT,
+                false,
+            ),
+            (
+                current.as_c_str(),
+                PATCH_ID,
+                SAME_AUTHORITY_HTTP2 | PROXY_APPLIED,
+                false,
+            ),
+            (
+                proxy_applied.as_c_str(),
+                PROXY_APPLIED_PATCH_ID,
+                SAME_AUTHORITY_HTTP2 | PROXY_APPLIED | BOUNDED_RETIREMENT,
+                false,
             ),
             (current.as_c_str(), PATCH_ID, SAME_AUTHORITY_HTTP2, false),
             (http2.as_c_str(), HTTP2_PATCH_ID, SAME_AUTHORITY_HTTP2, true),
@@ -1098,6 +1167,49 @@ mod tests {
                 accepted
             );
         }
+    }
+
+    #[test]
+    fn failed_factory_releases_only_revision_four_callback_quiescent_state() {
+        let _lock = TEST_LOCK.lock().unwrap();
+        for offset in 0..1025 {
+            let (mut state, hooks) = fixture();
+            let shared = Arc::get_mut(&mut state).unwrap();
+            shared.token = 100_000 + offset;
+            shared.functions.capabilities |= BOUNDED_RETIREMENT;
+            let token = shared.token;
+            retained().lock().unwrap().insert(token, state.clone());
+            let owner = NativeTlsContext {
+                state: state.clone(),
+                _ui: PhantomData,
+            };
+            assert!(matches!(
+                finish_context_creation(ptr::null_mut(), owner),
+                Err(NativeTlsError::Unavailable)
+            ));
+            assert!(!retained().lock().unwrap().contains_key(&token));
+            assert_eq!(hooks.failures.load(Ordering::Acquire), 1);
+            assert_eq!(Arc::strong_count(&state), 1);
+        }
+        // Existing runtimes do not promise callback quiescence after NULL.
+        // Their userdata remains pinned until the existing terminal ACK.
+        let (mut state, _) = fixture();
+        let shared = Arc::get_mut(&mut state).unwrap();
+        shared.token = 200_000;
+        shared.functions.capabilities |= SAME_AUTHORITY_HTTP2 | PROXY_APPLIED;
+        let token = shared.token;
+        retained().lock().unwrap().insert(token, state.clone());
+        let owner = NativeTlsContext {
+            state: state.clone(),
+            _ui: PhantomData,
+        };
+        assert!(matches!(
+            finish_context_creation(ptr::null_mut(), owner),
+            Err(NativeTlsError::Unavailable)
+        ));
+        assert!(retained().lock().unwrap().contains_key(&token));
+        accept_state(&state, token, state.generation, 2).unwrap();
+        assert!(!retained().lock().unwrap().contains_key(&token));
     }
 
     #[test]

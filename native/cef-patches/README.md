@@ -2,11 +2,14 @@
 
 Pinned CEF: `682c378d70d5780061e96644dca16ddd8fd157a9`.
 Pinned Chromium: `154.0.8037.58`.
-**Current patch ID: `sorng-tls-v2-682c378-3`.**
-Revision3 adds a bounded private proxy application ACK, independently from TLS
+**Current patch ID: `sorng-tls-v2-682c378-4`.**
+Revision 4 adds bounded registration retirement (capability bit 9). Revision 3
+remains the exact reviewed proxy-ACK contract described below; revision 4 preserves
+that contract and the existing ABI 2 layouts.
+Revision 3 adds a bounded private proxy application ACK, independently from TLS
 readiness. It validates the exact fixed loopback proxy, fences the configuration
 pipe and verifies fixed rules inside NetworkService without PAC, DNS or socket
-activity. State4 is actual proxy proof; state5 is its distinct failure. ABI2
+activity. State4 is actual proxy proof; state5 is its distinct failure. ABI 2
 structure layouts remain unchanged. Known H2 revision2 remains supported without
 claiming proxy application proof; no HTTP/3 capability is added.
 The reviewed legacy H1 runtime remains `sorng-tls-v2-682c378-1`.
@@ -300,7 +303,7 @@ later Chrome profile updates cannot replace these anchors. Custom CA capability
 is advertised only on builds with Chrome root-store support; unsupported builds
 reject custom modes. The app owns CA selection and policy/consent semantics.
 
-Revoke permanently tombstones the token, denies pending challenges and asks all
+Revoke permanently rejects token replay, denies pending challenges and asks all
 known network delegates to disconnect sockets. State 2 acknowledges revocation
 and terminates userdata callbacks. Retain callback userdata until state 2 returns,
 or until CefShutdown returns if shutdown/disconnection prevents acknowledgment.
@@ -328,12 +331,15 @@ Main must also revoke proxy/credential leases; transmitted bytes cannot be recal
 - TLS socket gate after sync AND async native verification, outside verifier
   caches. Cached verification results still require fresh socket admission.
 - Bounded private-context Mojo bridge: 64 pending challenges, browser timeout
-  300 seconds, network timeout 305 seconds; process limit 1024 context tombstones.
+  300 seconds, network timeout 305 seconds. Revisions1–3 retain up to 1024 lifetime
+  tombstones; revision 4 bounds live/retiring registrations to 1024 and keeps an
+  O(1) monotonic token replay fence after safe retirement.
 - Native success, scoped exceptions and custom CA modes all retain app admission.
 - Delegate loss/revoke denies pending admission and disconnects registered sockets;
   payload reads/writes also check active admission.
-- Protected contexts disable HTTP2/QUIC, early data, TLS resumption and TLS
-  renegotiation. HTTP1 exact-destination reuse remains; no cross-authority H2 pool.
+- Revision 1 disables HTTP2/QUIC; revisions 2–4 allow same-authority H2. All
+  revisions disable QUIC, early data, TLS resumption and TLS renegotiation.
+  No cross-authority H2 pooling is enabled.
 - Existing allowed-bad-cert shortcuts cannot bypass native verification.
 - ECH public-name retries and TLS client authentication fail closed (unsupported).
 - Six parameterized real-socket tests authored for sync/async verifier modes
@@ -390,3 +396,35 @@ Chromium's `cef/` in a real checkout).
 6. Verify stock CEF API hashes remain compatible and additive exports survive all
    platform linkers. The ABI header stays OUT of includes_common_capi, which pinned
    tools/cef_api_hash.py hashes; package the additional header separately.
+
+## Bounded registration retirement — revision 4 candidate
+
+Patch 0012 is additive to the immutable revision 3 queue. Creation accepts only a
+nonzero token above the process high-water mark, after validating every descriptor
+and trust anchor. Tokens never wrap or become reusable with a new generation.
+Capacity counts actual live/retiring registrations, including revoked contexts
+that remain attached. The fixed active limit is unchanged at1024.
+
+Revocation alone never removes an attached context's denying TLS delegate. A
+successful registration can retire only after real Detach, every observed control
+ACK/disconnect, the terminal application callback returning, and all enclosing
+application callbacks leaving. A deferred UI task captures token and generation,
+relooks up the exact entry, rechecks eligibility, and then erases it. Weak callback
+factories are destroyed before the registration's remaining state. No callback
+expiry is treated as a synthetic revocation ACK.
+
+Only the exact revision 4 capability contract guarantees that a NULL factory return
+is callback-quiescent. A failed factory suppresses application callbacks before
+returning NULL; internal revocation callbacks may finish later without using the
+application userdata. The host retains the conservative legacy behavior for all
+older revisions. A separate size/version-checked, UI-thread-only stats export
+returns counts, root-byte totals and the monotonic high-water value; it exposes no
+pointers, certificates or endpoints.
+
+The standalone C++ policy test compiles the same header used by the actual engine
+and exercises 10,000 identities, capacity/replay/wrap boundaries, nested callbacks,
+Detach/ACK ordering and idempotent control settlement. Both maintained native
+acceptance clients share the portable exact-loaded-image registry fixture and run
+it last, after ordinary host contexts. Actual private runtime acceptance and all
+six platform binaries remain mandatory; source and policy tests do not replace
+that evidence. Accepted older packages and local runtime selection are unchanged.

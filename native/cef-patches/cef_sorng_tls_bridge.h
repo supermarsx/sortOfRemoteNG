@@ -31,6 +31,8 @@ extern "C" {
 #define CEF_SORNG_TLS_CAP_SAME_AUTHORITY_HTTP2 (1ull << 6)
 // Bit 7 remains reserved for a separately reviewed HTTP/3 contract.
 #define CEF_SORNG_TLS_CAP_PROXY_APPLIED (1ull << 8)
+// Revision 4: monotonic token replay fence and bounded live registration state.
+#define CEF_SORNG_TLS_CAP_BOUNDED_CONTEXT_RETIREMENT (1ull << 9)
 #define CEF_SORNG_TLS_CA_SYSTEM 0u
 #define CEF_SORNG_TLS_CA_SYSTEM_PLUS_CUSTOM 1u
 #define CEF_SORNG_TLS_CA_CUSTOM_ONLY 2u
@@ -109,6 +111,19 @@ typedef struct cef_sorng_tls_api_v2 {
   const char* patch_id;
 } cef_sorng_tls_api_v2;
 
+// UI-thread read-only counters. No pointers, certificate bytes or endpoints.
+typedef struct cef_sorng_tls_registry_stats_v2_t {
+  uint32_t size;
+  uint32_t abi_version;
+  uint64_t registrations;  // Includes attached revoked and retiring entries.
+  uint64_t retiring;
+  uint64_t root_bytes;
+  uint64_t token_high_water;
+} cef_sorng_tls_registry_stats_v2_t;
+
+SORNG_TLS_EXPORT int SORNG_TLS_CALL
+cef_sorng_tls_registry_stats_v2(cef_sorng_tls_registry_stats_v2_t* stats);
+
 SORNG_TLS_EXPORT const cef_sorng_tls_api_v2* SORNG_TLS_CALL
 cef_sorng_tls_get_api_v2(void);
 struct _cef_request_context_t;
@@ -118,6 +133,11 @@ struct _cef_request_context_handler_t;
 // context; nonempty cache_path or persistent-session-cookies settings rejected.
 // Token is installed on the actual native context BEFORE its initialization.
 // Returns one owned CEF reference (release via base.release); NULL on failure.
+// With BOUNDED_CONTEXT_RETIREMENT, every accepted token must be strictly larger
+// than all previously accepted tokens in this process (no wrap/reuse, even with
+// a different generation). NULL is callback-quiescent when that capability is
+// present: after the call returns NULL, no application callback can occur for
+// that descriptor. Older revisions retain their existing conservative lifetime.
 // Handler is borrowed for the call; bridge retains its own reference as needed.
 // Await state(1) AND normal OnRequestContextInitialized; return is not readiness.
 SORNG_TLS_EXPORT struct _cef_request_context_t* SORNG_TLS_CALL
@@ -135,7 +155,7 @@ SORNG_TLS_EXPORT int SORNG_TLS_CALL
 cef_sorng_tls_complete_v2(uint64_t context_token, uint64_t generation,
                           uint64_t challenge, uint32_t decision,
                           uint32_t exception_mask);
-// UI thread only. Tombstones the token; cannot subsequently rearm it.
+// UI thread only. Permanently rejects token replay; cannot subsequently rearm it.
 // Keep callback user_data alive until on_state(2), or until CefShutdown returns
 // if shutdown prevents delivery. Main must also revoke proxy/credential leases.
 SORNG_TLS_EXPORT int SORNG_TLS_CALL

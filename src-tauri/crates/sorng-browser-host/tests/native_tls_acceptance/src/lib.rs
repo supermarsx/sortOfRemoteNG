@@ -35,6 +35,7 @@ use tao::{
 };
 mod fixture;
 mod ledger;
+mod registry_retirement_fixture;
 mod static_document;
 mod storage;
 use ledger::{Decision, Ledger};
@@ -500,6 +501,7 @@ fn execute(bootstrap: &mut dyn RuntimeBootstrap, paths: &BundlePaths) -> Result 
             unsafe {
                 runtime.shutdown()?;
                 cef_tls_bridge::after_cef_shutdown();
+                registry_retirement_fixture::after_shutdown();
             }
             report["shutdownComplete"] = true.into();
             report["failures"] = serde_json::json!(failures);
@@ -936,10 +938,23 @@ fn execute(bootstrap: &mut dyn RuntimeBootstrap, paths: &BundlePaths) -> Result 
             }
         }
     }
+    if bridge.patch_id() == cef_tls_bridge::PATCH_ID {
+        let retirement = registry_retirement_fixture::run(&mut || {
+            registry_retirement_fixture::pump(&runtime, &mut events)
+        }, &certificates.root);
+        report["registrationRetirementCases"] = match retirement {
+            Ok(value) => value,
+            Err(error) => {
+                failures.push(format!("registry-retirement: {error}"));
+                serde_json::json!({"ok":false})
+            }
+        };
+    }
     drop(bridge);
     unsafe {
         runtime.shutdown()?;
         cef_tls_bridge::after_cef_shutdown();
+                registry_retirement_fixture::after_shutdown();
     }
     report["shutdownComplete"] = true.into();
     report["failures"] = serde_json::json!(failures);
