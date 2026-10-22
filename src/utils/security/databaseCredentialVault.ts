@@ -221,7 +221,18 @@ function deviceTrust(value: unknown): VaultDeviceTrustFacet {
 export function normalizeDatabaseCredentialEntry(
   value: unknown,
 ): DatabaseCredentialEntry {
-  const row = object(value, ["id", "name", "createdAt", "updatedAt", "facets"]);
+  const row = object(
+    value,
+    ["id", "name", "createdAt", "updatedAt", "facets"],
+    ["tags"],
+  );
+  let tags: string[] | undefined;
+  if (hasOwn(row, "tags")) {
+    if (!Array.isArray(row.tags) || row.tags.length > 16) return invalid();
+    tags = Array.from(row.tags, (tag) => text(tag, 40).trim());
+    if (new Set(tags.map((tag) => tag.toLowerCase())).size !== tags.length)
+      return invalid();
+  }
   const raw = object(row.facets, [], DATABASE_CREDENTIAL_FACETS);
   const facets: DatabaseCredentialFacets = {};
   for (const key of [
@@ -285,6 +296,7 @@ export function normalizeDatabaseCredentialEntry(
     createdAt,
     updatedAt,
     facets,
+    ...(tags ? { tags } : {}),
   };
 }
 export const emptyDatabaseCredentialVault = (): DatabaseCredentialVault => ({
@@ -326,6 +338,7 @@ export function databaseCredentialMetadata(
     availableFacets: DATABASE_CREDENTIAL_FACETS.filter((key) =>
       hasOwn(entry.facets, key),
     ),
+    ...(entry.tags ? { tags: [...entry.tags] } : {}),
   };
 }
 export function selectDatabaseCredentialFacets(

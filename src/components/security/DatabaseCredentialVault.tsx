@@ -7,6 +7,11 @@ import {
   ShieldAlert,
   Upload,
   Download,
+  Pencil,
+  Trash2,
+  ArrowRightToLine,
+  ChevronLeft,
+  ChevronRight,
 } from "lucide-react";
 import { ConnectionContext } from "../../contexts/ConnectionContextTypes";
 import type { Connection } from "../../types/connection/connection";
@@ -29,6 +34,8 @@ import {
   connectionCredentialMatches,
 } from "../../utils/security/connectionCredentialInventory";
 import { useConnectionCredentialInventory } from "./databaseCredentialVault/useConnectionCredentialInventory";
+import { vaultCredentialCategories } from "../../utils/security/credentialVaultCategories";
+import type { DatabaseCredentialMetadata } from "../../types/security/databaseCredentialVault";
 const VaultArchiveDialog = React.lazy(
   () => import("./databaseCredentialVault/VaultArchiveDialog"),
 );
@@ -143,8 +150,23 @@ function VaultWorkspace({
     reviewRef.current = next;
     setReview(next);
   };
+  const assignmentText = (id: string) =>
+    inventory.assignments === null
+      ? "Assignments unavailable"
+      : (inventory.assignments.get(id) ?? [])
+          .map((row) =>
+            row.application ? `${row.name} (${row.application})` : row.name,
+          )
+          .join(", ") || "Not assigned";
+  const categoryLabels = (row: DatabaseCredentialMetadata) =>
+    vaultCredentialCategories(
+      row,
+      (inventory.assignments?.get(row.id) ?? []).flatMap(
+        (assignment) => assignment.categories,
+      ),
+    );
   const vaultRows = (mgr.snapshot?.entries ?? []).filter((row) =>
-    `${row.name} ${row.availableFacets.map((key) => FACET_LABELS[key]).join(" ")}`
+    `${row.name} ${row.availableFacets.map((key) => FACET_LABELS[key]).join(" ")} ${categoryLabels(row).join(" ")} ${assignmentText(row.id)}`
       .toLowerCase()
       .includes(search.toLowerCase()),
   );
@@ -155,7 +177,17 @@ function VaultWorkspace({
     ...(source === "vault"
       ? []
       : inventory.rows
-          .filter((row) => connectionCredentialMatches(row, search))
+          .filter(
+            (row) =>
+              connectionCredentialMatches(row, search) ||
+              [
+                ...(inventory.categories.get(row.id) ?? []),
+                inventory.applications.get(row.id) ?? "",
+              ]
+                .join(" ")
+                .toLowerCase()
+                .includes(search.trim().toLowerCase()),
+          )
           .map((row) => ({ source: "connection" as const, row }))),
   ];
   const pages = Math.max(1, Math.ceil(rows.length / 25)),
@@ -173,7 +205,9 @@ function VaultWorkspace({
         <div className="ml-auto flex gap-2">
           <button
             type="button"
-            className="sor-btn sor-btn-secondary"
+            className="sor-btn-icon"
+            aria-label="Import archive"
+            data-tooltip="Import archive"
             disabled={busy || mgr.loading || !mgr.snapshot}
             onClick={() =>
               request(() => {
@@ -183,11 +217,12 @@ function VaultWorkspace({
             }
           >
             <Upload size={14} />
-            Import archive
           </button>
           <button
             type="button"
-            className="sor-btn sor-btn-secondary"
+            className="sor-btn-icon"
+            aria-label="Export archive"
+            data-tooltip="Export archive"
             disabled={
               busy ||
               mgr.loading ||
@@ -202,11 +237,12 @@ function VaultWorkspace({
             }
           >
             <Download size={14} />
-            Export archive
           </button>
           <button
             type="button"
-            className="sor-btn sor-btn-secondary"
+            className="sor-btn-icon"
+            aria-label="Reload vault"
+            data-tooltip="Reload vault"
             disabled={busy || mgr.loading}
             onClick={() =>
               request(() => {
@@ -216,18 +252,18 @@ function VaultWorkspace({
             }
           >
             <RefreshCw size={14} />
-            Reload vault
           </button>
           <button
             type="button"
-            className="sor-btn sor-btn-primary"
+            className="sor-btn-icon text-primary"
+            aria-label="New credential"
+            data-tooltip="New credential"
             disabled={busy || mgr.loading || !mgr.snapshot || !onOpenEditor}
             onClick={() =>
               onOpenEditor?.({ mode: "create", scope: { ...api.scope! } })
             }
           >
             <Plus size={14} />
-            New credential
           </button>
         </div>
       </header>
@@ -283,7 +319,7 @@ function VaultWorkspace({
                   setSearch(event.target.value);
                   setPage(0);
                 }}
-                placeholder="Search names, credential types or sources"
+                placeholder="Search names, tags, types or assignments"
               />
             </label>
             <div className="flex items-center gap-2 text-sm">
@@ -306,23 +342,23 @@ function VaultWorkspace({
             </div>
           </div>
           <table
-            className="w-full text-left text-sm"
+            className="w-full min-w-[48rem] table-fixed text-left text-sm [&_td]:whitespace-nowrap [&_td]:px-2 [&_td]:py-1.5"
             aria-label="Database vault credentials"
             aria-busy={mgr.loading}
           >
             <thead>
               <tr className="border-b border-[var(--color-border)]">
-                <th className="p-2">Name</th>
-                <th className="p-2">Source</th>
-                <th className="p-2">Credential types</th>
+                <th className="w-1/4 p-2">Name</th>
+                <th className="w-32 p-2">Source</th>
+                <th className="w-1/4 p-2">Category tags</th>
                 <th
                   scope="col"
                   className="p-2 text-right"
-                  title="Distinct saved connection references in this database; not live sessions"
+                  data-tooltip="Saved connection and application assignments in this database; not live sessions"
                 >
-                  Used by
+                  Assigned to
                 </th>
-                <th className="p-2 text-right">Actions</th>
+                <th className="w-20 p-2 text-right">Actions</th>
               </tr>
             </thead>
             <tbody>
@@ -335,42 +371,73 @@ function VaultWorkspace({
                       className="border-b border-[var(--color-border)]"
                     >
                       <td className="p-2 font-medium">
-                        {item.row.name}
-                        <span className="block text-xs font-normal text-[var(--color-textSecondary)]">
-                          {item.row.protocol}
+                        <span className="flex min-w-0 items-center gap-2">
+                          <span
+                            className="truncate"
+                            data-tooltip={item.row.name}
+                          >
+                            {item.row.name}
+                          </span>
+                          <span className="shrink-0 text-xs font-normal text-[var(--color-textSecondary)]">
+                            {item.row.protocol}
+                          </span>
                         </span>
                       </td>
-                      <td className="p-2 text-xs">
+                      <td
+                        className="truncate text-xs"
+                        data-tooltip={item.row.storage
+                          .map(
+                            (key) => CONNECTION_CREDENTIAL_STORAGE_LABELS[key],
+                          )
+                          .join(" · ")}
+                      >
                         {item.row.storage
                           .map(
                             (key) => CONNECTION_CREDENTIAL_STORAGE_LABELS[key],
                           )
                           .join(" · ")}
                         {item.row.localValuesIgnored && (
-                          <span className="block text-[var(--color-textSecondary)]">
-                            Local login values retained, not a vault fallback
+                          <span
+                            className="ml-1 text-[var(--color-textSecondary)]"
+                            data-tooltip="Local login values retained, not a vault fallback"
+                          >
+                            · Local retained
                           </span>
                         )}
                       </td>
-                      <td className="p-2 text-[var(--color-textSecondary)]">
-                        {item.row.kinds
-                          .map((key) => CONNECTION_CREDENTIAL_LABELS[key])
-                          .join(", ")}
+                      <td
+                        className="truncate text-[var(--color-textSecondary)]"
+                        data-tooltip={`Types: ${item.row.kinds.map((key) => CONNECTION_CREDENTIAL_LABELS[key]).join(", ")}`}
+                      >
+                        <span className="rounded bg-[var(--color-surface)] px-1.5 py-0.5 text-xs">
+                          {(
+                            inventory.categories.get(item.row.id) ?? ["Other"]
+                          ).join(" · ")}
+                        </span>
                       </td>
                       <td
                         className="p-2 text-right text-[var(--color-textSecondary)]"
                         aria-label="Usage count not applicable to a connection-local row"
                       >
-                        —
+                        <span
+                          className="block truncate"
+                          data-tooltip={`${item.row.name}${inventory.applications.get(item.row.id) ? ` (${inventory.applications.get(item.row.id)})` : ""}`}
+                        >
+                          {item.row.name}
+                          {inventory.applications.get(item.row.id)
+                            ? ` (${inventory.applications.get(item.row.id)})`
+                            : ""}
+                        </span>
                       </td>
                       <td className="p-2 text-right">
                         <div className="flex justify-end gap-2">
                           {inventory.migratable.has(item.row.id) && (
                             <button
                               type="button"
-                              className="sor-btn sor-btn-secondary"
+                              className="sor-btn-icon"
                               disabled={busy || mgr.loading || !onOpenEditor}
                               aria-label={`Move credentials from ${item.row.name} to vault`}
+                              data-tooltip="Move to vault"
                               onClick={() =>
                                 onOpenEditor?.({
                                   mode: "migrate",
@@ -379,12 +446,12 @@ function VaultWorkspace({
                                 })
                               }
                             >
-                              Move to vault
+                              <ArrowRightToLine size={15} />
                             </button>
                           )}
                           <button
                             type="button"
-                            className="sor-btn sor-btn-secondary"
+                            className="sor-btn-icon"
                             disabled={busy || mgr.loading || !onEditConnection}
                             aria-label={`Edit credentials in connection ${item.row.name}`}
                             data-tooltip="Open the owning connection editor; no secrets are copied into the vault"
@@ -394,7 +461,7 @@ function VaultWorkspace({
                               })
                             }
                           >
-                            Edit in connection
+                            <Pencil size={15} />
                           </button>
                         </div>
                       </td>
@@ -404,12 +471,20 @@ function VaultWorkspace({
                       key={`vault:${item.row.id}`}
                       className="border-b border-[var(--color-border)]"
                     >
-                      <td className="p-2 font-medium">{item.row.name}</td>
+                      <td
+                        className="truncate font-medium"
+                        data-tooltip={item.row.name}
+                      >
+                        {item.row.name}
+                      </td>
                       <td className="p-2 text-xs">Reusable vault</td>
-                      <td className="p-2 text-[var(--color-textSecondary)]">
-                        {item.row.availableFacets
-                          .map((key) => FACET_LABELS[key])
-                          .join(", ")}
+                      <td
+                        className="truncate text-[var(--color-textSecondary)]"
+                        data-tooltip={`${categoryLabels(item.row).join(", ")} · Types: ${item.row.availableFacets.map((key) => FACET_LABELS[key]).join(", ")}`}
+                      >
+                        <span className="rounded bg-[var(--color-surface)] px-1.5 py-0.5 text-xs">
+                          {categoryLabels(item.row).join(" · ")}
+                        </span>
                       </td>
                       <td
                         className="p-2 text-right tabular-nums"
@@ -419,15 +494,27 @@ function VaultWorkspace({
                             : `${inventory.usage.get(item.row.id) ?? 0} saved connection references`
                         }
                       >
-                        {inventory.usage === null
-                          ? "—"
-                          : (inventory.usage.get(item.row.id) ?? 0)}
+                        <span className="flex min-w-0 items-center gap-1 text-left">
+                          <span className="shrink-0" aria-hidden="true">
+                            {inventory.usage === null
+                              ? "—"
+                              : (inventory.usage.get(item.row.id) ?? 0)}{" "}
+                            ·
+                          </span>
+                          <span
+                            className="truncate"
+                            aria-label={assignmentText(item.row.id)}
+                            data-tooltip={assignmentText(item.row.id)}
+                          >
+                            {assignmentText(item.row.id)}
+                          </span>
+                        </span>
                       </td>
                       <td className="p-2">
                         <div className="flex justify-end gap-2">
                           <button
                             type="button"
-                            className="sor-btn sor-btn-secondary"
+                            className="sor-btn-icon"
                             disabled={busy || mgr.loading || !onOpenEditor}
                             aria-label={`Edit ${item.row.name}`}
                             data-tooltip="Explicitly load this credential into the private editor"
@@ -439,16 +526,17 @@ function VaultWorkspace({
                               });
                             }}
                           >
-                            Edit
+                            <Pencil size={15} />
                           </button>
                           <button
                             type="button"
-                            className="sor-btn sor-btn-danger"
+                            className="sor-btn-icon text-error"
                             disabled={busy || mgr.loading}
                             aria-label={`Delete ${item.row.name}`}
+                            data-tooltip={`Delete ${item.row.name}`}
                             onClick={() => remove(mgr.snapshot!, item.row.id)}
                           >
-                            Delete
+                            <Trash2 size={15} />
                           </button>
                         </div>
                       </td>
@@ -480,19 +568,23 @@ function VaultWorkspace({
             <div className="flex gap-2">
               <button
                 type="button"
-                className="sor-btn sor-btn-secondary"
+                className="sor-btn-icon"
+                aria-label="Previous"
+                data-tooltip="Previous page"
                 disabled={currentPage === 0}
                 onClick={() => setPage(currentPage - 1)}
               >
-                Previous
+                <ChevronLeft size={15} />
               </button>
               <button
                 type="button"
-                className="sor-btn sor-btn-secondary"
+                className="sor-btn-icon"
+                aria-label="Next"
+                data-tooltip="Next page"
                 disabled={currentPage + 1 >= pages}
                 onClick={() => setPage(currentPage + 1)}
               >
-                Next
+                <ChevronRight size={15} />
               </button>
             </div>
           </footer>

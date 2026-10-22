@@ -1,6 +1,6 @@
 import React, { useId, useState } from "react";
 import { Eye, EyeOff, Plus, Trash2 } from "lucide-react";
-import { Checkbox, PasswordInput, Select } from "../../ui/forms";
+import { Checkbox, CheckboxField, PasswordInput, Select } from "../../ui/forms";
 import type {
   DatabaseCredentialEntry,
   DatabaseCredentialFacet,
@@ -15,6 +15,7 @@ import {
 } from "../../../utils/security/databaseCredentialVault";
 
 import { FACET_LABELS } from "../../../hooks/security/useDatabaseCredentialVault";
+import { CREDENTIAL_CATEGORIES } from "../../../utils/security/credentialVaultCategories";
 
 function SecretField({
   label,
@@ -112,6 +113,7 @@ export default function CredentialEntryForm({
   onCancel: () => void;
   busy: boolean;
 }) {
+  const [customTag, setCustomTag] = useState("");
   let valid = true;
   try {
     normalizeDatabaseCredentialEntry(entry);
@@ -272,6 +274,109 @@ export default function CredentialEntryForm({
       {textField("Credential name", entry.name, (name) =>
         onChange({ ...entry, name }),
       )}
+      <fieldset className="rounded border border-[var(--color-border)] p-3">
+        <legend className="px-1 text-sm">Category tags</legend>
+        <div className="flex flex-wrap gap-x-4 gap-y-2">
+          {CREDENTIAL_CATEGORIES.map((tag) => (
+            <CheckboxField
+              key={tag}
+              label={tag}
+              checked={(entry.tags ?? []).some(
+                (saved) => saved.toLowerCase() === tag.toLowerCase(),
+              )}
+              disabled={
+                busy ||
+                ((entry.tags?.length ?? 0) >= 16 &&
+                  !(entry.tags ?? []).some(
+                    (saved) => saved.toLowerCase() === tag.toLowerCase(),
+                  ))
+              }
+              onChange={(checked) =>
+                onChange({
+                  ...entry,
+                  tags: checked
+                    ? [...(entry.tags ?? []), tag]
+                    : (entry.tags ?? []).filter(
+                        (saved) => saved.toLowerCase() !== tag.toLowerCase(),
+                      ),
+                })
+              }
+            />
+          ))}
+        </div>
+        <div className="mt-3 flex items-end gap-2">
+          <label className="min-w-0 flex-1 text-sm">
+            Custom label
+            <input
+              className="sor-form-input mt-1 w-full"
+              aria-label="Custom label"
+              maxLength={40}
+              value={customTag}
+              disabled={busy}
+              onChange={(event) => setCustomTag(event.target.value)}
+            />
+          </label>
+          <button
+            type="button"
+            className="sor-btn-icon"
+            aria-label="Add custom label"
+            data-tooltip="Add custom label"
+            disabled={
+              busy ||
+              !customTag.trim() ||
+              (entry.tags?.length ?? 0) >= 16 ||
+              (entry.tags ?? []).some(
+                (tag) => tag.toLowerCase() === customTag.trim().toLowerCase(),
+              )
+            }
+            onClick={() => {
+              onChange({
+                ...entry,
+                tags: [...(entry.tags ?? []), customTag.trim()],
+              });
+              setCustomTag("");
+            }}
+          >
+            <Plus size={16} />
+          </button>
+        </div>
+        <div className="mt-2 flex flex-wrap gap-2">
+          {(entry.tags ?? [])
+            .filter(
+              (tag) =>
+                !CREDENTIAL_CATEGORIES.some(
+                  (category) => category.toLowerCase() === tag.toLowerCase(),
+                ),
+            )
+            .map((tag) => (
+              <span
+                key={tag}
+                className="inline-flex items-center gap-1 rounded bg-[var(--color-surface)] px-2 py-1 text-xs"
+              >
+                {tag}
+                <button
+                  type="button"
+                  className="sor-btn-icon !h-5 !w-5"
+                  aria-label={`Remove label ${tag}`}
+                  data-tooltip={`Remove label ${tag}`}
+                  disabled={busy}
+                  onClick={() =>
+                    onChange({
+                      ...entry,
+                      tags: entry.tags!.filter((saved) => saved !== tag),
+                    })
+                  }
+                >
+                  <Trash2 size={12} />
+                </button>
+              </span>
+            ))}
+        </div>
+        <p className="mt-2 text-xs text-[var(--color-textSecondary)]">
+          Labels are saved with this credential. Its types and assigned
+          connections also help classify the list.
+        </p>
+      </fieldset>
       <fieldset className="rounded border border-[var(--color-border)] bg-[var(--color-surface)] p-3">
         <legend className="px-1 text-xs font-medium text-[var(--color-textSecondary)]">
           Include credential types

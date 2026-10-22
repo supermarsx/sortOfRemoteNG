@@ -82,6 +82,7 @@ export function useCredentialEditor(request: CredentialEditorRequest) {
             createdAt: row.createdAt,
             updatedAt: row.updatedAt,
             facets,
+            ...(row.tags ? { tags: [...row.tags] } : {}),
           };
         } else if (requested.mode === "migrate") {
           const current = check();

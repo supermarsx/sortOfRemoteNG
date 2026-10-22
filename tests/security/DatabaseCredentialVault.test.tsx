@@ -29,6 +29,11 @@ import type { CredentialEditorRequest } from "../../src/types/security/credentia
 import { getCredentialVaultDraft } from "../../src/utils/security/credentialVaultDrafts";
 import CredentialSourceSection from "../../src/components/connectionEditor/CredentialSourceSection";
 import DatabaseCredentialVaultSection from "../../src/components/SettingsDialog/sections/security/DatabaseCredentialVaultSection";
+import { useTooltipSystem } from "../../src/hooks/window/useTooltipSystem";
+function TooltipFixture({ children }: { children: React.ReactNode }) {
+  useTooltipSystem();
+  return <>{children}</>;
+}
 vi.mock("../../src/components/ui/dialogs/ConfirmDialog", () => ({
   ConfirmDialog: ({
     isOpen,
@@ -160,6 +165,116 @@ function deferred<T>() {
 afterEach(cleanup);
 
 describe("database vault manager", () => {
+  it("shows compact icon-only rows, category tags and actual application assignments with no secret resolution, then drops revoked assignment metadata", async () => {
+    const { api } = facade([{ ...entry(), tags: ["SMTP", "Finance"] }]);
+    const rows = [
+      {
+        id: "mail-app",
+        name: "Mail administration",
+        protocol: "https",
+        httpApplication: { version: 1, id: "webmin", loginMode: "digest" },
+        credentialSource: { kind: "vault", credentialId: id },
+      },
+    ] as Connection[];
+    const ctx = { ...context(api), getCurrentConnections: vi.fn(() => rows) };
+    const view = render(
+      <TooltipFixture>
+        <ConnectionContext.Provider value={ctx}>
+          <DatabaseCredentialVault />
+        </ConnectionContext.Provider>
+      </TooltipFixture>,
+    );
+    const edit = await screen.findByRole("button", {
+      name: "Edit NAS operator",
+    });
+    const row = edit.closest("tr")!;
+    expect(row).toHaveTextContent("SMTP");
+    expect(row).toHaveTextContent("Mail administration (Webmin)");
+    expect(row).toHaveTextContent("Digest");
+    for (const button of within(row).getAllByRole("button")) {
+      expect(button).toHaveAttribute("aria-label");
+      expect(button).toHaveAttribute("data-tooltip");
+      expect(button.textContent).toBe("");
+      expect(button).not.toHaveAttribute("title");
+    }
+    fireEvent.mouseOver(edit);
+    expect(document.querySelectorAll(".app-tooltip.is-visible")).toHaveLength(
+      1,
+    );
+    expect(document.querySelector(".app-tooltip.is-visible")).toHaveTextContent(
+      "Explicitly load this credential into the private editor",
+    );
+    fireEvent.mouseOut(edit);
+    expect(
+      screen.getByRole("table", { name: "Database vault credentials" })
+        .className,
+    ).toContain("whitespace-nowrap");
+    fireEvent.change(
+      screen.getByRole("searchbox", { name: "Search vault credentials" }),
+      { target: { value: "Webmin" } },
+    );
+    expect(
+      screen.getByRole("button", { name: "Edit NAS operator" }),
+    ).toBeInTheDocument();
+    expect(api.resolve).not.toHaveBeenCalled();
+    expect(view.container.innerHTML).not.toMatch(/PRIVATE_|JBSW/);
+    fireEvent.change(
+      screen.getByRole("searchbox", { name: "Search vault credentials" }),
+      { target: { value: "" } },
+    );
+    view.rerender(
+      <TooltipFixture>
+        <ConnectionContext.Provider
+          value={{
+            ...ctx,
+            getCurrentConnections: () => {
+              throw new Error("Owner revoked");
+            },
+          }}
+        >
+          <DatabaseCredentialVault />
+        </ConnectionContext.Provider>
+      </TooltipFixture>,
+    );
+    expect(view.container.innerHTML).not.toContain("Mail administration");
+    expect(view.container.innerHTML).not.toContain("Webmin");
+  });
+
+  it("preserves saved tags while renaming and saves selected categories/custom labels through the real editor", async () => {
+    const { api, snapshot } = facade([
+      { ...entry(), tags: ["SMTP", "Finance"] },
+    ]);
+    mount(api);
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Edit NAS operator" }),
+    );
+    await screen.findByLabelText("Credential name");
+    expect(screen.getByRole("checkbox", { name: "SMTP" })).toBeChecked();
+    fireEvent.change(screen.getByLabelText("Credential name"), {
+      target: { value: "Mail operator" },
+    });
+    fireEvent.click(screen.getByRole("checkbox", { name: "VPN" }));
+    fireEvent.change(screen.getByRole("textbox", { name: "Custom label" }), {
+      target: { value: "Operations" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Add custom label" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save credential" }));
+    await screen.findByRole("button", { name: "Edit Mail operator" });
+    expect(snapshot().entries[0].tags).toEqual([
+      "SMTP",
+      "Finance",
+      "VPN",
+      "Operations",
+    ]);
+    const changes = vi.mocked(api.compareAndSwap).mock.calls[0][1];
+    expect(changes[0]).toMatchObject({
+      operation: "put",
+      entry: {
+        facets: entry().facets,
+        tags: ["SMTP", "Finance", "VPN", "Operations"],
+      },
+    });
+  });
   it("reads metadata only until explicit Edit, masks every secret and preserves multiline keys", async () => {
     const { api } = facade([entry()]);
     mount(api);

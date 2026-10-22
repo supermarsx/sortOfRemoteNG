@@ -9,6 +9,9 @@ import { credentialVaultScopeKey } from "../../../hooks/security/useDatabaseCred
 import {
   credentialVaultUsage,
   canMigrateConnectionCredential,
+  credentialVaultAssignments,
+  credentialConnectionAssignment,
+  type CredentialAssignment,
 } from "../../../utils/security/credentialVaultUsage";
 import {
   connectionCredentialInventory,
@@ -56,6 +59,9 @@ export function useConnectionCredentialInventory(
   }, []);
   let rows: ConnectionCredentialInventoryRow[] = [];
   let usage: Map<string, number> | null = null;
+  let assignments: Map<string, CredentialAssignment[]> | null = null;
+  let categories = new Map<string, string[]>();
+  let applications = new Map<string, string>();
   let migratable = new Set<string>();
   let unavailable = !context?.getCurrentConnections || !connectionScope;
   if (
@@ -70,6 +76,22 @@ export function useConnectionCredentialInventory(
         const connections = context.getCurrentConnections(connectionScope);
         rows = connectionCredentialInventory(connections);
         usage = credentialVaultUsage(connections);
+        assignments = credentialVaultAssignments(connections, rows);
+        const indexed = new Map(rows.map((row) => [row.id, row]));
+        const metadata = connections.map((connection) =>
+          credentialConnectionAssignment(
+            connection,
+            indexed.get(connection.id),
+          ),
+        );
+        categories = new Map(
+          metadata.map((row) => [row.connectionId, row.categories]),
+        );
+        applications = new Map(
+          metadata
+            .filter((row) => row.application)
+            .map((row) => [row.connectionId, row.application!]),
+        );
         migratable = new Set(
           connections
             .filter(canMigrateConnectionCredential)
@@ -129,5 +151,16 @@ export function useConnectionCredentialInventory(
       if (alive.current) setOpening(false);
     }
   };
-  return { rows, usage, migratable, unavailable, opening, error, edit };
+  return {
+    rows,
+    usage,
+    assignments,
+    categories,
+    applications,
+    migratable,
+    unavailable,
+    opening,
+    error,
+    edit,
+  };
 }

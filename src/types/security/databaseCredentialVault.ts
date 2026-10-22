@@ -74,6 +74,8 @@ export interface DatabaseCredentialEntry {
   createdAt: string;
   updatedAt: string;
   facets: DatabaseCredentialFacets;
+  /** Descriptive category/custom labels, never credential values or permissions. */
+  tags?: string[];
 }
 
 export interface DatabaseCredentialVault {
@@ -94,6 +96,7 @@ export interface DatabaseCredentialMetadata {
   createdAt: string;
   updatedAt: string;
   availableFacets: DatabaseCredentialFacet[];
+  tags?: string[];
 }
 
 export interface DatabaseCredentialSnapshot {

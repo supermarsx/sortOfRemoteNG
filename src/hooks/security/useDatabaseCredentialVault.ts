@@ -162,6 +162,7 @@ export function useDatabaseCredentialVault(api: DatabaseCredentialVaultApi) {
           createdAt: row.createdAt,
           updatedAt: row.updatedAt,
           facets,
+          ...(row.tags ? { tags: [...row.tags] } : {}),
         };
         setDraft({ entry, snapshot: review, original: JSON.stringify(entry) });
       }),

@@ -48,6 +48,33 @@ const entry = (): DatabaseCredentialEntry => ({
 });
 
 describe("database credential vault validation", () => {
+  it("preserves optional category/custom labels through v1 normalization and safe metadata without changing legacy entries", () => {
+    expect(normalizeDatabaseCredentialEntry(entry())).not.toHaveProperty(
+      "tags",
+    );
+    const parsed = normalizeDatabaseCredentialEntry({
+      ...entry(),
+      tags: [" SMTP ", "Operations"],
+    });
+    expect(parsed.tags).toEqual(["SMTP", "Operations"]);
+    const metadata = databaseCredentialMetadata(parsed);
+    metadata.tags!.push("Changed metadata copy");
+    expect(parsed.tags).toEqual(["SMTP", "Operations"]);
+    expect(JSON.stringify(metadata)).not.toMatch(/PRIVATE_|JBSW/);
+    for (const tags of [
+      null,
+      "SMTP",
+      [""],
+      ["a".repeat(41)],
+      Array.from({ length: 17 }, (_, index) => `tag${index}`),
+      ["SMTP", " smtp "],
+      ["PRIVATE_BAD\nLABEL"],
+    ]) {
+      expect(() =>
+        normalizeDatabaseCredentialEntry({ ...entry(), tags }),
+      ).toThrow(/Invalid database credential vault/);
+    }
+  });
   it("defaults only absence to empty, with no global or local credential migration", () => {
     expect(normalizeDatabaseCredentialVault(undefined)).toEqual(
       emptyDatabaseCredentialVault(),

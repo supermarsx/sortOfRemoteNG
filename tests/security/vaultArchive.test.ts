@@ -92,6 +92,18 @@ function archive(): DatabaseVaultArchive {
     ],
   };
 }
+
+it("round-trips descriptive category/custom labels through encrypted archives without changing credentials", async () => {
+  const source = archive();
+  source.credentials[0].tags = ["SMTP", "Finance"];
+  const file = await encryptVaultArchive(source, "separate archive password");
+  const restored = await decryptVaultArchive(file, "separate archive password");
+  expect(restored.credentials[0].tags).toEqual(["SMTP", "Finance"]);
+  expect(restored.credentials[0].facets).toEqual(source.credentials[0].facets);
+  const invalid = structuredClone(source);
+  invalid.credentials[0].tags = ["SMTP", "smtp"];
+  expect(() => normalizeDatabaseVaultArchive(invalid)).toThrow();
+});
 beforeEach(() => vi.stubGlobal("crypto", webcrypto));
 afterEach(() => vi.unstubAllGlobals());
 describe("encrypted credential vault archives", () => {
