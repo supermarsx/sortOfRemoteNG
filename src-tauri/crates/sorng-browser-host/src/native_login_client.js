@@ -1050,6 +1050,7 @@
     const limit =
       now() + 60000 + 2 * (timing.fillDelayMs + timing.submitDelayMs);
     const consumed = new Set();
+    let cookieConsentAttempted = false;
     let stage =
       provider === "voip-phone"
         ? "form"
@@ -1244,13 +1245,9 @@
       }
     }
     function blocked() {
-      if (
-        window._cf_chl_opt ||
-        doc.querySelector(
-          "#challenge-form, #challenge-running, #challenge-stage",
-        )
-      )
-        return true;
+      // Challenge script globals and hidden nodes can survive a completed
+      // challenge. Only the currently displayed interstitial blocks a form.
+      if (cloudflareInterstitial()) return true;
       const responses = doc.querySelectorAll(
         'input[name="cf-turnstile-response"]',
       );
@@ -1279,6 +1276,53 @@
           (node.getAttribute("role") !== "alert" || node.textContent.trim())
         );
       });
+    }
+    function acceptCloudflareCookies() {
+      if (
+        provider !== "cloudflare" ||
+        cookieConsentAttempted ||
+        stage !== "identifier" ||
+        consumed.size ||
+        pending ||
+        packet ||
+        action ||
+        owned.length ||
+        !route() ||
+        cloudflareInterstitial()
+      )
+        return false;
+      // Cloudflare's published OneTrust SDK owns this exact consent control.
+      // Never click a generic dialog/Accept label or a challenge control.
+      // https://ot.www.cloudflare.com/public/vendor/onetrust/scripttemplates/202503.1.0/otBannerSdk.js
+      const roots = doc.querySelectorAll(
+        "#onetrust-consent-sdk #onetrust-banner-sdk",
+      );
+      if (roots.length !== 1 || !painted(roots[0])) return false;
+      const root = roots[0];
+      const buttons = root.querySelectorAll(
+        "button#onetrust-accept-btn-handler",
+      );
+      if (
+        buttons.length !== 1 ||
+        !root.querySelector("#onetrust-policy") ||
+        root.querySelector(
+          "form,input,textarea,select,iframe,[contenteditable=true]",
+        )
+      )
+        return false;
+      const button = buttons[0];
+      if (
+        !painted(button) ||
+        button.matches(":disabled") ||
+        button.form ||
+        ["formaction", "formtarget", "formmethod", "formenctype"].some((key) =>
+          button.hasAttribute(key),
+        )
+      )
+        return false;
+      cookieConsentAttempted = true;
+      button.click();
+      return true;
     }
     function route() {
       // The limit bounds detection. A delivered credential or action keeps
@@ -1839,6 +1883,10 @@
       busy = true;
       try {
         if (!route()) return finish(false);
+        if (acceptCloudflareCookies()) {
+          stable = null;
+          return;
+        }
         if (action) {
           if (!valid(action.target)) return finish(false);
           if (now() >= action.at && (!action.submit || ready(action.target))) {
@@ -2604,6 +2652,8 @@
       form: "form-submit",
     };
     let steps = null,
+      preparation = null,
+      preparationAttempted = false,
       connectionOrigin = "",
       detectionMs = DETECT_DEFAULT_MS,
       fillDelayMs = 0,
@@ -3158,6 +3208,7 @@
       }
       if (!found) {
         stable = null;
+        prepareWindmillPasswordForm();
         return;
       }
       if (found.target.user?.value || found.target.pw?.value)
@@ -3182,6 +3233,55 @@
       pending = { stage: STAGES[found.step.kind] };
       bound(GRANT_WAIT_MS, "no-grant");
       notify(pending.stage);
+    }
+    function prepareWindmillPasswordForm() {
+      if (
+        preparation !== "windmill-password-form" ||
+        preparationAttempted ||
+        from !== 0 ||
+        !current() ||
+        !mainDocumentLoaded() ||
+        location.pathname !== "/user/login" ||
+        !steps[0] ||
+        !applies(steps[0]) ||
+        steps[0].kind !== "form" ||
+        steps[0].frame !== null ||
+        steps[0].selectors.username !==
+          'input[id$="-email"][type="email"][autocomplete="username"]' ||
+        steps[0].selectors.password !==
+          'input[id$="-password"][type="password"][autocomplete="current-password"]' ||
+        cloudflareInterstitial()
+      )
+        return;
+      // Source-backed optional entry point, not SSO or a credential submit.
+      // An already visible form goes through ordinary detection above.
+      if (
+        doc.querySelector(
+          '[role="dialog"], iframe, input[autocomplete="one-time-code"]',
+        )
+      )
+        return;
+      const fields = doc.querySelectorAll(
+        steps[0].selectors.username + "," + steps[0].selectors.password,
+      );
+      if (Array.from(fields).some((field) => field.value)) return;
+      const buttons = Array.from(doc.querySelectorAll("button")).filter(
+        (button) =>
+          button.textContent.trim() === "Log in without third-party" &&
+          control(button) &&
+          enabled(button),
+      );
+      if (buttons.length !== 1) return;
+      const button = buttons[0];
+      if (
+        button.form ||
+        ["formaction", "formmethod", "formtarget", "formenctype"].some((key) =>
+          button.hasAttribute(key),
+        )
+      )
+        return;
+      preparationAttempted = true;
+      button.click();
     }
     function next(index) {
       // Continue in this document from the step after `index`, if any applies.
@@ -3378,9 +3478,14 @@
           "readiness",
           "timing",
           "selectors",
+          "preparation",
         ])
       )
         throw new Error();
+      if (own(raw, "preparation")) {
+        if (raw.preparation !== "windmill-password-form") throw new Error();
+        preparation = raw.preparation;
+      }
       // `selectors` beside steps are not read: the steps win.
       if (own(raw, "readiness")) {
         if (

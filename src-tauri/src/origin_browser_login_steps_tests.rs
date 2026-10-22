@@ -326,6 +326,28 @@ fn app_row(id: &str, mode: &str) -> Value {
     row
 }
 
+#[test]
+fn only_selected_windmill_profiles_receive_native_password_pane_preparation() {
+    use_catalog(|catalog| {
+        let plan = catalog["profiles"]["windmill"]["declarativeLogin"].clone();
+        catalog["declarativeLoginSupported"] = true.into();
+        catalog["profiles"]["zabbix"]["declarativeLogin"] = plan;
+    });
+    for id in ["windmill", "windmill-self-hosted", "zabbix"] {
+        let mut row = app_row(id, "form");
+        row["preparation"] = json!("windmill-password-form");
+        let (configuration, _) = saved_declarative_login(&row, &json!({}), id, OWN)
+            .unwrap()
+            .unwrap();
+        let configuration: Value = serde_json::from_str(&configuration).unwrap();
+        if id.starts_with("windmill") {
+            assert_eq!(configuration["preparation"], "windmill-password-form");
+        } else {
+            assert!(configuration.get("preparation").is_none());
+        }
+    }
+}
+
 fn deliveries(
     login: &crate::origin_browser_authority::NativeLoginAuthority,
     identity: &BrowserIdentity,

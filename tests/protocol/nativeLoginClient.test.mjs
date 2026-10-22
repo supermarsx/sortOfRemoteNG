@@ -29,6 +29,52 @@ const selectors = {
 };
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
+test("Brevo native modular form handles reviewed handler-only controls without GET or eye toggle", async (t) => {
+  const html =
+    '<form><input type="text" id="email" name="email"><input type="password" id="password" name="password"><button id="eyeIcon" type="button"></button><button type="button" data-testid="submit-button">Log In</button></form>';
+  const selectors = {
+    username: 'form input#email[name="email"]',
+    password: 'form input#password[name="password"][type="password"]',
+    submit:
+      'form:has(input#email):has(input#password) button[data-testid="submit-button"][type="button"]',
+  };
+  const f = nativeFixture(
+    t,
+    html,
+    "https://login.brevo.com/",
+    { selectors },
+    "modular-form",
+  );
+  let login = 0,
+    eye = 0;
+  f.field('[data-testid="submit-button"]').addEventListener(
+    "click",
+    () => login++,
+  );
+  f.field("#eyeIcon").addEventListener("click", () => eye++);
+  const options = {
+    version: 1,
+    fillDelayMs: 0,
+    submitDelayMs: 0,
+    detectionTimeoutMs: 8000,
+    submit: true,
+    fields: [],
+  };
+  await f.advance(1000);
+  assert.deepEqual(f.signals, ["form-prepare"]);
+  assert.equal(f.send("form-prepare", true, 30000, options), true);
+  await f.advance(1000);
+  assert.equal(f.send("form", true, 30000, options), true);
+  await f.advance(2000);
+  assert.equal(f.field("#email").value, "alice@example.test");
+  assert.equal(f.field("#password").value, "test-secret");
+  assert.equal(f.send("form-submit", true, 30000, options), true);
+  await f.advance(1000);
+  assert.equal(login, 1);
+  assert.equal(eye, 0);
+  assert.equal(f.submits(), 0);
+});
+
 test("native profile snapshot exactly matches all reviewed legacy defaults", async () => {
   const result = await build({
     entryPoints: ["src/utils/connection/httpApplicationProfiles.ts"],
@@ -600,6 +646,89 @@ test("Cloudflare combined form respects fill-only consent and stage minimization
   assert.equal(f.field('[type="password"]').value, "test-secret");
   assert.equal(f.submits(), 0);
   assert.equal(f.signals.at(-1), "form-completed");
+});
+
+test("Cloudflare accepts only its reviewed cookie banner before requesting credentials", async (t) => {
+  const f = providerFixture(
+    t,
+    "cloudflare",
+    semanticEmail +
+      '<div id="onetrust-consent-sdk"><div id="onetrust-banner-sdk" role="dialog"><div id="onetrust-policy">Cookies</div><button id="onetrust-accept-btn-handler">Accept all</button></div></div>',
+    "https://dash.cloudflare.com/login",
+  );
+  let clicks = 0;
+  f.field("#onetrust-accept-btn-handler").onclick = () => {
+    clicks++;
+    assert.deepEqual(f.signals, []);
+    f.field("#onetrust-consent-sdk").remove();
+  };
+  await f.advance(1200);
+  assert.equal(clicks, 1);
+  assert.deepEqual(f.signals, ["identifier"]);
+});
+
+test("Adobe resumes on a real form with hidden completed challenge markers and stale globals", async (t) => {
+  const f = providerFixture(
+    t,
+    "adobe-admin-console",
+    '<div id="challenge-stage" hidden>Completed</div><form id="EmailForm"><input id="EmailPage-EmailField" name="username" type="email"><button type="submit" data-id="EmailPage-ContinueButton">Continue</button></form>',
+    "https://auth.services.adobe.com/en_US/index.html#/",
+  );
+  f.w._cf_chl_opt = { cType: "managed" };
+  await f.advance(1200);
+  assert.deepEqual(f.signals, ["identifier"]);
+});
+
+for (const [name, url, extra, button] of [
+  ["other origin", "https://cloudflare.example.test/login", "", "button"],
+  ["another route", "https://dash.cloudflare.com/settings", "", "button"],
+  [
+    "challenge",
+    "https://dash.cloudflare.com/login",
+    '<div id="challenge-stage">Verify</div>',
+    "button",
+  ],
+  [
+    "credential-bearing banner",
+    "https://dash.cloudflare.com/login",
+    '<input type="password">',
+    "button",
+  ],
+  [
+    "foreign form target",
+    "https://dash.cloudflare.com/login",
+    "",
+    'button formtarget="_blank"',
+  ],
+])
+  test(`Cloudflare cookie acceptance refuses ${name}`, async (t) => {
+    const f = providerFixture(
+      t,
+      "cloudflare",
+      semanticEmail +
+        `<div id="onetrust-consent-sdk"><div id="onetrust-banner-sdk" role="dialog"><div id="onetrust-policy">Cookies</div><${button} id="onetrust-accept-btn-handler">Accept all</button>${extra}</div></div>`,
+      url,
+    );
+    let clicks = 0;
+    f.field("#onetrust-accept-btn-handler").onclick = () => clicks++;
+    await f.advance(1500);
+    assert.equal(clicks, 0);
+    assert.ok(!f.signals.includes("identifier"));
+  });
+
+test("Cloudflare cookie acceptance does not retry or bypass a remaining dialog", async (t) => {
+  const f = providerFixture(
+    t,
+    "cloudflare",
+    semanticEmail +
+      '<div id="onetrust-consent-sdk"><div id="onetrust-banner-sdk" role="dialog"><div id="onetrust-policy">Cookies</div><button id="onetrust-accept-btn-handler">Accept all</button></div></div>',
+    "https://dash.cloudflare.com/login",
+  );
+  let clicks = 0;
+  f.field("#onetrust-accept-btn-handler").onclick = () => clicks++;
+  await f.advance(4000);
+  assert.equal(clicks, 1);
+  assert.deepEqual(f.signals, []);
 });
 
 for (const provider of ["chatgpt", "adobe-admin-console", "synology-dsm"]) {

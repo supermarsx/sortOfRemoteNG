@@ -871,11 +871,16 @@ fn saved_declarative_login(
         detection = u64::from(options.detection_timeout_ms);
     }
     let detection = detection.max((fill + submit + 8_000).min(60_000));
-    let setup = serde_json::json!({
+    let mut setup = serde_json::json!({
         "declarativeLogin": plan.configuration(),
         "readiness": {"detectionTimeoutMs": detection},
         "timing": {"fillDelayMs": fill, "submitDelayMs": submit},
     });
+    if matches!(application_id, "windmill" | "windmill-self-hosted") {
+        // Only the selected built-in application may open its password pane.
+        // Custom plans and page content cannot enable this preparation.
+        setup["preparation"] = "windmill-password-form".into();
+    }
     Ok(Some((setup.to_string(), plan)))
 }
 

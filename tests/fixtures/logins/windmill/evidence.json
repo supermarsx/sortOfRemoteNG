@@ -39,6 +39,14 @@
       "url": "https://github.com/windmill-labs/windmill/blob/9202a74071ba424ad6cfc1cfded518ee7db002dc/frontend/src/routes/(root)/(logged)/user/(user)/login/+page.svelte",
       "commit": "9202a74071ba424ad6cfc1cfded518ee7db002dc",
       "retrieved": "2026-10-22"
+    },
+    {
+      "id": "password-entry",
+      "kind": "public-source",
+      "title": "Optional password entry point and native button",
+      "url": "https://github.com/windmill-labs/windmill/blob/9202a74071ba424ad6cfc1cfded518ee7db002dc/frontend/src/lib/components/Login.svelte",
+      "commit": "9202a74071ba424ad6cfc1cfded518ee7db002dc",
+      "retrieved": "2026-10-22"
     }
   ],
   "selectors": [
@@ -63,6 +71,12 @@
       "path": "/user/login",
       "origin": "https://app.windmill.dev",
       "derivedFrom": ["login", "password", "input", "route"]
+    },
+    {
+      "file": "fixture.closed.html",
+      "path": "/user/login",
+      "origin": "https://app.windmill.dev",
+      "derivedFrom": ["password-entry"]
     }
   ],
   "staysInteractive": [
@@ -76,8 +90,8 @@
     },
     {
       "kind": "other",
-      "note": "When provider buttons hide the password pane, choose Log in without third-party and retry automatic login if needed. Disabled password login, first-time setup and workspace selection remain interactive."
+      "note": "Disabled password login, first-time setup and workspace selection remain interactive. Native preparation only opens the reviewed password entry point; it never selects an SSO provider."
     }
   ],
-  "notes": "Pinned public source only, no account test or hosted DOM capture. The hosted component says password credentials are available by contacting Windmill. Dynamic IDs are matched by authored suffix and autocomplete/type attributes. No registration/recovery route or embedded app gate is included. Source-backed synthetic fixture contains no vendor scripts or account data."
+  "notes": "Pinned public source only; no account test or hosted DOM capture. Native preparation may click the exact Log in without third-party button once before any credential grant, only for the selected Windmill profile on /user/login. An already visible password pane needs no click. SSO, MFA, setup and recovery remain interactive. Synthetic fixtures contain no vendor scripts or account data."
 }

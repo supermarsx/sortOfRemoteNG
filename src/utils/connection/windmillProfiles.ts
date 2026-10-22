@@ -3,7 +3,7 @@ import type { HttpApplicationProfile } from "./httpApplicationProfiles";
 export const WINDMILL_LOGIN_URL = "https://app.windmill.dev/user/login";
 
 const passwordHelp =
-  'Use your website email and password, not an API token. If SSO choices are shown, open "Log in without third-party" on the website to reveal the password form. SSO, MFA, approval, initial setup and password reset remain interactive.';
+  'Use your website email and password, not an API token. Automatic login can open the website’s "Log in without third-party" password pane. SSO, MFA, approval, initial setup and password reset remain interactive.';
 
 export const WINDMILL_PROFILES: readonly HttpApplicationProfile[] = [
   {

@@ -18,15 +18,21 @@ for (const id of ["windmill", "windmill-self-hosted"]) {
     `tests/fixtures/logins/${id}/fixture.html`,
     "utf8",
   );
+  const closedFixture = readFileSync(
+    `tests/fixtures/logins/${id}/fixture.closed.html`,
+    "utf8",
+  );
   const origin =
     id === "windmill"
       ? "https://app.windmill.dev"
       : "https://windmill.example.test:8443";
-  const configuration = (connection = origin) =>
-    loginSteps(plan.loginSteps, {
+  const configuration = (connection = origin) => ({
+    ...loginSteps(plan.loginSteps, {
       connection,
       origins: plan.credentialOrigins,
-    });
+    }),
+    preparation: "windmill-password-form",
+  });
   const selectors = plan.loginSteps[0].selectors;
 
   for (const autoSubmit of [true, false]) {
@@ -76,10 +82,7 @@ for (const id of ["windmill", "windmill-self-hosted"]) {
   }
 
   for (const [name, html] of [
-    [
-      "SSO-only or unopened password pane",
-      '<button type="button">Continue with SSO</button><button type="button">Log in without third-party</button>',
-    ],
+    ["SSO-only", '<button type="button">Continue with SSO</button>'],
     [
       "password reset",
       fixture.replace(
@@ -104,6 +107,74 @@ for (const id of ["windmill", "windmill-self-hosted"]) {
       assert.equal(clicks, 0);
     });
   }
+
+  test(`${id}: opens only the password entry point before requesting a grant`, async (t) => {
+    const h = host();
+    const p = page(
+      t,
+      h,
+      origin + "/user/login",
+      closedFixture,
+      configuration(),
+    );
+    let opens = 0,
+      sso = 0;
+    p.$("#sso").onclick = () => sso++;
+    p.$("#password-entry").onclick = () => {
+      opens++;
+      assert.ok(!h.requests.some(([, stage]) => stage === "form"));
+      p.doc.body.innerHTML = fixture;
+      p.$(selectors.password).addEventListener("keydown", (event) => {
+        if (event.key === "Enter") event.preventDefault();
+      });
+    };
+    await h.advance(3000);
+    assert.equal(opens, 1);
+    assert.equal(sso, 0);
+    assert.equal(p.$(selectors.username).value, USER);
+    assert.equal(p.$(selectors.password).value, SECRET);
+    assert.equal(p.reason(), "completed");
+  });
+
+  for (const [name, url, extra, options] of [
+    ["off route", origin + "/user/signup", "", configuration()],
+    [
+      "off origin",
+      "https://identity.example.test/user/login",
+      "",
+      configuration(),
+    ],
+    [
+      "challenge dialog",
+      origin + "/user/login",
+      '<div role="dialog">Verify identity</div>',
+      configuration(),
+    ],
+    [
+      "no native preparation",
+      origin + "/user/login",
+      "",
+      loginSteps(plan.loginSteps, {
+        connection: origin,
+        origins: plan.credentialOrigins,
+      }),
+    ],
+  ])
+    test(`${id}: password entry never clicks for ${name}`, async (t) => {
+      const h = host();
+      const p = page(
+        t,
+        h,
+        url,
+        '<button type="button">Log in without third-party</button>' + extra,
+        options,
+      );
+      let clicks = 0;
+      p.doc.addEventListener("click", () => clicks++);
+      await h.advance(3000);
+      assert.equal(clicks, 0);
+      assert.equal(p.typed.length, 0);
+    });
 
   test(`${id}: user-entered account is preserved`, async (t) => {
     const h = host();
