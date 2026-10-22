@@ -1,7 +1,9 @@
 //! A saved SSH local forward is a byte-stream route behind the owned browser
 //! relay. Its private listener is never a Chromium proxy or a website origin.
 use super::*;
-use crate::ssh::service::{connect_ssh_on_state, disconnect_ssh_on_state};
+use crate::ssh::service::{
+    connect_ssh_on_state_observed, disconnect_ssh_on_state, SshEstablishmentOrigin,
+};
 use crate::ssh::{PortForwardConfig, PortForwardDirection, SshServiceState};
 use tauri::Manager;
 
@@ -379,6 +381,7 @@ pub(super) async fn prepare<R: Runtime>(
     lease: &NativeOwnerLease,
     source: &Url,
     browser_session_id: &str,
+    settings: &Value,
 ) -> Result<Option<Arc<SshRoute>>, NativeAuthorityError> {
     let target = authority(
         source.host_str().ok_or(UNSUPPORTED)?,
@@ -393,7 +396,7 @@ pub(super) async fn prepare<R: Runtime>(
         .inner()
         .clone();
     let mut config =
-        super::ssh_config::resolve(window, state, lease, connection, &spec.ssh).await?;
+        super::ssh_config::resolve(window, state, lease, connection, &spec.ssh, settings).await?;
     config.host_key_prompt_id = Some(format!("native-browser:{browser_session_id}"));
     lease
         .recheck(window, state)
@@ -401,9 +404,13 @@ pub(super) async fn prepare<R: Runtime>(
         .map_err(|_| unavailable("owner"))?;
     let actor = connect_while_current(
         async {
-            let id = connect_ssh_on_state(&service, config)
-                .await
-                .map_err(|error| connect_error(&error))?;
+            let id = connect_ssh_on_state_observed(
+                &service,
+                config,
+                SshEstablishmentOrigin::NativeBrowser,
+            )
+            .await
+            .map_err(|error| connect_error(&error))?;
             // Arm cleanup synchronously before returning success to the lease
             // race. No actor ID may be discarded without its cleanup guard.
             Ok(Actor::new(service, id, lease.clone()))

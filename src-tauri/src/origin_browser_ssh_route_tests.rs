@@ -433,10 +433,16 @@ async fn ssh_source_and_selected_vault_are_bound_to_the_encrypted_owner_lease() 
     f.replace_totp_fixture_data(&data);
     let authorized = f.authorize().await.unwrap();
     let spec = json!({"connectionId":"saved-ssh","ownerDatabaseId":"db","forwardType":"local"});
-    let config =
-        super::super::ssh_config::resolve(&f.window, &f.state, &authorized.lease, &website, &spec)
-            .await
-            .unwrap();
+    let config = super::super::ssh_config::resolve(
+        &f.window,
+        &f.state,
+        &authorized.lease,
+        &website,
+        &spec,
+        &Value::Null,
+    )
+    .await
+    .unwrap();
     assert_eq!(config.username, "selected-account");
     assert_eq!(
         config.password.as_ref().unwrap().expose_secret(),
@@ -466,6 +472,7 @@ async fn ssh_editor_jump_resolves_its_saved_source_and_refuses_real_nested_hops(
         &authorized.lease,
         &website,
         &standalone.ssh,
+        &Value::Null,
     )
     .await
     .unwrap();
@@ -481,6 +488,7 @@ async fn ssh_editor_jump_resolves_its_saved_source_and_refuses_real_nested_hops(
         &authorized.lease,
         &website,
         &linked.ssh,
+        &Value::Null,
     )
     .await
     .unwrap();
@@ -500,7 +508,8 @@ async fn ssh_editor_jump_resolves_its_saved_source_and_refuses_real_nested_hops(
             &f.state,
             &authorized.lease,
             &website,
-            &spec
+            &spec,
+            &Value::Null,
         )
         .await
         .is_err());
@@ -523,7 +532,8 @@ async fn ssh_reference_missing_foreign_or_changed_source_never_uses_inline_fallb
             &f.state,
             &authorized.lease,
             &website,
-            &spec
+            &spec,
+            &Value::Null,
         )
         .await
         .is_err());
@@ -534,9 +544,16 @@ async fn ssh_reference_missing_foreign_or_changed_source_never_uses_inline_fallb
     f.replace_totp_fixture_data(&data);
     let authorized = f.authorize().await.unwrap();
     let spec = json!({"connectionId":"saved-ssh","forwardType":"local"});
-    super::super::ssh_config::resolve(&f.window, &f.state, &authorized.lease, &website, &spec)
-        .await
-        .unwrap();
+    super::super::ssh_config::resolve(
+        &f.window,
+        &f.state,
+        &authorized.lease,
+        &website,
+        &spec,
+        &Value::Null,
+    )
+    .await
+    .unwrap();
     data["connections"][1]["hostname"] = "different.example.test".into();
     f.replace_totp_fixture_data(&data);
     assert!(authorized.lease.recheck(&f.window, &f.state).await.is_err());

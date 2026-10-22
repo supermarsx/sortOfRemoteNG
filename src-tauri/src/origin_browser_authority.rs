@@ -1189,6 +1189,7 @@ async fn authorize_create_inner<R: Runtime>(
         &lease,
         &initial_url,
         &request.owner.session_id,
+        &settings,
     )
     .await?;
     let hops = if ssh_route.is_some() {

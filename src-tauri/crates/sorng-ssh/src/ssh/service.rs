@@ -38,6 +38,10 @@ use super::PENDING_HOST_KEY_PROMPTS;
 #[path = "proxy_chain_contract_tests.rs"]
 mod proxy_chain_contract_tests;
 
+#[path = "establishment_diagnostics.rs"]
+mod establishment_diagnostics;
+pub use establishment_diagnostics::SshEstablishmentOrigin;
+
 #[path = "forward_relay.rs"]
 mod forward_relay;
 pub(crate) use forward_relay::ChannelOpenGate;
@@ -2274,6 +2278,7 @@ fn shutdown_establishment_sockets(sockets: &StdMutex<Vec<TcpStream>>) {
 }
 
 struct SshEstablishmentControl {
+    diagnostics: OnceLock<establishment_diagnostics::Attempt>,
     health: sorng_core::route_health::RouteHealth,
     health_final_index: AtomicUsize,
     health_proxy_index: AtomicUsize,
@@ -2291,10 +2296,19 @@ impl SshEstablishmentControl {
         config: &SshConnectionConfig,
         cancellation: Arc<PendingSshConnection>,
     ) -> Result<Arc<Self>, String> {
+        let policy = establishment_diagnostics::IpPolicy::parse(&config.ip_protocol)?;
         let control = Self::new_with_timeout(
             clamped_ssh_establishment_timeout(config.connect_timeout),
             cancellation,
         )?;
+        let _ = control
+            .diagnostics
+            .set(establishment_diagnostics::Attempt::new(
+                &config.host,
+                config.port,
+                policy,
+                control.overall_timeout,
+            ));
         control.health_final_index.store(
             super::route_health::initialize(config, &control.health),
             Ordering::Relaxed,
@@ -2348,6 +2362,7 @@ impl SshEstablishmentControl {
         });
 
         Ok(Arc::new(Self {
+            diagnostics: OnceLock::new(),
             health: Default::default(),
             health_final_index: AtomicUsize::new(0),
             health_proxy_index: AtomicUsize::new(0),
@@ -3990,30 +4005,47 @@ impl SshService {
         phase: &str,
         timeout: Duration,
     ) -> Result<Vec<SocketAddr>, String> {
-        if let Ok(address) = host.parse::<IpAddr>() {
-            return Ok(vec![SocketAddr::new(address, port)]);
+        let diagnostics = control.diagnostics.get_or_init(Default::default);
+        let mut observation = diagnostics.resolve(&host, port);
+        let resolved = if let Ok(address) = host.parse::<IpAddr>() {
+            Ok(vec![SocketAddr::new(address, port)])
+        } else {
+            control
+                .run_isolated_local_phase(
+                    phase,
+                    timeout,
+                    self.establishment_session_lease.clone(),
+                    move |context| {
+                        context.ensure_active()?;
+                        let rows = (host.as_str(), port)
+                            .to_socket_addrs()
+                            .map_err(|_| {
+                                "Failed to resolve SSH establishment endpoint".to_string()
+                            })?
+                            .take(64)
+                            .collect::<Vec<_>>();
+                        context.ensure_active()?;
+                        Ok(rows)
+                    },
+                )
+                .await
+        };
+        match resolved {
+            Ok(rows) => {
+                let rows = diagnostics.policy().select(rows);
+                if rows.is_empty() {
+                    observation.finish("no-compatible-address", &[]);
+                    Err("Failed to resolve SSH establishment endpoint".into())
+                } else {
+                    observation.finish("resolved", &rows);
+                    Ok(rows)
+                }
+            }
+            Err(error) => {
+                observation.finish("failed", &[]);
+                Err(error)
+            }
         }
-
-        control
-            .run_isolated_local_phase(
-                phase,
-                timeout,
-                self.establishment_session_lease.clone(),
-                move |context| {
-                    context.ensure_active()?;
-                    let addresses = (host.as_str(), port)
-                        .to_socket_addrs()
-                        .map_err(|_| "Failed to resolve SSH establishment endpoint".to_string())?
-                        .collect::<Vec<_>>();
-                    context.ensure_active()?;
-                    if addresses.is_empty() {
-                        Err("SSH establishment resolver returned no addresses".to_string())
-                    } else {
-                        Ok(addresses)
-                    }
-                },
-            )
-            .await
     }
 
     async fn connect_establishment_addresses(
@@ -4023,19 +4055,18 @@ impl SshService {
         phase: &str,
         timeout: Duration,
     ) -> Result<AsyncTcpStream, String> {
+        let diagnostics = control.diagnostics.get_or_init(Default::default);
+        let mut observation = diagnostics.connecting();
         control
-            .run_async_phase(phase, timeout, async move {
-                let mut last_error = None;
-                for address in addresses {
-                    match AsyncTcpStream::connect(address).await {
-                        Ok(stream) => return Ok(stream),
-                        Err(error) => last_error = Some(error),
-                    }
-                }
-                Err(match last_error {
-                    Some(error) => establishment_transport_error(&error),
-                    None => "SSH establishment resolver returned no addresses".to_string(),
-                })
+            .run_async_phase(phase, timeout, async {
+                establishment_diagnostics::connect_candidates(
+                    addresses,
+                    AsyncTcpStream::connect,
+                    &mut observation,
+                    Duration::from_millis(250),
+                )
+                .await
+                .map_err(|error| establishment_transport_error(&error))
             })
             .await
     }
@@ -8747,7 +8778,17 @@ pub async fn connect_ssh_on_state(
     state: &SshServiceState,
     config: SshConnectionConfig,
 ) -> Result<String, String> {
-    connect_ssh_on_state_with(state, config, establish_ssh_in_blocking_worker).await
+    connect_ssh_on_state_observed(state, config, SshEstablishmentOrigin::Other).await
+}
+
+/// Diagnostic origin is assigned by trusted Rust call sites, never renderer fields.
+#[doc(hidden)]
+pub async fn connect_ssh_on_state_observed(
+    state: &SshServiceState,
+    config: SshConnectionConfig,
+    origin: SshEstablishmentOrigin,
+) -> Result<String, String> {
+    connect_ssh_on_state_with_origin(state, config, origin, establish_ssh_in_blocking_worker).await
 }
 
 /// Test an SSH path under the same process-wide admission and blocking-worker
@@ -8867,9 +8908,23 @@ async fn establish_ssh_in_blocking_worker(
     .map_err(|error| format!("SSH connection worker failed: {error}"))?
 }
 
+#[cfg(test)]
 async fn connect_ssh_on_state_with<F, Fut>(
     state: &SshServiceState,
     config: SshConnectionConfig,
+    establish: F,
+) -> Result<String, String>
+where
+    F: FnOnce(SshService, String, SshConnectionConfig, SshConnectionWorkerLease) -> Fut,
+    Fut: Future<Output = Result<EstablishedSshConnection, String>>,
+{
+    connect_ssh_on_state_with_origin(state, config, SshEstablishmentOrigin::Other, establish).await
+}
+
+async fn connect_ssh_on_state_with_origin<F, Fut>(
+    state: &SshServiceState,
+    config: SshConnectionConfig,
+    origin: SshEstablishmentOrigin,
     establish: F,
 ) -> Result<String, String>
 where
@@ -8888,6 +8943,14 @@ where
         .as_ref()
         .cloned()
         .ok_or_else(|| "SSH connection attempt is missing establishment control".to_string())?;
+    control
+        .diagnostics
+        .get_or_init(Default::default)
+        .set_origin(origin);
+    control
+        .diagnostics
+        .get_or_init(Default::default)
+        .set_route(&config);
     let worker_lease = attempt.take_worker_lease();
     let timeout_session_id = session_id.clone();
     let timeout_session_lease = Arc::clone(&attempt.session_lease);
@@ -8912,10 +8975,19 @@ where
     let (cancelled, session_lease) = attempt.finish();
     if cancelled {
         drop(result);
+        control
+            .diagnostics
+            .get_or_init(Default::default)
+            .completed(false);
         return Err("SSH connection cancelled".to_string());
     }
 
-    service.adopt_connection(result?, session_lease)
+    let adopted = result.and_then(|connection| service.adopt_connection(connection, session_lease));
+    control
+        .diagnostics
+        .get_or_init(Default::default)
+        .completed(adopted.is_ok());
+    adopted
 }
 
 #[cfg(test)]

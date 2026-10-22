@@ -85,10 +85,20 @@ fn no_nested_route(source: &Value) -> Result<(), NativeAuthorityError> {
     Ok(())
 }
 
+#[cfg(test)]
 fn build(
     source: &Value,
     vault: Option<&Value>,
     inline: bool,
+) -> Result<crate::ssh::SshConnectionConfig, NativeAuthorityError> {
+    build_with_settings(source, vault, inline, &Value::Null)
+}
+
+fn build_with_settings(
+    source: &Value,
+    vault: Option<&Value>,
+    inline: bool,
+    settings: &Value,
 ) -> Result<crate::ssh::SshConnectionConfig, NativeAuthorityError> {
     no_nested_route(source)?;
     if !inline
@@ -181,41 +191,14 @@ fn build(
         {
             return Err(ERROR);
         }
-        for (saved, native) in [
-            ("connectTimeout", "connect_timeout"),
-            ("keepAliveInterval", "keep_alive_interval"),
-            ("knownHostsPath", "known_hosts_path"),
-            ("tcpNoDelay", "tcp_no_delay"),
-            ("tcpKeepAlive", "tcp_keepalive"),
-            ("keepAliveProbes", "keepalive_probes"),
-            ("ipProtocol", "ip_protocol"),
-            ("enableCompression", "compression"),
-            ("compressionLevel", "compression_level"),
-            ("compressionConfig", "compression_config"),
-            ("sshVersion", "ssh_version"),
-            ("preferredCiphers", "preferred_ciphers"),
-            ("preferredMACs", "preferred_macs"),
-            ("preferredKeyExchanges", "preferred_kex"),
-            (
-                "preferredHostKeyAlgorithms",
-                "preferred_host_key_algorithms",
-            ),
-            ("agentForwarding", "agent_forwarding"),
-        ] {
-            if let Some(value) = options.get(saved).filter(|v| !v.is_null()) {
-                config[native] = value.clone();
-            }
+        if let Some(value) = options.get("knownHostsPath").filter(|v| !v.is_null()) {
+            config["known_hosts_path"] = value.clone();
         }
     }
-    for (saved, native) in [
-        ("sshConnectTimeout", "connect_timeout"),
-        ("sshKeepAliveInterval", "keep_alive_interval"),
-        ("sshKnownHostsPath", "known_hosts_path"),
-    ] {
-        if let Some(value) = source.get(saved).filter(|v| !v.is_null()) {
-            config[native] = value.clone();
-        }
+    if let Some(value) = source.get("sshKnownHostsPath").filter(|v| !v.is_null()) {
+        config["known_hosts_path"] = value.clone();
     }
+    apply_terminal_options(&mut config, source, settings)?;
     // The editor's empty default means the verified platform known_hosts path,
     // not a literal empty filesystem path. Normalize after override precedence.
     if config.get("known_hosts_path").and_then(Value::as_str) == Some("") {
@@ -259,6 +242,7 @@ pub(super) async fn resolve<R: Runtime>(
     lease: &NativeOwnerLease,
     _route_source: &Value,
     ssh_spec: &Value,
+    settings: &Value,
 ) -> Result<crate::ssh::SshConnectionConfig, NativeAuthorityError> {
     let id = reference(ssh_spec, lease.database_id())?;
     let source = if let Some(id) = &id {
@@ -279,7 +263,136 @@ pub(super) async fn resolve<R: Runtime>(
     } else {
         None
     };
-    build(&source, vault.as_ref(), id.is_none())
+    build_with_settings(&source, vault.as_ref(), id.is_none(), settings)
+}
+
+// Mirrors useWebTerminal's merged terminal/tcp producer. Transport policy is
+// not sourced from the unrelated shell/environment connection options.
+fn apply_terminal_options(
+    config: &mut Value,
+    source: &Value,
+    settings: &Value,
+) -> Result<(), NativeAuthorityError> {
+    let global = settings.get("sshTerminal").filter(|v| !v.is_null());
+    let local = source
+        .get("sshTerminalConfigOverride")
+        .filter(|v| !v.is_null());
+    for value in [global, local].into_iter().flatten() {
+        if !value.is_object() {
+            return Err(ERROR);
+        }
+    }
+    let pick = |key: &str| {
+        local
+            .and_then(|v| v.get(key))
+            .or_else(|| global.and_then(|v| v.get(key)))
+            .filter(|v| !v.is_null())
+            .cloned()
+    };
+    for (saved, native) in [
+        ("enableCompression", "compression"),
+        ("compressionLevel", "compression_level"),
+        ("sshVersion", "ssh_version"),
+        ("preferredCiphers", "preferred_ciphers"),
+        ("preferredMACs", "preferred_macs"),
+        ("preferredKeyExchanges", "preferred_kex"),
+        (
+            "preferredHostKeyAlgorithms",
+            "preferred_host_key_algorithms",
+        ),
+    ] {
+        if let Some(value) = pick(saved) {
+            config[native] = value;
+        }
+    }
+    let global_tcp = global
+        .and_then(|v| v.get("tcpOptions"))
+        .filter(|v| !v.is_null());
+    let local_tcp = local
+        .and_then(|v| v.get("tcpOptions"))
+        .filter(|v| !v.is_null());
+    for value in [global_tcp, local_tcp].into_iter().flatten() {
+        if !value.is_object() {
+            return Err(ERROR);
+        }
+    }
+    let tcp = |key: &str, default: Value| {
+        local_tcp
+            .and_then(|v| v.get(key))
+            .or_else(|| global_tcp.and_then(|v| v.get(key)))
+            .filter(|v| !v.is_null())
+            .cloned()
+            .unwrap_or(default)
+    };
+    let fallback = |key: &str, default: Value| {
+        source
+            .get(key)
+            .filter(|value| !value.is_null())
+            .cloned()
+            .unwrap_or(default)
+    };
+    config["connect_timeout"] = tcp(
+        "connectionTimeout",
+        fallback("sshConnectTimeout", json!(30)),
+    );
+    config["keep_alive_interval"] = if tcp("tcpKeepAlive", json!(false)).as_bool().ok_or(ERROR)? {
+        tcp(
+            "keepAliveInterval",
+            fallback("sshKeepAliveInterval", json!(30)),
+        )
+    } else {
+        Value::Null
+    };
+    config["tcp_no_delay"] = tcp("tcpNoDelay", json!(true));
+    config["tcp_keepalive"] = tcp("soKeepAlive", json!(true));
+    config["keepalive_probes"] = tcp("keepAliveProbes", json!(3));
+    config["ip_protocol"] = tcp("ipProtocol", json!("auto"));
+    if !matches!(
+        config["ip_protocol"].as_str(),
+        Some("auto" | "ipv4" | "ipv6")
+    ) {
+        return Err(ERROR);
+    }
+    let global_connection = settings.get("sshConnection").filter(|v| !v.is_null());
+    let local_connection = source
+        .get("sshConnectionConfigOverride")
+        .filter(|v| !v.is_null());
+    for value in [global_connection, local_connection].into_iter().flatten() {
+        if !value.is_object() {
+            return Err(ERROR);
+        }
+    }
+    let connection = |key: &str| {
+        local_connection
+            .and_then(|v| v.get(key))
+            .or_else(|| global_connection.and_then(|v| v.get(key)))
+    };
+    // Never discard an effective route selector. An explicit local empty
+    // command does override the global command, just like the terminal merge.
+    for key in ["proxyCommand", "proxyCommandTemplate"] {
+        if connection(key).is_some_and(|v| !v.is_null() && v != "") {
+            return Err(ERROR);
+        }
+    }
+    if connection("enableJumpHost") == Some(&Value::Bool(true))
+        || connection("mixedChain").is_some_and(|v| {
+            !v.is_null()
+                && !v
+                    .get("hops")
+                    .and_then(Value::as_array)
+                    .is_some_and(Vec::is_empty)
+        })
+    {
+        return Err(ERROR);
+    }
+    if let Some(value) = local_connection
+        .and_then(|v| v.get("agentForwarding"))
+        .or_else(|| global_connection.and_then(|v| v.get("agentForwarding")))
+        .filter(|v| !v.is_null())
+    {
+        config["agent_forwarding"] = value.clone();
+    }
+    Ok(())
 }
 
 #[cfg(test)]
@@ -287,6 +400,77 @@ mod tests {
     use super::*;
     fn row() -> Value {
         json!({"protocol":"ssh","hostname":"ssh.example.test","port":22,"username":"account","password":"fixture-password"})
+    }
+    #[test]
+    fn browser_transport_matches_terminal_merged_tcp_and_algorithm_options() {
+        let settings = json!({"sshTerminal":{"tcpOptions":{"connectionTimeout":41,"ipProtocol":"ipv6","tcpNoDelay":false,"soKeepAlive":false,"keepAliveProbes":7,"keepAliveInterval":21,"tcpKeepAlive":true},"enableCompression":true,"preferredCiphers":["aes256-ctr"]},"sshConnection":{"agentForwarding":true}});
+        let mut source = row();
+        source["sshConnectTimeout"] = 99.into();
+        source["sshConnectionConfigOverride"] = json!({"connectTimeout":88,"ipProtocol":"ipv4"});
+        source["sshTerminalConfigOverride"] = json!({"tcpOptions":{"connectionTimeout":17,"ipProtocol":"ipv4"},"preferredCiphers":["aes128-ctr"]});
+        let config = build_with_settings(&source, None, false, &settings).unwrap();
+        assert_eq!(config.host, "ssh.example.test");
+        assert_eq!(config.port, 22);
+        assert_eq!(config.connect_timeout, Some(17));
+        assert_eq!(config.ip_protocol, "ipv4");
+        assert!(!config.tcp_no_delay);
+        assert!(!config.tcp_keepalive);
+        assert_eq!(config.keepalive_probes, 7);
+        assert_eq!(config.keep_alive_interval, Some(21));
+        assert!(config.compression);
+        assert!(config.agent_forwarding);
+        assert_eq!(config.preferred_ciphers, vec!["aes128-ctr"]);
+        source["sshTerminalConfigOverride"]["tcpOptions"]["tcpKeepAlive"] = false.into();
+        assert_eq!(
+            build_with_settings(&source, None, false, &settings)
+                .unwrap()
+                .keep_alive_interval,
+            None
+        );
+        source["sshTerminalConfigOverride"]["tcpOptions"]["ipProtocol"] = "bogus".into();
+        assert!(build_with_settings(&source, None, false, &settings).is_err());
+    }
+    #[test]
+    fn partial_terminal_settings_follow_actual_terminal_legacy_fallbacks() {
+        let mut source = row();
+        source["sshConnectTimeout"] = 43.into();
+        source["sshKeepAliveInterval"] = 27.into();
+        for settings in [
+            Value::Null,
+            json!({"sshTerminal":{}}),
+            json!({"sshTerminal":{"tcpOptions":{}}}),
+        ] {
+            let config = build_with_settings(&source, None, false, &settings).unwrap();
+            assert_eq!(config.connect_timeout, Some(43));
+            assert_eq!(config.keep_alive_interval, None);
+        }
+        source["sshTerminalConfigOverride"] = json!({"tcpOptions":{"tcpKeepAlive":true}});
+        let config = build_with_settings(&source, None, false, &Value::Null).unwrap();
+        assert_eq!(config.keep_alive_interval, Some(27));
+        assert_eq!(config.connect_timeout, Some(43));
+        source.as_object_mut().unwrap().remove("sshConnectTimeout");
+        source
+            .as_object_mut()
+            .unwrap()
+            .remove("sshKeepAliveInterval");
+        let config = build_with_settings(&source, None, false, &Value::Null).unwrap();
+        assert_eq!(config.connect_timeout, Some(30));
+        assert_eq!(config.keep_alive_interval, Some(30));
+    }
+    #[test]
+    fn template_only_and_mixed_routes_are_never_silently_replaced_by_direct_tcp() {
+        for options in [
+            json!({"proxyCommandTemplate":"nc"}),
+            json!({"mixedChain":{"hops":[{"type":"proxy","host":"proxy.example.test","port":1080}]}}),
+        ] {
+            let mut source = row();
+            source["sshConnectionConfigOverride"] = options.clone();
+            assert!(build(&source, None, false).is_err());
+            assert!(
+                build_with_settings(&row(), None, false, &json!({"sshConnection":options}))
+                    .is_err()
+            );
+        }
     }
     #[test]
     fn selects_local_config_without_disabling_host_key_verification() {
