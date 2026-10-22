@@ -11,6 +11,13 @@ runtime Simple Icons import, or new dependency is used. A server/database/NAS/AP
 switch/cloud variant combines its mark with the app's corresponding role frame;
 these composites are app UI symbols, not official alternate brand logos.
 
+Windmill uses the six polygons and pale-blue accents from its official
+[publisher icon](https://github.com/windmill-labs/windmill/blob/9202a74071ba424ad6cfc1cfded518ee7db002dc/frontend/src/lib/components/icons/WindmillIcon.svelte),
+uniformly normalized from its original viewBox to 24 units. Primary blades inherit the connection color. This is the
+windmill.dev developer automation platform mark, shared by the hosted and
+self-hosted presets. Publisher copyright, AGPL-3.0 licensing and trademark
+rights remain applicable; no endorsement is implied.
+
 ## Installed Simple Icons
 
 `src/utils/icons/brand/brandIconSlugs.ts` is the source of truth for the installed paths

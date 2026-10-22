@@ -1,0 +1,26 @@
+{
+  "$schema": "../../../types/connection/httpLoginSteps.schema.json",
+  "version": 1,
+  "id": "windmill",
+  "evidence": {
+    "class": "A",
+    "source": "https://github.com/windmill-labs/windmill/blob/9202a74071ba424ad6cfc1cfded518ee7db002dc/frontend/src/lib/components/Login.svelte",
+    "reviewed": "2026-10-22"
+  },
+  "credentialOrigins": ["https://app.windmill.dev"],
+  "loginSteps": [
+    {
+      "kind": "form",
+      "origin": "https://app.windmill.dev",
+      "paths": ["/user/login"],
+      "selectors": {
+        "username": "input[id$=\"-email\"][type=\"email\"][autocomplete=\"username\"]",
+        "password": "input[id$=\"-password\"][type=\"password\"][autocomplete=\"current-password\"]"
+      }
+    },
+    {
+      "kind": "submit",
+      "submission": "enter"
+    }
+  ]
+}

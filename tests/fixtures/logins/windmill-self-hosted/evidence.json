@@ -1,0 +1,82 @@
+{
+  "$schema": "../evidence.schema.json",
+  "version": 1,
+  "id": "windmill-self-hosted",
+  "class": "A",
+  "source": "https://github.com/windmill-labs/windmill/blob/9202a74071ba424ad6cfc1cfded518ee7db002dc/frontend/src/lib/components/Login.svelte",
+  "reviewed": "2026-10-22",
+  "mechanism": "form",
+  "summary": "Explicit /user/login route: saved email and password in the revealed password pane. The website handles Enter on the password input and owns the login request.",
+  "sources": [
+    {
+      "id": "login",
+      "kind": "public-source",
+      "title": "Password sign-in component",
+      "url": "https://github.com/windmill-labs/windmill/blob/9202a74071ba424ad6cfc1cfded518ee7db002dc/frontend/src/lib/components/Login.svelte",
+      "commit": "9202a74071ba424ad6cfc1cfded518ee7db002dc",
+      "retrieved": "2026-10-22"
+    },
+    {
+      "id": "password",
+      "kind": "public-source",
+      "title": "Password control and Enter forwarding",
+      "url": "https://github.com/windmill-labs/windmill/blob/9202a74071ba424ad6cfc1cfded518ee7db002dc/frontend/src/lib/components/Password.svelte",
+      "commit": "9202a74071ba424ad6cfc1cfded518ee7db002dc",
+      "retrieved": "2026-10-22"
+    },
+    {
+      "id": "input",
+      "kind": "public-source",
+      "title": "Native input attributes",
+      "url": "https://github.com/windmill-labs/windmill/blob/9202a74071ba424ad6cfc1cfded518ee7db002dc/frontend/src/lib/components/text_input/TextInput.svelte",
+      "commit": "9202a74071ba424ad6cfc1cfded518ee7db002dc",
+      "retrieved": "2026-10-22"
+    },
+    {
+      "id": "route",
+      "kind": "public-source",
+      "title": "Explicit login route disables automatic SSO redirects",
+      "url": "https://github.com/windmill-labs/windmill/blob/9202a74071ba424ad6cfc1cfded518ee7db002dc/frontend/src/routes/(root)/(logged)/user/(user)/login/+page.svelte",
+      "commit": "9202a74071ba424ad6cfc1cfded518ee7db002dc",
+      "retrieved": "2026-10-22"
+    }
+  ],
+  "selectors": [
+    {
+      "selector": "input[id$=\"-email\"][type=\"email\"][autocomplete=\"username\"]",
+      "role": "username",
+      "source": "login",
+      "basis": "observed",
+      "locator": "emailId is `${uid}-email`; TextInput receives type email and autocomplete username."
+    },
+    {
+      "selector": "input[id$=\"-password\"][type=\"password\"][autocomplete=\"current-password\"]",
+      "role": "password",
+      "source": "login",
+      "basis": "observed",
+      "locator": "passwordId is `${uid}-password`; Password receives current-password and allowMultiline=false, forwards onKeyDown to handleKeyDown; Password and TextInput sources render the native input."
+    }
+  ],
+  "fixtures": [
+    {
+      "file": "fixture.html",
+      "path": "/user/login",
+      "derivedFrom": ["login", "password", "input", "route"]
+    }
+  ],
+  "staysInteractive": [
+    {
+      "kind": "single-sign-on",
+      "note": "OAuth/SAML providers, their account selection and approval remain interactive; no third-party credential origin is granted."
+    },
+    {
+      "kind": "totp",
+      "note": "No automatic MFA-code plan is introduced; any identity-provider challenge remains interactive."
+    },
+    {
+      "kind": "other",
+      "note": "When provider buttons hide the password pane, choose Log in without third-party and retry automatic login if needed. Disabled password login, first-time setup and workspace selection remain interactive."
+    }
+  ],
+  "notes": "Pinned public source only, no account test or hosted DOM capture. The hosted component says password credentials are available by contacting Windmill. Dynamic IDs are matched by authored suffix and autocomplete/type attributes. No registration/recovery route or embedded app gate is included. Source-backed synthetic fixture contains no vendor scripts or account data."
+}

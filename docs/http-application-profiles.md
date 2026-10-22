@@ -27,6 +27,11 @@ Both start in manual mode and offer explicit native password-form assistance.
 See [Activepieces website login]({{ '/activepieces-login/' | relative_url }}) for
 address/port setup and interactive email-code or SSO sign-in.
 
+**Windmill** and **Windmill (self-hosted)** support the developer automation
+platform's reviewed native email/password form, with SSO, MFA and approvals
+remaining interactive. See [Windmill connections](windmill-application.md) for
+hosted password availability, self-hosted addresses and login behavior.
+
 | Mode                 | What happens                                                                                                                                                                                         |
 | -------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Manual browsing      | No saved website username/password is supplied to the proxy. Sign in on the website yourself. Existing website cookies may still represent a signed-in session; manual mode does not promise logout. |

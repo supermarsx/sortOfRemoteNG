@@ -29,11 +29,11 @@ mode, and you turn automatic login on per connection.
 | HTTP authentication, no page form                                            | 7            |
 | Configured by you                                                            | 2            |
 | No web login                                                                 | 8            |
-| Login steps written, class A: every selector seen in an authoritative source | 19           |
+| Login steps written, class A: every selector seen in an authoritative source | 21           |
 | Login steps written, class B: unverified layout                              | 18           |
 | Evidence, but no steps file                                                  | 3            |
 | Nothing to build from (class C)                                              | 36           |
-| Total                                                                        | 158          |
+| Total                                                                        | 160          |
 
 Of the 65 that sign in automatically, 38 use reviewed form selectors and 27 keep a hand-written
 adapter (`adobe` 1, `bitwarden` 2, `chatgpt` 1, `claude` 1, `cloudflare` 1, `google` 19,
@@ -259,7 +259,7 @@ Native integration entries with no web login page.
 | PHP runtime                 | `php`           | `none`             | -     | -         | -          | No web login page |
 | VMware Workstation / Fusion | `vmwareDesktop` | `none`             | -     | -         | -          | No web login page |
 
-### Login steps written (37)
+### Login steps written (39)
 
 A steps file exists under `src/data/loginSteps/`. Class A: every selector was seen in an
 authoritative source. Class B: the layout is unverified until someone signs in with it.
@@ -300,6 +300,8 @@ authoritative source. Class B: the layout is unverified until someone signs in w
 | Uptime Kuma (self-hosted)                   | `uptime-kuma`                | `manual`           | A     | `form`    | `self-hosted/uptime-kuma.json`                    | Authoritative source |
 | VMware vSphere                              | `vmware`                     | `generic-form`     | B     | `form`    | `appliances/vmware.json`                          | Unverified layout    |
 | Wazuh dashboard (self-hosted)               | `wazuh`                      | `manual`           | A     | `form`    | `self-hosted/wazuh.json`                          | Authoritative source |
+| Windmill                                    | `windmill`                   | `manual`           | A     | `form`    | `hosted/windmill.json`                            | Authoritative source |
+| Windmill (self-hosted)                      | `windmill-self-hosted`       | `manual`           | A     | `form`    | `self-hosted/windmill-self-hosted.json`           | Authoritative source |
 | Zabbix frontend (self-hosted)               | `zabbix`                     | `manual`           | A     | `form`    | `self-hosted/zabbix.json`                         | Authoritative source |
 | Zoom web portal                             | `zoom`                       | `manual`           | B     | `form`    | `enterprise-identity/zoom.json`                   | Unverified layout    |
 | Zulip (organization / self-hosted)          | `zulip`                      | `manual`           | A     | `form`    | `self-hosted/zulip.json`                          | Authoritative source |

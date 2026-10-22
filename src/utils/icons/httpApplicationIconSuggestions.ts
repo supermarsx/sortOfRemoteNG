@@ -41,6 +41,8 @@ export const HTTP_APPLICATION_ICON_SUGGESTIONS = Object.freeze({
   phpmyadmin: "phpmyadmin",
   nextcloud: "nextcloud",
   portainer: "portainer",
+  windmill: "windmill",
+  "windmill-self-hosted": "windmill",
   nginxProxyMgr: "nginx-proxy-manager",
   proxmox: "proxmox",
   pfsense: "pfsense",

@@ -186,6 +186,12 @@
     "activepieces-self-hosted": {
       "loginPath": "/sign-in"
     },
+    "windmill": {
+      "hostedLoginUrl": "https://app.windmill.dev/user/login"
+    },
+    "windmill-self-hosted": {
+      "loginPath": "/user/login"
+    },
     "namecheap": {
       "hostedLoginUrl": "https://www.namecheap.com/myaccount/login/"
     },

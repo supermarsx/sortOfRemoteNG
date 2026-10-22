@@ -206,6 +206,7 @@ test("every brand icon is a themed passive Lucide icon with its declared artwork
     putty,
     noip,
     tacticalrmm,
+    windmill,
     vscode,
   } = await importBrandModule();
 
@@ -226,6 +227,7 @@ test("every brand icon is a themed passive Lucide icon with its declared artwork
     "putty",
     "noip",
     "tacticalrmm",
+    "windmill",
     "vscode",
   ];
   assert.equal(
@@ -242,6 +244,7 @@ test("every brand icon is a themed passive Lucide icon with its declared artwork
   assert.equal(BRAND_ICONS.activepieces, activepieces);
   assert.equal(BRAND_ICONS.noip, noip);
   assert.equal(BRAND_ICONS.tacticalrmm, tacticalrmm);
+  assert.equal(BRAND_ICONS.windmill, windmill);
   assert.equal(BRAND_ICONS.vscode, vscode);
   const providerGeometry = {
     microsoftteams: [
@@ -397,6 +400,10 @@ test("every brand icon is a themed passive Lucide icon with its declared artwork
           /stroke="currentColor"/u,
           "PuTTY needs its linework as well as solid screens",
         );
+      } else if (name === "windmill") {
+        assert.equal((markup.match(/<polygon\b/gu) ?? []).length, 6);
+        assert.equal((markup.match(/fill="currentColor"/gu) ?? []).length, 3);
+        assert.equal((markup.match(/fill="#bcd4fc"/gu) ?? []).length, 3);
       } else {
         assert.match(markup, /<path d="[^"]+"/u, `${name} must draw a path`);
       }

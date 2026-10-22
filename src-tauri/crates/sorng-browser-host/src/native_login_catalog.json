@@ -611,6 +611,51 @@
         ]
       }
     },
+    "windmill": {
+      "capability": "manual",
+      "declarativeLogin": {
+        "mode": "exclusive",
+        "credentialOrigins": ["https://app.windmill.dev"],
+        "passwordOnly": false,
+        "loginSteps": [
+          {
+            "kind": "form",
+            "origin": "https://app.windmill.dev",
+            "paths": ["/user/login"],
+            "selectors": {
+              "username": "input[id$=\"-email\"][type=\"email\"][autocomplete=\"username\"]",
+              "password": "input[id$=\"-password\"][type=\"password\"][autocomplete=\"current-password\"]"
+            }
+          },
+          {
+            "kind": "submit",
+            "submission": "enter"
+          }
+        ]
+      }
+    },
+    "windmill-self-hosted": {
+      "capability": "manual",
+      "declarativeLogin": {
+        "mode": "exclusive",
+        "credentialOrigins": [],
+        "passwordOnly": false,
+        "loginSteps": [
+          {
+            "kind": "form",
+            "paths": ["/user/login"],
+            "selectors": {
+              "username": "input[id$=\"-email\"][type=\"email\"][autocomplete=\"username\"]",
+              "password": "input[id$=\"-password\"][type=\"password\"][autocomplete=\"current-password\"]"
+            }
+          },
+          {
+            "kind": "submit",
+            "submission": "enter"
+          }
+        ]
+      }
+    },
     "namecheap": {
       "capability": "manual"
     },

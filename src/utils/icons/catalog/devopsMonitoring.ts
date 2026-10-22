@@ -40,6 +40,7 @@ import {
   meshcentral,
   minio,
   n8n,
+  windmill,
   nodered,
   prometheus,
   puppet,
@@ -57,6 +58,13 @@ import { DEVELOPER_TOOL_ICONS } from "./developerToolIcons";
 import { SCRIPT_LANGUAGE_ICONS } from "./scriptLanguages";
 
 export const DEVOPS_MONITORING_ICONS = [
+  defineIcon("windmill", "Windmill", "devops-monitoring", windmill, [
+    "windmill.dev",
+    "workflow",
+    "automation",
+    "scripts",
+    "self-hosted",
+  ]),
   defineIcon("activity", "Activity", "devops-monitoring", Activity, [
     "prometheus",
     "monitoring",

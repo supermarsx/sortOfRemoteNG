@@ -5,6 +5,7 @@ import { putty } from "./puttyBrandIcon";
 import { noip } from "./noipBrandIcon";
 import { tacticalrmm } from "./tacticalRmmBrandIcon";
 import { activepieces } from "./activepiecesBrandIcon";
+import { windmill } from "./windmillBrandIcon";
 import {
   STANDARD_NOTES_BRAND_ICONS,
   type StandardNotesBrandIconName,
@@ -79,6 +80,7 @@ export { putty } from "./puttyBrandIcon";
 export { noip } from "./noipBrandIcon";
 export { tacticalrmm } from "./tacticalRmmBrandIcon";
 export { activepieces } from "./activepiecesBrandIcon";
+export { windmill } from "./windmillBrandIcon";
 export * from "./standardNotesBrandIcons";
 export { vscode } from "./developerPublisherBrandIcons";
 export * from "./messagingPublisherBrandIcons";
@@ -95,6 +97,7 @@ export type BrandIconName =
   | "noip"
   | "tacticalrmm"
   | "activepieces"
+  | "windmill"
   | "vscode"
   | StandardNotesBrandIconName
   | DashboardBrandIconName
@@ -119,6 +122,7 @@ export const BRAND_ICONS: Readonly<Record<BrandIconName, LucideIcon>> = {
   noip,
   tacticalrmm,
   activepieces,
+  windmill,
   vscode,
   ...STANDARD_NOTES_BRAND_ICONS,
   ...DASHBOARD_BRAND_ICONS,

@@ -37,6 +37,8 @@ import stepsTplinkSwitch from "../../data/loginSteps/appliances/tplink-switch.js
 import stepsUptimeKuma from "../../data/loginSteps/self-hosted/uptime-kuma.json";
 import stepsVmware from "../../data/loginSteps/appliances/vmware.json";
 import stepsWazuh from "../../data/loginSteps/self-hosted/wazuh.json";
+import stepsWindmill from "../../data/loginSteps/hosted/windmill.json";
+import stepsWindmillSelfHosted from "../../data/loginSteps/self-hosted/windmill-self-hosted.json";
 import stepsZabbix from "../../data/loginSteps/self-hosted/zabbix.json";
 import stepsZoom from "../../data/loginSteps/enterprise-identity/zoom.json";
 import stepsZulip from "../../data/loginSteps/self-hosted/zulip.json";
@@ -80,6 +82,8 @@ export const HTTP_LOGIN_STEPS_FILES: readonly (readonly [
   ["uptime-kuma", stepsUptimeKuma],
   ["vmware", stepsVmware],
   ["wazuh", stepsWazuh],
+  ["windmill", stepsWindmill],
+  ["windmill-self-hosted", stepsWindmillSelfHosted],
   ["zabbix", stepsZabbix],
   ["zoom", stepsZoom],
   ["zulip", stepsZulip],
