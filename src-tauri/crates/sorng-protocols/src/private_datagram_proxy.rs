@@ -4,6 +4,7 @@
 //! enable CEF QUIC. The supplied native dialer must preserve the selected route;
 //! unsupported UDP routes must fail instead of falling back to direct traffic.
 use crate::private_forward_proxy::{Authority, DestinationGrant};
+pub mod capsule;
 use std::{
     collections::HashMap,
     future::Future,
