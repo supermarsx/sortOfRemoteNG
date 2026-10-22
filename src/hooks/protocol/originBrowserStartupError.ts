@@ -1,4 +1,22 @@
 export const originBrowserSshConnectFailures = {
+  "ssh-route-command-review-cancelled": [
+    "SSH proxy command review",
+    "Approval of the SSH proxy command was cancelled before the route completed.",
+    "Reopen the website when ready. Review the displayed proxy command before approving a new connection attempt.",
+    "network",
+  ],
+  "ssh-route-command-review-timeout": [
+    "SSH proxy command review",
+    "The SSH proxy command review expired before approval was received.",
+    "Retry the browser connection and review the command when its approval dialog opens.",
+    "network",
+  ],
+  "ssh-route-command-review-unavailable": [
+    "SSH proxy command review",
+    "The command review could not be opened or its owning browser request became unavailable.",
+    "Keep the owning database unlocked, confirm the saved SSH route is available, and retry the browser connection.",
+    "network",
+  ],
   "ssh-route-connect-dns": [
     "SSH route hostname resolution",
     "The SSH endpoint hostname could not be resolved.",

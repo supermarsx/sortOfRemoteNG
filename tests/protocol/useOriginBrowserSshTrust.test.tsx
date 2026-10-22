@@ -13,12 +13,16 @@ const h = vi.hoisted(() => ({
   verify: vi.fn(),
   trust: vi.fn(),
   ensure: vi.fn(),
+  prompt: vi.fn(),
   scope: { databaseId: "db" as string | null, resolved: true },
   callbacks: [] as Array<(event: { payload: unknown }) => Promise<void>>,
   off: vi.fn(),
 }));
 vi.mock("@tauri-apps/api/event", () => ({ listen: h.listen }));
 vi.mock("@tauri-apps/api/core", () => ({ invoke: h.invoke }));
+vi.mock("../../src/utils/prompts/promptQueue", () => ({
+  requestPrompt: h.prompt,
+}));
 vi.mock("../../src/utils/auth/trustStore", async (original) => {
   const actual =
     await original<typeof import("../../src/utils/auth/trustStore")>();
@@ -83,7 +87,10 @@ async function start(props = options()) {
 }
 async function emit(payload = prompt()) {
   await act(async () => {
-    await h.callbacks[h.callbacks.length - 1]!({ payload });
+    const listener = [...h.listen.mock.calls]
+      .reverse()
+      .find(([name]) => name === "ssh://host-key-prompt")?.[1];
+    await listener({ payload });
   });
 }
 beforeEach(() => {
@@ -96,6 +103,7 @@ beforeEach(() => {
   });
   h.invoke.mockResolvedValue(undefined);
   h.ensure.mockResolvedValue(undefined);
+  h.prompt.mockResolvedValue({ confirmed: false, remember: false });
   h.verify.mockResolvedValue({ status: "trusted" });
   h.trust.mockResolvedValue(undefined);
   vi.spyOn(window, "confirm").mockReturnValue(false);
@@ -271,7 +279,7 @@ describe("native browser SSH host-key trust", () => {
     ) as Connection;
     expect(props.connection.security?.tunnelChain?.[0].type).toBe("ssh-jump");
     await start(props);
-    expect(h.listen).toHaveBeenCalledTimes(1);
+    expect(h.listen).toHaveBeenCalledTimes(2);
     await emit();
     expect(h.verify).toHaveBeenCalledWith(
       "ssh.test",
@@ -313,7 +321,7 @@ describe("native browser SSH host-key trust", () => {
     act(() => view.result.current.retry());
     await waitFor(() => expect(view.result.current.ready).toBe(true));
     expect(view.result.current.failed).toBe(false);
-    expect(h.listen).toHaveBeenCalledTimes(2);
+    expect(h.listen).toHaveBeenCalledTimes(4);
   });
   it("gates a changed source until its replacement listener is actually registered", async () => {
     const props = options();
@@ -346,7 +354,7 @@ describe("native browser SSH host-key trust", () => {
     await act(async () => {
       finish(h.off);
     });
-    expect(h.off).toHaveBeenCalledOnce();
+    expect(h.off).toHaveBeenCalledTimes(2);
     expect(h.invoke).not.toHaveBeenCalled();
   });
   it("registers before readiness and accepts only the exact correlated native endpoint", async () => {
@@ -557,7 +565,7 @@ describe("native browser SSH host-key trust", () => {
     await start(props);
     const other = renderHook(() => useOriginBrowserSshTrust(props));
     expect(other.result.current.ready).toBe(false);
-    expect(h.listen).toHaveBeenCalledOnce();
+    expect(h.listen).toHaveBeenCalledTimes(2);
   });
   it("does not require a listener for an ordinary direct browser route", () => {
     const props = options();
@@ -565,5 +573,155 @@ describe("native browser SSH host-key trust", () => {
     const view = renderHook(() => useOriginBrowserSshTrust(props));
     expect(view.result.current.ready).toBe(true);
     expect(h.listen).not.toHaveBeenCalled();
+  });
+});
+
+const commandPrompt = (extra = {}) => ({
+  nonce: "command-review-1",
+  createRequestId: "create-1",
+  hostKeyPromptId: "native-browser:browser",
+  commandPreview: "fixture-proxy --target ssh.test:22",
+  ...extra,
+});
+async function commandEvent(payload = commandPrompt()) {
+  const listener = [...h.listen.mock.calls]
+    .reverse()
+    .find(([name]) => name === "ssh://native-browser-command-review")?.[1];
+  await listener({ payload });
+}
+describe("native browser SSH command review", () => {
+  it("uses the themed prompt and replies only nonce/decision for the exact pending create", async () => {
+    const props = options();
+    props.getPendingCreateRequestId = () => "create-1";
+    h.prompt.mockResolvedValue({ confirmed: true, remember: false });
+    await start(props);
+    await act(async () => {
+      await commandEvent();
+    });
+    expect(h.prompt).toHaveBeenCalledWith(
+      expect.objectContaining({
+        defaultAction: "cancel",
+        preview: {
+          label: "SSH ProxyCommand",
+          text: "fixture-proxy --target ssh.test:22",
+        },
+      }),
+      { signal: expect.any(AbortSignal) },
+    );
+    expect(h.invoke).toHaveBeenCalledWith(
+      "origin_browser_ssh_respond_to_command_review",
+      { nonce: "command-review-1", accepted: true },
+    );
+    expect(h.invoke.mock.calls[0][1]).not.toHaveProperty("command");
+    await act(async () => {
+      await commandEvent();
+    });
+    expect(h.prompt).toHaveBeenCalledTimes(1);
+    expect(h.invoke).toHaveBeenCalledTimes(1);
+  });
+  it("rejects old/unknown create IDs and foreign correlations without opening a prompt", async () => {
+    const props = options();
+    props.getPendingCreateRequestId = () => "create-2";
+    await start(props);
+    await act(async () => {
+      await commandEvent();
+    });
+    expect(h.prompt).not.toHaveBeenCalled();
+    expect(h.invoke).toHaveBeenLastCalledWith(
+      "origin_browser_ssh_respond_to_command_review",
+      { nonce: "command-review-1", accepted: false },
+    );
+    h.invoke.mockClear();
+    await act(async () => {
+      await commandEvent(
+        commandPrompt({
+          nonce: "foreign",
+          hostKeyPromptId: "native-browser:other",
+        }),
+      );
+    });
+    expect(h.invoke).not.toHaveBeenCalled();
+  });
+  it("rechecks the current request after an asynchronous approval without needing a rerender", async () => {
+    const props = options();
+    let current = "create-1";
+    props.getPendingCreateRequestId = () => current;
+    let finish!: (value: { confirmed: boolean; remember: boolean }) => void;
+    h.prompt.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          finish = resolve;
+        }),
+    );
+    await start(props);
+    let work!: Promise<void>;
+    act(() => {
+      work = commandEvent();
+    });
+    await waitFor(() => expect(h.prompt).toHaveBeenCalledTimes(1));
+    current = "create-2";
+    await act(async () => {
+      finish({ confirmed: true, remember: false });
+      await work;
+    });
+    expect(h.invoke).toHaveBeenLastCalledWith(
+      "origin_browser_ssh_respond_to_command_review",
+      { nonce: "command-review-1", accepted: false },
+    );
+  });
+  it("native expiry closes its exact pending prompt and cannot approve later", async () => {
+    const props = options();
+    props.getPendingCreateRequestId = () => "create-1";
+    h.prompt.mockImplementation(
+      (_request, { signal }) =>
+        new Promise((resolve) =>
+          signal.addEventListener(
+            "abort",
+            () => resolve({ confirmed: false, remember: false }),
+            { once: true },
+          ),
+        ),
+    );
+    await start(props);
+    let work!: Promise<void>;
+    act(() => {
+      work = commandEvent();
+    });
+    await waitFor(() => expect(h.prompt).toHaveBeenCalledTimes(1));
+    await act(async () => {
+      await commandEvent(commandPrompt({ closed: true }));
+      await work;
+    });
+    expect(h.invoke).toHaveBeenLastCalledWith(
+      "origin_browser_ssh_respond_to_command_review",
+      { nonce: "command-review-1", accepted: false },
+    );
+  });
+  it("unmount rejects once and a late affirmative result cannot execute", async () => {
+    const props = options();
+    props.getPendingCreateRequestId = () => "create-1";
+    let finish!: (value: { confirmed: boolean; remember: boolean }) => void;
+    h.prompt.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          finish = resolve;
+        }),
+    );
+    const view = await start(props);
+    let work!: Promise<void>;
+    act(() => {
+      work = commandEvent();
+    });
+    await waitFor(() => expect(h.prompt).toHaveBeenCalledTimes(1));
+    view.unmount();
+    await act(async () => {
+      finish({ confirmed: true, remember: false });
+      await work;
+    });
+    expect(h.invoke).toHaveBeenCalledTimes(1);
+    expect(h.invoke).toHaveBeenCalledWith(
+      "origin_browser_ssh_respond_to_command_review",
+      { nonce: "command-review-1", accepted: false },
+    );
   });
 });

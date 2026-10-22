@@ -73,7 +73,21 @@ pub(crate) fn dispatch_startup(invoke: tauri::ipc::Invoke) -> bool {
     }
     if name == "origin_browser_create" {
         let request = request!(OriginBrowserCreateRequest);
+        if crate::application_log_commands::require_shell(&window).is_err() {
+            resolver.reject("Browser creation is available only in an app window.");
+            return true;
+        }
+        #[cfg(feature = "native-browser")]
+        let request_scope = match sorng_commands_core::origin_browser_authority::ssh_command_review::begin_request(&window, &request) {
+            Ok(scope) => scope,
+            Err(error) => {
+                resolver.reject(error);
+                return true;
+            }
+        };
         resolver.respond_async(crate::origin_browser_startup_task::task(move || async move {
+            #[cfg(feature = "native-browser")]
+            let _request_scope = request_scope;
             let state: State<'_, EncryptionState> = State::from_command(CommandItem {
                 plugin: None,
                 name,
@@ -130,7 +144,52 @@ pub(crate) fn is_command(command: &str) -> bool {
             | "origin_browser_diagnose"
             | "origin_browser_manual_input"
             | "origin_browser_cancel_login"
+            | "origin_browser_ssh_respond_to_command_review"
+            | "origin_browser_ssh_cancel_pending_create"
     )
+}
+
+#[tauri::command]
+pub(crate) async fn origin_browser_ssh_respond_to_command_review(
+    window: WebviewWindow,
+    state: State<'_, EncryptionState>,
+    nonce: String,
+    accepted: bool,
+) -> Result<(), String> {
+    crate::application_log_commands::require_shell(&window)
+        .map_err(|_| "SSH command review is available only in an app window.")?;
+    #[cfg(feature = "native-browser")]
+    {
+        sorng_commands_core::origin_browser_authority::ssh_command_review::respond(
+            &window, &state, &nonce, accepted,
+        ).await
+    }
+    #[cfg(not(feature = "native-browser"))]
+    {
+        let _ = (window, state, nonce, accepted);
+        Err(UNAVAILABLE.into())
+    }
+}
+
+#[tauri::command]
+pub(crate) fn origin_browser_ssh_cancel_pending_create(
+    window: WebviewWindow,
+    state: State<'_, EncryptionState>,
+    request_id: String,
+) -> Result<(), String> {
+    crate::application_log_commands::require_shell(&window)
+        .map_err(|_| "Browser cancellation is available only in an app window.")?;
+    #[cfg(feature = "native-browser")]
+    {
+        sorng_commands_core::origin_browser_authority::ssh_command_review::cancel(
+            &window, &state, &request_id,
+        )
+    }
+    #[cfg(not(feature = "native-browser"))]
+    {
+        let _ = (window, state, request_id);
+        Err(UNAVAILABLE.into())
+    }
 }
 
 #[derive(serde::Deserialize)]
@@ -544,6 +603,8 @@ mod tests {
             "origin_browser_diagnose",
             "origin_browser_manual_input",
             "origin_browser_cancel_login",
+            "origin_browser_ssh_respond_to_command_review",
+            "origin_browser_ssh_cancel_pending_create",
         ] {
             assert!(is_command(command));
         }

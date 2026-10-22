@@ -2,7 +2,8 @@
 //! relay. Its private listener is never a Chromium proxy or a website origin.
 use super::*;
 use crate::ssh::service::{
-    connect_ssh_on_state_observed, disconnect_ssh_on_state, SshEstablishmentOrigin,
+    connect_ssh_on_state_observed, connect_ssh_on_state_reviewed, disconnect_ssh_on_state,
+    SshEstablishmentOrigin,
 };
 use crate::ssh::{PortForwardConfig, PortForwardDirection, SshServiceState};
 use tauri::Manager;
@@ -380,7 +381,7 @@ pub(super) async fn prepare<R: Runtime>(
     connection: &Value,
     lease: &NativeOwnerLease,
     source: &Url,
-    browser_session_id: &str,
+    request: &OriginBrowserCreateRequest,
     settings: &Value,
 ) -> Result<Option<Arc<SshRoute>>, NativeAuthorityError> {
     let target = authority(
@@ -397,31 +398,59 @@ pub(super) async fn prepare<R: Runtime>(
         .clone();
     let mut config =
         super::ssh_config::resolve(window, state, lease, connection, &spec.ssh, settings).await?;
-    config.host_key_prompt_id = Some(format!("native-browser:{browser_session_id}"));
+    config.host_key_prompt_id = Some(format!("native-browser:{}", request.owner.session_id));
     lease
         .recheck(window, state)
         .await
         .map_err(|_| unavailable("owner"))?;
-    let actor = connect_while_current(
+    #[cfg(test)]
+    let _test_request_scope = config
+        .proxy_command
+        .as_ref()
+        .and_then(|_| super::ssh_command_review::begin_test(window, state, request));
+    let (claim, reviewed) = if config.proxy_command.is_some() {
+        let claim =
+            super::ssh_command_review::current(window, state, &request.owner, &request.request_id)
+                .ok_or_else(|| unavailable("command-review-cancelled"))?;
+        let reviewed =
+            super::ssh_command_review::review(window, state, lease, &claim, &config).await?;
+        (Some(claim), Some(reviewed))
+    } else {
+        (
+            super::ssh_command_review::current(window, state, &request.owner, &request.request_id),
+            None,
+        )
+    };
+    let connecting = connect_while_current(
         async {
-            let id = connect_ssh_on_state_observed(
-                &service,
-                config,
-                SshEstablishmentOrigin::NativeBrowser,
-            )
-            .await
+            let id = if let Some(reviewed) = reviewed {
+                connect_ssh_on_state_reviewed(&service, config, reviewed).await
+            } else {
+                connect_ssh_on_state_observed(
+                    &service,
+                    config,
+                    SshEstablishmentOrigin::NativeBrowser,
+                )
+                .await
+            }
             .map_err(|error| connect_error(&error))?;
-            // Arm cleanup synchronously before returning success to the lease
-            // race. No actor ID may be discarded without its cleanup guard.
+            // Cleanup is armed before ownership checks may discard the result.
             Ok(Actor::new(service, id, lease.clone()))
         },
         || lease.is_current(),
-    )
-    .await?;
+    );
+    let actor = if let Some(claim) = &claim {
+        claim.run(connecting).await?
+    } else {
+        connecting.await?
+    };
     lease
         .recheck(window, state)
         .await
         .map_err(|_| unavailable("owner"))?;
+    if claim.as_ref().is_some_and(|claim| !claim.is_current()) {
+        return Err(unavailable("command-review-cancelled"));
+    }
     let config = PortForwardConfig {
         local_host: "127.0.0.1".into(),
         local_port: 0,

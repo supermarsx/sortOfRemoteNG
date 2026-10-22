@@ -184,11 +184,7 @@ fn build_with_settings(
             return Err(ERROR);
         }
         // An unsupported upstream route must never silently become direct SSH.
-        if options.get("enableJumpHost") == Some(&Value::Bool(true))
-            || options
-                .get("proxyCommand")
-                .is_some_and(|v| !v.is_null() && v != "")
-        {
+        if options.get("enableJumpHost") == Some(&Value::Bool(true)) {
             return Err(ERROR);
         }
         if let Some(value) = options.get("knownHostsPath").filter(|v| !v.is_null()) {
@@ -367,12 +363,40 @@ fn apply_terminal_options(
             .and_then(|v| v.get(key))
             .or_else(|| global_connection.and_then(|v| v.get(key)))
     };
-    // Never discard an effective route selector. An explicit local empty
-    // command does override the global command, just like the terminal merge.
-    for key in ["proxyCommand", "proxyCommandTemplate"] {
-        if connection(key).is_some_and(|v| !v.is_null() && v != "") {
-            return Err(ERROR);
+    // Mirror the normal producer's command/template || null normalization.
+    // This selects configuration only. Execution still requires an owner-bound
+    // native review; persisted confirmation flags are deliberately not copied.
+    let optional_text = |key: &str| -> Result<Value, NativeAuthorityError> {
+        match connection(key) {
+            None | Some(Value::Null) => Ok(Value::Null),
+            Some(Value::String(value)) if value.len() <= 256 * 1024 && !value.contains('\0') => {
+                Ok(if value.is_empty() {
+                    Value::Null
+                } else {
+                    json!(value)
+                })
+            }
+            _ => Err(ERROR),
         }
+    };
+    let command = optional_text("proxyCommand")?;
+    let template = optional_text("proxyCommandTemplate")?;
+    if !command.is_null() || !template.is_null() {
+        let number = |key: &str| match connection(key) {
+            None | Some(Value::Null) => Value::Null,
+            Some(value) if value == &json!(0) => Value::Null,
+            Some(value) => value.clone(),
+        };
+        config["proxy_command"] = json!({
+            "command":command,"template":template,
+            "proxy_host":optional_text("proxyCommandHost")?,
+            "proxy_port":number("proxyCommandPort"),
+            "proxy_username":optional_text("proxyCommandUsername")?,
+            "proxy_password":optional_text("proxyCommandPassword")?,
+            "proxy_type":optional_text("proxyCommandProxyType")?,
+            "timeout_secs":number("proxyCommandTimeout"),
+            "command_confirmed":false,
+        });
     }
     if connection("enableJumpHost") == Some(&Value::Bool(true))
         || connection("mixedChain").is_some_and(|v| {
@@ -458,19 +482,48 @@ mod tests {
         assert_eq!(config.keep_alive_interval, Some(30));
     }
     #[test]
-    fn template_only_and_mixed_routes_are_never_silently_replaced_by_direct_tcp() {
-        for options in [
-            json!({"proxyCommandTemplate":"nc"}),
-            json!({"mixedChain":{"hops":[{"type":"proxy","host":"proxy.example.test","port":1080}]}}),
-        ] {
-            let mut source = row();
-            source["sshConnectionConfigOverride"] = options.clone();
-            assert!(build(&source, None, false).is_err());
-            assert!(
-                build_with_settings(&row(), None, false, &json!({"sshConnection":options}))
-                    .is_err()
-            );
-        }
+    fn template_only_is_preserved_for_review_and_mixed_routes_never_become_direct() {
+        let mut source = row();
+        source["sshConnectionConfigOverride"] =
+            json!({"proxyCommandTemplate":"nc","proxyCommandConfirmed":true});
+        let config = build(&source, None, false).unwrap();
+        let command = config.proxy_command.unwrap();
+        assert!(command.command.is_none());
+        assert!(command.template.is_some());
+        assert!(!command.command_confirmed);
+        let global = json!({"sshConnection":{"proxyCommandTemplate":"ncat","proxyCommandHost":"proxy.example.test","proxyCommandPort":1080}});
+        let config = build_with_settings(&row(), None, false, &global).unwrap();
+        assert_eq!(
+            config.proxy_command.unwrap().proxy_host.as_deref(),
+            Some("proxy.example.test")
+        );
+        source["sshConnectionConfigOverride"] = json!({"mixedChain":{"hops":[{"type":"proxy","host":"proxy.example.test","port":1080}]}});
+        assert!(build(&source, None, false).is_err());
+        assert!(build_with_settings(
+            &row(),
+            None,
+            false,
+            &json!({"sshConnection":source["sshConnectionConfigOverride"]})
+        )
+        .is_err());
+    }
+    #[test]
+    fn local_command_overrides_global_template_without_persisted_execution_authority() {
+        let settings = json!({"sshConnection":{"proxyCommand":"ignored-global","proxyCommandTemplate":"nc","proxyCommandConfirmed":true}});
+        let mut source = row();
+        source["sshConnectionConfigOverride"] = json!({"proxyCommand":"fixture-tool %h %p", "proxyCommandTemplate":null,"proxyCommandConfirmed":true});
+        let config = build_with_settings(&source, None, false, &settings).unwrap();
+        let command = config.proxy_command.unwrap();
+        assert_eq!(command.command.as_deref(), Some("fixture-tool %h %p"));
+        assert!(command.template.is_none());
+        assert!(!command.command_confirmed);
+        source["sshConnectionConfigOverride"]["proxyCommand"] = "".into();
+        assert!(build_with_settings(&source, None, false, &settings)
+            .unwrap()
+            .proxy_command
+            .is_none());
+        source["sshConnectionConfigOverride"]["proxyCommand"] = false.into();
+        assert!(build_with_settings(&source, None, false, &settings).is_err());
     }
     #[test]
     fn selects_local_config_without_disabling_host_key_verification() {

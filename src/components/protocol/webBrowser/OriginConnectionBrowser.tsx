@@ -288,6 +288,7 @@ export default function OriginConnectionBrowser({
     overlayOpen;
   const popupBridge = useNativeOriginPopupBridge();
   const sshStarting = useRef(true);
+  const pendingCreateId = useRef<() => string | null>(() => null);
   const sshTrust = useOriginBrowserSshTrust({
     sessionId: session.id,
     ownerDatabaseId,
@@ -297,6 +298,7 @@ export default function OriginConnectionBrowser({
     settings,
     enabled: ownerAvailable && settingsReady !== false,
     isPending: () => sshStarting.current,
+    getPendingCreateRequestId: () => pendingCreateId.current(),
   });
   const nativeBrowser = useOriginBrowser({
     transport: popupBridge.browserTransport,
@@ -337,6 +339,8 @@ export default function OriginConnectionBrowser({
             : 0,
         ),
   });
+  pendingCreateId.current =
+    nativeBrowser.getPendingCreateRequestId ?? (() => null);
   sshStarting.current =
     nativeBrowser.state.phase === "starting" ||
     nativeBrowser.state.phase === "idle";

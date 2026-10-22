@@ -37,6 +37,24 @@ const names = [
 ];
 
 describe("native browser per-view startup diagnostics", () => {
+  it.each(["cancelled", "timeout", "unavailable"])(
+    "identifies the exact command review %s outcome without exposing extra text",
+    (reason) => {
+      const native = `Saved browser SSH route is unavailable (command-review-${reason}); review its saved SSH connection and tunnel settings; no direct fallback`;
+      const failure = originBrowserStartupError("create", native);
+      expect(failure).toMatchObject({
+        category: "connection",
+        code: `ssh-route-command-review-${reason}`,
+      });
+      expect(originBrowserStartupRetryable(failure)).toBe(false);
+      for (const input of [`${native}: SECRET`, `SECRET ${native}`]) {
+        const rejected = originBrowserStartupError("create", input);
+        expect(rejected.code).toBeUndefined();
+        expect(rejected.message).not.toContain("SECRET");
+      }
+      expect(originBrowserStartupError("resync", native).code).toBeUndefined();
+    },
+  );
   it.each(["service", "connect", "forward", "owner"] as const)(
     "recognizes only the exact fixed native SSH %s failure",
     (stage) => {

@@ -94,6 +94,8 @@ mod login_steps;
 pub use basic_auth::NativeBasicAuth;
 #[path = "origin_browser_routes.rs"]
 mod routes;
+#[path = "origin_browser_ssh_command_review.rs"]
+pub mod ssh_command_review;
 #[path = "origin_browser_ssh_config.rs"]
 mod ssh_config;
 #[path = "origin_browser_ssh_route.rs"]
@@ -1188,7 +1190,7 @@ async fn authorize_create_inner<R: Runtime>(
         &connection,
         &lease,
         &initial_url,
-        &request.owner.session_id,
+        request,
         &settings,
     )
     .await?;

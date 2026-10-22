@@ -323,6 +323,7 @@ interface Attempt {
   loadFailed: boolean;
   proxyRecoveryResolved: boolean;
   createStarted: boolean;
+  pendingCreateRequestId: string | null;
   identity: OriginBrowserIdentity | null;
   closeTask: Promise<boolean> | null;
   closeFailed: boolean;
@@ -639,6 +640,19 @@ export function useOriginBrowser(options: UseOriginBrowserOptions) {
   const closeAttempt = useCallback(
     async (attempt: Attempt, retryFailed = false): Promise<boolean> => {
       attempt.cancelled = true;
+      const pendingRequestId = attempt.pendingCreateRequestId;
+      attempt.pendingCreateRequestId = null;
+      if (pendingRequestId) {
+        try {
+          void Promise.resolve(
+            invoke("origin_browser_ssh_cancel_pending_create", {
+              requestId: pendingRequestId,
+            }),
+          ).catch(() => {});
+        } catch {
+          /* Diagnostic/review IPC failure cannot revive the local attempt. */
+        }
+      }
       attempt.pendingSnapshot = null;
       attempt.disarm();
       // Whatever ends the attempt ends its pause: nothing is created for a tab
@@ -936,6 +950,7 @@ export function useOriginBrowser(options: UseOriginBrowserOptions) {
         loadFailed: false,
         proxyRecoveryResolved: false,
         createStarted: false,
+        pendingCreateRequestId: null,
         identity: null,
         closeTask: null,
         closeFailed: false,
@@ -1458,11 +1473,12 @@ export function useOriginBrowser(options: UseOriginBrowserOptions) {
           requestId = crypto.randomUUID();
           ownerGuard.current?.();
           startupStage = "create";
+          attempt.pendingCreateRequestId = requestId;
           attempt.createStarted = true;
           budget.used++;
           arm(lifecycle.current.createTimeoutMs, startTimedOut);
           try {
-            result = await transport.create({
+            const creating = transport.create({
               ...(quickConnect ? { quickConnect } : {}),
               owner,
               expectedSecurityRevision,
@@ -1486,8 +1502,14 @@ export function useOriginBrowser(options: UseOriginBrowserOptions) {
                 },
               },
             });
+            result = await Promise.resolve(creating).finally(() => {
+              if (attempt.pendingCreateRequestId === requestId)
+                attempt.pendingCreateRequestId = null;
+            });
             break;
           } catch (error) {
+            if (attempt.pendingCreateRequestId === requestId)
+              attempt.pendingCreateRequestId = null;
             const failure = originBrowserStartupError("create", error);
             // A lease lost to an edit of the saved connection gets one fresh
             // create, which native authorizes from the saved row again.
@@ -2005,6 +2027,13 @@ export function useOriginBrowser(options: UseOriginBrowserOptions) {
   // not hold an already usable native browser in the session's connecting state.
   // A restart replaces the attempt in place, so the session never reads as
   // ended while one runs: `closing` and `closed` mean a final close only.
+  const getPendingCreateRequestId = useCallback(() => {
+    const attempt = current.current;
+    return attempt && !attempt.cancelled
+      ? attempt.pendingCreateRequestId
+      : null;
+  }, []);
+
   const connectionStatus: ConnectionSession["status"] | null =
     state.phase === "idle"
       ? null
@@ -2038,6 +2067,7 @@ export function useOriginBrowser(options: UseOriginBrowserOptions) {
     reconnect,
     restart,
     lastRestart,
+    getPendingCreateRequestId,
   };
 }
 
@@ -2046,6 +2076,8 @@ type Controller = ReturnType<typeof useOriginBrowser>;
  * because those components, and their fixtures, do not need them. */
 export type OriginBrowserController = Omit<
   Controller,
-  "restart" | "lastRestart"
+  "restart" | "lastRestart" | "getPendingCreateRequestId"
 > &
-  Partial<Pick<Controller, "restart" | "lastRestart">>;
+  Partial<
+    Pick<Controller, "restart" | "lastRestart" | "getPendingCreateRequestId">
+  >;

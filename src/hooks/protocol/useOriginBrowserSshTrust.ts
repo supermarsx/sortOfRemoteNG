@@ -13,6 +13,7 @@ import {
 import { tunnelSourceIdentity } from "../../utils/ssh/sshTunnelSourceIdentity";
 import { stableJsonStringify } from "../../utils/core/stableJsonStringify";
 import { connectionEndpointHost } from "../../utils/connection/connectionEndpointHost";
+import { requestPrompt } from "../../utils/prompts/promptQueue";
 
 export interface NativeBrowserSshTrustOptions {
   sessionId: string;
@@ -20,10 +21,12 @@ export interface NativeBrowserSshTrustOptions {
   proof: { assertCurrent(): void } | null;
   connection: Connection | undefined;
   connections: readonly Connection[];
-  settings: Pick<GlobalSettings, "sshTrustPolicy" | "trustPolicy">;
+  settings: Pick<GlobalSettings, "sshTrustPolicy" | "trustPolicy"> &
+    Partial<Pick<GlobalSettings, "sshConnection">>;
   enabled: boolean;
   /** Read current native-create progress without restarting the listener. */
   isPending?: () => boolean;
+  getPendingCreateRequestId?: () => string | null;
 }
 
 interface Prompt {
@@ -133,6 +136,9 @@ function source(options: NativeBrowserSshTrustOptions) {
       tunnelSourceIdentity(selected),
       host,
     ]),
+    commandSettingsIdentity: stableJsonStringify(
+      options.settings.sshConnection ?? null,
+    ),
     policy: resolveEffectiveTrustPolicy(
       selected.sshTrustPolicy,
       options.settings.sshTrustPolicy,
@@ -181,7 +187,40 @@ export function useOriginBrowserSshTrust(
     token.current = owner;
     listeners.set(correlation, owner);
     let active = true;
-    let unlisten: (() => void) | undefined;
+    const unlisteners: Array<() => void> = [];
+    let registrationFailed = false;
+    const retain = (promise: Promise<() => void>) =>
+      promise.then((off) => {
+        let listening = true;
+        const once = () => {
+          if (listening) {
+            listening = false;
+            off();
+          }
+        };
+        if (!active || registrationFailed) once();
+        else unlisteners.push(once);
+        return once;
+      });
+    const commandPrompts = new Map<
+      string,
+      { controller: AbortController; requestId: string }
+    >();
+    const answeredCommands = new Set<string>();
+    const seenCommands = new Set<string>();
+    const respondCommand = async (nonce: string, accepted: boolean) => {
+      if (answeredCommands.has(nonce)) return;
+      answeredCommands.add(nonce);
+      commandPrompts.delete(nonce);
+      try {
+        await invoke("origin_browser_ssh_respond_to_command_review", {
+          nonce,
+          accepted,
+        });
+      } catch {
+        /* Native expiry/cancellation has no execution fallback. */
+      }
+    };
     const pending = new Set<string>();
     const answered = new Set<string>();
     const respond = async (
@@ -217,96 +256,172 @@ export function useOriginBrowserSshTrust(
         throw new Error("Native browser SSH trust authority changed.");
       live.proof.assertCurrent();
     };
-    void listen<Prompt>("ssh://host-key-prompt", async ({ payload }) => {
-      if (
-        !active ||
-        payload?.host_key_prompt_id !== correlation ||
-        !text(payload.session_id, 256)
-      )
-        return;
-      if (seen.current.has(payload.session_id)) return;
-      if (seen.current.size >= 256) {
-        await respond(payload.session_id, "reject");
-        return;
-      }
-      seen.current.add(payload.session_id);
-      pending.add(payload.session_id);
-      let decision: "reject" | "accept_and_save" = "reject";
-      try {
-        check(false);
+    const hostListening = retain(
+      listen<Prompt>("ssh://host-key-prompt", async ({ payload }) => {
         if (
-          !selected.host ||
-          payload.host !== selected.host ||
-          payload.port !== selected.port ||
-          !["first_use", "mismatch"].includes(payload.status) ||
-          !text(payload.fingerprint, 512) ||
-          (payload.key_type != null && !text(payload.key_type, 128)) ||
-          (payload.key_bits != null &&
-            (!Number.isSafeInteger(payload.key_bits) ||
-              payload.key_bits < 1)) ||
-          (payload.public_key != null && !text(payload.public_key, 16384))
+          !active ||
+          payload?.host_key_prompt_id !== correlation ||
+          !text(payload.session_id, 256)
         )
-          throw new Error(
-            "Native SSH prompt is not bound to the selected source.",
-          );
-        await ensureTrustStoreReady();
-        check();
-        const identity = {
-          fingerprint: payload.fingerprint,
-          keyType: payload.key_type ?? undefined,
-          keyBits: payload.key_bits ?? undefined,
-          publicKey: payload.public_key ?? undefined,
-          firstSeen: new Date().toISOString(),
-          lastSeen: new Date().toISOString(),
-        };
-        const verification = await verifyIdentity(
-          selected.host,
-          selected.port,
-          "ssh",
-          identity,
-          selected.connectionId,
-        );
-        check();
-        const mismatch =
-          payload.status === "mismatch" || verification.status === "mismatch";
-        if (verification.status === "trusted" && !mismatch)
-          decision = "accept_and_save";
-        else if (
-          selected.policy !== "strict" &&
-          window.confirm(
-            `${mismatch ? "WARNING: SSH HOST KEY CHANGED" : "New SSH host key"}\n${selected.host}:${selected.port}\n${payload.key_type ?? "SSH"}\nSHA-256 fingerprint: ${payload.fingerprint}\n\nVerify this fingerprint with the server administrator. Trust and save this key for this browser's SSH tunnel?`,
+          return;
+        if (seen.current.has(payload.session_id)) return;
+        if (seen.current.size >= 256) {
+          await respond(payload.session_id, "reject");
+          return;
+        }
+        seen.current.add(payload.session_id);
+        pending.add(payload.session_id);
+        let decision: "reject" | "accept_and_save" = "reject";
+        try {
+          check(false);
+          if (
+            !selected.host ||
+            payload.host !== selected.host ||
+            payload.port !== selected.port ||
+            !["first_use", "mismatch"].includes(payload.status) ||
+            !text(payload.fingerprint, 512) ||
+            (payload.key_type != null && !text(payload.key_type, 128)) ||
+            (payload.key_bits != null &&
+              (!Number.isSafeInteger(payload.key_bits) ||
+                payload.key_bits < 1)) ||
+            (payload.public_key != null && !text(payload.public_key, 16384))
           )
-        ) {
+            throw new Error(
+              "Native SSH prompt is not bound to the selected source.",
+            );
+          await ensureTrustStoreReady();
           check();
-          await trustIdentity(
+          const identity = {
+            fingerprint: payload.fingerprint,
+            keyType: payload.key_type ?? undefined,
+            keyBits: payload.key_bits ?? undefined,
+            publicKey: payload.public_key ?? undefined,
+            firstSeen: new Date().toISOString(),
+            lastSeen: new Date().toISOString(),
+          };
+          const verification = await verifyIdentity(
             selected.host,
             selected.port,
             "ssh",
             identity,
-            true,
             selected.connectionId,
           );
           check();
-          decision = "accept_and_save";
-        }
-      } catch {
-        decision = "reject";
-      }
-      if (decision !== "reject") {
-        try {
-          check();
+          const mismatch =
+            payload.status === "mismatch" || verification.status === "mismatch";
+          if (verification.status === "trusted" && !mismatch)
+            decision = "accept_and_save";
+          else if (
+            selected.policy !== "strict" &&
+            window.confirm(
+              `${mismatch ? "WARNING: SSH HOST KEY CHANGED" : "New SSH host key"}\n${selected.host}:${selected.port}\n${payload.key_type ?? "SSH"}\nSHA-256 fingerprint: ${payload.fingerprint}\n\nVerify this fingerprint with the server administrator. Trust and save this key for this browser's SSH tunnel?`,
+            )
+          ) {
+            check();
+            await trustIdentity(
+              selected.host,
+              selected.port,
+              "ssh",
+              identity,
+              true,
+              selected.connectionId,
+            );
+            check();
+            decision = "accept_and_save";
+          }
         } catch {
           decision = "reject";
         }
-      }
-      await respond(payload.session_id, decision);
-    })
-      .then((off) => {
+        if (decision !== "reject") {
+          try {
+            check();
+          } catch {
+            decision = "reject";
+          }
+        }
+        await respond(payload.session_id, decision);
+      }),
+    );
+    const commandListening = retain(
+      listen<{
+        nonce: string;
+        createRequestId: string;
+        hostKeyPromptId: string;
+        commandPreview?: string;
+        closed?: boolean;
+      }>("ssh://native-browser-command-review", async ({ payload }) => {
+        if (
+          !active ||
+          payload?.hostKeyPromptId !== correlation ||
+          !text(payload.nonce, 256)
+        )
+          return;
+        if (payload.closed === true) {
+          commandPrompts.get(payload.nonce)?.controller.abort();
+          return;
+        }
+        if (seenCommands.has(payload.nonce)) return;
+        if (seenCommands.size >= 256) {
+          await respondCommand(payload.nonce, false);
+          return;
+        }
+        seenCommands.add(payload.nonce);
+        const controller = new AbortController();
+        commandPrompts.set(payload.nonce, {
+          controller,
+          requestId: payload.createRequestId,
+        });
+        let accepted = false;
+        const checkRequest = (resolved = false) => {
+          check(resolved);
+          if (
+            !text(payload.createRequestId, 256) ||
+            current.current.getPendingCreateRequestId?.() !==
+              payload.createRequestId ||
+            controller.signal.aborted
+          )
+            throw new Error("The SSH command request changed.");
+        };
+        try {
+          checkRequest();
+          if (
+            typeof payload.commandPreview !== "string" ||
+            payload.commandPreview.length === 0 ||
+            payload.commandPreview.length > 16384 ||
+            payload.commandPreview.includes("\0")
+          )
+            throw new Error("The SSH command preview is unavailable.");
+          await ensureTrustStoreReady();
+          checkRequest(true);
+          const decision = await requestPrompt(
+            {
+              title: "Run this browser's SSH ProxyCommand?",
+              message:
+                "This command establishes the saved SSH route. Review it before continuing; credential values in the preview are masked.",
+              confirmLabel: "Run command",
+              defaultAction: "cancel",
+              preview: {
+                label: "SSH ProxyCommand",
+                text: payload.commandPreview,
+              },
+            },
+            { signal: controller.signal },
+          );
+          checkRequest(true);
+          accepted = decision.confirmed;
+        } catch {
+          accepted = false;
+        }
+        await respondCommand(payload.nonce, accepted);
+      }),
+    );
+    void Promise.all([hostListening, commandListening])
+      .then((offs) => {
+        const off = () => offs.forEach((close) => close());
         if (!active) {
           off();
           return;
         }
-        unlisten = off;
         setRegistered({
           token: owner,
           binding,
@@ -315,6 +430,8 @@ export function useOriginBrowserSshTrust(
         });
       })
       .catch(() => {
+        registrationFailed = true;
+        unlisteners.forEach((off) => off());
         if (active)
           setFailure({
             token: owner,
@@ -327,7 +444,11 @@ export function useOriginBrowserSshTrust(
       active = false;
       if (token.current === owner) token.current = null;
       if (listeners.get(correlation) === owner) listeners.delete(correlation);
-      unlisten?.();
+      unlisteners.forEach((off) => off());
+      for (const [nonce, prompt] of commandPrompts) {
+        prompt.controller.abort();
+        void respondCommand(nonce, false);
+      }
       for (const sessionId of pending) void respond(sessionId, "reject");
     };
   }, [

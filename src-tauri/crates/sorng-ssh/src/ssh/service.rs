@@ -8788,7 +8788,31 @@ pub async fn connect_ssh_on_state_observed(
     config: SshConnectionConfig,
     origin: SshEstablishmentOrigin,
 ) -> Result<String, String> {
-    connect_ssh_on_state_with_origin(state, config, origin, establish_ssh_in_blocking_worker).await
+    connect_ssh_on_state_with_origin(
+        state,
+        config,
+        origin,
+        None,
+        establish_ssh_in_blocking_worker,
+    )
+    .await
+}
+
+/// Executes only the exact command approved for this provisional actor.
+#[doc(hidden)]
+pub async fn connect_ssh_on_state_reviewed(
+    state: &SshServiceState,
+    config: SshConnectionConfig,
+    review: super::proxy_command::ReviewedProxyCommand,
+) -> Result<String, String> {
+    connect_ssh_on_state_with_origin(
+        state,
+        config,
+        SshEstablishmentOrigin::NativeBrowser,
+        Some(review),
+        establish_ssh_in_blocking_worker,
+    )
+    .await
 }
 
 /// Test an SSH path under the same process-wide admission and blocking-worker
@@ -8918,13 +8942,21 @@ where
     F: FnOnce(SshService, String, SshConnectionConfig, SshConnectionWorkerLease) -> Fut,
     Fut: Future<Output = Result<EstablishedSshConnection, String>>,
 {
-    connect_ssh_on_state_with_origin(state, config, SshEstablishmentOrigin::Other, establish).await
+    connect_ssh_on_state_with_origin(
+        state,
+        config,
+        SshEstablishmentOrigin::Other,
+        None,
+        establish,
+    )
+    .await
 }
 
 async fn connect_ssh_on_state_with_origin<F, Fut>(
     state: &SshServiceState,
     config: SshConnectionConfig,
     origin: SshEstablishmentOrigin,
+    review: Option<super::proxy_command::ReviewedProxyCommand>,
     establish: F,
 ) -> Result<String, String>
 where
@@ -8951,7 +8983,14 @@ where
         .diagnostics
         .get_or_init(Default::default)
         .set_route(&config);
-    let worker_lease = attempt.take_worker_lease();
+    let mut worker_lease = attempt.take_worker_lease();
+    if let Some(review) = review {
+        worker_lease
+            ._proxy_command_reservation
+            .as_mut()
+            .ok_or_else(|| "ProxyCommand review has no execution reservation".to_string())?
+            .install_review(review)?;
+    }
     let timeout_session_id = session_id.clone();
     let timeout_session_lease = Arc::clone(&attempt.session_lease);
 

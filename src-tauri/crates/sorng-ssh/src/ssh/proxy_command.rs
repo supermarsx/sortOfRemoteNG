@@ -19,7 +19,7 @@ use std::collections::{HashMap, VecDeque};
 use std::io::{Read, Write};
 use std::net::{Shutdown, TcpStream};
 use std::process::{Child, Command, Stdio};
-use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, AtomicU8, AtomicUsize, Ordering};
 use std::sync::mpsc::{self, Receiver};
 use std::sync::{Arc, Condvar, Mutex as StdMutex, OnceLock};
 use std::thread::JoinHandle;
@@ -749,12 +749,177 @@ fn validate_proxy_command_registration(
     Ok(())
 }
 
+/// Rust-only admission for one explicitly reviewed native browser request.
+/// It is never deserialized from persisted settings or accepted through IPC.
+#[doc(hidden)]
+#[derive(Clone)]
+pub struct ProxyCommandReviewPermit(Arc<ProxyCommandReviewState>);
+struct ProxyCommandReviewState {
+    // 0 waiting, 1 approved, 2 execution admitted, 3 cancelled.
+    state: AtomicU8,
+    expires: StdMutex<Option<Instant>>,
+    changed: tokio::sync::Notify,
+}
+impl ProxyCommandReviewPermit {
+    pub fn new(lifetime: Duration) -> Self {
+        Self(Arc::new(ProxyCommandReviewState {
+            state: AtomicU8::new(0),
+            expires: StdMutex::new(Some(Instant::now() + lifetime)),
+            changed: tokio::sync::Notify::new(),
+        }))
+    }
+    /// Request ownership exists before a review is needed, without imposing a
+    /// new deadline on ordinary SSH connection establishment.
+    pub fn pending_request() -> Self {
+        Self(Arc::new(ProxyCommandReviewState {
+            state: AtomicU8::new(0),
+            expires: StdMutex::new(None),
+            changed: tokio::sync::Notify::new(),
+        }))
+    }
+    pub fn start_review(&self, lifetime: Duration) -> Result<(), String> {
+        let mut expires = self
+            .0
+            .expires
+            .lock()
+            .map_err(|_| ProxyCommandError::ConfirmationRequired.to_string())?;
+        if self.0.state.load(Ordering::Acquire) != 0 || expires.is_some() {
+            return Err(ProxyCommandError::ConfirmationRequired.to_string());
+        }
+        *expires = Some(Instant::now() + lifetime);
+        drop(expires);
+        self.0.changed.notify_waiters();
+        Ok(())
+    }
+    fn deadline(&self) -> Option<Instant> {
+        // A poisoned review deadline is invalid immediately.
+        self.0
+            .expires
+            .lock()
+            .map(|deadline| *deadline)
+            .unwrap_or(Some(Instant::now()))
+    }
+    pub fn is_current(&self) -> bool {
+        match self.0.state.load(Ordering::Acquire) {
+            2 => true,
+            3 => false,
+            _ => match self.deadline() {
+                Some(deadline) => Instant::now() < deadline,
+                None => true,
+            },
+        }
+    }
+    pub fn is_expired(&self) -> bool {
+        matches!(self.0.state.load(Ordering::Acquire), 0 | 1)
+            && self
+                .deadline()
+                .is_some_and(|deadline| Instant::now() >= deadline)
+    }
+    pub fn cancel(&self) {
+        self.0.state.store(3, Ordering::Release);
+        self.0.changed.notify_waiters();
+    }
+    pub async fn cancelled(&self) {
+        loop {
+            let changed = self.0.changed.notified();
+            tokio::pin!(changed);
+            changed.as_mut().enable();
+            if !self.is_current() {
+                return;
+            }
+            let deadline = self
+                .deadline()
+                .filter(|_| self.0.state.load(Ordering::Acquire) != 2);
+            if let Some(deadline) = deadline {
+                tokio::select! {
+                    biased;
+                    ()=changed=>{},
+                    ()=tokio::time::sleep_until(tokio::time::Instant::from_std(deadline))=>{},
+                }
+            } else {
+                changed.await;
+            }
+        }
+    }
+    /// Only trusted Rust code calls this after the owner/window/request review.
+    pub fn approve(&self, expanded: &str) -> Result<ReviewedProxyCommand, String> {
+        if self.deadline().is_none()
+            || !self.is_current()
+            || self
+                .0
+                .state
+                .compare_exchange(0, 1, Ordering::AcqRel, Ordering::Acquire)
+                .is_err()
+        {
+            return Err(ProxyCommandError::ConfirmationRequired.to_string());
+        }
+        Ok(ReviewedProxyCommand {
+            fingerprint: command_fingerprint(expanded),
+            permit: self.clone(),
+        })
+    }
+    fn consume(&self) -> bool {
+        // This CAS is the execution-admission boundary shared with cancellation.
+        // A cancellation/replacement that wins first can never be approved again.
+        self.deadline()
+            .is_some_and(|deadline| Instant::now() < deadline)
+            && self
+                .0
+                .state
+                .compare_exchange(1, 2, Ordering::AcqRel, Ordering::Acquire)
+                .is_ok()
+    }
+}
+#[doc(hidden)]
+pub struct ReviewedProxyCommand {
+    fingerprint: String,
+    permit: ProxyCommandReviewPermit,
+}
+enum ReservationReview {
+    Normal,
+    Scoped(ReviewedProxyCommand),
+    Consumed,
+}
+
 pub(crate) struct ProxyCommandProducerReservation {
     session_id: String,
     generation: u64,
+    review: StdMutex<ReservationReview>,
 }
 
 impl ProxyCommandProducerReservation {
+    pub(crate) fn install_review(&mut self, review: ReviewedProxyCommand) -> Result<(), String> {
+        let slot = self
+            .review
+            .get_mut()
+            .map_err(|_| "ProxyCommand review is unavailable")?;
+        if !matches!(slot, ReservationReview::Normal) {
+            return Err(ProxyCommandError::ConfirmationRequired.to_string());
+        }
+        *slot = ReservationReview::Scoped(review);
+        Ok(())
+    }
+    fn require_review(&self, expanded: &str) -> Result<(), String> {
+        let mut slot = self
+            .review
+            .lock()
+            .map_err(|_| "ProxyCommand review is unavailable")?;
+        if matches!(*slot, ReservationReview::Normal) {
+            drop(slot);
+            return require_proxy_command_confirmation(expanded);
+        }
+        let review = std::mem::replace(&mut *slot, ReservationReview::Consumed);
+        match review {
+            ReservationReview::Scoped(review)
+                if review.fingerprint == command_fingerprint(expanded)
+                    && review.permit.consume() =>
+            {
+                Ok(())
+            }
+            _ => Err(ProxyCommandError::ConfirmationRequired.to_string()),
+        }
+    }
+
     fn matches(&self, session_id: &str, generation: u64) -> bool {
         self.session_id == session_id && self.generation == generation
     }
@@ -780,6 +945,7 @@ fn insert_proxy_command_reservation(
     Ok(ProxyCommandProducerReservation {
         session_id: session_id.to_string(),
         generation,
+        review: StdMutex::new(ReservationReview::Normal),
     })
 }
 
@@ -1449,7 +1615,7 @@ fn spawn_proxy_command_inner(
     // cannot be replayed. Persisted/imported
     // `command_confirmed` booleans are deliberately ignored here because they
     // are not bound to the expanded command fingerprint.
-    if let Err(error) = require_proxy_command_confirmation(&cmd_string) {
+    if let Err(error) = reservation.require_review(&cmd_string) {
         log::warn!(
             "[{}] Refusing unconfirmed ProxyCommand (import/sync origin): {}",
             session_id,
@@ -3236,6 +3402,83 @@ mod tests {
     fn leaves_credential_free_command_intact() {
         let cmd = "nc target.example.com 22";
         assert_eq!(redact_proxy_credentials(cmd), cmd);
+    }
+    #[test]
+    fn native_review_is_reserved_for_one_actor_and_cannot_fall_back_to_global_approval() {
+        let command = "reviewed-native-fixture-command";
+        let first = ProxyCommandReviewPermit::new(Duration::from_secs(10));
+        let review = first.approve(command).unwrap();
+        let mut actor = ProxyCommandProducerReservation {
+            session_id: "review-only-fixture".into(),
+            generation: 0,
+            review: StdMutex::new(ReservationReview::Normal),
+        };
+        actor.install_review(review).unwrap();
+        let other = ProxyCommandProducerReservation {
+            session_id: "other-review-fixture".into(),
+            generation: 0,
+            review: StdMutex::new(ReservationReview::Normal),
+        };
+        assert!(other.require_review(command).is_err());
+        assert!(actor.require_review(command).is_ok());
+        mark_proxy_command_confirmed(command);
+        assert!(
+            actor.require_review(command).is_err(),
+            "a consumed scoped grant never borrows a normal actor's approval"
+        );
+        assert!(
+            other.require_review(command).is_ok(),
+            "normal global review semantics remain intact"
+        );
+        assert!(first.approve(command).is_err());
+    }
+    #[test]
+    fn native_review_rejects_cancelled_expired_or_changed_commands_before_execution() {
+        for cancel in [false, true] {
+            let permit = ProxyCommandReviewPermit::new(if cancel {
+                Duration::from_secs(10)
+            } else {
+                Duration::ZERO
+            });
+            if cancel {
+                let review = permit.approve("same-command").unwrap();
+                permit.cancel();
+                assert!(!review.permit.consume());
+            } else {
+                assert!(permit.approve("same-command").is_err());
+            }
+        }
+        let permit = ProxyCommandReviewPermit::new(Duration::from_secs(10));
+        let mut actor = ProxyCommandProducerReservation {
+            session_id: "changed-review-fixture".into(),
+            generation: 0,
+            review: StdMutex::new(ReservationReview::Normal),
+        };
+        actor
+            .install_review(permit.approve("original-command").unwrap())
+            .unwrap();
+        assert!(actor.require_review("different-command").is_err());
+        assert!(actor.require_review("original-command").is_err());
+    }
+    #[tokio::test]
+    async fn native_review_expiry_wakes_pending_waiters_but_not_an_admitted_execution() {
+        let pending = ProxyCommandReviewPermit::new(Duration::from_millis(20));
+        tokio::time::timeout(Duration::from_secs(1), pending.cancelled())
+            .await
+            .unwrap();
+        assert!(!pending.is_current());
+        let running = ProxyCommandReviewPermit::new(Duration::from_millis(100));
+        assert!(running.approve("fixture-command").unwrap().permit.consume());
+        assert!(
+            tokio::time::timeout(Duration::from_millis(150), running.cancelled())
+                .await
+                .is_err()
+        );
+        assert!(running.is_current());
+        running.cancel();
+        tokio::time::timeout(Duration::from_secs(1), running.cancelled())
+            .await
+            .unwrap();
     }
 }
 

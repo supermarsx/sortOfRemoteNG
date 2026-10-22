@@ -2249,3 +2249,65 @@ describe("failed native document visibility", () => {
     await act(async () => closed.resolve());
   });
 });
+
+describe("native browser pending command-review ownership", () => {
+  it("exposes only the current unresolved create ID and cancels it on cleanup before any prompt", async () => {
+    ipc.invoke.mockResolvedValue(undefined);
+    const f = fixture();
+    const pending = deferred<OriginBrowserCreateResult>();
+    f.transport.create.mockReturnValueOnce(pending.promise);
+    const view = renderHook(() => useOriginBrowser(f.options));
+    await waitFor(() => expect(f.transport.create).toHaveBeenCalledTimes(1));
+    const request = f.transport.create.mock.calls[0][0];
+    expect(view.result.current.getPendingCreateRequestId()).toBe(
+      request.requestId,
+    );
+    view.unmount();
+    expect(ipc.invoke).toHaveBeenCalledWith(
+      "origin_browser_ssh_cancel_pending_create",
+      { requestId: request.requestId },
+    );
+    await act(async () =>
+      pending.resolve({ requestId: request.requestId, snapshot: snapshot() }),
+    );
+    await waitFor(() =>
+      expect(f.transport.close).toHaveBeenCalledWith({ identity }),
+    );
+  });
+  it("clears the request on native completion and isolates a broken cancellation bridge", async () => {
+    const f = fixture();
+    const pending = deferred<OriginBrowserCreateResult>();
+    f.transport.create.mockReturnValueOnce(pending.promise);
+    const view = renderHook(() => useOriginBrowser(f.options));
+    await waitFor(() => expect(f.transport.create).toHaveBeenCalledTimes(1));
+    const request = f.transport.create.mock.calls[0][0];
+    await act(async () =>
+      pending.resolve({ requestId: request.requestId, snapshot: snapshot() }),
+    );
+    await waitFor(() =>
+      expect(view.result.current.state.phase).toBe("attached"),
+    );
+    expect(view.result.current.getPendingCreateRequestId()).toBe(null);
+    view.unmount();
+    const next = fixture();
+    const unanswered = deferred<OriginBrowserCreateResult>();
+    next.transport.create.mockReturnValueOnce(unanswered.promise);
+    ipc.invoke.mockImplementation((command) => {
+      if (command === "origin_browser_ssh_cancel_pending_create")
+        throw new Error("bridge unavailable");
+      return Promise.resolve(undefined);
+    });
+    const other = renderHook(() => useOriginBrowser(next.options));
+    await waitFor(() => expect(next.transport.create).toHaveBeenCalledTimes(1));
+    expect(() => other.unmount()).not.toThrow();
+    const nextRequest = next.transport.create.mock.calls[0][0];
+    await act(async () =>
+      unanswered.resolve({
+        requestId: nextRequest.requestId,
+        snapshot: snapshot(),
+      }),
+    );
+    await waitFor(() => expect(next.transport.close).toHaveBeenCalled());
+    ipc.invoke.mockReset();
+  });
+});
