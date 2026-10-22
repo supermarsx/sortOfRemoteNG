@@ -5,6 +5,7 @@
 //! serialization here. The native browser owner must enforce proxy use and isolate
 //! its privileged app endpoints. A loopback address alone is NOT authentication.
 
+use crate::private_datagram_proxy::{DatagramLimits, PrivateDatagramProxy};
 use base64::Engine;
 use rand::RngCore;
 use sha2::{Digest, Sha256};
@@ -25,6 +26,8 @@ use zeroize::{Zeroize, Zeroizing};
 
 #[path = "private_forward_proxy/accept.rs"]
 mod accept;
+#[path = "private_forward_proxy/connect_udp.rs"]
+mod connect_udp;
 #[path = "private_forward_proxy/http.rs"]
 mod forward_http;
 use accept::{
@@ -230,6 +233,14 @@ pub struct PrivateForwardProxy {
     stopped: watch::Sender<bool>,
     task: Option<JoinHandle<io::Result<()>>>,
     observations: Arc<Observations>,
+    datagrams: Option<Arc<PrivateDatagramProxy>>,
+}
+
+#[derive(Clone)]
+struct RelayRoute {
+    dialer: Arc<dyn RouteDialer>,
+    grant: DestinationGrant,
+    datagrams: Option<Arc<PrivateDatagramProxy>>,
 }
 
 impl PrivateForwardProxy {
@@ -262,11 +273,30 @@ impl PrivateForwardProxy {
         let address = endpoint.address;
         let (stopped, receiver) = watch::channel(false);
         let observations = Arc::new(Observations::default());
+        let datagrams = if let Some(datagram_dialer) = dialer.datagrams() {
+            let owner = receiver.clone();
+            let observed = observations.clone();
+            Some(Arc::new(
+                PrivateDatagramProxy::new(
+                    Arc::new(move || !*owner.borrow() && !observed.failed()),
+                    grant.clone(),
+                    datagram_dialer,
+                    DatagramLimits::default(),
+                )
+                .map_err(|_| io::Error::other("Private datagram initialization failed"))?,
+            ))
+        } else {
+            None
+        };
+        let route = RelayRoute {
+            dialer,
+            grant,
+            datagrams: datagrams.clone(),
+        };
         let task = tokio::spawn(serve(
             endpoint,
             receiver,
-            dialer,
-            grant,
+            route,
             credential_hash,
             limits,
             observations.clone(),
@@ -277,11 +307,17 @@ impl PrivateForwardProxy {
             stopped,
             task: Some(task),
             observations,
+            datagrams,
         })
     }
 
     pub fn local_addr(&self) -> SocketAddr {
         self.address
+    }
+
+    /// Capability of this exact selected route, never a direct UDP fallback.
+    pub fn supports_datagrams(&self) -> bool {
+        self.is_running() && self.datagrams.is_some()
     }
 
     /// Native readiness snapshot. Check before Ready/status/authorization; a
@@ -321,6 +357,9 @@ impl PrivateForwardProxy {
             self.observations.task_ended();
         }
         self.stopped.send_replace(true);
+        if let Some(datagrams) = &self.datagrams {
+            datagrams.revoke();
+        }
     }
 
     pub async fn stop(&mut self) -> io::Result<()> {
@@ -363,8 +402,7 @@ async fn revoked(mut receiver: watch::Receiver<bool>) {
 async fn serve<S: ListenerSource>(
     endpoint: Endpoint<S>,
     stop: watch::Receiver<bool>,
-    dialer: Arc<dyn RouteDialer>,
-    grant: DestinationGrant,
+    route: RelayRoute,
     credential_hash: [u8; 32],
     limits: ProxyLimits,
     observations: Arc<Observations>,
@@ -465,14 +503,13 @@ async fn serve<S: ListenerSource>(
                         continue;
                     }
                     let stop = stop.clone();
-                    let dialer = dialer.clone();
-                    let grant = grant.clone();
+                    let route = route.clone();
                     let observations = observations.clone();
                     clients.spawn(async move {
                         tokio::select! {
                             biased;
                             _ = revoked(stop) => {},
-                            _ = handle_client(client, dialer, grant, credential_hash, limits, observations) => {},
+                            _ = handle_client(client, route, credential_hash, limits, observations) => {},
                         }
                     });
                 }
@@ -490,6 +527,7 @@ struct Admission {
     authority: Authority,
     early: Zeroizing<Vec<u8>>,
     forward: Option<forward_http::ForwardRequest>,
+    datagram: bool,
 }
 
 async fn read_admission(
@@ -519,12 +557,23 @@ async fn read_admission(
             .position(|w| w == b"\r\n\r\n")
         {
             let end = previous.saturating_sub(3) + offset + 4;
+            if header.starts_with(b"GET /.well-known/masque/udp/") {
+                let endpoint = client.local_addr().map_err(|_| 400u16)?;
+                let authority = connect_udp::validate(&header[..end], credential_hash, endpoint)?;
+                return Ok(Admission {
+                    authority,
+                    early: Zeroizing::new(header[end..].to_vec()),
+                    forward: None,
+                    datagram: true,
+                });
+            }
             if !header.starts_with(b"CONNECT ") {
                 let forward = forward_http::validate(&header[..end], credential_hash)?;
                 return Ok(Admission {
                     authority: forward.authority.clone(),
                     early: header,
                     forward: Some(forward),
+                    datagram: false,
                 });
             }
             let authority = parse_admission(&header[..end], credential_hash)?;
@@ -532,6 +581,7 @@ async fn read_admission(
                 authority,
                 early: Zeroizing::new(header[end..].to_vec()),
                 forward: None,
+                datagram: false,
             });
         }
     }
@@ -653,8 +703,7 @@ async fn refuse_busy(client: &mut TcpStream, deadline: Duration) {
 
 async fn handle_client(
     mut client: TcpStream,
-    dialer: Arc<dyn RouteDialer>,
-    grant: DestinationGrant,
+    route: RelayRoute,
     credential_hash: [u8; 32],
     limits: ProxyLimits,
     observations: Arc<Observations>,
@@ -681,13 +730,30 @@ async fn handle_client(
         }
     };
     increment(&observations.authenticated_requests);
-    if !grant(&admission.authority) {
+    if !(route.grant)(&admission.authority) {
         increment(&observations.destination_denials);
         refuse(&mut client, 403, limits.response_timeout).await;
         return;
     }
+    if admission.datagram {
+        let Some(datagrams) = &route.datagrams else {
+            increment(&observations.request_rejections);
+            refuse(&mut client, 503, limits.response_timeout).await;
+            return;
+        };
+        match datagrams.open(admission.authority).await {
+            Ok(flow) => connect_udp::relay(client, admission.early, flow, limits).await,
+            Err(_) => {
+                increment(&observations.upstream_failures);
+                refuse(&mut client, 502, limits.response_timeout).await;
+            }
+        }
+        return;
+    }
     let mut upstream =
-        match tokio::time::timeout(limits.dial_timeout, dialer.dial(admission.authority)).await {
+        match tokio::time::timeout(limits.dial_timeout, route.dialer.dial(admission.authority))
+            .await
+        {
             Ok(Ok(stream)) => stream,
             result => {
                 increment(&observations.upstream_failures);

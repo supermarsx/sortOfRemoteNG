@@ -680,6 +680,7 @@ async fn completed_supervisor_results_and_explicit_revocation_are_not_running() 
             stopped,
             task: Some(task),
             observations: Arc::default(),
+            datagrams: None,
         };
         assert!(proxy.is_running());
         finish.send(()).unwrap();
@@ -735,6 +736,7 @@ async fn a_relay_that_has_given_up_is_not_running_while_its_cleanup_is_still_pen
         stopped,
         task: Some(task),
         observations: Arc::default(),
+        datagrams: None,
     };
     assert!(proxy.is_running());
     assert!(proxy.with_credentials(|_, _| ()).is_some());
