@@ -111,7 +111,7 @@ impl RouteDatagramDialer for DirectDatagrams {
     fn open(&self, authority: Authority) -> DatagramOpenFuture {
         Box::pin(async move {
             tokio::time::timeout(Duration::from_secs(20), async move {
-                let peers = tokio::net::lookup_host((authority.host(), authority.port()))
+                let peers = crate::browser_dns::resolve(authority.to_string())
                     .await
                     .map_err(|_| io::Error::other("Configured datagram name resolution failed"))?;
                 let mut last = io::ErrorKind::AddrNotAvailable;
