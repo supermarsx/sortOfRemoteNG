@@ -58,6 +58,7 @@ export function discoveryBlockers(
     macSdkVersion,
     availableGiB,
     memoryGiB,
+    nativeProbeCompleted = true,
   },
   platform,
 ) {
@@ -70,7 +71,7 @@ export function discoveryBlockers(
     (pythonVersion[0] === 3 && pythonVersion[1] < RECIPE.minimumPython[1])
   )
     blockers.push("Python 3.12 or newer is required");
-  if (platform === "win32") {
+  if (platform === "win32" && nativeProbeCompleted) {
     if (
       Number.parseInt(visualStudioVersion, 10) <
         RECIPE.minimumWindowsVisualStudioMajor ||
@@ -179,6 +180,72 @@ async function command(exe, args, capture = exec, timeout = 30_000) {
   return stdout.trim();
 }
 
+export function peArchitecture(bytes) {
+  if (bytes.length < 64 || bytes.readUInt16LE(0) !== 0x5a4d) return null;
+  const offset = bytes.readUInt32LE(0x3c);
+  if (offset > bytes.length - 6 || bytes.readUInt32LE(offset) !== 0x00004550)
+    return null;
+  return (
+    { 0x8664: "x64", 0xaa64: "arm64" }[bytes.readUInt16LE(offset + 4)] ?? null
+  );
+}
+
+export async function nativeWindowsShell(
+  env = process.env,
+  architecture = process.arch,
+  load = readFile,
+) {
+  // Fixed installation locations, not PATH lookup or caller-provided commands.
+  const candidates = [
+    path.win32.join(
+      env.ProgramFiles ?? "C:\\Program Files",
+      "PowerShell",
+      "7",
+      "pwsh.exe",
+    ),
+    path.win32.join(
+      env.SystemRoot ?? "C:\\Windows",
+      "System32",
+      "WindowsPowerShell",
+      "v1.0",
+      "powershell.exe",
+    ),
+  ];
+  for (const candidate of candidates) {
+    const bytes = await load(candidate).catch((error) => {
+      if (error.code === "ENOENT") return null;
+      throw error;
+    });
+    if (bytes && peArchitecture(bytes) === architecture) return candidate;
+  }
+  const error = new Error(
+    "No matching native PowerShell installation was observed",
+  );
+  error.code = "NATIVE_SHELL_UNAVAILABLE";
+  throw error;
+}
+
+export function probeFailure(error, stage) {
+  const kind =
+    error?.code === "NATIVE_SHELL_UNAVAILABLE"
+      ? "native-shell-unavailable"
+      : error?.killed || error?.code === "ETIMEDOUT"
+        ? "timeout"
+        : error?.code === "ENOENT"
+          ? "command-missing"
+          : error instanceof SyntaxError
+            ? "invalid-output"
+            : "command-failed";
+  return {
+    stage,
+    kind,
+    exitCode: Number.isSafeInteger(error?.code) ? error.code : null,
+    signal: ["SIGTERM", "SIGKILL"].includes(error?.signal)
+      ? error.signal
+      : null,
+  };
+}
+
 // Fixed, reviewed discovery commands; no renderer/user text is executed.
 const WINDOWS = String.raw`
 $ErrorActionPreference='Stop'
@@ -205,15 +272,18 @@ $sdkDirectories=@(); if(Test-Path -LiteralPath (Join-Path $kits 'Include')){ $sd
 `;
 
 async function nativeTools(platform) {
-  if (platform === "win32")
-    return JSON.parse(
-      await command("powershell.exe", [
-        "-NoProfile",
-        "-NonInteractive",
-        "-Command",
-        WINDOWS,
-      ]),
+  if (platform === "win32") {
+    const shell = await nativeWindowsShell();
+    const result = JSON.parse(
+      await command(
+        shell,
+        ["-NoProfile", "-NonInteractive", "-Command", WINDOWS],
+        exec,
+        90_000,
+      ),
     );
+    return { ...result, shell, shellArchitecture: process.arch };
+  }
   if (platform === "darwin") {
     const developer = await command("xcode-select", ["-p"]);
     const sdk = await command("xcrun", ["--sdk", "macosx", "--show-sdk-path"]);
@@ -332,9 +402,13 @@ export async function observe(
   )
     .then(JSON.parse)
     .catch(() => ({ path: null, version: null }));
-  const native = await nativeTools(process.platform).catch(() => ({
+  const native = await nativeTools(process.platform).catch((error) => ({
     files: [],
     probeFailed: true,
+    failure: probeFailure(
+      error,
+      process.platform === "win32" ? "windows-native-tools" : "native-tools",
+    ),
   }));
   const toolsRoot = path.parse(
     await realpath(python.path ?? process.execPath),
@@ -359,6 +433,7 @@ export async function observe(
     macSdkVersion: native.sdkVersion,
     availableGiB: gib(disk.bavail * disk.bsize),
     memoryGiB: gib(os.totalmem()),
+    nativeProbeCompleted: native.probeFailed !== true,
   };
   const blockers = [...discoveryBlockers(facts, process.platform), ...errors];
   if (native.probeFailed)

@@ -11,7 +11,10 @@ import {
   assertCleanupTarget,
   discoveryBlockers,
   inventoryFile,
+  nativeWindowsShell,
   observe,
+  peArchitecture,
+  probeFailure,
   selectTarget,
 } from "../../scripts/cef-hosted-bootstrap.mjs";
 
@@ -57,6 +60,19 @@ test("actual prerequisites do not silently downgrade VS, SDK, Python or capacity
     discoveryBlockers({ ...adequate, macSdkVersion: "14.9" }, "darwin").length,
   );
   assert.ok(discoveryBlockers(adequate, "darwin").length);
+  assert.deepEqual(
+    discoveryBlockers(
+      {
+        ...adequate,
+        visualStudioVersion: undefined,
+        windowsSdk: undefined,
+        debuggerVersion: undefined,
+        nativeProbeCompleted: false,
+      },
+      "win32",
+    ),
+    [],
+  );
   for (const patch of [
     { pythonVersion: [3, 11, 0] },
     { pythonVersion: [3] },
@@ -80,6 +96,77 @@ test("actual prerequisites do not silently downgrade VS, SDK, Python or capacity
       "linux",
     ),
     [],
+  );
+});
+
+const pe = (machine) => {
+  const bytes = Buffer.alloc(128);
+  bytes.writeUInt16LE(0x5a4d, 0);
+  bytes.writeUInt32LE(64, 0x3c);
+  bytes.writeUInt32LE(0x00004550, 64);
+  bytes.writeUInt16LE(machine, 68);
+  return bytes;
+};
+test("Windows probe uses only a fixed installed native-architecture PowerShell", async () => {
+  assert.equal(peArchitecture(pe(0xaa64)), "arm64");
+  assert.equal(peArchitecture(pe(0x8664)), "x64");
+  assert.equal(peArchitecture(Buffer.from("not a PE")), null);
+  const observed = [];
+  const shell = await nativeWindowsShell(
+    { ProgramFiles: "C:\\Program Files", SystemRoot: "C:\\Windows" },
+    "arm64",
+    async (file) => {
+      observed.push(file);
+      return file.endsWith("pwsh.exe") ? pe(0x8664) : pe(0xaa64);
+    },
+  );
+  assert.equal(
+    shell,
+    "C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe",
+  );
+  assert.deepEqual(observed, [
+    "C:\\Program Files\\PowerShell\\7\\pwsh.exe",
+    shell,
+  ]);
+  await assert.rejects(
+    nativeWindowsShell({}, "arm64", async () => pe(0x8664)),
+    /matching native/,
+  );
+  assert.equal(
+    await nativeWindowsShell({}, "arm64", async () => pe(0xaa64)),
+    "C:\\Program Files\\PowerShell\\7\\pwsh.exe",
+  );
+});
+
+test("failed native discovery records only fixed stage, timeout and exit diagnostics", () => {
+  assert.deepEqual(
+    probeFailure(
+      {
+        killed: true,
+        code: null,
+        signal: "SIGTERM",
+        message: "sensitive raw process text",
+        stdout: "private output",
+        stderr: "private error",
+      },
+      "windows-native-tools",
+    ),
+    {
+      stage: "windows-native-tools",
+      kind: "timeout",
+      exitCode: null,
+      signal: "SIGTERM",
+    },
+  );
+  assert.equal(probeFailure({ code: 7 }, "native-tools").exitCode, 7);
+  assert.equal(
+    probeFailure(new SyntaxError("raw JSON content"), "native-tools").kind,
+    "invalid-output",
+  );
+  assert.equal(
+    probeFailure({ code: "NATIVE_SHELL_UNAVAILABLE" }, "windows-native-tools")
+      .kind,
+    "native-shell-unavailable",
   );
 });
 
