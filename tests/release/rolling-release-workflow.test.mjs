@@ -640,23 +640,27 @@ test("normal main CI calls release only after every internal job", () => {
   }
 });
 
-test("main pushes enter an ordered non-cancelling queue before CI work", () => {
+test("CI validation supersedes old work without cancelling its release caller", () => {
+  assert.doesNotMatch(
+    ciWorkflow.slice(0, ciWorkflow.indexOf("jobs:")),
+    /concurrency:/,
+  );
   assert.match(
     ciWorkflow,
-    /concurrency:[\s\S]*?rolling-main-ci-order[\s\S]*?queue: max[\s\S]*?cancel-in-progress: false[\s\S]*?jobs:/,
+    /concurrency:\s*\n\s*group:.*github\.event_name.*github\.event\.pull_request\.number \|\| github\.ref.*\n\s*cancel-in-progress: true/,
   );
+  const caller = ciWorkflow.slice(ciWorkflow.indexOf("  rolling-release:"));
+  assert.doesNotMatch(caller, /concurrency:|cancel-in-progress:/);
+  assert.match(caller, /uses: \.\/\.github\/workflows\/release\.yml/);
 });
 
-test("main Docker E2E gates are SHA-scoped while PR refreshes cancel", () => {
+test("new Docker E2E work supersedes the same event/ref, including main", () => {
   assert.match(
     e2eWorkflow,
-    /github\.event_name == 'push'[\s\S]*?format\('e2e-main-\{0\}', github\.sha\)/,
+    /concurrency:\s*\n\s*group:.*github\.workflow.*github\.event_name.*github\.event\.pull_request\.number \|\| github\.ref/,
   );
-  assert.match(
-    e2eWorkflow,
-    /cancel-in-progress: \$\{\{ github\.event_name == 'pull_request' \}\}/,
-  );
-  assert.doesNotMatch(e2eWorkflow, /cancel-in-progress: true/);
+  assert.match(e2eWorkflow, /cancel-in-progress: true/);
+  assert.doesNotMatch(e2eWorkflow, /e2e-main-|github\.sha/);
 });
 
 test("release builds distinct macOS architectures without Kafka", () => {
@@ -1065,9 +1069,7 @@ test("resource controls preserve platform release features and signing inputs", 
       .filter((feature) => !["db-sqlite"].includes(feature))
       .sort(),
     [...windowsFeatureSet]
-      .filter(
-        (feature) => !["db-sqlite-dynamic"].includes(feature),
-      )
+      .filter((feature) => !["db-sqlite-dynamic"].includes(feature))
       .sort(),
     "all non-linkage capabilities must remain identical across platforms",
   );
@@ -1326,9 +1328,7 @@ test("Windows releases stage, map, and validate the exact dynamic native runtime
   )?.[1];
   assert.ok(expectedDllBlock);
   assert.deepEqual(
-    [...expectedDllBlock.matchAll(/"([^"]+\.dll)"/g)].map((match) =>
-      match[1],
-    ),
+    [...expectedDllBlock.matchAll(/"([^"]+\.dll)"/g)].map((match) => match[1]),
     expectedDllNames,
   );
   assert.match(

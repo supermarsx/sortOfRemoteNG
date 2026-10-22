@@ -6,15 +6,13 @@ on:
   pull_request:
     branches: ["**"]
 
-# Enter the ordered rolling pipeline at workflow dispatch, before job duration
-# can reorder main pushes. Other refs receive unique groups and remain parallel.
-concurrency:
-  group: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && 'rolling-main-ci-order' || format('ci-{0}', github.run_id) }}
-  queue: max
-  cancel-in-progress: false
-
+# Cancel superseded validation jobs without cancelling the reusable release.
+# Publication has its own non-cancelling queue in release.yml.
 jobs:
   docs:
+    concurrency:
+      group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}-docs
+      cancel-in-progress: true
     name: Documentation links
     runs-on: ubuntu-latest
     steps:
@@ -26,6 +24,9 @@ jobs:
       - run: node scripts/ci/check-docs-links.mjs
 
   version:
+    concurrency:
+      group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}-version
+      cancel-in-progress: true
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
@@ -41,7 +42,7 @@ jobs:
       - name: Install pinned launcher dependencies
         run: npm ci
       - name: Verify full-feature native defaults and launchers
-        run: node --test tests/tooling/nativeFeatureDefaults.node-test.mjs tests/tooling/devLauncher.node-test.mjs tests/tooling/opksshBuildScript.node-test.mjs tests/tooling/commandInventory.node-test.mjs tests/tooling/boxedCommandHandlers.node-test.mjs tests/tooling/devCompilationProfile.node-test.mjs tests/tooling/nativeBuildTimings.node-test.mjs tests/tooling/sourcePathCitations.node-test.mjs tests/tooling/kafkaRemoval.node-test.mjs
+        run: node --test tests/tooling/nativeFeatureDefaults.node-test.mjs tests/tooling/devLauncher.node-test.mjs tests/tooling/opksshBuildScript.node-test.mjs tests/tooling/commandInventory.node-test.mjs tests/tooling/boxedCommandHandlers.node-test.mjs tests/tooling/devCompilationProfile.node-test.mjs tests/tooling/nativeBuildTimings.node-test.mjs tests/tooling/sourcePathCitations.node-test.mjs tests/tooling/kafkaRemoval.node-test.mjs tests/tooling/ciConcurrency.node-test.mjs
       - name: Verify generated cache exclusions
         run: node --test tests/tooling/buildCacheExclusions.node-test.mjs
       - name: Verify patched browser release producer and developer acquisition
@@ -72,6 +73,9 @@ jobs:
         run: npm run release:test
 
   linux-package-recipes:
+    concurrency:
+      group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}-linux-package-recipes
+      cancel-in-progress: true
     name: Linux package recipe metadata
     runs-on: ubuntu-latest
     steps:
@@ -100,6 +104,9 @@ jobs:
           '
 
   updater-signature-verifier:
+    concurrency:
+      group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}-updater-signature-verifier
+      cancel-in-progress: true
     name: Updater signature verifier
     runs-on: ubuntu-latest
     steps:
@@ -115,6 +122,9 @@ jobs:
           -p sorng-updater-signature-verifier
 
   format:
+    concurrency:
+      group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}-format
+      cancel-in-progress: true
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
@@ -127,6 +137,9 @@ jobs:
       - run: npm ci
       - run: npm run format
   lint:
+    concurrency:
+      group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}-lint
+      cancel-in-progress: true
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
@@ -137,6 +150,9 @@ jobs:
       - run: npm ci
       - run: npm run lint
   typecheck:
+    concurrency:
+      group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}-typecheck
+      cancel-in-progress: true
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
@@ -147,6 +163,9 @@ jobs:
       - run: npm ci
       - run: npm run typecheck
   test:
+    concurrency:
+      group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}-test
+      cancel-in-progress: true
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
@@ -163,6 +182,9 @@ jobs:
           path: coverage
 
   coverage:
+    concurrency:
+      group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}-coverage
+      cancel-in-progress: true
     runs-on: ubuntu-latest
     needs: test
     steps:
@@ -178,6 +200,9 @@ jobs:
   # local processes and loopback HTTP fixtures only; live-provider and Docker
   # tests remain in the dedicated e2e workflows.
   rust-integration-contracts:
+    concurrency:
+      group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}-rust-integration-contracts-${{ matrix.cohort }}
+      cancel-in-progress: true
     name: rust-integration-contracts (${{ matrix.cohort }})
     runs-on: ubuntu-latest
     strategy:
@@ -405,6 +430,9 @@ jobs:
   # ── Rust workspace check ───────────────────────────────────────────
   # Check the full app dependency graph on both Linux and Windows/MSVC.
   rust-check-linux:
+    concurrency:
+      group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}-rust-check-linux
+      cancel-in-progress: true
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -436,6 +464,9 @@ jobs:
   # cannot silently regress us. See `rust-toolchain.toml` and
   # `README.md` Toolchain section.
   rust-check-windows:
+    concurrency:
+      group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}-rust-check-windows
+      cancel-in-progress: true
     runs-on: windows-latest
     defaults:
       run:
@@ -471,6 +502,9 @@ jobs:
   # Shared browser transport fixtures must pass on every supported desktop OS.
   # This is not native-host or live provider acceptance; those remain unreleased.
   browser-transport-contracts:
+    concurrency:
+      group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}-browser-transport-contracts-${{ matrix.os }}
+      cancel-in-progress: true
     name: Browser transport contracts (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
     timeout-minutes: 45
@@ -545,6 +579,9 @@ jobs:
   # lane verifies both the CLI fallback and vendor C ABI contracts, then
   # stages a real embedded runtime by default. Only explicit --disable opts out.
   rust-opkssh-targeted:
+    concurrency:
+      group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}-rust-opkssh-targeted-${{ matrix.target }}
+      cancel-in-progress: true
     name: OPKSSH targeted (${{ matrix.target }})
     runs-on: ${{ matrix.os }}
     env:
@@ -636,6 +673,9 @@ jobs:
   # goldens, reconnect regression, and the deterministic RDPDR harness.
   # The live ignored RDP golden-path / RDPDR smoke stays in e2e.yml.
   rust-rdp-targeted:
+    concurrency:
+      group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}-rust-rdp-targeted-${{ matrix.target }}
+      cancel-in-progress: true
     name: RDP targeted (${{ matrix.target }})
     runs-on: ${{ matrix.os }}
     strategy:
@@ -692,6 +732,9 @@ jobs:
   # The two jobs below gate the canonical shipping feature set. Keep this
   # blocking so Rust feature drift cannot pass CI unnoticed.
   rust-check-all-features-linux:
+    concurrency:
+      group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}-rust-check-all-features-linux
+      cancel-in-progress: true
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -714,6 +757,9 @@ jobs:
           --features cert-auth,cloud,collab,db-mongo,db-mssql,db-mysql,db-postgres,db-redis,db-sqlite,logs-json,opkssh-vendored-wrapper,ops,platform,protocol-serial-dynamic,rdp,rdp-mf-decode,rdp-software-decode,rdp-snapshot,script-engine,tls-cert-details,vpn-softether
 
   rust-lint:
+    concurrency:
+      group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}-rust-lint
+      cancel-in-progress: true
     runs-on: ubuntu-latest
     defaults:
       run:

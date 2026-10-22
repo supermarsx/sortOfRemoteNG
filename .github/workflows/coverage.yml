@@ -16,6 +16,11 @@ on:
 # src-tauri/src, sorng-vpn/src, and sorng-rdp/src. Raise either ratchet only with
 # measured evidence; command, service, and integration code stays in scope.
 
+# Keep push and PR checks independent; a newer source supersedes the same event/ref.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 jobs:
   backend-coverage:
     name: cargo-llvm-cov (workspace)
