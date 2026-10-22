@@ -965,7 +965,10 @@ describe("RDP file drop prompt", () => {
 
   describe("in the source", () => {
     const source = () =>
-      readFileSync("src/components/rdp/RDPClient.tsx", "utf8");
+      readFileSync("src/components/rdp/RDPClient.tsx", "utf8").replace(
+        /\r\n/g,
+        "\n",
+      );
 
     const between = (text: string, start: string, end: string) => {
       const from = text.indexOf(start);
