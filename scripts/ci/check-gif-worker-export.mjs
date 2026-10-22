@@ -5,9 +5,10 @@ import { readFileSync, readdirSync } from "node:fs";
 import { join, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createContext, runInContext } from "node:vm";
+import ts from "typescript";
 
 /** Evaluate the emitted worker URL factory, not an incidental source-asset URL. */
-function workerUrlFromClient(chunks) {
+export function workerUrlFromClient(chunks) {
   const client = [...chunks].find(([, source]) =>
     source.includes("GIF recording requires Web Worker support"),
   );
@@ -18,9 +19,103 @@ function workerUrlFromClient(chunks) {
     URL,
     location: new URL("https://gif-worker.test/"),
   });
-  runInContext(client[1], context, { filename: client[0], timeout: 5000 });
+  // Only evaluate registration array literals: importing a second emitted
+  // chunk must not execute its runtime/bootstrap or any application factory.
+  // TypeScript is already a direct build dependency and parses actual JS here.
+  for (const [path, source] of chunks) {
+    if (!source.includes("TURBOPACK")) continue;
+    const file = ts.createSourceFile(
+      path,
+      source,
+      ts.ScriptTarget.Latest,
+      false,
+      ts.ScriptKind.JS,
+    );
+    assert.equal(
+      file.parseDiagnostics.length,
+      0,
+      `Invalid emitted JavaScript in ${path}.`,
+    );
+    const visit = (node) => {
+      if (
+        ts.isCallExpression(node) &&
+        node.expression.getText(file).replace(/\s/gu, "") ===
+          "(globalThis.TURBOPACK||(globalThis.TURBOPACK=[])).push"
+      ) {
+        assert.equal(
+          node.arguments.length,
+          1,
+          "Unknown Turbopack client chunk format.",
+        );
+        const registration = node.arguments[0];
+        assert.ok(
+          ts.isArrayLiteralExpression(registration),
+          "Unknown Turbopack client chunk format.",
+        );
+        // New builds can place a registration group in a nested array.
+        const elements = registration.elements
+          .slice(1)
+          .flatMap((element) =>
+            ts.isArrayLiteralExpression(element)
+              ? [...element.elements]
+              : [element],
+          );
+        if (
+          elements.length === 1 &&
+          ts.isObjectLiteralExpression(elements[0])
+        ) {
+          const properties = elements[0].properties;
+          assert.ok(
+            properties.length === 2 &&
+              properties.every(
+                (property) =>
+                  ts.isPropertyAssignment(property) &&
+                  ["otherChunks", "runtimeModuleIds"].includes(
+                    property.name.getText(file),
+                  ) &&
+                  ts.isArrayLiteralExpression(property.initializer),
+              ),
+            "Unknown Turbopack runtime registration format.",
+          );
+          return; // Entry/runtime metadata is executed by the real worker probe.
+        }
+        // Check IDs/factories without evaluating arbitrary element expressions.
+        for (let offset = 0; offset < elements.length;) {
+          let ids = 0;
+          while (
+            offset < elements.length &&
+            ts.isNumericLiteral(elements[offset])
+          ) {
+            offset++;
+            ids++;
+          }
+          assert.ok(
+            ids &&
+              offset < elements.length &&
+              (ts.isArrowFunction(elements[offset]) ||
+                ts.isFunctionExpression(elements[offset])),
+            "Unknown Turbopack client chunk format.",
+          );
+          offset++;
+        }
+        // The metadata slot normally reads document.currentScript. Its value
+        // is irrelevant to module lookup, so never evaluate that expression.
+        registrations.push({
+          path,
+          values: runInContext(
+            `[null,${elements.map((element) => element.getText(file)).join(",")}]`,
+            context,
+            { filename: path, timeout: 5000 },
+          ),
+        });
+        return;
+      }
+      ts.forEachChild(node, visit);
+    };
+    visit(file);
+  }
   const factories = new Map();
-  for (const registration of registrations) {
+  for (const { path, values: registration } of registrations) {
     for (let offset = 1; offset < registration.length;) {
       let end = offset;
       while (
@@ -32,12 +127,31 @@ function workerUrlFromClient(chunks) {
         end < registration.length,
         "Unknown Turbopack client chunk format.",
       );
-      for (; offset < end; offset++)
-        factories.set(registration[offset], registration[end]);
+      for (; offset < end; offset++) {
+        const id = registration[offset];
+        assert.ok(
+          Number.isSafeInteger(id) && id >= 0,
+          "Unknown Turbopack module ID.",
+        );
+        const entries = factories.get(id) ?? [];
+        // Split entry chunks can repeat a byte-identical module definition.
+        // Conflicting definitions remain ambiguous and fail when reachable.
+        if (
+          !entries.some(
+            (entry) =>
+              entry.path === path &&
+              entry.factory.toString() === registration[end].toString(),
+          )
+        )
+          entries.push({ path, factory: registration[end] });
+        factories.set(id, entries);
+      }
       offset++;
     }
   }
-  const candidate = [...factories].find(([, factory]) => {
+  const candidate = [...factories].find(([, entries]) => {
+    const factory = entries.find((entry) => entry.path === client[0])?.factory;
+    if (!factory) return false;
     const source = factory.toString();
     return (
       source.includes("turbopack-worker-") &&
@@ -61,8 +175,26 @@ function workerUrlFromClient(chunks) {
   const modules = new Map();
   const load = (id) => {
     if (modules.has(id)) return modules.get(id);
-    const factory = factories.get(id);
-    assert.ok(factory, `Missing emitted worker-factory dependency ${id}.`);
+    const registered = factories.get(id);
+    assert.ok(registered, `Missing emitted worker-factory dependency ${id}.`);
+    // Split entry compilations can reuse IDs with different minified bindings.
+    // Prefer the selected client's own definition. A cross-chunk dependency
+    // must be unambiguous; never choose one by filesystem ordering.
+    const local = registered.filter((entry) => entry.path === client[0]);
+    const entries = local.length
+      ? local
+      : registered.filter(
+          (entry, index) =>
+            registered.findIndex(
+              (other) => other.factory.toString() === entry.factory.toString(),
+            ) === index,
+        );
+    assert.equal(
+      entries.length,
+      1,
+      `Duplicate emitted worker-factory module ${id}.`,
+    );
+    const [{ factory }] = entries;
     const exports = {};
     modules.set(id, exports);
     factory({
