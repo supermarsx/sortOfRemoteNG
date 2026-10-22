@@ -9,6 +9,7 @@ pub mod http;
 pub mod origin_browser;
 pub mod origin_browser_diagnostics;
 pub mod private_forward_proxy;
+pub mod private_datagram_proxy;
 pub mod private_forward_route;
 pub mod webview_origins;
 pub mod autologin_asset;
