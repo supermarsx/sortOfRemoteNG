@@ -1137,6 +1137,16 @@ test("workflow has manual/default-branch guards, six targets, protected least-pr
   assert.equal(workflow.jobs.publish.permissions.contents, "write");
   assert.equal(workflow.jobs.publish.environment, "cef-runtime-publish");
   assert.equal(workflow.jobs.build["runs-on"], "${{ matrix.runners }}");
+  const prerequisiteUpload = workflow.jobs.build.steps.find(
+    (step) =>
+      step.with?.name === "cef-hosted-build-prerequisites-${{ matrix.key }}",
+  );
+  assert.match(prerequisiteUpload.if, /always\(\)/);
+  assert.equal(
+    prerequisiteUpload.with.path,
+    "${{ runner.temp }}/cef-hosted-provision",
+  );
+  assert.doesNotMatch(prerequisiteUpload.if, /steps\.build\.outputs/);
   assert.match(workflow.jobs.publish.concurrency.group, /matrix.key/);
   assert.equal(workflow.concurrency["cancel-in-progress"], false);
   for (const [name, job] of Object.entries(workflow.jobs)) {

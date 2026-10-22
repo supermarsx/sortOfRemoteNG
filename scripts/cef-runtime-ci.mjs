@@ -824,6 +824,26 @@ export async function build(
     );
     const reviewedMap = await pinned(inputsRoot, mapPin);
     const map = await json(reviewedMap);
+    const preparationLogs = await mkdtemp(
+      path.join(env.RUNNER_TEMP, "cef-hosted-prepare-"),
+    );
+    await output("logs", preparationLogs);
+    await writeFile(
+      path.join(preparationLogs, "hosted-identity.json"),
+      stableJson({
+        target,
+        observed: {
+          platform: process.platform,
+          architecture: process.arch,
+          imageOS: String(env.ImageOS ?? "").slice(0, 128),
+          imageVersion: String(env.ImageVersion ?? "").slice(0, 128),
+        },
+        reviewed: map.hosted,
+        sourceLockIdentity: identity.sourceLockSha256,
+        admissionGranted: false,
+      }),
+      { flag: "wx" },
+    );
     buildHost = assertHostedBuildIdentity(map, target, env);
     const disk = await statfs(env.RUNNER_TEMP);
     assertHostedCapacity(
@@ -834,10 +854,6 @@ export async function build(
       },
       map,
     );
-    const preparationLogs = await mkdtemp(
-      path.join(env.RUNNER_TEMP, "cef-hosted-prepare-"),
-    );
-    await output("logs", preparationLogs);
     const destination = path.join(toolsRoot, mapName(target));
     if (await exists(destination)) {
       const present = await measure(destination);

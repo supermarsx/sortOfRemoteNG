@@ -241,6 +241,14 @@ jobs:
             if [[ "$RUNNER_OS" == 'Windows' ]]; then export SORNG_CEF_TOOLS_ROOT='C:/'; else export SORNG_CEF_TOOLS_ROOT='/'; fi
           fi
           node scripts/cef-runtime-ci.mjs build --inputs "$CEF_INPUTS" --target "$CEF_TARGET" --repository "$GITHUB_REPOSITORY" --runner-mode "$CEF_RUNNER_MODE" --execute
+      - name: Retain actual hosted prerequisites even when identity or source preparation fails
+        if: always() && inputs.mode == 'hosted-build'
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        with:
+          name: cef-hosted-build-prerequisites-${{ matrix.key }}
+          path: ${{ runner.temp }}/cef-hosted-provision
+          retention-days: 14
+          if-no-files-found: warn
       - name: Retain complete source/build/package diagnostics
         if: always() && steps.build.outputs.logs != ''
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
