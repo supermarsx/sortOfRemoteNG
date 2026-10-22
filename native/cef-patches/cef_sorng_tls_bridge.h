@@ -20,13 +20,15 @@ extern "C" {
 #endif
 
 #define CEF_SORNG_TLS_ABI_V2 2u
-// TCP TLS / HTTP1 only; no early data, resumption, QUIC or TLS client auth.
+// TCP TLS admission; no early data, resumption, QUIC or TLS client auth.
 #define CEF_SORNG_TLS_CAP_SOCKET_ADMISSION (1ull << 0)
 #define CEF_SORNG_TLS_CAP_CONTEXT_REVOKE (1ull << 1)
-#define CEF_SORNG_TLS_CAP_HTTP1_ONLY (1ull << 2)
+#define CEF_SORNG_TLS_CAP_HTTP1_ONLY (1ull << 2)  // Legacy patch ID 1 only.
 #define CEF_SORNG_TLS_CAP_SCOPED_EXCEPTIONS (1ull << 3)
 #define CEF_SORNG_TLS_CAP_CUSTOM_CA (1ull << 4)
 #define CEF_SORNG_TLS_CAP_PRIVATE_CONTEXT (1ull << 5)
+// Exact native authority/session-key reuse only; no IP/SAN coalescing or Alt-Svc.
+#define CEF_SORNG_TLS_CAP_SAME_AUTHORITY_HTTP2 (1ull << 6)
 #define CEF_SORNG_TLS_CA_SYSTEM 0u
 #define CEF_SORNG_TLS_CA_SYSTEM_PLUS_CUSTOM 1u
 #define CEF_SORNG_TLS_CA_CUSTOM_ONLY 2u

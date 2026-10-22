@@ -17,6 +17,8 @@ import path from "node:path";
 import {
   BRIDGE_V2,
   BRIDGE_PATCH_ID,
+  LEGACY_BRIDGE_PATCH_ID,
+  LEGACY_BRIDGE_V2,
   UPSTREAM_CEF_COMMIT,
   UPSTREAM_CEF_VERSION_REFERENCES,
   UPSTREAM_CHROMIUM_COMMIT,
@@ -281,6 +283,30 @@ test("strict source pins and ABI reject branches, missing values, unsupported ca
   );
 });
 
+test("known bridge revisions require their exact protocol capabilities", () => {
+  const current = fixture().lock;
+  assert.equal(validateSourceLock(current).bridge.patchId, BRIDGE_PATCH_ID);
+  const legacy = clone(current);
+  legacy.bridge.patchId = LEGACY_BRIDGE_PATCH_ID;
+  legacy.bridge.capabilities = [...LEGACY_BRIDGE_V2.capabilities];
+  assert.equal(
+    validateSourceLock(legacy).bridge.patchId,
+    LEGACY_BRIDGE_PATCH_ID,
+  );
+  for (const [patchId, capabilities] of [
+    [BRIDGE_PATCH_ID, LEGACY_BRIDGE_V2.capabilities],
+    [LEGACY_BRIDGE_PATCH_ID, BRIDGE_V2.capabilities],
+    [BRIDGE_PATCH_ID, [...BRIDGE_V2.capabilities, "http1-only"]],
+  ]) {
+    const mismatched = clone(current);
+    Object.assign(mismatched.bridge, {
+      patchId,
+      capabilities: [...capabilities],
+    });
+    assert.throws(() => validateSourceLock(mismatched));
+  }
+});
+
 test("packaging V2 identity matches the maintained native side ABI", async () => {
   const header = await readFile(
     new URL("../../native/cef-patches/cef_sorng_tls_bridge.h", import.meta.url),
@@ -289,10 +315,13 @@ test("packaging V2 identity matches the maintained native side ABI", async () =>
   assert.match(header, /#define CEF_SORNG_TLS_ABI_V2 2u/);
   assert.match(header, new RegExp(`${BRIDGE_V2.symbol}\\(void\\)`));
   assert.match(header, new RegExp(`${BRIDGE_V2.factorySymbol}\\(`));
-  for (const [bit, capability] of BRIDGE_V2.capabilities.entries()) {
+  const bits = [0, 1, 6, 3, 4, 5];
+  for (const [index, capability] of BRIDGE_V2.capabilities.entries()) {
     const define = capability.replaceAll("-", "_").toUpperCase();
     assert.ok(
-      header.includes(`#define CEF_SORNG_TLS_CAP_${define} (1ull << ${bit})`),
+      header.includes(
+        `#define CEF_SORNG_TLS_CAP_${define} (1ull << ${bits[index]})`,
+      ),
     );
   }
   assert.equal(BRIDGE_V2.capabilities.length, 6);

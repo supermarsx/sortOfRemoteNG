@@ -46,7 +46,8 @@ export const UPSTREAM_DEPOT_TOOLS_COMMIT =
   "c101dcbe0489c455fce7c2247bfee19680b116c3";
 export const UPSTREAM_SISO_REVISION =
   "efbbe7f1892211b5e9512576843a3c247b6a6d7c";
-export const BRIDGE_PATCH_ID = "sorng-tls-v2-682c378-1";
+export const LEGACY_BRIDGE_PATCH_ID = "sorng-tls-v2-682c378-1";
+export const BRIDGE_PATCH_ID = "sorng-tls-v2-682c378-2";
 export const BRIDGE_V2 = Object.freeze({
   symbol: "cef_sorng_tls_get_api_v2",
   factorySymbol: "cef_sorng_tls_create_context_v2",
@@ -54,11 +55,21 @@ export const BRIDGE_V2 = Object.freeze({
   capabilities: Object.freeze([
     "socket-admission",
     "context-revoke",
-    "http1-only",
+    "same-authority-http2",
     "scoped-exceptions",
     "custom-ca",
     "private-context",
   ]),
+});
+// Existing reviewed packages stay usable while a new engine is built and
+// accepted. A revision may claim only its exact implemented protocol contract.
+export const LEGACY_BRIDGE_V2 = Object.freeze({
+  ...BRIDGE_V2,
+  capabilities: Object.freeze(
+    BRIDGE_V2.capabilities.map((value) =>
+      value === "same-authority-http2" ? "http1-only" : value,
+    ),
+  ),
 });
 const repositories = Object.freeze({
   cef: "https://github.com/chromiumembedded/cef.git",
@@ -221,8 +232,14 @@ export function validateSourceLock(lock) {
     lock.bridge.abiVersion !== BRIDGE_V2.abiVersion
   )
     fail("Unsupported bridge ABI/export");
-  if (lock.bridge.patchId !== BRIDGE_PATCH_ID)
-    fail("Bridge patchId differs from the frozen native contract");
+  const revisionContract =
+    lock.bridge.patchId === BRIDGE_PATCH_ID
+      ? BRIDGE_V2
+      : lock.bridge.patchId === LEGACY_BRIDGE_PATCH_ID
+        ? LEGACY_BRIDGE_V2
+        : null;
+  if (!revisionContract)
+    fail("Bridge patchId differs from a supported frozen native contract");
   filePin(lock.bridge.header, "bridge.header");
   if (!lock.bridge.header.path.startsWith("include/"))
     fail("Bridge header must live under SDK include/");
@@ -233,7 +250,7 @@ export function validateSourceLock(lock) {
   unique(lock.bridge.capabilities, "bridge capabilities");
   if (
     JSON.stringify([...lock.bridge.capabilities].sort()) !==
-    JSON.stringify([...BRIDGE_V2.capabilities].sort())
+    JSON.stringify([...revisionContract.capabilities].sort())
   )
     fail(
       "Bridge V2 capabilities must exactly match the native ABI (no unsupported trust claims)",

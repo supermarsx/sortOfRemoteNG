@@ -7,7 +7,7 @@ use sorng_browser_host::{
     cef_runtime::{self, CefRuntime},
     cef_tls_bridge::{
         self, NativeTlsBridge, NativeTlsCaMode, NativeTlsCompletion, NativeTlsConfig,
-        NativeTlsDecision, NativeTlsEvidence, NativeTlsHooks, PATCH_ID,
+        NativeTlsDecision, NativeTlsEvidence, NativeTlsHooks,
     },
     control::{Lifecycle, ViewportBounds},
     domain_permissions::{WebsitePermissionDecision, WebsitePermissionEngine, WebsiteRequestClass},
@@ -486,13 +486,13 @@ fn execute(bootstrap: &mut dyn RuntimeBootstrap, paths: &BundlePaths) -> Result 
         )?
     };
     let mut report = serde_json::json!({"schema":2,"engine":"cef","bindingPin":"154.3.0","evidenceKind":"native-cef-local-fixture",
-        "patchId":PATCH_ID,"runId":run_id,"platform":std::env::consts::OS,"productionReady":false,"publicProviderAcceptance":false,
+        "patchId":null,"runId":run_id,"platform":std::env::consts::OS,"productionReady":false,"publicProviderAcceptance":false,
         "loadedBridgeVerified":false,"securitySwitchesClean":false,"networkPolicyConfigured":false,"shutdownComplete":false,"cases":[],"failures":[],
         "manualRequested":manual_requested,"manualStatus":if manual_requested {"pending"} else {"not-run"},
         "storageIsolation":{"status":"not-run"},
         "remainingGates":["OS socket/DNS containment","native first paint","public provider acceptance","other platform runtime","app trust authority integration","AIA/OCSP/CRL runtime","HTTP keep-alive runtime"]});
     let mut failures: Vec<String> = vec![];
-    let bridge = unsafe { NativeTlsBridge::from_loaded(PATCH_ID) };
+    let bridge = unsafe { NativeTlsBridge::from_loaded_supported() };
     let bridge = match bridge {
         Ok(b) => b,
         Err(e) => {
@@ -511,6 +511,7 @@ fn execute(bootstrap: &mut dyn RuntimeBootstrap, paths: &BundlePaths) -> Result 
         }
     };
     report["loadedBridgeVerified"] = true.into();
+    report["patchId"] = bridge.patch_id().into();
     let security = command_line_get_global().is_some_and(|command| {
         [
             "no-sandbox",

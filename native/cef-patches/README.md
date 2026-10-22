@@ -2,7 +2,8 @@
 
 Pinned CEF: `682c378d70d5780061e96644dca16ddd8fd157a9`.
 Pinned Chromium: `154.0.8037.58`.
-**Frozen patch ID: `sorng-tls-v2-682c378-1`.**
+**Current patch ID: `sorng-tls-v2-682c378-2`.**
+The reviewed legacy H1 runtime remains `sorng-tls-v2-682c378-1`.
 
 This directory owns the additional C ABI and maintained engine delta, not Rust
 integration or engine packaging. Custom binaries are required. The pinned
@@ -10,6 +11,35 @@ Windows x64 engine has been compiled and packaged locally; full runtime and
 cross-platform acceptance have not passed. See
 [the current readiness checkpoint](../../docs/browser-readiness.md).
 Symbol presence and patch applicability are not runtime security proof.
+
+## Same-authority HTTP/2 candidate — 2026-10-22
+
+Patches 0008 and 0009 enable H2 in protected contexts without enabling Alt-Svc,
+QUIC, early data, or TLS resumption. The socket filters the caller's ALPN list
+instead of adding a protocol it excluded, preserving H1-only retries. The
+protected session pool reuses only an exact session key; DNS, IP and certificate
+SAN aliases cannot substitute for a separate native authority admission.
+
+Revision 2 advertises bit 6 (`same-authority-http2`), while legacy revision 1
+advertises bit 2 (`http1-only`). The ABI and export names remain V2. Packaging
+checks require the exact revision/capability pair. Native `from_loaded(pin)`
+also remains exact; the application's explicit `from_loaded_supported()` policy
+permits either reviewed revision during migration. Unknown revisions and
+contradictory protocol bits are rejected. Neither revision advertises HTTP/3.
+
+The Windows x64 engine linked successfully in 245 steps on 2026-10-22. Its new
+immutable package is separate from the selected legacy runtime. Local real-H2
+acceptance passed multiplexing, admission deny/delay, owner revocation with
+pre-close socket termination, SAN-covered cross-authority refusal, private
+context separation, H1-only server fallback, and WSS over a separate H1 socket.
+The maintained fixture lives in
+`src-tauri/crates/sorng-browser-host/tests/native_http2_acceptance`.
+
+Paired synthetic measurements used one immutable fixture DLL: H2 reused one
+TLS/CONNECT connection per context versus six for H1, and held-request peaks
+exceeded six. Total page load time remained approximately 2.2–2.3 seconds in
+that fixture. This restores multiplexing but does not establish a total page
+speedup, public-site acceptance, other-platform acceptance, or HTTP/3 support.
 
 ## Targeted recovery checkpoint — 2026-10-07
 

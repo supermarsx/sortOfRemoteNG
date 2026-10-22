@@ -12,6 +12,7 @@ import {
   assessNativeTlsReport,
   assessTlsSocketLedger,
   TLS_PATCH_ID,
+  TLS_LEGACY_PATCH_ID,
   TLS_CASES,
   runAcceptance,
   inspectNetlog,
@@ -485,6 +486,55 @@ test("a complete synthetic validator input never attests actual CEF or provider 
   assert.equal(result.publicProviderAcceptance, false);
   assert.equal(result.productionReady, false);
   assert.equal(result.nativeTlsFixtureAccepted, undefined);
+});
+
+test("TLS reports preserve known legacy compatibility without substituting a staged revision", () => {
+  for (const actual of [TLS_PATCH_ID, TLS_LEGACY_PATCH_ID]) {
+    const report = syntheticTlsReport();
+    report.patchId = actual;
+    assert.equal(assessNativeTlsReport(report, "validator-test-only").ok, true);
+    assert.equal(
+      assessNativeTlsReport(report, "validator-test-only", actual).ok,
+      true,
+    );
+    const other = actual === TLS_PATCH_ID ? TLS_LEGACY_PATCH_ID : TLS_PATCH_ID;
+    assert.equal(
+      assessNativeTlsReport(report, "validator-test-only", other).ok,
+      false,
+    );
+    assert.equal(
+      assessNativeTlsReport(report, "validator-test-only", "unreviewed").ok,
+      false,
+    );
+  }
+  const unknown = syntheticTlsReport();
+  unknown.patchId = "sorng-tls-v2-unreviewed";
+  assert.equal(assessNativeTlsReport(unknown, "validator-test-only").ok, false);
+});
+
+test("a custom bundle with an unsupported bridge pin fails before launching or creating run output", async () => {
+  const root = await mkdtemp(path.join(tmpdir(), "cef-bridge-pin-"));
+  const output = path.join(root, "not-created");
+  try {
+    await writeFile(
+      path.join(root, "acceptance-staging.json"),
+      JSON.stringify({
+        kind: "sorng-cef-custom-package",
+        preflight: { bridge: { patchId: "sorng-tls-v2-unreviewed" } },
+      }),
+    );
+    await assert.rejects(
+      runAcceptance({
+        executable: path.join(root, "never-launched.exe"),
+        output,
+        suite: "tls",
+      }),
+      /no supported bridge revision pin/,
+    );
+    assert.equal(existsSync(output), false);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
 });
 
 test("stock, old, unrelated and replayed reports fail the V2 invocation gate", () => {
@@ -1306,7 +1356,7 @@ test("both runner suites apply the crash gate before their final acceptance verd
   assert.match(runner, /native-crash-summary\.json/);
   assert.match(
     runner,
-    /applyNativeCrashGate\(\s*suite === ["']tls["']\s*\? assessNativeTlsReport\(native,\s*runId\)\s*:\s*assessNativeReport\(native\),\s*nativeCrashSummary,?\s*\)/,
+    /applyNativeCrashGate\(\s*suite === ["']tls["']\s*\? assessNativeTlsReport\(native,\s*runId,\s*expectedPatchId\)\s*:\s*assessNativeReport\(native,\s*expectedPatchId\),\s*nativeCrashSummary,?\s*\)/,
   );
   assert.match(
     runner,
@@ -2160,7 +2210,7 @@ test("the runner scrubs inherited mode variables, starts hidden and returns meas
   assert.match(runner.slice(spawned, spawned + 200), /windowsHide: true,/);
   assert.doesNotMatch(runner, /windowsHide: (?!true)/);
   const branch = runner.indexOf("if (measurePlan) {", spawned);
-  const verdict = runner.indexOf("assessNativeTlsReport(native, runId)");
+  const verdict = runner.indexOf("assessNativeTlsReport(");
   assert.ok(branch > 0 && verdict > branch);
   const measured = runner.slice(branch, verdict);
   assert.match(
@@ -3269,7 +3319,7 @@ test("the menu suite takes no measurement options, sets its mode only in its own
   assert.ok(scrub > 0 && scrub < set && set < spawned);
   assert.equal(runner.match(/SORNG_CEF_ACCEPTANCE_MODE = /g).length, 2);
   const branch = runner.indexOf('if (suite === "menu") {', spawned);
-  const verdict = runner.indexOf("assessNativeTlsReport(native, runId)");
+  const verdict = runner.indexOf("assessNativeTlsReport(");
   assert.ok(branch > 0 && verdict > branch);
   const evidence = runner.slice(branch, verdict);
   assert.match(

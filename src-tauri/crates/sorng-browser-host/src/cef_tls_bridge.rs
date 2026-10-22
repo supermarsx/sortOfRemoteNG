@@ -22,7 +22,8 @@ use std::{
 
 pub const CEF_REVISION: &str = "682c378d70d5780061e96644dca16ddd8fd157a9";
 pub const CHROMIUM_VERSION: &str = "154.0.8037.58";
-pub const PATCH_ID: &str = "sorng-tls-v2-682c378-1";
+pub const LEGACY_PATCH_ID: &str = "sorng-tls-v2-682c378-1";
+pub const PATCH_ID: &str = "sorng-tls-v2-682c378-2";
 const ABI: u32 = 2;
 const SOCKET: u64 = 1;
 const REVOKE: u64 = 2;
@@ -30,7 +31,8 @@ const HTTP1: u64 = 4;
 const EXCEPTIONS: u64 = 8;
 const CUSTOM_CA: u64 = 16;
 const PRIVATE: u64 = 32;
-const REQUIRED: u64 = SOCKET | REVOKE | HTTP1 | PRIVATE;
+const SAME_AUTHORITY_HTTP2: u64 = 64;
+const REQUIRED: u64 = SOCKET | REVOKE | PRIVATE;
 const MAX_CHAIN: usize = 64;
 const MAX_CERT: usize = 256 * 1024;
 const MAX_CHAIN_BYTES: usize = 4 * 1024 * 1024;
@@ -223,6 +225,27 @@ unsafe fn matches_pin(value: *const c_char, expected: &str) -> bool {
     true
 }
 
+/// Only known revision/protocol pairs are compatible. Accept the reviewed H1
+/// engine while the H2 upgrade is built; never turn a capability bit into an
+/// assertion that an unknown engine implements the corresponding admission.
+unsafe fn matches_bridge_revision(
+    actual: *const c_char,
+    requested: &str,
+    capabilities: u64,
+) -> bool {
+    if capabilities & !(REQUIRED | HTTP1 | SAME_AUTHORITY_HTTP2 | EXCEPTIONS | CUSTOM_CA) != 0 {
+        return false;
+    }
+    let protocol = capabilities & (HTTP1 | SAME_AUTHORITY_HTTP2);
+    let legacy = protocol == HTTP1 && unsafe { matches_pin(actual, LEGACY_PATCH_ID) };
+    let current = protocol == SAME_AUTHORITY_HTTP2 && unsafe { matches_pin(actual, PATCH_ID) };
+    match requested {
+        PATCH_ID => current,
+        LEGACY_PATCH_ID => legacy,
+        _ => false,
+    }
+}
+
 /// Non-Send UI capability acquired from actual loaded CEF, never a path supplied
 /// by the renderer. `patch_id` must come from the reviewed native package pin.
 pub struct NativeTlsBridge {
@@ -230,6 +253,15 @@ pub struct NativeTlsBridge {
     _ui: PhantomData<Rc<()>>,
 }
 impl NativeTlsBridge {
+    /// Explicit application transition policy. This accepts either reviewed
+    /// revision; package-specific acceptance must use `from_loaded` instead.
+    /// # Safety
+    /// Same initialization and independent provenance requirements as `from_loaded`.
+    pub unsafe fn from_loaded_supported() -> Result<Self, NativeTlsError> {
+        unsafe { Self::from_loaded(PATCH_ID) }
+            .or_else(|_| unsafe { Self::from_loaded(LEGACY_PATCH_ID) })
+    }
+
     /// # Safety
     /// CEF must already be initialized and remain loaded through shutdown.
     /// Package provenance must be verified independently before loading CEF.
@@ -253,7 +285,7 @@ impl NativeTlsBridge {
             || api.capabilities & REQUIRED != REQUIRED
             || !unsafe { matches_pin(api.cef_revision, CEF_REVISION) }
             || !unsafe { matches_pin(api.chromium_version, CHROMIUM_VERSION) }
-            || !unsafe { matches_pin(api.patch_id, patch_id) }
+            || !unsafe { matches_bridge_revision(api.patch_id, patch_id, api.capabilities) }
         {
             return Err(NativeTlsError::Incompatible);
         }
@@ -285,6 +317,17 @@ impl NativeTlsBridge {
     }
     pub fn supports_custom_ca(&self) -> bool {
         self.functions.capabilities & CUSTOM_CA != 0
+    }
+    pub fn supports_same_authority_http2(&self) -> bool {
+        self.functions.capabilities & SAME_AUTHORITY_HTTP2 != 0
+    }
+    /// The actual loaded, validated revision, not a requested package label.
+    pub fn patch_id(&self) -> &'static str {
+        if self.supports_same_authority_http2() {
+            PATCH_ID
+        } else {
+            LEGACY_PATCH_ID
+        }
     }
 
     /// Creates only a distinct, nonpersistent native context. Callback userdata
@@ -886,6 +929,51 @@ fn pump_inner() -> Result<(), NativeTlsError> {
 mod tests {
     use super::*;
     use std::sync::atomic::AtomicUsize;
+
+    #[test]
+    fn bridge_revision_pins_protocol_and_preserves_known_legacy_runtime() {
+        let legacy = std::ffi::CString::new(LEGACY_PATCH_ID).unwrap();
+        let current = std::ffi::CString::new(PATCH_ID).unwrap();
+        let unknown = c"sorng-tls-v2-unreviewed";
+        for (actual, requested, protocol, accepted) in [
+            (legacy.as_c_str(), PATCH_ID, HTTP1, false),
+            (current.as_c_str(), PATCH_ID, SAME_AUTHORITY_HTTP2, true),
+            (legacy.as_c_str(), LEGACY_PATCH_ID, HTTP1, true),
+            (
+                current.as_c_str(),
+                LEGACY_PATCH_ID,
+                SAME_AUTHORITY_HTTP2,
+                false,
+            ),
+            (legacy.as_c_str(), PATCH_ID, SAME_AUTHORITY_HTTP2, false),
+            (current.as_c_str(), PATCH_ID, HTTP1, false),
+            (
+                current.as_c_str(),
+                PATCH_ID,
+                HTTP1 | SAME_AUTHORITY_HTTP2,
+                false,
+            ),
+            (current.as_c_str(), PATCH_ID, 0, false),
+            (
+                current.as_c_str(),
+                PATCH_ID,
+                SAME_AUTHORITY_HTTP2 | (1 << 7),
+                false,
+            ),
+            (unknown, PATCH_ID, SAME_AUTHORITY_HTTP2, false),
+            (
+                current.as_c_str(),
+                "unreviewed",
+                SAME_AUTHORITY_HTTP2,
+                false,
+            ),
+        ] {
+            assert_eq!(
+                unsafe { matches_bridge_revision(actual.as_ptr(), requested, REQUIRED | protocol) },
+                accepted
+            );
+        }
+    }
 
     #[test]
     fn cookie_switch_excludes_all_schemes_without_enabling_disk_or_shared_storage() {

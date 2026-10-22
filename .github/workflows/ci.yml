@@ -529,7 +529,7 @@ jobs:
           node scripts/native-build-env.mjs cargo test --manifest-path src-tauri/Cargo.toml -p sorng-browser-host --features cef-host --lib --locked --no-run --message-format=json > .artifacts/macos-cef-test-artifacts.jsonl
           node scripts/ci/diagnose-macos-cef-tests.mjs .artifacts/macos-cef-test-artifacts.jsonl
       - name: Runtime package layout and whole-matrix contract
-        run: node --test tests/tooling/browserRuntimePackage.node-test.mjs tests/tooling/browserAppBuild.node-test.mjs tests/tooling/windowsNativeCrashCapture.node-test.mjs
+        run: node --test tests/tooling/browserRuntimePackage.node-test.mjs tests/tooling/browserAppBuild.node-test.mjs tests/tooling/windowsNativeCrashCapture.node-test.mjs tests/tooling/browserCustomRuntime.node-test.mjs tests/tooling/cefHttp2Admission.node-test.mjs
       - name: Upload sanitized fixture results
         if: always()
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0

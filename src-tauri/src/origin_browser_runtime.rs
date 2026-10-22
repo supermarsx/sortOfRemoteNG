@@ -11,7 +11,7 @@ use sorng_browser_host::{
     cef_context::{PreparationStatus, PrivateRequestContext},
     cef_runtime::{CefRuntime, RuntimeError, ScheduleWake, WakeUnavailable},
     cef_session_retention::{RetentionPolicy, SignInCookie},
-    cef_tls_bridge::{self, NativeTlsBridge, NativeTlsConfig, PATCH_ID},
+    cef_tls_bridge::{self, NativeTlsBridge, NativeTlsConfig},
     control::Lifecycle,
     ipc::*,
     native_automation::{
@@ -901,7 +901,7 @@ pub(crate) fn install(runtime: CefRuntime<'static>) -> Result<(), String> {
         }
         // Probe actual exports/build pins on CEF UI. A compile flag or package
         // manifest alone cannot activate saved TOFU/pins/custom trust policies.
-        let tls = match unsafe { NativeTlsBridge::from_loaded(PATCH_ID) } {
+        let tls = match unsafe { NativeTlsBridge::from_loaded_supported() } {
             Ok(bridge) if bridge.supports_scoped_exceptions() && bridge.supports_custom_ca() => {
                 Some(bridge)
             }

@@ -16,7 +16,11 @@ import {
   inspectNativeBinary,
   packageManifest,
 } from "./browser-runtime-package.mjs";
-import { stageCustomRuntimePackage } from "./lib/browser-custom-runtime.mjs";
+import {
+  stageCustomRuntimePackage,
+  BRIDGE_PATCH_ID,
+  LEGACY_BRIDGE_PATCH_ID,
+} from "./lib/browser-custom-runtime.mjs";
 import { ensureBrowserSandboxAccess } from "./lib/browser-sandbox-access.mjs";
 import { verifyLocalRuntimeSelection } from "./lib/browser-local-runtime.mjs";
 import { assessStorageIsolation } from "./lib/cef-storage-acceptance.mjs";
@@ -25,7 +29,14 @@ import {
   applyNativeCrashGate,
 } from "./lib/cef-native-crash-summary.mjs";
 
-export const TLS_PATCH_ID = "sorng-tls-v2-682c378-1";
+export const TLS_PATCH_ID = BRIDGE_PATCH_ID;
+export const TLS_LEGACY_PATCH_ID = LEGACY_BRIDGE_PATCH_ID;
+function matchesTlsRevision(actual, expected) {
+  return (
+    [TLS_PATCH_ID, TLS_LEGACY_PATCH_ID].includes(actual) &&
+    (expected === undefined || actual === expected)
+  );
+}
 export const TLS_CASES = [
   "manual",
   "staged",
@@ -125,7 +136,7 @@ export function assessTlsSocketLedger(c) {
 }
 
 /** Validate observations, never turn a JSON document into execution provenance. */
-export function assessNativeTlsReport(report, runId) {
+export function assessNativeTlsReport(report, runId, expectedPatchId) {
   const failures = [];
   const require = (ok, reason) => {
     if (!ok) failures.push(reason);
@@ -138,7 +149,7 @@ export function assessNativeTlsReport(report, runId) {
   require(typeof runId === "string" &&
     runId.length > 0 &&
     report?.runId === runId, "fresh invocation correlation missing");
-  require(report?.patchId === TLS_PATCH_ID &&
+  require(matchesTlsRevision(report?.patchId, expectedPatchId) &&
     report?.loadedBridgeVerified === true, "frozen loaded V2 bridge missing");
   require(report?.productionReady === false &&
     report?.publicProviderAcceptance ===
@@ -299,7 +310,7 @@ export function assessNativeTlsReport(report, runId) {
   };
 }
 
-export function assessNativeReport(report) {
+export function assessNativeReport(report, expectedPatchId) {
   const failures = [...(report?.failures ?? [])];
   const require = (ok, message) => {
     if (!ok) failures.push(message);
@@ -313,7 +324,10 @@ export function assessNativeReport(report) {
     "measure", "measurement report is not acceptance evidence");
   require(report?.mode !==
     "menu", "context-menu evidence report is not acceptance evidence");
-  require(report?.nativeTlsAdmission?.patchId === TLS_PATCH_ID &&
+  require(matchesTlsRevision(
+    report?.nativeTlsAdmission?.patchId,
+    expectedPatchId,
+  ) &&
     report.nativeTlsAdmission.verified ===
       true, "legacy SPKI fixture cannot establish patched-engine TLS admission; run the native TLS suite");
   const policy = report?.networkPolicy;
@@ -2494,6 +2508,24 @@ export async function runAcceptance({
     throw new Error("Invalid timeoutMs (1000..600000)");
   executable = path.resolve(executable);
   output = path.resolve(output);
+  let expectedPatchId;
+  try {
+    const staging = JSON.parse(
+      await readFile(
+        path.join(path.dirname(executable), "acceptance-staging.json"),
+        "utf8",
+      ),
+    );
+    if (staging?.kind === "sorng-cef-custom-package") {
+      expectedPatchId = staging.preflight?.bridge?.patchId;
+      if (![TLS_PATCH_ID, TLS_LEGACY_PATCH_ID].includes(expectedPatchId))
+        throw new Error(
+          "Staged custom runtime has no supported bridge revision pin",
+        );
+    }
+  } catch (error) {
+    if (error?.code !== "ENOENT") throw error;
+  }
   await ensureBrowserSandboxAccess({
     bundle: path.dirname(executable),
     appName: path.basename(executable, ".exe"),
@@ -2766,8 +2798,8 @@ export async function runAcceptance({
   // a crashed/restarted network service must not masquerade as a TLS rejection.
   const assessed = applyNativeCrashGate(
     suite === "tls"
-      ? assessNativeTlsReport(native, runId)
-      : assessNativeReport(native),
+      ? assessNativeTlsReport(native, runId, expectedPatchId)
+      : assessNativeReport(native, expectedPatchId),
     nativeCrashSummary,
   );
   if (exitCode !== 0 || timedOut)

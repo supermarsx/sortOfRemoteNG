@@ -1,0 +1,57 @@
+[package]
+name = "sorng-cef-http2-acceptance"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+# Separate opt-in executable; never linked into the application or normal tests.
+[workspace]
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+sorng-browser-host = { path = "../..", features = ["cef-host"] }
+sorng-protocols = { path = "../../../sorng-protocols" }
+cef = { version = "=154.3.0", default-features = false, features = ["sandbox", "resources"] }
+tao = "=0.35.3"
+tokio = { version = "1", features = ["full"] }
+tokio-rustls = "0.26"
+rustls = "0.23"
+rcgen = "0.12"
+serde_json = "1"
+raw-window-handle = "0.6"
+
+h2 = "0.4"
+http = "1"
+bytes = "1"
+sha1 = "0.10"
+base64 = "0.23"
+
+[patch.crates-io]
+# Keep retired JS event IDs out of queued native dispatch after tab cleanup.
+tauri = { path = "../../../../patches/tauri-event-cleanup" }
+ironrdp-connector = { path = "../../../../patches/ironrdp-connector" }
+ironrdp-blocking = { path = "../../../../patches/ironrdp-blocking" }
+ironrdp-session = { path = "../../../../patches/ironrdp-session" }
+ironrdp-dvc = { path = "../../../../patches/ironrdp-dvc" }
+# Patched copy of office-crypto 0.2.0 — fixes the segment-boundary
+# off-by-one in `decrypt_ooxml` that corrupted multi-segment plaintexts
+# and underflowed for plaintexts shorter than SEGMENT_LENGTH. See the
+# PATCH comment in patches/office-crypto/src/crypto.rs.
+office-crypto = { path = "../../../../patches/office-crypto" }
+# Patched copy of h3 0.0.8 — adds a `Protocol::from_static(&'static str)`
+# constructor so the SSH3 client (sorng-ssh) can emit a custom
+# `:protocol = ssh3` extended-CONNECT pseudo-header. Upstream's `ext::Protocol`
+# is a CLOSED enum with no constructor for arbitrary tokens, which `ssh3`
+# servers require to route the conversation. The patch is minimal + additive
+# (one enum variant + constructor + as_str arm); see vendor/h3-ssh3/src/ext.rs
+# and `.orchestration/logs/t23-e7.md`. Version matches the locked 0.0.8 so it
+# applies cleanly and the whole workspace (incl. h3-quinn) uses the patched h3.
+h3 = { path = "../../../../vendor/h3-ssh3" }
+# Tiberius 0.12.3 TLS-only patch: maintained Rustls 0.23, explicit provider,
+# fallible native roots and additive custom CA trust. See its PATCHES.md.
+tiberius = { path = "../../../../vendor/tiberius-rustls" }
+# Enable upstream WinCNG ECC for the application's Windows 10+ baseline.
+# No changes to native cryptography or host-key policy; see its PATCHES.md.
+libssh2-sys = { path = "../../../../vendor/libssh2-sys-wincng" }
