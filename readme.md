@@ -95,6 +95,8 @@ npm install
 npm run tauri:dev
 ```
 
+Use `npm run tauri:dev:no-watch` to keep the native app running without rebuilding on source changes. It still builds once at launch; frontend hot reload remains enabled.
+
 Build an installer or application bundle for the current platform with:
 
 ```bash

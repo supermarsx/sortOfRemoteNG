@@ -34,6 +34,10 @@ test("package scripts keep both public dev commands on the tested launchers", ()
   );
   assert.equal(scripts.tauri, "node ./scripts/tauri.mjs");
   assert.equal(scripts["tauri:dev"], "node ./scripts/tauri-dev.mjs");
+  assert.equal(
+    scripts["tauri:dev:no-watch"],
+    "node ./scripts/tauri-dev.mjs --no-watch",
+  );
 });
 
 for (const [name, launch, prefix] of [

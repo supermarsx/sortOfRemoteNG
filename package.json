@@ -64,6 +64,7 @@
     "e2e:mock-pve:test": "node --test ./tests/e2e-mock-pve/*.node-test.mjs",
     "tauri": "node ./scripts/tauri.mjs",
     "tauri:dev": "node ./scripts/tauri-dev.mjs",
+    "tauri:dev:no-watch": "node ./scripts/tauri-dev.mjs --no-watch",
     "tauri:build": "node ./scripts/native-build-env.mjs --dynamic-native-runtime tauri build --features full -- --no-default-features",
     "turbo:dev": "turbo dev",
     "turbo:build": "turbo build",

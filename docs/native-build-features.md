@@ -8,6 +8,14 @@ hide_page_header: true
 
 Normal desktop development and direct Cargo builds include all supported native feature families by default. Both `npm run tauri dev` and `npm run tauri:dev` use the managed development launcher with matching frontend port, capability origin and native feature defaults. Restart/rebuild the desktop process to change compiled features; a web reload cannot update a running lean binary.
 
+To build and launch once without automatically rebuilding or restarting the native app on source changes, use:
+
+```sh
+npm run tauri:dev:no-watch
+```
+
+This is shorthand for `npm run tauri dev -- --no-watch`. The initial incremental native build still runs, and the frontend dev server keeps hot reload enabled. Restart the command to pick up Rust or native configuration changes. Other launch options can be combined, for example `npm run tauri:dev:no-watch -- --isolated-profile`.
+
 `default = ["full"]`; `full-dev` is a compatibility alias for `full`. This includes operations, platform integrations, cloud, collaboration, all six database drivers, RDP and its supported decoders/snapshots, serial, OPKSSH, certificate details/authentication, script engine and SoftEther. Security, database ownership, permissions and explicit website automation consent are unchanged. Host-specific APIs still require their supported OS, drivers, services and tools.
 
 Reduced builds are explicit:
