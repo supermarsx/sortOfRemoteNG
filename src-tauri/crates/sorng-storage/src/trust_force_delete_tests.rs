@@ -28,6 +28,7 @@ fn fixture() -> (tempfile::TempDir, TrustRuntime, ForceDeleteContext) {
         active: RwLock::new(None),
         activation_generation: AtomicU64::new(0),
         io: std::sync::Mutex::new(()),
+        decoded: std::sync::Mutex::new(None),
     };
     rt.set_active(Some("active".into()), None).unwrap();
     (

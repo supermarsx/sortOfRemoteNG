@@ -662,57 +662,169 @@ fn validate_fresh_migration(
 /// upgrade without an explicit migration command: a per-DB file
 /// written in P1/P2/P3 (raw JSON under the SDBF preamble) is read
 /// as-is; the next save promotes it to an envelope.
+// Private to one native owner lease. Only decoded outer artifacts are retained;
+// the managed inner database is never opened or cached here. Every hit still
+// reads the complete SDBF recovery-selected bytes and validates current policy.
+#[derive(Default)]
+pub(crate) struct ManagedSnapshotCache {
+    index: Option<DecodedArtifact>,
+    data: Option<DecodedArtifact>,
+    validated: Option<(String, ([u8; 32], [u8; 32]))>,
+}
+#[cfg(test)]
+impl ManagedSnapshotCache {
+    pub(crate) fn hits(&self) -> usize {
+        self.index.as_ref().map_or(0, |entry| entry.hits)
+            + self.data.as_ref().map_or(0, |entry| entry.hits)
+    }
+    pub(crate) fn is_empty(&self) -> bool {
+        self.index.is_none() && self.data.is_none()
+    }
+}
+struct DecodedArtifact {
+    path: std::path::PathBuf,
+    generation: u64,
+    owner: u64,
+    artifact: ArtifactKind,
+    encrypted: bool,
+    digest: [u8; 32],
+    value: std::sync::Arc<serde_json::Value>,
+    #[cfg(test)]
+    hits: usize,
+}
+const MAX_CACHED_OUTER_BYTES: usize = 2 * 1024 * 1024;
+
+fn bounded_decoded_size(value: &serde_json::Value) -> usize {
+    use serde_json::Value;
+    let base = std::mem::size_of::<Value>();
+    match value {
+        Value::String(text) => base.saturating_add(text.capacity()),
+        Value::Array(values) => values.iter().fold(base, |size, item| {
+            size.saturating_add(128)
+                .saturating_add(bounded_decoded_size(item))
+        }),
+        Value::Object(values) => values.iter().fold(base, |size, (key, item)| {
+            size.saturating_add(128)
+                .saturating_add(key.capacity())
+                .saturating_add(bounded_decoded_size(item))
+        }),
+        _ => base,
+    }
+}
+
 async fn encrypted_load(
     state: &EncryptionState,
     artifact: ArtifactKind,
     canonical: &Path,
 ) -> Result<Option<LoadResult>, String> {
+    encrypted_load_cached(state, artifact, canonical, None).await
+}
+
+async fn encrypted_load_cached(
+    state: &EncryptionState,
+    artifact: ArtifactKind,
+    canonical: &Path,
+    mut cache: Option<&mut Option<DecodedArtifact>>,
+) -> Result<Option<LoadResult>, String> {
     let require_encrypted = state.resolve_write_policy(artifact, false)?;
-    let (payload_bytes, source) = match safe_read_raw(canonical).map_err(|e| e.to_string())? {
-        Some(p) => p,
-        None => {
-            for suffix in ["", "bak", "tmp", "v0.bak"] {
-                let path = if suffix.is_empty() {
-                    canonical.to_path_buf()
-                } else {
-                    sibling(canonical, suffix)
-                };
-                match std::fs::symlink_metadata(&path) {
-                    Ok(_) => {
-                        return Err(format!(
-                            "database generations exist but none is readable: {}",
-                            canonical.display()
-                        ))
-                    }
-                    Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
-                    Err(error) => {
-                        return Err(format!(
-                            "inspect database generation {}: {error}",
-                            path.display()
-                        ))
+    let generation = state.key_generation();
+    let (payload_bytes, source, digest) =
+        match safe_read_raw_with_digest(canonical).map_err(|e| e.to_string())? {
+            Some(p) => p,
+            None => {
+                for suffix in ["", "bak", "tmp", "v0.bak"] {
+                    let path = if suffix.is_empty() {
+                        canonical.to_path_buf()
+                    } else {
+                        sibling(canonical, suffix)
+                    };
+                    match std::fs::symlink_metadata(&path) {
+                        Ok(_) => {
+                            return Err(format!(
+                                "database generations exist but none is readable: {}",
+                                canonical.display()
+                            ))
+                        }
+                        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+                        Err(error) => {
+                            return Err(format!(
+                                "inspect database generation {}: {error}",
+                                path.display()
+                            ))
+                        }
                     }
                 }
+                return Ok(None);
             }
-            return Ok(None);
+        };
+
+    if state.key_generation() != generation {
+        if let Some(slot) = cache.as_deref_mut() {
+            *slot = None;
         }
-    };
-
-    if is_envelope_blob(&payload_bytes) {
+        return Err("database key changed during artifact load".into());
+    }
+    if let Some(Some(entry)) = cache.as_deref_mut() {
+        if entry.path == canonical
+            && entry.generation == generation
+            && entry.owner == state.database_session_owner()
+            && entry.artifact == artifact
+            && entry.encrypted == require_encrypted
+            && entry.digest == digest
+        {
+            #[cfg(test)]
+            {
+                entry.hits += 1;
+            }
+            return Ok(Some(LoadResult {
+                value: entry.value.as_ref().clone(),
+                source,
+            }));
+        }
+    }
+    // A failed decode must not leave an old authenticated snapshot reusable.
+    if let Some(slot) = cache.as_deref_mut() {
+        *slot = None;
+    }
+    let value = if is_envelope_blob(&payload_bytes) {
         let plain = decrypt_payload(state, artifact, &payload_bytes).await?;
-        let value: serde_json::Value =
-            serde_json::from_slice(&plain).map_err(|e| format!("decrypted JSON: {e}"))?;
-        return Ok(Some(LoadResult { value, source }));
+        serde_json::from_slice::<serde_json::Value>(&plain)
+            .map_err(|e| format!("decrypted JSON: {e}"))?
+    } else {
+        if require_encrypted {
+            return Err(
+                "database plaintext conflicts with the authenticated encryption policy".into(),
+            );
+        }
+        // Legacy plaintext-P1 path. The file pre-dates P4 — parse the
+        // bytes as raw JSON and return as-is. The next save will wrap it
+        // in an envelope (per the approved "tolerant read + re-encrypt
+        // on write" policy).
+        serde_json::from_slice::<serde_json::Value>(&payload_bytes)
+            .map_err(|e| format!("legacy plaintext JSON: {e}"))?
+    };
+    if state.key_generation() != generation {
+        return Err("database key changed during artifact load".into());
     }
-
-    if require_encrypted {
-        return Err("database plaintext conflicts with the authenticated encryption policy".into());
+    if cache.is_some()
+        && payload_bytes.len() <= MAX_CACHED_OUTER_BYTES
+        && bounded_decoded_size(&value) <= MAX_CACHED_OUTER_BYTES
+        && (artifact != ArtifactKind::Connections || value.is_string())
+    {
+        if let Some(slot) = cache {
+            *slot = Some(DecodedArtifact {
+                path: canonical.to_path_buf(),
+                generation,
+                owner: state.database_session_owner(),
+                artifact,
+                encrypted: require_encrypted,
+                digest,
+                value: std::sync::Arc::new(value.clone()),
+                #[cfg(test)]
+                hits: 0,
+            });
+        }
     }
-    // Legacy plaintext-P1 path. The file pre-dates P4 — parse the
-    // bytes as raw JSON and return as-is. The next save will wrap it
-    // in an envelope (per the approved "tolerant read + re-encrypt
-    // on write" policy).
-    let value: serde_json::Value = serde_json::from_slice(&payload_bytes)
-        .map_err(|e| format!("legacy plaintext JSON: {e}"))?;
     Ok(Some(LoadResult { value, source }))
 }
 
@@ -1164,11 +1276,21 @@ pub(crate) struct ManagedSnapshot {
     pub index: serde_json::Value,
     pub row: serde_json::Value,
     pub data: serde_json::Value,
+    pub content_fingerprint: Option<([u8; 32], [u8; 32])>,
 }
 pub(crate) async fn managed_snapshot(
     profile: &Path,
     state: &EncryptionState,
     id: &str,
+) -> Result<ManagedSnapshot, String> {
+    managed_snapshot_cached(profile, state, id, &mut ManagedSnapshotCache::default()).await
+}
+
+pub(crate) async fn managed_snapshot_cached(
+    profile: &Path,
+    state: &EncryptionState,
+    id: &str,
+    cache: &mut ManagedSnapshotCache,
 ) -> Result<ManagedSnapshot, String> {
     database_transaction::validate_database_id(id)?;
     state.resolve_write_policy(ArtifactKind::Connections, false)?;
@@ -1179,10 +1301,15 @@ pub(crate) async fn managed_snapshot(
     sorng_encryption::artifact_transaction::validate_regular_path(profile, &path, true)?;
     sorng_encryption::artifact_transaction::validate_regular_path(profile, &index_path, true)?;
     recover_database_transactions(&dir)?;
-    let index = encrypted_load(state, ArtifactKind::DatabasesIndex, &index_path)
-        .await?
-        .ok_or("database index missing")?
-        .value;
+    let index = encrypted_load_cached(
+        state,
+        ArtifactKind::DatabasesIndex,
+        &index_path,
+        Some(&mut cache.index),
+    )
+    .await?
+    .ok_or("database index missing")?
+    .value;
     let row = index
         .as_array()
         .ok_or("database index malformed")?
@@ -1190,18 +1317,35 @@ pub(crate) async fn managed_snapshot(
         .find(|row| row.get("id").and_then(serde_json::Value::as_str) == Some(id))
         .ok_or("database no longer exists")?
         .clone();
-    let data = encrypted_load(state, ArtifactKind::Connections, &path)
-        .await?
-        .ok_or("database payload missing")?
-        .value;
+    let data = encrypted_load_cached(
+        state,
+        ArtifactKind::Connections,
+        &path,
+        Some(&mut cache.data),
+    )
+    .await?
+    .ok_or("database payload missing")?
+    .value;
     validate_data_shape(
         &data,
         row.get("isEncrypted")
             .and_then(serde_json::Value::as_bool)
             .ok_or("database encryption metadata malformed")?,
     )?;
-    if row.get("protectionFormat").is_some()
-        || sorng_encryption::database_protection::is_managed(&data)
+    let content_fingerprint = cache
+        .index
+        .as_ref()
+        .zip(cache.data.as_ref())
+        .map(|(index, data)| (index.digest, data.digest));
+    let already_validated = content_fingerprint.is_some_and(|fingerprint| {
+        cache
+            .validated
+            .as_ref()
+            .is_some_and(|(owner, prior)| owner == id && *prior == fingerprint)
+    });
+    if !already_validated
+        && (row.get("protectionFormat").is_some()
+            || sorng_encryption::database_protection::is_managed(&data))
     {
         let envelope = sorng_encryption::database_protection::DatabaseEnvelope::parse(&data, id)?;
         if envelope.security_revision != security_revision(&row) {
@@ -1210,7 +1354,13 @@ pub(crate) async fn managed_snapshot(
             );
         }
     }
-    Ok(ManagedSnapshot { index, row, data })
+    cache.validated = content_fingerprint.map(|fingerprint| (id.to_owned(), fingerprint));
+    Ok(ManagedSnapshot {
+        index,
+        row,
+        data,
+        content_fingerprint,
+    })
 }
 
 /// Prepare ciphertext asynchronously, then enter the exact native owner fence
@@ -2347,6 +2497,166 @@ mod tests {
             .await
             .unwrap_err()
             .contains("none is readable"));
+    }
+
+    #[tokio::test]
+    async fn native_outer_cache_hashes_current_bytes_and_never_retains_open_credentials() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("index.json");
+        let state = EncryptionState::new();
+        let mut cache = None;
+        safe_write(&path, br#"[{"id":"one"}]"#).unwrap();
+        let load = encrypted_load_cached(
+            &state,
+            ArtifactKind::DatabasesIndex,
+            &path,
+            Some(&mut cache),
+        )
+        .await
+        .unwrap()
+        .unwrap();
+        assert_eq!(load.value[0]["id"], "one");
+        let stamp = std::fs::metadata(&path).unwrap().modified().unwrap();
+        encrypted_load_cached(
+            &state,
+            ArtifactKind::DatabasesIndex,
+            &path,
+            Some(&mut cache),
+        )
+        .await
+        .unwrap();
+        assert_eq!(cache.as_ref().unwrap().hits, 1);
+        safe_write(&path, br#"[{"id":"two"}]"#).unwrap();
+        std::fs::File::options()
+            .write(true)
+            .open(&path)
+            .unwrap()
+            .set_times(std::fs::FileTimes::new().set_modified(stamp))
+            .unwrap();
+        let changed = encrypted_load_cached(
+            &state,
+            ArtifactKind::DatabasesIndex,
+            &path,
+            Some(&mut cache),
+        )
+        .await
+        .unwrap()
+        .unwrap();
+        assert_eq!(changed.value[0]["id"], "two");
+        assert_eq!(cache.as_ref().unwrap().hits, 0);
+        let other = dir.path().join("other.json");
+        safe_write(
+            &other,
+            br#"{"connections":[{"password":"synthetic-secret"}]}"#,
+        )
+        .unwrap();
+        encrypted_load_cached(&state, ArtifactKind::Connections, &other, Some(&mut cache))
+            .await
+            .unwrap();
+        assert!(
+            cache.is_none(),
+            "opened legacy credentials must not be retained"
+        );
+        std::fs::write(&other, b"unreadable").unwrap();
+        assert!(
+            encrypted_load_cached(&state, ArtifactKind::Connections, &other, Some(&mut cache))
+                .await
+                .is_err()
+        );
+    }
+
+    #[tokio::test]
+    async fn native_outer_cache_reauthenticates_key_rotation_and_same_stamp_tamper() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("index.json");
+        let state = unlocked_state(0x31).await;
+        save_payload(
+            &state,
+            ArtifactKind::DatabasesIndex,
+            &path,
+            &serde_json::json!([{"id":"db"}]),
+            true,
+        )
+        .await
+        .unwrap();
+        let mut cache = None;
+        encrypted_load_cached(
+            &state,
+            ArtifactKind::DatabasesIndex,
+            &path,
+            Some(&mut cache),
+        )
+        .await
+        .unwrap();
+        encrypted_load_cached(
+            &state,
+            ArtifactKind::DatabasesIndex,
+            &path,
+            Some(&mut cache),
+        )
+        .await
+        .unwrap();
+        assert_eq!(cache.as_ref().unwrap().hits, 1);
+        let foreign = unlocked_state(0x41).await;
+        assert_eq!(foreign.key_generation(), state.key_generation());
+        assert!(encrypted_load_cached(
+            &foreign,
+            ArtifactKind::DatabasesIndex,
+            &path,
+            Some(&mut cache)
+        )
+        .await
+        .is_err());
+        assert!(cache.is_none());
+        encrypted_load_cached(
+            &state,
+            ArtifactKind::DatabasesIndex,
+            &path,
+            Some(&mut cache),
+        )
+        .await
+        .unwrap();
+        let original = safe_read_raw(&path).unwrap().unwrap().0;
+        let stamp = std::fs::metadata(&path).unwrap().modified().unwrap();
+        let mut changed = original.clone();
+        *changed.last_mut().unwrap() ^= 1;
+        safe_write(&path, &changed).unwrap();
+        std::fs::File::options()
+            .write(true)
+            .open(&path)
+            .unwrap()
+            .set_times(std::fs::FileTimes::new().set_modified(stamp))
+            .unwrap();
+        assert!(encrypted_load_cached(
+            &state,
+            ArtifactKind::DatabasesIndex,
+            &path,
+            Some(&mut cache)
+        )
+        .await
+        .is_err());
+        assert!(cache.is_none());
+        safe_write(&path, &original).unwrap();
+        encrypted_load_cached(
+            &state,
+            ArtifactKind::DatabasesIndex,
+            &path,
+            Some(&mut cache),
+        )
+        .await
+        .unwrap();
+        state
+            .install(MasterDek::from_bytes(&[0x32; 32]).unwrap())
+            .await;
+        assert!(encrypted_load_cached(
+            &state,
+            ArtifactKind::DatabasesIndex,
+            &path,
+            Some(&mut cache)
+        )
+        .await
+        .is_err());
+        assert!(cache.is_none());
     }
 
     #[test]

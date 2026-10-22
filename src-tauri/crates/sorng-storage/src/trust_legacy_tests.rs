@@ -55,6 +55,7 @@ fn fixture() -> (tempfile::TempDir, TrustRuntime, Value) {
         active: RwLock::new(None),
         activation_generation: AtomicU64::new(0),
         io: std::sync::Mutex::new(()),
+        decoded: std::sync::Mutex::new(None),
     };
     (root, rt, payload)
 }

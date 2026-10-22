@@ -278,6 +278,67 @@ impl NativeCertificatePermit {
     }
 }
 
+#[derive(Default)]
+struct ParsedCertificates {
+    entries: BTreeMap<[u8; 32], Arc<sorng_protocols::http::TlsCertificateInfo>>,
+    bytes: usize,
+    #[cfg(test)]
+    hits: usize,
+}
+impl ParsedCertificates {
+    fn capture(
+        &mut self,
+        chain: &[Vec<u8>],
+    ) -> Result<Arc<sorng_protocols::http::TlsCertificateInfo>, NativeAuthorityError> {
+        use sha2::{Digest, Sha256};
+        let error = NativeAuthorityError::CertificatePolicyUnsupported;
+        let total = chain
+            .iter()
+            .try_fold(0usize, |n, der| n.checked_add(der.len()))
+            .ok_or(error)?;
+        if chain.is_empty() || chain.len() > 32 || total > 2 * 1024 * 1024 {
+            return Err(error);
+        }
+        let mut hash = Sha256::new();
+        for der in chain {
+            hash.update((der.len() as u64).to_le_bytes());
+            hash.update(der);
+        }
+        let fingerprint: [u8; 32] = hash.finalize().into();
+        if let Some(parsed) = self.entries.get(&fingerprint) {
+            #[cfg(test)]
+            {
+                self.hits += 1;
+            }
+            return Ok(parsed.clone());
+        }
+        let parsed =
+            sorng_protocols::http::capture_peer_certificate_chain(chain).map_err(|_| error)?;
+        if parsed.chain.is_empty()
+            || parsed
+                .chain
+                .iter()
+                .any(|entry| entry.details.parse_error.is_some())
+        {
+            return Err(error);
+        }
+        let cost = serde_json::to_vec(&parsed)
+            .map_err(|_| error)?
+            .len()
+            .saturating_mul(8);
+        let parsed = Arc::new(parsed);
+        if cost <= 2 * 1024 * 1024 {
+            if self.entries.len() >= 8 || self.bytes.saturating_add(cost) > 2 * 1024 * 1024 {
+                self.entries.clear();
+                self.bytes = 0;
+            }
+            self.bytes += cost;
+            self.entries.insert(fingerprint, parsed.clone());
+        }
+        Ok(parsed)
+    }
+}
+
 pub struct NativeCertificateAuthority {
     browser: BrowserIdentity,
     network_origins: NetworkOriginGrant,
@@ -285,6 +346,9 @@ pub struct NativeCertificateAuthority {
     system_ca: bool,
     lease: NativeOwnerLease,
     temporary_pins: Option<Arc<Mutex<TemporaryPins>>>,
+    // Pure public-certificate parsing only. No decision, permit, owner or native
+    // CA result is cached; the exact DER chain is hashed on every handshake.
+    parsed: Mutex<ParsedCertificates>,
 }
 
 pub(super) fn saved_policy(
@@ -324,6 +388,10 @@ pub(super) fn saved_policy(
 }
 
 impl NativeCertificateAuthority {
+    #[cfg(test)]
+    pub(crate) fn parsed_cache_hits(&self) -> usize {
+        self.parsed.lock().unwrap().hits
+    }
     pub(super) fn new(
         connection: &Value,
         settings: &Value,
@@ -349,6 +417,7 @@ impl NativeCertificateAuthority {
                 .unwrap_or("system")
                 == "system",
             lease: lease.clone(),
+            parsed: Mutex::new(ParsedCertificates::default()),
             temporary_pins: lease
                 .is_temporary()
                 .then(|| Arc::new(Mutex::new(TemporaryPins::default()))),
@@ -370,8 +439,11 @@ impl NativeCertificateAuthority {
         {
             return Ok(NativeCertificateDecision::Deny);
         }
-        let captured = sorng_protocols::http::capture_peer_certificate_chain(&evidence.chain_der)
-            .map_err(|_| error)?;
+        let captured = self
+            .parsed
+            .lock()
+            .map_err(|_| error)?
+            .capture(&evidence.chain_der)?;
         if captured.chain.is_empty()
             || captured
                 .chain
@@ -380,7 +452,7 @@ impl NativeCertificateAuthority {
         {
             return Err(error);
         }
-        let mut value = serde_json::to_value(&captured).map_err(|_| error)?;
+        let mut value = serde_json::to_value(captured.as_ref()).map_err(|_| error)?;
         let now = chrono::Utc::now().to_rfc3339();
         value["first_seen"] = now.clone().into();
         value["last_seen"] = now.into();
@@ -697,6 +769,92 @@ fn encode(value: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn parsed_certificate_cache_reuses_only_complete_exact_valid_chains() {
+        use base64::Engine;
+        let pem = include_str!("../vendor/tiberius-rustls/docker/certs/server.crt");
+        let encoded: String = pem
+            .lines()
+            .filter(|line| !line.starts_with("---"))
+            .map(str::trim)
+            .collect();
+        let der = base64::engine::general_purpose::STANDARD
+            .decode(&encoded)
+            .unwrap();
+        let mut cache = ParsedCertificates::default();
+        let one = cache.capture(std::slice::from_ref(&der)).unwrap();
+        let same = cache.capture(std::slice::from_ref(&der)).unwrap();
+        assert!(Arc::ptr_eq(&one, &same));
+        let longer = cache.capture(&[der.clone(), der]).unwrap();
+        assert!(!Arc::ptr_eq(&one, &longer));
+        assert_eq!(longer.chain.len(), 2);
+        assert_eq!(cache.entries.len(), 2);
+        assert!(cache.capture(&[vec![0, 1, 2]]).is_err());
+        assert!(cache.capture(&[]).is_err());
+        assert_eq!(
+            cache.entries.len(),
+            2,
+            "invalid certificate parses never enter the cache"
+        );
+        assert!(cache.bytes <= 2 * 1024 * 1024);
+        // Vary the full issuer sequence while retaining the same leaf. These
+        // are distinct parse snapshots, not equivalent leaf-only cache keys.
+        let der = base64::engine::general_purpose::STANDARD
+            .decode(&encoded)
+            .unwrap();
+        for count in 3..=10 {
+            cache.capture(&vec![der.clone(); count]).unwrap();
+            assert!(cache.entries.len() <= 8);
+            assert!(cache.bytes <= 2 * 1024 * 1024);
+        }
+        let replaced = cache.capture(&[der]).unwrap();
+        assert!(!Arc::ptr_eq(&one, &replaced), "evicted parses are rebuilt");
+        let mut value = serde_json::to_value(replaced.as_ref()).unwrap();
+        value["first_seen"] = "2026-01-01T00:00:00Z".into();
+        value["last_seen"] = "2026-01-01T00:00:00Z".into();
+        value["chain_fingerprints"] = serde_json::json!(replaced
+            .chain
+            .iter()
+            .map(|cert| cert.fingerprint.clone())
+            .collect::<Vec<_>>());
+        let identity: CertIdentity = serde_json::from_value(value).unwrap();
+        assert_eq!(
+            temporary_action(None, &identity, &TrustPolicy::CaTrustOnly, true, true, true),
+            Action::Remember
+        );
+        assert_eq!(
+            temporary_action(
+                None,
+                &identity,
+                &TrustPolicy::CaTrustOnly,
+                true,
+                false,
+                true
+            ),
+            Action::Deny,
+            "a parsed cache hit never reuses earlier native CA evidence"
+        );
+        assert_eq!(
+            temporary_action(
+                None,
+                &identity,
+                &TrustPolicy::CaTrustOnly,
+                true,
+                true,
+                false
+            ),
+            Action::Deny,
+            "current validity is evaluated after immutable parsing"
+        );
+        assert!(
+            matches!(
+                temporary_action(None, &identity, &TrustPolicy::AlwaysAsk, true, true, true),
+                Action::Review(_)
+            ),
+            "current policy still controls admission for the same parsed certificate"
+        );
+    }
 
     fn temporary_certificate(leaf: char, issuer: char) -> CertIdentity {
         serde_json::from_value(serde_json::json!({

@@ -16,6 +16,7 @@
 
 use chrono::Utc;
 use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 use std::collections::HashMap;
 use std::io::Read;
 use std::path::{Path, PathBuf};
@@ -1843,7 +1844,22 @@ pub struct TrustRuntime {
     /// Serialises every read-modify-write across the async service and the
     /// synchronous verifiers (they share the file, not the memory).
     io: std::sync::Mutex<()>,
+    decoded: std::sync::Mutex<Option<DecodedTrust>>,
 }
+
+// One bounded active-document snapshot, never a cached trust verdict. Every hit
+// still reads and hashes recovery-selected bytes and checks the current key.
+struct DecodedTrust {
+    path: PathBuf,
+    activation: u64,
+    key_generation: u64,
+    key_digest: Option<[u8; 32]>,
+    payload_digest: [u8; 32],
+    data: Arc<TrustStoreData>,
+    #[cfg(test)]
+    hits: usize,
+}
+const MAX_DECODED_TRUST_BYTES: usize = 2 * 1024 * 1024;
 
 struct TrustIoGuard<'a> {
     _io: std::sync::MutexGuard<'a, ()>,
@@ -1874,6 +1890,7 @@ pub fn install_runtime(
         active: RwLock::new(None),
         activation_generation: AtomicU64::new(0),
         io: std::sync::Mutex::new(()),
+        decoded: std::sync::Mutex::new(None),
     });
     match runtime_slot().write() {
         Ok(mut slot) => *slot = Some(rt.clone()),
@@ -2131,6 +2148,10 @@ impl TrustRuntime {
             .map_err(|_| "trust runtime active lock poisoned".to_string())?;
         *guard = next;
         self.activation_generation.fetch_add(1, Ordering::AcqRel);
+        *self
+            .decoded
+            .lock()
+            .map_err(|_| "trust cache lock poisoned")? = None;
         Ok(())
     }
 
@@ -2323,7 +2344,8 @@ impl TrustRuntime {
             );
         }
         refuse_symlink(canonical)?;
-        let Some((payload, _source)) = sdbf::safe_read_raw(canonical).map_err(|e| e.to_string())?
+        let Some((payload, _source, payload_digest)) =
+            sdbf::safe_read_raw_with_digest(canonical).map_err(|e| e.to_string())?
         else {
             if any_generation {
                 return Err(
@@ -2332,6 +2354,45 @@ impl TrustRuntime {
             }
             return Ok(TrustStoreData::default());
         };
+        let activation = self.activation_generation.load(Ordering::Acquire);
+        let key_generation = self
+            .enc_state
+            .as_ref()
+            .map_or(0, |state| state.key_generation());
+        let key_digest = key.map(|key| Sha256::digest(key.bytes()).into());
+        // Policy checks remain live even when decoded bytes match exactly.
+        if !is_envelope_blob(&payload) {
+            if let Some(state) = &self.enc_state {
+                if state.resolve_write_policy_with_key(ArtifactKind::TrustStore, false, key)? {
+                    return Err(
+                        "plaintext trust store conflicts with the authenticated encryption policy"
+                            .into(),
+                    );
+                }
+            }
+        }
+        {
+            let mut cached = self
+                .decoded
+                .lock()
+                .map_err(|_| "trust cache lock poisoned")?;
+            if let Some(entry) = cached.as_mut() {
+                if entry.path == canonical
+                    && entry.activation == activation
+                    && entry.key_generation == key_generation
+                    && entry.key_digest == key_digest
+                    && entry.payload_digest == payload_digest
+                {
+                    #[cfg(test)]
+                    {
+                        entry.hits += 1;
+                    }
+                    return Ok(entry.data.as_ref().clone());
+                }
+            }
+            *cached = None;
+        }
+        let payload_len = payload.len();
         let plain = if is_envelope_blob(&payload) {
             let key = key.ok_or_else(|| {
                 "trust store is encrypted; unlock first via Settings → Security".to_string()
@@ -2358,6 +2419,29 @@ impl TrustRuntime {
         let data: TrustStoreData = serde_json::from_slice(&plain)
             .map_err(|error| format!("parse trust store {}: {error}", canonical.display()))?;
         validate_trust_store_data(&data)?;
+        // Conservative bound for strings, collection nodes and typed records;
+        // entries outside this budget remain fully supported without caching.
+        let retained_budget = plain.len().saturating_mul(8).saturating_add(
+            data.records
+                .len()
+                .saturating_mul(std::mem::size_of::<TrustRecord>())
+                .saturating_mul(2),
+        );
+        if payload_len <= MAX_DECODED_TRUST_BYTES && retained_budget <= MAX_DECODED_TRUST_BYTES {
+            *self
+                .decoded
+                .lock()
+                .map_err(|_| "trust cache lock poisoned")? = Some(DecodedTrust {
+                path: canonical.to_path_buf(),
+                activation,
+                key_generation,
+                key_digest,
+                payload_digest,
+                data: Arc::new(data.clone()),
+                #[cfg(test)]
+                hits: 0,
+            });
+        }
         Ok(data)
     }
 
@@ -2409,6 +2493,10 @@ impl TrustRuntime {
         data: &TrustStoreData,
         key: Option<&SubKey>,
     ) -> Result<(), String> {
+        *self
+            .decoded
+            .lock()
+            .map_err(|_| "trust cache lock poisoned")? = None;
         refuse_symlink(canonical)?;
         validate_trust_store_data(data)?;
         let plain =
@@ -3124,6 +3212,38 @@ mod runtime_tests {
     use super::*;
     use sorng_encryption::MasterDek;
     use tempfile::tempdir;
+
+    #[tokio::test]
+    async fn decoded_cache_requires_current_exact_bytes_key_and_activation() {
+        let _storage_fixture = crate::STORAGE_FIXTURE.lock().await;
+        let dir = tempdir().unwrap();
+        let guard = install_active_runtime_for_tests(dir.path().join("databases"), "selected");
+        let rt = &guard.runtime;
+        let path = rt.trust_file_path("selected").unwrap();
+        let data = TrustStoreData::default();
+        rt.write_file(&path, &data).unwrap();
+        rt.read_file(&path).unwrap();
+        rt.read_file(&path).unwrap();
+        assert!(rt.decoded.lock().unwrap().as_ref().unwrap().hits > 0);
+        let stamp = std::fs::metadata(&path).unwrap().modified().unwrap();
+        let mut changed = data.clone();
+        changed.policy = TrustPolicy::CertificatePinning;
+        sdbf::safe_write(&path, &serde_json::to_vec(&changed).unwrap()).unwrap();
+        std::fs::File::options()
+            .write(true)
+            .open(&path)
+            .unwrap()
+            .set_times(std::fs::FileTimes::new().set_modified(stamp))
+            .unwrap();
+        assert_eq!(
+            rt.read_file(&path).unwrap().policy,
+            TrustPolicy::CertificatePinning
+        );
+        assert_eq!(rt.decoded.lock().unwrap().as_ref().unwrap().hits, 0);
+        rt.set_active(None, None).unwrap();
+        assert!(rt.decoded.lock().unwrap().is_none());
+        assert!(rt.load_active().is_err());
+    }
 
     #[tokio::test]
     async fn shared_stale_verification_cannot_resurrect_reviewed_forget_or_revoke() {

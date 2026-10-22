@@ -153,6 +153,10 @@ pub fn encode_preamble(payload: &[u8]) -> [u8; PREAMBLE_LEN] {
 /// payload slice on success. Catches: short buffer, wrong magic,
 /// unknown version, payload length mismatch, checksum mismatch.
 pub fn parse_and_verify(bytes: &[u8]) -> Result<&[u8], FileStoreError> {
+    parse_and_verify_digest(bytes).map(|(payload, _)| payload)
+}
+
+fn parse_and_verify_digest(bytes: &[u8]) -> Result<(&[u8], [u8; 32]), FileStoreError> {
     if bytes.len() < PREAMBLE_LEN {
         return Err(FileStoreError::Preamble(format!(
             "buffer is {} bytes, preamble needs {}",
@@ -186,14 +190,14 @@ pub fn parse_and_verify(bytes: &[u8]) -> Result<&[u8], FileStoreError> {
         )));
     }
     let payload = &bytes[PREAMBLE_LEN..PREAMBLE_LEN + payload_len];
-    let actual_checksum = checksum(payload);
-    if actual_checksum != stamped_checksum {
+    let digest: [u8; 32] = Sha256::digest(payload).into();
+    if digest[..CHECKSUM_LEN] != stamped_checksum {
         return Err(FileStoreError::Verify(
             "checksum".into(),
             "stored checksum does not match payload".into(),
         ));
     }
-    Ok(payload)
+    Ok((payload, digest))
 }
 
 // ══════════════════════════════════════════════════════════════════
@@ -270,6 +274,18 @@ pub fn safe_write(canonical: &Path, payload: &[u8]) -> Result<(), FileStoreError
 /// not valid JSON, so the JSON-parsing step in `safe_read` would
 /// false-reject a valid encrypted file.
 pub fn safe_read_raw(canonical: &Path) -> Result<Option<(Vec<u8>, LoadSource)>, FileStoreError> {
+    safe_read_raw_with_digest(canonical)
+        .map(|result| result.map(|(payload, source, _)| (payload, source)))
+}
+
+/// Same recovery-selected payload and checksum validation as `safe_read_raw`,
+/// with the complete SHA-256 already computed during validation. Never use the
+/// truncated on-disk checksum as an authenticated-memory cache fingerprint.
+pub type VerifiedRawPayload = (Vec<u8>, LoadSource, [u8; 32]);
+
+pub fn safe_read_raw_with_digest(
+    canonical: &Path,
+) -> Result<Option<VerifiedRawPayload>, FileStoreError> {
     let candidates = [
         (canonical.to_path_buf(), LoadSource::Current),
         (sibling(canonical, "bak"), LoadSource::Backup),
@@ -286,11 +302,11 @@ pub fn safe_read_raw(canonical: &Path) -> Result<Option<(Vec<u8>, LoadSource)>, 
             Ok(b) => b,
             Err(_) => continue,
         };
-        let payload = match parse_and_verify(&bytes) {
+        let (payload, digest) = match parse_and_verify_digest(&bytes) {
             Ok(p) => p,
             Err(_) => continue,
         };
-        return Ok(Some((payload.to_vec(), *source)));
+        return Ok(Some((payload.to_vec(), *source, digest)));
     }
     Ok(None)
 }
@@ -344,6 +360,33 @@ pub fn sibling(canonical: &Path, suffix: &str) -> PathBuf {
 mod tests {
     use super::*;
     use tempfile::tempdir;
+
+    #[test]
+    fn full_digest_tracks_exact_recovery_selected_payload() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("digest.json");
+        safe_write(&path, b"first").unwrap();
+        let (first, source, hash) = safe_read_raw_with_digest(&path).unwrap().unwrap();
+        assert_eq!(source, LoadSource::Current);
+        assert_eq!(hash.as_slice(), Sha256::digest(&first).as_slice());
+        let stamp = std::fs::metadata(&path).unwrap().modified().unwrap();
+        safe_write(&path, b"other").unwrap();
+        std::fs::File::options()
+            .write(true)
+            .open(&path)
+            .unwrap()
+            .set_times(std::fs::FileTimes::new().set_modified(stamp))
+            .unwrap();
+        let (other, _, other_hash) = safe_read_raw_with_digest(&path).unwrap().unwrap();
+        assert_ne!(hash, other_hash);
+        assert_eq!(other, b"other");
+        std::fs::write(&path, b"bad-checksum").unwrap();
+        let (recovered, source, recovered_hash) =
+            safe_read_raw_with_digest(&path).unwrap().unwrap();
+        assert_eq!(source, LoadSource::Backup);
+        assert_eq!(recovered, first);
+        assert_eq!(recovered_hash, hash);
+    }
 
     /// Round-trip through the extracted codec, then prove the `.bak`
     /// fallback still works from the new location — including for a

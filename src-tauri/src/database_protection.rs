@@ -1,6 +1,9 @@
 //! Native managed inner-database control plane. The renderer receives plaintext
 //! only for an unlocked database, never DEKs, KEKs, or vault secret material.
-use crate::database_files::{lock_database_operation, managed_snapshot, ManagedSnapshot};
+use crate::database_files::{
+    lock_database_operation, managed_snapshot, managed_snapshot_cached, ManagedSnapshot,
+    ManagedSnapshotCache,
+};
 // Shared artifact adapters also compile in app_lib, which intentionally has no
 // database_files module. Expose the same guard through the existing public
 // protection facade; do not duplicate or weaken its plaintext-vault checks.
@@ -547,6 +550,9 @@ pub mod native_browser_owner {
     }
 
     fn recheck_content(snapshot: &ManagedSnapshot) -> Result<([u8; 32], [u8; 32]), String> {
+        if let Some(content) = snapshot.content_fingerprint {
+            return Ok(content);
+        }
         // managed_snapshot already validates the string envelope. Hash its
         // exact bytes directly: re-serializing a megabyte JSON string adds a
         // second escaping/allocation pass without adding any security binding.
@@ -576,6 +582,7 @@ pub mod native_browser_owner {
         dependencies: std::sync::Mutex<Dependencies>,
         source_dependencies: std::sync::OnceLock<Arc<dyn SourceDependencies>>,
         recheck_proof: std::sync::Mutex<Option<RecheckProof>>,
+        snapshot_cache: tokio::sync::Mutex<ManagedSnapshotCache>,
         revoked: AtomicBool,
         revocation_cause: AtomicU8,
         cookie_gate: std::sync::Mutex<()>,
@@ -998,6 +1005,9 @@ pub mod native_browser_owner {
                 // all key deliveries retain their existing serialization gates;
                 // an in-flight operation also checks validity before returning.
                 inner.revoked.store(true, Ordering::Release);
+                if let Ok(mut cache) = inner.snapshot_cache.try_lock() {
+                    *cache = ManagedSnapshotCache::default();
+                }
             }
             valid && !inner.revoked.load(Ordering::Acquire)
         }
@@ -1006,6 +1016,9 @@ pub mod native_browser_owner {
         pub fn revoke(&self) {
             let _gate = self.0.cookie_gate.lock().unwrap_or_else(|e| e.into_inner());
             self.0.revoked.store(true, Ordering::Release);
+            if let Ok(mut cache) = self.0.snapshot_cache.try_lock() {
+                *cache = ManagedSnapshotCache::default();
+            }
         }
 
         /// Revoke after a failed recheck and return the cause now latched.
@@ -1032,6 +1045,9 @@ pub mod native_browser_owner {
                 Err(first) => first,
             };
             inner.revoked.store(true, Ordering::Release);
+            if let Ok(mut cache) = inner.snapshot_cache.try_lock() {
+                *cache = ManagedSnapshotCache::default();
+            }
             if latched == CAUSE_SOURCE_CHANGED {
                 RecheckFailure::SourceChanged
             } else {
@@ -1158,6 +1174,7 @@ pub mod native_browser_owner {
                         // not to the route the browser attempt dials through.
                         source_dependencies: std::sync::OnceLock::new(),
                         recheck_proof: std::sync::Mutex::new(None),
+                        snapshot_cache: tokio::sync::Mutex::new(ManagedSnapshotCache::default()),
                         revoked: AtomicBool::new(false),
                         revocation_cause: AtomicU8::new(CAUSE_NONE),
                         cookie_gate: std::sync::Mutex::new(()),
@@ -1213,6 +1230,23 @@ pub mod native_browser_owner {
             result
         }
 
+        async fn checked_snapshot(&self, state: &EncryptionState) -> Result<ManagedSnapshot, String> {
+            let inner = &self.0;
+            let mut cache = inner.snapshot_cache.lock().await;
+            if !self.is_current() {
+                *cache = ManagedSnapshotCache::default();
+                return Err(UNAVAILABLE.into());
+            }
+            let loaded = managed_snapshot_cached(&inner.root, state, &inner.database, &mut cache).await;
+            // The nonblocking revoker may have found this mutex held. Its
+            // owning worker discards the snapshot before releasing the lock.
+            if !self.is_current() {
+                *cache = ManagedSnapshotCache::default();
+                return Err(UNAVAILABLE.into());
+            }
+            loaded
+        }
+
         async fn recheck_inner<R: Runtime>(
             &self,
             window: &WebviewWindow<R>,
@@ -1239,7 +1273,7 @@ pub mod native_browser_owner {
             if native_root(window, state)? != inner.root || !self.is_current() {
                 return Err(UNAVAILABLE.into());
             }
-            let snapshot = managed_snapshot(&inner.root, state, &inner.database).await?;
+            let snapshot = self.checked_snapshot(state).await?;
             timing.mark_slot(2);
             if !is_managed(&snapshot) || revision(&snapshot) != inner.revision {
                 return Err(UNAVAILABLE.into());
@@ -1549,6 +1583,56 @@ pub mod native_browser_owner {
             }
         }
 
+        #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+        async fn outer_snapshot_cache_coalesces_concurrent_reads_and_revocation_clears_it() {
+            let f = Fixture::new(1024).await;
+            let lease = f.lease().await;
+            let barrier = Arc::new(tokio::sync::Barrier::new(8));
+            let mut jobs = tokio::task::JoinSet::new();
+            for _ in 0..8 {
+                let (lease, window, state, barrier) = (
+                    lease.clone(),
+                    f.window.clone(),
+                    f.state.clone(),
+                    barrier.clone(),
+                );
+                jobs.spawn(async move {
+                    barrier.wait().await;
+                    lease.recheck(&window, &state).await
+                });
+            }
+            while let Some(result) = jobs.join_next().await {
+                result.unwrap().unwrap();
+            }
+            assert_eq!(
+                lease.0.snapshot_cache.lock().await.hits(),
+                14,
+                "one decoded snapshot then seven exact-content hits for both documents"
+            );
+            lease.revoke();
+            assert!(lease.0.snapshot_cache.lock().await.is_empty());
+            assert!(lease.recheck(&f.window, &f.state).await.is_err());
+        }
+
+        #[tokio::test]
+        async fn outer_snapshot_cache_inflight_revocation_discards_repopulated_cache() {
+            use std::future::Future;
+            let f = Fixture::new(32).await;
+            let lease = f.lease().await;
+            lease.recheck(&f.window, &f.state).await.unwrap();
+            let held = lease.0.snapshot_cache.lock().await;
+            let pending = lease.checked_snapshot(&f.state);
+            tokio::pin!(pending);
+            let mut context = std::task::Context::from_waker(std::task::Waker::noop());
+            assert!(pending.as_mut().poll(&mut context).is_pending(),
+                "actual snapshot worker is blocked on the held cache mutex");
+            lease.revoke();
+            assert!(!held.is_empty(), "held cache proves the nonblocking clear could not run");
+            drop(held);
+            assert!(pending.await.is_err());
+            assert!(lease.0.snapshot_cache.lock().await.is_empty());
+        }
+
         #[tokio::test]
         async fn recheck_cache_uses_exact_content_and_index_despite_same_length_and_mtime() {
             let mut f = Fixture::new(32).await;
@@ -1784,6 +1868,8 @@ pub mod native_browser_owner {
                     println!("fixture_bytes={} iteration={} authorize_us={} before_us={} recheck_phases_us={:?} certificate_us={} after_us={}",
                                 f.plaintext_bytes, iteration, authorize_us, stages[5], costs, certificate_us, after_us);
                 }
+                println!("fixture_bytes={} outer_cache_hits={} outer_reads=40 certificate_parse_hits={} certificate_evaluations=10",
+                    f.plaintext_bytes, authorized.lease.0.snapshot_cache.lock().await.hits(), authorized.certificates.parsed_cache_hits());
                 runtime.set_active(None, None).unwrap();
             }
         }
@@ -2118,6 +2204,7 @@ pub mod native_browser_owner {
                 dependencies: std::sync::Mutex::new(Default::default()),
                 source_dependencies: std::sync::OnceLock::new(),
                 recheck_proof: std::sync::Mutex::new(None),
+                snapshot_cache: tokio::sync::Mutex::new(ManagedSnapshotCache::default()),
                 revoked: AtomicBool::new(false),
                 revocation_cause: AtomicU8::new(CAUSE_NONE),
                 cookie_gate: std::sync::Mutex::new(()),
@@ -2545,6 +2632,7 @@ pub mod native_browser_owner {
             dependencies: std::sync::Mutex::new(Default::default()),
             source_dependencies: std::sync::OnceLock::new(),
             recheck_proof: std::sync::Mutex::new(None),
+            snapshot_cache: tokio::sync::Mutex::new(ManagedSnapshotCache::default()),
             revoked: AtomicBool::new(false),
             revocation_cause: AtomicU8::new(CAUSE_NONE),
             cookie_gate: std::sync::Mutex::new(()),
@@ -2915,6 +3003,7 @@ pub mod native_browser_owner {
             dependencies: std::sync::Mutex::new(Default::default()),
             source_dependencies: std::sync::OnceLock::new(),
             recheck_proof: std::sync::Mutex::new(None),
+            snapshot_cache: tokio::sync::Mutex::new(ManagedSnapshotCache::default()),
             revoked: AtomicBool::new(false),
             revocation_cause: AtomicU8::new(CAUSE_NONE),
             cookie_gate: std::sync::Mutex::new(()),
@@ -2982,6 +3071,7 @@ pub mod native_browser_owner {
                 source_dependencies: std::sync::OnceLock::new(),
                 // The initial read just authenticated this exact snapshot and
                 // selected row; no dependency has been registered yet.
+                snapshot_cache: tokio::sync::Mutex::new(ManagedSnapshotCache::default()),
                 recheck_proof: std::sync::Mutex::new(Some(RecheckProof {
                     content: recheck_content(&snapshot)?,
                     dependencies: Dependencies::new(),
