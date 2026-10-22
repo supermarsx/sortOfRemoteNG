@@ -41,7 +41,9 @@ pub(super) enum IpPolicy {
 impl IpPolicy {
     pub(super) fn parse(value: &str) -> Result<Self, String> {
         match value {
-            "auto" => Ok(Self::Auto),
+            // Older native callers use "any" for the same unrestricted-family
+            // policy. Preserve that wire value without accepting unknown policies.
+            "auto" | "any" => Ok(Self::Auto),
             "ipv4" => Ok(Self::V4),
             "ipv6" => Ok(Self::V6),
             _ => Err("Invalid SSH IP protocol policy".into()),

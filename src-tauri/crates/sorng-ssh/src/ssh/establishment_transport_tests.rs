@@ -29,6 +29,15 @@ fn address_policy_is_explicit_deduplicated_and_never_rewrites_endpoint() {
     }
 }
 #[test]
+fn legacy_any_policy_preserves_auto_address_order_and_family_fallback() {
+    let addresses = vec![address(false, 22), address(false, 22), address(true, 22)];
+    assert_eq!(IpPolicy::parse("any").unwrap(), IpPolicy::Auto);
+    assert_eq!(
+        IpPolicy::parse("any").unwrap().select(addresses),
+        vec![address(false, 22), address(true, 22)]
+    );
+}
+#[test]
 fn endpoint_keys_are_process_scoped_and_omit_accounts() {
     let a = fingerprint_with(&[1; 32], "SSH.Example.test", 22);
     assert_eq!(a, fingerprint_with(&[1; 32], "ssh.example.test", 22));
