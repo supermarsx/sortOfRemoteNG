@@ -40,7 +40,7 @@ fn cross_authority() -> bool {
     std::env::var("SORNG_CEF_HTTP2_CHECK").as_deref() == Ok("cross-authority")
 }
 fn websocket_check() -> bool {
-    std::env::var("SORNG_CEF_HTTP2_CHECK").as_deref() == Ok("wss")
+    matches!(std::env::var("SORNG_CEF_HTTP2_CHECK").as_deref(), Ok("wss" | "permission-churn"))
 }
 fn revoke_check() -> bool {
     std::env::var("SORNG_CEF_HTTP2_CHECK").as_deref() == Ok("revoke")
@@ -113,6 +113,7 @@ fn case_index(path: &str) -> Option<usize> {
 const KIND: &str = "native-same-authority-http2";
 mod http2_fixture;
 mod proxy_ack_fixture;
+mod permission_churn_fixture;
 mod websocket_fixture;
 #[no_mangle]
 pub unsafe extern "C" fn RunWinMain(
@@ -251,7 +252,157 @@ struct Slot {
     alpn_observed: Arc<Mutex<Vec<String>>>,
     tls_owner: Arc<TlsOwner>,
 }
+fn create_slot(
+    index: usize,
+    source_session: &str,
+    asynchronous: &tokio::runtime::Runtime,
+    clock: Instant,
+    tls_acceptor: &tokio_rustls::TlsAcceptor,
+    connection_ids: &Arc<AtomicUsize>,
+    fixture_nodelay: bool,
+) -> Result<Slot> {
+    let tls_owner = Arc::new(TlsOwner {
+        current: AtomicBool::new(true),
+        denied: AtomicUsize::new(0),
+        admitted: AtomicBool::new(false),
+        before_admission_bytes: AtomicUsize::new(0),
+        closed_connections: AtomicUsize::new(0),
+        pending: Mutex::new(Vec::new()),
+    });
+    let server_owner = tls_owner.clone();
+    let listener = asynchronous.block_on(tokio::net::TcpListener::bind("127.0.0.1:0"))?;
+    let address = listener.local_addr()?;
+    let requests = Arc::new(Mutex::new(Vec::new()));
+    let req = requests.clone();
+    let counters = Arc::new(
+        (0..CASES.len())
+            .map(|_| Counters::default())
+            .collect::<Vec<_>>(),
+    );
+    let server_counters = counters.clone();
+    let current_case = Arc::new(AtomicUsize::new(0));
+    let (stop, mut stopped) = tokio::sync::oneshot::channel();
+    let alpn_observed = Arc::new(Mutex::new(Vec::new()));
+    let server_alpn = alpn_observed.clone();
+    let acceptor = tls_acceptor.clone();
+    let connection_ids = connection_ids.clone();
+    let server=asynchronous.spawn(async move {
+        let mut tasks=tokio::task::JoinSet::new();
+        loop {tokio::select! {
+            _=&mut stopped=>break,
+            accepted=listener.accept()=>{
+                let (stream,_)=accepted?;
+                if fixture_nodelay {stream.set_nodelay(true)?;}
+                let acceptor=acceptor.clone();
+                let alpn_observed=server_alpn.clone();
+                let connection_id=connection_ids.fetch_add(1,Ordering::Relaxed);
+                let req=req.clone(); let counters=server_counters.clone();
+                let owner=server_owner.clone();
+                tasks.spawn(async move {
+                    let stream=acceptor.accept(stream).await?;
+                    let alpn=String::from_utf8_lossy(stream.get_ref().1.alpn_protocol().unwrap_or_default()).to_string();
+                    alpn_observed.lock().unwrap().push(alpn.clone());
+                    let stream=http2_fixture::ObservedIo {inner:stream,owner};
+                    if alpn=="h2" {
+                        return http2_fixture::serve(stream,index,connection_id,clock,req,counters).await;
+                    }
+                    if alpn!="http/1.1" {return Err(std::io::Error::other("fixture negotiated unsupported protocol"));}
+                    let mut stream=tokio::io::BufReader::new(stream);
+                    loop {
+                    let mut header=Vec::new();
+                    while !header.ends_with(b"\r\n\r\n") && header.len()<16384 {
+                        if stream.read_until(b'\n',&mut header).await?==0 {return Ok::<_,std::io::Error>(())}
+                    }
+                    if header.len()>16384 || !header.ends_with(b"\r\n\r\n") || !header.starts_with(b"GET ") {return Err(std::io::Error::other("bounded GET fixture required"));}
+                    let request=String::from_utf8_lossy(&header);
+                    let path=request.lines().next().and_then(|s|s.split_whitespace().nth(1)).unwrap_or("").to_owned();
+                    if path=="/socket" {
+                        websocket_fixture::echo(&mut stream,&request).await?;
+                        req.lock().unwrap().push(serde_json::json!({"alpn":alpn,"connectionId":connection_id,"path":path,"websocket":true,"written":true}));
+                        return Ok(());
+                    }
+                    let case=case_index(&path);
+                    let began_ms=clock.elapsed().as_secs_f64()*1000.0;
+                    if let Some(i)=case { enter(&counters[i].active,&counters[i].peak); tokio::time::sleep(Duration::from_millis(CASES[i].response_ms)).await; }
+                    let asset=path.contains("/asset-");
+                    let body=if asset { "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"1\" height=\"1\"><rect width=\"1\" height=\"1\"/></svg>".to_owned() }
+                        else { let i=case.unwrap_or(0); let images=(0..CASES[i].resources).map(|n|format!("<img src=\"/case-{i}/asset-{n}.svg\">" )).collect::<String>(); format!("<!doctype html><title>marker-{index}-{path}</title><body>{images}</body>") };
+                    let content_type=if asset {"image/svg+xml"}else{"text/html"};
+                    let response=format!("HTTP/1.1 200 OK\r\nContent-Type: {content_type}\r\nCache-Control: no-store\r\nContent-Length: {}\r\nConnection: keep-alive\r\n\r\n{body}",body.len());
+                    let result=stream.write_all(response.as_bytes()).await;
+                    let end_ms=clock.elapsed().as_secs_f64()*1000.0;
+                    if let Some(i)=case {counters[i].active.fetch_sub(1,Ordering::Relaxed);}
+                    req.lock().unwrap().push(serde_json::json!({"alpn":alpn,"connectionId":connection_id,"path":path,"case":case,"asset":asset,"startMs":began_ms,"endMs":end_ms,"written":result.is_ok()}));
+                    result?;
+                    }
+                });
+            }
+        }}
+        tasks.abort_all();while tasks.join_next().await.is_some(){} Ok(())
+    });
+    let dials = Arc::new(AtomicUsize::new(0));
+    let count = dials.clone();
+    let dial_counters = counters.clone();
+    let dial_case = current_case.clone();
+    let dialer: Arc<dyn RouteDialer> = Arc::new(move |target: Authority| -> DialFuture {
+        let count = count.clone();
+        let counters = dial_counters.clone();
+        let i = dial_case.load(Ordering::Relaxed);
+        Box::pin(async move {
+            if !["proxy-first.fixture.test", "alternate.fixture.test"].contains(&target.host())
+                || target.port() != 443
+            {
+                return Err(std::io::Error::other("fixture route denied"));
+            }
+            count.fetch_add(1, Ordering::Relaxed);
+            enter(&counters[i].dial_active, &counters[i].dial_peak);
+            tokio::time::sleep(Duration::from_millis(CASES[i].dial_ms)).await;
+            let stream = tokio::net::TcpStream::connect(address).await;
+            counters[i].dial_active.fetch_sub(1, Ordering::Relaxed);
+            let stream = stream?;
+            if fixture_nodelay {
+                stream.set_nodelay(true)?;
+            }
+            Ok(Box::new(stream) as BoxedStream)
+        })
+    });
+    let policy = OriginBrowserPolicy::new_with_allowed_origins(
+        "isolated-proxy-fixture",
+        "same-connection",
+        source_session,
+        ORIGIN,
+        &[OTHER_ORIGIN],
+    )?;
+    let identity = policy.identity().clone();
+    let session = Arc::new(Mutex::new(asynchronous.block_on(
+        OriginBrowserSession::start(policy, dialer, ProxyLimits::default()),
+    )?));
+    Ok(Slot {
+        proxy_application_verified: false,
+        proxy_before_host: serde_json::Value::Null,
+        identity,
+        session,
+        context: None,
+        host: None,
+        sink: Arc::new(Sink(Mutex::new(Observed::default()), clock)),
+        dials,
+        requests,
+        stop: Some(stop),
+        server: Some(server),
+        navigated: false,
+        navigation_ms: 0.0,
+        counters,
+        current_case,
+        reports: Vec::new(),
+        close_sent: false,
+        alpn_observed,
+        tls_owner,
+    })
+}
 fn execute(bootstrap: &mut dyn RuntimeBootstrap, paths: &BundlePaths) -> Result {
+    if std::env::var("SORNG_CEF_HTTP2_CHECK").as_deref() == Ok("permission-churn") {
+        return permission_churn_fixture::execute(bootstrap, paths);
+    }
     let legacy = std::env::var("SORNG_CEF_HTTP2_EXPECT").as_deref() == Ok("legacy");
     let http2_revision = std::env::var("SORNG_CEF_HTTP2_EXPECT").as_deref() == Ok("h2");
     if std::env::var("SORNG_CEF_HTTP2_EXPECT").is_ok_and(|mode| !["legacy", "h2", "proxy-ack"].contains(&mode.as_str())) {
@@ -271,143 +422,8 @@ fn execute(bootstrap: &mut dyn RuntimeBootstrap, paths: &BundlePaths) -> Result 
     let connection_ids = Arc::new(AtomicUsize::new(0));
     let mut slots = Vec::new();
     for index in 0..2 {
-        let tls_owner = Arc::new(TlsOwner {
-            current: AtomicBool::new(true),
-            denied: AtomicUsize::new(0),
-            admitted: AtomicBool::new(false),
-            before_admission_bytes: AtomicUsize::new(0),
-            closed_connections: AtomicUsize::new(0),
-            pending: Mutex::new(Vec::new()),
-        });
-        let server_owner = tls_owner.clone();
-        let listener = asynchronous.block_on(tokio::net::TcpListener::bind("127.0.0.1:0"))?;
-        let address = listener.local_addr()?;
-        let requests = Arc::new(Mutex::new(Vec::new()));
-        let req = requests.clone();
-        let counters = Arc::new(
-            (0..CASES.len())
-                .map(|_| Counters::default())
-                .collect::<Vec<_>>(),
-        );
-        let server_counters = counters.clone();
-        let current_case = Arc::new(AtomicUsize::new(0));
-        let (stop, mut stopped) = tokio::sync::oneshot::channel();
-        let alpn_observed = Arc::new(Mutex::new(Vec::new()));
-        let server_alpn = alpn_observed.clone();
-        let acceptor = tls_acceptor.clone();
-        let connection_ids = connection_ids.clone();
-        let server=asynchronous.spawn(async move {
-            let mut tasks=tokio::task::JoinSet::new();
-            loop {tokio::select! {
-                _=&mut stopped=>break,
-                accepted=listener.accept()=>{
-                    let (stream,_)=accepted?;
-                    if fixture_nodelay {stream.set_nodelay(true)?;}
-                    let acceptor=acceptor.clone();
-                    let alpn_observed=server_alpn.clone();
-                    let connection_id=connection_ids.fetch_add(1,Ordering::Relaxed);
-                    let req=req.clone(); let counters=server_counters.clone();
-                    let owner=server_owner.clone();
-                    tasks.spawn(async move {
-                        let stream=acceptor.accept(stream).await?;
-                        let alpn=String::from_utf8_lossy(stream.get_ref().1.alpn_protocol().unwrap_or_default()).to_string();
-                        alpn_observed.lock().unwrap().push(alpn.clone());
-                        let stream=http2_fixture::ObservedIo {inner:stream,owner};
-                        if alpn=="h2" {
-                            return http2_fixture::serve(stream,index,connection_id,clock,req,counters).await;
-                        }
-                        if alpn!="http/1.1" {return Err(std::io::Error::other("fixture negotiated unsupported protocol"));}
-                        let mut stream=tokio::io::BufReader::new(stream);
-                        loop {
-                        let mut header=Vec::new();
-                        while !header.ends_with(b"\r\n\r\n") && header.len()<16384 {
-                            if stream.read_until(b'\n',&mut header).await?==0 {return Ok::<_,std::io::Error>(())}
-                        }
-                        if header.len()>16384 || !header.ends_with(b"\r\n\r\n") || !header.starts_with(b"GET ") {return Err(std::io::Error::other("bounded GET fixture required"));}
-                        let request=String::from_utf8_lossy(&header);
-                        let path=request.lines().next().and_then(|s|s.split_whitespace().nth(1)).unwrap_or("").to_owned();
-                        if path=="/socket" {
-                            websocket_fixture::echo(&mut stream,&request).await?;
-                            req.lock().unwrap().push(serde_json::json!({"alpn":alpn,"connectionId":connection_id,"path":path,"websocket":true,"written":true}));
-                            return Ok(());
-                        }
-                        let case=case_index(&path);
-                        let began_ms=clock.elapsed().as_secs_f64()*1000.0;
-                        if let Some(i)=case { enter(&counters[i].active,&counters[i].peak); tokio::time::sleep(Duration::from_millis(CASES[i].response_ms)).await; }
-                        let asset=path.contains("/asset-");
-                        let body=if asset { "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"1\" height=\"1\"><rect width=\"1\" height=\"1\"/></svg>".to_owned() }
-                            else { let i=case.unwrap_or(0); let images=(0..CASES[i].resources).map(|n|format!("<img src=\"/case-{i}/asset-{n}.svg\">" )).collect::<String>(); format!("<!doctype html><title>marker-{index}-{path}</title><body>{images}</body>") };
-                        let content_type=if asset {"image/svg+xml"}else{"text/html"};
-                        let response=format!("HTTP/1.1 200 OK\r\nContent-Type: {content_type}\r\nCache-Control: no-store\r\nContent-Length: {}\r\nConnection: keep-alive\r\n\r\n{body}",body.len());
-                        let result=stream.write_all(response.as_bytes()).await;
-                        let end_ms=clock.elapsed().as_secs_f64()*1000.0;
-                        if let Some(i)=case {counters[i].active.fetch_sub(1,Ordering::Relaxed);}
-                        req.lock().unwrap().push(serde_json::json!({"alpn":alpn,"connectionId":connection_id,"path":path,"case":case,"asset":asset,"startMs":began_ms,"endMs":end_ms,"written":result.is_ok()}));
-                        result?;
-                        }
-                    });
-                }
-            }}
-            tasks.abort_all();while tasks.join_next().await.is_some(){} Ok(())
-        });
-        let dials = Arc::new(AtomicUsize::new(0));
-        let count = dials.clone();
-        let dial_counters = counters.clone();
-        let dial_case = current_case.clone();
-        let dialer: Arc<dyn RouteDialer> = Arc::new(move |target: Authority| -> DialFuture {
-            let count = count.clone();
-            let counters = dial_counters.clone();
-            let i = dial_case.load(Ordering::Relaxed);
-            Box::pin(async move {
-                if !["proxy-first.fixture.test", "alternate.fixture.test"].contains(&target.host())
-                    || target.port() != 443
-                {
-                    return Err(std::io::Error::other("fixture route denied"));
-                }
-                count.fetch_add(1, Ordering::Relaxed);
-                enter(&counters[i].dial_active, &counters[i].dial_peak);
-                tokio::time::sleep(Duration::from_millis(CASES[i].dial_ms)).await;
-                let stream = tokio::net::TcpStream::connect(address).await;
-                counters[i].dial_active.fetch_sub(1, Ordering::Relaxed);
-                let stream = stream?;
-                if fixture_nodelay {
-                    stream.set_nodelay(true)?;
-                }
-                Ok(Box::new(stream) as BoxedStream)
-            })
-        });
-        let policy = OriginBrowserPolicy::new_with_allowed_origins(
-            "isolated-proxy-fixture",
-            "same-connection",
-            &format!("tab-{index}"),
-            ORIGIN,
-            &[OTHER_ORIGIN],
-        )?;
-        let identity = policy.identity().clone();
-        let session = Arc::new(Mutex::new(asynchronous.block_on(
-            OriginBrowserSession::start(policy, dialer, ProxyLimits::default()),
-        )?));
-        slots.push(Slot {
-            proxy_application_verified: false,
-            proxy_before_host: serde_json::Value::Null,
-            identity,
-            session,
-            context: None,
-            host: None,
-            sink: Arc::new(Sink(Mutex::new(Observed::default()), clock)),
-            dials,
-            requests,
-            stop: Some(stop),
-            server: Some(server),
-            navigated: false,
-            navigation_ms: 0.0,
-            counters,
-            current_case,
-            reports: Vec::new(),
-            close_sent: false,
-            alpn_observed,
-            tls_owner,
-        });
+        slots.push(create_slot(index, &format!("tab-{index}"), &asynchronous, clock,
+            &tls_acceptor, &connection_ids, fixture_nodelay)?);
     }
     let mut raw_before = Vec::new();
     for slot in &slots {
