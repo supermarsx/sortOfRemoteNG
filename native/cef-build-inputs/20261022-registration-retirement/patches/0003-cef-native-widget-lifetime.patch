@@ -1,0 +1,21 @@
+diff --git a/libcef/browser/native/native_widget_delegate.cc b/libcef/browser/native/native_widget_delegate.cc
+--- a/libcef/browser/native/native_widget_delegate.cc
++++ b/libcef/browser/native/native_widget_delegate.cc
+@@ -113,12 +113,14 @@ void CefNativeWidgetDelegate::WidgetIsZombie(views::Widget* widget) {
+   contents_view_ = nullptr;
+   web_view_ = nullptr;
+ 
+-  // This triggers deletion of contained Views.
+-  widget_.reset();
+-
++  // Clear the platform delegate's borrowed Widget pointer before freeing it.
++  // In particular, raw_ptr release must not observe an already deleted Widget.
+   if (!on_delete_.is_null()) {
+     std::move(on_delete_).Run();
+   }
+ 
++  // This triggers deletion of contained Views, after observers have detached.
++  widget_.reset();
++
+   delete this;
+ }

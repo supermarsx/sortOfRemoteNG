@@ -1,0 +1,368 @@
+{
+  "engineBuildAttempted": false,
+  "excludedDraftPaths": [
+    "runners/ (superseded draft copies; never copy into final inputs)"
+  ],
+  "gnRequirements": [
+    {
+      "commit": "a654841425914cbb703a2931e07b70a83aedbafd",
+      "path": "build/config/BUILDCONFIG.gn",
+      "repository": "chromium",
+      "sha256": "5df70bd3d47e744fb3737e28dacf7cec42df9785f097d7343bb701e267e6ae39",
+      "size": 33848
+    },
+    {
+      "commit": "a654841425914cbb703a2931e07b70a83aedbafd",
+      "path": "build/config/compiler/compiler.gni",
+      "repository": "chromium",
+      "sha256": "7c36e0aa7b9ff6bff1a296edb89e8703f6e82d0d93795ff90a10457bb1a6a8e8",
+      "size": 19143
+    },
+    {
+      "commit": "a654841425914cbb703a2931e07b70a83aedbafd",
+      "path": "build/config/compiler/pgo/pgo.gni",
+      "repository": "chromium",
+      "sha256": "754dc82d9e86932d36dabf69554f69d79c56a592cb1fbab2f3d5da936030caac",
+      "size": 2449
+    },
+    {
+      "commit": "a654841425914cbb703a2931e07b70a83aedbafd",
+      "path": "build/toolchain/concurrent_links.gni",
+      "repository": "chromium",
+      "sha256": "9ddb5d6e09fd972f80e7d68db4ff7cda84b330dc6a51f98229c4da802b7fdd97",
+      "size": 7385
+    },
+    {
+      "commit": "682c378d70d5780061e96644dca16ddd8fd157a9",
+      "path": "cef/tools/gn_args.py",
+      "repository": "cef",
+      "sha256": "ab94e3b3c214198b396c8b4858b5d5e9cb42be956bbc294d651dd86eac44df6e",
+      "size": 26541
+    },
+    {
+      "commit": "a654841425914cbb703a2931e07b70a83aedbafd",
+      "path": "docs/mac_arm64.md",
+      "repository": "chromium",
+      "sha256": "895f99dde2c82f36c05783136b4f6c5c71ac7b45180523fa832a427497b52e71",
+      "size": 3459
+    },
+    {
+      "commit": "a654841425914cbb703a2931e07b70a83aedbafd",
+      "path": "build/config/mac/mac_sdk.gni",
+      "repository": "chromium",
+      "sha256": "c8d20392804889087b6737bd1ffc10fdc1845e2a7d9a4218856ef248771bc8e9",
+      "size": 6534
+    },
+    {
+      "commit": "a654841425914cbb703a2931e07b70a83aedbafd",
+      "path": "build/vs_toolchain.py",
+      "repository": "chromium",
+      "sha256": "032620538c8199207bbc9ebed1f884528f4f4a39000c4752ae33e5e8d6a481f6",
+      "size": 28418
+    },
+    {
+      "commit": "a654841425914cbb703a2931e07b70a83aedbafd",
+      "path": "build/toolchain/win/setup_toolchain.py",
+      "repository": "chromium",
+      "sha256": "d44e8a20670fb92b794809e66cd874aafb48521731ec32e13684ef689fca18f1",
+      "size": 15133
+    }
+  ],
+  "hostedProvision": {
+    "allSixProvisionJobsSucceeded": true,
+    "buildAndPublishJobsSkipped": true,
+    "runUrl": "https://github.com/supermarsx/sortOfRemoteNG/actions/runs/39808087337",
+    "sourceCommit": "d7a496a0068e73ec58540c3faf6c10138ad7446e"
+  },
+  "kind": "sorng-cef-build-input-review",
+  "nativeAcceptancePerformed": false,
+  "publicationAllowed": false,
+  "reviewDecisions": [
+    "Measured >=4CPU/>=14GiB build hosts: four build workers, two sync workers, one concurrent link; not a completion/OOM guarantee",
+    "Non-official non-debug non-component builds, PGO0 and ThinLTO false, symbols0; sandbox and security controls retained",
+    "Symbols0 reduces engine stack completeness; app PDB retention is independent",
+    "Mac ARM is cross-built on the measured Intel host and requires separate native ARM acceptance",
+    "Windows maps force actual VS2026 path/version and Windows Kits root; pinned Chromium requires SDK28000; no older SDK/VS fallback",
+    "Native tool inventories are representative measured files, not hermetic installation inventories",
+    "Linux and Intel Mac disk headroom and 300-minute cold-build budget are risks; failures retain truthful diagnostics",
+    "Per-target release descriptors may pin different source locks; never rebind the existing local Windows bundle to this new six-target lock"
+  ],
+  "schemaVersion": 1,
+  "scope": "Reviewed source and measured hosted build inputs only; NOT a build, acceptance, or publication receipt",
+  "sourceLockIdentity": "a4e2f53b29a8b7fc51c67e0df99650beeb5f764046633b9482a81733f0168b11",
+  "sourceLockRawSha256": "b193a5c5d29c5b41f8ce6e2d9c99999b7105be47c62dbdf46b2e7813e7f072d0",
+  "targets": [
+    {
+      "actualBuildHost": "x86_64-pc-windows-msvc",
+      "gn": {
+        "path": "gn/x86_64-pc-windows-msvc.gn",
+        "sha256": "08e557f9f932045f45702d3c32a2584889862ce02858ac8b75d4eb9bcb350a2a",
+        "size": 286
+      },
+      "nativeFileCount": 9,
+      "observationArtifactPath": ".artifacts/cef-hosted-provision-39808087337/x86_64-pc-windows-msvc/after/observation.json",
+      "observationSha256": "1c0d12746a7425818973534958349aa68c250865f8d90d42ba0cfc0540628d3b",
+      "resourceSettings": {
+        "assumption": "Four build workers on measured >=4CPU/>=14GiB hosts; no completion or OOM guarantee. Timeout/OOM retains failure diagnostics.",
+        "buildJobs": 4,
+        "concurrentLinks": 1,
+        "observedAvailableGiB": 219.53,
+        "observedCpuCount": 4,
+        "observedMemoryGiB": 15.99,
+        "syncJobs": 2
+      },
+      "runnerMap": {
+        "path": "cef-ci-runner-x86_64-pc-windows-msvc.json",
+        "sha256": "95dd3f26d64a238f72d50eda3bafb58d1283293287d62e85cf28c174eaad0ba3",
+        "size": 653
+      },
+      "target": "x86_64-pc-windows-msvc",
+      "toolchain": {
+        "path": "tools/x86_64-pc-windows-msvc.json",
+        "sha256": "1ab37b96d68476c2855358da2663913eb455501440b6981c80bdcdb2f1b1684e",
+        "size": 2237
+      }
+    },
+    {
+      "actualBuildHost": "aarch64-pc-windows-msvc",
+      "gn": {
+        "path": "gn/aarch64-pc-windows-msvc.gn",
+        "sha256": "ff7ed9ef9fbb49b57fbf73d79ff77c130aa417fdd0330f6e7e2c17aee14d5e51",
+        "size": 288
+      },
+      "nativeFileCount": 9,
+      "observationArtifactPath": ".artifacts/cef-hosted-provision-39808087337/aarch64-pc-windows-msvc/after/observation.json",
+      "observationSha256": "be25d44b8646645827e3112f35985ab1198fe08ba3f0247456a752f69c3e193c",
+      "resourceSettings": {
+        "assumption": "Four build workers on measured >=4CPU/>=14GiB hosts; no completion or OOM guarantee. Timeout/OOM retains failure diagnostics.",
+        "buildJobs": 4,
+        "concurrentLinks": 1,
+        "observedAvailableGiB": 121.51,
+        "observedCpuCount": 4,
+        "observedMemoryGiB": 15.99,
+        "syncJobs": 2
+      },
+      "runnerMap": {
+        "path": "cef-ci-runner-aarch64-pc-windows-msvc.json",
+        "sha256": "22f8b2ab05b17cdf72269c6f7400921c21fc82a482b031e41e547ba1368a4997",
+        "size": 654
+      },
+      "target": "aarch64-pc-windows-msvc",
+      "toolchain": {
+        "path": "tools/aarch64-pc-windows-msvc.json",
+        "sha256": "038355e85fd2fff441b96a79914b85cad9c5e7cc758f0f70eb2c1a3f6b225a88",
+        "size": 2252
+      }
+    },
+    {
+      "actualBuildHost": "x86_64-unknown-linux-gnu",
+      "gn": {
+        "path": "gn/x86_64-unknown-linux-gnu.gn",
+        "sha256": "b75d67bfd4b645a7b5895d5c764340a1f846453fee6bf9afff231daf60f06db1",
+        "size": 312
+      },
+      "nativeFileCount": 4,
+      "observationArtifactPath": ".artifacts/cef-hosted-provision-39808087337/x86_64-unknown-linux-gnu/after/observation.json",
+      "observationSha256": "081f9db51617338607adb800f96051600a8a15e6c5c09430fbf7c5b138576b52",
+      "resourceSettings": {
+        "assumption": "Four build workers on measured >=4CPU/>=14GiB hosts; no completion or OOM guarantee. Timeout/OOM retains failure diagnostics.",
+        "buildJobs": 4,
+        "concurrentLinks": 1,
+        "observedAvailableGiB": 102.64,
+        "observedCpuCount": 4,
+        "observedMemoryGiB": 15.61,
+        "syncJobs": 2
+      },
+      "runnerMap": {
+        "path": "cef-ci-runner-x86_64-unknown-linux-gnu.json",
+        "sha256": "4f521859896927bdabd2aafeeca45e93798237d0ae59dae6729323fefaf23af8",
+        "size": 407
+      },
+      "target": "x86_64-unknown-linux-gnu",
+      "toolchain": {
+        "path": "tools/x86_64-unknown-linux-gnu.json",
+        "sha256": "7b5db286f997bdb4ebfa266c6dd0d267d45dacdc41d830a7e24d32507c200ad2",
+        "size": 923
+      }
+    },
+    {
+      "actualBuildHost": "aarch64-unknown-linux-gnu",
+      "gn": {
+        "path": "gn/aarch64-unknown-linux-gnu.gn",
+        "sha256": "fdfb1748ced8a607677f7a1a3f36e54aa5e352b663da74ad9429b838d6d4f91c",
+        "size": 314
+      },
+      "nativeFileCount": 4,
+      "observationArtifactPath": ".artifacts/cef-hosted-provision-39808087337/aarch64-unknown-linux-gnu/after/observation.json",
+      "observationSha256": "c21c3de587ccedbbdf62827b37e3bf1f54bbfbf0a1d2ca19764aa92ecfd4d32f",
+      "resourceSettings": {
+        "assumption": "Four build workers on measured >=4CPU/>=14GiB hosts; no completion or OOM guarantee. Timeout/OOM retains failure diagnostics.",
+        "buildJobs": 4,
+        "concurrentLinks": 1,
+        "observedAvailableGiB": 111.64,
+        "observedCpuCount": 4,
+        "observedMemoryGiB": 15.57,
+        "syncJobs": 2
+      },
+      "runnerMap": {
+        "path": "cef-ci-runner-aarch64-unknown-linux-gnu.json",
+        "sha256": "b5d9de7c74814303089134eed0f6d733872a5c25dd6ccd0c72e1b57c013d3cd4",
+        "size": 424
+      },
+      "target": "aarch64-unknown-linux-gnu",
+      "toolchain": {
+        "path": "tools/aarch64-unknown-linux-gnu.json",
+        "sha256": "001af45ad01dca5da621daf6d55531a3aefcf81943a0f30b48e47d2ce7f9216e",
+        "size": 926
+      }
+    },
+    {
+      "actualBuildHost": "x86_64-apple-darwin",
+      "gn": {
+        "path": "gn/x86_64-apple-darwin.gn",
+        "sha256": "817383bba38b84601551d7dc7d5f7ea0e3f67ed6b7ca13eb3ddbbca001e5cc61",
+        "size": 341
+      },
+      "nativeFileCount": 4,
+      "observationArtifactPath": ".artifacts/cef-hosted-provision-39808087337/x86_64-apple-darwin/after/observation.json",
+      "observationSha256": "5bf5394a7a1261bfb5785b7247d004cd9090ec24c675ae2ff89c7ab5e976d6d4",
+      "resourceSettings": {
+        "assumption": "Four build workers on measured >=4CPU/>=14GiB hosts; no completion or OOM guarantee. Timeout/OOM retains failure diagnostics.",
+        "buildJobs": 4,
+        "concurrentLinks": 1,
+        "observedAvailableGiB": 107.21,
+        "observedCpuCount": 4,
+        "observedMemoryGiB": 14,
+        "syncJobs": 2
+      },
+      "runnerMap": {
+        "path": "cef-ci-runner-x86_64-apple-darwin.json",
+        "sha256": "a63b9539a0cfb22174d439456a0d8e6d702f6882cf8e68de5bbdcf7e0f73d827",
+        "size": 731
+      },
+      "target": "x86_64-apple-darwin",
+      "toolchain": {
+        "path": "tools/x86_64-apple-darwin.json",
+        "sha256": "b0c0ea86f296937f8c09cc48f7e9a7c8e19e8486c0b1badcd081b81567647c32",
+        "size": 1255
+      }
+    },
+    {
+      "actualBuildHost": "x86_64-apple-darwin",
+      "gn": {
+        "path": "gn/aarch64-apple-darwin.gn",
+        "sha256": "bf830e0c15789d4a873fc451661fd484865c54cdffb6b64cf8c2c2ad9fa4d94e",
+        "size": 343
+      },
+      "nativeFileCount": 4,
+      "observationArtifactPath": ".artifacts/cef-hosted-provision-39808087337/x86_64-apple-darwin/after/observation.json",
+      "observationSha256": "5bf5394a7a1261bfb5785b7247d004cd9090ec24c675ae2ff89c7ab5e976d6d4",
+      "resourceSettings": {
+        "assumption": "Four build workers on measured >=4CPU/>=14GiB hosts; no completion or OOM guarantee. Timeout/OOM retains failure diagnostics.",
+        "buildJobs": 4,
+        "concurrentLinks": 1,
+        "observedAvailableGiB": 107.21,
+        "observedCpuCount": 4,
+        "observedMemoryGiB": 14,
+        "syncJobs": 2
+      },
+      "runnerMap": {
+        "path": "cef-ci-runner-aarch64-apple-darwin.json",
+        "sha256": "2ca5ede16f31c3b9b8671593d7008e60d2b744a19886b801db85645972c407b1",
+        "size": 726
+      },
+      "target": "aarch64-apple-darwin",
+      "toolchain": {
+        "path": "tools/aarch64-apple-darwin.json",
+        "sha256": "fefd4f939940d7798d0de6e89d01e745e71d27cd1a42d1441fe52179160c8812",
+        "size": 1257
+      }
+    }
+  ],
+  "upstreamAndPatchProvenance": {
+    "actualLocalWindowsPackageUnmodified": true,
+    "bridgeHeader": {
+      "path": "include/cef_sorng_tls_bridge.h",
+      "sha256": "0a30bff278c41b862051eb841e16f8f3a10957de9c0deef63c5923ced114189d"
+    },
+    "patchId": "sorng-tls-v2-682c378-4",
+    "patches": [
+      {
+        "path": "patches/0001-chromium-socket-admission.patch",
+        "repository": "chromium",
+        "sha256": "b347abc666cc693c7ada52b2ba31ad69e1d2f67541ca0a4684ea868fdff4a876"
+      },
+      {
+        "path": "patches/0002-cef-native-bridge.patch",
+        "repository": "cef",
+        "sha256": "0f2592f560ccd7045376485ba37753f171ad4cf18ca3a3bd9cabb9a1ac340653"
+      },
+      {
+        "path": "patches/0003-cef-native-widget-lifetime.patch",
+        "repository": "cef",
+        "sha256": "ea26cd554faa7991303ae85118313538b15d16d77b7436a9b4186fbc233cf540"
+      },
+      {
+        "path": "patches/0004-chromium-soda-provisioning.patch",
+        "repository": "chromium",
+        "sha256": "426d95532f3ff8f0c4f5e3d46cc0b3ff77f300bdcb2d853e02b1404b2c013482"
+      },
+      {
+        "path": "patches/0005-chromium-proxy-route-probe.patch",
+        "repository": "chromium",
+        "sha256": "094770e23077c0791536a579e7bdec43b47fd0de4839ebf1514fb99fc135f810"
+      },
+      {
+        "path": "patches/0006-cef-explicit-download-destination.patch",
+        "repository": "cef",
+        "sha256": "f1bac1adce80ff7afdf0abefd01546244a1e403bbad6b48d5fd68c214b87c813"
+      },
+      {
+        "path": "patches/0007-chromium-instance-tracer-reentrancy.patch",
+        "repository": "chromium",
+        "sha256": "3d3940a4f45b81739aab3735fbea41ee8f485ad89382bbec6340a7b694f04c78"
+      },
+      {
+        "path": "patches/0008-chromium-same-authority-http2.patch",
+        "repository": "chromium",
+        "sha256": "1d4a1a6dd69b04af328150740730bf6a50b7a7d5f80350a79ebdeca6664bc7f8"
+      },
+      {
+        "path": "patches/0009-cef-http2-bridge-capability.patch",
+        "repository": "cef",
+        "sha256": "6940d55fbd25a69ba56874b06938dfececd1d35b71f69ae8a8c6fb56cd86e8a8"
+      },
+      {
+        "path": "patches/0010-chromium-proxy-application-ack.patch",
+        "repository": "chromium",
+        "sha256": "ab48a00f1c71e2d2893d0169c7f0828252d813df2227062b0e7ca9275dc93a55"
+      },
+      {
+        "path": "patches/0011-cef-proxy-application-ack.patch",
+        "repository": "cef",
+        "sha256": "7148edbb12fe1459a073b9eacd09dea35261f68911d6c9f5e03a3f379e7aaec0"
+      },
+      {
+        "path": "patches/0012-cef-registration-retirement.patch",
+        "repository": "cef",
+        "sha256": "dd863571d99103cf53a90806f1aa4d3b3ba9b141ff082a2e7ae74796cb7ab699"
+      }
+    ],
+    "preservedFromActualLocalWindowsLock": "9b03f692f091694cc8a613e579436e82fd9805e9f9442e8d606c6aec8cc5b835",
+    "upstream": {
+      "cef": {
+        "commit": "682c378d70d5780061e96644dca16ddd8fd157a9",
+        "repository": "https://github.com/chromiumembedded/cef.git",
+        "version": "154.0.32+g682c378+chromium-154.0.8037.58"
+      },
+      "chromium": {
+        "commit": "a654841425914cbb703a2931e07b70a83aedbafd",
+        "repository": "https://chromium.googlesource.com/chromium/src.git"
+      },
+      "depotTools": {
+        "commit": "c101dcbe0489c455fce7c2247bfee19680b116c3",
+        "repository": "https://chromium.googlesource.com/chromium/tools/depot_tools.git"
+      }
+    }
+  }
+}

@@ -1,0 +1,32 @@
+{
+  "files": [
+    {
+      "path": "usr/local/Cellar/python@3.14/3.14.7/Frameworks/Python.framework/Versions/3.14/bin/python3.14",
+      "sha256": "b08b055365df6dcd3fff0b805b688428f0f6a01839303f22c0716780155c480d",
+      "size": 13592
+    },
+    {
+      "path": "Applications/Xcode_16.4.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/clang",
+      "sha256": "4c458256bcdf913774de1bb4a37768244d3b41f32ad55afb2dfec3432f46f4fe",
+      "size": 264942528
+    },
+    {
+      "path": "Applications/Xcode_16.4.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk/SDKSettings.json",
+      "sha256": "58a133735f0a55a624a1703067059f6e78925e51725ec6e1f966072e142c9c42",
+      "size": 6953
+    },
+    {
+      "path": "Applications/Xcode_16.4.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk/usr/lib/libSystem.B.tbd",
+      "sha256": "4f96f1402e1950b1764ac6accd0d2b9c1ca197b7783caae5e838fd0a4b474028",
+      "size": 327843
+    },
+    {
+      "path": "cef-ci-runner-x86_64-apple-darwin.json",
+      "sha256": "a63b9539a0cfb22174d439456a0d8e6d702f6882cf8e68de5bbdcf7e0f73d827",
+      "size": 731
+    }
+  ],
+  "kind": "sorng-cef-toolchain-lock",
+  "schemaVersion": 1,
+  "target": "x86_64-apple-darwin"
+}

@@ -42,3 +42,6 @@ src-tauri/patches/tauri-event-cleanup/
 # Reviewed security backports retain upstream source/license bytes.
 src-tauri/vendor/tauri-plugin-updater/
 vendor/braces-depth-guard/
+
+# Reviewed CEF build inputs retain the exact bytes pinned by the source lock.
+native/cef-build-inputs/20261022-registration-retirement/

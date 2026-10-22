@@ -8,3 +8,6 @@ src-tauri/crates/sorng-protocols/src/vendor/darkreader/* -text whitespace=cr-at-
 
 # Preserve the pinned framework archive, including upstream whitespace.
 src-tauri/patches/tauri-event-cleanup/** -text -whitespace
+
+# Reviewed CEF build inputs are hashed as bytes on every build host.
+native/cef-build-inputs/20261022-registration-retirement/** -text -whitespace

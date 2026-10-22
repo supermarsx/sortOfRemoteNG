@@ -1,0 +1,104 @@
+diff --git a/chrome/browser/accessibility/soda_installer_impl.cc b/chrome/browser/accessibility/soda_installer_impl.cc
+index 4a7690ada0f37d3acfcb037044614a865d79bb41..9894e74208335e72228ec7a42562d23df50777a4 100644
+--- a/chrome/browser/accessibility/soda_installer_impl.cc
++++ b/chrome/browser/accessibility/soda_installer_impl.cc
+@@ -25,6 +25,7 @@
+ #include "chrome/browser/component_updater/soda_language_pack_component_installer.h"
+ #include "components/prefs/pref_service.h"
+ #include "components/soda/constants.h"
++#include "components/soda/soda_features.h"
+ #include "components/update_client/crx_update_item.h"
+ #include "media/base/media_switches.h"
+ #include "ui/base/l10n/l10n_util.h"
+@@ -56,6 +57,9 @@ base::FilePath SodaInstallerImpl::GetLanguagePath(
+ }
+ 
+ void SodaInstallerImpl::InstallSoda(PrefService* global_prefs) {
++  if (!base::FeatureList::IsEnabled(kSodaComponentUpdates)) {
++    return;
++  }
+   if (soda_binary_installed_ || is_soda_downloading_ ||
+       never_download_soda_for_testing_) {
+     return;
+@@ -78,6 +82,9 @@ void SodaInstallerImpl::InstallSoda(PrefService* global_prefs) {
+ 
+ void SodaInstallerImpl::InstallLanguage(std::string_view language,
+                                         PrefService* global_prefs) {
++  if (!base::FeatureList::IsEnabled(kSodaComponentUpdates)) {
++    return;
++  }
+   if (never_download_soda_for_testing_) {
+     return;
+   }
+diff --git a/components/soda/soda_features.cc b/components/soda/soda_features.cc
+index 6de140b0f2205ff7b2f46ea1d0f4454f7402d5fc..2fc00e68a0c0b199594fe0288b57fec6e5aff54b 100644
+--- a/components/soda/soda_features.cc
++++ b/components/soda/soda_features.cc
+@@ -7,6 +7,7 @@
+ #include "base/feature_list.h"
+ 
+ namespace speech {
++BASE_FEATURE(kSodaComponentUpdates, base::FEATURE_ENABLED_BY_DEFAULT);
+ #if BUILDFLAG(IS_CHROMEOS)
+ BASE_FEATURE(kFeatureManagementCrosSodaConchLanguages,
+              base::FEATURE_DISABLED_BY_DEFAULT);
+diff --git a/components/soda/soda_features.h b/components/soda/soda_features.h
+index 07a2c2307243b0d1e6a735927e2cf720f6d113cc..8486c49161945c6691f24af7e7bf8cd6e4a6a10e 100644
+--- a/components/soda/soda_features.h
++++ b/components/soda/soda_features.h
+@@ -9,6 +9,10 @@
+ #include "base/feature_list.h"
+ 
+ namespace speech {
++// Allows embedders to disable SODA provisioning without disabling other
++// component updates or microphone capture.
++COMPONENT_EXPORT(SODA_INSTALLER)
++BASE_DECLARE_FEATURE(kSodaComponentUpdates);
+ #if BUILDFLAG(IS_CHROMEOS)
+ COMPONENT_EXPORT(SODA_INSTALLER)
+ BASE_DECLARE_FEATURE(kFeatureManagementCrosSodaConchLanguages);
+diff --git a/components/soda/soda_installer.cc b/components/soda/soda_installer.cc
+index de40e5c8825e729a5c5ba1655547080d301ef423..71c0bad5842fc47604ded23a9dbd5132e8fbea97 100644
+--- a/components/soda/soda_installer.cc
++++ b/components/soda/soda_installer.cc
+@@ -20,6 +20,7 @@
+ #include "components/prefs/scoped_user_pref_update.h"
+ #include "components/soda/constants.h"
+ #include "components/soda/pref_names.h"
++#include "components/soda/soda_features.h"
+ #include "media/base/media_switches.h"
+ 
+ #if BUILDFLAG(IS_CHROMEOS)
+@@ -89,6 +90,9 @@ void SodaInstaller::RegisterLocalStatePrefs(PrefRegistrySimple* registry) {
+ 
+ void SodaInstaller::Init(PrefService* profile_prefs,
+                          PrefService* global_prefs) {
++  if (!base::FeatureList::IsEnabled(kSodaComponentUpdates)) {
++    return;
++  }
+ #if BUILDFLAG(IS_CHROMEOS)
+   if (!base::FeatureList::IsEnabled(
+           ash::features::kOnDeviceSpeechRecognition) ||
+diff --git a/components/soda/soda_util.cc b/components/soda/soda_util.cc
+index 40c7ac63c75c21bbbe468f32d2e9a79cb6df9d0f..eb3c70baa7715835f441bf01b0d957401ceb76e0 100644
+--- a/components/soda/soda_util.cc
++++ b/components/soda/soda_util.cc
+@@ -10,6 +10,7 @@
+ #include "base/i18n/legacy_language_tag_helpers.h"
+ #include "build/build_config.h"
+ #include "components/soda/constants.h"
++#include "components/soda/soda_features.h"
+ #include "components/soda/soda_installer.h"
+ #include "media/base/media_switches.h"
+ #include "media/mojo/mojom/speech_recognizer.mojom.h"
+@@ -63,6 +64,10 @@ bool IsSupportedWin() {
+ }  // namespace
+ 
+ bool IsOnDeviceSpeechRecognitionSupported() {
++  // Report unavailable instead of promising a model that cannot be provisioned.
++  if (!base::FeatureList::IsEnabled(kSodaComponentUpdates)) {
++    return false;
++  }
+   // TODO(crbug.com/446260680): Disable on-device speech recognition if the
+   // OnDeviceWebSpeechGeminiNano feature flag is enabled and the device doesn't
+   // support Gemini Nano.
