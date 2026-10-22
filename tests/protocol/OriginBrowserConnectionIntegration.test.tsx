@@ -699,10 +699,10 @@ describe("real-origin connection-tab integration", () => {
       }),
     ).toBeVisible();
     expect(
-      screen.getByRole("heading", {
+      screen.queryByRole("heading", {
         name: "Shared website request permissions",
       }),
-    ).toBeVisible();
+    ).toBeNull();
     expect(
       screen.getByRole("heading", {
         name: "Connection website request overrides",
@@ -2604,7 +2604,7 @@ describe("real-origin connection-tab integration", () => {
       "This connection's saved settings changed, so this tab reconnected to apply them.",
     );
   });
-  it("does not promote connection display overrides when saving global request permissions", async () => {
+  it("saves connection permissions without writing shared settings or promoting display overrides", async () => {
     f.settings.webBrowser.defaultZoomPercent = 125;
     const browserSession = {
       version: 1,
@@ -2617,13 +2617,12 @@ describe("real-origin connection-tab integration", () => {
     fireEvent.click(
       screen.getByRole("button", { name: "Save for next connection" }),
     );
-    await waitFor(() => expect(f.updateSettings).toHaveBeenCalledOnce());
-    expect(
-      f.updateSettings.mock.calls[0][0].webBrowser.defaultZoomPercent,
-    ).toBe(125);
-    expect(f.updateSettings.mock.calls[0][0].webBrowser.showBookmarksBar).toBe(
-      true,
+    await waitFor(() =>
+      expect(f.context.dispatchAndFlush).toHaveBeenCalledOnce(),
     );
+    expect(f.updateSettings).not.toHaveBeenCalled();
+    expect(f.settings.webBrowser.defaultZoomPercent).toBe(125);
+    expect(f.settings.webBrowser.showBookmarksBar).toBe(true);
     expect(f.context.state.connections[0].browserSession).toEqual(
       browserSession,
     );
@@ -2967,7 +2966,7 @@ describe("real-origin connection-tab integration", () => {
       "flex-wrap",
       "shrink-0",
     );
-    expect(dialog.querySelectorAll(".sor-settings-card")).toHaveLength(2);
+    expect(dialog.querySelectorAll(".sor-settings-card")).toHaveLength(1);
     expect(
       within(dialog).queryByRole("combobox", { name: /browser engine/i }),
     ).toBeNull();
@@ -3562,17 +3561,17 @@ describe("real-origin connection-tab integration", () => {
       else expect(text).not.toBe(general);
     },
   );
-  it("mounts both permission scopes and closes before persisting and reconnecting", async () => {
+  it("edits only connection permissions and closes before persisting and reconnecting", async () => {
     await attached();
     fireEvent.click(screen.getByRole("button", { name: "Browser settings" }));
     expect(
       screen.queryByRole("combobox", { name: /browser engine/i }),
     ).toBeNull();
     expect(
-      screen.getByRole("heading", {
+      screen.queryByRole("heading", {
         name: "Shared website request permissions",
       }),
-    ).toBeVisible();
+    ).toBeNull();
     expect(
       screen.getByRole("heading", {
         name: "Connection website request overrides",
@@ -3595,9 +3594,7 @@ describe("real-origin connection-tab integration", () => {
     expect(closeOrder).toBeLessThan(
       f.context.dispatchAndFlush.mock.invocationCallOrder[0],
     );
-    expect(f.context.dispatchAndFlush.mock.invocationCallOrder[0]).toBeLessThan(
-      f.updateSettings.mock.invocationCallOrder[0],
-    );
+    expect(f.updateSettings).not.toHaveBeenCalled();
   });
   it("does not save permissions or reconnect when native close is unconfirmed", async () => {
     await attached();

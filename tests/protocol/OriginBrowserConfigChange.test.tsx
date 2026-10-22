@@ -511,16 +511,15 @@ describe("in-tab Save and reconnect (R2)", () => {
       "reconnecting",
       "connected",
     ]);
-    // Both scopes reached their stores, after the close and before the create.
+    // The owning row is saved after close; shared defaults are never written.
     expect(h.disk[0].websiteDomainPermissions.websites).toMatchObject([
       override,
     ]);
-    expect(h.updateSettings).toHaveBeenCalledOnce();
+    expect(h.updateSettings).not.toHaveBeenCalled();
     expect(h.order.filter((step) => !step.startsWith("status:"))).toEqual([
       "create",
       "close",
       "save",
-      "settings",
       "create",
     ]);
     expect(h.creates[1].row.websiteDomainPermissions.websites).toMatchObject([
@@ -585,7 +584,7 @@ describe("in-tab Save and reconnect (R2)", () => {
     expect(h.disk[0].websiteDomainPermissions.websites).toMatchObject([
       override,
     ]);
-    expect(h.updateSettings).toHaveBeenCalledOnce();
+    expect(h.updateSettings).not.toHaveBeenCalled();
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
     await flush();
     await settle();
@@ -660,7 +659,7 @@ describe("in-tab Save and reconnect when native never answers the close", () => 
 });
 
 describe("in-tab Save for next connection", () => {
-  it("closes the page, saves both scopes, then ends the tab", async () => {
+  it("closes the page, saves only the connection, then ends the tab", async () => {
     await openTab();
     editPermissions();
     fireEvent.click(
@@ -670,14 +669,9 @@ describe("in-tab Save for next connection", () => {
     expect(h.disk[0].websiteDomainPermissions.websites).toMatchObject([
       override,
     ]);
-    expect(h.updateSettings).toHaveBeenCalledOnce();
+    expect(h.updateSettings).not.toHaveBeenCalled();
     // The tab ends only once the save has finished, and nothing reconnects.
-    expect(h.order.slice(-4)).toEqual([
-      "close",
-      "save",
-      "settings",
-      "status:disconnected",
-    ]);
+    expect(h.order.slice(-3)).toEqual(["close", "save", "status:disconnected"]);
     await flush();
     await settle();
     expect(calls("origin_browser_create")).toHaveLength(1);
@@ -726,7 +720,7 @@ describe("in-tab Save for next connection", () => {
     expect(h.disk[0].websiteDomainPermissions.websites).toMatchObject([
       override,
     ]);
-    expect(h.updateSettings).toHaveBeenCalledOnce();
+    expect(h.updateSettings).not.toHaveBeenCalled();
     expect(screen.queryByRole("dialog")).toBeNull();
     expect(calls("origin_browser_create")).toHaveLength(2);
   });

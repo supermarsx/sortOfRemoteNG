@@ -57,7 +57,6 @@ import {
 } from "../../ui/overlays/Modal";
 import { SettingsCard } from "../../ui/settings/SettingsPrimitives";
 import { OriginConnectionPermissions } from "../../SettingsDialog/sections/webBrowser/OriginBrowserPreferences";
-import WebsiteDomainPermissionsEditor from "../../SettingsDialog/sections/webBrowser/WebsiteDomainPermissionsEditor";
 import type { WebBrowserSettingsConfig } from "../../../types/settings/webBrowser";
 import type { WebsiteDomainPermissionsSettings } from "../../../types/settings/websiteDomainPermissions";
 import type { SettingsTabId } from "../../SettingsDialog/settingsConstants";
@@ -168,7 +167,7 @@ export default function OriginConnectionBrowser({
   onOpenSettings?: (tab?: SettingsTabId) => void;
 }) {
   const context = useConnections();
-  const { settings, settingsReady, updateSettings } = useSettings();
+  const { settings, settingsReady } = useSettings();
   const { toast } = useToastContext();
   // These fallback values are display-only. Invalid shared settings never
   // reach native creation or the permissions dialog's save path.
@@ -1761,7 +1760,7 @@ export default function OriginConnectionBrowser({
           connection={connection}
           config={globalBrowserConfig}
           onClose={() => setEditing(false)}
-          onSave={async (config, permissions, reconnect) => {
+          onSave={async (permissions, reconnect) => {
             assertShellOwner();
             const lease = captureSessionDatabaseAccess(session);
             const settingsAtStart = JSON.stringify(settings.webBrowser);
@@ -1814,7 +1813,6 @@ export default function OriginConnectionBrowser({
                   authoritySignature: nativeBrowserAuthoritySignature(written),
                 }));
               assertAccess();
-              await updateSettings({ webBrowser: config });
               lease();
             };
             if (!reconnect) {
@@ -1883,12 +1881,10 @@ function BrowserPermissionsDialog({
   config: WebBrowserSettingsConfig;
   onClose: () => void;
   onSave: (
-    config: WebBrowserSettingsConfig,
     permissions: WebsiteDomainPermissionsSettings | undefined,
     reconnect: boolean,
   ) => Promise<void>;
 }) {
-  const [draft, setDraft] = useState(config);
   const [permissions, setPermissions] = useState(
     connection.websiteDomainPermissions,
   );
@@ -1922,7 +1918,7 @@ function BrowserPermissionsDialog({
           saved !== JSON.stringify(permissions))
       )
         throw new Error();
-      await onSave(draft, permissions, reconnect);
+      await onSave(permissions, reconnect);
     } catch (failure) {
       if (alive.current)
         setError(
@@ -1949,31 +1945,24 @@ function BrowserPermissionsDialog({
         title={
           <h3 className="flex items-center gap-2">
             <Settings2 size={18} className="text-primary" aria-hidden="true" />
-            Browser settings
+            Connection permissions
           </h3>
         }
         onClose={pending ? undefined : onClose}
       />
       <ModalBody className="min-h-0 overflow-y-auto p-4 space-y-4">
         <p className="text-sm leading-relaxed text-[var(--color-textSecondary)]">
-          Saved permissions never apply to a page that is already open. Save and
-          reconnect closes this page, saves and opens it again in this tab. Save
-          for next connection closes this page, saves and leaves this tab
-          disconnected. Login consent and certificate trust remain separate.
+          These permissions apply only to this connection. Shared defaults are
+          managed in Settings. Saved permissions never apply to a page that is
+          already open. Save and reconnect closes this page, saves and opens it
+          again in this tab. Save for next connection closes this page, saves
+          and leaves this tab disconnected. Login consent and certificate trust
+          remain separate.
         </p>
-        <SettingsCard>
-          <WebsiteDomainPermissionsEditor
-            settings={draft.domainPermissions}
-            onChange={(domainPermissions) =>
-              setDraft((current) => ({ ...current, domainPermissions }))
-            }
-            disabled={pending}
-          />
-        </SettingsCard>
         <SettingsCard>
           <OriginConnectionPermissions
             settings={permissions}
-            sharedSettings={draft.domainPermissions}
+            sharedSettings={config.domainPermissions}
             onChange={setPermissions}
             disabled={pending}
           />
