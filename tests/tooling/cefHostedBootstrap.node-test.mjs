@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, realpath, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import YAML from "yaml";
@@ -208,14 +208,13 @@ test("cleanup accepts only exact reviewed disposable directories on public ephem
 });
 
 test("tool candidate hashes measure actual bytes, change on tampering and cannot escape tools root", async (t) => {
-  const root = await mkdtemp(path.join(os.tmpdir(), "cef-hosted-inventory-"));
+  const root = await realpath(
+    await mkdtemp(path.join(os.tmpdir(), "cef-hosted-inventory-")),
+  );
   t.after(() => rm(root, { recursive: true, force: true }));
   const file = path.join(root, "python-tool");
   await writeFile(file, "synthetic tool bytes, never an executable");
-  const pin = await inventoryFile(
-    file,
-    await import("node:fs/promises").then((fs) => fs.realpath(root)),
-  );
+  const pin = await inventoryFile(file, root);
   assert.equal(pin.path, "python-tool");
   assert.equal(
     pin.size,
@@ -232,6 +231,44 @@ test("tool candidate hashes measure actual bytes, change on tampering and cannot
   await assert.rejects(
     inventoryFile(file, path.join(root, "unrelated")),
     /escapes/,
+  );
+});
+
+test("inventory resolves aliased file names against a canonical tools root before reading", async () => {
+  const root = path.resolve("canonical-tools");
+  const resolved = path.join(root, "python-tool");
+  const bytes = Buffer.from("synthetic tool");
+  let reads = 0;
+  const io = {
+    realpath: async () => resolved,
+    lstat: async (file) => {
+      assert.equal(file, resolved);
+      return { isFile: () => true, size: bytes.length };
+    },
+    createReadStream: async function* (file) {
+      assert.equal(file, resolved);
+      reads++;
+      yield bytes;
+    },
+  };
+  const pin = await inventoryFile(
+    path.resolve("lexical-alias", "python-tool"),
+    root,
+    io,
+  );
+  assert.equal(pin.path, "python-tool");
+  assert.equal(pin.sha256, createHash("sha256").update(bytes).digest("hex"));
+  await assert.rejects(
+    inventoryFile(resolved, root, {
+      ...io,
+      realpath: async () => path.resolve("outside-tools", "python-tool"),
+    }),
+    /escapes/,
+  );
+  assert.equal(
+    reads,
+    1,
+    "a resolved escape must be rejected before reading bytes",
   );
 });
 

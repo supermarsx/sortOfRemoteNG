@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdtemp, readFile, realpath, rm } from "node:fs/promises";
 import path from "node:path";
 import os from "node:os";
 import { RECIPE } from "../../scripts/cef-hosted-bootstrap.mjs";
@@ -158,7 +158,9 @@ test("downloaded bytes are bounded and hash-verified before any executable can b
 });
 
 async function sdkReceiptFixture(t, exitCode = 0) {
-  const root = await mkdtemp(path.join(os.tmpdir(), "cef-provision-mock-"));
+  const root = await realpath(
+    await mkdtemp(path.join(os.tmpdir(), "cef-provision-mock-")),
+  );
   t.after(() => rm(root, { recursive: true, force: true }));
   const output = path.join(root, "result");
   const calls = [];
@@ -226,6 +228,24 @@ test("completed provisioning retains actual post-install blockers and never clai
       .completed,
     true,
   );
+});
+
+test("provision rejects output outside the canonical runner workspace before commands or observations", async (t) => {
+  const f = await sdkReceiptFixture(t);
+  await assert.rejects(
+    provision(
+      {
+        target: "x86_64-pc-windows-msvc",
+        output: path.join(f.env.RUNNER_TEMP, "..", "outside-result"),
+        execute: true,
+      },
+      f.env,
+      f.dependencies,
+    ),
+    /beneath the ephemeral workspace/,
+  );
+  assert.equal(f.calls.length, 0);
+  assert.equal(f.observations(), 0);
 });
 
 test("installer exit3010 explicitly reports reboot required without retrying, rebooting or claiming confirmation", async (t) => {
