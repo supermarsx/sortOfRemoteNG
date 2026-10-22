@@ -669,7 +669,11 @@ fn validate_fresh_migration(
 pub(crate) struct ManagedSnapshotCache {
     index: Option<DecodedArtifact>,
     data: Option<DecodedArtifact>,
-    validated: Option<(String, ([u8; 32], [u8; 32]))>,
+    validated: Option<ValidatedSnapshot>,
+}
+struct ValidatedSnapshot {
+    database: String,
+    fingerprint: ([u8; 32], [u8; 32]),
 }
 #[cfg(test)]
 impl ManagedSnapshotCache {
@@ -1341,7 +1345,7 @@ pub(crate) async fn managed_snapshot_cached(
         cache
             .validated
             .as_ref()
-            .is_some_and(|(owner, prior)| owner == id && *prior == fingerprint)
+            .is_some_and(|prior| prior.database == id && prior.fingerprint == fingerprint)
     });
     if !already_validated
         && (row.get("protectionFormat").is_some()
@@ -1354,7 +1358,10 @@ pub(crate) async fn managed_snapshot_cached(
             );
         }
     }
-    cache.validated = content_fingerprint.map(|fingerprint| (id.to_owned(), fingerprint));
+    cache.validated = content_fingerprint.map(|fingerprint| ValidatedSnapshot {
+        database: id.to_owned(),
+        fingerprint,
+    });
     Ok(ManagedSnapshot {
         index,
         row,
