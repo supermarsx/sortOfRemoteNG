@@ -236,6 +236,10 @@ vi.mock("@xterm/addon-fit", () => ({
   FitAddon: vi.fn(function () {
     return {
       fit: mockFit,
+      proposeDimensions: () => ({
+        cols: mockTerminal.cols,
+        rows: mockTerminal.rows,
+      }),
     };
   }),
 }));

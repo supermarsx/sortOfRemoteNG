@@ -462,6 +462,7 @@ export function useWebTerminal(
   const termRef = useRef<Terminal | null>(null);
   const fitRef = useRef<FitAddon | null>(null);
   const requestFitRef = useRef<(() => void) | null>(null);
+  const fitNowRef = useRef<(() => void) | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
 
   /* ── SSH refs ── */
@@ -3522,6 +3523,7 @@ export function useWebTerminal(
     };
 
     const doFit = () => {
+      clearTimeout(fitRetryTimer);
       fitRetryTimer = undefined;
       if (
         isDisposed.current ||
@@ -3590,6 +3592,7 @@ export function useWebTerminal(
       rafId = requestAnimationFrame(doFit);
     };
     requestFitRef.current = scheduleFit;
+    fitNowRef.current = doFit;
 
     const openTimer = requestAnimationFrame(() => {
       if (isDisposed.current) return;
@@ -4021,6 +4024,7 @@ export function useWebTerminal(
       clearTimeout(resizeTimer);
       clearTimeout(fitRetryTimer);
       if (requestFitRef.current === scheduleFit) requestFitRef.current = null;
+      if (fitNowRef.current === doFit) fitNowRef.current = null;
       if (bellResetTimer) clearTimeout(bellResetTimer);
       if (bellSilenceTimer) clearTimeout(bellSilenceTimer);
       window.removeEventListener("resize", scheduleFit);
@@ -4113,7 +4117,9 @@ export function useWebTerminal(
   /* ── Simple actions ── */
 
   const safeFit = useCallback(() => {
-    requestFitRef.current?.();
+    // Explicit fullscreen focus restoration follows the same owned measured
+    // fit immediately; observer/font events still coalesce on animation frames.
+    fitNowRef.current?.();
   }, []);
 
   const reflowFullscreenTerminal = useCallback(() => {
