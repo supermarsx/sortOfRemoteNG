@@ -9,7 +9,7 @@ use sorng_commands_core::origin_browser_authority::{
     NativeCertificateAuthority, NativeCertificateDecision, NativeCertificateEvidence,
 };
 use sorng_encryption::EncryptionState;
-use std::sync::{Arc, OnceLock, Weak};
+use std::sync::{atomic::AtomicU32, Arc, OnceLock, Weak};
 use tauri::{Manager, WebviewWindow};
 use super::certificate_review::review_certificate;
 
@@ -17,6 +17,7 @@ pub(super) struct CertificateHooks {
     attempt: Weak<Attempt>,
     authority: Arc<NativeCertificateAuthority>,
     window: WebviewWindow,
+    timing_samples: AtomicU32,
 }
 
 impl CertificateHooks {
@@ -29,6 +30,7 @@ impl CertificateHooks {
             attempt: Arc::downgrade(attempt),
             authority,
             window,
+            timing_samples: AtomicU32::new(0),
         })
     }
 }
@@ -90,7 +92,7 @@ impl NativeTlsHooks for CertificateHooks {
         };
         let authority = self.authority.clone();
         let window = self.window.clone();
-        let mut timing = tls_timing();
+        let mut timing = tls_timing(&self.timing_samples);
         tauri::async_runtime::spawn(async move {
             timing.phase(timing::Phase::OwnerBefore);
             let state = window.state::<EncryptionState>();
@@ -155,13 +157,20 @@ impl NativeTlsHooks for CertificateHooks {
     }
 }
 
-fn tls_timing() -> timing::Probe {
-    use std::sync::{atomic::AtomicU32, mpsc::SyncSender};
-    static SAMPLES: AtomicU32 = AtomicU32::new(0);
+fn tls_timing(samples: &AtomicU32) -> timing::Probe {
+    use std::sync::mpsc::SyncSender;
     static SENDER: OnceLock<Option<SyncSender<timing::Report>>> = OnceLock::new();
     let sender = SENDER.get_or_init(|| {
         timing::worker(|report| {
             let [queued, before, certificate, review, after, ui_queue, ui] = report.millis;
+            diagnostics::navigation_at(
+                Navigation::TlsTiming {
+                    phase_ms: report.millis,
+                    outcome: report.outcome as u8,
+                    last_phase: report.last_phase as u8,
+                },
+                report.observed_at,
+            );
             log::info!(
                 "Native browser TLS timing: outcome={} last_phase={} worker_queue_ms={} owner_before_ms={} certificate_ms={} review_ms={} owner_after_ms={} ui_queue_ms={} ui_completion_ms={}",
                 report.outcome as u8, report.last_phase as u8,
@@ -169,7 +178,7 @@ fn tls_timing() -> timing::Probe {
             );
         }).ok()
     });
-    timing::Probe::new(&SAMPLES, sender.as_ref())
+    timing::Probe::new(samples, sender.as_ref())
 }
 
 // BEGIN std-only TLS timing
@@ -183,7 +192,7 @@ mod timing {
             atomic::{AtomicU32, Ordering},
             mpsc::{self, SyncSender},
         },
-        time::Instant,
+        time::{Instant, SystemTime},
     };
 
     const LIMIT: u32 = 32;
@@ -211,6 +220,7 @@ mod timing {
         pub millis: [u64; 7],
         pub last_phase: Phase,
         pub outcome: Outcome,
+        pub observed_at: SystemTime,
     }
     struct Active {
         report: Report,
@@ -246,6 +256,7 @@ mod timing {
                         millis: [0; 7],
                         last_phase: Phase::WorkerQueue,
                         outcome: Outcome::Cancelled,
+                        observed_at: SystemTime::now(),
                     },
                     checkpoint: Instant::now(),
                     sender: sender.clone(),
@@ -274,6 +285,7 @@ mod timing {
     impl Drop for Probe {
         fn drop(&mut self) {
             if let Some(mut active) = self.0.take() {
+                active.report.observed_at = SystemTime::now();
                 let elapsed = active.checkpoint.elapsed().as_millis();
                 let slot = &mut active.report.millis[active.report.last_phase as usize];
                 *slot = slot.saturating_add(elapsed.min(u128::from(u64::MAX)) as u64);
@@ -304,6 +316,19 @@ mod timing {
             });
             assert_eq!(receiver.try_iter().count(), LIMIT as usize);
             assert_eq!(count.load(Ordering::Relaxed), LIMIT);
+        }
+
+        #[test]
+        fn later_attempts_keep_their_own_bounded_samples() {
+            let (sender, receiver) = mpsc::sync_channel((LIMIT * 2) as usize);
+            for _ in 0..2 {
+                let attempt = AtomicU32::new(0);
+                for _ in 0..LIMIT + 8 {
+                    drop(Probe::new(&attempt, Some(&sender)));
+                }
+                assert_eq!(attempt.load(Ordering::Relaxed), LIMIT);
+            }
+            assert_eq!(receiver.try_iter().count(), (LIMIT * 2) as usize);
         }
 
         #[test]
@@ -345,6 +370,7 @@ mod timing {
                         millis: [0; 7],
                         last_phase: Phase::Review,
                         outcome: Outcome::Cancelled,
+                        observed_at: SystemTime::now(),
                     })
                     .unwrap();
             }

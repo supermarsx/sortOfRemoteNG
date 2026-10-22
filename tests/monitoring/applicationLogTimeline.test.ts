@@ -14,6 +14,57 @@ const file = {
 const browser = (row: unknown) =>
   parseLogTimeline(JSON.stringify(row), "browser", file)[0];
 describe("bounded application log timeline", () => {
+  it("shows bounded TLS phase timings from journals without disclosing unrelated fields", () => {
+    const row = browser({
+      version: 1,
+      timestampUnixMs: 1792663200000,
+      navigation: {
+        event: "tls-timing",
+        phase_ms: [1, 2, 3, 0, 2, 17, 0],
+        outcome: 3,
+        last_phase: 6,
+        password: "private-sentinel",
+        url: "https://private-sentinel.invalid",
+      },
+    });
+    expect(row).toMatchObject({
+      category: "tls",
+      message: "TLS timing: admitted",
+      timestampMs: 1792663200000,
+      level: "INFO",
+    });
+    expect(row.details).toContain("Owner check before: 2 ms");
+    expect(row.details).toContain("Certificate verification: 3 ms");
+    expect(row.details).toContain("UI queue: 17 ms");
+    expect(logRowsText([row])).not.toContain("private-sentinel");
+  });
+
+  it("rejects malformed TLS metrics and preserves a denied outcome", () => {
+    const valid = {
+      event: "tls-timing",
+      phase_ms: [0, 1, 0, 0, 0, 0, 0],
+      outcome: 1,
+      last_phase: 1,
+    };
+    expect(browser({ version: 1, navigation: valid })).toMatchObject({
+      message: "TLS timing: owner denied",
+      level: "WARN",
+    });
+    for (const changed of [
+      { phase_ms: [0] },
+      { phase_ms: [-1, 0, 0, 0, 0, 0, 0] },
+      { phase_ms: [86_400_001, 0, 0, 0, 0, 0, 0] },
+      { outcome: 5 },
+      { last_phase: 7 },
+    ]) {
+      const row = browser({
+        version: 1,
+        navigation: { ...valid, ...changed, secret: "private-sentinel" },
+      });
+      expect(row.message).not.toContain("TLS timing:");
+      expect(logRowsText([row])).not.toContain("private-sentinel");
+    }
+  });
   it("keeps persistent browser failures filterable and preserves observed time across queued logging", () => {
     const rows = parseLogTimeline(
       [

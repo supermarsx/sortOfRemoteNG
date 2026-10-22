@@ -175,6 +175,7 @@ const events: Record<string, [LogCategory, string]> = {
   "tls-evidence": ["tls", "TLS evidence received"],
   "tls-review": ["tls", "TLS review requested"],
   "tls-allow": ["tls", "TLS connection permitted"],
+  "tls-timing": ["tls", "TLS verification timing"],
   "tls-denied": ["tls", "TLS connection denied"],
   "tls-failed": ["tls", "TLS verification failed"],
   "tls-bridge-failed": ["tls", "TLS bridge failed"],
@@ -286,6 +287,34 @@ function journal(
   )
     return unknown;
   const [category, message] = events[nav.event];
+  if (nav.event === "tls-timing") {
+    if (
+      !number(nav.outcome) ||
+      nav.outcome > 4 ||
+      !number(nav.last_phase) ||
+      nav.last_phase > 6 ||
+      !Array.isArray(nav.phase_ms) ||
+      nav.phase_ms.length !== 7 ||
+      !nav.phase_ms.every((ms) => number(ms) && ms <= 86_400_000)
+    )
+      return unknown;
+    const phases = nav.phase_ms;
+    const keys = [
+      "worker_queue_ms",
+      "owner_before_ms",
+      "certificate_ms",
+      "review_ms",
+      "owner_after_ms",
+      "ui_queue_ms",
+      "ui_completion_ms",
+    ];
+    const timing = nativeTiming(
+      `Native browser TLS timing: outcome=${nav.outcome} last_phase=${nav.last_phase} ${keys.map((key, i) => `${key}=${phases[i]}`).join(" ")}`,
+    );
+    return timing
+      ? { ...timing, timestampMs, level: nav.outcome === 3 ? "INFO" : "WARN" }
+      : unknown;
+  }
   const details: string[] = [];
   for (const [key, label] of [
     ["allowed", "Allowed"],

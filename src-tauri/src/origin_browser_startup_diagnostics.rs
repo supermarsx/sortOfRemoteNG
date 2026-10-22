@@ -375,6 +375,7 @@ struct Journal {
     observation_records: usize,
     relay_records: usize,
     timing_records: usize,
+    tls_timing_records: usize,
 }
 
 /// Fixed, secret-free observations from the native browser callbacks. Separate
@@ -395,6 +396,7 @@ pub(crate) enum Navigation {
     TlsEvidence { code: i32, fatal: bool },
     TlsReview,
     TlsAllow,
+    TlsTiming { phase_ms: [u64; 7], outcome: u8, last_phase: u8 },
     TlsDenied,
     TlsFailed,
     TlsBridgeFailed { reason: TlsBridgeFailure },
@@ -591,6 +593,7 @@ fn open_journal(root: &Path) -> io::Result<Journal> {
         observation_records: 0,
         relay_records: 0,
         timing_records: 0,
+        tls_timing_records: 0,
     })
 }
 
@@ -611,23 +614,25 @@ impl Journal {
         let tls_failure = matches!(status, Navigation::TlsFailed | Navigation::TlsBridgeFailed { .. });
         let session_failure = matches!(status, Navigation::SessionFailed { .. });
         let relay = matches!(status, Navigation::PrivateRelay { .. });
+        let tls_timing = matches!(status, Navigation::TlsTiming { .. });
         let observation = matches!(status, Navigation::RendererFeature { .. } | Navigation::ResourceAdmission { .. });
         // Resource/renderer observations cannot consume lifecycle/navigation
         // evidence. Both budgets and the caller's per-attempt gate are bounded.
         // First-failure relay evidence has its own small budget, so noisy
         // resource callbacks cannot hide whether a failed tab reached its relay.
         if (relay && self.relay_records >= MAX_TIMED_STARTUPS as usize)
+            || (tls_timing && self.tls_timing_records >= 1024)
             || (observation && self.observation_records >= 512)
             || (tls_failure && self.tls_failure_records >= MAX_RECORDS)
             || (session_failure && self.session_failure_records >= MAX_RECORDS)
-            || (!relay && !observation && !tls_failure && !session_failure && self.navigation_records >= 128) {
+            || (!relay && !observation && !tls_failure && !session_failure && !tls_timing && self.navigation_records >= 128) {
             return Ok(());
         }
         let record = serde_json::json!({
             "version": 1,
             "timestampUnixMs": timestamp.duration_since(UNIX_EPOCH).unwrap_or_default().as_millis(),
             "processId": std::process::id(),
-            "navigationSequence": self.navigation_records + self.observation_records + self.relay_records + self.tls_failure_records + self.session_failure_records,
+            "navigationSequence": self.navigation_records + self.observation_records + self.relay_records + self.tls_failure_records + self.session_failure_records + self.tls_timing_records,
             "navigation": status,
         });
         let mut bytes = serde_json::to_vec(&record)?;
@@ -638,6 +643,7 @@ impl Journal {
         else if session_failure { self.session_failure_records += 1; }
         else if relay { self.relay_records += 1; }
         else if observation { self.observation_records += 1; }
+        else if tls_timing { self.tls_timing_records += 1; }
         else { self.navigation_records += 1; }
         Ok(())
     }
@@ -694,8 +700,12 @@ pub(crate) fn record(stage: Stage, failure: Option<Failure>) {
 }
 
 pub(crate) fn navigation(status: Navigation) {
+    navigation_at(status, SystemTime::now());
+}
+
+pub(crate) fn navigation_at(status: Navigation, observed_at: SystemTime) {
     if let Some(sender) = dispatcher() {
-        let _ = delivery::enqueue(sender, Message::Navigation(status, SystemTime::now()));
+        let _ = delivery::enqueue(sender, Message::Navigation(status, observed_at));
     }
 }
 
@@ -703,6 +713,34 @@ pub(crate) fn navigation(status: Navigation) {
 mod tests {
     use super::*;
     use std::sync::mpsc;
+
+    #[test]
+    fn tls_phase_budget_cannot_hide_failures_or_consume_navigation_budget() {
+        let temp = tempfile::tempdir().unwrap();
+        let mut journal = open_journal(temp.path()).unwrap();
+        journal.navigation_records = 128;
+        journal.observation_records = 512;
+        journal.tls_timing_records = 1023;
+        let observed = UNIX_EPOCH + std::time::Duration::from_millis(1_792_663_200_000);
+        for _ in 0..2 {
+            journal.navigation(Navigation::TlsTiming {
+                phase_ms: [1, 2, 3, 0, 2, 17, 0], outcome: 3, last_phase: 6,
+            }, observed).unwrap();
+        }
+        journal.navigation(Navigation::TlsFailed, observed).unwrap();
+        assert_eq!(journal.tls_timing_records, 1024);
+        assert_eq!(journal.navigation_records, 128);
+        assert_eq!(journal.tls_failure_records, 1);
+        drop(journal);
+        let path = fs::read_dir(temp.path()).unwrap().next().unwrap().unwrap().path();
+        let rows: Vec<serde_json::Value> = fs::read_to_string(path).unwrap().lines()
+            .map(|line| serde_json::from_str(line).unwrap()).collect();
+        assert_eq!(rows.len(), 2);
+        assert_eq!(rows[0]["navigation"]["event"], "tls-timing");
+        assert_eq!(rows[0]["navigation"]["phase_ms"], serde_json::json!([1, 2, 3, 0, 2, 17, 0]));
+        assert_eq!(rows[0]["timestampUnixMs"], 1_792_663_200_000_u64);
+        assert_eq!(rows[1]["navigation"]["event"], "tls-failed");
+    }
 
     #[test]
     fn session_first_causes_have_an_independent_fixed_only_budget() {
