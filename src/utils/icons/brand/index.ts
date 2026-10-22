@@ -4,6 +4,7 @@ import { GENERATED_BRAND_ICONS } from "./generatedBrandIcons";
 import { putty } from "./puttyBrandIcon";
 import { noip } from "./noipBrandIcon";
 import { tacticalrmm } from "./tacticalRmmBrandIcon";
+import { activepieces } from "./activepiecesBrandIcon";
 import {
   STANDARD_NOTES_BRAND_ICONS,
   type StandardNotesBrandIconName,
@@ -77,6 +78,7 @@ export * from "./hostingPublisherBrandIcons";
 export { putty } from "./puttyBrandIcon";
 export { noip } from "./noipBrandIcon";
 export { tacticalrmm } from "./tacticalRmmBrandIcon";
+export { activepieces } from "./activepiecesBrandIcon";
 export * from "./standardNotesBrandIcons";
 export { vscode } from "./developerPublisherBrandIcons";
 export * from "./messagingPublisherBrandIcons";
@@ -92,6 +94,7 @@ export type BrandIconName =
   | "putty"
   | "noip"
   | "tacticalrmm"
+  | "activepieces"
   | "vscode"
   | StandardNotesBrandIconName
   | DashboardBrandIconName
@@ -115,6 +118,7 @@ export const BRAND_ICONS: Readonly<Record<BrandIconName, LucideIcon>> = {
   putty,
   noip,
   tacticalrmm,
+  activepieces,
   vscode,
   ...STANDARD_NOTES_BRAND_ICONS,
   ...DASHBOARD_BRAND_ICONS,

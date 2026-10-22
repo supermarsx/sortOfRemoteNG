@@ -1,0 +1,112 @@
+{
+  "$schema": "../evidence.schema.json",
+  "version": 1,
+  "id": "activepieces-self-hosted",
+  "class": "A",
+  "mechanism": "form",
+  "source": "https://github.com/activepieces/activepieces/blob/5da73236367bf9bfb16279ecb060c50300354201/packages/web/src/features/authentication/components/sign-in-form.tsx",
+  "reviewed": "2026-10-22",
+  "summary": "The published React sign-in form uses email and password on /sign-in with a script-handled button. On layouts offering email codes first, the user selects Use password before automatic login.",
+  "sources": [
+    {
+      "id": "sign-in",
+      "kind": "public-source",
+      "title": "Activepieces password sign-in form",
+      "url": "https://github.com/activepieces/activepieces/blob/5da73236367bf9bfb16279ecb060c50300354201/packages/web/src/features/authentication/components/sign-in-form.tsx",
+      "commit": "5da73236367bf9bfb16279ecb060c50300354201",
+      "retrieved": "2026-10-22"
+    },
+    {
+      "id": "input",
+      "kind": "public-source",
+      "title": "Native input prop forwarding",
+      "url": "https://github.com/activepieces/activepieces/blob/5da73236367bf9bfb16279ecb060c50300354201/packages/web/src/components/ui/input.tsx",
+      "commit": "5da73236367bf9bfb16279ecb060c50300354201",
+      "retrieved": "2026-10-22"
+    },
+    {
+      "id": "button",
+      "kind": "public-source",
+      "title": "Native button prop and click-handler forwarding",
+      "url": "https://github.com/activepieces/activepieces/blob/5da73236367bf9bfb16279ecb060c50300354201/packages/web/src/components/ui/button.tsx",
+      "commit": "5da73236367bf9bfb16279ecb060c50300354201",
+      "retrieved": "2026-10-22"
+    },
+    {
+      "id": "routes",
+      "kind": "public-source",
+      "title": "Authentication route declarations",
+      "url": "https://github.com/activepieces/activepieces/blob/5da73236367bf9bfb16279ecb060c50300354201/packages/web/src/app/routes/auth-routes.tsx",
+      "commit": "5da73236367bf9bfb16279ecb060c50300354201",
+      "retrieved": "2026-10-22"
+    },
+    {
+      "id": "methods",
+      "kind": "public-source",
+      "title": "Password, email-code and first-user method selection",
+      "url": "https://github.com/activepieces/activepieces/blob/5da73236367bf9bfb16279ecb060c50300354201/packages/web/src/features/authentication/components/auth-landing/auth-drawer-body.tsx",
+      "commit": "5da73236367bf9bfb16279ecb060c50300354201",
+      "retrieved": "2026-10-22"
+    },
+    {
+      "id": "federated",
+      "kind": "public-source",
+      "title": "Google and SAML sign-in availability",
+      "url": "https://github.com/activepieces/activepieces/blob/5da73236367bf9bfb16279ecb060c50300354201/packages/web/src/features/authentication/components/third-party-logins.tsx",
+      "commit": "5da73236367bf9bfb16279ecb060c50300354201",
+      "retrieved": "2026-10-22"
+    }
+  ],
+  "selectors": [
+    {
+      "selector": "form input[data-testid=\"sign-in-email\"]",
+      "role": "username",
+      "source": "sign-in",
+      "basis": "observed",
+      "locator": "SignInForm: email Input with data-testid sign-in-email; input source forwards props to native input",
+      "fixture": "fixture.html"
+    },
+    {
+      "selector": "form input[data-testid=\"sign-in-password\"][type=\"password\"]",
+      "role": "password",
+      "source": "sign-in",
+      "basis": "observed",
+      "locator": "SignInForm: password Input with data-testid sign-in-password and initial type password; input source forwards props to native input",
+      "fixture": "fixture.html"
+    },
+    {
+      "selector": "form button[data-testid=\"sign-in-button\"]",
+      "role": "control",
+      "source": "sign-in",
+      "basis": "observed",
+      "locator": "SignInForm: Button with data-testid sign-in-button and form.handleSubmit click handler; button source renders native button",
+      "fixture": "fixture.html"
+    }
+  ],
+  "fixtures": [
+    {
+      "file": "fixture.html",
+      "path": "/sign-in",
+      "derivedFrom": ["sign-in", "input", "button", "routes"]
+    }
+  ],
+  "staysInteractive": [
+    {
+      "kind": "other",
+      "note": "Select Use password manually where the initial screen offers email codes. Fresh-install account creation, invitations, account recovery and email verification stay interactive."
+    },
+    {
+      "kind": "email-code",
+      "note": "Email-code authentication and the six-digit code remain interactive; this is not an authenticator TOTP flow."
+    },
+    {
+      "kind": "captcha",
+      "note": "Turnstile or other verification challenges remain interactive."
+    },
+    {
+      "kind": "single-sign-on",
+      "note": "Google and SAML sign-in, external identity-provider MFA and approvals remain interactive. Saved passwords are not released to identity-provider origins."
+    }
+  ],
+  "notes": "Source-backed synthetic fixture only; no account sign-in or hosted deployment version was tested. Exact sign-in test ids exclude sign-up and reset forms. The native password-type guard refuses the field if the user reveals the password. No pre-step chooses an optional authentication method."
+}

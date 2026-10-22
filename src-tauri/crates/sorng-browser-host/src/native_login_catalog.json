@@ -560,6 +560,57 @@
         ]
       }
     },
+    "activepieces": {
+      "capability": "manual",
+      "declarativeLogin": {
+        "mode": "exclusive",
+        "credentialOrigins": ["https://cloud.activepieces.com"],
+        "passwordOnly": false,
+        "loginSteps": [
+          {
+            "kind": "form",
+            "origin": "https://cloud.activepieces.com",
+            "paths": ["/sign-in"],
+            "selectors": {
+              "username": "form input[data-testid=\"sign-in-email\"]",
+              "password": "form input[data-testid=\"sign-in-password\"][type=\"password\"]"
+            }
+          },
+          {
+            "kind": "submit",
+            "submission": "spa",
+            "selectors": {
+              "control": "form button[data-testid=\"sign-in-button\"]"
+            }
+          }
+        ]
+      }
+    },
+    "activepieces-self-hosted": {
+      "capability": "manual",
+      "declarativeLogin": {
+        "mode": "exclusive",
+        "credentialOrigins": [],
+        "passwordOnly": false,
+        "loginSteps": [
+          {
+            "kind": "form",
+            "paths": ["/sign-in"],
+            "selectors": {
+              "username": "form input[data-testid=\"sign-in-email\"]",
+              "password": "form input[data-testid=\"sign-in-password\"][type=\"password\"]"
+            }
+          },
+          {
+            "kind": "submit",
+            "submission": "spa",
+            "selectors": {
+              "control": "form button[data-testid=\"sign-in-button\"]"
+            }
+          }
+        ]
+      }
+    },
     "namecheap": {
       "capability": "manual"
     },

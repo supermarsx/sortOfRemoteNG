@@ -22,6 +22,11 @@ accepted, and a saved path never grants access to a different origin.
 
 ## Choose how to sign in
 
+**Business applications** includes Activepieces Cloud and Activepieces (self-hosted).
+Both start in manual mode and offer explicit native password-form assistance.
+See [Activepieces website login]({{ '/activepieces-login/' | relative_url }}) for
+address/port setup and interactive email-code or SSO sign-in.
+
 | Mode                 | What happens                                                                                                                                                                                         |
 | -------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Manual browsing      | No saved website username/password is supplied to the proxy. Sign in on the website yourself. Existing website cookies may still represent a signed-in session; manual mode does not promise logout. |

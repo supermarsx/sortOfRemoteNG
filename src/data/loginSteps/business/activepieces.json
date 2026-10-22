@@ -1,0 +1,29 @@
+{
+  "$schema": "../../../types/connection/httpLoginSteps.schema.json",
+  "version": 1,
+  "id": "activepieces",
+  "evidence": {
+    "class": "A",
+    "source": "https://github.com/activepieces/activepieces/blob/5da73236367bf9bfb16279ecb060c50300354201/packages/web/src/features/authentication/components/sign-in-form.tsx",
+    "reviewed": "2026-10-22"
+  },
+  "credentialOrigins": ["https://cloud.activepieces.com"],
+  "loginSteps": [
+    {
+      "kind": "form",
+      "origin": "https://cloud.activepieces.com",
+      "paths": ["/sign-in"],
+      "selectors": {
+        "username": "form input[data-testid=\"sign-in-email\"]",
+        "password": "form input[data-testid=\"sign-in-password\"][type=\"password\"]"
+      }
+    },
+    {
+      "kind": "submit",
+      "submission": "spa",
+      "selectors": {
+        "control": "form button[data-testid=\"sign-in-button\"]"
+      }
+    }
+  ]
+}

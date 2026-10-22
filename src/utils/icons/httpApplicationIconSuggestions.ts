@@ -22,6 +22,8 @@ export const HTTP_APPLICATION_ICON_SUGGESTIONS = Object.freeze({
   ...HOSTED_DASHBOARD_ICON_SUGGESTIONS,
   "adobe-admin-console": "adobe",
   canva: "canva",
+  activepieces: "activepieces",
+  "activepieces-self-hosted": "activepieces",
   "standard-notes": "standard-notes",
   "standard-notes-self-hosted": "standard-notes",
   "standard-red-notes": "standard-red-notes",

@@ -38,11 +38,11 @@ const connection = (
 describe("HTTP application profile policy", () => {
   it("categorizes the existing applications plus Custom, Webmin, and Cloudflare, with non-web integrations separate", () => {
     // 149 existing profiles plus Vodafone Smart Router 3, YouTube Studio and
-    // the TP-Link managed switch and reviewed EAP standalone login.
-    expect(HTTP_APPLICATION_PROFILES).toHaveLength(156);
+    // the TP-Link managed switch, reviewed EAP login and two Activepieces profiles.
+    expect(HTTP_APPLICATION_PROFILES).toHaveLength(158);
     expect(
       new Set(HTTP_APPLICATION_PROFILES.map((profile) => profile.id)).size,
-    ).toBe(156);
+    ).toBe(158);
     for (const profile of HTTP_APPLICATION_PROFILES) {
       expect(HTTP_APPLICATION_CATEGORIES[profile.category]).toBeTruthy();
       expect(profile.category === "native").toBe(profile.capability === "none");
@@ -125,7 +125,7 @@ describe("HTTP application profile policy", () => {
     const declarative = HTTP_APPLICATION_PROFILES.filter(
       (profile) => profile.declarativeLogin,
     );
-    expect(declarative).toHaveLength(35);
+    expect(declarative).toHaveLength(37);
     const exclusive = declarative.filter(
       (profile) => profile.declarativeLoginMode === "exclusive",
     ).length;
@@ -144,7 +144,7 @@ describe("HTTP application profile policy", () => {
           getHttpApplicationLoginModes(profile).join() === modes.join(),
       ).length;
     // Manual only; native-only; and every profile that offers form login today.
-    expect(offering("manual")).toBe(60 - exclusive);
+    expect(offering("manual")).toBe(62 - exclusive);
     expect(offering()).toBe(8);
     expect(
       HTTP_APPLICATION_PROFILES.filter((profile) =>

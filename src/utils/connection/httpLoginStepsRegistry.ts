@@ -3,6 +3,8 @@
 // run `node scripts/generate-native-login-catalog.mjs`.
 // Empty while DECLARATIVE_LOGIN_SUPPORTED is off: the generator then
 // validates the steps files and ships none of them.
+import stepsActivepieces from "../../data/loginSteps/business/activepieces.json";
+import stepsActivepiecesSelfHosted from "../../data/loginSteps/business/activepieces-self-hosted.json";
 import stepsAmazonShopping from "../../data/loginSteps/commerce-social-developer/amazon-shopping.json";
 import stepsAutoridadeTributaria from "../../data/loginSteps/portuguese-portals/autoridade-tributaria.json";
 import stepsBudibase from "../../data/loginSteps/self-hosted/budibase.json";
@@ -44,6 +46,8 @@ export const HTTP_LOGIN_STEPS_FILES: readonly (readonly [
   id: string,
   file: unknown,
 ])[] = [
+  ["activepieces", stepsActivepieces],
+  ["activepieces-self-hosted", stepsActivepiecesSelfHosted],
   ["amazon-shopping", stepsAmazonShopping],
   ["autoridade-tributaria", stepsAutoridadeTributaria],
   ["budibase", stepsBudibase],

@@ -99,6 +99,9 @@ export default function ApplicationSection({
       : profile?.selectors;
   const fileApi = isSynologyFileConnection(mgr.formData);
   const boundedAiFlow = profile?.id === "chatgpt" || profile?.id === "claude";
+  const activepieces =
+    profile?.id === "activepieces" ||
+    profile?.id === "activepieces-self-hosted";
   // Present only while the engine that runs login steps is supported.
   const declarativeLogin = profile?.declarativeLogin;
   const customProfile = profile?.capability === "custom-form";
@@ -683,7 +686,12 @@ export default function ApplicationSection({
                   )}
                   <div className="max-w-2xl space-y-2">
                     <p className="text-sm font-medium">
-                      Website credential source
+                      {activepieces
+                        ? "Activepieces account"
+                        : "Website credential source"}
+                      {activepieces && (
+                        <InfoTooltip text="Use your Activepieces website account, not an API key. If the website offers email codes first, choose Use password before starting automatic login. Google/SAML SSO, verification codes and approval stay interactive. Password login must be enabled on the server." />
+                      )}
                     </p>
                     {settings.loginMode === "manual" ? (
                       <p
@@ -738,7 +746,7 @@ export default function ApplicationSection({
                           htmlFor="http-application-user"
                           className="block text-sm mb-2"
                         >
-                          Website{" "}
+                          {activepieces ? "Activepieces" : "Website"}{" "}
                           {profile.usernameLabel?.toLowerCase() ?? "username"}
                         </label>
                         <input
@@ -764,7 +772,9 @@ export default function ApplicationSection({
                           htmlFor="http-application-password"
                           className="block text-sm mb-2"
                         >
-                          Website password
+                          {activepieces
+                            ? "Activepieces password"
+                            : "Website password"}
                         </label>
                         <PasswordInput
                           id="http-application-password"

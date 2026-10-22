@@ -23,6 +23,7 @@ import {
 } from "lucide-react";
 
 import {
+  activepieces,
   ansible,
   azuredevops,
   buildkite,
@@ -351,6 +352,20 @@ export const DEVOPS_MONITORING_ICONS = [
     "configuration management",
     "playbook",
   ]),
+  defineIcon(
+    "activepieces",
+    "Activepieces",
+    "devops-monitoring",
+    activepieces,
+    [
+      "activepieces",
+      "active pieces",
+      "automation",
+      "workflow",
+      "integration",
+      "self hosted",
+    ],
+  ),
   defineIcon("n8n", "n8n", "devops-monitoring", n8n, [
     "n8n",
     "automation",

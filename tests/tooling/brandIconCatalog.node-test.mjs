@@ -202,6 +202,7 @@ test("every brand icon is a themed passive Lucide icon with its declared artwork
     DASHBOARD_BRAND_ICONS,
     RETRACED_PROVIDER_BRAND_ICONS,
     STANDARD_NOTES_BRAND_ICONS,
+    activepieces,
     putty,
     noip,
     tacticalrmm,
@@ -221,6 +222,7 @@ test("every brand icon is a themed passive Lucide icon with its declared artwork
     ...Object.keys(DASHBOARD_BRAND_ICONS),
     ...Object.keys(RETRACED_PROVIDER_BRAND_ICONS),
     ...Object.keys(STANDARD_NOTES_BRAND_ICONS),
+    "activepieces",
     "putty",
     "noip",
     "tacticalrmm",
@@ -237,6 +239,7 @@ test("every brand icon is a themed passive Lucide icon with its declared artwork
     "every source group and individual mark must reach the registry",
   );
   assert.equal(BRAND_ICONS.putty, putty);
+  assert.equal(BRAND_ICONS.activepieces, activepieces);
   assert.equal(BRAND_ICONS.noip, noip);
   assert.equal(BRAND_ICONS.tacticalrmm, tacticalrmm);
   assert.equal(BRAND_ICONS.vscode, vscode);

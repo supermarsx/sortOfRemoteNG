@@ -180,6 +180,12 @@
     "standard-red-notes": {
       "loginPath": "/"
     },
+    "activepieces": {
+      "hostedLoginUrl": "https://cloud.activepieces.com/sign-in"
+    },
+    "activepieces-self-hosted": {
+      "loginPath": "/sign-in"
+    },
     "namecheap": {
       "hostedLoginUrl": "https://www.namecheap.com/myaccount/login/"
     },

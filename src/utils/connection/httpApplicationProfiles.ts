@@ -21,6 +21,7 @@ import { normalizeExchangeOwaMailbox } from "./exchangeOwaProfile";
 import { ADOBE_ADMIN_CONSOLE_PROFILE } from "./adobeAdminConsoleProfile";
 import { CANVA_PROFILE } from "./canvaProfile";
 import { STANDARD_NOTES_PROFILES } from "./standardNotesProfiles";
+import { ACTIVEPIECES_PROFILES } from "./activepiecesProfiles";
 import {
   AMAZON_SHOPPING_PROFILES,
   getAmazonShoppingMarket,
@@ -230,6 +231,7 @@ const BASE_HTTP_APPLICATION_PROFILES: readonly HttpApplicationProfile[] = [
   VODAFONE_SMART_ROUTER_PROFILE,
   ...SELF_HOSTED_VAULT_PROFILES,
   ...STANDARD_NOTES_PROFILES,
+  ...ACTIVEPIECES_PROFILES,
   ...HOSTED_DASHBOARD_PROFILES,
   ADOBE_ADMIN_CONSOLE_PROFILE,
   CANVA_PROFILE,

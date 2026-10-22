@@ -29,11 +29,11 @@ mode, and you turn automatic login on per connection.
 | HTTP authentication, no page form                                            | 7            |
 | Configured by you                                                            | 2            |
 | No web login                                                                 | 8            |
-| Login steps written, class A: every selector seen in an authoritative source | 17           |
+| Login steps written, class A: every selector seen in an authoritative source | 19           |
 | Login steps written, class B: unverified layout                              | 18           |
 | Evidence, but no steps file                                                  | 3            |
 | Nothing to build from (class C)                                              | 36           |
-| Total                                                                        | 156          |
+| Total                                                                        | 158          |
 
 Of the 65 that sign in automatically, 38 use reviewed form selectors and 27 keep a hand-written
 adapter (`adobe` 1, `bitwarden` 2, `chatgpt` 1, `claude` 1, `cloudflare` 1, `google` 19,
@@ -259,13 +259,15 @@ Native integration entries with no web login page.
 | PHP runtime                 | `php`           | `none`             | -     | -         | -          | No web login page |
 | VMware Workstation / Fusion | `vmwareDesktop` | `none`             | -     | -         | -          | No web login page |
 
-### Login steps written (35)
+### Login steps written (37)
 
 A steps file exists under `src/data/loginSteps/`. Class A: every selector was seen in an
 authoritative source. Class B: the layout is unverified until someone signs in with it.
 
 | Application                                 | Id                           | Catalog capability | Class | Mechanism | Steps file                                        | Note                 |
 | ------------------------------------------- | ---------------------------- | ------------------ | ----- | --------- | ------------------------------------------------- | -------------------- |
+| Activepieces (self-hosted)                  | `activepieces-self-hosted`   | `manual`           | A     | `form`    | `business/activepieces-self-hosted.json`          | Authoritative source |
+| Activepieces Cloud                          | `activepieces`               | `manual`           | A     | `form`    | `business/activepieces.json`                      | Authoritative source |
 | Amazon Shopping                             | `amazon-shopping`            | `manual`           | B     | `form`    | `commerce-social-developer/amazon-shopping.json`  | Unverified layout    |
 | Autoridade Tributária — Portal das Finanças | `autoridade-tributaria`      | `manual`           | B     | `form`    | `portuguese-portals/autoridade-tributaria.json`   | Unverified layout    |
 | Budibase                                    | `budibase`                   | `generic-form`     | A     | `form`    | `self-hosted/budibase.json`                       | Authoritative source |
