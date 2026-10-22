@@ -1,0 +1,19 @@
+{
+  "kind": "reviewed-hosted-image-variant",
+  "target": "aarch64-unknown-linux-gnu",
+  "sourceLockIdentity": "49355206f8f7204361f755f54635a9c9ae8de8c11fc0bdc5af7376d2dceeee60",
+  "baseSourceLockIdentity": "a4e2f53b29a8b7fc51c67e0df99650beeb5f764046633b9482a81733f0168b11",
+  "actualRun": 39818101932,
+  "actualHead": "0695bebc58d019102805b9d3e8f8ce5c3a3ba90d",
+  "actualPostProvisionImage": {
+    "os": "ubuntu24-arm64",
+    "version": "20261012.149.1"
+  },
+  "actualToolFileCount": 4,
+  "actualToolHashesMatchReviewedBase": true,
+  "sourcePatchesAndHeaderChanged": false,
+  "engineBuildSucceeded": false,
+  "acceptanceObserved": false,
+  "observationsSha256": "b773ba14d072a6d6bc3620cfe8d6d5b794dc176743f2fee6296373db138a36c3",
+  "candidateSha256": "5ddaebfd84e7bf50375f13b97140bfd04c1a5a45b3ae586f64c87c9b2454f1f4"
+}
