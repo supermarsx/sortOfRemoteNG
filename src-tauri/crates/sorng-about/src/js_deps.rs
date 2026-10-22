@@ -43,7 +43,7 @@ const PRODUCTION_DEPS: &[(&str, &str, &str, &str)] = &[
     ("jsqr", "1.4.0", "Apache-2.0", "Cryptography & Auth"),
     ("lucide-react", "1.35.0", "ISC", "React & UI"),
     ("mermaid", "12.0.0", "MIT", "Other"),
-    ("next", "16.3.8", "MIT", "Next.js"),
+    ("next", "16.4.2", "MIT", "Next.js"),
     ("pdfjs-dist", "6.3.289", "Apache-2.0", "Other"),
     ("prettier", "3.9.6", "MIT", "Formatting"),
     ("qrcode", "1.5.4", "MIT", "Cryptography & Auth"),
