@@ -386,6 +386,7 @@ pub(crate) enum Navigation {
     Requested,
     Browse { allowed: bool, main_frame: bool },
     ProxyAuth { callback_present: bool },
+    PrivateProxyApplied,
     AuthCompleted { handled: bool },
     LoadError { code: i32, main_frame: bool },
     PrivateRelay {
@@ -437,6 +438,9 @@ fn application_navigation_failure(status: &Navigation) -> Option<(&'static str, 
         }
         Navigation::PrivateRelay { .. } => "native_browser::proxy",
         Navigation::SessionFailed { .. } => "native_browser::session",
+        Navigation::TlsBridgeFailed {
+            reason: TlsBridgeFailure::ProxyConfiguration,
+        } => "native_browser::proxy",
         Navigation::TlsDenied | Navigation::TlsFailed | Navigation::TlsBridgeFailed { .. } => {
             "native_browser::tls"
         }
@@ -524,6 +528,8 @@ fn dispatcher() -> Option<&'static SyncSender<Message>> {
                 Message::Navigation(status, timestamp) => {
                     if let Some((target, detail)) = application_navigation_failure(&status) {
                         log::error!(target: target, "Native browser failure: timestampUnixMs={} source=native {detail}", timestamp.duration_since(UNIX_EPOCH).unwrap_or_default().as_millis());
+                    } else if matches!(status, Navigation::PrivateProxyApplied) {
+                        log::info!(target: "native_browser::proxy", "Native browser proxy: timestampUnixMs={} source=native event=private-proxy-applied", timestamp.duration_since(UNIX_EPOCH).unwrap_or_default().as_millis());
                     }
                     if let Some(opened) = journal.as_mut() {
                         if let Err(error) = opened.navigation(status, timestamp) {
@@ -713,6 +719,20 @@ pub(crate) fn navigation_at(status: Navigation, observed_at: SystemTime) {
 mod tests {
     use super::*;
     use std::sync::mpsc;
+
+    #[test]
+    fn proxy_application_observations_have_fixed_schema_and_failure_category() {
+        let status = Navigation::TlsBridgeFailed {
+            reason: TlsBridgeFailure::ProxyConfiguration,
+        };
+        let (target, detail) = application_navigation_failure(&status).unwrap();
+        assert_eq!(target, "native_browser::proxy");
+        assert_eq!(serde_json::from_str::<serde_json::Value>(&detail).unwrap(),
+            serde_json::json!({"event": "tls-bridge-failed", "reason": "proxy-configuration"}));
+        assert!(application_navigation_failure(&Navigation::PrivateProxyApplied).is_none());
+        assert_eq!(serde_json::to_value(Navigation::PrivateProxyApplied).unwrap(),
+            serde_json::json!({"event": "private-proxy-applied"}));
+    }
 
     #[test]
     fn tls_phase_budget_cannot_hide_failures_or_consume_navigation_budget() {

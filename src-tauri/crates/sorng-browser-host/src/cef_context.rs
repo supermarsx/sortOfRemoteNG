@@ -437,7 +437,25 @@ impl PrivateRequestContext {
                 return status;
             }
             match tls.status() {
-                NativeTlsStatus::Installed => {}
+                NativeTlsStatus::Installed => {
+                    if status == PreparationStatus::ProxyConfigured {
+                        let port = match lock_session(
+                            &self.preparation.session,
+                            &self.preparation.identity,
+                        ) {
+                            Ok(session) => session.proxy_endpoint().port(),
+                            Err(_) => return PreparationStatus::Revoked,
+                        };
+                        match tls.prepare_proxy(port) {
+                            Ok(true) => {}
+                            Ok(false) => return PreparationStatus::Initializing,
+                            Err(_) => {
+                                self.preparation.fail(ContextError::ProxyMismatch);
+                                return PreparationStatus::Failed(ContextError::ProxyMismatch);
+                            }
+                        }
+                    }
+                }
                 NativeTlsStatus::Initializing => return PreparationStatus::Initializing,
                 _ => {
                     self.preparation.fail(ContextError::CreationFailed);
@@ -555,6 +573,13 @@ impl PrivateRequestContext {
             .as_ref()
             .is_some_and(|tls| tls.status() == NativeTlsStatus::Installed)
             && self.status() == PreparationStatus::ProxyConfigured
+    }
+
+    /// True only for a current known-capability native NetworkService ACK.
+    /// Legacy preference-only readiness is intentionally not proof.
+    pub fn proxy_application_verified(&self) -> bool {
+        self.tls.as_ref().is_some_and(|tls| tls.proxy_applied())
+            && self.preparation.current_status() == PreparationStatus::ProxyConfigured
     }
 
     /// Native browser creation must reuse its context's immutable snapshot.
@@ -712,7 +737,7 @@ impl PrivateRequestContext {
 
     /// Reassert the attempt's exact retained relay before a new navigation.
     /// A freshly created Chromium context can inherit the global deny proxy;
-    /// rewriting the private preference also notifies its Network Service.
+    /// configuration readback alone does not prove a NetworkService update.
     pub(crate) fn reassert_browser_proxy(&self, browser: &Browser) -> Result<(), ContextError> {
         if currently_on(ThreadId::UI) != 1 { return Err(ContextError::WrongThread); }
         if !self.browser_claimed || self.status() != PreparationStatus::ProxyConfigured { return Err(ContextError::SessionUnavailable); }
@@ -771,6 +796,8 @@ impl NativeTlsHooks for ContextTlsHooks {
             // owning attempt record its document/lease evidence before cleanup.
             if reason == crate::cef_tls_bridge::NativeTlsFailure::OwnerUnavailable {
                 preparation.revoke();
+            } else if reason == crate::cef_tls_bridge::NativeTlsFailure::ProxyConfiguration {
+                preparation.fail(ContextError::ProxyMismatch);
             } else {
                 let _ = preparation.session.lock().unwrap_or_else(|err| err.into_inner())
                     .revoke_for(&preparation.identity, BrowserSessionFailure::CertificateBridge);
@@ -1332,6 +1359,29 @@ mod tests {
                     .with_proxy_credentials(|_, _| ())
                     .is_none());
             }
+        }
+
+        #[tokio::test]
+        async fn proxy_application_failure_retains_proxy_first_cause_before_delegating() {
+            let preparation = Arc::new(preparation().await);
+            let (adapter, hooks) = adapter(&preparation, None);
+            adapter.on_failure_reason(NativeTlsFailure::ProxyConfiguration);
+            assert_callback(
+                &hooks,
+                Observation {
+                    reason: Some(NativeTlsFailure::ProxyConfiguration),
+                    session_status: Some(BrowserSessionStatus::Revoked),
+                    preparation_status: Some(PreparationStatus::Failed(ContextError::ProxyMismatch)),
+                    first_failure: Some(BrowserSessionFailure::PrivateProxy),
+                    owner_reason_applied: false,
+                },
+            );
+            assert!(preparation
+                .session
+                .lock()
+                .unwrap()
+                .with_proxy_credentials(|_, _| ())
+                .is_none());
         }
 
         #[tokio::test]

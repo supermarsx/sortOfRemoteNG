@@ -4,6 +4,7 @@
 #[serde(rename_all = "kebab-case")]
 pub(crate) enum TlsBridgeFailure {
     ContextCreation,
+    ProxyConfiguration,
     InvalidEvidence,
     InvalidState,
     OwnerUnavailable,
@@ -24,6 +25,7 @@ mod tests {
     fn journal_failure_reasons_are_fixed_names_only() {
         for (reason, expected) in [
             (TlsBridgeFailure::ContextCreation, "context-creation"),
+            (TlsBridgeFailure::ProxyConfiguration, "proxy-configuration"),
             (TlsBridgeFailure::InvalidEvidence, "invalid-evidence"),
             (TlsBridgeFailure::InvalidState, "invalid-state"),
             (TlsBridgeFailure::OwnerUnavailable, "owner-unavailable"),

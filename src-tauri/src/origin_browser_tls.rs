@@ -52,6 +52,7 @@ impl NativeTlsHooks for CertificateHooks {
     fn on_failure_reason(&self, reason: NativeTlsFailure) {
         let fixed = match reason {
             NativeTlsFailure::ContextCreation => TlsBridgeFailure::ContextCreation,
+            NativeTlsFailure::ProxyConfiguration => TlsBridgeFailure::ProxyConfiguration,
             NativeTlsFailure::InvalidEvidence => TlsBridgeFailure::InvalidEvidence,
             NativeTlsFailure::InvalidState => TlsBridgeFailure::InvalidState,
             NativeTlsFailure::OwnerUnavailable => TlsBridgeFailure::OwnerUnavailable,
@@ -67,6 +68,8 @@ impl NativeTlsHooks for CertificateHooks {
         if let Some(attempt) = self.attempt.upgrade() {
             if reason == NativeTlsFailure::OwnerUnavailable {
                 attempt.revoke();
+            } else if reason == NativeTlsFailure::ProxyConfiguration {
+                attempt.revoke_for(super::BrowserSessionFailure::PrivateProxy);
             } else {
                 attempt.revoke_for(super::BrowserSessionFailure::CertificateBridge);
             }

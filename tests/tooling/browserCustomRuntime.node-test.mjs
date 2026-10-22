@@ -17,6 +17,8 @@ import path from "node:path";
 import {
   BRIDGE_V2,
   BRIDGE_PATCH_ID,
+  HTTP2_BRIDGE_PATCH_ID,
+  HTTP2_BRIDGE_V2,
   LEGACY_BRIDGE_PATCH_ID,
   LEGACY_BRIDGE_V2,
   UPSTREAM_CEF_COMMIT,
@@ -286,6 +288,10 @@ test("strict source pins and ABI reject branches, missing values, unsupported ca
 test("known bridge revisions require their exact protocol capabilities", () => {
   const current = fixture().lock;
   assert.equal(validateSourceLock(current).bridge.patchId, BRIDGE_PATCH_ID);
+  const http2 = clone(current);
+  http2.bridge.patchId = HTTP2_BRIDGE_PATCH_ID;
+  http2.bridge.capabilities = [...HTTP2_BRIDGE_V2.capabilities];
+  assert.equal(validateSourceLock(http2).bridge.patchId, HTTP2_BRIDGE_PATCH_ID);
   const legacy = clone(current);
   legacy.bridge.patchId = LEGACY_BRIDGE_PATCH_ID;
   legacy.bridge.capabilities = [...LEGACY_BRIDGE_V2.capabilities];
@@ -315,7 +321,7 @@ test("packaging V2 identity matches the maintained native side ABI", async () =>
   assert.match(header, /#define CEF_SORNG_TLS_ABI_V2 2u/);
   assert.match(header, new RegExp(`${BRIDGE_V2.symbol}\\(void\\)`));
   assert.match(header, new RegExp(`${BRIDGE_V2.factorySymbol}\\(`));
-  const bits = [0, 1, 6, 3, 4, 5];
+  const bits = [0, 1, 6, 3, 4, 5, 8];
   for (const [index, capability] of BRIDGE_V2.capabilities.entries()) {
     const define = capability.replaceAll("-", "_").toUpperCase();
     assert.ok(
@@ -324,7 +330,7 @@ test("packaging V2 identity matches the maintained native side ABI", async () =>
       ),
     );
   }
-  assert.equal(BRIDGE_V2.capabilities.length, 6);
+  assert.equal(BRIDGE_V2.capabilities.length, 7);
   assert.doesNotMatch(header, /cef_sorng_tls_prepare_context_v[12]/);
 });
 
@@ -815,7 +821,14 @@ function nativeFixture(target, symbols = [], library = false) {
 async function stagingFixture(
   t,
   target,
-  { flat = false, symbols = [BRIDGE_V2.symbol, BRIDGE_V2.factorySymbol] } = {},
+  {
+    flat = false,
+    symbols = [
+      BRIDGE_V2.symbol,
+      BRIDGE_V2.factorySymbol,
+      "cef_sorng_tls_apply_proxy_v2",
+    ],
+  } = {},
 ) {
   const data = await diskFixture(t, target);
   const layout = packageManifest(target, "fixture.app");
@@ -1223,6 +1236,33 @@ test("custom SDK preparation rejects incompatible build metadata and normalized 
     const output = path.join(data.root, name);
     await assert.rejects(prepareCustomRuntime({ ...data, output }), expected);
     await assert.rejects(stat(output), { code: "ENOENT" });
+  }
+});
+
+test("proxy ACK export is required only for its explicit reviewed revision", async (t) => {
+  const root = await mkdtemp(
+    path.join(os.tmpdir(), "custom-cef-proxy-export-"),
+  );
+  t.after(() => rm(root, { recursive: true, force: true }));
+  for (const target of TARGETS) {
+    const file = path.join(root, target);
+    await writeFile(
+      file,
+      nativeFixture(target, [BRIDGE_V2.symbol, BRIDGE_V2.factorySymbol], true),
+    );
+    await assert.rejects(
+      inspectCustomRuntimeExports(file, target, BRIDGE_PATCH_ID),
+      /cef_sorng_tls_apply_proxy_v2/,
+    );
+    const knownHttp2 = await inspectCustomRuntimeExports(
+      file,
+      target,
+      HTTP2_BRIDGE_PATCH_ID,
+    );
+    assert.deepEqual(knownHttp2.exports, [
+      BRIDGE_V2.symbol,
+      BRIDGE_V2.factorySymbol,
+    ]);
   }
 });
 

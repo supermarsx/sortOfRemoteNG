@@ -2,7 +2,13 @@
 
 Pinned CEF: `682c378d70d5780061e96644dca16ddd8fd157a9`.
 Pinned Chromium: `154.0.8037.58`.
-**Current patch ID: `sorng-tls-v2-682c378-2`.**
+**Current patch ID: `sorng-tls-v2-682c378-3`.**
+Revision3 adds a bounded private proxy application ACK, independently from TLS
+readiness. It validates the exact fixed loopback proxy, fences the configuration
+pipe and verifies fixed rules inside NetworkService without PAC, DNS or socket
+activity. State4 is actual proxy proof; state5 is its distinct failure. ABI2
+structure layouts remain unchanged. Known H2 revision2 remains supported without
+claiming proxy application proof; no HTTP/3 capability is added.
 The reviewed legacy H1 runtime remains `sorng-tls-v2-682c378-1`.
 
 This directory owns the additional C ABI and maintained engine delta, not Rust

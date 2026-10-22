@@ -7,7 +7,7 @@ use sorng_browser_host::{
     cef_runtime::{self, CefRuntime},
     cef_tls_bridge::{
         self, NativeTlsBridge, NativeTlsCaMode, NativeTlsCompletion, NativeTlsConfig,
-        NativeTlsDecision, NativeTlsEvidence, NativeTlsHooks, LEGACY_PATCH_ID, PATCH_ID,
+        NativeTlsDecision, NativeTlsEvidence, NativeTlsHooks, HTTP2_PATCH_ID, LEGACY_PATCH_ID, PATCH_ID,
     },
     control::{Lifecycle, ViewportBounds},
     domain_permissions::{WebsitePermissionDecision, WebsitePermissionEngine, WebsiteRequestClass},
@@ -112,6 +112,7 @@ fn case_index(path: &str) -> Option<usize> {
 }
 const KIND: &str = "native-same-authority-http2";
 mod http2_fixture;
+mod proxy_ack_fixture;
 mod websocket_fixture;
 #[no_mangle]
 pub unsafe extern "C" fn RunWinMain(
@@ -230,6 +231,8 @@ fn certificates() -> Result<(Vec<u8>, Vec<u8>, tokio_rustls::TlsAcceptor)> {
     Ok((root, der, tokio_rustls::TlsAcceptor::from(Arc::new(config))))
 }
 struct Slot {
+    proxy_application_verified: bool,
+    proxy_before_host: serde_json::Value,
     identity: BrowserIdentity,
     session: Arc<Mutex<OriginBrowserSession>>,
     context: Option<PrivateRequestContext>,
@@ -250,6 +253,10 @@ struct Slot {
 }
 fn execute(bootstrap: &mut dyn RuntimeBootstrap, paths: &BundlePaths) -> Result {
     let legacy = std::env::var("SORNG_CEF_HTTP2_EXPECT").as_deref() == Ok("legacy");
+    let http2_revision = std::env::var("SORNG_CEF_HTTP2_EXPECT").as_deref() == Ok("h2");
+    if std::env::var("SORNG_CEF_HTTP2_EXPECT").is_ok_and(|mode| !["legacy", "h2", "proxy-ack"].contains(&mode.as_str())) {
+        return Err("unknown native fixture revision".into());
+    }
     let visible = std::env::var_os("SORNG_PROBE_VISIBLE").is_some();
     let fixture_nodelay = std::env::var_os("SORNG_PROBE_FIXTURE_NODELAY").is_some();
     let clock = Instant::now();
@@ -381,6 +388,8 @@ fn execute(bootstrap: &mut dyn RuntimeBootstrap, paths: &BundlePaths) -> Result 
             OriginBrowserSession::start(policy, dialer, ProxyLimits::default()),
         )?));
         slots.push(Slot {
+            proxy_application_verified: false,
+            proxy_before_host: serde_json::Value::Null,
             identity,
             session,
             context: None,
@@ -451,7 +460,7 @@ fn execute(bootstrap: &mut dyn RuntimeBootstrap, paths: &BundlePaths) -> Result 
     };
     let initialize_finished_ms = clock.elapsed().as_secs_f64() * 1000.0;
     let bridge =
-        unsafe { NativeTlsBridge::from_loaded(if legacy { LEGACY_PATCH_ID } else { PATCH_ID })? };
+        unsafe { NativeTlsBridge::from_loaded(if legacy { LEGACY_PATCH_ID } else if http2_revision { HTTP2_PATCH_ID } else { PATCH_ID })? };
     if bridge.supports_same_authority_http2() == legacy {
         return Err("HTTP/2-capable engine required".into());
     }
@@ -525,6 +534,12 @@ fn execute(bootstrap: &mut dyn RuntimeBootstrap, paths: &BundlePaths) -> Result 
                         return Err("private context failed".into());
                     }
                     if c.status() == PreparationStatus::ProxyConfigured {
+                        slot.proxy_application_verified = c.proxy_application_verified();
+                        slot.proxy_before_host = serde_json::json!(slot.session.lock().unwrap().proxy_diagnostics());
+                        slot.proxy_before_host["upstreamDials"] = serde_json::json!(slot.dials.load(Ordering::Relaxed));
+                        if !legacy && !http2_revision && !slot.proxy_application_verified {
+                            return Err("proxy application proof missing before host creation".into());
+                        }
                         if !c.tls_hooks_installed() {return Err("TLS installation unacknowledged".into());}
                         phase="host-create";slot.host = Some(unsafe {
                             CefBrowserHost::create_owned_engineering_probe(
@@ -638,7 +653,7 @@ fn execute(bootstrap: &mut dyn RuntimeBootstrap, paths: &BundlePaths) -> Result 
             .as_ref()
             .is_some_and(|h| h.lifecycle() == Lifecycle::Closed)
     });
-    let rows:Vec<_>=slots.iter().map(|s|{let o=s.sink.0.lock().unwrap();serde_json::json!({"sessionStatus":format!("{:?}",s.session.lock().unwrap().status()),"sessionFailure":format!("{:?}",s.session.lock().unwrap().failure_reason()),"tlsCurrent":s.tls_owner.current.load(Ordering::Relaxed),"alpnObserved":*s.alpn_observed.lock().unwrap(),"beforeAdmissionBytes":s.tls_owner.before_admission_bytes.load(Ordering::Relaxed),"denied":s.tls_owner.denied.load(Ordering::Relaxed),"dials":s.dials.load(Ordering::Relaxed),"requests":*s.requests.lock().unwrap(),"cases":s.reports,"title":o.title,"nativeStates":o.native_states,"featureStates":o.feature_states,"errors":o.errors,"diagnostics":s.session.lock().unwrap().proxy_diagnostics()})}).collect();
+    let rows:Vec<_>=slots.iter().map(|s|{let o=s.sink.0.lock().unwrap();serde_json::json!({"proxyApplicationVerified":s.proxy_application_verified,"proxyBeforeHost":s.proxy_before_host,"sessionStatus":format!("{:?}",s.session.lock().unwrap().status()),"sessionFailure":format!("{:?}",s.session.lock().unwrap().failure_reason()),"tlsCurrent":s.tls_owner.current.load(Ordering::Relaxed),"alpnObserved":*s.alpn_observed.lock().unwrap(),"beforeAdmissionBytes":s.tls_owner.before_admission_bytes.load(Ordering::Relaxed),"denied":s.tls_owner.denied.load(Ordering::Relaxed),"dials":s.dials.load(Ordering::Relaxed),"requests":*s.requests.lock().unwrap(),"cases":s.reports,"title":o.title,"nativeStates":o.native_states,"featureStates":o.feature_states,"errors":o.errors,"diagnostics":s.session.lock().unwrap().proxy_diagnostics()})}).collect();
     let endpoints: Vec<_> = slots
         .iter()
         .map(|s| s.session.lock().unwrap().proxy_endpoint().to_string())
@@ -664,10 +679,32 @@ fn execute(bootstrap: &mut dyn RuntimeBootstrap, paths: &BundlePaths) -> Result 
             asynchronous.block_on(server)??;
         }
     }
+    let proxy_boundary_port = slots[0].session.lock().unwrap().proxy_endpoint().port();
+    let proxy_boundary = if !legacy && !http2_revision {
+        match proxy_ack_fixture::run(&mut || {
+            runtime.work()?;
+            cef_tls_bridge::pump_tls()?;
+            Ok(())
+        }, proxy_boundary_port) {
+            Ok(value) => value,
+            Err(error) => {
+                failures.push(format!("proxy-boundary: {error}"));
+                serde_json::json!({"ok":false})
+            }
+        }
+    } else {
+        serde_json::json!({"required":false,"reason":"legacy-runtime-no-proxy-ack"})
+    };
+    report["proxyBoundaryCases"] = proxy_boundary;
+    report["failures"] = serde_json::json!(failures);
+    // Preserve completed assertions if an engine shutdown invariant aborts.
+    // The final receipt still requires shutdownComplete and a clean process exit.
+    std::fs::write(output.join("native-report.json"), serde_json::to_vec_pretty(&report)?)?;
     drop(bridge);
     unsafe {
         runtime.shutdown()?;
         sorng_browser_host::cef_tls_bridge::after_cef_shutdown();
+        proxy_ack_fixture::after_shutdown();
     }
     let counts = report["first"].as_array().is_some_and(|rows| {
         rows.len() == 2
@@ -677,7 +714,29 @@ fn execute(bootstrap: &mut dyn RuntimeBootstrap, paths: &BundlePaths) -> Result 
                     && r["upstreamFailures"] == 0
             })
     });
-    report["ok"] = (failures.is_empty()
+    let proxy_ack_clean = legacy || http2_revision || slots.iter().enumerate().all(|(index, slot)| {
+        // Chromium may start background jobs before a browser exists. They
+        // must stop at unauthenticated 407s, never reach the route dialer.
+        let delta = |field: &str| slot.proxy_before_host[field].as_u64()
+            .zip(baseline[index][field].as_u64())
+            .and_then(|(current, before)| current.checked_sub(before));
+        slot.proxy_application_verified
+            && delta("acceptedConnections").is_some()
+            && delta("acceptedConnections") == delta("authenticationChallenges")
+            && slot.proxy_before_host["authenticatedRequests"] == baseline[index]["authenticatedRequests"]
+            && slot.proxy_before_host["upstreamDials"] == 0
+            && slot.proxy_before_host["upstreamFailures"] == 0
+            && delta("requestRejections") == Some(0)
+            && delta("capacityRefusals") == Some(0)
+    });
+    report["proxyProofRequired"] = (!legacy && !http2_revision).into();
+    report["proxyAckNoApplicationNetwork"] = proxy_ack_clean.into();
+    report["preHostUnauthenticatedConnections"] = serde_json::json!(slots.iter().enumerate().map(|(index, slot)| {
+        slot.proxy_before_host["acceptedConnections"].as_u64()
+            .zip(baseline[index]["acceptedConnections"].as_u64())
+            .and_then(|(current, before)| current.checked_sub(before))
+    }).collect::<Vec<_>>());
+    report["ok"] = (proxy_ack_clean && failures.is_empty()
         && clean
         && closed
         && stage == CASES.len()

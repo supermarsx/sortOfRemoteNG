@@ -116,6 +116,7 @@ const failures = [
   "initial-zoom",
   "initial-navigation",
   "context-creation",
+  "proxy-configuration",
   "invalid-evidence",
   "invalid-state",
   "owner-unavailable",
@@ -172,6 +173,10 @@ const events: Record<string, [LogCategory, string]> = {
   "auth-completed": ["proxy", "Proxy authentication completed"],
   "load-error": ["navigation", "Document load error"],
   "private-relay": ["proxy", "Private relay failure evidence"],
+  "private-proxy-applied": [
+    "proxy",
+    "Private proxy configuration acknowledged",
+  ],
   "tls-evidence": ["tls", "TLS evidence received"],
   "tls-review": ["tls", "TLS review requested"],
   "tls-allow": ["tls", "TLS connection permitted"],
@@ -286,7 +291,10 @@ function journal(
     !Object.prototype.hasOwnProperty.call(events, nav.event)
   )
     return unknown;
-  const [category, message] = events[nav.event];
+  const [category, message] =
+    nav.event === "tls-bridge-failed" && nav.reason === "proxy-configuration"
+      ? (["proxy", "Private proxy configuration failed"] as const)
+      : events[nav.event];
   if (nav.event === "tls-timing") {
     if (
       !number(nav.outcome) ||
@@ -562,7 +570,7 @@ export function parseLogTimeline(
     const tracing = traced ? tracingMessage(traced[3]) : null;
     const message = structured?.[4] ?? simple?.[2] ?? tracing?.message ?? line;
     const failureTime =
-      /^Native browser (?:client )?failure: timestampUnixMs=(\d{1,16}) /.exec(
+      /^Native browser (?:(?:client )?failure|proxy): timestampUnixMs=(\d{1,16}) /.exec(
         message,
       );
     const observedTime = failureTime ? Number(failureTime[1]) : NaN;

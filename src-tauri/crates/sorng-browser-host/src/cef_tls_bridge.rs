@@ -23,7 +23,8 @@ use std::{
 pub const CEF_REVISION: &str = "682c378d70d5780061e96644dca16ddd8fd157a9";
 pub const CHROMIUM_VERSION: &str = "154.0.8037.58";
 pub const LEGACY_PATCH_ID: &str = "sorng-tls-v2-682c378-1";
-pub const PATCH_ID: &str = "sorng-tls-v2-682c378-2";
+pub const HTTP2_PATCH_ID: &str = "sorng-tls-v2-682c378-2";
+pub const PATCH_ID: &str = "sorng-tls-v2-682c378-3";
 const ABI: u32 = 2;
 const SOCKET: u64 = 1;
 const REVOKE: u64 = 2;
@@ -32,6 +33,8 @@ const EXCEPTIONS: u64 = 8;
 const CUSTOM_CA: u64 = 16;
 const PRIVATE: u64 = 32;
 const SAME_AUTHORITY_HTTP2: u64 = 64;
+const PROXY_APPLIED: u64 = 1 << 8;
+const PROXY_TIMEOUT: Duration = Duration::from_secs(10);
 const REQUIRED: u64 = SOCKET | REVOKE | PRIVATE;
 const MAX_CHAIN: usize = 64;
 const MAX_CERT: usize = 256 * 1024;
@@ -109,6 +112,7 @@ pub enum NativeTlsDecision {
 /// Fixed native metadata only: no hosts, origins, chains, tokens or native text.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum NativeTlsFailure {
+    ProxyConfiguration,
     ContextCreation,
     InvalidEvidence,
     InvalidState,
@@ -194,11 +198,13 @@ type Create = unsafe extern "C" fn(
 ) -> *mut cef::sys::_cef_request_context_t;
 type Complete = unsafe extern "C" fn(u64, u64, u64, u32, u32) -> i32;
 type Revoke = unsafe extern "C" fn(u64, u64) -> i32;
+type ApplyProxy = unsafe extern "C" fn(u64, u64, u16) -> i32;
 #[derive(Clone, Copy)]
 struct Functions {
     create: Create,
     complete: Complete,
     revoke: Revoke,
+    apply_proxy: Option<ApplyProxy>,
     capabilities: u64,
 }
 
@@ -233,15 +239,24 @@ unsafe fn matches_bridge_revision(
     requested: &str,
     capabilities: u64,
 ) -> bool {
-    if capabilities & !(REQUIRED | HTTP1 | SAME_AUTHORITY_HTTP2 | EXCEPTIONS | CUSTOM_CA) != 0 {
+    if capabilities
+        & !(REQUIRED | HTTP1 | SAME_AUTHORITY_HTTP2 | EXCEPTIONS | CUSTOM_CA | PROXY_APPLIED)
+        != 0
+    {
         return false;
     }
     let protocol = capabilities & (HTTP1 | SAME_AUTHORITY_HTTP2);
     let legacy = protocol == HTTP1 && unsafe { matches_pin(actual, LEGACY_PATCH_ID) };
-    let current = protocol == SAME_AUTHORITY_HTTP2 && unsafe { matches_pin(actual, PATCH_ID) };
+    let http2 = protocol == SAME_AUTHORITY_HTTP2
+        && capabilities & PROXY_APPLIED == 0
+        && unsafe { matches_pin(actual, HTTP2_PATCH_ID) };
+    let current = protocol == SAME_AUTHORITY_HTTP2
+        && capabilities & PROXY_APPLIED != 0
+        && unsafe { matches_pin(actual, PATCH_ID) };
     match requested {
         PATCH_ID => current,
-        LEGACY_PATCH_ID => legacy,
+        HTTP2_PATCH_ID => http2,
+        LEGACY_PATCH_ID => legacy && capabilities & PROXY_APPLIED == 0,
         _ => false,
     }
 }
@@ -259,6 +274,7 @@ impl NativeTlsBridge {
     /// Same initialization and independent provenance requirements as `from_loaded`.
     pub unsafe fn from_loaded_supported() -> Result<Self, NativeTlsError> {
         unsafe { Self::from_loaded(PATCH_ID) }
+            .or_else(|_| unsafe { Self::from_loaded(HTTP2_PATCH_ID) })
             .or_else(|_| unsafe { Self::from_loaded(LEGACY_PATCH_ID) })
     }
 
@@ -306,6 +322,15 @@ impl NativeTlsBridge {
                         module.symbol(c"cef_sorng_tls_revoke_v2")?,
                     )
                 },
+                apply_proxy: if api.capabilities & PROXY_APPLIED != 0 {
+                    Some(unsafe {
+                        std::mem::transmute::<*mut c_void, ApplyProxy>(
+                            module.symbol(c"cef_sorng_tls_apply_proxy_v2")?,
+                        )
+                    })
+                } else {
+                    None
+                },
                 capabilities: api.capabilities,
             },
             _ui: PhantomData,
@@ -323,8 +348,10 @@ impl NativeTlsBridge {
     }
     /// The actual loaded, validated revision, not a requested package label.
     pub fn patch_id(&self) -> &'static str {
-        if self.supports_same_authority_http2() {
+        if self.functions.capabilities & PROXY_APPLIED != 0 {
             PATCH_ID
+        } else if self.supports_same_authority_http2() {
+            HTTP2_PATCH_ID
         } else {
             LEGACY_PATCH_ID
         }
@@ -354,6 +381,8 @@ impl NativeTlsBridge {
                 status: NativeTlsStatus::Initializing,
                 installed: false,
                 revoke_sent: false,
+                proxy_requested: None,
+                proxy_applied: false,
                 failure: None,
                 challenges: BTreeMap::new(),
                 seen: BTreeSet::new(),
@@ -456,6 +485,8 @@ struct Data {
     status: NativeTlsStatus,
     installed: bool,
     revoke_sent: bool,
+    proxy_requested: Option<Instant>,
+    proxy_applied: bool,
     failure: Option<NativeTlsFailure>,
     challenges: BTreeMap<u64, Challenge>,
     seen: BTreeSet<u64>,
@@ -577,6 +608,64 @@ pub struct NativeTlsContext {
     _ui: PhantomData<Rc<()>>,
 }
 impl NativeTlsContext {
+    /// New engines ACK their exact fixed proxy independently from TLS Ready.
+    /// Legacy engines retain their old configuration-only readiness contract.
+    pub fn proxy_applied(&self) -> bool {
+        self.state.functions.capabilities & PROXY_APPLIED != 0
+            && self.state.hooks.is_current()
+            && self
+                .state
+                .data
+                .lock()
+                .is_ok_and(|data| data.proxy_applied && data.status == NativeTlsStatus::Installed)
+    }
+    pub(crate) fn prepare_proxy(&self, port: u16) -> Result<bool, NativeTlsError> {
+        let Some(apply) = self.state.functions.apply_proxy else {
+            return Ok(true);
+        };
+        on_ui()?;
+        self.prepare_proxy_inner(port, apply)
+    }
+    fn prepare_proxy_inner(&self, port: u16, apply: ApplyProxy) -> Result<bool, NativeTlsError> {
+        if !self.state.hooks.is_current() {
+            self.state.fail(NativeTlsFailure::OwnerUnavailable);
+            return Err(NativeTlsError::Revoked);
+        }
+        let send = {
+            let mut data = self
+                .state
+                .data
+                .lock()
+                .map_err(|_| NativeTlsError::Revoked)?;
+            if data.status != NativeTlsStatus::Installed {
+                return Err(NativeTlsError::Revoked);
+            }
+            if data.proxy_applied {
+                return Ok(true);
+            }
+            if data
+                .proxy_requested
+                .is_some_and(|since| since.elapsed() >= PROXY_TIMEOUT)
+            {
+                drop(data);
+                self.state.fail(NativeTlsFailure::ProxyConfiguration);
+                return Err(NativeTlsError::Revoked);
+            }
+            if data.proxy_requested.is_none() {
+                data.proxy_requested = Some(Instant::now());
+                true
+            } else {
+                false
+            }
+        };
+        if send
+            && (port == 0 || unsafe { apply(self.state.token, self.state.generation, port) } != 1)
+        {
+            self.state.fail(NativeTlsFailure::ProxyConfiguration);
+            return Err(NativeTlsError::Revoked);
+        }
+        Ok(self.proxy_applied())
+    }
     pub fn status(&self) -> NativeTlsStatus {
         self.state
             .data
@@ -787,11 +876,33 @@ fn accept_state(
     if state.token != token || state.generation != generation {
         return Err(NativeTlsFailure::InvalidState);
     }
+    if matches!(status, 4 | 5) && !state.hooks.is_current() {
+        return Err(NativeTlsFailure::OwnerUnavailable);
+    }
     let mut data = state
         .data
         .lock()
         .map_err(|_| NativeTlsFailure::PoisonedState)?;
     match status {
+        5 if state.functions.capabilities & PROXY_APPLIED != 0
+            && data.status == NativeTlsStatus::Installed
+            && data.proxy_requested.is_some() =>
+        {
+            return Err(NativeTlsFailure::ProxyConfiguration);
+        }
+        4 if state.functions.capabilities & PROXY_APPLIED != 0
+            && data.status == NativeTlsStatus::Installed
+            && data.proxy_requested.is_some()
+            && !data.proxy_applied =>
+        {
+            if data
+                .proxy_requested
+                .is_some_and(|since| since.elapsed() >= PROXY_TIMEOUT)
+            {
+                return Err(NativeTlsFailure::ProxyConfiguration);
+            }
+            data.proxy_applied = true;
+        }
         1 if !data.installed && data.status == NativeTlsStatus::Initializing => {
             data.installed = true;
             data.status = NativeTlsStatus::Installed;
@@ -933,11 +1044,25 @@ mod tests {
     #[test]
     fn bridge_revision_pins_protocol_and_preserves_known_legacy_runtime() {
         let legacy = std::ffi::CString::new(LEGACY_PATCH_ID).unwrap();
+        let http2 = std::ffi::CString::new(HTTP2_PATCH_ID).unwrap();
         let current = std::ffi::CString::new(PATCH_ID).unwrap();
         let unknown = c"sorng-tls-v2-unreviewed";
         for (actual, requested, protocol, accepted) in [
             (legacy.as_c_str(), PATCH_ID, HTTP1, false),
-            (current.as_c_str(), PATCH_ID, SAME_AUTHORITY_HTTP2, true),
+            (
+                current.as_c_str(),
+                PATCH_ID,
+                SAME_AUTHORITY_HTTP2 | PROXY_APPLIED,
+                true,
+            ),
+            (current.as_c_str(), PATCH_ID, SAME_AUTHORITY_HTTP2, false),
+            (http2.as_c_str(), HTTP2_PATCH_ID, SAME_AUTHORITY_HTTP2, true),
+            (
+                http2.as_c_str(),
+                HTTP2_PATCH_ID,
+                SAME_AUTHORITY_HTTP2 | PROXY_APPLIED,
+                false,
+            ),
             (legacy.as_c_str(), LEGACY_PATCH_ID, HTTP1, true),
             (
                 current.as_c_str(),
@@ -1033,6 +1158,7 @@ mod tests {
                 create,
                 complete,
                 revoke,
+                apply_proxy: None,
                 capabilities: REQUIRED | EXCEPTIONS | CUSTOM_CA,
             },
             hooks: hooks.clone(),
@@ -1040,6 +1166,8 @@ mod tests {
                 status: NativeTlsStatus::Installed,
                 installed: true,
                 revoke_sent: false,
+                proxy_requested: None,
+                proxy_applied: false,
                 failure: None,
                 challenges: BTreeMap::new(),
                 seen: BTreeSet::new(),
@@ -1062,6 +1190,105 @@ mod tests {
             state: Arc::downgrade(state),
             challenge,
             used: false,
+        }
+    }
+
+    static PROXY_CALLS: Mutex<Vec<(u64, u64, u16)>> = Mutex::new(Vec::new());
+    unsafe extern "C" fn apply_proxy(t: u64, g: u64, p: u16) -> i32 {
+        PROXY_CALLS.lock().unwrap().push((t, g, p));
+        1
+    }
+    fn proxy_fixture(token: u64) -> NativeTlsContext {
+        let (mut state, _) = fixture();
+        let shared = Arc::get_mut(&mut state).unwrap();
+        shared.token = token;
+        shared.generation = token + 100;
+        shared.functions.capabilities |= PROXY_APPLIED;
+        shared.functions.apply_proxy = Some(apply_proxy);
+        NativeTlsContext {
+            state,
+            _ui: PhantomData,
+        }
+    }
+    #[test]
+    fn proxy_ack_is_separate_from_tls_and_reversed_context_acks_do_not_cross() {
+        let _lock = TEST_LOCK.lock().unwrap();
+        PROXY_CALLS.lock().unwrap().clear();
+        let first = proxy_fixture(1001);
+        let second = proxy_fixture(1002);
+        assert!(!first.proxy_applied()); // TLS Ready alone is insufficient.
+        assert!(!first.prepare_proxy_inner(41001, apply_proxy).unwrap());
+        assert!(!second.prepare_proxy_inner(41002, apply_proxy).unwrap());
+        assert!(!first.prepare_proxy_inner(41001, apply_proxy).unwrap());
+        assert_eq!(
+            PROXY_CALLS.lock().unwrap().as_slice(),
+            &[(1001, 1101, 41001), (1002, 1102, 41002)]
+        );
+        accept_state(&second.state, 1002, 1102, 4).unwrap();
+        assert!(second.proxy_applied());
+        assert!(!first.proxy_applied());
+        assert!(accept_state(&first.state, 1002, 1102, 4).is_err());
+        accept_state(&first.state, 1001, 1101, 4).unwrap();
+        assert!(first.proxy_applied());
+    }
+    #[test]
+    fn proxy_ack_rejects_unsolicited_legacy_late_revoked_and_expired_completion() {
+        let _lock = TEST_LOCK.lock().unwrap();
+        let (legacy, _) = fixture();
+        assert!(accept_state(&legacy, 71, 72, 4).is_err());
+        let pending = proxy_fixture(1101);
+        assert!(accept_state(&pending.state, 1101, 1201, 4).is_err());
+        assert!(!pending.prepare_proxy_inner(41101, apply_proxy).unwrap());
+        pending.state.data.lock().unwrap().proxy_requested = Some(Instant::now() - PROXY_TIMEOUT);
+        assert!(matches!(
+            accept_state(&pending.state, 1101, 1201, 4),
+            Err(NativeTlsFailure::ProxyConfiguration)
+        ));
+        assert!(pending.prepare_proxy_inner(41101, apply_proxy).is_err());
+        assert!(!pending.proxy_applied());
+        let revoked = proxy_fixture(1102);
+        assert!(!revoked.prepare_proxy_inner(41102, apply_proxy).unwrap());
+        revoked.revoke();
+        assert!(accept_state(&revoked.state, 1102, 1202, 4).is_err());
+        assert!(!revoked.proxy_applied());
+    }
+    #[test]
+    fn proxy_failure_state_is_explicit_and_does_not_reclassify_generic_tls_faults() {
+        let _lock = TEST_LOCK.lock().unwrap();
+        let (legacy, _) = fixture();
+        assert!(matches!(
+            accept_state(&legacy, 71, 72, 5),
+            Err(NativeTlsFailure::InvalidState)
+        ));
+        let context = proxy_fixture(1201);
+        assert!(matches!(
+            accept_state(&context.state, 1201, 1301, 5),
+            Err(NativeTlsFailure::InvalidState)
+        ));
+        assert!(!context.prepare_proxy_inner(41201, apply_proxy).unwrap());
+        assert!(matches!(
+            accept_state(&context.state, 1201, 1301, 3),
+            Err(NativeTlsFailure::EngineFailure)
+        ));
+        assert!(matches!(
+            accept_state(&context.state, 1201, 1301, 5),
+            Err(NativeTlsFailure::ProxyConfiguration)
+        ));
+    }
+    #[test]
+    fn owner_loss_precedes_late_proxy_success_or_failure_without_rearming() {
+        let _lock = TEST_LOCK.lock().unwrap();
+        let (mut state, hooks) = fixture();
+        let shared = Arc::get_mut(&mut state).unwrap();
+        shared.functions.capabilities |= PROXY_APPLIED;
+        shared.data.lock().unwrap().proxy_requested = Some(Instant::now());
+        hooks.current.store(false, Ordering::Release);
+        for status in [4, 5] {
+            assert!(matches!(
+                accept_state(&state, 71, 72, status),
+                Err(NativeTlsFailure::OwnerUnavailable)
+            ));
+            assert!(!state.data.lock().unwrap().proxy_applied);
         }
     }
     fn raw_evidence(host: &[u8], chain: &[Bytes]) -> Evidence {

@@ -14,6 +14,51 @@ const file = {
 const browser = (row: unknown) =>
   parseLogTimeline(JSON.stringify(row), "browser", file)[0];
 describe("bounded application log timeline", () => {
+  it("preserves proxy acknowledgement observation time in the application sink", () => {
+    const row = parseLogTimeline(
+      "[2026-10-22T11:00:01Z][INFO][native_browser::proxy] Native browser proxy: timestampUnixMs=1792663200000 source=native event=private-proxy-applied",
+      "application",
+      file,
+    )[0];
+    expect(row).toMatchObject({
+      category: "proxy",
+      timestampMs: 1792663200000,
+      level: "INFO",
+    });
+  });
+  it("shows a timestamped native proxy acknowledgement as an observation", () => {
+    expect(
+      browser({
+        version: 1,
+        timestampUnixMs: 1792663200000,
+        navigation: { event: "private-proxy-applied" },
+      }),
+    ).toMatchObject({
+      category: "proxy",
+      message: "Private proxy configuration acknowledged",
+      timestampMs: 1792663200000,
+      level: "INFO",
+    });
+  });
+  it("keeps proxy application failures timestamped and filterable without raw configuration", () => {
+    const row = browser({
+      version: 1,
+      timestampUnixMs: 1792663200000,
+      navigation: {
+        event: "tls-bridge-failed",
+        reason: "proxy-configuration",
+        config: "private-sentinel",
+      },
+    });
+    expect(row).toMatchObject({
+      category: "proxy",
+      message: "Private proxy configuration failed",
+      timestampMs: 1792663200000,
+      level: "WARN",
+    });
+    expect(row.details).toContain("Reason: proxy configuration");
+    expect(logRowsText([row])).not.toContain("private-sentinel");
+  });
   it("shows bounded TLS phase timings from journals without disclosing unrelated fields", () => {
     const row = browser({
       version: 1,

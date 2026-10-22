@@ -153,5 +153,50 @@
     "project": "chromium",
     "path": "net/spdy/spdy_session_pool.cc",
     "sha256": "8798fe4d882c55465977b1d727d104540e1140b7d44f75e97373a5c0c0c7bcbf"
+  },
+  {
+    "project": "chromium",
+    "path": "chrome/browser/net/proxy_config_monitor.h",
+    "sha256": "c618b05cc8b6b9aab6e9a1e49f6fdb15ddee0634062cafe31086bacbd5fa2975"
+  },
+  {
+    "project": "chromium",
+    "path": "chrome/browser/net/proxy_config_monitor.cc",
+    "sha256": "2f9f9d302d9e14342718517f26b4793caeebc3f1aebb016460d960a9f617c496"
+  },
+  {
+    "project": "chromium",
+    "path": "chrome/browser/net/profile_network_context_service.h",
+    "sha256": "1c2f8d3a774dab6c6420b0b783b5464334ac883a6c1ccd8d71637331d8358179"
+  },
+  {
+    "project": "chromium",
+    "path": "chrome/browser/net/profile_network_context_service.cc",
+    "sha256": "551dc4450f098310be50284bb18ea548a4cb9d311b7f5f45582388094c35820f"
+  },
+  {
+    "project": "cef",
+    "path": "include/cef_sorng_tls_bridge.h",
+    "sha256": "fb591f97bd97a27a21546160ed69fb983634c7a35b3af45923622419e1593107"
+  },
+  {
+    "project": "cef",
+    "path": "libcef/browser/net_service/sorng_tls_bridge.cc",
+    "sha256": "ea9928b3bfdd707f3967b96022ea6c16cfff94dd1b7ad6b54f1af60f63cbfb19"
+  },
+  {
+    "project": "chromium",
+    "path": "net/proxy_resolution/configured_proxy_resolution_service.h",
+    "sha256": "64307f1101c7f19e92741ef4c15a692fb46e529bb7c021ff5bbd7602327d7b15"
+  },
+  {
+    "project": "chromium",
+    "path": "net/proxy_resolution/configured_proxy_resolution_service.cc",
+    "sha256": "b937b2e6e6a88eb0bde129dc389c5a4c6ba6bbd798b8e0b7e3819227517a7b9e"
+  },
+  {
+    "project": "chromium",
+    "path": "services/network/network_context.h",
+    "sha256": "b83318bd55116c8e9669fce81f848caab005fb8a1f1ae1a0798dbbb34199f3ab"
   }
 ]

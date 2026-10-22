@@ -29,6 +29,8 @@ extern "C" {
 #define CEF_SORNG_TLS_CAP_PRIVATE_CONTEXT (1ull << 5)
 // Exact native authority/session-key reuse only; no IP/SAN coalescing or Alt-Svc.
 #define CEF_SORNG_TLS_CAP_SAME_AUTHORITY_HTTP2 (1ull << 6)
+// Bit 7 remains reserved for a separately reviewed HTTP/3 contract.
+#define CEF_SORNG_TLS_CAP_PROXY_APPLIED (1ull << 8)
 #define CEF_SORNG_TLS_CA_SYSTEM 0u
 #define CEF_SORNG_TLS_CA_SYSTEM_PLUS_CUSTOM 1u
 #define CEF_SORNG_TLS_CA_CUSTOM_ONLY 2u
@@ -73,7 +75,9 @@ typedef struct cef_sorng_tls_evidence_v2 {
 typedef void(SORNG_TLS_CALL* cef_sorng_tls_evidence_cb_v2)(
     void* user_data,
     const cef_sorng_tls_evidence_v2* evidence);
-// 1=network context installed; 2=revocation acknowledged; 3=bridge failure.
+// 1=TLS delegate installed; 2=revocation acknowledged; 3=bridge failure;
+// 4=exact owned proxy applied (only after apply_proxy, with PROXY_APPLIED cap).
+// 5=proxy application failed (same capability; generic TLS faults remain 3).
 typedef void(SORNG_TLS_CALL* cef_sorng_tls_state_cb_v2)(void* user_data,
                                                         uint64_t context_token,
                                                         uint64_t generation,
@@ -136,6 +140,13 @@ cef_sorng_tls_complete_v2(uint64_t context_token, uint64_t generation,
 // if shutdown prevents delivery. Main must also revoke proxy/credential leases.
 SORNG_TLS_EXPORT int SORNG_TLS_CALL
 cef_sorng_tls_revoke_v2(uint64_t context_token, uint64_t generation);
+// UI thread only, after private fixed preference installation and state(1).
+// ACKs the exact HTTP 127.0.0.1:port config in NetworkService without network
+// traffic, DNS or PAC; completion is state(4), proxy failure state(5). One request per
+// context. Existing callback lifetime/revocation contract is unchanged.
+SORNG_TLS_EXPORT int SORNG_TLS_CALL
+cef_sorng_tls_apply_proxy_v2(uint64_t context_token, uint64_t generation,
+                            uint16_t expected_port);
 
 #ifdef __cplusplus
 }

@@ -2258,6 +2258,9 @@ pub(crate) fn tick() {
             }
             let attempt = pending.attempt;
             attempt.timing.mark(TimingStage::ContextReady);
+            if pending.context.proxy_application_verified() {
+                diagnostics::navigation(diagnostics::Navigation::PrivateProxyApplied);
+            }
             let scale = pending.window.scale_factor().unwrap_or(1.0);
             let sink = Arc::new(Sink {
                 window: pending.window.clone(),
