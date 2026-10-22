@@ -11,6 +11,7 @@ import {
   chmod,
   stat,
   readlink,
+  realpath,
 } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -445,7 +446,11 @@ test("verified relative input paths stay anchored for subprocess working directo
     assert.equal(path.isAbsolute(result.archivePath), true);
     assert.equal(
       result.archivePath,
-      path.join(data.artifactRoot, data.pkg.artifact.archive.path),
+      // chdir()/cwd() canonicalizes macOS's /var -> /private/var temp alias.
+      // Compare the same verified file, not the spelling returned by tmpdir().
+      await realpath(
+        path.join(data.artifactRoot, data.pkg.artifact.archive.path),
+      ),
     );
     // git -C changes how relative patch paths resolve. All verified files use
     // this same path boundary, so a caller's relative root must not survive it.
