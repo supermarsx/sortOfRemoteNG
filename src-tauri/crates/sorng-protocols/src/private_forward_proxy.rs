@@ -23,18 +23,18 @@ use tokio::sync::watch;
 use tokio::task::{JoinHandle, JoinSet};
 use zeroize::{Zeroize, Zeroizing};
 
-#[path = "private_forward_proxy/http.rs"]
-mod forward_http;
 #[path = "private_forward_proxy/accept.rs"]
 mod accept;
+#[path = "private_forward_proxy/http.rs"]
+mod forward_http;
 use accept::{
     rebind, AcceptBackoff, AcceptListener, Endpoint, ListenerSource, LoopbackSource, RebindBudget,
     Rebound,
 };
 #[path = "private_forward_proxy/lifecycle.rs"]
 mod lifecycle;
-pub use lifecycle::{PrivateProxyDiagnostics, PrivateProxyState};
 use lifecycle::{increment, Observations};
+pub use lifecycle::{PrivateProxyDiagnostics, PrivateProxyState};
 
 pub trait ProxyStream: AsyncRead + AsyncWrite + Unpin + Send {}
 impl<T: AsyncRead + AsyncWrite + Unpin + Send> ProxyStream for T {}
@@ -46,6 +46,11 @@ pub type DialFuture = Pin<Box<dyn Future<Output = io::Result<BoxedStream>> + Sen
 /// Never spawn detached establishment work or fall back to a different route.
 pub trait RouteDialer: Send + Sync + 'static {
     fn dial(&self, authority: Authority) -> DialFuture;
+    /// Explicit UDP capability for this same saved route. TCP-only routes must
+    /// retain None; a caller must never manufacture direct UDP as a fallback.
+    fn datagrams(&self) -> Option<Arc<dyn crate::private_datagram_proxy::RouteDatagramDialer>> {
+        None
+    }
 }
 
 impl<F> RouteDialer for F

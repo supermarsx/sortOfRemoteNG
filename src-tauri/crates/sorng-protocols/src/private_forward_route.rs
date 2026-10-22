@@ -2,8 +2,12 @@
 //! These adapters open bytes, not website TLS or HTTP. There is no default
 //! route, ambient proxy lookup, URL credential serialization, or retry fallback.
 
+use crate::private_datagram_proxy::{
+    ConnectedUdpDatagram, DatagramOpenFuture, RouteDatagram, RouteDatagramDialer,
+};
 use crate::private_forward_proxy::{Authority, BoxedStream, DialFuture, RouteDialer};
 use std::io;
+use std::sync::Arc;
 use std::time::Duration;
 use zeroize::Zeroizing;
 
@@ -75,6 +79,12 @@ impl NativeForwardRoute {
 }
 
 impl RouteDialer for NativeForwardRoute {
+    fn datagrams(&self) -> Option<Arc<dyn RouteDatagramDialer>> {
+        match self.0 {
+            Route::Direct => Some(Arc::new(DirectDatagrams)),
+            Route::HttpConnect(_) | Route::Socks5(_) => None,
+        }
+    }
     fn dial(&self, authority: Authority) -> DialFuture {
         let route = self.0.clone();
         Box::pin(async move {
@@ -94,6 +104,51 @@ impl RouteDialer for NativeForwardRoute {
     }
 }
 
+/// Only an explicitly selected direct upstream route creates this capability.
+/// The browser still sends datagrams through its authenticated private relay.
+struct DirectDatagrams;
+impl RouteDatagramDialer for DirectDatagrams {
+    fn open(&self, authority: Authority) -> DatagramOpenFuture {
+        Box::pin(async move {
+            tokio::time::timeout(Duration::from_secs(20), async move {
+                let peers = tokio::net::lookup_host((authority.host(), authority.port()))
+                    .await
+                    .map_err(|_| io::Error::other("Configured datagram name resolution failed"))?;
+                let mut last = io::ErrorKind::AddrNotAvailable;
+                for peer in peers {
+                    let bind = if peer.is_ipv4() {
+                        "0.0.0.0:0"
+                    } else {
+                        "[::]:0"
+                    };
+                    let socket = match tokio::net::UdpSocket::bind(bind).await {
+                        Ok(socket) => socket,
+                        Err(error) => {
+                            last = error.kind();
+                            continue;
+                        }
+                    };
+                    match socket.connect(peer).await {
+                        Ok(()) => {
+                            return Ok(Arc::new(ConnectedUdpDatagram::new(socket)?)
+                                as Arc<dyn RouteDatagram>)
+                        }
+                        Err(error) => last = error.kind(),
+                    }
+                }
+                Err(io::Error::new(last, "Configured datagram transport failed"))
+            })
+            .await
+            .map_err(|_| {
+                io::Error::new(
+                    io::ErrorKind::TimedOut,
+                    "Configured datagram transport timed out",
+                )
+            })?
+        })
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -101,6 +156,53 @@ mod tests {
     use std::sync::Arc;
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
     use tokio::net::TcpListener;
+
+    #[test]
+    fn only_explicit_direct_upstream_routes_advertise_datagrams() {
+        assert!(NativeForwardRoute::direct().datagrams().is_some());
+        assert!(
+            NativeForwardRoute::http_connect("http://proxy.invalid:3128".into())
+                .unwrap()
+                .datagrams()
+                .is_none()
+        );
+        assert!(
+            NativeForwardRoute::socks5("proxy.invalid:1080", Socks5Auth::no_auth())
+                .unwrap()
+                .datagrams()
+                .is_none()
+        );
+        let tcp_only = |_: Authority| -> DialFuture {
+            Box::pin(async { Err(io::Error::other("fixture TCP-only")) })
+        };
+        assert!(tcp_only.datagrams().is_none());
+    }
+
+    #[tokio::test]
+    async fn explicit_direct_datagram_route_preserves_messages_and_filters_foreign_peers() {
+        let peer = tokio::net::UdpSocket::bind("127.0.0.1:0").await.unwrap();
+        let authority = Authority::parse(&peer.local_addr().unwrap().to_string()).unwrap();
+        let flow = NativeForwardRoute::direct()
+            .datagrams()
+            .unwrap()
+            .open(authority)
+            .await
+            .unwrap();
+        let mut bytes = [0; 32];
+        for payload in [b"message".as_slice(), b"".as_slice()] {
+            assert_eq!(flow.send(payload).await.unwrap(), payload.len());
+            let (length, sender) = peer.recv_from(&mut bytes).await.unwrap();
+            assert_eq!(&bytes[..length], payload);
+            let foreign = tokio::net::UdpSocket::bind("127.0.0.1:0").await.unwrap();
+            foreign.send_to(b"foreign", sender).await.unwrap();
+            peer.send_to(payload, sender).await.unwrap();
+            let length = tokio::time::timeout(Duration::from_secs(1), flow.recv(&mut bytes))
+                .await
+                .unwrap()
+                .unwrap();
+            assert_eq!(&bytes[..length], payload);
+        }
+    }
 
     #[test]
     fn invalid_or_unsupported_routes_are_not_silently_direct() {
