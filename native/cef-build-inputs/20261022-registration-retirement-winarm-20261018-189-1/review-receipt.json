@@ -1,0 +1,19 @@
+{
+  "kind": "reviewed-hosted-image-variant",
+  "target": "aarch64-pc-windows-msvc",
+  "sourceLockIdentity": "2793e64ccf1be9002feacfd08deb6f60899170e1ae49c733ed772e7566d0ce33",
+  "baseSourceLockIdentity": "a4e2f53b29a8b7fc51c67e0df99650beeb5f764046633b9482a81733f0168b11",
+  "actualRun": 39818095759,
+  "actualHead": "0695bebc58d019102805b9d3e8f8ce5c3a3ba90d",
+  "actualPostProvisionImage": {
+    "os": "win11-vs2026-arm64",
+    "version": "20261018.189.1"
+  },
+  "actualToolFileCount": 9,
+  "actualToolHashesMatchReviewedBase": true,
+  "sourcePatchesAndHeaderChanged": false,
+  "engineBuildSucceeded": false,
+  "acceptanceObserved": false,
+  "observationsSha256": "cb0575a1e5f703bca5d9bec0d658c15975a8ab0b5500df8991cc74122f211ce9",
+  "candidateSha256": "348d72ee4b7cce5c6ea0ff33830dfa13b08eee275a368a3c03006006d89fd796"
+}
