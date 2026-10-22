@@ -1151,21 +1151,35 @@ test("workflow has manual/default-branch guards, six targets, protected least-pr
   assert.equal(workflow.concurrency["cancel-in-progress"], false);
   for (const [name, job] of Object.entries(workflow.jobs)) {
     assert.match(job.if, /workflow_dispatch/);
-    if (["discover", "provision"].includes(name)) {
+    if (["discover", "provision", "accept-native"].includes(name)) {
       assert.match(job.if, /visibility == 'public'/);
-      assert.match(job.if, new RegExp(`mode == '${name}'`));
+      assert.match(
+        job.if,
+        new RegExp(
+          `mode == '${name === "accept-native" ? "acceptance" : name}'`,
+        ),
+      );
     } else {
       assert.match(job.if, /default_branch/);
       assert.match(job.if, /mode == 'build'/);
     }
     if (name !== "publish") assert.notEqual(job.permissions?.contents, "write");
-    for (const step of job.steps) {
+    for (const step of job.steps ?? []) {
       if (step.uses) assert.match(step.uses, /@[a-f0-9]{40}$/);
       if (step.uses?.startsWith("actions/checkout"))
         assert.equal(step.with["persist-credentials"], false);
       if (step.run) assert.doesNotMatch(step.run, /\$\{\{\s*inputs\./);
     }
   }
+  assert.equal(
+    workflow.jobs["accept-native"].uses,
+    "./.github/workflows/cef-runtime-acceptance.yml",
+  );
+  assert.deepEqual(workflow.jobs["accept-native"].permissions, {
+    contents: "read",
+    actions: "read",
+  });
+  assert.equal(workflow.jobs["accept-native"].secrets, undefined);
   assert.ok(
     workflow.jobs.build.steps.some(
       (step) =>

@@ -1,9 +1,10 @@
 name: Patched CEF engineering runtime
 
-# Deliberately no push, PR, pull_request_target, schedule, or workflow_call.
+# Deliberately no push, PR, pull_request_target, or schedule.
 # Configure cef-runtime-publish with required reviewers and default-branch-only
-# deployment rules before enabling publication. Provision runners out of band;
-# this workflow never installs system packages or fabricates toolchain pins.
+# deployment rules before enabling publication. Dedicated tools are provisioned
+# out of band; hosted preparation replays a fixed reviewed prerequisite recipe.
+# Observations never fabricate or replace reviewed toolchain pins.
 on:
   workflow_dispatch:
     inputs:
@@ -12,7 +13,12 @@ on:
         required: true
         default: build
         type: choice
-        options: [build, discover, provision, hosted-build]
+        options: [build, discover, provision, hosted-build, acceptance]
+      producers:
+        description: Reviewed exact producer artifact identities for native acceptance only (JSON array)
+        required: false
+        default: ""
+        type: string
       discovery_cleanup_linux:
         description: Explicitly remove only reviewed expendable Linux SDK directories during hosted preparation
         required: true
@@ -57,6 +63,15 @@ env:
   CEF_DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
 
 jobs:
+  accept-native:
+    if: inputs.mode == 'acceptance' && github.event_name == 'workflow_dispatch' && github.event.repository.visibility == 'public'
+    permissions:
+      contents: read
+      actions: read
+    uses: ./.github/workflows/cef-runtime-acceptance.yml
+    with:
+      reviewed_inputs: ${{ inputs.reviewed_inputs }}
+      producers: ${{ inputs.producers }}
   discover:
     if: inputs.mode == 'discover' && github.event_name == 'workflow_dispatch' && github.event.repository.visibility == 'public'
     strategy:
