@@ -64,6 +64,68 @@ async fn closed(stream: &mut TcpStream) {
     assert!(matches!(result, Ok(0)) || result.is_err());
 }
 
+async fn destination_revoked_while_dialing(plain_http: bool) {
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let address = listener.local_addr().unwrap();
+    let allowed = Arc::new(AtomicBool::new(true));
+    let started = Arc::new(Notify::new());
+    let release = Arc::new(tokio::sync::Semaphore::new(0));
+    let dialer = Arc::new({
+        let started = started.clone();
+        let release = release.clone();
+        move |_: Authority| -> DialFuture {
+            let started = started.clone();
+            let release = release.clone();
+            Box::pin(async move {
+                let stream = TcpStream::connect(address).await?;
+                started.notify_one();
+                let _permit = release.acquire().await.unwrap();
+                Ok(Box::new(stream) as BoxedStream)
+            })
+        }
+    });
+    let mut proxy = PrivateForwardProxy::start(
+        dialer,
+        Arc::new({
+            let allowed = allowed.clone();
+            move |_| allowed.load(Ordering::SeqCst)
+        }),
+        ProxyLimits::default(),
+    )
+    .await
+    .unwrap();
+    let mut client = TcpStream::connect(proxy.local_addr()).await.unwrap();
+    let mut bytes = if plain_http {
+        format!("POST http://allowed.test/upload HTTP/1.1\r\nHost: allowed.test\r\nProxy-Authorization: {}\r\nContent-Length: 24\r\n\r\n", auth(&proxy)).into_bytes()
+    } else {
+        request("allowed.test:443", &auth(&proxy))
+    };
+    bytes.extend_from_slice(b"SYNTHETIC-EARLY-SENTINEL");
+    client.write_all(&bytes).await.unwrap();
+    timeout(TEST_DEADLINE, started.notified()).await.unwrap();
+    let (mut upstream, _) = timeout(TEST_DEADLINE, listener.accept())
+        .await
+        .unwrap()
+        .unwrap();
+    allowed.store(false, Ordering::SeqCst);
+    release.add_permits(1);
+    assert!(head(&mut client).await.starts_with("HTTP/1.1 403 "));
+    closed(&mut upstream).await;
+    assert_eq!(proxy.diagnostics().destination_denials, 1);
+    assert_eq!(proxy.diagnostics().upstream_failures, 0);
+    proxy.stop().await.unwrap();
+}
+
+#[tokio::test]
+async fn destination_revocation_during_connect_dial_denies_200_and_buffered_early_bytes() {
+    destination_revoked_while_dialing(false).await;
+}
+
+#[tokio::test]
+async fn destination_revocation_during_http_dial_denies_headers_and_upload() {
+    destination_revoked_while_dialing(true).await;
+}
+
 #[test]
 fn authorities_are_unambiguous_and_include_ipv6() {
     for (input, expected) in [

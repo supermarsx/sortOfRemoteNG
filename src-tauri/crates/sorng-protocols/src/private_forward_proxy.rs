@@ -750,22 +750,33 @@ async fn handle_client(
         }
         return;
     }
-    let mut upstream =
-        match tokio::time::timeout(limits.dial_timeout, route.dialer.dial(admission.authority))
-            .await
-        {
-            Ok(Ok(stream)) => stream,
-            result => {
-                increment(&observations.upstream_failures);
-                refuse(
-                    &mut client,
-                    if result.is_err() { 504 } else { 502 },
-                    limits.response_timeout,
-                )
-                .await;
-                return;
-            }
-        };
+    let mut upstream = match tokio::time::timeout(
+        limits.dial_timeout,
+        route.dialer.dial(admission.authority.clone()),
+    )
+    .await
+    {
+        Ok(Ok(stream)) => stream,
+        result => {
+            increment(&observations.upstream_failures);
+            refuse(
+                &mut client,
+                if result.is_err() { 504 } else { 502 },
+                limits.response_timeout,
+            )
+            .await;
+            return;
+        }
+    };
+    // A destination grant may change while establishment is awaiting the saved
+    // route. Never publish a tunnel or release buffered HTTP/application bytes
+    // using the authorization that preceded that await.
+    if !(route.grant)(&admission.authority) {
+        increment(&observations.destination_denials);
+        drop(upstream);
+        refuse(&mut client, 403, limits.response_timeout).await;
+        return;
+    }
     if let Some(forward) = admission.forward {
         forward_http::relay(client, admission.early, upstream, forward, limits).await;
         return;
