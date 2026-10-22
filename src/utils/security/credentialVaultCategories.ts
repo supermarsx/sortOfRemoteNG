@@ -37,18 +37,9 @@ export function connectionCredentialCategories(
 }
 
 export function vaultCredentialCategories(
-  row: Pick<DatabaseCredentialMetadata, "tags" | "availableFacets">,
-  assignedCategories: readonly string[] = [],
+  row: Pick<DatabaseCredentialMetadata, "tags">,
 ): string[] {
-  const categories = new Map<string, string>();
-  const add = (tag: string) => categories.set(tag.toLowerCase(), tag);
-  if (
-    row.availableFacets.includes("password") ||
-    row.availableFacets.includes("username")
-  )
-    add("User/password");
-  if (row.availableFacets.includes("privateKey")) add("Private key");
-  for (const tag of assignedCategories) if (tag !== "Other") add(tag);
-  for (const tag of row.tags ?? []) add(tag);
-  return categories.size ? [...categories.values()] : ["Other"];
+  // Tags are choices made by the user, never inferred from secret facets,
+  // connection protocols, authentication methods or saved assignments.
+  return [...(row.tags ?? [])];
 }

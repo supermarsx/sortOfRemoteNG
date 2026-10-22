@@ -195,7 +195,7 @@ describe("database vault manager", () => {
     const row = edit.closest("tr")!;
     expect(row).toHaveTextContent("SMTP");
     expect(row).toHaveTextContent("Mail administration (Webmin)");
-    expect(row).toHaveTextContent("Digest");
+    expect(row).not.toHaveTextContent("Digest");
     for (const button of within(row).getAllByRole("button")) {
       expect(button).toHaveAttribute("aria-label");
       expect(button).toHaveAttribute("data-tooltip");
@@ -717,13 +717,15 @@ describe("vault picker and settings entry point", () => {
 function VaultLayoutFixture({
   api,
   mode = "paged",
+  pageSize = 100,
 }: {
   api: DatabaseCredentialVaultApi;
   mode?: "paged" | "infinite";
+  pageSize?: 25 | 50 | 100 | 250;
 }) {
   const [settings, setSettings] = useState<GlobalSettings>({
     ...defaultSettings,
-    credentialVaultView: normalizeCredentialVaultView({ mode }),
+    credentialVaultView: normalizeCredentialVaultView({ mode, pageSize }),
   });
   return (
     <SettingsContext.Provider
@@ -751,9 +753,9 @@ describe("vault list layout and navigation", () => {
   it("shows 100 rows by default, persists keyboard and pointer resizing, and allows smaller pages", async () => {
     const { api } = facade(manyEntries(121));
     render(<VaultLayoutFixture api={api} />);
-    await screen.findByRole("button", { name: "Edit Fixture credential 099" });
+    await screen.findByText("Fixture credential 099");
     expect(
-      screen.queryByRole("button", { name: "Edit Fixture credential 100" }),
+      screen.queryByText("Fixture credential 100"),
     ).not.toBeInTheDocument();
     const separator = screen.getByRole("separator", {
       name: "Resize Assigned to column",
@@ -778,25 +780,23 @@ describe("vault list layout and navigation", () => {
     }
     expect(separator).toHaveAttribute("aria-valuenow", "120");
     fireEvent.click(screen.getByRole("button", { name: "Next" }));
-    expect(
-      screen.getByRole("button", { name: "Edit Fixture credential 120" }),
-    ).toBeInTheDocument();
+    expect(screen.getByText("Fixture credential 120")).toBeInTheDocument();
     fireEvent.click(
       screen.getByRole("combobox", { name: "Credentials per page" }),
     );
     fireEvent.mouseDown(screen.getByRole("option", { name: "25" }));
+    expect(screen.getByText("Fixture credential 000")).toBeInTheDocument();
     expect(
-      screen.getByRole("button", { name: "Edit Fixture credential 000" }),
-    ).toBeInTheDocument();
-    expect(
-      screen.queryByRole("button", { name: "Edit Fixture credential 025" }),
+      screen.queryByText("Fixture credential 025"),
     ).not.toBeInTheDocument();
     expect(api.resolve).not.toHaveBeenCalled();
   });
   it("grows infinite scroll in bounded chunks and resets on search, source and owner changes", async () => {
-    const { api } = facade(manyEntries(225));
-    const view = render(<VaultLayoutFixture api={api} mode="infinite" />);
-    await screen.findByRole("button", { name: "Edit Fixture credential 099" });
+    const { api } = facade(manyEntries(75));
+    const view = render(
+      <VaultLayoutFixture api={api} mode="infinite" pageSize={25} />,
+    );
+    await screen.findByText("Fixture credential 024");
     const pane = screen.getByRole("region", { name: "Credential inventory" });
     Object.defineProperties(pane, {
       scrollHeight: { configurable: true, value: 1000 },
@@ -804,30 +804,24 @@ describe("vault list layout and navigation", () => {
       scrollTop: { configurable: true, writable: true, value: 600 },
     });
     fireEvent.scroll(pane);
+    expect(screen.getByText("Fixture credential 049")).toBeInTheDocument();
     expect(
-      screen.getByRole("button", { name: "Edit Fixture credential 199" }),
-    ).toBeInTheDocument();
-    expect(
-      screen.queryByRole("button", { name: "Edit Fixture credential 200" }),
+      screen.queryByText("Fixture credential 050"),
     ).not.toBeInTheDocument();
     fireEvent.change(screen.getByLabelText("Search vault credentials"), {
-      target: { value: "224" },
+      target: { value: "074" },
     });
-    expect(
-      screen.getByRole("button", { name: "Edit Fixture credential 224" }),
-    ).toBeInTheDocument();
+    expect(screen.getByText("Fixture credential 074")).toBeInTheDocument();
     fireEvent.change(screen.getByLabelText("Search vault credentials"), {
       target: { value: "" },
     });
     expect(
-      screen.queryByRole("button", { name: "Edit Fixture credential 100" }),
+      screen.queryByText("Fixture credential 025"),
     ).not.toBeInTheDocument();
     fireEvent.click(
       screen.getByRole("button", { name: "Load more credentials" }),
     );
-    expect(
-      screen.getByRole("button", { name: "Edit Fixture credential 199" }),
-    ).toBeInTheDocument();
+    expect(screen.getByText("Fixture credential 049")).toBeInTheDocument();
     fireEvent.click(
       screen.getByRole("combobox", { name: "Credential source filter" }),
     );
@@ -837,22 +831,127 @@ describe("vault list layout and navigation", () => {
     );
     fireEvent.mouseDown(screen.getByRole("option", { name: "All sources" }));
     expect(
-      screen.queryByRole("button", { name: "Edit Fixture credential 100" }),
+      screen.queryByText("Fixture credential 025"),
     ).not.toBeInTheDocument();
     fireEvent.click(
       screen.getByRole("button", { name: "Load more credentials" }),
     );
-    const replacement = facade(manyEntries(121)).api;
+    const replacement = facade(manyEntries(51)).api;
     replacement.scope = {
       ...replacement.scope!,
       databaseId: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
     };
-    view.rerender(<VaultLayoutFixture api={replacement} mode="infinite" />);
-    await screen.findByRole("button", { name: "Edit Fixture credential 099" });
+    view.rerender(
+      <VaultLayoutFixture api={replacement} mode="infinite" pageSize={25} />,
+    );
+    await screen.findByText("Fixture credential 024");
     expect(
-      screen.queryByRole("button", { name: "Edit Fixture credential 100" }),
+      screen.queryByText("Fixture credential 025"),
     ).not.toBeInTheDocument();
     expect(api.resolve).not.toHaveBeenCalled();
     expect(replacement.resolve).not.toHaveBeenCalled();
+  });
+});
+
+describe("user-assigned vault tags and stationary controls", () => {
+  it("never infers category tags from password/private-key facets or saved assignments", async () => {
+    const tagged = {
+      ...entry(),
+      id: crypto.randomUUID(),
+      name: "Custom tags saved",
+      tags: ["SMTP", "Accounts team"],
+    };
+    const { api } = facade([entry(), tagged]);
+    const connections = [
+      {
+        id: "smtp-owner",
+        name: "Outgoing mail",
+        hostname: "fixture.invalid",
+        protocol: "ssh",
+        port: 22,
+        isGroup: false,
+        createdAt: "2026-10-22T00:00:00.000Z",
+        updatedAt: "2026-10-22T00:00:00.000Z",
+        credentialSource: { kind: "vault", credentialId: id },
+      },
+    ] as Connection[];
+    render(
+      <ConnectionContext.Provider
+        value={{ ...context(api), getCurrentConnections: () => connections }}
+      >
+        <DatabaseCredentialVault />
+      </ConnectionContext.Provider>,
+    );
+    const untaggedRow = (
+      await screen.findByRole("button", { name: "Edit NAS operator" })
+    ).closest("tr")!;
+    expect(within(untaggedRow).getAllByRole("cell")[2]).toHaveTextContent(
+      /^—$/,
+    );
+    const connectionRow = screen
+      .getByRole("button", {
+        name: "Edit credentials in connection Outgoing mail",
+      })
+      .closest("tr")!;
+    expect(within(connectionRow).getAllByRole("cell")[2]).toHaveTextContent(
+      /^—$/,
+    );
+    const taggedRow = screen
+      .getByRole("button", { name: "Edit Custom tags saved" })
+      .closest("tr")!;
+    expect(within(taggedRow).getAllByRole("cell")[2]).toHaveTextContent(
+      "SMTP · Accounts team",
+    );
+    expect(within(taggedRow).getAllByRole("cell")[2]).not.toHaveTextContent(
+      /User\/password|Private key|Other/,
+    );
+    fireEvent.change(screen.getByLabelText("Search vault credentials"), {
+      target: { value: "User/password" },
+    });
+    expect(
+      screen.queryByRole("button", { name: "Edit NAS operator" }),
+    ).not.toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText("Search vault credentials"), {
+      target: { value: "Accounts team" },
+    });
+    expect(
+      screen.getByRole("button", { name: "Edit Custom tags saved" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Edit NAS operator" }),
+    ).not.toBeInTheDocument();
+    expect(api.resolve).not.toHaveBeenCalled();
+  });
+  it("keeps search, source and page controls outside the row scroll pane and centers the resizable table", async () => {
+    const { api } = facade(manyEntries(121));
+    render(<VaultLayoutFixture api={api} mode="infinite" />);
+    await screen.findByText("Fixture credential 099");
+    const pane = screen.getByRole("region", { name: "Credential inventory" });
+    const toolbar = screen.getByRole("toolbar", {
+      name: "Credential list controls",
+    });
+    expect(toolbar).toHaveClass("shrink-0");
+    expect(toolbar).toContainElement(
+      screen.getByLabelText("Search vault credentials"),
+    );
+    expect(toolbar).toContainElement(
+      screen.getByRole("combobox", { name: "Credential source filter" }),
+    );
+    expect(pane).not.toContainElement(toolbar);
+    expect(pane).not.toContainElement(
+      screen.getByRole("combobox", { name: "Credentials per page" }),
+    );
+    expect(pane).not.toContainElement(
+      screen.getByRole("button", { name: "Load more credentials" }),
+    );
+    expect(
+      screen.getByRole("table", { name: "Database vault credentials" }),
+    ).toHaveClass("mx-auto");
+    expect(
+      screen.getByRole("separator", { name: "Resize Assigned to column" }),
+    ).toBeInTheDocument();
+    fireEvent.scroll(pane);
+    expect(screen.getByText("Fixture credential 120")).toBeInTheDocument();
+    expect(toolbar).toBeInTheDocument();
   });
 });

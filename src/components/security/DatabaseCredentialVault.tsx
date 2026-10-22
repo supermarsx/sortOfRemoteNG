@@ -191,12 +191,7 @@ function VaultWorkspace({
           )
           .join(", ") || "Not assigned";
   const categoryLabels = (row: DatabaseCredentialMetadata) =>
-    vaultCredentialCategories(
-      row,
-      (inventory.assignments?.get(row.id) ?? []).flatMap(
-        (assignment) => assignment.categories,
-      ),
-    );
+    vaultCredentialCategories(row);
   const vaultRows = (mgr.snapshot?.entries ?? []).filter((row) =>
     `${row.name} ${row.availableFacets.map((key) => FACET_LABELS[key]).join(" ")} ${categoryLabels(row).join(" ")} ${assignmentText(row.id)}`
       .toLowerCase()
@@ -212,10 +207,7 @@ function VaultWorkspace({
           .filter(
             (row) =>
               connectionCredentialMatches(row, search) ||
-              [
-                ...(inventory.categories.get(row.id) ?? []),
-                inventory.applications.get(row.id) ?? "",
-              ]
+              [inventory.applications.get(row.id) ?? ""]
                 .join(" ")
                 .toLowerCase()
                 .includes(search.trim().toLowerCase()),
@@ -352,6 +344,44 @@ function VaultWorkspace({
         </p>
       )}
       <div
+        className="flex shrink-0 flex-wrap items-center justify-center gap-3 px-4 py-3"
+        role="toolbar"
+        aria-label="Credential list controls"
+      >
+        <label className="flex items-center gap-2">
+          <Search size={16} />
+          <input
+            type="search"
+            aria-label="Search vault credentials"
+            className="sor-form-input"
+            value={search}
+            onChange={(event) => {
+              setSearch(event.target.value);
+              setPage(0);
+            }}
+            placeholder="Search names, tags, types or assignments"
+          />
+        </label>
+        <div className="flex items-center gap-2 text-sm">
+          <label htmlFor="vault-credential-source-filter">Source</label>
+          <Select
+            id="vault-credential-source-filter"
+            label="Credential source filter"
+            variant="form-sm"
+            value={source}
+            onChange={(value) => {
+              setSource(value as typeof source);
+              setPage(0);
+            }}
+            options={[
+              { value: "all", label: "All sources" },
+              { value: "vault", label: "Reusable vault" },
+              { value: "connections", label: "Connections" },
+            ]}
+          />
+        </div>
+      </div>
+      <div
         className="min-h-0 flex-1 overflow-x-auto overflow-y-auto overscroll-contain p-4"
         style={{
           scrollbarWidth: "thin",
@@ -373,40 +403,6 @@ function VaultWorkspace({
         tabIndex={0}
       >
         <>
-          <div className="mb-3 flex flex-wrap items-center gap-3">
-            <label className="flex items-center gap-2">
-              <Search size={16} />
-              <input
-                type="search"
-                aria-label="Search vault credentials"
-                className="sor-form-input"
-                value={search}
-                onChange={(event) => {
-                  setSearch(event.target.value);
-                  setPage(0);
-                }}
-                placeholder="Search names, tags, types or assignments"
-              />
-            </label>
-            <div className="flex items-center gap-2 text-sm">
-              <label htmlFor="vault-credential-source-filter">Source</label>
-              <Select
-                id="vault-credential-source-filter"
-                label="Credential source filter"
-                variant="form-sm"
-                value={source}
-                onChange={(value) => {
-                  setSource(value as typeof source);
-                  setPage(0);
-                }}
-                options={[
-                  { value: "all", label: "All sources" },
-                  { value: "vault", label: "Reusable vault" },
-                  { value: "connections", label: "Connections" },
-                ]}
-              />
-            </div>
-          </div>
           {layoutError && (
             <p role="alert">Could not save the credential list layout.</p>
           )}
@@ -419,7 +415,7 @@ function VaultWorkspace({
                 0,
               ),
             }}
-            className="table-fixed text-left text-sm [&_td]:whitespace-nowrap [&_td]:px-2 [&_td]:py-1.5"
+            className="mx-auto table-fixed text-left text-sm [&_td]:whitespace-nowrap [&_td]:px-2 [&_td]:py-1.5"
             aria-label="Database vault credentials"
             aria-busy={mgr.loading}
           >
@@ -434,7 +430,7 @@ function VaultWorkspace({
                 />
               ))}
             </colgroup>
-            <thead>
+            <thead className="sticky top-0 z-10 bg-[var(--color-background)]">
               <tr className="border-b border-[var(--color-border)]">
                 {VAULT_COLUMNS.filter((column) =>
                   view.columns.includes(column.id),
@@ -573,9 +569,7 @@ function VaultWorkspace({
                         data-tooltip={`Types: ${item.row.kinds.map((key) => CONNECTION_CREDENTIAL_LABELS[key]).join(", ")}`}
                       >
                         <span className="rounded bg-[var(--color-surface)] px-1.5 py-0.5 text-xs">
-                          {(
-                            inventory.categories.get(item.row.id) ?? ["Other"]
-                          ).join(" · ")}
+                          —
                         </span>
                       </td>
                       <td
@@ -657,7 +651,7 @@ function VaultWorkspace({
                         data-tooltip={`${categoryLabels(item.row).join(", ")} · Types: ${item.row.availableFacets.map((key) => FACET_LABELS[key]).join(", ")}`}
                       >
                         <span className="rounded bg-[var(--color-surface)] px-1.5 py-0.5 text-xs">
-                          {categoryLabels(item.row).join(" · ")}
+                          {categoryLabels(item.row).join(" · ") || "—"}
                         </span>
                       </td>
                       <td
@@ -739,70 +733,70 @@ function VaultWorkspace({
               )}
             </tbody>
           </table>
-          <footer className="mt-3 flex items-center justify-between text-xs">
-            <span>
-              {rows.length} results ·{" "}
-              {view.mode === "infinite"
-                ? `Showing ${Math.min(visibleCount, rows.length)}`
-                : `Page ${currentPage + 1} of ${pages}`}
-            </span>
-            <div className="flex items-center gap-2">
-              <div className="flex items-center gap-2">
-                <span>Per page</span>
-                <Select
-                  label="Credentials per page"
-                  variant="form-sm"
-                  value={view.pageSize}
-                  disabled={!preferences}
-                  onChange={(value) => {
-                    setPage(0);
-                    saveView({
-                      pageSize: Number(value) as typeof view.pageSize,
-                    });
-                  }}
-                  options={[25, 50, 100, 250].map((size) => ({
-                    value: size,
-                    label: String(size),
-                  }))}
-                />
-              </div>
-              {view.mode === "infinite" ? (
-                <button
-                  type="button"
-                  className="sor-btn sor-btn-secondary"
-                  disabled={visibleCount >= rows.length}
-                  onClick={grow}
-                >
-                  Load more credentials
-                </button>
-              ) : (
-                <>
-                  <button
-                    type="button"
-                    className="sor-btn-icon"
-                    aria-label="Previous"
-                    data-tooltip="Previous page"
-                    disabled={currentPage === 0}
-                    onClick={() => setPage(currentPage - 1)}
-                  >
-                    <ChevronLeft size={15} />
-                  </button>
-                  <button
-                    type="button"
-                    className="sor-btn-icon"
-                    aria-label="Next"
-                    data-tooltip="Next page"
-                    disabled={currentPage + 1 >= pages}
-                    onClick={() => setPage(currentPage + 1)}
-                  >
-                    <ChevronRight size={15} />
-                  </button>
-                </>
-              )}
-            </div>
-          </footer>
         </>
       </div>
+      <footer className="flex shrink-0 flex-wrap items-center justify-between gap-2 border-t border-[var(--color-border)] px-4 py-3 text-xs">
+        <span>
+          {rows.length} results ·{" "}
+          {view.mode === "infinite"
+            ? `Showing ${Math.min(visibleCount, rows.length)}`
+            : `Page ${currentPage + 1} of ${pages}`}
+        </span>
+        <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2">
+            <span>Per page</span>
+            <Select
+              label="Credentials per page"
+              variant="form-sm"
+              value={view.pageSize}
+              disabled={!preferences}
+              onChange={(value) => {
+                setPage(0);
+                saveView({
+                  pageSize: Number(value) as typeof view.pageSize,
+                });
+              }}
+              options={[25, 50, 100, 250].map((size) => ({
+                value: size,
+                label: String(size),
+              }))}
+            />
+          </div>
+          {view.mode === "infinite" ? (
+            <button
+              type="button"
+              className="sor-btn sor-btn-secondary"
+              disabled={visibleCount >= rows.length}
+              onClick={grow}
+            >
+              Load more credentials
+            </button>
+          ) : (
+            <>
+              <button
+                type="button"
+                className="sor-btn-icon"
+                aria-label="Previous"
+                data-tooltip="Previous page"
+                disabled={currentPage === 0}
+                onClick={() => setPage(currentPage - 1)}
+              >
+                <ChevronLeft size={15} />
+              </button>
+              <button
+                type="button"
+                className="sor-btn-icon"
+                aria-label="Next"
+                data-tooltip="Next page"
+                disabled={currentPage + 1 >= pages}
+                onClick={() => setPage(currentPage + 1)}
+              >
+                <ChevronRight size={15} />
+              </button>
+            </>
+          )}
+        </div>
+      </footer>
       {archive && (
         <React.Suspense
           fallback={

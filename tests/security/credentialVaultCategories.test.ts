@@ -32,15 +32,18 @@ describe("credential category and assignment metadata", () => {
         kinds: ["password"],
       }),
     ).toContain("Remote access key");
-    expect(vaultCredentialCategories({ availableFacets: ["domain"] })).toEqual([
-      "Other",
+    expect(vaultCredentialCategories({})).toEqual([]);
+    expect(vaultCredentialCategories({ tags: ["SMTP", "Finance"] })).toEqual([
+      "SMTP",
+      "Finance",
     ]);
-    expect(
-      vaultCredentialCategories(
-        { availableFacets: ["password"], tags: ["SMTP", "Finance"] },
-        ["SMTP", "Other"],
-      ),
-    ).toEqual(["User/password", "SMTP", "Finance"]);
+    const facetMetadata = {
+      tags: undefined,
+      availableFacets: ["password", "privateKey"] as const,
+      protocol: "smtp",
+      authType: "digest",
+    };
+    expect(vaultCredentialCategories(facetMetadata)).toEqual([]);
   });
 
   it("projects distinct saved assignments and known application labels without reading credential values", () => {
@@ -96,11 +99,7 @@ describe("credential category and assignment metadata", () => {
         },
       ],
     ).get("entry")![0].categories;
-    expect(
-      vaultCredentialCategories(
-        { availableFacets: ["password"] },
-        unrelatedLocalKinds,
-      ),
-    ).toEqual(["User/password"]);
+    expect(unrelatedLocalKinds).not.toContain("VPN");
+    expect(vaultCredentialCategories({})).toEqual([]);
   });
 });
