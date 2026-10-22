@@ -469,9 +469,10 @@ export function assessNativeHttp2Report(report, runId, expectedPatchId, check) {
                 c.resources === 32 &&
                 c.responseDelayMs === 80 &&
                 Number.isSafeInteger(c.requestPeak) &&
-                (protocol === "h2"
+                (protocol === "h2" && check !== "cross-authority"
                   ? c.requestPeak > 6
-                  : c.requestPeak > 0 && c.requestPeak <= 6),
+                  : c.requestPeak > 0 &&
+                    (protocol === "h2" || c.requestPeak <= 6)),
             ),
         ), "complete seven-case native multiplex/fallback matrix required");
       if (check === "delay")

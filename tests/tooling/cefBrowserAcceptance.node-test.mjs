@@ -547,6 +547,19 @@ test("cross-authority assessment requires every allowed asset and no denied dest
     assess(syntheticHttp2Report("cross-authority")).failures,
     [],
   );
+  const serialized = syntheticHttp2Report("cross-authority");
+  for (const slot of serialized.slots)
+    for (const row of slot.cases) row.requestPeak = 2;
+  assert.equal(assess(serialized).ok, true);
+  for (const check of ["multiplex", "delay"]) {
+    const report = syntheticHttp2Report(check);
+    for (const slot of report.slots)
+      for (const row of slot.cases) row.requestPeak = 2;
+    assert.equal(
+      assessNativeHttp2Report(report, "synthetic-h2", TLS_PATCH_ID, check).ok,
+      false,
+    );
+  }
   for (const change of [
     (report) => report.slots[0].cases[2].requests.pop(),
     (report) => {

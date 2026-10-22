@@ -7,7 +7,8 @@ use sorng_browser_host::{
     cef_runtime::{self, CefRuntime},
     cef_tls_bridge::{
         self, NativeTlsBridge, NativeTlsCaMode, NativeTlsCompletion, NativeTlsConfig,
-        NativeTlsDecision, NativeTlsEvidence, NativeTlsHooks, HTTP2_PATCH_ID, LEGACY_PATCH_ID, PATCH_ID, PROXY_APPLIED_PATCH_ID,
+        NativeTlsDecision, NativeTlsEvidence, NativeTlsHooks, HTTP2_PATCH_ID, LEGACY_PATCH_ID,
+        PATCH_ID, PROXY_APPLIED_PATCH_ID,
     },
     control::{Lifecycle, ViewportBounds},
     domain_permissions::{WebsitePermissionDecision, WebsitePermissionEngine, WebsiteRequestClass},
@@ -40,7 +41,10 @@ fn cross_authority() -> bool {
     std::env::var("SORNG_CEF_HTTP2_CHECK").as_deref() == Ok("cross-authority")
 }
 fn websocket_check() -> bool {
-    matches!(std::env::var("SORNG_CEF_HTTP2_CHECK").as_deref(), Ok("wss" | "permission-churn"))
+    matches!(
+        std::env::var("SORNG_CEF_HTTP2_CHECK").as_deref(),
+        Ok("wss" | "permission-churn")
+    )
 }
 fn revoke_check() -> bool {
     std::env::var("SORNG_CEF_HTTP2_CHECK").as_deref() == Ok("revoke")
@@ -112,10 +116,10 @@ fn case_index(path: &str) -> Option<usize> {
 }
 const KIND: &str = "native-same-authority-http2";
 mod http2_fixture;
+mod permission_churn_fixture;
 mod proxy_ack_fixture;
 #[path = "../../native_tls_acceptance/src/registry_retirement_fixture.rs"]
 mod registry_retirement_fixture;
-mod permission_churn_fixture;
 mod websocket_fixture;
 #[cfg(windows)]
 #[no_mangle]
@@ -410,7 +414,9 @@ fn execute(bootstrap: &mut dyn RuntimeBootstrap, paths: &BundlePaths) -> Result 
     }
     let legacy = std::env::var("SORNG_CEF_HTTP2_EXPECT").as_deref() == Ok("legacy");
     let http2_revision = std::env::var("SORNG_CEF_HTTP2_EXPECT").as_deref() == Ok("h2");
-    if std::env::var("SORNG_CEF_HTTP2_EXPECT").is_ok_and(|mode| !["legacy", "h2", "proxy-ack", "retirement", "h1"].contains(&mode.as_str())) {
+    if std::env::var("SORNG_CEF_HTTP2_EXPECT").is_ok_and(|mode| {
+        !["legacy", "h2", "proxy-ack", "retirement", "h1"].contains(&mode.as_str())
+    }) {
         return Err("unknown native fixture revision".into());
     }
     let visible = std::env::var_os("SORNG_PROBE_VISIBLE").is_some();
@@ -427,8 +433,15 @@ fn execute(bootstrap: &mut dyn RuntimeBootstrap, paths: &BundlePaths) -> Result 
     let connection_ids = Arc::new(AtomicUsize::new(0));
     let mut slots = Vec::new();
     for index in 0..2 {
-        slots.push(create_slot(index, &format!("tab-{index}"), &asynchronous, clock,
-            &tls_acceptor, &connection_ids, fixture_nodelay)?);
+        slots.push(create_slot(
+            index,
+            &format!("tab-{index}"),
+            &asynchronous,
+            clock,
+            &tls_acceptor,
+            &connection_ids,
+            fixture_nodelay,
+        )?);
     }
     let mut raw_before = Vec::new();
     for slot in &slots {
@@ -480,8 +493,17 @@ fn execute(bootstrap: &mut dyn RuntimeBootstrap, paths: &BundlePaths) -> Result 
         )?
     };
     let initialize_finished_ms = clock.elapsed().as_secs_f64() * 1000.0;
-    let bridge =
-        unsafe { NativeTlsBridge::from_loaded(if legacy { LEGACY_PATCH_ID } else if http2_revision { HTTP2_PATCH_ID } else if std::env::var("SORNG_CEF_HTTP2_EXPECT").as_deref() == Ok("proxy-ack") { PROXY_APPLIED_PATCH_ID } else { PATCH_ID })? };
+    let bridge = unsafe {
+        NativeTlsBridge::from_loaded(if legacy {
+            LEGACY_PATCH_ID
+        } else if http2_revision {
+            HTTP2_PATCH_ID
+        } else if std::env::var("SORNG_CEF_HTTP2_EXPECT").as_deref() == Ok("proxy-ack") {
+            PROXY_APPLIED_PATCH_ID
+        } else {
+            PATCH_ID
+        })?
+    };
     if bridge.supports_same_authority_http2() == legacy {
         return Err("HTTP/2-capable engine required".into());
     }
@@ -707,9 +729,10 @@ fn execute(bootstrap: &mut dyn RuntimeBootstrap, paths: &BundlePaths) -> Result 
     }
     let proxy_boundary_port = slots[0].session.lock().unwrap().proxy_endpoint().port();
     let proxy_boundary = if !legacy && !http2_revision {
-        match proxy_ack_fixture::run(&mut || {
-            registry_retirement_fixture::pump(&runtime, &mut events)
-        }, proxy_boundary_port) {
+        match proxy_ack_fixture::run(
+            &mut || registry_retirement_fixture::pump(&runtime, &mut events),
+            proxy_boundary_port,
+        ) {
             Ok(value) => value,
             Err(error) => {
                 failures.push(format!("proxy-boundary: {error}"));
@@ -720,17 +743,28 @@ fn execute(bootstrap: &mut dyn RuntimeBootstrap, paths: &BundlePaths) -> Result 
         serde_json::json!({"required":false,"reason":"legacy-runtime-no-proxy-ack"})
     };
     let retirement = if bridge.patch_id() == PATCH_ID {
-        match registry_retirement_fixture::run(&mut || registry_retirement_fixture::pump(&runtime, &mut events), &root_der) {
+        match registry_retirement_fixture::run(
+            &mut || registry_retirement_fixture::pump(&runtime, &mut events),
+            &root_der,
+        ) {
             Ok(value) => value,
-            Err(error) => { failures.push(format!("registry-retirement: {error}")); serde_json::json!({"ok":false}) }
+            Err(error) => {
+                failures.push(format!("registry-retirement: {error}"));
+                serde_json::json!({"ok":false})
+            }
         }
-    } else { serde_json::json!({"required":false}) };
+    } else {
+        serde_json::json!({"required":false})
+    };
     report["registrationRetirementCases"] = retirement;
     report["proxyBoundaryCases"] = proxy_boundary;
     report["failures"] = serde_json::json!(failures);
     // Preserve completed assertions if an engine shutdown invariant aborts.
     // The final receipt still requires shutdownComplete and a clean process exit.
-    std::fs::write(output.join("native-report.json"), serde_json::to_vec_pretty(&report)?)?;
+    std::fs::write(
+        output.join("native-report.json"),
+        serde_json::to_vec_pretty(&report)?,
+    )?;
     drop(bridge);
     unsafe {
         runtime.shutdown()?;
@@ -746,29 +780,41 @@ fn execute(bootstrap: &mut dyn RuntimeBootstrap, paths: &BundlePaths) -> Result 
                     && r["upstreamFailures"] == 0
             })
     });
-    let proxy_ack_clean = legacy || http2_revision || slots.iter().enumerate().all(|(index, slot)| {
-        // Chromium may start background jobs before a browser exists. They
-        // must stop at unauthenticated 407s, never reach the route dialer.
-        let delta = |field: &str| slot.proxy_before_host[field].as_u64()
-            .zip(baseline[index][field].as_u64())
-            .and_then(|(current, before)| current.checked_sub(before));
-        slot.proxy_application_verified
-            && delta("acceptedConnections").is_some()
-            && delta("acceptedConnections") == delta("authenticationChallenges")
-            && slot.proxy_before_host["authenticatedRequests"] == baseline[index]["authenticatedRequests"]
-            && slot.proxy_before_host["upstreamDials"] == 0
-            && slot.proxy_before_host["upstreamFailures"] == 0
-            && delta("requestRejections") == Some(0)
-            && delta("capacityRefusals") == Some(0)
-    });
+    let proxy_ack_clean = legacy
+        || http2_revision
+        || slots.iter().enumerate().all(|(index, slot)| {
+            // Chromium may start background jobs before a browser exists. They
+            // must stop at unauthenticated 407s, never reach the route dialer.
+            let delta = |field: &str| {
+                slot.proxy_before_host[field]
+                    .as_u64()
+                    .zip(baseline[index][field].as_u64())
+                    .and_then(|(current, before)| current.checked_sub(before))
+            };
+            slot.proxy_application_verified
+                && delta("acceptedConnections").is_some()
+                && delta("acceptedConnections") == delta("authenticationChallenges")
+                && slot.proxy_before_host["authenticatedRequests"]
+                    == baseline[index]["authenticatedRequests"]
+                && slot.proxy_before_host["upstreamDials"] == 0
+                && slot.proxy_before_host["upstreamFailures"] == 0
+                && delta("requestRejections") == Some(0)
+                && delta("capacityRefusals") == Some(0)
+        });
     report["proxyProofRequired"] = (!legacy && !http2_revision).into();
     report["proxyAckNoApplicationNetwork"] = proxy_ack_clean.into();
-    report["preHostUnauthenticatedConnections"] = serde_json::json!(slots.iter().enumerate().map(|(index, slot)| {
-        slot.proxy_before_host["acceptedConnections"].as_u64()
-            .zip(baseline[index]["acceptedConnections"].as_u64())
-            .and_then(|(current, before)| current.checked_sub(before))
-    }).collect::<Vec<_>>());
-    report["ok"] = (proxy_ack_clean && failures.is_empty()
+    report["preHostUnauthenticatedConnections"] = serde_json::json!(slots
+        .iter()
+        .enumerate()
+        .map(|(index, slot)| {
+            slot.proxy_before_host["acceptedConnections"]
+                .as_u64()
+                .zip(baseline[index]["acceptedConnections"].as_u64())
+                .and_then(|(current, before)| current.checked_sub(before))
+        })
+        .collect::<Vec<_>>());
+    report["ok"] = (proxy_ack_clean
+        && failures.is_empty()
         && clean
         && closed
         && stage == CASES.len()
@@ -786,7 +832,12 @@ fn execute(bootstrap: &mut dyn RuntimeBootstrap, paths: &BundlePaths) -> Result 
             }) && s.reports.iter().any(|r| {
                 r["resources"] == 32
                     && r["responseDelayMs"] == 80
-                    && if legacy || h1_only() {
+                    && if cross_authority() {
+                        // This case intentionally denies half the resources.
+                        // Certificate rejections affect scheduling; the separate
+                        // multiplex/delay cases prove concurrency above H1 limits.
+                        r["requestPeak"].as_u64().unwrap_or(0) > 0
+                    } else if legacy || h1_only() {
                         r["requestPeak"].as_u64().unwrap_or(0) <= 6
                     } else {
                         r["requestPeak"].as_u64().unwrap_or(0) > 6
@@ -853,8 +904,16 @@ fn execute(bootstrap: &mut dyn RuntimeBootstrap, paths: &BundlePaths) -> Result 
         .into();
     }
     if std::env::var("SORNG_CEF_HTTP2_CHECK").as_deref() == Ok("delay") {
-        let observed = slots.iter().all(|slot| slot.tls_owner.minimum_admission_delay_ms.lock().unwrap().is_some_and(|ms| ms >= 300));
-        if !observed { failures.push("admission delay was not observed".into()); }
+        let observed = slots.iter().all(|slot| {
+            slot.tls_owner
+                .minimum_admission_delay_ms
+                .lock()
+                .unwrap()
+                .is_some_and(|ms| ms >= 300)
+        });
+        if !observed {
+            failures.push("admission delay was not observed".into());
+        }
         report["ok"] = (report["ok"] == true && observed).into();
         report["failures"] = serde_json::json!(failures);
     }
