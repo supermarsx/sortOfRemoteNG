@@ -2229,10 +2229,21 @@ export function acceptanceCustomPlan(plan, target, stem) {
   return { ...plan, appName: stem };
 }
 
+export function acceptanceBundleRoot(executable) {
+  const directory = path.dirname(path.resolve(executable));
+  const parent = path.dirname(directory);
+  return path.basename(directory) === "MacOS" &&
+    path.basename(parent) === "Contents"
+    ? path.dirname(parent)
+    : directory;
+}
+
 export async function stageAcceptance({
   runtime,
   customPlan,
   client,
+  helper,
+  appPlist,
   output,
   target,
   suite = "legacy",
@@ -2241,10 +2252,6 @@ export async function stageAcceptance({
     throw new Error("Unknown acceptance suite");
   const stem =
     suite === "tls" ? "sorng_cef_tls_acceptance" : "sorng_cef_acceptance";
-  if (process.platform !== "win32" || target !== "x86_64-pc-windows-msvc")
-    throw new Error(
-      "Use the platform packaging lane to stage Unix/ARM bundles; this copier supports Windows x64 only",
-    );
   if (customPlan) {
     if (runtime) throw new Error("Choose --custom-plan or --runtime, not both");
     const plan = acceptanceCustomPlan(
@@ -2252,6 +2259,11 @@ export async function stageAcceptance({
       target,
       stem,
     );
+    const layout = packageManifest(target, stem);
+    if (layout.platform !== "windows" && !helper)
+      throw new Error("Custom Unix acceptance staging requires --helper");
+    if (layout.platform === "macos" && !appPlist)
+      throw new Error("Custom macOS acceptance staging requires --app-plist");
     if (plan.localRuntimeSelection)
       verifyLocalRuntimeSelection(plan.localRuntimeSelection);
     // Reuse the app's SHA-256 inventory, ABI/export and post-copy checks.
@@ -2259,6 +2271,8 @@ export async function stageAcceptance({
     const staging = await stageCustomRuntimePackage({
       plan,
       application: client,
+      helper,
+      appPlist,
       output,
     });
     if (plan.localRuntimeSelection)
@@ -2269,13 +2283,24 @@ export async function stageAcceptance({
       { flag: "wx" },
     );
     return {
-      executable: path.join(output, `${stem}.exe`),
+      executable: path.join(
+        output,
+        layout.platform === "windows"
+          ? `${stem}.exe`
+          : layout.platform === "macos"
+            ? `Contents/MacOS/${stem}`
+            : stem,
+      ),
       target,
       suite,
       productionReady: false,
     };
   }
   if (!runtime) throw new Error("Expected --custom-plan or --runtime");
+  if (process.platform !== "win32" || target !== "x86_64-pc-windows-msvc")
+    throw new Error(
+      "Official SDK copying supports Windows x64 only; other targets require a verified custom plan",
+    );
   const inspection = await inspectRuntime(runtime, target);
   if (!inspection.ok)
     throw new Error(`Pinned SDK rejected: ${inspection.errors.join("; ")}`);
@@ -2508,13 +2533,11 @@ export async function runAcceptance({
     throw new Error("Invalid timeoutMs (1000..600000)");
   executable = path.resolve(executable);
   output = path.resolve(output);
+  const bundle = acceptanceBundleRoot(executable);
   let expectedPatchId;
   try {
     const staging = JSON.parse(
-      await readFile(
-        path.join(path.dirname(executable), "acceptance-staging.json"),
-        "utf8",
-      ),
+      await readFile(path.join(bundle, "acceptance-staging.json"), "utf8"),
     );
     if (staging?.kind === "sorng-cef-custom-package") {
       expectedPatchId = staging.preflight?.bridge?.patchId;
@@ -2527,7 +2550,7 @@ export async function runAcceptance({
     if (error?.code !== "ENOENT") throw error;
   }
   await ensureBrowserSandboxAccess({
-    bundle: path.dirname(executable),
+    bundle,
     appName: path.basename(executable, ".exe"),
   });
   // A fresh parent is mandatory; no existing application/user profile is used.
@@ -2856,7 +2879,11 @@ async function main(args) {
     options[rest[i].slice(2)] = rest[i + 1];
   }
   if (command === "stage")
-    return stageAcceptance({ ...options, customPlan: options["custom-plan"] });
+    return stageAcceptance({
+      ...options,
+      customPlan: options["custom-plan"],
+      appPlist: options["app-plist"],
+    });
   const launch = (suite, rest) => {
     const { [INTERACTIVE_DESKTOP_OPTION]: interactiveDesktop, ...others } =
       rest;
@@ -2878,7 +2905,7 @@ async function main(args) {
     return result;
   }
   throw new Error(
-    "Usage: node scripts/cef-browser-acceptance.mjs stage (--custom-plan PREPARED_PLAN_JSON | --runtime OFFICIAL_SDK) --client DLL --output NEW_DIR --target x86_64-pc-windows-msvc [--suite tls] | run-tls --executable PACKAGED_EXECUTABLE --output NEW_DIR [--manual true] | run --executable LEGACY_EXECUTABLE --output NEW_DIR | measure --executable LEGACY_EXECUTABLE --output NEW_DIR [--window-ms 5000..40000] [--only SCENARIO_ID,...] | menu --executable LEGACY_EXECUTABLE --output NEW_DIR. On Windows every run starts the client on a private desktop; --use-interactive-desktop true puts its windows on the desktop of whoever is using the machine instead.",
+    "Usage: node scripts/cef-browser-acceptance.mjs stage (--custom-plan PREPARED_PLAN_JSON | --runtime OFFICIAL_SDK) --client NATIVE_CLIENT --output NEW_DIR --target TARGET [--helper UNIX_HELPER] [--app-plist MACOS_INFO_PLIST] [--suite tls] | run-tls --executable PACKAGED_EXECUTABLE --output NEW_DIR [--manual true] | run --executable LEGACY_EXECUTABLE --output NEW_DIR | measure --executable LEGACY_EXECUTABLE --output NEW_DIR [--window-ms 5000..40000] [--only SCENARIO_ID,...] | menu --executable LEGACY_EXECUTABLE --output NEW_DIR. On Windows every run starts the client on a private desktop; --use-interactive-desktop true puts its windows on the desktop of whoever is using the machine instead.",
   );
 }
 if (

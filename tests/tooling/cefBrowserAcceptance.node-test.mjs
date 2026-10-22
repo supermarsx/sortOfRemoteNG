@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
-import { mkdtemp, readFile, writeFile, rm } from "node:fs/promises";
+import { mkdtemp, mkdir, readFile, writeFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -19,6 +19,7 @@ import {
   decodeNetlog,
   summarizeProxyTrace,
   acceptanceCustomPlan,
+  acceptanceBundleRoot,
   stageAcceptance,
   MEASUREMENT_SCENARIOS,
   MEASUREMENT_VARIABLES,
@@ -45,6 +46,43 @@ import {
   readNativeCrashSummary,
   applyNativeCrashGate,
 } from "../../scripts/lib/cef-native-crash-summary.mjs";
+
+test("acceptance metadata stays at the staged bundle root on all platforms", () => {
+  const root = path.resolve("fixture-bundle");
+  for (const executable of [
+    "sorng_cef_tls_acceptance.exe",
+    "sorng_cef_tls_acceptance",
+    "Contents/MacOS/sorng_cef_tls_acceptance",
+  ]) {
+    assert.equal(acceptanceBundleRoot(path.join(root, executable)), root);
+  }
+  assert.equal(
+    acceptanceBundleRoot(path.join(root, "unrelated/MacOS/client")),
+    path.join(root, "unrelated/MacOS"),
+  );
+});
+
+test("running a staged macOS client checks its exact bundle-root revision before launching", async (t) => {
+  const root = await mkdtemp(path.join(tmpdir(), "cef-acceptance-macos-pin-"));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  await mkdir(path.join(root, "Contents/MacOS"), { recursive: true });
+  await writeFile(
+    path.join(root, "acceptance-staging.json"),
+    JSON.stringify({
+      kind: "sorng-cef-custom-package",
+      preflight: { bridge: { patchId: "unsupported-fixture" } },
+    }),
+  );
+  await assert.rejects(
+    runAcceptance({
+      executable: path.join(root, "Contents/MacOS/sorng_cef_tls_acceptance"),
+      output: path.join(root, "must-not-launch"),
+      suite: "tls",
+    }),
+    /no supported bridge revision pin/,
+  );
+  assert.equal(existsSync(path.join(root, "must-not-launch")), false);
+});
 
 test("custom acceptance preserves the verified plan and changes only the client name", () => {
   const target = "x86_64-pc-windows-msvc";
@@ -78,24 +116,55 @@ test("custom acceptance preserves the verified plan and changes only the client 
   );
 });
 
-test(
-  "acceptance never mixes official runtime selection with a custom plan",
-  { skip: process.platform !== "win32" },
-  async () => {
-    await assert.rejects(
-      stageAcceptance({
-        runtime: "official",
-        customPlan: "missing-plan.json",
-        target: "x86_64-pc-windows-msvc",
+test("acceptance never mixes official runtime selection with a custom plan", async () => {
+  await assert.rejects(
+    stageAcceptance({
+      runtime: "official",
+      customPlan: "missing-plan.json",
+      target: "x86_64-pc-windows-msvc",
+    }),
+    /not both/,
+  );
+  await assert.rejects(
+    stageAcceptance({ target: "x86_64-pc-windows-msvc" }),
+    /Expected --custom-plan or --runtime/,
+  );
+});
+
+test("Unix acceptance requires its real helper and macOS application metadata before staging", async (t) => {
+  const root = await mkdtemp(path.join(tmpdir(), "cef-acceptance-inputs-"));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const planFile = path.join(root, "plan.json");
+  for (const target of [
+    "x86_64-unknown-linux-gnu",
+    "aarch64-unknown-linux-gnu",
+    "x86_64-apple-darwin",
+    "aarch64-apple-darwin",
+  ]) {
+    await writeFile(
+      planFile,
+      JSON.stringify({
+        runtimeKind: "custom",
+        target,
+        customRuntime: { fixtureOnly: true },
       }),
-      /not both/,
     );
     await assert.rejects(
-      stageAcceptance({ target: "x86_64-pc-windows-msvc" }),
-      /Expected --custom-plan or --runtime/,
+      stageAcceptance({ customPlan: planFile, target }),
+      /requires --helper/,
     );
-  },
-);
+    if (target.endsWith("apple-darwin")) {
+      await assert.rejects(
+        stageAcceptance({
+          customPlan: planFile,
+          target,
+          helper: "not-a-binary",
+        }),
+        /requires --app-plist/,
+      );
+    }
+  }
+});
 
 test("missing native evidence cannot become readiness", () => {
   const result = assessNativeReport();
