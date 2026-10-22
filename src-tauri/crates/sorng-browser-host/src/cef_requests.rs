@@ -223,7 +223,14 @@ fn resource_handler_with_denial(
         permissions,
         scope,
         Arc::new(AtomicBool::new(denied)),
-        Arc::new(Mutex::new(None)),
+        ResourceRequestTracking {
+            recording: Arc::new(Mutex::new(None)),
+            admission_wait: if denied {
+                None
+            } else {
+                crate::cef_runtime::resource_admission_wait()
+            },
+        },
         isolate_redirect,
     )
 }
@@ -995,6 +1002,14 @@ wrap_request_handler! {
     }
 }
 
+// Both observations belong to this handler, with shared inner ownership across
+// native wrapper clones. Recording may span the body; admission ends earlier.
+#[derive(Clone)]
+struct ResourceRequestTracking {
+    recording: Arc<Mutex<Option<recording::Capture>>>,
+    admission_wait: Option<crate::cef_runtime::ResourceAdmissionWait>,
+}
+
 wrap_resource_request_handler! {
     struct SessionResourceRequestHandler {
         session: Arc<Mutex<OriginBrowserSession>>,
@@ -1002,7 +1017,7 @@ wrap_resource_request_handler! {
         permissions: Arc<WebsitePermissionEngine>,
         scope: Option<ResourceScope>,
         denied: Arc<AtomicBool>,
-        recording: Arc<Mutex<Option<recording::Capture>>>,
+        tracking: ResourceRequestTracking,
         isolate_redirect: bool,
     }
 
@@ -1014,6 +1029,9 @@ wrap_resource_request_handler! {
             request: Option<&mut Request>,
             callback: Option<&mut Callback>,
         ) -> ReturnValue {
+            // This token covers only the preceding native cookie/admission
+            // handoff. It must not keep fast pumping during bodies or WSS.
+            if let Some(wait) = &self.tracking.admission_wait { wait.release(); }
             let allowed = scoped_request_allowed(&self.session, &self.identity, &self.permissions, self.scope.as_ref(), request.as_deref());
             if self.denied.load(Ordering::Acquire)
                 || callback.is_none()
@@ -1023,7 +1041,7 @@ wrap_resource_request_handler! {
                 ReturnValue::CANCEL
             } else {
                 observe_admitted_request(&self.session, &self.identity, request.as_deref());
-                recording_callbacks::start(&self.recording, &self.identity, request.as_deref());
+                recording_callbacks::start(&self.tracking.recording, &self.identity, request.as_deref());
                 // Synchronous decision; never invoke the async callback too.
                 ReturnValue::CONTINUE
             }
@@ -1049,7 +1067,7 @@ wrap_resource_request_handler! {
                         })
                     })
                 });
-            recording_callbacks::redirect(&self.recording, request.as_deref(), response.as_deref(), new_url.as_deref(), allowed);
+            recording_callbacks::redirect(&self.tracking.recording, request.as_deref(), response.as_deref(), new_url.as_deref(), allowed);
             if !allowed {
                 self.denied.store(true, Ordering::Release);
                 let inert_rewrite_succeeded = new_url.is_some_and(|url| {
@@ -1088,7 +1106,7 @@ wrap_resource_request_handler! {
             status: UrlrequestStatus,
             received_content_length: i64,
         ) {
-            recording_callbacks::complete(&self.recording, response.as_deref(), status, received_content_length);
+            recording_callbacks::complete(&self.tracking.recording, response.as_deref(), status, received_content_length);
         }
 
         fn on_protocol_execution(
@@ -1109,6 +1127,54 @@ wrap_resource_request_handler! {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn admission_wait_ends_before_allowed_body_or_cancel_and_not_on_wrapper_clone_drop() {
+        #[cfg(target_os = "macos")]
+        crate::platform::test_runtime::ensure_loaded();
+        for allowed in [false, true] {
+            let (session, identity) = session().await;
+            report_synthetic_ready(&mut session.lock().unwrap(), &identity);
+            let token = crate::cef_runtime::ResourceAdmissionWait::callback_test_token();
+            let observer = token.clone();
+            let handler = SessionResourceRequestHandler::new(
+                Arc::new(session),
+                identity,
+                Arc::new(allow_classes(&[WebsiteRequestClass::FetchXhr])),
+                Some(first_party_scope(ResourceType::XHR)),
+                Arc::new(AtomicBool::new(!allowed)),
+                ResourceRequestTracking {
+                    recording: Arc::new(Mutex::new(None)),
+                    admission_wait: Some(token),
+                },
+                false,
+            );
+            let retained = handler.clone();
+            drop(handler);
+            assert!(observer.callback_test_pending());
+            let mut request = navigation_mocks::request(ResourceType::XHR);
+            let (mut callback, _) = navigation_mocks::callback();
+            assert_eq!(
+                retained.on_before_resource_load(
+                    None,
+                    None,
+                    Some(&mut request),
+                    Some(&mut callback)
+                ),
+                if allowed {
+                    ReturnValue::CONTINUE
+                } else {
+                    ReturnValue::CANCEL
+                }
+            );
+            // The resource wrapper stays alive for the body; repeated callbacks
+            // cannot keep/restart the admission interval.
+            assert!(!observer.callback_test_pending());
+            retained.on_before_resource_load(None, None, Some(&mut request), Some(&mut callback));
+            assert!(!observer.callback_test_pending());
+            drop(retained);
+        }
+    }
     include!("cef_recording_tests.rs");
     use crate::domain_permissions::{
         WebsiteDestinationPermissions, WebsiteDomainPermissionsSettings, WebsiteNetworkPolicy,

@@ -127,6 +127,92 @@ struct Scheduler {
     network_policy: AtomicU8,
 }
 
+// The application has one CEF runtime per process. Tokens retain only a weak
+// reference to its scheduler: a cancelled/old request cannot wake a new owner.
+static ADMISSION_SCHEDULER: OnceLock<Mutex<std::sync::Weak<Scheduler>>> = OnceLock::new();
+
+#[derive(Clone)]
+pub(crate) struct ResourceAdmissionWait(Arc<ResourceAdmissionWaitInner>);
+
+struct ResourceAdmissionWaitInner {
+    scheduler: std::sync::Weak<Scheduler>,
+    pending: AtomicBool,
+}
+
+impl ResourceAdmissionWait {
+    #[cfg(test)]
+    pub(crate) fn callback_test_token() -> Self {
+        Self(Arc::new(ResourceAdmissionWaitInner {
+            scheduler: std::sync::Weak::new(),
+            pending: AtomicBool::new(true),
+        }))
+    }
+
+    #[cfg(test)]
+    pub(crate) fn callback_test_pending(&self) -> bool {
+        self.0.pending.load(Ordering::Acquire)
+    }
+
+    fn start(scheduler: &Arc<Scheduler>) -> Option<Self> {
+        if scheduler.failed.load(Ordering::Acquire) {
+            return None;
+        }
+        let wake = match scheduler.pump.lock() {
+            Ok(mut pump) => {
+                if !pump.admission_available() {
+                    return None;
+                }
+                pump.begin_admission(Instant::now())
+            }
+            Err(error) => {
+                drop(error.into_inner());
+                scheduler.fail();
+                return None;
+            }
+        };
+        let token = Self(Arc::new(ResourceAdmissionWaitInner {
+            scheduler: Arc::downgrade(scheduler),
+            pending: AtomicBool::new(true),
+        }));
+        if wake {
+            scheduler.notify();
+        }
+        Some(token)
+    }
+
+    pub(crate) fn release(&self) {
+        self.0.release();
+    }
+}
+
+impl ResourceAdmissionWaitInner {
+    fn release(&self) {
+        if !self.pending.swap(false, Ordering::AcqRel) {
+            return;
+        }
+        if let Some(scheduler) = self.scheduler.upgrade() {
+            match scheduler.pump.lock() {
+                Ok(mut pump) => pump.end_admission(),
+                Err(error) => {
+                    drop(error.into_inner());
+                    scheduler.fail();
+                }
+            }
+        }
+    }
+}
+
+impl Drop for ResourceAdmissionWaitInner {
+    fn drop(&mut self) {
+        self.release();
+    }
+}
+
+pub(crate) fn resource_admission_wait() -> Option<ResourceAdmissionWait> {
+    let scheduler = ADMISSION_SCHEDULER.get()?.lock().ok()?.upgrade()?;
+    ResourceAdmissionWait::start(&scheduler)
+}
+
 impl Scheduler {
     fn fail(&self) {
         if self.failed.swap(true, Ordering::AcqRel) {
@@ -461,6 +547,10 @@ impl<'bootstrap> CefRuntime<'bootstrap> {
             }
             return Err(error);
         }
+        *ADMISSION_SCHEDULER
+            .get_or_init(|| Mutex::new(std::sync::Weak::new()))
+            .lock()
+            .unwrap_or_else(|error| error.into_inner()) = Arc::downgrade(&scheduler);
         Ok(Self {
             thread: thread::current().id(),
             scheduler,
@@ -607,6 +697,57 @@ impl CefRuntime<'static> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn admission_wait_clones_release_once_and_only_first_wait_wakes_owner() {
+        let wakes = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let observed = wakes.clone();
+        let scheduler = scheduler(
+            Arc::new(move || {
+                observed.fetch_add(1, Ordering::SeqCst);
+                Ok(())
+            }),
+            Arc::new(|_| {}),
+        );
+        let first = ResourceAdmissionWait::start(&scheduler).unwrap();
+        let clone = first.clone();
+        let second = ResourceAdmissionWait::start(&scheduler).unwrap();
+        assert_eq!(wakes.load(Ordering::SeqCst), 1);
+        drop(first); // CEF wrapper clones cannot end a live handler's wait.
+        assert!(scheduler.pump.lock().unwrap().deadline().is_some());
+        clone.release();
+        clone.release();
+        assert!(scheduler.pump.lock().unwrap().deadline().is_some());
+        drop(second); // Last-drop cancellation releases without a callback.
+        assert_eq!(scheduler.pump.lock().unwrap().deadline(), None);
+        drop(clone);
+        assert_eq!(wakes.load(Ordering::SeqCst), 1);
+    }
+
+    #[test]
+    fn cancelled_admission_generation_never_wakes_or_changes_replacement() {
+        let old = scheduler(Arc::new(|| Ok(())), Arc::new(|_| {}));
+        let token = ResourceAdmissionWait::start(&old).unwrap();
+        old.pump.lock().unwrap().stop();
+        let wakes = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let observed = wakes.clone();
+        let current = scheduler(
+            Arc::new(move || {
+                observed.fetch_add(1, Ordering::SeqCst);
+                Ok(())
+            }),
+            Arc::new(|_| {}),
+        );
+        token.release();
+        drop(token);
+        assert_eq!(current.pump.lock().unwrap().deadline(), None);
+        assert_eq!(wakes.load(Ordering::SeqCst), 0);
+        assert!(ResourceAdmissionWait::start(&old).is_none());
+        drop(old);
+        let current_token = ResourceAdmissionWait::start(&current).unwrap();
+        drop(current);
+        current_token.release(); // Weak owner already gone: no work/CEF call.
+    }
 
     struct CleanupBootstrap(Arc<Mutex<Vec<&'static str>>>);
 
