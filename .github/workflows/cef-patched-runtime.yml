@@ -12,9 +12,9 @@ on:
         required: true
         default: build
         type: choice
-        options: [build, discover]
+        options: [build, discover, provision, hosted-build]
       discovery_cleanup_linux:
-        description: Explicitly remove only the reviewed expendable Linux SDK directories during discovery
+        description: Explicitly remove only reviewed expendable Linux SDK directories during hosted preparation
         required: true
         default: false
         type: boolean
@@ -118,7 +118,7 @@ jobs:
           retention-days: 14
           if-no-files-found: error
   plan:
-    if: inputs.mode != 'discover' && github.event_name == 'workflow_dispatch' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
+    if: github.event_name == 'workflow_dispatch' && ((inputs.mode == 'build' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch)) || (inputs.mode == 'hosted-build' && github.event.repository.visibility == 'public'))
     runs-on: ubuntu-latest
     timeout-minutes: 10
     outputs:
@@ -135,16 +135,43 @@ jobs:
         env:
           CEF_INPUTS: ${{ inputs.reviewed_inputs }}
           CEF_TARGET: ${{ inputs.target }}
-        run: node scripts/cef-runtime-ci.mjs plan --inputs "$CEF_INPUTS" --target "$CEF_TARGET"
+          CEF_RUNNER_MODE: ${{ inputs.mode == 'hosted-build' && 'hosted' || 'dedicated' }}
+        run: node scripts/cef-runtime-ci.mjs plan --inputs "$CEF_INPUTS" --target "$CEF_TARGET" --runner-mode "$CEF_RUNNER_MODE"
 
-  build:
-    needs: plan
-    if: inputs.mode != 'discover' && github.event_name == 'workflow_dispatch' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
+  provision:
+    if: inputs.mode == 'provision' && github.event_name == 'workflow_dispatch' && github.event.repository.visibility == 'public'
     strategy:
       fail-fast: false
-      matrix: ${{ fromJSON(needs.plan.outputs.matrix) }}
-    runs-on: ${{ matrix.runners }}
-    timeout-minutes: 4320
+      matrix:
+        include:
+          - {
+              target: x86_64-pc-windows-msvc,
+              runner: windows-2025-vs2026,
+              platform: win32,
+            }
+          - {
+              target: aarch64-pc-windows-msvc,
+              runner: windows-11-arm,
+              platform: win32,
+            }
+          - {
+              target: x86_64-unknown-linux-gnu,
+              runner: ubuntu-24.04,
+              platform: linux,
+            }
+          - {
+              target: aarch64-unknown-linux-gnu,
+              runner: ubuntu-24.04-arm,
+              platform: linux,
+            }
+          - {
+              target: x86_64-apple-darwin,
+              runner: macos-15-intel,
+              platform: darwin,
+            }
+          - { target: aarch64-apple-darwin, runner: macos-15, platform: darwin }
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
@@ -152,7 +179,53 @@ jobs:
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version-file: ".node-version"
-      # Runner service must supply SORNG_CEF_TOOLS_ROOT. Its reviewed inventory
+          package-manager-cache: false
+      - name: Provision fixed reviewed prerequisites on ephemeral public runners
+        env:
+          CEF_TARGET: ${{ matrix.target }}
+          CEF_PROVISION_OUTPUT: ${{ runner.temp }}/cef-hosted-provision
+          CEF_PROVISION_CLEANUP: ${{ matrix.platform == 'linux' && inputs.discovery_cleanup_linux }}
+          GITHUB_REPOSITORY_VISIBILITY: ${{ github.event.repository.visibility }}
+        run: |
+          cleanup=()
+          if [[ "$CEF_PROVISION_CLEANUP" == 'true' ]]; then cleanup+=(--cleanup); fi
+          node scripts/cef-hosted-provision.mjs --target "$CEF_TARGET" --output "$CEF_PROVISION_OUTPUT" --execute "${cleanup[@]}"
+      - name: Retain actual post-provision observations for separate pin review
+        if: always()
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        with:
+          name: cef-hosted-provision-${{ matrix.target }}
+          path: ${{ runner.temp }}/cef-hosted-provision
+          retention-days: 14
+          if-no-files-found: error
+
+  build:
+    needs: plan
+    if: github.event_name == 'workflow_dispatch' && ((inputs.mode == 'build' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch)) || (inputs.mode == 'hosted-build' && github.event.repository.visibility == 'public'))
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.plan.outputs.matrix) }}
+    runs-on: ${{ matrix.runners }}
+    timeout-minutes: ${{ inputs.mode == 'hosted-build' && 350 || 4320 }}
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: ".node-version"
+      - name: Replay fixed prerequisites before checking reviewed hosted pins
+        if: inputs.mode == 'hosted-build'
+        env:
+          CEF_TARGET: ${{ matrix.provisionTarget }}
+          CEF_PROVISION_OUTPUT: ${{ runner.temp }}/cef-hosted-provision
+          CEF_PROVISION_CLEANUP: ${{ runner.os == 'Linux' && inputs.discovery_cleanup_linux }}
+          GITHUB_REPOSITORY_VISIBILITY: ${{ github.event.repository.visibility }}
+        run: |
+          cleanup=()
+          if [[ "$CEF_PROVISION_CLEANUP" == 'true' ]]; then cleanup+=(--cleanup); fi
+          node scripts/cef-hosted-provision.mjs --target "$CEF_TARGET" --output "$CEF_PROVISION_OUTPUT" --execute "${cleanup[@]}"
+      # Dedicated runner service must supply SORNG_CEF_TOOLS_ROOT. Its reviewed inventory
       # includes cef-ci-runner-<target>.json and the selected Python executable.
       # RUNNER_TEMP must be short, space-free, outside checkout/node_modules,
       # and have sufficient engine-source/object/SDK disk capacity.
@@ -161,7 +234,13 @@ jobs:
         env:
           CEF_INPUTS: ${{ inputs.reviewed_inputs }}
           CEF_TARGET: ${{ matrix.target }}
-        run: node scripts/cef-runtime-ci.mjs build --inputs "$CEF_INPUTS" --target "$CEF_TARGET" --repository "$GITHUB_REPOSITORY" --execute
+          CEF_RUNNER_MODE: ${{ inputs.mode == 'hosted-build' && 'hosted' || 'dedicated' }}
+          GITHUB_REPOSITORY_VISIBILITY: ${{ github.event.repository.visibility }}
+        run: |
+          if [[ "$CEF_RUNNER_MODE" == 'hosted' ]]; then
+            if [[ "$RUNNER_OS" == 'Windows' ]]; then export SORNG_CEF_TOOLS_ROOT='C:/'; else export SORNG_CEF_TOOLS_ROOT='/'; fi
+          fi
+          node scripts/cef-runtime-ci.mjs build --inputs "$CEF_INPUTS" --target "$CEF_TARGET" --repository "$GITHUB_REPOSITORY" --runner-mode "$CEF_RUNNER_MODE" --execute
       - name: Retain complete source/build/package diagnostics
         if: always() && steps.build.outputs.logs != ''
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
@@ -181,7 +260,7 @@ jobs:
 
   publish:
     needs: [plan, build]
-    if: inputs.mode != 'discover' && inputs.publish == true && github.event_name == 'workflow_dispatch' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
+    if: inputs.mode == 'build' && inputs.publish == true && github.event_name == 'workflow_dispatch' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
     environment: cef-runtime-publish
     permissions:
       contents: write

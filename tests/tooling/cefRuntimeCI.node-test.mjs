@@ -22,6 +22,11 @@ import {
   PACK_PYTHON,
   boundedBuildCommands,
   buildEnvironment,
+  createHostedBuildBudget,
+  run as runBuildCommand,
+  assertHostedBuildIdentity,
+  assertHostedCapacity,
+  hostedBuildHost,
   descriptorFor,
   flattenSdk,
   githubClient,
@@ -75,6 +80,153 @@ const runner = (selected = target) => ({
     GYP_MSVS_VERSION: "2026",
   },
 });
+
+test("hosted builds bind actual reviewed image and only explicit same-OS macOS ARM cross-compilation", () => {
+  const macTarget = "aarch64-apple-darwin";
+  const map = {
+    ...runner(macTarget),
+    schemaVersion: 2,
+    hosted: {
+      runner: "macos-15-intel",
+      imageOS: "macos15",
+      imageVersion: "20260824.0482.1",
+      platform: "darwin",
+      architecture: "x64",
+      acceptanceRunner: "macos-15",
+    },
+  };
+  const env = {
+    GITHUB_ACTIONS: "true",
+    RUNNER_ENVIRONMENT: "github-hosted",
+    GITHUB_REPOSITORY_VISIBILITY: "public",
+    ImageOS: "macos15",
+    ImageVersion: "20260824.0482.1",
+  };
+  assert.equal(hostedBuildHost(macTarget).runner, "macos-15-intel");
+  assert.equal(
+    assertHostedBuildIdentity(map, macTarget, env, "darwin", "x64")
+      .crossCompiled,
+    true,
+  );
+  for (const patch of [
+    { ImageVersion: "new-image" },
+    { GITHUB_REPOSITORY_VISIBILITY: "private" },
+    { RUNNER_ENVIRONMENT: "self-hosted" },
+  ])
+    assert.throws(
+      () =>
+        assertHostedBuildIdentity(
+          map,
+          macTarget,
+          { ...env, ...patch },
+          "darwin",
+          "x64",
+        ),
+      /identity changed/,
+    );
+  assert.throws(
+    () => assertHostedBuildIdentity(map, macTarget, env, "linux", "x64"),
+    /identity changed/,
+  );
+  assert.throws(
+    () =>
+      validateRunnerMap(
+        {
+          ...map,
+          hosted: { ...map.hosted, acceptanceRunner: "macos-15-intel" },
+        },
+        macTarget,
+      ),
+    /fixed target/,
+  );
+  assert.throws(
+    () =>
+      validateRunnerMap(
+        { ...map, hosted: { ...map.hosted, runner: "arbitrary-paid-runner" } },
+        macTarget,
+      ),
+    /fixed target/,
+  );
+  assert.throws(
+    () => validateRunnerMap({ ...map, buildJobs: 5 }, macTarget),
+    /parallelism/,
+  );
+  assert.doesNotThrow(() =>
+    assertHostedCapacity({ availableGiB: 107, memoryGiB: 14, cpus: 4 }, map),
+  );
+  for (const patch of [{ availableGiB: 84 }, { memoryGiB: 7 }, { cpus: 2 }])
+    assert.throws(
+      () =>
+        assertHostedCapacity(
+          { availableGiB: 107, memoryGiB: 14, cpus: 4, ...patch },
+          map,
+        ),
+      /capacity/,
+    );
+});
+
+test("one monotonic hosted budget is carried across stages rather than reset for every command", () => {
+  let now = 10;
+  const budget = createHostedBuildBudget(100, () => now);
+  assert.equal(budget.remaining(), 100);
+  now = 50;
+  assert.equal(budget.remaining(), 60);
+  budget.assertRemaining();
+  now = 110;
+  assert.equal(budget.remaining(), 0);
+  assert.throws(() => budget.assertRemaining(), /budget exhausted/);
+  assert.throws(() => createHostedBuildBudget(301 * 60_000), /bounded/);
+});
+
+test(
+  "actual hosted deadline stops only its spawned child tree and retains failure diagnostics",
+  { timeout: 15_000 },
+  async (t) => {
+    const root = await temp(t);
+    const heartbeat = path.join(root, "heartbeat");
+    const child = path.join(root, "child.cjs");
+    const grandchild = path.join(root, "grandchild.cjs");
+    await writeFile(
+      grandchild,
+      `const fs=require('node:fs');setInterval(()=>fs.appendFileSync(${JSON.stringify(heartbeat)},'x'),20);`,
+    );
+    await writeFile(
+      child,
+      `require('node:child_process').spawn(process.execPath,[${JSON.stringify(grandchild)}],{stdio:'inherit'});setInterval(()=>{},1000);`,
+    );
+    await assert.rejects(
+      runBuildCommand(process.execPath, [child], {
+        cwd: root,
+        env: process.env,
+        logs: root,
+        name: "deadline-fixture",
+        budget: createHostedBuildBudget(2000),
+      }),
+      /budget exhausted/,
+    );
+    const receipt = JSON.parse(
+      await readFile(path.join(root, "deadline-fixture.deadline.json"), "utf8"),
+    );
+    assert.equal(receipt.budgetExpired, true);
+    assert.ok(
+      ["owned-tree-terminated", "owned-group-terminated"].includes(
+        receipt.cleanup,
+      ),
+    );
+    assert.equal(receipt.productionReady, false);
+    const observed = await readFile(heartbeat, "utf8");
+    assert.ok(
+      observed.length > 0,
+      "the actual grandchild was running before the deadline",
+    );
+    await new Promise((resolve) => setTimeout(resolve, 150));
+    assert.equal(
+      await readFile(heartbeat, "utf8"),
+      observed,
+      "the owned grandchild must stop as well",
+    );
+  },
+);
 
 async function temp(t) {
   const dir = await mkdtemp(path.join(os.tmpdir(), "cef-ci-fixture-"));
@@ -154,6 +306,74 @@ async function fixture(t, all = false) {
   await put(inputsRoot, "source-lock.json", stableJson(sourceLock));
   return { work, checkout, inputsRoot, sourceLock };
 }
+
+test("hosted planning verifies all actual image-map pin bytes before selecting fixed native/cross runners", async (t) => {
+  const f = await fixture(t, true);
+  for (const build of f.sourceLock.builds) {
+    const host = hostedBuildHost(build.target);
+    const nativeRunner =
+      build.target === "aarch64-apple-darwin" ? "macos-15" : host.runner;
+    const mapBytes = stableJson({
+      ...runner(build.target),
+      schemaVersion: 2,
+      hosted: {
+        runner: host.runner,
+        platform: host.platform,
+        architecture: host.architecture,
+        imageOS: "reviewed-image",
+        imageVersion: "actual-observation-v1",
+        acceptanceRunner: nativeRunner,
+      },
+    });
+    const mapFile = `cef-ci-runner-${build.target}.json`;
+    await put(f.inputsRoot, mapFile, mapBytes);
+    const toolchain = JSON.parse(
+      await readFile(path.join(f.inputsRoot, build.toolchainLock.path), "utf8"),
+    );
+    toolchain.files[0] = {
+      ...pin(mapFile, mapBytes),
+      size: Buffer.byteLength(mapBytes),
+    };
+    const tools = stableJson(toolchain);
+    await put(f.inputsRoot, build.toolchainLock.path, tools);
+    build.toolchainLock = pin(build.toolchainLock.path, tools);
+  }
+  await put(f.inputsRoot, "source-lock.json", stableJson(f.sourceLock));
+  const planned = await plan({
+    checkout: f.checkout,
+    inputs: "reviewed",
+    runnerMode: "hosted",
+  });
+  assert.equal(planned.matrix.include.length, 6);
+  const armMac = planned.matrix.include.find(
+    (row) => row.target === "aarch64-apple-darwin",
+  );
+  assert.equal(armMac.runners, "macos-15-intel");
+  assert.equal(armMac.provisionTarget, "x86_64-apple-darwin");
+  assert.ok(
+    planned.matrix.include.every(
+      (row) => row.runnerMode === "hosted" && typeof row.runners === "string",
+    ),
+  );
+  await put(
+    f.inputsRoot,
+    "cef-ci-runner-aarch64-apple-darwin.json",
+    "changed map",
+  );
+  await assert.rejects(
+    plan({
+      checkout: f.checkout,
+      inputs: "reviewed",
+      target,
+      runnerMode: "hosted",
+    }),
+    /mismatch/,
+  );
+  await assert.rejects(
+    plan({ checkout: f.checkout, inputs: "reviewed", runnerMode: "arbitrary" }),
+    /runner mode/,
+  );
+});
 
 // Minimal structural PE tables exercise the real inventory/export inspector;
 // no fixture library is ever loaded or claimed as runnable.
@@ -839,6 +1059,17 @@ test("CLI requires explicit execution and trusted default-branch dispatch; no im
     /duplicate/,
   );
   assert.throws(() => parseArguments(["publish", "--unknown"]), /Unknown/);
+  assert.throws(
+    () =>
+      parseArguments([
+        "plan",
+        "--runner-mode",
+        "hosted",
+        "--runner-mode",
+        "dedicated",
+      ]),
+    /duplicate/,
+  );
   await assert.rejects(
     main(["build", "--execute", "--repository", repository], {
       GITHUB_EVENT_NAME: "pull_request",
@@ -853,6 +1084,41 @@ test("CLI requires explicit execution and trusted default-branch dispatch; no im
       GITHUB_REPOSITORY: repository,
     }),
     /Protected publish/,
+  );
+  const hostedEnv = {
+    GITHUB_ACTIONS: "true",
+    GITHUB_EVENT_NAME: "workflow_dispatch",
+    GITHUB_REF: "refs/heads/reviewed-producer",
+    GITHUB_REPOSITORY: repository,
+    GITHUB_REPOSITORY_VISIBILITY: "public",
+    RUNNER_ENVIRONMENT: "github-hosted",
+  };
+  await assert.rejects(
+    main(
+      ["build", "--runner-mode", "hosted", "--repository", repository],
+      hostedEnv,
+    ),
+    /requires --execute/,
+  );
+  for (const patch of [
+    { GITHUB_REPOSITORY_VISIBILITY: "private" },
+    { RUNNER_ENVIRONMENT: "self-hosted" },
+    { GITHUB_EVENT_NAME: "pull_request" },
+  ])
+    await assert.rejects(
+      main(["build", "--runner-mode", "hosted", "--repository", repository], {
+        ...hostedEnv,
+        ...patch,
+      }),
+      /public hosted branch/,
+    );
+  await assert.rejects(
+    main(["build", "--repository", repository], hostedEnv),
+    /default-branch/,
+  );
+  await assert.rejects(
+    main(["publish", "--repository", repository], hostedEnv),
+    /default-branch/,
   );
 });
 test("workflow has manual/default-branch guards, six targets, protected least-privilege publish and pinned actions", async () => {
@@ -875,12 +1141,12 @@ test("workflow has manual/default-branch guards, six targets, protected least-pr
   assert.equal(workflow.concurrency["cancel-in-progress"], false);
   for (const [name, job] of Object.entries(workflow.jobs)) {
     assert.match(job.if, /workflow_dispatch/);
-    if (name === "discover") {
+    if (["discover", "provision"].includes(name)) {
       assert.match(job.if, /visibility == 'public'/);
-      assert.match(job.if, /mode == 'discover'/);
+      assert.match(job.if, new RegExp(`mode == '${name}'`));
     } else {
       assert.match(job.if, /default_branch/);
-      assert.match(job.if, /mode != 'discover'/);
+      assert.match(job.if, /mode == 'build'/);
     }
     if (name !== "publish") assert.notEqual(job.permissions?.contents, "write");
     for (const step of job.steps) {

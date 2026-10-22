@@ -266,7 +266,12 @@ test("discovery workflow is read-only, bounded, explicit, and cannot enter produ
   );
   const inputs = workflow.on.workflow_dispatch.inputs;
   assert.equal(inputs.mode.default, "build");
-  assert.deepEqual(inputs.mode.options, ["build", "discover"]);
+  assert.deepEqual(inputs.mode.options, [
+    "build",
+    "discover",
+    "provision",
+    "hosted-build",
+  ]);
   assert.equal(inputs.discovery_cleanup_linux.default, false);
   const job = workflow.jobs.discover;
   assert.match(job.if, /mode == 'discover'/);
@@ -294,7 +299,7 @@ test("discovery workflow is read-only, bounded, explicit, and cannot enter produ
     ),
   );
   for (const name of ["plan", "build", "publish"]) {
-    assert.match(workflow.jobs[name].if, /mode != 'discover'/);
+    assert.match(workflow.jobs[name].if, /mode == 'build'/);
     assert.match(workflow.jobs[name].if, /default_branch/);
   }
 });

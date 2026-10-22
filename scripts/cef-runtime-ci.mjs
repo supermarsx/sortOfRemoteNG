@@ -13,12 +13,15 @@ import {
   readFile,
   readdir,
   realpath,
+  statfs,
   writeFile,
 } from "node:fs/promises";
 import path from "node:path";
+import os from "node:os";
 import { fileURLToPath } from "node:url";
 import { finished } from "node:stream/promises";
 import { TARGETS } from "./browser-runtime-package.mjs";
+import { RECIPE as HOSTED_RECIPE } from "./cef-hosted-bootstrap.mjs";
 import { inventoryCustomArtifact } from "./cef-custom-artifact-inventory.mjs";
 import {
   customRuntimeBuildRecipe,
@@ -205,7 +208,14 @@ function toolchainShape(value, target) {
   return value;
 }
 
-export async function plan({ inputs, target = "all", checkout = ROOT }) {
+export async function plan({
+  inputs,
+  target = "all",
+  checkout = ROOT,
+  runnerMode = "dedicated",
+}) {
+  if (!["dedicated", "hosted"].includes(runnerMode))
+    fail("Unknown engine runner mode");
   releaseRelativePath(inputs);
   const base = await realpath(checkout);
   const inputsRoot = await realpath(path.resolve(base, inputs));
@@ -221,9 +231,22 @@ export async function plan({ inputs, target = "all", checkout = ROOT }) {
   for (const pin of [...sourceLock.patches, sourceLock.bridge.header])
     await pinned(inputsRoot, pin);
   // Validate ALL lock inputs, not just the selected target: identity covers all pins.
+  const hostedMaps = new Map();
   for (const item of sourceLock.builds) {
     const toolchain = await json(await pinned(inputsRoot, item.toolchainLock));
     toolchainShape(toolchain, item.target);
+    if (runnerMode === "hosted") {
+      const mapPin = toolchain.files.find(
+        (entry) => entry.path === mapName(item.target),
+      );
+      const map = validateRunnerMap(
+        await json(await pinned(inputsRoot, mapPin)),
+        item.target,
+      );
+      if (map.schemaVersion !== 2)
+        fail("Hosted builds require reviewed image-bound runner maps");
+      hostedMaps.set(item.target, map);
+    }
     await customRuntimeBuildRecipe({
       sourceLock,
       inputsRoot,
@@ -237,7 +260,13 @@ export async function plan({ inputs, target = "all", checkout = ROOT }) {
     matrix: {
       include: selected.map((item) => ({
         target: item,
-        runners: RUNNERS[item],
+        runners:
+          runnerMode === "hosted"
+            ? hostedMaps.get(item).hosted.runner
+            : RUNNERS[item],
+        ...(runnerMode === "hosted"
+          ? { provisionTarget: hostedBuildHost(item).target, runnerMode }
+          : {}),
         key: releaseIdentity(sourceLock, item).key,
       })),
     },
@@ -265,15 +294,49 @@ export function validateRunnerMap(value, target) {
       "syncJobs",
       "buildJobs",
       "environment",
+      ...(value?.schemaVersion === 2 ? ["hosted"] : []),
     ],
     "runner map",
   );
   if (
-    value.schemaVersion !== 1 ||
+    ![1, 2].includes(value.schemaVersion) ||
     value.kind !== "sorng-cef-ci-runner" ||
     value.target !== target
   )
     fail("Runner map target/schema mismatch");
+  if (value.schemaVersion === 2) {
+    shape(
+      value.hosted,
+      [
+        "runner",
+        "imageOS",
+        "imageVersion",
+        "platform",
+        "architecture",
+        "acceptanceRunner",
+      ],
+      "hosted runner identity",
+    );
+    const expected = hostedBuildHost(target);
+    const native = HOSTED_RECIPE.targets.find(
+      (entry) => entry.target === target,
+    );
+    if (
+      value.hosted.runner !== expected.runner ||
+      value.hosted.platform !== expected.platform ||
+      value.hosted.architecture !== expected.architecture ||
+      value.hosted.acceptanceRunner !== native.runner ||
+      typeof value.hosted.imageOS !== "string" ||
+      typeof value.hosted.imageVersion !== "string" ||
+      !/^[A-Za-z0-9_.-]{1,64}$/.test(value.hosted.imageOS) ||
+      !/^[A-Za-z0-9_.-]{1,64}$/.test(value.hosted.imageVersion)
+    )
+      fail(
+        "Hosted runner identity does not match the reviewed fixed target contract",
+      );
+    if (value.syncJobs > 2 || value.buildJobs > 4)
+      fail("Hosted engine parallelism exceeds its reviewed bound");
+  }
   releaseRelativePath(value.python);
   if (!Array.isArray(value.path) || value.path.length > 32)
     fail("Invalid runner PATH additions");
@@ -299,6 +362,63 @@ export function validateRunnerMap(value, target) {
       fail("Runner environment must be relocatable, not host-absolute");
   }
   return value;
+}
+
+export function hostedBuildHost(target) {
+  const source = HOSTED_RECIPE.targets.find((entry) => entry.target === target);
+  if (!source) fail("Unknown hosted target");
+  // Only this upstream-supported, same-OS cross-build is permitted. The actual
+  // target Mach-O is checked by inventoryCustomArtifact, never inferred from host.
+  return target === "aarch64-apple-darwin"
+    ? HOSTED_RECIPE.targets.find(
+        (entry) => entry.target === "x86_64-apple-darwin",
+      )
+    : source;
+}
+
+export function assertHostedBuildIdentity(
+  map,
+  target,
+  env,
+  platform = process.platform,
+  architecture = process.arch,
+) {
+  validateRunnerMap(map, target);
+  const expected = hostedBuildHost(target);
+  if (
+    map.schemaVersion !== 2 ||
+    platform !== expected.platform ||
+    architecture !== expected.architecture ||
+    env.GITHUB_ACTIONS !== "true" ||
+    env.RUNNER_ENVIRONMENT !== "github-hosted" ||
+    env.GITHUB_REPOSITORY_VISIBILITY !== "public" ||
+    env.ImageOS !== map.hosted.imageOS ||
+    env.ImageVersion !== map.hosted.imageVersion
+  )
+    fail("Hosted build OS, architecture or reviewed image identity changed");
+  return {
+    platform,
+    architecture,
+    imageOS: env.ImageOS,
+    imageVersion: env.ImageVersion,
+    target,
+    crossCompiled: target === "aarch64-apple-darwin",
+  };
+}
+
+export function assertHostedCapacity(
+  { availableGiB, memoryGiB, cpus },
+  runner,
+) {
+  if (
+    !Number.isFinite(availableGiB) ||
+    availableGiB < HOSTED_RECIPE.minimumFreeDiskGiB ||
+    !Number.isFinite(memoryGiB) ||
+    memoryGiB < HOSTED_RECIPE.minimumMemoryGiB ||
+    !Number.isSafeInteger(cpus) ||
+    cpus < runner.buildJobs
+  )
+    fail("Hosted engine workspace or bounded CPU/RAM capacity is insufficient");
 }
 
 export function buildEnvironment(
@@ -350,11 +470,71 @@ export async function sourceWorkspace(temp, checkout = ROOT) {
   return mkdtemp(path.join(root, "cef-ci-"));
 }
 
-async function run(
+export function createHostedBuildBudget(
+  milliseconds = 300 * 60_000,
+  clock = () => performance.now(),
+) {
+  if (
+    !Number.isSafeInteger(milliseconds) ||
+    milliseconds <= 0 ||
+    milliseconds > 300 * 60_000
+  )
+    fail("Hosted build budget must be bounded to 300 minutes");
+  const deadline = clock() + milliseconds;
+  return {
+    remaining: () => Math.max(0, deadline - clock()),
+    assertRemaining() {
+      if (this.remaining() <= 0)
+        fail("Hosted build budget exhausted; inspect retained diagnostics");
+    },
+  };
+}
+
+async function stopOwnedBuildChild(child, env) {
+  if (!Number.isSafeInteger(child.pid) || child.pid <= 0) return "not-started";
+  if (process.platform === "win32") {
+    if (child.exitCode !== null || child.signalCode !== null)
+      return "parent-ended-descendants-unconfirmed";
+    return new Promise((resolve) => {
+      const killer = spawn(
+        path.join(env.SystemRoot ?? "C:\\Windows", "System32", "taskkill.exe"),
+        ["/PID", String(child.pid), "/T", "/F"],
+        { windowsHide: true, shell: false, stdio: "ignore" },
+      );
+      const timer = setTimeout(() => {
+        killer.kill();
+        resolve("cleanup-timeout");
+      }, 5000);
+      killer.once("error", () => {
+        clearTimeout(timer);
+        resolve("cleanup-failed");
+      });
+      killer.once("close", (code) => {
+        clearTimeout(timer);
+        resolve(code === 0 ? "owned-tree-terminated" : "cleanup-failed");
+      });
+    });
+  }
+  try {
+    process.kill(-child.pid, "SIGTERM");
+  } catch (error) {
+    if (error.code !== "ESRCH") return "cleanup-failed";
+  }
+  await new Promise((resolve) => setTimeout(resolve, 250));
+  try {
+    process.kill(-child.pid, "SIGKILL");
+  } catch (error) {
+    if (error.code !== "ESRCH") return "cleanup-failed";
+  }
+  return "owned-group-terminated";
+}
+
+export async function run(
   executable,
   args,
-  { cwd, env, logs, name, capture = false },
+  { cwd, env, logs, name, capture = false, budget },
 ) {
+  budget?.assertRemaining();
   const stdout = createWriteStream(path.join(logs, `${name}.stdout.log`), {
     flags: "wx",
   });
@@ -367,6 +547,7 @@ async function run(
     env,
     windowsHide: true,
     shell: false,
+    detached: Boolean(budget) && process.platform !== "win32",
     stdio: ["ignore", "pipe", "pipe"],
   });
   child.stdout.on("data", (chunk) => {
@@ -379,22 +560,60 @@ async function run(
   child.stderr.pipe(stderr);
   // Avoid flooding CI with compiler progress; full streams remain artifacts.
   process.stderr.write(`[cef-runtime-ci] ${name}; logs: ${logs}\n`);
+  let deadlineTimer;
+  let timedOut = false;
   try {
     await new Promise((resolve, reject) => {
-      child.once("error", reject);
-      child.once("close", (code) =>
+      child.once("error", (error) => {
+        if (!timedOut) reject(error);
+      });
+      child.once("close", (code) => {
+        if (timedOut) return;
         code === 0
           ? resolve()
           : reject(
               new Error(`${name} failed (${code}); inspect retained logs`),
-            ),
-      );
+            );
+      });
+      if (budget)
+        deadlineTimer = setTimeout(() => {
+          timedOut = true;
+          void stopOwnedBuildChild(child, env)
+            .then(async (cleanup) => {
+              try {
+                await writeFile(
+                  path.join(logs, `${name}.deadline.json`),
+                  stableJson({
+                    kind: "hosted-build-deadline",
+                    stage: name,
+                    budgetExpired: true,
+                    cleanup,
+                    productionReady: false,
+                  }),
+                );
+              } finally {
+                child.stdout.unpipe(stdout);
+                child.stderr.unpipe(stderr);
+                child.stdout.destroy();
+                child.stderr.destroy();
+                child.unref();
+              }
+              reject(
+                new Error(
+                  "Hosted build budget exhausted; inspect command cleanup and retained diagnostics",
+                ),
+              );
+            })
+            .catch(reject);
+        }, Math.ceil(budget.remaining()));
     });
   } finally {
+    clearTimeout(deadlineTimer);
     stdout.end();
     stderr.end();
     await Promise.all([finished(stdout), finished(stderr)]);
   }
+  budget?.assertRemaining();
   if (capture && text.length > 1024 * 1024)
     fail("Command output exceeded capture bound");
   return text.trim();
@@ -558,12 +777,26 @@ export async function descriptorFor({
 }
 
 export async function build(
-  { inputs, target, repository, execute, checkout = ROOT },
+  {
+    inputs,
+    target,
+    repository,
+    execute,
+    checkout = ROOT,
+    runnerMode = "dedicated",
+  },
   env = process.env,
 ) {
   if (!execute) fail("build requires --execute");
+  const budget =
+    runnerMode === "hosted" ? createHostedBuildBudget() : undefined;
   repositoryName(repository);
-  const { sourceLock, inputsRoot } = await plan({ inputs, target, checkout });
+  const { sourceLock, inputsRoot } = await plan({
+    inputs,
+    target,
+    checkout,
+    runnerMode,
+  });
   const identity = releaseIdentity(sourceLock, target);
   const expectedPlatform = target.includes("windows")
     ? "win32"
@@ -571,7 +804,10 @@ export async function build(
       ? "linux"
       : "darwin";
   const expectedArch = target.startsWith("aarch64") ? "arm64" : "x64";
-  if (process.platform !== expectedPlatform || process.arch !== expectedArch)
+  if (
+    runnerMode === "dedicated" &&
+    (process.platform !== expectedPlatform || process.arch !== expectedArch)
+  )
     fail("Target requires a native matching OS/architecture runner");
   if (!env.SORNG_CEF_TOOLS_ROOT)
     fail("Provision SORNG_CEF_TOOLS_ROOT before source acquisition");
@@ -581,6 +817,58 @@ export async function build(
     await json(await pinned(inputsRoot, buildPin.toolchainLock)),
     target,
   );
+  let buildHost = null;
+  if (runnerMode === "hosted") {
+    const mapPin = toolchain.files.find(
+      (entry) => entry.path === mapName(target),
+    );
+    const reviewedMap = await pinned(inputsRoot, mapPin);
+    const map = await json(reviewedMap);
+    buildHost = assertHostedBuildIdentity(map, target, env);
+    const disk = await statfs(env.RUNNER_TEMP);
+    assertHostedCapacity(
+      {
+        availableGiB: (disk.bavail * disk.bsize) / 1024 ** 3,
+        memoryGiB: os.totalmem() / 1024 ** 3,
+        cpus: os.availableParallelism(),
+      },
+      map,
+    );
+    const preparationLogs = await mkdtemp(
+      path.join(env.RUNNER_TEMP, "cef-hosted-prepare-"),
+    );
+    await output("logs", preparationLogs);
+    const destination = path.join(toolsRoot, mapName(target));
+    if (await exists(destination)) {
+      const present = await measure(destination);
+      if (present.sha256 !== mapPin.sha256 || present.size !== mapPin.size)
+        fail(
+          "A different runner map already exists at the fixed tools-root location",
+        );
+    } else if (process.platform === "win32")
+      await copyFile(reviewedMap, destination, constants.COPYFILE_EXCL);
+    else
+      await run(
+        "sudo",
+        ["-n", "install", "-m", "0644", "--", reviewedMap, destination],
+        {
+          cwd: checkout,
+          env: buildEnvironment(
+            map,
+            {
+              toolsRoot,
+              source: toolsRoot,
+              depot: toolsRoot,
+              python: path.join(toolsRoot, map.python),
+            },
+            env,
+          ),
+          logs: preparationLogs,
+          name: "stage-reviewed-runner-map",
+          budget,
+        },
+      );
+  }
   const runner = validateRunnerMap(
     await json(
       await pinned(
@@ -590,6 +878,10 @@ export async function build(
     ),
     target,
   );
+  if (runnerMode === "dedicated" && runner.schemaVersion !== 1)
+    fail(
+      "Hosted image maps cannot silently select the dedicated producer path",
+    );
   const python = path.join(toolsRoot, runner.python);
   await verifyToolchainFiles({
     sourceLock,
@@ -617,8 +909,40 @@ export async function build(
     { toolsRoot, source, depot, python },
     env,
   );
-  const call = (exe, args, name, cwd = checkout, capture = false) =>
-    run(exe, args, { cwd, env: childEnv, logs, name, capture });
+  // Non-secret job ownership marker permits the Actions runner's final cleanup
+  // if stopping the exact owned child tree itself fails.
+  if (budget && env.RUNNER_TRACKING_ID)
+    childEnv.RUNNER_TRACKING_ID = env.RUNNER_TRACKING_ID;
+  const checkBudget = async (stage) => {
+    if (budget && budget.remaining() <= 0) {
+      await writeFile(
+        path.join(logs, "hosted-budget-exhausted.json"),
+        stableJson({
+          kind: "hosted-build-budget",
+          stage,
+          exhausted: true,
+          productionReady: false,
+        }),
+      );
+      budget.assertRemaining();
+    }
+  };
+  const call = async (exe, args, name, cwd = checkout, capture = false) => {
+    await checkBudget(name);
+    try {
+      return await run(exe, args, {
+        cwd,
+        env: childEnv,
+        logs,
+        name,
+        capture,
+        budget,
+      });
+    } catch (error) {
+      await checkBudget(name);
+      throw error;
+    }
+  };
   const patched = path.join(checkout, "scripts/cef-patched-runtime.mjs");
   const facts = JSON.parse(
     await call(
@@ -781,6 +1105,7 @@ export async function build(
     artifactRoot: bundle,
     sdkRoot: path.join(work, "roundtrip", archiveRoot),
   });
+  await checkBudget("package-verification");
   const descriptor = await descriptorFor({
     bundle,
     sourceLock,
@@ -791,6 +1116,7 @@ export async function build(
   await writeFile(path.join(bundle, "runtime.json"), stableJson(descriptor), {
     flag: "wx",
   });
+  await checkBudget("package-complete");
   const result = {
     target,
     key: identity.key,
@@ -799,6 +1125,7 @@ export async function build(
     descriptorSha256: (await measure(path.join(bundle, "runtime.json"))).sha256,
     archiveSdkRelationship: "extracted-and-inventory-verified",
     nativeAcceptance: "not-tested",
+    ...(buildHost ? { buildHost, targetArchitectureVerified: true } : {}),
     productionReady: false,
   };
   await writeFile(path.join(logs, "result.json"), stableJson(result), {
@@ -1065,15 +1392,22 @@ export function parseArguments(argv) {
     const key = args[i].replace(/^--/, "");
     if (
       !args[i].startsWith("--") ||
-      !["inputs", "target", "repository", "bundle", "execute"].includes(key) ||
-      Object.hasOwn(options, key)
+      ![
+        "inputs",
+        "target",
+        "repository",
+        "bundle",
+        "execute",
+        "runner-mode",
+      ].includes(key) ||
+      Object.hasOwn(options, key === "runner-mode" ? "runnerMode" : key)
     )
       fail("Unknown/duplicate producer argument");
     if (key === "execute") options.execute = true;
     else {
       const value = args[++i];
       if (!value || value.startsWith("--")) fail(`Missing ${key}`);
-      options[key] = value;
+      options[key === "runner-mode" ? "runnerMode" : key] = value;
     }
   }
   return options;
@@ -1088,7 +1422,17 @@ export async function main(argv = process.argv.slice(2), env = process.env) {
   }
   // Defense in depth beyond workflow conditions. Local tests call pure helpers;
   // CLI source builds/publication are only explicit trusted default-branch jobs.
-  if (
+  if (options.command === "build" && options.runnerMode === "hosted") {
+    if (
+      env.GITHUB_EVENT_NAME !== "workflow_dispatch" ||
+      !/^refs\/heads\/.+/.test(env.GITHUB_REF ?? "") ||
+      env.GITHUB_REPOSITORY !== options.repository ||
+      env.GITHUB_ACTIONS !== "true" ||
+      env.RUNNER_ENVIRONMENT !== "github-hosted" ||
+      env.GITHUB_REPOSITORY_VISIBILITY !== "public"
+    )
+      fail("Explicit public hosted branch workflow_dispatch required");
+  } else if (
     env.GITHUB_EVENT_NAME !== "workflow_dispatch" ||
     env.GITHUB_REF !== `refs/heads/${env.CEF_DEFAULT_BRANCH}` ||
     !env.CEF_DEFAULT_BRANCH ||
