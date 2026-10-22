@@ -13,6 +13,7 @@ import {
   stat,
   readlink,
   realpath,
+  readdir,
 } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -387,22 +388,15 @@ test("upstream version derivation must exactly match before source build", async
   const chromium = path.join(data.root, "source", "src");
   const directory = path.join(chromium, "cef", "tools");
   await mkdir(directory, { recursive: true });
-  // Node stands in for Python in this subprocess contract test. No engine runs.
+  // Exercise the real interpreter contract, including observational flags.
+  const python = process.platform === "win32" ? "python" : "python3";
   await writeFile(
     path.join(directory, "cef_version.py"),
-    'process.stdout.write("fixture-pinned-version\\n");',
+    'print("fixture-pinned-version")\n',
   );
-  await verifySourceCheckoutVersion(
-    process.execPath,
-    chromium,
-    "fixture-pinned-version",
-  );
+  await verifySourceCheckoutVersion(python, chromium, "fixture-pinned-version");
   await assert.rejects(
-    verifySourceCheckoutVersion(
-      process.execPath,
-      chromium,
-      "fixture-other-version",
-    ),
+    verifySourceCheckoutVersion(python, chromium, "fixture-other-version"),
     /Upstream CEF version derivation differs.*metadata refs/,
   );
   const plan = sourceAcquisitionPlan(path.join(data.root, "other-source"));
@@ -782,6 +776,32 @@ test("hosted runner metadata is verified from reviewed inputs without provisioni
     verifyToolchainFiles({ ...options, runnerMapFromInputs: "true" }),
     /runnerMapFromInputs/,
   );
+});
+
+test("observational source version imports leave a pristine checkout unchanged, including mismatch failures", async (t) => {
+  const root = await mkdtemp(
+    path.join(os.tmpdir(), "cef-version-observation-"),
+  );
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const tools = path.join(root, "cef", "tools");
+  await mkdir(tools, { recursive: true });
+  await writeFile(
+    path.join(tools, "version_fixture.py"),
+    "VERSION = 'fixture-pinned-version'\n",
+  );
+  await writeFile(
+    path.join(tools, "cef_version.py"),
+    "from version_fixture import VERSION\nprint(VERSION)\n",
+  );
+  const python = process.platform === "win32" ? "python" : "python3";
+  const before = await readdir(tools);
+  await verifySourceCheckoutVersion(python, root, "fixture-pinned-version");
+  assert.deepEqual(await readdir(tools), before);
+  await assert.rejects(
+    verifySourceCheckoutVersion(python, root, "different-version"),
+    /version derivation differs/,
+  );
+  assert.deepEqual(await readdir(tools), before);
 });
 
 test("source plan pins all upstream revisions and Siso; no acquisition is executed", () => {

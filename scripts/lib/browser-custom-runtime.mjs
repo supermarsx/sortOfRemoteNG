@@ -1371,7 +1371,9 @@ export async function verifySourceCheckoutVersion(python, chromium, expected) {
   const root = path.resolve(chromium);
   const { stdout } = await exec(
     python,
-    [path.join(root, "cef/tools/cef_version.py"), "current", root],
+    // Pristine CEF has no generated .gitignore yet. Observational imports must
+    // not create untracked __pycache__ files before the strict patch preflight.
+    ["-B", path.join(root, "cef/tools/cef_version.py"), "current", root],
     { cwd: root, windowsHide: true, timeout: 120_000, maxBuffer: 1024 * 1024 },
   );
   if (stdout.trim() !== expected)
