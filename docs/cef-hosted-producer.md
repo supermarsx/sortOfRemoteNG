@@ -1,3 +1,9 @@
+---
+title: Hosted CEF producer prerequisites
+description: Observing and reviewing the six hosted toolchains before native runtime builds and publication.
+hide_page_header: true
+---
+
 # Hosted CEF producer prerequisites
 
 The engineering workflow has two explicit modes. Its existing default, **build**, still requires reviewed input locks, dedicated runners and the protected default-branch publisher. **discover** uses only six fixed standard public-repository runner labels. It gathers observations and never builds CEF, installs an SDK, creates trusted pins, or publishes anything.
