@@ -7,6 +7,318 @@ use tokio::task::JoinHandle;
 
 use super::{InspectionFailureKind as Kind, InspectionStage as Stage};
 
+#[tokio::test]
+async fn healthy_second_address_does_not_wait_for_first_address_timeout() {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::sync::Arc;
+    struct DropWitness(Arc<AtomicUsize>);
+    impl Drop for DropWitness {
+        fn drop(&mut self) {
+            self.0.fetch_add(1, Ordering::SeqCst);
+        }
+    }
+    let dropped = Arc::new(AtomicUsize::new(0));
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let healthy = listener.local_addr().unwrap();
+    let blackhole: SocketAddr = "[2001:db8::1]:443".parse().unwrap();
+    let net = FakeNet {
+        resolve: resolves_to(&[]),
+        dial: Box::new({
+            let dropped = dropped.clone();
+            move |address| {
+                let dropped = dropped.clone();
+                Box::pin(async move {
+                    if address == blackhole {
+                        let _witness = DropWitness(dropped);
+                        std::future::pending::<()>().await;
+                        unreachable!()
+                    }
+                    assert_eq!(address, healthy);
+                    TcpStream::connect(healthy).await
+                })
+            }
+        }),
+    };
+    let mut attempt = Attempt::new(InspectionRoute::Direct, InspectionTimeouts::DEFAULT);
+    let stream = tokio::time::timeout(
+        Duration::from_secs(1),
+        attempt.dial(&net, &[blackhole, healthy], true),
+    )
+    .await
+    .expect("healthy second address waited for the blackholed first address")
+    .unwrap_or_else(|_| panic!("healthy second address failed"));
+    assert_eq!(attempt.addresses_tried, 2);
+    assert_eq!(attempt.address, Some(healthy));
+    assert_eq!(dropped.load(Ordering::SeqCst), 1);
+    drop(stream);
+    drop(listener.accept().await.unwrap());
+}
+
+#[tokio::test]
+async fn address_race_is_bounded_and_caller_cancellation_drops_every_dial() {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::sync::Arc;
+    struct Active(Arc<AtomicUsize>);
+    impl Drop for Active {
+        fn drop(&mut self) {
+            self.0.fetch_sub(1, Ordering::SeqCst);
+        }
+    }
+    let active = Arc::new(AtomicUsize::new(0));
+    let peak = Arc::new(AtomicUsize::new(0));
+    let started = Arc::new(AtomicUsize::new(0));
+    let second_started = Arc::new(tokio::sync::Notify::new());
+    let net = FakeNet {
+        resolve: resolves_to(&[]),
+        dial: Box::new({
+            let (active, peak, started) = (active.clone(), peak.clone(), started.clone());
+            let second_started = second_started.clone();
+            move |_| {
+                let (active, peak, started) = (active.clone(), peak.clone(), started.clone());
+                let second_started = second_started.clone();
+                Box::pin(async move {
+                    let count = active.fetch_add(1, Ordering::SeqCst) + 1;
+                    peak.fetch_max(count, Ordering::SeqCst);
+                    if started.fetch_add(1, Ordering::SeqCst) + 1 == 2 {
+                        second_started.notify_one();
+                    }
+                    let _guard = Active(active);
+                    std::future::pending().await
+                })
+            }
+        }),
+    };
+    let addresses = [
+        "192.0.2.1:443",
+        "192.0.2.2:443",
+        "192.0.2.3:443",
+        "192.0.2.4:443",
+    ]
+    .map(|address| address.parse().unwrap());
+    let mut attempt = Attempt::new(
+        InspectionRoute::Direct,
+        InspectionTimeouts {
+            connect: ms(2000),
+            per_address_floor: ms(1000),
+            ..InspectionTimeouts::DEFAULT
+        },
+    );
+    let mut dial = Box::pin(attempt.dial(&net, &addresses, true));
+    tokio::select! {
+        _ = &mut dial => panic!("pending dial unexpectedly completed"),
+        () = second_started.notified() => {}
+    }
+    assert_eq!(peak.load(Ordering::SeqCst), 2);
+    assert_eq!(started.load(Ordering::SeqCst), 2);
+    drop(dial);
+    assert_eq!(active.load(Ordering::SeqCst), 0);
+    tokio::time::sleep(ms(50)).await;
+    assert_eq!(started.load(Ordering::SeqCst), 2);
+    let mut attempt = Attempt::new(
+        InspectionRoute::Direct,
+        InspectionTimeouts {
+            connect: ms(80),
+            per_address_floor: ms(80),
+            ..InspectionTimeouts::DEFAULT
+        },
+    );
+    assert!(matches!(
+        attempt.dial(&net, &addresses, true).await,
+        Err(DialError::TimedOut(budget)) if budget == ms(80)
+    ));
+    assert_eq!(active.load(Ordering::SeqCst), 0);
+    assert_eq!(peak.load(Ordering::SeqCst), 2);
+}
+
+#[tokio::test]
+async fn address_fallback_stays_on_selected_proxy_and_returns_opaque_transport() {
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let healthy = listener.local_addr().unwrap();
+    let blackhole: SocketAddr = "[2001:db8::1]:8443".parse().unwrap();
+    let proxy = tokio::spawn(async move {
+        let (mut socket, _) = listener.accept().await.unwrap();
+        let request = read_request(&mut socket).await;
+        assert!(request.starts_with("CONNECT destination.invalid:443 HTTP/1.1\r\n"));
+        socket
+            .write_all(b"HTTP/1.1 200 Connection Established\r\n\r\n")
+            .await
+            .unwrap();
+        let mut bytes = [0; 6];
+        socket.read_exact(&mut bytes).await.unwrap();
+        assert_eq!(&bytes, b"opaque");
+    });
+    let net = FakeNet {
+        resolve: Box::new(move |authority| {
+            assert_eq!(authority, "proxy.invalid:8443");
+            Box::pin(async move { Ok(vec![blackhole, healthy]) })
+        }),
+        dial: Box::new(move |address| {
+            Box::pin(async move {
+                if address == blackhole {
+                    std::future::pending::<()>().await;
+                    unreachable!()
+                }
+                assert_eq!(address, healthy);
+                TcpStream::connect(healthy).await
+            })
+        }),
+    };
+    let mut stream = tokio::time::timeout(
+        Duration::from_secs(1),
+        connect_browser_transport_with(
+            "destination.invalid",
+            443,
+            Some("http://proxy.invalid:8443"),
+            &net,
+        ),
+    )
+    .await
+    .expect("selected proxy address fallback stalled")
+    .unwrap();
+    stream.write_all(b"opaque").await.unwrap();
+    drop(stream);
+    proxy.await.unwrap();
+}
+
+#[tokio::test]
+async fn address_race_failure_diagnostic_follows_order_not_completion() {
+    let net = FakeNet {
+        resolve: resolves_to(&["[2001:db8::1]:443", "192.0.2.1:443"]),
+        dial: Box::new(|address| {
+            Box::pin(async move {
+                if address.is_ipv6() {
+                    tokio::time::sleep(ms(100)).await;
+                    Err(io::Error::from(io::ErrorKind::NetworkUnreachable))
+                } else {
+                    Err(io::Error::from(io::ErrorKind::ConnectionRefused))
+                }
+            })
+        }),
+    };
+    let error = inspect_error(
+        "nas.example",
+        443,
+        None,
+        InspectionTimeouts {
+            connect: ms(300),
+            per_address_floor: ms(10),
+            ..InspectionTimeouts::DEFAULT
+        },
+        &net,
+    )
+    .await;
+    assert_eq!(error.kind, Kind::ConnectionRefused);
+    assert_eq!(error.address.as_deref(), Some("192.0.2.1:443"));
+    assert_eq!(error.addresses_tried, 2);
+}
+
+#[tokio::test]
+async fn address_race_preserves_shorter_overall_deadline() {
+    let net = FakeNet {
+        resolve: resolves_to(&["[2001:db8::1]:443", "192.0.2.1:443"]),
+        dial: dial_pending(),
+    };
+    let error = inspect_error(
+        "nas.example",
+        443,
+        None,
+        InspectionTimeouts {
+            overall: ms(80),
+            ..InspectionTimeouts::DEFAULT
+        },
+        &net,
+    )
+    .await;
+    assert_eq!(error.kind, Kind::DeadlineExceeded);
+    assert_eq!(error.stage, Stage::Connect);
+    assert_eq!(error.timeout_ms, Some(80));
+    assert_eq!(error.addresses_tried, 1);
+}
+
+/// Source-level timing witness, never contacts the injected IPv6 address.
+#[tokio::test]
+#[ignore = "Explicit loopback adversarial address-fallback measurement"]
+async fn adversarial_ordered_address_fallback_timing() {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::sync::Arc;
+    struct Cancelled(Arc<AtomicUsize>);
+    impl Drop for Cancelled {
+        fn drop(&mut self) {
+            self.0.fetch_add(1, Ordering::SeqCst);
+        }
+    }
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let healthy = listener.local_addr().unwrap();
+    let blackhole: SocketAddr = "[2001:db8::1]:443".parse().unwrap();
+    let cancelled = Arc::new(AtomicUsize::new(0));
+    let net = FakeNet {
+        resolve: resolves_to(&[]),
+        dial: Box::new({
+            let cancelled = cancelled.clone();
+            move |address| {
+                let cancelled = cancelled.clone();
+                Box::pin(async move {
+                    if address == blackhole {
+                        let _guard = Cancelled(cancelled);
+                        std::future::pending::<()>().await;
+                        unreachable!()
+                    }
+                    assert_eq!(address, healthy);
+                    TcpStream::connect(healthy).await
+                })
+            }
+        }),
+    };
+    let mut production = Vec::new();
+    let mut staggered = Vec::new();
+    for _ in 0..8 {
+        let mut attempt = Attempt::new(
+            InspectionRoute::Direct,
+            InspectionTimeouts {
+                connect: ms(200),
+                per_address_floor: ms(10),
+                overall: ms(1000),
+                ..InspectionTimeouts::DEFAULT
+            },
+        );
+        let begin = Instant::now();
+        let stream = attempt
+            .dial(&net, &[blackhole, healthy], true)
+            .await
+            .unwrap_or_else(|_| panic!("injected healthy fallback failed"));
+        production.push(begin.elapsed().as_secs_f64() * 1000.0);
+        assert_eq!(attempt.addresses_tried, 2);
+        drop(stream);
+        drop(listener.accept().await.unwrap());
+        let begin = Instant::now();
+        let stream = tokio::select! {
+            result = net.dial(blackhole) => result.unwrap(),
+            result = async { tokio::time::sleep(ms(20)).await; net.dial(healthy).await } => result.unwrap(),
+        };
+        staggered.push(begin.elapsed().as_secs_f64() * 1000.0);
+        drop(stream);
+        drop(listener.accept().await.unwrap());
+    }
+    let mut attempt = Attempt::new(InspectionRoute::Direct, InspectionTimeouts::DEFAULT);
+    let begin = Instant::now();
+    drop(
+        attempt
+            .dial(&net, &[blackhole, healthy], true)
+            .await
+            .unwrap_or_else(|_| panic!("default fallback failed")),
+    );
+    let default_ms = begin.elapsed().as_secs_f64() * 1000.0;
+    drop(listener.accept().await.unwrap());
+    production.sort_by(f64::total_cmp);
+    staggered.sort_by(f64::total_cmp);
+    assert!(default_ms < 1000.0);
+    assert_eq!(cancelled.load(Ordering::SeqCst), 17);
+    println!(
+        "ADDRESS_FALLBACK {}",
+        serde_json::json!({"injectedOnly":true,"samples":8,"defaultConnectBudgetMs":10000,"defaultFirstAddressWaitMs":default_ms,"productionMedianMs":production[4],"productionP95Ms":production[7],"scratch20msStaggerMedianMs":staggered[4],"scratch20msStaggerP95Ms":staggered[7],"cancelledBlackholeFutures":17})
+    );
+}
+
 async fn read_request<S: AsyncRead + Unpin>(socket: &mut S) -> String {
     let mut bytes = Vec::new();
     while !bytes.ends_with(b"\r\n\r\n") {
@@ -532,7 +844,7 @@ async fn dns_failure_is_resolve_stage() {
 }
 
 #[tokio::test]
-async fn multi_address_budget_is_split_and_counts_attempts() {
+async fn multi_address_budget_is_shared_and_counts_actual_attempts() {
     let net = FakeNet {
         resolve: resolves_to(&["[2001:db8::1]:443", "192.0.2.1:443"]),
         dial: dial_pending(),
@@ -547,13 +859,13 @@ async fn multi_address_budget_is_split_and_counts_attempts() {
     assert_eq!(error.addresses_tried, 2);
     assert_eq!(error.address.as_deref(), Some("192.0.2.1:443"));
     assert_eq!(error.timeout_ms, Some(400));
-    assert!((400..2000).contains(&error.stage_elapsed_ms), "{error:?}");
+    assert!((250..2000).contains(&error.stage_elapsed_ms), "{error:?}");
     assert!(error.message.contains("(2 addresses tried)"), "{error:?}");
     assert!(error
         .message
         .starts_with("TCP connect to nas.example:443 (192.0.2.1:443) timed out"));
 
-    // The floor keeps each address usable when the split would be too small.
+    // Individual floors cannot extend the shared connect-stage budget.
     let net = FakeNet {
         resolve: resolves_to(&["192.0.2.1:443", "192.0.2.2:443", "192.0.2.3:443"]),
         dial: dial_pending(),
@@ -565,7 +877,8 @@ async fn multi_address_budget_is_split_and_counts_attempts() {
     };
     let error = inspect_error("nas.example", 443, None, timeouts, &net).await;
     assert_eq!(error.addresses_tried, 3);
-    assert_eq!(error.timeout_ms, Some(300));
+    assert_eq!(error.timeout_ms, Some(150));
+    assert!(error.stage_elapsed_ms < 1000, "{error:?}");
 }
 
 #[tokio::test]

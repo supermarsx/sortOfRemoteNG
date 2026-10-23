@@ -10,6 +10,7 @@
 
 use super::{capture_peer_certificate_chain, tls_server_name, TlsCertificateInfo};
 use base64::Engine;
+use futures_util::{stream::FuturesUnordered, StreamExt};
 use serde::Serialize;
 use std::future::Future;
 use std::io;
@@ -539,8 +540,9 @@ impl Attempt {
         }
     }
 
-    /// Dials addresses in order. Each gets an equal share of the connect
-    /// budget, never below the floor, and never past the overall deadline.
+    /// Staggers addresses in resolver order with at most two active dials.
+    /// Individual attempt floors never extend the shared connect deadline.
+    /// All futures are scoped here: success or cancellation drops every loser.
     async fn dial(
         &mut self,
         net: &dyn InspectionNet,
@@ -550,24 +552,76 @@ impl Attempt {
         let count = u32::try_from(addresses.len()).unwrap_or(u32::MAX).max(1);
         let floor = self.timeouts.per_address_floor.min(self.timeouts.connect);
         let share = (self.timeouts.connect / count).max(floor);
-        let mut waited = Duration::ZERO;
-        let mut last = DialError::Overall;
-        for &address in addresses {
-            if record {
-                self.address = Some(address);
-                self.addresses_tried = self.addresses_tried.saturating_add(1);
+        let stagger = Duration::from_millis(250).min(share / 2);
+        let remaining = self.timeouts.overall.saturating_sub(self.started.elapsed());
+        let overall_first = remaining < self.timeouts.connect;
+        let deadline = tokio::time::Instant::now() + remaining.min(self.timeouts.connect);
+        let mut next_launch = tokio::time::Instant::now();
+        let mut active = FuturesUnordered::new();
+        let mut next = 0;
+        let mut last = None;
+        loop {
+            if tokio::time::Instant::now() >= deadline {
+                return Err(if overall_first {
+                    DialError::Overall
+                } else {
+                    DialError::TimedOut(self.timeouts.connect)
+                });
             }
-            match self.within(share, net.dial(address)).await {
-                Ok(Ok(stream)) => return Ok(stream),
-                Ok(Err(error)) => last = DialError::Io(error),
-                Err(Expired::Stage(budget)) => {
-                    waited += budget;
-                    last = DialError::TimedOut(waited);
+            if next < addresses.len()
+                && active.len() < 2
+                && (active.is_empty() || tokio::time::Instant::now() >= next_launch)
+            {
+                let index = next;
+                let address = addresses[index];
+                next += 1;
+                if record {
+                    self.address = Some(address);
+                    self.addresses_tried = self.addresses_tried.saturating_add(1);
                 }
-                Err(Expired::Overall) => return Err(DialError::Overall),
+                active.push(async move {
+                    (index, tokio::time::timeout(share, net.dial(address)).await)
+                });
+                next_launch = tokio::time::Instant::now() + stagger;
+            }
+            if active.is_empty() && next == addresses.len() {
+                if record {
+                    if let Some((index, _)) = last.as_ref() {
+                        self.address = Some(addresses[*index]);
+                    }
+                }
+                return Err(last.map_or(DialError::Overall, |(_, error)| error));
+            }
+            tokio::select! {
+                biased;
+                () = tokio::time::sleep_until(deadline) => {
+                    return Err(if overall_first {
+                        DialError::Overall
+                    } else {
+                        DialError::TimedOut(self.timeouts.connect)
+                    });
+                }
+                result = active.next(), if !active.is_empty() => {
+                    let (index, result) = result.expect("active dial collection is nonempty");
+                    let error = match result {
+                        Ok(Ok(stream)) => {
+                            if record {
+                                self.address = Some(addresses[index]);
+                            }
+                            return Ok(stream);
+                        }
+                        Ok(Err(error)) => DialError::Io(error),
+                        Err(_) => DialError::TimedOut(self.timeouts.connect),
+                    };
+                    // Completion order must not change the reported endpoint/outcome.
+                    if last.as_ref().is_none_or(|(previous, _)| index > *previous) {
+                        last = Some((index, error));
+                    }
+                    next_launch = tokio::time::Instant::now();
+                }
+                () = tokio::time::sleep_until(next_launch), if next < addresses.len() && active.len() < 2 => {}
             }
         }
-        Err(last)
     }
 }
 
