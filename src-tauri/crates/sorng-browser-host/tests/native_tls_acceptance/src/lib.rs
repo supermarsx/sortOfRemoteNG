@@ -40,6 +40,21 @@ mod static_document;
 mod storage;
 use ledger::{Decision, Ledger};
 type Result<T = ()> = std::result::Result<T, Box<dyn std::error::Error>>;
+// The caller supplies the exact revision already verified by NativeTlsBridge.
+// Registry ABI2 and the bounded-retirement contract are shared by revisions4/5.
+fn registration_retirement_for_revision<T>(
+    patch_id: &str,
+    run: impl FnOnce() -> Result<T>,
+) -> Option<Result<T>> {
+    match patch_id {
+        cef_tls_bridge::PATCH_ID | cef_tls_bridge::HTTP3_PATCH_ID => Some(run()),
+        cef_tls_bridge::LEGACY_PATCH_ID
+        | cef_tls_bridge::HTTP2_PATCH_ID
+        | cef_tls_bridge::PROXY_APPLIED_PATCH_ID => None,
+        _ => Some(Err("unsupported registry fixture bridge revision".into())),
+    }
+}
+
 // The reviewed staged adapter requires this exact origin. The route dialer
 // below maps it only to a numeric loopback listener; no public provider call.
 const ORIGIN: &str = "https://accounts.google.com";
@@ -938,10 +953,12 @@ fn execute(bootstrap: &mut dyn RuntimeBootstrap, paths: &BundlePaths) -> Result 
             }
         }
     }
-    if bridge.patch_id() == cef_tls_bridge::PATCH_ID {
-        let retirement = registry_retirement_fixture::run(&mut || {
-            registry_retirement_fixture::pump(&runtime, &mut events)
-        }, &certificates.root);
+    if let Some(retirement) = registration_retirement_for_revision(bridge.patch_id(), || {
+        registry_retirement_fixture::run(
+            &mut || registry_retirement_fixture::pump(&runtime, &mut events),
+            &certificates.root,
+        )
+    }) {
         report["registrationRetirementCases"] = match retirement {
             Ok(value) => value,
             Err(error) => {
@@ -954,7 +971,7 @@ fn execute(bootstrap: &mut dyn RuntimeBootstrap, paths: &BundlePaths) -> Result 
     unsafe {
         runtime.shutdown()?;
         cef_tls_bridge::after_cef_shutdown();
-                registry_retirement_fixture::after_shutdown();
+        registry_retirement_fixture::after_shutdown();
     }
     report["shutdownComplete"] = true.into();
     report["failures"] = serde_json::json!(failures);
@@ -966,5 +983,59 @@ fn execute(bootstrap: &mut dyn RuntimeBootstrap, paths: &BundlePaths) -> Result 
         Ok(())
     } else {
         Err("native fixture gates failed; inspect native-report.json".into())
+    }
+}
+
+#[cfg(test)]
+mod retirement_revision_tests {
+    use super::*;
+    use std::cell::Cell;
+
+    #[test]
+    fn current_retirement_revisions_run_once_and_preserve_results() {
+        for revision in [cef_tls_bridge::PATCH_ID, cef_tls_bridge::HTTP3_PATCH_ID] {
+            let calls = Cell::new(0);
+            let result = registration_retirement_for_revision(revision, || {
+                calls.set(calls.get() + 1);
+                Ok(1025)
+            })
+            .expect("retirement evidence is mandatory")
+            .unwrap();
+            assert_eq!(result, 1025);
+            assert_eq!(calls.get(), 1);
+            let failure = registration_retirement_for_revision::<()>(revision, || {
+                calls.set(calls.get() + 1);
+                Err("controlled registry proof failure".into())
+            })
+            .expect("failure must be reported")
+            .unwrap_err();
+            assert_eq!(failure.to_string(), "controlled registry proof failure");
+            assert_eq!(calls.get(), 2);
+        }
+    }
+
+    #[test]
+    fn legacy_skips_and_unknown_rejects_without_invoking_registry() {
+        for revision in [
+            cef_tls_bridge::LEGACY_PATCH_ID,
+            cef_tls_bridge::HTTP2_PATCH_ID,
+            cef_tls_bridge::PROXY_APPLIED_PATCH_ID,
+        ] {
+            assert!(
+                registration_retirement_for_revision::<()>(revision, || panic!(
+                    "legacy registry invocation"
+                ))
+                .is_none()
+            );
+        }
+        for revision in ["", "sorng-tls-v2-682c378-6", "sorng-tls-v2-682c378-5-extra"] {
+            let result = registration_retirement_for_revision::<()>(revision, || {
+                panic!("unknown registry invocation")
+            });
+            assert_eq!(
+                result.unwrap().unwrap_err().to_string(),
+                "unsupported registry fixture bridge revision"
+            );
+        }
     }
 }
