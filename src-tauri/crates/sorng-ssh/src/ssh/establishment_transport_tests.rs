@@ -258,13 +258,181 @@ impl log::Log for Capture {
     }
     fn flush(&self) {}
 }
-#[test]
-fn actual_log_records_are_closed_fields_and_compare_callers_without_endpoint_disclosure() {
+fn install_capture() {
     static INSTALL: std::sync::Once = std::sync::Once::new();
     INSTALL.call_once(|| {
         log::set_logger(&Capture).unwrap();
         log::set_max_level(log::LevelFilter::Info);
     });
+}
+fn captured_rows(attempt: &Attempt) -> Vec<String> {
+    CAPTURED
+        .lock()
+        .unwrap()
+        .iter()
+        .filter(|line| line.contains(&format!("attempt={} ", attempt.id)))
+        .cloned()
+        .collect()
+}
+fn private_log_fields(row: &str) -> Option<std::collections::HashMap<&str, &str>> {
+    if row.chars().any(char::is_control) {
+        return None;
+    }
+    let mut fields = std::collections::HashMap::new();
+    for pair in row
+        .strip_prefix("SSH establishment observed: ")?
+        .split_ascii_whitespace()
+    {
+        let (key, value) = pair.split_once('=')?;
+        if value.is_empty() || fields.insert(key, value).is_some() {
+            return None;
+        }
+    }
+    const KEYS: &[&str] = &[
+        "timestampUnixMs",
+        "attempt",
+        "caller",
+        "route",
+        "target",
+        "endpoint",
+        "policy",
+        "phase",
+        "outcome",
+        "candidate",
+        "address",
+        "family",
+        "candidates",
+        "ipv4",
+        "ipv6",
+        "elapsedMs",
+        "overallMs",
+        "budgetMs",
+    ];
+    if fields.len() != KEYS.len() || KEYS.iter().any(|key| !fields.contains_key(key)) {
+        return None;
+    }
+    for key in [
+        "attempt",
+        "candidates",
+        "ipv4",
+        "ipv6",
+        "elapsedMs",
+        "overallMs",
+        "budgetMs",
+    ] {
+        fields[key].parse::<u64>().ok()?;
+    }
+    fields["timestampUnixMs"].parse::<i64>().ok()?;
+    if fields["candidate"].parse::<i64>().ok()? < -1 {
+        return None;
+    }
+    let fingerprint = |value: &str| {
+        value == "unavailable"
+            || (value.len() == 32
+                && value
+                    .bytes()
+                    .all(|byte| matches!(byte, b'0'..=b'9' | b'a'..=b'f')))
+    };
+    if !fingerprint(fields["target"])
+        || !(fingerprint(fields["endpoint"])
+            || matches!(fields["endpoint"], "none" | "resolved-candidates"))
+        || !(fingerprint(fields["address"]) || fields["address"] == "none")
+        || !matches!(fields["caller"], "other" | "terminal" | "native-browser")
+        || !matches!(
+            fields["route"],
+            "direct" | "proxy-command" | "mixed" | "proxy-chain" | "proxy" | "ssh-jump"
+        )
+        || !matches!(fields["policy"], "auto" | "ipv4" | "ipv6")
+        || !matches!(
+            fields["phase"],
+            "resolve" | "candidate" | "connect" | "tcp-candidate" | "establishment"
+        )
+        || !matches!(
+            fields["outcome"],
+            "established"
+                | "failed"
+                | "resolved"
+                | "interrupted"
+                | "connected"
+                | "refused"
+                | "timed-out"
+                | "denied"
+                | "address-unavailable"
+                | "transport-error"
+        )
+        || !matches!(fields["family"], "none" | "ipv4" | "ipv6")
+    {
+        return None;
+    }
+    Some(fields)
+}
+fn assert_private_log(row: &str) {
+    assert!(
+        private_log_fields(row).is_some(),
+        "shared establishment logs must contain only closed, typed fields"
+    );
+}
+#[test]
+fn actual_log_numeric_budget_with_endpoint_digits_remains_private() {
+    install_capture();
+    let attempt = Attempt::new(
+        "private-ssh.example.invalid",
+        2237,
+        IpPolicy::V6,
+        Duration::from_millis(2237),
+    );
+    attempt.completed(true);
+    let rows = captured_rows(&attempt);
+    assert_eq!(rows.len(), 1);
+    assert!(rows[0].contains("budgetMs=2237"));
+    assert!(rows[0].contains(&format!(
+        "target={}",
+        fingerprint("private-ssh.example.invalid", 2237)
+    )));
+    assert!(rows[0].contains("endpoint=none"));
+    assert_private_log(&rows[0]);
+}
+#[test]
+fn closed_log_schema_accepts_numeric_fingerprint_collisions_and_rejects_raw_endpoints() {
+    install_capture();
+    let attempt = Attempt::new(
+        "private-ssh.example.invalid",
+        2237,
+        IpPolicy::V6,
+        Duration::from_secs(17),
+    );
+    attempt.completed(true);
+    let rows = captured_rows(&attempt);
+    assert_eq!(rows.len(), 1);
+    let original = &rows[0];
+    // A real production digest, with a fixed test salt, legitimately contains
+    // the decimal port substring. No raw address is present in this value.
+    let safe_hash = fingerprint_with(&[0; 32], "private-ssh-1174.example.invalid", 2237);
+    assert_eq!(safe_hash, "6370b247e19223741c9bf676a8875b68");
+    let target = private_log_fields(original).unwrap()["target"];
+    let valid = original.replace(&format!("target={target}"), &format!("target={safe_hash}"));
+    assert_private_log(&valid);
+    for (key, value) in [
+        ("target", "private-ssh.example.invalid"),
+        ("endpoint", "private-upstream.example.invalid:8822"),
+        ("endpoint", "2237"),
+        ("address", "[2001:db8::7]:2237"),
+        ("caller", "native-browser\nprivate-upstream.example.invalid"),
+        ("budgetMs", "private-upstream.example.invalid"),
+    ] {
+        let value_before = private_log_fields(&valid).unwrap()[key];
+        let invalid = valid.replace(&format!("{key}={value_before}"), &format!("{key}={value}"));
+        assert!(
+            private_log_fields(&invalid).is_none(),
+            "raw endpoint or control data must be rejected"
+        );
+    }
+    assert!(private_log_fields(&format!("{valid} unexpected=2237")).is_none());
+    assert!(private_log_fields(&format!("{valid} target={safe_hash}")).is_none());
+}
+#[test]
+fn actual_log_records_are_closed_fields_and_compare_callers_without_endpoint_disclosure() {
+    install_capture();
     let attempt = Attempt::new(
         "private-ssh.example.invalid",
         2237,
@@ -275,29 +443,24 @@ fn actual_log_records_are_closed_fields_and_compare_callers_without_endpoint_dis
     attempt
         .resolve("private-upstream.example.invalid", 8822)
         .finish("resolved", &["[2001:db8::7]:2237".parse().unwrap()]);
-    let rows: Vec<_> = CAPTURED
-        .lock()
-        .unwrap()
-        .iter()
-        .filter(|line| line.contains(&format!("attempt={} ", attempt.id)))
-        .cloned()
-        .collect();
+    let rows = captured_rows(&attempt);
     assert_eq!(rows.len(), 2);
     for row in rows {
         assert!(row.contains("caller=native-browser route=direct"));
         assert!(row.contains("policy=ipv6"));
         assert!(row.contains("budgetMs=17000"));
-        for private in [
-            "private-ssh",
-            "private-upstream",
-            "2001:db8",
-            "8822",
-            "2237",
-        ] {
-            assert!(
-                !row.contains(private),
-                "endpoint text must not enter shared application logs"
-            );
+        let fields = private_log_fields(&row).expect("closed native log fields");
+        assert_eq!(
+            fields["target"],
+            fingerprint("private-ssh.example.invalid", 2237)
+        );
+        assert_eq!(
+            fields["endpoint"],
+            fingerprint("private-upstream.example.invalid", 8822)
+        );
+        if fields["phase"] == "candidate" {
+            assert_eq!(fields["address"], fingerprint("2001:db8::7", 2237));
         }
+        assert_private_log(&row);
     }
 }
