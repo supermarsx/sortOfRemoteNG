@@ -465,6 +465,10 @@ export function buildEnvironment(
   ].join(path.delimiter);
   return {
     ...env,
+    // The pinned CEF generator otherwise omits ARM64 on an Intel Mac, even
+    // with target_cpu=arm64 and GN_OUT_CONFIGS=Release_GN_arm64. This is a CPU
+    // configuration opt-in for this explicit target, never an inherited flag.
+    ...(map.target === "aarch64-apple-darwin" ? { CEF_ENABLE_ARM64: "1" } : {}),
     DEPOT_TOOLS_UPDATE: "0",
     DEPOT_TOOLS_WIN_TOOLCHAIN: "0",
     GIT_TERMINAL_PROMPT: "0",

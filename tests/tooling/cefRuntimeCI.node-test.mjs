@@ -868,6 +868,63 @@ test("child build env relocates reviewed paths and strips CI tokens and implicit
   assert.equal(env.KEEP, "yes");
   assert.equal(env.DEPOT_TOOLS_UPDATE, "0");
 });
+
+test("only the explicit Mac ARM target enables its CEF configuration and the reviewed hook receives it", async (t) => {
+  const f = await fixture(t, true);
+  const locations = {
+    toolsRoot: f.work,
+    source: f.work,
+    depot: f.work,
+    python: process.execPath,
+  };
+  for (const selected of TARGETS) {
+    const child = buildEnvironment(runner(selected), locations, {
+      ...process.env,
+      CEF_ENABLE_ARM64: "0",
+      CEF_ENABLE_AMD64: "1",
+      CEF_UNREVIEWED_OVERRIDE: "1",
+    });
+    assert.equal(
+      child.CEF_ENABLE_ARM64,
+      selected === "aarch64-apple-darwin" ? "1" : undefined,
+    );
+    assert.equal(child.CEF_ENABLE_AMD64, undefined);
+    assert.equal(child.CEF_UNREVIEWED_OVERRIDE, undefined);
+    const recipe = await customRuntimeBuildRecipe({
+      sourceLock: f.sourceLock,
+      target: selected,
+      inputsRoot: f.inputsRoot,
+      checkouts: { cef: f.work, chromium: f.work, depotTools: f.work },
+    });
+    // This is the same merge used immediately before invoking the real hook.
+    Object.assign(child, recipe.environment);
+    assert.equal(
+      child.CEF_ENABLE_ARM64,
+      selected === "aarch64-apple-darwin" ? "1" : undefined,
+    );
+    if (selected !== "aarch64-apple-darwin") continue;
+    assert.equal(child.GN_OUT_CONFIGS, "Release_GN_arm64");
+    assert.deepEqual(recipe.commands[0].args, ["cef/tools/gclient_hook.py"]);
+    const observed = await runBuildCommand(
+      process.execPath,
+      [
+        "-e",
+        "process.stdout.write(JSON.stringify({flag:process.env.CEF_ENABLE_ARM64,configs:process.env.GN_OUT_CONFIGS}))",
+      ],
+      {
+        cwd: f.work,
+        env: child,
+        logs: f.work,
+        name: "portable-hook-environment",
+        capture: true,
+      },
+    );
+    assert.deepEqual(JSON.parse(observed), {
+      flag: "1",
+      configs: "Release_GN_arm64",
+    });
+  }
+});
 test("source workspace must be physically external and free of ancestor node_modules", async (t) => {
   const work = await temp(t),
     checkout = path.join(work, "repo"),
