@@ -640,6 +640,34 @@ async function output(key, value) {
     await appendFile(process.env.GITHUB_OUTPUT, `${key}=${value}\n`);
 }
 
+// The pinned CEF hook invokes `gn` by name, whose depot_tools shell/batch
+// launcher requires a separately bootstrapped Python. Keep using the reviewed
+// interpreter, including for that one nested invocation; do not modify sources.
+export function cefHookArguments(cef, depot) {
+  if (!path.isAbsolute(cef) || !path.isAbsolute(depot))
+    fail("CEF hook requires absolute pinned checkout paths");
+  return [
+    "-B",
+    "-c",
+    `import os,runpy,sys
+hook,gn=sys.argv[1:]
+sys.path.insert(0,os.path.dirname(hook))
+import gclient_util
+original=gclient_util.RunAction
+def reviewed_action(directory,command):
+ if command and command[0]=='gn':
+  if len(command)<3 or command[1]!='gen':
+   raise RuntimeError('Unsupported CEF GN invocation')
+  command=[sys.executable,'-B',gn,*command[1:]]
+ return original(directory,command)
+gclient_util.RunAction=reviewed_action
+sys.argv=[hook]
+runpy.run_path(hook,run_name='__main__')`,
+    path.join(cef, "tools", "gclient_hook.py"),
+    path.join(depot, "gn.py"),
+  ];
+}
+
 export function boundedBuildCommands(recipe, jobs) {
   if (!Number.isInteger(jobs) || jobs < 1 || jobs > 32)
     fail("Bounded buildJobs required");
@@ -1050,7 +1078,17 @@ export async function build(
   for (const [index, step] of commands.entries()) {
     if (step.executable !== "python3")
       fail("Unexpected reviewed recipe executable");
-    await call(python, step.args, `build-${index}`, step.cwd);
+    if (
+      index === 0 &&
+      (step.args.length !== 1 || step.args[0] !== "cef/tools/gclient_hook.py")
+    )
+      fail("Unexpected reviewed CEF hook command");
+    await call(
+      python,
+      index === 0 ? cefHookArguments(cef, depot) : step.args,
+      `build-${index}`,
+      step.cwd,
+    );
   }
   const distributions = (
     await readdir(path.join(cef, "binary_distrib"), { withFileTypes: true })

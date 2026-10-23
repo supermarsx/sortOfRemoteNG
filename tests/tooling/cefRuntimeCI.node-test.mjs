@@ -21,6 +21,7 @@ import {
   MAX_RELEASE_ASSET,
   PACK_PYTHON,
   boundedBuildCommands,
+  cefHookArguments,
   buildEnvironment,
   createHostedBuildBudget,
   run as runBuildCommand,
@@ -767,6 +768,109 @@ test("all six real build recipes use explicit bounded autoninja -j including Sis
   assert.throws(() => boundedBuildCommands({ commands: [] }, 4), /exactly one/);
   assert.throws(() => boundedBuildCommands({ commands: [] }, 0), /Bounded/);
 });
+test("CEF hook uses the reviewed Python for nested GN only, never a PATH wrapper", async (t) => {
+  const directory = await mkdtemp(path.join(os.tmpdir(), "cef hook driver "));
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  const cef = path.join(directory, "CEF checkout");
+  const tools = path.join(cef, "tools");
+  const depot = path.join(directory, "pinned depot");
+  const poison = path.join(directory, "poison PATH");
+  await Promise.all(
+    [tools, depot, poison].map((p) => mkdir(p, { recursive: true })),
+  );
+  const python = (
+    await exec(process.platform === "win32" ? "python" : "python3", [
+      "-B",
+      "-c",
+      "import sys;print(sys.executable)",
+    ])
+  ).stdout.trim();
+  const trace = path.join(directory, "trace.jsonl");
+  const marker = path.join(directory, "poison-ran");
+  await writeFile(
+    path.join(tools, "gclient_util.py"),
+    `import json,os,subprocess
+def RunAction(directory,command):
+ with open(os.environ['TRACE'],'a') as f:f.write(json.dumps({'cwd':directory,'command':command})+'\\n')
+ result=subprocess.run(command,cwd=directory)
+ if result.returncode:raise SystemExit(result.returncode)
+`,
+  );
+  await writeFile(
+    path.join(tools, "gclient_hook.py"),
+    `from gclient_util import RunAction
+import os,sys
+if os.environ.get('MODE')=='unsupported':
+ RunAction(os.getcwd(),['gn','clean','out path'])
+else:
+ RunAction(os.getcwd(),[sys.executable,'-B',os.environ['OTHER'],'plain value','literal"quote'])
+ RunAction(os.getcwd(),['gn','gen','out path','--kept=value with spaces'])
+`,
+  );
+  const other = path.join(directory, "other child.py");
+  await writeFile(
+    other,
+    "import sys;assert sys.argv[1:]==['plain value','literal\"quote']\n",
+  );
+  await writeFile(
+    path.join(depot, "gn.py"),
+    "import os,sys;assert sys.argv[1:]==['gen','out path','--kept=value with spaces'];sys.exit(int(os.environ.get('GN_EXIT','0')))\n",
+  );
+  await writeFile(
+    path.join(poison, "gn.cmd"),
+    `@echo poison>${marker}\r\n@exit /b 99\r\n`,
+  );
+  await writeFile(
+    path.join(poison, "gn"),
+    `#!/bin/sh\nprintf poison > '${marker.replaceAll("\\", "/")}'\nexit 99\n`,
+    { mode: 0o755 },
+  );
+  const options = {
+    cwd: directory,
+    env: { ...process.env, PATH: poison, TRACE: trace, OTHER: other },
+  };
+  await exec(python, cefHookArguments(cef, depot), options);
+  const rows = (await readFile(trace, "utf8"))
+    .trim()
+    .split("\n")
+    .map(JSON.parse);
+  assert.deepEqual(rows, [
+    {
+      cwd: directory,
+      command: [python, "-B", other, "plain value", 'literal"quote'],
+    },
+    {
+      cwd: directory,
+      command: [
+        python,
+        "-B",
+        path.join(depot, "gn.py"),
+        "gen",
+        "out path",
+        "--kept=value with spaces",
+      ],
+    },
+  ]);
+  await assert.rejects(readFile(marker), { code: "ENOENT" });
+  await assert.rejects(
+    exec(python, cefHookArguments(cef, depot), {
+      ...options,
+      env: { ...options.env, GN_EXIT: "23" },
+    }),
+    (error) => error.code === 23,
+  );
+  const beforeUnsupported = await readFile(trace, "utf8");
+  await assert.rejects(
+    exec(python, cefHookArguments(cef, depot), {
+      ...options,
+      env: { ...options.env, MODE: "unsupported" },
+    }),
+    /Unsupported CEF GN invocation/,
+  );
+  assert.equal(await readFile(trace, "utf8"), beforeUnsupported);
+  assert.throws(() => cefHookArguments("relative", depot), /absolute pinned/);
+});
+
 test("plan rejects mismatched pins, traversal and escaping reviewed-input junction", async (t) => {
   const f = await fixture(t);
   await assert.rejects(
