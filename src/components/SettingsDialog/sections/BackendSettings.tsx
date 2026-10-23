@@ -1,5 +1,8 @@
 import React from "react";
-import { GlobalSettings, BackendConfig } from "../../../types/settings/settings";
+import {
+  GlobalSettings,
+  BackendConfig,
+} from "../../../types/settings/settings";
 import {
   Cpu,
   Network,
@@ -87,16 +90,19 @@ export const BackendSettings: React.FC<BackendSettingsProps> = ({
             infoTooltip="Higher verbosity captures more events but uses more disk space. Use Trace only for short debugging sessions."
           />
 
-          <SettingsNumberRow
-            settingKey="backendConfig.maxConcurrentRdpSessions"
-            icon={<Layers size={16} />}
-            label="Max Concurrent RDP Sessions"
-            value={cfg.maxConcurrentRdpSessions}
-            min={1}
-            max={50}
-            onChange={(v) => update({ maxConcurrentRdpSessions: v })}
-            infoTooltip="Hard ceiling on how many RDP sessions can be live at once. Beyond this, new connections wait until a slot frees up."
-          />
+          <div
+            data-setting-key="connectionAdmissionMode"
+            className="p-3 text-sm"
+          >
+            <p className="font-medium">Connection capacity</p>
+            <p className="text-[var(--color-textSecondary)]">
+              {settings.connectionAdmissionMode === "automatic"
+                ? "Automatic — available system memory"
+                : `Fixed limit: ${settings.maxConcurrentConnections} connections`}
+              . Manage this shared policy in Performance → Connection capacity.
+              RDP also checks native memory before starting a worker.
+            </p>
+          </div>
         </Card>
       </div>
 
@@ -228,9 +234,7 @@ export const BackendSettings: React.FC<BackendSettingsProps> = ({
 
           <div
             className={`flex flex-col gap-2.5 ${
-              cfg.tempFileCleanupEnabled
-                ? ""
-                : "opacity-50 pointer-events-none"
+              cfg.tempFileCleanupEnabled ? "" : "opacity-50 pointer-events-none"
             }`}
           >
             <SettingsNumberRow
@@ -241,9 +245,7 @@ export const BackendSettings: React.FC<BackendSettingsProps> = ({
               min={5}
               max={1440}
               unit="min"
-              onChange={(v) =>
-                update({ tempFileCleanupIntervalMinutes: v })
-              }
+              onChange={(v) => update({ tempFileCleanupIntervalMinutes: v })}
               infoTooltip="How often the temp directory is scanned for stale files when cleanup is enabled."
             />
           </div>

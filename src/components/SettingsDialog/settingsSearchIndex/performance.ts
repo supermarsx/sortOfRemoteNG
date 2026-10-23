@@ -8,6 +8,32 @@ import type { SettingSearchEntry } from "./types";
  * enforces the join in both directions.
  */
 export const PERFORMANCE_SEARCH_ENTRIES: SettingSearchEntry[] = [
+  {
+    key: "connectionAdmissionMode",
+    values: [
+      "automatic",
+      "fixed",
+      "Automatic — available memory",
+      "Set a connection limit",
+    ],
+    label: "Connection limit",
+    description:
+      "Automatic uses available system memory; a fixed connection limit is optional.",
+    tags: ["memory", "ram", "connection", "capacity", "automatic", "limit"],
+    synonyms: ["maximum connections", "concurrent connections"],
+    section: "performance",
+    sectionLabel: "Performance",
+  },
+  {
+    key: "maxConcurrentConnections",
+    label: "Maximum connections",
+    description:
+      "Optional fixed connection limit. Automatic mode uses system memory instead.",
+    tags: ["connection", "limit", "maximum", "concurrent"],
+    synonyms: ["connection count", "simultaneous connections"],
+    section: "performance",
+    sectionLabel: "Performance",
+  },
   // ─── Connection Retry ───────────────────────────────────────────
   {
     key: "retryAttempts",

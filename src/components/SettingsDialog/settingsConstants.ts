@@ -376,6 +376,7 @@ export const TAB_DEFAULTS: Record<string, (keyof GlobalSettings)[]> = {
     "certExpiryWarningDays",
   ],
   performance: [
+    "connectionAdmissionMode",
     "maxConcurrentConnections",
     "connectionTimeout",
     "retryAttempts",
@@ -508,6 +509,7 @@ export const DEFAULT_VALUES: Partial<GlobalSettings> = {
   showNetworkScannerIcon: true,
   showNetworkToolkitIcon: true,
   maxConcurrentConnections: 10,
+  connectionAdmissionMode: "automatic",
   connectionTimeout: 30,
   retryAttempts: 3,
   retryDelay: 5000,

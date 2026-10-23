@@ -1,4 +1,5 @@
 import { normalizeCredentialVaultView } from "./credentialVaultView";
+import { normalizeConnectionAdmissionSettings } from "../session/connectionAdmission";
 import {
   emit as emitTauriEvent,
   listen as listenTauriEvent,
@@ -573,6 +574,7 @@ const DEFAULT_SETTINGS: GlobalSettings = {
   },
 
   maxConcurrentConnections: 10,
+  connectionAdmissionMode: "automatic",
   connectionTimeout: 30,
   retryAttempts: 3,
   retryDelay: 5000,
@@ -1238,6 +1240,7 @@ export class SettingsManager {
       credentialVaultView: normalizeCredentialVaultView(
         normalizedStored.credentialVaultView,
       ),
+      ...normalizeConnectionAdmissionSettings(normalizedStored),
       webBrowser: normalizeWebBrowserSettings(normalizedStored.webBrowser),
       internalProxy: normalizeInternalProxySettings(
         normalizedStored.internalProxy,
@@ -1362,6 +1365,22 @@ export class SettingsManager {
     };
     // Native-owned history must never enter optimistic state or write patches.
     delete safePatch.recordTimestamps;
+    if (
+      "maxConcurrentConnections" in safePatch &&
+      !("connectionAdmissionMode" in safePatch)
+    )
+      safePatch.connectionAdmissionMode = "fixed";
+    if (
+      "connectionAdmissionMode" in safePatch ||
+      "maxConcurrentConnections" in safePatch
+    )
+      Object.assign(
+        safePatch,
+        normalizeConnectionAdmissionSettings({
+          ...this.settings,
+          ...safePatch,
+        }),
+      );
     if ("showDocumentsIcon" in safePatch)
       safePatch.showDocumentsIcon = safePatch.showDocumentsIcon !== false;
     if ("showDocumentsInConnectionTree" in safePatch)
@@ -1760,6 +1779,19 @@ export class SettingsManager {
       recordTimestamps: _recordTimestamps,
       ...ordinary
     } = settings as Partial<GlobalSettings> & { recordTimestamps?: unknown };
+    if (
+      "maxConcurrentConnections" in ordinary &&
+      !("connectionAdmissionMode" in ordinary)
+    )
+      ordinary.connectionAdmissionMode = "fixed";
+    if (
+      "connectionAdmissionMode" in ordinary ||
+      "maxConcurrentConnections" in ordinary
+    )
+      Object.assign(
+        ordinary,
+        normalizeConnectionAdmissionSettings({ ...this.settings, ...ordinary }),
+      );
     this.settings = { ...this.settings, ...ordinary };
   }
 

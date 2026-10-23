@@ -265,6 +265,7 @@ export const defaultSettings: GlobalSettings = {
     requirePassword: true,
   },
   maxConcurrentConnections: 10,
+  connectionAdmissionMode: "automatic",
   connectionTimeout: 30,
   retryAttempts: 3,
   retryDelay: 5000,
@@ -715,6 +716,10 @@ export const SettingsProvider: React.FC<{ children: React.ReactNode }> = ({
       const merged = {
         ...settingsRef.current,
         ...updates,
+        connectionAdmissionMode:
+          settingsManager.getSettings().connectionAdmissionMode,
+        maxConcurrentConnections:
+          settingsManager.getSettings().maxConcurrentConnections,
         showDocumentsInConnectionTree:
           settingsManager.getSettings().showDocumentsInConnectionTree === true,
         searchDocumentContents:

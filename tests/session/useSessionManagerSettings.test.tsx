@@ -162,6 +162,83 @@ describe("useSessionManager settings effects", () => {
     });
   });
 
+  it("opens beyond the old ten-session default using actual native memory evidence", async () => {
+    const clock = vi.spyOn(Date, "now").mockReturnValue(Date.now() + 60_000);
+    try {
+      SettingsManager.getInstance().applyInMemory({
+        connectionAdmissionMode: "automatic",
+        maxConcurrentConnections: 10,
+      });
+      connectionMocks.state.sessions = Array.from({ length: 18 }, (_, index) =>
+        makeSession({ id: `memory-existing-${index}` }),
+      );
+      connectionMocks.invoke.mockImplementation(async (command) =>
+        command === "get_system_memory_info"
+          ? {
+              total_bytes: 32 * 1024 ** 3,
+              used_bytes: 8 * 1024 ** 3,
+              available_bytes: 24 * 1024 ** 3,
+            }
+          : undefined,
+      );
+      const { result } = renderHook(() => useSessionManager());
+      let opened: string | undefined;
+      await act(async () => {
+        opened = await result.current.handleConnect(makeConnection());
+      });
+      expect(opened).toBeTruthy();
+      expect(connectionMocks.dispatch).toHaveBeenCalledWith(
+        expect.objectContaining({
+          type: "ADD_SESSION",
+          payload: expect.objectContaining({ id: opened }),
+        }),
+      );
+      expect(result.current.confirmDialog).toBeNull();
+    } finally {
+      clock.mockRestore();
+    }
+  });
+
+  it("refuses unknown memory through the themed alert and permits an explicit fixed-mode retry", async () => {
+    const clock = vi.spyOn(Date, "now").mockReturnValue(Date.now() + 120_000);
+    try {
+      SettingsManager.getInstance().applyInMemory({
+        connectionAdmissionMode: "automatic",
+      });
+      connectionMocks.invoke.mockResolvedValue(undefined);
+      const { result } = renderHook(() => useSessionManager());
+      let opening!: Promise<string | undefined>;
+      act(() => {
+        opening = result.current.handleConnect(makeConnection());
+      });
+      await waitFor(() =>
+        expect(result.current.confirmDialog?.props.message).toMatch(
+          /available system memory could not be checked/i,
+        ),
+      );
+      expect(
+        connectionMocks.dispatch.mock.calls.some(
+          ([action]) => action.type === "ADD_SESSION",
+        ),
+      ).toBe(false);
+      await act(async () => {
+        result.current.confirmDialog!.props.onConfirm();
+        expect(await opening).toBeUndefined();
+      });
+      SettingsManager.getInstance().applyInMemory({
+        connectionAdmissionMode: "fixed",
+        maxConcurrentConnections: 2,
+      });
+      await act(async () => {
+        expect(
+          await result.current.handleConnect(makeConnection()),
+        ).toBeTruthy();
+      });
+    } finally {
+      clock.mockRestore();
+    }
+  });
+
   it("keeps real protocol clients out of the simulated timer/metrics path", () => {
     for (const option of PROTOCOL_OPTIONS) {
       expect(usesGenericSessionTimer(option.value), option.value).toBe(false);

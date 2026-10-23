@@ -421,6 +421,7 @@ export interface GlobalSettings {
 
   // Performance Settings
   maxConcurrentConnections: number;
+  connectionAdmissionMode?: "automatic" | "fixed";
   connectionTimeout: number;
   retryAttempts: number;
   retryDelay: number;

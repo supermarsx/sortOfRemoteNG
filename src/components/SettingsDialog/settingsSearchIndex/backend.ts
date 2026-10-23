@@ -35,10 +35,16 @@ export const BACKEND_SEARCH_ENTRIES: SettingSearchEntry[] = [
     ],
   },
   {
-    key: "backendConfig.maxConcurrentRdpSessions",
-    label: "Max Concurrent RDP Sessions",
+    key: "connectionAdmissionMode",
+    values: [
+      "automatic",
+      "fixed",
+      "Automatic — available memory",
+      "Set a connection limit",
+    ],
+    label: "Connection capacity",
     description:
-      "Hard ceiling on how many RDP sessions can be live at once. Beyond this, new connections wait until a slot frees up.",
+      "Shared connection admission policy. Automatic mode uses available system memory; manage it in Performance settings.",
     tags: ["rdp", "concurrent", "sessions", "limit", "max", "ceiling"],
     synonyms: ["session limit", "parallel sessions", "simultaneous rdp"],
     section: "backend",

@@ -17,8 +17,11 @@ import {
   Timer,
   Target,
   Hash,
+  Layers,
 } from "lucide-react";
 import SectionHeading from "../../ui/SectionHeading";
+import { Select } from "../../ui/forms/Select";
+import { InfoTooltip } from "../../ui/InfoTooltip";
 import {
   Card,
   SettingsSectionHeader as SectionHeader,
@@ -50,6 +53,60 @@ export const PerformanceSettings: React.FC<PerformanceSettingsProps> = ({
         title="Performance"
         description="Connection retry, performance monitoring, status checking, and action logging."
       />
+
+      <div className="space-y-4">
+        <SectionHeader
+          icon={<Layers className="w-4 h-4 text-primary" />}
+          title="Connection capacity"
+        />
+        <Card>
+          <div
+            data-setting-key="connectionAdmissionMode"
+            className="sor-settings-select-row"
+          >
+            <div className="min-w-0">
+              <span className="sor-settings-row-label flex items-center gap-1">
+                Connection limit{" "}
+                <InfoTooltip text="Uses conservative opening estimates: 64 MiB for SSH, 512 MiB for web sessions, 256 MiB for RDP and 128 MiB for other connections. Keeps at least 1 GiB or 10% of system RAM free. New openings remain reserved until a fresh OS sample can reflect them; established sessions are not charged again. This is an estimate, not a hard limit on actual RAM use." />
+              </span>
+              <p className="text-xs text-[var(--color-textSecondary)] mt-0.5">
+                Automatic mode checks system memory before opening connections.
+                Existing connections stay open.
+              </p>
+            </div>
+            <Select
+              label="Connection limit"
+              variant="settings"
+              value={settings.connectionAdmissionMode ?? "fixed"}
+              options={[
+                { value: "automatic", label: "Automatic — available memory" },
+                { value: "fixed", label: "Set a connection limit" },
+              ]}
+              onChange={(value) =>
+                updateSettings({
+                  connectionAdmissionMode: value as "automatic" | "fixed",
+                })
+              }
+            />
+          </div>
+          {settings.connectionAdmissionMode !== "automatic" && (
+            <SettingsNumberRow
+              settingKey="maxConcurrentConnections"
+              icon={<Hash size={16} />}
+              label="Maximum connections"
+              min={1}
+              value={settings.maxConcurrentConnections}
+              onChange={(value) =>
+                updateSettings({
+                  connectionAdmissionMode: "fixed",
+                  maxConcurrentConnections: value,
+                })
+              }
+              infoTooltip="Optional explicit limit. Tool tabs do not count. Choose Automatic to use available system memory instead."
+            />
+          )}
+        </Card>
+      </div>
 
       {/* Connection Retry */}
       <div className="space-y-4">

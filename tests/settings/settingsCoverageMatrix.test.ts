@@ -102,6 +102,7 @@ function sampleValueFor(
 ): unknown {
   if (key === "defaultConnectionProtocol") return "ssh";
   const special: Partial<Record<keyof GlobalSettings, unknown>> = {
+    connectionAdmissionMode: "fixed",
     credentialVaultView: {
       columns: ["name", "categories", "actions"],
       widths: {

@@ -82,6 +82,10 @@ import { recordForcedSessionCleanupEvidence } from "../../utils/session/forcedSe
 import { disconnectSynologySession } from "../../utils/session/synologySessionLifecycle";
 import { isSynologyFileConnection } from "../../types/protocols/synology";
 import { useNewToolTabFocus } from "./useNewToolTabFocus";
+import {
+  connectionAdmission,
+  MEMORY_UNAVAILABLE,
+} from "../../utils/session/connectionAdmission";
 
 export function usesGenericSessionTimer(protocol: string): boolean {
   return usesLegacyGenericTimer(protocol);
@@ -295,6 +299,20 @@ export const useSessionManager = () => {
   credentialVaultRef.current = credentialVault;
 
   const settingsManager = SettingsManager.getInstance();
+  const admissionOwner = useRef(Symbol("session-manager-admission"));
+  const admissionEpoch = useRef(0);
+  useEffect(() => {
+    const owner = admissionOwner.current;
+    if (settingsManager.getSettings().connectionAdmissionMode === "automatic")
+      void connectionAdmission.warm();
+    return () => {
+      admissionEpoch.current += 1;
+      connectionAdmission.releaseOwner(owner);
+    };
+  }, [settingsManager]);
+  useEffect(() => {
+    connectionAdmission.reconcile(admissionOwner.current, state.sessions);
+  }, [state.sessions]);
   const statusChecker = StatusChecker.getInstance();
   const scriptEngine = ScriptEngine.getInstance();
 
@@ -476,6 +494,7 @@ export const useSessionManager = () => {
       desktopHeight: 0,
     });
 
+    connectionAdmission.releaseSession(sessionId);
     dispatch({ type: "REMOVE_SESSION", payload: sessionId });
     releaseUnusedConnectionResources(endedSession);
     if (connection) {
@@ -1072,10 +1091,16 @@ export const useSessionManager = () => {
     assertCurrent?: () => void,
     onSessionOpened?: () => void,
   ): Promise<string | undefined> => {
+    const openingEpoch = admissionEpoch.current;
+    const assertAdmissionCurrent = () => {
+      if (openingEpoch !== admissionEpoch.current || isUnmountedRef.current)
+        throw new Error("Connection opening was cancelled.");
+      assertCurrent?.();
+    };
     assertCurrent?.();
     const settings = settingsManager.getSettings();
     const runtimeCapabilities = await loadRuntimeCapabilities();
-    assertCurrent?.();
+    assertAdmissionCurrent();
     const unsupportedMessage =
       getVaultRuntimeUnsupportedMessage(connection) ??
       getRuntimeProtocolUnavailableMessage(
@@ -1123,7 +1148,7 @@ export const useSessionManager = () => {
         (isIntegrationConnectionProtocol(session.protocol) &&
           session.status !== "disconnected"),
     );
-    let remainingRealSessionCount = realSessions.length;
+    const closedForReplacement = new Set<string>();
 
     if (settings.singleConnectionMode && realSessions.length > 0) {
       const proceed = await showConfirm(
@@ -1145,86 +1170,128 @@ export const useSessionManager = () => {
           );
           return;
         }
+        closedForReplacement.add(session.id);
       }
-      remainingRealSessionCount = 0;
     }
 
-    if (remainingRealSessionCount >= settings.maxConcurrentConnections) {
+    const admissionContext = () => {
+      const latest = settingsManager.getSettings();
+      return {
+        settings: latest,
+        sessions: stateRef.current.sessions.filter(
+          (session) =>
+            !closedForReplacement.has(session.id) &&
+            (isRealConnectionSession(session) ||
+              isIntegrationConnectionProtocol(session.protocol)) &&
+            (latest.connectionAdmissionMode !== "automatic"
+              ? !isIntegrationConnectionProtocol(session.protocol) ||
+                session.status !== "disconnected"
+              : (session.status !== "disconnected" &&
+                  session.status !== "error") ||
+                session.vpnLeaseBindings?.some(
+                  (binding) => binding.status === "active",
+                )),
+        ),
+      };
+    };
+    let admission:
+      Awaited<ReturnType<typeof connectionAdmission.acquire>> | undefined;
+    try {
+      admission = await connectionAdmission.acquire(
+        admissionOwner.current,
+        connection.protocol,
+        admissionContext,
+        assertAdmissionCurrent,
+      );
+      admission.revalidate();
+    } catch (error) {
+      admission?.release();
+      assertAdmissionCurrent();
       await showAlert(
-        `Maximum concurrent connections (${settings.maxConcurrentConnections}) reached.`,
+        error instanceof Error ? error.message : MEMORY_UNAVAILABLE,
       );
       return;
     }
-
-    const isIntegrationSession = isIntegrationConnectionProtocol(
-      connection.protocol,
-    );
-    assertCurrent?.();
-    const session: ConnectionSession = {
-      id: generateId(),
-      connectionId: connection.id,
-      ...(connection.credentialSource?.kind === "vault"
-        ? { ownerDatabaseId: credentialVaultRef.current?.scope?.databaseId }
-        : {}),
-      name:
-        settings.hostnameOverride && connection.hostname
-          ? connection.hostname
-          : connection.name,
-      // Integration panels own their backend connection. Do not claim a live
-      // transport until their connection hook reports a successful command.
-      status: isIntegrationSession ? "disconnected" : "connecting",
-      startTime: new Date(),
-      // Internal compatibility route only; saved File Station connections are HTTP(S).
-      protocol: isSynologyFileConnection(connection)
-        ? "synology"
-        : connection.protocol,
-      hostname: connectionEndpointHost(connection),
-      backendSessionId: isIntegrationSession
-        ? connection.integration?.instanceId
-        : undefined,
-      integration: isIntegrationSession ? connection.integration : undefined,
-      reconnectAttempts: 0,
-      maxReconnectAttempts: resolveConnectionRetryAttempts(
-        connection.retryAttempts,
-        settings.retryAttempts,
-      ),
-      ...(unsupportedMessage
-        ? { status: "error" as const, errorMessage: unsupportedMessage }
-        : {}),
-    };
-
-    endingSessionIdsRef.current.delete(session.id);
-    dispatch({ type: "ADD_SESSION", payload: session });
-    // Capture ownership before an awaited lifecycle hook can throw and before
-    // React necessarily publishes the newly dispatched session to stateRef.
-    onSessionOpened?.();
-    await lifecycle.emitStarted(session, connection, { reason: "user" });
-
-    // Per-connection focusOnConnect overrides the global setting
-    const shouldFocus =
-      connection.focusOnConnect ?? !settings.openConnectionInBackground;
-    if (shouldFocus) {
-      setActiveSessionId(session.id);
-    }
-
-    if (unsupportedMessage) {
-      settingsManager.logAction(
-        "error",
-        "Connection unavailable",
-        connection.id,
-        unsupportedMessage,
+    if (!admission) return;
+    try {
+      const isIntegrationSession = isIntegrationConnectionProtocol(
+        connection.protocol,
       );
-      await lifecycle.emitInitialStatus(session, connection, {
-        reason: "error",
-      });
-      return session.id;
-    }
+      assertCurrent?.();
+      const session: ConnectionSession = {
+        id: generateId(),
+        connectionId: connection.id,
+        ...(connection.credentialSource?.kind === "vault"
+          ? { ownerDatabaseId: credentialVaultRef.current?.scope?.databaseId }
+          : {}),
+        name:
+          settings.hostnameOverride && connection.hostname
+            ? connection.hostname
+            : connection.name,
+        // Integration panels own their backend connection. Do not claim a live
+        // transport until their connection hook reports a successful command.
+        status: isIntegrationSession ? "disconnected" : "connecting",
+        startTime: new Date(),
+        // Internal compatibility route only; saved File Station connections are HTTP(S).
+        protocol: isSynologyFileConnection(connection)
+          ? "synology"
+          : connection.protocol,
+        hostname: connectionEndpointHost(connection),
+        backendSessionId: isIntegrationSession
+          ? connection.integration?.instanceId
+          : undefined,
+        integration: isIntegrationSession ? connection.integration : undefined,
+        reconnectAttempts: 0,
+        maxReconnectAttempts: resolveConnectionRetryAttempts(
+          connection.retryAttempts,
+          settings.retryAttempts,
+        ),
+        ...(unsupportedMessage
+          ? { status: "error" as const, errorMessage: unsupportedMessage }
+          : {}),
+      };
 
-    const completed = await connectSession(session, connection);
-    if (completed) {
-      await lifecycle.emitInitialStatus(session, connection);
+      endingSessionIdsRef.current.delete(session.id);
+      admission.commit(session.id);
+      try {
+        dispatch({ type: "ADD_SESSION", payload: session });
+      } catch (error) {
+        admission.abort();
+        throw error;
+      }
+      // Capture ownership before an awaited lifecycle hook can throw and before
+      // React necessarily publishes the newly dispatched session to stateRef.
+      onSessionOpened?.();
+      await lifecycle.emitStarted(session, connection, { reason: "user" });
+
+      // Per-connection focusOnConnect overrides the global setting
+      const shouldFocus =
+        connection.focusOnConnect ?? !settings.openConnectionInBackground;
+      if (shouldFocus) {
+        setActiveSessionId(session.id);
+      }
+
+      if (unsupportedMessage) {
+        settingsManager.logAction(
+          "error",
+          "Connection unavailable",
+          connection.id,
+          unsupportedMessage,
+        );
+        await lifecycle.emitInitialStatus(session, connection, {
+          reason: "error",
+        });
+        return session.id;
+      }
+
+      const completed = await connectSession(session, connection);
+      if (completed) {
+        await lifecycle.emitInitialStatus(session, connection);
+      }
+      return session.id;
+    } finally {
+      admission.release();
     }
-    return session.id;
   };
 
   const reconnectSession = async (
@@ -1582,6 +1649,7 @@ export const useSessionManager = () => {
       }
       if (!isCurrentCloseAttempt(attempt)) return false;
       markSessionEnding(sessionId);
+      connectionAdmission.releaseSession(sessionId);
       dispatch({ type: "REMOVE_SESSION", payload: sessionId });
       return true;
     }
@@ -1686,6 +1754,7 @@ export const useSessionManager = () => {
           }
         }
         if (!isCurrentCloseAttempt(attempt)) return false;
+        connectionAdmission.releaseSession(sessionId);
         dispatch({ type: "REMOVE_SESSION", payload: sessionId });
         releaseUnusedConnectionResources(session);
         if (connection) {
@@ -2288,6 +2357,7 @@ export const useSessionManager = () => {
         });
       }
 
+      connectionAdmission.releaseSession(sessionId);
       dispatch({ type: "REMOVE_SESSION", payload: sessionId });
       releaseUnusedConnectionResources(session);
 
@@ -2578,6 +2648,7 @@ export const useSessionManager = () => {
       session.name,
     );
 
+    connectionAdmission.releaseSession(sessionId);
     dispatch({ type: "REMOVE_SESSION", payload: sessionId });
     releaseUnusedConnectionResources(session);
 
