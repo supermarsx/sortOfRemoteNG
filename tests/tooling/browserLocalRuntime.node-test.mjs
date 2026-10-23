@@ -42,6 +42,7 @@ import {
   TARGETS,
   packageManifest,
 } from "../../scripts/browser-runtime-package.mjs";
+import { ensurePublishedRuntime } from "../../scripts/lib/browser-runtime-bootstrap.mjs";
 
 // Synthetic structural binaries and measured fixture digests, NEVER runnable
 // engines, production pins, build attestations or native acceptance evidence.
@@ -291,6 +292,107 @@ test("default selection is repository-anchored and already ignored", async () =>
   assert.match(
     await readFile(new URL("../../.gitignore", import.meta.url), "utf8"),
     /^\/\.artifacts\/$/m,
+  );
+});
+
+test("explicit dev selector uses its reviewed runtime without reading or changing the default", async (t) => {
+  const isolated = await fixture(t);
+  const normal = await fixture(t);
+  await registerLocalRuntime(isolated.options);
+  await registerLocalRuntime(normal.options);
+  const before = await readFile(normal.selectionFile, "utf8");
+  const args = [
+    "dev",
+    "--target",
+    isolated.target,
+    "--cef-local-selection",
+    isolated.selectionFile,
+  ];
+  const options = parseArguments(
+    args,
+    {},
+    { selectionFile: normal.selectionFile },
+  );
+  assert.equal(options.localRuntimeSelection.file, isolated.selectionFile);
+  assert.equal(options.sdk, isolated.sdk);
+  assert.deepEqual(options.tauriArgs, []);
+  assert.equal(
+    (await loadCustomRuntimeInputs(options)).preflight.filesVerified,
+    Object.keys(isolated.files).length,
+  );
+  assert.equal(await readFile(normal.selectionFile, "utf8"), before);
+  const deferred = parseArguments(
+    args,
+    {},
+    { selectionFile: normal.selectionFile, deferRuntime: true },
+  );
+  const report = await ensurePublishedRuntime(deferred, {
+    selectionFile: normal.selectionFile,
+    fetchRuntime: () => {
+      throw Error("must never acquire");
+    },
+  });
+  assert.equal(report.reason, "explicit-configuration");
+  // The exact identity binding remains active after selection.
+  await writeFile(
+    isolated.manifestFile,
+    json({ ...isolated.manifest, changed: true }),
+  );
+  assert.throws(
+    () => parseArguments(args, {}, { selectionFile: normal.selectionFile }),
+    /identity|fields|digest|reviewed/i,
+  );
+});
+
+test("explicit local selection rejects malformed, contradictory and missing files without custom-input fallback", async (t) => {
+  const f = await fixture(t);
+  await registerLocalRuntime(f.options);
+  const parse = (flags, env = {}) =>
+    parseArguments(["dev", "--target", f.target, ...flags], env, {
+      selectionFile: f.selectionFile,
+    });
+  for (const value of [" ", "bad\nfile", "bad\0file"])
+    assert.throws(
+      () => parse(["--cef-local-selection", value]),
+      /Invalid CEF local selection path/,
+    );
+  assert.throws(() => parse(["--cef-local-selection"]), /requires a value/);
+  assert.throws(
+    () =>
+      parse([
+        "--cef-local-selection",
+        f.selectionFile,
+        "--cef-local-selection",
+        f.selectionFile,
+      ]),
+    /Duplicate/,
+  );
+  assert.throws(
+    () =>
+      parse([
+        "--cef-local-selection",
+        f.selectionFile,
+        "--cef-runtime-kind",
+        "official",
+      ]),
+    /requires custom/,
+  );
+  assert.throws(
+    () =>
+      parse(["--cef-local-selection", f.selectionFile], {
+        CEF_PATH: "unrelated-sdk",
+      }),
+    /conflicts/,
+  );
+  const missing = path.join(f.root, "absent.json");
+  assert.throws(
+    () =>
+      parse(["--cef-local-selection", missing], {
+        SORNG_CEF_CUSTOM_MANIFEST: f.manifestFile,
+        SORNG_CEF_SOURCE_LOCK: f.lockFile,
+        SORNG_CEF_SDK: f.sdk,
+      }),
+    /Explicit CEF local selection is unavailable/,
   );
 });
 

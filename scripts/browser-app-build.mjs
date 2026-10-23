@@ -256,6 +256,7 @@ export function parseArguments(
     "--cef-custom-manifest": "customManifest",
     "--cef-source-lock": "sourceLock",
     "--cef-artifact-root": "artifactRoot",
+    "--cef-local-selection": "localSelectionFile",
     "--cef-output": "output",
     "--cef-cargo-target-dir": "cargoTarget",
     "--cef-public-target-dir": "publicTarget",
@@ -276,6 +277,12 @@ export function parseArguments(
     if (Object.hasOwn(values, arg)) {
       const key = values[arg];
       const supplied = value();
+      if (key === "localSelectionFile") {
+        if (options.localSelectionFile !== undefined)
+          throw new Error("Duplicate CEF local selection flag");
+        if (!supplied.trim() || /[\x00-\x1f\x7f]/.test(supplied))
+          throw new Error("Invalid CEF local selection path");
+      }
       if (
         [
           "runtimeKind",
@@ -328,6 +335,15 @@ export function parseArguments(
     else if (arg.startsWith("--cef-"))
       throw new Error(`Unknown CEF option ${arg}`);
     else options.tauriArgs.push(arg);
+  }
+  if (options.localSelectionFile) {
+    if (options.runtimeKind === "official")
+      throw new Error(
+        "Explicit local CEF selection requires custom runtime mode",
+      );
+    // An explicit file must never trigger catalog acquisition into the default
+    // selector, even during main()'s deferred first parse.
+    options.runtimeKind ??= "custom";
   }
   packageManifest(options.target);
   // Cargo-side feature flags affect the SAME app. Promote them before choosing
@@ -401,7 +417,9 @@ export function parseArguments(
       "Custom CEF acquisition uses the reviewed release catalog or browser:runtime:fetch; --cef-download is unavailable",
     );
   if (deferRuntime) return options;
-  resolveLocalRuntime(options, selectionFile);
+  resolveLocalRuntime(options, options.localSelectionFile ?? selectionFile);
+  if (options.localSelectionFile && !options.localRuntimeSelection)
+    throw new Error("Explicit CEF local selection is unavailable; no fallback");
   options.runtimeKind ??= "custom";
   if (options.runtimeKind === "custom") {
     if (!options.customManifest || !options.sourceLock || !options.sdk)
