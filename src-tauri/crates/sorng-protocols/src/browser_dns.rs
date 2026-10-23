@@ -159,6 +159,68 @@ mod tests {
 
     struct DroppedLookup(Arc<AtomicUsize>);
 
+    #[tokio::test]
+    async fn sixteen_cancelled_context_lookups_hold_global_budget_but_release_recovers_other_context(
+    ) {
+        let slots = Arc::new(Semaphore::new(MAX_DNS_JOBS));
+        let mut releases = Vec::new();
+        for _ in 0..MAX_DNS_JOBS {
+            let (release, started, lookup) = blocked_lookup();
+            releases.push(release);
+            let caller = tokio::spawn(resolve_with(
+                "context-a.invalid:443".into(),
+                slots.clone(),
+                lookup,
+            ));
+            within(started).await.unwrap();
+            caller.abort();
+            assert!(within(caller).await.unwrap_err().is_cancelled());
+        }
+        assert_eq!(slots.available_permits(), 0);
+        let calls = Arc::new(AtomicUsize::new(0));
+        let called = calls.clone();
+        let mut other = Box::pin(resolve_with(
+            "context-b.invalid:443".into(),
+            slots.clone(),
+            move |_| {
+                called.fetch_add(1, Ordering::SeqCst);
+                Ok(std::iter::once(address()))
+            },
+        ));
+        assert!(
+            tokio::time::timeout(Duration::from_millis(50), other.as_mut())
+                .await
+                .is_err()
+        );
+        assert_eq!(calls.load(Ordering::SeqCst), 0);
+        // Numeric destinations never need a DNS admission slot.
+        assert_eq!(
+            within(resolve_with(
+                "127.0.0.1:443".into(),
+                slots.clone(),
+                |_| -> io::Result<std::iter::Empty<SocketAddr>> {
+                    panic!("numeric route reached DNS")
+                }
+            ))
+            .await
+            .unwrap()
+            .len(),
+            1
+        );
+        releases[0].release();
+        assert_eq!(within(other).await.unwrap(), vec![address()]);
+        assert_eq!(calls.load(Ordering::SeqCst), 1);
+        for release in &mut releases {
+            release.release();
+        }
+        within(async {
+            while slots.available_permits() != MAX_DNS_JOBS {
+                tokio::task::yield_now().await;
+            }
+        })
+        .await;
+    }
+
     impl Drop for DroppedLookup {
         fn drop(&mut self) {
             self.0.fetch_add(1, Ordering::SeqCst);
