@@ -8,6 +8,7 @@ import {
   mkdtemp,
   readFile,
   readdir,
+  realpath,
   rm,
   symlink,
   writeFile,
@@ -769,7 +770,10 @@ test("all six real build recipes use explicit bounded autoninja -j including Sis
   assert.throws(() => boundedBuildCommands({ commands: [] }, 0), /Bounded/);
 });
 test("CEF hook uses the reviewed Python for nested GN only, never a PATH wrapper", async (t) => {
-  const directory = await mkdtemp(path.join(os.tmpdir(), "cef hook driver "));
+  // Python getcwd() resolves aliases such as macOS /var -> /private/var.
+  const directory = await realpath(
+    await mkdtemp(path.join(os.tmpdir(), "cef hook driver ")),
+  );
   t.after(() => rm(directory, { recursive: true, force: true }));
   const cef = path.join(directory, "CEF checkout");
   const tools = path.join(cef, "tools");
