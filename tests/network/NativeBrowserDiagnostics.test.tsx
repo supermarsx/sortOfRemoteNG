@@ -69,6 +69,38 @@ afterEach(() => {
 });
 
 describe("native diagnostics scalar projection", () => {
+  it.each([1, 2, 3, 4, 5])(
+    "retains only a known observed engine revision %s and honest startup proof",
+    (revision) => {
+      const data = snapshot();
+      const row = {
+        ...data.sessions[0],
+        loadedPatchId: `sorng-tls-v2-682c378-${revision}`,
+        proxyAppliedAtStartup: revision >= 3,
+      };
+      expect(
+        parseNativeBrowserDiagnostics({ ...data, sessions: [row] }).sessions[0],
+      ).toEqual(row);
+    },
+  );
+  it.each([
+    { loadedPatchId: "SECRET/path" },
+    { loadedPatchId: "sorng-tls-v2-682c378-6" },
+    { loadedPatchId: "sorng-tls-v2-682c378-1", proxyAppliedAtStartup: true },
+    { loadedPatchId: null, proxyAppliedAtStartup: true },
+    {
+      loadedPatchId: "sorng-tls-v2-682c378-4",
+      proxyAppliedAtStartup: "SECRET",
+    },
+  ])("rejects unknown or contradictory runtime proof %j", (fields) => {
+    const data = snapshot();
+    expect(() =>
+      parseNativeBrowserDiagnostics({
+        ...data,
+        sessions: [{ ...data.sessions[0], ...fields }],
+      }),
+    ).toThrow("Native browser diagnostics are unavailable.");
+  });
   it("does not retain database IDs, source tokens, URLs, credentials, or native errors", () => {
     const data = snapshot();
     const raw = {

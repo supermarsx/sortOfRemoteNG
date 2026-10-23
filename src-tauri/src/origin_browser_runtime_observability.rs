@@ -29,7 +29,11 @@ pub(crate) fn snapshot(window: &WebviewWindow) -> Result<SessionDiagnosticsRespo
                 .try_lock()
                 .ok()
                 .map(|session| session.proxy_diagnostics());
+            let (loaded_patch_id, proxy_applied_at_startup) =
+                attempt.engine_observations.snapshot();
             SessionDiagnostics {
+                loaded_patch_id,
+                proxy_applied_at_startup,
                 route_health: (attempt.route_health)(attempt.identity.session_id()),
                 identity: SessionIdentity {
                     connection_id: attempt.identity.connection_id().to_owned(),

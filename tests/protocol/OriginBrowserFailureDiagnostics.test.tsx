@@ -62,6 +62,72 @@ function deferred<T>() {
   });
   return { promise, resolve };
 }
+
+it.each(["connectionId", "sessionId"])(
+  "ignores proof from a different %s sharing the attempt string",
+  async (field) => {
+    vi.stubGlobal("__TAURI__", { core: { invoke } });
+    vi.mocked(invoke).mockResolvedValue({
+      available: true,
+      sessions: [
+        {
+          identity: {
+            connectionId: "PRIVATE_CONNECTION",
+            sessionId: "PRIVATE_SESSION",
+            attemptId: "PRIVATE_ATTEMPT",
+            [field]: "foreign",
+          },
+          phase: "attached",
+          proxy: null,
+          loadedPatchId: "sorng-tls-v2-682c378-4",
+          proxyAppliedAtStartup: true,
+        },
+      ],
+    });
+    render(<OriginBrowserFailureDiagnostics {...props()} />);
+    await waitFor(() =>
+      expect(invoke).toHaveBeenCalledWith("origin_browser_session_diagnostics"),
+    );
+    await act(async () => {});
+    expect(screen.queryByText("sorng-tls-v2-682c378-4")).toBeNull();
+    expect(screen.queryByText("Verified at startup")).toBeNull();
+  },
+);
+
+it.each([
+  ["sorng-tls-v2-682c378-1", false, "Not supported by this legacy runtime"],
+  ["sorng-tls-v2-682c378-4", true, "Verified at startup"],
+] as const)(
+  "shows actual loaded %s separately from historical proxy proof",
+  async (patch, applied, label) => {
+    vi.stubGlobal("__TAURI__", { core: { invoke } });
+    const input = props();
+    vi.mocked(invoke).mockResolvedValue({
+      available: true,
+      sessions: [
+        {
+          identity: {
+            connectionId: "PRIVATE_CONNECTION",
+            sessionId: "PRIVATE_SESSION",
+            attemptId: "PRIVATE_ATTEMPT",
+          },
+          phase: "attached",
+          proxy: null,
+          loadedPatchId: patch,
+          proxyAppliedAtStartup: applied,
+          endpoint: "https://PRIVATE_ENDPOINT/password=EXTRA_SECRET",
+        },
+      ],
+    });
+    render(<OriginBrowserFailureDiagnostics {...input} />);
+    expect(await screen.findByText(patch)).toBeVisible();
+    expect(screen.getByText(label)).toBeVisible();
+    assertNoSecrets(
+      screen.getByTestId("origin-browser-failure-diagnostics").textContent ??
+        "",
+    );
+  },
+);
 function assertNoSecrets(text: string) {
   for (const secret of [
     "RAW_NATIVE_ERROR",

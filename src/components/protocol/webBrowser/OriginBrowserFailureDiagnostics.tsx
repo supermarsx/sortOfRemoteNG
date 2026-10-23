@@ -316,9 +316,14 @@ export function OriginBrowserFailureDiagnostics({
   );
   const nativeAvailable = snapshot?.phase === "attached";
   const [relayHealth, setRelayHealth] = useState("Not observed");
+  const [engineProof, setEngineProof] = useState({
+    patch: "Not reported",
+    ack: "Not reported",
+  });
   useLayoutEffect(() => {
     let current = true;
     setRelayHealth("Not observed");
+    setEngineProof({ patch: "Not reported", ack: "Not reported" });
     if (active && ownerAvailable && snapshot) {
       void (async () => {
         const invoke = await getInvoke();
@@ -329,9 +334,26 @@ export function OriginBrowserFailureDiagnostics({
         );
         if (!current) return;
         assertOwner();
-        const relay = data.sessions.find(
-          (item) => item.identity.attemptId === snapshot.identity.attemptId,
-        )?.proxy;
+        const observed = data.sessions.find(
+          (item) =>
+            item.identity.attemptId === snapshot.identity.attemptId &&
+            item.identity.connectionId === snapshot.identity.connectionId &&
+            item.identity.sessionId === snapshot.identity.sessionId,
+        );
+        const relay = observed?.proxy;
+        if (observed)
+          setEngineProof({
+            patch: observed.loadedPatchId ?? "Not reported",
+            ack:
+              observed.proxyAppliedAtStartup === true
+                ? "Verified at startup"
+                : observed.loadedPatchId &&
+                    /-[12]$/.test(observed.loadedPatchId)
+                  ? "Not supported by this legacy runtime"
+                  : observed.proxyAppliedAtStartup === false
+                    ? "Not observed"
+                    : "Not reported",
+          });
         if (relay)
           setRelayHealth(
             `${relay.state}; accepted connections: ${relay.acceptedConnections}; upstream failures: ${relay.upstreamFailures}`,
@@ -369,6 +391,8 @@ export function OriginBrowserFailureDiagnostics({
   const facts: [string, string][] = [
     ["Private proxy health", relayHealth],
     ["Browser engine", "Native CEF"],
+    ["Loaded CEF patch", engineProof.patch],
+    ["Proxy configuration ACK", engineProof.ack],
     ...browserConnectionDiagnosticFacts(connection),
     ["App version", APP_VERSION],
     ["Website origin", target],

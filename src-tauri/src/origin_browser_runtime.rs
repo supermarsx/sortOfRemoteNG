@@ -128,6 +128,7 @@ fn view_failure(failure: Failure, message: &'static str) -> String {
 }
 
 struct Attempt {
+    engine_observations: crate::origin_browser_observability::EngineObservations,
     renderer_startup: renderer_startup::RendererStartup,
     route_health: sorng_core::route_health::RouteHealthReader,
     timing: Trace,
@@ -1418,6 +1419,7 @@ async fn create_document(
     let session = Arc::new(Mutex::new(session));
     timing.mark(TimingStage::ProxyReady);
     let attempt = Arc::new(Attempt {
+        engine_observations: crate::origin_browser_observability::EngineObservations::default(),
         renderer_startup: renderer_startup::RendererStartup::default(),
         timing: timing.clone(),
         navigation_submitted: AtomicBool::new(false),
@@ -2224,6 +2226,9 @@ pub(crate) fn tick() {
                     continue;
                 }
             }
+            if let Some(bridge) = &ui.tls {
+                pending.attempt.engine_observations.observe_loaded(bridge.patch_id());
+            }
             match pending.context.status() {
                 PreparationStatus::Initializing => {
                     waiting.push(pending);
@@ -2270,6 +2275,7 @@ pub(crate) fn tick() {
             let attempt = pending.attempt;
             attempt.timing.mark(TimingStage::ContextReady);
             if pending.context.proxy_application_verified() {
+                attempt.engine_observations.observe_proxy_applied();
                 diagnostics::navigation(diagnostics::Navigation::PrivateProxyApplied);
             }
             let scale = pending.window.scale_factor().unwrap_or(1.0);

@@ -21,6 +21,9 @@ export interface NativeProxyDiagnostics {
 }
 
 export interface NativeBrowserSessionDiagnostics {
+  loadedPatchId?: string | null;
+  /** Historical exact-context ACK, not a current networking-health claim. */
+  proxyAppliedAtStartup?: boolean;
   identity: { connectionId: string; sessionId: string; attemptId: string };
   /** Null means the native snapshot was busy, not an inferred phase. */
   phase: OriginBrowserSnapshot["phase"] | null;
@@ -119,9 +122,33 @@ export function parseNativeBrowserDiagnostics(
         row.phase === "failed" && row.failureReason === "redirect-denied"
           ? "redirect-denied"
           : originBrowserFailureReason(row.phase, row.failureReason);
+      if (
+        row.loadedPatchId !== undefined &&
+        row.loadedPatchId !== null &&
+        (typeof row.loadedPatchId !== "string" ||
+          !/^sorng-tls-v2-682c378-[1-5]$/.test(row.loadedPatchId))
+      )
+        throw invalid();
+      if (
+        row.proxyAppliedAtStartup !== undefined &&
+        typeof row.proxyAppliedAtStartup !== "boolean"
+      )
+        throw invalid();
+      if (
+        row.proxyAppliedAtStartup === true &&
+        (typeof row.loadedPatchId !== "string" ||
+          !/^sorng-tls-v2-682c378-[3-5]$/.test(row.loadedPatchId))
+      )
+        throw invalid();
       return {
         identity,
         phase,
+        ...(row.loadedPatchId !== undefined
+          ? { loadedPatchId: row.loadedPatchId as string | null }
+          : {}),
+        ...(row.proxyAppliedAtStartup !== undefined
+          ? { proxyAppliedAtStartup: row.proxyAppliedAtStartup as boolean }
+          : {}),
         ...(failureReason ? { failureReason } : {}),
         proxy: proxySnapshot(row.proxy),
         ...(row.routeHealth !== undefined

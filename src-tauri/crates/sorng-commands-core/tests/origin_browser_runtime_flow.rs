@@ -3,6 +3,9 @@
 mod flow;
 #[path = "../../../src/origin_browser_renderer_startup.rs"]
 mod renderer_startup;
+#[allow(dead_code)]
+#[path = "../../../src/origin_browser_observability.rs"]
+mod engine_observability;
 
 use std::{
     cell::{Cell, RefCell},
