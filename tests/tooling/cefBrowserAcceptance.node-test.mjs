@@ -12,6 +12,8 @@ import {
   assessNativeTlsReport,
   assessRegistrationRetirement,
   assessNativeHttp2Report,
+  assessNativeHttp3Report,
+  HTTP3_CHECKS,
   http2Environment,
   acceptanceNetlogEnvironment,
   HTTP2_CHECKS,
@@ -54,8 +56,178 @@ import {
 } from "../../scripts/lib/cef-native-crash-summary.mjs";
 import {
   HTTP2_BRIDGE_PATCH_ID,
+  HTTP3_BRIDGE_PATCH_ID,
   PROXY_APPLIED_BRIDGE_PATCH_ID,
 } from "../../scripts/lib/browser-custom-runtime.mjs";
+
+function nativeHttp3Report(check = "multiplex") {
+  const fallback = check.endsWith("fallback");
+  const slot = (index) => ({
+    sessionId: `h3-tab-${index}`,
+    proxyApplied: true,
+    datagramsApplied: !fallback,
+    beforeAdmissionHttp3Requests: 0,
+    admitted: 2,
+    quicAdmitted: fallback || check === "deny" ? 0 : 1,
+    quicDenied: check === "deny" || check === "cross-authority" ? 1 : 0,
+    quicVerified: fallback ? 0 : 1,
+    alternateQuicDenied: check === "cross-authority" ? 1 : 0,
+    alternateQuicVerified: check === "cross-authority" ? 1 : 0,
+    alternateUdpFlowsOpened: check === "cross-authority" ? 1 : 0,
+    denied: check === "deny" || check === "cross-authority" ? 1 : 0,
+    h3Requests: fallback || check === "deny" ? 0 : 32,
+    h3Completed:
+      fallback ||
+      check === "deny" ||
+      check === "revoke" ||
+      (check === "isolation" && index === 0)
+        ? 0
+        : 32,
+    h3Connections: fallback ? 0 : 1,
+    h3Peak: 32,
+    h3AssetRequests: 32,
+    h3AssetCompleted: 32,
+    h3Paths: Array.from(
+      { length: 32 },
+      (_, n) => `https://http3.fixture.test/asset/${n}`,
+    ),
+    udpFlowsOpened: fallback ? 0 : 1,
+    udpSent: fallback ? 0 : 40,
+    udpReceived: fallback ? 0 : 40,
+    tcpRequests: fallback
+      ? Array.from({ length: 32 }, (_, n) => ({
+          path: `/asset/${n}`,
+          protocol: check === "h2-fallback" ? "h2" : "http/1.1",
+        }))
+      : [],
+    deferred: 2,
+    minimumAdmissionDelayMs: 301,
+    revoked: check === "revoke" || (check === "isolation" && index === 0),
+    revokeBaseline: 32,
+    revokedNavigationRejected: true,
+  });
+  const count = check === "isolation" ? 4 : 2;
+  return {
+    probeKind: "native-owned-http3",
+    runId: "fresh-h3-run",
+    patchId: HTTP3_BRIDGE_PATCH_ID,
+    check,
+    loadedBridgeVerified: true,
+    ok: true,
+    clean: true,
+    closed: true,
+    shutdownComplete: true,
+    productionTlsFactory: true,
+    globalQuicOverride: false,
+    serverEarlyDataDisabled: true,
+    serverSessionTicketsDisabled: true,
+    slots: Array.from({ length: count }, (_, n) => slot(n)),
+    flowsAfterStop: Array(count).fill(0),
+    lateOldCleanup: true,
+    survivorAfterLateOldCleanup: 1,
+    failures: [],
+  };
+}
+
+test("HTTP3 acceptance requires actual multiplexing and rejects fallback or forged readiness", () => {
+  const good = nativeHttp3Report();
+  const assess = (r) =>
+    assessNativeHttp3Report(
+      r,
+      "fresh-h3-run",
+      HTTP3_BRIDGE_PATCH_ID,
+      "multiplex",
+    );
+  assert.equal(assess(good).ok, true);
+  for (const mutate of [
+    (r) => (r.patchId = TLS_PATCH_ID),
+    (r) => (r.runId = "old"),
+    (r) => (r.loadedBridgeVerified = false),
+    (r) => (r.globalQuicOverride = true),
+    (r) => (r.productionTlsFactory = false),
+    (r) => (r.slots[0].datagramsApplied = false),
+    (r) => (r.slots[0].proxyApplied = false),
+    (r) => (r.slots[0].h3Connections = 0),
+    (r) => (r.slots[0].h3Requests = 0),
+    (r) => (r.slots[0].h3Completed = 31),
+    (r) => (r.slots[0].h3AssetCompleted = 31),
+    (r) => (r.slots[0].h3Peak = 1),
+    (r) => (r.slots[0].beforeAdmissionHttp3Requests = 1),
+    (r) => (r.slots[0].quicAdmitted = 0),
+    (r) => (r.slots[0].quicVerified = 0),
+    (r) => (r.slots[0].h3Requests = "32"),
+    (r) => (r.slots[0].h3Peak = Infinity),
+    (r) => (r.slots[0].udpSent = "40"),
+    (r) => (r.slots[0].h3Paths[1] = r.slots[0].h3Paths[0]),
+    (r) => (r.slots[0].h3Paths[1] = "https://other.fixture.test/asset/1"),
+    (r) => (r.slots[0].h3Paths[1] = "not-a-url"),
+    (r) => (r.slots[0].udpSent = 0),
+    (r) => (r.slots[1].sessionId = r.slots[0].sessionId),
+    (r) => (r.flowsAfterStop[0] = 1),
+    (r) => (r.closed = false),
+    (r) => (r.shutdownComplete = false),
+    (r) => r.failures.push("timeout"),
+  ]) {
+    const bad = structuredClone(good);
+    mutate(bad);
+    assert.equal(assess(bad).ok, false);
+  }
+  assert.equal(
+    assessNativeHttp3Report(good, "fresh-h3-run", TLS_PATCH_ID, "multiplex").ok,
+    false,
+  );
+});
+
+test("HTTP3 check-specific admission, revocation, isolation and TCP fallback evidence is mandatory", () => {
+  for (const check of HTTP3_CHECKS) {
+    const report = nativeHttp3Report(check);
+    const assess = (r) =>
+      assessNativeHttp3Report(r, "fresh-h3-run", HTTP3_BRIDGE_PATCH_ID, check);
+    assert.equal(assess(report).ok, true, check);
+    if (check === "deny") report.slots[0].h3Requests = 1;
+    else if (check === "delay") report.slots[0].minimumAdmissionDelayMs = 299;
+    else if (check === "revoke") report.slots[0].revokeBaseline = 31;
+    else if (check === "isolation") report.slots.pop();
+    else if (check === "cross-authority")
+      report.slots[0].alternateQuicDenied = 0;
+    else if (check.endsWith("fallback"))
+      report.slots[0].tcpRequests[0].protocol = "h3";
+    else report.slots[0].h3Peak = 1;
+    assert.equal(assess(report).ok, false, check);
+  }
+});
+
+test("HTTP3 controls are scrubbed and only an explicit closed check is forwarded", async () => {
+  const original = {
+    PATH: "retained",
+    SORNG_CEF_HTTP2_CHECK: "proxy-retry",
+    SORNG_CEF_HTTP3_CHECK: "force",
+    SORNG_CEF_HTTP3_EXPECT: "legacy",
+    SORNG_PROBE_VISIBLE: "1",
+  };
+  assert.deepEqual(http2Environment(original, "http3", "multiplex"), {
+    PATH: "retained",
+    SORNG_CEF_HTTP3_CHECK: "multiplex",
+  });
+  assert.deepEqual(http2Environment(original, "tls"), { PATH: "retained" });
+  assert.equal(original.SORNG_CEF_HTTP3_EXPECT, "legacy");
+  assert.throws(
+    () => http2Environment(original, "http3", "force"),
+    /Unknown HTTP3/,
+  );
+  await assert.rejects(
+    stageAcceptance({ suite: "http3" }),
+    /verified custom runtime/,
+  );
+  await assert.rejects(
+    runAcceptance({
+      suite: "http3",
+      check: "multiplex",
+      interactiveDesktop: "true",
+    }),
+    /isolated execution/,
+  );
+});
 
 test("acceptance metadata stays at the staged bundle root on all platforms", () => {
   const root = path.resolve("fixture-bundle");
@@ -2043,7 +2215,7 @@ test("streaming cef.log scan retains markers across chunk boundaries and missing
   }
 });
 
-test("both runner suites apply the crash gate before their final acceptance verdict", () => {
+test("all native runner suites apply the crash gate before their final acceptance verdict", () => {
   const source = readFileSync(
     new URL("../../scripts/cef-browser-acceptance.mjs", import.meta.url),
     "utf8",
@@ -2059,7 +2231,7 @@ test("both runner suites apply the crash gate before their final acceptance verd
   assert.match(runner, /native-crash-summary\.json/);
   assert.match(
     runner,
-    /applyNativeCrashGate\(\s*suite === ["']tls["']\s*\? assessNativeTlsReport\(native,\s*runId,\s*expectedPatchId\)\s*:\s*suite === ["']http2["']\s*\? assessNativeHttp2Report\(native,\s*runId,\s*expectedPatchId,\s*check\)\s*:\s*assessNativeReport\(native,\s*expectedPatchId\),\s*nativeCrashSummary,?\s*\)/,
+    /applyNativeCrashGate\(\s*suite === ["']tls["']\s*\? assessNativeTlsReport\(native,\s*runId,\s*expectedPatchId\)\s*:\s*suite === ["']http2["']\s*\? assessNativeHttp2Report\(native,\s*runId,\s*expectedPatchId,\s*check\)\s*:\s*suite === ["']http3["']\s*\? assessNativeHttp3Report\(native,\s*runId,\s*expectedPatchId,\s*check\)\s*:\s*assessNativeReport\(native,\s*expectedPatchId\),\s*nativeCrashSummary,?\s*\)/,
   );
   assert.match(
     runner,

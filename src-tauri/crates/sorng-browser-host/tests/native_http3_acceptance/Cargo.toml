@@ -7,6 +7,18 @@ publish = false
 # Independent, opt-in synthetic fixture; never part of the application graph.
 [workspace]
 
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[features]
+default = []
+cef = ["dep:sorng-browser-host", "dep:sorng-protocols", "dep:cef", "dep:tao", "dep:raw-window-handle", "dep:tokio-rustls", "dep:serde_json", "dep:h2"]
+
+[[bin]]
+name = "sorng-cef-http3-acceptance"
+path = "src/main.rs"
+required-features = ["cef"]
+
 [dependencies]
 bytes = "=1.12.1"
 http = "=1.5.0"
@@ -16,7 +28,23 @@ rustls = { version = "=0.23.43", default-features = false, features = ["ring", "
 rcgen = "=0.12.1"
 h3 = "=0.0.8"
 h3-quinn = "=0.0.10"
+sorng-browser-host = { path = "../..", features = ["cef-host"], optional = true }
+sorng-protocols = { path = "../../../sorng-protocols", optional = true }
+cef = { version = "=154.3.0", default-features = false, features = ["sandbox", "resources"], optional = true }
+tao = { version = "=0.35.3", optional = true }
+raw-window-handle = { version = "0.6", optional = true }
+tokio-rustls = { version = "0.26", default-features = false, features = ["ring", "tls12"], optional = true }
+serde_json = { version = "1", optional = true }
+h2 = { version = "0.4", optional = true }
 
 [patch.crates-io]
+tauri = { path = "../../../../patches/tauri-event-cleanup" }
+ironrdp-connector = { path = "../../../../patches/ironrdp-connector" }
+ironrdp-blocking = { path = "../../../../patches/ironrdp-blocking" }
+ironrdp-session = { path = "../../../../patches/ironrdp-session" }
+ironrdp-dvc = { path = "../../../../patches/ironrdp-dvc" }
+office-crypto = { path = "../../../../patches/office-crypto" }
+tiberius = { path = "../../../../vendor/tiberius-rustls" }
+libssh2-sys = { path = "../../../../vendor/libssh2-sys-wincng" }
 # Reuse the existing workspace's additive SSH3 protocol-token patch.
 h3 = { path = "../../../../vendor/h3-ssh3" }

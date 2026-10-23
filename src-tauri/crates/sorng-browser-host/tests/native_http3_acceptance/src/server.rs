@@ -5,7 +5,7 @@ use std::{
     net::SocketAddr,
     sync::{
         atomic::{AtomicUsize, Ordering},
-        Arc,
+        Arc, Mutex,
     },
     time::Duration,
 };
@@ -22,6 +22,9 @@ pub struct Observations {
     pub active: AtomicUsize,
     pub peak: AtomicUsize,
     pub completed: AtomicUsize,
+    pub asset_requests: AtomicUsize,
+    pub asset_completed: AtomicUsize,
+    pub paths: Mutex<Vec<String>>,
     request_started: tokio::sync::Notify,
 }
 
@@ -60,14 +63,27 @@ impl FixtureServer {
         let certificate = rcgen::generate_simple_self_signed(vec!["localhost".into()])?;
         let cert = CertificateDer::from(certificate.serialize_der()?);
         let key = PrivatePkcs8KeyDer::from(certificate.serialize_private_key_der());
+        Self::start_with_chain(vec![cert], key, response_delay).await
+    }
+
+    /// Same exact fixture identity can be served over bootstrap TLS and QUIC.
+    /// No system trust, public DNS or certificate verification override is used.
+    pub async fn start_with_chain(
+        chain: Vec<CertificateDer<'static>>,
+        key: PrivatePkcs8KeyDer<'static>,
+        response_delay: Option<Duration>,
+    ) -> Result<Self> {
+        let cert = chain.first().ok_or("empty fixture chain")?.clone();
         let mut tls = rustls::ServerConfig::builder_with_provider(Arc::new(
             rustls::crypto::ring::default_provider(),
         ))
         .with_protocol_versions(&[&rustls::version::TLS13])?
         .with_no_client_auth()
-        .with_single_cert(vec![cert.clone()], key.into())?;
+        .with_single_cert(chain, key.into())?;
         tls.alpn_protocols = vec![b"h3".to_vec()];
         tls.max_early_data_size = 0;
+        tls.send_tls13_tickets = 0;
+        tls.session_storage = Arc::new(rustls::server::NoServerSessionStorage {});
         let mut config = quinn::ServerConfig::with_crypto(Arc::new(
             quinn::crypto::rustls::QuicServerConfig::try_from(tls)?,
         ));
@@ -109,6 +125,16 @@ impl FixtureServer {
                         requests.spawn(async move {
                             let (request, mut stream) = resolver.resolve_request().await?;
                             events.requests.fetch_add(1, Ordering::SeqCst);
+                            let asset = request.uri().path().starts_with("/asset/");
+                            if asset {
+                                events.asset_requests.fetch_add(1, Ordering::SeqCst);
+                            }
+                            {
+                                let mut paths = events.paths.lock().unwrap();
+                                if paths.len() < 256 {
+                                    paths.push(request.uri().to_string());
+                                }
+                            }
                             events.request_started.notify_one();
                             let _active = ActiveRequest::new(events.clone());
                             if let Some(delay) = response_delay {
@@ -119,6 +145,7 @@ impl FixtureServer {
                             let response = http::Response::builder()
                                 .status(200)
                                 .header("content-type", "text/plain")
+                                .header("access-control-allow-origin", "*")
                                 .body(())?;
                             stream.send_response(response).await?;
                             stream
@@ -129,6 +156,9 @@ impl FixtureServer {
                                 .await?;
                             stream.finish().await?;
                             events.completed.fetch_add(1, Ordering::SeqCst);
+                            if asset {
+                                events.asset_completed.fetch_add(1, Ordering::SeqCst);
+                            }
                             Ok::<(), Box<dyn std::error::Error + Send + Sync>>(())
                         });
                     }

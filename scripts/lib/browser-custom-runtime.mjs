@@ -53,6 +53,7 @@ export const LEGACY_BRIDGE_PATCH_ID = "sorng-tls-v2-682c378-1";
 export const HTTP2_BRIDGE_PATCH_ID = "sorng-tls-v2-682c378-2";
 export const PROXY_APPLIED_BRIDGE_PATCH_ID = "sorng-tls-v2-682c378-3";
 export const BRIDGE_PATCH_ID = "sorng-tls-v2-682c378-4";
+export const HTTP3_BRIDGE_PATCH_ID = "sorng-tls-v2-682c378-5";
 export const BRIDGE_V2 = Object.freeze({
   symbol: "cef_sorng_tls_get_api_v2",
   factorySymbol: "cef_sorng_tls_create_context_v2",
@@ -67,6 +68,11 @@ export const BRIDGE_V2 = Object.freeze({
     "proxy-applied",
     "bounded-context-retirement",
   ]),
+});
+// Additive candidate contract. The default remains the accepted revision four.
+export const HTTP3_BRIDGE_V2 = Object.freeze({
+  ...BRIDGE_V2,
+  capabilities: Object.freeze([...BRIDGE_V2.capabilities, "owned-http3"]),
 });
 // Existing reviewed packages stay usable while a new engine is built and
 // accepted. A revision may claim only its exact implemented protocol contract.
@@ -256,15 +262,17 @@ export function validateSourceLock(lock) {
   )
     fail("Unsupported bridge ABI/export");
   const revisionContract =
-    lock.bridge.patchId === BRIDGE_PATCH_ID
-      ? BRIDGE_V2
-      : lock.bridge.patchId === PROXY_APPLIED_BRIDGE_PATCH_ID
-        ? PROXY_APPLIED_BRIDGE_V2
-        : lock.bridge.patchId === HTTP2_BRIDGE_PATCH_ID
-          ? HTTP2_BRIDGE_V2
-          : lock.bridge.patchId === LEGACY_BRIDGE_PATCH_ID
-            ? LEGACY_BRIDGE_V2
-            : null;
+    lock.bridge.patchId === HTTP3_BRIDGE_PATCH_ID
+      ? HTTP3_BRIDGE_V2
+      : lock.bridge.patchId === BRIDGE_PATCH_ID
+        ? BRIDGE_V2
+        : lock.bridge.patchId === PROXY_APPLIED_BRIDGE_PATCH_ID
+          ? PROXY_APPLIED_BRIDGE_V2
+          : lock.bridge.patchId === HTTP2_BRIDGE_PATCH_ID
+            ? HTTP2_BRIDGE_V2
+            : lock.bridge.patchId === LEGACY_BRIDGE_PATCH_ID
+              ? LEGACY_BRIDGE_V2
+              : null;
   if (!revisionContract)
     fail("Bridge patchId differs from a supported frozen native contract");
   filePin(lock.bridge.header, "bridge.header");
@@ -757,10 +765,18 @@ export async function inspectCustomRuntimeExports(
     }
   }
   const requiredExports = [BRIDGE_V2.symbol, BRIDGE_V2.factorySymbol];
-  if ([BRIDGE_PATCH_ID, PROXY_APPLIED_BRIDGE_PATCH_ID].includes(patchId))
+  if (
+    [
+      HTTP3_BRIDGE_PATCH_ID,
+      BRIDGE_PATCH_ID,
+      PROXY_APPLIED_BRIDGE_PATCH_ID,
+    ].includes(patchId)
+  )
     requiredExports.push("cef_sorng_tls_apply_proxy_v2");
-  if (patchId === BRIDGE_PATCH_ID)
+  if ([HTTP3_BRIDGE_PATCH_ID, BRIDGE_PATCH_ID].includes(patchId))
     requiredExports.push("cef_sorng_tls_registry_stats_v2");
+  if (patchId === HTTP3_BRIDGE_PATCH_ID)
+    requiredExports.push("cef_sorng_tls_configure_datagrams_v2");
   for (const symbol of requiredExports)
     if (!exports.has(symbol))
       fail(`Custom CEF missing defined V2 export: ${symbol}`);

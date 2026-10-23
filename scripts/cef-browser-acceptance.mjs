@@ -19,6 +19,7 @@ import {
 import {
   stageCustomRuntimePackage,
   BRIDGE_PATCH_ID,
+  HTTP3_BRIDGE_PATCH_ID,
   PROXY_APPLIED_BRIDGE_PATCH_ID,
   HTTP2_BRIDGE_PATCH_ID,
   LEGACY_BRIDGE_PATCH_ID,
@@ -206,16 +207,203 @@ export const HTTP2_CHECKS = Object.freeze([
   "permission-churn",
 ]);
 
+export const HTTP3_CHECKS = Object.freeze([
+  "multiplex",
+  "deny",
+  "delay",
+  "revoke",
+  "isolation",
+  "cross-authority",
+  "h2-fallback",
+  "h1-fallback",
+]);
+
+/** Protocol observations are required in addition to process/network gates. */
+export function assessNativeHttp3Report(report, runId, expectedPatchId, check) {
+  const failures = [];
+  const require = (ok, reason) => {
+    if (!ok) failures.push(reason);
+  };
+  const count = (value) => Number.isSafeInteger(value) && value >= 0;
+  const exactAssets = (paths) =>
+    Array.isArray(paths) &&
+    paths.length === 32 &&
+    new Set(paths).size === 32 &&
+    Array.from({ length: 32 }, (_, n) => `/asset/${n}`).every((path) =>
+      paths.includes(path),
+    );
+  require(HTTP3_CHECKS.includes(check), "known HTTP3 check required");
+  require(expectedPatchId === HTTP3_BRIDGE_PATCH_ID &&
+    report?.patchId === expectedPatchId &&
+    report?.loadedBridgeVerified ===
+      true, "exact revision-five loaded bridge required");
+  require(report?.probeKind === "native-owned-http3" &&
+    report?.runId === runId &&
+    typeof runId === "string" &&
+    runId.length > 0 &&
+    report?.check === check, "fresh matching HTTP3 report identity required");
+  require(report?.ok === true &&
+    report?.clean === true &&
+    report?.closed === true &&
+    report?.shutdownComplete ===
+      true, "clean closed native HTTP3 run required");
+  require(report?.productionTlsFactory === true &&
+    report?.globalQuicOverride ===
+      false, "production scoped TLS/datagram factory required");
+  require(report?.serverEarlyDataDisabled === true &&
+    report?.serverSessionTicketsDisabled ===
+      true, "fixture early-data/resumption barriers required");
+  require(Array.isArray(report?.failures) &&
+    report.failures.length === 0, "native HTTP3 failures present or missing");
+  const slots = Array.isArray(report?.slots) ? report.slots : [];
+  require(slots.length ===
+    (check === "isolation"
+      ? 4
+      : 2), "complete independent native HTTP3 contexts required");
+  require(Array.isArray(report?.flowsAfterStop) &&
+    report.flowsAfterStop.length === slots.length &&
+    report.flowsAfterStop.every(
+      (n) => n === 0,
+    ), "all owned UDP flows must close after stop");
+  require(new Set(slots.map((row) => row?.sessionId)).size === slots.length &&
+    slots.every(
+      (row) => typeof row?.sessionId === "string" && row.sessionId.length > 0,
+    ), "distinct actual context identities required");
+  if (check === "isolation")
+    require(report?.lateOldCleanup === true &&
+      count(report?.survivorAfterLateOldCleanup) &&
+      report.survivorAfterLateOldCleanup >
+        0, "old A cleanup must leave actual B traffic and fresh A2/C operational");
+  for (const [index, raw] of slots.entries()) {
+    const row = raw && typeof raw === "object" ? raw : {};
+    const counters = [
+      "h3Requests",
+      "h3Completed",
+      "h3AssetRequests",
+      "h3AssetCompleted",
+      "h3Connections",
+      "h3Peak",
+      "udpFlowsOpened",
+      "udpSent",
+      "udpReceived",
+      "admitted",
+      "denied",
+      "quicAdmitted",
+      "quicDenied",
+      "quicVerified",
+      "alternateQuicDenied",
+      "alternateQuicVerified",
+      "alternateUdpFlowsOpened",
+      "deferred",
+      "revokeBaseline",
+    ];
+    require(counters.every((name) => count(row[name])) &&
+      row.h3Completed <=
+        row.h3Requests, `context ${index}: finite nonnegative native counters required`);
+    const fallback = ["h2-fallback", "h1-fallback"].includes(check);
+    require(row.proxyApplied === true &&
+      row.datagramsApplied ===
+        !fallback, `context ${index}: separate proxy/datagram ACK evidence required`);
+    require(row.beforeAdmissionHttp3Requests ===
+      0, `context ${index}: HTTP3 requests before admission`);
+    require(count(row.admitted) &&
+      row.admitted >
+        0, `context ${index}: bootstrap native admission required`);
+    if (fallback) {
+      const protocol = check === "h2-fallback" ? "h2" : "http/1.1";
+      const assets = Array.isArray(row.tcpRequests)
+        ? row.tcpRequests.filter((r) => /^\/asset\/\d+$/.test(r?.path))
+        : [];
+      require(row.h3Requests === 0 &&
+        row.h3Connections === 0 &&
+        row.udpFlowsOpened ===
+          0, `context ${index}: unsupported UDP route must stay TCP-only`);
+      require(exactAssets(assets.map((r) => r.path)) &&
+        assets.every(
+          (r) => r.protocol === protocol,
+        ), `context ${index}: actual ${protocol} fallback assets required`);
+      continue;
+    }
+    require(row.udpFlowsOpened > 0 &&
+      row.udpSent > 0 &&
+      row.udpReceived >
+        0, `context ${index}: actual owned datagram traffic required`);
+    require(row.quicVerified >
+      0, `context ${index}: actual valid native QUIC certificate evidence required`);
+    if (check === "deny") {
+      require(row.denied > 0 &&
+        row.quicDenied > 0 &&
+        row.h3Requests ===
+          0, `context ${index}: denied QUIC certificate must release no HTTP3 requests`);
+      continue;
+    }
+    require(row.quicAdmitted >
+      0, `context ${index}: actual native QUIC admission completion required`);
+    const revoked =
+      check === "revoke" || (check === "isolation" && index === 0);
+    if (revoked) {
+      require(row.revoked === true &&
+        row.revokedNavigationRejected === true &&
+        row.h3Requests > 0 &&
+        row.revokeBaseline ===
+          row.h3Requests, `context ${index}: revocation must stop new HTTP3 requests`);
+    } else {
+      const paths = Array.isArray(row.h3Paths)
+        ? row.h3Paths.map((value) => {
+            try {
+              const u = new URL(value);
+              return u.origin === "https://http3.fixture.test" &&
+                !u.username &&
+                !u.password &&
+                !u.search &&
+                !u.hash
+                ? u.pathname
+                : null;
+            } catch {
+              return null;
+            }
+          })
+        : [];
+      require(paths.length === row.h3Requests &&
+        paths.every((path) => path !== null) &&
+        exactAssets(
+          paths.filter((path) => path?.startsWith("/asset/")),
+        ), `context ${index}: exact unique same-authority assets 0..31 required`);
+      require(row.h3Requests >= 32 &&
+        row.h3Completed >= 32 &&
+        row.h3AssetRequests === 32 &&
+        row.h3AssetCompleted === 32 &&
+        row.h3Connections === 1 &&
+        row.h3Peak >
+          1, `context ${index}: 32 multiplexed HTTP3 assets on one QUIC connection required`);
+    }
+    if (check === "delay")
+      require(row.deferred > 0 &&
+        count(row.minimumAdmissionDelayMs) &&
+        row.minimumAdmissionDelayMs >=
+          300, `context ${index}: actual native QUIC admission hold required`);
+    if (check === "cross-authority")
+      require(row.alternateQuicDenied > 0 &&
+        row.alternateQuicVerified > 0 &&
+        row.alternateUdpFlowsOpened >
+          0, `context ${index}: alternate authority requires separately verified and denied QUIC evidence`);
+  }
+  return { ok: failures.length === 0, failures, productionReady: false };
+}
+
 /** Scrub experiment controls even when launching another acceptance suite. */
 export function http2Environment(environment, suite, check) {
   if (suite === "http2" && !HTTP2_CHECKS.includes(check))
     throw new Error("Unknown HTTP2 check");
-  if (suite !== "http2" && check !== undefined)
-    throw new Error("check applies only to http2");
+  if (suite === "http3" && !HTTP3_CHECKS.includes(check))
+    throw new Error("Unknown HTTP3 check");
+  if (!["http2", "http3"].includes(suite) && check !== undefined)
+    throw new Error("check applies only to http2/http3");
   const env = { ...environment };
   for (const name of Object.keys(env))
     if (
       name.startsWith("SORNG_CEF_HTTP2_") ||
+      name.startsWith("SORNG_CEF_HTTP3_") ||
       [
         "PROBE_VISIBLE",
         "PROBE_FIXTURE_NODELAY",
@@ -228,6 +416,7 @@ export function http2Environment(environment, suite, check) {
     env.SORNG_CEF_HTTP2_CHECK = check === "h1-fallback" ? "multiplex" : check;
     env.SORNG_CEF_HTTP2_EXPECT = check === "h1-fallback" ? "h1" : "retirement";
   }
+  if (suite === "http3") env.SORNG_CEF_HTTP3_CHECK = check;
   return env;
 }
 
@@ -519,7 +708,7 @@ export function assessNativeTlsReport(report, runId, expectedPatchId) {
     report?.runId === runId, "fresh invocation correlation missing");
   require(matchesTlsRevision(report?.patchId, expectedPatchId) &&
     report?.loadedBridgeVerified === true, "frozen loaded V2 bridge missing");
-  if (report?.patchId === TLS_PATCH_ID) {
+  if ([TLS_PATCH_ID, HTTP3_BRIDGE_PATCH_ID].includes(report?.patchId)) {
     const retirement = assessRegistrationRetirement(
       report.registrationRetirementCases,
     );
@@ -2604,6 +2793,7 @@ export function acceptanceCustomPlan(plan, target, stem) {
       "sorng_cef_acceptance",
       "sorng_cef_tls_acceptance",
       "sorng_cef_http2_acceptance",
+      "sorng_cef_http3_acceptance",
     ].includes(stem)
   )
     throw new Error("Unknown acceptance client");
@@ -2629,14 +2819,18 @@ export async function stageAcceptance({
   target,
   suite = "legacy",
 }) {
-  if (!["legacy", "tls", "http2"].includes(suite))
+  if (!["legacy", "tls", "http2", "http3"].includes(suite))
     throw new Error("Unknown acceptance suite");
+  if (suite === "http3" && !customPlan)
+    throw new Error("HTTP3 staging requires a verified custom runtime plan");
   const stem =
     suite === "tls"
       ? "sorng_cef_tls_acceptance"
       : suite === "http2"
         ? "sorng_cef_http2_acceptance"
-        : "sorng_cef_acceptance";
+        : suite === "http3"
+          ? "sorng_cef_http3_acceptance"
+          : "sorng_cef_acceptance";
   if (customPlan) {
     if (runtime) throw new Error("Choose --custom-plan or --runtime, not both");
     const plan = acceptanceCustomPlan(
@@ -2847,7 +3041,7 @@ export function assessPrivateDesktop(result) {
 }
 
 function observeWindowsSandbox({ pid, executable, output, suite }) {
-  const observerPath = ["tls", "http2"].includes(suite)
+  const observerPath = ["tls", "http2", "http3"].includes(suite)
     ? "native_tls_acceptance"
     : "native_acceptance";
   const observer = spawn(
@@ -2893,14 +3087,16 @@ export async function runAcceptance({
   only,
   check,
 }) {
-  if (!["legacy", "tls", "http2", "measure", "menu"].includes(suite))
+  if (!["legacy", "tls", "http2", "http3", "measure", "menu"].includes(suite))
     throw new Error("Unknown acceptance suite");
   const controlledEnvironment = http2Environment(process.env, suite, check);
   if (
-    suite === "http2" &&
+    ["http2", "http3"].includes(suite) &&
     (manual !== "false" || interactiveDesktop !== "false")
   )
-    throw new Error("HTTP2 acceptance requires automated isolated execution");
+    throw new Error(
+      "HTTP2/HTTP3 acceptance requires automated isolated execution",
+    );
   if (!["true", "false"].includes(manual))
     throw new Error("--manual must be true or false");
   const desktop = desktopFor({
@@ -2920,7 +3116,7 @@ export async function runAcceptance({
   // Revision-four TLS acceptance also exercises 1,025 context lifecycles.
   // Keep a finite private-run bound without confusing it with page timeouts.
   timeoutMs = Number(
-    timeoutMs ?? (["tls", "http2"].includes(suite) ? 600000 : 90000),
+    timeoutMs ?? (["tls", "http2", "http3"].includes(suite) ? 600000 : 90000),
   );
   if (
     !Number.isSafeInteger(timeoutMs) ||
@@ -2938,7 +3134,10 @@ export async function runAcceptance({
     );
     if (staging?.kind === "sorng-cef-custom-package") {
       expectedPatchId = staging.preflight?.bridge?.patchId;
-      if (!TLS_SUPPORTED_PATCH_IDS.includes(expectedPatchId))
+      if (!(
+        TLS_SUPPORTED_PATCH_IDS.includes(expectedPatchId) ||
+        (suite === "http3" && expectedPatchId === HTTP3_BRIDGE_PATCH_ID)
+      ))
         throw new Error(
           "Staged custom runtime has no supported bridge revision pin",
         );
@@ -2949,6 +3148,10 @@ export async function runAcceptance({
   if (suite === "http2" && expectedPatchId !== TLS_PATCH_ID)
     throw new Error(
       "HTTP2 acceptance requires an exactly staged revision-four runtime",
+    );
+  if (suite === "http3" && expectedPatchId !== HTTP3_BRIDGE_PATCH_ID)
+    throw new Error(
+      "HTTP3 acceptance requires an exactly staged revision-five runtime",
     );
   await ensureBrowserSandboxAccess({
     bundle,
@@ -3228,7 +3431,9 @@ export async function runAcceptance({
       ? assessNativeTlsReport(native, runId, expectedPatchId)
       : suite === "http2"
         ? assessNativeHttp2Report(native, runId, expectedPatchId, check)
-        : assessNativeReport(native, expectedPatchId),
+        : suite === "http3"
+          ? assessNativeHttp3Report(native, runId, expectedPatchId, check)
+          : assessNativeReport(native, expectedPatchId),
     nativeCrashSummary,
   );
   if (exitCode !== 0 || timedOut)
@@ -3241,7 +3446,7 @@ export async function runAcceptance({
       "native network log missing or unexpected DNS/socket path",
     );
   if (
-    ["tls", "http2"].includes(suite) &&
+    ["tls", "http2", "http3"].includes(suite) &&
     process.platform === "win32" &&
     sandbox?.ok !== true
   )
@@ -3260,7 +3465,7 @@ export async function runAcceptance({
     run,
     runId,
     suite,
-    ...(suite === "http2" ? { check, expectedPatchId } : {}),
+    ...(["http2", "http3"].includes(suite) ? { check, expectedPatchId } : {}),
     exitCode,
     timedOut,
     desktop: desktopRecord,
@@ -3272,6 +3477,8 @@ export async function runAcceptance({
     nativeTlsFixtureAccepted: suite === "tls" && assessed.failures.length === 0,
     nativeHttp2FixtureAccepted:
       suite === "http2" && assessed.failures.length === 0,
+    nativeHttp3FixtureAccepted:
+      suite === "http3" && assessed.failures.length === 0,
     actualCefAcceptance: false,
     publicProviderAcceptance: false,
     productionReady: false,
@@ -3305,6 +3512,7 @@ async function main(args) {
   if (command === "run") return launch(options.suite, options);
   if (command === "run-tls") return launch("tls", options);
   if (command === "run-http2") return launch("http2", options);
+  if (command === "run-http3") return launch("http3", options);
   if (command === "measure") {
     const { "window-ms": windowMs, ...rest } = options;
     return launch("measure", { ...rest, windowMs });
@@ -3319,7 +3527,7 @@ async function main(args) {
     return result;
   }
   throw new Error(
-    "Usage: node scripts/cef-browser-acceptance.mjs stage (--custom-plan PREPARED_PLAN_JSON | --runtime OFFICIAL_SDK) --client NATIVE_CLIENT --output NEW_DIR --target TARGET [--helper UNIX_HELPER] [--app-plist MACOS_INFO_PLIST] [--suite tls|http2] | run-http2 --executable PACKAGED_EXECUTABLE --output NEW_DIR --check multiplex|deny|delay|revoke|cross-authority|wss|h1-fallback|permission-churn | run-tls --executable PACKAGED_EXECUTABLE --output NEW_DIR [--manual true] | run --executable LEGACY_EXECUTABLE --output NEW_DIR | measure --executable LEGACY_EXECUTABLE --output NEW_DIR [--window-ms 5000..40000] [--only SCENARIO_ID,...] | menu --executable LEGACY_EXECUTABLE --output NEW_DIR. On Windows every run starts the client on a private desktop; --use-interactive-desktop true puts its windows on the desktop of whoever is using the machine instead. HTTP2 runs are automated and reject the interactive override.",
+    "Usage: node scripts/cef-browser-acceptance.mjs stage (--custom-plan PREPARED_PLAN_JSON | --runtime OFFICIAL_SDK) --client NATIVE_CLIENT --output NEW_DIR --target TARGET [--helper UNIX_HELPER] [--app-plist MACOS_INFO_PLIST] [--suite tls|http2|http3] | run-http3 --executable PACKAGED_EXECUTABLE --output NEW_DIR --check multiplex|deny|delay|revoke|isolation|cross-authority|h2-fallback|h1-fallback | run-http2 --executable PACKAGED_EXECUTABLE --output NEW_DIR --check multiplex|deny|delay|revoke|cross-authority|wss|h1-fallback|permission-churn | run-tls --executable PACKAGED_EXECUTABLE --output NEW_DIR [--manual true] | run --executable LEGACY_EXECUTABLE --output NEW_DIR | measure --executable LEGACY_EXECUTABLE --output NEW_DIR [--window-ms 5000..40000] [--only SCENARIO_ID,...] | menu --executable LEGACY_EXECUTABLE --output NEW_DIR. On Windows every run starts the client on a private desktop; --use-interactive-desktop true puts its windows on the desktop of whoever is using the machine instead. HTTP2 runs are automated and reject the interactive override.",
   );
 }
 if (

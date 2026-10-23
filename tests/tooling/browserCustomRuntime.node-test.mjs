@@ -22,6 +22,8 @@ import path from "node:path";
 import {
   BRIDGE_V2,
   BRIDGE_PATCH_ID,
+  HTTP3_BRIDGE_PATCH_ID,
+  HTTP3_BRIDGE_V2,
   PROXY_APPLIED_BRIDGE_PATCH_ID,
   PROXY_APPLIED_BRIDGE_V2,
   HTTP2_BRIDGE_PATCH_ID,
@@ -385,6 +387,10 @@ test("strict source pins and ABI reject branches, missing values, unsupported ca
 test("known bridge revisions require their exact protocol capabilities", () => {
   const current = fixture().lock;
   assert.equal(validateSourceLock(current).bridge.patchId, BRIDGE_PATCH_ID);
+  const http3 = clone(current);
+  http3.bridge.patchId = HTTP3_BRIDGE_PATCH_ID;
+  http3.bridge.capabilities = [...HTTP3_BRIDGE_V2.capabilities];
+  assert.equal(validateSourceLock(http3).bridge.patchId, HTTP3_BRIDGE_PATCH_ID);
   const proxyApplied = clone(current);
   proxyApplied.bridge.patchId = PROXY_APPLIED_BRIDGE_PATCH_ID;
   proxyApplied.bridge.capabilities = [...PROXY_APPLIED_BRIDGE_V2.capabilities];
@@ -404,6 +410,13 @@ test("known bridge revisions require their exact protocol capabilities", () => {
     LEGACY_BRIDGE_PATCH_ID,
   );
   for (const [patchId, capabilities] of [
+    [HTTP3_BRIDGE_PATCH_ID, BRIDGE_V2.capabilities],
+    [BRIDGE_PATCH_ID, HTTP3_BRIDGE_V2.capabilities],
+    [HTTP3_BRIDGE_PATCH_ID, [...HTTP3_BRIDGE_V2.capabilities, "http1-only"]],
+    [
+      HTTP3_BRIDGE_PATCH_ID,
+      HTTP3_BRIDGE_V2.capabilities.filter((v) => v !== "proxy-applied"),
+    ],
     [BRIDGE_PATCH_ID, PROXY_APPLIED_BRIDGE_V2.capabilities],
     [PROXY_APPLIED_BRIDGE_PATCH_ID, BRIDGE_V2.capabilities],
     [BRIDGE_PATCH_ID, LEGACY_BRIDGE_V2.capabilities],
@@ -1202,7 +1215,7 @@ function nativeFixture(target, symbols = [], library = false) {
     bytes.writeBigUInt64LE(24n, 248);
     bytes.writeUInt32LE(3, 260);
     bytes.writeBigUInt64LE(800n, 280);
-    bytes.writeBigUInt64LE(512n, 288);
+    bytes.writeBigUInt64LE(BigInt(Math.max(512, symbols.length * 128)), 288);
     symbols.forEach((symbol, i) => {
       const entry = 512 + i * 24;
       bytes.writeUInt32LE(i * 128, entry);
@@ -1226,7 +1239,7 @@ function nativeFixture(target, symbols = [], library = false) {
     bytes.writeUInt32LE(512, 64);
     bytes.writeUInt32LE(symbols.length, 68);
     bytes.writeUInt32LE(800, 72);
-    bytes.writeUInt32LE(512, 76);
+    bytes.writeUInt32LE(Math.max(512, symbols.length * 128), 76);
     symbols.forEach((symbol, i) => {
       const entry = 512 + i * 16;
       bytes.writeUInt32LE(i * 128, entry);
@@ -1711,6 +1724,30 @@ test("proxy ACK export is required only for its explicit reviewed revision", asy
       ),
     );
     await inspectCustomRuntimeExports(file, target, BRIDGE_PATCH_ID);
+    await assert.rejects(
+      inspectCustomRuntimeExports(file, target, HTTP3_BRIDGE_PATCH_ID),
+      /cef_sorng_tls_configure_datagrams_v2/,
+    );
+    await writeFile(
+      file,
+      nativeFixture(
+        target,
+        [
+          BRIDGE_V2.symbol,
+          BRIDGE_V2.factorySymbol,
+          "cef_sorng_tls_apply_proxy_v2",
+          "cef_sorng_tls_registry_stats_v2",
+          "cef_sorng_tls_configure_datagrams_v2",
+        ],
+        true,
+      ),
+    );
+    const http3 = await inspectCustomRuntimeExports(
+      file,
+      target,
+      HTTP3_BRIDGE_PATCH_ID,
+    );
+    assert.ok(http3.exports.includes("cef_sorng_tls_configure_datagrams_v2"));
     const knownHttp2 = await inspectCustomRuntimeExports(
       file,
       target,
