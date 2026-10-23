@@ -526,8 +526,8 @@ export function buildEnvironment(
   const locations = { TOOLS: toolsRoot, SOURCE: source, DEPOT: depot };
   for (const [key, val] of Object.entries(map.environment))
     env[key] = val.replace(
-      /^@(TOOLS|SOURCE|DEPOT)@\//,
-      (_, name) => `${locations[name]}${path.sep}`,
+      /^@(TOOLS|SOURCE|DEPOT)@\/(.+)$/,
+      (_, name, suffix) => path.join(locations[name], suffix),
     );
   env.PATH = [
     depot,

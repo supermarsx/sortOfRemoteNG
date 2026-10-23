@@ -17,6 +17,7 @@ import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import YAML from "yaml";
+import { Script } from "node:vm";
 import {
   RUNNERS,
   MAX_RELEASE_ASSET,
@@ -951,6 +952,115 @@ test("runner maps reject host paths, unsupported env, traversal and unbounded pa
     assert.throws(() => validateRunnerMap(map, target));
   }
 });
+test("actual Mac producer maps keep POSIX, drive and UNC roots absolute without double-root GN paths", async (t) => {
+  const source = await readFile(
+    new URL("../../scripts/cef-runtime-ci.mjs", import.meta.url),
+    "utf8",
+  );
+  // Execute the actual function with each platform's path implementation. This
+  // checks POSIX behavior on Windows too, without adding a production override.
+  const functionSource = source
+    .slice(
+      source.indexOf("export function buildEnvironment("),
+      source.indexOf("export async function sourceWorkspace("),
+    )
+    .replace("export function", "function");
+  const roots = [
+    {
+      api: path.posix,
+      tools: "/",
+      source: "/source/",
+      depot: "/depot/",
+      developer: "/Applications/Xcode_26.3.app/Contents/Developer",
+      sourceToolchain: "/source/toolchain",
+      depotSdk: "/depot/sdk",
+    },
+    {
+      api: path.win32,
+      tools: "C:\\",
+      source: "C:\\source\\",
+      depot: "C:\\depot\\",
+      developer: "C:\\Applications\\Xcode_26.3.app\\Contents\\Developer",
+      sourceToolchain: "C:\\source\\toolchain",
+      depotSdk: "C:\\depot\\sdk",
+    },
+    {
+      api: path.win32,
+      tools: "\\\\server\\share\\",
+      source: "\\\\server\\share\\source\\",
+      depot: "\\\\server\\share\\depot\\",
+      developer:
+        "\\\\server\\share\\Applications\\Xcode_26.3.app\\Contents\\Developer",
+      sourceToolchain: "\\\\server\\share\\source\\toolchain",
+      depotSdk: "\\\\server\\share\\depot\\sdk",
+    },
+  ];
+  for (const [selected, namespace] of [
+    [
+      "x86_64-apple-darwin",
+      "20261023-registration-retirement-lf-macintel-xcode26-3-sdk26-2",
+    ],
+    [
+      "aarch64-apple-darwin",
+      "20261023-registration-retirement-lf-macarm-intelcross-xcode26-3-sdk26-2",
+    ],
+  ]) {
+    const map = JSON.parse(
+      await readFile(
+        path.join(
+          root,
+          "native",
+          "cef-build-inputs",
+          namespace,
+          `cef-ci-runner-${selected}.json`,
+        ),
+        "utf8",
+      ),
+    );
+    validateRunnerMap(map, selected);
+    for (const locations of roots) {
+      await t.test(`${selected} ${locations.tools}`, () => {
+        const actual = new Script(
+          `${functionSource}\nbuildEnvironment;`,
+        ).runInNewContext({ path: locations.api, process: { env: {} } });
+        const value = actual(
+          {
+            ...map,
+            environment: {
+              ...map.environment,
+              GYP_MSVS_OVERRIDE_PATH: "@SOURCE@/toolchain",
+              WDK_DIR: "@DEPOT@/sdk",
+            },
+          },
+          {
+            toolsRoot: locations.tools,
+            source: locations.source,
+            depot: locations.depot,
+            python: "/reviewed/python",
+          },
+          { GH_TOKEN: "never-forward", PATH: "system" },
+        );
+        assert.equal(value.DEVELOPER_DIR, locations.developer);
+        assert.equal(
+          value.SDKROOT,
+          locations.developer +
+            (locations.api === path.posix
+              ? "/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk"
+              : "\\Platforms\\MacOSX.platform\\Developer\\SDKs\\MacOSX.sdk"),
+        );
+        assert.equal(value.GYP_MSVS_OVERRIDE_PATH, locations.sourceToolchain);
+        assert.equal(value.WDK_DIR, locations.depotSdk);
+        assert.equal(value.MACOSX_DEPLOYMENT_TARGET, "14.0");
+        assert.equal(
+          value.CEF_ENABLE_ARM64,
+          selected.startsWith("aarch64") ? "1" : undefined,
+        );
+        assert.equal(value.GH_TOKEN, undefined);
+      });
+    }
+  }
+});
+
 test("child build env relocates reviewed paths and strips CI tokens and implicit build overrides", () => {
   const env = buildEnvironment(
     runner(),
@@ -984,7 +1094,7 @@ test("child build env relocates reviewed paths and strips CI tokens and implicit
     "PYTHONPATH",
   ])
     assert.equal(env[key], undefined);
-  assert.equal(env.GYP_MSVS_OVERRIDE_PATH, `/tools${path.sep}native`);
+  assert.equal(env.GYP_MSVS_OVERRIDE_PATH, path.join("/tools", "native"));
   assert.equal(env.KEEP, "yes");
   assert.equal(env.DEPOT_TOOLS_UPDATE, "0");
 });
