@@ -1,0 +1,54 @@
+{
+  "schemaVersion": 1,
+  "kind": "sorng-cef-build-input-review",
+  "scope": "Target-only observed Xcode 26.3 / SDK 26.2 candidate; not build, native acceptance, or publication evidence",
+  "baseNamespace": "native/cef-build-inputs/20261023-registration-retirement-lf",
+  "baseSourceLockIdentity": "254fc0acc6001def832bed411ba320bfebd8111aeca64ee8c572512c0369d689",
+  "baseReviewReceiptSha256": "b9d9a7ff8d5446cc2eef2d598144fd48f0dece4fd02818d2974499b65531f9da",
+  "inheritedLfNormalizationReceiptSha256": "c7b7f956b9838d02a2a9cb9c0f719832cfdfa5ad21e204ea88434bb8f045d8b9",
+  "sourceLockIdentity": "a679635c674febe0b151f72aa6cdfedb48b7ed0efa3dc73c737b800eff49aa14",
+  "sourceLockRawSha256": "1a037adc0c22a2d0396aba493b2971211ac6efb5f77fe2f94e6a5f92d04f266f",
+  "target": "aarch64-apple-darwin",
+  "bridgeAbiVersion": 2,
+  "bridgeRevision": 4,
+  "sourceSemantics": "All 12 reviewed patch files, the ABI 2 / revision 4 bridge header, target GN arguments, and upstream commits retain their exact raw bytes. Only per-child Xcode/SDK paths and measured SDK/clang/runner-map pins change. Python bytes and deployment target 14.0 remain unchanged.",
+  "actualObservation": {
+    "runId": 39994326173,
+    "sourceHead": "fcd18b4578310cfea55328cf43a2a3d6fa672adb",
+    "artifactId": 12518839249,
+    "observationSha256": "ffda30c7decba3eb1f69d5a0b5987471c6ce578d3ce9b5c317dd57f0bc7b3f68",
+    "target": "x86_64-apple-darwin",
+    "image": {
+      "os": "macos15",
+      "version": "20260824.0482.1"
+    },
+    "selectedApplication": "/Applications/Xcode_26.3.app",
+    "xcodeVersion": "26.3",
+    "xcodeBuild": "17C529",
+    "sdkVersion": "26.2",
+    "selectedCandidateComplete": true,
+    "overallInventoryTruncated": true,
+    "overallDeadlineReached": true,
+    "scope": "Complete positive selected candidate measured before the inventory deadline later expired on Xcode 16.1. This is not an exhaustive absence claim."
+  },
+  "producerHost": {
+    "acceptanceRunner": "macos-15",
+    "architecture": "x64",
+    "imageOS": "macos15",
+    "imageVersion": "20260824.0482.1",
+    "platform": "darwin",
+    "runner": "macos-15-intel"
+  },
+  "nativeAcceptanceRequired": true,
+  "toolFileCount": 9,
+  "buildCompatibilityVerified": false,
+  "engineBuilt": false,
+  "nativeAcceptancePassed": false,
+  "published": false,
+  "knownBlockers": [
+    "Actual GN and engine compilation for this new SDK candidate remain required",
+    "SDK 26.2 differs from pinned Chromium official SDK 26.5; the nonofficial use_system_xcode recipe is unchanged and is not accepted by metadata alone",
+    "Both target-native acceptance runs and six-platform publication remain required",
+    "The immutable Windows 9b03 package remains a different source/runtime identity"
+  ]
+}

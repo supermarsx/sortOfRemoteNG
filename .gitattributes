@@ -19,3 +19,5 @@ native/cef-build-inputs/20261023-registration-retirement-lf-winarm-20261021-192-
 native/cef-build-inputs/20261023-registration-retirement-lf-linuxarm-cross-sysroot/** -text -whitespace
 native/cef-build-inputs/20261023-registration-retirement-lf-winx64-git/** -text -whitespace
 native/cef-build-inputs/20261023-registration-retirement-lf-winarm-git/** -text -whitespace
+native/cef-build-inputs/20261023-registration-retirement-lf-macintel-xcode26-3-sdk26-2/** -text -whitespace
+native/cef-build-inputs/20261023-registration-retirement-lf-macarm-intelcross-xcode26-3-sdk26-2/** -text -whitespace
