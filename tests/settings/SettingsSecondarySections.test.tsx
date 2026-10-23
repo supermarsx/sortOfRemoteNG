@@ -104,12 +104,16 @@ describe("Secondary settings section centralization", () => {
     const updateSettings = vi.fn();
     const { container } = render(
       <PerformanceSettings
-        settings={baseSettings}
+        settings={{
+          ...baseSettings,
+          connectionAdmissionMode: "fixed",
+          maxConcurrentConnections: 23,
+        }}
         updateSettings={updateSettings}
       />,
     );
 
-    expect(container.querySelectorAll(".sor-settings-card").length).toBe(4);
+    expect(container.querySelectorAll(".sor-settings-card").length).toBe(5);
     expect(container.querySelector("h3 svg")?.getAttribute("class")).toContain(
       "text-primary",
     );
@@ -118,7 +122,13 @@ describe("Secondary settings section centralization", () => {
     const sectionHeaders = Array.from(
       container.querySelectorAll(".sor-settings-section-header"),
     );
-    expect(sectionHeaders).toHaveLength(4);
+    expect(sectionHeaders.map((header) => header.textContent)).toEqual([
+      "Connection capacity",
+      "Connection Retry",
+      "Performance Monitoring",
+      "Status Checking",
+      "Action Logging",
+    ]);
     for (const header of sectionHeaders) {
       const icon = header.firstElementChild;
       expect(icon?.tagName.toLowerCase()).toBe("svg");
@@ -155,6 +165,22 @@ describe("Secondary settings section centralization", () => {
     expect(updateSettings).toHaveBeenCalledWith(
       expect.objectContaining({ maxLogEntries: 1200 }),
     );
+
+    const connectionLimit = screen.getByRole("combobox", {
+      name: "Connection limit",
+    });
+    expect(connectionLimit.className).toContain("sor-settings-select");
+    expect(connectionLimit.textContent).toContain("Set a connection limit");
+    expect(
+      screen.getByRole("spinbutton", { name: "Maximum connections" }),
+    ).toHaveValue(23);
+    fireEvent.click(connectionLimit);
+    fireEvent.mouseDown(
+      screen.getByRole("option", { name: "Automatic — available memory" }),
+    );
+    expect(updateSettings).toHaveBeenLastCalledWith({
+      connectionAdmissionMode: "automatic",
+    });
   });
 
   it("uses centralized form/range/checkbox classes in ThemeSettings", () => {
