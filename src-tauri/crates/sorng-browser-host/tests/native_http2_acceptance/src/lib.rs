@@ -43,7 +43,7 @@ fn cross_authority() -> bool {
 fn websocket_check() -> bool {
     matches!(
         std::env::var("SORNG_CEF_HTTP2_CHECK").as_deref(),
-        Ok("wss" | "permission-churn")
+        Ok("wss" | "permission-churn" | "proxy-retry")
     )
 }
 fn revoke_check() -> bool {
@@ -118,6 +118,7 @@ const KIND: &str = "native-same-authority-http2";
 mod http2_fixture;
 mod permission_churn_fixture;
 mod proxy_ack_fixture;
+mod proxy_retry_fixture;
 #[path = "../../native_tls_acceptance/src/registry_retirement_fixture.rs"]
 mod registry_retirement_fixture;
 mod websocket_fixture;
@@ -335,7 +336,9 @@ fn create_slot(
                     if let Some(i)=case { enter(&counters[i].active,&counters[i].peak); tokio::time::sleep(Duration::from_millis(CASES[i].response_ms)).await; }
                     let asset=path.contains("/asset-");
                     let body=if asset { "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"1\" height=\"1\"><rect width=\"1\" height=\"1\"/></svg>".to_owned() }
-                        else { let i=case.unwrap_or(0); let images=(0..CASES[i].resources).map(|n|format!("<img src=\"/case-{i}/asset-{n}.svg\">" )).collect::<String>(); format!("<!doctype html><title>marker-{index}-{path}</title><body>{images}</body>") };
+                        else { let i=case.unwrap_or(0); let images=(0..CASES[i].resources).map(|n|format!("<img src=\"/case-{i}/asset-{n}.svg\">" )).collect::<String>();
+                            let socket=if websocket_check(){r#"<script>const ws=new WebSocket(location.origin.replace(/^http/,'ws')+'/socket');ws.onopen=()=>ws.send('fixture');ws.onmessage=e=>{if(e.data==='fixture'){const i=new Image();i.src='/wss-ok'}}</script>"#}else{""};
+                            format!("<!doctype html><title>marker-{index}-{path}</title><body>{images}{socket}</body>") };
                     let content_type=if asset {"image/svg+xml"}else{"text/html"};
                     let response=format!("HTTP/1.1 200 OK\r\nContent-Type: {content_type}\r\nCache-Control: no-store\r\nContent-Length: {}\r\nConnection: keep-alive\r\n\r\n{body}",body.len());
                     let result=stream.write_all(response.as_bytes()).await;
@@ -409,6 +412,9 @@ fn create_slot(
     })
 }
 fn execute(bootstrap: &mut dyn RuntimeBootstrap, paths: &BundlePaths) -> Result {
+    if std::env::var("SORNG_CEF_HTTP2_CHECK").as_deref() == Ok("proxy-retry") {
+        return proxy_retry_fixture::execute(bootstrap, paths);
+    }
     if std::env::var("SORNG_CEF_HTTP2_CHECK").as_deref() == Ok("permission-churn") {
         return permission_churn_fixture::execute(bootstrap, paths);
     }
