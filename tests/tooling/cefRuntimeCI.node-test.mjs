@@ -1148,7 +1148,8 @@ test("workflow has manual/default-branch guards, six targets, protected least-pr
   );
   assert.doesNotMatch(prerequisiteUpload.if, /steps\.build\.outputs/);
   assert.match(workflow.jobs.publish.concurrency.group, /matrix.key/);
-  assert.equal(workflow.concurrency["cancel-in-progress"], false);
+  assert.equal(workflow.concurrency, undefined);
+  assert.equal(workflow.jobs.publish.concurrency["cancel-in-progress"], false);
   for (const [name, job] of Object.entries(workflow.jobs)) {
     assert.match(job.if, /workflow_dispatch/);
     if (["discover", "provision", "accept-native"].includes(name)) {
@@ -1190,5 +1191,133 @@ test("workflow has manual/default-branch guards, six targets, protected least-pr
   assert.doesNotMatch(
     raw,
     /(?:apt-get|brew install|choco install|cargo |npm ci)/,
+  );
+});
+
+test("producer supersession cancels only the same validation purpose and actual target, preserving publication", async () => {
+  const workflow = YAML.parse(
+    await readFile(
+      path.join(root, ".github/workflows/cef-patched-runtime.yml"),
+      "utf8",
+    ),
+  );
+  // Evaluate the actual closed variable expressions from the YAML. No eval and
+  // no independently reimplemented group template that could hide YAML drift.
+  const group = (job, context) => {
+    const result = job.concurrency.group.replace(
+      /\$\{\{\s*([A-Za-z_][A-Za-z0-9_.]*)\s*\}\}/gu,
+      (_, expression) => {
+        const value = expression
+          .split(".")
+          .reduce((object, key) => object?.[key], context);
+        assert.equal(
+          typeof value,
+          "string",
+          `Missing concurrency input ${expression}`,
+        );
+        return value;
+      },
+    );
+    assert.doesNotMatch(
+      result,
+      /\$\{\{/u,
+      "Unsupported concurrency expression",
+    );
+    return result;
+  };
+  const context = {
+    github: {
+      ref: "refs/heads/engine-verification",
+      sha: "a".repeat(40),
+      run_id: "100",
+    },
+    inputs: {
+      mode: "hosted-build",
+      reviewed_inputs: "native/cef-build-inputs/reviewed-r4",
+      target: "all",
+    },
+    matrix: { target: TARGETS[0], key: `reviewed-lock-${TARGETS[0]}` },
+  };
+  assert.equal(
+    workflow.concurrency,
+    undefined,
+    "No caller-wide cancellation may interrupt publishing",
+  );
+  const nonpublishing = Object.entries(workflow.jobs).filter(
+    ([name]) => name !== "publish",
+  );
+  for (const [name, job] of nonpublishing) {
+    assert.equal(job.concurrency["cancel-in-progress"], true, name);
+    assert.doesNotMatch(
+      job.concurrency.group,
+      /github\.(?:sha|run_id|run_number)/u,
+    );
+    assert.equal(
+      group(job, context),
+      group(job, {
+        ...context,
+        github: { ...context.github, sha: "b".repeat(40), run_id: "101" },
+      }),
+      `${name}: newer source must supersede earlier source`,
+    );
+    for (const changed of [
+      {
+        ...context,
+        github: { ...context.github, ref: "refs/heads/another-branch" },
+      },
+      { ...context, inputs: { ...context.inputs, mode: "build" } },
+      {
+        ...context,
+        inputs: {
+          ...context.inputs,
+          reviewed_inputs: "native/cef-build-inputs/another-reviewed-variant",
+        },
+      },
+    ])
+      assert.notEqual(group(job, context), group(job, changed), name);
+  }
+  assert.equal(
+    new Set(nonpublishing.map(([, job]) => group(job, context))).size,
+    nonpublishing.length,
+  );
+  for (const name of ["discover", "provision", "build"]) {
+    const job = workflow.jobs[name];
+    assert.equal(
+      group(job, context),
+      group(job, {
+        ...context,
+        inputs: { ...context.inputs, target: context.matrix.target },
+      }),
+      `${name}: all and single-target dispatches share the actual target key`,
+    );
+    const siblings = TARGETS.map((target) =>
+      group(job, { ...context, matrix: { ...context.matrix, target } }),
+    );
+    assert.equal(
+      new Set(siblings).size,
+      TARGETS.length,
+      `${name}: matrix siblings must not cancel each other`,
+    );
+  }
+  assert.notEqual(
+    group(workflow.jobs.plan, context),
+    group(workflow.jobs.plan, {
+      ...context,
+      inputs: { ...context.inputs, target: TARGETS[0] },
+    }),
+  );
+  const publish = workflow.jobs.publish;
+  assert.deepEqual(publish.concurrency, {
+    group: "cef-engine-publish-${{ matrix.key }}",
+    "cancel-in-progress": false,
+  });
+  assert.equal(publish.environment, "cef-runtime-publish");
+  assert.deepEqual(publish.permissions, { contents: "write" });
+  assert.notEqual(
+    group(publish, context),
+    group(publish, {
+      ...context,
+      matrix: { ...context.matrix, key: `another-lock-${TARGETS[0]}` },
+    }),
   );
 });
