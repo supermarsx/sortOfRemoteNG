@@ -16,6 +16,7 @@ import { promisify } from "node:util";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { inventoryMacSdks } from "./lib/cef-mac-sdk-inventory.mjs";
 
 const ROOT = fileURLToPath(new URL("../", import.meta.url));
 const exec = promisify(execFile);
@@ -375,6 +376,10 @@ async function nativeTools(platform) {
         "macosx",
         "--show-sdk-version",
       ]),
+      macSdkInventory: await inventoryMacSdks().catch((error) => ({
+        probeFailed: true,
+        failure: probeFailure(error, "mac-sdk-inventory"),
+      })),
       files: [
         clang,
         path.join(sdk, "SDKSettings.json"),
