@@ -324,6 +324,195 @@ async function nativeTools(platform) {
   };
 }
 
+// The former four unconditional 120s deletions define the entire phase budget.
+// GNU timeout runs privileged too: killing only Node's sudo child is insufficient.
+export async function cleanupLinuxCapacity(
+  { temp, destination, env, platform = process.platform, checkout = ROOT },
+  io = {
+    lstat,
+    realpath,
+    statfs,
+    writeFile,
+    command,
+    now: () => performance.now(),
+  },
+) {
+  const guards = { platform, env, checkout, temp };
+  assertCleanupTarget(RECIPE.linuxCleanupPaths[0], guards);
+  const began = io.now();
+  const deadline = began + RECIPE.linuxCleanupPaths.length * 120_000;
+  const required = RECIPE.minimumFreeDiskGiB * 1024 ** 3;
+  const free = async () => {
+    const disk = await io.statfs(temp);
+    const bytes = disk.bavail * disk.bsize;
+    if (!Number.isSafeInteger(bytes) || bytes < 0)
+      fail("Invalid cleanup capacity observation");
+    return bytes;
+  };
+  const before = await free();
+  const receipt = {
+    reviewedAllowlist: RECIPE.linuxCleanupPaths,
+    requiredFreeGiB: RECIPE.minimumFreeDiskGiB,
+    freeDiskBeforeGiB: gib(before),
+    freeDiskAfterGiB: gib(before),
+    completed: [],
+    attempts: [],
+    inventory: [],
+    pending: null,
+    elapsedMs: 0,
+    sufficient: before >= required,
+  };
+  const save = async () => {
+    receipt.elapsedMs = Math.max(0, io.now() - began);
+    await io.writeFile(
+      path.join(destination, "cleanup.json"),
+      JSON.stringify(receipt, null, 2),
+    );
+  };
+  await save();
+  if (receipt.sufficient) return receipt.completed;
+  const validate = async (candidate) => {
+    const info = await io.lstat(candidate).catch((error) => {
+      if (error.code === "ENOENT") return null;
+      throw error;
+    });
+    if (!info) return false;
+    assertCleanupTarget(candidate, {
+      ...guards,
+      canonical: await io.realpath(candidate),
+      symlink: info.isSymbolicLink(),
+    });
+    if (!info.isDirectory()) fail("Cleanup candidate is not a directory");
+    return true;
+  };
+  const timed = async (candidate, operation, budget) => {
+    const outer = Math.floor(Math.min(budget, deadline - io.now()));
+    if (outer < 3_000) fail("Cleanup phase budget exhausted");
+    const margin = operation === "du" ? 2_000 : 10_000;
+    if (outer <= margin) fail("Cleanup phase budget exhausted");
+    return io.command(
+      "sudo",
+      [
+        "-n",
+        "timeout",
+        "--signal=TERM",
+        `--kill-after=${operation === "du" ? 1 : 5}s`,
+        `${(outer - margin) / 1000}s`,
+        ...(operation === "du"
+          ? ["du", "-sx", "--block-size=1"]
+          : ["rm", "-rf"]),
+        "--",
+        candidate,
+      ],
+      undefined,
+      outer,
+    );
+  };
+  for (const candidate of RECIPE.linuxCleanupPaths) {
+    if (!(await validate(candidate))) continue;
+    const row = { path: candidate, bytes: null, status: "unknown" };
+    receipt.inventory.push(row);
+    receipt.pending = candidate;
+    await save();
+    try {
+      const result = await timed(candidate, "du", 10_000);
+      const value = /^(\d+)(?:\s|$)/.exec(result);
+      const size = value ? Number(value[1]) : NaN;
+      if (Number.isSafeInteger(size) && size >= 0) {
+        row.bytes = size;
+        row.status = "measured";
+      }
+    } catch (error) {
+      // Only an exited GNU timeout is a known bounded partial result. An outer
+      // timeout/signal cannot prove the privileged subtree stopped: abort.
+      if (error.killed || error.signal) {
+        row.status = "outer-timeout";
+        await save();
+        throw error;
+      }
+      row.status = [124, 137].includes(error.code) ? "deadline" : "unavailable";
+    }
+    receipt.pending = null;
+    await save();
+  }
+  // Smaller known directories finish first; expensive/unknown inventories last.
+  const candidates = [...receipt.inventory].sort(
+    (a, b) =>
+      (a.bytes === null) - (b.bytes === null) ||
+      (a.bytes ?? 0) - (b.bytes ?? 0),
+  );
+  for (const candidate of candidates) {
+    const available = await free();
+    receipt.freeDiskAfterGiB = gib(available);
+    receipt.sufficient = available >= required;
+    if (receipt.sufficient) break;
+    if (!(await validate(candidate.path))) continue;
+    const attempt = {
+      path: candidate.path,
+      status: "pending",
+      freeBeforeGiB: gib(available),
+      freeAfterGiB: gib(available),
+      elapsedMs: 0,
+    };
+    receipt.attempts.push(attempt);
+    receipt.pending = candidate.path;
+    await save();
+    const started = io.now();
+    let progress = Promise.resolve();
+    let progressError;
+    const timer = setInterval(() => {
+      progress = progress
+        .then(async () => {
+          receipt.freeDiskAfterGiB = gib(await free());
+          attempt.elapsedMs = Math.max(0, io.now() - started);
+          await save();
+        })
+        .catch((error) => {
+          progressError = error;
+        });
+    }, 10_000);
+    try {
+      try {
+        await timed(candidate.path, "rm", 120_000);
+      } finally {
+        clearInterval(timer);
+        await progress;
+      }
+      if (progressError) throw progressError;
+      // A successful rm is still not a completed directory if it reappeared.
+      if (await validate(candidate.path)) attempt.status = "still-present";
+      else {
+        attempt.status = "removed";
+        receipt.completed.push(candidate.path);
+      }
+    } catch (error) {
+      attempt.status =
+        [124, 137].includes(error.code) && !error.killed && !error.signal
+          ? "partial-deadline"
+          : "failed";
+      attempt.elapsedMs = Math.max(0, io.now() - started);
+      attempt.freeAfterGiB = receipt.freeDiskAfterGiB = gib(await free());
+      await save();
+      if (attempt.status === "failed") throw error;
+    }
+    attempt.elapsedMs = Math.max(0, io.now() - started);
+    const after = await free();
+    attempt.freeAfterGiB = receipt.freeDiskAfterGiB = gib(after);
+    receipt.sufficient = after >= required;
+    receipt.pending = null;
+    await save();
+    if (receipt.sufficient) break;
+  }
+  receipt.pending = null;
+  const finalAvailable = await free();
+  receipt.freeDiskAfterGiB = gib(finalAvailable);
+  receipt.sufficient = finalAvailable >= required;
+  await save();
+  if (!receipt.sufficient)
+    fail("Less than 100 GiB is available after bounded allowlisted cleanup");
+  return receipt.completed;
+}
+
 export async function observe(
   { target, output, cleanup = false },
   env = process.env,
@@ -345,53 +534,9 @@ export async function observe(
   if (!inside(temp, await realpath(destination)))
     fail("Discovery output resolves outside the runner workspace");
   const diskBefore = await statfs(temp);
-  const cleaned = [];
-  if (cleanup)
-    for (const candidate of RECIPE.linuxCleanupPaths) {
-      const info = await lstat(candidate).catch((error) => {
-        if (error.code === "ENOENT") return null;
-        throw error;
-      });
-      if (!info) continue;
-      assertCleanupTarget(candidate, {
-        env,
-        canonical: await realpath(candidate),
-        symlink: info.isSymbolicLink(),
-      });
-      if (!info.isDirectory()) fail("Cleanup candidate is not a directory");
-      await writeFile(
-        path.join(destination, "cleanup.json"),
-        JSON.stringify(
-          {
-            reviewedAllowlist: RECIPE.linuxCleanupPaths,
-            completed: cleaned,
-            pending: candidate,
-            freeDiskBeforeGiB: gib(diskBefore.bavail * diskBefore.bsize),
-          },
-          null,
-          2,
-        ),
-      );
-      await command(
-        "sudo",
-        ["-n", "rm", "-rf", "--", candidate],
-        exec,
-        120_000,
-      );
-      cleaned.push(candidate);
-      await writeFile(
-        path.join(destination, "cleanup.json"),
-        JSON.stringify(
-          {
-            reviewedAllowlist: RECIPE.linuxCleanupPaths,
-            completed: cleaned,
-            pending: null,
-          },
-          null,
-          2,
-        ),
-      );
-    }
+  const cleaned = cleanup
+    ? await cleanupLinuxCapacity({ temp, destination, env })
+    : [];
   const python = await command(
     process.platform === "win32" ? "python" : "python3",
     [

@@ -9,6 +9,7 @@ import { UPSTREAM_CHROMIUM_COMMIT } from "../../scripts/lib/browser-custom-runti
 import {
   RECIPE,
   assertCleanupTarget,
+  cleanupLinuxCapacity,
   discoveryBlockers,
   inventoryFile,
   nativeWindowsShell,
@@ -340,4 +341,211 @@ test("discovery workflow is read-only, bounded, explicit, and cannot enter produ
     assert.match(workflow.jobs[name].if, /mode == 'build'/);
     assert.match(workflow.jobs[name].if, /default_branch/);
   }
+});
+
+function capacityFixture({
+  freeGiB = 85,
+  sizes = [30, 8, 10, 2],
+  gains = {},
+} = {}) {
+  const present = new Set(RECIPE.linuxCleanupPaths);
+  let bytes = freeGiB * 1024 ** 3;
+  let now = 0;
+  const calls = [],
+    receipts = [];
+  const io = {
+    now: () => now,
+    statfs: async () => ({ bavail: bytes, bsize: 1 }),
+    realpath: async (p) => p,
+    lstat: async (p) => {
+      if (!present.has(p))
+        throw Object.assign(new Error("missing"), { code: "ENOENT" });
+      return { isDirectory: () => true, isSymbolicLink: () => false };
+    },
+    writeFile: async (_, body) => receipts.push(JSON.parse(body)),
+    command: async (exe, args, _, timeout) => {
+      const candidate = args.at(-1),
+        operation = args.includes("du") ? "du" : "rm";
+      calls.push({ exe, args, timeout, operation, candidate });
+      now += 100;
+      if (operation === "du") {
+        const value = sizes[RECIPE.linuxCleanupPaths.indexOf(candidate)];
+        if (value === null)
+          throw Object.assign(new Error("bounded inventory"), { code: 124 });
+        return `${value * 1024 ** 3}\t${candidate}`;
+      }
+      bytes += (gains[candidate] ?? 0) * 1024 ** 3;
+      present.delete(candidate);
+      return "";
+    },
+  };
+  return {
+    io,
+    calls,
+    receipts,
+    present,
+    advance: (ms) => {
+      now += ms;
+    },
+    addFree: (giB) => {
+      bytes += giB * 1024 ** 3;
+    },
+  };
+}
+const capacityOptions = {
+  temp: hosted.RUNNER_TEMP,
+  destination: "/home/runner/work/_temp/cleanup",
+  env: hosted,
+  platform: "linux",
+  checkout: "/home/runner/work/repo/repo",
+};
+
+test("capacity already sufficient touches no disposable directory or command", async () => {
+  const f = capacityFixture({ freeGiB: 100 });
+  f.io.lstat = async () => {
+    throw new Error("must not inspect");
+  };
+  assert.deepEqual(await cleanupLinuxCapacity(capacityOptions, f.io), []);
+  assert.equal(f.calls.length, 0);
+  assert.equal(f.receipts.at(-1).sufficient, true);
+  const missing = capacityFixture();
+  missing.present.clear();
+  let checks = 0;
+  missing.io.statfs = async () => ({
+    bavail: (++checks === 1 ? 85 : 100) * 1024 ** 3,
+    bsize: 1,
+  });
+  assert.deepEqual(await cleanupLinuxCapacity(capacityOptions, missing.io), []);
+  assert.equal(missing.calls.length, 0);
+  assert.equal(missing.receipts.at(-1).sufficient, true);
+  await assert.rejects(
+    cleanupLinuxCapacity({ ...capacityOptions, platform: "win32" }, f.io),
+    /Linux/,
+  );
+});
+
+test("measured smaller candidates reclaim enough capacity before expensive Android removal", async () => {
+  const f = capacityFixture({
+    gains: {
+      "/opt/hostedtoolcache/CodeQL": 2,
+      "/usr/share/dotnet": 8,
+      "/opt/ghc": 10,
+    },
+  });
+  const removed = await cleanupLinuxCapacity(capacityOptions, f.io);
+  assert.deepEqual(removed, [
+    "/opt/hostedtoolcache/CodeQL",
+    "/usr/share/dotnet",
+    "/opt/ghc",
+  ]);
+  assert(f.present.has("/usr/local/lib/android"));
+  for (const call of f.calls) {
+    assert.equal(call.exe, "sudo");
+    assert.deepEqual(call.args.slice(0, 3), ["-n", "timeout", "--signal=TERM"]);
+    assert(call.timeout <= 120000);
+    assert.equal(call.args.at(-2), "--");
+  }
+  assert.equal(f.receipts.at(-1).freeDiskAfterGiB, 105);
+  assert.equal(f.receipts.at(-1).sufficient, true);
+});
+
+test("unknown inventory runs last and timed-out partial removal is never called completed", async () => {
+  const f = capacityFixture({ sizes: [null, 8, 10, 2] });
+  const command = f.io.command;
+  f.io.command = async (...args) => {
+    if (args[1].includes("rm")) {
+      f.calls.push({ operation: "rm", candidate: args[1].at(-1) });
+      f.addFree(16);
+      throw Object.assign(new Error("root-owned timeout exited"), {
+        code: 124,
+      });
+    }
+    return command(...args);
+  };
+  assert.deepEqual(await cleanupLinuxCapacity(capacityOptions, f.io), []);
+  const receipt = f.receipts.at(-1);
+  assert.equal(receipt.attempts[0].path, "/opt/hostedtoolcache/CodeQL");
+  assert.equal(receipt.attempts[0].status, "partial-deadline");
+  assert.equal(receipt.sufficient, true);
+  assert.equal(receipt.freeDiskAfterGiB, 101);
+  assert.equal(f.present.size, 4);
+  const insufficient = capacityFixture({ sizes: [null, 8, 10, 2] });
+  await assert.rejects(
+    cleanupLinuxCapacity(capacityOptions, insufficient.io),
+    /100 GiB/,
+  );
+  assert.deepEqual(
+    insufficient.calls
+      .filter((call) => call.operation === "rm")
+      .map((call) => call.candidate),
+    [
+      "/opt/hostedtoolcache/CodeQL",
+      "/usr/share/dotnet",
+      "/opt/ghc",
+      "/usr/local/lib/android",
+    ],
+  );
+});
+
+test("cleanup refuses symlink swaps before removal and never treats low final capacity as success", async () => {
+  const f = capacityFixture();
+  const lstat = f.io.lstat;
+  let reads = 0;
+  f.io.lstat = async (p) => {
+    const value = await lstat(p);
+    if (++reads > 4) return { ...value, isSymbolicLink: () => true };
+    return value;
+  };
+  await assert.rejects(
+    cleanupLinuxCapacity(capacityOptions, f.io),
+    /ordinary allowlisted/,
+  );
+  assert.equal(f.calls.filter((call) => call.operation === "rm").length, 0);
+  const low = capacityFixture();
+  await assert.rejects(
+    cleanupLinuxCapacity(capacityOptions, low.io),
+    /Less than 100 GiB/,
+  );
+  assert.equal(low.receipts.at(-1).sufficient, false);
+  const oneByteShort = capacityFixture({ freeGiB: 100 - 1 / 1024 ** 3 });
+  await assert.rejects(
+    cleanupLinuxCapacity(capacityOptions, oneByteShort.io),
+    /100 GiB/,
+  );
+  assert.equal(oneByteShort.receipts.at(-1).freeDiskAfterGiB, 100);
+  assert.equal(
+    oneByteShort.receipts.at(-1).sufficient,
+    false,
+    "rounded display must not weaken the byte-level threshold",
+  );
+});
+
+test("inventory and removals share the original480-second budget and outer termination fails closed", async () => {
+  const f = capacityFixture();
+  const command = f.io.command;
+  f.io.command = async (...args) => {
+    const result = await command(...args);
+    f.advance(args[3] - 100 - 0.25);
+    return result;
+  };
+  await assert.rejects(
+    cleanupLinuxCapacity(capacityOptions, f.io),
+    /100 GiB|budget/,
+  );
+  assert(f.receipts.at(-1).elapsedMs <= 480000);
+  const removals = f.calls.filter((call) => call.operation === "rm");
+  assert.equal(removals.at(-1).timeout, 80001);
+  assert(f.calls.every((call) => Number.isInteger(call.timeout)));
+  const killed = capacityFixture();
+  killed.io.command = async () => {
+    throw Object.assign(new Error("outer timeout"), {
+      code: "ETIMEDOUT",
+      killed: true,
+      signal: "SIGTERM",
+    });
+  };
+  await assert.rejects(
+    cleanupLinuxCapacity(capacityOptions, killed.io),
+    /outer timeout/,
+  );
 });
