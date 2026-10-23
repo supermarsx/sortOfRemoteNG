@@ -298,11 +298,12 @@ describe("Yealink phone web-login profile", () => {
     });
   });
 
-  it("distinguishes native RSA login from the T20P page handler", () => {
+  it("distinguishes native RSA login from the reviewed T20P/T21P page handlers", () => {
     expect(profile.description).toMatch(
       /RSA-capable servlet pages sign in natively/,
     );
     expect(profile.description).toMatch(/SIP-T20P.*OnConfirm/);
+    expect(profile.description).toMatch(/SIP-T21P.*OnConfirm/);
     expect(profile.description).toMatch(
       /unsupported forms require manual login/,
     );

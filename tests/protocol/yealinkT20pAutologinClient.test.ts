@@ -3,6 +3,7 @@ import { loadAutologinClient } from "../helpers/autologinAsset";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const markup = readFileSync("tests/fixtures/yealink-t20p.html", "utf8");
+const t21pMarkup = readFileSync("tests/fixtures/yealink-t21p.html", "utf8");
 const source = ["yealink_autologin_client.js", "autologin_client.js"]
   .map((name) =>
     name === "autologin_client.js"
@@ -46,6 +47,23 @@ function ready() {
   (document.querySelector("#idConfirm") as HTMLInputElement).onclick = () => {
     (window as unknown as { OnConfirm(): void }).OnConfirm();
   };
+}
+
+function reviewedT21p() {
+  document.body.innerHTML = t21pMarkup;
+  for (const element of document.querySelectorAll("input"))
+    Object.defineProperty(element, "offsetParent", {
+      get: () => document.body,
+    });
+  ready();
+}
+
+function capturedClone(element: Element): Element {
+  const clone = element.cloneNode(true) as Element;
+  // This is captured DOM with translated labels already present. Replacing
+  // a node must not rerun the firmware's decorative document-write scripts.
+  clone.querySelectorAll("script").forEach((script) => script.remove());
+  return clone;
 }
 
 describe("keyless Yealink T20P native page handler", () => {
@@ -110,6 +128,111 @@ describe("keyless Yealink T20P native page handler", () => {
     await start();
     expect(confirm).toHaveBeenCalledOnce();
     expect(fetchMock).toHaveBeenCalledOnce();
+  });
+  it("accepts the reviewed T21P table header without inventing a model id or autocomplete attribute", async () => {
+    reviewedT21p();
+    expect(document.querySelector("#loginPhoneModel")).toBeNull();
+    expect(form().hasAttribute("autocomplete")).toBe(false);
+    const pending = start();
+    await vi.advanceTimersByTimeAsync(8000);
+    expect(await pending).toMatchObject({
+      ok: true,
+      via: "yealink-OnConfirm-click",
+    });
+    expect(fetchMock).toHaveBeenCalledOnce();
+    expect(confirm).toHaveBeenCalledOnce();
+    expect(directSubmit).not.toHaveBeenCalled();
+    expect(requestSubmit).not.toHaveBeenCalled();
+  });
+  it.each([
+    [
+      "unsupported model",
+      () => {
+        form().querySelector("tr td:nth-child(2)")!.textContent =
+          "Enterprise IP phone SIP-T31P";
+      },
+    ],
+    [
+      "T20P without its reviewed model id",
+      () => {
+        form().querySelector("tr td:nth-child(2)")!.textContent =
+          "Enterprise IP phone SIP-T20P";
+      },
+    ],
+    [
+      "outside-form model",
+      () => {
+        document.body.append(form().querySelector("tr td:nth-child(2)")!);
+      },
+    ],
+    [
+      "duplicate header",
+      () => {
+        form().append(capturedClone(form().querySelector("table")!));
+      },
+    ],
+    [
+      "cross-origin action",
+      () => {
+        form().setAttribute(
+          "action",
+          "https://other.invalid/servlet?p=login&q=login",
+        );
+      },
+    ],
+    [
+      "GET submission",
+      () => {
+        form().setAttribute("method", "get");
+      },
+    ],
+    [
+      "different autocomplete contract",
+      () => {
+        form().setAttribute("autocomplete", "on");
+      },
+    ],
+    [
+      "unsafe hidden destination",
+      () => {
+        field("jumpto").value = "other";
+      },
+    ],
+  ] as const)(
+    "rejects T21P %s before credential redemption",
+    async (_label, mutate) => {
+      reviewedT21p();
+      mutate();
+      const pending = start();
+      await vi.advanceTimersByTimeAsync(8000);
+      expect(await pending).toMatchObject({ ok: false });
+      expect(fetchMock).not.toHaveBeenCalled();
+      expect(confirm).not.toHaveBeenCalled();
+      expect(directSubmit).not.toHaveBeenCalled();
+    },
+  );
+  it("revalidates the T21P header during credential redemption", async () => {
+    reviewedT21p();
+    fetchMock.mockImplementation(async () => {
+      const model = form().querySelector("tr td:nth-child(2)")!;
+      model.replaceWith(capturedClone(model));
+      return { ok: true, json: async () => response };
+    });
+    expect(await start()).toMatchObject({ ok: false });
+    expect(field("username").value).toBe("");
+    expect(field("pwd").value).toBe("");
+    expect(confirm).not.toHaveBeenCalled();
+    expect(response.password).toBeNull();
+  });
+  it("revalidates T21P between username and password writes", async () => {
+    reviewedT21p();
+    field("username").addEventListener("input", () => {
+      field("jumpto").value = "other";
+    });
+    expect(await start()).toMatchObject({ ok: false });
+    expect(field("pwd").value).toBe("");
+    expect(confirm).not.toHaveBeenCalled();
+    expect(requestSubmit).not.toHaveBeenCalled();
   });
   it("waits for the page handler before redeeming credentials", async () => {
     vi.stubGlobal("OnConfirm", undefined);

@@ -852,6 +852,125 @@ test("Yealink uses only the reviewed keyless phone handler once", async (t) => {
   assert.equal(f.signals.at(-1), "form-completed");
 });
 
+test("Yealink T21P HTTP form uses its reviewed table header and page handler", async (t) => {
+  const html = readFileSync("tests/fixtures/yealink-t21p.html", "utf8");
+  const f = providerFixture(
+    t,
+    "voip-phone",
+    html,
+    "http://phone.test/servlet?p=login&q=login",
+  );
+  let clicks = 0;
+  f.w.OnConfirm = () => {
+    clicks++;
+  };
+  f.field("#idConfirm").onclick = f.w.OnConfirm;
+  f.field("form").onsubmit = () => false;
+  await f.advance(700);
+  assert.deepEqual(f.signals, ["form"]);
+  f.send("form");
+  await f.advance(700);
+  assert.equal(clicks, 1);
+  assert.equal(f.field('[name="username"]').value, "alice@example.test");
+  assert.equal(f.field('[name="pwd"]').value, "test-secret");
+  assert.equal(f.submits(), 0);
+  assert.equal(f.signals.at(-1), "form-completed");
+});
+
+for (const [label, mutate] of [
+  [
+    "unsupported model",
+    (f) => {
+      f.field("tr td:nth-child(2)").textContent =
+        "Enterprise IP phone SIP-T31P";
+    },
+  ],
+  [
+    "T20P without its reviewed model id",
+    (f) => {
+      f.field("tr td:nth-child(2)").textContent =
+        "Enterprise IP phone SIP-T20P";
+    },
+  ],
+  [
+    "outside-form model",
+    (f) => {
+      f.w.document.body.append(f.field("tr td:nth-child(2)"));
+    },
+  ],
+  [
+    "duplicate header",
+    (f) => {
+      f.field("form").append(f.field("table").cloneNode(true));
+    },
+  ],
+  [
+    "cross-origin action",
+    (f) => {
+      f.field("form").action = "https://other.invalid/servlet?p=login&q=login";
+    },
+  ],
+  [
+    "GET submission",
+    (f) => {
+      f.field("form").method = "get";
+    },
+  ],
+  [
+    "different autocomplete contract",
+    (f) => {
+      f.field("form").setAttribute("autocomplete", "on");
+    },
+  ],
+  [
+    "unsafe hidden destination",
+    (f) => {
+      f.field('[name="jumpto"]').value = "other";
+    },
+  ],
+]) {
+  test(`Yealink T21P rejects ${label} before requesting a native grant`, async (t) => {
+    const f = providerFixture(
+      t,
+      "voip-phone",
+      readFileSync("tests/fixtures/yealink-t21p.html", "utf8"),
+      "http://phone.test/servlet?p=login&q=login",
+    );
+    f.w.OnConfirm = () => assert.fail("unsafe form must not submit");
+    f.field("#idConfirm").onclick = f.w.OnConfirm;
+    f.field("form").onsubmit = () => false;
+    mutate(f);
+    await f.advance(700);
+    assert.equal(f.signals.includes("form"), false);
+    assert.equal(f.field('[name="pwd"]').value, "");
+    assert.equal(f.submits(), 0);
+  });
+}
+
+test("Yealink T21P revalidates its header before native credential disclosure", async (t) => {
+  const f = providerFixture(
+    t,
+    "voip-phone",
+    readFileSync("tests/fixtures/yealink-t21p.html", "utf8"),
+    "http://phone.test/servlet?p=login&q=login",
+  );
+  let clicks = 0;
+  f.w.OnConfirm = () => {
+    clicks++;
+  };
+  f.field("#idConfirm").onclick = f.w.OnConfirm;
+  f.field("form").onsubmit = () => false;
+  await f.advance(700);
+  assert.deepEqual(f.signals, ["form"]);
+  const model = f.field("tr td:nth-child(2)");
+  model.replaceWith(model.cloneNode(true));
+  f.send("form");
+  await f.advance(700);
+  assert.equal(f.field('[name="username"]').value, "");
+  assert.equal(f.field('[name="pwd"]').value, "");
+  assert.equal(clicks, 0);
+});
+
 for (const change of [
   "redirect",
   "pagehide",

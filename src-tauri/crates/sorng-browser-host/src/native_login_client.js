@@ -1731,10 +1731,22 @@
           if (!identity || painted(identity) || !identity.readOnly) return null;
         }
       } else if (provider === "voip-phone") {
-        // Keyless SIP-T20P only: the reviewed OnConfirm handler owns encryption
+        // Reviewed keyless SIP-T20P/T21P: OnConfirm owns password processing
         // and submission. Never requestSubmit(), Enter or HTTP-auth fallback.
         form = only(doc, 'form[name="formInput"]');
-        const model = only(doc, "#loginPhoneModel");
+        let model = only(doc, "#loginPhoneModel");
+        let t21p = false;
+        if (form && !doc.querySelectorAll("#loginPhoneModel").length) {
+          model = only(
+            form,
+            ":scope > table > tbody > tr:first-child > td:nth-child(2)",
+          );
+          t21p =
+            !!model &&
+            !model.hasAttribute("id") &&
+            model.parentElement.children.length === 2;
+          if (!t21p) return null;
+        }
         if (!form || !model) return null;
         const copy = model.cloneNode(true);
         copy
@@ -1744,9 +1756,15 @@
           (value || "").replace(/\s/g, "").replace(/;$/, "");
         const url = new URL(form.action, doc.baseURI);
         if (
-          copy.textContent.trim() !== "Enterprise IP phone SIP-T20P" ||
+          copy.textContent.trim() !==
+            (t21p
+              ? "Enterprise IP phone SIP-T21P"
+              : "Enterprise IP phone SIP-T20P") ||
           form.method !== "post" ||
-          (form.getAttribute("autocomplete") || "").toLowerCase() !== "off" ||
+          !(
+            (t21p && !form.hasAttribute("autocomplete")) ||
+            (form.getAttribute("autocomplete") || "").toLowerCase() === "off"
+          ) ||
           handler(form.getAttribute("onsubmit")) !== "returnfalse" ||
           typeof form.onsubmit !== "function" ||
           typeof window.OnConfirm !== "function" ||

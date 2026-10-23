@@ -1,4 +1,4 @@
-// Keyless SIP-T20P only. The phone owns submission and password processing.
+// Reviewed keyless SIP-T20P/T21P forms. The phone owns password processing.
 (function () {
   "use strict";
   if (window.__sorng_yealink_login) return;
@@ -26,12 +26,30 @@
   function target(helpers) {
     var form = only(document, 'form[name="formInput"]');
     var model = only(document, "#loginPhoneModel");
+    var t21p = false;
+    // The reviewed T21P has no model/table IDs. Match only its own form's
+    // first two-cell table header, never arbitrary model text in the page.
+    if (form && !document.querySelectorAll("#loginPhoneModel").length) {
+      model = only(
+        form,
+        ":scope > table > tbody > tr:first-child > td:nth-child(2)",
+      );
+      t21p =
+        !!model &&
+        !model.hasAttribute("id") &&
+        model.parentElement.children.length === 2 &&
+        modelText(model) === "Enterprise IP phone SIP-T21P";
+      if (!t21p) return null;
+    }
     if (
       !form ||
       !model ||
-      modelText(model) !== "Enterprise IP phone SIP-T20P" ||
+      (!t21p && modelText(model) !== "Enterprise IP phone SIP-T20P") ||
       form.method.toLowerCase() !== "post" ||
-      (form.getAttribute("autocomplete") || "").toLowerCase() !== "off" ||
+      !(
+        (t21p && !form.hasAttribute("autocomplete")) ||
+        (form.getAttribute("autocomplete") || "").toLowerCase() === "off"
+      ) ||
       handler(form.getAttribute("onsubmit")) !== "returnfalse" ||
       typeof form.onsubmit !== "function" ||
       !/^(|_self)$/.test(form.getAttribute("target") || "")
@@ -97,6 +115,7 @@
       confirm: confirm,
       clear: clear,
       model: model,
+      modelLabel: modelText(model),
       action: action.href,
       onConfirm: window.OnConfirm,
       onclick: confirm.onclick,

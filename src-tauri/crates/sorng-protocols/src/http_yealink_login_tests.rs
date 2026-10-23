@@ -23,6 +23,7 @@ use tokio::net::TcpListener;
 /// the way `e2e/fixtures/voip-phone/server.mjs` substitutes it.
 const LOGIN_TEMPLATE: &str = include_str!("../../../../e2e/fixtures/voip-phone/servlet/login.html");
 const T20P_FORM: &str = include_str!("../../../../tests/fixtures/yealink-t20p.html");
+const T21P_FORM: &str = include_str!("../../../../tests/fixtures/yealink-t21p.html");
 
 const PHONE_TYPE: &str = "T21P_E2";
 const FIRMWARE: &str = "52.84.0.15";
@@ -582,6 +583,75 @@ fn every_forwarded_request_carries_the_session_the_proxy_established() {
 
 async fn sign_in(phone: &Phone, slot: &YealinkSessionCookie) -> Result<(), String> {
     pre_authenticate(&client(), &phone.url, USERNAME, PASSWORD, slot).await
+}
+
+#[test]
+fn t21p_user_header_without_model_id_uses_only_the_reviewed_dom_flow() {
+    assert_eq!(classify_login_page(T21P_FORM), LoginPage::LegacyT20pDom);
+    // Browser HTML parsing inserts tbody even when the wire HTML omits it.
+    let omitted_tbody = T21P_FORM.replace("<tbody>", "").replace("</tbody>", "");
+    assert_eq!(
+        classify_login_page(&omitted_tbody),
+        LoginPage::LegacyT20pDom
+    );
+    // The fixture's provenance comment is outside the form. Nested HTML
+    // comments would close early and expose a real form, not an inert example.
+    let comment_free_form = &T21P_FORM
+        [T21P_FORM.find("<form").unwrap()..T21P_FORM.find("</form>").unwrap() + "</form>".len()];
+    for (index, body) in [
+        T21P_FORM.replace("SIP-T21P", "SIP-T31P"),
+        T21P_FORM.replace("SIP-T21P", "SIP-T20P"),
+        T21P_FORM
+            .replace("<table ", "<div><table ")
+            .replace("</table>", "</table></div>"),
+        T21P_FORM.replace("</table>", "</table><table></table>"),
+        T21P_FORM.replace("<td width=\"70%\">", "<td id=\"other\" width=\"70%\">"),
+        T21P_FORM.replace(
+            "<td width=\"70%\">",
+            "<td>Other cell</td><td width=\"70%\">",
+        ),
+        T21P_FORM.replace("method=\"post\"", "method=\"get\""),
+        T21P_FORM.replace("method=\"post\"", "method=\"post\" autocomplete=\"on\""),
+        T21P_FORM.replace(
+            "/servlet?p=login&amp;q=login",
+            "https://other.invalid/servlet?p=login&amp;q=login",
+        ),
+        T21P_FORM.replace("value=\"status\"", "value=\"other\""),
+        T21P_FORM.replace("OnConfirm()", "formInput.submit()"),
+        format!("<!-- {comment_free_form} -->"),
+        format!("<script>var example = `{T21P_FORM}`;</script>"),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        assert_ne!(body, T21P_FORM, "negative fixture must change the form");
+        assert_ne!(
+            classify_login_page(&body),
+            LoginPage::LegacyT20pDom,
+            "negative fixture {index}"
+        );
+    }
+    let key = test_key();
+    assert!(matches!(
+        classify_login_page(&format!("{T21P_FORM}{}", login_page(&key, SESSION_ID))),
+        LoginPage::Encrypted(_)
+    ));
+}
+
+#[tokio::test]
+async fn t21p_dom_discovery_does_not_post_credentials_or_create_an_rsa_session() {
+    let phone = phone_with_responder(test_key(), |_| respond(200, "OK", "", T21P_FORM)).await;
+    let slot = session_slot();
+    assert!(!browser_login_pending(&slot));
+    sign_in(&phone, &slot).await.unwrap();
+    assert_discovery_requests(&phone, &[servlet::LOGIN_FORM], None);
+    assert!(slot.read().unwrap().is_none());
+    assert!(browser_login_pending(&slot));
+    assert!(
+        sign_in(&phone, &slot).await.is_err(),
+        "discovery is one-shot"
+    );
+    assert!(!browser_login_pending(&session_slot()));
 }
 
 #[test]

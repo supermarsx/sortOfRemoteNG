@@ -1,0 +1,103 @@
+<!doctype html>
+<html>
+  <head>
+    <title>Yealink SIP-T21P</title>
+  </head>
+  <body>
+    <!-- Structural transcription of the user-supplied T21P login form. Styles and
+     extension attributes are omitted; no model/table IDs are invented. -->
+    <form
+      name="formInput"
+      onsubmit="return false;"
+      action="/servlet?p=login&amp;q=login"
+      method="post"
+    >
+      <table width="100%" bgcolor="#EAEAEA">
+        <tbody>
+          <tr>
+            <td width="30%">
+              <script>
+                T("Login");
+              </script>
+              Login
+            </td>
+            <td width="70%">
+              <script>
+                T("Enterprise IP phone SIP-T21P");
+              </script>
+              Enterprise IP phone SIP-T21P
+            </td>
+          </tr>
+          <tr height="10">
+            <td colspan="2"><hr /></td>
+          </tr>
+          <tr>
+            <td>
+              <script>
+                T("Username");
+              </script>
+              Username
+            </td>
+            <td>
+              <input
+                type="text"
+                name="username"
+                value=""
+                maxlength="32"
+                onkeydown="jumpToNext(event.keyCode)"
+              />
+            </td>
+          </tr>
+          <tr>
+            <td>
+              <script>
+                T("Password");
+              </script>
+              Password
+            </td>
+            <td>
+              <input
+                type="password"
+                name="pwd"
+                value=""
+                maxlength="32"
+                onkeydown="jumpToNext(event.keyCode)"
+              /><input
+                type="hidden"
+                name="jumpto"
+                value="status"
+                maxlength="32"
+              /><input type="hidden" name="acc" value="" maxlength="32" />
+            </td>
+          </tr>
+          <tr>
+            <td colspan="2" align="center">
+              <input
+                id="idConfirm"
+                type="button"
+                onclick="OnConfirm()"
+                onmousedown="on_down_event(this)"
+                value="Confirm"
+                onmouseup="on_up_event(this)"
+              /><input
+                id="idCancel"
+                type="button"
+                onclick="OnClear()"
+                value="Cancel"
+                onmousedown="on_down_event(this)"
+                onmouseup="on_up_event(this)"
+              />
+            </td>
+          </tr>
+          <tr id="idNotice" height="40">
+            <td id="notice" colspan="2" align="center">
+              <script>
+                T("");
+              </script>
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </form>
+  </body>
+</html>

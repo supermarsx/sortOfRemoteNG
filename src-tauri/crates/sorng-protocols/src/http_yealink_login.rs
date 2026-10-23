@@ -149,7 +149,8 @@ pub enum LoginPage {
     /// public key, so the password can be wrapped the way the page's own
     /// JavaScript would have wrapped it.
     Encrypted(auth::LoginFormFacts),
-    /// Exact keyless SIP-T20P form, submitted only by its own browser handler.
+    /// Reviewed keyless SIP-T20P/T21P form, submitted by its browser handler.
+    /// Keep the historical variant name for callers; this grants no password.
     LegacyT20pDom,
     /// Recognised, or honestly unrecognised — either way, not signable here.
     Unsupported(UnsupportedPhone),
@@ -232,7 +233,6 @@ fn is_t20p_dom_form(body: &str) -> bool {
     };
     if value(&attrs, "name") != "formInput"
         || !value(&attrs, "method").eq_ignore_ascii_case("post")
-        || !value(&attrs, "autocomplete").eq_ignore_ascii_case("off")
         || handler(value(&attrs, "onsubmit")) != "returnfalse"
         || !matches!(value(&attrs, "target"), "" | "_self")
         || value(&attrs, "action") != "/servlet?p=login&q=login"
@@ -243,7 +243,11 @@ fn is_t20p_dom_form(body: &str) -> bool {
         regex::Regex::new(r#"(?is)<([a-z][a-z0-9]*)\b((?:"[^"]*"|'[^']*'|[^'">])*)>"#).unwrap()
     });
     let mut roles = HashSet::new();
+    let mut tables = 0;
     for tag in tags.captures_iter(&form[2]) {
+        if tag[1].eq_ignore_ascii_case("table") {
+            tables += 1;
+        }
         let Some(attrs) = attributes(&tag[2]) else {
             return false;
         };
@@ -301,11 +305,29 @@ fn is_t20p_dom_form(body: &str) -> bool {
             }
         }
     }
-    models == 1
+    let autocomplete_off = value(&attrs, "autocomplete").eq_ignore_ascii_case("off");
+    if models == 1 {
+        return autocomplete_off;
+    }
+    if models != 0 || tables != 1 || !(autocomplete_off || !attrs.contains_key("autocomplete")) {
+        return false;
+    }
+    // The captured T21P has no model/table IDs. Only the first two-cell row
+    // of the form's own direct table identifies it. Script source was removed
+    // above; a model string elsewhere in the document cannot select this flow.
+    // Raw HTML may omit tbody; the browser inserts it before its own DOM check.
+    static T21P_HEADER: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
+    let header = T21P_HEADER.get_or_init(|| regex::Regex::new(
+        r#"(?is)^\s*<table\b(?:"[^"]*"|'[^']*'|[^'">])*>\s*(?:<tbody\b(?:"[^"]*"|'[^']*'|[^'">])*>\s*)?<tr\b(?:"[^"]*"|'[^']*'|[^'">])*>\s*<td\b(?:"[^"]*"|'[^']*'|[^'">])*>[^<]*</td\s*>\s*<td\b(?P<model_attrs>(?:"[^"]*"|'[^']*'|[^'">])*)>\s*Enterprise IP phone SIP-T21P\s*</td\s*>\s*</tr\s*>"#,
+    ).unwrap());
+    header.captures(&form[2]).is_some_and(|header| {
+        attributes(header.name("model_attrs").unwrap().as_str())
+            .is_some_and(|model| !model.contains_key("id"))
+    })
 }
 
 /// Native RSA sessions never authorize document credential delivery. Startup
-/// must positively recognize the T20P form; failure and restart have no grant.
+/// must positively recognize a reviewed T2x form; failure/restart have no grant.
 pub(crate) fn browser_login_pending(session: &YealinkSessionCookie) -> bool {
     session
         .t20p_dom_admitted
