@@ -680,52 +680,108 @@ describe("native global encryption proof for vault access", () => {
 
 describe("database-owned vault archives", () => {
   it("keeps actual parent import success through Provider publication and refreshed vault receipts", async () => {
+    const publication = deferred<void>();
+    let publicationReleased = false;
+    let providerIds: string[] = [];
+    let providerVaultRevision = 0;
+    const PublicationGate = ({ children }: { children: React.ReactNode }) => {
+      const current = useConnections();
+      if (
+        current.state.connections.some((row) => row.name === "Imported NAS")
+      ) {
+        providerIds = current.state.connections.map((row) => row.id);
+        providerVaultRevision = current.credentialVault!.changeRevision;
+        // Provider/real UI may commit before another consumer's receipt.
+        // React Suspense makes that independent publication deterministic.
+        if (!publicationReleased) throw publication.promise;
+      }
+      return children;
+    };
     const hook = renderHook(() => useConnections(), {
       wrapper: ({ children }: { children: React.ReactNode }) => (
         <ConnectionProvider>
-          {children}
+          <React.Suspense fallback={null}>
+            <PublicationGate>{children}</PublicationGate>
+          </React.Suspense>
           <DatabaseCredentialVault />
         </ConnectionProvider>
       ),
     });
-    await act(() => hook.result.current.loadData("db-a"));
-    const importButton = await screen.findByRole("button", {
-      name: /Import archive/,
-    });
-    await waitFor(() => expect(importButton).toBeEnabled());
-    fireEvent.click(importButton);
-    fireEvent.change(await screen.findByLabelText("Archive password"), {
-      target: { value: "synthetic archive password" },
-    });
-    fireEvent.click(
-      screen.getByRole("button", { name: "Open and review archive" }),
-    );
-    const commit = await screen.findByRole("button", {
-      name: "Import reviewed records",
-    });
-    expect(mock.save).not.toHaveBeenCalled();
-    fireEvent.click(commit);
-    await waitFor(() =>
+    try {
+      await act(() => hook.result.current.loadData("db-a"));
+      const owner = { ...hook.result.current.credentialVault!.scope! };
+      expect(owner.databaseId).toBe("db-a");
+      const importButton = await screen.findByRole("button", {
+        name: /Import archive/,
+      });
+      await waitFor(() => expect(importButton).toBeEnabled());
+      fireEvent.click(importButton);
+      fireEvent.change(await screen.findByLabelText("Archive password"), {
+        target: { value: "synthetic archive password" },
+      });
+      fireEvent.click(
+        screen.getByRole("button", { name: "Open and review archive" }),
+      );
+      const commit = await screen.findByRole("button", {
+        name: "Import reviewed records",
+      });
+      expect(mock.save).not.toHaveBeenCalled();
+      fireEvent.click(commit);
+      await waitFor(() =>
+        expect(
+          screen.getByText(/Imported 1 credentials and 1 linked connections/),
+        ).toBeInTheDocument(),
+      );
+      expect(mock.save).toHaveBeenCalledOnce();
+      await waitFor(() => {
+        expect(providerIds).toEqual(
+          mock.saved!.connections.map((row) => row.id),
+        );
+        expect(providerVaultRevision).toBeGreaterThan(0);
+      });
+      let receiptPublished = false;
+      const publicationResult = waitFor(() => {
+        expect(hook.result.current.state.connections).toHaveLength(2);
+        expect(
+          hook.result.current.state.connections.map((row) => row.id),
+        ).toEqual(mock.saved!.connections.map((row) => row.id));
+        expect(hook.result.current.credentialVault!.scope).toEqual(owner);
+        expect(
+          hook.result.current.credentialVault!.changeRevision,
+        ).toBeGreaterThan(0);
+        receiptPublished = true;
+      });
+      expect(receiptPublished).toBe(false);
+      await act(async () => {
+        publicationReleased = true;
+        publication.resolve(undefined);
+      });
+      await publicationResult;
+      const api = hook.result.current.credentialVault!;
+      expect(api.changeRevision).toBeGreaterThan(0);
+      const snapshot = await api.list(api.scope!);
+      expect(snapshot.entries).toHaveLength(1);
+      expect(snapshot.entries.map((entry) => entry.id)).toEqual(
+        mock.saved!.credentialVault!.entries.map((entry) => entry.id),
+      );
+      expect(
+        hook.result.current.state.connections.find((row) => row.id !== "host")
+          ?.credentialSource,
+      ).toMatchObject({ kind: "vault", credentialId: snapshot.entries[0].id });
+      await act(async () => hook.rerender());
       expect(
         screen.getByText(/Imported 1 credentials and 1 linked connections/),
-      ).toBeInTheDocument(),
-    );
-    expect(mock.save).toHaveBeenCalledOnce();
-    expect(hook.result.current.state.connections).toHaveLength(2);
-    const api = hook.result.current.credentialVault!;
-    expect(api.changeRevision).toBeGreaterThan(0);
-    const snapshot = await api.list(api.scope!);
-    expect(snapshot.entries).toHaveLength(1);
-    await act(async () => hook.rerender());
-    expect(
-      screen.getByText(/Imported 1 credentials and 1 linked connections/),
-    ).toBeInTheDocument();
-    expect(
-      screen.queryByRole("button", { name: "Import reviewed records" }),
-    ).not.toBeInTheDocument();
-    expect(document.body.textContent).not.toContain("PRIVATE_PASSWORD");
-    expect(document.body.textContent).not.toContain("JBSWY3DPEHPK3PXP");
-    expect(mock.save).toHaveBeenCalledOnce();
+      ).toBeInTheDocument();
+      expect(
+        screen.queryByRole("button", { name: "Import reviewed records" }),
+      ).not.toBeInTheDocument();
+      expect(document.body.textContent).not.toContain("PRIVATE_PASSWORD");
+      expect(document.body.textContent).not.toContain("JBSWY3DPEHPK3PXP");
+      expect(mock.save).toHaveBeenCalledOnce();
+    } finally {
+      publicationReleased = true;
+      publication.resolve(undefined);
+    }
   });
   it("exports only reviewed entries and linked connections, stripping ignored local credentials", async () => {
     mock.saved!.credentialVault = {
