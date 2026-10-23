@@ -1529,17 +1529,45 @@ pub mod native_browser_owner {
             }
 
             pub(super) async fn lease(&self) -> NativeOwnerLease {
+                self.lease_for("saved").await
+            }
+
+            pub(super) async fn lease_for(&self, connection: &str) -> NativeOwnerLease {
                 read(
                     &self.window,
                     &self.state,
                     "db",
-                    "saved",
+                    connection,
                     "revision",
                     &self.request.source_session_id,
                 )
                 .await
                 .unwrap()
                 .1
+            }
+
+            pub(super) async fn authorize_for(
+                &self,
+                connection: &str,
+                session: &str,
+            ) -> crate::origin_browser_authority::NativeAuthorizedBrowser {
+                self.try_authorize_for(connection, session).await.unwrap()
+            }
+
+            pub(super) async fn try_authorize_for(
+                &self,
+                connection: &str,
+                session: &str,
+            ) -> Result<
+                crate::origin_browser_authority::NativeAuthorizedBrowser,
+                crate::origin_browser_authority::NativeAuthorityError,
+            > {
+                let mut request: OriginBrowserCreateRequest =
+                    serde_json::from_value(serde_json::to_value(&self.request).unwrap()).unwrap();
+                request.owner.connection_id = connection.into();
+                request.owner.session_id = session.into();
+                request.request_id = format!("fixture-{session}");
+                authorize_create_with_certificate_hooks(&self.window, &self.state, &request).await
             }
 
             pub(super) fn write_data(&mut self, same_stamp: bool) {
@@ -1882,6 +1910,282 @@ pub mod native_browser_owner {
 
         async fn detailed(f: &Fixture, lease: &NativeOwnerLease) -> Result<(), RecheckFailure> {
             lease.recheck_detailed(&f.window, &f.state).await
+        }
+
+        struct EchoFixture {
+            address: std::net::SocketAddr,
+            task: tokio::task::JoinHandle<()>,
+        }
+        impl EchoFixture {
+            async fn start() -> Self {
+                use tokio::io::{AsyncReadExt, AsyncWriteExt};
+                let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+                let address = listener.local_addr().unwrap();
+                let task = tokio::spawn(async move {
+                    let mut peers = tokio::task::JoinSet::new();
+                    loop {
+                        tokio::select! {
+                            accepted = listener.accept() => {
+                                let (mut stream, _) = accepted.unwrap();
+                                peers.spawn(async move {
+                                    let mut bytes = [0; 128];
+                                    loop {
+                                        let count = match stream.read(&mut bytes).await { Ok(count) => count, Err(_) => return };
+                                        if count == 0 { return; }
+                                        if stream.write_all(&bytes[..count]).await.is_err() { return; }
+                                    }
+                                });
+                            }
+                            Some(_) = peers.join_next(), if !peers.is_empty() => {}
+                        }
+                    }
+                });
+                Self { address, task }
+            }
+
+            async fn proxy(
+                &self,
+                authorized: &crate::origin_browser_authority::NativeAuthorizedBrowser,
+            ) -> sorng_protocols::private_forward_proxy::PrivateForwardProxy {
+                use sorng_protocols::private_forward_proxy::{
+                    BoxedStream, DialFuture, PrivateForwardProxy, ProxyLimits,
+                };
+                let endpoint = self.address;
+                let lease = authorized.lease.clone();
+                let native_grant = authorized.policy.destination_grant();
+                PrivateForwardProxy::start(
+                    Arc::new(
+                        move |target: sorng_protocols::private_forward_proxy::Authority| -> DialFuture {
+                            assert_eq!(target.host(), "source.example");
+                            assert_eq!(target.port(), 443);
+                            Box::pin(async move {
+                                Ok(Box::new(tokio::net::TcpStream::connect(endpoint).await?)
+                                    as BoxedStream)
+                            })
+                        },
+                    ),
+                    Arc::new(move |target| lease.is_current() && native_grant(target)),
+                    ProxyLimits::default(),
+                )
+                .await
+                .unwrap()
+            }
+        }
+        impl Drop for EchoFixture {
+            fn drop(&mut self) {
+                self.task.abort();
+            }
+        }
+
+        async fn relay_connect(
+            proxy: &sorng_protocols::private_forward_proxy::PrivateForwardProxy,
+        ) -> (u16, tokio::net::TcpStream) {
+            use base64::Engine;
+            use tokio::io::{AsyncReadExt, AsyncWriteExt};
+            tokio::time::timeout(std::time::Duration::from_secs(3), async {
+                        let credentials = proxy.with_credentials(|user, password| base64::engine::general_purpose::STANDARD.encode(format!("{user}:{password}"))).unwrap();
+                        let mut stream = tokio::net::TcpStream::connect(proxy.local_addr()).await.unwrap();
+                        stream.write_all(format!("CONNECT source.example:443 HTTP/1.1\r\nHost: source.example:443\r\nProxy-Authorization: Basic {credentials}\r\n\r\n").as_bytes()).await.unwrap();
+                        let mut header = Vec::new(); let mut chunk = [0; 1024];
+                        while !header.windows(4).any(|window| window == b"\r\n\r\n") {
+                            let count = stream.read(&mut chunk).await.unwrap(); assert!(count > 0); header.extend_from_slice(&chunk[..count]); assert!(header.len() <= 4096);
+                        }
+                        let status = std::str::from_utf8(&header).unwrap().split_whitespace().nth(1).unwrap().parse().unwrap();
+                        (status, stream)
+                    }).await.expect("owned loopback admission did not settle")
+        }
+        async fn echo(stream: &mut tokio::net::TcpStream) {
+            use tokio::io::{AsyncReadExt, AsyncWriteExt};
+            tokio::time::timeout(std::time::Duration::from_secs(3), async {
+                stream.write_all(b"ping").await.unwrap();
+                let mut bytes = [0; 4];
+                stream.read_exact(&mut bytes).await.unwrap();
+                assert_eq!(&bytes, b"ping");
+            })
+            .await
+            .expect("independent owned relay stopped forwarding")
+        }
+        async fn three_sources() -> Fixture {
+            let mut fixture = Fixture::new(0).await;
+            let row = fixture.data["connections"][0].clone();
+            for id in ["b", "c"] {
+                let mut other = row.clone();
+                other["id"] = id.into();
+                fixture.data["connections"]
+                    .as_array_mut()
+                    .unwrap()
+                    .push(other);
+            }
+            fixture.write_data(false);
+            fixture
+        }
+
+        #[tokio::test]
+        async fn saved_policy_edit_isolates_live_a_b_relays_and_fresh_a2_c() {
+            use tokio::io::AsyncReadExt;
+            for (field, changed) in [
+                (
+                    "websiteDomainPermissions",
+                    json!({"version":1,"websites":[{"origin":"https://source.example","requestClasses":{"script":"deny"},"destinations":[]}]}),
+                ),
+                (
+                    "httpProxyPolicy",
+                    json!({"nativeBrowsingMode":"restricted","sameOriginOnly":true}),
+                ),
+            ] {
+                let mut f = three_sources().await;
+                let upstream = EchoFixture::start().await;
+                let a = f.authorize_for("saved", "fixture-a").await;
+                let b = f.authorize_for("b", "fixture-b").await;
+                let mut relay_a = upstream.proxy(&a).await;
+                let mut relay_b = upstream.proxy(&b).await;
+                let (status_a, mut live_a) = relay_connect(&relay_a).await;
+                let (status_b, mut live_b) = relay_connect(&relay_b).await;
+                assert_eq!((status_a, status_b), (200, 200));
+                echo(&mut live_a).await;
+                echo(&mut live_b).await;
+                f.data["connections"][0][field] = changed;
+                f.write_data(false);
+                assert_eq!(
+                    detailed(&f, &a.lease).await,
+                    Err(RecheckFailure::SourceChanged)
+                );
+                assert_eq!(detailed(&f, &b.lease).await, Ok(()));
+                assert_eq!(relay_connect(&relay_a).await.0, 403);
+                echo(&mut live_b).await;
+                assert_eq!(relay_connect(&relay_b).await.0, 200);
+                let a2 = f.authorize_for("saved", "fixture-a2").await;
+                let c = f.authorize_for("c", "fixture-c").await;
+                let script = |authorized: &crate::origin_browser_authority::NativeAuthorizedBrowser| {
+                    authorized
+                        .permissions
+                        .resolve(
+                            sorng_browser_host::domain_permissions::WebsitePermissionQuery {
+                                website_origin: "https://source.example",
+                                destination_origin: "https://extra.example",
+                                request_class: "script",
+                                native_denied: false,
+                            },
+                        )
+                        .decision
+                };
+                assert_eq!(
+                    script(&a2),
+                    sorng_browser_host::domain_permissions::WebsitePermissionDecision::Deny
+                );
+                assert_eq!(
+                    script(&b),
+                    sorng_browser_host::domain_permissions::WebsitePermissionDecision::Allow
+                );
+                assert_eq!(
+                    script(&c),
+                    sorng_browser_host::domain_permissions::WebsitePermissionDecision::Allow
+                );
+                let mut relay_a2 = upstream.proxy(&a2).await;
+                let mut relay_c = upstream.proxy(&c).await;
+                relay_a.stop().await.unwrap();
+                let closed =
+                    tokio::time::timeout(std::time::Duration::from_secs(3), live_a.read(&mut [0; 1]))
+                        .await
+                        .unwrap();
+                assert!(!matches!(closed, Ok(count) if count > 0));
+                for proxy in [&relay_a2, &relay_b, &relay_c] {
+                    let (status, mut stream) = relay_connect(proxy).await;
+                    assert_eq!(status, 200);
+                    echo(&mut stream).await;
+                }
+                assert_eq!(
+                    detailed(&f, &a.lease).await,
+                    Err(RecheckFailure::SourceChanged)
+                );
+                assert_eq!(detailed(&f, &a2.lease).await, Ok(()));
+                assert_eq!(detailed(&f, &c.lease).await, Ok(()));
+                echo(&mut live_b).await;
+                relay_a2.stop().await.unwrap();
+                relay_b.stop().await.unwrap();
+                relay_c.stop().await.unwrap();
+            }
+        }
+
+        #[tokio::test]
+        async fn global_policy_save_keeps_live_relays_and_new_attempts_read_intended_defaults() {
+            use sorng_browser_host::domain_permissions::{
+                WebsitePermissionDecision, WebsitePermissionQuery,
+            };
+            let mut f = three_sources().await;
+            // B has its own reviewed policy, so global defaults do not replace it.
+            f.data["connections"][1]["httpProxyPolicy"] = json!({"nativeBrowsingMode":"standard"});
+            f.write_data(false);
+            let upstream = EchoFixture::start().await;
+            let a = f.authorize_for("saved", "global-a").await;
+            let b = f.authorize_for("b", "global-b").await;
+            let decision = |authorized: &crate::origin_browser_authority::NativeAuthorizedBrowser| {
+                authorized
+                    .permissions
+                    .resolve(WebsitePermissionQuery {
+                        website_origin: "https://source.example",
+                        destination_origin: "https://extra.example",
+                        request_class: "script",
+                        native_denied: false,
+                    })
+                    .decision
+            };
+            assert_eq!(decision(&a), WebsitePermissionDecision::Allow);
+            let mut relay_a = upstream.proxy(&a).await;
+            let mut relay_b = upstream.proxy(&b).await;
+            let (_, mut live_a) = relay_connect(&relay_a).await;
+            let (_, mut live_b) = relay_connect(&relay_b).await;
+            // Explicit temp root/state: no app-data discovery, singleton manager,
+            // keyring, environment override, real profile or credentials.
+            crate::app_settings_commands::write_app_settings_inner(f.root.path(), &f.state,
+                        json!({"webBrowser":{"defaultPolicy":{"nativeBrowsingMode":"restricted","sameOriginOnly":true}}})).await.unwrap();
+            assert_eq!(detailed(&f, &a.lease).await, Ok(()));
+            assert_eq!(detailed(&f, &b.lease).await, Ok(()));
+            echo(&mut live_a).await;
+            echo(&mut live_b).await;
+            assert_eq!(decision(&a), WebsitePermissionDecision::Allow); // Documented snapshot contract.
+            let a2 = f.authorize_for("saved", "global-a2").await;
+            let b2 = f.authorize_for("b", "global-b2").await;
+            let c = f.authorize_for("c", "global-c").await;
+            assert_eq!(decision(&a2), WebsitePermissionDecision::Deny);
+            assert_eq!(decision(&c), WebsitePermissionDecision::Deny);
+            assert_eq!(decision(&b2), WebsitePermissionDecision::Allow);
+            // A syntactically saved but invalid global policy must not poison
+            // B's already-owned relay, and fixing it must admit C immediately.
+            crate::app_settings_commands::write_app_settings_inner(
+                f.root.path(),
+                &f.state,
+                json!({"webBrowser":{"defaultPolicy":{"nativeBrowsingMode":"unsupported"}}}),
+            )
+            .await
+            .unwrap();
+            assert!(matches!(
+                f.try_authorize_for("c", "invalid-global-c").await,
+                Err(crate::origin_browser_authority::NativeAuthorityError::PolicyInvalid { .. })
+            ));
+            echo(&mut live_b).await;
+            crate::app_settings_commands::write_app_settings_inner(f.root.path(), &f.state,
+                    json!({"webBrowser":{"defaultPolicy":{"nativeBrowsingMode":"restricted","sameOriginOnly":true}}})).await.unwrap();
+            let recovered = f.authorize_for("c", "recovered-global-c").await;
+            assert_eq!(decision(&recovered), WebsitePermissionDecision::Deny);
+            let mut recovered_proxy = upstream.proxy(&recovered).await;
+            let (status, mut recovered_stream) = relay_connect(&recovered_proxy).await;
+            assert_eq!(status, 200);
+            echo(&mut recovered_stream).await;
+            let mut relay_a2 = upstream.proxy(&a2).await;
+            let mut relay_c = upstream.proxy(&c).await;
+            relay_a.stop().await.unwrap();
+            a.lease.revoke();
+            for proxy in [&relay_a2, &relay_b, &relay_c] {
+                let (status, mut stream) = relay_connect(proxy).await;
+                assert_eq!(status, 200);
+                echo(&mut stream).await;
+            }
+            echo(&mut live_b).await;
+            relay_a2.stop().await.unwrap();
+            relay_b.stop().await.unwrap();
+            relay_c.stop().await.unwrap();
+            recovered_proxy.stop().await.unwrap();
         }
 
         #[tokio::test]

@@ -410,6 +410,201 @@ async function attached() {
 }
 
 describe("real-origin connection-tab integration", () => {
+  it.each(["scripts", "origins"])(
+    "isolates persisted %s edits to A while B stays attached and C opens with its own attempt",
+    async (change) => {
+      const b = {
+        ...session,
+        id: "tab-b",
+        connectionId: "connection-b",
+        name: "Browser B",
+      } as ConnectionSession;
+      const c = {
+        ...session,
+        id: "tab-c",
+        connectionId: "connection-c",
+        name: "Browser C",
+      } as ConnectionSession;
+      const a = { ...session, name: "Browser A" } as ConnectionSession;
+      const rowB = { ...connection, id: b.connectionId, name: b.name };
+      const rowC = { ...connection, id: c.connectionId, name: c.name };
+      f.context.state.connections = [connection, rowB, rowC];
+      f.context.state.sessions = [a, b, c];
+      const listeners = new Set<(event: any) => void>();
+      const identities = new Map<string, OriginBrowserSnapshot["identity"]>();
+      const native = f.invoke.getMockImplementation()!;
+      f.listen.mockImplementation(async (name, callback) => {
+        if (name === "origin-browser-state") listeners.add(callback);
+        return () => listeners.delete(callback);
+      });
+      f.invoke.mockImplementation(async (command, args) => {
+        const request = args.request;
+        if (command === "origin_browser_status")
+          return {
+            capability: { availability: "available" },
+            snapshot: request.identity
+              ? {
+                  ...snapshot(request.identity.attemptId),
+                  identity: request.identity,
+                }
+              : null,
+          };
+        if (command === "origin_browser_create") {
+          const attemptId = `isolated-${request.owner.sessionId}-${++f.serial}`;
+          const identity = { ...request.owner, attemptId };
+          identities.set(request.owner.sessionId, identity);
+          return {
+            requestId: request.requestId,
+            snapshot: {
+              ...snapshot(attemptId),
+              identity,
+            },
+          };
+        }
+        return native(command, args);
+      });
+      let showC = false;
+      const tree = () => (
+        <>
+          <section key={a.id} aria-label={a.name}>
+            <WebBrowser session={a} />
+          </section>
+          <section key={b.id} aria-label={b.name}>
+            <WebBrowser session={b} />
+          </section>
+          {showC && (
+            <section key={c.id} aria-label={c.name}>
+              <WebBrowser session={c} />
+            </section>
+          )}
+        </>
+      );
+      const forSession = (name: string, id: string) =>
+        calls(name).filter(
+          ([, args]) =>
+            (args.request.owner ?? args.request.identity)?.sessionId === id,
+        );
+      const view = render(tree());
+      await waitFor(() =>
+        expect(forSession("origin_browser_create", b.id)).toHaveLength(1),
+      );
+      await waitFor(() =>
+        expect(
+          within(screen.getByRole("region", { name: b.name })).getByRole(
+            "button",
+            { name: "Reload" },
+          ),
+        ).toBeEnabled(),
+      );
+      const bIdentity = identities.get(b.id)!;
+      const oldA = identities.get(a.id)!;
+      f.context.persistence = { dirty: true, saving: true };
+      f.context.state.connections = [
+        {
+          ...connection,
+          ...(change === "scripts"
+            ? {
+                websiteDomainPermissions: {
+                  version: 1,
+                  websites: [
+                    {
+                      origin: "https://fixture.invalid",
+                      requestClasses: { script: "deny" },
+                      destinations: [],
+                    },
+                  ],
+                },
+              }
+            : {
+                httpProxyPolicy: {
+                  ...f.settings.webBrowser.defaultPolicy,
+                  nativeBrowsingMode: "restricted",
+                  sameOriginOnly: true,
+                },
+              }),
+        },
+        rowB,
+        rowC,
+      ];
+      view.rerender(tree());
+      await act(async () => {});
+      expect(forSession("origin_browser_create", a.id)).toHaveLength(1);
+      expect(forSession("origin_browser_close", b.id)).toHaveLength(0);
+      f.context.persistence = { dirty: false, saving: false };
+      view.rerender(tree());
+      await waitFor(() =>
+        expect(forSession("origin_browser_create", a.id)).toHaveLength(2),
+      );
+      expect(forSession("origin_browser_create", b.id)).toHaveLength(1);
+      expect(forSession("origin_browser_close", b.id)).toHaveLength(0);
+      showC = true;
+      view.rerender(tree());
+      await waitFor(() =>
+        expect(forSession("origin_browser_create", c.id)).toHaveLength(1),
+      );
+      await act(async () => {
+        for (const callback of listeners)
+          callback({
+            payload: {
+              ...snapshot(oldA.attemptId, {
+                sequence: 99,
+                phase: "failed",
+                failureReason: "source-changed",
+              }),
+              identity: oldA,
+            },
+          });
+      });
+      fireEvent.click(
+        within(screen.getByRole("region", { name: b.name })).getByRole(
+          "button",
+          { name: "Reload" },
+        ),
+      );
+      await waitFor(() =>
+        expect(
+          forSession("origin_browser_control", b.id).some(
+            ([, args]) =>
+              args.request.action.kind === "reload" &&
+              args.request.identity.attemptId === bIdentity.attemptId,
+          ),
+        ).toBe(true),
+      );
+      expect(forSession("origin_browser_create", b.id)).toHaveLength(1);
+      expect(forSession("origin_browser_close", b.id)).toHaveLength(0);
+      expect(forSession("origin_browser_create", c.id)).toHaveLength(1);
+      expect(f.context.dispatchAndFlush).not.toHaveBeenCalled();
+      expect(f.updateSettings).not.toHaveBeenCalled();
+
+      // Global request defaults are explicitly documented to apply on reopen,
+      // so saving them must not retire unrelated existing private attempts.
+      f.settings.webBrowser = {
+        ...f.settings.webBrowser,
+        defaultPolicy: {
+          ...f.settings.webBrowser.defaultPolicy,
+          nativeBrowsingMode: "restricted",
+          sameOriginOnly: true,
+        },
+      };
+      view.rerender(tree());
+      await act(async () => {});
+      expect(forSession("origin_browser_create", b.id)).toHaveLength(1);
+      expect(forSession("origin_browser_close", b.id)).toHaveLength(0);
+      expect(forSession("origin_browser_create", c.id)).toHaveLength(1);
+      fireEvent.click(
+        within(screen.getByRole("region", { name: a.name })).getByRole(
+          "button",
+          { name: "Reconnect" },
+        ),
+      );
+      await waitFor(() =>
+        expect(forSession("origin_browser_create", a.id)).toHaveLength(3),
+      );
+      expect(forSession("origin_browser_close", b.id)).toHaveLength(0);
+      expect(forSession("origin_browser_create", c.id)).toHaveLength(1);
+    },
+  );
+
   it("registers SSH host-key verification before creating a tunneled Webmin tab and preserves its website origin", async () => {
     f.context.state.connections = [
       setInlineSsh(
