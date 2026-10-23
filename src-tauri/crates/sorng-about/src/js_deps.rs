@@ -33,7 +33,7 @@ const PRODUCTION_DEPS: &[(&str, &str, &str, &str)] = &[
     ("@xterm/addon-web-links", "0.12.0", "MIT", "Terminal Emulation"),
     ("@xterm/xterm", "6.0.0", "MIT", "Terminal Emulation"),
     ("codemirror", "6.0.2", "MIT", "Code Editing"),
-    ("dompurify", "3.4.15", "(MPL-2.0 OR Apache-2.0)", "Other"),
+    ("dompurify", "3.4.17", "(MPL-2.0 OR Apache-2.0)", "Other"),
     ("exceljs", "4.4.0", "MIT", "Other"),
     ("gifenc", "1.0.3", "MIT", "Media"),
     ("i18next", "26.4.2", "MIT", "Internationalization"),
