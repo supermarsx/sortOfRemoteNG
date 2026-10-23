@@ -51,12 +51,52 @@ test("every protected session alias path requires exact authority/context key", 
   );
 });
 
-test("new H2 capability is distinct from legacy H1 and reserved H3", async () => {
+test("H2 and owned H3 capabilities are distinct from legacy H1", async () => {
   const header = await readFile(
     new URL("cef_sorng_tls_bridge.h", root),
     "utf8",
   );
   assert.match(header, /CEF_SORNG_TLS_CAP_HTTP1_ONLY \(1ull << 2\)/);
   assert.match(header, /CEF_SORNG_TLS_CAP_SAME_AUTHORITY_HTTP2 \(1ull << 6\)/);
-  assert.doesNotMatch(header, /#define CEF_SORNG_TLS_CAP_\w+ \(1ull << 7\)/);
+  assert.match(header, /CEF_SORNG_TLS_CAP_OWNED_HTTP3 \(1ull << 7\)/);
+  assert.match(
+    header,
+    /6=owned datagram transport configured \(OWNED_HTTP3 only, after configure\)/,
+  );
+  assert.match(header, /after states\(1\) and \(4\)\. OWNED_HTTP3 only/);
+  assert.match(
+    header,
+    /must match the already-acknowledged private HTTP 127\.0\.0\.1 proxy/,
+  );
+  assert.match(header, /Configuration is one-shot per native context/);
+  assert.match(header, /not readiness: await state\(6\)/);
+  assert.match(header, /A context without this configuration cannot use QUIC/);
+  assert.match(
+    header.replace(/\s+/g, " "),
+    /cef_sorng_tls_configure_datagrams_v2\(uint64_t context_token, uint64_t generation, uint16_t expected_port, const uint8_t\* proxy_password, size_t password_length\)/,
+  );
+});
+
+test("immutable H1 and H2 revision patches do not advertise owned H3", async () => {
+  const series = await readFile(
+    new URL("154.0.8037.58-682c378/series", root),
+    "utf8",
+  );
+  const legacy = series
+    .split(/\r?\n/)
+    .filter(Boolean)
+    .map((line) => line.split(" ")[1])
+    .filter((name) => Number(name.slice(0, 4)) <= 12);
+  assert.equal(legacy.length, 12);
+  for (const name of legacy) {
+    const source = await readFile(
+      new URL(`154.0.8037.58-682c378/${name}`, root),
+      "utf8",
+    );
+    assert.doesNotMatch(
+      source,
+      /CEF_SORNG_TLS_CAP_OWNED_HTTP3|cef_sorng_tls_configure_datagrams_v2/,
+      name,
+    );
+  }
 });
