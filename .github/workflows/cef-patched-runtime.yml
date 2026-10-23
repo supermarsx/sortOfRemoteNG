@@ -73,41 +73,43 @@ jobs:
     with:
       reviewed_inputs: ${{ inputs.reviewed_inputs }}
       producers: ${{ inputs.producers }}
+  hosted-plan:
+    if: github.event_name == 'workflow_dispatch' && github.event.repository.visibility == 'public' && (inputs.mode == 'discover' || inputs.mode == 'provision')
+    concurrency:
+      group: cef-engine-hosted-plan-${{ github.ref }}-${{ inputs.mode }}-${{ inputs.reviewed_inputs }}-${{ inputs.target }}
+      cancel-in-progress: true
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      matrix: ${{ steps.plan.outputs.matrix }}
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: ".node-version"
+          package-manager-cache: false
+      - name: Select reviewed native targets before scheduling hosted runners
+        id: plan
+        env:
+          CEF_TARGET: ${{ inputs.target }}
+        run: |
+          node --input-type=module <<'NODE'
+          import { appendFile } from 'node:fs/promises';
+          import { hostedTargetMatrix } from './scripts/cef-hosted-bootstrap.mjs';
+          const matrix = hostedTargetMatrix(process.env.CEF_TARGET);
+          await appendFile(process.env.GITHUB_OUTPUT, `matrix=${JSON.stringify(matrix)}\n`);
+          NODE
   discover:
+    needs: hosted-plan
     if: inputs.mode == 'discover' && github.event_name == 'workflow_dispatch' && github.event.repository.visibility == 'public'
     concurrency:
       group: cef-engine-discover-${{ github.ref }}-${{ inputs.mode }}-${{ inputs.reviewed_inputs }}-${{ matrix.target }}
       cancel-in-progress: true
     strategy:
       fail-fast: false
-      matrix:
-        include:
-          - {
-              target: x86_64-pc-windows-msvc,
-              runner: windows-2025-vs2026,
-              platform: win32,
-            }
-          - {
-              target: aarch64-pc-windows-msvc,
-              runner: windows-11-arm,
-              platform: win32,
-            }
-          - {
-              target: x86_64-unknown-linux-gnu,
-              runner: ubuntu-24.04,
-              platform: linux,
-            }
-          - {
-              target: aarch64-unknown-linux-gnu,
-              runner: ubuntu-24.04-arm,
-              platform: linux,
-            }
-          - {
-              target: x86_64-apple-darwin,
-              runner: macos-15-intel,
-              platform: darwin,
-            }
-          - { target: aarch64-apple-darwin, runner: macos-15, platform: darwin }
+      matrix: ${{ fromJSON(needs.hosted-plan.outputs.matrix) }}
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 15
     steps:
@@ -161,40 +163,14 @@ jobs:
         run: node scripts/cef-runtime-ci.mjs plan --inputs "$CEF_INPUTS" --target "$CEF_TARGET" --runner-mode "$CEF_RUNNER_MODE"
 
   provision:
+    needs: hosted-plan
     if: inputs.mode == 'provision' && github.event_name == 'workflow_dispatch' && github.event.repository.visibility == 'public'
     concurrency:
       group: cef-engine-provision-${{ github.ref }}-${{ inputs.mode }}-${{ inputs.reviewed_inputs }}-${{ matrix.target }}
       cancel-in-progress: true
     strategy:
       fail-fast: false
-      matrix:
-        include:
-          - {
-              target: x86_64-pc-windows-msvc,
-              runner: windows-2025-vs2026,
-              platform: win32,
-            }
-          - {
-              target: aarch64-pc-windows-msvc,
-              runner: windows-11-arm,
-              platform: win32,
-            }
-          - {
-              target: x86_64-unknown-linux-gnu,
-              runner: ubuntu-24.04,
-              platform: linux,
-            }
-          - {
-              target: aarch64-unknown-linux-gnu,
-              runner: ubuntu-24.04-arm,
-              platform: linux,
-            }
-          - {
-              target: x86_64-apple-darwin,
-              runner: macos-15-intel,
-              platform: darwin,
-            }
-          - { target: aarch64-apple-darwin, runner: macos-15, platform: darwin }
+      matrix: ${{ fromJSON(needs.hosted-plan.outputs.matrix) }}
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 30
     steps:

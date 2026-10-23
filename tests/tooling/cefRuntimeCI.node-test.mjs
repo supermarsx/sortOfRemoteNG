@@ -1577,6 +1577,107 @@ test("CLI requires explicit execution and trusted default-branch dispatch; no im
     /default-branch/,
   );
 });
+test("hosted discovery and provision schedule only the requested native target", async () => {
+  const workflow = YAML.parse(
+    await readFile(
+      path.join(root, ".github/workflows/cef-patched-runtime.yml"),
+      "utf8",
+    ),
+  );
+  const target = "x86_64-unknown-linux-gnu";
+  for (const name of ["discover", "provision"]) {
+    const job = workflow.jobs[name];
+    // Evaluate the checked-in static matrix on the old workflow, or its actual
+    // exported planner on the corrected one. This reproduces the six-runner
+    // fan-out from the real workflow instead of a separately invented matrix.
+    const actual =
+      typeof job.strategy.matrix === "object"
+        ? job.strategy.matrix
+        : (
+            await import("../../scripts/cef-hosted-bootstrap.mjs")
+          ).hostedTargetMatrix(target);
+    assert.deepEqual(
+      actual.include.map((row) => row.target),
+      [target],
+      name,
+    );
+    assert.equal(job.needs, "hosted-plan");
+    assert.equal(
+      job.strategy.matrix,
+      "${{ fromJSON(needs.hosted-plan.outputs.matrix) }}",
+    );
+  }
+  const planned = workflow.jobs["hosted-plan"];
+  assert.match(planned.if, /workflow_dispatch/);
+  assert.match(planned.if, /visibility == 'public'/);
+  assert.match(planned.if, /inputs.mode == 'discover'/);
+  assert.match(planned.if, /inputs.mode == 'provision'/);
+  assert.equal(planned.outputs.matrix, "${{ steps.plan.outputs.matrix }}");
+  const step = planned.steps.find((entry) => entry.id === "plan");
+  assert.equal(step.env.CEF_TARGET, "${{ inputs.target }}");
+  assert.match(step.run, /hostedTargetMatrix\(process\.env\.CEF_TARGET\)/);
+  assert.match(step.run, /appendFile\(process\.env\.GITHUB_OUTPUT/);
+  assert.doesNotMatch(step.run, /\$\{\{\s*inputs\./);
+});
+
+test("the actual hosted planner step emits selected rows and rejects an unknown target before output", async (t) => {
+  const workflow = YAML.parse(
+    await readFile(
+      path.join(root, ".github/workflows/cef-patched-runtime.yml"),
+      "utf8",
+    ),
+  );
+  const step = workflow.jobs["hosted-plan"].steps.find(
+    (entry) => entry.id === "plan",
+  );
+  const source =
+    /^node --input-type=module <<'NODE'\n([\s\S]*)\nNODE\n?$/u.exec(
+      step.run,
+    )?.[1];
+  assert.ok(source, "execute the actual checked-in workflow JavaScript body");
+  const { hostedTargetMatrix, RECIPE } =
+    await import("../../scripts/cef-hosted-bootstrap.mjs");
+  const directory = await mkdtemp(
+    path.join(os.tmpdir(), "cef-hosted-target-plan-"),
+  );
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  for (const target of [
+    "all",
+    ...TARGETS,
+    "unknown-target\nmatrix=untrusted",
+  ]) {
+    const output = path.join(directory, "github-output");
+    await writeFile(output, "");
+    const result = exec(
+      process.execPath,
+      ["--input-type=module", "-e", source],
+      {
+        cwd: root,
+        env: { ...process.env, CEF_TARGET: target, GITHUB_OUTPUT: output },
+        timeout: 10_000,
+      },
+    );
+    if (target.startsWith("unknown")) {
+      await assert.rejects(result, /Unknown hosted CEF target/);
+      assert.equal(await readFile(output, "utf8"), "");
+    } else {
+      await result;
+      const actual = await readFile(output, "utf8");
+      assert.equal(
+        actual,
+        `matrix=${JSON.stringify(hostedTargetMatrix(target))}\n`,
+      );
+      const expected = RECIPE.targets
+        .filter((row) => target === "all" || row.target === target)
+        .map(({ target, runner, platform }) => ({ target, runner, platform }));
+      assert.deepEqual(
+        JSON.parse(actual.slice("matrix=".length)).include,
+        expected,
+      );
+    }
+  }
+});
+
 test("workflow has manual/default-branch guards, six targets, protected least-privilege publish and pinned actions", async () => {
   const raw = await readFile(
       path.join(root, ".github/workflows/cef-patched-runtime.yml"),
@@ -1608,7 +1709,15 @@ test("workflow has manual/default-branch guards, six targets, protected least-pr
   assert.equal(workflow.jobs.publish.concurrency["cancel-in-progress"], false);
   for (const [name, job] of Object.entries(workflow.jobs)) {
     assert.match(job.if, /workflow_dispatch/);
-    if (["discover", "provision", "accept-native"].includes(name)) {
+    if (name === "hosted-plan") {
+      assert.match(job.if, /visibility == 'public'/);
+      assert.match(job.if, /mode == 'discover'/);
+      assert.match(job.if, /mode == 'provision'/);
+      assert.doesNotMatch(
+        job.if,
+        /mode == 'build'|mode == 'hosted-build'|mode == 'acceptance'/,
+      );
+    } else if (["discover", "provision", "accept-native"].includes(name)) {
       assert.match(job.if, /visibility == 'public'/);
       assert.match(
         job.if,

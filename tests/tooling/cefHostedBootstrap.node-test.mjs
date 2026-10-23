@@ -11,6 +11,7 @@ import {
   assertCleanupTarget,
   cleanupLinuxCapacity,
   discoveryBlockers,
+  hostedTargetMatrix,
   inventoryFile,
   nativeWindowsShell,
   observe,
@@ -42,6 +43,39 @@ test("discovery covers six exact native standard-public targets, never paid or a
     () => selectTarget("aarch64-apple-darwin", "darwin", "x64"),
     /native target/,
   );
+});
+
+test("hosted scheduling selects all or one exact recipe target without aliases or environment fallback", () => {
+  const expected = RECIPE.targets.map(({ target, runner, platform }) => ({
+    target,
+    runner,
+    platform,
+  }));
+  assert.deepEqual(hostedTargetMatrix("all"), { include: expected });
+  for (const row of expected) {
+    assert.deepEqual(hostedTargetMatrix(row.target), { include: [row] });
+  }
+  for (const target of [
+    undefined,
+    null,
+    "",
+    "unknown",
+    "linux",
+    "ubuntu-24.04",
+    "all ",
+    "ALL",
+    "x86_64-unknown-linux-gnu\n",
+    [expected[0].target],
+  ]) {
+    assert.throws(
+      () => hostedTargetMatrix(target),
+      /Unknown hosted CEF target/,
+    );
+  }
+  const mutable = hostedTargetMatrix("all");
+  mutable.include[0].runner = "arbitrary-runner";
+  mutable.include.pop();
+  assert.deepEqual(hostedTargetMatrix("all"), { include: expected });
 });
 
 const adequate = {
@@ -464,11 +498,16 @@ test("discovery workflow is read-only, bounded, explicit, and cannot enter produ
   assert.equal(job["timeout-minutes"], 15);
   assert.equal(job["runs-on"], "${{ matrix.runner }}");
   assert.deepEqual(
-    job.strategy.matrix.include.map(({ target, runner }) => ({
+    hostedTargetMatrix("all").include.map(({ target, runner }) => ({
       target,
       runner,
     })),
     RECIPE.targets.map(({ target, runner }) => ({ target, runner })),
+  );
+  assert.equal(job.needs, "hosted-plan");
+  assert.equal(
+    job.strategy.matrix,
+    "${{ fromJSON(needs.hosted-plan.outputs.matrix) }}",
   );
   assert.equal(workflow.permissions.contents, "read");
   assert.equal(job.environment, undefined);

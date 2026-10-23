@@ -38,6 +38,22 @@ const inside = (root, file) => {
   );
 };
 
+/** Select only reviewed public native runner rows, before scheduling any work. */
+export function hostedTargetMatrix(target) {
+  const rows =
+    target === "all"
+      ? RECIPE.targets
+      : RECIPE.targets.filter((row) => row.target === target);
+  if (!rows.length) fail("Unknown hosted CEF target");
+  return {
+    include: rows.map(({ target, runner, platform }) => ({
+      target,
+      runner,
+      platform,
+    })),
+  };
+}
+
 export function selectTarget(
   target,
   platform = process.platform,
