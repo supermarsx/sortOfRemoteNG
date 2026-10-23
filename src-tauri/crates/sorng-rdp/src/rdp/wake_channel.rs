@@ -11,7 +11,7 @@ use std::fmt;
 use std::io::{self, Read, Write};
 use std::net::TcpStream;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 use tokio::sync::{mpsc, OwnedSemaphorePermit, Semaphore};
 
 /// Hard process-local bound for commands accepted but not yet handled by one
@@ -21,11 +21,21 @@ use tokio::sync::{mpsc, OwnedSemaphorePermit, Semaphore};
 pub const MAX_PENDING_COMMANDS: usize = 256;
 
 /// Hard retained-memory weight for one session's accepted regular commands.
-/// The service admits at most 16 active-or-starting RDP workers, bounding the
-/// process-wide queued command payload to 256 MiB even when every session is
-/// saturated. Keep the resource-budget regression below synchronized with the
-/// service admission limit if either constant changes.
+/// A separate process-wide budget bounds the aggregate independently of how
+/// many memory-admitted RDP workers exist.
 pub const MAX_PENDING_COMMAND_BYTES: usize = 16 * 1024 * 1024;
+pub const MAX_PROCESS_PENDING_COMMAND_BYTES: usize = 256 * 1024 * 1024;
+
+#[derive(Clone)]
+struct WakeByteBudget {
+    session: Arc<Semaphore>,
+    process: Arc<Semaphore>,
+}
+
+fn process_command_budget() -> Arc<Semaphore> {
+    static BUDGET: OnceLock<Arc<Semaphore>> = OnceLock::new();
+    Arc::clone(BUDGET.get_or_init(|| Arc::new(Semaphore::new(MAX_PROCESS_PENDING_COMMAND_BYTES))))
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum WakeSendError {
@@ -55,6 +65,7 @@ struct QueuedCommand {
 pub struct WakeCommandPermit {
     _count: OwnedSemaphorePermit,
     _bytes: OwnedSemaphorePermit,
+    _process_bytes: OwnedSemaphorePermit,
     byte_weight: usize,
 }
 
@@ -153,7 +164,7 @@ pub struct WakeSender {
     shutdown_requested: Arc<AtomicBool>,
     activity_changed: Arc<AtomicBool>,
     pending_command_permits: Arc<Semaphore>,
-    pending_byte_permits: Arc<Semaphore>,
+    pending_byte_permits: WakeByteBudget,
 }
 
 impl WakeSender {
@@ -164,7 +175,7 @@ impl WakeSender {
         shutdown_requested: Arc<AtomicBool>,
         activity_changed: Arc<AtomicBool>,
         pending_command_permits: Arc<Semaphore>,
-        pending_byte_permits: Arc<Semaphore>,
+        pending_byte_permits: WakeByteBudget,
     ) -> Self {
         Self {
             inner,
@@ -226,7 +237,10 @@ impl WakeSender {
         let count_permit = Arc::clone(&self.pending_command_permits)
             .try_acquire_owned()
             .map_err(|_| WakeSendError::Full)?;
-        let byte_permit = Arc::clone(&self.pending_byte_permits)
+        let byte_permit = Arc::clone(&self.pending_byte_permits.session)
+            .try_acquire_many_owned(byte_weight_u32)
+            .map_err(|_| WakeSendError::Full)?;
+        let process_permit = Arc::clone(&self.pending_byte_permits.process)
             .try_acquire_many_owned(byte_weight_u32)
             .map_err(|_| WakeSendError::Full)?;
         if self.inner.is_closed() {
@@ -235,6 +249,7 @@ impl WakeSender {
         Ok(WakeCommandPermit {
             _count: count_permit,
             _bytes: byte_permit,
+            _process_bytes: process_permit,
             byte_weight,
         })
     }
@@ -281,7 +296,7 @@ impl Clone for WakeSender {
             shutdown_requested: Arc::clone(&self.shutdown_requested),
             activity_changed: Arc::clone(&self.activity_changed),
             pending_command_permits: Arc::clone(&self.pending_command_permits),
-            pending_byte_permits: Arc::clone(&self.pending_byte_permits),
+            pending_byte_permits: self.pending_byte_permits.clone(),
         }
     }
 }
@@ -405,13 +420,22 @@ impl WakeReceiver {
 
 /// Create a wake-signaled command channel pair.
 pub fn create_wake_channel() -> io::Result<(WakeSender, WakeReceiver)> {
+    create_wake_channel_with_budget(process_command_budget())
+}
+
+fn create_wake_channel_with_budget(
+    process: Arc<Semaphore>,
+) -> io::Result<(WakeSender, WakeReceiver)> {
     let (cmd_tx, cmd_rx) = mpsc::unbounded_channel::<QueuedCommand>();
     let (wake_reader, wake_writer) = create_wake_pair()?;
     let signaled = Arc::new(AtomicBool::new(false));
     let shutdown_requested = Arc::new(AtomicBool::new(false));
     let activity_changed = Arc::new(AtomicBool::new(false));
     let pending_command_permits = Arc::new(Semaphore::new(MAX_PENDING_COMMANDS));
-    let pending_byte_permits = Arc::new(Semaphore::new(MAX_PENDING_COMMAND_BYTES));
+    let pending_byte_permits = WakeByteBudget {
+        session: Arc::new(Semaphore::new(MAX_PENDING_COMMAND_BYTES)),
+        process,
+    };
     let tx = WakeSender::new(
         cmd_tx,
         wake_writer,
@@ -712,16 +736,36 @@ mod tests {
     }
 
     #[test]
-    fn queue_budget_stays_bounded_by_service_admission_limit() {
-        let aggregate = MAX_PENDING_COMMAND_BYTES
-            .checked_mul(crate::rdp::types::MAX_RDP_ACTIVE_OR_PENDING_SESSIONS)
-            .expect("aggregate budget must fit usize");
-        assert_eq!(
-            crate::rdp::types::MAX_RDP_ACTIVE_OR_PENDING_SESSIONS,
-            16,
-            "raising the session cap requires an explicit queued-memory review"
-        );
-        assert!(aggregate <= 256 * 1024 * 1024);
+    fn process_byte_budget_remains_bounded_without_a_session_count_ceiling() {
+        assert_eq!(MAX_PROCESS_PENDING_COMMAND_BYTES, 256 * 1024 * 1024);
+        let weight = regular_command_byte_weight(&RdpCommand::ClipboardCopy("x".repeat(512)));
+        let budget = Arc::new(Semaphore::new(weight * 2));
+        let mut channels: Vec<_> = (0..24)
+            .map(|_| create_wake_channel_with_budget(budget.clone()).unwrap())
+            .collect();
+        channels[0]
+            .0
+            .send(RdpCommand::ClipboardCopy("x".repeat(512)))
+            .unwrap();
+        channels[1]
+            .0
+            .send(RdpCommand::ClipboardCopy("x".repeat(512)))
+            .unwrap();
+        assert!(matches!(
+            channels[2]
+                .0
+                .send(RdpCommand::ClipboardCopy("x".repeat(512))),
+            Err(WakeSendError::Full)
+        ));
+        channels[0].1.try_recv().unwrap();
+        channels[2]
+            .0
+            .send(RdpCommand::ClipboardCopy("x".repeat(512)))
+            .unwrap();
+        assert_eq!(budget.available_permits(), 0);
+        channels[3].0.send(RdpCommand::Shutdown).unwrap();
+        drop(channels);
+        assert_eq!(budget.available_permits(), weight * 2);
     }
 
     #[test]

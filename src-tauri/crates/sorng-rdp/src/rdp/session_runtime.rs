@@ -1,4 +1,5 @@
-use tokio::sync::{watch, OwnedSemaphorePermit};
+use sorng_core::connection_memory::MemoryReservation;
+use tokio::sync::watch;
 
 /// Monotonic identity for one concrete RDP worker occupying a connection record.
 /// Cleanup always compares this generation before mutating the registry so a
@@ -41,7 +42,7 @@ impl RdpWorkerCompletion {
 /// makes admission account for detached, slow, and panicking workers until
 /// their closure has genuinely finished.
 struct RdpWorkerLease {
-    session_slot: Option<OwnedSemaphorePermit>,
+    session_slot: Option<MemoryReservation>,
     completion_sender: Option<watch::Sender<bool>>,
 }
 
@@ -57,7 +58,7 @@ impl Drop for RdpWorkerLease {
 }
 
 fn bind_rdp_worker_lifetime(
-    session_slot: OwnedSemaphorePermit,
+    session_slot: MemoryReservation,
 ) -> (RdpWorkerLease, RdpWorkerCompletion) {
     let (completion_sender, receiver) = watch::channel(false);
     (
@@ -105,7 +106,7 @@ impl RdpWorkerRuntime {
     /// the actual worker lifetime.
     pub fn spawn_blocking<F>(
         generation: RdpWorkerGeneration,
-        session_slot: OwnedSemaphorePermit,
+        session_slot: MemoryReservation,
         worker: F,
     ) -> Self
     where
@@ -152,9 +153,8 @@ mod tests {
     use std::sync::atomic::{AtomicUsize, Ordering};
     use std::sync::{Arc, Condvar, Mutex};
     use std::time::Duration;
-    use tokio::sync::Semaphore;
 
-    const CAPACITY: usize = 16;
+    const CAPACITY: usize = 24;
 
     #[derive(Default)]
     struct BlockingGate {
@@ -189,7 +189,7 @@ mod tests {
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
     async fn worker_owned_permits_bound_blocked_churn_and_restore_capacity() {
         for reconnect_attempts in [100_usize, 500, 1_000] {
-            let slots = Arc::new(Semaphore::new(CAPACITY));
+            let slots = crate::rdp::types::test_memory_admission(CAPACITY);
             let gate = Arc::new(BlockingGate::default());
             let live_workers = Arc::new(AtomicUsize::new(0));
             let mut completions = Vec::with_capacity(CAPACITY);
@@ -245,7 +245,7 @@ mod tests {
 
     #[tokio::test]
     async fn close_requests_are_idempotent_and_completion_follows_permit_release() {
-        let slots = Arc::new(Semaphore::new(1));
+        let slots = crate::rdp::types::test_memory_admission(1);
         let permit = Arc::clone(&slots)
             .try_acquire_owned()
             .expect("initial permit should be available");
@@ -261,5 +261,28 @@ mod tests {
         completion.wait().await;
         assert_eq!(slots.available_permits(), 1);
         assert!(runtime.is_complete());
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn dropping_runtime_does_not_release_memory_until_blocking_worker_exits() {
+        let slots = crate::rdp::types::test_memory_admission(1);
+        let permit = slots.clone().try_acquire_owned().unwrap();
+        let gate = Arc::new(BlockingGate::default());
+        let live = Arc::new(AtomicUsize::new(0));
+        let (worker_gate, worker_live) = (gate.clone(), live.clone());
+        let runtime = RdpWorkerRuntime::spawn_blocking(8, permit, move || {
+            worker_live.store(1, Ordering::Release);
+            worker_gate.wait();
+            worker_live.store(0, Ordering::Release);
+        });
+        wait_for_count(&live, 1).await;
+        let completion = runtime.completion();
+        drop(runtime);
+        assert_eq!(slots.available_permits(), 0);
+        assert!(slots.clone().try_acquire_owned().is_err());
+        gate.open();
+        completion.wait().await;
+        assert_eq!(slots.available_permits(), 1);
+        assert_eq!(live.load(Ordering::Acquire), 0);
     }
 }

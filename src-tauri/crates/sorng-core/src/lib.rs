@@ -3,6 +3,7 @@
 //! Shared types and diagnostics infrastructure used across all service crates.
 
 pub mod app_identity;
+pub mod connection_memory;
 pub mod cpu_features;
 pub mod diagnostics;
 pub mod events;

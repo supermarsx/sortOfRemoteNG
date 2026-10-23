@@ -10279,6 +10279,7 @@ dependencies = [
  "serde_json",
  "sorng-app-domains",
  "sorng-app-shell",
+ "sorng-core",
  "sorng-storage",
  "tauri",
  "tauri-plugin-autostart",
@@ -10720,6 +10721,7 @@ dependencies = [
  "log",
  "serde",
  "serde_json",
+ "sysinfo",
  "tokio",
 ]
 

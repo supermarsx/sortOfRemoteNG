@@ -9,6 +9,7 @@ description = "Shared types and diagnostics infrastructure"
 serde = { workspace = true }
 serde_json = { workspace = true }
 log = { workspace = true }
+sysinfo = { version = "0.39.6", default-features = false, features = ["system"] }
 
 [dev-dependencies]
 tokio = { version = "1", features = ["rt", "macros"] }

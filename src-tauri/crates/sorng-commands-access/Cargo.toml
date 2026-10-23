@@ -6,6 +6,7 @@ edition = "2021"
 description = "Access command handlers — split from app crate to reduce coherence checking time"
 
 [dependencies]
+sorng-core = { path = "../sorng-core" }
 sorng-app-domains = { path = "../sorng-app-domains", default-features = false, features = ["cloud"] }
 sorng-storage = { path = "../sorng-storage" }
 tauri = { workspace = true }

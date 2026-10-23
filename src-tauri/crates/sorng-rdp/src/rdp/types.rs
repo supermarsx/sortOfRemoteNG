@@ -1,6 +1,6 @@
 use std::collections::{HashMap, VecDeque};
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, OnceLock};
 
 use super::frame_channel::{DynFrameChannel, FrameDeliveryCredits};
 use super::input::CredentialInputRequest;
@@ -9,7 +9,7 @@ use super::wake_channel::WakeSender;
 use crate::ironrdp::pdu::input::fast_path::FastPathInputEvent;
 use secrecy::SecretString;
 use serde::{Deserialize, Serialize};
-use tokio::sync::{OwnedSemaphorePermit, Semaphore};
+use sorng_core::connection_memory::{MemoryAdmission, MemoryReservation, MIB};
 
 use super::cert_trust::ServerCertValidationMode;
 use super::network::{build_credssp_http_client, build_tls_config};
@@ -684,7 +684,7 @@ pub struct RdpService {
     pub frame_delivery_credits: Arc<FrameDeliveryCredits>,
     /// Counts both active sessions and connect calls that have passed
     /// admission but have not yet been inserted into `connections`.
-    pub session_slots: Arc<Semaphore>,
+    pub session_slots: Arc<MemoryAdmission>,
     next_worker_generation: RdpWorkerGeneration,
     /// Cached TLS connector -- built once, reused for every connection.
     /// Building a TLS connector loads the system root certificate store which
@@ -699,10 +699,28 @@ pub struct RdpService {
     pub log_buffer: VecDeque<RdpLogEntry>,
 }
 
-/// A conservative process-wide ceiling for resource-heavy RDP session
-/// workers. Each admitted worker owns one permit before it is spawned and
-/// until its blocking closure has actually exited.
-pub const MAX_RDP_ACTIVE_OR_PENDING_SESSIONS: usize = 16;
+/// A conservative estimate, not a count ceiling or measurement of actual RAM.
+pub const RDP_WORKER_MEMORY_ESTIMATE: u64 = 256 * MIB;
+
+fn process_memory_admission() -> Arc<MemoryAdmission> {
+    static ADMISSION: OnceLock<Arc<MemoryAdmission>> = OnceLock::new();
+    Arc::clone(ADMISSION.get_or_init(|| MemoryAdmission::system(RDP_WORKER_MEMORY_ESTIMATE)))
+}
+
+#[cfg(test)]
+pub(crate) fn test_memory_admission(capacity: usize) -> Arc<MemoryAdmission> {
+    use sorng_core::connection_memory::SystemMemoryInfo;
+    let total = 4 * 1024 * MIB + capacity as u64 * RDP_WORKER_MEMORY_ESTIMATE * 2;
+    let available =
+        (1024 * MIB).max(total.div_ceil(10)) + capacity as u64 * RDP_WORKER_MEMORY_ESTIMATE;
+    MemoryAdmission::with_probe(RDP_WORKER_MEMORY_ESTIMATE, move || {
+        Ok(SystemMemoryInfo {
+            total_bytes: total,
+            available_bytes: available,
+            used_bytes: total - available,
+        })
+    })
+}
 
 impl RdpService {
     pub fn new() -> super::RdpServiceState {
@@ -717,7 +735,7 @@ impl RdpService {
         Arc::new(tokio::sync::Mutex::new(RdpService {
             connections: HashMap::new(),
             frame_delivery_credits: Arc::new(FrameDeliveryCredits::new()),
-            session_slots: Arc::new(Semaphore::new(MAX_RDP_ACTIVE_OR_PENDING_SESSIONS)),
+            session_slots: process_memory_admission(),
             next_worker_generation: 1,
             cached_tls_connector: tls_connector,
             cached_http_client: http_client,
@@ -727,15 +745,10 @@ impl RdpService {
 
     /// Reserve one active-or-pending session slot without waiting. The owned
     /// permit automatically returns to the pool on every startup error.
-    pub fn try_reserve_session_slot(&self) -> Result<OwnedSemaphorePermit, String> {
+    pub fn try_reserve_session_slot(&self) -> Result<MemoryReservation, String> {
         Arc::clone(&self.session_slots)
             .try_acquire_owned()
-            .map_err(|_| {
-                format!(
-                    "RDP session limit reached (maximum {} active or starting sessions)",
-                    MAX_RDP_ACTIVE_OR_PENDING_SESSIONS
-                )
-            })
+            .map_err(|error| format!("RDP connection could not start: {error}"))
     }
 
     pub fn allocate_worker_generation(&mut self) -> RdpWorkerGeneration {
@@ -752,7 +765,7 @@ impl RdpService {
         Arc::new(tokio::sync::Mutex::new(RdpService {
             connections: HashMap::new(),
             frame_delivery_credits: Arc::new(FrameDeliveryCredits::new()),
-            session_slots: Arc::new(Semaphore::new(capacity)),
+            session_slots: test_memory_admission(capacity),
             next_worker_generation: 1,
             cached_tls_connector: None,
             cached_http_client: None,
