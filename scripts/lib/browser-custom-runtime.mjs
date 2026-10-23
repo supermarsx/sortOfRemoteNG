@@ -1236,7 +1236,18 @@ export async function stageCustomRuntimePackage({
   };
 }
 
-async function git(root, args, isolated = {}) {
+export function validateGitExecutable(file) {
+  if (
+    typeof file !== "string" ||
+    !path.isAbsolute(file) ||
+    /[\x00-\x1f\x7f]/.test(file) ||
+    !["git", "git.exe"].includes(path.basename(file).toLowerCase())
+  )
+    fail("An absolute explicit Git executable is required");
+  return file;
+}
+
+async function git(root, args, isolated = {}, gitExecutable) {
   // No shell expansion, prompts, optional index refresh, or inherited index overrides.
   const env = {
     ...process.env,
@@ -1251,12 +1262,16 @@ async function git(root, args, isolated = {}) {
     )
       delete env[key];
   Object.assign(env, isolated);
-  const { stdout } = await exec("git", ["-C", root, ...args], {
-    env,
-    windowsHide: true,
-    timeout: 120_000,
-    maxBuffer: 8 * 1024 * 1024,
-  });
+  const { stdout } = await exec(
+    gitExecutable === undefined ? "git" : validateGitExecutable(gitExecutable),
+    ["-C", root, ...args],
+    {
+      env,
+      windowsHide: true,
+      timeout: 120_000,
+      maxBuffer: 8 * 1024 * 1024,
+    },
+  );
   return stdout.trim();
 }
 
@@ -1288,10 +1303,18 @@ export async function verifySourcePatchTemporaryDirectory({
 /** Simulate ordered patches without writing the checkout, its index or objects.
  * The production caller first verifies all source identities and input pins.
  */
-export async function verifySourcePatchSeries({ cwd, patches }) {
+export async function verifySourcePatchSeries({ cwd, patches, gitExecutable }) {
   const root = await realpath(cwd);
   const objects = await realpath(
-    path.resolve(root, await git(root, ["rev-parse", "--git-path", "objects"])),
+    path.resolve(
+      root,
+      await git(
+        root,
+        ["rev-parse", "--git-path", "objects"],
+        {},
+        gitExecutable,
+      ),
+    ),
   );
   const temporaryRoot = await realpath(os.tmpdir());
   const temporary = await mkdtemp(
@@ -1309,12 +1332,13 @@ export async function verifySourcePatchSeries({ cwd, patches }) {
       GIT_OBJECT_DIRECTORY: temporaryObjects,
       GIT_ALTERNATE_OBJECT_DIRECTORIES: objects,
     };
-    await git(root, ["read-tree", "HEAD"], isolated);
+    await git(root, ["read-tree", "HEAD"], isolated, gitExecutable);
     for (const patch of patches)
       await git(
         root,
         ["apply", "--cached", "--whitespace=error-all", "--", patch],
         isolated,
+        gitExecutable,
       );
   } finally {
     // Revalidate immediately before recursive deletion. A retargeted path is
@@ -1333,6 +1357,7 @@ export async function verifySourcePatchSeries({ cwd, patches }) {
  * untracked scan. Dependencies must already be provisioned; nothing is fetched.
  */
 export async function preflightSourceCheckout({
+  gitExecutable,
   sourceLock,
   inputsRoot,
   checkouts,
@@ -1342,12 +1367,13 @@ export async function preflightSourceCheckout({
   for (const name of Object.keys(repositories)) {
     const root = await realpath(checkouts[name]);
     if (
-      (await realpath(await git(root, ["rev-parse", "--show-toplevel"]))) !==
-      root
+      (await realpath(
+        await git(root, ["rev-parse", "--show-toplevel"], {}, gitExecutable),
+      )) !== root
     )
       fail(`${name}: checkout root required`);
     if (
-      (await git(root, ["rev-parse", "HEAD"])) !==
+      (await git(root, ["rev-parse", "HEAD"], {}, gitExecutable)) !==
       sourceLock.upstream[name].commit
     )
       fail(`${name}: source revision mismatch`);
@@ -1359,7 +1385,7 @@ export async function preflightSourceCheckout({
       ".",
     ];
     if (name === "chromium") args.push(":(exclude)cef");
-    if (await git(root, args))
+    if (await git(root, args, {}, gitExecutable))
       fail(
         `${name}: clean checkout required; existing changes are never reset`,
       );
@@ -1393,7 +1419,8 @@ export async function preflightSourceCheckout({
     }
   }
   // Verify every input pin before beginning any isolated patch simulation.
-  for (const group of patchGroups) await verifySourcePatchSeries(group);
+  for (const group of patchGroups)
+    await verifySourcePatchSeries({ ...group, gitExecutable });
   return {
     sourceLockSha256: identitySha256(sourceLock),
     patchGroups,
@@ -1414,7 +1441,12 @@ export async function applySourcePatches(options) {
     let appliedPatches = 0;
     try {
       for (const patch of group.patches) {
-        await git(group.cwd, ["apply", "--whitespace=error-all", "--", patch]);
+        await git(
+          group.cwd,
+          ["apply", "--whitespace=error-all", "--", patch],
+          {},
+          options.gitExecutable,
+        );
         appliedPatches += 1;
       }
       appliedRepositories.push(group.repository);

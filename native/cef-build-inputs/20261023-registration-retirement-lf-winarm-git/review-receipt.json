@@ -1,0 +1,60 @@
+{
+  "schemaVersion": 1,
+  "kind": "reviewed-target-native-windows-git-producer-inputs",
+  "target": "aarch64-pc-windows-msvc",
+  "sourceLockIdentity": "c0c325fd350e0e96be93ff704dcb7b977e7c8e3352df49d27bd148bc2ac3bc1a",
+  "sourceLockRawSha256": "aeb89c87735a214503400a6a3bc817aaea9d289d6f279433658d89ce31e41091",
+  "baseNamespace": "native/cef-build-inputs/20261023-registration-retirement-lf-winarm-20261021-192-1",
+  "baseSourceLockIdentity": "cde394260dde00c7821f1608af9ec988aab71e8132ebf9f954e46ce0265ad080",
+  "baseSourceLockRawSha256": "7781385d822214488ff89572f6b34d06be72b2374e5dc3f8a3033fd03f25639a",
+  "baseNormalizationReceiptSha256": "270bb9ad3f17bf12261317ec71e7f290112406d417e153fda4d63d6db9323448",
+  "baseReviewReceiptSha256": "f9169e11b904a704c8898e5b5f8be6dcf7859b232fbafbcc9751042b7bf11d76",
+  "sourceHeaderAllTwelvePatchesAndGnRawBytesUnchanged": true,
+  "previousNineHostToolPinsUnchanged": true,
+  "selectedGit": {
+    "path": "Program Files/Git/clangarm64/bin/git.exe",
+    "architecture": "arm64",
+    "version": "git version 2.56.0.windows.2",
+    "size": 3976392,
+    "sha256": "fbf9eae1898d502ba155f2ea2c6e411cabd7800a040c0892cc92d7d3d74e019f",
+    "selection": "explicit-reviewed-native-program-not-PATH-or-observer-choice"
+  },
+  "observation": {
+    "runId": 39991813871,
+    "headSha": "5ab7d30b71cb1ec76763a2cd0ddfa083defd03ad",
+    "image": {
+      "os": "win11-vs2026-arm64",
+      "version": "20261021.192.1"
+    },
+    "rawSha256": "6a20bb5847520700f2058010360c11d6dc336d75152823f9540cb540c2e08f75",
+    "candidateRawSha256": "fe5b53f1cc735cee52626609cdd680357869f8d17bc1c1c56bd629f3fdb7f589",
+    "gitStatus": "ambiguous",
+    "artifact": {
+      "target": "aarch64-pc-windows-msvc",
+      "id": 12518795500,
+      "name": "cef-hosted-discovery-aarch64-pc-windows-msvc",
+      "size": 2711,
+      "digest": "447ceb998fab7c4e792a8ff76f331aaa637971125519515885c0f11a44215398"
+    }
+  },
+  "postProvisionBaseline": {
+    "path": ".artifacts/codex-r4-lf-winarm-prereq-39968937579-20261023/cef-hosted-build-prerequisites-254fc0acc6001def832bed411ba320bfebd8111aeca64ee8c572512c0369d689-aarch64-pc-windows-msvc/after/observation.json",
+    "sha256": "42bcdcc4f7d0cd81f865804162cc09eedeebc78e4f7a90bdc9bfd6726a5470d0",
+    "allNineHostToolPinsMatched": true
+  },
+  "launcherTemplate": {
+    "depotToolsCommit": "c101dcbe0489c455fce7c2247bfee19680b116c3",
+    "path": "bootstrap/git.template.bat",
+    "sha256": "51253d48d2c9e101cd3f79d99f4a7efdbbb85350007b065d9e963296f6f7f23c",
+    "upstreamNativeSubSystems": [
+      "ucrt64",
+      "clangarm64"
+    ],
+    "bootstrapExecuted": false
+  },
+  "buildAttempted": false,
+  "nativeAcceptancePerformed": false,
+  "publicationAllowed": false,
+  "existingRuntimeChanged": false,
+  "priorLocalWindowsAcceptanceTransferred": false
+}

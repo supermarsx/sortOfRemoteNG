@@ -19,6 +19,7 @@ import {
   sourceAcquisitionPlan,
   validateCustomRuntimeManifest,
   validateSourceLock,
+  validateGitExecutable,
   verifySourceBuildIsolation,
   verifySourceCheckoutVersion,
   verifyToolchainFiles,
@@ -28,7 +29,7 @@ const exec = promisify(execFile);
 export const HELP = `CEF patched-runtime tooling (no stock fallback):
   doctor [--python EXE]                       Read-only Windows prerequisite inventory
   source-plan --root NEW_SHORT_DIR [--target TRIPLE]  Emit pinned acquisition recipe; no fetch
-  acquire --root NEW_SHORT_DIR [--target TRIPLE] --execute  Fetch pinned repositories only (no hooks/build)
+  acquire --root NEW_SHORT_DIR [--target TRIPLE] [--git ABSOLUTE_GIT] --execute  Fetch pinned repositories only (no hooks/build)
   validate --lock JSON [--manifest JSON] [--all-targets]
   preflight --lock JSON --manifest JSON --target TRIPLE --artifacts DIR --sdk DIR
   check-source|apply|recipe|build --lock JSON --inputs DIR --cef DIR --chromium DIR --depot-tools DIR
@@ -73,6 +74,7 @@ export function parseArguments(argv) {
     "depot-tools",
     "root",
     "python",
+    "git",
     "tools",
     "log-dir",
     "artifacts",
@@ -237,7 +239,9 @@ export function gclientConfiguration(plan) {
 /** Fetch only into a NEW workspace. No hook, package installer or global config
  * runs here. Failure preserves partial checkouts/logs; never deletes or resets.
  */
-export async function acquireSources(root, target) {
+export async function acquireSources(root, target, gitExecutable) {
+  const git =
+    gitExecutable === undefined ? "git" : validateGitExecutable(gitExecutable);
   const plan = acquisitionSourcePlan(root, target);
   // Validate serialization before creating a workspace or starting acquisition.
   const config = gclientConfiguration(plan);
@@ -301,14 +305,14 @@ export async function acquireSources(root, target) {
       ];
       for (const [index, args] of commands.entries()) {
         await executeStep(
-          { cwd: repository.destination, executable: "git", args },
+          { cwd: repository.destination, executable: git, args },
           env,
           logs,
           `${repository.name}-${index}`,
         );
       }
       const { stdout } = await exec(
-        "git",
+        git,
         ["-C", repository.destination, "rev-parse", "HEAD"],
         { env, windowsHide: true, timeout: 30_000 },
       );
@@ -320,7 +324,7 @@ export async function acquireSources(root, target) {
         repository.versionReferences,
       )) {
         const { stdout: refCommit } = await exec(
-          "git",
+          git,
           ["-C", repository.destination, "rev-parse", ref],
           { env, windowsHide: true, timeout: 30_000 },
         );
@@ -393,7 +397,11 @@ export async function main(argv = process.argv.slice(2)) {
   if (options.command === "acquire") {
     if (!options.execute)
       throw new Error("acquire requires --execute; source-plan is read-only");
-    return acquireSources(requireOption(options, "root"), options.target);
+    return acquireSources(
+      requireOption(options, "root"),
+      options.target,
+      options.git,
+    );
   }
   const sourceLock = validateSourceLock(
     await readJson(requireOption(options, "lock")),
@@ -417,6 +425,10 @@ export async function main(argv = process.argv.slice(2)) {
       requireAllTargets: !!options["all-targets"],
     });
   const params = {
+    gitExecutable:
+      options.git === undefined
+        ? undefined
+        : validateGitExecutable(options.git),
     sourceLock,
     inputsRoot: requireOption(options, "inputs"),
     checkouts: {

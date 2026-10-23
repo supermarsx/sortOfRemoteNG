@@ -101,6 +101,20 @@ test("actual prerequisites do not silently downgrade VS, SDK, Python or capacity
   );
 });
 
+test("multiple observed Git installations are review candidates, while missing or failed observations still block", () => {
+  for (const gitStatus of ["available", "ambiguous"])
+    assert.deepEqual(
+      discoveryBlockers({ ...adequate, gitStatus }, "win32"),
+      [],
+    );
+  for (const gitStatus of ["missing", "unavailable"])
+    assert.ok(
+      discoveryBlockers({ ...adequate, gitStatus }, "win32").some((message) =>
+        message.includes("Git"),
+      ),
+    );
+});
+
 const pe = (machine) => {
   const bytes = Buffer.alloc(128);
   bytes.writeUInt16LE(0x5a4d, 0);

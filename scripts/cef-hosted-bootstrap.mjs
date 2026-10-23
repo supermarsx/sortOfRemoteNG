@@ -60,6 +60,7 @@ export function discoveryBlockers(
     availableGiB,
     memoryGiB,
     nativeProbeCompleted = true,
+    gitStatus,
   },
   platform,
 ) {
@@ -73,6 +74,13 @@ export function discoveryBlockers(
   )
     blockers.push("Python 3.12 or newer is required");
   if (platform === "win32" && nativeProbeCompleted) {
+    if (
+      gitStatus !== undefined &&
+      !["available", "ambiguous"].includes(gitStatus)
+    )
+      blockers.push(
+        "Windows Git executable discovery is missing or incomplete",
+      );
     if (
       Number.parseInt(visualStudioVersion, 10) <
         RECIPE.minimumWindowsVisualStudioMajor ||
@@ -662,14 +670,11 @@ export async function observe(
     availableGiB: gib(disk.bavail * disk.bsize),
     memoryGiB: gib(os.totalmem()),
     nativeProbeCompleted: native.probeFailed !== true,
+    gitStatus: native.git?.status,
   };
   const blockers = [...discoveryBlockers(facts, process.platform), ...errors];
   if (native.probeFailed)
     blockers.push("Native tool discovery did not complete");
-  if (process.platform === "win32" && native.git?.status !== "available")
-    blockers.push(
-      "Windows Git executable discovery is missing, ambiguous, or incomplete",
-    );
   if (native.missing?.length)
     blockers.push(
       "Required native compiler, ATL/MFC, or SDK files are missing",

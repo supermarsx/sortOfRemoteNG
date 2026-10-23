@@ -44,6 +44,7 @@ import {
   customRuntimeEnvironment,
   preflightSourceCheckout,
   verifySourcePatchSeries,
+  validateGitExecutable,
   verifySourcePatchTemporaryDirectory,
   customRuntimeBuildRecipe,
   sourceAcquisitionPlan,
@@ -1866,3 +1867,100 @@ test(
     );
   },
 );
+function installedTestGit() {
+  const name = process.platform === "win32" ? "git.exe" : "git";
+  for (const directory of (process.env.PATH ?? process.env.Path ?? "").split(
+    path.delimiter,
+  )) {
+    const file = path.resolve(directory.replace(/^"|"$/g, ""), name);
+    if (existsSync(file)) return file;
+  }
+  throw new Error("The existing source-contract tests require installed Git");
+}
+
+test("explicit Git runs real isolated patch checks with poisoned PATH and never falls back when missing", async (t) => {
+  const data = await patchSeriesFixture(t);
+  const before = await data.snapshot();
+  const gitExecutable = installedTestGit();
+  const input = path.join(path.dirname(data.cwd), "explicit-git-input.json");
+  await writeFile(
+    input,
+    JSON.stringify({
+      cwd: data.cwd,
+      patches: data.patches,
+      gitExecutable,
+      sourceLock: fixture().lock,
+    }),
+  );
+  const moduleUrl = new URL(
+    "../../scripts/lib/browser-custom-runtime.mjs",
+    import.meta.url,
+  ).href;
+  const script = `import assert from 'node:assert/strict';
+import {readFileSync} from 'node:fs';
+import {verifySourcePatchSeries,preflightSourceCheckout,applySourcePatches} from ${JSON.stringify(moduleUrl)};
+const d=JSON.parse(readFileSync(process.argv[1],'utf8'));
+await verifySourcePatchSeries(d);
+const options={sourceLock:d.sourceLock,inputsRoot:d.cwd,checkouts:{cef:d.cwd,chromium:d.cwd,depotTools:d.cwd},gitExecutable:d.gitExecutable};
+await assert.rejects(preflightSourceCheckout(options),/source revision mismatch/);
+await assert.rejects(applySourcePatches(options),/source revision mismatch/);
+console.log('explicit Git patch simulation and source preflight reached pinned-revision guards');`;
+  const env = { ...process.env };
+  for (const key of Object.keys(env))
+    if (key.toUpperCase() === "PATH") delete env[key];
+  env.PATH = path.join(path.dirname(data.cwd), "no commands here");
+  const stdout = execFileSync(
+    process.execPath,
+    ["--input-type=module", "-e", script, input],
+    { env, encoding: "utf8", windowsHide: true },
+  );
+  assert.match(stdout, /reached pinned-revision guards/);
+  assert.deepEqual(await data.snapshot(), before);
+  await assert.rejects(
+    verifySourcePatchSeries({
+      ...data,
+      gitExecutable: path.join(path.dirname(data.cwd), "absent", "git.exe"),
+    }),
+    /ENOENT/,
+  );
+});
+
+test("initial acquisition honors explicit Git and rejects missing or relative executables without PATH fallback or fetch", async (t) => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "cef-explicit-git-"));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const source = path.join(root, "source");
+  assert.throws(() => validateGitExecutable("git.exe"), /absolute explicit/);
+  assert.equal(
+    parseArguments([
+      "acquire",
+      "--root",
+      source,
+      "--git",
+      path.join(root, "git.exe"),
+      "--execute",
+    ]).git,
+    path.join(root, "git.exe"),
+  );
+  await assert.rejects(
+    acquireSources(source, undefined, path.join(root, "absent", "git.exe")),
+    /Source acquisition incomplete/,
+  );
+  const result = JSON.parse(
+    await readFile(
+      path.join(source, "acquisition-logs", "result.json"),
+      "utf8",
+    ),
+  );
+  assert.equal(result.repositories.length, 3);
+  for (const repository of result.repositories) {
+    assert.equal(repository.ok, false);
+    assert.match(repository.error, /ENOENT/);
+    assert.ok(repository.error.includes(path.join(root, "absent", "git.exe")));
+  }
+  for (const relative of ["src/.git", "src/cef/.git", "depot_tools/.git"])
+    assert.equal(
+      existsSync(path.join(source, relative)),
+      false,
+      "no initialization or fetch can succeed through a PATH fallback",
+    );
+});

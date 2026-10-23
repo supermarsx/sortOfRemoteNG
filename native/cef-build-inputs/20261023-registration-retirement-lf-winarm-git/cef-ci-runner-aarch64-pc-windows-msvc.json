@@ -1,0 +1,23 @@
+{
+  "buildJobs": 4,
+  "environment": {
+    "GYP_MSVS_OVERRIDE_PATH": "@TOOLS@/Program Files/Microsoft Visual Studio/18/Enterprise",
+    "GYP_MSVS_VERSION": "2026",
+    "WINDOWSSDKDIR": "@TOOLS@/Program Files (x86)/Windows Kits/10"
+  },
+  "hosted": {
+    "acceptanceRunner": "windows-11-arm",
+    "architecture": "arm64",
+    "imageOS": "win11-vs2026-arm64",
+    "imageVersion": "20261021.192.1",
+    "platform": "win32",
+    "runner": "windows-11-arm"
+  },
+  "kind": "sorng-cef-ci-runner",
+  "path": [],
+  "python": "hostedtoolcache/windows/Python/3.13.16/arm64/python.exe",
+  "schemaVersion": 2,
+  "syncJobs": 2,
+  "target": "aarch64-pc-windows-msvc",
+  "git": "Program Files/Git/clangarm64/bin/git.exe"
+}

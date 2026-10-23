@@ -1,0 +1,60 @@
+{
+  "schemaVersion": 1,
+  "kind": "reviewed-target-native-windows-git-producer-inputs",
+  "target": "x86_64-pc-windows-msvc",
+  "sourceLockIdentity": "a840db7c18196156d502268114cc6946134562e2c9113b9980e04edad32f8b6b",
+  "sourceLockRawSha256": "91f2c6dd95e73197aaa4c752746b8a14d178f6c02e0e6ea5181e94e566b822a2",
+  "baseNamespace": "native/cef-build-inputs/20261023-registration-retirement-lf",
+  "baseSourceLockIdentity": "254fc0acc6001def832bed411ba320bfebd8111aeca64ee8c572512c0369d689",
+  "baseSourceLockRawSha256": "c3cb6d739d11259313796399514921449534b2a5680fdb67295cf95ee25bd10f",
+  "baseNormalizationReceiptSha256": "c7b7f956b9838d02a2a9cb9c0f719832cfdfa5ad21e204ea88434bb8f045d8b9",
+  "baseReviewReceiptSha256": "b9d9a7ff8d5446cc2eef2d598144fd48f0dece4fd02818d2974499b65531f9da",
+  "sourceHeaderAllTwelvePatchesAndGnRawBytesUnchanged": true,
+  "previousNineHostToolPinsUnchanged": true,
+  "selectedGit": {
+    "path": "Program Files/Git/ucrt64/bin/git.exe",
+    "architecture": "x64",
+    "version": "git version 2.56.0.windows.2",
+    "size": 4413272,
+    "sha256": "b824434dfe3b5f9cf648af6c9cc8cb1f6a982cc6e13b6c6ebbe6533c7e51cc2e",
+    "selection": "explicit-reviewed-native-program-not-PATH-or-observer-choice"
+  },
+  "observation": {
+    "runId": 39991813871,
+    "headSha": "5ab7d30b71cb1ec76763a2cd0ddfa083defd03ad",
+    "image": {
+      "os": "win25-vs2026",
+      "version": "20261021.278.1"
+    },
+    "rawSha256": "c5098b8ee17808f96c2f19a61b5fb95c5b7357eb170f0ab94c9d1d986dbda25e",
+    "candidateRawSha256": "2d552a3c037eecf7a9a25f694c72119ed191cf47e5ef904e724c9e5fad7d33ed",
+    "gitStatus": "ambiguous",
+    "artifact": {
+      "target": "x86_64-pc-windows-msvc",
+      "id": 12517479606,
+      "name": "cef-hosted-discovery-x86_64-pc-windows-msvc",
+      "size": 2678,
+      "digest": "c17de2b9efeef067770b3f0b92e0bc7ef679600a814ca2062dd15a310e5890e0"
+    }
+  },
+  "postProvisionBaseline": {
+    "path": ".artifacts/cef-hosted-provision-39808087337/x86_64-pc-windows-msvc/after/observation.json",
+    "sha256": "1c0d12746a7425818973534958349aa68c250865f8d90d42ba0cfc0540628d3b",
+    "allNineHostToolPinsMatched": true
+  },
+  "launcherTemplate": {
+    "depotToolsCommit": "c101dcbe0489c455fce7c2247bfee19680b116c3",
+    "path": "bootstrap/git.template.bat",
+    "sha256": "51253d48d2c9e101cd3f79d99f4a7efdbbb85350007b065d9e963296f6f7f23c",
+    "upstreamNativeSubSystems": [
+      "ucrt64",
+      "clangarm64"
+    ],
+    "bootstrapExecuted": false
+  },
+  "buildAttempted": false,
+  "nativeAcceptancePerformed": false,
+  "publicationAllowed": false,
+  "existingRuntimeChanged": false,
+  "priorLocalWindowsAcceptanceTransferred": false
+}

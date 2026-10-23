@@ -20,6 +20,10 @@ import YAML from "yaml";
 import {
   RUNNERS,
   MAX_RELEASE_ASSET,
+  WINDOWS_GIT_PROGRAMS,
+  WINDOWS_GIT_TEMPLATE_SHA256,
+  verifyWindowsGitProgram,
+  prepareWindowsGitLauncher,
   PACK_PYTHON,
   boundedBuildCommands,
   cefHookArguments,
@@ -486,6 +490,9 @@ test("hosted planning verifies all actual image-map pin bytes before selecting f
       build.target === "aarch64-apple-darwin" ? "macos-15" : host.runner;
     const mapBytes = stableJson({
       ...runner(build.target),
+      ...(WINDOWS_GIT_PROGRAMS[build.target]
+        ? { git: WINDOWS_GIT_PROGRAMS[build.target] }
+        : {}),
       schemaVersion: 2,
       hosted: {
         runner: host.runner,
@@ -505,6 +512,11 @@ test("hosted planning verifies all actual image-map pin bytes before selecting f
       ...pin(mapFile, mapBytes),
       size: Buffer.byteLength(mapBytes),
     };
+    if (WINDOWS_GIT_PROGRAMS[build.target])
+      toolchain.files.push({
+        ...pin(WINDOWS_GIT_PROGRAMS[build.target], "inert native Git fixture"),
+        size: Buffer.byteLength("inert native Git fixture"),
+      });
     const tools = stableJson(toolchain);
     await put(f.inputsRoot, build.toolchainLock.path, tools);
     build.toolchainLock = pin(build.toolchainLock.path, tools);
@@ -1654,4 +1666,121 @@ test("producer supersession cancels only the same validation purpose and actual 
       matrix: { ...context.matrix, key: `another-lock-${TARGETS[0]}` },
     }),
   );
+});
+const pinnedGitTemplate = Buffer.from(
+  [
+    "@echo off",
+    "setlocal",
+    "if not defined EDITOR set EDITOR=notepad",
+    ":: Exclude the current directory when searching for executables.",
+    ":: This is required for the SSO helper to run, which is written in Go.",
+    ":: Without this set, the SSO helper may throw an error when resolving",
+    ":: the `git` command (see https://pkg.go.dev/os/exec for more details).",
+    'set "NoDefaultCurrentDirectoryInExePath=1"',
+    'set "PATH=${GIT_PATH_PREPEND};%~dp0;%PATH%"',
+    '"${GIT_PROGRAM}" %*',
+    "",
+  ].join("\n"),
+);
+
+test("Windows Git selection requires the exact reviewed native file and rejects missing or tampered pins before acquisition", async (t) => {
+  const work = await temp(t);
+  const bytes = Buffer.from("inert native Git fixture; never executed");
+  const selected = WINDOWS_GIT_PROGRAMS[target];
+  await put(work, selected, bytes);
+  const toolchain = {
+    files: [{ ...pin(selected, bytes), size: bytes.length }],
+  };
+  const map = { ...runner(), git: selected };
+  const options = { runner: map, target, toolchain, toolsRoot: work };
+  assert.equal(
+    await verifyWindowsGitProgram(options),
+    path.resolve(work, selected),
+  );
+  await assert.rejects(
+    verifyWindowsGitProgram({ ...options, runner: runner() }),
+    /explicit native Windows Git/,
+  );
+  await assert.rejects(
+    verifyWindowsGitProgram({ ...options, toolchain: { files: [] } }),
+    /no reviewed file pin/,
+  );
+  assert.throws(
+    () =>
+      validateRunnerMap(
+        { ...map, git: "Program Files/Git/cmd/git.exe" },
+        target,
+      ),
+    /target-native/,
+  );
+  await put(work, selected, "changed bytes");
+  await assert.rejects(verifyWindowsGitProgram(options), /mismatch/);
+  await rm(path.join(work, selected));
+  await assert.rejects(verifyWindowsGitProgram(options), /ENOENT/);
+});
+
+test("the missing Windows git.bat is generated only from the pinned template and explicit executable, without bootstrapping", async (t) => {
+  const work = await temp(t),
+    depot = path.join(work, "owned depot"),
+    logs = path.join(work, "logs");
+  await mkdir(logs);
+  await put(depot, "bootstrap/git.template.bat", pinnedGitTemplate);
+  assert.equal(hash(pinnedGitTemplate), WINDOWS_GIT_TEMPLATE_SHA256);
+  const gitExecutable = path.resolve(
+    work,
+    "Program Files/Git/ucrt64/bin/git.exe",
+  );
+  await assert.rejects(readFile(path.join(depot, "git.bat")), /ENOENT/);
+  const receipt = await prepareWindowsGitLauncher({
+    depot,
+    gitExecutable,
+    logs,
+  });
+  const launcher = await readFile(path.join(depot, "git.bat"));
+  assert.ok(launcher.includes(Buffer.from('"' + gitExecutable + '" %*')));
+  assert.ok(
+    launcher.includes(
+      Buffer.from("PATH=" + path.dirname(gitExecutable) + ";%~dp0;%PATH%"),
+    ),
+  );
+  assert.equal(launcher.includes(Buffer.from("${")), false);
+  assert.equal(receipt.launcherSha256, hash(launcher));
+  assert.equal(receipt.bootstrapExecuted, false);
+  assert.equal(receipt.globalGitConfigurationWritten, false);
+  assert.equal(receipt.pathFallbackAllowed, false);
+  assert.deepEqual(
+    await readFile(path.join(depot, "bootstrap/git.template.bat")),
+    pinnedGitTemplate,
+  );
+  await assert.rejects(
+    prepareWindowsGitLauncher({ depot, gitExecutable, logs }),
+    /EEXIST/,
+  );
+});
+
+test("tampered launcher templates and command-sensitive explicit paths fail before creating any shim", async (t) => {
+  const work = await temp(t),
+    depot = path.join(work, "depot"),
+    logs = path.join(work, "logs");
+  await mkdir(logs);
+  await put(
+    depot,
+    "bootstrap/git.template.bat",
+    Buffer.concat([pinnedGitTemplate, Buffer.from("changed")]),
+  );
+  const gitExecutable = path.resolve(work, "git.exe");
+  await assert.rejects(
+    prepareWindowsGitLauncher({ depot, gitExecutable, logs }),
+    /template mismatch/,
+  );
+  await assert.rejects(readFile(path.join(depot, "git.bat")), /ENOENT/);
+  for (const dangerous of ["%PATH%", 'bad"quote', "bad&command", "bad\nline"])
+    await assert.rejects(
+      prepareWindowsGitLauncher({
+        depot,
+        gitExecutable: path.resolve(work, dangerous, "git.exe"),
+        logs,
+      }),
+      /Unsafe/,
+    );
 });

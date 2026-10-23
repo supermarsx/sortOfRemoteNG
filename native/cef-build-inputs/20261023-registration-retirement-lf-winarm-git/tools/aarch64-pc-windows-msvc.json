@@ -1,0 +1,62 @@
+{
+  "files": [
+    {
+      "path": "hostedtoolcache/windows/Python/3.13.16/arm64/python.exe",
+      "sha256": "7f6216dc7f783f3d3e899b745ebc8e73a1253a2bbdfa6d24a71ff919c25d58b0",
+      "size": 104672
+    },
+    {
+      "path": "Program Files/Microsoft Visual Studio/18/Enterprise/VC/Tools/MSVC/14.51.36231/include/vcruntime.h",
+      "sha256": "8a6e89fe85c66162d62c772d02367ae2e6530f1faaaa8d099427698a689bac7f",
+      "size": 11444
+    },
+    {
+      "path": "Program Files/Microsoft Visual Studio/18/Enterprise/VC/Tools/MSVC/14.51.36231/lib/arm64/libcmt.lib",
+      "sha256": "66c641d9053909ad68c241b7fa000926390af37fe180cf430429edbeea195651",
+      "size": 18932596
+    },
+    {
+      "path": "Program Files/Microsoft Visual Studio/18/Enterprise/VC/Tools/MSVC/14.51.36231/atlmfc/lib/arm64/atls.lib",
+      "sha256": "432551ac196e927308246b7be3ada5fb89cf46da510ee02a01ee593cd72cb941",
+      "size": 2946396
+    },
+    {
+      "path": "Program Files/Microsoft Visual Studio/18/Enterprise/VC/Tools/MSVC/14.51.36231/bin/Hostarm64/arm64/cl.exe",
+      "sha256": "9f36f48c99f07158a62f3d013247095f318d3560b0c31555f3664f0de25ebbcb",
+      "size": 787808
+    },
+    {
+      "path": "Program Files (x86)/Windows Kits/10/Include/10.0.28000.0/um/Windows.h",
+      "sha256": "b337d661d03a4abefb7b86a2742ce1ad5d19b57cd8b858bd13e7bbcc1dbeeaaa",
+      "size": 7511
+    },
+    {
+      "path": "Program Files (x86)/Windows Kits/10/Lib/10.0.28000.0/um/x64/kernel32.Lib",
+      "sha256": "8ba8dab9adec752047d4f136852e8136d01836bff39bbb56a20ac5f2d56415d8",
+      "size": 311908
+    },
+    {
+      "path": "Program Files (x86)/Windows Kits/10/Lib/10.0.28000.0/um/arm64/kernel32.Lib",
+      "sha256": "bc40b3959db3ba93ee0f816d639e33835301f2662cbd63406e30f7f6c97fd8df",
+      "size": 652320
+    },
+    {
+      "path": "Program Files (x86)/Windows Kits/10/Debuggers/x64/dbghelp.dll",
+      "sha256": "1cb683068ecb13ea434a56ac344d4fd7a8d04ccde9ba2bd38e99acd27f26cb10",
+      "size": 2259328
+    },
+    {
+      "path": "cef-ci-runner-aarch64-pc-windows-msvc.json",
+      "sha256": "06f288f324a9d0817a5c56691d54e16d84d1980aaa4a947889ad4a8a7be3012f",
+      "size": 707
+    },
+    {
+      "path": "Program Files/Git/clangarm64/bin/git.exe",
+      "size": 3976392,
+      "sha256": "fbf9eae1898d502ba155f2ea2c6e411cabd7800a040c0892cc92d7d3d74e019f"
+    }
+  ],
+  "kind": "sorng-cef-toolchain-lock",
+  "schemaVersion": 1,
+  "target": "aarch64-pc-windows-msvc"
+}

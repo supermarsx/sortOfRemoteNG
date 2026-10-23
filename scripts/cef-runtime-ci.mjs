@@ -179,6 +179,66 @@ export function releaseIdentity(sourceLock, target) {
   };
 }
 const mapName = (target) => `cef-ci-runner-${target}.json`;
+export const WINDOWS_GIT_PROGRAMS = Object.freeze({
+  "x86_64-pc-windows-msvc": "Program Files/Git/ucrt64/bin/git.exe",
+  "aarch64-pc-windows-msvc": "Program Files/Git/clangarm64/bin/git.exe",
+});
+export const WINDOWS_GIT_TEMPLATE_SHA256 =
+  "51253d48d2c9e101cd3f79d99f4a7efdbbb85350007b065d9e963296f6f7f23c";
+export async function verifyWindowsGitProgram({
+  runner,
+  target,
+  toolchain,
+  toolsRoot,
+}) {
+  if (runner.git !== WINDOWS_GIT_PROGRAMS[target])
+    fail("A reviewed explicit native Windows Git program is required");
+  const pin = toolchain.files.find((entry) => entry.path === runner.git);
+  if (!pin) fail("The selected Windows Git program has no reviewed file pin");
+  return pinned(toolsRoot, pin);
+}
+export async function prepareWindowsGitLauncher({
+  depot,
+  gitExecutable,
+  logs,
+}) {
+  if (!path.isAbsolute(gitExecutable) || /[%!^&|<>"\r\n]/.test(gitExecutable))
+    fail("Unsafe explicit Windows Git program path");
+  const template = await readFile(
+    path.join(depot, "bootstrap", "git.template.bat"),
+  );
+  if (
+    createHash("sha256").update(template).digest("hex") !==
+    WINDOWS_GIT_TEMPLATE_SHA256
+  )
+    fail("Pinned depot_tools Git launcher template mismatch");
+  const bytes = Buffer.from(
+    template
+      .toString("utf8")
+      .replace("${GIT_PATH_PREPEND}", path.dirname(gitExecutable))
+      .replace("${GIT_PROGRAM}", gitExecutable),
+  );
+  if (bytes.includes(Buffer.from("${")))
+    fail("Unresolved Git launcher template field");
+  await writeFile(path.join(depot, "git.bat"), bytes, { flag: "wx" });
+  const receipt = {
+    kind: "reviewed-native-windows-git-launcher",
+    gitExecutable,
+    depotToolsCommit: "c101dcbe0489c455fce7c2247bfee19680b116c3",
+    templateSha256: WINDOWS_GIT_TEMPLATE_SHA256,
+    launcherSha256: createHash("sha256").update(bytes).digest("hex"),
+    bootstrapExecuted: false,
+    globalGitConfigurationWritten: false,
+    pathFallbackAllowed: false,
+  };
+  await writeFile(
+    path.join(logs, "windows-git-launcher.json"),
+    stableJson(receipt),
+    { flag: "wx" },
+  );
+  return receipt;
+}
+
 function toolchainShape(value, target) {
   shape(value, ["schemaVersion", "kind", "target", "files"], "toolchain lock");
   if (
@@ -245,6 +305,15 @@ export async function plan({
       );
       if (map.schemaVersion !== 2)
         fail("Hosted builds require reviewed image-bound runner maps");
+      if (
+        selected.includes(item.target) &&
+        item.target.includes("windows") &&
+        (map.git !== WINDOWS_GIT_PROGRAMS[item.target] ||
+          !toolchain.files.some((pin) => pin.path === map.git))
+      )
+        fail(
+          "Hosted Windows acquisition requires a reviewed explicit native Git file pin",
+        );
       hostedMaps.set(item.target, map);
     }
     await customRuntimeBuildRecipe({
@@ -298,6 +367,7 @@ export function validateRunnerMap(value, target) {
       "syncJobs",
       "buildJobs",
       "environment",
+      ...(Object.hasOwn(value ?? {}, "git") ? ["git"] : []),
       ...(value?.schemaVersion === 2 ? ["hosted"] : []),
     ],
     "runner map",
@@ -341,6 +411,8 @@ export function validateRunnerMap(value, target) {
     if (value.syncJobs > 2 || value.buildJobs > 4)
       fail("Hosted engine parallelism exceeds its reviewed bound");
   }
+  if (Object.hasOwn(value, "git") && value.git !== WINDOWS_GIT_PROGRAMS[target])
+    fail("Runner Git program must be the reviewed target-native executable");
   releaseRelativePath(value.python);
   if (!Array.isArray(value.path) || value.path.length > 32)
     fail("Invalid runner PATH additions");
@@ -922,6 +994,13 @@ export async function build(
     python,
     runnerMapFromInputs: runnerMode === "hosted",
   });
+  const gitExecutable = runner.git
+    ? await verifyWindowsGitProgram({ runner, target, toolchain, toolsRoot })
+    : undefined;
+  if (runnerMode === "hosted" && expectedPlatform === "win32" && !gitExecutable)
+    fail(
+      "Hosted Windows acquisition requires a reviewed explicit native Git file pin",
+    );
   for (const entry of runner.path)
     if (!inside(toolsRoot, await realpath(path.join(toolsRoot, entry))))
       fail("Runner PATH escapes tools root");
@@ -999,7 +1078,16 @@ export async function build(
   try {
     await call(
       process.execPath,
-      [patched, "acquire", "--root", source, "--target", target, "--execute"],
+      [
+        patched,
+        "acquire",
+        "--root",
+        source,
+        "--target",
+        target,
+        "--execute",
+        ...(gitExecutable ? ["--git", gitExecutable] : []),
+      ],
       "acquire",
     );
   } finally {
@@ -1010,6 +1098,8 @@ export async function build(
         { recursive: true, errorOnExist: true, force: false },
       );
   }
+  if (gitExecutable)
+    await prepareWindowsGitLauncher({ depot, gitExecutable, logs });
   await call(
     python,
     [
@@ -1065,6 +1155,7 @@ export async function build(
       chromium,
       "--depot-tools",
       depot,
+      ...(gitExecutable ? ["--git", gitExecutable] : []),
     ],
     "apply",
   );
