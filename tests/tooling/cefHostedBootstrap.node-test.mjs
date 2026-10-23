@@ -308,6 +308,7 @@ test("discovery workflow is read-only, bounded, explicit, and cannot enter produ
     "discover",
     "provision",
     "hosted-build",
+    "acceptance",
   ]);
   assert.equal(inputs.discovery_cleanup_linux.default, false);
   const job = workflow.jobs.discover;
