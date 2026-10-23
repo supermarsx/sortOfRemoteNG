@@ -1,0 +1,38 @@
+{
+  "schemaVersion": 1,
+  "kind": "sorng-cef-reviewed-hosted-image-variant",
+  "scope": "Target-only r4 LF inputs using the original reviewed native ARM Windows image map, independently observed again; NOT engine build, acceptance, publication or runtime promotion",
+  "sourceLockIdentity": "cde394260dde00c7821f1608af9ec988aab71e8132ebf9f954e46ce0265ad080",
+  "sourceLockRawSha256": "7781385d822214488ff89572f6b34d06be72b2374e5dc3f8a3033fd03f25639a",
+  "baseNamespace": "native/cef-build-inputs/20261023-registration-retirement-lf",
+  "baseSourceLockIdentity": "254fc0acc6001def832bed411ba320bfebd8111aeca64ee8c572512c0369d689",
+  "hostToolInventoryNamespace": "native/cef-build-inputs/20261022-registration-retirement",
+  "hostToolInventorySourceLockIdentity": "a4e2f53b29a8b7fc51c67e0df99650beeb5f764046633b9482a81733f0168b11",
+  "target": "aarch64-pc-windows-msvc",
+  "abiVersion": 2,
+  "bridgeRevision": 4,
+  "actualRun": 39968937579,
+  "actualHead": "bb4d826e1cbfc47f6f2134dff508be454e1de41f",
+  "actualPostProvisionImage": {
+    "os": "win11-vs2026-arm64",
+    "version": "20261021.192.1"
+  },
+  "actualPostProvisionCompleted": true,
+  "observationsSha256": "42bcdcc4f7d0cd81f865804162cc09eedeebc78e4f7a90bdc9bfd6726a5470d0",
+  "candidateSha256": "348d72ee4b7cce5c6ea0ff33830dfa13b08eee275a368a3c03006006d89fd796",
+  "originalRunnerMapSha256": "22f8b2ab05b17cdf72269c6f7400921c21fc82a482b031e41e547ba1368a4997",
+  "originalToolchainSha256": "038355e85fd2fff441b96a79914b85cad9c5e7cc758f0f70eb2c1a3f6b225a88",
+  "actualToolFileCount": 9,
+  "actualToolHashesAndSizesMatchOriginalReviewedPins": true,
+  "sourceHeaderAll12PatchesAndGnUnchanged": true,
+  "requiredProducerBehaviors": [
+    "Use exact reviewed Git source containing this namespace and native Windows prerequisite doctor correction",
+    "Keep exact image/tool pin verification before acquisition; no fallback to old map on mismatch",
+    "Actual native Windows ARM64 engine build and target-native acceptance remain required"
+  ],
+  "engineBuildAttempted": false,
+  "nativeAcceptancePerformed": false,
+  "publicationAllowed": false,
+  "existingRuntimeChanged": false,
+  "existingLocalWindowsAcceptanceTransferred": false
+}
