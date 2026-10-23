@@ -102,6 +102,18 @@ function sampleValueFor(
 ): unknown {
   if (key === "defaultConnectionProtocol") return "ssh";
   const special: Partial<Record<keyof GlobalSettings, unknown>> = {
+    credentialVaultView: {
+      columns: ["name", "categories", "actions"],
+      widths: {
+        name: 300,
+        source: 100,
+        categories: 180,
+        assigned: 120,
+        actions: 90,
+      },
+      pageSize: 50,
+      mode: "infinite",
+    },
     webBrowser: { ...defaults.webBrowser!, showBookmarksBar: false },
     internalProxy: { ...defaults.internalProxy!, connectTimeoutSeconds: 25 },
     sessionQuickActions: {

@@ -20,6 +20,26 @@ import type {
 } from "../../src/types/security/databaseCredentialVault";
 import DatabaseCredentialVault from "../../src/components/security/DatabaseCredentialVault";
 import { getCredentialVaultDraft } from "../../src/utils/security/credentialVaultDrafts";
+import SettingsContext, {
+  defaultSettings,
+} from "../../src/contexts/SettingsContext";
+
+function InventoryPreferences({ children }: React.PropsWithChildren) {
+  const [settings, setSettings] = React.useState(defaultSettings);
+  return (
+    <SettingsContext.Provider
+      value={{
+        settings,
+        reloadSettings: async () => {},
+        updateSettings: async (patch) => {
+          setSettings((current) => ({ ...current, ...patch }));
+        },
+      }}
+    >
+      {children}
+    </SettingsContext.Provider>
+  );
+}
 
 afterEach(cleanup);
 const connection = (
@@ -95,12 +115,14 @@ function fixture(initial = [connection("a")], vault = true) {
     }) as unknown as ConnectionContextType;
   const edit = vi.fn();
   const view = () => (
-    <ConnectionContext.Provider value={ctx()}>
-      <DatabaseCredentialVault
-        sessionId="inventory-tab"
-        onEditConnection={edit}
-      />
-    </ConnectionContext.Provider>
+    <InventoryPreferences>
+      <ConnectionContext.Provider value={ctx()}>
+        <DatabaseCredentialVault
+          sessionId="inventory-tab"
+          onEditConnection={edit}
+        />
+      </ConnectionContext.Provider>
+    </InventoryPreferences>
   );
   return {
     api,
@@ -149,10 +171,24 @@ describe("protected connection-backed credential inventory", () => {
     expect(
       screen.getByText(/1 reusable credentials · 1 connections/),
     ).toBeInTheDocument();
-    expect(table()).toHaveTextContent("Private key / key file");
+    const ownerRow = screen
+      .getByRole("button", {
+        name: "Edit credentials in connection Server a",
+      })
+      .closest("tr")!;
+    const categories = within(ownerRow).getAllByRole("cell")[2];
+    expect(categories).toHaveTextContent("—");
+    expect(categories).toHaveAttribute(
+      "data-tooltip",
+      expect.stringContaining("Private key / key file"),
+    );
+    expect(table()).not.toHaveTextContent("Private key / key file");
     expect(table()).toHaveTextContent("Database vault link");
     expect(table()).toHaveTextContent("External reference");
-    expect(table()).toHaveTextContent("not a vault fallback");
+    expect(within(ownerRow).getByText("· Local retained")).toHaveAttribute(
+      "data-tooltip",
+      "Local login values retained, not a vault fallback",
+    );
     expect(document.body.innerHTML).not.toContain("SECRET_");
     expect(f.api.resolve).not.toHaveBeenCalled();
     expect(f.api.compareAndSwap).not.toHaveBeenCalled();
@@ -182,6 +218,11 @@ describe("protected connection-backed credential inventory", () => {
     await screen.findByRole("button", {
       name: "Edit credentials in connection Server 0",
     });
+    expect(within(table()).getAllByRole("row")).toHaveLength(32);
+    fireEvent.click(
+      screen.getByRole("combobox", { name: "Credentials per page" }),
+    );
+    fireEvent.mouseDown(screen.getByRole("option", { name: "25" }));
     expect(within(table()).getAllByRole("row")).toHaveLength(26);
     expect(
       screen.getByRole("button", { name: "Export archive" }),
@@ -198,9 +239,17 @@ describe("protected connection-backed credential inventory", () => {
     expect(within(table()).getAllByRole("row")).toHaveLength(26);
     f.setRows([connection("new", { name: "Updated owner record" })]);
     mounted.rerender(f.view());
-    expect(
-      within(table()).getByText("Updated owner record"),
-    ).toBeInTheDocument();
+    const updated = screen
+      .getByRole("button", {
+        name: "Edit credentials in connection Updated owner record",
+      })
+      .closest("tr")!;
+    expect(within(updated).getAllByRole("cell")[0]).toHaveTextContent(
+      "Updated owner record",
+    );
+    expect(within(updated).getAllByRole("cell")[3]).toHaveTextContent(
+      "Updated owner record",
+    );
     expect(within(table()).queryByText("Server 0")).not.toBeInTheDocument();
     f.setRows([]);
     mounted.rerender(f.view());
