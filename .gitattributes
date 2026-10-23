@@ -16,3 +16,4 @@ native/cef-build-inputs/20261022-registration-retirement-linuxarm-20261012-149-1
 native/cef-build-inputs/20261023-registration-retirement-lf/** -text -whitespace
 native/cef-build-inputs/20261023-registration-retirement-lf-linuxarm-cross/** -text -whitespace
 native/cef-build-inputs/20261023-registration-retirement-lf-winarm-20261021-192-1/** -text -whitespace
+native/cef-build-inputs/20261023-registration-retirement-lf-linuxarm-cross-sysroot/** -text -whitespace

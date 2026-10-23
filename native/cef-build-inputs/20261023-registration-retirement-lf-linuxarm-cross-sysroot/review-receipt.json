@@ -1,0 +1,73 @@
+{
+  "schemaVersion": 1,
+  "kind": "sorng-cef-reviewed-host-cross-build-inputs",
+  "scope": "Linux x64 hosted build of ARM64 r4 output, with separate real native ARM acceptance; NOT build, acceptance, publication or runtime promotion evidence",
+  "sourceLockIdentity": "e4c64bf94a403a8ec02f826a29969471eb583c49c461eacb29e38ac4de052078",
+  "sourceLockRawSha256": "1369afc5af9d933e4f795ed5e73d8cbe8e9355cd5705627d993256692b038cb1",
+  "baseNamespace": "native/cef-build-inputs/20261023-registration-retirement-lf-linuxarm-cross",
+  "baseSourceLockIdentity": "a953d6d550de0881750593c0042497e7eacfd29442390a121d600309b3735e77",
+  "target": "aarch64-unknown-linux-gnu",
+  "abiVersion": 2,
+  "bridgeRevision": 4,
+  "buildHost": {
+    "runner": "ubuntu-24.04",
+    "architecture": "x64",
+    "imageOS": "ubuntu24",
+    "imageVersion": "20261012.334.1"
+  },
+  "acceptanceRunner": "ubuntu-24.04-arm",
+  "hostToolchainSource": {
+    "target": "x86_64-unknown-linux-gnu",
+    "path": "tools/x86_64-unknown-linux-gnu.json",
+    "sha256": "7b5db286f997bdb4ebfa266c6dd0d267d45dacdc41d830a7e24d32507c200ad2",
+    "runnerMapSha256": "4f521859896927bdabd2aafeeca45e93798237d0ae59dae6729323fefaf23af8",
+    "executableAndHeaderPinsUnchanged": true
+  },
+  "targetGnUnchanged": false,
+  "headerAndAll12PatchesUnchanged": true,
+  "gclient": {
+    "target_cpu": [
+      "arm64"
+    ],
+    "hostCpuRetained": true,
+    "targetCpuOnlySerialized": false
+  },
+  "upstreamEvidence": {
+    "chromiumCommit": "a654841425914cbb703a2931e07b70a83aedbafd",
+    "cefCommit": "682c378d70d5780061e96644dca16ddd8fd157a9",
+    "upstreamBuilder": "infra/config/generated/luci/cr-buildbucket.cfg linux-arm64-official cpu:x86-64",
+    "upstreamGn": "infra/config/generated/builders/ci/linux-arm64-official/gn-args.json target_cpu=arm64",
+    "arm64SysrootSha256": "c7176a4c7aacbf46bda58a029f39f79a68008d3dee6518f154dcf5161a5486d8",
+    "gperfHostPackage": "infra/3pp/tools/gperf/linux-amd64",
+    "gperfVersion": "version:3@3.2",
+    "gperfResolvedInstanceSha256": "a2dad151e1d0afdce5c6d4f8b097d226ab29cad056afd2243eb859f1b1689676"
+  },
+  "requiredProducerBehavior": [
+    "Pinned explicit Linux ARM cross map selects x64 build host; native ARM default remains unchanged",
+    "Top-level gclient target_cpu arm64 serialized before sync; no target_cpu_only or host override",
+    "Final output ELF architecture must be AArch64, independent of host",
+    "Native TLS/browser acceptance runs on ubuntu-24.04-arm; no x64 substitution",
+    "Honor this explicit pinned use_sysroot=true GN assignment; the real ARM64 sysroot must be provisioned before GN generation"
+  ],
+  "knownBlockers": [
+    "Current source includes bounded capacity-driven cleanup, but actual corrected hosted retry has not completed;100GiB admission remains mandatory",
+    "Earlier Linux x64 installer20-minute timeout still needs phase-observer diagnosis if reproduced",
+    "Actual cross engine build and target-native ARM acceptance remain unperformed"
+  ],
+  "engineBuildAttempted": false,
+  "nativeAcceptancePerformed": false,
+  "publicationAllowed": false,
+  "defaultRuntimeChanged": false,
+  "existingLocalWindowsAcceptanceTransferred": false,
+  "reviewedGnChange": {
+    "path": "gn/aarch64-unknown-linux-gnu.gn",
+    "previousSha256": "fdfb1748ced8a607677f7a1a3f36e54aa5e352b663da74ad9429b838d6d4f91c",
+    "sha256": "0fcbeab5302c8409736a340e1424642b80185be8245245298a8eea19fe8e0817",
+    "onlyAddedAssignment": "use_sysroot = true",
+    "reason": "Pinned CEF Linux recommended default is false and omits the ARM64 config unless explicitly overridden in reviewed GN",
+    "pinnedGeneratorSha256": "ab94e3b3c214198b396c8b4858b5d5e9cb42be956bbc294d651dd86eac44df6e",
+    "requiredSysrootSha256": "c7176a4c7aacbf46bda58a029f39f79a68008d3dee6518f154dcf5161a5486d8",
+    "generatorOnlyFixtureEvidence": true,
+    "actualEngineBuildPerformed": false
+  }
+}
