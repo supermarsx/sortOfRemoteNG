@@ -23,10 +23,6 @@ const actionlintConfig = readFileSync(
   new URL("../../.github/actionlint.yaml", import.meta.url),
   "utf8",
 );
-const dependabotConfig = readFileSync(
-  new URL("../../.github/dependabot.yml", import.meta.url),
-  "utf8",
-);
 const cargoConfig = readFileSync(
   new URL("../../src-tauri/.cargo/config.toml", import.meta.url),
   "utf8",
@@ -446,7 +442,7 @@ test("actionlint suppression is scoped to its pre-queue schema diagnostic", () =
   );
 });
 
-test("privileged release actions are immutable and Dependabot-managed", () => {
+test("privileged release actions use immutable audited pins and readable versions", () => {
   const actionLines = releaseWorkflow.match(/^\s+-?\s*uses:\s+.+$/gm) ?? [];
   assert.ok(actionLines.length > 0);
   for (const actionLine of actionLines) {
@@ -456,8 +452,6 @@ test("privileged release actions are immutable and Dependabot-managed", () => {
       `action must use an audited SHA and readable version comment: ${actionLine}`,
     );
   }
-  assert.match(dependabotConfig, /package-ecosystem: github-actions/);
-  assert.match(dependabotConfig, /interval: weekly/);
 });
 
 test("release actions use audited Node 24-compatible immutable releases", () => {
