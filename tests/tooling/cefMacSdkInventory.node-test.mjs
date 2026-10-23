@@ -46,8 +46,13 @@ async function fixture(t, count = 1) {
     );
     await mkdir(path.dirname(clang), { recursive: true });
     await mkdir(path.join(sdk, "usr", "include"), { recursive: true });
+    await mkdir(path.join(sdk, "usr", "lib"), { recursive: true });
     await writeFile(clang, "owned inert clang fixture; never executed");
     await writeFile(path.join(sdk, "SDKSettings.json"), '{"Version":"26.5"}');
+    await writeFile(
+      path.join(sdk, "usr", "lib", "libSystem.tbd"),
+      "owned SDK system library fixture",
+    );
     for (const name of MAC_REQUIRED_MODULEMAPS)
       await writeFile(
         path.join(sdk, "usr", "include", name),
@@ -126,6 +131,20 @@ test("installed SDK observations hash actual required bytes without selecting or
     );
   }
   assert.equal(candidate.clang.path, f.items[0].clang);
+  assert.equal(
+    candidate.systemLibrary.path,
+    path.join(f.items[0].sdk, "usr", "lib", "libSystem.tbd"),
+  );
+  assert.equal(
+    candidate.systemLibrary.size,
+    Buffer.byteLength("owned SDK system library fixture"),
+  );
+  assert.equal(
+    candidate.systemLibrary.sha256,
+    createHash("sha256")
+      .update("owned SDK system library fixture")
+      .digest("hex"),
+  );
   assert.ok(!JSON.stringify(result).includes("credential"));
   assert.deepEqual(environment.SDKROOT, "foreign");
 });
@@ -144,6 +163,44 @@ test("an older SDK missing required Darwin maps is explicitly incompatible, neve
     result.candidates[0].modulemaps.map((entry) => entry.present),
     [false, false, false, true],
   );
+});
+
+test("SDK input completeness also requires the actual system-library fingerprint", async (t) => {
+  const f = await fixture(t);
+  await rm(path.join(f.items[0].sdk, "usr", "lib", "libSystem.tbd"));
+  const result = await inventoryMacSdks(
+    { applications: f.applications },
+    { execute: f.execute },
+  );
+  assert.equal(result.candidates[0].systemLibrary, null);
+  assert.equal(result.candidates[0].status, "missing-required-inputs");
+  assert.equal(result.candidates[0].requiredInputsPresent, false);
+});
+
+test("SDK system-library aliases retain the real target path and bytes", async (t) => {
+  const f = await fixture(t);
+  const original = path.join(f.items[0].sdk, "usr", "lib", "libSystem.tbd");
+  const canonical = path.join(f.items[0].sdk, "usr", "lib", "libSystem.B.tbd");
+  await rename(original, canonical);
+  try {
+    await symlink("libSystem.B.tbd", original, "file");
+  } catch (error) {
+    if (error.code === "EPERM")
+      return t.skip("file symlink privilege unavailable");
+    throw error;
+  }
+  const result = await inventoryMacSdks(
+    { applications: f.applications },
+    { execute: f.execute },
+  );
+  assert.equal(result.candidates[0].systemLibrary.path, canonical);
+  assert.equal(
+    result.candidates[0].systemLibrary.sha256,
+    createHash("sha256")
+      .update("owned SDK system library fixture")
+      .digest("hex"),
+  );
+  assert.equal(result.candidates[0].requiredInputsPresent, true);
 });
 
 test("candidate count and command budgets are finite", async (t) => {

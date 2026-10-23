@@ -228,6 +228,10 @@ export async function inventoryMacSdks(
         path.join(sdk, "SDKSettings.json"),
         sdk,
       );
+      candidate.systemLibrary = await measure(
+        path.join(sdk, "usr", "lib", "libSystem.tbd"),
+        sdk,
+      );
       candidate.clang = await measure(clang, developer);
       await verifyRoot();
       if (
@@ -238,6 +242,7 @@ export async function inventoryMacSdks(
       candidate.requiredInputsPresent =
         candidate.modulemaps.every((item) => item.present) &&
         candidate.sdkSettings !== null &&
+        candidate.systemLibrary !== null &&
         candidate.clang !== null;
       candidate.status = candidate.requiredInputsPresent
         ? "required-inputs-present"
