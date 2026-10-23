@@ -185,7 +185,7 @@ describe("independent native tab page loading", () => {
   });
 });
 
-it("keeps essential busy motion slower than decorative overrides and supplies a reduced-motion label", async () => {
+it("rotates the existing site icon without visible loading text under every motion preference", async () => {
   const css = postcss.parse(
     readFileSync(
       "src/components/protocol/webBrowser/OriginPopupTabs.module.css",
@@ -216,7 +216,7 @@ it("keeps essential busy motion slower than decorative overrides and supplies a 
   expect(spinning).toEqual([
     {
       selector: ".trigger .loadingIcon",
-      media: "(prefers-reduced-motion: no-preference)",
+      media: "",
       value: "tab-loading-spin 1s linear infinite",
       important: true,
     },
@@ -238,13 +238,31 @@ it("keeps essential busy motion slower than decorative overrides and supplies a 
       node.type === "atrule" &&
       node.params === "(prefers-reduced-motion: reduce)",
   );
-  expect(reduced?.toString()).toContain("display: inline");
-  expect(reduced?.toString()).not.toMatch(/animation:/);
+  expect(reduced).toBeUndefined();
   const f = await mountTabs();
   f.setParentLoading(true);
-  const label = tab("Owner").querySelector(`.${styles.loadingLabel}`);
-  expect(label).toHaveTextContent("Loading");
-  expect(label).toHaveAttribute("aria-hidden", "true");
+  expect(tab("Owner")).not.toHaveTextContent("Loading");
+  expect(tab("Owner").querySelector(".lucide-globe")).not.toBeNull();
+  expect(tab("Owner").querySelector(".lucide-loader-circle")).toBeNull();
+  const fChild = child("a", {
+    snapshot: {
+      identity,
+      sequence: 1,
+      phase: "attached",
+      loading: true,
+      displayUrl: "https://fixture.invalid/",
+      currentUrl: "https://fixture.invalid/",
+      title: "A",
+      canGoBack: false,
+      canGoForward: false,
+    },
+  });
+  f.emit([fChild]);
+  expect(tab("A")).not.toHaveTextContent("Loading");
+  expect(tab("A").querySelector(".lucide-globe")).toHaveClass(
+    styles.loadingIcon,
+  );
+  expect(tab("A").querySelector(".lucide-loader-circle")).toBeNull();
   expect(tab("Owner")).toHaveAttribute("aria-busy", "true");
 });
 const auxClick = (node: Element, button = 1) =>

@@ -88,24 +88,13 @@
   flex-shrink: 0;
 }
 
-.loadingLabel {
-  display: none;
-}
-
 /* Loading is operational feedback, independent of decorative 0/50ms app
-   transitions. The two-class selector outranks those global duration rules. */
-@media (prefers-reduced-motion: no-preference) {
-  .trigger .loadingIcon {
-    animation: tab-loading-spin 1s linear infinite !important;
-    transform-origin: center;
-    transform-box: fill-box;
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .loadingLabel {
-    display: inline;
-  }
+   transitions and OS motion hints. Keep the site icon in place; aria-busy
+   exposes the same state without adding visible loading text. */
+.trigger .loadingIcon {
+  animation: tab-loading-spin 1s linear infinite !important;
+  transform-origin: center;
+  transform-box: fill-box;
 }
 
 @keyframes tab-loading-spin {
