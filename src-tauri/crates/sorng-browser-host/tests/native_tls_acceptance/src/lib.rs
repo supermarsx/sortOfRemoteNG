@@ -25,7 +25,7 @@ use sorng_protocols::{
 use std::{
     path::PathBuf,
     sync::{
-        atomic::{AtomicBool, Ordering},
+        atomic::{AtomicBool, AtomicUsize, Ordering},
         Arc, Mutex,
     },
     time::{Duration, Instant},
@@ -236,6 +236,50 @@ impl LoginDiagnostics {
             "events":self.rows.iter().map(|(at,event,stage)|serde_json::json!({"elapsedMs":at,"event":event,"stage":stage})).collect::<Vec<_>>()})
     }
 }
+struct NonblockingLoginDiagnostics {
+    buffer: Mutex<LoginDiagnostics>,
+    contention_dropped: AtomicUsize,
+}
+impl NonblockingLoginDiagnostics {
+    fn new() -> Self {
+        Self {
+            buffer: Mutex::new(LoginDiagnostics::new()),
+            contention_dropped: AtomicUsize::new(0),
+        }
+    }
+    fn record(&self, observe: impl FnOnce(&mut LoginDiagnostics)) {
+        if let Ok(mut buffer) = self.buffer.try_lock() {
+            observe(&mut buffer);
+        } else {
+            let _ = self.contention_dropped.fetch_update(
+                Ordering::Relaxed,
+                Ordering::Relaxed,
+                |count| Some(count.saturating_add(1)),
+            );
+        }
+    }
+    fn phase(&self, phase: LoginPhase, stage: Option<NativeLoginStage>) {
+        self.record(|buffer| buffer.phase(phase, stage));
+    }
+    fn feature(&self, status: NativeFeatureStatus) {
+        self.record(|buffer| buffer.feature(status));
+    }
+    fn report(&self) -> serde_json::Value {
+        let contention = self.contention_dropped.load(Ordering::Relaxed);
+        match self.buffer.try_lock() {
+            Ok(buffer) => {
+                let mut report = buffer.report();
+                report["contentionDropped"] = contention.into();
+                report["dropped"] = buffer.dropped.saturating_add(contention).into();
+                report["snapshotUnavailable"] = false.into();
+                report
+            }
+            Err(_) => {
+                serde_json::json!({"limit":LOGIN_DIAGNOSTIC_LIMIT,"events":[],"contentionDropped":contention,"snapshotUnavailable":true})
+            }
+        }
+    }
+}
 struct State {
     name: &'static str,
     pending: Vec<Pending>,
@@ -266,7 +310,7 @@ struct State {
     first_decision: Option<Instant>,
     storage: Option<Arc<Mutex<storage::Evidence>>>,
     static_document: Option<Arc<Mutex<static_document::Evidence>>>,
-    login_diagnostics: LoginDiagnostics,
+    login_diagnostics: Arc<NonblockingLoginDiagnostics>,
 }
 impl State {
     fn new(name: &'static str) -> Self {
@@ -301,7 +345,7 @@ impl State {
             storage: None,
             static_document: (name == "staged")
                 .then(|| Arc::new(Mutex::new(static_document::Evidence::default()))),
-            login_diagnostics: LoginDiagnostics::new(),
+            login_diagnostics: Arc::new(NonblockingLoginDiagnostics::new()),
         }
     }
     fn report(&self, installed: bool, closed: bool, rejected: bool) -> serde_json::Value {
@@ -332,6 +376,42 @@ struct Hooks {
     state: Arc<Mutex<State>>,
     identity: BrowserIdentity,
     current: AtomicBool,
+}
+// Storage keeps the original Hooks type/behavior. Only the main TLS cases opt
+// into observations, whose callbacks never acquire that control State mutex.
+struct LoginDiagnosticHooks {
+    inner: Arc<Hooks>,
+    diagnostics: Arc<NonblockingLoginDiagnostics>,
+}
+impl NativeDocumentHooks for LoginDiagnosticHooks {
+    fn on_main_document(&self, identity: &BrowserIdentity, _: u64) {
+        if identity == &self.inner.identity && self.inner.current.load(Ordering::Acquire) {
+            self.diagnostics.phase(LoginPhase::MainDocument, None);
+        }
+    }
+    fn on_feature_status(&self, identity: &BrowserIdentity, _: &str, status: NativeFeatureStatus) {
+        if identity == &self.inner.identity && self.inner.current.load(Ordering::Acquire) {
+            self.diagnostics.feature(status);
+        }
+    }
+    fn login_adapter(&self) -> NativeLoginAdapter {
+        self.inner.login_adapter()
+    }
+    fn with_auto_login(
+        &self,
+        request: &NativeLoginRequest<'_>,
+        deliver: &mut dyn FnMut(NativeLoginCredentials<'_>),
+    ) {
+        if request.identity == &self.inner.identity && self.inner.current.load(Ordering::Acquire) {
+            self.diagnostics
+                .phase(LoginPhase::GrantChecked, Some(request.stage));
+        }
+        self.inner.with_auto_login(request, &mut |credentials| {
+            self.diagnostics
+                .phase(LoginPhase::GrantCreated, Some(request.stage));
+            deliver(credentials);
+        });
+    }
 }
 impl NativeTlsHooks for Hooks {
     fn on_evidence(&self, evidence: NativeTlsEvidence, completion: NativeTlsCompletion) {
@@ -384,20 +464,7 @@ impl BrowserEventSink for Hooks {
     }
 }
 impl NativeDocumentHooks for Hooks {
-    fn on_main_document(&self, identity: &BrowserIdentity, _: u64) {
-        if identity == &self.identity && self.current.load(Ordering::Acquire) {
-            self.state
-                .lock()
-                .unwrap()
-                .login_diagnostics
-                .phase(LoginPhase::MainDocument, None);
-        }
-    }
-    fn on_feature_status(&self, identity: &BrowserIdentity, _: &str, status: NativeFeatureStatus) {
-        if identity == &self.identity && self.current.load(Ordering::Acquire) {
-            self.state.lock().unwrap().login_diagnostics.feature(status);
-        }
-    }
+    fn on_main_document(&self, _: &BrowserIdentity, _: u64) {}
     fn login_adapter(&self) -> NativeLoginAdapter {
         let state = self.state.lock().unwrap();
         if state.name == "manual" || state.storage.is_some() {
@@ -421,11 +488,7 @@ impl NativeDocumentHooks for Hooks {
         if !["staged", "successor"].contains(&s.name) || s.revoked {
             return;
         }
-        s.login_diagnostics
-            .phase(LoginPhase::GrantChecked, Some(request.stage));
         s.grants.push(format!("{:?}", request.stage));
-        s.login_diagnostics
-            .phase(LoginPhase::GrantCreated, Some(request.stage));
         drop(s);
         deliver(NativeLoginCredentials {
             identity: &self.identity,
@@ -732,6 +795,11 @@ fn execute(bootstrap: &mut dyn RuntimeBootstrap, paths: &BundlePaths) -> Result 
                 identity: identity.clone(),
                 current: AtomicBool::new(true),
             });
+            let diagnostics = state.lock().unwrap().login_diagnostics.clone();
+            let login_hooks = Arc::new(LoginDiagnosticHooks {
+                inner: hooks.clone(),
+                diagnostics: diagnostics.clone(),
+            });
             let defaults = [
                 "navigation",
                 "frame",
@@ -821,18 +889,14 @@ fn execute(bootstrap: &mut dyn RuntimeBootstrap, paths: &BundlePaths) -> Result 
                                     ViewportBounds::new(0., 0., 800., 600.)?,
                                     parent.scale_factor(),
                                     hooks.clone(),
-                                    Some(hooks.clone()),
+                                    Some(login_hooks.clone()),
                                 )?
                             });
                         }
                     }
                     if let Some(browser) = &browser {
                         if !navigated && closing.is_none() && browser.features_ready(&identity)? {
-                            state
-                                .lock()
-                                .unwrap()
-                                .login_diagnostics
-                                .phase(LoginPhase::FeaturesReady, None);
+                            diagnostics.phase(LoginPhase::FeaturesReady, None);
                             // Attempt-local readiness follows actual engine installation,
                             // proxy readback, browser creation and renderer acknowledgment.
                             // This does not modify the application's production Ready gate.
@@ -860,11 +924,7 @@ fn execute(bootstrap: &mut dyn RuntimeBootstrap, paths: &BundlePaths) -> Result 
                                     }
                                 ),
                             )?;
-                            state
-                                .lock()
-                                .unwrap()
-                                .login_diagnostics
-                                .phase(LoginPhase::NavigationDispatched, None);
+                            diagnostics.phase(LoginPhase::NavigationDispatched, None);
                             if let Some(evidence) = &state.lock().unwrap().static_document {
                                 static_probe = Some(static_document::Probe::new(evidence.clone()));
                             }
@@ -901,16 +961,12 @@ fn execute(bootstrap: &mut dyn RuntimeBootstrap, paths: &BundlePaths) -> Result 
                                 match probe.advance(browser, &identity) {
                                     Ok(true) => {
                                         static_completed = true;
-                                        state
-                                            .lock()
-                                            .unwrap()
-                                            .login_diagnostics
-                                            .phase(LoginPhase::StaticCompleted, None);
+                                        diagnostics.phase(LoginPhase::StaticCompleted, None);
                                         browser.navigate(
                                             &identity,
                                             &format!("{ORIGIN}/v3/signin/identifier"),
                                         )?;
-                                        state.lock().unwrap().login_diagnostics.phase(
+                                        diagnostics.phase(
                                             LoginPhase::IdentifierNavigationDispatched,
                                             None,
                                         );
@@ -1142,6 +1198,126 @@ mod login_diagnostic_tests {
     use super::*;
 
     #[test]
+    fn login_diagnostic_callback_does_not_wait_for_control_state() {
+        let policy = OriginBrowserPolicy::new_with_allowed_origins(
+            "diagnostic-owner",
+            "diagnostic-connection",
+            "diagnostic-session",
+            ORIGIN,
+            &[],
+        )
+        .unwrap();
+        let state = Arc::new(Mutex::new(State::new("staged")));
+        let diagnostics = state.lock().unwrap().login_diagnostics.clone();
+        let hooks = Arc::new(LoginDiagnosticHooks {
+            inner: Arc::new(Hooks {
+                state: state.clone(),
+                identity: policy.identity().clone(),
+                current: AtomicBool::new(true),
+            }),
+            diagnostics: diagnostics.clone(),
+        });
+        let held = state.lock().unwrap();
+        let (finished, received) = std::sync::mpsc::channel();
+        let observing = hooks.clone();
+        let worker = std::thread::spawn(move || {
+            observing.on_feature_status(
+                &observing.inner.identity,
+                "ignored",
+                NativeFeatureStatus::RendererInstalled,
+            );
+            observing.on_main_document(&observing.inner.identity, 0);
+            finished.send(()).unwrap();
+        });
+        let completed_while_held = received.recv_timeout(Duration::from_millis(250)).is_ok();
+        // A failing regression must still release and join its own worker.
+        drop(held);
+        worker.join().unwrap();
+        assert!(
+            completed_while_held,
+            "diagnostic callback waited for control State"
+        );
+
+        let held = diagnostics.buffer.lock().unwrap();
+        let (finished, received) = std::sync::mpsc::channel();
+        let worker = std::thread::spawn(move || {
+            hooks.on_feature_status(
+                &hooks.inner.identity,
+                "ignored",
+                NativeFeatureStatus::RendererInstalled,
+            );
+            hooks.on_main_document(&hooks.inner.identity, 0);
+            finished.send(()).unwrap();
+        });
+        let completed_while_held = received.recv_timeout(Duration::from_millis(250)).is_ok();
+        drop(held);
+        worker.join().unwrap();
+        assert!(
+            completed_while_held,
+            "diagnostic callback waited for diagnostic buffer"
+        );
+        assert_eq!(diagnostics.report()["contentionDropped"], 2);
+    }
+
+    #[test]
+    fn login_diagnostic_wrapper_preserves_grants_and_releases_all_guards_before_delivery() {
+        let policy = OriginBrowserPolicy::new_with_allowed_origins(
+            "owner",
+            "connection",
+            "session",
+            ORIGIN,
+            &[],
+        )
+        .unwrap();
+        let state = Arc::new(Mutex::new(State::new("staged")));
+        let diagnostics = state.lock().unwrap().login_diagnostics.clone();
+        let hooks = LoginDiagnosticHooks {
+            inner: Arc::new(Hooks {
+                state: state.clone(),
+                identity: policy.identity().clone(),
+                current: AtomicBool::new(true),
+            }),
+            diagnostics: diagnostics.clone(),
+        };
+        assert_eq!(hooks.login_adapter(), NativeLoginAdapter::Google);
+        let mut request = NativeLoginRequest {
+            identity: policy.identity(),
+            origin: ORIGIN,
+            adapter: NativeLoginAdapter::Google,
+            stage: NativeLoginStage::Identifier,
+            path: "/v3/signin/identifier",
+            frame: None,
+        };
+        let mut delivered = 0;
+        hooks.with_auto_login(&request, &mut |credentials| {
+            delivered += 1;
+            assert!(state.try_lock().is_ok());
+            assert!(diagnostics.buffer.try_lock().is_ok());
+            assert_eq!(credentials.username, "synthetic@example.test");
+            assert_eq!(credentials.password, "synthetic-local-only");
+            assert!(credentials.valid_until > Instant::now());
+            assert!(credentials.valid_until <= Instant::now() + Duration::from_secs(2));
+            assert!(credentials.auto_submit);
+        });
+        assert_eq!(delivered, 1);
+        let before = diagnostics.report()["events"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|row| row["event"] == "grant-created")
+            .count();
+        request.origin = "https://foreign.invalid";
+        hooks.with_auto_login(&request, &mut |_| panic!("foreign origin grant"));
+        let after = diagnostics.report()["events"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|row| row["event"] == "grant-created")
+            .count();
+        assert_eq!(before, after);
+    }
+
+    #[test]
     fn login_diagnostics_keep_ordered_monotonic_phases_and_are_bounded() {
         let mut diagnostics = LoginDiagnostics::new();
         diagnostics.phase(LoginPhase::StaticCompleted, None);
@@ -1190,10 +1366,14 @@ mod login_diagnostic_tests {
         )
         .unwrap();
         let state = Arc::new(Mutex::new(State::new("staged")));
-        let hooks = Hooks {
-            state: state.clone(),
-            identity: policy.identity().clone(),
-            current: AtomicBool::new(true),
+        let diagnostics = state.lock().unwrap().login_diagnostics.clone();
+        let hooks = LoginDiagnosticHooks {
+            inner: Arc::new(Hooks {
+                state: state.clone(),
+                identity: policy.identity().clone(),
+                current: AtomicBool::new(true),
+            }),
+            diagnostics: diagnostics.clone(),
         };
         let sentinel =
             "https://secret.invalid/path?password=PRIVATE_SENTINEL\ninput[value=PRIVATE_SENTINEL]";
@@ -1207,23 +1387,25 @@ mod login_diagnostic_tests {
             sentinel,
             NativeFeatureStatus::LoginChallengeWaiting,
         );
-        let before = state.lock().unwrap().login_diagnostics.rows.len();
+        let before = diagnostics.report()["events"].as_array().unwrap().len();
         hooks.on_feature_status(
             foreign.identity(),
             sentinel,
             NativeFeatureStatus::LoginAdapterCompleted,
         );
         hooks.on_main_document(foreign.identity(), u64::MAX);
-        hooks.current.store(false, Ordering::Release);
+        hooks.inner.current.store(false, Ordering::Release);
         hooks.on_feature_status(
             policy.identity(),
             sentinel,
             NativeFeatureStatus::LoginAdapterCompleted,
         );
         hooks.on_main_document(policy.identity(), u64::MAX);
-        let state = state.lock().unwrap();
-        assert_eq!(state.login_diagnostics.rows.len(), before);
-        let report = state.login_diagnostics.report().to_string();
+        assert_eq!(
+            diagnostics.report()["events"].as_array().unwrap().len(),
+            before
+        );
+        let report = diagnostics.report().to_string();
         assert!(report.contains("renderer-rejected-document"));
         assert!(report.contains("other-feature"));
         for private in [
