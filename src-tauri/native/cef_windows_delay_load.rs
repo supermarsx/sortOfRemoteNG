@@ -122,6 +122,9 @@ const WINSOCK_IMPORTS: &[&str] = &[
 // seven real call stubs outside its IAT. Anchor BOTH fragments, not just the
 // new downloads functions; changing /DELAYLOAD casing alone cannot merge them.
 const SHELL32_IMPORTS: &[&str] = &[
+    // sysinfo's Windows command-line reader adds a windows-targets import.
+    // Anchor it in the SDK closure too, so it cannot form a detached IAT.
+    "CommandLineToArgvW",
     "SHOpenFolderAndSelectItems",
     "ILCreateFromPathW",
     "Shell_NotifyIconW",
@@ -244,7 +247,9 @@ mod tests {
         let directives = canonical_import_directives(true, "windows", "msvc");
         let first = WINSOCK_IMPORTS.len() + 1;
         assert_eq!(directives[first], "cargo:rustc-link-lib=dylib=shell32");
-        assert_eq!(SHELL32_IMPORTS.len(), 11);
+        assert_eq!(SHELL32_IMPORTS.len(), 12);
+        assert!(directives
+            .contains(&"cargo:rustc-link-arg=/INCLUDE:__imp_CommandLineToArgvW".to_owned()));
         assert_eq!(
             directives.len(),
             directives.iter().collect::<BTreeSet<_>>().len()

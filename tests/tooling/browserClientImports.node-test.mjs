@@ -457,6 +457,7 @@ test("accepts a single canonical Shell32 closure alongside canonical Winsock", (
           "DragFinish",
           "SHAppBarMessage",
           "DragQueryFileW",
+          "CommandLineToArgvW",
         ],
       },
     ],
@@ -464,10 +465,43 @@ test("accepts a single canonical Shell32 closure alongside canonical Winsock", (
   assert.deepEqual(validateBrowserClientImports(f.buffer, x64).thunkOwnership, {
     format: "msvc-x64",
     status: "recognized-patterns-checked",
-    recognizedThunks: 13,
+    recognizedThunks: 14,
     unrecognizedCandidates: 0,
     unrecognizedSlots: 0,
   });
+});
+
+test("rejects the new CommandLineToArgvW fragment beside the existing eleven Shell32 slots", () => {
+  const f = codeFixture({
+    delayed: [
+      { dll: "WS2_32.dll", names: symbols },
+      {
+        dll: "SHELL32.dll",
+        names: [
+          "DragQueryFileW",
+          0x80000000000000ben,
+          "SHAppBarMessage",
+          "DragFinish",
+          "Shell_NotifyIconGetRect",
+          "ShellExecuteW",
+          "SHCreateItemFromParsingName",
+          "SHGetKnownFolderPath",
+          0x800000000000009bn,
+          "Shell_NotifyIconW",
+          "SHOpenFolderAndSelectItems",
+        ],
+      },
+    ],
+  });
+  // The real sysinfo-linked DLL has a separate one-entry INT/IAT containing
+  // CommandLineToArgvW, but its thunk still invokes the Shell32 descriptor.
+  f.writeThunk(0x2180, 0x1e00, 0x2300);
+  const before = Buffer.from(f.buffer);
+  rejects(
+    f.buffer,
+    /orphan MSVC x64.*slot 0x1e00.*outside shell32\.dll descriptor/,
+  );
+  assert.deepEqual(f.buffer, before);
 });
 
 test("recognized tail cannot target an unadvertised descriptor", () => {
