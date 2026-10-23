@@ -1686,6 +1686,92 @@ describe("origin browser attempt controller", () => {
     expect(f.result.current.state.phase).toBe("error");
   });
 
+  it("ends a known renderer failure immediately while startup resync is unanswered", async () => {
+    const f = fixture();
+    const resync =
+      deferred<Awaited<ReturnType<OriginBrowserTransport["status"]>>>();
+    f.transport.status
+      .mockResolvedValueOnce({
+        capability: { availability: "available" },
+        snapshot: null,
+      })
+      .mockReturnValueOnce(resync.promise);
+    const hook = renderHook(() => useOriginBrowser(f.options));
+    await waitFor(() => expect(f.transport.status).toHaveBeenCalledTimes(2));
+    const failure = snapshot({
+      sequence: 4,
+      phase: "failed",
+      failureReason: "renderer",
+    });
+    f.emit(failure);
+    expect(hook.result.current.state.phase).toBe("error");
+    expect(hook.result.current.state.error).toContain("page renderer stopped");
+    expect(f.transport.close).toHaveBeenCalledExactlyOnceWith({ identity });
+    // A later resync success cannot revive the failed renderer or its surface.
+    await act(async () =>
+      resync.resolve({
+        capability: { availability: "available" },
+        snapshot: snapshot({ sequence: 5 }),
+      }),
+    );
+    f.emit(snapshot({ sequence: 6 }));
+    expect(hook.result.current.state.phase).toBe("error");
+    expect(f.transport.create).toHaveBeenCalledOnce();
+    expect(f.transport.control).not.toHaveBeenCalled();
+  });
+
+  it("shows a failed renderer create receipt without waiting for a resync reply", async () => {
+    const f = fixture();
+    f.transport.create.mockImplementationOnce(async (request) => ({
+      requestId: request.requestId,
+      snapshot: snapshot({
+        sequence: 3,
+        phase: "failed",
+        failureReason: "renderer",
+      }),
+    }));
+    f.transport.status
+      .mockResolvedValueOnce({
+        capability: { availability: "available" },
+        snapshot: null,
+      })
+      .mockReturnValue(new Promise(() => {}));
+    const hook = renderHook(() => useOriginBrowser(f.options));
+    await waitFor(() => expect(f.transport.create).toHaveBeenCalledOnce());
+    await act(async () => {});
+    expect(hook.result.current.state.phase).toBe("error");
+    expect(hook.result.current.state.error).toContain("page renderer stopped");
+    expect(f.transport.close).toHaveBeenCalledExactlyOnceWith({ identity });
+    expect(f.transport.status).toHaveBeenCalledOnce();
+  });
+
+  it("does not promote an older renderer fault over a newer queued snapshot during resync", async () => {
+    const f = fixture();
+    const resync =
+      deferred<Awaited<ReturnType<OriginBrowserTransport["status"]>>>();
+    f.transport.status
+      .mockResolvedValueOnce({
+        capability: { availability: "available" },
+        snapshot: null,
+      })
+      .mockReturnValueOnce(resync.promise);
+    const hook = renderHook(() => useOriginBrowser(f.options));
+    await waitFor(() => expect(f.transport.status).toHaveBeenCalledTimes(2));
+    f.emit(snapshot({ sequence: 5, loading: true }));
+    f.emit(
+      snapshot({ sequence: 4, phase: "failed", failureReason: "renderer" }),
+    );
+    expect(hook.result.current.state.phase).toBe("starting");
+    expect(f.transport.close).not.toHaveBeenCalled();
+    await act(async () =>
+      resync.resolve({
+        capability: { availability: "available" },
+        snapshot: snapshot({ sequence: 6 }),
+      }),
+    );
+    expect(hook.result.current.state.phase).toBe("attached");
+  });
+
   it("keeps a failed document attached for explicit navigation without replaying a request", async () => {
     const f = await mounted();
     f.transport.control.mockClear();

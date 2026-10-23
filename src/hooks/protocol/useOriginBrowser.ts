@@ -1013,11 +1013,27 @@ export function useOriginBrowser(options: UseOriginBrowserOptions) {
         }
         if (!attempt.verified) {
           if (
-            !attempt.pendingSnapshot ||
-            snapshot.sequence > attempt.pendingSnapshot.sequence
+            attempt.pendingSnapshot &&
+            snapshot.sequence <= attempt.pendingSnapshot.sequence
           )
-            attempt.pendingSnapshot = snapshot;
-          return;
+            return;
+          // A matched create already established this exact native identity.
+          // Resync still gates presentation, but must not postpone a terminal
+          // renderer denial behind an unanswered status request. Publishing
+          // this failure closes/cancels the attempt before any surface appears.
+          if (
+            snapshot.phase === "failed" &&
+            snapshot.failureReason === "renderer"
+          ) {
+            attempt.verified = true;
+          } else {
+            if (
+              !attempt.pendingSnapshot ||
+              snapshot.sequence > attempt.pendingSnapshot.sequence
+            )
+              attempt.pendingSnapshot = snapshot;
+            return;
+          }
         }
         if (snapshot.sequence <= attempt.sequence) return;
         attempt.sequence = snapshot.sequence;
@@ -1554,6 +1570,13 @@ export function useOriginBrowser(options: UseOriginBrowserOptions) {
         }
         if (result.requestId !== requestId) {
           attempt.fail();
+          return;
+        }
+        if (
+          result.snapshot.phase === "failed" &&
+          result.snapshot.failureReason === "renderer"
+        ) {
+          attempt.publish(result.snapshot);
           return;
         }
         startupStage = "resync";
