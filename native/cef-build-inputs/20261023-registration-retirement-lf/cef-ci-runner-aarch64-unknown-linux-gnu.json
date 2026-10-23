@@ -1,0 +1,18 @@
+{
+  "buildJobs": 4,
+  "environment": {},
+  "hosted": {
+    "acceptanceRunner": "ubuntu-24.04-arm",
+    "architecture": "arm64",
+    "imageOS": "ubuntu24-arm64",
+    "imageVersion": "20261012.149.1",
+    "platform": "linux",
+    "runner": "ubuntu-24.04-arm"
+  },
+  "kind": "sorng-cef-ci-runner",
+  "path": [],
+  "python": "usr/bin/python3.12",
+  "schemaVersion": 2,
+  "syncJobs": 2,
+  "target": "aarch64-unknown-linux-gnu"
+}

@@ -1,0 +1,22 @@
+{
+  "buildJobs": 4,
+  "environment": {
+    "DEVELOPER_DIR": "@TOOLS@/Applications/Xcode_16.4.app/Contents/Developer",
+    "MACOSX_DEPLOYMENT_TARGET": "14.0",
+    "SDKROOT": "@TOOLS@/Applications/Xcode_16.4.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX15.5.sdk"
+  },
+  "hosted": {
+    "acceptanceRunner": "macos-15",
+    "architecture": "x64",
+    "imageOS": "macos15",
+    "imageVersion": "20260824.0482.1",
+    "platform": "darwin",
+    "runner": "macos-15-intel"
+  },
+  "kind": "sorng-cef-ci-runner",
+  "path": [],
+  "python": "usr/local/Cellar/python@3.14/3.14.7/Frameworks/Python.framework/Versions/3.14/bin/python3.14",
+  "schemaVersion": 2,
+  "syncJobs": 2,
+  "target": "aarch64-apple-darwin"
+}

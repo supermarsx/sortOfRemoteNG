@@ -1,0 +1,143 @@
+{
+  "schemaVersion": 1,
+  "kind": "sorng-cef-build-input-review",
+  "scope": "New LF r4 source-input identity plus two already reviewed measured hosted-image variants; NOT build, acceptance, or publication evidence",
+  "sourceLockIdentity": "254fc0acc6001def832bed411ba320bfebd8111aeca64ee8c572512c0369d689",
+  "sourceLockRawSha256": "c3cb6d739d11259313796399514921449534b2a5680fdb67295cf95ee25bd10f",
+  "baseNamespace": "native\\cef-build-inputs\\20261022-registration-retirement",
+  "baseSourceLockIdentity": "a4e2f53b29a8b7fc51c67e0df99650beeb5f764046633b9482a81733f0168b11",
+  "baseReviewReceiptSha256": "9348d1565b4664deb8463c3289a01b91814702fe83128eaaeee0dda0e5854314",
+  "normalizationReceipt": "normalization-receipt.json",
+  "bridgeRevision": 4,
+  "sourceSemantics": "Only CRLF transport bytes in0008/0009 andthefrozenheader change toLF; full LF-normalized text, ABI2/bridge revision4 and capability set unchanged; no C++/GN changes",
+  "hostedMapOverlays": [
+    {
+      "target": "aarch64-pc-windows-msvc",
+      "namespace": "20261022-registration-retirement-winarm-20261018-189-1",
+      "sourceLockIdentity": "2793e64ccf1be9002feacfd08deb6f60899170e1ae49c733ed772e7566d0ce33",
+      "reviewReceiptSha256": "06cf911b306f26d2579eadb4f280c6d8e633d34249402f99764c9c674843ae20",
+      "actualRun": 39818095759,
+      "actualImage": {
+        "os": "win11-vs2026-arm64",
+        "version": "20261018.189.1"
+      },
+      "actualToolFileCount": 9,
+      "executableToolHashesUnchanged": true,
+      "gnUnchanged": true
+    },
+    {
+      "target": "aarch64-unknown-linux-gnu",
+      "namespace": "20261022-registration-retirement-linuxarm-20261012-149-1",
+      "sourceLockIdentity": "49355206f8f7204361f755f54635a9c9ae8de8c11fc0bdc5af7376d2dceeee60",
+      "reviewReceiptSha256": "e66c3044cacf92bffba247bd584ac66be455ea9a4d7517cec8c818f56fdc5c14",
+      "actualRun": 39818101932,
+      "actualImage": {
+        "os": "ubuntu24-arm64",
+        "version": "20261012.149.1"
+      },
+      "actualToolFileCount": 4,
+      "executableToolHashesUnchanged": true,
+      "gnUnchanged": true
+    }
+  ],
+  "gnRequirements": [
+    {
+      "commit": "a654841425914cbb703a2931e07b70a83aedbafd",
+      "path": "build/config/BUILDCONFIG.gn",
+      "repository": "chromium",
+      "sha256": "5df70bd3d47e744fb3737e28dacf7cec42df9785f097d7343bb701e267e6ae39",
+      "size": 33848
+    },
+    {
+      "commit": "a654841425914cbb703a2931e07b70a83aedbafd",
+      "path": "build/config/compiler/compiler.gni",
+      "repository": "chromium",
+      "sha256": "7c36e0aa7b9ff6bff1a296edb89e8703f6e82d0d93795ff90a10457bb1a6a8e8",
+      "size": 19143
+    },
+    {
+      "commit": "a654841425914cbb703a2931e07b70a83aedbafd",
+      "path": "build/config/compiler/pgo/pgo.gni",
+      "repository": "chromium",
+      "sha256": "754dc82d9e86932d36dabf69554f69d79c56a592cb1fbab2f3d5da936030caac",
+      "size": 2449
+    },
+    {
+      "commit": "a654841425914cbb703a2931e07b70a83aedbafd",
+      "path": "build/toolchain/concurrent_links.gni",
+      "repository": "chromium",
+      "sha256": "9ddb5d6e09fd972f80e7d68db4ff7cda84b330dc6a51f98229c4da802b7fdd97",
+      "size": 7385
+    },
+    {
+      "commit": "682c378d70d5780061e96644dca16ddd8fd157a9",
+      "path": "cef/tools/gn_args.py",
+      "repository": "cef",
+      "sha256": "ab94e3b3c214198b396c8b4858b5d5e9cb42be956bbc294d651dd86eac44df6e",
+      "size": 26541
+    },
+    {
+      "commit": "a654841425914cbb703a2931e07b70a83aedbafd",
+      "path": "docs/mac_arm64.md",
+      "repository": "chromium",
+      "sha256": "895f99dde2c82f36c05783136b4f6c5c71ac7b45180523fa832a427497b52e71",
+      "size": 3459
+    },
+    {
+      "commit": "a654841425914cbb703a2931e07b70a83aedbafd",
+      "path": "build/config/mac/mac_sdk.gni",
+      "repository": "chromium",
+      "sha256": "c8d20392804889087b6737bd1ffc10fdc1845e2a7d9a4218856ef248771bc8e9",
+      "size": 6534
+    },
+    {
+      "commit": "a654841425914cbb703a2931e07b70a83aedbafd",
+      "path": "build/vs_toolchain.py",
+      "repository": "chromium",
+      "sha256": "032620538c8199207bbc9ebed1f884528f4f4a39000c4752ae33e5e8d6a481f6",
+      "size": 28418
+    },
+    {
+      "commit": "a654841425914cbb703a2931e07b70a83aedbafd",
+      "path": "build/toolchain/win/setup_toolchain.py",
+      "repository": "chromium",
+      "sha256": "d44e8a20670fb92b794809e66cd874aafb48521731ec32e13684ef689fca18f1",
+      "size": 15133
+    }
+  ],
+  "reviewDecisions": [
+    "Measured >=4CPU/>=14GiB build hosts: four build workers, two sync workers, one concurrent link; not a completion/OOM guarantee",
+    "Non-official non-debug non-component builds, PGO0 and ThinLTO false, symbols0; sandbox and security controls retained",
+    "Symbols0 reduces engine stack completeness; app PDB retention is independent",
+    "Mac ARM is cross-built on the measured Intel host and requires separate native ARM acceptance",
+    "Windows maps force actual VS2026 path/version and Windows Kits root; pinned Chromium requires SDK28000; no older SDK/VS fallback",
+    "Native tool inventories are representative measured files, not hermetic installation inventories",
+    "Linux and Intel Mac disk headroom and 300-minute cold-build budget are risks; failures retain truthful diagnostics",
+    "Per-target release descriptors may pin different source locks; never rebind the existing local Windows bundle to this new six-target lock"
+  ],
+  "minimumProducerCommit": "1c8ce337f8c965ca6070f133690ae1b60f482ba8",
+  "requiredProducerBehavior": [
+    "Ordered isolated-index patch-series validation and sequential actual apply",
+    "Native Windows shell/desktop-selector prerequisite doctor",
+    "Bounded phase-only prerequisite installation diagnostics"
+  ],
+  "knownBlockers": [
+    {
+      "target": "aarch64-unknown-linux-gnu",
+      "run": 39822018638,
+      "stage": "sync",
+      "reason": "Pinned CIPD infra/3pp/tools/gperf/linux-arm64@version:3@3.2 absent; reviewed tool/cross-build remedy still required"
+    },
+    {
+      "target": "x86_64-unknown-linux-gnu",
+      "run": 39821262941,
+      "stage": "prerequisite-install",
+      "reason": "Prior fixed-budget installer timeout unresolved; new diagnostics require controlled retry"
+    }
+  ],
+  "engineBuildAttempted": false,
+  "nativeAcceptancePerformed": false,
+  "publicationAllowed": false,
+  "existingLocalWindowsSourceLockIdentity": "9b03f692f091694cc8a613e579436e82fd9805e9f9442e8d606c6aec8cc5b835",
+  "existingLocalWindowsAcceptanceTransferred": false
+}
