@@ -123,9 +123,85 @@ $s=Get-AuthenticodeSignature -LiteralPath $Installer
 // Observe child-process phases without printing their arguments or modifying the
 // reviewed installer. Its own stdout/stderr and exit status remain authoritative.
 export const LINUX_INSTALLER_OBSERVER = String.raw`
-import json, os, runpy, subprocess, sys
+import json, os, runpy, stat, subprocess, sys, threading, time
 _popen = subprocess.Popen
 _records = 0
+_record_lock = threading.Lock()
+
+def read_fixed(file, limit):
+    try:
+        fd = os.open(file, os.O_RDONLY | getattr(os, 'O_NOFOLLOW', 0))
+        try:
+            if not stat.S_ISREG(os.fstat(fd).st_mode):
+                return None
+            return os.read(fd, limit).decode('ascii', 'replace')
+        finally:
+            os.close(fd)
+    except OSError:
+        return None
+
+def number(value):
+    try:
+        result = int(value)
+        return result if 0 <= result <= 9007199254740991 else None
+    except (TypeError, ValueError):
+        return None
+
+def process_progress(pid):
+    root = '/proc/' + str(pid)
+    comm = (read_fixed(root + '/comm', 64) or '').strip()
+    role = comm if comm in ('sudo', 'apt-get', 'dpkg', 'dpkg-deb', 'http', 'https', 'gpgv', 'debconf') else 'other'
+    status = read_fixed(root + '/status', 4096) or ''
+    state = 'unknown'
+    for line in status.splitlines():
+        if line.startswith('State:'):
+            words = line.split()
+            state = dict(R='running', S='sleeping', D='disk-wait', T='stopped', Z='zombie').get(words[1] if len(words) > 1 else '', 'unknown')
+    io = {}
+    for line in (read_fixed(root + '/io', 4096) or '').splitlines():
+        key, _, value = line.partition(':')
+        if key in ('rchar', 'wchar', 'read_bytes', 'write_bytes', 'syscr', 'syscw'):
+            io[key] = number(value.strip())
+    children = []
+    for value in (read_fixed(root + '/task/' + str(pid) + '/children', 4096) or '').split()[:32]:
+        child = number(value)
+        if child is not None and child > 0:
+            children.append(child)
+    return dict(pid=pid, role=role, state=state, io=io), children
+
+def dpkg_progress():
+    # No package names or log text leave this observer; only fixed actions and
+    # numeric file metadata. O_NOFOLLOW prevents following an unexpected alias.
+    try:
+        fd = os.open('/var/log/dpkg.log', os.O_RDONLY | getattr(os, 'O_NOFOLLOW', 0))
+        try:
+            info = os.fstat(fd)
+            if not stat.S_ISREG(info.st_mode):
+                return None
+            os.lseek(fd, max(0, info.st_size - 4096), os.SEEK_SET)
+            lines = os.read(fd, 4096).decode('ascii', 'replace').splitlines()
+            action = 'other'
+            if lines:
+                words = lines[-1].split()
+                if len(words) > 2 and words[2] in ('startup', 'status', 'install', 'upgrade', 'configure', 'unpack', 'trigproc', 'remove', 'purge'):
+                    action = words[2]
+            return dict(bytes=number(info.st_size), modifiedMs=number(int(info.st_mtime * 1000)), action=action)
+        finally:
+            os.close(fd)
+    except OSError:
+        return None
+
+def progress(pid):
+    pending, seen, rows = [pid], set(), []
+    while pending and len(rows) < 32:
+        current = pending.pop(0)
+        if current in seen:
+            continue
+        seen.add(current)
+        row, children = process_progress(current)
+        rows.append(row)
+        pending.extend(children[:32 - len(pending)])
+    return dict(processes=rows, processListTruncated=bool(pending), dpkg=dpkg_progress())
 def phase(args):
     if not isinstance(args, (list, tuple)):
         return None
@@ -141,22 +217,43 @@ def phase(args):
     if 'install' in words:
         return 'apt-simulation' if '--just-print' in words else 'apt-install'
     return None
-def emit(stage, state, pid, code=None):
+def emit(stage, state, pid, code=None, **extra):
     global _records
-    if stage is not None and _records < 128:
-        _records += 1
-        print('SORNG_PREREQUISITE_PHASE ' + json.dumps(dict(phase=stage, state=state, pid=pid, exitCode=code), separators=(',', ':')), file=sys.stderr, flush=True)
+    with _record_lock:
+        if stage is not None and _records < 256:
+            _records += 1
+            print('SORNG_PREREQUISITE_PHASE ' + json.dumps(dict(phase=stage, state=state, pid=pid, exitCode=code, **extra), separators=(',', ':')), file=sys.stderr, flush=True)
 class ObservedPopen(_popen):
     def __init__(self, args, *rest, **kwargs):
         self._observed_phase = phase(args)
         self._observed_finished = False
+        self._observed_stop = threading.Event()
+        self._observed_guard = threading.Lock()
+        self._observed_start = time.monotonic()
         super().__init__(args, *rest, **kwargs)
         emit(self._observed_phase, 'started', self.pid)
+        if self._observed_phase == 'apt-install':
+            threading.Thread(target=self._heartbeat, name='sorng-apt-progress', daemon=True).start()
+    def _heartbeat(self):
+        for _ in range(120):
+            if self._observed_stop.wait(10):
+                return
+            try:
+                snapshot = progress(self.pid)
+                with self._observed_guard:
+                    if self._observed_stop.is_set():
+                        return
+                    emit(self._observed_phase, 'progress', self.pid, elapsedMs=int((time.monotonic() - self._observed_start) * 1000), **snapshot)
+            except Exception:
+                # Observation failure must not change installer execution.
+                pass
     def wait(self, *args, **kwargs):
         result = super().wait(*args, **kwargs)
-        if not self._observed_finished:
-            self._observed_finished = True
-            emit(self._observed_phase, 'finished', self.pid, result)
+        with self._observed_guard:
+            self._observed_stop.set()
+            if not self._observed_finished:
+                self._observed_finished = True
+                emit(self._observed_phase, 'finished', self.pid, result)
         return result
 subprocess.Popen = ObservedPopen
 sys.argv = sys.argv[1:]

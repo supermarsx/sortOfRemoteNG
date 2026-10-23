@@ -79,6 +79,149 @@ sys.exit(17)
   );
 });
 
+test("apt heartbeat arrives while a real child is pending and stops before its original failure", async (t) => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "cef-apt-heartbeat-"));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const script = path.join(root, "installer.py");
+  const release = path.join(root, "release-child");
+  await writeFile(
+    script,
+    String.raw`
+import subprocess, sys, time, threading
+code = '''import pathlib,time,sys
+print("child-original", flush=True)
+release = pathlib.Path(sys.argv[1])
+deadline = time.monotonic() + 16
+while not release.exists() and time.monotonic() < deadline:
+    time.sleep(0.02)
+sys.exit(23 if release.exists() else 24)
+'''
+try:
+    subprocess.check_call(['apt-get', '-c', code, sys.argv[1], 'install', 'https://private.invalid/secret'], executable=sys.executable)
+except subprocess.CalledProcessError as error:
+    assert error.returncode == 23
+    print('installer-original', flush=True)
+    # A completed child must not retain its observer even if its installer lives.
+    time.sleep(0.2)
+    assert not any(thread.name == 'sorng-apt-progress' for thread in threading.enumerate())
+    sys.exit(17)
+`,
+  );
+  const completion = promisify(execFile)(
+    process.platform === "win32" ? "python.exe" : "python3",
+    ["-I", "-u", "-c", LINUX_INSTALLER_OBSERVER, script, release],
+    { timeout: 20_000 },
+  );
+  let observedWhilePending = false;
+  let releaseError;
+  completion.child.stderr.on("data", (chunk) => {
+    if (chunk.includes('"state":"progress"')) {
+      observedWhilePending = completion.child.exitCode === null;
+      void writeFile(release, "release").catch((error) => {
+        releaseError = error;
+      });
+    }
+  });
+  await assert.rejects(completion, (error) => {
+    assert.equal(error.code, 17);
+    assert.deepEqual(error.stdout.trim().split(/\r?\n/), [
+      "child-original",
+      "installer-original",
+    ]);
+    assert.equal(observedWhilePending, true);
+    assert.equal(releaseError, undefined);
+    assert.doesNotMatch(error.stderr, /private|secret|https:|child-original/);
+    const rows = error.stderr
+      .trim()
+      .split(/\r?\n/)
+      .map((line) => {
+        assert.ok(line.startsWith("SORNG_PREREQUISITE_PHASE "));
+        return JSON.parse(line.slice("SORNG_PREREQUISITE_PHASE ".length));
+      });
+    assert.deepEqual(
+      rows.map((row) => row.state),
+      ["started", "progress", "finished"],
+    );
+    assert.equal(rows.at(-1).exitCode, 23);
+    const heartbeat = rows[1];
+    assert.ok(Number.isSafeInteger(heartbeat.elapsedMs));
+    assert.ok(heartbeat.elapsedMs >= 10_000);
+    assert.ok(
+      heartbeat.processes.length >= 1 && heartbeat.processes.length <= 32,
+    );
+    assert.equal(typeof heartbeat.processListTruncated, "boolean");
+    for (const process of heartbeat.processes) {
+      assert.deepEqual(Object.keys(process).sort(), [
+        "io",
+        "pid",
+        "role",
+        "state",
+      ]);
+      assert.ok(Number.isSafeInteger(process.pid) && process.pid > 0);
+      assert.ok(
+        [
+          "sudo",
+          "apt-get",
+          "dpkg",
+          "dpkg-deb",
+          "http",
+          "https",
+          "gpgv",
+          "debconf",
+          "other",
+        ].includes(process.role),
+      );
+      assert.ok(
+        [
+          "running",
+          "sleeping",
+          "disk-wait",
+          "stopped",
+          "zombie",
+          "unknown",
+        ].includes(process.state),
+      );
+      for (const [key, value] of Object.entries(process.io)) {
+        assert.ok(
+          [
+            "rchar",
+            "wchar",
+            "read_bytes",
+            "write_bytes",
+            "syscr",
+            "syscw",
+          ].includes(key),
+        );
+        assert.ok(
+          value === null || (Number.isSafeInteger(value) && value >= 0),
+        );
+      }
+    }
+    if (heartbeat.dpkg !== null) {
+      assert.deepEqual(Object.keys(heartbeat.dpkg).sort(), [
+        "action",
+        "bytes",
+        "modifiedMs",
+      ]);
+      assert.ok(
+        [
+          "startup",
+          "status",
+          "install",
+          "upgrade",
+          "configure",
+          "unpack",
+          "trigproc",
+          "remove",
+          "purge",
+          "other",
+        ].includes(heartbeat.dpkg.action),
+      );
+    }
+    return true;
+  });
+});
+
 test("Linux provisioning observes the pinned installer without changing arguments, deadline or failure status", async (t) => {
   const f = await sdkReceiptFixture(t);
   f.dependencies.platform = "linux";
