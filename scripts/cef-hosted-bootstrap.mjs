@@ -190,6 +190,72 @@ export function peArchitecture(bytes) {
   );
 }
 
+// Discovery only: these facts never select a producer executable or create a
+// launcher. A future producer must use separately reviewed exact file pins.
+export async function observeWindowsGit(
+  candidates,
+  io = {
+    realpath,
+    readFile,
+    version: (file) => command(file, ["--version"]),
+  },
+) {
+  const validPath = (candidate) =>
+    typeof candidate === "string" &&
+    /^[A-Za-z]:[\\/]/.test(candidate) &&
+    !/[\x00-\x1f\x7f]/.test(candidate) &&
+    path.win32.basename(candidate).toLowerCase() === "git.exe";
+  if (
+    !Array.isArray(candidates) ||
+    candidates.length > 8 ||
+    candidates.some((candidate) => !validPath(candidate))
+  )
+    return {
+      status: "unavailable",
+      candidates: [],
+      reason: "invalid-candidates",
+    };
+  const seen = new Set();
+  const facts = [];
+  for (const candidate of candidates) {
+    try {
+      const file = await io.realpath(candidate);
+      if (!validPath(file)) throw new Error("Invalid canonical Git executable");
+      const key = file.toLowerCase();
+      if (seen.has(key)) continue;
+      seen.add(key);
+      const bytes = await io.readFile(file);
+      const architecture = peArchitecture(bytes);
+      if (!architecture) throw new Error("Unrecognized Git executable");
+      const version = await io.version(file);
+      if (!/^git version [0-9][A-Za-z0-9.+_-]{0,95}$/.test(version))
+        throw new Error("Unrecognized Git version");
+      facts.push({
+        path: file,
+        architecture,
+        version,
+        size: bytes.length,
+        sha256: createHash("sha256").update(bytes).digest("hex"),
+      });
+    } catch (error) {
+      return {
+        status: "unavailable",
+        candidates: facts,
+        failure: probeFailure(error, "windows-git"),
+      };
+    }
+  }
+  return {
+    status:
+      facts.length === 0
+        ? "missing"
+        : facts.length === 1
+          ? "available"
+          : "ambiguous",
+    candidates: facts,
+  };
+}
+
 export async function nativeWindowsShell(
   env = process.env,
   architecture = process.arch,
@@ -268,7 +334,8 @@ $targetArch=if($env:PROCESSOR_ARCHITECTURE -eq 'ARM64'){'arm64'}else{'x64'}
 if(Test-Path -LiteralPath (Join-Path $kits 'Debuggers/x64/dbghelp.dll') -PathType Leaf){$debuggerVersion=(Get-Item -LiteralPath (Join-Path $kits 'Debuggers/x64/dbghelp.dll')).VersionInfo.FileVersion}
 foreach($tail in @("Lib/10.0.28000.0/um/$targetArch/kernel32.lib",'Debuggers/x64/dbghelp.dll')){if(!(Test-Path -LiteralPath (Join-Path $kits $tail) -PathType Leaf)){$missing+=$tail}}
 $sdkDirectories=@(); if(Test-Path -LiteralPath (Join-Path $kits 'Include')){ $sdkDirectories=@(Get-ChildItem -LiteralPath (Join-Path $kits 'Include') -Directory | Select-Object -ExpandProperty Name) }
-@{visualStudioVersion=$vs.installationVersion;visualStudioPath=$vs.installationPath;compilerVersion=$compilerVersion;debuggerVersion=$debuggerVersion;windowsSdk=$sdkVersion;sdkDirectories=$sdkDirectories;files=$files;missing=$missing}|ConvertTo-Json -Depth 4 -Compress
+$gitCandidates=@(Get-Command git.exe -CommandType Application -All -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Source -Unique | Select-Object -First 9)
+@{visualStudioVersion=$vs.installationVersion;visualStudioPath=$vs.installationPath;compilerVersion=$compilerVersion;debuggerVersion=$debuggerVersion;windowsSdk=$sdkVersion;sdkDirectories=$sdkDirectories;files=$files;missing=$missing;gitCandidates=$gitCandidates}|ConvertTo-Json -Depth 4 -Compress
 `;
 
 async function nativeTools(platform) {
@@ -282,7 +349,18 @@ async function nativeTools(platform) {
         90_000,
       ),
     );
-    return { ...result, shell, shellArchitecture: process.arch };
+    const git = await observeWindowsGit(result.gitCandidates);
+    const { gitCandidates: _gitCandidates, ...native } = result;
+    return {
+      ...native,
+      git,
+      files: [
+        ...result.files,
+        ...git.candidates.map((candidate) => candidate.path),
+      ],
+      shell,
+      shellArchitecture: process.arch,
+    };
   }
   if (platform === "darwin") {
     const developer = await command("xcode-select", ["-p"]);
@@ -583,6 +661,10 @@ export async function observe(
   const blockers = [...discoveryBlockers(facts, process.platform), ...errors];
   if (native.probeFailed)
     blockers.push("Native tool discovery did not complete");
+  if (process.platform === "win32" && native.git?.status !== "available")
+    blockers.push(
+      "Windows Git executable discovery is missing, ambiguous, or incomplete",
+    );
   if (native.missing?.length)
     blockers.push(
       "Required native compiler, ATL/MFC, or SDK files are missing",

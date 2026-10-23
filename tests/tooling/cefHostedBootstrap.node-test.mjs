@@ -14,6 +14,7 @@ import {
   inventoryFile,
   nativeWindowsShell,
   observe,
+  observeWindowsGit,
   peArchitecture,
   probeFailure,
   selectTarget,
@@ -108,6 +109,137 @@ const pe = (machine) => {
   bytes.writeUInt16LE(machine, 68);
   return bytes;
 };
+
+test("Windows Git observation records actual canonical bytes, PE architecture and version", async () => {
+  for (const [machine, architecture] of [
+    [0x8664, "x64"],
+    [0xaa64, "arm64"],
+  ]) {
+    const bytes = pe(machine);
+    const file = "C:\\Program Files\\Git\\bin\\git.exe";
+    const result = await observeWindowsGit(
+      ["C:\\PROGRA~1\\Git\\bin\\git.exe"],
+      {
+        realpath: async () => file,
+        readFile: async (actual) => {
+          assert.equal(actual, file);
+          return bytes;
+        },
+        version: async (actual) => {
+          assert.equal(actual, file);
+          return "git version 2.56.0.windows.2";
+        },
+      },
+    );
+    assert.deepEqual(result, {
+      status: "available",
+      candidates: [
+        {
+          path: file,
+          architecture,
+          version: "git version 2.56.0.windows.2",
+          size: bytes.length,
+          sha256: createHash("sha256").update(bytes).digest("hex"),
+        },
+      ],
+    });
+    bytes[100] ^= 1;
+    const changed = await observeWindowsGit([file], {
+      realpath: async () => file,
+      readFile: async () => bytes,
+      version: async () => "git version 2.56.0.windows.2",
+    });
+    assert.notEqual(changed.candidates[0].sha256, result.candidates[0].sha256);
+  }
+});
+
+test("Git observation deduplicates canonical aliases but never chooses between distinct installations", async () => {
+  let versions = 0;
+  const io = {
+    realpath: async (file) => file.replace("PROGRA~1", "Program Files"),
+    readFile: async () => pe(0xaa64),
+    version: async () => {
+      versions++;
+      return "git version 2.56.0.windows.2";
+    },
+  };
+  const aliases = await observeWindowsGit(
+    ["C:\\PROGRA~1\\Git\\bin\\git.exe", "C:\\Program Files\\Git\\bin\\git.exe"],
+    io,
+  );
+  assert.equal(aliases.status, "available");
+  assert.equal(aliases.candidates.length, 1);
+  assert.equal(versions, 1);
+  const distinct = await observeWindowsGit(
+    ["C:\\Program Files\\Git\\bin\\git.exe", "C:\\Other Git\\git.exe"],
+    io,
+  );
+  assert.equal(distinct.status, "ambiguous");
+  assert.equal(distinct.candidates.length, 2);
+});
+
+test("missing, malformed or excessive Git candidates cannot invent an executable or invoke a fallback", async () => {
+  const untouched = {
+    realpath: async () =>
+      assert.fail("must not resolve an absent or invalid candidate"),
+    readFile: async () =>
+      assert.fail("must not read an absent or invalid candidate"),
+    version: async () => assert.fail("must not execute a fallback"),
+  };
+  assert.deepEqual(await observeWindowsGit([], untouched), {
+    status: "missing",
+    candidates: [],
+  });
+  for (const candidates of [
+    undefined,
+    Array(9).fill("C:\\Git\\git.exe"),
+    ["git.exe"],
+    ["\\\\server\\Git\\git.exe"],
+    ["C:\\Git\\git.exe\n"],
+  ]) {
+    assert.deepEqual(await observeWindowsGit(candidates, untouched), {
+      status: "unavailable",
+      candidates: [],
+      reason: "invalid-candidates",
+    });
+  }
+  let versions = 0;
+  const invalidPe = await observeWindowsGit(["C:\\Git\\git.exe"], {
+    realpath: async (file) => file,
+    readFile: async () => Buffer.from("not a PE executable"),
+    version: async () => {
+      versions++;
+      return "git version 1.0";
+    },
+  });
+  assert.equal(invalidPe.status, "unavailable");
+  assert.equal(versions, 0);
+});
+
+test("failed Git version commands retain only fixed bounded failure metadata", async () => {
+  const result = await observeWindowsGit(["C:\\Git\\git.exe"], {
+    realpath: async (file) => file,
+    readFile: async () => pe(0x8664),
+    version: async () => {
+      throw {
+        code: "ETIMEDOUT",
+        killed: true,
+        message: "private error",
+        stdout: "private output",
+      };
+    },
+  });
+  assert.deepEqual(result, {
+    status: "unavailable",
+    candidates: [],
+    failure: {
+      stage: "windows-git",
+      kind: "timeout",
+      exitCode: null,
+      signal: null,
+    },
+  });
+});
 test("Windows probe uses only a fixed installed native-architecture PowerShell", async () => {
   assert.equal(peArchitecture(pe(0xaa64)), "arm64");
   assert.equal(peArchitecture(pe(0x8664)), "x64");
