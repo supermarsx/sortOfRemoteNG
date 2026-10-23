@@ -1539,7 +1539,12 @@ export async function customRuntimeBuildRecipe({
     environment: {
       DEPOT_TOOLS_UPDATE: "0",
       ...(windows ? { DEPOT_TOOLS_WIN_TOOLCHAIN: "0" } : {}),
-      GN_DEFINES: gnDefines,
+      // CEF parses this environment value with Python shlex, not GN syntax.
+      // Quote each complete assignment so inner GN string quotes survive. The
+      // validated literal grammar above excludes single quotes and escapes.
+      GN_DEFINES: Object.entries(args)
+        .map(([name, value]) => `'${name}=${value}'`)
+        .join(" "),
       GN_OUT_CONFIGS: `Release_GN_${arch}`,
       CEF_USE_GN: "1",
     },

@@ -732,6 +732,42 @@ for (const target of TARGETS)
     assert.equal(plan.executed, false);
     assert.equal(plan.productionReady, false);
     assert.equal(plan.environment.DEPOT_TOOLS_UPDATE, "0");
+    // CEF tokenizes GN_DEFINES with Python shlex, not the GN file parser.
+    // Retain typed string literals (notably "14.0") inside each assignment.
+    const build = data.sourceLock.builds.find((item) => item.target === target);
+    const definitions = `${gnArgs(target)}\n# reviewed comment\nsymbol_level = 0\nuse_sysroot = true\n`;
+    await writeFile(path.join(data.inputsRoot, build.gnArgs.path), definitions);
+    build.gnArgs.sha256 = hash(definitions);
+    const environmentRecipe = await customRuntimeBuildRecipe({
+      ...data,
+      checkouts,
+    });
+    const python = process.platform === "win32" ? "python" : "python3";
+    const decoded = JSON.parse(
+      execFileSync(
+        python,
+        [
+          "-B",
+          "-c",
+          "import json,shlex,sys\nresult={}\nfor token in shlex.split(sys.stdin.read()):\n name,value=token.split('=',1)\n assert name and name not in result\n result[name]=json.loads(value)\nprint(json.dumps(result))",
+        ],
+        { input: environmentRecipe.environment.GN_DEFINES, encoding: "utf8" },
+      ),
+    );
+    assert.deepEqual(decoded, {
+      target_cpu: target.startsWith("aarch64") ? "arm64" : "x64",
+      is_component_build: false,
+      is_debug: false,
+      use_remoteexec: false,
+      use_siso: true,
+      ...(target.includes("apple")
+        ? { mac_deployment_target: "14.0" }
+        : target.includes("linux")
+          ? { ozone_platform_x11: true }
+          : {}),
+      symbol_level: 0,
+      use_sysroot: true,
+    });
     const args = plan.commands[1].args;
     assert.ok(args.includes("cef"));
     if (target.includes("windows")) {
