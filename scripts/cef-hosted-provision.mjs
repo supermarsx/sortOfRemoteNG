@@ -120,6 +120,49 @@ $s=Get-AuthenticodeSignature -LiteralPath $Installer
 @{status=$s.Status.ToString();thumbprint=$s.SignerCertificate.Thumbprint;subject=$s.SignerCertificate.Subject;productVersion=(Get-Item -LiteralPath $Installer).VersionInfo.ProductVersion}|ConvertTo-Json -Compress
 `;
 
+// Observe child-process phases without printing their arguments or modifying the
+// reviewed installer. Its own stdout/stderr and exit status remain authoritative.
+export const LINUX_INSTALLER_OBSERVER = String.raw`
+import json, os, runpy, subprocess, sys
+_popen = subprocess.Popen
+_records = 0
+def phase(args):
+    if not isinstance(args, (list, tuple)):
+        return None
+    words = list(args)
+    if words and os.path.basename(str(words[0])) == 'sudo':
+        words = words[1:]
+        while words and '=' in str(words[0]) and not str(words[0]).startswith('-'):
+            words = words[1:]
+    if not words or os.path.basename(str(words[0])) != 'apt-get':
+        return None
+    if 'update' in words:
+        return 'apt-update'
+    if 'install' in words:
+        return 'apt-simulation' if '--just-print' in words else 'apt-install'
+    return None
+def emit(stage, state, pid, code=None):
+    global _records
+    if stage is not None and _records < 128:
+        _records += 1
+        print('SORNG_PREREQUISITE_PHASE ' + json.dumps(dict(phase=stage, state=state, pid=pid, exitCode=code), separators=(',', ':')), file=sys.stderr, flush=True)
+class ObservedPopen(_popen):
+    def __init__(self, args, *rest, **kwargs):
+        self._observed_phase = phase(args)
+        self._observed_finished = False
+        super().__init__(args, *rest, **kwargs)
+        emit(self._observed_phase, 'started', self.pid)
+    def wait(self, *args, **kwargs):
+        result = super().wait(*args, **kwargs)
+        if not self._observed_finished:
+            self._observed_finished = True
+            emit(self._observed_phase, 'finished', self.pid, result)
+        return result
+subprocess.Popen = ObservedPopen
+sys.argv = sys.argv[1:]
+runpy.run_path(sys.argv[0], run_name='__main__')
+`;
+
 export async function provision(
   { target, output, execute = false, cleanup = false },
   env = process.env,
@@ -252,7 +295,7 @@ export async function provision(
       } else {
         await run(
           "python3",
-          ["-I", file, ...plan.arguments],
+          ["-I", "-u", "-c", LINUX_INSTALLER_OBSERVER, file, ...plan.arguments],
           20 * 60_000,
           "install-linux-dependencies",
         );

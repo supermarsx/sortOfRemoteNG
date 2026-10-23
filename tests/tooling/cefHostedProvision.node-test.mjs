@@ -1,7 +1,9 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { mkdtemp, readFile, realpath, rm } from "node:fs/promises";
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
+import { mkdtemp, readFile, realpath, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import os from "node:os";
 import { RECIPE } from "../../scripts/cef-hosted-bootstrap.mjs";
@@ -9,10 +11,115 @@ import {
   acquirePinned,
   assertProvisionHost,
   childEnvironment,
+  LINUX_INSTALLER_OBSERVER,
   provision,
   provisionPlan,
   verifyInstallerSignature,
 } from "../../scripts/cef-hosted-provision.mjs";
+
+test("Linux phase observer executes original script and preserves failure without disclosing child arguments", async (t) => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "cef-linux-phases-"));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const script = path.join(root, "installer.py");
+  await writeFile(
+    script,
+    String.raw`
+import subprocess, sys
+assert sys.argv[1:] == ['--no-prompt', 'private-argument']
+for extra in [['update'], ['--just-print', 'install'], ['install']]:
+    # Python executes the synthetic child; no apt executable is launched.
+    subprocess.check_output(['apt-get', '-c', 'print("child-result")', *extra, 'https://private.invalid/secret'], executable=sys.executable)
+print('original-installer-output')
+sys.exit(17)
+`,
+  );
+  await assert.rejects(
+    promisify(execFile)(
+      process.platform === "win32" ? "python.exe" : "python3",
+      [
+        "-I",
+        "-u",
+        "-c",
+        LINUX_INSTALLER_OBSERVER,
+        script,
+        "--no-prompt",
+        "private-argument",
+      ],
+    ),
+    (error) => {
+      assert.equal(error.code, 17);
+      assert.equal(error.stdout.trim(), "original-installer-output");
+      assert.doesNotMatch(
+        error.stderr,
+        /private|secret|https:|--no-prompt|child-result/,
+      );
+      const rows = error.stderr
+        .trim()
+        .split(/\r?\n/)
+        .map((line) => {
+          assert.ok(line.startsWith("SORNG_PREREQUISITE_PHASE "));
+          return JSON.parse(line.slice("SORNG_PREREQUISITE_PHASE ".length));
+        });
+      assert.deepEqual(
+        rows.map((row) => [row.phase, row.state, row.exitCode]),
+        [
+          ["apt-update", "started", null],
+          ["apt-update", "finished", 0],
+          ["apt-simulation", "started", null],
+          ["apt-simulation", "finished", 0],
+          ["apt-install", "started", null],
+          ["apt-install", "finished", 0],
+        ],
+      );
+      assert.ok(
+        rows.every((row) => Number.isSafeInteger(row.pid) && row.pid > 0),
+      );
+      return true;
+    },
+  );
+});
+
+test("Linux provisioning observes the pinned installer without changing arguments, deadline or failure status", async (t) => {
+  const f = await sdkReceiptFixture(t);
+  f.dependencies.platform = "linux";
+  f.dependencies.architecture = "x64";
+  f.dependencies.exec = async (exe, args, options) => {
+    assert.equal(exe, "python3");
+    assert.deepEqual(args.slice(0, 4), [
+      "-I",
+      "-u",
+      "-c",
+      LINUX_INSTALLER_OBSERVER,
+    ]);
+    assert.equal(path.basename(args[4]), "install-build-deps.py");
+    assert.deepEqual(
+      args.slice(5),
+      RECIPE.provisioning.linuxDependencies.arguments,
+    );
+    assert.equal(options.timeout, 20 * 60_000);
+    const error = new Error("private failure");
+    error.code = 17;
+    error.stderr = "fixed phase diagnostic";
+    throw error;
+  };
+  await assert.rejects(
+    provision(
+      { target: "x86_64-unknown-linux-gnu", output: f.output, execute: true },
+      f.env,
+      f.dependencies,
+    ),
+    /install-linux-dependencies/,
+  );
+  const receipt = JSON.parse(
+    await readFile(path.join(f.output, "provision.json"), "utf8"),
+  );
+  assert.equal(receipt.failure.exitCode, 17);
+  assert.equal(receipt.completed, false);
+  assert.equal(
+    await readFile(path.join(f.output, "install-build-deps.py"), "utf8"),
+    "inert test data, never executable",
+  );
+});
 
 test("provision commands are exact fixed reviewed SDK features or pinned native Linux dependencies", () => {
   const windows = provisionPlan("x86_64-pc-windows-msvc", "win32", "x64");
