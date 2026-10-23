@@ -265,7 +265,11 @@ export async function plan({
             ? hostedMaps.get(item).hosted.runner
             : RUNNERS[item],
         ...(runnerMode === "hosted"
-          ? { provisionTarget: hostedBuildHost(item).target, runnerMode }
+          ? {
+              provisionTarget: hostedBuildHost(item, hostedMaps.get(item))
+                .target,
+              runnerMode,
+            }
           : {}),
         key: releaseIdentity(sourceLock, item).key,
       })),
@@ -317,7 +321,7 @@ export function validateRunnerMap(value, target) {
       ],
       "hosted runner identity",
     );
-    const expected = hostedBuildHost(target);
+    const expected = hostedBuildHost(target, value);
     const native = HOSTED_RECIPE.targets.find(
       (entry) => entry.target === target,
     );
@@ -364,15 +368,24 @@ export function validateRunnerMap(value, target) {
   return value;
 }
 
-export function hostedBuildHost(target) {
+export function hostedBuildHost(target, map) {
   const source = HOSTED_RECIPE.targets.find((entry) => entry.target === target);
   if (!source) fail("Unknown hosted target");
-  // Only this upstream-supported, same-OS cross-build is permitted. The actual
-  // target Mach-O is checked by inventoryCustomArtifact, never inferred from host.
-  return target === "aarch64-apple-darwin"
-    ? HOSTED_RECIPE.targets.find(
-        (entry) => entry.target === "x86_64-apple-darwin",
-      )
+  // Only these upstream-supported, same-OS cross-builds are permitted. Linux
+  // cross-builds require an explicit pinned x64 map; historical native ARM maps
+  // and the no-map default retain their original host identity. Actual output
+  // ELF/Mach-O architecture is checked independently, never inferred from host.
+  const cross =
+    target === "aarch64-apple-darwin"
+      ? "x86_64-apple-darwin"
+      : target === "aarch64-unknown-linux-gnu" &&
+          map?.hosted?.platform === "linux" &&
+          map.hosted.architecture === "x64" &&
+          map.hosted.runner === "ubuntu-24.04"
+        ? "x86_64-unknown-linux-gnu"
+        : null;
+  return cross
+    ? HOSTED_RECIPE.targets.find((entry) => entry.target === cross)
     : source;
 }
 
@@ -384,7 +397,7 @@ export function assertHostedBuildIdentity(
   architecture = process.arch,
 ) {
   validateRunnerMap(map, target);
-  const expected = hostedBuildHost(target);
+  const expected = hostedBuildHost(target, map);
   if (
     map.schemaVersion !== 2 ||
     platform !== expected.platform ||
@@ -402,7 +415,7 @@ export function assertHostedBuildIdentity(
     imageOS: env.ImageOS,
     imageVersion: env.ImageVersion,
     target,
-    crossCompiled: target === "aarch64-apple-darwin",
+    crossCompiled: expected.target !== target,
   };
 }
 
@@ -954,7 +967,7 @@ export async function build(
   try {
     await call(
       process.execPath,
-      [patched, "acquire", "--root", source, "--execute"],
+      [patched, "acquire", "--root", source, "--target", target, "--execute"],
       "acquire",
     );
   } finally {

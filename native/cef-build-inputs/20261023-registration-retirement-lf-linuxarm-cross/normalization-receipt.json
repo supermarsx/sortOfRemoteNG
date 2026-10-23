@@ -1,0 +1,43 @@
+{
+  "schemaVersion": 1,
+  "kind": "sorng-cef-patch-line-ending-normalization",
+  "recipeVersion": 1,
+  "transformation": "strict UTF-8; replace CRLF pairs with LF; reject lone CR; all other bytes unchanged",
+  "baseNamespace": "native\\cef-build-inputs\\20261022-registration-retirement",
+  "baseSourceLockIdentity": "a4e2f53b29a8b7fc51c67e0df99650beeb5f764046633b9482a81733f0168b11",
+  "sourceLockIdentity": "a953d6d550de0881750593c0042497e7eacfd29442390a121d600309b3735e77",
+  "changes": [
+    {
+      "path": "patches/0008-chromium-same-authority-http2.patch",
+      "repository": "chromium",
+      "rawSha256": "1d4a1a6dd69b04af328150740730bf6a50b7a7d5f80350a79ebdeca6664bc7f8",
+      "normalizedSha256": "4d2625adae0ba7e3268bd4e21fa789a42f1dab57a15432fae1d4577ac6533103",
+      "rawBytes": 4214,
+      "normalizedBytes": 4125,
+      "crlfLines": 89
+    },
+    {
+      "path": "patches/0009-cef-http2-bridge-capability.patch",
+      "repository": "cef",
+      "rawSha256": "6940d55fbd25a69ba56874b06938dfececd1d35b71f69ae8a8c6fb56cd86e8a8",
+      "normalizedSha256": "321ad6e827dfb596033b622a76a41b9f616f7fecd496ddb3864b5fa07ef0dec8",
+      "rawBytes": 2014,
+      "normalizedBytes": 1972,
+      "crlfLines": 42
+    },
+    {
+      "path": "include/cef_sorng_tls_bridge.h",
+      "repository": "cef-header-contract",
+      "rawSha256": "0a30bff278c41b862051eb841e16f8f3a10957de9c0deef63c5923ced114189d",
+      "normalizedSha256": "6ea8336407a9b4b56d25a9092b54346142214c31ea7432fa893f2eee27d33a10",
+      "rawBytes": 7911,
+      "normalizedBytes": 7737,
+      "crlfLines": 174
+    }
+  ],
+  "canonicalPatchQueueModified": false,
+  "existingPackagesRelabeled": false,
+  "engineBuildAttempted": false,
+  "nativeAcceptancePerformed": false,
+  "normalizedBaseSourceLockIdentity": "254fc0acc6001def832bed411ba320bfebd8111aeca64ee8c572512c0369d689"
+}

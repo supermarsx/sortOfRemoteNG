@@ -9,6 +9,7 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { nativeWindowsShell, probeFailure } from "./cef-hosted-bootstrap.mjs";
+import { TARGETS } from "./browser-runtime-package.mjs";
 import {
   applySourcePatches,
   assessWindowsEnginePrerequisites,
@@ -26,8 +27,8 @@ import {
 const exec = promisify(execFile);
 export const HELP = `CEF patched-runtime tooling (no stock fallback):
   doctor [--python EXE]                       Read-only Windows prerequisite inventory
-  source-plan --root NEW_SHORT_DIR             Emit pinned acquisition recipe; no fetch
-  acquire --root NEW_SHORT_DIR --execute       Fetch pinned repositories only (no hooks/build)
+  source-plan --root NEW_SHORT_DIR [--target TRIPLE]  Emit pinned acquisition recipe; no fetch
+  acquire --root NEW_SHORT_DIR [--target TRIPLE] --execute  Fetch pinned repositories only (no hooks/build)
   validate --lock JSON [--manifest JSON] [--all-targets]
   preflight --lock JSON --manifest JSON --target TRIPLE --artifacts DIR --sdk DIR
   check-source|apply|recipe|build --lock JSON --inputs DIR --cef DIR --chromium DIR --depot-tools DIR
@@ -209,11 +210,37 @@ async function executeStep(step, environment, logDirectory, index, python) {
   });
 }
 
+/** Closed acquisition inputs; target selection never overrides the host CPU. */
+export function acquisitionSourcePlan(root, target) {
+  if (target !== undefined && !TARGETS.includes(target))
+    throw new Error("Unknown acquisition target");
+  const plan = sourceAcquisitionPlan(root);
+  if (target === "aarch64-unknown-linux-gnu") {
+    // gclient unions this with the actual host CPU. The ARM64 sysroot is gated
+    // by checkout_arm64 in pinned DEPS; a GN target alone cannot provision it.
+    plan.gclient.target_cpu = ["arm64"];
+  }
+  return plan;
+}
+
+export function gclientConfiguration(plan) {
+  const solution = plan.gclient.solutions[0];
+  const cpus = plan.gclient.target_cpu;
+  if (
+    cpus !== undefined &&
+    (!Array.isArray(cpus) || cpus.length !== 1 || cpus[0] !== "arm64")
+  )
+    throw new Error("Unsupported acquisition CPU configuration");
+  return `solutions = [{\n  'name': 'src',\n  'url': '${solution.url}',\n  'managed': False,\n  'custom_deps': {},\n  'custom_vars': {\n    'checkout_pgo_profiles': True,\n    'siso_version': '${solution.custom_vars.siso_version}',\n    'download_remoteexec_cfg': False,\n  },\n}]\n${cpus ? "target_cpu = ['arm64']\n" : ""}`;
+}
+
 /** Fetch only into a NEW workspace. No hook, package installer or global config
  * runs here. Failure preserves partial checkouts/logs; never deletes or resets.
  */
-export async function acquireSources(root) {
-  const plan = sourceAcquisitionPlan(root);
+export async function acquireSources(root, target) {
+  const plan = acquisitionSourcePlan(root, target);
+  // Validate serialization before creating a workspace or starting acquisition.
+  const config = gclientConfiguration(plan);
   await mkdir(plan.root); // Existing roots fail before spawning any process.
   const logs = path.join(plan.root, "acquisition-logs");
   await mkdir(logs);
@@ -349,8 +376,6 @@ export async function acquireSources(root) {
     );
   // gclient format is Python, not JSON. This file is data for a later explicit
   // sync; writing it does not invoke depot_tools bootstrap or run hooks.
-  const solution = plan.gclient.solutions[0];
-  const config = `solutions = [{\n  'name': 'src',\n  'url': '${solution.url}',\n  'managed': False,\n  'custom_deps': {},\n  'custom_vars': {\n    'checkout_pgo_profiles': True,\n    'siso_version': '${solution.custom_vars.siso_version}',\n    'download_remoteexec_cfg': False,\n  },\n}]\n`;
   await writeFile(path.join(plan.root, ".gclient"), config, { flag: "wx" });
   return result;
 }
@@ -361,11 +386,14 @@ export async function main(argv = process.argv.slice(2)) {
   if (options.command === "doctor")
     return inspectWindowsEnginePrerequisites(options.python);
   if (options.command === "source-plan")
-    return sourceAcquisitionPlan(requireOption(options, "root"));
+    return acquisitionSourcePlan(
+      requireOption(options, "root"),
+      options.target,
+    );
   if (options.command === "acquire") {
     if (!options.execute)
       throw new Error("acquire requires --execute; source-plan is read-only");
-    return acquireSources(requireOption(options, "root"));
+    return acquireSources(requireOption(options, "root"), options.target);
   }
   const sourceLock = validateSourceLock(
     await readJson(requireOption(options, "lock")),

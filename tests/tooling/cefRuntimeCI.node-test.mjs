@@ -43,6 +43,11 @@ import {
 } from "../../scripts/cef-runtime-ci.mjs";
 import { inventoryCustomArtifact } from "../../scripts/cef-custom-artifact-inventory.mjs";
 import {
+  acquisitionSourcePlan,
+  acquireSources,
+  gclientConfiguration,
+} from "../../scripts/cef-patched-runtime.mjs";
+import {
   BRIDGE_PATCH_ID,
   BRIDGE_V2,
   UPSTREAM_CEF_COMMIT,
@@ -52,7 +57,11 @@ import {
   identitySha256,
   preflightCustomRuntime,
 } from "../../scripts/lib/browser-custom-runtime.mjs";
-import { CEF_PIN, TARGETS } from "../../scripts/browser-runtime-package.mjs";
+import {
+  CEF_PIN,
+  TARGETS,
+  inspectNativeBinary,
+} from "../../scripts/browser-runtime-package.mjs";
 import { RELEASE_LIMITS } from "../../scripts/lib/browser-runtime-release.mjs";
 
 // Synthetic fixture bytes below are not executable engines or production pins.
@@ -81,7 +90,7 @@ const runner = (selected = target) => ({
   },
 });
 
-test("hosted builds bind actual reviewed image and only explicit same-OS macOS ARM cross-compilation", () => {
+test("macOS ARM cross-compilation binds the actual reviewed same-OS host image", () => {
   const macTarget = "aarch64-apple-darwin";
   const map = {
     ...runner(macTarget),
@@ -163,6 +172,166 @@ test("hosted builds bind actual reviewed image and only explicit same-OS macOS A
         ),
       /capacity/,
     );
+});
+
+test("Linux ARM cross-build requires an explicit reviewed x64 map and retains native ARM acceptance", () => {
+  const selected = "aarch64-unknown-linux-gnu";
+  const map = {
+    ...runner(selected),
+    schemaVersion: 2,
+    hosted: {
+      runner: "ubuntu-24.04",
+      imageOS: "ubuntu24",
+      imageVersion: "reviewed-x64-image",
+      platform: "linux",
+      architecture: "x64",
+      acceptanceRunner: "ubuntu-24.04-arm",
+    },
+  };
+  const env = {
+    GITHUB_ACTIONS: "true",
+    RUNNER_ENVIRONMENT: "github-hosted",
+    GITHUB_REPOSITORY_VISIBILITY: "public",
+    ImageOS: map.hosted.imageOS,
+    ImageVersion: map.hosted.imageVersion,
+  };
+  assert.equal(hostedBuildHost(selected).runner, "ubuntu-24.04-arm");
+  assert.equal(hostedBuildHost(selected, map).runner, "ubuntu-24.04");
+  assert.equal(
+    assertHostedBuildIdentity(map, selected, env, "linux", "x64").crossCompiled,
+    true,
+  );
+  const native = {
+    ...map,
+    hosted: {
+      ...map.hosted,
+      runner: "ubuntu-24.04-arm",
+      architecture: "arm64",
+    },
+  };
+  assert.equal(
+    assertHostedBuildIdentity(native, selected, env, "linux", "arm64")
+      .crossCompiled,
+    false,
+  );
+  for (const changes of [
+    { runner: "arbitrary-runner" },
+    { architecture: "arm64" },
+    { platform: "darwin" },
+    { acceptanceRunner: "ubuntu-24.04" },
+  ])
+    assert.throws(
+      () =>
+        validateRunnerMap(
+          { ...map, hosted: { ...map.hosted, ...changes } },
+          selected,
+        ),
+      /fixed target/,
+    );
+  assert.throws(
+    () =>
+      validateRunnerMap(
+        { ...map, target: "x86_64-unknown-linux-gnu" },
+        selected,
+      ),
+    /target\/schema/,
+  );
+  assert.throws(
+    () => assertHostedBuildIdentity(map, selected, env, "linux", "arm64"),
+    /identity changed/,
+  );
+  assert.throws(
+    () =>
+      assertHostedBuildIdentity(
+        map,
+        selected,
+        { ...env, ImageVersion: "another-image" },
+        "linux",
+        "x64",
+      ),
+    /identity changed/,
+  );
+});
+
+test("acquisition serializes the selected ARM64 sysroot CPU before sync without overriding the host CPU", async (t) => {
+  const temporary = await mkdtemp(
+    path.join(os.tmpdir(), "cef-cross-acquisition-"),
+  );
+  t.after(() => rm(temporary, { recursive: true, force: true }));
+  const destination = path.join(temporary, "not-created");
+  const standard = acquisitionSourcePlan(destination);
+  const nativeX64 = acquisitionSourcePlan(
+    destination,
+    "x86_64-unknown-linux-gnu",
+  );
+  assert.deepEqual(nativeX64, standard);
+  assert.equal(gclientConfiguration(standard).includes("target_cpu"), false);
+  const cross = acquisitionSourcePlan(destination, "aarch64-unknown-linux-gnu");
+  assert.deepEqual(cross.gclient.target_cpu, ["arm64"]);
+  const serialized = gclientConfiguration(cross);
+  assert.match(serialized, /^target_cpu = \['arm64'\]$/m);
+  assert.doesNotMatch(serialized, /target_cpu_only|host_cpu|custom_deps.*None/);
+  assert.deepEqual(cross.sourcePins, standard.sourcePins);
+  assert.deepEqual(cross.gclient.solutions, standard.gclient.solutions);
+  const file = path.join(temporary, "gclient-fixture");
+  await writeFile(file, serialized);
+  // Parse actual emitted Python assignments as literals, without executing
+  // depot_tools, fetching sources or replacing its host/target CPU policy.
+  const python = process.platform === "win32" ? "python" : "python3";
+  const parsed = await exec(python, [
+    "-I",
+    "-c",
+    "import ast,json,sys; tree=ast.parse(open(sys.argv[1],encoding='utf-8').read()); print(json.dumps({n.targets[0].id:ast.literal_eval(n.value) for n in tree.body if isinstance(n,ast.Assign)}))",
+    file,
+  ]);
+  const actual = JSON.parse(parsed.stdout);
+  assert.deepEqual(actual.target_cpu, ["arm64"]);
+  assert.equal(actual.target_cpu_only, undefined);
+  assert.equal(actual.solutions[0].url, standard.gclient.solutions[0].url);
+  for (const invalid of [
+    "all",
+    "arm64",
+    "aarch64-unknown-linux-gnu\n",
+    "x'; print('unsafe')",
+  ]) {
+    assert.throws(() => acquisitionSourcePlan(destination, invalid), /target/);
+    await assert.rejects(acquireSources(destination, invalid), /target/);
+  }
+  await assert.rejects(readFile(destination), /ENOENT/);
+  assert.throws(
+    () =>
+      gclientConfiguration({
+        ...cross,
+        gclient: { ...cross.gclient, target_cpu: ["arm64", "x64"] },
+      }),
+    /CPU configuration/,
+  );
+});
+
+test("Linux cross output must still be AArch64 ELF even though the build host is x64", async (t) => {
+  const temporary = await mkdtemp(path.join(os.tmpdir(), "cef-cross-output-"));
+  t.after(() => rm(temporary, { recursive: true, force: true }));
+  const file = path.join(temporary, "cef-bootstrap");
+  // Structural fixture only: exercise the real final-output architecture
+  // inspector, never load or describe these bytes as a runnable CEF binary.
+  const bytes = Buffer.alloc(64);
+  bytes.writeUInt32LE(0x464c457f, 0);
+  bytes[4] = 2;
+  bytes[5] = 1;
+  bytes.writeUInt16LE(2, 16);
+  bytes.writeUInt16LE(62, 18);
+  await writeFile(file, bytes);
+  await assert.rejects(
+    inspectNativeBinary(file, "aarch64-unknown-linux-gnu"),
+    /does not match/,
+  );
+  bytes.writeUInt16LE(183, 18);
+  await writeFile(file, bytes);
+  await inspectNativeBinary(file, "aarch64-unknown-linux-gnu");
+  await assert.rejects(
+    inspectNativeBinary(file, "x86_64-unknown-linux-gnu"),
+    /does not match/,
+  );
 });
 
 test("one monotonic hosted budget is carried across stages rather than reset for every command", () => {

@@ -1,0 +1,61 @@
+{
+  "schemaVersion": 1,
+  "kind": "sorng-cef-reviewed-host-cross-build-inputs",
+  "scope": "Linux x64 hosted build of ARM64 r4 output, with separate real native ARM acceptance; NOT build, acceptance, publication or runtime promotion evidence",
+  "sourceLockIdentity": "a953d6d550de0881750593c0042497e7eacfd29442390a121d600309b3735e77",
+  "sourceLockRawSha256": "8ca8e4a47111014bb2d2c489a892dd12880fe32d1b8ffbec0193cc1fed3b0631",
+  "baseNamespace": "native/cef-build-inputs/20261023-registration-retirement-lf",
+  "baseSourceLockIdentity": "254fc0acc6001def832bed411ba320bfebd8111aeca64ee8c572512c0369d689",
+  "target": "aarch64-unknown-linux-gnu",
+  "abiVersion": 2,
+  "bridgeRevision": 4,
+  "buildHost": {
+    "runner": "ubuntu-24.04",
+    "architecture": "x64",
+    "imageOS": "ubuntu24",
+    "imageVersion": "20261012.334.1"
+  },
+  "acceptanceRunner": "ubuntu-24.04-arm",
+  "hostToolchainSource": {
+    "target": "x86_64-unknown-linux-gnu",
+    "path": "tools/x86_64-unknown-linux-gnu.json",
+    "sha256": "7b5db286f997bdb4ebfa266c6dd0d267d45dacdc41d830a7e24d32507c200ad2",
+    "runnerMapSha256": "4f521859896927bdabd2aafeeca45e93798237d0ae59dae6729323fefaf23af8",
+    "executableAndHeaderPinsUnchanged": true
+  },
+  "targetGnUnchanged": true,
+  "headerAndAll12PatchesUnchanged": true,
+  "gclient": {
+    "target_cpu": [
+      "arm64"
+    ],
+    "hostCpuRetained": true,
+    "targetCpuOnlySerialized": false
+  },
+  "upstreamEvidence": {
+    "chromiumCommit": "a654841425914cbb703a2931e07b70a83aedbafd",
+    "cefCommit": "682c378d70d5780061e96644dca16ddd8fd157a9",
+    "upstreamBuilder": "infra/config/generated/luci/cr-buildbucket.cfg linux-arm64-official cpu:x86-64",
+    "upstreamGn": "infra/config/generated/builders/ci/linux-arm64-official/gn-args.json target_cpu=arm64",
+    "arm64SysrootSha256": "c7176a4c7aacbf46bda58a029f39f79a68008d3dee6518f154dcf5161a5486d8",
+    "gperfHostPackage": "infra/3pp/tools/gperf/linux-amd64",
+    "gperfVersion": "version:3@3.2",
+    "gperfResolvedInstanceSha256": "a2dad151e1d0afdce5c6d4f8b097d226ab29cad056afd2243eb859f1b1689676"
+  },
+  "requiredProducerBehavior": [
+    "Pinned explicit Linux ARM cross map selects x64 build host; native ARM default remains unchanged",
+    "Top-level gclient target_cpu arm64 serialized before sync; no target_cpu_only or host override",
+    "Final output ELF architecture must be AArch64, independent of host",
+    "Native TLS/browser acceptance runs on ubuntu-24.04-arm; no x64 substitution"
+  ],
+  "knownBlockers": [
+    "Prior x64-host prerequisite installer20-minute timeout remains unresolved; phase observer must diagnose controlled retry",
+    "Actual source sync/GN/engine build and native ARM acceptance are not yet performed",
+    "Actual Linux x64 producer39968899518 failed before installer: Android allowlist cleanup hit120s while free disk84.87GiB remained below required100GiB. Capacity-driven cleanup repair and controlled hosted retry remain required before cross dispatch."
+  ],
+  "engineBuildAttempted": false,
+  "nativeAcceptancePerformed": false,
+  "publicationAllowed": false,
+  "defaultRuntimeChanged": false,
+  "existingLocalWindowsAcceptanceTransferred": false
+}
