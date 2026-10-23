@@ -27,6 +27,7 @@
         "OptionId.WindowsDesktopDebuggers"
       ]
     },
+    "linuxSupplementalPackages": ["libpipewire-0.3-dev"],
     "linuxDependencies": {
       "url": "https://chromium.googlesource.com/chromium/src/+/a654841425914cbb703a2931e07b70a83aedbafd/build/install-build-deps.py?format=TEXT",
       "encoding": "base64",

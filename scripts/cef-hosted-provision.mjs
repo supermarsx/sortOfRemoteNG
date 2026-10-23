@@ -300,6 +300,19 @@ export async function provision(
           "install-linux-dependencies",
         );
         await run(
+          "sudo",
+          [
+            "-n",
+            "apt-get",
+            "-y",
+            "--no-install-recommends",
+            "install",
+            ...RECIPE.provisioning.linuxSupplementalPackages,
+          ],
+          10 * 60_000,
+          "install-linux-supplemental-packages",
+        );
+        await run(
           "dpkg-query",
           ["-W", "-f=${binary:Package}\t${Version}\t${Architecture}\n"],
           30_000,

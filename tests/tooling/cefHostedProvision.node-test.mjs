@@ -337,6 +337,121 @@ test("completed provisioning retains actual post-install blockers and never clai
   );
 });
 
+test("Linux adds the reviewed PipeWire development package after the pinned installer and before inventory", async (t) => {
+  const f = await sdkReceiptFixture(t);
+  const calls = [];
+  const order = [];
+  const receipt = await provision(
+    { target: "x86_64-unknown-linux-gnu", output: f.output, execute: true },
+    f.env,
+    {
+      ...f.dependencies,
+      platform: "linux",
+      observe: async (...args) => {
+        order.push("observe");
+        return f.dependencies.observe(...args);
+      },
+      exec: async (exe, args, options) => {
+        order.push(exe);
+        calls.push({ exe, args, timeout: options.timeout });
+        return { stdout: "synthetic success", stderr: "" };
+      },
+    },
+  );
+  assert.equal(calls[0].exe, "python3");
+  assert.ok(calls[0].args.includes(LINUX_INSTALLER_OBSERVER));
+  assert.deepEqual(calls[1], {
+    exe: "sudo",
+    args: [
+      "-n",
+      "apt-get",
+      "-y",
+      "--no-install-recommends",
+      "install",
+      "libpipewire-0.3-dev",
+    ],
+    timeout: 10 * 60_000,
+  });
+  assert.equal(calls[2].exe, "dpkg-query");
+  assert.equal(calls.length, 3);
+  assert.equal(f.observations(), 2);
+  assert.deepEqual(order, [
+    "observe",
+    "python3",
+    "sudo",
+    "dpkg-query",
+    "observe",
+  ]);
+  assert.equal(receipt.completed, true);
+  assert.deepEqual(
+    receipt.stages.map((stage) => stage.stage),
+    [
+      "install-linux-dependencies",
+      "install-linux-supplemental-packages",
+      "installed-packages",
+    ],
+  );
+});
+
+for (const failedExecutable of ["python3", "sudo"])
+  test(`Linux prerequisite failure at ${failedExecutable} prevents later commands and post-install confirmation`, async (t) => {
+    const f = await sdkReceiptFixture(t);
+    const calls = [];
+    await assert.rejects(
+      provision(
+        { target: "x86_64-unknown-linux-gnu", output: f.output, execute: true },
+        f.env,
+        {
+          ...f.dependencies,
+          platform: "linux",
+          exec: async (exe) => {
+            calls.push(exe);
+            if (exe === failedExecutable) {
+              const error = new Error("synthetic install failure");
+              error.code = 17;
+              throw error;
+            }
+            return { stdout: "synthetic success", stderr: "" };
+          },
+        },
+      ),
+      /install-linux-/,
+    );
+    assert.deepEqual(
+      calls,
+      failedExecutable === "python3" ? ["python3"] : ["python3", "sudo"],
+    );
+    assert.equal(f.observations(), 1);
+    const receipt = JSON.parse(
+      await readFile(path.join(f.output, "provision.json"), "utf8"),
+    );
+    assert.equal(receipt.completed, false);
+    assert.equal(receipt.failure.exitCode, 17);
+  });
+
+test("Linux capacity guard prevents both pinned and supplemental installers", async (t) => {
+  const f = await sdkReceiptFixture(t);
+  let acquired = false;
+  await assert.rejects(
+    provision(
+      { target: "x86_64-unknown-linux-gnu", output: f.output, execute: true },
+      f.env,
+      {
+        ...f.dependencies,
+        platform: "linux",
+        observe: async () => ({ availableGiB: 99, blockers: [] }),
+        acquire: async () => {
+          acquired = true;
+          throw new Error("must not download");
+        },
+      },
+    ),
+    /reviewed disk minimum/,
+  );
+  assert.equal(acquired, false);
+  assert.equal(f.calls.length, 0);
+});
+
 test("provision rejects output outside the canonical runner workspace before commands or observations", async (t) => {
   const f = await sdkReceiptFixture(t);
   await assert.rejects(
