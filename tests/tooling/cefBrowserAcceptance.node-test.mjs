@@ -1311,6 +1311,147 @@ test("TLS reports preserve known legacy compatibility without substituting a sta
   assert.equal(assessNativeTlsReport(unknown, "validator-test-only").ok, false);
 });
 
+test("native TLS revision five requires its exact pin and unchanged retirement evidence", () => {
+  const report = syntheticTlsReport();
+  report.patchId = HTTP3_BRIDGE_PATCH_ID;
+  assert.equal(
+    assessNativeTlsReport(report, "validator-test-only", HTTP3_BRIDGE_PATCH_ID)
+      .ok,
+    true,
+  );
+  assert.equal(assessNativeTlsReport(report, "validator-test-only").ok, true);
+  for (const expected of [
+    TLS_PATCH_ID,
+    TLS_LEGACY_PATCH_ID,
+    "sorng-tls-v2-682c378-6",
+  ])
+    assert.equal(
+      assessNativeTlsReport(report, "validator-test-only", expected).ok,
+      false,
+    );
+  for (const retirement of [
+    undefined,
+    { ...syntheticRetirementReport(), finalRegistrations: 1 },
+  ])
+    assert.equal(
+      assessNativeTlsReport(
+        { ...report, registrationRetirementCases: retirement },
+        "validator-test-only",
+        HTTP3_BRIDGE_PATCH_ID,
+      ).ok,
+      false,
+    );
+  for (const actual of [
+    "sorng-tls-v2-682c378-6",
+    `${HTTP3_BRIDGE_PATCH_ID}-extra`,
+  ])
+    assert.equal(
+      assessNativeTlsReport(
+        { ...report, patchId: actual },
+        "validator-test-only",
+        actual,
+      ).ok,
+      false,
+    );
+  // General legacy acceptance keeps its existing 1..4 contract. The TLS-only
+  // extension cannot silently authorize revision5 for another suite.
+  for (const revision of [TLS_PATCH_ID, HTTP3_BRIDGE_PATCH_ID]) {
+    const legacy = assessNativeReport(
+      { nativeTlsAdmission: { patchId: revision, verified: true } },
+      revision,
+    );
+    assert.equal(
+      legacy.failures.some((failure) => failure.includes("legacy SPKI")),
+      revision === HTTP3_BRIDGE_PATCH_ID,
+    );
+  }
+});
+
+test("revision-five TLS staged-pin readback reaches only the normal prelaunch boundary", async () => {
+  const source = readFileSync(
+    new URL("../../scripts/cef-browser-acceptance.mjs", import.meta.url),
+    "utf8",
+  );
+  const revisionChecks = source.slice(
+    source.indexOf("const TLS_SUPPORTED_PATCH_IDS ="),
+    source.indexOf("export const TLS_CASES ="),
+  );
+  const runner = source
+    .slice(
+      source.indexOf("export async function runAcceptance("),
+      source.indexOf("async function main(args)"),
+    )
+    .replace("export async function", "async function");
+  const bundle = path.resolve("synthetic-tls5-bundle");
+  let pin = HTTP3_BRIDGE_PATCH_ID;
+  let checkpoints = 0;
+  let processLaunches = 0;
+  let createdOutputs = 0;
+  const run = new Script(
+    `${revisionChecks}\n${runner}\nrunAcceptance;`,
+  ).runInNewContext({
+    TLS_PATCH_ID,
+    PROXY_APPLIED_BRIDGE_PATCH_ID,
+    HTTP2_BRIDGE_PATCH_ID,
+    TLS_LEGACY_PATCH_ID,
+    HTTP3_BRIDGE_PATCH_ID,
+    process: { platform: "linux", env: {} },
+    path,
+    http2Environment,
+    desktopFor,
+    acceptanceBundleRoot,
+    readFile: async (file) => {
+      assert.equal(file, path.join(bundle, "acceptance-staging.json"));
+      return JSON.stringify({
+        kind: "sorng-cef-custom-package",
+        preflight: { bridge: { patchId: pin } },
+      });
+    },
+    ensureBrowserSandboxAccess: async () => {
+      checkpoints++;
+      throw new Error("controlled prelaunch checkpoint");
+    },
+    mkdir: async () => {
+      createdOutputs++;
+      throw new Error("output creation forbidden");
+    },
+    spawn: () => {
+      processLaunches++;
+      throw new Error("process launch forbidden");
+    },
+  });
+  const options = {
+    executable: path.join(bundle, "never-launched"),
+    output: path.resolve("never-created-tls5"),
+  };
+  await assert.rejects(
+    run({ ...options, suite: "tls" }),
+    /controlled prelaunch checkpoint/,
+  );
+  assert.equal(checkpoints, 1);
+  await assert.rejects(
+    run({ ...options, suite: "legacy" }),
+    /no supported bridge revision pin/,
+  );
+  await assert.rejects(
+    run({ ...options, suite: "http2", check: "multiplex" }),
+    /no supported bridge revision pin|exactly staged revision-four/,
+  );
+  pin = "sorng-tls-v2-682c378-6";
+  await assert.rejects(
+    run({ ...options, suite: "tls" }),
+    /no supported bridge revision pin/,
+  );
+  pin = TLS_PATCH_ID;
+  await assert.rejects(
+    run({ ...options, suite: "tls" }),
+    /controlled prelaunch checkpoint/,
+  );
+  assert.equal(checkpoints, 2);
+  assert.equal(processLaunches, 0);
+  assert.equal(createdOutputs, 0);
+});
+
 test("revision four requires bounded real-registry observations while older exact revisions remain compatible", () => {
   const report = syntheticTlsReport();
   delete report.registrationRetirementCases;

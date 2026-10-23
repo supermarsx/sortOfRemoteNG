@@ -40,9 +40,10 @@ const TLS_SUPPORTED_PATCH_IDS = [
   HTTP2_BRIDGE_PATCH_ID,
   TLS_LEGACY_PATCH_ID,
 ];
-function matchesTlsRevision(actual, expected) {
+function matchesTlsRevision(actual, expected, nativeTlsSuite = false) {
   return (
-    TLS_SUPPORTED_PATCH_IDS.includes(actual) &&
+    (TLS_SUPPORTED_PATCH_IDS.includes(actual) ||
+      (nativeTlsSuite && actual === HTTP3_BRIDGE_PATCH_ID)) &&
     (expected === undefined || actual === expected)
   );
 }
@@ -706,7 +707,7 @@ export function assessNativeTlsReport(report, runId, expectedPatchId) {
   require(typeof runId === "string" &&
     runId.length > 0 &&
     report?.runId === runId, "fresh invocation correlation missing");
-  require(matchesTlsRevision(report?.patchId, expectedPatchId) &&
+  require(matchesTlsRevision(report?.patchId, expectedPatchId, true) &&
     report?.loadedBridgeVerified === true, "frozen loaded V2 bridge missing");
   if ([TLS_PATCH_ID, HTTP3_BRIDGE_PATCH_ID].includes(report?.patchId)) {
     const retirement = assessRegistrationRetirement(
@@ -3136,7 +3137,8 @@ export async function runAcceptance({
       expectedPatchId = staging.preflight?.bridge?.patchId;
       if (!(
         TLS_SUPPORTED_PATCH_IDS.includes(expectedPatchId) ||
-        (suite === "http3" && expectedPatchId === HTTP3_BRIDGE_PATCH_ID)
+        (["tls", "http3"].includes(suite) &&
+          expectedPatchId === HTTP3_BRIDGE_PATCH_ID)
       ))
         throw new Error(
           "Staged custom runtime has no supported bridge revision pin",
