@@ -47,6 +47,7 @@ async function mountTabs(initialViews = [child("a"), child("b"), child("c")]) {
   let sequence = 0;
   let views: readonly OriginPopupView[] = initialViews;
   let sourceIdentity = identity;
+  let parentLoading = false;
   let popups!: OriginBrowserPopups;
   const inventory = (): OriginPopupInventory => ({
     sourceIdentity,
@@ -81,7 +82,11 @@ async function mountTabs(initialViews = [child("a"), child("b"), child("c")]) {
       onActivate,
     });
     return show ? (
-      <OriginPopupTabs popups={popups} parentTitle="Owner" />
+      <OriginPopupTabs
+        popups={popups}
+        parentTitle="Owner"
+        parentLoading={parentLoading}
+      />
     ) : null;
   }
   const shell = render(<Shell />);
@@ -95,6 +100,10 @@ async function mountTabs(initialViews = [child("a"), child("b"), child("c")]) {
       return popups;
     },
     inventory,
+    setParentLoading(value: boolean) {
+      parentLoading = value;
+      shell.rerender(<Shell />);
+    },
     emit(next: readonly OriginPopupView[]) {
       views = next;
       sequence++;
@@ -121,6 +130,61 @@ const tabNames = () =>
   screen.getAllByRole("tab").map((node) => node.textContent);
 const ids = (f: Awaited<ReturnType<typeof mountTabs>>) =>
   f.popups.tabs.map((view) => view.viewId);
+
+describe("independent native tab page loading", () => {
+  const page = (patch = {}) => ({
+    identity,
+    sequence: 1,
+    phase: "attached" as const,
+    displayUrl: "https://fixture.invalid/",
+    currentUrl: "https://fixture.invalid/",
+    title: "Fixture",
+    loading: true,
+    canGoBack: false,
+    canGoForward: false,
+    ...patch,
+  });
+  it("shows root loading while another tab is selected and stops on completion", async () => {
+    const f = await mountTabs();
+    fireEvent.click(tab("A"));
+    f.setParentLoading(true);
+    expect(tab("Owner")).toHaveAttribute("aria-busy", "true");
+    expect(
+      tab("Owner").querySelector(".motion-safe\\:animate-spin"),
+    ).not.toBeNull();
+    expect(tab("A")).not.toHaveAttribute("aria-busy");
+    f.setParentLoading(false);
+    expect(tab("Owner")).not.toHaveAttribute("aria-busy");
+    expect(
+      tab("Owner").querySelector(".motion-safe\\:animate-spin"),
+    ).toBeNull();
+  });
+  it("tracks background child loading and clears terminal failures even if native loading stays true", async () => {
+    const f = await mountTabs([child("a", { snapshot: page() })]);
+    expect(tab("A")).toHaveAttribute("aria-busy", "true");
+    expect(tab("Owner")).not.toHaveAttribute("aria-busy");
+    f.emit([
+      child("a", {
+        snapshot: page({
+          sequence: 2,
+          phase: "failed",
+          failureReason: "renderer",
+        }),
+      }),
+    ]);
+    expect(tab("A")).not.toHaveAttribute("aria-busy");
+    expect(tab("A").querySelector(".motion-safe\\:animate-spin")).toBeNull();
+    f.emit([
+      child("a", {
+        snapshot: page({
+          sequence: 3,
+          loadFailure: { code: -130, category: "proxy" },
+        }),
+      }),
+    ]);
+    expect(tab("A")).not.toHaveAttribute("aria-busy");
+  });
+});
 const auxClick = (node: Element, button = 1) =>
   fireEvent(
     node,

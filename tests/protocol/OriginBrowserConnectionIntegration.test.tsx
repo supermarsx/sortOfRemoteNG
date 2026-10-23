@@ -1227,6 +1227,16 @@ describe("real-origin connection-tab integration", () => {
       );
       expect(!!screen.queryByRole("progressbar")).toBe(childLoading);
       expect(
+        screen
+          .getByRole("tab", { name: "Fixture native" })
+          .getAttribute("aria-busy"),
+      ).toBe(!childLoading ? "true" : null);
+      expect(
+        screen
+          .getByRole("tab", { name: "Popup child" })
+          .getAttribute("aria-busy"),
+      ).toBe(childLoading ? "true" : null);
+      expect(
         screen.getByRole("region", { name: "Popup child" }),
       ).toHaveAttribute("aria-busy", String(childLoading));
       expect(

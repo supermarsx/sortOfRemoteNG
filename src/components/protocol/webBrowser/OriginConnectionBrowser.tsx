@@ -1431,6 +1431,14 @@ export default function OriginConnectionBrowser({
       <OriginPopupTabs
         popups={popups}
         parentTitle={rootSnapshot?.title || "Website"}
+        parentLoading={
+          ownerAvailable &&
+          (phase === "starting" ||
+            (phase === "attached" &&
+              rootSnapshot?.phase === "attached" &&
+              !rootSnapshot.loadFailure &&
+              rootSnapshot.loading))
+        }
       />
       {!isTemporary &&
         ownerAvailable &&

@@ -10,9 +10,11 @@ import styles from "./OriginPopupTabs.module.css";
 export default function OriginPopupTabs({
   popups,
   parentTitle = "Website",
+  parentLoading = false,
 }: {
   popups: OriginBrowserPopups;
   parentTitle?: string;
+  parentLoading?: boolean;
 }) {
   const helpId = useId();
   const tabButtons = useRef(new Map<string | null, HTMLButtonElement>());
@@ -150,6 +152,7 @@ export default function OriginPopupTabs({
             type="button"
             role="tab"
             aria-selected={popups.activeViewId === null}
+            aria-busy={parentLoading || undefined}
             aria-describedby={helpId}
             tabIndex={focusId === null ? 0 : -1}
             title={parentTitle}
@@ -158,13 +161,25 @@ export default function OriginPopupTabs({
             onKeyDown={(event) => onKeyDown(event, null)}
             onClick={() => popups.select(null)}
           >
-            <Globe size={14} aria-hidden="true" className={styles.icon} />
+            {parentLoading ? (
+              <LoaderCircle
+                size={14}
+                aria-hidden="true"
+                className={`${styles.icon} motion-safe:animate-spin`}
+              />
+            ) : (
+              <Globe size={14} aria-hidden="true" className={styles.icon} />
+            )}
             <span className={styles.title}>{parentTitle}</span>
           </button>
         </div>
         {popups.tabs.map((tab, index) => {
           const title = tab.title || `Popup ${index + 1}`;
           const busy = tab.closing || tab.phase === "available";
+          const pageLoading =
+            tab.snapshot?.phase === "attached" &&
+            !tab.snapshot.loadFailure &&
+            tab.snapshot.loading;
           const status = tab.closing
             ? "Closing"
             : tab.phase === "available"
@@ -248,7 +263,7 @@ export default function OriginPopupTabs({
                 aria-selected={popups.activeViewId === tab.viewId}
                 aria-label={`${title}${status ? ` · ${status}` : ""}`}
                 aria-describedby={helpId}
-                aria-busy={busy || undefined}
+                aria-busy={busy || pageLoading || undefined}
                 aria-keyshortcuts="Alt+ArrowLeft Alt+ArrowRight Delete"
                 tabIndex={focusId === tab.viewId ? 0 : -1}
                 title={title}
@@ -258,7 +273,7 @@ export default function OriginPopupTabs({
                 onKeyDown={(event) => onKeyDown(event, tab.viewId)}
                 onClick={() => popups.select(tab.viewId)}
               >
-                {busy || tab.snapshot?.loading ? (
+                {busy || pageLoading ? (
                   <LoaderCircle
                     size={14}
                     aria-hidden="true"
