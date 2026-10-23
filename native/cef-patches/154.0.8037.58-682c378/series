@@ -10,3 +10,5 @@ cef 0009-cef-http2-bridge-capability.patch
 chromium 0010-chromium-proxy-application-ack.patch
 cef 0011-cef-proxy-application-ack.patch
 cef 0012-cef-registration-retirement.patch
+chromium 0013-chromium-owned-quic-datagrams.patch
+cef 0014-cef-owned-quic-datagrams.patch
