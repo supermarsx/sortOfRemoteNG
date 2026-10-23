@@ -337,7 +337,7 @@ test("completed provisioning retains actual post-install blockers and never clai
   );
 });
 
-test("Linux adds the reviewed PipeWire development package after the pinned installer and before inventory", async (t) => {
+test("Linux adds the reviewed PipeWire and X11/XCB development packages after the pinned installer and before inventory", async (t) => {
   const f = await sdkReceiptFixture(t);
   const calls = [];
   const order = [];
@@ -369,6 +369,7 @@ test("Linux adds the reviewed PipeWire development package after the pinned inst
       "--no-install-recommends",
       "install",
       "libpipewire-0.3-dev",
+      "libx11-xcb-dev",
     ],
     timeout: 10 * 60_000,
   });
