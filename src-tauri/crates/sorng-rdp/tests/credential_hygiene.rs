@@ -2,12 +2,14 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
 use secrecy::{ExposeSecret, SecretBox, SecretString};
+use sorng_core::connection_memory::{MemoryAdmission, SystemMemoryInfo, MIB};
 use sorng_rdp::rdp::cert_trust::security_error_lifecycle_summary;
 use sorng_rdp::rdp::session_runtime::RdpWorkerRuntime;
 use sorng_rdp::rdp::session_state::{ChannelSummary, FrameFlowSummary};
 use sorng_rdp::rdp::stats::RdpSessionStats;
 use sorng_rdp::rdp::types::{
     RdpActiveConnection, RdpSession, RdpSessionActivityControl, RdpStatsEvent,
+    RDP_WORKER_MEMORY_ESTIMATE,
 };
 use sorng_rdp::rdp::wake_channel::create_wake_channel;
 use zeroize::Zeroize;
@@ -133,9 +135,17 @@ fn cached_password_field_uses_secret_string_and_redacts_debug() {
 
     runtime.block_on(async {
         let (cmd_tx, _cmd_rx) = create_wake_channel().expect("wake channel");
-        let session_slot = std::sync::Arc::new(tokio::sync::Semaphore::new(1))
-            .try_acquire_owned()
-            .expect("session slot");
+        let total = 4 * 1024 * MIB + 2 * RDP_WORKER_MEMORY_ESTIMATE;
+        let available = (1024 * MIB).max(total.div_ceil(10)) + RDP_WORKER_MEMORY_ESTIMATE;
+        let session_slot = MemoryAdmission::with_probe(RDP_WORKER_MEMORY_ESTIMATE, move || {
+            Ok(SystemMemoryInfo {
+                total_bytes: total,
+                used_bytes: total - available,
+                available_bytes: available,
+            })
+        })
+        .try_acquire_owned()
+        .expect("session slot");
         let connection = RdpActiveConnection {
             session: test_session(),
             cmd_tx,
