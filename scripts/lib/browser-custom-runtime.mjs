@@ -8,10 +8,12 @@ import {
   cp,
   lstat,
   mkdir,
+  mkdtemp,
   readFile,
   readdir,
   readlink,
   realpath,
+  rm,
   stat,
   symlink,
   writeFile,
@@ -19,6 +21,7 @@ import {
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import path from "node:path";
+import os from "node:os";
 import { fileURLToPath } from "node:url";
 import {
   CEF_PIN,
@@ -1217,7 +1220,7 @@ export async function stageCustomRuntimePackage({
   };
 }
 
-async function git(root, args) {
+async function git(root, args, isolated = {}) {
   // No shell expansion, prompts, optional index refresh, or inherited index overrides.
   const env = {
     ...process.env,
@@ -1231,6 +1234,7 @@ async function git(root, args) {
       )
     )
       delete env[key];
+  Object.assign(env, isolated);
   const { stdout } = await exec("git", ["-C", root, ...args], {
     env,
     windowsHide: true,
@@ -1238,6 +1242,74 @@ async function git(root, args) {
     maxBuffer: 8 * 1024 * 1024,
   });
   return stdout.trim();
+}
+
+/** Reject unowned or retargeted paths before recursive temporary cleanup. */
+export async function verifySourcePatchTemporaryDirectory({
+  root,
+  directory,
+  identity,
+}) {
+  const relative = path.relative(root, directory);
+  if (
+    !relative.startsWith("sorng-cef-patch-index-") ||
+    path.dirname(relative) !== "." ||
+    path.isAbsolute(relative) ||
+    path.relative(root, await realpath(root)) !== ""
+  )
+    fail("Patch temporary directory is outside its resolved temporary root");
+  const entry = await lstat(directory);
+  if (
+    !entry.isDirectory() ||
+    entry.isSymbolicLink() ||
+    path.relative(directory, await realpath(directory)) !== "" ||
+    (identity && (entry.dev !== identity.dev || entry.ino !== identity.ino))
+  )
+    fail("Patch temporary directory identity changed; cleanup refused");
+  return { dev: entry.dev, ino: entry.ino };
+}
+
+/** Simulate ordered patches without writing the checkout, its index or objects.
+ * The production caller first verifies all source identities and input pins.
+ */
+export async function verifySourcePatchSeries({ cwd, patches }) {
+  const root = await realpath(cwd);
+  const objects = await realpath(
+    path.resolve(root, await git(root, ["rev-parse", "--git-path", "objects"])),
+  );
+  const temporaryRoot = await realpath(os.tmpdir());
+  const temporary = await mkdtemp(
+    path.join(temporaryRoot, "sorng-cef-patch-index-"),
+  );
+  const identity = await verifySourcePatchTemporaryDirectory({
+    root: temporaryRoot,
+    directory: temporary,
+  });
+  try {
+    const temporaryObjects = path.join(temporary, "objects");
+    await mkdir(temporaryObjects);
+    const isolated = {
+      GIT_INDEX_FILE: path.join(temporary, "index"),
+      GIT_OBJECT_DIRECTORY: temporaryObjects,
+      GIT_ALTERNATE_OBJECT_DIRECTORIES: objects,
+    };
+    await git(root, ["read-tree", "HEAD"], isolated);
+    for (const patch of patches)
+      await git(
+        root,
+        ["apply", "--cached", "--whitespace=error-all", "--", patch],
+        isolated,
+      );
+  } finally {
+    // Revalidate immediately before recursive deletion. A retargeted path is
+    // deliberately left untouched rather than deleting an unowned directory.
+    await verifySourcePatchTemporaryDirectory({
+      root: temporaryRoot,
+      directory: temporary,
+      identity,
+    });
+    await rm(temporary, { recursive: true, force: true });
+  }
 }
 
 /** Raw checked-out sources, before upstream hooks or the project patch queue.
@@ -1297,13 +1369,6 @@ export async function preflightSourceCheckout({
     ))
       patches.push(await verifyFile(inputsRoot, patch));
     if (patches.length) {
-      await git(checkouts[name], [
-        "apply",
-        "--check",
-        "--whitespace=error-all",
-        "--",
-        ...patches,
-      ]);
       patchGroups.push({
         repository: name,
         cwd: await realpath(checkouts[name]),
@@ -1311,6 +1376,8 @@ export async function preflightSourceCheckout({
       });
     }
   }
+  // Verify every input pin before beginning any isolated patch simulation.
+  for (const group of patchGroups) await verifySourcePatchSeries(group);
   return {
     sourceLockSha256: identitySha256(sourceLock),
     patchGroups,
@@ -1328,17 +1395,16 @@ export async function applySourcePatches(options) {
   const result = await preflightSourceCheckout(options);
   const appliedRepositories = [];
   for (const group of result.patchGroups) {
+    let appliedPatches = 0;
     try {
-      await git(group.cwd, [
-        "apply",
-        "--whitespace=error-all",
-        "--",
-        ...group.patches,
-      ]);
+      for (const patch of group.patches) {
+        await git(group.cwd, ["apply", "--whitespace=error-all", "--", patch]);
+        appliedPatches += 1;
+      }
       appliedRepositories.push(group.repository);
     } catch (error) {
       throw new Error(
-        `Patch application failed; applied repositories: ${appliedRepositories.join(",") || "none"}. No rollback/reset performed. ${error.message}`,
+        `Patch application failed; applied repositories: ${appliedRepositories.join(",") || "none"}; current repository: ${group.repository}; completed patches: ${appliedPatches}. No rollback/reset performed. ${error.message}`,
       );
     }
   }

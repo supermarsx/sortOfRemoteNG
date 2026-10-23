@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { existsSync } from "node:fs";
 import { createHash } from "node:crypto";
+import { execFileSync } from "node:child_process";
 import {
   mkdtemp,
   mkdir,
@@ -14,6 +15,7 @@ import {
   readlink,
   realpath,
   readdir,
+  rename,
 } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -39,6 +41,8 @@ import {
   inspectCustomRuntimeExports,
   customRuntimeEnvironment,
   preflightSourceCheckout,
+  verifySourcePatchSeries,
+  verifySourcePatchTemporaryDirectory,
   customRuntimeBuildRecipe,
   sourceAcquisitionPlan,
   assessWindowsEnginePrerequisites,
@@ -919,6 +923,174 @@ test("source preflight rejects partial non-Git fixtures before applying anything
     await readFile(path.join(data.sdkRoot, "CREDITS.html"), "utf8"),
     "fixture credits",
   );
+});
+
+async function patchSeriesFixture(t) {
+  const root = await mkdtemp(path.join(os.tmpdir(), "cef-ordered-patches-"));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const cwd = path.join(root, "checkout");
+  await mkdir(cwd);
+  const git = (...args) =>
+    execFileSync("git", ["-C", cwd, ...args], {
+      encoding: "utf8",
+      windowsHide: true,
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+  git("init");
+  git("config", "core.autocrlf", "false");
+  git("config", "user.name", "Patch fixture");
+  git("config", "user.email", "patch-fixture@example.invalid");
+  await writeFile(path.join(cwd, "base.txt"), "base\n");
+  git("add", "base.txt");
+  git("commit", "-m", "fixture base");
+  const patches = [
+    path.join(root, "create.patch"),
+    path.join(root, "modify.patch"),
+  ];
+  await writeFile(
+    patches[0],
+    "diff --git a/created.txt b/created.txt\nnew file mode 100644\n--- /dev/null\n+++ b/created.txt\n@@ -0,0 +1 @@\n+first\n",
+  );
+  await writeFile(
+    patches[1],
+    "diff --git a/created.txt b/created.txt\n--- a/created.txt\n+++ b/created.txt\n@@ -1 +1 @@\n-first\n+second\n",
+  );
+  const snapshot = async () => {
+    const files = {};
+    const visit = async (directory, prefix = "") => {
+      for (const entry of await readdir(directory, { withFileTypes: true })) {
+        const name = `${prefix}${entry.name}`;
+        const file = path.join(directory, entry.name);
+        if (entry.isDirectory()) await visit(file, `${name}/`);
+        else if (entry.isSymbolicLink()) files[name] = await readlink(file);
+        else files[name] = hash(await readFile(file));
+      }
+    };
+    await visit(cwd);
+    return files;
+  };
+  return { cwd, patches, git, snapshot };
+}
+
+test("ordered source simulation supports create-then-modify without changing checkout, index or original objects", async (t) => {
+  const data = await patchSeriesFixture(t);
+  // This is the actual former producer command and its dependent-series failure.
+  assert.throws(
+    () =>
+      data.git(
+        "apply",
+        "--check",
+        "--whitespace=error-all",
+        "--",
+        ...data.patches,
+      ),
+    /created\.txt: No such file or directory/,
+  );
+  const before = await data.snapshot();
+  await verifySourcePatchSeries(data);
+  assert.deepEqual(await data.snapshot(), before);
+  assert.equal(data.git("status", "--porcelain=v1"), "");
+  for (const patch of data.patches)
+    data.git("apply", "--whitespace=error-all", "--", patch);
+  assert.equal(
+    await readFile(path.join(data.cwd, "created.txt"), "utf8"),
+    "second\n",
+  );
+});
+
+test("invalid later patch and whitespace failures leave every original byte and status unchanged", async (t) => {
+  const data = await patchSeriesFixture(t);
+  await writeFile(
+    path.join(data.cwd, "untracked-private.txt"),
+    "retain exactly\n",
+  );
+  const status = data.git("status", "--porcelain=v1");
+  const before = await data.snapshot();
+  await writeFile(
+    data.patches[1],
+    (await readFile(data.patches[1], "utf8")).replace("-first", "-absent"),
+  );
+  await assert.rejects(verifySourcePatchSeries(data), /patch|apply/i);
+  assert.deepEqual(await data.snapshot(), before);
+  assert.equal(data.git("status", "--porcelain=v1"), status);
+  await writeFile(
+    data.patches[0],
+    (await readFile(data.patches[0], "utf8")).replace("+first\n", "+first \n"),
+  );
+  await assert.rejects(
+    verifySourcePatchSeries({ ...data, patches: [data.patches[0]] }),
+    /whitespace/i,
+  );
+  assert.deepEqual(await data.snapshot(), before);
+});
+
+test("ordered simulation does not silently normalize incompatible patch transport bytes", async (t) => {
+  const data = await patchSeriesFixture(t);
+  const before = await data.snapshot();
+  await writeFile(
+    data.patches[1],
+    (await readFile(data.patches[1], "utf8")).replaceAll("\n", "\r\n"),
+  );
+  await assert.rejects(verifySourcePatchSeries(data), /patch does not apply/);
+  assert.deepEqual(await data.snapshot(), before);
+});
+
+test("patch cleanup guard rejects outside, nested, file and replaced directory paths without deleting them", async (t) => {
+  const fixture = await realpath(
+    await mkdtemp(path.join(os.tmpdir(), "cef-patch-cleanup-guard-")),
+  );
+  t.after(() => rm(fixture, { recursive: true, force: true }));
+  const root = path.join(fixture, "root");
+  await mkdir(root);
+  const directory = await mkdtemp(path.join(root, "sorng-cef-patch-index-"));
+  const identity = await verifySourcePatchTemporaryDirectory({
+    root,
+    directory,
+  });
+  const outside = path.join(fixture, "sorng-cef-patch-index-outside");
+  const nested = path.join(directory, "sorng-cef-patch-index-nested");
+  const file = path.join(root, "sorng-cef-patch-index-file");
+  await mkdir(outside);
+  await mkdir(nested);
+  await writeFile(file, "retain exactly\n");
+  for (const candidate of [outside, nested, file, root]) {
+    await assert.rejects(
+      verifySourcePatchTemporaryDirectory({ root, directory: candidate }),
+      /temporary directory/,
+    );
+    assert.ok(existsSync(candidate));
+  }
+  // Reuse the pathname for another real directory, without touching anything
+  // outside this test's own fixture. A path-only prefix check would accept it.
+  const replacement = await mkdtemp(path.join(root, "sorng-cef-patch-index-"));
+  const replacementIdentity = await verifySourcePatchTemporaryDirectory({
+    root,
+    directory: replacement,
+  });
+  assert.notDeepEqual(identity, replacementIdentity);
+  await rename(directory, path.join(root, "retained-original"));
+  await rename(replacement, directory);
+  await assert.rejects(
+    verifySourcePatchTemporaryDirectory({
+      root,
+      directory,
+      identity,
+    }),
+    /identity changed/,
+  );
+  assert.ok(existsSync(directory));
+  const link = path.join(root, "sorng-cef-patch-index-link");
+  await symlink(
+    outside,
+    link,
+    process.platform === "win32" ? "junction" : "dir",
+  );
+  await assert.rejects(
+    verifySourcePatchTemporaryDirectory({ root, directory: link }),
+    /identity changed/,
+  );
+  assert.ok(existsSync(outside));
+  assert.ok(existsSync(link));
 });
 
 test("Windows prerequisite assessment reports current missing SDK/compiler/debuggers honestly", () => {
