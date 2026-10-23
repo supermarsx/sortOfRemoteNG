@@ -88,6 +88,32 @@
   flex-shrink: 0;
 }
 
+.loadingLabel {
+  display: none;
+}
+
+/* Loading is operational feedback, independent of decorative 0/50ms app
+   transitions. The two-class selector outranks those global duration rules. */
+@media (prefers-reduced-motion: no-preference) {
+  .trigger .loadingIcon {
+    animation: tab-loading-spin 1s linear infinite !important;
+    transform-origin: center;
+    transform-box: fill-box;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .loadingLabel {
+    display: inline;
+  }
+}
+
+@keyframes tab-loading-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
 .status {
   font-size: 0.625rem;
   color: var(--color-textMuted);

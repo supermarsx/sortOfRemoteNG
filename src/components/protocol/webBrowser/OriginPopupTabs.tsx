@@ -165,12 +165,18 @@ export default function OriginPopupTabs({
               <LoaderCircle
                 size={14}
                 aria-hidden="true"
-                className={`${styles.icon} motion-safe:animate-spin`}
+                className={`${styles.icon} ${styles.loadingIcon}`}
               />
             ) : (
               <Globe size={14} aria-hidden="true" className={styles.icon} />
             )}
             <span className={styles.title}>{parentTitle}</span>
+            {parentLoading && (
+              <span aria-hidden="true" className={styles.loadingLabel}>
+                {" "}
+                · Loading
+              </span>
+            )}
           </button>
         </div>
         {popups.tabs.map((tab, index) => {
@@ -277,12 +283,18 @@ export default function OriginPopupTabs({
                   <LoaderCircle
                     size={14}
                     aria-hidden="true"
-                    className={`${styles.icon} motion-safe:animate-spin`}
+                    className={`${styles.icon} ${styles.loadingIcon}`}
                   />
                 ) : (
                   <Globe size={14} aria-hidden="true" className={styles.icon} />
                 )}
                 <span className={styles.title}>{title}</span>
+                {pageLoading && !busy && (
+                  <span aria-hidden="true" className={styles.loadingLabel}>
+                    {" "}
+                    · Loading
+                  </span>
+                )}
                 {status && <span className={styles.status}> · {status}</span>}
               </button>
               <button

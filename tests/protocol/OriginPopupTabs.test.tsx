@@ -1,4 +1,6 @@
 import React from "react";
+import { readFileSync } from "node:fs";
+import postcss from "postcss";
 import {
   act,
   cleanup,
@@ -9,6 +11,7 @@ import {
 } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import OriginPopupTabs from "../../src/components/protocol/webBrowser/OriginPopupTabs";
+import styles from "../../src/components/protocol/webBrowser/OriginPopupTabs.module.css";
 import {
   useOriginBrowserPopups,
   type OriginBrowserPopups,
@@ -149,15 +152,11 @@ describe("independent native tab page loading", () => {
     fireEvent.click(tab("A"));
     f.setParentLoading(true);
     expect(tab("Owner")).toHaveAttribute("aria-busy", "true");
-    expect(
-      tab("Owner").querySelector(".motion-safe\\:animate-spin"),
-    ).not.toBeNull();
+    expect(tab("Owner").querySelector(`.${styles.loadingIcon}`)).not.toBeNull();
     expect(tab("A")).not.toHaveAttribute("aria-busy");
     f.setParentLoading(false);
     expect(tab("Owner")).not.toHaveAttribute("aria-busy");
-    expect(
-      tab("Owner").querySelector(".motion-safe\\:animate-spin"),
-    ).toBeNull();
+    expect(tab("Owner").querySelector(`.${styles.loadingIcon}`)).toBeNull();
   });
   it("tracks background child loading and clears terminal failures even if native loading stays true", async () => {
     const f = await mountTabs([child("a", { snapshot: page() })]);
@@ -173,7 +172,7 @@ describe("independent native tab page loading", () => {
       }),
     ]);
     expect(tab("A")).not.toHaveAttribute("aria-busy");
-    expect(tab("A").querySelector(".motion-safe\\:animate-spin")).toBeNull();
+    expect(tab("A").querySelector(`.${styles.loadingIcon}`)).toBeNull();
     f.emit([
       child("a", {
         snapshot: page({
@@ -184,6 +183,69 @@ describe("independent native tab page loading", () => {
     ]);
     expect(tab("A")).not.toHaveAttribute("aria-busy");
   });
+});
+
+it("keeps essential busy motion slower than decorative overrides and supplies a reduced-motion label", async () => {
+  const css = postcss.parse(
+    readFileSync(
+      "src/components/protocol/webBrowser/OriginPopupTabs.module.css",
+      "utf8",
+    ),
+  );
+  const base = postcss.parse(readFileSync("src/styles/base.css", "utf8"));
+  const spinning: Array<{
+    selector: string;
+    media: string;
+    value: string;
+    important: boolean;
+  }> = [];
+  css.walkDecls("animation", (decl) => {
+    if (
+      decl.parent?.type !== "rule" ||
+      !decl.parent.selector.includes(".loadingIcon")
+    )
+      return;
+    const media = decl.parent.parent;
+    spinning.push({
+      selector: decl.parent.selector,
+      media: media?.type === "atrule" ? media.params : "",
+      value: decl.value,
+      important: !!decl.important,
+    });
+  });
+  expect(spinning).toEqual([
+    {
+      selector: ".trigger .loadingIcon",
+      media: "(prefers-reduced-motion: no-preference)",
+      value: "tab-loading-spin 1s linear infinite",
+      important: true,
+    },
+  ]);
+  // Actual app rules are important, but have one class of specificity. Busy
+  // motion must beat both without changing decorative or OS motion settings.
+  const globalDurations: string[] = [];
+  base.walkDecls("animation-duration", (decl) => {
+    if (
+      decl.important &&
+      decl.parent?.type === "rule" &&
+      /animations-disabled|reduce-motion/.test(decl.parent.selector)
+    )
+      globalDurations.push(decl.value);
+  });
+  expect(globalDurations).toEqual(["0ms", "50ms"]);
+  const reduced = css.nodes.find(
+    (node) =>
+      node.type === "atrule" &&
+      node.params === "(prefers-reduced-motion: reduce)",
+  );
+  expect(reduced?.toString()).toContain("display: inline");
+  expect(reduced?.toString()).not.toMatch(/animation:/);
+  const f = await mountTabs();
+  f.setParentLoading(true);
+  const label = tab("Owner").querySelector(`.${styles.loadingLabel}`);
+  expect(label).toHaveTextContent("Loading");
+  expect(label).toHaveAttribute("aria-hidden", "true");
+  expect(tab("Owner")).toHaveAttribute("aria-busy", "true");
 });
 const auxClick = (node: Element, button = 1) =>
   fireEvent(
