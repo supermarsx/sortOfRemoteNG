@@ -582,7 +582,11 @@ describe("lasting SSH script trust through the real dialog and store", () => {
       expect(mark).toHaveAccessibleName(
         new RegExp(choice === "connection" ? "this connection" : "everywhere"),
       );
-      fireEvent.click(screen.getByTestId("trusted-script-mark-revoke"));
+      // The binding/library refresh may recompute the hint after it appears.
+      // Wait for the actionable control before exercising durable revocation.
+      fireEvent.click(
+        await screen.findByRole("button", { name: "Revoke trust for Uptime" }),
+      );
       await waitFor(() =>
         expect(
           screen.queryByTestId("trusted-script-mark"),
