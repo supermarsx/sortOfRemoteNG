@@ -50,10 +50,61 @@ export async function inventoryMacSdks(
   };
   const candidates = [];
   const seen = new Set();
-  const names = (await readdir(root))
-    .filter((name) => /^Xcode(?:[_-][A-Za-z0-9_.-]+)?\.app$/.test(name))
-    .sort();
-  const selected = names.slice(0, 8);
+  const isXcodeName = (name) =>
+    /^Xcode(?:[_-][A-Za-z0-9_.-]+)?\.app$/.test(name);
+  const names = (await readdir(root)).filter(isXcodeName).sort();
+  const resolutionFailures = [];
+  let duplicateAliasCount = 0;
+  let resolvedNameCount = 0;
+  let deadlineReached = false;
+  for (const name of names.slice(0, 64)) {
+    try {
+      await verifyRoot();
+      const named = path.join(root, name);
+      const entry = await lstat(named);
+      if (!entry.isDirectory() && !entry.isSymbolicLink())
+        throw fault("xcode-not-directory");
+      const canonical = await realpath(named);
+      if (
+        canonical === root ||
+        !inside(root, canonical) ||
+        !(await stat(canonical)).isDirectory()
+      )
+        throw fault("xcode-outside-applications");
+      if (!isXcodeName(path.basename(canonical)))
+        throw fault("canonical-xcode-name-invalid");
+      if (seen.has(canonical)) duplicateAliasCount++;
+      else seen.add(canonical);
+      resolvedNameCount++;
+    } catch (error) {
+      if (error.inventoryCode === "inventory-deadline") deadlineReached = true;
+      resolutionFailures.push({
+        name,
+        failure: error.inventoryCode ?? "xcode-resolution-failed",
+      });
+      if (
+        error.inventoryCode === "inventory-deadline" ||
+        error.inventoryCode === "applications-changed"
+      )
+        break;
+    }
+  }
+  // Only an observation order: never selects an SDK or changes xcode-select.
+  // Alias spelling must not affect the numeric ordering of canonical Xcodes.
+  const ordered = [...seen].sort((left, right) => {
+    const a = path.basename(left),
+      b = path.basename(right);
+    const numbers = (name) => (name.match(/[0-9]+/g) ?? []).map(BigInt);
+    const x = numbers(a),
+      y = numbers(b);
+    for (let index = 0; index < Math.max(x.length, y.length); index++) {
+      const first = x[index] ?? 0n,
+        second = y[index] ?? 0n;
+      if (first !== second) return first > second ? -1 : 1;
+    }
+    return a < b ? -1 : a > b ? 1 : 0;
+  });
+  const selected = ordered.slice(0, 8);
   const measure = async (file, owner) => {
     await verifyRoot();
     let canonical;
@@ -93,9 +144,9 @@ export async function inventoryMacSdks(
       await handle.close();
     }
   };
-  for (const name of selected) {
+  for (const app of selected) {
     const candidate = {
-      application: path.join(root, name),
+      application: app,
       status: "probe-failed",
       requiredInputsPresent: false,
       buildCompatibilityVerified: false,
@@ -106,19 +157,12 @@ export async function inventoryMacSdks(
       const entry = await lstat(candidate.application);
       if (!entry.isDirectory() && !entry.isSymbolicLink())
         throw fault("xcode-not-directory");
-      const app = await realpath(candidate.application);
       if (
-        app === root ||
+        (await realpath(candidate.application)) !== app ||
         !inside(root, app) ||
         !(await stat(app)).isDirectory()
       )
         throw fault("xcode-outside-applications");
-      if (seen.has(app)) {
-        candidate.status = "duplicate-canonical-xcode";
-        continue;
-      }
-      seen.add(app);
-      candidate.application = app;
       const developer = await realpath(path.join(app, "Contents", "Developer"));
       if (!inside(app, developer)) throw fault("developer-outside-xcode");
       const env = {
@@ -200,6 +244,7 @@ export async function inventoryMacSdks(
         : "missing-required-inputs";
     } catch (error) {
       candidate.failure = error.inventoryCode ?? "probe-command-or-file-failed";
+      if (candidate.failure === "inventory-deadline") deadlineReached = true;
       if (
         candidate.failure === "inventory-deadline" ||
         candidate.failure === "applications-changed"
@@ -211,7 +256,22 @@ export async function inventoryMacSdks(
     schemaVersion: 1,
     kind: "sorng-cef-installed-mac-sdk-inventory",
     candidates,
-    truncated: names.length > 8 || candidates.length < selected.length,
+    totalMatchingNames: names.length,
+    nameResolutionLimit: 64,
+    resolvedNameCount,
+    unresolvedNameCount: names.length - resolvedNameCount,
+    totalCanonicalCandidates:
+      resolvedNameCount === names.length ? seen.size : null,
+    resolvedCanonicalCount: seen.size,
+    duplicateAliasCount,
+    probedCanonicalCount: candidates.length,
+    unprobedCanonicalCount: seen.size - candidates.length,
+    resolutionFailures,
+    deadlineReached,
+    truncated:
+      deadlineReached ||
+      resolvedNameCount < names.length ||
+      candidates.length < ordered.length,
     engineBuildAttempted: false,
     publicationAllowed: false,
   };
