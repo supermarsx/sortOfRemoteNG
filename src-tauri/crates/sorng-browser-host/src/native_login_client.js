@@ -340,6 +340,9 @@
       autoSubmit = false,
       receipt = null,
       submitted = false;
+    let startRequested = false,
+      preGrantRetries = 0,
+      recoveryAnchor = null;
     const emit = (stage, index = 0) =>
       signal(`totp|${stage}|${setup.id}|${index}`);
     const later = (fn, ms) => {
@@ -478,22 +481,11 @@
         (!deadline || now() < deadline)
       );
     }
-    function discover() {
-      if (stopped) return;
-      const found = controls();
-      // Keep looking while the challenge is absent or another live control
-      // holds focus. Never take focus away from it or replace manual input.
-      // A control that is no longer shown is not live: an unpainted page may
-      // leave focus on the panel it has just hidden.
-      const focused = doc.activeElement;
+    function tacticalModalFor(found) {
       const tacticalModal = found?.input.closest(
         '.q-dialog[role="dialog"][aria-modal="true"]',
       );
-      // Quasar's reviewed Tactical modal can hold focus on its non-interactive
-      // inner container while autofocus settles. That container owns this
-      // challenge; it is not a user-selected input or action to preserve.
-      const tacticalContainer =
-        found &&
+      return found &&
         tacticalModal &&
         setup.id === "tacticalrmm-totp" &&
         setup.submission === "spa" &&
@@ -502,18 +494,83 @@
           '.q-dialog form input[autocomplete="one-time-code"][inputmode="numeric"]' &&
         setup.submitSelector ===
           '.q-dialog form:has(input[autocomplete="one-time-code"][inputmode="numeric"]) button[type="submit"]' &&
+        tacticalModal.contains(found.form) &&
+        visible(tacticalModal) &&
+        Array.from(
+          doc.querySelectorAll('.q-dialog[role="dialog"][aria-modal="true"]'),
+        ).filter(visible).length === 1
+        ? tacticalModal
+        : null;
+    }
+    function tacticalFocusContainer(found, focused) {
+      const tacticalModal = tacticalModalFor(found);
+      // Quasar's reviewed focus queue can move focus to this noninteractive
+      // owner container. Never extend this exception to a real action/input.
+      return (
+        tacticalModal &&
         focused instanceof HTMLDivElement &&
         focused.matches('.q-dialog__inner[tabindex="-1"]') &&
         !focused.hasAttribute("role") &&
         !focused.closest('[contenteditable]:not([contenteditable="false"])') &&
         focused.contains(found.input) &&
-        tacticalModal.contains(found.form) &&
         focused.closest('.q-dialog[role="dialog"][aria-modal="true"]') ===
-          tacticalModal &&
-        visible(tacticalModal) &&
-        Array.from(
-          doc.querySelectorAll('.q-dialog[role="dialog"][aria-modal="true"]'),
-        ).filter(visible).length === 1;
+          tacticalModal
+      );
+    }
+    function rediscoverBeforeGrant() {
+      const previous = target;
+      const found = controls();
+      const modal = tacticalModalFor(found);
+      const focused = doc.activeElement;
+      if (
+        stopped ||
+        startRequested ||
+        preGrantRetries >= 3 ||
+        !previous ||
+        !found ||
+        !modal ||
+        prefix ||
+        previous.input.value ||
+        found.input.value ||
+        previous.form !== found.form ||
+        previous.href !== found.href ||
+        previous.fingerprint !== found.fingerprint ||
+        !sameTotpHandlers(found, previous) ||
+        !(
+          (previous.input === found.input &&
+            tacticalFocusContainer(found, focused)) ||
+          (previous.input !== found.input &&
+            !previous.input.isConnected &&
+            (focused === doc.body ||
+              focused === found.input ||
+              tacticalFocusContainer(found, focused)))
+        )
+      )
+        return false;
+      // No start/grant has been requested. Keep the same form/modal/document
+      // pinned while its focus/render queue settles, with a finite retry cap.
+      recoveryAnchor = { form: found.form, modal, href: found.href };
+      preGrantRetries++;
+      target = null;
+      later(discover, 200);
+      return true;
+    }
+    function discover() {
+      if (stopped) return;
+      const found = controls();
+      if (
+        recoveryAnchor &&
+        (!found ||
+          found.form !== recoveryAnchor.form ||
+          found.href !== recoveryAnchor.href ||
+          tacticalModalFor(found) !== recoveryAnchor.modal)
+      ) {
+        cancel();
+        return;
+      }
+      // Never take focus away from another live control or replace manual input.
+      const focused = doc.activeElement;
+      const tacticalContainer = tacticalFocusContainer(found, focused);
       if (
         !found ||
         (!found.input.value &&
@@ -529,9 +586,12 @@
       if (found.input.value) return;
       target = found;
       found.input.focus({ preventScroll: true });
+      if (target !== found || stopped) return;
       later(() => {
-        if (current()) emit("start");
-        else cancel();
+        if (current()) {
+          startRequested = true;
+          emit("start");
+        } else if (!rediscoverBeforeGrant()) cancel();
       }, setup.fillDelayMs);
     }
     // Both facts are in for `index` digits: the host's receipt and the trusted
@@ -572,6 +632,7 @@
       return true;
     }
     function inputEvent(event) {
+      if (!target && recoveryAnchor && !stopped) cancel();
       if (!target || stopped) return;
       if (
         !armed ||
@@ -593,6 +654,7 @@
     doc.addEventListener(
       "beforeinput",
       (event) => {
+        if (!target && recoveryAnchor && !stopped) cancel();
         if (!target || stopped) return;
         if (
           !armed ||
@@ -612,6 +674,7 @@
     doc.addEventListener(
       "keydown",
       (event) => {
+        if (!target && recoveryAnchor && !stopped) cancel();
         if (!target || stopped) return;
         if (
           !armed ||
@@ -630,14 +693,24 @@
     doc.addEventListener(
       "pointerdown",
       () => {
-        if (target) cancel();
+        if (target || recoveryAnchor) cancel();
       },
       true,
     );
     doc.addEventListener(
       "focusin",
       (event) => {
-        if (target && event.target !== target.input) cancel();
+        if (!target && recoveryAnchor && !stopped) {
+          const found = controls();
+          if (
+            !found ||
+            (event.target !== found.input &&
+              !tacticalFocusContainer(found, event.target))
+          )
+            cancel();
+        }
+        if (target && event.target !== target.input && !rediscoverBeforeGrant())
+          cancel();
       },
       true,
     );

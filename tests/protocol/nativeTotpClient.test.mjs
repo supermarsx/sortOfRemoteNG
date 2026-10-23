@@ -147,7 +147,7 @@ function fixture(t, options = {}) {
         dispatch("probe", index + 1, expiry, options.submit !== false);
       }
       if (command === "finish") dispatch("submit", 6, expiry, true);
-    }, 0);
+    }, options.receiptDelayMs || 0);
   };
   dispatch = win.eval(source)(signal, setup, "approved-otp");
   return {
@@ -196,6 +196,203 @@ test("Tactical RMM Quasar dialog focus container yields to its reviewed OTP fiel
   assert.equal(f.submits(), 1);
   assert.equal(f.doc.querySelector('input[type="password"]').value, "");
 });
+
+test("Tactical modal focus settles before requesting its single native OTP grant", async (t) => {
+  const setup = { ...catalog.tacticalrmm[0], fillDelayMs: 60 };
+  const f = fixture(t, {
+    html: tacticalOtpHtml,
+    url: "https://device.test/login",
+    setup,
+    inputSelector: setup.codeSelector,
+    initialFocus: ".q-dialog__inner",
+  });
+  // QDialog schedules its focus operation independently of input discovery.
+  f.input.addEventListener(
+    "focus",
+    () =>
+      f.win.setTimeout(
+        () => f.doc.querySelector(".q-dialog__inner").focus(),
+        10,
+      ),
+    { once: true },
+  );
+  for (let count = 0; count < 80 && f.submits() === 0; count++) await delay(25);
+  assert.equal(f.doc.activeElement, f.input);
+  assert.equal(f.typed.join(""), "123456");
+  assert.equal(f.submits(), 1);
+  assert.equal(
+    f.signals.filter((signal) => signal.includes("|start|")).length,
+    1,
+  );
+});
+
+test("Tactical modal input replacement before a grant is rediscovered in the same form", async (t) => {
+  const setup = { ...catalog.tacticalrmm[0], fillDelayMs: 60 };
+  const f = fixture(t, {
+    html: tacticalOtpHtml,
+    url: "https://device.test/login",
+    setup,
+    inputSelector: setup.codeSelector,
+    initialFocus: ".q-dialog__inner",
+  });
+  let replacement;
+  f.input.addEventListener(
+    "focus",
+    () =>
+      f.win.setTimeout(() => {
+        replacement = f.input.cloneNode(true);
+        f.input.replaceWith(replacement);
+      }, 10),
+    { once: true },
+  );
+  for (let count = 0; count < 80 && f.submits() === 0; count++) await delay(25);
+  assert.ok(replacement);
+  assert.equal(f.doc.activeElement, replacement);
+  assert.equal(replacement.value, "123456");
+  assert.equal(f.input.value, "");
+  assert.equal(f.submits(), 1);
+  assert.equal(
+    f.signals.filter((signal) => signal.includes("|start|")).length,
+    1,
+  );
+});
+
+test("Tactical focus settlement is bounded and never requests a grant while unstable", async (t) => {
+  const setup = { ...catalog.tacticalrmm[0], fillDelayMs: 30 };
+  const f = fixture(t, {
+    html: tacticalOtpHtml,
+    url: "https://device.test/login",
+    setup,
+    inputSelector: setup.codeSelector,
+    initialFocus: ".q-dialog__inner",
+  });
+  let attempts = 0;
+  f.input.addEventListener("focus", () => {
+    attempts++;
+    f.win.setTimeout(() => f.doc.querySelector(".q-dialog__inner").focus(), 5);
+  });
+  await delay(1200);
+  assert.ok(attempts > 1 && attempts <= 4);
+  assert.equal(f.typed.length, 0);
+  assert.equal(f.submits(), 0);
+  assert.equal(
+    f.signals.some((signal) => signal.includes("|start|")),
+    false,
+  );
+  assert.equal(
+    f.signals.filter((signal) => signal.includes("|cancel|")).length,
+    1,
+  );
+});
+
+for (const interaction of ["focus-control", "pointer", "keyboard"]) {
+  test(`Tactical pre-grant rediscovery stops on ${interaction} during settlement`, async (t) => {
+    const setup = { ...catalog.tacticalrmm[0], fillDelayMs: 60 };
+    const f = fixture(t, {
+      html: tacticalOtpHtml,
+      url: "https://device.test/login",
+      setup,
+      inputSelector: setup.codeSelector,
+      initialFocus: ".q-dialog__inner",
+    });
+    f.input.addEventListener(
+      "focus",
+      () => {
+        f.win.setTimeout(() => {
+          f.doc.querySelector(".q-dialog__inner").focus();
+          if (interaction === "focus-control")
+            f.doc.querySelector("#cancel-token").focus();
+          else
+            f.doc.dispatchEvent(
+              new f.win.Event(
+                interaction === "pointer" ? "pointerdown" : "keydown",
+                { bubbles: true },
+              ),
+            );
+        }, 10);
+      },
+      { once: true },
+    );
+    await delay(500);
+    assert.equal(f.typed.length, 0);
+    assert.equal(f.submits(), 0);
+    assert.equal(
+      f.signals.some((signal) => signal.includes("|start|")),
+      false,
+    );
+    assert.equal(
+      f.signals.filter((signal) => signal.includes("|cancel|")).length,
+      1,
+    );
+  });
+}
+
+test("Tactical modal focus changes after a start cannot reclaim focus or repeat a grant", async (t) => {
+  const setup = catalog.tacticalrmm[0];
+  const f = fixture(t, {
+    html: tacticalOtpHtml,
+    url: "https://device.test/login",
+    setup,
+    inputSelector: setup.codeSelector,
+    initialFocus: ".q-dialog__inner",
+    receiptDelayMs: 100,
+  });
+  for (
+    let count = 0;
+    count < 40 && !f.signals.some((signal) => signal.includes("|start|"));
+    count++
+  )
+    await delay(5);
+  assert.equal(
+    f.signals.filter((signal) => signal.includes("|start|")).length,
+    1,
+  );
+  f.doc.querySelector(".q-dialog__inner").focus();
+  await delay(250);
+  assert.equal(f.doc.activeElement, f.doc.querySelector(".q-dialog__inner"));
+  assert.equal(f.typed.length, 0);
+  assert.equal(f.submits(), 0);
+  assert.equal(
+    f.signals.filter((signal) => signal.includes("|start|")).length,
+    1,
+  );
+});
+
+for (const replaced of ["form", "modal"]) {
+  test(`Tactical rediscovery cannot move a grant to a replacement ${replaced}`, async (t) => {
+    const setup = { ...catalog.tacticalrmm[0], fillDelayMs: 60 };
+    const f = fixture(t, {
+      html: tacticalOtpHtml,
+      url: "https://device.test/login",
+      setup,
+      inputSelector: setup.codeSelector,
+      initialFocus: ".q-dialog__inner",
+    });
+    f.input.addEventListener(
+      "focus",
+      () => {
+        f.win.setTimeout(() => {
+          f.doc.querySelector(".q-dialog__inner").focus();
+          const owner =
+            replaced === "form" ? f.input.form : f.input.closest(".q-dialog");
+          owner.replaceWith(owner.cloneNode(true));
+        }, 10);
+      },
+      { once: true },
+    );
+    await delay(450);
+    assert.equal(f.typed.length, 0);
+    assert.equal(f.submits(), 0);
+    assert.equal(
+      f.signals.some((signal) => signal.includes("|start|")),
+      false,
+    );
+    assert.equal(
+      f.signals.filter((signal) => signal.includes("|cancel|")).length,
+      1,
+    );
+  });
+}
 
 for (const [label, html, initialFocus] of [
   ["Cancel control", tacticalOtpHtml, "#cancel-token"],
