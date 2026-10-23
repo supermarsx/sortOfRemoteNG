@@ -466,7 +466,7 @@ impl NativeDocumentHooks for LoginHooks {
                 proxy: true,
                 callback_present,
             } => Navigation::ProxyAuth { callback_present },
-            Native::AuthCompleted { handled } => Navigation::AuthCompleted { handled },
+            Native::AuthCompleted { handled, outcome } => Navigation::AuthCompleted { handled, outcome },
             Native::LoadError { code, main_frame } => Navigation::LoadError { code, main_frame },
             Native::ResourceAdmission { resource_type, is_navigation, browser_present, frame_present,
                 initiator_empty, initiator_opaque, default_disabled } => {

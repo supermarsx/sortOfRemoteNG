@@ -14,6 +14,33 @@ const file = {
 const browser = (row: unknown) =>
   parseLogTimeline(JSON.stringify(row), "browser", file)[0];
 describe("bounded application log timeline", () => {
+  it("distinguishes native credential dispatch from handled cancellation without exposing challenge data", () => {
+    const auth = (outcome?: unknown) =>
+      browser({
+        version: 1,
+        navigation: {
+          event: "auth-completed",
+          handled: true,
+          outcome,
+          host: "private-sentinel",
+          realm: "private-sentinel",
+          password: "private-sentinel",
+        },
+      });
+    expect(auth("credential-dispatched-to-callback").details).toContain(
+      "Outcome: credential dispatched to callback",
+    );
+    expect(auth("stale-attempt").details).toContain("Outcome: stale attempt");
+    expect(auth("stale-attempt").details).toContain("Callback completed: yes");
+    expect(auth("relay-unavailable").details).toContain(
+      "Outcome: relay unavailable or revoked",
+    );
+    expect(auth().details).toContain("Handled: yes");
+    expect(auth("private-sentinel").details).not.toContain("Outcome:");
+    expect(
+      logRowsText([auth("stale-attempt"), auth("private-sentinel")]),
+    ).not.toContain("private-sentinel");
+  });
   it("preserves proxy acknowledgement observation time in the application sink", () => {
     const row = parseLogTimeline(
       "[2026-10-22T11:00:01Z][INFO][native_browser::proxy] Native browser proxy: timestampUnixMs=1792663200000 source=native event=private-proxy-applied",

@@ -5,6 +5,7 @@
 //! not a durability guarantee, diagnosis or containment.
 
 use rand::RngCore;
+use sorng_protocols::origin_browser::ProxyAuthOutcome;
 use sorng_protocols::private_forward_proxy::PrivateProxyDiagnostics;
 use std::{
     fs::{self, File, OpenOptions},
@@ -376,6 +377,8 @@ struct Journal {
     relay_records: usize,
     timing_records: usize,
     tls_timing_records: usize,
+    auth_success_records: usize,
+    auth_rejection_records: usize,
 }
 
 /// Fixed, secret-free observations from the native browser callbacks. Separate
@@ -387,7 +390,11 @@ pub(crate) enum Navigation {
     Browse { allowed: bool, main_frame: bool },
     ProxyAuth { callback_present: bool },
     PrivateProxyApplied,
-    AuthCompleted { handled: bool },
+    AuthCompleted {
+        handled: bool,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        outcome: Option<ProxyAuthOutcome>,
+    },
     LoadError { code: i32, main_frame: bool },
     PrivateRelay {
         sample: u32,
@@ -437,6 +444,12 @@ fn application_navigation_failure(status: &Navigation) -> Option<(&'static str, 
             }
         }
         Navigation::PrivateRelay { .. } => "native_browser::proxy",
+        Navigation::AuthCompleted {
+            outcome: Some(outcome),
+            ..
+        } if *outcome != ProxyAuthOutcome::CredentialDispatchedToCallback => {
+            "native_browser::proxy"
+        }
         Navigation::SessionFailed { .. } => "native_browser::session",
         Navigation::TlsBridgeFailed {
             reason: TlsBridgeFailure::ProxyConfiguration,
@@ -449,6 +462,33 @@ fn application_navigation_failure(status: &Navigation) -> Option<(&'static str, 
     // Navigation has only enums, booleans and bounded scalar counters. It has
     // no URL, title, owner ID, endpoint, certificate or arbitrary error field.
     Some((target, serde_json::to_string(status).ok()?))
+}
+
+/// Independent of the optional journal: callbacks cannot generate unlimited
+/// application-log auth failures after its quota is exhausted or opening fails.
+/// Other failure classes keep their existing delivery, and successes cost none.
+#[derive(Default)]
+struct ApplicationFailureMirroring {
+    auth_rejections: usize,
+}
+
+impl ApplicationFailureMirroring {
+    fn failure(&mut self, status: &Navigation) -> Option<(&'static str, String)> {
+        if matches!(status, Navigation::AuthCompleted { outcome: Some(outcome), .. }
+            if *outcome != ProxyAuthOutcome::CredentialDispatchedToCallback)
+        {
+            if self.auth_rejections >= 128 {
+                if self.auth_rejections == 128 {
+                    // One bounded fixed warning, with no suppressed payload.
+                    log::warn!(target: "native_browser::proxy", "Native browser proxy authentication observations limited: source=native");
+                    self.auth_rejections += 1;
+                }
+                return None;
+            }
+            self.auth_rejections += 1;
+        }
+        application_navigation_failure(status)
+    }
 }
 
 pub(crate) fn authority_failure(
@@ -488,6 +528,7 @@ fn dispatcher() -> Option<&'static SyncSender<Message>> {
     static WORKER: OnceLock<Option<SyncSender<Message>>> = OnceLock::new();
     WORKER.get_or_init(|| {
         let mut journal: Option<Journal> = None;
+        let mut application_failures = ApplicationFailureMirroring::default();
         // Command/authorization milestones precede the working-root selection.
         // Buffer only bounded numeric snapshots until Begin, never UI file I/O.
         let mut early_timing = Vec::new();
@@ -526,7 +567,7 @@ fn dispatcher() -> Option<&'static SyncSender<Message>> {
                     }
                 }
                 Message::Navigation(status, timestamp) => {
-                    if let Some((target, detail)) = application_navigation_failure(&status) {
+                    if let Some((target, detail)) = application_failures.failure(&status) {
                         log::error!(target: target, "Native browser failure: timestampUnixMs={} source=native {detail}", timestamp.duration_since(UNIX_EPOCH).unwrap_or_default().as_millis());
                     } else if matches!(status, Navigation::PrivateProxyApplied) {
                         log::info!(target: "native_browser::proxy", "Native browser proxy: timestampUnixMs={} source=native event=private-proxy-applied", timestamp.duration_since(UNIX_EPOCH).unwrap_or_default().as_millis());
@@ -600,6 +641,8 @@ fn open_journal(root: &Path) -> io::Result<Journal> {
         relay_records: 0,
         timing_records: 0,
         tls_timing_records: 0,
+        auth_success_records: 0,
+        auth_rejection_records: 0,
     })
 }
 
@@ -617,6 +660,13 @@ impl Journal {
     }
 
     fn navigation(&mut self, status: Navigation, timestamp: SystemTime) -> io::Result<()> {
+        let auth = match status {
+            Navigation::AuthCompleted {
+                outcome: Some(outcome),
+                ..
+            } => Some(outcome == ProxyAuthOutcome::CredentialDispatchedToCallback),
+            _ => None,
+        };
         let tls_failure = matches!(status, Navigation::TlsFailed | Navigation::TlsBridgeFailed { .. });
         let session_failure = matches!(status, Navigation::SessionFailed { .. });
         let relay = matches!(status, Navigation::PrivateRelay { .. });
@@ -626,26 +676,33 @@ impl Journal {
         // evidence. Both budgets and the caller's per-attempt gate are bounded.
         // First-failure relay evidence has its own small budget, so noisy
         // resource callbacks cannot hide whether a failed tab reached its relay.
-        if (relay && self.relay_records >= MAX_TIMED_STARTUPS as usize)
+        if (auth == Some(true) && self.auth_success_records >= MAX_RECORDS)
+            || (auth == Some(false) && self.auth_rejection_records >= 128)
+            || (relay && self.relay_records >= MAX_TIMED_STARTUPS as usize)
             || (tls_timing && self.tls_timing_records >= 1024)
             || (observation && self.observation_records >= 512)
             || (tls_failure && self.tls_failure_records >= MAX_RECORDS)
             || (session_failure && self.session_failure_records >= MAX_RECORDS)
-            || (!relay && !observation && !tls_failure && !session_failure && !tls_timing && self.navigation_records >= 128) {
+            || (auth.is_none()
+                && !relay && !observation && !tls_failure && !session_failure && !tls_timing && self.navigation_records >= 128) {
             return Ok(());
         }
         let record = serde_json::json!({
             "version": 1,
             "timestampUnixMs": timestamp.duration_since(UNIX_EPOCH).unwrap_or_default().as_millis(),
             "processId": std::process::id(),
-            "navigationSequence": self.navigation_records + self.observation_records + self.relay_records + self.tls_failure_records + self.session_failure_records + self.tls_timing_records,
+            "navigationSequence": self.navigation_records + self.observation_records + self.relay_records + self.tls_failure_records + self.session_failure_records + self.tls_timing_records + self.auth_success_records + self.auth_rejection_records,
             "navigation": status,
         });
         let mut bytes = serde_json::to_vec(&record)?;
         bytes.push(b'\n');
         self.file.write_all(&bytes)?;
         self.file.sync_data()?;
-        if tls_failure { self.tls_failure_records += 1; }
+        if auth == Some(true) {
+            self.auth_success_records += 1;
+        } else if auth == Some(false) {
+            self.auth_rejection_records += 1;
+        } else if tls_failure { self.tls_failure_records += 1; }
         else if session_failure { self.session_failure_records += 1; }
         else if relay { self.relay_records += 1; }
         else if observation { self.observation_records += 1; }
@@ -732,6 +789,127 @@ mod tests {
         assert!(application_navigation_failure(&Navigation::PrivateProxyApplied).is_none());
         assert_eq!(serde_json::to_value(Navigation::PrivateProxyApplied).unwrap(),
             serde_json::json!({"event": "private-proxy-applied"}));
+    }
+
+    #[test]
+    fn application_auth_failure_flood_is_bounded_without_a_journal_or_with_an_exhausted_one() {
+        for journal_available in [false, true] {
+            let temp = tempfile::tempdir().unwrap();
+            let mut journal = journal_available.then(|| open_journal(temp.path()).unwrap());
+            if let Some(journal) = journal.as_mut() {
+                journal.navigation_records = 128;
+                journal.auth_rejection_records = 128;
+            }
+            let mut mirror = ApplicationFailureMirroring::default();
+            let mut failures = 0;
+            for _ in 0..1_000 {
+                assert!(mirror.failure(&Navigation::AuthCompleted {
+                    handled: true, outcome: Some(ProxyAuthOutcome::CredentialDispatchedToCallback),
+                }).is_none());
+                let rejection = Navigation::AuthCompleted {
+                    handled: true, outcome: Some(ProxyAuthOutcome::RealmMismatch),
+                };
+                // Same order as the worker: mirroring precedes optional IO.
+                failures += usize::from(mirror.failure(&rejection).is_some());
+                if let Some(journal) = journal.as_mut() {
+                    journal.navigation(rejection, SystemTime::now()).unwrap();
+                }
+            }
+            assert_eq!(failures, 128);
+            assert_eq!(mirror.auth_rejections, 129); // includes the one limit warning
+            for other in [Navigation::TlsFailed,
+                Navigation::LoadError { code: -130, main_frame: true },
+                Navigation::SessionFailed { reason: sorng_protocols::origin_browser::BrowserSessionFailure::Watchdog },
+            ] {
+                assert!(mirror.failure(&other).is_some(), "auth flood must not consume other failure classes");
+            }
+            assert_eq!(mirror.auth_rejections, 129);
+        }
+    }
+
+    #[test]
+    fn proxy_auth_rejections_survive_navigation_and_success_saturation_with_fixed_fields() {
+        let temp = tempfile::tempdir().unwrap();
+        let mut journal = open_journal(temp.path()).unwrap();
+        journal.navigation_records = 128;
+        for _ in 0..100 {
+            journal
+                .navigation(
+                    Navigation::AuthCompleted {
+                        handled: true,
+                        outcome: Some(ProxyAuthOutcome::CredentialDispatchedToCallback),
+                    },
+                    SystemTime::now(),
+                )
+                .unwrap();
+        }
+        assert_eq!(journal.auth_success_records, MAX_RECORDS);
+        for outcome in [
+            ProxyAuthOutcome::CallbackMissing,
+            ProxyAuthOutcome::InvalidChallengeMetadata,
+            ProxyAuthOutcome::StaleAttempt,
+            ProxyAuthOutcome::NativeStatePoisoned,
+            ProxyAuthOutcome::RelayUnavailable,
+            ProxyAuthOutcome::SchemeMismatch,
+            ProxyAuthOutcome::RealmMismatch,
+            ProxyAuthOutcome::EndpointMismatch,
+        ] {
+            let event = Navigation::AuthCompleted {
+                handled: outcome != ProxyAuthOutcome::CallbackMissing,
+                outcome: Some(outcome),
+            };
+            let (target, detail) = application_navigation_failure(&event).unwrap();
+            assert_eq!(target, "native_browser::proxy");
+            let value: serde_json::Value = serde_json::from_str(&detail).unwrap();
+            assert_eq!(value.as_object().unwrap().len(), 3);
+            assert_eq!(value["event"], "auth-completed");
+            assert!(value["outcome"]
+                .as_str()
+                .unwrap()
+                .bytes()
+                .all(|b| b.is_ascii_lowercase() || b == b'-'));
+            journal.navigation(event, SystemTime::now()).unwrap();
+        }
+        assert_eq!(journal.auth_rejection_records, 8);
+        for _ in 0..200 {
+            journal
+                .navigation(
+                    Navigation::AuthCompleted {
+                        handled: true,
+                        outcome: Some(ProxyAuthOutcome::StaleAttempt),
+                    },
+                    SystemTime::now(),
+                )
+                .unwrap();
+        }
+        assert_eq!(journal.auth_rejection_records, 128);
+        assert_eq!(journal.navigation_records, 128);
+        let old = Navigation::AuthCompleted {
+            handled: true,
+            outcome: None,
+        };
+        assert_eq!(
+            serde_json::to_value(old).unwrap(),
+            serde_json::json!({"event":"auth-completed","handled":true})
+        );
+        assert!(application_navigation_failure(&old).is_none());
+        // Mirroring is independent of the exhausted journal quota.
+        assert!(application_navigation_failure(&Navigation::AuthCompleted {
+            handled: true,
+            outcome: Some(ProxyAuthOutcome::StaleAttempt),
+        })
+        .is_some());
+        drop(journal);
+        let path = fs::read_dir(temp.path())
+            .unwrap()
+            .next()
+            .unwrap()
+            .unwrap()
+            .path();
+        assert_eq!(
+            fs::read_to_string(path).unwrap().lines().count(),
+            MAX_RECORDS + 128
+        );
     }
 
     #[test]

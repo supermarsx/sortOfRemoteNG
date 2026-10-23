@@ -47,6 +47,7 @@ use cef::*;
 use raw_window_handle::{HasDisplayHandle, HasWindowHandle};
 use sorng_protocols::origin_browser::{
     BrowserIdentity, BrowserSessionFailure, BrowserSessionStatus, OriginBrowserSession,
+    ProxyAuthOutcome,
 };
 use std::collections::HashMap;
 use std::marker::PhantomData;
@@ -248,6 +249,7 @@ pub enum NativeNavigationStatus {
     },
     AuthCompleted {
         handled: bool,
+        outcome: Option<ProxyAuthOutcome>,
     },
 }
 
@@ -2091,6 +2093,19 @@ impl Shared {
 }
 
 impl RequestLifecycle for Shared {
+    fn proxy_auth_completed(&self, handled: bool, outcome: ProxyAuthOutcome) {
+        // A denied callback can belong to an already revoked attempt. Unlike
+        // page observations, this fixed outcome must survive that revocation;
+        // it cannot authorize anything or borrow a successor's identity.
+        if let Some(hooks) = &self.hooks {
+            if catch_unwind(AssertUnwindSafe(|| hooks.on_navigation_status(
+                &self.identity,
+                NativeNavigationStatus::AuthCompleted { handled, outcome: Some(outcome) },
+            ))).is_err() {
+                self.revoke();
+            }
+        }
+    }
     fn renderer_fault(&self, browser: Option<&Browser>) {
         self.fault(browser, BrowserFault::Renderer);
     }
@@ -3150,7 +3165,12 @@ wrap_request_handler! {
                 // of invalid proxy flags. Never fall back to server credentials.
                 self.inner.auth_credentials(browser, origin_url, is_proxy, host, port, realm, scheme, callback)
             };
-            self.shared.navigation_status(NativeNavigationStatus::AuthCompleted { handled: decision == 1 });
+            // Private proxy completion is observed by the actual inner path,
+            // which distinguishes credential dispatch from explicit cancellation.
+            // Server authentication has no proxy outcome and retains its event.
+            if is_proxy == 0 {
+                self.shared.navigation_status(NativeNavigationStatus::AuthCompleted { handled: decision == 1, outcome: None });
+            }
             decision
         }
         fn on_select_client_certificate(&self, browser: Option<&mut Browser>, is_proxy: i32,
@@ -4804,6 +4824,30 @@ mod tests {
             *observations.0.lock().unwrap(),
             [NativeNavigationStatus::Requested]
         );
+    }
+
+    #[tokio::test]
+    async fn fixed_proxy_auth_rejection_survives_revocation_without_reopening_the_session() {
+        #[derive(Default)]
+        struct Observations(Mutex<Vec<(BrowserIdentity, NativeNavigationStatus)>>);
+        impl NativeDocumentHooks for Observations {
+            fn on_main_document(&self, _: &BrowserIdentity, _: u64) {}
+            fn on_navigation_status(&self, identity: &BrowserIdentity, status: NativeNavigationStatus) {
+                self.0.lock().unwrap().push((identity.clone(), status));
+            }
+        }
+        let mut shared = fixture(Arc::new(Sink(Mutex::new(Vec::new())))).await;
+        let observations = Arc::new(Observations::default());
+        shared.hooks = Some(observations.clone());
+        shared.revoke();
+        shared.proxy_auth_completed(true, ProxyAuthOutcome::RelayUnavailable);
+        assert_eq!(shared.session.lock().unwrap().status(), BrowserSessionStatus::Revoked);
+        let observed = observations.0.lock().unwrap();
+        assert_eq!(observed.len(), 1);
+        assert!(observed[0].0 == shared.identity);
+        assert_eq!(observed[0].1, NativeNavigationStatus::AuthCompleted {
+            handled: true, outcome: Some(ProxyAuthOutcome::RelayUnavailable),
+        });
     }
 
     #[tokio::test]

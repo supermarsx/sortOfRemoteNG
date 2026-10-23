@@ -13,7 +13,7 @@ use cef::rc::Rc;
 use cef::*;
 use sorng_protocols::origin_browser::{
     BrowserIdentity, BrowserSessionFailure, BrowserSessionStatus, NativeProxyChallenge,
-    OriginBrowserSession,
+    OriginBrowserSession, ProxyAuthOutcome,
 };
 use std::os::raw::c_int;
 use std::sync::{
@@ -55,6 +55,7 @@ pub(crate) fn deny_permissions() -> Arc<WebsitePermissionEngine> {
 pub(crate) trait RequestLifecycle: Send + Sync {
     fn renderer_fault(&self, browser: Option<&Browser>);
     fn main_document_available(&self, browser: Option<&Browser>);
+    fn proxy_auth_completed(&self, _handled: bool, _outcome: ProxyAuthOutcome) {}
 }
 
 pub(crate) fn request_handler_with_lifecycle(
@@ -826,37 +827,59 @@ impl AuthCompletion for AuthCallback {
     }
 }
 
+#[cfg(test)]
+
 fn complete_auth(
     session: &Mutex<OriginBrowserSession>,
     identity: &BrowserIdentity,
     metadata: AuthMetadata<'_>,
     callback: Option<&impl AuthCompletion>,
 ) -> c_int {
-    let answered = {
+    complete_auth_observed(session, identity, metadata, callback, |_, _| {})
+}
+
+fn complete_auth_observed(
+    session: &Mutex<OriginBrowserSession>,
+    identity: &BrowserIdentity,
+    metadata: AuthMetadata<'_>,
+    callback: Option<&impl AuthCompletion>,
+    observe: impl FnOnce(bool, ProxyAuthOutcome),
+) -> c_int {
+    let outcome = {
         // Check poison even when callback/challenge metadata is absent. Drop
         // the guard before cancellation; no nested callback can retain it.
         let session = lock_attempt(session, identity);
-        callback.is_some_and(|callback| {
-            metadata.challenge().is_some_and(|challenge| {
-                session.as_ref().is_some_and(|session| {
+        match (session.as_ref(), callback) {
+            (None, _) => ProxyAuthOutcome::NativeStatePoisoned,
+            (_, None) => ProxyAuthOutcome::CallbackMissing,
+            (Some(session), Some(callback)) => match metadata.challenge() {
+                None => ProxyAuthOutcome::InvalidChallengeMetadata,
+                Some(challenge) => {
                     // Sole credential release path. Keep the healthy guard
                     // until native completion; never retain credentials across
                     // a task or release them from recovered poisoned state.
                     session
-                        .answer_proxy_challenge(identity, challenge, |user, password| {
+                        .answer_proxy_challenge_observed(identity, challenge, |user, password| {
                             callback.continue_with(user, password);
                         })
-                        .is_some()
-                })
-            })
-        })
+                        .map_or_else(
+                            |outcome| outcome,
+                            |()| ProxyAuthOutcome::CredentialDispatchedToCallback,
+                        )
+                }
+            },
+        }
     };
     let Some(callback) = callback else {
+        observe(false, outcome);
         return 0;
     };
-    if !answered {
+    if outcome != ProxyAuthOutcome::CredentialDispatchedToCallback {
         callback.cancel();
     }
+    // The observer never runs under the credential/session mutex, including
+    // cancellation and poisoned-state recovery. It grants no capability.
+    observe(true, outcome);
     // Completed exactly once, including explicit cancellation. Only a missing
     // callback uses CEF's immediate return-false cancellation.
     1
@@ -997,7 +1020,11 @@ wrap_request_handler! {
                 is_proxy, host: host.as_deref(), port,
                 realm: realm.as_deref(), scheme: scheme.as_deref(),
             };
-            complete_auth(&self.session, &self.identity, metadata, callback.as_deref())
+            complete_auth_observed(&self.session, &self.identity, metadata, callback.as_deref(), |handled, outcome| {
+                if let Some(lifecycle) = &self.lifecycle {
+                    lifecycle.proxy_auth_completed(handled, outcome);
+                }
+            })
         }
     }
 }
@@ -3125,6 +3152,160 @@ mod tests {
         assert_stream_closed(&mut upstream).await;
         let mut session = session.into_inner().unwrap_or_else(|p| p.into_inner());
         session.stop().await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn proxy_auth_outcomes_observe_actual_completion_after_unlock() {
+        let (session, identity) = session().await;
+        let endpoint = session.lock().unwrap().proxy_endpoint();
+        let host = endpoint.ip().to_string();
+        let metadata = || AuthMetadata {
+            is_proxy: 1,
+            host: Some(&host),
+            port: c_int::from(endpoint.port()),
+            realm: Some("private-forward-proxy"),
+            scheme: Some("basic"),
+        };
+        let completion = Completion::default();
+        let observed = std::cell::Cell::new(None);
+        let observe = |handled, outcome| {
+            assert!(
+                session.try_lock().is_ok(),
+                "observer must run after session unlock"
+            );
+            observed.set(Some((handled, outcome)));
+        };
+        assert_eq!(
+            complete_auth_observed(&session, &identity, metadata(), Some(&completion), observe),
+            1
+        );
+        assert_eq!(
+            observed.get(),
+            Some((true, ProxyAuthOutcome::CredentialDispatchedToCallback))
+        );
+        assert_eq!(
+            (completion.continued.get(), completion.cancelled.get()),
+            (1, 0)
+        );
+        assert_eq!(
+            complete_auth_observed(
+                &session,
+                &identity,
+                metadata(),
+                None::<&Completion>,
+                observe
+            ),
+            0
+        );
+        assert_eq!(
+            observed.get(),
+            Some((false, ProxyAuthOutcome::CallbackMissing))
+        );
+        let (_, stale) = self::session().await;
+        assert_eq!(
+            complete_auth_observed(&session, &stale, metadata(), Some(&completion), observe),
+            1
+        );
+        assert_eq!(observed.get(), Some((true, ProxyAuthOutcome::StaleAttempt)));
+        assert!(session
+            .lock()
+            .unwrap()
+            .with_proxy_credentials(|_, _| ())
+            .is_some());
+        for (input, expected) in [
+            (
+                AuthMetadata {
+                    port: -1,
+                    ..metadata()
+                },
+                ProxyAuthOutcome::InvalidChallengeMetadata,
+            ),
+            (
+                AuthMetadata {
+                    port: 65536,
+                    ..metadata()
+                },
+                ProxyAuthOutcome::InvalidChallengeMetadata,
+            ),
+            (
+                AuthMetadata {
+                    host: None,
+                    ..metadata()
+                },
+                ProxyAuthOutcome::InvalidChallengeMetadata,
+            ),
+            (
+                AuthMetadata {
+                    host: Some("localhost"),
+                    ..metadata()
+                },
+                ProxyAuthOutcome::EndpointMismatch,
+            ),
+            (
+                AuthMetadata {
+                    port: if endpoint.port() == 1 { 2 } else { 1 },
+                    ..metadata()
+                },
+                ProxyAuthOutcome::EndpointMismatch,
+            ),
+            (
+                AuthMetadata {
+                    realm: Some("private-sentinel"),
+                    ..metadata()
+                },
+                ProxyAuthOutcome::RealmMismatch,
+            ),
+            (
+                AuthMetadata {
+                    scheme: Some("digest"),
+                    ..metadata()
+                },
+                ProxyAuthOutcome::SchemeMismatch,
+            ),
+        ] {
+            let rejected = Completion::default();
+            assert_eq!(
+                complete_auth_observed(&session, &identity, input, Some(&rejected), observe),
+                1
+            );
+            assert_eq!(observed.get(), Some((true, expected)));
+            assert_eq!((rejected.continued.get(), rejected.cancelled.get()), (0, 1));
+        }
+        revoke_attempt(&session, &identity);
+        assert_eq!(
+            complete_auth_observed(&session, &identity, metadata(), Some(&completion), observe),
+            1
+        );
+        assert_eq!(
+            observed.get(),
+            Some((true, ProxyAuthOutcome::RelayUnavailable))
+        );
+        assert_eq!(
+            (completion.continued.get(), completion.cancelled.get()),
+            (1, 2)
+        );
+        poison(&session);
+        assert_eq!(
+            complete_auth_observed(
+                &session,
+                &identity,
+                metadata(),
+                Some(&completion),
+                |handled, outcome| {
+                    assert!(matches!(
+                        session.try_lock(),
+                        Err(std::sync::TryLockError::Poisoned(_))
+                    ));
+                    assert!(handled);
+                    assert_eq!(outcome, ProxyAuthOutcome::NativeStatePoisoned);
+                }
+            ),
+            1
+        );
+        assert_eq!(
+            (completion.continued.get(), completion.cancelled.get()),
+            (1, 3)
+        );
     }
 
     #[tokio::test]

@@ -494,6 +494,12 @@ observation explicitly enabled.
 
 - CEF global switch readback was true; all three attempts emitted proxy
   `AuthChallenge` and `AuthCompleted { handled: true }`.
+  Historical `handled` means the native callback was completed, including an
+  explicit cancellation. New optional typed proxy outcomes distinguish rejection
+  from `credential-dispatched-to-callback`; even dispatch does not prove that the
+  relay accepted authentication. Server-auth and old journal rows omit the outcome.
+  `relay-unavailable` includes explicit revocation and observed listener/task loss;
+  it does not infer which underlying condition caused an unavailable relay.
 - The local TLS server observed 26 HTTP requests; private-context isolation
   returned its proof. This does not prove full native cookie/login acceptance.
 - Each attempt emitted one `Closed` event and reported zero post-revocation

@@ -191,6 +191,17 @@ const events: Record<string, [LogCategory, string]> = {
 const number = (value: unknown): value is number =>
   typeof value === "number" && Number.isSafeInteger(value) && value >= 0;
 const human = (value: string) => value.replace(/-/g, " ");
+const proxyAuthOutcomes = [
+  "credential-dispatched-to-callback",
+  "callback-missing",
+  "invalid-challenge-metadata",
+  "stale-attempt",
+  "native-state-poisoned",
+  "relay-unavailable",
+  "scheme-mismatch",
+  "realm-mismatch",
+  "endpoint-mismatch",
+];
 const object = (value: unknown): Record<string, unknown> | null =>
   value !== null && typeof value === "object" && !Array.isArray(value)
     ? (value as Record<string, unknown>)
@@ -324,11 +335,21 @@ function journal(
       : unknown;
   }
   const details: string[] = [];
+  const authOutcome =
+    nav.event === "auth-completed" &&
+    typeof nav.outcome === "string" &&
+    proxyAuthOutcomes.includes(nav.outcome)
+      ? nav.outcome
+      : null;
+  if (authOutcome)
+    details.push(
+      `Outcome: ${authOutcome === "relay-unavailable" ? "relay unavailable or revoked" : human(authOutcome)}`,
+    );
   for (const [key, label] of [
     ["allowed", "Allowed"],
     ["main_frame", "Main frame"],
     ["fatal", "Fatal"],
-    ["handled", "Handled"],
+    ["handled", authOutcome ? "Callback completed" : "Handled"],
     ["callback_present", "Callback present"],
     ["default_disabled", "Default handler disabled"],
   ]) {
@@ -381,7 +402,11 @@ function journal(
     message,
     details: details.join(" · "),
     timestampMs,
-    level: /(?:error|failed|denied)$/.test(nav.event) ? "WARN" : "INFO",
+    level:
+      (authOutcome && authOutcome !== "credential-dispatched-to-callback") ||
+      /(?:error|failed|denied)$/.test(nav.event)
+        ? "WARN"
+        : "INFO",
   };
 }
 

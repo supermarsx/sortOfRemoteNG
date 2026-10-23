@@ -548,6 +548,21 @@ pub struct OriginBrowserSession {
     failure: BrowserSessionFailureState,
 }
 
+/// Closed native callback outcomes, never a claim that the relay accepted auth.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum ProxyAuthOutcome {
+    CredentialDispatchedToCallback,
+    CallbackMissing,
+    InvalidChallengeMetadata,
+    StaleAttempt,
+    NativeStatePoisoned,
+    RelayUnavailable,
+    SchemeMismatch,
+    RealmMismatch,
+    EndpointMismatch,
+}
+
 /// Challenge metadata from a trusted native engine callback, never page JS or
 /// renderer IPC. Hosts without an explicit proxy flag must establish it from
 /// the native challenge URI and the retained relay endpoint before constructing
@@ -655,13 +670,32 @@ impl OriginBrowserSession {
         challenge: NativeProxyChallenge<'_>,
         callback: impl FnOnce(&str, &str) -> R,
     ) -> Option<R> {
-        if self.check_identity(identity).is_err()
-            || !challenge.is_proxy
-            || !challenge.scheme.eq_ignore_ascii_case("basic")
-            || challenge.realm != "private-forward-proxy"
-            || challenge.port != self.proxy_endpoint().port()
-        {
-            return None;
+        self.answer_proxy_challenge_observed(identity, challenge, callback)
+            .ok()
+    }
+
+    /// Same authorization and completion as the compatibility API, with only a
+    /// fixed rejection category. No challenge value is retained or serialized.
+    pub fn answer_proxy_challenge_observed<R>(
+        &self,
+        identity: &BrowserIdentity,
+        challenge: NativeProxyChallenge<'_>,
+        callback: impl FnOnce(&str, &str) -> R,
+    ) -> Result<R, ProxyAuthOutcome> {
+        if self.check_identity(identity).is_err() {
+            return Err(ProxyAuthOutcome::StaleAttempt);
+        }
+        if !challenge.is_proxy {
+            return Err(ProxyAuthOutcome::InvalidChallengeMetadata);
+        }
+        if !challenge.scheme.eq_ignore_ascii_case("basic") {
+            return Err(ProxyAuthOutcome::SchemeMismatch);
+        }
+        if challenge.realm != "private-forward-proxy" {
+            return Err(ProxyAuthOutcome::RealmMismatch);
+        }
+        if challenge.port != self.proxy_endpoint().port() {
+            return Err(ProxyAuthOutcome::EndpointMismatch);
         }
         // Native engines may return an IPv6 host with or without URL brackets.
         // Parsing remains numeric-only, with no scoped addresses or host aliases.
@@ -671,9 +705,10 @@ impl OriginBrowserSession {
             .and_then(|value| value.strip_suffix(']'))
             .unwrap_or(challenge.host);
         if host.parse::<IpAddr>().ok() != Some(self.proxy_endpoint().ip()) {
-            return None;
+            return Err(ProxyAuthOutcome::EndpointMismatch);
         }
         self.with_proxy_credentials(callback)
+            .ok_or(ProxyAuthOutcome::RelayUnavailable)
     }
 
     fn check_identity(&self, identity: &BrowserIdentity) -> Result<(), BrowserPolicyError> {
