@@ -54,6 +54,8 @@ pub(crate) mod certificate_review;
 
 #[path = "origin_browser_renderer_deadline.rs"]
 mod renderer_deadline;
+#[path = "origin_browser_renderer_startup.rs"]
+mod renderer_startup;
 
 #[path = "origin_browser_runtime_flow.rs"]
 mod flow;
@@ -126,6 +128,7 @@ fn view_failure(failure: Failure, message: &'static str) -> String {
 }
 
 struct Attempt {
+    renderer_startup: renderer_startup::RendererStartup,
     route_health: sorng_core::route_health::RouteHealthReader,
     timing: Trace,
     navigation_submitted: AtomicBool,
@@ -1185,6 +1188,9 @@ impl BrowserEventSink for Sink {
             && matches!(event.state.fault, Some(BrowserFault::Renderer))
             && !self.attempt.cancelled.load(Ordering::Acquire)
         {
+            self.attempt
+                .renderer_startup
+                .observe_renderer_failure(self.attempt.current());
             // Renderer lifecycle/bridge failure, not a GPU capability warning.
             // The queue accepts fixed enums only; no page or native error text.
             diagnostics::record(Stage::RuntimeFault, Some(Failure::RendererFault));
@@ -1412,6 +1418,7 @@ async fn create_document(
     let session = Arc::new(Mutex::new(session));
     timing.mark(TimingStage::ProxyReady);
     let attempt = Arc::new(Attempt {
+        renderer_startup: renderer_startup::RendererStartup::default(),
         timing: timing.clone(),
         navigation_submitted: AtomicBool::new(false),
         downloads: downloads::DownloadOwner::new(
@@ -2390,13 +2397,25 @@ pub(crate) fn tick() {
                 );
             }
             if let Some(start) = view.start.take() {
-                if !shared().admission.ready()
-                    || !view.attempt.current()
-                    || start.response.is_closed()
-                {
+                let decision = view.attempt.renderer_startup.decision(
+                    renderer_startup::StartState {
+                        current: view.attempt.current(),
+                        runtime_ready: shared().admission.ready(),
+                        document_current: view.attempt.document.current(),
+                        ordinary_close: view.attempt.ordinary_close.load(Ordering::Acquire),
+                        response_open: !start.response.is_closed(),
+                    },
+                );
+                if decision == renderer_startup::Decision::RendererFailed {
+                    view.attempt.revoke();
+                    let _ = start
+                        .response
+                        .send(Err(view_failure(Failure::RendererSetup, RENDERER_FAILED)));
+                } else if decision == renderer_startup::Decision::Stale {
                     view.attempt.revoke();
                     let _ = start.response.send(Err(STALE.into()));
                 } else if renderer_deadline::expired(Instant::now(), start.deadline) {
+                    view.attempt.renderer_startup.finish();
                     view.attempt.revoke();
                     let _ = start
                         .response
@@ -2405,6 +2424,7 @@ pub(crate) fn tick() {
                     match view.host.features_ready(&view.attempt.identity) {
                         Ok(false) => view.start = Some(start),
                         Err(error) => {
+                            view.attempt.renderer_startup.finish();
                             log::error!("Native browser stage=renderer-setup error={error}");
                             view.attempt.revoke();
                             let _ = start
@@ -2412,6 +2432,7 @@ pub(crate) fn tick() {
                                 .send(Err(view_failure(Failure::RendererSetup, RENDERER_FAILED)));
                         }
                         Ok(true) => {
+                            view.attempt.renderer_startup.finish();
                             view.attempt.timing.mark(TimingStage::RendererReady);
                             // Signal preparation only. The async create path
                             // must recheck saved authority before reporting the

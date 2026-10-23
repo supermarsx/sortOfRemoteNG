@@ -1,12 +1,86 @@
 //! Exercise the production async handoffs without initializing CEF or networking.
 #[path = "../../../src/origin_browser_runtime_flow.rs"]
 mod flow;
+#[path = "../../../src/origin_browser_renderer_startup.rs"]
+mod renderer_startup;
 
 use std::{
     cell::{Cell, RefCell},
     time::Duration,
 };
 use tokio::sync::oneshot;
+
+fn renderer_start_state() -> renderer_startup::StartState {
+    renderer_startup::StartState {
+        current: true,
+        runtime_ready: true,
+        document_current: true,
+        ordinary_close: false,
+        response_open: true,
+    }
+}
+
+#[tokio::test]
+async fn renderer_startup_reports_observed_fault_after_its_own_revocation() {
+    use renderer_startup::{Decision, RendererStartup};
+    let startup = RendererStartup::default();
+    let (sender, receiver) = oneshot::channel();
+    startup.observe_renderer_failure(true);
+    let mut state = renderer_start_state();
+    state.current = false; // The real renderer callback revoked its attempt.
+    let decision = startup.decision(state);
+    assert_eq!(decision, Decision::RendererFailed);
+    sender.send(decision).unwrap();
+    assert_eq!(receiver.await.unwrap(), Decision::RendererFailed);
+    // The same completed receipt cannot be replayed as a new renderer failure.
+    let mut state = renderer_start_state();
+    state.current = false;
+    assert_eq!(startup.decision(state), Decision::Stale);
+}
+
+#[test]
+fn renderer_startup_does_not_upgrade_foreign_or_cancelled_events_to_faults() {
+    use renderer_startup::{Decision, RendererStartup};
+    let startup = RendererStartup::default();
+    startup.observe_renderer_failure(false);
+    let mut state = renderer_start_state();
+    state.current = false;
+    assert_eq!(startup.decision(state), Decision::Stale);
+    startup.observe_renderer_failure(true);
+    let mut state = renderer_start_state();
+    state.current = false;
+    assert_eq!(startup.decision(state), Decision::Stale);
+}
+
+#[test]
+fn renderer_startup_discarded_document_close_or_response_supersedes_old_fault() {
+    use renderer_startup::{Decision, RendererStartup};
+    for invalidation in 0..4 {
+        let startup = RendererStartup::default();
+        startup.observe_renderer_failure(true);
+        let mut state = renderer_start_state();
+        match invalidation {
+            0 => state.document_current = false,
+            1 => state.ordinary_close = true,
+            2 => state.response_open = false,
+            _ => state.runtime_ready = false,
+        }
+        assert_eq!(startup.decision(state), Decision::Stale);
+        assert_eq!(startup.decision(renderer_start_state()), Decision::Stale);
+    }
+}
+
+#[test]
+fn renderer_startup_success_cannot_inherit_a_later_document_failure() {
+    use renderer_startup::{Decision, RendererStartup};
+    let startup = RendererStartup::default();
+    assert_eq!(startup.decision(renderer_start_state()), Decision::Continue);
+    startup.finish();
+    startup.observe_renderer_failure(true);
+    let mut state = renderer_start_state();
+    state.current = false;
+    assert_eq!(startup.decision(state), Decision::Stale);
+}
 
 #[test]
 fn blocked_attempt_revocation_leaves_registry_available() {
