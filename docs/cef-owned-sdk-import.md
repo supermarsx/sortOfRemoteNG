@@ -10,7 +10,7 @@ This opt-in producer ingests operator-reviewed local bytes. It does **not** repl
 
 ## Review before use
 
-A separate reviewed change must register a portable record at `native/cef-owned-sdk-imports/<review-id>/review.json`, preserve its exact bytes, and independently approve its raw SHA256. No real review records are included with this implementation.
+A separate reviewed change must register a portable record at `native/cef-owned-sdk-imports/<review-id>/review.json`, preserve its exact bytes, and independently approve its raw SHA256. A review record alone does not establish native runtime readiness.
 
 The closed record binds one target, original source identity, original raw source-lock digest, descriptor, engine, inventory count, exact five asset names/sizes/digests, raw genuine handoff digest, original evidence pins, reviewed Python digest/size and canonical original review digest. It contains no original machine paths, credentials or raw private evidence. Only Windows x64 packages and owned Linux x64 engine results are supported. The supplied original source identity is never rebound to the current six-platform lock.
 
@@ -38,4 +38,8 @@ An owned-import selection has exactly eleven fields: `target`, `runId`, `headSha
 
 The acceptance adapter verifies repository/default branch/manual workflow/run attempt/current successful status and immutable source digest before GET-only transport. It binds the small Actions seal, portable review and unchanged five draft assets, then revalidates the actual bundle. Transport tokens do not enter native fixture processes. Real TLS and HTTP/2 admission, revocation, isolation, sandbox, privacy and cleanup gates remain required on the actual native target. A static seal is not native acceptance.
 
-The existing publisher derives identities per bundle, but its protected workflow still expects reviewed hosted inputs. Publication authorization/adapter wiring, actual review records, immutable catalog pins, and all required platform acceptance are separate pending work. This importer neither changes defaults nor publishes a runtime.
+After a successful direct native acceptance run, register a separately reviewed `native/cef-owned-sdk-imports/<review-id>/publication.json` record. It binds the original import selection and the exact acceptance run, attempt, source code, artifact, seal and report digests.
+
+The manual `cef-owned-sdk-publish.yml` workflow verifies that record without write access, then repeats verification in the protected `cef-runtime-publish` environment before immutable engineering publication. Its publication queue does not cancel an active publisher. Successful verification preserves the original local-build provenance and never claims hosted compilation or production readiness.
+
+Actual review records, successful native runs, immutable catalog pins and all required platform acceptance remain necessary before an application release. These opt-in workflows do not change runtime defaults or the all-platform release gate.
