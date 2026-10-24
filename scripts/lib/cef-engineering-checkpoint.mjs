@@ -1802,7 +1802,9 @@ export async function downloadAsset(
     {
       headers: {
         Authorization: `Bearer ${token}`,
-        Accept: "application/octet-stream",
+        Accept: route.startsWith("/actions/artifacts/")
+          ? "application/vnd.github+json"
+          : "application/octet-stream",
         "X-GitHub-Api-Version": "2022-11-28",
       },
       redirect: "manual",

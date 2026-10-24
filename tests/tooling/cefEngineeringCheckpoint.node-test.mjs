@@ -288,6 +288,61 @@ test("restore client is closed GET-only and cannot reach foreign repo endpoints"
   );
   assert.equal(calls.length, 1);
 });
+test("Actions ZIP negotiates JSON before signed bytes; release assets retain octet-stream", async (t) => {
+  const root = await scratch(t),
+    bytes = Buffer.from("sealed-owned-bytes");
+  for (const [route, accept, host] of [
+    [
+      "/actions/artifacts/55/zip",
+      "application/vnd.github+json",
+      "productionresultssa0.blob.core.windows.net",
+    ],
+    [
+      "/releases/assets/44",
+      "application/octet-stream",
+      "release-assets.githubusercontent.com",
+    ],
+  ]) {
+    const calls = [];
+    const file = path.join(
+      root,
+      route.startsWith("/actions/") ? "actions.zip" : "release.bin",
+    );
+    await downloadAsset(
+      "owner/repo",
+      "credential",
+      route,
+      file,
+      { bytes: bytes.length, sha256: sha(bytes) },
+      {
+        request: async (url, opts) => {
+          calls.push({ url: String(url), opts });
+          if (calls.length === 1)
+            return opts.headers.Accept === accept
+              ? new Response(null, {
+                  status: 302,
+                  headers: {
+                    location: `https://${host}/owned?signature=private`,
+                  },
+                })
+              : new Response(null, { status: 415 });
+          return new Response(bytes);
+        },
+      },
+    );
+    assert.equal(
+      calls[0].url,
+      `https://api.github.com/repos/owner/repo${route}`,
+    );
+    assert.equal(calls[0].opts.headers.Accept, accept);
+    assert.equal(calls[0].opts.headers.Authorization, "Bearer credential");
+    assert.equal(calls[0].opts.redirect, "manual");
+    assert.equal(calls[1].opts.headers, undefined);
+    assert.equal(calls[1].opts.redirect, "error");
+    assert.deepEqual(await readFile(file), bytes);
+  }
+});
+
 test("download strips auth on verified redirect and rejects hostile redirects before request", async (t) => {
   const root = await scratch(t),
     bytes = Buffer.from("owned-bytes"),
@@ -364,6 +419,112 @@ test("asset tamper or oversized stream never becomes an admitted download", asyn
       { request: async () => new Response("y") },
     ),
   );
+});
+
+test("both download routes reject failed statuses, byte tamper and short or oversized bodies without fallback", async (t) => {
+  const root = await scratch(t);
+  let index = 0;
+  for (const route of ["/actions/artifacts/55/zip", "/releases/assets/44"]) {
+    for (const [body, status] of [
+      ["", 403],
+      ["", 415],
+      ["", 500],
+      ["", 200],
+      ["y", 200],
+      ["xx", 200],
+    ]) {
+      let calls = 0;
+      const file = path.join(root, `denied-${index++}`);
+      await assert.rejects(
+        downloadAsset(
+          "owner/repo",
+          "credential",
+          route,
+          file,
+          { bytes: 1, sha256: sha("x") },
+          {
+            request: async () => {
+              calls++;
+              return new Response(body, { status });
+            },
+          },
+        ),
+      );
+      assert.equal(calls, 1);
+      if (status !== 200)
+        await assert.rejects(readFile(file), { code: "ENOENT" });
+    }
+    let calls = 0;
+    await assert.rejects(
+      downloadAsset(
+        "owner/repo",
+        "credential",
+        route,
+        path.join(root, `unsafe-${index++}`),
+        { bytes: 1, sha256: sha("x") },
+        {
+          request: async () => {
+            calls++;
+            return new Response(null, {
+              status: 302,
+              headers: {
+                location: "https://foreign.invalid/owned?secret=private",
+              },
+            });
+          },
+        },
+      ),
+      /Unreviewed asset download domain/,
+    );
+    assert.equal(calls, 1);
+  }
+});
+
+test("route media negotiation cannot admit another route or bypass the carried deadline or expected-byte bound", async (t) => {
+  const root = await scratch(t);
+  let requests = 0;
+  const request = async () => {
+    requests++;
+    return new Response("x");
+  };
+  for (const route of [
+    "/actions/artifacts/55/tar",
+    "/actions/artifacts/55/zip?redirect=foreign",
+    "/releases/assets/0",
+    "https://foreign.invalid/zip",
+  ]) {
+    await assert.rejects(
+      downloadAsset(
+        "owner/repo",
+        "credential",
+        route,
+        path.join(root, "none"),
+        { bytes: 1, sha256: sha("x") },
+        { request },
+      ),
+    );
+  }
+  await assert.rejects(
+    downloadAsset(
+      "owner/repo",
+      "credential",
+      "/actions/artifacts/55/zip",
+      path.join(root, "expired"),
+      { bytes: 1, sha256: sha("x") },
+      { request, deadline: Date.now() - 1 },
+    ),
+  );
+  await assert.rejects(
+    downloadAsset(
+      "owner/repo",
+      "credential",
+      "/actions/artifacts/55/zip",
+      path.join(root, "oversized"),
+      { bytes: 2, sha256: sha("xx") },
+      { request, maximum: 1 },
+    ),
+  );
+  assert.equal(requests, 0);
 });
 test("quiescence does not mistake a remaining owned group for safe archive input", async () => {
   assert.equal(
