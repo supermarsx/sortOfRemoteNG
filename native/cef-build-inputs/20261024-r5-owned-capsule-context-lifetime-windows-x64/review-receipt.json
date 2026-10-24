@@ -1,0 +1,93 @@
+{
+  "schemaVersion": 1,
+  "kind": "sorng-cef-build-input-review",
+  "scope": "Source-only additive capsule/factory lifetime fix. Tests uncompiled; no engine build, SDK, acceptance, performance or publication proof.",
+  "sourceLockIdentity": "626d080f2b6ec0019c00bbc5f1626be9dd08ee87b92f5b6db6763258b87af10a",
+  "sourceLockRawSha256": "1018fcbdf5569abbdd0d3a587210aa4b134af7db69687c61ab2e38040ddb91fa",
+  "baseSourceLockIdentity": "1381a26cc354669adc843224dcf066721adecb62cf75c0d8108d325a260edbdc",
+  "baseSourceLockRawSha256": "2f1637b0bedccbed6c402af9e99e00bcbd87d59c01f7806f7664658ceee80ab0",
+  "bridgeAbiVersion": 2,
+  "bridgeRevision": 5,
+  "capabilities": [
+    "socket-admission",
+    "context-revoke",
+    "same-authority-http2",
+    "scoped-exceptions",
+    "custom-ca",
+    "private-context",
+    "proxy-applied",
+    "bounded-context-retirement",
+    "owned-http3"
+  ],
+  "patch18": {
+    "repository": "chromium",
+    "path": "patches/0018-chromium-owned-capsule-context-lifetime.patch",
+    "sha256": "64b0c79cf40284dba8b93ee47fd3268d827a71b09860895c2770666296b4b383"
+  },
+  "all17PatchesHeaderGnAndToolchainBytesUnchanged": true,
+  "allOriginalUpstreamInventoryBytesUnchanged": true,
+  "pristineUpstream": [
+    {
+      "path": "services/network/network_context.cc",
+      "sha256": "a3270f4c1a0e66f7f51b89e130c9b7179a7ea0f3dbff823ab13c4c82093a33ad",
+      "commit": "a654841425914cbb703a2931e07b70a83aedbafd"
+    },
+    {
+      "path": "services/network/network_context.h",
+      "sha256": "b83318bd55116c8e9669fce81f848caab005fb8a1f1ae1a0798dbbb34199f3ab",
+      "commit": "a654841425914cbb703a2931e07b70a83aedbafd"
+    }
+  ],
+  "earlierPatchCreatedFilesWithoutPristineUpstreamHash": [
+    "net/socket/sorng_capsule_datagram_client_socket.cc",
+    "net/socket/sorng_capsule_datagram_client_socket.h",
+    "net/socket/sorng_capsule_datagram_client_socket_unittest.cc",
+    "services/network/sorng_datagram_configuration_unittest.cc"
+  ],
+  "reviewedPost17SourcePreimages": [
+    {
+      "path": "net/socket/sorng_capsule_datagram_client_socket.cc",
+      "sha256": "a4e238cc1e2736c57faba2e6c0a094bb05d75f1298c9469c267be25ba5057600"
+    },
+    {
+      "path": "net/socket/sorng_capsule_datagram_client_socket.h",
+      "sha256": "7902f3763bab3c10280ffe53dbd066b32277b843452d9f4e27a1693ba51c37de"
+    },
+    {
+      "path": "net/socket/sorng_capsule_datagram_client_socket_unittest.cc",
+      "sha256": "ad276359be11ebfc77ab81611ca2f49f89e2626e646257012379864c0a670f9d"
+    },
+    {
+      "path": "services/network/network_context.cc",
+      "sha256": "46be125f3b61ca09f9f526031b4ebf29f0eb21078de92610f54a6af36965b481"
+    },
+    {
+      "path": "services/network/network_context.h",
+      "sha256": "672245aacccfc0eef63fbc0c525803407cde06cda1f29b1addf7c643f66b7e49"
+    },
+    {
+      "path": "services/network/sorng_datagram_configuration_unittest.cc",
+      "sha256": "1c1e03f49162337fb3e228ceca7089c7e3d52051e6a358daac30c82b35788922"
+    }
+  ],
+  "sourcePatchApplyCheck": true,
+  "sourcePatchApplyRoundtripRawBytes": true,
+  "securityPolicy": "Existing GN bytes unchanged, including tracer=false and enabled BRP/DPD/GWP/sandbox. Actual generated flags and native tests remain mandatory.",
+  "pinnedToolFiles": 8,
+  "actualToolFilesReverifiedForThisCandidate": 0,
+  "engineCompiled": false,
+  "nativeTestsCompiled": false,
+  "nativeTestsRun": false,
+  "sdkCreated": false,
+  "runtimeAcceptance": false,
+  "defaultSelectionChanged": false,
+  "oldNativeProofTransferred": false,
+  "remainingGates": [
+    "Independent canonical patch/input review",
+    "Explicit FCEF source/output lease and original source/tool/args/DLL/PDB beforeimage proof",
+    "Actual old-production/new-test causal RED under owned bounded test launcher, then fixed real target tests",
+    "Generated flag inspection preserving BRP/DPD/GWP/sandbox and production tracer=false",
+    "Explicit incremental whole-engine build and symbols; new immutable SDK",
+    "All real required TLS/H2/H3 native acceptance before runtime eligibility"
+  ]
+}
