@@ -1,7 +1,15 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { mkdtemp, readFile, realpath, rm, writeFile } from "node:fs/promises";
+import {
+  lstat,
+  mkdir,
+  mkdtemp,
+  readFile,
+  realpath,
+  rm,
+  writeFile,
+} from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 
@@ -90,6 +98,218 @@ test("maintained tracer delta changes only node-destruction placement, not secur
   assert.equal(
     row[0].sha256,
     "853a73637d8aa9cb5c6c93650ca4eead862426185eb37b51f97d6c8bd2283a67",
+  );
+});
+
+const allocationPatchName =
+  "0017-chromium-instance-tracer-allocation-reentrancy.patch";
+const allocationRoot =
+  "base/allocator/partition_allocator/src/partition_alloc/";
+
+function patchFile(patch, relative) {
+  const expected = `diff --git a/${relative} b/${relative}`;
+  const sections = patch.split(/(?=^diff --git )/m);
+  const matches = sections.filter(
+    (section) => section.split("\n")[0] === expected,
+  );
+  assert.equal(
+    matches.length,
+    1,
+    `Exactly one maintained delta for ${relative}`,
+  );
+  return matches[0];
+}
+
+function addedFile(patch, relative) {
+  const section = patchFile(patch, relative);
+  assert.match(section, /^new file mode 100644$/m);
+  assert.match(section, /^--- \/dev\/null$/m);
+  const hunks = [...section.matchAll(/^@@ -0,0 \+1,([1-9][0-9]*) @@$/gm)];
+  assert.equal(hunks.length, 1, "Extract the complete actual added file");
+  const body = section.slice(hunks[0].index + hunks[0][0].length + 1);
+  const lines = body.split("\n");
+  assert.equal(lines.pop(), "", "Maintained source ends with a newline");
+  assert.equal(lines.length, Number(hunks[0][1]));
+  assert.ok(lines.every((line) => line.startsWith("+")));
+  return lines.map((line) => line.slice(1)).join("\n") + "\n";
+}
+
+// Mask lexical non-code without joining statements across source lines.
+function cppCode(source) {
+  return source.replace(
+    /R"([^ ()\\\t\r\n]{0,16})\([\s\S]*?\)\1"|\/\*[\s\S]*?\*\/|\/\/(?:\\\r?\n|[^\n])*|"(?:\\[\s\S]|[^"\\])*"|'(?:\\[\s\S]|[^'\\])*'/g,
+    (token) => token.replace(/[^\n]/g, " "),
+  );
+}
+
+function assertDelegation(source) {
+  assert.doesNotMatch(
+    source,
+    /\\\r?\n/,
+    "Line splicing is unsupported in the maintained delegation projection",
+  );
+  const implementation = cppCode(source);
+  assert.match(implementation, /InstanceTracerStorage<Info>/);
+  assert.match(
+    implementation,
+    /^[ \t]*GetStorage\(\)\.Trace\(owner_id, slot_count, may_dangle\);[ \t]*$/m,
+  );
+  assert.match(
+    implementation,
+    /^[ \t]*GetStorage\(\)\.Untrace\(owner_id\);[ \t]*$/m,
+  );
+  assert.match(
+    implementation,
+    /^[ \t]*return GetStorage\(\)\.GetStackTracesForAllocation\(allocation\);[ \t]*$/m,
+  );
+  assert.doesNotMatch(
+    implementation,
+    /recursive_mutex|thread_local|enable_backup_ref_ptr.*=/,
+  );
+}
+
+async function allocationSources() {
+  const [patch, series] = await Promise.all([
+    readFile(new URL(allocationPatchName, seriesRoot), "utf8"),
+    readFile(new URL("series", seriesRoot), "utf8"),
+  ]);
+  assert.equal(
+    series
+      .split(/\r?\n/)
+      .filter((line) => line === `chromium ${allocationPatchName}`).length,
+    1,
+    "The allocation fix must be registered exactly once",
+  );
+  const implementation = patchFile(patch, sourcePath)
+    .split(/\r?\n/)
+    .filter(
+      (line) =>
+        line.startsWith(" ") ||
+        (line.startsWith("+") && !line.startsWith("+++")),
+    )
+    .map((line) => line.slice(1))
+    .join("\n");
+  assertDelegation(implementation);
+  return {
+    header: addedFile(
+      patch,
+      allocationRoot + "pointers/instance_tracer_storage.h",
+    ),
+    tests: addedFile(
+      patch,
+      allocationRoot + "pointers/instance_tracer_storage_unittest.cc",
+    ),
+  };
+}
+
+test("delegation statements must be code, including across patch context lines", () => {
+  const statements = [
+    "InstanceTracerStorage<Info>",
+    "GetStorage().Trace(owner_id, slot_count, may_dangle);",
+    "GetStorage().Untrace(owner_id);",
+    "return GetStorage().GetStackTracesForAllocation(allocation);",
+  ];
+  assertDelegation(statements.join("\n"));
+  assert.throws(() =>
+    assertDelegation("/" + "\\" + "\n*\n" + statements.join("\n") + "\n*/"),
+  );
+  for (let index = 1; index < statements.length; index++) {
+    for (const hide of [
+      (line) => `/*\n${line}\n*/`,
+      (line) => `// ${line}`,
+      (line) => `"escaped \\"\n${line}\n"`,
+      (line) => `R"tag(\n${line}\n)tag"`,
+    ]) {
+      const changed = [...statements];
+      changed[index] = hide(changed[index]);
+      assert.throws(() => assertDelegation(changed.join("\n")));
+    }
+  }
+});
+
+test("patch 17 binds the tested storage to every real tracer operation", async () => {
+  const sources = await allocationSources();
+  assert.match(sources.header, /class InstanceTracerStorage/);
+  assert.match(
+    sources.tests,
+    /#include "partition_alloc\/pointers\/instance_tracer_storage\.h"/,
+  );
+  assert.match(sources.tests, /InstanceTracerStorageIntegrationTest/);
+});
+
+test("patch 17 actual shared header and same nine tests compile and run without Chromium initialization", async (t) => {
+  const sources = await allocationSources();
+  const candidates = process.env.CXX ? [process.env.CXX] : ["clang++", "g++"];
+  let compiler;
+  for (const candidate of candidates) {
+    const version = run(candidate, ["--version"], { timeout: 5_000 });
+    if (!version.error && version.status === 0) {
+      compiler = candidate;
+      t.diagnostic(version.stdout.split(/\r?\n/)[0]);
+      break;
+    }
+  }
+  assert.ok(
+    compiler,
+    "A C++17 compiler is required to execute maintained storage regressions",
+  );
+  const parent = await realpath(os.tmpdir());
+  const parentStamp = await lstat(parent, { bigint: true });
+  const root = await mkdtemp(path.join(parent, "sorng-tracer-allocation-"));
+  const rootStamp = await lstat(root, { bigint: true });
+  t.after(async () => {
+    const currentParent = await lstat(parent, { bigint: true });
+    const currentRoot = await lstat(root, { bigint: true });
+    assert.ok(currentRoot.isDirectory() && !currentRoot.isSymbolicLink());
+    assert.equal(await realpath(root), root);
+    assert.equal(await realpath(parent), parent);
+    assert.equal(path.dirname(root), parent);
+    assert.ok(path.basename(root).startsWith("sorng-tracer-allocation-"));
+    for (const field of ["dev", "ino"]) {
+      assert.equal(currentRoot[field], rootStamp[field]);
+      assert.equal(currentParent[field], parentStamp[field]);
+    }
+    await rm(root, { recursive: true, force: true });
+  });
+  const directory = path.join(root, "partition_alloc", "pointers");
+  await mkdir(directory, { recursive: true });
+  await writeFile(
+    path.join(directory, "instance_tracer_storage.h"),
+    sources.header,
+    { flag: "wx" },
+  );
+  const source = path.join(root, "instance_tracer_storage_unittest.cc");
+  await writeFile(source, sources.tests, { flag: "wx" });
+  const binary = path.join(
+    root,
+    "storage-tests" + (process.platform === "win32" ? ".exe" : ""),
+  );
+  const compiled = run(
+    compiler,
+    [
+      "-std=c++17",
+      "-pthread",
+      "-O0",
+      "-Wall",
+      "-Wextra",
+      "-Werror",
+      "-DSORNG_INSTANCE_TRACER_STORAGE_STANDALONE",
+      "-I",
+      root,
+      source,
+      "-o",
+      binary,
+    ],
+    { cwd: root },
+  );
+  assert.ifError(compiled.error);
+  assert.equal(compiled.status, 0, `${compiled.stdout}\n${compiled.stderr}`);
+  const result = run(binary, [], { cwd: root, timeout: 10_000 });
+  assert.ifError(result.error);
+  assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`);
+  assert.match(result.stdout, /^tests=9 failures=0\r?$/m);
+  t.diagnostic(
+    "Nine tests executed from the exact patch header and test source; real raw_ptr/engine acceptance is a separate gate",
   );
 });
 
