@@ -138,12 +138,37 @@ const SHELL32_IMPORTS: &[&str] = &[
     "DragQueryFileW",
 ];
 
+// The H3 fixture's RNG adds an SDK SystemFunction036 import beside thirteen
+// windows-targets security imports. Their mixed-case DLL names leave the RNG
+// slot outside the advertised delay IAT. Resolve the complete observed closure
+// from the SDK before scanning dependency archives; keep Advapi32 delayed.
+const ADVAPI32_IMPORTS: &[&str] = &[
+    "SystemFunction036",
+    "IsValidAcl",
+    "GetAce",
+    "GetSecurityInfo",
+    "GetSecurityDescriptorControl",
+    "InitializeAcl",
+    "AddAce",
+    "InitializeSecurityDescriptor",
+    "SetSecurityDescriptorOwner",
+    "SetSecurityDescriptorGroup",
+    "SetSecurityDescriptorDacl",
+    "SetSecurityDescriptorControl",
+    "MapGenericMask",
+    "RegGetValueW",
+];
+
 fn canonical_import_directives(cef_enabled: bool, os: &str, env: &str) -> Vec<String> {
     if !cef_enabled || os != "windows" || env != "msvc" {
         return Vec::new();
     }
     let mut result = Vec::new();
-    for (library, imports) in [("ws2_32", WINSOCK_IMPORTS), ("shell32", SHELL32_IMPORTS)] {
+    for (library, imports) in [
+        ("ws2_32", WINSOCK_IMPORTS),
+        ("shell32", SHELL32_IMPORTS),
+        ("advapi32", ADVAPI32_IMPORTS),
+    ] {
         result.push(format!("cargo:rustc-link-lib=dylib={library}"));
         result.extend(
             imports
@@ -213,7 +238,7 @@ mod tests {
         assert_eq!(directives[0], "cargo:rustc-link-lib=dylib=ws2_32");
         assert_eq!(
             directives.len(),
-            WINSOCK_IMPORTS.len() + SHELL32_IMPORTS.len() + 2
+            WINSOCK_IMPORTS.len() + SHELL32_IMPORTS.len() + ADVAPI32_IMPORTS.len() + 3
         );
         assert_eq!(
             WINSOCK_IMPORTS.len(),
@@ -263,6 +288,42 @@ mod tests {
         assert!(linker_arguments(true, "windows", "msvc")
             .unwrap()
             .contains(&"/DELAYLOAD:shell32.dll".to_owned()));
+    }
+
+    #[test]
+    fn canonical_advapi32_imports_cover_rng_and_security_fragments() {
+        let directives = canonical_import_directives(true, "windows", "msvc");
+        let first = WINSOCK_IMPORTS.len() + SHELL32_IMPORTS.len() + 2;
+        assert_eq!(
+            directives.get(first).map(String::as_str),
+            Some("cargo:rustc-link-lib=dylib=advapi32")
+        );
+        let observed = [
+            "SystemFunction036",
+            "IsValidAcl",
+            "GetAce",
+            "GetSecurityInfo",
+            "GetSecurityDescriptorControl",
+            "InitializeAcl",
+            "AddAce",
+            "InitializeSecurityDescriptor",
+            "SetSecurityDescriptorOwner",
+            "SetSecurityDescriptorGroup",
+            "SetSecurityDescriptorDacl",
+            "SetSecurityDescriptorControl",
+            "MapGenericMask",
+            "RegGetValueW",
+        ];
+        assert_eq!(directives.len(), first + 1 + observed.len());
+        for (index, symbol) in observed.iter().enumerate() {
+            assert_eq!(
+                directives[first + index + 1],
+                format!("cargo:rustc-link-arg=/INCLUDE:__imp_{symbol}")
+            );
+        }
+        assert!(linker_arguments(true, "windows", "msvc")
+            .unwrap()
+            .contains(&"/DELAYLOAD:advapi32.dll".to_owned()));
     }
 
     #[test]

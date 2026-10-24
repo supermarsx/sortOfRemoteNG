@@ -510,6 +510,65 @@ test("recognized tail cannot target an unadvertised descriptor", () => {
   rejects(f.buffer, /targets unadvertised descriptor 0x1800/);
 });
 
+const observedAdvapiSecurityImports = [
+  "IsValidAcl",
+  "GetAce",
+  "GetSecurityInfo",
+  "GetSecurityDescriptorControl",
+  "InitializeAcl",
+  "AddAce",
+  "InitializeSecurityDescriptor",
+  "SetSecurityDescriptorOwner",
+  "SetSecurityDescriptorGroup",
+  "SetSecurityDescriptorDacl",
+  "SetSecurityDescriptorControl",
+  "MapGenericMask",
+  "RegGetValueW",
+];
+
+test("rejects the real detached SystemFunction036 slot beside thirteen Advapi security slots", () => {
+  const f = codeFixture({
+    delayed: [
+      { dll: "WS2_32.dll", names: symbols },
+      { dll: "advapi32.dll", names: observedAdvapiSecurityImports },
+    ],
+  });
+  // The actual H3 DLL's one-entry RNG INT/IAT is outside the thirteen-entry
+  // advertised Advapi table, but invokes that same descriptor's helper tail.
+  f.writeThunk(0x2180, 0x1e00, 0x2300);
+  const before = Buffer.from(f.buffer);
+  rejects(
+    f.buffer,
+    /orphan MSVC x64.*slot 0x1e00.*outside advapi32\.dll descriptor/,
+  );
+  assert.deepEqual(
+    f.buffer,
+    before,
+    "validation must never repair an orphan slot",
+  );
+});
+
+test("accepts all fourteen canonical SDK Advapi imports while keeping their thunks delayed", () => {
+  const f = codeFixture({
+    delayed: [
+      { dll: "WS2_32.dll", names: symbols },
+      {
+        dll: "ADVAPI32.dll",
+        names: ["SystemFunction036", ...observedAdvapiSecurityImports],
+      },
+    ],
+  });
+  const before = Buffer.from(f.buffer);
+  assert.deepEqual(validateBrowserClientImports(f.buffer, x64).thunkOwnership, {
+    format: "msvc-x64",
+    status: "recognized-patterns-checked",
+    recognizedThunks: 18,
+    unrecognizedCandidates: 0,
+    unrecognizedSlots: 0,
+  });
+  assert.deepEqual(f.buffer, before);
+});
+
 test("unrecognized thunk code reports partial coverage", () => {
   const { buffer } = codeFixture();
   buffer[offset(0x2020)] = 0x49;
