@@ -251,12 +251,15 @@ export async function main(argv = process.argv.slice(2), env = process.env) {
     hostRemaining(env);
     const verified = await tools(env),
       code = await codeDigest();
-    await afterGnPhase("sdk-preflight", () =>
-      selectedSdkPreflight({
-        temp,
-        selected: verified.selected,
-        expectedTargets: verified.sdkTargets,
-      }),
+    const aliasAttestation = await afterGnPhase("sdk-preflight", () =>
+      selectedSdkPreflight(
+        {
+          temp,
+          selected: verified.selected,
+          expectedTargets: verified.sdkTargets,
+        },
+        async (attested) => attested,
+      ),
     );
     const work = await workspace(temp, SOURCE_ID);
     const result = await build(
@@ -301,6 +304,7 @@ export async function main(argv = process.argv.slice(2), env = process.env) {
                 developerDir: context.env.DEVELOPER_DIR,
                 sdkRoot: context.env.SDKROOT,
                 expectedTargets: verified.sdkTargets,
+                aliasAttestation,
                 observe: logSdkLayout,
               }),
             );
@@ -399,6 +403,7 @@ export async function main(argv = process.argv.slice(2), env = process.env) {
                         developerDir: context.env.DEVELOPER_DIR,
                         sdkRoot: context.env.SDKROOT,
                         expectedTargets: verified.sdkTargets,
+                        aliasAttestation,
                         observe: logSdkLayout,
                       }),
                     );

@@ -1194,6 +1194,61 @@ function sdkBasenameVersion(name) {
   const match = /^MacOSX([0-9]+(?:\.[0-9]+){0,2})\.sdk$/.exec(name);
   return match && match[1].length <= 16 ? match[1] : undefined;
 }
+// Opaque in-process capability: never decoded from checkpoint/recipe JSON.
+const selectedSdkAliases = new WeakMap();
+function selectedAliasName(index, name) {
+  return index === 0
+    ? name === "MacOSX.sdk" || sdkBasenameVersion(name) !== undefined
+    : name === ["", "MacOSX.platform", "XcodeDefault.xctoolchain"][index];
+}
+async function aliasIdentity(raw, target) {
+  const before = await lstat(raw, { bigint: true });
+  const link = before.isSymbolicLink() ? await readlink(raw) : null;
+  assert(
+    before.isDirectory() || before.isSymbolicLink(),
+    "Selected SDK alias kind",
+  );
+  assert(
+    (await realpath(raw)) === target,
+    "Selected SDK alias physical target",
+  );
+  const after = await lstat(raw, { bigint: true });
+  assert(
+    before.dev === after.dev &&
+      before.ino === after.ino &&
+      before.mode === after.mode &&
+      (!before.isSymbolicLink() || (await readlink(raw)) === link),
+    "Selected SDK alias changed",
+  );
+  return { dev: before.dev, ino: before.ino, mode: before.mode, link };
+}
+async function verifySelectedAliases(token, developerDir, sdkRoot, targets) {
+  const attested = selectedSdkAliases.get(token);
+  assert(
+    attested &&
+      attested.developerDir === developerDir &&
+      attested.sdkRoot === sdkRoot &&
+      attested.rows.length === 3 &&
+      Array.isArray(targets) &&
+      targets.length === 3,
+    "Selected SDK alias attestation required",
+  );
+  for (const [index, row] of attested.rows.entries()) {
+    assert(
+      row.target === targets[index] && selectedAliasName(index, row.name),
+      "Selected SDK alias binding",
+    );
+    const current = await aliasIdentity(row.raw, row.target);
+    assert(
+      current.dev === row.identity.dev &&
+        current.ino === row.identity.ino &&
+        current.mode === row.identity.mode &&
+        current.link === row.identity.link,
+      "Selected SDK alias identity changed",
+    );
+  }
+  return attested.rows;
+}
 export function logSdkLayout(value, log = console.log) {
   log(
     `[cef-engineering-checkpoint] sdk-layout ${canonical(sdkLayoutRecord(value))}`,
@@ -1233,6 +1288,8 @@ export async function selectedSdkPreflight(
     baseStamp = await lstat(base, { bigint: true });
   const owned = await mkdtemp(path.join(base, "cef-checkpoint-sdk-probe-"));
   const ownedStamp = await lstat(owned, { bigint: true });
+  const aliases = [];
+  let aliasAttestation;
   try {
     const directory = path.join(owned, "sdk", "xcode_links");
     await mkdir(directory, { recursive: true });
@@ -1305,17 +1362,49 @@ export async function selectedSdkPreflight(
             }
           : {}),
       });
+      assert(
+        path.isAbsolute(raw) &&
+          raw.length <= 4096 &&
+          !/[\x00-\x1f\x7f]/.test(raw) &&
+          selectedAliasName(index, path.basename(raw)),
+        "Closed selected SDK alias required",
+      );
+      assert(
+        Array.isArray(expectedTargets) &&
+          expectedTargets.length === 3 &&
+          typeof expected === "string" &&
+          path.isAbsolute(expected),
+        "Selected SDK target binding required",
+      );
+      aliases.push(
+        Object.freeze({
+          raw,
+          name: path.basename(raw),
+          target: expected,
+          identity: Object.freeze(await aliasIdentity(raw, expected)),
+        }),
+      );
       await symlink(
         raw,
         path.join(directory, path.basename(raw)),
         process.platform === "win32" ? "junction" : "dir",
       );
     }
+    aliasAttestation = Object.freeze(Object.create(null));
+    selectedSdkAliases.set(
+      aliasAttestation,
+      Object.freeze({
+        developerDir: selected.DEVELOPER_DIR,
+        sdkRoot: selected.SDKROOT,
+        rows: Object.freeze(aliases),
+      }),
+    );
     await normalizeSdkLinks(owned, {
       developerDir: selected.DEVELOPER_DIR,
       sdkRoot: selected.SDKROOT,
       expectedTargets,
       observe,
+      aliasAttestation,
     });
   } finally {
     // Fail closed on a replaced root/output. Never recursively delete a changed alias.
@@ -1343,12 +1432,18 @@ export async function selectedSdkPreflight(
     await rm(owned, { recursive: true, force: true });
   }
   // Source acquisition is structurally downstream of successful probe and cleanup.
-  return continuation();
+  return continuation(aliasAttestation);
 }
 
 export async function normalizeSdkLinks(
   out,
-  { developerDir, sdkRoot, expectedTargets, observe = () => {} },
+  {
+    developerDir,
+    sdkRoot,
+    expectedTargets,
+    aliasAttestation,
+    observe = () => {},
+  },
 ) {
   let role = "layout";
   const check = (ok, reason, facts = {}) => {
@@ -1413,6 +1508,18 @@ export async function normalizeSdkLinks(
       await noLinks(spec.target);
       check((await stat(spec.target)).isDirectory(), "physical-kind");
     }
+    if (aliasAttestation !== undefined) {
+      const aliases = await verifySelectedAliases(
+        aliasAttestation,
+        developerDir,
+        sdkRoot,
+        expectedTargets,
+      );
+      for (const [index, row] of aliases.entries()) {
+        specs[index].names.add(row.name);
+        specs[index].selectedRaw = row.raw;
+      }
+    }
     role = "layout";
     const directory = path.join(out, "sdk", "xcode_links");
     await noLinks(directory);
@@ -1445,7 +1552,9 @@ export async function normalizeSdkLinks(
       const physicalMatch = (await realpath(file)) === spec.target;
       check(
         path.isAbsolute(raw) &&
-          (raw === spec.raw || raw === spec.target) &&
+          (raw === spec.raw ||
+            raw === spec.target ||
+            raw === spec.selectedRaw) &&
           physicalMatch,
         "raw-target",
         {
@@ -1467,6 +1576,13 @@ export async function normalizeSdkLinks(
     // Validate every entry before changing ONLY our generated out/ links. Preserve
     // GN's raw link names; canonicalize target text so Python's strict physical
     // recipe remains unchanged. The source and installed SDK are never modified.
+    if (aliasAttestation !== undefined)
+      await verifySelectedAliases(
+        aliasAttestation,
+        developerDir,
+        sdkRoot,
+        expectedTargets,
+      );
     for (const row of validated)
       if (row.raw !== row.target) {
         role = row.role;

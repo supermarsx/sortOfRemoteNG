@@ -1454,7 +1454,11 @@ test("reaper stability compares exact process identities rather than equal cardi
   assert.equal(sameObservedCohort([root, a], [root, a, b]), false);
 });
 
-async function sdkLinkFixture(t, alias = true) {
+async function sdkLinkFixture(
+  t,
+  alias = true,
+  physicalName = "MacOSX26.2.sdk",
+) {
   const root = await scratch(t),
     developer = path.join(root, "Developer"),
     sdk = path.join(
@@ -1463,7 +1467,7 @@ async function sdkLinkFixture(t, alias = true) {
       "MacOSX.platform",
       "Developer",
       "SDKs",
-      "MacOSX26.2.sdk",
+      physicalName,
     ),
     platform = path.join(developer, "Platforms", "MacOSX.platform"),
     toolchain = path.join(developer, "Toolchains", "XcodeDefault.xctoolchain");
@@ -2146,7 +2150,7 @@ for (const scenario of [
   "unknown-name-same-physical",
   "known-name-wrong-physical",
 ]) {
-  test(`SDK preflight attributes ${scenario} to the command role before strict rejection`, async (t) => {
+  test(`SDK preflight attributes ${scenario} and preserves exact selected-command authority`, async (t) => {
     const f = await sdkLinkFixture(t),
       records = [];
     const reported =
@@ -2158,28 +2162,28 @@ for (const scenario of [
     else await mkdir(reported, { recursive: true });
     let index = 0,
       acquired = false;
-    await assert.rejects(
-      selectedSdkPreflight(
-        {
-          temp: f.root,
-          selected: {
-            DEVELOPER_DIR: f.options.developerDir,
-            SDKROOT: f.rawSdk,
-            MACOSX_DEPLOYMENT_TARGET: "14.0",
-          },
-          expectedTargets: f.options.expectedTargets,
-          observe: (value) => records.push(sdkLayoutRecord(value)),
-          run: async () => ({
-            stdout:
-              [reported, f.platform, f.options.developerDir][index++] + "\n",
-          }),
+    const preflight = selectedSdkPreflight(
+      {
+        temp: f.root,
+        selected: {
+          DEVELOPER_DIR: f.options.developerDir,
+          SDKROOT: f.rawSdk,
+          MACOSX_DEPLOYMENT_TARGET: "14.0",
         },
-        async () => {
-          acquired = true;
-        },
-      ),
+        expectedTargets: f.options.expectedTargets,
+        observe: (value) => records.push(sdkLayoutRecord(value)),
+        run: async () => ({
+          stdout:
+            [reported, f.platform, f.options.developerDir][index++] + "\n",
+        }),
+      },
+      async () => {
+        acquired = true;
+      },
     );
-    assert.equal(acquired, false);
+    if (scenario === "unknown-name-same-physical") await preflight;
+    else await assert.rejects(preflight);
+    assert.equal(acquired, scenario === "unknown-name-same-physical");
     const sdk = records.find(
       (row) => row.reason === "probe-target" && row.role === "sdk",
     );
@@ -2191,7 +2195,10 @@ for (const scenario of [
       assert.equal(sdk.reportedSdkVersion, "99.7");
       assert.equal(sdk.expectedSdkVersion, "26.2");
     }
-    assert(records.some((row) => row.ok === false));
+    assert.equal(
+      records.some((row) => row.ok === false || row.physicalMatch === false),
+      scenario !== "unknown-name-same-physical",
+    );
     assert.equal(JSON.stringify(records).includes(f.root), false);
     assert.equal(JSON.stringify(records).includes("foreign-sdk"), false);
   });
@@ -2231,3 +2238,174 @@ test("SDK pre-link diagnostics keep only numeric version components and fixed bo
       undefined,
     );
 });
+
+async function reverseSelectedSdk(t) {
+  const f = await sdkLinkFixture(t, false, "MacOSX.sdk");
+  const reported = path.join(path.dirname(f.sdk), "MacOSX26.2.sdk");
+  await symlink(f.sdk, reported, f.type);
+  await unlink(path.join(f.directory, "MacOSX.sdk"));
+  await symlink(reported, path.join(f.directory, "MacOSX26.2.sdk"), f.type);
+  let index = 0;
+  const options = {
+    temp: f.root,
+    selected: {
+      DEVELOPER_DIR: f.options.developerDir,
+      SDKROOT: f.sdk,
+      MACOSX_DEPLOYMENT_TARGET: "14.0",
+    },
+    expectedTargets: f.options.expectedTargets,
+    observe: () => {},
+    run: async () => ({
+      stdout:
+        [reported, f.platform, f.options.developerDir][index++ % 3] + "\n",
+    }),
+  };
+  return { f, reported, options };
+}
+
+test("exact selected-command versioned reverse alias is process-attested and canonicalized", async (t) => {
+  const { f, reported, options } = await reverseSelectedSdk(t);
+  await assert.rejects(
+    normalizeSdkLinks(f.out, f.options),
+    /SDK layout check failed/,
+  );
+  const publicResult = await selectedSdkPreflight(options);
+  assert.deepEqual(publicResult, { sdkProbe: true, nativeAcceptance: false });
+  assert.equal(JSON.stringify(publicResult).includes(f.root), false);
+  const aliasAttestation = await selectedSdkPreflight(
+    options,
+    async (token) => token,
+  );
+  assert.equal(JSON.stringify(aliasAttestation), "{}");
+  await assert.rejects(
+    normalizeSdkLinks(f.out, {
+      ...f.options,
+      aliasAttestation: JSON.parse(JSON.stringify(aliasAttestation)),
+    }),
+    /attestation required/,
+  );
+  const recipe = await normalizeSdkLinks(f.out, {
+    ...f.options,
+    aliasAttestation,
+  });
+  assert.equal(recipe["sdk/xcode_links/MacOSX26.2.sdk"], await realpath(f.sdk));
+  assert.equal(
+    await readlink(reported),
+    f.sdk,
+    "installed selected alias is never rewritten",
+  );
+  await unlink(path.join(f.directory, "MacOSX26.2.sdk"));
+  await symlink(reported, path.join(f.directory, "MacOSX26.2.sdk"), f.type);
+  assert.deepEqual(
+    await normalizeSdkLinks(f.out, { ...f.options, aliasAttestation }),
+    recipe,
+    "post-GN raw regeneration uses same attestation",
+  );
+});
+
+for (const scenario of [
+  "alias-replaced",
+  "unattested-name",
+  "unattested-raw-target",
+]) {
+  test(`selected alias attestation denies ${scenario} before any generated-link mutation`, async (t) => {
+    const { f, reported, options } = await reverseSelectedSdk(t);
+    const aliasAttestation = await selectedSdkPreflight(
+      options,
+      async (token) => token,
+    );
+    const generated = path.join(f.directory, "MacOSX26.2.sdk");
+    if (scenario === "alias-replaced") {
+      const foreign = path.join(f.root, "foreign");
+      await mkdir(foreign);
+      await unlink(reported);
+      await symlink(foreign, reported, f.type);
+    } else {
+      const other = path.join(
+        f.root,
+        scenario === "unattested-name" ? "MacOSX26.2.1.sdk" : "MacOSX26.2.sdk",
+      );
+      await symlink(f.sdk, other, f.type);
+      await unlink(generated);
+      await symlink(
+        other,
+        scenario === "unattested-name"
+          ? path.join(f.directory, "MacOSX26.2.1.sdk")
+          : generated,
+        f.type,
+      );
+    }
+    const names = await readdir(f.directory),
+      before = await Promise.all(
+        names.map(async (name) => [
+          name,
+          await readlink(path.join(f.directory, name)),
+        ]),
+      );
+    await assert.rejects(
+      normalizeSdkLinks(f.out, { ...f.options, aliasAttestation }),
+    );
+    assert.deepEqual(
+      await Promise.all(
+        names.map(async (name) => [
+          name,
+          await readlink(path.join(f.directory, name)),
+        ]),
+      ),
+      before,
+    );
+  });
+}
+
+test(
+  "versioned reverse alias canonical recipe survives unchanged Python pack and restore",
+  { skip: process.platform === "win32" },
+  async (t) => {
+    const { f, options } = await reverseSelectedSdk(t);
+    const aliasAttestation = await selectedSdkPreflight(
+      options,
+      async (token) => token,
+    );
+    const recipe = await normalizeSdkLinks(f.out, {
+      ...f.options,
+      aliasAttestation,
+    });
+    const recipePath = path.join(f.root, "recipe.json"),
+      helper = path.join(ROOT, "scripts/lib/cef-checkpoint-archive.py");
+    await writeFile(recipePath, canonical(recipe));
+    await writeFile(path.join(f.out, "owned"), "retained-object");
+    const pythonExe = python("import sys;print(sys.executable)").stdout.trim(),
+      bundle = path.join(f.root, "bundle");
+    const archive = await archiveCommand(pythonExe, helper, [
+      "pack",
+      "--input",
+      f.out,
+      "--output",
+      bundle,
+      "--generated-links",
+      recipePath,
+    ]);
+    const envelope = path.join(f.root, "manifest.json"),
+      restored = path.join(f.root, "restored");
+    await writeFile(envelope, canonical({ ...manifest(), archive }));
+    const result = await archiveCommand(pythonExe, helper, [
+      "restore",
+      "--input",
+      bundle,
+      "--output",
+      restored,
+      "--manifest",
+      envelope,
+      "--generated-links",
+      recipePath,
+    ]);
+    assert.equal(result.complete, true);
+    assert.equal(result.linksExtracted, false);
+    assert.equal(
+      await readFile(path.join(restored, "owned"), "utf8"),
+      "retained-object",
+    );
+    for (const [name, target] of Object.entries(recipe))
+      assert.equal(await readlink(path.join(restored, name)), target);
+  },
+);
