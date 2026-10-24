@@ -38,6 +38,8 @@ use tao::{
 };
 mod fixture;
 mod ledger;
+#[cfg(any(target_os = "windows", test))]
+mod private_parent;
 mod registry_retirement_fixture;
 mod static_document;
 mod storage;
@@ -679,6 +681,16 @@ fn execute(bootstrap: &mut dyn RuntimeBootstrap, paths: &BundlePaths) -> Result 
             .with_inner_size(tao::dpi::LogicalSize::new(800., 600.))
             .build(&events)?,
     );
+    // Unattended Windows fixtures show only their attested non-input private
+    // parent without activation, matching selected-tab presentation.
+    #[cfg(target_os = "windows")]
+    let private_parent_visibility = if manual_requested {
+        None
+    } else {
+        Some(private_parent::show(&parent)?)
+    };
+    #[cfg(not(target_os = "windows"))]
+    let private_parent_visibility: Option<serde_json::Value> = None;
     let mut settings = cef_runtime::native_settings(&paths.helper, &paths.resources)?;
     settings.root_cache_path =
         CefString::from(output.join("profile").to_str().ok_or("profile path")?);
@@ -702,6 +714,9 @@ fn execute(bootstrap: &mut dyn RuntimeBootstrap, paths: &BundlePaths) -> Result 
         "manualRequested":manual_requested,"manualStatus":if manual_requested {"pending"} else {"not-run"},
         "storageIsolation":{"status":"not-run"},
         "remainingGates":["OS socket/DNS containment","native first paint","public provider acceptance","other platform runtime","app trust authority integration","AIA/OCSP/CRL runtime","HTTP keep-alive runtime"]});
+    if let Some(evidence) = private_parent_visibility {
+        report["privateParentVisibility"] = evidence;
+    }
     let mut failures: Vec<String> = vec![];
     let bridge = unsafe { NativeTlsBridge::from_loaded_supported() };
     let bridge = match bridge {
@@ -930,8 +945,9 @@ fn execute(bootstrap: &mut dyn RuntimeBootstrap, paths: &BundlePaths) -> Result 
                             }
                             // Production credential typing intentionally rejects
                             // Hidden views. Attach positive login cases like a
-                            // selected tab; the unattended parent remains hidden.
-                            // Child show uses SW_SHOWNOACTIVATE, not native focus.
+                            // selected tab. The unattended Windows parent is shown
+                            // only on its attested non-input desktop without activation.
+                            // Child show still requests no native focus.
                             if manual_requested || matches!(name, "staged" | "successor") {
                                 browser.show(&identity)?;
                             }
