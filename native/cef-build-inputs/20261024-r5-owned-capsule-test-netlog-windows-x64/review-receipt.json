@@ -1,0 +1,44 @@
+{
+  "schemaVersion": 1,
+  "kind": "sorng-cef-build-input-review",
+  "scope": "Source-only additive test-constructor type qualification; no production behavior change. Corrected test uncompiled; no native acceptance.",
+  "sourceLockIdentity": "15b715e673a51e73f43932528b318193a53398a735237bc9854120c43a292cb0",
+  "sourceLockRawSha256": "c3e92d0345f9c46aebc9054c83ac36ed26c10cc6feaa9b743c9c32444b2143a5",
+  "baseSourceLockIdentity": "626d080f2b6ec0019c00bbc5f1626be9dd08ee87b92f5b6db6763258b87af10a",
+  "baseSourceLockRawSha256": "1018fcbdf5569abbdd0d3a587210aa4b134af7db69687c61ab2e38040ddb91fa",
+  "bridgeAbiVersion": 2,
+  "bridgeRevision": 5,
+  "capabilities": [
+    "socket-admission",
+    "context-revoke",
+    "same-authority-http2",
+    "scoped-exceptions",
+    "custom-ca",
+    "private-context",
+    "proxy-applied",
+    "bounded-context-retirement",
+    "owned-http3"
+  ],
+  "patch19": {
+    "repository": "chromium",
+    "path": "patches/0019-chromium-owned-capsule-test-netlog-qualification.patch",
+    "sha256": "d1b39acf848e568ef5067962e53f4075eaca1e49582ee726a7dcf65d94af796c"
+  },
+  "all18PatchesHeaderGnToolchainUpstreamBytesUnchanged": true,
+  "correctedSource": {
+    "path": "net/socket/sorng_capsule_datagram_client_socket_unittest.cc",
+    "beforeSha256": "3304d6fcd86794c1af8aa4cb329e0ec909a1290f37c3dab7d5897ae9087a665c",
+    "beforeBytes": 14500,
+    "afterSha256": "9130ca95daf92c26f1f31f7ce1f53f71da75802549b53e396f4515214d962269",
+    "afterBytes": 14505
+  },
+  "priorActualBuildOutcome": "compiler-failure: inherited NetLog member hides unqualified test constructor parameter type",
+  "priorFailureIsLifetimeRed": false,
+  "engineCompiled": false,
+  "nativeTestsCompiled": false,
+  "nativeTestsRun": false,
+  "sdkCreated": false,
+  "runtimeAcceptance": false,
+  "defaultSelectionChanged": false,
+  "oldNativeProofTransferred": false
+}

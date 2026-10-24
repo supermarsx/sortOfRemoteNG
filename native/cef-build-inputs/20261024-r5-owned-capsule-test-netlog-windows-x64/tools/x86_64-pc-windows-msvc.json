@@ -1,0 +1,15 @@
+{
+  "schemaVersion": 1,
+  "kind": "sorng-cef-toolchain-lock",
+  "target": "x86_64-pc-windows-msvc",
+  "files": [
+    {"path":"Users/Mariana/AppData/Local/Programs/Python/Python312/python.exe","sha256":"4d6f5f81a4bca11191c4c7c6b43632694d0a4ce74e068619d8fdc161d469859a","size":104952},
+    {"path":"Users/Mariana/AppData/Local/Programs/Python/Python312/python312.dll","sha256":"9a0e3435aaa680d868150f87ab3e388ad2eebc22f87e036155c7b4eda8cd2120","size":6945272},
+    {"path":"Program Files (x86)/Microsoft Visual Studio/2026/BuildTools/VC/Tools/MSVC/14.51.36231/bin/Hostx64/x64/cl.exe","sha256":"b0a1818ebae6da7f18230a84e76ce839212584ac4c2ab55b97a0d5268085da57","size":893288},
+    {"path":"Program Files (x86)/Microsoft Visual Studio/2026/BuildTools/VC/Tools/MSVC/14.51.36231/lib/x64/libcmt.lib","sha256":"d4cc4c224455825dec1669f9ad6a9872a4f5b37ed1daae1fd0b9044d7650d908","size":6610744},
+    {"path":"Program Files (x86)/Microsoft Visual Studio/2026/BuildTools/VC/Tools/MSVC/14.51.36231/include/vcruntime.h","sha256":"8a6e89fe85c66162d62c772d02367ae2e6530f1faaaa8d099427698a689bac7f","size":11444},
+    {"path":"Program Files (x86)/Windows Kits/10/Include/10.0.28000.0/um/Windows.h","sha256":"b337d661d03a4abefb7b86a2742ce1ad5d19b57cd8b858bd13e7bbcc1dbeeaaa","size":7511},
+    {"path":"Program Files (x86)/Windows Kits/10/Lib/10.0.28000.0/um/x64/kernel32.lib","sha256":"8ba8dab9adec752047d4f136852e8136d01836bff39bbb56a20ac5f2d56415d8","size":311908},
+    {"path":"Program Files (x86)/Windows Kits/10/Debuggers/x64/dbghelp.dll","sha256":"575e0d4f2859e8b368dd3dc21e4b16e4ad4f885dceeb44abe6466cfb4e4141f5","size":735728}
+  ]
+}

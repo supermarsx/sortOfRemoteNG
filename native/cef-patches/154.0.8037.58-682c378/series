@@ -16,3 +16,4 @@ chromium 0015-chromium-owned-quic-job-selection.patch
 chromium 0016-chromium-owned-quic-payload-advertisement.patch
 chromium 0017-chromium-instance-tracer-allocation-reentrancy.patch
 chromium 0018-chromium-owned-capsule-context-lifetime.patch
+chromium 0019-chromium-owned-capsule-test-netlog-qualification.patch
