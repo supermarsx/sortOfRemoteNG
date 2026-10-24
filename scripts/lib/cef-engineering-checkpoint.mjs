@@ -22,6 +22,7 @@ import {
 } from "node:fs/promises";
 import { finished } from "node:stream/promises";
 import path from "node:path";
+import { hostname, tmpdir, userInfo } from "node:os";
 
 export const LIMITS = Object.freeze({
   compressed: 32 * 1024 ** 3,
@@ -978,6 +979,10 @@ const ARCHIVE_FAILURES = new Set([
   "special-input",
   "input-bound",
   "missing-generated-link",
+  "generated-link-owner",
+  "generated-link-kind",
+  "generated-link-target",
+  "generated-link-state",
   "output-bound",
   "compressed-bound",
   "short-write",
@@ -1307,10 +1312,13 @@ async function stopObserved(child, initial) {
   }
   throw new Error("Observed descendants not reaped; checkpoint denied");
 }
+// Only a result produced by this live process may authorize output mutation.
+// Decoded checkpoint manifests retain the existing six-key portable shape.
+const liveCompileSlices = new WeakMap();
 export async function compileSlice(
   executable,
   args,
-  { cwd, env, logs, milliseconds = LIMITS.compileMs },
+  { cwd, env, logs, out, milliseconds = LIMITS.compileMs },
 ) {
   assert(
     process.platform !== "win32" &&
@@ -1323,6 +1331,15 @@ export async function compileSlice(
       !/^(GH_|GITHUB_|ACTIONS_)/i.test(key),
       "Compiler credential environment denied",
     );
+  const canonicalOut = out === undefined ? null : await noLinks(out);
+  const outIdentity = canonicalOut
+    ? await lstat(canonicalOut, { bigint: true })
+    : null;
+  assert(
+    !outIdentity || outIdentity.isDirectory(),
+    "Compile output directory required",
+  );
+  const beginWallMs = Date.now();
   const stdout = createWriteStream(
       path.join(logs, "checkpoint-compile.stdout.log"),
       { flags: "wx" },
@@ -1333,7 +1350,7 @@ export async function compileSlice(
     );
   const child = spawn(executable, args, {
     cwd,
-    env,
+    env: { ...env, TZ: "UTC" },
     shell: false,
     detached: true,
     stdio: ["ignore", "pipe", "pipe"],
@@ -1444,7 +1461,7 @@ export async function compileSlice(
       }) + "\n",
       { flag: "wx" },
     );
-    return {
+    const result = {
       outcome,
       exitCode: code,
       quiescent: true,
@@ -1452,6 +1469,15 @@ export async function compileSlice(
       quiescence: "observed-lineage-and-root-group",
       observed,
     };
+    liveCompileSlices.set(result, {
+      beginWallMs,
+      endWallMs: Date.now(),
+      groupId: child.pid,
+      canonicalOut,
+      outIdentity,
+      observed: observed.map((row) => ({ pid: row.pid, start: row.start })),
+    });
+    return result;
   } finally {
     clearTimeout(timer);
     monitoring = false;
@@ -2059,6 +2085,295 @@ export async function selectedSdkPreflight(
   }
   // Source acquisition is structurally downstream of successful probe and cleanup.
   return continuation(aliasAttestation);
+}
+
+const FRAMEWORK = "Chromium Embedded Framework.framework";
+export const FRAMEWORK_LINKS = Object.freeze(
+  Object.fromEntries(
+    [
+      ["Versions/Current", "version", "directory", "Versions/A"],
+      ["Resources", "resources", "directory", "Versions/A/Resources"],
+      ["Libraries", "libraries", "directory", "Versions/A/Libraries"],
+      [
+        "Chromium Embedded Framework",
+        "binary",
+        "file",
+        "Versions/A/Chromium Embedded Framework",
+      ],
+    ].map(([name, role, kind, target]) => [
+      `${FRAMEWORK}/${name}`,
+      Object.freeze({
+        role,
+        kind,
+        target: `${FRAMEWORK}/${target}`,
+        raw: role === "version" ? "A" : `Versions/Current/${name}`,
+      }),
+    ]),
+  ),
+);
+
+export function checkpointLinkRecipe(sdk) {
+  assert(
+    sdk && Object.keys(sdk).length === 3,
+    "Three attested SDK roles required",
+  );
+  const roles = new Set();
+  for (const [name, target] of Object.entries(sdk)) {
+    const leaf = name.slice("sdk/xcode_links/".length);
+    const role = /^MacOSX(?:[0-9]+(?:\.[0-9]+){0,2})?\.sdk$/.test(leaf)
+      ? "sdk"
+      : ["MacOSX.platform", "XcodeDefault.xctoolchain"].includes(leaf)
+        ? leaf
+        : null;
+    assert(
+      name === `sdk/xcode_links/${leaf}` &&
+        role &&
+        !roles.has(role) &&
+        typeof target === "string" &&
+        path.isAbsolute(target),
+      "Closed SDK recipe required",
+    );
+    roles.add(role);
+  }
+  return { ...sdk, ...FRAMEWORK_LINKS };
+}
+
+async function optionalLinkStat(file) {
+  try {
+    return await lstat(file, { bigint: true });
+  } catch (error) {
+    if (error.code === "ENOENT") return null;
+    throw error;
+  }
+}
+function sameLinkIdentity(a, b) {
+  return (
+    a &&
+    b &&
+    ["dev", "ino", "mode", "uid", "size", "mtimeNs", "ctimeNs"].every(
+      (key) => a[key] === b[key],
+    )
+  );
+}
+async function ownedRealPath(file, owner, kind) {
+  await noLinks(file);
+  const s = await lstat(file, { bigint: true });
+  assert(
+    s.uid === owner &&
+      (kind === "directory" ? s.isDirectory() : s.isFile() && s.nlink === 1n),
+    "Owned framework target kind required",
+  );
+  return s;
+}
+export async function attestFrameworkLinks(out) {
+  await noLinks(out);
+  const root = await lstat(out, { bigint: true });
+  const framework = path.join(out, FRAMEWORK);
+  const f = await optionalLinkStat(framework);
+  // The pinned package action need not have run in an interrupted build.
+  if (!f) return { framework: "absent", targets: {} };
+  await ownedRealPath(framework, root.uid, "directory");
+  await ownedRealPath(path.join(framework, "Versions"), root.uid, "directory");
+  await ownedRealPath(
+    path.join(framework, "Versions", "A"),
+    root.uid,
+    "directory",
+  );
+  // Inventory the complete framework without following ANY alias before writes.
+  // Python independently hashes every regular entry during the bounded pack.
+  const inventory = async () => {
+    const pending = [framework],
+      result = [],
+      end = Date.now() + 180000;
+    let visited = 0;
+    while (pending.length) {
+      const directory = pending.pop();
+      await ownedRealPath(directory, root.uid, "directory");
+      for await (const entry of await opendir(directory)) {
+        assert(
+          ++visited <= 300000 && Date.now() < end,
+          "Framework inventory bound",
+        );
+        const name = entry.name;
+        const file = path.join(directory, name),
+          member = path.relative(out, file).split(path.sep).join("/"),
+          s = await lstat(file, { bigint: true });
+        assert(s.uid === root.uid, "Foreign framework entry owner");
+        if (s.isSymbolicLink()) {
+          assert(member in FRAMEWORK_LINKS, "Unknown framework alias");
+          continue;
+        }
+        assert(
+          s.isDirectory() || (s.isFile() && s.nlink === 1n),
+          "Framework regular entry required",
+        );
+        result.push([
+          member,
+          String(s.dev),
+          String(s.ino),
+          String(s.uid),
+          String(s.mode),
+          ...(s.isFile()
+            ? [String(s.size), String(s.mtimeNs), String(s.ctimeNs)]
+            : []),
+        ]);
+        if (s.isDirectory()) pending.push(file);
+      }
+    }
+    return canonical(result.sort((a, b) => (a[0] < b[0] ? -1 : 1)));
+  };
+  const before = await inventory();
+  const rows = [],
+    targets = {};
+  for (const [member, spec] of Object.entries(FRAMEWORK_LINKS)) {
+    const file = path.join(out, member),
+      target = path.join(out, spec.target);
+    await ownedRealPath(path.dirname(file), root.uid, "directory");
+    const s = await lstat(file, { bigint: true });
+    assert(
+      s.isSymbolicLink() && s.uid === root.uid && s.nlink === 1n,
+      "Owned framework alias required",
+    );
+    const raw = await readlink(file);
+    assert(raw === spec.raw, "Unreviewed framework alias");
+    const t = await optionalLinkStat(target);
+    if (t) {
+      await ownedRealPath(target, root.uid, spec.kind);
+      targets[spec.role] = "present";
+    } else {
+      assert(spec.role !== "version", "Framework version must exist");
+      targets[spec.role] = "pending";
+    }
+    rows.push({ file, raw, identity: s });
+  }
+  // Attest only: these are Siso-tracked outputs, including their raw spelling.
+  for (const row of rows) {
+    assert(
+      sameLinkIdentity(row.identity, await lstat(row.file, { bigint: true })) &&
+        (await readlink(row.file)) === row.raw,
+      "Framework alias changed",
+    );
+  }
+  assert((await inventory()) === before, "Framework regular inventory changed");
+  return { framework: "factory", targets };
+}
+
+export async function removeQuiescentSisoLog(
+  out,
+  compile,
+  { beforeUnlink = async () => {} } = {},
+) {
+  validateCompile(compile);
+  const proof = liveCompileSlices.get(compile);
+  assert(
+    proof &&
+      proof.canonicalOut &&
+      proof.groupId === compile.groupId &&
+      sameObservedCohort(proof.observed, compile.observed),
+    "Genuine in-process compile result required",
+  );
+  assert(
+    proof.endWallMs >= proof.beginWallMs,
+    "Compiler wall clock moved backwards",
+  );
+  assert(
+    (await noLinks(out)) === proof.canonicalOut,
+    "Compile output path differs",
+  );
+  assert(
+    await observedQuiet(proof.observed, proof.groupId),
+    "Siso writers must be quiescent",
+  );
+  await noLinks(out);
+  const root = await lstat(out, { bigint: true });
+  assert(
+    ["dev", "ino", "uid", "mode"].every(
+      (key) => root[key] === proof.outIdentity[key],
+    ),
+    "Compile output identity changed",
+  );
+  const file = path.join(out, "siso.INFO"),
+    s = await optionalLinkStat(file);
+  if (!s) return { removed: false, absent: true };
+  assert(
+    s.isSymbolicLink() &&
+      s.nlink === 1n &&
+      s.uid === root.uid &&
+      s.uid === BigInt(userInfo().uid),
+    "Owned Siso log alias required",
+  );
+  const raw = await readlink(file);
+  assert(
+    Buffer.byteLength(raw) <= 2048 && path.isAbsolute(raw),
+    "Bounded Siso log alias required",
+  );
+  const temporary = tmpdir(),
+    canonicalTemporary = await realpath(temporary);
+  assert(
+    [temporary, canonicalTemporary].includes(path.dirname(raw)),
+    "Siso log outside actual temporary directory",
+  );
+  const prefix = `siso.${hostname()}.${userInfo().username}.log.INFO.`;
+  assert(path.basename(raw).startsWith(prefix), "Foreign Siso log identity");
+  const suffix = path.basename(raw).slice(prefix.length),
+    match = /^(\d{8})-(\d{6})\.([1-9][0-9]*)$/.exec(suffix);
+  assert(
+    match && proof.observed.some((row) => row.pid === Number(match[3])),
+    "Siso log PID not observed",
+  );
+  const digits = match[1] + match[2];
+  const timestamp = Date.parse(
+    `${digits.slice(0, 4)}-${digits.slice(4, 6)}-${digits.slice(6, 8)}T${digits.slice(8, 10)}:${digits.slice(10, 12)}:${digits.slice(12, 14)}.000Z`,
+  );
+  assert(
+    Number.isFinite(timestamp) &&
+      new Date(timestamp)
+        .toISOString()
+        .replace(/[^0-9]/g, "")
+        .slice(0, 14) === digits,
+    "Invalid Siso UTC timestamp",
+  );
+  // Filename precision is exactly one second: both actual endpoints round down.
+  assert(
+    timestamp >= Math.floor(proof.beginWallMs / 1000) * 1000 &&
+      timestamp <= Math.floor(proof.endWallMs / 1000) * 1000,
+    "Siso timestamp outside actual compile window",
+  );
+  const record = {
+    removed: false,
+    absent: false,
+    link: {
+      target: raw,
+      dev: String(s.dev),
+      ino: String(s.ino),
+      uid: String(s.uid),
+    },
+  };
+  await beforeUnlink(record); // Persist fixed private evidence before mutation.
+  assert(
+    await observedQuiet(proof.observed, proof.groupId),
+    "Siso writers returned",
+  );
+  await noLinks(out);
+  assert(
+    sameLinkIdentity(root, await lstat(out, { bigint: true })) &&
+      sameLinkIdentity(s, await lstat(file, { bigint: true })) &&
+      (await readlink(file)) === raw,
+    "Siso log alias changed",
+  );
+  // Never stat, open, resolve or remove the outside log target.
+  await unlink(file);
+  assert((await optionalLinkStat(file)) === null, "Siso alias still present");
+  return {
+    removed: true,
+    absent: false,
+    link: {
+      target: raw,
+      dev: String(s.dev),
+      ino: String(s.ino),
+      uid: String(s.uid),
+    },
+  };
 }
 
 export async function normalizeSdkLinks(

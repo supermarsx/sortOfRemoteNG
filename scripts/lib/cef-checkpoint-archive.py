@@ -18,6 +18,82 @@ CHUNK_BYTES = 1024**3
 MAX_RAW = 256 * 1024**3
 MAX_ENTRIES = 300000
 MAX_METADATA = 128 * 1024**2
+FRAMEWORK = 'Chromium Embedded Framework.framework'
+FRAMEWORK_ROLES = {
+    FRAMEWORK + '/Versions/Current': {'role': 'version', 'kind': 'directory', 'target': FRAMEWORK + '/Versions/A', 'raw': 'A'},
+    FRAMEWORK + '/Resources': {'role': 'resources', 'kind': 'directory', 'target': FRAMEWORK + '/Versions/A/Resources', 'raw': 'Versions/Current/Resources'},
+    FRAMEWORK + '/Libraries': {'role': 'libraries', 'kind': 'directory', 'target': FRAMEWORK + '/Versions/A/Libraries', 'raw': 'Versions/Current/Libraries'},
+    FRAMEWORK + '/Chromium Embedded Framework': {'role': 'binary', 'kind': 'file', 'target': FRAMEWORK + '/Versions/A/Chromium Embedded Framework', 'raw': 'Versions/Current/Chromium Embedded Framework'},
+}
+
+
+def link_recipe(value):
+    require(isinstance(value, dict) and len(value) in (0, 3, 7), 'link-recipe')
+    sdk = {k: v for k, v in value.items() if k not in FRAMEWORK_ROLES}
+    require(len(sdk) in (0, 3) and (len(value) != 7 or len(sdk) == 3), 'link-recipe')
+    roles = set()
+    for name, target in sdk.items():
+        relative(name)
+        require(isinstance(target, str) and len(target.encode()) <= 4096 and Path(target).is_absolute() and not any(ord(c) < 32 or ord(c) == 127 for c in target), 'link-recipe')
+        leaf = name.removeprefix('sdk/xcode_links/')
+        role = 'sdk' if re.fullmatch(r'MacOSX(?:[0-9]+(?:\.[0-9]+){0,2})?\.sdk', leaf) else leaf if leaf in ('MacOSX.platform', 'XcodeDefault.xctoolchain') else None
+        require(name == 'sdk/xcode_links/' + leaf and role is not None and role not in roles, 'link-recipe')
+        require(Path(target).name == leaf or (role == 'sdk' and re.fullmatch(r'MacOSX(?:[0-9]+(?:\.[0-9]+){0,2})?\.sdk', Path(target).name)), 'link-recipe')
+        roles.add(role)
+    if len(value) == 7:
+        require(all(value.get(k) == v for k, v in FRAMEWORK_ROLES.items()), 'link-recipe')
+    else:
+        require(not any(k in FRAMEWORK_ROLES for k in value), 'link-recipe')
+    return value
+
+
+def generated_state(root, recipe, rows, budget):
+    """Logical state is sealed; link identities are compared only within pack."""
+    recipe = link_recipe(recipe)
+    typed = len(recipe) == 7
+    owner = root.lstat().st_uid
+    by_name = {row['path']: row for row in rows}
+    state, identities = {'framework': 'absent', 'targets': {}}, []
+    factory = FRAMEWORK in by_name
+    if typed and factory:
+        require(by_name[FRAMEWORK]['kind'] == 'directory', 'generated-link-kind')
+        state['framework'] = 'factory'
+    for name, spec in recipe.items():
+        budget.check()
+        internal = name in FRAMEWORK_ROLES
+        if internal and not factory:
+            continue
+        p = root / name
+        safe(p.parent)
+        s = p.lstat()
+        require(stat.S_ISLNK(s.st_mode) and s.st_uid == owner and s.st_nlink == 1, 'generated-link-owner')
+        raw = os.readlink(p)
+        if internal:
+            target = root / spec['target']
+            require(raw == spec['raw'], 'unreviewed-generated-link')
+            row = by_name.get(spec['target'])
+            if row is None:
+                require(spec['role'] != 'version' and not target.exists() and not target.is_symlink(), 'generated-link-target')
+                ancestor = target.parent
+                while not ancestor.exists():
+                    ancestor = ancestor.parent
+                safe(ancestor)
+                require(ancestor.lstat().st_uid == owner, 'generated-link-owner')
+                state['targets'][spec['role']] = 'pending'
+            else:
+                safe(target)
+                t = target.lstat()
+                require(row['kind'] == spec['kind'] and t.st_uid == owner and (spec['kind'] != 'file' or t.st_nlink == 1), 'generated-link-kind')
+                state['targets'][spec['role']] = 'present'
+        else:
+            require(raw == spec and safe(spec).is_dir(), 'unreviewed-generated-link')
+        identities.append([name, stamp(s), s.st_uid, raw])
+    if typed:
+        for row in rows:
+            budget.check()
+            s = (root / row['path']).lstat()
+            require(s.st_uid == owner and (row['kind'] != 'file' or s.st_nlink == 1), 'generated-link-owner')
+    return state, identities
 
 
 class CheckpointError(ValueError):
@@ -71,7 +147,7 @@ class Budget:
 
 
 def inventory(root, budget, generated_links=None):
-    generated_links = generated_links or {}
+    generated_links = link_recipe(generated_links or {})
     seen_links = set()
     rows, pending, aliases, raw = [], [Path('.')], set(), 0
     while pending:
@@ -86,7 +162,7 @@ def inventory(root, budget, generated_links=None):
                 p = root / name
                 s = os.stat(p, follow_symlinks=False)
                 if stat.S_ISLNK(s.st_mode):
-                    require(name in generated_links and os.readlink(p) == generated_links[name] and safe(generated_links[name]).is_dir(), 'unreviewed-generated-link')
+                    require(name in generated_links, 'unreviewed-generated-link')
                     seen_links.add(name)
                     continue
                 require(not getattr(s, 'st_file_attributes', 0) & 0x400, 'input-link')
@@ -98,7 +174,11 @@ def inventory(root, budget, generated_links=None):
                     raw += s.st_size
                 rows.append({'path': name, 'kind': kind, 'stamp': stamp(s)})
                 require(len(rows) <= MAX_ENTRIES and raw <= MAX_RAW, 'input-bound')
-    require(seen_links == set(generated_links), 'missing-generated-link')
+    expected_links = set(generated_links)
+    if len(generated_links) == 7 and not any(r['path'] == FRAMEWORK for r in rows):
+        expected_links -= set(FRAMEWORK_ROLES)
+    require(seen_links == expected_links, 'missing-generated-link')
+    generated_state(root, generated_links, rows, budget)
     return sorted(rows, key=lambda r: r['path']), raw
 
 
@@ -162,6 +242,7 @@ def pack(source, output, seconds=600, cap=MAX_BYTES, chunk_size=CHUNK_BYTES, gen
     safe(output.parent)
     require(source not in output.parents and output not in source.parents and source != output, 'overlap')
     before, raw = inventory(source, budget, generated_links)
+    before_state, before_links = generated_state(source, generated_links, before, budget)
     root_stamp = stamp(source.stat())
     output.mkdir()
     writer = ChunkWriter(output, budget, cap, chunk_size)
@@ -188,9 +269,10 @@ def pack(source, output, seconds=600, cap=MAX_BYTES, chunk_size=CHUNK_BYTES, gen
                             files.append({'path': row['path'], 'sha256': reader.digest.hexdigest()})
         writer.finish_chunk()
         after, after_raw = inventory(source, budget, generated_links)
+        require((before_state, before_links) == generated_state(source, generated_links, after, budget), 'source-changed')
         require(before == after and raw == after_raw and root_stamp == stamp(source.stat()), 'source-changed')
         serialized_rows = [{**row, 'stamp': [str(value) if i in (1,2,3) else value for i,value in enumerate(row['stamp'])]} for row in before]
-        inventory_pin = metadata(output, 'inventory.json', {'schemaVersion': 1, 'entries': serialized_rows, 'files': files, 'generatedLinks': generated_links})
+        inventory_pin = metadata(output, 'inventory.json', {'schemaVersion': 1, 'entries': serialized_rows, 'files': files, 'generatedLinks': generated_links, **({'generatedState': before_state} if len(generated_links) == 7 else {})})
         return {'complete': True, 'chunks': writer.rows, 'inventory': inventory_pin, 'rawBytes': raw,
                 'compressedBytes': writer.total, 'entries': len(before), 'linksIncluded': False}
     finally:
@@ -255,7 +337,7 @@ class BoundedDecoded:
 
 
 def restore(bundle, destination, manifest, seconds=600, generated_links=None):
-    generated_links = generated_links or {}
+    generated_links = link_recipe(generated_links or {})
     budget = Budget(seconds)
     bundle = safe(bundle)
     destination = Path(os.path.abspath(destination))
@@ -268,7 +350,7 @@ def restore(bundle, destination, manifest, seconds=600, generated_links=None):
         checked_file(bundle, row, CHUNK_BYTES, budget)
     index = json.loads(checked_file(bundle, manifest['inventory'], MAX_METADATA, budget).read_bytes())
     require(index.get('generatedLinks', {}) == generated_links, 'generated-link-recipe-mismatch')
-    require(set(index) == {'schemaVersion','entries','files','generatedLinks'} and index['schemaVersion'] == 1, 'inventory-shape')
+    require(set(index) == ({'schemaVersion','entries','files','generatedLinks'} | ({'generatedState'} if len(generated_links) == 7 else set())) and index['schemaVersion'] == 1, 'inventory-shape')
     rows = index['entries']
     for row in rows:
         require(set(row) == {'path','kind','stamp'} and row['kind'] in ('file','directory'), 'inventory-row')
@@ -283,6 +365,20 @@ def restore(bundle, destination, manifest, seconds=600, generated_links=None):
     require(len(rows) <= MAX_ENTRIES and sum(r['stamp'][0] for r in rows if r['kind']=='file') <= MAX_RAW, 'input-bound')
     expected = {relative(r['path']): r for r in rows}
     require(len(expected) == len(rows) and len({unicodedata.normalize('NFC', p).casefold() for p in expected}) == len(rows), 'member-alias')
+    if len(generated_links) == 7:
+        for name in expected:
+            parent = Path(name).parent
+            while parent != Path('.'):
+                require(parent.as_posix() in expected and expected[parent.as_posix()]['kind'] == 'directory', 'generated-link-target')
+                parent = parent.parent
+        logical = {'framework': 'factory' if FRAMEWORK in expected else 'absent', 'targets': {}}
+        if FRAMEWORK in expected:
+            require(expected[FRAMEWORK]['kind'] == 'directory', 'generated-link-kind')
+            for spec in FRAMEWORK_ROLES.values():
+                row = expected.get(spec['target'])
+                require((row is not None and row['kind'] == spec['kind'] and (spec['kind'] != 'file' or row['stamp'][5] == 1)) or (row is None and spec['role'] != 'version'), 'generated-link-target')
+                logical['targets'][spec['role']] = 'present' if row is not None else 'pending'
+        require(index['generatedState'] == logical, 'generated-link-state')
     require(all(set(r)=={'path','sha256'} and isinstance(r['sha256'],str) and re.fullmatch(r'[a-f0-9]{64}',r['sha256']) for r in index['files']), 'inventory-file-pin')
     hashes = {r['path']: r['sha256'] for r in index['files']}
     require(len(hashes)==len(index['files']), 'inventory-file-alias')
@@ -319,12 +415,28 @@ def restore(bundle, destination, manifest, seconds=600, generated_links=None):
                         require(digest.hexdigest() == hashes[name], 'member-hash')
                     seen.add(name)
     require(seen == set(expected), 'missing-member')
+    restore_links = []
     for name, target in generated_links.items():
         relative(name)
-        require(name not in seen and safe(target).is_dir(), 'generated-link-recipe')
+        internal = name in FRAMEWORK_ROLES
+        if internal and FRAMEWORK not in expected:
+            continue
+        require(name not in seen, 'generated-link-recipe')
         parent = destination / name
         safe(parent.parent)
+        if internal:
+            t = destination / target['target']
+            row = expected.get(target['target'])
+            require((row is not None and row['kind'] == target['kind']) or (row is None and target['role'] != 'version'), 'generated-link-target')
+            target = target['raw']
+        else:
+            require(safe(target).is_dir(), 'generated-link-recipe')
+        restore_links.append((target, parent))
+    for target, parent in restore_links:
         os.symlink(target, parent)
+    state, _ = generated_state(destination, generated_links, rows, budget)
+    if len(generated_links) == 7:
+        require(state == index['generatedState'], 'generated-link-state')
     for row in sorted(rows, key=lambda x: x['path'].count('/'), reverse=True):
         p = destination / row['path']
         os.chmod(p, row['stamp'][4] & 0o777)
@@ -348,7 +460,7 @@ def main():
         data = Path(args.generated_links).read_bytes()
         require(len(data) <= 16384, 'link-recipe-bound')
         links = json.loads(data)
-        require(isinstance(links, dict) and len(links) <= 3 and all(relative(k) and Path(v).is_absolute() for k,v in links.items()), 'link-recipe')
+        link_recipe(links)
     if args.mode == 'seal':
         require(Path(args.input).stat().st_size < 1024**2, 'seal-zip-bound')
         with zipfile.ZipFile(args.input) as zipped:

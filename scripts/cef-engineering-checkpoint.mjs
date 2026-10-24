@@ -44,6 +44,9 @@ import {
   checkpointLog,
   checkpointCapacityRecord,
   normalizeSdkLinks,
+  checkpointLinkRecipe,
+  attestFrameworkLinks,
+  removeQuiescentSisoLog,
   selectedSdkPreflight,
   logSdkLayout,
   withVerifiedGraph,
@@ -330,7 +333,7 @@ export async function main(argv = process.argv.slice(2), env = process.env) {
                       expectedTargets: verified.sdkTargets,
                       aliasAttestation,
                       observe: logSdkLayout,
-                    }),
+                    }).then(checkpointLinkRecipe),
                   );
             const recipePath = path.join(
               context.logs,
@@ -451,9 +454,11 @@ export async function main(argv = process.argv.slice(2), env = process.env) {
                       }),
                     );
                     fail(
-                      canonical(regenerated) === canonical(linkRecipe),
+                      canonical(checkpointLinkRecipe(regenerated)) ===
+                        canonical(linkRecipe),
                       "Post-GN SDK recipe differs from verified physical targets",
                     );
+                    await attestFrameworkLinks(out);
                   },
                 });
               }
@@ -466,6 +471,7 @@ export async function main(argv = process.argv.slice(2), env = process.env) {
                 cwd: context.cwd,
                 env: context.env,
                 logs: context.logs,
+                out: context.checkpoint.out,
                 milliseconds: sliceBudget(
                   execution,
                   Math.floor(hostRemaining(env)),
@@ -493,20 +499,35 @@ export async function main(argv = process.argv.slice(2), env = process.env) {
               );
               fail(available >= required, "Full checkpoint output capacity");
             });
-            // Private evidence only; never changes the strict pack recipe/result.
-            const linkDiagnostic = await persistGeneratedLinkInventory(
-              out,
-              context.logs,
-            );
-            checkpointLog(
-              console.log,
-              `[cef-engineering-checkpoint] checkpoint link-diagnostic=${canonical(linkDiagnostic)}`,
-            );
             const archive = await withVerifiedGraph(
               out,
               identity.graph,
-              () =>
-                checkpointPhase("pack", () =>
+              async () => {
+                // The exact live compile result is retained; never decode/copy it.
+                const logAlias = await removeQuiescentSisoLog(out, compile, {
+                  beforeUnlink: (record) =>
+                    writeFile(
+                      path.join(context.logs, "siso-log-alias-before.json"),
+                      canonical(record),
+                      { flag: "wx" },
+                    ),
+                });
+                await writeFile(
+                  path.join(context.logs, "siso-log-alias.json"),
+                  canonical(logAlias),
+                  { flag: "wx" },
+                );
+                if (profile.platform === "darwin")
+                  await attestFrameworkLinks(out);
+                const linkDiagnostic = await persistGeneratedLinkInventory(
+                  out,
+                  context.logs,
+                );
+                checkpointLog(
+                  console.log,
+                  `[cef-engineering-checkpoint] checkpoint link-diagnostic=${canonical(linkDiagnostic)}`,
+                );
+                return checkpointPhase("pack", () =>
                   archiveCommand(
                     verified.python,
                     HELPER,
@@ -527,7 +548,8 @@ export async function main(argv = process.argv.slice(2), env = process.env) {
                         ),
                     },
                   ),
-                ),
+                );
+              },
               { log: console.log },
             );
             const manifest = {

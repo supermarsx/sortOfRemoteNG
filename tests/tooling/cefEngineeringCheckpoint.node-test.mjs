@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import YAML from "yaml";
-import { spawnSync } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import { writeFileSync, fstatSync, renameSync } from "node:fs";
 import { PassThrough } from "node:stream";
 import {
@@ -21,6 +21,7 @@ import {
   cp,
 } from "node:fs/promises";
 import path from "node:path";
+import { hostname, tmpdir, userInfo } from "node:os";
 import { fileURLToPath } from "node:url";
 import {
   LIMITS,
@@ -67,6 +68,10 @@ import {
   filePin,
   afterGnPhase,
   normalizeSdkLinks,
+  FRAMEWORK_LINKS,
+  checkpointLinkRecipe,
+  attestFrameworkLinks,
+  removeQuiescentSisoLog,
   selectedSdkPreflight,
   selectedSdkEnvironment,
   sdkLayoutRecord,
@@ -177,6 +182,423 @@ function python(code, args = []) {
     },
   );
 }
+
+test("typed framework recipe is static and admits only the three SDK roles", () => {
+  const sdk = {
+    "sdk/xcode_links/MacOSX26.2.sdk": "/owned/MacOSX26.2.sdk",
+    "sdk/xcode_links/MacOSX.platform": "/owned/MacOSX.platform",
+    "sdk/xcode_links/XcodeDefault.xctoolchain":
+      "/owned/XcodeDefault.xctoolchain",
+  };
+  const recipe = checkpointLinkRecipe(sdk);
+  assert.equal(Object.keys(recipe).length, 7);
+  assert.deepEqual(
+    Object.fromEntries(
+      Object.entries(recipe).filter(([name]) => name in FRAMEWORK_LINKS),
+    ),
+    FRAMEWORK_LINKS,
+  );
+  assert.throws(() => checkpointLinkRecipe({ ...sdk, unexpected: "/foreign" }));
+  assert.throws(() =>
+    checkpointLinkRecipe({
+      ...sdk,
+      "sdk/xcode_links/MacOSX.platform": "relative",
+    }),
+  );
+});
+
+async function frameworkFixture(t, state = "pending") {
+  const f = await sdkLinkFixture(t),
+    base = path.join(f.out, "Chromium Embedded Framework.framework");
+  if (state === "absent") return { ...f, base };
+  await mkdir(path.join(base, "Versions", "A"), { recursive: true });
+  if (state === "present") {
+    for (const name of ["Resources", "Libraries"])
+      await mkdir(path.join(base, "Versions", "A", name));
+    await writeFile(
+      path.join(base, "Versions", "A", "Resources", "owned-resource"),
+      "retained-resource",
+    );
+    await writeFile(
+      path.join(base, "Versions", "A", "Chromium Embedded Framework"),
+      "retained-binary",
+    );
+  }
+  for (const [member, spec] of Object.entries(FRAMEWORK_LINKS))
+    await symlink(
+      spec.role === "version"
+        ? "A"
+        : `Versions/Current/${path.basename(member)}`,
+      path.join(f.out, member),
+      spec.kind === "directory" ? "dir" : "file",
+    );
+  return { ...f, base };
+}
+for (const state of ["absent", "pending", "present"])
+  test(
+    `framework ${state} normalizes to a stable source-derived recipe`,
+    { skip: process.platform === "win32" },
+    async (t) => {
+      const f = await frameworkFixture(t, state),
+        sdk = await normalizeSdkLinks(f.out, f.options),
+        before = checkpointLinkRecipe(sdk);
+      const observed = await attestFrameworkLinks(f.out);
+      assert.equal(
+        observed.framework,
+        state === "absent" ? "absent" : "factory",
+      );
+      assert.deepEqual(checkpointLinkRecipe(sdk), before);
+      if (state !== "absent") {
+        assert.equal(observed.targets.version, "present");
+        assert.equal(observed.targets.binary, state);
+        for (const [member, spec] of Object.entries(FRAMEWORK_LINKS))
+          assert.equal(await readlink(path.join(f.out, member)), spec.raw);
+        assert.deepEqual(await attestFrameworkLinks(f.out), observed);
+      }
+    },
+  );
+for (const fault of [
+  "foreign-alias",
+  "unreleased-canonical-alias",
+  "missing-version",
+  "wrong-kind",
+  "missing-alias",
+  "linked-target",
+  "partial-root",
+])
+  test(
+    `framework denies ${fault} before changing any alias`,
+    { skip: process.platform === "win32" },
+    async (t) => {
+      const f = await frameworkFixture(t),
+        resources = path.join(f.base, "Resources"),
+        binary = path.join(
+          f.base,
+          "Versions",
+          "A",
+          "Chromium Embedded Framework",
+        );
+      if (fault === "foreign-alias") {
+        await unlink(resources);
+        await symlink("/foreign", resources);
+      }
+      if (fault === "unreleased-canonical-alias") {
+        await unlink(resources);
+        await symlink("Versions/A/Resources", resources);
+      }
+      if (fault === "missing-version")
+        await rm(path.join(f.base, "Versions", "A"), { recursive: true });
+      if (fault === "wrong-kind") await mkdir(binary);
+      if (fault === "linked-target") await symlink(f.root, binary);
+      if (fault === "missing-alias") await unlink(resources);
+      if (fault === "partial-root")
+        for (const member of Object.keys(FRAMEWORK_LINKS))
+          await unlink(path.join(f.out, member));
+      const original = await readlink(path.join(f.base, "Libraries")).catch(
+        () => null,
+      );
+      await assert.rejects(attestFrameworkLinks(f.out));
+      assert.equal(
+        await readlink(path.join(f.base, "Libraries")).catch(() => null),
+        original,
+      );
+    },
+  );
+
+// Kept as a constant so the exact same owned-fixture proof can run with an
+// existing POSIX Python when this host's Node cannot create POSIX symlinks.
+const FRAMEWORK_TRANSPORT_PROOF = String.raw`
+import importlib.util,pathlib,os,sys,json,subprocess
+p=pathlib.Path(sys.argv[1]);spec=importlib.util.spec_from_file_location('checkpoint',sys.argv[2]);m=importlib.util.module_from_spec(spec);spec.loader.exec_module(m)
+sdk={}
+for name in ['MacOSX26.2.sdk','MacOSX.platform','XcodeDefault.xctoolchain']:
+ t=p/name;t.mkdir();sdk['sdk/xcode_links/'+name]=str(t)
+recipe={**sdk,**m.FRAMEWORK_ROLES}
+assert len(m.link_recipe(recipe))==7
+for state in ['absent','pending','present']:
+ s=p/state;s.mkdir();(s/'sdk'/'xcode_links').mkdir(parents=True)
+ for name,target in sdk.items():os.symlink(target,s/name)
+ if state!='absent':
+  (s/m.FRAMEWORK/'Versions'/'A').mkdir(parents=True)
+  if state=='present':
+   (s/m.FRAMEWORK/'Versions'/'A'/'Resources').mkdir()
+   (s/m.FRAMEWORK/'Versions'/'A'/'Resources'/'owned').write_bytes(b'resource')
+   (s/m.FRAMEWORK/'Versions'/'A'/'Libraries').mkdir()
+   (s/m.FRAMEWORK/'Versions'/'A'/'Chromium Embedded Framework').write_bytes(b'binary')
+  if len(sys.argv)>3:
+   done=subprocess.run([sys.executable,'-I','-B',sys.argv[3],'--framework',str(s/m.FRAMEWORK),'--stamp',str(s/'factory.stamp'),'--version','A','--contents','Chromium Embedded Framework','Libraries','Resources'],capture_output=True,timeout=10)
+   assert done.returncode==0,done.stderr
+  else:
+   for name,row in m.FRAMEWORK_ROLES.items():os.symlink(row['raw'],s/name)
+ archive=m.pack(s,p/(state+'-bundle'),generated_links=recipe)
+ index=json.loads((p/(state+'-bundle')/'inventory.json').read_bytes())
+ assert index['generatedState']['framework']==('absent' if state=='absent' else 'factory')
+ if state!='absent':assert index['generatedState']['targets']['binary']==state
+ # No original out tree may satisfy restored target validation.
+ moved=p/(state+'-original');s.rename(moved)
+ r=p/(state+'-restored');m.restore(p/(state+'-bundle'),r,archive,generated_links=recipe)
+ if state=='present':assert (r/m.FRAMEWORK/'Chromium Embedded Framework').read_bytes()==b'binary'
+ if state!='absent':
+  for name,row in m.FRAMEWORK_ROLES.items():assert os.readlink(r/name)==row['raw']
+  final=p/(state+'-final');r.rename(final)
+  if state=='present':assert (final/m.FRAMEWORK/'Resources'/'owned').read_bytes()==b'resource'
+ # Independently reject closed-role/kind/target changes, even through direct Python API.
+ for field,value in [('kind','directory'),('target','foreign'),('role','unknown')]:
+  bad={**recipe,m.FRAMEWORK+'/Chromium Embedded Framework':{**recipe[m.FRAMEWORK+'/Chromium Embedded Framework'],field:value}}
+  try:m.link_recipe(bad);raise AssertionError('forged recipe')
+  except m.CheckpointError:pass
+ if state=='pending':
+  # A preexisting old sibling binary must never fill a missing extracted binary.
+  assert not (final/m.FRAMEWORK/'Versions'/'A'/'Chromium Embedded Framework').exists()
+  os.symlink('/foreign',final/'unknown')
+  try:m.pack(final,p/'unknown-bundle',generated_links=recipe);raise AssertionError('unknown link')
+  except m.CheckpointError:pass
+print(json.dumps({'states':3,'ownedFixture':True,'nativeAcceptance':False}))
+`;
+const FRAMEWORK_DENIAL_PROOF = String.raw`
+import importlib.util,pathlib,os,sys,json
+p=pathlib.Path(sys.argv[1]);spec=importlib.util.spec_from_file_location('checkpoint',sys.argv[2]);m=importlib.util.module_from_spec(spec);spec.loader.exec_module(m)
+sdk={}
+for name in ['MacOSX26.2.sdk','MacOSX.platform','XcodeDefault.xctoolchain']:
+ t=p/name;t.mkdir();sdk['sdk/xcode_links/'+name]=str(t)
+recipe={**sdk,**m.FRAMEWORK_ROLES}
+def fixture(name):
+ s=p/name;s.mkdir();(s/'sdk'/'xcode_links').mkdir(parents=True);(s/m.FRAMEWORK/'Versions'/'A').mkdir(parents=True)
+ for member,target in sdk.items():os.symlink(target,s/member)
+ for member,row in m.FRAMEWORK_ROLES.items():os.symlink(row['raw'],s/member)
+ (s/m.FRAMEWORK/'Versions'/'A'/'Chromium Embedded Framework').write_bytes(b'binary')
+ return s
+faults=['foreign-alias','unreleased-canonical-alias','wrong-binary-kind','missing-version','missing-alias','linked-target','hardlinked-file','unknown-directory-link','unknown-file-link']
+for fault in faults:
+ s=fixture(fault);binary=s/m.FRAMEWORK/'Versions'/'A'/'Chromium Embedded Framework';alias=s/m.FRAMEWORK/'Resources'
+ if fault=='foreign-alias':alias.unlink();os.symlink('/foreign',alias)
+ if fault=='unreleased-canonical-alias':alias.unlink();os.symlink('Versions/A/Resources',alias)
+ if fault=='wrong-binary-kind':binary.unlink();binary.mkdir()
+ if fault=='missing-version':binary.unlink();binary.parent.rmdir()
+ if fault=='missing-alias':alias.unlink()
+ if fault=='linked-target':binary.unlink();os.symlink(str(p),binary)
+ if fault=='hardlinked-file':os.link(binary,s/'second-link')
+ if fault=='unknown-directory-link':os.symlink(str(p),s/m.FRAMEWORK/'foreign')
+ if fault=='unknown-file-link':os.symlink(str(binary),s/'foreign')
+ try:m.pack(s,p/(fault+'-bundle'),generated_links=recipe);raise AssertionError(fault)
+ except m.CheckpointError:pass
+s=fixture('mutation');original=m.HashedReader
+class MutatingReader(original):
+ def read(self,count):
+  data=super().read(count)
+  alias=s/m.FRAMEWORK/'Resources'
+  if data and os.readlink(alias)!='foreign':alias.unlink();os.symlink('foreign',alias)
+  return data
+m.HashedReader=MutatingReader
+try:m.pack(s,p/'mutation-bundle',generated_links=recipe);raise AssertionError('mutation admitted')
+except m.CheckpointError:pass
+m.HashedReader=original
+s=fixture('bad-state');a=m.pack(s,p/'bad-state-bundle',generated_links=recipe)
+index_path=p/'bad-state-bundle'/'inventory.json';index=json.loads(index_path.read_bytes());index['generatedState']['targets']['binary']='pending'
+data=(json.dumps(index,sort_keys=True,separators=(',',':'))+'\n').encode();index_path.write_bytes(data)
+import hashlib
+a['inventory']={'name':'inventory.json','bytes':len(data),'sha256':hashlib.sha256(data).hexdigest()}
+try:m.restore(p/'bad-state-bundle',p/'state-restored',a,generated_links=recipe);raise AssertionError('forged state')
+except m.CheckpointError:pass
+print(json.dumps({'denied':11,'nativeAcceptance':False}))
+`;
+test(
+  "typed framework archive denies unsafe links, wrong kinds, hardlinks and pack mutation",
+  { skip: process.platform === "win32" },
+  async (t) => {
+    const root = await scratch(t),
+      result = python(FRAMEWORK_DENIAL_PROOF, [
+        root,
+        path.join(ROOT, "scripts/lib/cef-checkpoint-archive.py"),
+      ]);
+    assert.equal(result.status, 0, result.stderr || result.stdout);
+    assert.equal(JSON.parse(result.stdout).denied, 11);
+  },
+);
+test(
+  "typed framework archive restores absent, pending and full output without borrowing old out",
+  { skip: process.platform === "win32" },
+  async (t) => {
+    const root = await scratch(t),
+      result = python(FRAMEWORK_TRANSPORT_PROOF, [
+        root,
+        path.join(ROOT, "scripts/lib/cef-checkpoint-archive.py"),
+      ]);
+    assert.equal(result.status, 0, result.stderr || result.stdout);
+    assert.deepEqual(JSON.parse(result.stdout), {
+      states: 3,
+      ownedFixture: true,
+      nativeAcceptance: false,
+    });
+  },
+);
+test("Python independently rejects malformed framework roles and unknown SDK aliases", () => {
+  const result = python(
+    String.raw`import importlib.util,sys
+s=importlib.util.spec_from_file_location('m',sys.argv[1]);m=importlib.util.module_from_spec(s);s.loader.exec_module(m)
+for bad in [{'unknown':'/foreign'},{'sdk/xcode_links/unknown':'/foreign'},m.FRAMEWORK_ROLES]:
+ try:m.link_recipe(bad);raise AssertionError('unreviewed recipe')
+ except m.CheckpointError:pass
+print('{}')`,
+    [path.join(ROOT, "scripts/lib/cef-checkpoint-archive.py")],
+  );
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+});
+
+test(
+  "exact Siso log alias is removed only after actual owned compiler quiescence; target survives",
+  { skip: process.platform === "win32" },
+  async (t) => {
+    const root = await scratch(t),
+      compile = await compileSlice(
+        process.execPath,
+        [
+          "-e",
+          "require('node:fs').writeFileSync('siso-test-time',new Date().toISOString().replace(/[^0-9]/g,'').slice(0,14));setTimeout(()=>{},200)",
+        ],
+        {
+          cwd: root,
+          env: { PATH: path.dirname(process.execPath) },
+          logs: root,
+          out: root,
+          milliseconds: 2000,
+        },
+      );
+    const stamp = await readFile(path.join(root, "siso-test-time"), "utf8");
+    const time = `${stamp.slice(0, 8)}-${stamp.slice(8)}`;
+    const target = path.join(
+      tmpdir(),
+      `siso.${hostname()}.${userInfo().username}.log.INFO.${time}.${compile.groupId}`,
+    );
+    await writeFile(target, "target-must-survive", { flag: "wx" });
+    t.after(() => unlink(target));
+    await symlink(target, path.join(root, "siso.INFO"));
+    await assert.rejects(
+      removeQuiescentSisoLog(root, compile, {
+        beforeUnlink: async () => {
+          throw new Error("evidence write denied");
+        },
+      }),
+      /evidence write denied/,
+    );
+    assert.equal(await readlink(path.join(root, "siso.INFO")), target);
+    let before = 0;
+    const result = await removeQuiescentSisoLog(root, compile, {
+      beforeUnlink: async (record) => {
+        assert.equal(record.link.target, target);
+        assert.equal(await readlink(path.join(root, "siso.INFO")), target);
+        before++;
+      },
+    });
+    assert.equal(before, 1);
+    assert.equal(result.removed, true);
+    assert.equal(await readFile(target, "utf8"), "target-must-survive");
+    assert.equal((await removeQuiescentSisoLog(root, compile)).absent, true);
+    for (const foreign of [
+      path.join(root, path.basename(target)),
+      path.join(
+        tmpdir(),
+        `siso.foreign.runner.log.INFO.${time}.${compile.groupId}`,
+      ),
+      path.join(
+        tmpdir(),
+        `siso.${hostname()}.${userInfo().username}.log.INFO.${time}.1`,
+      ),
+    ]) {
+      await symlink(foreign, path.join(root, "siso.INFO"));
+      await assert.rejects(removeQuiescentSisoLog(root, compile));
+      assert.equal(await readlink(path.join(root, "siso.INFO")), foreign);
+      await unlink(path.join(root, "siso.INFO"));
+    }
+    for (const rejected of [
+      "20260230-010101",
+      "20000101-000000",
+      "20990101-000000",
+    ]) {
+      const foreign = path.join(
+        tmpdir(),
+        `siso.${hostname()}.${userInfo().username}.log.INFO.${rejected}.${compile.groupId}`,
+      );
+      await symlink(foreign, path.join(root, "siso.INFO"));
+      await assert.rejects(
+        removeQuiescentSisoLog(root, compile),
+        /Invalid Siso UTC|outside actual compile window/,
+      );
+      assert.equal(await readlink(path.join(root, "siso.INFO")), foreign);
+      await unlink(path.join(root, "siso.INFO"));
+    }
+    await symlink(target, path.join(root, "siso.INFO"));
+    await assert.rejects(
+      removeQuiescentSisoLog(root, JSON.parse(JSON.stringify(compile))),
+      /Genuine in-process/,
+    );
+    const other = path.join(root, "different-out");
+    await mkdir(other);
+    await assert.rejects(
+      removeQuiescentSisoLog(other, compile),
+      /Compile output path differs/,
+    );
+    assert.equal(await readlink(path.join(root, "siso.INFO")), target);
+  },
+);
+
+test(
+  "Siso cleanup rejects a self-asserted quiescent receipt while its exact owned child remains alive",
+  { skip: process.platform === "win32" },
+  async (t) => {
+    const root = await scratch(t),
+      child = spawn(process.execPath, ["-e", "setTimeout(()=>{},5000)"], {
+        detached: true,
+        stdio: "ignore",
+      });
+    const closed = new Promise((resolve) => child.once("close", resolve));
+    t.after(async () => {
+      if (child.exitCode === null && child.signalCode === null)
+        child.kill("SIGKILL");
+      await closed;
+    });
+    const ps = spawnSync("/bin/ps", ["-axo", "pid=,ppid=,lstart="], {
+      encoding: "utf8",
+      env: { PATH: "/usr/bin:/bin", LC_ALL: "C", TZ: "UTC" },
+    });
+    assert.equal(ps.status, 0);
+    const actual = processRows(ps.stdout).find((row) => row.pid === child.pid);
+    assert.ok(actual);
+    const target = path.join(
+        tmpdir(),
+        `siso.${hostname()}.${userInfo().username}.log.INFO.20261025-000000.${child.pid}`,
+      ),
+      file = path.join(root, "siso.INFO");
+    await symlink(target, file);
+    await assert.rejects(
+      removeQuiescentSisoLog(root, {
+        outcome: "slice-ended",
+        exitCode: 0,
+        quiescent: true,
+        groupId: child.pid,
+        quiescence: "observed-lineage-and-root-group",
+        observed: [{ pid: actual.pid, start: actual.start }],
+      }),
+      /Genuine in-process/,
+    );
+    assert.equal(await readlink(file), target);
+  },
+);
+test("decoded compiler receipts cannot authorize cleanup, even with no alias present", async (t) => {
+  const root = await scratch(t);
+  await assert.rejects(
+    removeQuiescentSisoLog(root, {
+      outcome: "slice-ended",
+      exitCode: null,
+      quiescent: true,
+      groupId: 123,
+      quiescence: "observed-lineage-and-root-group",
+      observed: [{ pid: 123, start: "Sat Oct 24 00:00:00 2026" }],
+    }),
+    /Genuine in-process/,
+  );
+  assert.deepEqual(await readdir(root), []);
+});
 test("manual checkpoint authority is exact, public and default-only", () => {
   assert.deepEqual(authority(env), producer);
   for (const change of [
@@ -3654,10 +4076,26 @@ test("production CLI wires each post-slice boundary and pack failure observer wi
   assert.match(compile, /observeFailure:/);
   assert.match(compile, /LIMITS\.compressed \+ 2 \* 1024 \*\* 3/);
   assert.match(compile, /withVerifiedGraph\(out, identity\.graph/);
-  assert.ok(
-    compile.indexOf("await persistGeneratedLinkInventory(out, context.logs)") <
-      compile.indexOf('checkpointPhase("pack"'),
+  assert.match(compile, /const compile = await checkpointPhase/);
+  assert.match(compile, /out: context\.checkpoint\.out/);
+  const guarded = compile.slice(
+    compile.indexOf("const archive = await withVerifiedGraph("),
+    compile.indexOf("const manifest ="),
   );
+  const positions = [
+    /async \(\) => \{/,
+    /await removeQuiescentSisoLog\(out, compile,/,
+    /await attestFrameworkLinks\(out\)/,
+    /await persistGeneratedLinkInventory\(\s*out,\s*context\.logs,?\s*\)/,
+    /checkpointPhase\("pack"/,
+  ].map((pattern) => {
+    const found = pattern.exec(guarded);
+    assert.ok(found, String(pattern));
+    return found.index;
+  });
+  for (let i = 1; i < positions.length; i++)
+    assert.ok(positions[i - 1] < positions[i]);
+  assert.doesNotMatch(guarded, /JSON\.parse|\.\.\.compile/);
 });
 
 test("post-slice link diagnostic preserves real rejected outside, loop and junction evidence without following", async (t) => {
