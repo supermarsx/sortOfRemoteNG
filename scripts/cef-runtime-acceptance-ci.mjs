@@ -113,6 +113,257 @@ function identifier(value) {
   if (!Number.isSafeInteger(value) || value < 1)
     fail("Positive exact GitHub identifier required");
 }
+const ACCEPTANCE_WORKFLOW = ".github/workflows/cef-runtime-acceptance.yml";
+
+export function acceptanceExecution(env) {
+  const direct = `${OWNED_REPOSITORY}/${ACCEPTANCE_WORKFLOW}@${env.GITHUB_REF}`;
+  const reusableCaller = `${OWNED_REPOSITORY}/.github/workflows/cef-patched-runtime.yml@${env.GITHUB_REF}`;
+  if (
+    env.GITHUB_ACTIONS !== "true" ||
+    env.RUNNER_ENVIRONMENT !== "github-hosted" ||
+    env.GITHUB_EVENT_NAME !== "workflow_dispatch" ||
+    env.GITHUB_REPOSITORY_VISIBILITY !== "public" ||
+    env.GITHUB_REPOSITORY !== OWNED_REPOSITORY ||
+    !/^refs\/heads\/[^\s\x00-\x1f\x7f]{1,240}$/.test(env.GITHUB_REF ?? "") ||
+    ![direct, reusableCaller].includes(env.GITHUB_WORKFLOW_REF) ||
+    env.GITHUB_WORKFLOW_SHA !== env.GITHUB_SHA
+  )
+    fail("Exact public manual native acceptance workflow required for seal");
+  digest(env.GITHUB_SHA, 40);
+  for (const key of [
+    "GITHUB_REPOSITORY_ID",
+    "GITHUB_RUN_ID",
+    "GITHUB_RUN_ATTEMPT",
+  ])
+    if (!/^[1-9][0-9]*$/.test(env[key] ?? ""))
+      fail("Exact native acceptance identifiers required");
+    else identifier(Number(env[key]));
+  // Reusable workflows retain the caller's GitHub context. Preserve the existing
+  // exact native-gate caller without minting a direct-workflow acceptance seal.
+  if (env.GITHUB_WORKFLOW_REF === reusableCaller) return null;
+  return {
+    repository: env.GITHUB_REPOSITORY,
+    repositoryId: Number(env.GITHUB_REPOSITORY_ID),
+    runId: Number(env.GITHUB_RUN_ID),
+    runAttempt: Number(env.GITHUB_RUN_ATTEMPT),
+    sourceSha: env.GITHUB_SHA,
+    workflow: ACCEPTANCE_WORKFLOW,
+    workflowRef: env.GITHUB_WORKFLOW_REF,
+    ref: env.GITHUB_REF,
+    event: "workflow_dispatch",
+  };
+}
+
+// Git object identities describe committed code regardless of checkout EOLs.
+// A tracked modification anywhere in that checkout invalidates the seal.
+export function acceptanceCodeIdentity(sourceSha, root = ROOT) {
+  digest(sourceSha, 40);
+  const git = (args) =>
+    execFileSync("git", ["-C", root, ...args], {
+      timeout: 10_000,
+      maxBuffer: 8 * 1024 ** 2,
+      windowsHide: true,
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+  if (
+    git(["rev-parse", "HEAD"]).toString().trim() !== sourceSha ||
+    git(["status", "--porcelain=v1", "--untracked-files=no"]).length
+  )
+    fail("Native acceptance code must match the clean workflow commit");
+  const sourceTree = git(["rev-parse", "HEAD^{tree}"]).toString().trim();
+  digest(sourceTree, 40);
+  return {
+    sourceTree,
+    codeSha256: sha(git(["ls-tree", "-r", "-z", "--full-tree", "HEAD"])),
+    codeDigestFormat: "git-ls-tree-r-z-sha256-v1",
+  };
+}
+
+export function createAcceptanceSeal(
+  result,
+  { execution, code, reportSha256 },
+) {
+  // These are evidence checks, not a replacement for executing native gates.
+  // The future publisher must independently authenticate the workflow/artifact.
+  exact(execution, [
+    "repository",
+    "repositoryId",
+    "runId",
+    "runAttempt",
+    "sourceSha",
+    "workflow",
+    "workflowRef",
+    "ref",
+    "event",
+  ]);
+  const observedExecution = acceptanceExecution({
+    GITHUB_ACTIONS: "true",
+    RUNNER_ENVIRONMENT: "github-hosted",
+    GITHUB_REPOSITORY_VISIBILITY: "public",
+    GITHUB_EVENT_NAME: execution.event,
+    GITHUB_REPOSITORY: execution.repository,
+    GITHUB_REPOSITORY_ID: String(execution.repositoryId),
+    GITHUB_RUN_ID: String(execution.runId),
+    GITHUB_RUN_ATTEMPT: String(execution.runAttempt),
+    GITHUB_SHA: execution.sourceSha,
+    GITHUB_WORKFLOW_SHA: execution.sourceSha,
+    GITHUB_WORKFLOW_REF: execution.workflowRef,
+    GITHUB_REF: execution.ref,
+  });
+  if (
+    !observedExecution ||
+    canonical(observedExecution) !== canonical(execution)
+  )
+    fail("Native acceptance workflow differs");
+  exact(code, ["sourceTree", "codeSha256", "codeDigestFormat"]);
+  digest(code.sourceTree, 40);
+  digest(code.codeSha256);
+  digest(reportSha256);
+  if (code.codeDigestFormat !== "git-ls-tree-r-z-sha256-v1")
+    fail("Unknown native acceptance code digest");
+  const owned = result.producer?.producer === "owned-import";
+  exact(result, [
+    "schemaVersion",
+    "kind",
+    "target",
+    "producer",
+    "acceptanceSourceSha",
+    "acceptanceWorkflowRunId",
+    "nativeHost",
+    "sourceLockIdentity",
+    "descriptorSha256",
+    "reports",
+    "builds",
+    "ok",
+    "nativeExecutionPerformed",
+    "publicProviderAcceptance",
+    "productionReady",
+    "publicationAllowed",
+    ...(owned ? ["ingestion", "hostedBuild"] : []),
+  ]);
+  if (
+    result.schemaVersion !== 1 ||
+    result.kind !== "sorng-cef-native-acceptance-run" ||
+    result.ok !== true ||
+    result.nativeExecutionPerformed !== true ||
+    result.publicProviderAcceptance !== false ||
+    result.productionReady !== false ||
+    result.publicationAllowed !== false ||
+    result.acceptanceSourceSha !== execution.sourceSha ||
+    result.acceptanceWorkflowRunId !== execution.runId ||
+    (owned &&
+      (result.ingestion !== "operator-reviewed-local-bytes" ||
+        result.hostedBuild !== false))
+  )
+    fail("Only completed native acceptance may create a seal");
+  const producer = selectedProducer(result.producer);
+  producerSelection([producer]);
+  if (
+    producer.target !== result.target ||
+    producer.descriptorSha256 !== result.descriptorSha256 ||
+    result.producer.sourceLockIdentity !== result.sourceLockIdentity
+  )
+    fail("Native acceptance producer/descriptor/source differs");
+  digest(result.sourceLockIdentity);
+  const native = NATIVE_TARGETS[result.target];
+  exact(result.nativeHost, ["platform", "architecture"]);
+  if (
+    result.nativeHost.platform !== native.platform ||
+    result.nativeHost.architecture !== native.arch
+  )
+    fail("Native acceptance host architecture differs");
+  const expected = ["tls", ...HTTP2_CHECKS.map((check) => `http2-${check}`)];
+  if (
+    !Array.isArray(result.reports) ||
+    result.reports.length !== expected.length
+  )
+    fail("All nine native acceptance reports required");
+  const seen = new Set();
+  for (const report of result.reports) {
+    exact(report, [
+      "suite",
+      "accepted",
+      "reportSha256",
+      ...(report.suite === "http2" ? ["check"] : []),
+    ]);
+    const label =
+      report.suite === "tls" ? "tls" : `${report.suite}-${report.check}`;
+    if (
+      report.accepted !== true ||
+      !expected.includes(label) ||
+      seen.has(label)
+    )
+      fail("Unique successful TLS and H2 reports required");
+    seen.add(label);
+    digest(report.reportSha256);
+  }
+  if (!Array.isArray(result.builds) || result.builds.length !== 2)
+    fail("Both native fixture builds required");
+  const suites = new Set();
+  for (const build of result.builds) {
+    exact(build, [
+      "suite",
+      "clientSha256",
+      "cargoLockSha256",
+      ...(native.platform !== "win32" ? ["helperSha256"] : []),
+    ]);
+    if (!["tls", "http2"].includes(build.suite) || suites.has(build.suite))
+      fail("Unique native fixture builds required");
+    suites.add(build.suite);
+    for (const key of Object.keys(build).filter((key) => key !== "suite"))
+      digest(build[key]);
+  }
+  return {
+    schemaVersion: 1,
+    kind: "sorng-cef-native-acceptance-seal",
+    execution: { ...execution, ...code },
+    target: result.target,
+    producer,
+    sourceLockIdentity: result.sourceLockIdentity,
+    descriptorSha256: result.descriptorSha256,
+    nativeHost: { ...result.nativeHost },
+    report: { path: "native-acceptance.json", sha256: reportSha256 },
+    reports: structuredClone(result.reports),
+    builds: structuredClone(result.builds),
+    ...(owned ? { ingestion: result.ingestion, hostedBuild: false } : {}),
+    nativeAcceptance: true,
+    productionReady: false,
+    publicationAllowed: false,
+  };
+}
+
+export async function writeAcceptanceSeal({
+  destination,
+  result,
+  execution,
+  code,
+}) {
+  const report = await readFile(
+    path.join(destination, "native-acceptance.json"),
+  );
+  if (canonical(JSON.parse(report)) !== canonical(result))
+    fail("Retained native acceptance result differs");
+  const seal = createAcceptanceSeal(result, {
+    execution,
+    code,
+    reportSha256: sha(report),
+  });
+  for (const row of seal.reports) {
+    const label = row.suite === "tls" ? "tls" : `http2-${row.check}`;
+    if (
+      (await hashFile(path.join(destination, label, "acceptance.json"))) !==
+      row.reportSha256
+    )
+      fail("Retained native case report differs");
+  }
+  // LAST and exclusive. Failed/partial runs retain diagnostics but no seal.
+  await writeFile(
+    path.join(destination, "seal.json"),
+    JSON.stringify(seal, null, 2),
+    { flag: "wx" },
+  );
+  return seal;
+}
 function repositoryName(value) {
   if (!/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(value ?? ""))
     fail("Invalid repository");
@@ -800,6 +1051,8 @@ export async function executeAcceptance(
   assertNativeTarget(target);
   digest(env.GITHUB_SHA, 40);
   identifier(Number(env.GITHUB_RUN_ID));
+  const execution = acceptanceExecution(env);
+  const code = execution ? acceptanceCodeIdentity(execution.sourceSha) : null;
   producerSelection([selectedProducer(entry)]);
   digest(entry.sourceLockIdentity);
   const temp = await realpath(env.RUNNER_TEMP);
@@ -1039,6 +1292,13 @@ export async function executeAcceptance(
     fail(
       "One or more native acceptance gates failed; inspect retained receipts",
     );
+  if (execution) {
+    if (
+      canonical(acceptanceCodeIdentity(execution.sourceSha)) !== canonical(code)
+    )
+      fail("Native acceptance code changed during execution");
+    await writeAcceptanceSeal({ destination, result, execution, code });
+  }
   return result;
 }
 async function main() {

@@ -1,14 +1,25 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { mkdtemp, readFile, realpath, rm, writeFile } from "node:fs/promises";
+import {
+  mkdtemp,
+  mkdir,
+  readFile,
+  realpath,
+  rm,
+  writeFile,
+} from "node:fs/promises";
+import { execFileSync } from "node:child_process";
 import os from "node:os";
 import path from "node:path";
 import YAML from "yaml";
 import {
   acceptancePlan,
+  acceptanceCodeIdentity,
+  acceptanceExecution,
   assertNativeTarget,
   createAcceptanceBudget,
+  createAcceptanceSeal,
   fixtureClientBuild,
   HTTP2_CHECKS,
   NATIVE_TARGETS,
@@ -17,6 +28,7 @@ import {
   runAcceptanceCommand,
   verifyAcceptanceBundle,
   verifyProducerMetadata,
+  writeAcceptanceSeal,
 } from "../../scripts/cef-runtime-acceptance-ci.mjs";
 import {
   WORKFLOW as ENGINEERING_WORKFLOW,
@@ -59,6 +71,371 @@ const artifact = {
   digest: `sha256:${selected.artifactSha256}`,
   size_in_bytes: 12345,
 };
+
+test("native acceptance writes a success-only attempt-specific seal separately from failure diagnostics", async () => {
+  const module = await import("../../scripts/cef-runtime-acceptance-ci.mjs");
+  assert.equal(typeof module.createAcceptanceSeal, "function");
+  const workflow = YAML.parse(
+    await readFile(".github/workflows/cef-runtime-acceptance.yml", "utf8"),
+  );
+  const seal = workflow.jobs.native.steps.find((step) =>
+    step.name?.startsWith("Retain successful native acceptance seal"),
+  );
+  assert.ok(seal);
+  assert.equal(
+    seal.if,
+    "success() && github.workflow_ref == format('{0}/.github/workflows/cef-runtime-acceptance.yml@{1}', github.repository, github.ref)",
+  );
+  assert.equal(seal.with["if-no-files-found"], "error");
+  assert.equal(
+    seal.with.name,
+    "cef-native-acceptance-seal-${{ matrix.target }}-${{ github.run_id }}-${{ github.run_attempt }}",
+  );
+  assert.match(seal.with.path, /\/seal\.json$/);
+  assert.equal(workflow.jobs.native.steps.at(-1).if, "always()");
+});
+
+function sealFixture(producer = selected) {
+  const native = NATIVE_TARGETS[producer.target];
+  const env = {
+    GITHUB_ACTIONS: "true",
+    RUNNER_ENVIRONMENT: "github-hosted",
+    GITHUB_EVENT_NAME: "workflow_dispatch",
+    GITHUB_REPOSITORY_VISIBILITY: "public",
+    GITHUB_REPOSITORY: repository,
+    GITHUB_REPOSITORY_ID: "11",
+    GITHUB_RUN_ID: "999",
+    GITHUB_RUN_ATTEMPT: "2",
+    GITHUB_SHA: "f".repeat(40),
+    GITHUB_WORKFLOW_SHA: "f".repeat(40),
+    GITHUB_REF: "refs/heads/Main",
+    GITHUB_WORKFLOW_REF: `${repository}/.github/workflows/cef-runtime-acceptance.yml@refs/heads/Main`,
+  };
+  const result = {
+    schemaVersion: 1,
+    kind: "sorng-cef-native-acceptance-run",
+    target: producer.target,
+    producer: { ...producer, sourceLockIdentity: "e".repeat(64) },
+    ...(producer.producer === "owned-import"
+      ? {
+          ingestion: "operator-reviewed-local-bytes",
+          hostedBuild: false,
+        }
+      : {}),
+    acceptanceSourceSha: env.GITHUB_SHA,
+    acceptanceWorkflowRunId: 999,
+    nativeHost: { platform: native.platform, architecture: native.arch },
+    sourceLockIdentity: "e".repeat(64),
+    descriptorSha256: producer.descriptorSha256,
+    reports: [
+      { suite: "tls", accepted: true, reportSha256: "1".repeat(64) },
+      ...HTTP2_CHECKS.map((check, i) => ({
+        suite: "http2",
+        check,
+        accepted: true,
+        reportSha256: String(i + 2).repeat(64),
+      })),
+    ],
+    builds: ["tls", "http2"].map((suite) => ({
+      suite,
+      clientSha256: "a".repeat(64),
+      cargoLockSha256: "b".repeat(64),
+      ...(native.platform !== "win32" ? { helperSha256: "c".repeat(64) } : {}),
+    })),
+    ok: true,
+    nativeExecutionPerformed: true,
+    publicProviderAcceptance: false,
+    productionReady: false,
+    publicationAllowed: false,
+  };
+  return {
+    env,
+    result,
+    options: {
+      execution: acceptanceExecution(env),
+      code: {
+        sourceTree: "a".repeat(40),
+        codeSha256: "b".repeat(64),
+        codeDigestFormat: "git-ls-tree-r-z-sha256-v1",
+      },
+      reportSha256: "d".repeat(64),
+    },
+  };
+}
+
+test("seal preserves legacy, completed engineering and owned import identities without claiming hosted local compilation or publication", () => {
+  const owned = {
+    ...sdkSelected,
+    producer: "owned-import",
+    target: "x86_64-pc-windows-msvc",
+    reviewedImport: "native/cef-owned-sdk-imports/example/review.json",
+    reviewSha256: "e".repeat(64),
+  };
+  for (const producer of [selected, sdkSelected, owned]) {
+    const { result, options } = sealFixture(producer);
+    const seal = createAcceptanceSeal(result, options);
+    assert.deepEqual(seal.producer, producer);
+    assert.equal(seal.execution.runAttempt, 2);
+    assert.equal(seal.execution.runId, 999);
+    assert.equal(seal.nativeAcceptance, true);
+    assert.equal(seal.productionReady, false);
+    assert.equal(seal.publicationAllowed, false);
+    assert.equal(seal.hostedBuild, producer === owned ? false : undefined);
+    assert.deepEqual(seal.reports, result.reports);
+    result.reports[0].accepted = false;
+    assert.equal(seal.reports[0].accepted, true);
+  }
+  for (const patch of [
+    { hostedBuild: true },
+    { ingestion: "hosted-compiled" },
+  ]) {
+    const { result, options } = sealFixture(owned);
+    assert.throws(() => createAcceptanceSeal({ ...result, ...patch }, options));
+  }
+});
+
+test("seal rejects failed, partial, duplicate, wrong-owner/source/architecture and fabricated readiness evidence", () => {
+  const mutations = [
+    (v) => {
+      v.ok = false;
+    },
+    (v) => {
+      v.nativeExecutionPerformed = false;
+    },
+    (v) => {
+      v.reports.pop();
+    },
+    (v) => {
+      v.reports[8] = v.reports[7];
+    },
+    (v) => {
+      v.reports[1].accepted = false;
+    },
+    (v) => {
+      v.reports[1].check = "unknown";
+    },
+    (v) => {
+      v.reports[1].reportSha256 = "0".repeat(64);
+    },
+    (v) => {
+      v.reports[0].check = "multiplex";
+    },
+    (v) => {
+      v.acceptanceWorkflowRunId++;
+    },
+    (v) => {
+      v.acceptanceSourceSha = "a".repeat(40);
+    },
+    (v) => {
+      v.producer.target = "x86_64-apple-darwin";
+    },
+    (v) => {
+      v.descriptorSha256 = "a".repeat(64);
+    },
+    (v) => {
+      v.sourceLockIdentity = "a".repeat(64);
+    },
+    (v) => {
+      v.nativeHost.architecture = "x64";
+    },
+    (v) => {
+      v.builds.pop();
+    },
+    (v) => {
+      v.builds[1] = v.builds[0];
+    },
+    (v) => {
+      v.builds[0].clientSha256 = "0".repeat(64);
+    },
+    (v) => {
+      delete v.builds[0].helperSha256;
+    },
+    (v) => {
+      v.productionReady = true;
+    },
+    (v) => {
+      v.publicationAllowed = true;
+    },
+    (v) => {
+      v.publicProviderAcceptance = true;
+    },
+  ];
+  for (const mutate of mutations) {
+    const { result, options } = sealFixture();
+    mutate(result);
+    assert.throws(() => createAcceptanceSeal(result, options));
+  }
+  const { result, options } = sealFixture();
+  assert.throws(() =>
+    createAcceptanceSeal(result, {
+      ...options,
+      execution: { ...options.execution, runAttempt: 0 },
+    }),
+  );
+  assert.throws(() =>
+    createAcceptanceSeal(result, {
+      ...options,
+      code: { ...options.code, codeDigestFormat: "unknown" },
+    }),
+  );
+});
+
+test("seal execution captures exact run attempt and workflow; rejects foreign, missing and rounded identifiers", () => {
+  const { env } = sealFixture();
+  for (const patch of [
+    { GITHUB_RUN_ATTEMPT: undefined },
+    { GITHUB_RUN_ATTEMPT: "02" },
+    { GITHUB_RUN_ATTEMPT: "9007199254740993" },
+    { GITHUB_REPOSITORY_ID: "0" },
+    {
+      GITHUB_WORKFLOW_REF: `${repository}/.github/workflows/cef-owned-sdk-import.yml@refs/heads/Main`,
+    },
+    { GITHUB_REPOSITORY: "foreign/repo" },
+    { GITHUB_WORKFLOW_SHA: "a".repeat(40) },
+    { GITHUB_EVENT_NAME: "pull_request" },
+    { RUNNER_ENVIRONMENT: "self-hosted" },
+    { GITHUB_REPOSITORY_VISIBILITY: "private" },
+    { GITHUB_REF: "refs/tags/v1" },
+  ])
+    assert.throws(() => acceptanceExecution({ ...env, ...patch }));
+  assert.equal(
+    acceptanceExecution({ ...env, GITHUB_RUN_ATTEMPT: "3" }).runAttempt,
+    3,
+  );
+});
+
+test("existing exact patched-runtime reusable caller executes native gates without direct-workflow seal authority", () => {
+  const { env, result, options } = sealFixture();
+  const caller = `${repository}/.github/workflows/cef-patched-runtime.yml@refs/heads/Main`;
+  assert.equal(
+    acceptanceExecution({ ...env, GITHUB_WORKFLOW_REF: caller }),
+    null,
+  );
+  assert.throws(() =>
+    createAcceptanceSeal(result, {
+      ...options,
+      execution: { ...options.execution, workflowRef: caller },
+    }),
+  );
+  for (const patch of [
+    {
+      GITHUB_WORKFLOW_REF: `${repository}/.github/workflows/other.yml@refs/heads/Main`,
+    },
+    { GITHUB_WORKFLOW_REF: caller, GITHUB_WORKFLOW_SHA: "a".repeat(40) },
+    { GITHUB_WORKFLOW_REF: caller, GITHUB_REF: "refs/heads/foreign" },
+    { GITHUB_WORKFLOW_REF: caller.replace(repository, "foreign/repository") },
+  ])
+    assert.throws(() => acceptanceExecution({ ...env, ...patch }));
+});
+
+test("code identity observes a real clean Git commit and denies dirty code or a different workflow head", async (t) => {
+  const root = await realpath(
+    await mkdtemp(path.join(os.tmpdir(), "cef-acceptance-code-")),
+  );
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const git = (...args) =>
+    execFileSync("git", ["-C", root, ...args], {
+      encoding: "utf8",
+      windowsHide: true,
+    });
+  git("init", "--quiet");
+  git("config", "core.autocrlf", "false");
+  await writeFile(path.join(root, "runner.mjs"), "export const gate = true;\n");
+  git("add", "runner.mjs");
+  git(
+    "-c",
+    "user.name=Acceptance Test",
+    "-c",
+    "user.email=acceptance@example.invalid",
+    "commit",
+    "--quiet",
+    "--no-gpg-sign",
+    "-m",
+    "fixture",
+  );
+  const head = git("rev-parse", "HEAD").trim();
+  const identity = acceptanceCodeIdentity(head, root);
+  assert.equal(identity.sourceTree, git("rev-parse", "HEAD^{tree}").trim());
+  assert.equal(
+    identity.codeSha256,
+    createHash("sha256")
+      .update(
+        execFileSync("git", [
+          "-C",
+          root,
+          "ls-tree",
+          "-r",
+          "-z",
+          "--full-tree",
+          "HEAD",
+        ]),
+      )
+      .digest("hex"),
+  );
+  assert.throws(
+    () => acceptanceCodeIdentity("a".repeat(40), root),
+    /workflow commit/,
+  );
+  await writeFile(
+    path.join(root, "runner.mjs"),
+    "export const gate = false;\n",
+  );
+  assert.throws(() => acceptanceCodeIdentity(head, root), /workflow commit/);
+});
+
+test("seal writer rechecks retained bytes and writes nothing for failures or report mutation", async (t) => {
+  const root = await realpath(
+    await mkdtemp(path.join(os.tmpdir(), "cef-acceptance-seal-")),
+  );
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const { result, options } = sealFixture();
+  for (const row of result.reports) {
+    const label = row.suite === "tls" ? "tls" : `http2-${row.check}`;
+    await mkdir(path.join(root, label));
+    // Synthetic serialization tests are never native runtime proof.
+    const bytes = JSON.stringify({ synthetic: true, case: label });
+    row.reportSha256 = createHash("sha256").update(bytes).digest("hex");
+    await writeFile(path.join(root, label, "acceptance.json"), bytes);
+  }
+  const aggregate = path.join(root, "native-acceptance.json");
+  await writeFile(aggregate, JSON.stringify(result));
+  const input = {
+    destination: root,
+    result,
+    execution: options.execution,
+    code: options.code,
+  };
+  const absent = () =>
+    assert.rejects(readFile(path.join(root, "seal.json")), {
+      code: "ENOENT",
+    });
+  const original = result.reports[0].reportSha256;
+  result.reports[0].reportSha256 = "c".repeat(64);
+  await assert.rejects(writeAcceptanceSeal(input), /result differs/);
+  await absent();
+  await writeFile(aggregate, JSON.stringify(result));
+  await assert.rejects(writeAcceptanceSeal(input), /case report differs/);
+  await absent();
+  result.reports[0].reportSha256 = original;
+  result.ok = false;
+  await writeFile(aggregate, JSON.stringify(result));
+  await assert.rejects(writeAcceptanceSeal(input), /completed native/);
+  await absent();
+  result.ok = true;
+  await writeFile(aggregate, JSON.stringify(result));
+  const seal = await writeAcceptanceSeal(input);
+  assert.equal(
+    seal.report.sha256,
+    createHash("sha256")
+      .update(await readFile(aggregate))
+      .digest("hex"),
+  );
+  assert.deepEqual(
+    JSON.parse(await readFile(path.join(root, "seal.json"))),
+    seal,
+  );
+  await assert.rejects(writeAcceptanceSeal(input), { code: "EEXIST" });
+});
 
 test("reviewed producer selection is finite exact target/ID/digest data without URLs or arbitrary runners", () => {
   assert.deepEqual(producerSelection([selected]), [selected]);

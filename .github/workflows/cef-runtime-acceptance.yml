@@ -130,6 +130,14 @@ jobs:
           else
             node scripts/cef-runtime-acceptance-ci.mjs run
           fi
+      - name: Retain successful native acceptance seal
+        if: success() && github.workflow_ref == format('{0}/.github/workflows/cef-runtime-acceptance.yml@{1}', github.repository, github.ref)
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        with:
+          name: cef-native-acceptance-seal-${{ matrix.target }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/cef-native-acceptance/seal.json
+          retention-days: 30
+          if-no-files-found: error
       - name: Retain actual native reports, logs and cleanup evidence
         if: always()
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
