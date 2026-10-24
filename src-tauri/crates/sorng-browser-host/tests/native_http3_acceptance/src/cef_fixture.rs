@@ -226,22 +226,17 @@ impl RouteDialer for Route {
     }
 }
 fn body(path: &str, index: usize, check: &str) -> (String, &'static str) {
-    if path.starts_with("/asset/") {
+    if path.starts_with("/asset/") || path == "/warmup" {
         return (format!("owned-tcp:{path}"), "text/plain");
     }
     // Navigation remains H1/H2. Only the subsequent same-authority fetches can
     // satisfy the H3 proof; a successful fallback cannot turn the test green.
-    let cross = if check == "cross-authority" {
-        format!("await fetch('https://{OTHER}/bootstrap-alternate').catch(()=>null); await fetch('https://{OTHER}/asset/denied').catch(()=>null);")
-    } else {
-        String::new()
-    };
-    let survivor = if check == "isolation" && index == 1 {
-        "setInterval(()=>fetch('/survivor').catch(()=>null),250);"
-    } else {
-        ""
-    };
-    let script = format!("{survivor}setTimeout(async()=>{{try{{let r=await Promise.all(Array.from({{length:32}},(_,i)=>fetch('/asset/'+i).then(r=>r.text())));{cross}document.title=r.every(x=>x.startsWith('owned-h3:'))?'h3-done-{index}':'fallback-done-{index}';}}catch{{document.title='request-rejected-{index}'}}}},750)");
+    let config = serde_json::json!({
+        "index": index,
+        "check": check,
+        "alternateOrigin": format!("https://{OTHER}"),
+    });
+    let script = format!("({})({config});", include_str!("page.js"));
     (
         format!("<!doctype html><title>bootstrap-{index}</title><script>{script}</script>"),
         "text/html",
