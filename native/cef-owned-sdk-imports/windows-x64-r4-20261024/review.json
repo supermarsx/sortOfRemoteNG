@@ -1,0 +1,54 @@
+{
+  "schemaVersion": 1,
+  "kind": "sorng-cef-owned-import-review",
+  "origin": "existing-windows-package",
+  "target": "x86_64-pc-windows-msvc",
+  "sourceLockIdentity": "9b03f692f091694cc8a613e579436e82fd9805e9f9442e8d606c6aec8cc5b835",
+  "bundleSourceLockRawSha256": "4486863a83584847d6fd8e00fa71650668681096e746f02c081b3f6c9a71c814",
+  "originalInputsSourceLockRawSha256": "4486863a83584847d6fd8e00fa71650668681096e746f02c081b3f6c9a71c814",
+  "descriptorSha256": "d5b01ce1486c0bf4f3557d444629e3bf09a97a822da0de8de3025f9125edfee6",
+  "handoffSha256": "78470de03b3b94b6b115ded2a303d1ecf05670a295952475a638bc3157d446cd",
+  "reviewBinding": {
+    "canonicalReviewSha256": "1aadf4db49530527e328fff48fe260fb79fb26fd274e45f35693aca31aba8508",
+    "evidencePins": {
+      "build": {
+        "sha256": "020771936f3909b4f592197e6059a9bde8c53c1c1e13a8837112c52a6d054d0a",
+        "path": "build-evidence.json",
+        "size": 1098
+      }
+    },
+    "verificationPython": {
+      "sha256": "7908da541b15992ac18d8292521a59f4833b2588f1d0720327aaa5b3cf4edd36",
+      "size": 98868
+    }
+  },
+  "assets": [
+    {
+      "name": "manifest.json",
+      "bytes": 206296,
+      "sha256": "1ddb6e9dfd9d662ffffa875d391f17a44a08a56c70bed20c14b2d86c98c64be9"
+    },
+    {
+      "name": "receipt.json",
+      "bytes": 467,
+      "sha256": "e14ad119f31f651fa9b8b84315d05f7d757fec0f0d4b0f79ba35c949217d7919"
+    },
+    {
+      "name": "runtime.json",
+      "bytes": 1711,
+      "sha256": "d5b01ce1486c0bf4f3557d444629e3bf09a97a822da0de8de3025f9125edfee6"
+    },
+    {
+      "name": "sorng-cef-custom-9b03f692f091694cc8a613e579436e82fd9805e9f9442e8d606c6aec8cc5b835-x86_64-pc-windows-msvc.tar.bz2",
+      "bytes": 235689757,
+      "sha256": "3e880f8bce048647d9261e0d9c317e02dab4470a9fd02d1c33b43dc09c01f82c"
+    },
+    {
+      "name": "source-lock.json",
+      "bytes": 3888,
+      "sha256": "4486863a83584847d6fd8e00fa71650668681096e746f02c081b3f6c9a71c814"
+    }
+  ],
+  "engineSha256": "c3f30f1202b043e3b92371ebc921aedfaddde029cf2ebabd4598b8a425e1aa8f",
+  "filesVerified": 953
+}

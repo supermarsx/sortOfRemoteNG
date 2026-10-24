@@ -23,3 +23,4 @@ native/cef-build-inputs/20261023-registration-retirement-lf-macintel-xcode26-3-s
 native/cef-build-inputs/20261023-registration-retirement-lf-macarm-intelcross-xcode26-3-sdk26-2/** -text -whitespace
 native/cef-build-inputs/20261024-registration-retirement-lf-macintel-sdk26-2-capture-compat/** -text -whitespace
 native/cef-build-inputs/20261024-registration-retirement-owned-linux-x64/** -text -whitespace
+native/cef-owned-sdk-imports/windows-x64-r4-20261024/** -text -whitespace
