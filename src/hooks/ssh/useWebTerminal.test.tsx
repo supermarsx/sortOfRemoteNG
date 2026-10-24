@@ -3649,44 +3649,91 @@ describe("useWebTerminal pre-open writes, post-open fit, and scrollOnOutput", ()
     view.unmount();
   });
 
-  it("writes ssh-output after open without any resize or ResizeObserver trigger (lazy core)", async () => {
-    const releasePath = holdRuntimePath();
-    mocks.MockTerminal.lazyCore = true;
-    const originalResizeObserver = (window as any).ResizeObserver;
-    (window as any).ResizeObserver = undefined;
-    let model: WebTerminalMgr | null = null;
-    const Harness = () => {
-      model = useWebTerminal(session);
-      return <div ref={model.containerRef} />;
-    };
-
-    vi.useFakeTimers();
-    try {
-      const view = render(<Harness />);
-      const terminal = mocks.MockTerminal.instances[0];
-      // Two frames (open rAF, then the fit rAF scheduled from open) but
-      // strictly less than the 50ms fallback fit timer.
-      await act(async () => vi.advanceTimersByTimeAsync(40));
-      expect(terminal.element).not.toBeNull();
-      expect((model as WebTerminalMgr | null)?.status).toBe("connecting");
-      await act(async () => releasePath());
-      await waitForSshReady(() => model);
-      expect((model as WebTerminalMgr | null)?.status).toBe("connected");
-      expect(mocks.listeners.has("ssh-output")).toBe(true);
-
-      terminal.write.mockClear();
-      act(() => {
-        emitTauriEvent("ssh-output", sshOutputPayload("A", 0));
+  it.each(["during initial replay", "after initial replay"] as const)(
+    "writes ssh-output after open without any resize or ResizeObserver trigger (%s, lazy core)",
+    async (eventOrder) => {
+      const releasePath = holdRuntimePath();
+      mocks.MockTerminal.lazyCore = true;
+      const originalResizeObserver = (window as any).ResizeObserver;
+      (window as any).ResizeObserver = undefined;
+      // A sequenced backend retains live bytes even while initial catch-up is
+      // pending. An undefined snapshot/legacy mock cannot model that contract.
+      let retained = "";
+      const snapshot = () => ({
+        session_id: "backend-ssh-1",
+        data: retained,
+        generation: 1,
+        sequence_start: 0,
+        sequence_end: new TextEncoder().encode(retained).byteLength,
+        retained_start: 0,
+        dropped_bytes: 0,
+        gap: false,
+        generation_changed: false,
       });
-      // Scheduler drains on a 0ms tick; stay under the 50ms fit timer.
-      await act(async () => vi.advanceTimersByTimeAsync(5));
-      expect(terminal.write).toHaveBeenCalledWith("A", expect.any(Function));
+      let releaseReplay!: (value: ReturnType<typeof snapshot>) => void;
+      const initialReplay = new Promise<ReturnType<typeof snapshot>>(
+        (resolve) => {
+          releaseReplay = resolve;
+        },
+      );
+      const originalInvoke = mocks.invoke.getMockImplementation()!;
+      let replayRequests = 0;
+      mocks.invoke.mockImplementation((command: string, ...args: unknown[]) => {
+        if (command === "get_terminal_buffer_snapshot") {
+          replayRequests++;
+          return replayRequests === 1
+            ? initialReplay
+            : Promise.resolve(snapshot());
+        }
+        return originalInvoke(command, ...args);
+      });
+      let model: WebTerminalMgr | null = null;
+      const Harness = () => {
+        model = useWebTerminal(session);
+        return <div ref={model.containerRef} />;
+      };
 
-      view.unmount();
-    } finally {
-      (window as any).ResizeObserver = originalResizeObserver;
-    }
-  });
+      vi.useFakeTimers();
+      const startedAt = Date.now();
+      try {
+        const view = render(<Harness />);
+        const terminal = mocks.MockTerminal.instances[0];
+        // Two frames (open and fit); never reach the 50ms fallback fit timer.
+        await act(async () => vi.advanceTimersByTimeAsync(40));
+        expect(terminal.element).not.toBeNull();
+        expect((model as WebTerminalMgr | null)?.status).toBe("connecting");
+        await act(async () => releasePath());
+        await waitForSshReady(() => model);
+        expect((model as WebTerminalMgr | null)?.status).toBe("connected");
+        expect(mocks.listeners.has("ssh-output")).toBe(true);
+        await act(async () => vi.advanceTimersByTimeAsync(0));
+        expect(replayRequests).toBe(1);
+
+        if (eventOrder === "after initial replay") {
+          await act(async () => releaseReplay(snapshot()));
+          // Settle the empty replay's scheduled completion before live output.
+          await act(async () => vi.advanceTimersByTimeAsync(1));
+        }
+        terminal.write.mockClear();
+        retained = "A";
+        act(() => emitTauriEvent("ssh-output", sshOutputPayload("A", 0)));
+        if (eventOrder === "during initial replay") {
+          expect(terminal.write).not.toHaveBeenCalled();
+          await act(async () => releaseReplay(snapshot()));
+        }
+        // Keep the original live-output drain budget; no fit/resize rescues it.
+        await act(async () => vi.advanceTimersByTimeAsync(5));
+        expect(terminal.write).toHaveBeenCalledExactlyOnceWith(
+          "A",
+          expect.any(Function),
+        );
+        expect(Date.now() - startedAt).toBeLessThan(50);
+        view.unmount();
+      } finally {
+        (window as any).ResizeObserver = originalResizeObserver;
+      }
+    },
+  );
 
   it("scrolls to bottom on parsed output only while scrollOnOutput is enabled, and follows the live config", async () => {
     mocks.terminalConfig = { scrollOnOutput: true };
