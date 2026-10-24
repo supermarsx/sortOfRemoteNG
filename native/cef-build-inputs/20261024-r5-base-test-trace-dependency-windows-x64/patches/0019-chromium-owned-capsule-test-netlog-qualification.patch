@@ -1,0 +1,12 @@
+diff --git a/net/socket/sorng_capsule_datagram_client_socket_unittest.cc b/net/socket/sorng_capsule_datagram_client_socket_unittest.cc
+--- a/net/socket/sorng_capsule_datagram_client_socket_unittest.cc
++++ b/net/socket/sorng_capsule_datagram_client_socket_unittest.cc
+@@ -51,7 +51,7 @@
+ class LifetimeSocket final : public MockTCPClientSocket {
+  public:
+   LifetimeSocket(const AddressList& addresses,
+-                 NetLog* log,
++                 net::NetLog* log,
+                  SocketDataProvider* data,
+                  ClientSocketFactory* factory,
+                  StreamLifetime* lifetime)

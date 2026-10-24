@@ -31,3 +31,4 @@ native/cef-build-inputs/20261024-r5-instance-tracer-production-default-windows-x
 native/cef-build-inputs/20261024-registration-retirement-lf-linuxarm-cross-sysroot-20261023-334-3/** -text -whitespace
 native/cef-build-inputs/20261024-r5-owned-capsule-context-lifetime-windows-x64/** -text -whitespace
 native/cef-build-inputs/20261024-r5-owned-capsule-test-netlog-windows-x64/** -text -whitespace
+native/cef-build-inputs/20261024-r5-base-test-trace-dependency-windows-x64/** -text -whitespace

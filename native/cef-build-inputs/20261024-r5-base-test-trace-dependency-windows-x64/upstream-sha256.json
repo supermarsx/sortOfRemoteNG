@@ -1,0 +1,212 @@
+[
+  {
+    "project": "chromium",
+    "path": "net/BUILD.gn",
+    "sha256": "b40fae2813aaeb62bba4cd7763202126a9585b8afaceda91dfc3231b4b9c8fbd"
+  },
+  {
+    "project": "chromium",
+    "path": "net/cert/cert_verify_proc.h",
+    "sha256": "b2ecaabfddd8719a19e2706771dae25d314963ceeceb55933cd56f29f971bbca"
+  },
+  {
+    "project": "chromium",
+    "path": "net/cert/cert_verify_proc_builtin.cc",
+    "sha256": "c42cadef5ad9a8102c38406661c0a94ed7223c606d3957278192924b8a1c2274"
+  },
+  {
+    "project": "chromium",
+    "path": "net/socket/ssl_client_socket.cc",
+    "sha256": "3fa5b0e9a1214ca7a502a28a5120a35eac8b3bb562a6033bcd3e29cfc7f624fd"
+  },
+  {
+    "project": "chromium",
+    "path": "net/socket/ssl_client_socket.h",
+    "sha256": "95b016246c68447fe587ed9c2464bc42eb6a5570678a2943514c8ff862b26dcf"
+  },
+  {
+    "project": "chromium",
+    "path": "net/socket/ssl_client_socket_impl.cc",
+    "sha256": "f7f8ffdec89759c1acd21a14262ac4264c43fe4ee192fae12a35c6751eb90c62"
+  },
+  {
+    "project": "chromium",
+    "path": "net/socket/ssl_client_socket_impl.h",
+    "sha256": "1bd56941a06e136289ce5264762f3ee001edad21ab5ba7a250f06217685f2be9"
+  },
+  {
+    "project": "chromium",
+    "path": "net/socket/ssl_client_socket_unittest.cc",
+    "sha256": "db53f72be767fd6fd35fcb34753ebf34ed069c4dc4dba6a9b183be02d95ae233"
+  },
+  {
+    "project": "chromium",
+    "path": "services/cert_verifier/cert_verifier_creation.cc",
+    "sha256": "96da50c702dc05db70d8bf256e112e51a044357fbb9078207db74d8b3e76165f"
+  },
+  {
+    "project": "chromium",
+    "path": "services/cert_verifier/cert_verifier_service.cc",
+    "sha256": "f1647c4301b92b127876b49807775f7b544a10c8cae8ba5196cd04685feb4622"
+  },
+  {
+    "project": "chromium",
+    "path": "services/cert_verifier/cert_verifier_service_factory.cc",
+    "sha256": "876893c412de6ea00bad098201fb1b94b19fc426cabb250eaeb7a858ccb9510c"
+  },
+  {
+    "project": "chromium",
+    "path": "services/cert_verifier/public/mojom/cert_verifier_service_factory.mojom",
+    "sha256": "88f1855282f324510efb259af40d09d70ebf7f68368a094d9f3a80ddd1c704d4"
+  },
+  {
+    "project": "chromium",
+    "path": "services/network/network_context.cc",
+    "sha256": "a3270f4c1a0e66f7f51b89e130c9b7179a7ea0f3dbff823ab13c4c82093a33ad"
+  },
+  {
+    "project": "chromium",
+    "path": "services/network/public/mojom/network_context.mojom",
+    "sha256": "5a9cc882d4afb15439a4997ac132bb4721f230dfc060942da1d69a05cf3682d8"
+  },
+  {
+    "project": "cef",
+    "path": "BUILD.gn",
+    "sha256": "6157524c9ce3af1c9455a498945d66b67c41a3aa1146da108fc589d8407d8f79"
+  },
+  {
+    "project": "cef",
+    "path": "cef_paths2.gypi",
+    "sha256": "17d404f821bce6d50dae8c45245fe30889f69596a445e856c7881b9c41964004"
+  },
+  {
+    "project": "cef",
+    "path": "libcef/browser/browser_context.cc",
+    "sha256": "8995beb6f281234004d282f80d4eb2106f7f879c0b74bfb18567f900575e1e5e"
+  },
+  {
+    "project": "cef",
+    "path": "libcef/browser/chrome/chrome_content_browser_client_cef.cc",
+    "sha256": "b28edbd83120eb6bfea454db3ed8c8a2d503d3f70a93cf886889185a6b51e3f1"
+  },
+  {
+    "project": "cef",
+    "path": "libcef/browser/request_context_impl.cc",
+    "sha256": "b2483b97408e978a914d75623162ebb57525e57f0f55676b92e59ee668b282e8"
+  },
+  {
+    "project": "cef",
+    "path": "libcef/browser/request_context_impl.h",
+    "sha256": "44a21bcc41737fb969493dd37598516190b0779ab60a575e23095bf7359937e5"
+  },
+  {
+    "project": "cef",
+    "path": "libcef/browser/native/native_widget_delegate.cc",
+    "sha256": "55694f7b59c6b109a6c6e980d650b1e7863c59b3a2d2e020f82b882e3d12905a"
+  },
+  {
+    "project": "chromium",
+    "path": "components/soda/soda_features.h",
+    "sha256": "8be1a4dd84686a1323cd00b620c3962ae0661e5460718e53034120d74fb15d15"
+  },
+  {
+    "project": "chromium",
+    "path": "components/soda/soda_features.cc",
+    "sha256": "2ee124b2ffb728c9cb3557e5da48a36a678e62035db1b75ce35b3a988374cb6c"
+  },
+  {
+    "project": "chromium",
+    "path": "components/soda/soda_installer.cc",
+    "sha256": "70abb62f396bf08ff581130062bdb31d403e8bc29d0c99a9e3a9491fdbebe417"
+  },
+  {
+    "project": "chromium",
+    "path": "components/soda/soda_util.cc",
+    "sha256": "7367c9fd8d90212188ba642924df40b89483f708d170ef5093e80f71e080d66f"
+  },
+  {
+    "project": "chromium",
+    "path": "chrome/browser/accessibility/soda_installer_impl.cc",
+    "sha256": "ccae4c401e2d97aab4bf8e2717150748eafc9ffc6485b3f9205fc6b23283a8c7"
+  },
+  {
+    "project": "chromium",
+    "path": "net/dns/host_resolver_manager.cc",
+    "sha256": "420850f98d4d3c2a0b5beb4a8fb7cd75ec3e3a5da1dc2aa7b894dad1e59d461b"
+  },
+  {
+    "project": "chromium",
+    "path": "net/dns/host_resolver_manager_unittest.cc",
+    "sha256": "9085612cd238e9abcbc12e22a7e9221e3f8a7162c74001606b21da2617080b5d"
+  },
+  {
+    "project": "cef",
+    "path": "libcef/browser/download_manager_delegate_impl.cc",
+    "sha256": "93327bbf93d9edaf023908f7240abe6e0ccd70cd331fed061fc380129e75ba0d"
+  },
+  {
+    "project": "chromium",
+    "path": "base/allocator/partition_allocator/src/partition_alloc/pointers/instance_tracer.cc",
+    "sha256": "853a73637d8aa9cb5c6c93650ca4eead862426185eb37b51f97d6c8bd2283a67"
+  },
+  {
+    "project": "chromium",
+    "path": "net/spdy/spdy_session_pool.cc",
+    "sha256": "8798fe4d882c55465977b1d727d104540e1140b7d44f75e97373a5c0c0c7bcbf"
+  },
+  {
+    "project": "chromium",
+    "path": "chrome/browser/net/proxy_config_monitor.h",
+    "sha256": "c618b05cc8b6b9aab6e9a1e49f6fdb15ddee0634062cafe31086bacbd5fa2975"
+  },
+  {
+    "project": "chromium",
+    "path": "chrome/browser/net/proxy_config_monitor.cc",
+    "sha256": "2f9f9d302d9e14342718517f26b4793caeebc3f1aebb016460d960a9f617c496"
+  },
+  {
+    "project": "chromium",
+    "path": "chrome/browser/net/profile_network_context_service.h",
+    "sha256": "1c2f8d3a774dab6c6420b0b783b5464334ac883a6c1ccd8d71637331d8358179"
+  },
+  {
+    "project": "chromium",
+    "path": "chrome/browser/net/profile_network_context_service.cc",
+    "sha256": "551dc4450f098310be50284bb18ea548a4cb9d311b7f5f45582388094c35820f"
+  },
+  {
+    "project": "cef",
+    "path": "include/cef_sorng_tls_bridge.h",
+    "sha256": "fb591f97bd97a27a21546160ed69fb983634c7a35b3af45923622419e1593107"
+  },
+  {
+    "project": "cef",
+    "path": "libcef/browser/net_service/sorng_tls_bridge.cc",
+    "sha256": "ea9928b3bfdd707f3967b96022ea6c16cfff94dd1b7ad6b54f1af60f63cbfb19"
+  },
+  {
+    "project": "chromium",
+    "path": "net/proxy_resolution/configured_proxy_resolution_service.h",
+    "sha256": "64307f1101c7f19e92741ef4c15a692fb46e529bb7c021ff5bbd7602327d7b15"
+  },
+  {
+    "project": "chromium",
+    "path": "net/proxy_resolution/configured_proxy_resolution_service.cc",
+    "sha256": "b937b2e6e6a88eb0bde129dc389c5a4c6ba6bbd798b8e0b7e3819227517a7b9e"
+  },
+  {
+    "project": "chromium",
+    "path": "services/network/network_context.h",
+    "sha256": "b83318bd55116c8e9669fce81f848caab005fb8a1f1ae1a0798dbbb34199f3ab"
+  },
+  {
+    "project": "chromium",
+    "path": "base/allocator/partition_allocator/src/partition_alloc/BUILD.gn",
+    "sha256": "0d12ddbf0e9ffb4df8eb2ad91ba72546146f4418747dd33f27195f4b99fa78fe"
+  },
+  {
+    "project": "chromium",
+    "path": "base/BUILD.gn",
+    "sha256": "6923bf617d6f758957984aeacdc0cdaa040e1187a7589d4d658682becfb268f5"
+  }
+]

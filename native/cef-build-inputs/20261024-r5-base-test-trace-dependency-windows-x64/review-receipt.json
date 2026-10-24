@@ -1,0 +1,48 @@
+{
+  "schemaVersion": 1,
+  "kind": "sorng-cef-build-input-review",
+  "scope": "Source-only explicit base_unittests dependency on existing test_trace_processor; no production source or flag change. New graph ungenerated and new target uncompiled.",
+  "sourceLockIdentity": "75d6ad1faef9fbcdd286da018913fd6c31c84e4b786abb1f06d7be3ccb74b244",
+  "sourceLockRawSha256": "572cb4ba0feb65d32af969d4b47a78302f91b18478363d4eb59b64ab07fcc626",
+  "baseSourceLockIdentity": "15b715e673a51e73f43932528b318193a53398a735237bc9854120c43a292cb0",
+  "baseSourceLockRawSha256": "c3e92d0345f9c46aebc9054c83ac36ed26c10cc6feaa9b743c9c32444b2143a5",
+  "bridgeAbiVersion": 2,
+  "bridgeRevision": 5,
+  "capabilities": [
+    "socket-admission",
+    "context-revoke",
+    "same-authority-http2",
+    "scoped-exceptions",
+    "custom-ca",
+    "private-context",
+    "proxy-applied",
+    "bounded-context-retirement",
+    "owned-http3"
+  ],
+  "patch20": {
+    "repository": "chromium",
+    "path": "patches/0020-chromium-base-unittests-trace-processor-dependency.patch",
+    "sha256": "bf93af98eaad7094ce577e2365f107ba0b8f4a95647b77cb6d9fec3a04de4708"
+  },
+  "all19PatchesHeaderGnToolchainBytesUnchanged": true,
+  "allOriginalUpstreamInventoryEntriesUnchanged": true,
+  "pristineUpstreamAdded": {
+    "project": "chromium",
+    "path": "base/BUILD.gn",
+    "sha256": "6923bf617d6f758957984aeacdc0cdaa040e1187a7589d4d658682becfb268f5"
+  },
+  "modifiedSource": {
+    "path": "base/BUILD.gn",
+    "beforeSha256": "6923bf617d6f758957984aeacdc0cdaa040e1187a7589d4d658682becfb268f5",
+    "beforeBytes": 233765,
+    "afterSha256": "416145c0a7ae2732cb827aebcb860e0c55fc9c880ddc4f5f7d1c8a6d074be3e9",
+    "afterBytes": 233805
+  },
+  "priorOutcome": "36 actual focused passes; base_unittests link failure from missing TestTraceProcessor dependency; security tests unstarted",
+  "oldNativeProofTransferred": false,
+  "engineCompiled": false,
+  "nativeTestsRun": false,
+  "sdkCreated": false,
+  "runtimeAcceptance": false,
+  "defaultSelectionChanged": false
+}
