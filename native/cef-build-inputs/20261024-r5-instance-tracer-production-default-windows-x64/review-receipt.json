@@ -1,0 +1,48 @@
+{
+  "schemaVersion": 1,
+  "kind": "sorng-cef-build-input-review",
+  "scope": "Metadata-only diagnostic candidate using production-default disabled BackupRefPtr instance tracing; not compiled, native-tested, performance-tested, SDK-accepted or published",
+  "sourceLockIdentity": "1381a26cc354669adc843224dcf066721adecb62cf75c0d8108d325a260edbdc",
+  "sourceLockRawSha256": "2f1637b0bedccbed6c402af9e99e00bcbd87d59c01f7806f7664658ceee80ab0",
+  "baseSourceLockIdentity": "16d1388e8949a8e027ed8f67fab0ea1a8a334c0b717e85b6a2b368660549562a",
+  "baseSourceLockRawSha256": "4e699b66a2fbf45f64d048d8228b2ec0738837a75647fbd7bcb0a45b51a2464a",
+  "bridgeAbiVersion": 2,
+  "bridgeRevision": 5,
+  "capabilities": [
+    "socket-admission",
+    "context-revoke",
+    "same-authority-http2",
+    "scoped-exceptions",
+    "custom-ca",
+    "private-context",
+    "proxy-applied",
+    "bounded-context-retirement",
+    "owned-http3"
+  ],
+  "onlyGnChange": {
+    "name": "enable_backup_ref_ptr_instance_tracer",
+    "before": true,
+    "after": false,
+    "oldRawSha256": "ff6f2c58be01bc42f7d23d63c0d5f14e47ca2ac766255846b09ec7f8db96ebb8",
+    "newRawSha256": "30ade2dd1b099b8e884fa53b91f537a3e5ffcc566da7d033ce0a83e22a6e0867"
+  },
+  "all17PatchesHeaderToolchainAndUpstreamPreimagesBytesUnchanged": true,
+  "otherGnBytesUnchanged": true,
+  "pinnedToolFiles": 8,
+  "actualToolFilesReverifiedForThisCandidate": 0,
+  "upstreamPreimages": "upstream-sha256.json",
+  "securityPolicy": "No BRP, dangling-pointer detection, OOB poison, GWP-ASan or sandbox flag change; preserve actual BACKUP_REF_PTR_POISON_OOB_PTR=0 and all other generated security values as a mandatory future before/after gate",
+  "runtimeAcceptance": false,
+  "engineCompiled": false,
+  "performanceImprovementClaimed": false,
+  "defaultSelectionChanged": false,
+  "tracerSpecificTwelveTestsTransferred": false,
+  "remainingGates": [
+    "Independent metadata review and explicit source/output lease authorization",
+    "Actual generated BRP/DPD/OOB poison/GWP/sandbox before-after equality with only tracer1-to0",
+    "Authorized incremental engine build and new immutable SDK plus symbols",
+    "Actual configured BRP/DPD and sandbox tests; tracer-specific12 cannot count while compiled out",
+    "Same immutable H2client and unchanged peak>6 criterion for controlled A/B",
+    "All required native TLS/H2/H3 acceptance before runtime eligibility"
+  ]
+}
