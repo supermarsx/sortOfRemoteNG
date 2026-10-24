@@ -52,6 +52,9 @@ jobs:
           package-manager-cache: false
       - name: Prepare existing fixed reviewed native prerequisites
         run: node scripts/cef-hosted-provision.mjs --target x86_64-apple-darwin --output "$RUNNER_TEMP/cef-checkpoint-prerequisites" --execute
+      - name: Verify dependency-free checkpoint contracts on the actual native host
+        timeout-minutes: 5
+        run: node --test tests/tooling/cefEngineeringCheckpoint.node-test.mjs
       - name: Download exact independently sealed prior checkpoint
         id: restore
         env:

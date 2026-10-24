@@ -459,6 +459,29 @@ test("workflow keeps credentials only in audited download/upload, sealed last, e
   assert.match(workflow, /cancel-in-progress: true/);
   assert.match(workflow, /persist-credentials: false/);
   assert.match(workflow, /restore_run:/);
+  const preflight = workflow.indexOf(
+    "node --test tests/tooling/cefEngineeringCheckpoint.node-test.mjs",
+  );
+  assert.ok(
+    preflight > workflow.indexOf("node scripts/cef-hosted-provision.mjs"),
+    "real platform tests run after fixed prerequisites",
+  );
+  assert.ok(
+    preflight <
+      workflow.indexOf("node scripts/cef-engineering-checkpoint.mjs download"),
+    "real platform tests must pass before any restore or source/compiler work",
+  );
+  const preflightStep = workflow
+    .split(/\n      - /)
+    .find((step) =>
+      step.includes(
+        "node --test tests/tooling/cefEngineeringCheckpoint.node-test.mjs",
+      ),
+    );
+  assert.doesNotMatch(
+    preflightStep,
+    /GH_TOKEN|GITHUB_TOKEN|npm (?:ci|install)|continue-on-error:/,
+  );
   assert.doesNotMatch(
     workflow,
     /actions\/cache@|npm (?:ci|install)|target_commitish:|\$\{\{ inputs\.restore_run \}\}.*node /,
