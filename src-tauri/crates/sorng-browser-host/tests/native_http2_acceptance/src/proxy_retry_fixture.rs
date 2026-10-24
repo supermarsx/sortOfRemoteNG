@@ -213,6 +213,10 @@ pub(super) fn execute(
             .with_visible(false)
             .build(&events)?,
     );
+    #[cfg(target_os = "linux")]
+    let linux_parent_readiness = Some(linux_parent_fixture::prepare(parent.as_ref())?);
+    #[cfg(not(target_os = "linux"))]
+    let linux_parent_readiness: Option<serde_json::Value> = None;
     let mut settings = cef_runtime::native_settings(&paths.helper, &paths.resources)?;
     settings.root_cache_path = CefString::from(output.join("profile").to_str().ok_or("profile")?);
     settings.log_file = CefString::from(output.join("cef.log").to_str().ok_or("log")?);
@@ -453,6 +457,7 @@ pub(super) fn execute(
         "globalPolicyChecks":checks,"phases":snapshots,"replacedOldContext":replacing,"sameRowFreshAttempt":same_row_fresh_attempt,
         "distinctEndpoints":distinct_endpoints,"distinctCredentials":distinct_credentials,"actualProxyProofs":proofs,
         "beforeAdmissionBytesZero":before_admission_zero,"closed":all_closed,"failures":failures,"productionReady":false});
+    report["linuxParentReadiness"] = serde_json::json!(linux_parent_readiness);
     std::fs::write(
         output.join("native-report.json"),
         serde_json::to_vec_pretty(&report)?,

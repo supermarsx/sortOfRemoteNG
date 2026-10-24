@@ -4817,6 +4817,7 @@ dependencies = [
  "base64 0.23.1",
  "bytes",
  "cef",
+ "gtk",
  "h2",
  "http",
  "raw-window-handle",

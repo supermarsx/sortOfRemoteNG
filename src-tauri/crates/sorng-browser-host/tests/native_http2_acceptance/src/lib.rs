@@ -34,6 +34,10 @@ use tao::{
     window::WindowBuilder,
 };
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt};
+#[cfg(any(target_os = "linux", test))]
+#[path = "../../native_acceptance/linux_parent_fixture.rs"]
+mod linux_parent_fixture;
+
 type Result<T = ()> = std::result::Result<T, Box<dyn std::error::Error>>;
 // Package-specific acceptance never probes another revision after a mismatch.
 // The historical protocol selectors still select revisions1–3 only when no
@@ -520,6 +524,14 @@ fn execute(bootstrap: &mut dyn RuntimeBootstrap, paths: &BundlePaths) -> Result 
             .with_visible(visible)
             .build(&events)?,
     );
+    #[cfg(target_os = "linux")]
+    let linux_parent_readiness = if visible {
+        None
+    } else {
+        Some(linux_parent_fixture::prepare(parent.as_ref())?)
+    };
+    #[cfg(not(target_os = "linux"))]
+    let linux_parent_readiness: Option<serde_json::Value> = None;
     let mut settings = cef_runtime::native_settings(&paths.helper, &paths.resources)?;
     settings.root_cache_path = CefString::from(output.join("profile").to_str().ok_or("profile")?);
     settings.log_file = CefString::from(output.join("cef.log").to_str().ok_or("log")?);
@@ -743,6 +755,7 @@ fn execute(bootstrap: &mut dyn RuntimeBootstrap, paths: &BundlePaths) -> Result 
     pump_intervals.sort_by(f64::total_cmp);
     let pump_summary = serde_json::json!({"samples":pump_intervals.len(),"medianMs":pump_intervals.get(pump_intervals.len()/2),"p95Ms":pump_intervals.get(pump_intervals.len()*95/100),"maxMs":pump_intervals.last()});
     let mut report = serde_json::json!({"probeKind":KIND,"runId":run_id,"patchId":bridge.patch_id(),"loadedBridgeVerified":true,"ok":false,"clean":clean,"closed":closed,"rawTcpBefore":raw_before,"rawTcpAfterFailure":raw_after_failure,"ownedLoopbackEndpoints":endpoints,"baselineBeforeCef":baseline,"first":before,"initializeStartedMs":initialize_started_ms,"initializeFinishedMs":initialize_finished_ms,"matrixCases":CASES.len(),"productionTlsFactory":true,"fixtureTcpNoDelay":fixture_nodelay,"parentVisible":visible,"childShowRequested":visible,"advertisedAlpn":["h2","http/1.1"],"pumpIntervals":pump_summary,"slots":rows,"failures":failures,"productionReady":false});
+    report["linuxParentReadiness"] = serde_json::json!(linux_parent_readiness);
     if !closed {
         std::fs::write(
             output.join("native-report.json"),

@@ -4799,6 +4799,7 @@ name = "sorng-cef-tls-acceptance"
 version = "0.1.0"
 dependencies = [
  "cef",
+ "gtk",
  "raw-window-handle",
  "rcgen",
  "rustls",

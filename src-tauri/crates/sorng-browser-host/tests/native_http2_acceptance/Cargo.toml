@@ -55,3 +55,7 @@ tiberius = { path = "../../../../vendor/tiberius-rustls" }
 # Enable upstream WinCNG ECC for the application's Windows 10+ baseline.
 # No changes to native cryptography or host-key policy; see its PATCHES.md.
 libssh2-sys = { path = "../../../../vendor/libssh2-sys-wincng" }
+
+# Fixture-only GTK realization; Tao already locks the same GTK version.
+[target.'cfg(target_os = "linux")'.dependencies]
+gtk = "=0.18.2"

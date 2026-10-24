@@ -38,6 +38,9 @@ use tao::{
 };
 mod fixture;
 mod ledger;
+#[cfg(any(target_os = "linux", test))]
+#[path = "../../native_acceptance/linux_parent_fixture.rs"]
+mod linux_parent_fixture;
 #[cfg(any(target_os = "windows", test))]
 mod private_parent;
 mod registry_retirement_fixture;
@@ -688,6 +691,14 @@ fn execute(bootstrap: &mut dyn RuntimeBootstrap, paths: &BundlePaths) -> Result 
             .with_inner_size(tao::dpi::LogicalSize::new(800., 600.))
             .build(&events)?,
     );
+    #[cfg(target_os = "linux")]
+    let linux_parent_readiness = if manual_requested {
+        None
+    } else {
+        Some(linux_parent_fixture::prepare(parent.as_ref())?)
+    };
+    #[cfg(not(target_os = "linux"))]
+    let linux_parent_readiness: Option<serde_json::Value> = None;
     // Unattended Windows fixtures show only their attested non-input private
     // parent without activation, matching selected-tab presentation.
     #[cfg(target_os = "windows")]
@@ -721,6 +732,9 @@ fn execute(bootstrap: &mut dyn RuntimeBootstrap, paths: &BundlePaths) -> Result 
         "manualRequested":manual_requested,"manualStatus":if manual_requested {"pending"} else {"not-run"},
         "storageIsolation":{"status":"not-run"},
         "remainingGates":["OS socket/DNS containment","native first paint","public provider acceptance","other platform runtime","app trust authority integration","AIA/OCSP/CRL runtime","HTTP keep-alive runtime"]});
+    if let Some(evidence) = linux_parent_readiness {
+        report["linuxParentReadiness"] = evidence;
+    }
     if let Some(evidence) = private_parent_visibility {
         report["privateParentVisibility"] = evidence;
     }
