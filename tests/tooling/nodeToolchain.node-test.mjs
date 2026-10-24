@@ -25,6 +25,7 @@ const EXPECTED_SETUP_NODE_COUNTS = {
   "cef-engineering-checkpoint.yml": 1,
   "cef-patched-runtime.yml": 6, // Includes the reviewed hosted-plan target-selection job.
   "cef-runtime-acceptance.yml": 2,
+  "cef-sdk-layout-probe.yml": 1,
   "ci.yml": 10,
   "coverage.yml": 1,
   "docs-pages.yml": 1,

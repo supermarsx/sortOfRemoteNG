@@ -1,0 +1,47 @@
+name: CEF selected SDK layout probe
+# Read-only diagnostics, with no Chromium acquisition or runtime authority.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: cef-sdk-layout-probe-${{ github.ref }}
+  cancel-in-progress: true
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  probe:
+    if: github.event_name == 'workflow_dispatch' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch) && github.event.repository.visibility == 'public'
+    runs-on: macos-15-intel
+    timeout-minutes: 10
+    env:
+      CEF_DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+      GITHUB_REPOSITORY_VISIBILITY: ${{ github.event.repository.visibility }}
+      SORNG_CEF_TOOLS_ROOT: /
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: ".node-version"
+          package-manager-cache: false
+      - name: Prepare existing fixed reviewed native prerequisites
+        run: node scripts/cef-hosted-provision.mjs --target x86_64-apple-darwin --output "$RUNNER_TEMP/cef-sdk-probe-prerequisites" --execute
+      - name: Probe selected native SDK links without acquiring sources
+        run: node scripts/cef-engineering-checkpoint.mjs probe-sdk 2>&1 | tee "$RUNNER_TEMP/cef-sdk-layout-probe.log"
+      - name: Retain bounded diagnostic output
+        if: always()
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        with:
+          name: cef-sdk-layout-probe-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            ${{ runner.temp }}/cef-sdk-layout-probe.log
+            ${{ runner.temp }}/cef-sdk-probe-prerequisites
+          retention-days: 14
+          if-no-files-found: warn
