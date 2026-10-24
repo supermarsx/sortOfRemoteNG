@@ -1196,7 +1196,7 @@ jobs:
 
       - name: Upload native build diagnostics
         if: always() && (matrix.platform == 'windows' || matrix.platform == 'linux')
-        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           # This deliberately does not match release-* and therefore cannot be
           # merged into the public installer set by the publication job.
@@ -2846,7 +2846,7 @@ jobs:
           --expected-version "${{ needs.metadata.outputs.machine_version }}"
 
       - name: Upload validated target assets
-        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: release-${{ matrix.artifact_id }}
           path: artifacts/

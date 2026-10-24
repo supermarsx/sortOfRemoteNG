@@ -75,7 +75,7 @@ jobs:
         run: node scripts/cef-engineering-checkpoint.mjs upload
       - name: Seal immutable checkpoint metadata LAST
         if: success() && steps.compile.outputs.sdk_complete == 'false'
-        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: cef-engineering-seal-${{ github.run_id }}-${{ github.run_attempt }}
           path: ${{ runner.temp }}/cef-engineering-seal/seal.json
@@ -84,7 +84,7 @@ jobs:
           if-no-files-found: error
       - name: Seal actual completed SDK transport LAST
         if: success() && steps.compile.outputs.sdk_complete == 'true'
-        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: cef-engineering-sdk-seal-c7bb8b0e4a4c8ba61fffe095c2d4466e45ddc6e762c9fcd3028f49909f9c1c8f-x86_64-apple-darwin-${{ github.run_id }}-${{ github.run_attempt }}
           path: ${{ runner.temp }}/cef-engineering-sdk-seal/seal.json
@@ -95,7 +95,7 @@ jobs:
         run: node scripts/cef-engineering-checkpoint.mjs outcome
       - name: Retain small diagnostics, never the multi-gigabyte checkpoint
         if: always()
-        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: cef-engineering-diagnostics-${{ github.run_id }}-${{ github.run_attempt }}
           path: |
