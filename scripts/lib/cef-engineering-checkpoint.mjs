@@ -37,6 +37,80 @@ export const INPUTS =
 export const TARGET = "x86_64-apple-darwin";
 export const SOURCE_ID =
   "c7bb8b0e4a4c8ba61fffe095c2d4466e45ddc6e762c9fcd3028f49909f9c1c8f";
+// Cross compilation never changes the native acceptance host. Adding a profile
+// changes the producer code digest; checkpoints from older code cannot migrate.
+const PROFILES = Object.freeze({
+  [TARGET]: Object.freeze({
+    target: TARGET,
+    source: SOURCE_ID,
+    inputs: INPUTS,
+    platform: "darwin",
+    architecture: "x64",
+    runner: "macos-15-intel",
+    provisionTarget: TARGET,
+    outConfig: "Release_GN_x64",
+    linkKind: "mac-sdk",
+    acceptanceRunner: "macos-15-intel",
+    acceptanceArchitecture: "x64",
+  }),
+  "aarch64-apple-darwin": Object.freeze({
+    target: "aarch64-apple-darwin",
+    source: "96cf240295fd3332882da4a60d306e4248b926b461e3bdbe2e78117c03bea5d0",
+    inputs:
+      "native/cef-build-inputs/20261024-registration-retirement-lf-macarm-sdk26-2-capture-compat",
+    platform: "darwin",
+    architecture: "x64",
+    runner: "macos-15-intel",
+    provisionTarget: TARGET,
+    outConfig: "Release_GN_arm64",
+    linkKind: "mac-sdk",
+    acceptanceRunner: "macos-15",
+    acceptanceArchitecture: "arm64",
+  }),
+  "aarch64-unknown-linux-gnu": Object.freeze({
+    target: "aarch64-unknown-linux-gnu",
+    source: "e4c64bf94a403a8ec02f826a29969471eb583c49c461eacb29e38ac4de052078",
+    inputs:
+      "native/cef-build-inputs/20261023-registration-retirement-lf-linuxarm-cross-sysroot",
+    platform: "linux",
+    architecture: "x64",
+    runner: "ubuntu-24.04",
+    provisionTarget: "x86_64-unknown-linux-gnu",
+    outConfig: "Release_GN_arm64",
+    linkKind: "linux-arm-sysroot",
+    acceptanceRunner: "ubuntu-24.04-arm",
+    acceptanceArchitecture: "arm64",
+  }),
+});
+export function checkpointProfile(target = TARGET) {
+  if (!Object.hasOwn(PROFILES, target))
+    throw new Error("Unknown checkpoint target");
+  return PROFILES[target];
+}
+export function checkpointHost(target, platform, architecture) {
+  const profile = checkpointProfile(target);
+  if (profile.platform !== platform || profile.architecture !== architecture)
+    throw new Error("Unreviewed checkpoint build host");
+  return profile;
+}
+export function checkpointCompileArguments(target, args) {
+  const p = checkpointProfile(target);
+  const targets =
+    p.platform === "linux" ? ["cef", "chrome_sandbox"] : ["cef", "cef_sandbox"];
+  if (
+    !Array.isArray(args) ||
+    args.length !== 7 ||
+    path.basename(args[0]) !== "autoninja.py" ||
+    args[1] !== "-j" ||
+    !/^[1-4]$/.test(args[2]) ||
+    args[3] !== "-C" ||
+    args[4] !== `out/${p.outConfig}` ||
+    args[5] !== targets[0] ||
+    args[6] !== targets[1]
+  )
+    throw new Error("Unreviewed checkpoint compile recipe");
+  return args;
+}
 // Closed exact account IDs observed in https://api.github.com/meta
 // domains.actions on 2026-10-24. This is not an Azure host wildcard.
 const GITHUB_BLOB_IDS = new Set([
@@ -232,8 +306,7 @@ export function validateIdentity(value) {
     "siso",
   ]);
   assert(
-    value.target === TARGET &&
-      value.source === SOURCE_ID &&
+    value.source === checkpointProfile(value.target).source &&
       hex(value.producer),
     "Unreviewed checkpoint source",
   );
@@ -263,10 +336,17 @@ export async function noLinks(file) {
   assert((await realpath(absolute)) === absolute, "Checkpoint path alias");
   return absolute;
 }
-export async function workspace(temp, identity) {
+export async function workspace(temp, identity, target = TARGET) {
+  const profile = checkpointProfile(target);
+  assert(identity === profile.source, "Workspace source differs from target");
   assert(hex(identity), "Invalid source identity");
   const base = await noLinks(temp);
-  const root = path.join(base, "sorng-cef-engineering", TARGET, identity);
+  const root = path.join(
+    base,
+    "sorng-cef-engineering",
+    profile.target,
+    identity,
+  );
   assert(!root.includes(" "), "Space-free engineering root required");
   await mkdir(path.dirname(root), { recursive: true });
   await noLinks(path.dirname(root));
@@ -292,6 +372,88 @@ export async function filePin(file, maximum) {
     bytes: s.size,
     sha256: hash.digest("hex"),
   };
+}
+
+// Linux ARM uses the existing x64-host gclient hooks. Admit only the pinned
+// ARM sysroot marker and host gperf installation; never substitute host libc.
+export async function linuxArmRecipe(chromium, out) {
+  const readRecipe = async (file, maximum) => {
+    const before = await filePin(file, maximum),
+      bytes = await readFile(file);
+    assert(
+      bytes.length === before.bytes && sha(bytes) === before.sha256,
+      "Linux dependency metadata changed",
+    );
+    return bytes.toString("utf8");
+  };
+  const sysroots = JSON.parse(
+    await readRecipe(
+      path.join(chromium, "build/linux/sysroot_scripts/sysroots.json"),
+      1024 ** 2,
+    ),
+  );
+  const expected =
+    "c7176a4c7aacbf46bda58a029f39f79a68008d3dee6518f154dcf5161a5486d8";
+  const root = sysroots.bullseye_arm64;
+  assert(
+    root?.Sha256Sum === expected &&
+      root.SysrootDir === "debian_bullseye_arm64-sysroot" &&
+      root.URL ===
+        "https://commondatastorage.googleapis.com/chrome-linux-sysroot",
+    "Unreviewed Linux ARM sysroot recipe",
+  );
+  const sysroot = await noLinks(
+    path.join(chromium, "build/linux", root.SysrootDir),
+  );
+  assert(
+    (await readRecipe(path.join(sysroot, ".stamp"), 4096)).trim() ===
+      `${root.URL}/${expected}`,
+    "Linux ARM sysroot installation missing",
+  );
+  const deps = await readRecipe(path.join(chromium, "DEPS"), 2 * 1024 ** 2);
+  assert(
+    deps.includes("infra/3pp/tools/gperf/${{platform}}") &&
+      deps.includes("version:3@3.2"),
+    "Unreviewed Linux host gperf recipe",
+  );
+  const gperf = await filePin(
+    path.join(chromium, "third_party/gperf/cipd/bin/gperf"),
+    16 * 1024 ** 2,
+  );
+  // noLinks checks every descendant below: Linux has no admitted generated
+  // SDK aliases. Any real GN layout differing from this contract must stop.
+  await assertNoGeneratedLinks(out);
+  return {
+    sysrootSha256: expected,
+    gperfPackage: "infra/3pp/tools/gperf/linux-amd64",
+    gperfVersion: "version:3@3.2",
+    gperf,
+    generatedLinks: {},
+  };
+}
+export async function assertNoGeneratedLinks(out) {
+  const root = await noLinks(out),
+    pending = [root];
+  let visited = 0;
+  const deadline = Date.now() + 60_000;
+  while (pending.length) {
+    assert(
+      ++visited <= 300000 && Date.now() < deadline,
+      "Linux generated-link inventory bound",
+    );
+    const current = pending.pop(),
+      info = await lstat(current);
+    assert(!info.isSymbolicLink(), "Unreviewed Linux generated link");
+    if (info.isDirectory()) {
+      const entries = await readdir(current);
+      assert(
+        visited + pending.length + entries.length <= 300000,
+        "Linux generated-link inventory bound",
+      );
+      for (const name of entries) pending.push(path.join(current, name));
+    } else assert(info.isFile(), "Unreviewed Linux generated file type");
+  }
+  return {};
 }
 function pin(value, maximum) {
   shape(value, ["name", "bytes", "sha256"]);
@@ -855,7 +1017,12 @@ export function apiClient(
   repository,
   token,
   request = fetch,
-  { readOnly = false, milliseconds = 20 * 60_000, sdk = false } = {},
+  {
+    readOnly = false,
+    milliseconds = 20 * 60_000,
+    sdk = false,
+    target = TARGET,
+  } = {},
 ) {
   const deadline = Date.now() + milliseconds;
   assert(
@@ -885,7 +1052,7 @@ export function apiClient(
             (upload &&
               (sdk
                 ? /^releases\/[1-9][0-9]*\/assets\?name=/.test(route) &&
-                  SDK_NAMES.some((name) =>
+                  sdkNames(target).some((name) =>
                     route.endsWith(`?name=${encodeURIComponent(name)}`),
                   )
                 : uploadRoute.test(route))))),
@@ -994,7 +1161,7 @@ export async function uploadCheckpoint(api, { bundle, manifest, producer }) {
   await writeFile(path.join(bundle, "manifest.json"), manifestBytes, {
     flag: "wx",
   });
-  const tag = `cef-checkpoint-${TARGET}-${manifest.identitySha256.slice(0, 16)}-${producer.runId}-${producer.attempt}`;
+  const tag = `cef-checkpoint-${manifest.identity.target}-${manifest.identitySha256.slice(0, 16)}-${producer.runId}-${producer.attempt}`;
   const release = await api("releases", {
     method: "POST",
     body: {
@@ -1045,7 +1212,8 @@ export async function uploadCheckpoint(api, { bundle, manifest, producer }) {
     assets,
   };
 }
-export function validateSeal(seal, expected) {
+export function validateSeal(seal, expected, target = TARGET) {
+  checkpointProfile(target);
   shape(seal, [
     "schemaVersion",
     "kind",
@@ -1066,7 +1234,7 @@ export function validateSeal(seal, expected) {
   assert(
     positive(seal.release.id) &&
       seal.release.tag ===
-        `cef-checkpoint-${TARGET}-${seal.identitySha256.slice(0, 16)}-${expected.runId}-${expected.attempt}`,
+        `cef-checkpoint-${target}-${seal.identitySha256.slice(0, 16)}-${expected.runId}-${expected.attempt}`,
     "Seal release mismatch",
   );
   pin(seal.manifest, LIMITS.seal);
@@ -2103,7 +2271,16 @@ export async function downloadAsset(
 }
 export async function restoreDownload(
   api,
-  { repository, token, runId, destination, python, helper, request = fetch },
+  {
+    repository,
+    token,
+    runId,
+    destination,
+    python,
+    helper,
+    request = fetch,
+    target = TARGET,
+  },
 ) {
   assert(positive(runId), "Explicit producer run required");
   const downloadDeadline = Date.now() + 20 * 60_000;
@@ -2160,7 +2337,7 @@ export async function restoreDownload(
     ["seal", "--input", zip, "--output", destination],
     { timeout: 15000 },
   );
-  validateSeal(seal, producer);
+  validateSeal(seal, producer, target);
   const release = await api(`releases/${seal.release.id}`);
   assert(
     release.draft === true &&
@@ -2217,6 +2394,10 @@ export async function restoreDownload(
       );
       manifest = validateManifest(JSON.parse(bytes));
       assert(
+        manifest.identity.target === target,
+        "Cross-target checkpoint restore",
+      );
+      assert(
         canonical(manifest.producer) === canonical(producer) &&
           manifest.identitySha256 === seal.identitySha256,
         "Manifest producer differs from seal",
@@ -2263,16 +2444,30 @@ export const SDK_NAMES = Object.freeze([
   SDK_ARCHIVE,
   "runtime.json",
 ]);
-export function sdkSealName(producer) {
-  return `cef-engineering-sdk-seal-${SOURCE_ID}-${TARGET}-${producer.runId}-${producer.attempt}`;
+export function sdkArchive(target = TARGET) {
+  const profile = checkpointProfile(target);
+  return `sorng-cef-custom-${profile.source}-${profile.target}.tar.bz2`;
 }
-export function sdkPin(value) {
+export function sdkNames(target = TARGET) {
+  return [
+    "source-lock.json",
+    "manifest.json",
+    "receipt.json",
+    sdkArchive(target),
+    "runtime.json",
+  ];
+}
+export function sdkSealName(producer, target = TARGET) {
+  const profile = checkpointProfile(target);
+  return `cef-engineering-sdk-seal-${profile.source}-${profile.target}-${producer.runId}-${producer.attempt}`;
+}
+export function sdkPin(value, target = TARGET) {
   shape(value, ["name", "bytes", "sha256"]);
   assert(
-    SDK_NAMES.includes(value.name) &&
+    sdkNames(target).includes(value.name) &&
       positive(value.bytes) &&
       value.bytes <=
-        (value.name === SDK_ARCHIVE ? SDK_ASSET_MAX : 16 * 1024 ** 2) &&
+        (value.name === sdkArchive(target) ? SDK_ASSET_MAX : 16 * 1024 ** 2) &&
       hex(value.sha256),
     "Invalid SDK asset pin",
   );
@@ -2299,8 +2494,8 @@ export function validateSdkCompletion(value) {
   assert(
     value.schemaVersion === 1 &&
       value.kind === "sorng-cef-engineering-sdk-completion" &&
-      value.target === TARGET &&
-      value.sourceLockSha256 === SOURCE_ID &&
+      value.sourceLockSha256 === checkpointProfile(value.target).source &&
+      value.identity.target === value.target &&
       value.nativeAcceptance === false &&
       value.runtimeReady === false,
     "Closed completed SDK proof required",
@@ -2343,10 +2538,10 @@ export function validateSdkCompletion(value) {
     Array.isArray(value.bundleAssets) && value.bundleAssets.length === 5,
     "Complete five-file SDK bundle required",
   );
-  for (const row of value.bundleAssets) sdkPin(row);
+  for (const row of value.bundleAssets) sdkPin(row, value.target);
   assert(
     new Set(value.bundleAssets.map((row) => row.name)).size === 5 &&
-      SDK_NAMES.every((name) =>
+      sdkNames(value.target).every((name) =>
         value.bundleAssets.some((row) => row.name === name),
       ),
     "SDK bundle names differ",
@@ -2361,8 +2556,9 @@ export function createSdkCompletion({
   checked,
 }) {
   assert(
-    checked.descriptor.target === TARGET &&
-      checked.identity.sourceLockSha256 === SOURCE_ID,
+    checked.descriptor.target === identity.target &&
+      checked.identity.sourceLockSha256 ===
+        checkpointProfile(identity.target).source,
     "Verified SDK differs from reviewed source",
   );
   const value = {
@@ -2371,8 +2567,8 @@ export function createSdkCompletion({
     producer,
     identity,
     identitySha256: validateIdentity(identity),
-    target: TARGET,
-    sourceLockSha256: SOURCE_ID,
+    target: identity.target,
+    sourceLockSha256: checkpointProfile(identity.target).source,
     compile,
     distributionExitCode,
     bundleVerified: true,
@@ -2410,7 +2606,7 @@ export function validateSdkSeal(seal, producer) {
   assert(
     positive(seal.release.id) &&
       seal.release.tag ===
-        `cef-sdk-checkpoint-${TARGET}-${seal.completion.identitySha256.slice(0, 16)}-${producer.runId}-${producer.attempt}`,
+        `cef-sdk-checkpoint-${seal.completion.target}-${seal.completion.identitySha256.slice(0, 16)}-${producer.runId}-${producer.attempt}`,
     "SDK draft mismatch",
   );
   assert(
@@ -2420,7 +2616,10 @@ export function validateSdkSeal(seal, producer) {
   const ids = new Set();
   for (const row of seal.assets) {
     shape(row, ["id", "name", "bytes", "sha256"]);
-    sdkPin({ name: row.name, bytes: row.bytes, sha256: row.sha256 });
+    sdkPin(
+      { name: row.name, bytes: row.bytes, sha256: row.sha256 },
+      seal.completion.target,
+    );
     assert(positive(row.id) && !ids.has(row.id), "SDK asset id");
     ids.add(row.id);
   }
@@ -2454,12 +2653,14 @@ export async function uploadSdkBundle(api, { bundle, completion, producer }) {
       canonical(
         await filePin(
           path.join(bundle, pin.name),
-          pin.name === SDK_ARCHIVE ? SDK_ASSET_MAX : 16 * 1024 ** 2,
+          pin.name === sdkArchive(completion.target)
+            ? SDK_ASSET_MAX
+            : 16 * 1024 ** 2,
         ),
       ) === canonical(pin),
       "SDK upload bytes changed",
     );
-  const tag = `cef-sdk-checkpoint-${TARGET}-${completion.identitySha256.slice(0, 16)}-${producer.runId}-${producer.attempt}`;
+  const tag = `cef-sdk-checkpoint-${completion.target}-${completion.identitySha256.slice(0, 16)}-${producer.runId}-${producer.attempt}`;
   const release = await api("releases", {
     method: "POST",
     body: {
@@ -2527,7 +2728,7 @@ export async function downloadSdkBundle(
 ) {
   assert(
     selection.producer === "engineering-sdk" &&
-      selection.target === TARGET &&
+      checkpointProfile(selection.target).target === selection.target &&
       positive(selection.runAttempt),
     "Explicit completed engineering SDK selection required",
   );
@@ -2561,7 +2762,7 @@ export async function downloadSdkBundle(
   );
   assert(
     artifact &&
-      artifact.name === sdkSealName(producer) &&
+      artifact.name === sdkSealName(producer, selection.target) &&
       artifact.expired === false &&
       artifact.workflow_run?.id === producer.runId &&
       artifact.workflow_run?.head_sha === producer.head &&
@@ -2592,7 +2793,10 @@ export async function downloadSdkBundle(
     producer,
   );
   assert(
-    seal.completionSha256 === selection.completionSha256 &&
+    seal.completion.target === selection.target &&
+      seal.completion.sourceLockSha256 ===
+        checkpointProfile(selection.target).source &&
+      seal.completionSha256 === selection.completionSha256 &&
       seal.completion.bundleAssets.find((row) => row.name === "runtime.json")
         .sha256 === selection.descriptorSha256,
     "SDK independently reviewed completion/descriptor mismatch",
@@ -2630,7 +2834,10 @@ export async function downloadSdkBundle(
       pin,
       {
         request,
-        maximum: pin.name === SDK_ARCHIVE ? SDK_ASSET_MAX : 16 * 1024 ** 2,
+        maximum:
+          pin.name === sdkArchive(selection.target)
+            ? SDK_ASSET_MAX
+            : 16 * 1024 ** 2,
         deadline,
       },
     );

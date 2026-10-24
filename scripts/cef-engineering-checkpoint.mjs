@@ -23,9 +23,10 @@ import {
 import { verifyToolchainFiles } from "./lib/browser-custom-runtime.mjs";
 import {
   LIMITS,
-  INPUTS,
-  TARGET,
-  SOURCE_ID,
+  checkpointProfile,
+  checkpointHost,
+  checkpointCompileArguments,
+  linuxArmRecipe,
   WORKFLOW,
   authority,
   sdkProbeAuthority,
@@ -96,7 +97,8 @@ export function argumentsFor(argv) {
     );
   return result;
 }
-async function tools(env) {
+async function tools(env, profile) {
+  const { inputs: INPUTS, target: TARGET, source: SOURCE_ID } = profile;
   const reviewed = await plan({
     inputs: INPUTS,
     target: TARGET,
@@ -126,6 +128,8 @@ async function tools(env) {
     python,
     runnerMapFromInputs: true,
   });
+  if (profile.platform === "linux")
+    return { python, toolchain, map, sdkTargets: [], selected: {} };
   const selected = (key) =>
     map.environment[key].replace(
       /^@TOOLS@\//,
@@ -188,13 +192,14 @@ async function codeDigest() {
   return codeTreeDigest(entries);
 }
 export async function main(argv = process.argv.slice(2), env = process.env) {
+  const profile = checkpointProfile(env.CEF_ENGINEERING_TARGET),
+    { inputs: INPUTS, target: TARGET, source: SOURCE_ID } = profile;
   const options = argumentsFor(argv),
     producer =
       options.mode === "probe-sdk" ? sdkProbeAuthority(env) : authority(env);
-  fail(
-    process.platform === "darwin" && process.arch === "x64",
-    "Reviewed native Mac Intel checkpoint only",
-  );
+  checkpointHost(TARGET, process.platform, process.arch);
+  if (options.mode === "probe-sdk")
+    fail(TARGET === "x86_64-apple-darwin", "SDK probe remains Mac Intel only");
   const temp = await noLinks(env.RUNNER_TEMP),
     download = path.join(temp, "cef-engineering-download"),
     state = path.join(temp, "cef-engineering-state.json"),
@@ -202,13 +207,14 @@ export async function main(argv = process.argv.slice(2), env = process.env) {
   if (options.mode === "download") {
     if (!options["--restore-run"])
       return { restore: false, nativeAcceptance: false };
-    const verified = await tools(env);
+    const verified = await tools(env, profile);
     const result = await restoreDownload(
       apiClient(producer.repository, env.GH_TOKEN, fetch, { readOnly: true }),
       {
         repository: producer.repository,
         token: env.GH_TOKEN,
         runId: options["--restore-run"],
+        target: TARGET,
         destination: download,
         python: verified.python,
         helper: HELPER,
@@ -231,7 +237,7 @@ export async function main(argv = process.argv.slice(2), env = process.env) {
       !env.GH_TOKEN && !env.GITHUB_TOKEN,
       "SDK probe must not receive a GitHub token",
     );
-    const verified = await tools(env);
+    const verified = await tools(env, profile);
     return afterGnPhase("sdk-preflight", () =>
       selectedSdkPreflight({
         temp,
@@ -250,19 +256,22 @@ export async function main(argv = process.argv.slice(2), env = process.env) {
       options["--slice-minutes"] ?? "15",
     );
     hostRemaining(env);
-    const verified = await tools(env),
+    const verified = await tools(env, profile),
       code = await codeDigest();
-    const aliasAttestation = await afterGnPhase("sdk-preflight", () =>
-      selectedSdkPreflight(
-        {
-          temp,
-          selected: verified.selected,
-          expectedTargets: verified.sdkTargets,
-        },
-        async (attested) => attested,
-      ),
-    );
-    const work = await workspace(temp, SOURCE_ID);
+    const aliasAttestation =
+      profile.platform === "darwin"
+        ? await afterGnPhase("sdk-preflight", () =>
+            selectedSdkPreflight(
+              {
+                temp,
+                selected: verified.selected,
+                expectedTargets: verified.sdkTargets,
+              },
+              async (attested) => attested,
+            ),
+          )
+        : null;
+    const work = await workspace(temp, SOURCE_ID, TARGET);
     const result = await build(
       {
         inputs: INPUTS,
@@ -277,38 +286,48 @@ export async function main(argv = process.argv.slice(2), env = process.env) {
             Math.floor(Math.min(40 * 60_000, hostRemaining(env) - 20 * 60_000)),
           workspace: work,
           async afterGn(context) {
-            const out = path.join(context.chromium, "out", "Release_GN_x64");
+            const out = path.join(context.chromium, "out", profile.outConfig);
             const siso = await afterGnPhase("siso-pin", () =>
               filePin(
                 path.join(context.chromium, "third_party/siso/cipd/siso"),
                 256 * 1024 ** 2,
               ),
             );
-            await afterGnPhase("sdk-roots", async () => {
-              const developer = await realpath(context.env.DEVELOPER_DIR),
-                sdk = await realpath(context.env.SDKROOT);
-              fail(
-                sdk.startsWith(
-                  path.join(
-                    developer,
-                    "Platforms",
-                    "MacOSX.platform",
-                    "Developer",
-                    "SDKs",
-                  ) + path.sep,
-                ),
-                "SDK outside verified Developer path",
-              );
-            });
-            const linkRecipe = await afterGnPhase("sdk-links", () =>
-              normalizeSdkLinks(out, {
-                developerDir: context.env.DEVELOPER_DIR,
-                sdkRoot: context.env.SDKROOT,
-                expectedTargets: verified.sdkTargets,
-                aliasAttestation,
-                observe: logSdkLayout,
-              }),
-            );
+            if (profile.platform === "darwin")
+              await afterGnPhase("sdk-roots", async () => {
+                const developer = await realpath(context.env.DEVELOPER_DIR),
+                  sdk = await realpath(context.env.SDKROOT);
+                fail(
+                  sdk.startsWith(
+                    path.join(
+                      developer,
+                      "Platforms",
+                      "MacOSX.platform",
+                      "Developer",
+                      "SDKs",
+                    ) + path.sep,
+                  ),
+                  "SDK outside verified Developer path",
+                );
+              });
+            const linuxRecipe =
+              profile.platform === "linux"
+                ? await afterGnPhase("sdk-roots", () =>
+                    linuxArmRecipe(context.chromium, out),
+                  )
+                : null;
+            const linkRecipe =
+              profile.platform === "linux"
+                ? linuxRecipe.generatedLinks
+                : await afterGnPhase("sdk-links", () =>
+                    normalizeSdkLinks(out, {
+                      developerDir: context.env.DEVELOPER_DIR,
+                      sdkRoot: context.env.SDKROOT,
+                      expectedTargets: verified.sdkTargets,
+                      aliasAttestation,
+                      observe: logSdkLayout,
+                    }),
+                  );
             const recipePath = path.join(
               context.logs,
               "generated-sdk-links.json",
@@ -339,6 +358,7 @@ export async function main(argv = process.argv.slice(2), env = process.env) {
                 canonical({
                   toolchain: verified.toolchain,
                   linkRecipe,
+                  ...(linuxRecipe ? { linuxRecipe } : {}),
                   nodeVersion: process.version,
                   nodeExecutable: await filePin(
                     await realpath(process.execPath),
@@ -406,6 +426,17 @@ export async function main(argv = process.argv.slice(2), env = process.env) {
                   expectedGraph: identity.graph,
                   revalidateGn: context.revalidateGn,
                   verifyGenerated: async () => {
+                    if (profile.platform === "linux") {
+                      const regenerated = await linuxArmRecipe(
+                        context.chromium,
+                        out,
+                      );
+                      fail(
+                        canonical(regenerated) === canonical(linuxRecipe),
+                        "Post-GN Linux dependency recipe changed",
+                      );
+                      return;
+                    }
                     const regenerated = await afterGnPhase("sdk-links", () =>
                       normalizeSdkLinks(out, {
                         developerDir: context.env.DEVELOPER_DIR,
@@ -425,6 +456,7 @@ export async function main(argv = process.argv.slice(2), env = process.env) {
             });
           },
           async compile(context) {
+            checkpointCompileArguments(TARGET, context.args);
             const compile = await compileSlice(
               context.executable,
               context.args,
@@ -529,8 +561,15 @@ export async function main(argv = process.argv.slice(2), env = process.env) {
   if (saved.kind === "sdk") {
     validateSdkCompletion(saved.completion);
     fail(
-      saved.bundle ===
-        path.join(temp, "sorng-cef-engineering", TARGET, SOURCE_ID, "bundle") &&
+      saved.completion.target === TARGET &&
+        saved.bundle ===
+          path.join(
+            temp,
+            "sorng-cef-engineering",
+            TARGET,
+            SOURCE_ID,
+            "bundle",
+          ) &&
         canonical(saved.completion.producer) === canonical(producer),
       "Foreign SDK state",
     );
@@ -542,7 +581,10 @@ export async function main(argv = process.argv.slice(2), env = process.env) {
       };
     await verifyBundle(saved.bundle, producer.repository);
     const seal = await uploadSdkBundle(
-      apiClient(producer.repository, env.GH_TOKEN, fetch, { sdk: true }),
+      apiClient(producer.repository, env.GH_TOKEN, fetch, {
+        sdk: true,
+        target: TARGET,
+      }),
       { bundle: saved.bundle, completion: saved.completion, producer },
     );
     const sealRoot = path.join(temp, "cef-engineering-sdk-seal");
@@ -560,7 +602,8 @@ export async function main(argv = process.argv.slice(2), env = process.env) {
   fail(saved.kind === "checkpoint", "Unknown engineering state");
   validateManifest(saved.manifest);
   fail(
-    saved.bundle === bundle &&
+    saved.manifest.identity.target === TARGET &&
+      saved.bundle === bundle &&
       canonical(saved.manifest.producer) === canonical(producer),
     "Foreign checkpoint state",
   );

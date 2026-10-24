@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import YAML from "yaml";
 import { spawnSync } from "node:child_process";
 import { writeFileSync, fstatSync, renameSync } from "node:fs";
 import { PassThrough } from "node:stream";
@@ -69,7 +70,14 @@ import {
   restoreVerifiedGraph,
   restoreDownload,
   workspace,
+  checkpointProfile,
+  checkpointHost,
+  checkpointCompileArguments,
+  sdkNames,
+  linuxArmRecipe,
+  assertNoGeneratedLinks,
 } from "../../scripts/lib/cef-engineering-checkpoint.mjs";
+import { plan, releaseIdentity } from "../../scripts/cef-runtime-ci.mjs";
 import {
   argumentsFor,
   main,
@@ -2895,3 +2903,255 @@ test(
       assert.equal(await readlink(path.join(restored, name)), target);
   },
 );
+
+test("closed Unix profiles bind ARM outputs to reviewed x64 builders and distinct native ARM acceptance", () => {
+  assert.equal(checkpointProfile().source, SOURCE_ID);
+  assert.equal(
+    checkpointProfile().inputs,
+    "native/cef-build-inputs/20261024-registration-retirement-lf-macintel-sdk26-2-capture-compat",
+  );
+  for (const target of ["aarch64-apple-darwin", "aarch64-unknown-linux-gnu"]) {
+    const p = checkpointProfile(target);
+    assert.equal(p.architecture, "x64");
+    assert.equal(p.acceptanceArchitecture, "arm64");
+    assert.equal(p.outConfig, "Release_GN_arm64");
+    assert.equal(checkpointHost(target, p.platform, "x64"), p);
+    assert.throws(
+      () => checkpointHost(target, p.platform, "arm64"),
+      /build host/,
+    );
+    assert.throws(() => checkpointHost(target, "win32", "x64"), /build host/);
+    assert.throws(
+      () => validateIdentity({ ...identity, target, source: SOURCE_ID }),
+      /source/,
+    );
+    assert.equal(
+      typeof validateIdentity({ ...identity, target, source: p.source }),
+      "string",
+    );
+    assert.notEqual(sdkSealName(producer, target), sdkSealName(producer));
+    assert.notDeepEqual(sdkNames(target), SDK_NAMES);
+    assert(Object.isFrozen(p));
+  }
+  assert.throws(() => checkpointProfile("aarch64-unreviewed"), /Unknown/);
+});
+
+test("all three actual reviewed recipes validate; new MacARM preserves every original payload and runner byte", async () => {
+  for (const target of [
+    TARGET,
+    "aarch64-apple-darwin",
+    "aarch64-unknown-linux-gnu",
+  ]) {
+    const p = checkpointProfile(target);
+    const reviewed = await plan({
+      inputs: p.inputs,
+      target,
+      checkout: ROOT,
+      runnerMode: "hosted",
+    });
+    assert.equal(
+      releaseIdentity(reviewed.sourceLock, target).sourceLockSha256,
+      p.source,
+    );
+  }
+  const old = path.join(
+    ROOT,
+    "native/cef-build-inputs/20261023-registration-retirement-lf-macarm-intelcross-xcode26-3-sdk26-2",
+  );
+  const next = path.join(
+    ROOT,
+    checkpointProfile("aarch64-apple-darwin").inputs,
+  );
+  const lock = JSON.parse(
+    await readFile(path.join(old, "source-lock.json"), "utf8"),
+  );
+  const fresh = JSON.parse(
+    await readFile(path.join(next, "source-lock.json"), "utf8"),
+  );
+  assert.deepEqual(fresh.patches.slice(0, -1), lock.patches);
+  assert.equal(fresh.patches.length, lock.patches.length + 1);
+  const files = [
+    ...lock.patches,
+    lock.bridge.header,
+    ...lock.builds.flatMap((b) => [b.gnArgs, b.toolchainLock]),
+  ];
+  // Header schema is an object pin, as are the build recipe pins.
+  for (const row of files) {
+    assert(row && typeof row.path === "string");
+    assert.deepEqual(
+      await readFile(path.join(next, row.path)),
+      await readFile(path.join(old, row.path)),
+    );
+  }
+  const runner = "cef-ci-runner-aarch64-apple-darwin.json";
+  assert.deepEqual(
+    await readFile(path.join(next, runner)),
+    await readFile(path.join(old, runner)),
+  );
+  const patch = fresh.patches.at(-1).path;
+  assert.deepEqual(
+    await readFile(path.join(next, patch)),
+    await readFile(path.join(ROOT, checkpointProfile().inputs, patch)),
+  );
+});
+
+test("ARM checkpoint and SDK proofs cannot be rebound to Intel or another ARM target", () => {
+  const target = "aarch64-apple-darwin",
+    p = checkpointProfile(target);
+  const own = { ...identity, target, source: p.source };
+  const proof = createSdkCompletion({
+    producer,
+    identity: own,
+    compile: {
+      ...manifest().compile,
+      outcome: "compiler-complete",
+      exitCode: 0,
+    },
+    distributionExitCode: 0,
+    checked: {
+      descriptor: { target },
+      identity: { sourceLockSha256: p.source },
+      assets: sdkNames(target).map((name) => ({
+        name,
+        size: 10,
+        sha256: "a".repeat(64),
+      })),
+    },
+  });
+  assert.equal(validateSdkCompletion(proof).target, target);
+  assert.throws(() => validateSdkCompletion({ ...proof, target: TARGET }));
+  assert.throws(() =>
+    validateSdkCompletion({ ...proof, sourceLockSha256: SOURCE_ID }),
+  );
+  assert.throws(() =>
+    validateSdkCompletion({ ...proof, bundleAssets: SDK_NAMES.map(asset) }),
+  );
+  const old = manifest();
+  const seal = {
+    schemaVersion: 1,
+    kind: "sorng-cef-engineering-seal",
+    producer,
+    identitySha256: old.identitySha256,
+    release: {
+      id: 33,
+      tag: `cef-checkpoint-${TARGET}-${old.identitySha256.slice(0, 16)}-22-1`,
+    },
+    manifest: asset("manifest.json"),
+    assets: [
+      asset("manifest.json"),
+      asset("inventory.json"),
+      asset("checkpoint-00000.bin"),
+    ].map((row, index) => ({ id: index + 1, ...row })),
+  };
+  assert.throws(() => validateSeal(seal, producer, target), /release mismatch/);
+});
+
+test("Linux ARM admits only the exact installed sysroot marker and x64 gperf, with no generated links", async (t) => {
+  const root = await scratch(t),
+    out = path.join(root, "out");
+  const sysroot = path.join(root, "build/linux/debian_bullseye_arm64-sysroot");
+  await mkdir(out);
+  await mkdir(path.join(root, "build/linux/sysroot_scripts"), {
+    recursive: true,
+  });
+  await mkdir(sysroot);
+  await mkdir(path.join(root, "third_party/gperf/cipd/bin"), {
+    recursive: true,
+  });
+  const sum =
+    "c7176a4c7aacbf46bda58a029f39f79a68008d3dee6518f154dcf5161a5486d8";
+  const url = "https://commondatastorage.googleapis.com/chrome-linux-sysroot";
+  await writeFile(
+    path.join(root, "build/linux/sysroot_scripts/sysroots.json"),
+    JSON.stringify({
+      bullseye_arm64: {
+        Sha256Sum: sum,
+        URL: url,
+        SysrootDir: path.basename(sysroot),
+      },
+    }),
+  );
+  await writeFile(
+    path.join(root, "DEPS"),
+    "infra/3pp/tools/gperf/${{platform}} version:3@3.2",
+  );
+  await writeFile(
+    path.join(root, "third_party/gperf/cipd/bin/gperf"),
+    "synthetic pinned host executable",
+  );
+  await writeFile(path.join(sysroot, ".stamp"), `${url}/${sum}`);
+  const recipe = await linuxArmRecipe(root, out);
+  assert.equal(recipe.sysrootSha256, sum);
+  assert.equal(recipe.gperfPackage, "infra/3pp/tools/gperf/linux-amd64");
+  assert.deepEqual(recipe.generatedLinks, {});
+  await writeFile(path.join(sysroot, ".stamp"), `${url}/wrong`);
+  await assert.rejects(linuxArmRecipe(root, out), /installation missing/);
+  const target = path.join(root, "foreign");
+  await mkdir(target);
+  await symlink(target, path.join(out, "unexpected-sdk"), "junction");
+  await assert.rejects(assertNoGeneratedLinks(out), /generated link/);
+});
+
+test("compile recipes preserve target output and platform sandbox without cross-target substitution", () => {
+  for (const target of [
+    TARGET,
+    "aarch64-apple-darwin",
+    "aarch64-unknown-linux-gnu",
+  ]) {
+    const p = checkpointProfile(target),
+      args = [
+        "/pinned/depot/autoninja.py",
+        "-j",
+        "4",
+        "-C",
+        `out/${p.outConfig}`,
+        "cef",
+        p.platform === "linux" ? "chrome_sandbox" : "cef_sandbox",
+      ];
+    assert.equal(checkpointCompileArguments(target, args), args);
+    for (const [index, value] of [
+      [2, "8"],
+      [4, "out/Debug_GN_arm64"],
+      [6, "bootstrap"],
+      [5, "all"],
+    ]) {
+      const altered = [...args];
+      altered[index] = value;
+      assert.throws(
+        () => checkpointCompileArguments(target, altered),
+        /compile recipe/,
+      );
+    }
+  }
+});
+
+test("manual workflow chooses only fixed cross-build hosts while seals retain the selected target", async () => {
+  const yaml = await readFile(path.join(ROOT, WORKFLOW), "utf8");
+  const document = YAML.parse(yaml);
+  assert.deepEqual(document.on.workflow_dispatch.inputs.target.options, [
+    TARGET,
+    "aarch64-apple-darwin",
+    "aarch64-unknown-linux-gnu",
+  ]);
+  assert.equal(document.on.workflow_dispatch.inputs.target.default, TARGET);
+  for (const target of document.on.workflow_dispatch.inputs.target.options)
+    assert(
+      document.jobs.checkpoint.concurrency.group.includes(
+        checkpointProfile(target).source,
+      ),
+    );
+  assert.match(
+    yaml,
+    /runs-on:.*aarch64-unknown-linux-gnu.*ubuntu-24\.04.*macos-15-intel/,
+  );
+  assert.match(yaml, /--target "\$CEF_PROVISION_TARGET"/);
+  assert.match(
+    yaml,
+    /checkpointProfile\(process\.env\.CEF_ENGINEERING_TARGET\)/,
+  );
+  assert.match(
+    yaml,
+    /name: cef-engineering-sdk-seal-\$\{\{ steps.profile.outputs.source \}\}-\$\{\{ inputs.target \}\}/,
+  );
+  assert.doesNotMatch(yaml, /continue-on-error:|restore-keys:|actions\/cache@/);
+});

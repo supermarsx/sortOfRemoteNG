@@ -19,8 +19,7 @@ import {
 
 import {
   WORKFLOW as ENGINEERING_WORKFLOW,
-  TARGET as ENGINEERING_TARGET,
-  SOURCE_ID as ENGINEERING_SOURCE,
+  checkpointProfile,
   LIMITS as CHECKPOINT_LIMITS,
   sdkSealName,
   validateSdkCompletion,
@@ -417,7 +416,12 @@ export function producerSelection(value) {
       typeof row.target !== "string" ||
       !Object.hasOwn(NATIVE_TARGETS, row.target) ||
       seen.has(row.target) ||
-      (sdk && row.target !== ENGINEERING_TARGET) ||
+      (sdk &&
+        ![
+          "x86_64-apple-darwin",
+          "aarch64-apple-darwin",
+          "aarch64-unknown-linux-gnu",
+        ].includes(row.target)) ||
       (owned &&
         !["x86_64-pc-windows-msvc", "x86_64-unknown-linux-gnu"].includes(
           row.target,
@@ -621,12 +625,15 @@ export async function acceptancePlan({
       ? { sourceLockSha256: review.sourceLockIdentity }
       : releaseIdentity(lock, row.target);
     const sdk = row.producer === "engineering-sdk";
-    if (sdk && identity.sourceLockSha256 !== ENGINEERING_SOURCE)
+    if (
+      sdk &&
+      identity.sourceLockSha256 !== checkpointProfile(row.target).source
+    )
       fail("Engineering SDK source inputs differ from reviewed producer");
     const name = owned
       ? importSealName(row.runId, row.runAttempt)
       : sdk
-        ? sdkSealName({ runId: row.runId, attempt: row.runAttempt })
+        ? sdkSealName({ runId: row.runId, attempt: row.runAttempt }, row.target)
         : `cef-engine-bundle-${identity.key}`;
     const [run, artifact] = await Promise.all([
       api(repository, `actions/runs/${row.runId}`, token, fetcher),
@@ -953,7 +960,7 @@ export async function downloadEngineeringSdk({
   producerSelection([selectedProducer(entry)]);
   if (
     entry.producer !== "engineering-sdk" ||
-    entry.sourceLockIdentity !== ENGINEERING_SOURCE
+    entry.sourceLockIdentity !== checkpointProfile(entry.target).source
   )
     fail("Explicit completed SDK entry required");
   assertNativeTarget(entry.target);

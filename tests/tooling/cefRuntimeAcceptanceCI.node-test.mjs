@@ -40,6 +40,7 @@ import {
   completionSha,
   canonical,
   SDK_NAMES,
+  checkpointProfile,
 } from "../../scripts/lib/cef-engineering-checkpoint.mjs";
 import { releaseIdentity } from "../../scripts/cef-runtime-ci.mjs";
 
@@ -832,7 +833,7 @@ test("engineering SDK selection is a separate exact producer variant; the legacy
   for (const patch of [
     { producer: "engineering-checkpoint" },
     { runAttempt: 0 },
-    { target: "aarch64-apple-darwin" },
+    { target: "x86_64-unknown-linux-gnu" },
     { completionSha256: "not-a-digest" },
     { runAttempt: undefined },
     { url: "https://other.invalid" },
@@ -1327,4 +1328,71 @@ test("write-capable Draft credentials still cannot mutate through either product
   );
   for (const key of ["GH_TOKEN", "GITHUB_TOKEN", "ACTIONS_RUNTIME_TOKEN"])
     assert.equal(child[key], undefined);
+});
+
+test("ARM engineering SDK plans schedule real native ARM hosts and reject another reviewed target's source", async () => {
+  for (const target of ["aarch64-apple-darwin", "aarch64-unknown-linux-gnu"]) {
+    const p = checkpointProfile(target),
+      row = { ...sdkSelected, target };
+    const expectedName = sdkSealName(
+      { runId: row.runId, attempt: row.runAttempt },
+      target,
+    );
+    const fetcher = async (url) => {
+      const base = `https://api.github.com/repos/${repository}`;
+      const data = {
+        [base]: {
+          id: 11,
+          full_name: repository,
+          private: false,
+          default_branch: "Main",
+        },
+        [`${base}/actions/workflows/cef-engineering-checkpoint.yml`]: {
+          id: 66,
+          path: ENGINEERING_WORKFLOW,
+        },
+        [`${base}/actions/runs/123`]: sdkRun,
+        [`${base}/actions/artifacts/456`]: {
+          ...sdkArtifact,
+          name: expectedName,
+        },
+      }[url];
+      assert.notEqual(data, undefined, String(url));
+      return new Response(JSON.stringify(data));
+    };
+    const result = await acceptancePlan({
+      producers: [row],
+      inputs: p.inputs,
+      repository,
+      fetcher,
+    });
+    const entry = result.matrix.include[0];
+    assert.equal(entry.target, target);
+    assert.equal(entry.runner, p.acceptanceRunner);
+    assert.equal(entry.sourceLockIdentity, p.source);
+    assert.equal(NATIVE_TARGETS[target].arch, "arm64");
+    assert.equal(result.nativeAcceptancePerformed, false);
+    assert.equal(result.publicationAllowed, false);
+    await assert.rejects(
+      acceptancePlan({
+        producers: [row],
+        inputs: ENGINEERING_INPUTS,
+        repository,
+        fetcher,
+      }),
+    );
+    const wrongSeal = async (url) =>
+      String(url).endsWith("/artifacts/456")
+        ? new Response(JSON.stringify(sdkArtifact))
+        : fetcher(url);
+    await assert.rejects(
+      acceptancePlan({
+        producers: [row],
+        inputs: p.inputs,
+        repository,
+        fetcher: wrongSeal,
+      }),
+      /artifact|seal|identity/i,
+    );
+  }
 });
