@@ -29,6 +29,19 @@ import {
   apiClient,
   downloadSdkBundle,
 } from "./lib/cef-engineering-checkpoint.mjs";
+import {
+  OWNED_WORKFLOW,
+  OWNED_REPOSITORY,
+  OWNED_LIMITS,
+  reviewedImportPath,
+  readOwnedImportReview,
+  importSealName,
+  validateImportCompletion,
+  ownedCompletionSha,
+  ownedImportApi,
+  parseOwnedJson,
+  downloadOwnedImport,
+} from "./lib/cef-owned-sdk-import.mjs";
 const ROOT = path.resolve(fileURLToPath(new URL("..", import.meta.url)));
 export const NATIVE_TARGETS = Object.freeze({
   "x86_64-pc-windows-msvc": {
@@ -119,11 +132,18 @@ const SDK_PRODUCER_FIELDS = [
   "runAttempt",
   "completionSha256",
 ];
+const OWNED_PRODUCER_FIELDS = [
+  ...SDK_PRODUCER_FIELDS,
+  "reviewedImport",
+  "reviewSha256",
+];
 function selectedProducer(row) {
   return Object.fromEntries(
-    (row.producer === "engineering-sdk"
-      ? SDK_PRODUCER_FIELDS
-      : LEGACY_PRODUCER_FIELDS
+    (row.producer === "owned-import"
+      ? OWNED_PRODUCER_FIELDS
+      : row.producer === "engineering-sdk"
+        ? SDK_PRODUCER_FIELDS
+        : LEGACY_PRODUCER_FIELDS
     ).map((key) => [key, row[key]]),
   );
 }
@@ -132,13 +152,25 @@ export function producerSelection(value) {
     fail("One to six reviewed producers required");
   const seen = new Set();
   for (const row of value) {
-    const sdk = row.producer === "engineering-sdk";
-    exact(row, sdk ? SDK_PRODUCER_FIELDS : LEGACY_PRODUCER_FIELDS);
+    const sdk = row.producer === "engineering-sdk",
+      owned = row.producer === "owned-import";
+    exact(
+      row,
+      owned
+        ? OWNED_PRODUCER_FIELDS
+        : sdk
+          ? SDK_PRODUCER_FIELDS
+          : LEGACY_PRODUCER_FIELDS,
+    );
     if (
       typeof row.target !== "string" ||
       !Object.hasOwn(NATIVE_TARGETS, row.target) ||
       seen.has(row.target) ||
-      (sdk && row.target !== ENGINEERING_TARGET)
+      (sdk && row.target !== ENGINEERING_TARGET) ||
+      (owned &&
+        !["x86_64-pc-windows-msvc", "x86_64-unknown-linux-gnu"].includes(
+          row.target,
+        ))
     )
       fail("Unknown or duplicate native target");
     seen.add(row.target);
@@ -147,7 +179,11 @@ export function producerSelection(value) {
     digest(row.headSha, 40);
     digest(row.artifactSha256);
     digest(row.descriptorSha256);
-    if (sdk) {
+    if (owned) {
+      reviewedImportPath(row.reviewedImport);
+      digest(row.reviewSha256);
+    }
+    if (sdk || owned) {
       identifier(row.runAttempt);
       digest(row.completionSha256);
     }
@@ -163,7 +199,8 @@ export function verifyProducerMetadata(
   context = {},
 ) {
   repositoryName(repository);
-  const sdk = selection.producer === "engineering-sdk";
+  const sdk = selection.producer === "engineering-sdk",
+    owned = selection.producer === "owned-import";
   if (
     run.id !== selection.runId ||
     run.head_sha !== selection.headSha ||
@@ -171,9 +208,11 @@ export function verifyProducerMetadata(
     run.repository?.full_name !== repository ||
     run.event !== "workflow_dispatch" ||
     run.path !==
-      (sdk
-        ? ENGINEERING_WORKFLOW
-        : ".github/workflows/cef-patched-runtime.yml") ||
+      (owned
+        ? OWNED_WORKFLOW
+        : sdk
+          ? ENGINEERING_WORKFLOW
+          : ".github/workflows/cef-patched-runtime.yml") ||
     run.status !== "completed" ||
     run.conclusion !== "success"
   )
@@ -181,7 +220,7 @@ export function verifyProducerMetadata(
       "Producer run is not the exact successful reviewed repository workflow",
     );
   if (
-    sdk &&
+    (sdk || owned) &&
     (!context.defaultBranch ||
       run.head_branch !== context.defaultBranch ||
       run.run_attempt !== selection.runAttempt ||
@@ -199,7 +238,12 @@ export function verifyProducerMetadata(
     artifact.digest !== `sha256:${selection.artifactSha256}` ||
     !Number.isSafeInteger(artifact.size_in_bytes) ||
     artifact.size_in_bytes < 1 ||
-    artifact.size_in_bytes > (sdk ? CHECKPOINT_LIMITS.seal - 1 : 3 * 1024 ** 3)
+    artifact.size_in_bytes >
+      (owned
+        ? OWNED_LIMITS.seal - 1
+        : sdk
+          ? CHECKPOINT_LIMITS.seal - 1
+          : 3 * 1024 ** 3)
   )
     fail("Producer artifact identity, digest, size, expiry or run mismatch");
   return true;
@@ -250,6 +294,7 @@ export async function acceptancePlan({
   repository,
   token,
   fetcher = fetch,
+  ownedReviewLoader = readOwnedImportReview,
 }) {
   repositoryName(repository);
   releaseRelativePath(inputs);
@@ -262,7 +307,32 @@ export async function acceptancePlan({
   );
   const include = [];
   const selected = producerSelection(producers);
-  let sdkContext = {};
+  let sdkContext = {},
+    ownedContext = {};
+  if (selected.some((row) => row.producer === "owned-import")) {
+    if (repository !== OWNED_REPOSITORY)
+      fail("Owned import repository mismatch");
+    const [repo, workflow] = await Promise.all([
+      api(repository, "", token, fetcher),
+      api(
+        repository,
+        "actions/workflows/cef-owned-sdk-import.yml",
+        token,
+        fetcher,
+      ),
+    ]);
+    if (
+      repo.full_name !== repository ||
+      repo.private !== false ||
+      workflow.path !== OWNED_WORKFLOW
+    )
+      fail("Owned import repository/workflow mismatch");
+    ownedContext = {
+      defaultBranch: repo.default_branch,
+      repositoryId: repo.id,
+      workflowId: workflow.id,
+    };
+  }
   if (selected.some((row) => row.producer === "engineering-sdk")) {
     const [repo, workflow] = await Promise.all([
       api(repository, "", token, fetcher),
@@ -286,18 +356,39 @@ export async function acceptancePlan({
     };
   }
   for (const row of selected) {
-    const identity = releaseIdentity(lock, row.target);
+    const owned = row.producer === "owned-import";
+    const review = owned
+      ? await ownedReviewLoader(ROOT, row.reviewedImport, row.reviewSha256)
+      : null;
+    if (
+      owned &&
+      (review.target !== row.target ||
+        review.descriptorSha256 !== row.descriptorSha256)
+    )
+      fail("Owned reviewed source/target/descriptor mismatch");
+    const identity = owned
+      ? { sourceLockSha256: review.sourceLockIdentity }
+      : releaseIdentity(lock, row.target);
     const sdk = row.producer === "engineering-sdk";
     if (sdk && identity.sourceLockSha256 !== ENGINEERING_SOURCE)
       fail("Engineering SDK source inputs differ from reviewed producer");
-    const name = sdk
-      ? sdkSealName({ runId: row.runId, attempt: row.runAttempt })
-      : `cef-engine-bundle-${identity.key}`;
+    const name = owned
+      ? importSealName(row.runId, row.runAttempt)
+      : sdk
+        ? sdkSealName({ runId: row.runId, attempt: row.runAttempt })
+        : `cef-engine-bundle-${identity.key}`;
     const [run, artifact] = await Promise.all([
       api(repository, `actions/runs/${row.runId}`, token, fetcher),
       api(repository, `actions/artifacts/${row.artifactId}`, token, fetcher),
     ]);
-    verifyProducerMetadata(row, run, artifact, repository, name, sdkContext);
+    verifyProducerMetadata(
+      row,
+      run,
+      artifact,
+      repository,
+      name,
+      owned ? ownedContext : sdkContext,
+    );
     include.push({
       ...row,
       runner: NATIVE_TARGETS[row.target].runner,
@@ -520,6 +611,7 @@ export async function verifyAcceptanceBundle({
   repository,
   expectedLock,
   verifier = verifyBundle,
+  ownedReviewLoader = readOwnedImportReview,
 }) {
   const raw = await readFile(path.join(bundle, "runtime.json"));
   if (
@@ -533,6 +625,44 @@ export async function verifyAcceptanceBundle({
     checked.identity.sourceLockSha256 !== expectedLock
   )
     fail("Downloaded bundle differs from reviewed target/source lock");
+  if (selection.producer === "owned-import") {
+    const bytes = await readFile(
+      path.join(bundle, "owned-import-completion.json"),
+    );
+    if (
+      bytes.length >= OWNED_LIMITS.seal ||
+      sha(bytes) !== selection.completionSha256
+    )
+      fail("Owned completion raw digest differs");
+    const completion = validateImportCompletion(parseOwnedJson(bytes));
+    const review = await ownedReviewLoader(
+      ROOT,
+      selection.reviewedImport,
+      selection.reviewSha256,
+    );
+    if (
+      ownedCompletionSha(completion) !== selection.completionSha256 ||
+      completion.reviewSha256 !== selection.reviewSha256 ||
+      completion.reviewedImport !== selection.reviewedImport ||
+      canonical(completion.review) !== canonical(review) ||
+      review.target !== selection.target ||
+      review.sourceLockIdentity !== expectedLock ||
+      completion.producer.runId !== selection.runId ||
+      completion.producer.attempt !== selection.runAttempt ||
+      completion.producer.head !== selection.headSha ||
+      completion.producer.repository !== repository ||
+      completion.producer.workflow !== OWNED_WORKFLOW
+    )
+      fail("Owned completion review/source/attempt differs");
+    const actual = checked.assets
+      .map(({ name, size, sha256 }) => ({ name, bytes: size, sha256 }))
+      .sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
+    const expected = [...review.assets].sort((a, b) =>
+      a.name < b.name ? -1 : a.name > b.name ? 1 : 0,
+    );
+    if (canonical(actual) !== canonical(expected))
+      fail("Owned completion does not bind all actual raw bundle assets");
+  }
   if (selection.producer === "engineering-sdk") {
     const proofBytes = await readFile(
       path.join(bundle, "sdk-completion-proof.json"),
@@ -606,6 +736,61 @@ export async function downloadEngineeringSdk({
       helper: path.join(ROOT, "scripts/lib/cef-checkpoint-archive.py"),
     },
   );
+}
+export async function downloadOwnedSdk({
+  entry,
+  bundle,
+  repository,
+  token,
+  env = process.env,
+}) {
+  producerSelection([selectedProducer(entry)]);
+  if (entry.producer !== "owned-import" || repository !== OWNED_REPOSITORY)
+    fail("Explicit owned-import entry required");
+  assertNativeTarget(entry.target);
+  const review = await readOwnedImportReview(
+    ROOT,
+    entry.reviewedImport,
+    entry.reviewSha256,
+  );
+  if (
+    review.sourceLockIdentity !== entry.sourceLockIdentity ||
+    review.target !== entry.target
+  )
+    fail("Owned source differs from independent review");
+  const temp = await realpath(env.RUNNER_TEMP),
+    parent = await realpath(path.dirname(path.resolve(bundle))),
+    destination = path.join(parent, path.basename(bundle));
+  if (!inside(temp, destination))
+    fail("Owned SDK output escapes ephemeral runner");
+  const python = execFileSync(
+    process.platform === "win32" ? "python" : "python3",
+    ["-I", "-B", "-c", "import sys;print(sys.executable)"],
+    {
+      encoding: "utf8",
+      timeout: 5000,
+      windowsHide: true,
+      env: nativeChildEnvironment(
+        env,
+        "",
+        path.join(temp, "cef-owned-download-cargo"),
+      ),
+    },
+  ).trim();
+  try {
+    return await downloadOwnedImport(ownedImportApi(repository, token), {
+      selection: entry,
+      review,
+      repository,
+      token,
+      destination,
+      python,
+    });
+  } catch {
+    fail(
+      "Owned import transport verification failed; no native authority granted",
+    );
+  }
 }
 export async function executeAcceptance(
   { entry, bundle, output, repository, env = process.env },
@@ -829,6 +1014,9 @@ export async function executeAcceptance(
     kind: "sorng-cef-native-acceptance-run",
     target,
     producer: entry,
+    ...(entry.producer === "owned-import"
+      ? { ingestion: "operator-reviewed-local-bytes", hostedBuild: false }
+      : {}),
     acceptanceSourceSha: env.GITHUB_SHA,
     acceptanceWorkflowRunId: Number(env.GITHUB_RUN_ID),
     nativeHost: { platform: process.platform, architecture: process.arch },
@@ -887,6 +1075,13 @@ async function main() {
       token: env.GH_TOKEN,
       env,
     });
+  if (mode === "download-owned")
+    return downloadOwnedSdk({
+      entry: JSON.parse(env.CEF_ENTRY),
+      bundle: env.CEF_BUNDLE,
+      repository: env.GITHUB_REPOSITORY,
+      token: env.GH_TOKEN,
+    });
   if (mode === "run")
     return executeAcceptance({
       entry: JSON.parse(env.CEF_ENTRY),
@@ -894,7 +1089,7 @@ async function main() {
       output: env.CEF_ACCEPTANCE_OUTPUT,
       repository: env.GITHUB_REPOSITORY,
     });
-  fail("Expected plan, download-sdk or run");
+  fail("Expected plan, download-sdk, download-owned or run");
 }
 if (
   process.argv[1] &&

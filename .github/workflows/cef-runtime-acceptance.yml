@@ -93,7 +93,7 @@ jobs:
           libayatana-appindicator3-dev librsvg2-dev libsoup-3.0-dev libasound2-dev
           libudev-dev libcurl4-openssl-dev libsasl2-dev libzstd-dev zlib1g-dev xvfb xauth
       - name: Download only the exact validated legacy producer artifact
-        if: matrix.producer != 'engineering-sdk'
+        if: matrix.producer != 'engineering-sdk' && matrix.producer != 'owned-import'
         uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
         with:
           artifact-ids: ${{ matrix.artifactId }}
@@ -110,6 +110,14 @@ jobs:
           CEF_ENTRY: ${{ toJSON(matrix) }}
           CEF_BUNDLE: ${{ runner.temp }}/cef-native-bundle
         run: node scripts/cef-runtime-acceptance-ci.mjs download-sdk
+      - name: Download reviewed local SDK through its distinct owned-import seal
+        if: matrix.producer == 'owned-import'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GITHUB_REPOSITORY_VISIBILITY: ${{ github.event.repository.visibility }}
+          CEF_ENTRY: ${{ toJSON(matrix) }}
+          CEF_BUNDLE: ${{ runner.temp }}/cef-native-bundle
+        run: node scripts/cef-runtime-acceptance-ci.mjs download-owned
       - name: Build native clients and execute real TLS and H2 security gates sequentially
         env:
           GITHUB_REPOSITORY_VISIBILITY: ${{ github.event.repository.visibility }}

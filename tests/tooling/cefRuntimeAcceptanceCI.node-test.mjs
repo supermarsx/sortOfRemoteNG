@@ -673,7 +673,10 @@ test("SDK transport authentication ends before native execution and validation s
   const legacy = steps.find((step) =>
     step.uses?.startsWith("actions/download-artifact@"),
   );
-  assert.equal(legacy.if, "matrix.producer != 'engineering-sdk'");
+  assert.equal(
+    legacy.if,
+    "matrix.producer != 'engineering-sdk' && matrix.producer != 'owned-import'",
+  );
   const download = steps.find((step) =>
     step.run?.includes("acceptance-ci.mjs download-sdk"),
   );

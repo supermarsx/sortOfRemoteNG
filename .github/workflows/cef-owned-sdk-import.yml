@@ -1,0 +1,59 @@
+name: Reviewed local CEF SDK import
+
+on:
+  workflow_dispatch:
+    inputs:
+      reviewed_import:
+        description: Committed operator-reviewed portable input path
+        required: true
+        type: string
+      review_sha256:
+        description: Independently reviewed raw portable input SHA256
+        required: true
+        type: string
+      quarantine_release_id:
+        description: Exact existing draft quarantine release id
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: cef-owned-sdk-import-${{ inputs.review_sha256 }}
+  cancel-in-progress: false
+
+jobs:
+  import:
+    if: github.event_name == 'workflow_dispatch' && github.event.repository.visibility == 'public' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 50
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: ".node-version"
+          package-manager-cache: false
+      - name: Install locked verifier dependencies
+        run: npm ci
+      - name: Verify exact draft bytes and write completion proof only after all checks
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GITHUB_REPOSITORY_VISIBILITY: ${{ github.event.repository.visibility }}
+          CEF_OWNED_REVIEW: ${{ inputs.reviewed_import }}
+          CEF_OWNED_REVIEW_SHA256: ${{ inputs.review_sha256 }}
+          CEF_OWNED_RELEASE_ID: ${{ inputs.quarantine_release_id }}
+          CEF_OWNED_BUNDLE: ${{ runner.temp }}/cef-owned-import-bundle
+          CEF_OWNED_OUTPUT: ${{ runner.temp }}/cef-owned-import-proof
+        run: node scripts/cef-owned-sdk-import.mjs seal
+      # LAST. A failed/partial import cannot create a successful independent seal.
+      - name: Retain independent owned-import completion seal
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        with:
+          name: cef-owned-import-seal-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/cef-owned-import-proof/seal.json
+          retention-days: 30
+          if-no-files-found: error
