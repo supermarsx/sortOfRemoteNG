@@ -6,9 +6,10 @@ on:
   pull_request:
     branches: ["**"]
 
-# Keep push and PR checks independent; a newer source supersedes the same event/ref.
+# Coalesce non-default-branch push/PR validation; preserve default push evidence
+# and keep scheduled/manual runs and fork head repositories separate.
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}
+  group: ${{ github.workflow }}-${{ github.event.pull_request.head.repo.full_name || github.repository }}-${{ github.head_ref || github.ref_name }}-${{ (github.event_name == 'push' || github.event_name == 'pull_request') && (github.head_ref || github.ref_name) != github.event.repository.default_branch && 'source' || github.event_name }}
   cancel-in-progress: true
 
 jobs:

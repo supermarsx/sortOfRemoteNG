@@ -641,17 +641,17 @@ test("CI validation supersedes old work without cancelling its release caller", 
   );
   assert.match(
     ciWorkflow,
-    /concurrency:\s*\n\s*group:.*github\.event_name.*github\.event\.pull_request\.number \|\| github\.ref.*\n\s*cancel-in-progress: true/,
+    /concurrency:\s*\n\s*group:.*github\.event\.pull_request\.head\.repo\.full_name \|\| github\.repository.*github\.head_ref \|\| github\.ref_name.*\n\s*cancel-in-progress: true/,
   );
   const caller = ciWorkflow.slice(ciWorkflow.indexOf("  rolling-release:"));
   assert.doesNotMatch(caller, /concurrency:|cancel-in-progress:/);
   assert.match(caller, /uses: \.\/\.github\/workflows\/release\.yml/);
 });
 
-test("new Docker E2E work supersedes the same event/ref, including main", () => {
+test("new Docker E2E work coalesces non-default push and PR while keeping default push distinct", () => {
   assert.match(
     e2eWorkflow,
-    /concurrency:\s*\n\s*group:.*github\.workflow.*github\.event_name.*github\.event\.pull_request\.number \|\| github\.ref/,
+    /concurrency:\s*\n\s*group:.*github\.workflow.*github\.event\.pull_request\.head\.repo\.full_name \|\| github\.repository.*github\.head_ref \|\| github\.ref_name/,
   );
   assert.match(e2eWorkflow, /cancel-in-progress: true/);
   assert.doesNotMatch(e2eWorkflow, /e2e-main-|github\.sha/);

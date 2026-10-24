@@ -11,7 +11,7 @@ on:
 jobs:
   docs:
     concurrency:
-      group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}-docs
+      group: ${{ github.workflow }}-${{ github.event.pull_request.head.repo.full_name || github.repository }}-${{ github.head_ref || github.ref_name }}-${{ (github.event_name == 'push' || github.event_name == 'pull_request') && (github.head_ref || github.ref_name) != github.event.repository.default_branch && 'source' || github.event_name }}-docs
       cancel-in-progress: true
     name: Documentation links
     runs-on: ubuntu-latest
@@ -25,7 +25,7 @@ jobs:
 
   version:
     concurrency:
-      group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}-version
+      group: ${{ github.workflow }}-${{ github.event.pull_request.head.repo.full_name || github.repository }}-${{ github.head_ref || github.ref_name }}-${{ (github.event_name == 'push' || github.event_name == 'pull_request') && (github.head_ref || github.ref_name) != github.event.repository.default_branch && 'source' || github.event_name }}-version
       cancel-in-progress: true
     runs-on: ubuntu-latest
     steps:
@@ -74,7 +74,7 @@ jobs:
 
   linux-package-recipes:
     concurrency:
-      group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}-linux-package-recipes
+      group: ${{ github.workflow }}-${{ github.event.pull_request.head.repo.full_name || github.repository }}-${{ github.head_ref || github.ref_name }}-${{ (github.event_name == 'push' || github.event_name == 'pull_request') && (github.head_ref || github.ref_name) != github.event.repository.default_branch && 'source' || github.event_name }}-linux-package-recipes
       cancel-in-progress: true
     name: Linux package recipe metadata
     runs-on: ubuntu-latest
@@ -105,7 +105,7 @@ jobs:
 
   updater-signature-verifier:
     concurrency:
-      group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}-updater-signature-verifier
+      group: ${{ github.workflow }}-${{ github.event.pull_request.head.repo.full_name || github.repository }}-${{ github.head_ref || github.ref_name }}-${{ (github.event_name == 'push' || github.event_name == 'pull_request') && (github.head_ref || github.ref_name) != github.event.repository.default_branch && 'source' || github.event_name }}-updater-signature-verifier
       cancel-in-progress: true
     name: Updater signature verifier
     runs-on: ubuntu-latest
@@ -123,7 +123,7 @@ jobs:
 
   format:
     concurrency:
-      group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}-format
+      group: ${{ github.workflow }}-${{ github.event.pull_request.head.repo.full_name || github.repository }}-${{ github.head_ref || github.ref_name }}-${{ (github.event_name == 'push' || github.event_name == 'pull_request') && (github.head_ref || github.ref_name) != github.event.repository.default_branch && 'source' || github.event_name }}-format
       cancel-in-progress: true
     runs-on: ubuntu-latest
     steps:
@@ -138,7 +138,7 @@ jobs:
       - run: npm run format
   lint:
     concurrency:
-      group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}-lint
+      group: ${{ github.workflow }}-${{ github.event.pull_request.head.repo.full_name || github.repository }}-${{ github.head_ref || github.ref_name }}-${{ (github.event_name == 'push' || github.event_name == 'pull_request') && (github.head_ref || github.ref_name) != github.event.repository.default_branch && 'source' || github.event_name }}-lint
       cancel-in-progress: true
     runs-on: ubuntu-latest
     steps:
@@ -151,7 +151,7 @@ jobs:
       - run: npm run lint
   typecheck:
     concurrency:
-      group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}-typecheck
+      group: ${{ github.workflow }}-${{ github.event.pull_request.head.repo.full_name || github.repository }}-${{ github.head_ref || github.ref_name }}-${{ (github.event_name == 'push' || github.event_name == 'pull_request') && (github.head_ref || github.ref_name) != github.event.repository.default_branch && 'source' || github.event_name }}-typecheck
       cancel-in-progress: true
     runs-on: ubuntu-latest
     steps:
@@ -164,7 +164,7 @@ jobs:
       - run: npm run typecheck
   test:
     concurrency:
-      group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}-test
+      group: ${{ github.workflow }}-${{ github.event.pull_request.head.repo.full_name || github.repository }}-${{ github.head_ref || github.ref_name }}-${{ (github.event_name == 'push' || github.event_name == 'pull_request') && (github.head_ref || github.ref_name) != github.event.repository.default_branch && 'source' || github.event_name }}-test
       cancel-in-progress: true
     runs-on: ubuntu-latest
     steps:
@@ -183,7 +183,7 @@ jobs:
 
   coverage:
     concurrency:
-      group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}-coverage
+      group: ${{ github.workflow }}-${{ github.event.pull_request.head.repo.full_name || github.repository }}-${{ github.head_ref || github.ref_name }}-${{ (github.event_name == 'push' || github.event_name == 'pull_request') && (github.head_ref || github.ref_name) != github.event.repository.default_branch && 'source' || github.event_name }}-coverage
       cancel-in-progress: true
     runs-on: ubuntu-latest
     needs: test
@@ -201,7 +201,7 @@ jobs:
   # tests remain in the dedicated e2e workflows.
   rust-integration-contracts:
     concurrency:
-      group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}-rust-integration-contracts-${{ matrix.cohort }}
+      group: ${{ github.workflow }}-${{ github.event.pull_request.head.repo.full_name || github.repository }}-${{ github.head_ref || github.ref_name }}-${{ (github.event_name == 'push' || github.event_name == 'pull_request') && (github.head_ref || github.ref_name) != github.event.repository.default_branch && 'source' || github.event_name }}-rust-integration-contracts-${{ matrix.cohort }}
       cancel-in-progress: true
     name: rust-integration-contracts (${{ matrix.cohort }})
     runs-on: ubuntu-latest
@@ -431,7 +431,7 @@ jobs:
   # Check the full app dependency graph on both Linux and Windows/MSVC.
   rust-check-linux:
     concurrency:
-      group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}-rust-check-linux
+      group: ${{ github.workflow }}-${{ github.event.pull_request.head.repo.full_name || github.repository }}-${{ github.head_ref || github.ref_name }}-${{ (github.event_name == 'push' || github.event_name == 'pull_request') && (github.head_ref || github.ref_name) != github.event.repository.default_branch && 'source' || github.event_name }}-rust-check-linux
       cancel-in-progress: true
     runs-on: ubuntu-latest
     defaults:
@@ -465,7 +465,7 @@ jobs:
   # `README.md` Toolchain section.
   rust-check-windows:
     concurrency:
-      group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}-rust-check-windows
+      group: ${{ github.workflow }}-${{ github.event.pull_request.head.repo.full_name || github.repository }}-${{ github.head_ref || github.ref_name }}-${{ (github.event_name == 'push' || github.event_name == 'pull_request') && (github.head_ref || github.ref_name) != github.event.repository.default_branch && 'source' || github.event_name }}-rust-check-windows
       cancel-in-progress: true
     runs-on: windows-latest
     defaults:
@@ -503,7 +503,7 @@ jobs:
   # This is not native-host or live provider acceptance; those remain unreleased.
   browser-transport-contracts:
     concurrency:
-      group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}-browser-transport-contracts-${{ matrix.os }}
+      group: ${{ github.workflow }}-${{ github.event.pull_request.head.repo.full_name || github.repository }}-${{ github.head_ref || github.ref_name }}-${{ (github.event_name == 'push' || github.event_name == 'pull_request') && (github.head_ref || github.ref_name) != github.event.repository.default_branch && 'source' || github.event_name }}-browser-transport-contracts-${{ matrix.os }}
       cancel-in-progress: true
     name: Browser transport contracts (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
@@ -580,7 +580,7 @@ jobs:
   # stages a real embedded runtime by default. Only explicit --disable opts out.
   rust-opkssh-targeted:
     concurrency:
-      group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}-rust-opkssh-targeted-${{ matrix.target }}
+      group: ${{ github.workflow }}-${{ github.event.pull_request.head.repo.full_name || github.repository }}-${{ github.head_ref || github.ref_name }}-${{ (github.event_name == 'push' || github.event_name == 'pull_request') && (github.head_ref || github.ref_name) != github.event.repository.default_branch && 'source' || github.event_name }}-rust-opkssh-targeted-${{ matrix.target }}
       cancel-in-progress: true
     name: OPKSSH targeted (${{ matrix.target }})
     runs-on: ${{ matrix.os }}
@@ -674,7 +674,7 @@ jobs:
   # The live ignored RDP golden-path / RDPDR smoke stays in e2e.yml.
   rust-rdp-targeted:
     concurrency:
-      group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}-rust-rdp-targeted-${{ matrix.target }}
+      group: ${{ github.workflow }}-${{ github.event.pull_request.head.repo.full_name || github.repository }}-${{ github.head_ref || github.ref_name }}-${{ (github.event_name == 'push' || github.event_name == 'pull_request') && (github.head_ref || github.ref_name) != github.event.repository.default_branch && 'source' || github.event_name }}-rust-rdp-targeted-${{ matrix.target }}
       cancel-in-progress: true
     name: RDP targeted (${{ matrix.target }})
     runs-on: ${{ matrix.os }}
@@ -733,7 +733,7 @@ jobs:
   # blocking so Rust feature drift cannot pass CI unnoticed.
   rust-check-all-features-linux:
     concurrency:
-      group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}-rust-check-all-features-linux
+      group: ${{ github.workflow }}-${{ github.event.pull_request.head.repo.full_name || github.repository }}-${{ github.head_ref || github.ref_name }}-${{ (github.event_name == 'push' || github.event_name == 'pull_request') && (github.head_ref || github.ref_name) != github.event.repository.default_branch && 'source' || github.event_name }}-rust-check-all-features-linux
       cancel-in-progress: true
     runs-on: ubuntu-latest
     defaults:
@@ -758,7 +758,7 @@ jobs:
 
   rust-lint:
     concurrency:
-      group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}-rust-lint
+      group: ${{ github.workflow }}-${{ github.event.pull_request.head.repo.full_name || github.repository }}-${{ github.head_ref || github.ref_name }}-${{ (github.event_name == 'push' || github.event_name == 'pull_request') && (github.head_ref || github.ref_name) != github.event.repository.default_branch && 'source' || github.event_name }}-rust-lint
       cancel-in-progress: true
     runs-on: ubuntu-latest
     defaults:

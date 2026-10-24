@@ -14,20 +14,74 @@ const files = ["ci", "coverage", "audit", "frontend-build", "e2e-smoke", "e2e"];
 const values = {
   workflow: "CI",
   event: "push",
-  ref: "refs/heads/main",
+  ref: "refs/heads/feature",
   pr: undefined,
+  repository: "owner/repo",
+  headRepository: undefined,
+  refName: "feature",
+  defaultBranch: "main",
+  headRef: undefined,
 };
 function render(group, context, matrix = {}) {
   return group.replace(/\$\{\{\s*(.*?)\s*\}\}/g, (_, expression) => {
     if (expression === "github.workflow") return context.workflow;
+    if (
+      expression ===
+      "(github.event_name == 'push' || github.event_name == 'pull_request') && (github.head_ref || github.ref_name) != github.event.repository.default_branch && 'source' || github.event_name"
+    )
+      return ["push", "pull_request"].includes(context.event) &&
+        (context.headRef || context.refName) !== context.defaultBranch
+        ? "source"
+        : context.event;
+    if (
+      expression ===
+      "github.event.pull_request.head.repo.full_name || github.repository"
+    )
+      return context.headRepository || context.repository;
+    if (expression === "github.head_ref || github.ref_name")
+      return context.headRef || context.refName;
     if (expression === "github.event_name") return context.event;
     if (expression === "github.event.pull_request.number || github.ref")
-      return context.pr ?? context.ref;
+      return context.pr || context.ref;
     const axis = /^matrix\.(cohort|os|target)$/.exec(expression);
     assert.ok(axis, `Unexpected concurrency expression: ${expression}`);
     assert.equal(typeof matrix[axis[1]], "string");
     return matrix[axis[1]];
   });
+}
+function assertReleaseEvidenceIsolated(group, context, matrix = {}) {
+  const defaultPush = {
+    ...context,
+    event: "push",
+    refName: context.defaultBranch,
+    headRef: undefined,
+    headRepository: undefined,
+  };
+  const requiredPush = render(group, defaultPush, matrix);
+  const defaultPr = {
+    ...defaultPush,
+    event: "pull_request",
+    headRef: context.defaultBranch,
+    headRepository: context.repository,
+    refName: "255/merge",
+  };
+  assert.notEqual(
+    render(group, defaultPr, matrix),
+    requiredPush,
+    "PR from default branch cannot cancel required default push evidence",
+  );
+  for (const event of ["schedule", "workflow_dispatch"]) {
+    assert.notEqual(
+      render(group, { ...defaultPush, event }, matrix),
+      requiredPush,
+      "non-push validation cannot cancel required default push evidence",
+    );
+    assert.notEqual(
+      render(group, { ...context, event }, matrix),
+      render(group, context, matrix),
+      "manual/scheduled runs retain a separate trigger family",
+    );
+  }
 }
 function rows(job) {
   const matrix = job.strategy?.matrix;
@@ -42,7 +96,7 @@ function rows(job) {
   );
 }
 
-test("each validation job cancels older same-event source work without cancelling publication", () => {
+test("each validation job coalesces non-default push and PR work while preserving release evidence", () => {
   const ci = read("ci");
   assert.equal(
     ci.concurrency,
@@ -78,18 +132,48 @@ test("each validation job cancels older same-event source work without cancellin
       assert.equal(
         render(
           policy.group,
+          { ...values, headRef: "", headRepository: "" },
+          rows(job)[index],
+        ),
+        key,
+        "actual empty-string push context uses GitHub truthy fallback",
+      );
+      assertReleaseEvidenceIsolated(policy.group, values, rows(job)[index]);
+      assert.equal(
+        render(
+          policy.group,
           { ...values, sha: "new-source", run_id: 999 },
           rows(job)[index],
         ),
         key,
       );
+      const pullRequest = {
+        ...values,
+        event: "pull_request",
+        pr: 255,
+        refName: "255/merge",
+        ref: "refs/pull/255/merge",
+        headRepository: values.repository,
+        headRef: values.refName,
+      };
+      assert.equal(
+        render(policy.group, pullRequest, rows(job)[index]),
+        key,
+        "same non-default branch push and PR must supersede each other",
+      );
       assert.notEqual(
         render(
           policy.group,
-          { ...values, event: "pull_request", pr: 255 },
+          { ...pullRequest, headRepository: "fork/repo" },
           rows(job)[index],
         ),
         key,
+        "fork head repositories stay separate",
+      );
+      assert.notEqual(
+        render(policy.group, { ...values, refName: "other" }, rows(job)[index]),
+        key,
+        "other source branches stay separate",
       );
     }
   }
@@ -110,7 +194,7 @@ test("each validation job cancels older same-event source work without cancellin
   });
 });
 
-test("all standalone CI families cancel old work while keeping events, branches and workflows isolated", () => {
+test("standalone validation coalesces non-default push and PR while preserving release evidence", () => {
   for (const name of files.filter((file) => file !== "ci")) {
     const workflow = read(name),
       policy = workflow.concurrency;
@@ -119,15 +203,35 @@ test("all standalone CI families cancel old work while keeping events, branches 
     const context = { ...values, workflow: workflow.name };
     const key = render(policy.group, context);
     assert.equal(
+      render(policy.group, { ...context, headRef: "", headRepository: "" }),
+      key,
+      "actual empty-string push context uses GitHub truthy fallback",
+    );
+    assertReleaseEvidenceIsolated(policy.group, context);
+    assert.equal(
       render(policy.group, { ...context, sha: "newer", run_id: 888 }),
       key,
     );
     assert.notEqual(
-      render(policy.group, { ...context, ref: "refs/heads/other" }),
+      render(policy.group, {
+        ...context,
+        refName: "other",
+        ref: "refs/heads/other",
+      }),
       key,
     );
+    const pullRequest = {
+      ...context,
+      event: "pull_request",
+      pr: 255,
+      refName: "255/merge",
+      ref: "refs/pull/255/merge",
+      headRepository: context.repository,
+      headRef: context.refName,
+    };
+    assert.equal(render(policy.group, pullRequest), key);
     assert.notEqual(
-      render(policy.group, { ...context, event: "pull_request", pr: 255 }),
+      render(policy.group, { ...pullRequest, headRepository: "fork/repo" }),
       key,
     );
     assert.notEqual(
