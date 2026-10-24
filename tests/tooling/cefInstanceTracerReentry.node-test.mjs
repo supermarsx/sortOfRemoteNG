@@ -108,7 +108,7 @@ const allocationRoot =
 
 function patchFile(patch, relative) {
   const expected = `diff --git a/${relative} b/${relative}`;
-  const sections = patch.split(/(?=^diff --git )/m);
+  const sections = patch.replace(/\r\n/g, "\n").split(/(?=^diff --git )/m);
   const matches = sections.filter(
     (section) => section.split("\n")[0] === expected,
   );
