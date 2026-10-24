@@ -589,11 +589,134 @@ export function validateManifest(value, expectedIdentity) {
   );
   return value;
 }
+const CHECKPOINT_PHASES = new Set([
+  "compile-result",
+  "capacity",
+  "graph-before",
+  "pack",
+  "graph-after",
+  "manifest",
+  "state",
+]);
+const CHECKPOINT_CODES = new Set([
+  "ENOENT",
+  "EACCES",
+  "EPERM",
+  "ELOOP",
+  "ENOTDIR",
+  "EEXIST",
+  "ENOSPC",
+  "EDQUOT",
+  "EIO",
+  "ETIMEDOUT",
+  "GRAPH_BOUND",
+]);
+export function checkpointLog(log, line) {
+  try {
+    log(line);
+  } catch {
+    /* Observation must not replace an operation result. */
+  }
+}
+export async function checkpointPhase(phase, operation, log = console.log) {
+  assert(CHECKPOINT_PHASES.has(phase), "Closed checkpoint phase required");
+  checkpointLog(
+    log,
+    `[cef-engineering-checkpoint] checkpoint stage=${phase} event=begin`,
+  );
+  try {
+    const result = await operation();
+    checkpointLog(
+      log,
+      `[cef-engineering-checkpoint] checkpoint stage=${phase} event=complete`,
+    );
+    return result;
+  } catch (error) {
+    const code = CHECKPOINT_CODES.has(error?.code)
+      ? error.code
+      : error?.message === "Checkpoint graph differs from verified fresh GN"
+        ? "GRAPH_MISMATCH"
+        : error?.message === "Checkpoint archive rejected"
+          ? "ARCHIVE_REJECTED"
+          : error?.message === "Archive deadline; partial is not admitted"
+            ? "ARCHIVE_DEADLINE"
+            : "CHECK_FAILED";
+    checkpointLog(
+      log,
+      `[cef-engineering-checkpoint] checkpoint stage=${phase} event=failed code=${code}`,
+    );
+    throw error;
+  }
+}
+export function checkpointCapacityRecord(availableBytes, requiredBytes) {
+  const safe = (value) =>
+    Number.isSafeInteger(value) && value >= 0 ? value : null;
+  return {
+    availableBytes: safe(availableBytes),
+    requiredBytes: safe(requiredBytes),
+  };
+}
+const ARCHIVE_FAILURES = new Set([
+  "member-path",
+  "input-link",
+  "input-alias",
+  "deadline-bound",
+  "archive-deadline",
+  "member-alias",
+  "unreviewed-generated-link",
+  "special-input",
+  "input-bound",
+  "missing-generated-link",
+  "output-bound",
+  "compressed-bound",
+  "short-write",
+  "metadata-bound",
+  "overlap",
+  "source-changed",
+  "archive-io-error",
+  "link-recipe-bound",
+  "link-recipe",
+]);
+export function archiveFailureRecord(
+  stdout,
+  exitCode,
+  { overflow = false, deadline = false } = {},
+) {
+  let error = deadline
+    ? "archive-deadline"
+    : overflow
+      ? "archive-output-bound"
+      : "unknown";
+  if (typeof stdout === "string" && stdout.length > LIMITS.seal)
+    error = "archive-output-bound";
+  else if (!deadline && !overflow && typeof stdout === "string") {
+    try {
+      const value = JSON.parse(stdout);
+      if (
+        value &&
+        Object.keys(value).sort().join() === "complete,error" &&
+        value.complete === false &&
+        ARCHIVE_FAILURES.has(value.error)
+      )
+        error = value.error;
+    } catch {
+      /* Untrusted/partial helper output never becomes a log label. */
+    }
+  }
+  return {
+    error,
+    exitCode:
+      Number.isInteger(exitCode) && exitCode >= 0 && exitCode <= 255
+        ? exitCode
+        : null,
+  };
+}
+
 export async function archiveCommand(
   python,
   helper,
   args,
-  { timeout = LIMITS.archiveMs } = {},
+  { timeout = LIMITS.archiveMs, observeFailure } = {},
 ) {
   assert(
     path.isAbsolute(python) &&
@@ -611,16 +734,28 @@ export async function archiveCommand(
       stdio: ["ignore", "pipe", "pipe"],
     });
     let stdout = "",
-      overflow = false;
+      overflow = false,
+      diagnosticEmitted = false;
+    const diagnostic = (code, options = {}) => {
+      if (diagnosticEmitted || !observeFailure) return;
+      diagnosticEmitted = true;
+      try {
+        observeFailure(archiveFailureRecord(stdout, code, options));
+      } catch {
+        /* Diagnostics cannot hide an existing failure or escape an event callback. */
+      }
+    };
     child.stdout.on("data", (data) => {
       stdout += data;
       if (stdout.length > LIMITS.seal) {
         overflow = true;
+        diagnostic(null, { overflow: true });
         void stopGroup(child);
       }
     });
     child.stderr.resume();
     const timer = setTimeout(() => {
+      diagnostic(null, { deadline: true });
       void stopGroup(child).then(
         () => reject(new Error("Archive deadline; partial is not admitted")),
         reject,
@@ -628,15 +763,19 @@ export async function archiveCommand(
     }, timeout);
     child.once("error", (error) => {
       clearTimeout(timer);
+      diagnostic(null);
       reject(error);
     });
     child.once("close", (code) => {
       clearTimeout(timer);
-      if (code !== 0 || overflow)
+      if (code !== 0 || overflow) {
+        diagnostic(code, { overflow });
         return reject(new Error("Checkpoint archive rejected"));
+      }
       try {
         resolve(JSON.parse(stdout));
       } catch {
+        diagnostic(code);
         reject(new Error("Malformed archive result"));
       }
     });
@@ -2105,16 +2244,36 @@ export async function graphDigest(root) {
   return (await graphInventory(root)).sha256;
 }
 
-export async function verifyGraph(root, expected) {
+export async function verifyGraph(root, expected, options) {
   assert(
-    hex(expected) && (await graphDigest(root)) === expected,
+    hex(expected) && (await graphInventory(root, options)).sha256 === expected,
     "Checkpoint graph differs from verified fresh GN",
   );
 }
-export async function withVerifiedGraph(root, expected, operation) {
-  await verifyGraph(root, expected);
+export async function withVerifiedGraph(
+  root,
+  expected,
+  operation,
+  { log } = {},
+) {
+  const verify = (phase) =>
+    log
+      ? checkpointPhase(
+          phase,
+          () =>
+            verifyGraph(root, expected, {
+              observe: (value) =>
+                checkpointLog(
+                  log,
+                  `[cef-engineering-checkpoint] checkpoint graph=${graphInventoryRecord(value)}`,
+                ),
+            }),
+          log,
+        )
+      : verifyGraph(root, expected);
+  await verify("graph-before");
   const result = await operation();
-  await verifyGraph(root, expected);
+  await verify("graph-after");
   return result;
 }
 export async function restoreVerifiedGraph({

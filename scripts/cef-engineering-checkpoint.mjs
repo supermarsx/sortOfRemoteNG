@@ -39,6 +39,9 @@ import {
   graphInventory,
   graphInventoryRecord,
   afterGnPhase,
+  checkpointPhase,
+  checkpointLog,
+  checkpointCapacityRecord,
   normalizeSdkLinks,
   selectedSdkPreflight,
   logSdkLayout,
@@ -457,10 +460,8 @@ export async function main(argv = process.argv.slice(2), env = process.env) {
           },
           async compile(context) {
             checkpointCompileArguments(TARGET, context.args);
-            const compile = await compileSlice(
-              context.executable,
-              context.args,
-              {
+            const compile = await checkpointPhase("compile-result", () =>
+              compileSlice(context.executable, context.args, {
                 cwd: context.cwd,
                 env: context.env,
                 logs: context.logs,
@@ -468,7 +469,7 @@ export async function main(argv = process.argv.slice(2), env = process.env) {
                   execution,
                   Math.floor(hostRemaining(env)),
                 ),
-              },
+              }),
             );
             const { out, identity, digest, recipePath } = context.checkpoint;
             if (
@@ -476,24 +477,48 @@ export async function main(argv = process.argv.slice(2), env = process.env) {
               compile.outcome === "compiler-complete" &&
               compile.exitCode === 0
             ) {
-              await withVerifiedGraph(out, identity.graph, async () => {});
+              await withVerifiedGraph(out, identity.graph, async () => {}, {
+                log: console.log,
+              });
               return { kind: "continue-sdk", compile };
             }
-            const free = await statfs(temp);
-            fail(
-              free.bavail * free.bsize >= LIMITS.compressed + 2 * 1024 ** 3,
-              "Full checkpoint output capacity",
-            );
-            const archive = await withVerifiedGraph(out, identity.graph, () =>
-              archiveCommand(verified.python, HELPER, [
-                "pack",
-                "--input",
-                out,
-                "--output",
-                bundle,
-                "--generated-links",
-                recipePath,
-              ]),
+            await checkpointPhase("capacity", async () => {
+              const free = await statfs(temp);
+              const available = free.bavail * free.bsize;
+              const required = LIMITS.compressed + 2 * 1024 ** 3;
+              checkpointLog(
+                console.log,
+                `[cef-engineering-checkpoint] checkpoint capacity=${canonical(checkpointCapacityRecord(available, required))}`,
+              );
+              fail(available >= required, "Full checkpoint output capacity");
+            });
+            const archive = await withVerifiedGraph(
+              out,
+              identity.graph,
+              () =>
+                checkpointPhase("pack", () =>
+                  archiveCommand(
+                    verified.python,
+                    HELPER,
+                    [
+                      "pack",
+                      "--input",
+                      out,
+                      "--output",
+                      bundle,
+                      "--generated-links",
+                      recipePath,
+                    ],
+                    {
+                      observeFailure: (record) =>
+                        checkpointLog(
+                          console.log,
+                          `[cef-engineering-checkpoint] checkpoint archive=${canonical(record)}`,
+                        ),
+                    },
+                  ),
+                ),
+              { log: console.log },
             );
             const manifest = {
               schemaVersion: 1,
@@ -506,11 +531,15 @@ export async function main(argv = process.argv.slice(2), env = process.env) {
               nativeAcceptance: false,
               runtimeReady: false,
             };
-            validateManifest(manifest, digest);
-            await writeFile(
-              state,
-              `${canonical({ kind: "checkpoint", manifest, bundle, logs: context.logs })}\n`,
-              { flag: "wx" },
+            await checkpointPhase("manifest", () =>
+              validateManifest(manifest, digest),
+            );
+            await checkpointPhase("state", () =>
+              writeFile(
+                state,
+                `${canonical({ kind: "checkpoint", manifest, bundle, logs: context.logs })}\n`,
+                { flag: "wx" },
+              ),
             );
             return {
               checkpoint: true,

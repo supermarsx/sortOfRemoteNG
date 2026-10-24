@@ -3155,3 +3155,272 @@ test("manual workflow chooses only fixed cross-build hosts while seals retain th
   );
   assert.doesNotMatch(yaml, /continue-on-error:|restore-keys:|actions\/cache@/);
 });
+
+test("post-slice diagnostics identify fixed stages without changing the original failure", async () => {
+  const { checkpointPhase } =
+    await import("../../scripts/lib/cef-engineering-checkpoint.mjs");
+  assert.equal(typeof checkpointPhase, "function");
+  for (const phase of [
+    "compile-result",
+    "capacity",
+    "graph-before",
+    "pack",
+    "graph-after",
+    "manifest",
+    "state",
+  ]) {
+    const lines = [];
+    const original = Object.assign(
+      new Error("private https://secret.invalid/token"),
+      { code: "ENOSPC" },
+    );
+    await assert.rejects(
+      checkpointPhase(
+        phase,
+        () => {
+          throw original;
+        },
+        (line) => lines.push(line),
+      ),
+      (error) => error === original,
+    );
+    assert.deepEqual(lines, [
+      `[cef-engineering-checkpoint] checkpoint stage=${phase} event=begin`,
+      `[cef-engineering-checkpoint] checkpoint stage=${phase} event=failed code=ENOSPC`,
+    ]);
+    assert.doesNotMatch(lines.join("\n"), /private|secret|token|https:/);
+  }
+});
+
+test("post-slice graph diagnostics distinguish before/after failures and preserve both immutable guards", async (t) => {
+  const root = await scratch(t);
+  await writeFile(path.join(root, "build.ninja"), "reviewed");
+  await writeFile(path.join(root, "args.gn"), "is_debug=false");
+  const digest = await graphDigest(root);
+  let packs = 0;
+  const lines = [];
+  const log = (line) => lines.push(line);
+  await writeFile(path.join(root, "build.ninja"), "changed-before");
+  await assert.rejects(
+    withVerifiedGraph(
+      root,
+      digest,
+      async () => {
+        packs++;
+      },
+      { log },
+    ),
+    /graph differs/,
+  );
+  assert.equal(packs, 0);
+  const graphRecords = lines.filter((line) =>
+    line.startsWith("[cef-engineering-checkpoint] checkpoint graph="),
+  );
+  assert.ok(graphRecords.length > 0);
+  for (const line of graphRecords) {
+    const record = JSON.parse(line.slice(line.indexOf("graph=") + 6));
+    assert.equal(
+      typeof record,
+      "object",
+      "graph counters must be encoded exactly once",
+    );
+    assert.equal(typeof record.files, "number");
+    assert.equal(typeof record.bytes, "number");
+  }
+  assert.ok(
+    lines.includes(
+      "[cef-engineering-checkpoint] checkpoint stage=graph-before event=failed code=GRAPH_MISMATCH",
+    ),
+  );
+  assert.ok(!lines.some((line) => line.includes("stage=graph-after")));
+  await writeFile(path.join(root, "build.ninja"), "reviewed");
+  lines.length = 0;
+  await assert.rejects(
+    withVerifiedGraph(
+      root,
+      digest,
+      async () => {
+        packs++;
+        await writeFile(path.join(root, "build.ninja"), "changed-during");
+      },
+      { log },
+    ),
+    /graph differs/,
+  );
+  assert.equal(packs, 1);
+  assert.ok(
+    lines.includes(
+      "[cef-engineering-checkpoint] checkpoint stage=graph-before event=complete",
+    ),
+  );
+  assert.ok(
+    lines.includes(
+      "[cef-engineering-checkpoint] checkpoint stage=graph-after event=failed code=GRAPH_MISMATCH",
+    ),
+  );
+  assert.doesNotMatch(
+    lines.join("\n"),
+    /changed-before|changed-during|reviewed|checkpoint-test-/,
+  );
+});
+
+test("post-slice capacity/error observations use only closed labels and finite counts", async () => {
+  const { checkpointPhase, checkpointCapacityRecord, archiveFailureRecord } =
+    await import("../../scripts/lib/cef-engineering-checkpoint.mjs");
+  assert.deepEqual(checkpointCapacityRecord(123, 456), {
+    availableBytes: 123,
+    requiredBytes: 456,
+  });
+  for (const value of [
+    "secret",
+    Infinity,
+    NaN,
+    -1,
+    1.5,
+    Number.MAX_SAFE_INTEGER + 1,
+    {},
+  ])
+    assert.deepEqual(checkpointCapacityRecord(value, 456), {
+      availableBytes: null,
+      requiredBytes: 456,
+    });
+  assert.deepEqual(
+    archiveFailureRecord('{"complete":false,"error":"source-changed"}', 7),
+    { error: "source-changed", exitCode: 7 },
+  );
+  for (const output of [
+    '{"complete":false,"error":"secret https://private/path"}',
+    '{"complete":false,"error":"source-changed","path":"secret"}',
+    '{"complete":true,"error":"source-changed"}',
+    "not-json",
+  ])
+    assert.deepEqual(archiveFailureRecord(output, 1), {
+      error: "unknown",
+      exitCode: 1,
+    });
+  assert.deepEqual(archiveFailureRecord("x".repeat(LIMITS.seal + 1), 1), {
+    error: "archive-output-bound",
+    exitCode: 1,
+  });
+  assert.deepEqual(archiveFailureRecord("secret", null, { deadline: true }), {
+    error: "archive-deadline",
+    exitCode: null,
+  });
+  const rows = [];
+  await assert.rejects(
+    checkpointPhase(
+      "state",
+      () => {
+        throw Object.assign(new Error("private"), { code: "TOKEN\nprivate" });
+      },
+      (line) => rows.push(line),
+    ),
+  );
+  assert.match(rows.at(-1), /code=CHECK_FAILED$/);
+  assert.doesNotMatch(rows.join("\n"), /TOKEN|private/);
+  await assert.rejects(
+    checkpointPhase(
+      "untrusted/path",
+      () => assert.fail("unexpected operation"),
+      () => assert.fail("unexpected log"),
+    ),
+    /Closed checkpoint phase/,
+  );
+  assert.equal(
+    await checkpointPhase(
+      "manifest",
+      () => 42,
+      () => {
+        throw Error("observer failed");
+      },
+    ),
+    42,
+  );
+  const original = Error("original");
+  await assert.rejects(
+    checkpointPhase(
+      "state",
+      () => {
+        throw original;
+      },
+      () => {
+        throw Error("observer failed");
+      },
+    ),
+    (e) => e === original,
+  );
+});
+
+test("actual archive child retains a whitelisted failure reason without exposing helper stderr or unknown fields", async (t) => {
+  const root = await scratch(t),
+    helper = path.join(root, "failing-helper.py");
+  const pythonExe = python("import sys;print(sys.executable)").stdout.trim();
+  const run = async (output) => {
+    await writeFile(
+      helper,
+      `import sys\nprint(${JSON.stringify(JSON.stringify(output))})\nprint('secret https://private.invalid/password',file=sys.stderr)\nsys.exit(7)\n`,
+    );
+    const rows = [];
+    await assert.rejects(
+      archiveCommand(pythonExe, helper, [], {
+        observeFailure: (row) => rows.push(row),
+      }),
+      /Checkpoint archive rejected/,
+    );
+    assert.equal(rows.length, 1);
+    return rows;
+  };
+  assert.deepEqual(
+    await run({ complete: false, error: "unreviewed-generated-link" }),
+    [{ error: "unreviewed-generated-link", exitCode: 7 }],
+  );
+  assert.deepEqual(
+    await run({
+      complete: false,
+      error: "secret https://private.invalid/password",
+    }),
+    [{ error: "unknown", exitCode: 7 }],
+  );
+  await assert.rejects(
+    archiveCommand(pythonExe, helper, [], {
+      observeFailure: () => {
+        throw Error("observer-secret");
+      },
+    }),
+    /Checkpoint archive rejected/,
+  );
+});
+
+test("production CLI wires each post-slice boundary and pack failure observer without changing the native recipe", async () => {
+  const source = await readFile(
+    path.join(ROOT, "scripts/cef-engineering-checkpoint.mjs"),
+    "utf8",
+  );
+  const compile = source.slice(
+    source.indexOf("async compile(context)"),
+    source.indexOf("if (result.sdkCompletion)"),
+  );
+  for (const stage of [
+    "compile-result",
+    "capacity",
+    "pack",
+    "manifest",
+    "state",
+  ])
+    assert.ok(compile.includes(`checkpointPhase("${stage}"`));
+  assert.ok(
+    compile.indexOf('checkpointPhase("compile-result"') <
+      compile.indexOf('checkpointPhase("capacity"'),
+  );
+  assert.ok(
+    compile.indexOf('checkpointPhase("pack"') <
+      compile.indexOf('checkpointPhase("manifest"'),
+  );
+  assert.ok(
+    compile.indexOf('checkpointPhase("manifest"') <
+      compile.indexOf('checkpointPhase("state"'),
+  );
+  assert.match(compile, /observeFailure:/);
+  assert.match(compile, /LIMITS\.compressed \+ 2 \* 1024 \*\* 3/);
+  assert.match(compile, /withVerifiedGraph\(out, identity\.graph/);
+});
