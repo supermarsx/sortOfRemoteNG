@@ -683,7 +683,10 @@ test("workflow keeps credentials only in audited download/upload, sealed last, e
     /GH_TOKEN|GITHUB_TOKEN|npm (?:ci|install)|continue-on-error:/,
   );
   assert.doesNotMatch(
-    workflow,
+    workflow.replace(
+      "run: npm ci --ignore-scripts --no-audit --no-fund",
+      "run: locked-checkpoint-contract-dependencies",
+    ),
     /actions\/cache@|npm (?:ci|install)|target_commitish:|\$\{\{ inputs\.restore_run \}\}.*node /,
   );
   assert.ok(
@@ -3154,6 +3157,58 @@ test("manual workflow chooses only fixed cross-build hosts while seals retain th
     /name: cef-engineering-sdk-seal-\$\{\{ steps.profile.outputs.source \}\}-\$\{\{ inputs.target \}\}/,
   );
   assert.doesNotMatch(yaml, /continue-on-error:|restore-keys:|actions\/cache@/);
+});
+
+test("checkpoint contracts install locked dependencies before importing YAML", async () => {
+  const workflow = YAML.parse(
+    await readFile(path.join(ROOT, WORKFLOW), "utf8"),
+  );
+  const steps = workflow.jobs.checkpoint.steps;
+  const install = steps.findIndex(
+    (step) => step.name === "Install locked checkpoint contract dependencies",
+  );
+  const contracts = steps.findIndex(
+    (step) =>
+      step.run ===
+      "node --test tests/tooling/cefEngineeringCheckpoint.node-test.mjs",
+  );
+  assert(install >= 0 && install < contracts);
+  assert.equal(
+    steps[install].run,
+    "npm ci --ignore-scripts --no-audit --no-fund",
+  );
+  assert.equal(
+    steps[contracts].name,
+    "Verify checkpoint contracts on the actual native host",
+  );
+});
+
+test("checkpoint provisioning enables only the existing Linux cleanup opt-in", async () => {
+  const workflow = YAML.parse(
+    await readFile(path.join(ROOT, WORKFLOW), "utf8"),
+  );
+  const step = workflow.jobs.checkpoint.steps.find(
+    (entry) =>
+      entry.name === "Prepare existing fixed reviewed native prerequisites",
+  );
+  const command =
+    'node scripts/cef-hosted-provision.mjs --target "$CEF_PROVISION_TARGET" --output "$RUNNER_TEMP/cef-checkpoint-prerequisites" --execute';
+  const expected = `if [ "$CEF_ENGINEERING_TARGET" = "aarch64-unknown-linux-gnu" ]; then\n  ${command} --cleanup\nelse\n  ${command}\nfi\n`;
+  assert.equal(step.run, expected);
+  for (const target of [
+    TARGET,
+    "aarch64-apple-darwin",
+    "aarch64-unknown-linux-gnu",
+  ]) {
+    const profile = checkpointProfile(target);
+    const branch =
+      step.run.split("\n")[target === "aarch64-unknown-linux-gnu" ? 1 : 3];
+    assert.equal(branch.includes("--cleanup"), profile.platform === "linux");
+  }
+  assert.equal(
+    step.env.CEF_PROVISION_TARGET,
+    "${{ steps.profile.outputs.provision }}",
+  );
 });
 
 test("post-slice diagnostics identify fixed stages without changing the original failure", async () => {

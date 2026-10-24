@@ -65,8 +65,15 @@ jobs:
       - name: Prepare existing fixed reviewed native prerequisites
         env:
           CEF_PROVISION_TARGET: ${{ steps.profile.outputs.provision }}
-        run: node scripts/cef-hosted-provision.mjs --target "$CEF_PROVISION_TARGET" --output "$RUNNER_TEMP/cef-checkpoint-prerequisites" --execute
-      - name: Verify dependency-free checkpoint contracts on the actual native host
+        run: |
+          if [ "$CEF_ENGINEERING_TARGET" = "aarch64-unknown-linux-gnu" ]; then
+            node scripts/cef-hosted-provision.mjs --target "$CEF_PROVISION_TARGET" --output "$RUNNER_TEMP/cef-checkpoint-prerequisites" --execute --cleanup
+          else
+            node scripts/cef-hosted-provision.mjs --target "$CEF_PROVISION_TARGET" --output "$RUNNER_TEMP/cef-checkpoint-prerequisites" --execute
+          fi
+      - name: Install locked checkpoint contract dependencies
+        run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Verify checkpoint contracts on the actual native host
         timeout-minutes: 5
         run: node --test tests/tooling/cefEngineeringCheckpoint.node-test.mjs
       - name: Download exact independently sealed prior checkpoint
