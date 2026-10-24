@@ -48,6 +48,67 @@ mod static_document;
 mod storage;
 use ledger::{Decision, Ledger};
 type Result<T = ()> = std::result::Result<T, Box<dyn std::error::Error>>;
+
+// Error cleanup retains the ORIGINAL deadline and never fabricates Closed.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum ErrorDrainOutcome {
+    Pending,
+    Closed,
+    Deadline,
+}
+struct FixtureErrorDrain {
+    deadline: Instant,
+    primary_failure: String,
+    close_requested: [bool; 2],
+    revoked: bool,
+    revoke_failed: bool,
+    close_failed: bool,
+    pump_failed: bool,
+    tls_pump_failed: bool,
+    timed_out: bool,
+}
+impl FixtureErrorDrain {
+    fn new(deadline: Instant, close_requested: [bool; 2], primary_failure: String) -> Self {
+        Self {
+            deadline,
+            primary_failure,
+            close_requested,
+            revoked: false,
+            revoke_failed: false,
+            close_failed: false,
+            pump_failed: false,
+            tls_pump_failed: false,
+            timed_out: false,
+        }
+    }
+    fn request_close_once(&mut self, index: usize, state: Option<Lifecycle>) -> bool {
+        if self.close_requested[index] || state.is_none_or(|value| value == Lifecycle::Closed) {
+            return false;
+        }
+        // Set BEFORE a potentially reentrant native close or an error.
+        self.close_requested[index] = true;
+        true
+    }
+    fn outcome(&mut self, now: Instant, states: [Option<Lifecycle>; 2]) -> ErrorDrainOutcome {
+        if states
+            .into_iter()
+            .all(|state| state.is_none_or(|value| value == Lifecycle::Closed))
+        {
+            ErrorDrainOutcome::Closed
+        } else if now >= self.deadline {
+            self.timed_out = true;
+            ErrorDrainOutcome::Deadline
+        } else {
+            ErrorDrainOutcome::Pending
+        }
+    }
+    fn report(&self) -> serde_json::Value {
+        serde_json::json!({"primaryFailure":self.primary_failure,"revokeFailed":self.revoke_failed,
+            "closeFailed":self.close_failed,"pumpFailed":self.pump_failed,
+            "tlsPumpFailed":self.tls_pump_failed,"deadlineExpired":self.timed_out})
+    }
+}
+
 // The caller supplies the exact revision already verified by NativeTlsBridge.
 // Registry ABI2 and the bounded-retirement contract are shared by revisions4/5.
 fn registration_retirement_for_revision<T>(
@@ -651,6 +712,98 @@ impl Predecessor {
     }
 }
 
+struct FailedTlsOwners<'a> {
+    browser: Option<&'a CefBrowserHost<'static>>,
+    state: &'a Arc<Mutex<State>>,
+    hooks: &'a Hooks,
+    session: &'a Arc<Mutex<OriginBrowserSession>>,
+    identity: &'a BrowserIdentity,
+    predecessor: &'a mut Option<Predecessor>,
+}
+fn revoke_failed_tls_owner(
+    state: &Arc<Mutex<State>>,
+    hooks: &Hooks,
+    session: &Arc<Mutex<OriginBrowserSession>>,
+    identity: &BrowserIdentity,
+    drain: &mut FixtureErrorDrain,
+) {
+    hooks.current.store(false, Ordering::Release);
+    let pending = {
+        let mut state = state.lock().unwrap();
+        state.revoked = true;
+        std::mem::take(&mut state.pending)
+    };
+    if session.lock().unwrap().revoke(identity).is_err() {
+        drain.revoke_failed = true;
+    }
+    for item in pending {
+        item.completion.complete(NativeTlsDecision::Deny);
+    }
+}
+fn drain_failed_tls_case(
+    runtime: &CefRuntime<'_>,
+    drain: &mut FixtureErrorDrain,
+    owners: FailedTlsOwners<'_>,
+) -> ErrorDrainOutcome {
+    if !drain.revoked {
+        drain.revoked = true;
+        revoke_failed_tls_owner(
+            owners.state,
+            owners.hooks,
+            owners.session,
+            owners.identity,
+            drain,
+        );
+        if let Some(old) = owners.predecessor.as_ref() {
+            revoke_failed_tls_owner(&old.state, &old.hooks, &old.session, &old.identity, drain);
+        }
+    }
+    let states = [
+        owners.browser.map(|browser| browser.lifecycle()),
+        owners
+            .predecessor
+            .as_ref()
+            .map(|old| old.browser.lifecycle()),
+    ];
+    let outcome = drain.outcome(Instant::now(), states);
+    if outcome != ErrorDrainOutcome::Pending {
+        return outcome;
+    }
+    if drain.request_close_once(0, states[0])
+        && owners
+            .browser
+            .expect("created browser")
+            .close(owners.identity)
+            .is_err()
+    {
+        drain.close_failed = true;
+    }
+    if drain.request_close_once(1, states[1]) {
+        let old = owners.predecessor.as_mut().expect("created predecessor");
+        old.close_sent = true;
+        if old.browser.close(&old.identity).is_err() {
+            drain.close_failed = true;
+        }
+    }
+    if runtime.cleanup_only_work().is_err() {
+        drain.pump_failed = true;
+    }
+    if cef_tls_bridge::pump_tls().is_err() {
+        drain.tls_pump_failed = true;
+    }
+    if let Some(old) = owners.predecessor.as_mut() {
+        old.closed = old.browser.lifecycle() == Lifecycle::Closed;
+    }
+    let states = [
+        owners.browser.map(|browser| browser.lifecycle()),
+        owners
+            .predecessor
+            .as_ref()
+            .map(|old| old.browser.lifecycle()),
+    ];
+    drain.outcome(Instant::now(), states)
+}
+
 pub fn run(bootstrap: &mut dyn RuntimeBootstrap, paths: &BundlePaths) -> i32 {
     match execute(bootstrap, paths) {
         Ok(()) => 0,
@@ -873,11 +1026,36 @@ fn execute(bootstrap: &mut dyn RuntimeBootstrap, paths: &BundlePaths) -> Result 
                 "staged" => 40,
                 _ => 20,
             };
-            let mut case_error = None;
+            let original_close_deadline = began + Duration::from_secs(deadline + 5);
+            let mut error_drain: Option<FixtureErrorDrain> = None;
             let mut parked = false;
             events.run_return(|event, _, flow| {
                 *flow = ControlFlow::WaitUntil(Instant::now() + Duration::from_millis(5));
                 if !matches!(event, Event::MainEventsCleared) {
+                    return;
+                }
+                if let Some(drain) = error_drain.as_mut() {
+                    let outcome = drain_failed_tls_case(
+                        &runtime,
+                        drain,
+                        FailedTlsOwners {
+                            browser: browser.as_ref(),
+                            state: &state,
+                            hooks: &hooks,
+                            session: &session,
+                            identity: &identity,
+                            predecessor: &mut predecessor,
+                        },
+                    );
+                    if outcome != ErrorDrainOutcome::Pending {
+                        closed = browser
+                            .as_ref()
+                            .is_none_or(|host| host.lifecycle() == Lifecycle::Closed)
+                            && predecessor
+                                .as_ref()
+                                .is_none_or(|old| old.browser.lifecycle() == Lifecycle::Closed);
+                        *flow = ControlFlow::Exit;
+                    }
                     return;
                 }
                 let step = (|| -> Result {
@@ -1070,12 +1248,41 @@ fn execute(bootstrap: &mut dyn RuntimeBootstrap, paths: &BundlePaths) -> Result 
                     Ok(())
                 })();
                 if let Err(error) = step {
-                    case_error = Some(error.to_string());
-                    *flow = ControlFlow::Exit;
+                    let mut drain = FixtureErrorDrain::new(
+                        original_close_deadline,
+                        [
+                            close_sent,
+                            predecessor.as_ref().is_some_and(|old| old.close_sent),
+                        ],
+                        error.to_string(),
+                    );
+                    let outcome = drain_failed_tls_case(
+                        &runtime,
+                        &mut drain,
+                        FailedTlsOwners {
+                            browser: browser.as_ref(),
+                            state: &state,
+                            hooks: &hooks,
+                            session: &session,
+                            identity: &identity,
+                            predecessor: &mut predecessor,
+                        },
+                    );
+                    if outcome != ErrorDrainOutcome::Pending {
+                        closed = browser
+                            .as_ref()
+                            .is_none_or(|host| host.lifecycle() == Lifecycle::Closed)
+                            && predecessor
+                                .as_ref()
+                                .is_none_or(|old| old.browser.lifecycle() == Lifecycle::Closed);
+                        *flow = ControlFlow::Exit;
+                    }
+                    error_drain = Some(drain);
                 }
             });
-            if let Some(error) = case_error {
-                failures.push(format!("{name}: {error}"));
+            if let Some(drain) = &error_drain {
+                failures.push(format!("{name}: {}", drain.primary_failure));
+                report["errorDrain"] = drain.report();
             }
             if name == "manual" {
                 report["manualStatus"] = if closed && state.lock().unwrap().proof.is_some() {
@@ -1085,7 +1292,7 @@ fn execute(bootstrap: &mut dyn RuntimeBootstrap, paths: &BundlePaths) -> Result 
                 }
                 .into();
             }
-            if parked {
+            if parked && error_drain.is_none() {
                 predecessor = Some(Predecessor {
                     browser: browser.take().unwrap(),
                     fixture,
@@ -1164,7 +1371,7 @@ fn execute(bootstrap: &mut dyn RuntimeBootstrap, paths: &BundlePaths) -> Result 
                 output.join("native-progress.json"),
                 serde_json::to_vec_pretty(&report)?,
             )?;
-            if !closed {
+            if !closed || error_drain.is_some() {
                 break;
             }
         }
@@ -1197,7 +1404,9 @@ fn execute(bootstrap: &mut dyn RuntimeBootstrap, paths: &BundlePaths) -> Result 
             }
         }
     }
-    if let Some(retirement) = registration_retirement_for_revision(bridge.patch_id(), || {
+    if report.get("errorDrain").is_some() {
+        report["registrationRetirementCases"] = serde_json::json!({"required":true,"ok":false,"reason":"primary-error-before-registry-retirement"});
+    } else if let Some(retirement) = registration_retirement_for_revision(bridge.patch_id(), || {
         registry_retirement_fixture::run(
             &mut || registry_retirement_fixture::pump(&runtime, &mut events),
             &certificates.root,
@@ -1511,5 +1720,92 @@ mod retirement_revision_tests {
                 "unsupported registry fixture bridge revision"
             );
         }
+    }
+}
+
+#[cfg(test)]
+mod error_drain_tests {
+    use super::*;
+    fn drain(now: Instant) -> FixtureErrorDrain {
+        FixtureErrorDrain::new(
+            now + Duration::from_millis(100),
+            [false; 2],
+            "original renderer failure".into(),
+        )
+    }
+    #[test]
+    fn prehost_error_finishes_without_fabricating_a_native_close_or_success() {
+        let now = Instant::now();
+        let mut drain = drain(now);
+        assert!(!drain.request_close_once(0, None));
+        assert_eq!(drain.outcome(now, [None, None]), ErrorDrainOutcome::Closed);
+        assert_eq!(drain.close_requested, [false; 2]);
+        assert_eq!(drain.primary_failure, "original renderer failure");
+        assert_eq!(
+            drain.report()["primaryFailure"],
+            "original renderer failure"
+        );
+    }
+    #[test]
+    fn faulted_and_hidden_hosts_close_once_and_require_every_real_callback() {
+        let now = Instant::now();
+        let mut drain = drain(now);
+        let states = [Some(Lifecycle::Faulted), Some(Lifecycle::Hidden)];
+        assert_eq!(drain.outcome(now, states), ErrorDrainOutcome::Pending);
+        assert!(drain.request_close_once(0, states[0]));
+        assert!(drain.request_close_once(1, states[1]));
+        assert!(!drain.request_close_once(0, Some(Lifecycle::Faulted)));
+        assert!(!drain.request_close_once(1, Some(Lifecycle::Closing)));
+        assert_eq!(
+            drain.outcome(now, [Some(Lifecycle::Closed), Some(Lifecycle::Closing)]),
+            ErrorDrainOutcome::Pending
+        );
+        assert_eq!(
+            drain.outcome(now, [Some(Lifecycle::Closed), Some(Lifecycle::Closed)]),
+            ErrorDrainOutcome::Closed
+        );
+    }
+    #[test]
+    fn delayed_close_uses_remaining_original_deadline_and_never_resets_it() {
+        let now = Instant::now();
+        let mut drain = drain(now);
+        let original_deadline = drain.deadline;
+        assert_eq!(
+            drain.outcome(
+                now + Duration::from_millis(99),
+                [Some(Lifecycle::Closing), None]
+            ),
+            ErrorDrainOutcome::Pending
+        );
+        drain.close_failed = true;
+        drain.pump_failed = true;
+        drain.tls_pump_failed = true;
+        assert_eq!(drain.deadline, original_deadline);
+        assert_eq!(
+            drain.outcome(original_deadline, [Some(Lifecycle::Closing), None]),
+            ErrorDrainOutcome::Deadline
+        );
+        assert!(drain.timed_out);
+        assert_eq!(drain.primary_failure, "original renderer failure");
+        assert_eq!(drain.report()["pumpFailed"], true);
+        assert_eq!(drain.report()["deadlineExpired"], true);
+    }
+    #[test]
+    fn one_real_host_and_a_previously_requested_close_do_not_revive_or_reissue() {
+        let now = Instant::now();
+        let mut drain = FixtureErrorDrain::new(now, [true, false], "first failure".into());
+        assert!(!drain.request_close_once(0, Some(Lifecycle::Faulted)));
+        assert!(!drain.request_close_once(1, Some(Lifecycle::Closed)));
+        assert_eq!(
+            drain.outcome(now, [Some(Lifecycle::Faulted), None]),
+            ErrorDrainOutcome::Deadline
+        );
+        // A fault is not cleanup proof, and later observations never erase the
+        // primary error or manufacture a successful case.
+        assert_eq!(drain.primary_failure, "first failure");
+        assert_ne!(
+            drain.outcome(now, [Some(Lifecycle::Hidden), None]),
+            ErrorDrainOutcome::Closed
+        );
     }
 }

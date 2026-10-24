@@ -39,6 +39,67 @@ use tokio::io::{AsyncBufReadExt, AsyncWriteExt};
 mod linux_parent_fixture;
 
 type Result<T = ()> = std::result::Result<T, Box<dyn std::error::Error>>;
+
+// Error cleanup retains the ORIGINAL deadline and never fabricates Closed.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum ErrorDrainOutcome {
+    Pending,
+    Closed,
+    Deadline,
+}
+struct FixtureErrorDrain {
+    deadline: Instant,
+    primary_failure: String,
+    close_requested: [bool; 2],
+    revoked: bool,
+    revoke_failed: bool,
+    close_failed: bool,
+    pump_failed: bool,
+    tls_pump_failed: bool,
+    timed_out: bool,
+}
+impl FixtureErrorDrain {
+    fn new(deadline: Instant, close_requested: [bool; 2], primary_failure: String) -> Self {
+        Self {
+            deadline,
+            primary_failure,
+            close_requested,
+            revoked: false,
+            revoke_failed: false,
+            close_failed: false,
+            pump_failed: false,
+            tls_pump_failed: false,
+            timed_out: false,
+        }
+    }
+    fn request_close_once(&mut self, index: usize, state: Option<Lifecycle>) -> bool {
+        if self.close_requested[index] || state.is_none_or(|value| value == Lifecycle::Closed) {
+            return false;
+        }
+        // Set BEFORE a potentially reentrant native close or an error.
+        self.close_requested[index] = true;
+        true
+    }
+    fn outcome(&mut self, now: Instant, states: [Option<Lifecycle>; 2]) -> ErrorDrainOutcome {
+        if states
+            .into_iter()
+            .all(|state| state.is_none_or(|value| value == Lifecycle::Closed))
+        {
+            ErrorDrainOutcome::Closed
+        } else if now >= self.deadline {
+            self.timed_out = true;
+            ErrorDrainOutcome::Deadline
+        } else {
+            ErrorDrainOutcome::Pending
+        }
+    }
+    fn report(&self) -> serde_json::Value {
+        serde_json::json!({"primaryFailure":self.primary_failure,"revokeFailed":self.revoke_failed,
+            "closeFailed":self.close_failed,"pumpFailed":self.pump_failed,
+            "tlsPumpFailed":self.tls_pump_failed,"deadlineExpired":self.timed_out})
+    }
+}
+
 // Package-specific acceptance never probes another revision after a mismatch.
 // The historical protocol selectors still select revisions1–3 only when no
 // explicit maintained-runner pin is present.
@@ -82,6 +143,63 @@ fn all_created_hosts_closed(states: impl IntoIterator<Item = Option<Lifecycle>>)
         .into_iter()
         .all(|state| state.is_none_or(|lifecycle| lifecycle == Lifecycle::Closed))
 }
+
+fn drain_failed_slots(
+    runtime: &CefRuntime<'_>,
+    slots: &mut [Slot],
+    drain: &mut FixtureErrorDrain,
+) -> ErrorDrainOutcome {
+    if !drain.revoked {
+        drain.revoked = true;
+        // Fence ALL owners before any pump can execute other queued work.
+        for slot in slots.iter() {
+            slot.tls_owner.current.store(false, Ordering::Release);
+            if slot.session.lock().unwrap().revoke(&slot.identity).is_err() {
+                drain.revoke_failed = true;
+            }
+            let pending = std::mem::take(&mut *slot.tls_owner.pending.lock().unwrap());
+            for (_, completion, _) in pending {
+                completion.complete(NativeTlsDecision::Deny);
+            }
+        }
+    }
+    let states = std::array::from_fn(|index| {
+        slots
+            .get(index)
+            .and_then(|slot| slot.host.as_ref().map(|host| host.lifecycle()))
+    });
+    let outcome = drain.outcome(Instant::now(), states);
+    if outcome != ErrorDrainOutcome::Pending {
+        return outcome;
+    }
+    for (index, slot) in slots.iter_mut().enumerate() {
+        if drain.request_close_once(index, slot.host.as_ref().map(|host| host.lifecycle())) {
+            slot.close_sent = true;
+            if slot
+                .host
+                .as_ref()
+                .expect("created host")
+                .close(&slot.identity)
+                .is_err()
+            {
+                drain.close_failed = true;
+            }
+        }
+    }
+    if runtime.cleanup_only_work().is_err() {
+        drain.pump_failed = true;
+    }
+    if cef_tls_bridge::pump_tls().is_err() {
+        drain.tls_pump_failed = true;
+    }
+    let states = std::array::from_fn(|index| {
+        slots
+            .get(index)
+            .and_then(|slot| slot.host.as_ref().map(|host| host.lifecycle()))
+    });
+    drain.outcome(Instant::now(), states)
+}
+
 const ORIGIN: &str = "https://proxy-first.fixture.test";
 const OTHER_ORIGIN: &str = "https://alternate.fixture.test";
 fn cross_authority() -> bool {
@@ -585,10 +703,16 @@ fn execute(bootstrap: &mut dyn RuntimeBootstrap, paths: &BundlePaths) -> Result 
     let mut phase = "pump";
     let mut raw_after_failure = Vec::new();
     let mut before = serde_json::Value::Null;
+    let original_close_deadline = began + Duration::from_secs(45);
+    let mut error_drain: Option<FixtureErrorDrain> = None;
 
     events.run_return(|event, _, flow| {
         *flow = ControlFlow::WaitUntil(Instant::now() + Duration::from_millis(1));
         if !matches!(event, Event::MainEventsCleared) {
+            return;
+        }
+        if let Some(drain) = error_drain.as_mut() {
+            if drain_failed_slots(&runtime, &mut slots, drain) != ErrorDrainOutcome::Pending { *flow = ControlFlow::Exit; }
             return;
         }
         let step = (|| -> Result {
@@ -742,10 +866,15 @@ fn execute(bootstrap: &mut dyn RuntimeBootstrap, paths: &BundlePaths) -> Result 
             Ok(())
         })();
         if let Err(e) = step {
-            failures.push(format!("{phase}: {e}"));
-            *flow = ControlFlow::Exit;
+            let mut drain = FixtureErrorDrain::new(original_close_deadline,
+                std::array::from_fn(|index| slots.get(index).is_some_and(|slot| slot.close_sent)), format!("{phase}: {e}"));
+            if drain_failed_slots(&runtime, &mut slots, &mut drain) != ErrorDrainOutcome::Pending { *flow = ControlFlow::Exit; }
+            error_drain = Some(drain);
         }
     });
+    if let Some(drain) = &error_drain {
+        failures.push(drain.primary_failure.clone());
+    }
     let closed =
         all_created_hosts_closed(slots.iter().map(|s| s.host.as_ref().map(|h| h.lifecycle())));
     let rows:Vec<_>=slots.iter().map(|s|{let o=s.sink.0.lock().unwrap();serde_json::json!({"proxyApplicationVerified":s.proxy_application_verified,"proxyBeforeHost":s.proxy_before_host,"sessionStatus":format!("{:?}",s.session.lock().unwrap().status()),"sessionFailure":format!("{:?}",s.session.lock().unwrap().failure_reason()),"tlsCurrent":s.tls_owner.current.load(Ordering::Relaxed),"alpnObserved":*s.alpn_observed.lock().unwrap(),"beforeAdmissionBytes":s.tls_owner.before_admission_bytes.load(Ordering::Relaxed),"minimumAdmissionDelayMs":*s.tls_owner.minimum_admission_delay_ms.lock().unwrap(),"denied":s.tls_owner.denied.load(Ordering::Relaxed),"dials":s.dials.load(Ordering::Relaxed),"requests":*s.requests.lock().unwrap(),"cases":s.reports,"title":o.title,"nativeStates":o.native_states,"featureStates":o.feature_states,"errors":o.errors,"diagnostics":s.session.lock().unwrap().proxy_diagnostics()})}).collect();
@@ -757,6 +886,9 @@ fn execute(bootstrap: &mut dyn RuntimeBootstrap, paths: &BundlePaths) -> Result 
     let pump_summary = serde_json::json!({"samples":pump_intervals.len(),"medianMs":pump_intervals.get(pump_intervals.len()/2),"p95Ms":pump_intervals.get(pump_intervals.len()*95/100),"maxMs":pump_intervals.last()});
     let mut report = serde_json::json!({"probeKind":KIND,"runId":run_id,"patchId":bridge.patch_id(),"loadedBridgeVerified":true,"ok":false,"clean":clean,"closed":closed,"rawTcpBefore":raw_before,"rawTcpAfterFailure":raw_after_failure,"ownedLoopbackEndpoints":endpoints,"baselineBeforeCef":baseline,"first":before,"initializeStartedMs":initialize_started_ms,"initializeFinishedMs":initialize_finished_ms,"matrixCases":CASES.len(),"productionTlsFactory":true,"fixtureTcpNoDelay":fixture_nodelay,"parentVisible":visible,"childShowRequested":visible,"advertisedAlpn":["h2","http/1.1"],"pumpIntervals":pump_summary,"slots":rows,"failures":failures,"productionReady":false});
     report["linuxParentReadiness"] = serde_json::json!(linux_parent_readiness);
+    if let Some(drain) = &error_drain {
+        report["errorDrain"] = drain.report();
+    }
     if !closed {
         std::fs::write(
             output.join("native-report.json"),
@@ -776,7 +908,9 @@ fn execute(bootstrap: &mut dyn RuntimeBootstrap, paths: &BundlePaths) -> Result 
         }
     }
     let proxy_boundary_port = slots[0].session.lock().unwrap().proxy_endpoint().port();
-    let proxy_boundary = if !legacy && !http2_revision {
+    let proxy_boundary = if error_drain.is_some() {
+        serde_json::json!({"required":true,"ok":false,"reason":"primary-error-before-proxy-boundary"})
+    } else if !legacy && !http2_revision {
         match proxy_ack_fixture::run(
             &mut || registry_retirement_fixture::pump(&runtime, &mut events),
             proxy_boundary_port,
@@ -790,7 +924,9 @@ fn execute(bootstrap: &mut dyn RuntimeBootstrap, paths: &BundlePaths) -> Result 
     } else {
         serde_json::json!({"required":false,"reason":"legacy-runtime-no-proxy-ack"})
     };
-    let retirement = if requires_retirement(bridge.patch_id()) {
+    let retirement = if error_drain.is_some() {
+        serde_json::json!({"required":requires_retirement(bridge.patch_id()),"ok":false,"reason":"primary-error-before-registry-retirement"})
+    } else if requires_retirement(bridge.patch_id()) {
         match registry_retirement_fixture::run(
             &mut || registry_retirement_fixture::pump(&runtime, &mut events),
             &root_der,
@@ -1113,5 +1249,92 @@ mod fixture_close_tests {
         // The actual report's failures.is_empty and native-proof requirements
         // remain unchanged; this cleanup fact alone can never be acceptance.
         assert!(!(failures.is_empty() && closed));
+    }
+}
+
+#[cfg(test)]
+mod error_drain_tests {
+    use super::*;
+    fn drain(now: Instant) -> FixtureErrorDrain {
+        FixtureErrorDrain::new(
+            now + Duration::from_millis(100),
+            [false; 2],
+            "original renderer failure".into(),
+        )
+    }
+    #[test]
+    fn prehost_error_finishes_without_fabricating_a_native_close_or_success() {
+        let now = Instant::now();
+        let mut drain = drain(now);
+        assert!(!drain.request_close_once(0, None));
+        assert_eq!(drain.outcome(now, [None, None]), ErrorDrainOutcome::Closed);
+        assert_eq!(drain.close_requested, [false; 2]);
+        assert_eq!(drain.primary_failure, "original renderer failure");
+        assert_eq!(
+            drain.report()["primaryFailure"],
+            "original renderer failure"
+        );
+    }
+    #[test]
+    fn faulted_and_hidden_hosts_close_once_and_require_every_real_callback() {
+        let now = Instant::now();
+        let mut drain = drain(now);
+        let states = [Some(Lifecycle::Faulted), Some(Lifecycle::Hidden)];
+        assert_eq!(drain.outcome(now, states), ErrorDrainOutcome::Pending);
+        assert!(drain.request_close_once(0, states[0]));
+        assert!(drain.request_close_once(1, states[1]));
+        assert!(!drain.request_close_once(0, Some(Lifecycle::Faulted)));
+        assert!(!drain.request_close_once(1, Some(Lifecycle::Closing)));
+        assert_eq!(
+            drain.outcome(now, [Some(Lifecycle::Closed), Some(Lifecycle::Closing)]),
+            ErrorDrainOutcome::Pending
+        );
+        assert_eq!(
+            drain.outcome(now, [Some(Lifecycle::Closed), Some(Lifecycle::Closed)]),
+            ErrorDrainOutcome::Closed
+        );
+    }
+    #[test]
+    fn delayed_close_uses_remaining_original_deadline_and_never_resets_it() {
+        let now = Instant::now();
+        let mut drain = drain(now);
+        let original_deadline = drain.deadline;
+        assert_eq!(
+            drain.outcome(
+                now + Duration::from_millis(99),
+                [Some(Lifecycle::Closing), None]
+            ),
+            ErrorDrainOutcome::Pending
+        );
+        drain.close_failed = true;
+        drain.pump_failed = true;
+        drain.tls_pump_failed = true;
+        assert_eq!(drain.deadline, original_deadline);
+        assert_eq!(
+            drain.outcome(original_deadline, [Some(Lifecycle::Closing), None]),
+            ErrorDrainOutcome::Deadline
+        );
+        assert!(drain.timed_out);
+        assert_eq!(drain.primary_failure, "original renderer failure");
+        assert_eq!(drain.report()["pumpFailed"], true);
+        assert_eq!(drain.report()["deadlineExpired"], true);
+    }
+    #[test]
+    fn one_real_host_and_a_previously_requested_close_do_not_revive_or_reissue() {
+        let now = Instant::now();
+        let mut drain = FixtureErrorDrain::new(now, [true, false], "first failure".into());
+        assert!(!drain.request_close_once(0, Some(Lifecycle::Faulted)));
+        assert!(!drain.request_close_once(1, Some(Lifecycle::Closed)));
+        assert_eq!(
+            drain.outcome(now, [Some(Lifecycle::Faulted), None]),
+            ErrorDrainOutcome::Deadline
+        );
+        // A fault is not cleanup proof, and later observations never erase the
+        // primary error or manufacture a successful case.
+        assert_eq!(drain.primary_failure, "first failure");
+        assert_ne!(
+            drain.outcome(now, [Some(Lifecycle::Hidden), None]),
+            ErrorDrainOutcome::Closed
+        );
     }
 }
