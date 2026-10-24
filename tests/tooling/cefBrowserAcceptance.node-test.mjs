@@ -2237,6 +2237,79 @@ const nativeFatalLine =
   "[123:456:1007/223313.648:FATAL:net\\socket\\ssl_client_socket_impl.cc:949] Check failed: cert_verifier_request_. https://user:SECRET@private.test/token\n";
 const networkRestartLine =
   "[123:456:1007/223313.649:ERROR:content\\browser\\network_service_instance_impl.cc:653] Network service crashed or was terminated, restarting service.\n";
+// Fixed native lines from retained integrated deny cef.log (not page text).
+// Both Chromium kLogOnly and kCrash emit this report; it does not prove death.
+const nativeDanglingPrefix =
+  "[57068:51736:1024/194911.480:ERROR:base\\allocator\\partition_alloc_support.cc:651] \r\n\r\n" +
+  "[DanglingSignature]\tPRIVATE-SECRET\tNo active task\r\n\r\n";
+const nativeDanglingFirst =
+  "[DanglingPtr](1/3) A raw_ptr/raw_ref is dangling.\r\n";
+
+test("native allocator dangling reports reject memory safety without claiming fatal process death", () => {
+  for (const text of [
+    nativeDanglingPrefix + nativeDanglingFirst,
+    nativeDanglingPrefix +
+      nativeDanglingFirst +
+      "\n[DanglingPtr](2/3) First, the memory was freed at:\n" +
+      "Stack trace:\nPRIVATE-SECRET\n" +
+      "[DanglingPtr](3/3) Later, the dangling raw_ptr was released at:\n",
+    "[ERROR:base/allocator/partition_alloc_support.cc(651)]\n" +
+      nativeDanglingFirst,
+  ]) {
+    const summary = summarizeNativeCrashLog(text);
+    assert.equal(summary.ok, false);
+    assert.equal(summary.complete, true);
+    assert.equal(summary.counts.nativeFatal, 0);
+    assert.equal(summary.counts.danglingPointerReports, 1);
+    assert.deepEqual(summary.failures, ["native-dangling-pointer-report"]);
+    assert.equal(
+      applyNativeCrashGate({ ok: true, failures: [] }, summary).ok,
+      false,
+    );
+    assert.doesNotMatch(
+      JSON.stringify(summary),
+      /PRIVATE|SECRET|57068|partition_alloc_support|DanglingSignature/,
+    );
+  }
+});
+
+test("dangling pointer prose and page-console markers do not become native allocator reports", () => {
+  for (const text of [
+    nativeDanglingFirst,
+    '[1:2:INFO:CONSOLE(1)] "' + nativeDanglingFirst.trim() + '"\n',
+    '[1:2:ERROR:CONSOLE(1)] "partition_alloc_support.cc [DanglingPtr](1/3) A raw_ptr/raw_ref is dangling."\n',
+    "[1:2:ERROR:fixture.cc:1]\n" + nativeDanglingFirst,
+    nativeDanglingPrefix +
+      "[1:2:INFO:CONSOLE(1)] arbitrary page text\n" +
+      nativeDanglingFirst,
+    nativeDanglingPrefix + "\n".repeat(16) + nativeDanglingFirst,
+    nativeDanglingPrefix + "quoted " + nativeDanglingFirst,
+  ]) {
+    const summary = summarizeNativeCrashLog(text);
+    assert.equal(summary.counts.danglingPointerReports, 0);
+    assert.equal(summary.ok, true);
+  }
+});
+
+test("partial dangling evidence and tampered summaries cannot attest clean memory safety", () => {
+  const partial = summarizeNativeCrashLog(
+    nativeDanglingPrefix + nativeDanglingFirst.trimEnd(),
+  );
+  assert.equal(partial.counts.danglingPointerReports, 1);
+  assert.equal(partial.complete, false);
+  const clean = summarizeNativeCrashLog("");
+  for (const count of [1, "0", null, undefined, NaN, -1]) {
+    const tampered = {
+      ...clean,
+      ok: true,
+      counts: { ...clean.counts, danglingPointerReports: count },
+    };
+    assert.equal(
+      applyNativeCrashGate({ ok: true, failures: [] }, tampered).ok,
+      false,
+    );
+  }
+});
 
 test("native FATAL and recovered network service failure retain only fixed labels and counts", () => {
   const summary = summarizeNativeCrashLog(
@@ -2249,6 +2322,7 @@ test("native FATAL and recovered network service failure retain only fixed label
   assert.deepEqual(summary.counts, {
     nativeFatal: 1,
     networkServiceCrashOrRestart: 1,
+    danglingPointerReports: 0,
   });
   assert.deepEqual(summary.failures, [
     "native-fatal",
@@ -2309,6 +2383,7 @@ test("ordinary startup warnings and page text do not become native crash records
     assert.deepEqual(summary.counts, {
       nativeFatal: 0,
       networkServiceCrashOrRestart: 0,
+      danglingPointerReports: 0,
     });
     assert.equal(
       applyNativeCrashGate({ ok: true, failures: [] }, summary).ok,
@@ -2371,6 +2446,7 @@ test("streaming cef.log scan retains markers across chunk boundaries and missing
     assert.deepEqual(summary.counts, {
       nativeFatal: 1,
       networkServiceCrashOrRestart: 1,
+      danglingPointerReports: 0,
     });
     assert.doesNotMatch(
       JSON.stringify(summary),
@@ -2378,6 +2454,15 @@ test("streaming cef.log scan retains markers across chunk boundaries and missing
     );
     await writeFile(file, "");
     assert.equal((await readNativeCrashSummary(file)).ok, true);
+    await writeFile(
+      file,
+      "\n".repeat(65500) + nativeDanglingPrefix + nativeDanglingFirst,
+    );
+    const dangling = await readNativeCrashSummary(file);
+    assert.equal(dangling.complete, true);
+    assert.equal(dangling.counts.danglingPointerReports, 1);
+    assert.equal(dangling.counts.nativeFatal, 0);
+    assert.equal(dangling.ok, false);
   } finally {
     await rm(directory, { recursive: true, force: true });
   }

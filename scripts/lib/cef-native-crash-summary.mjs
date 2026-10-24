@@ -12,12 +12,45 @@ function scanner() {
     bytes = 0,
     lines = 0,
     oversizedLine = false,
-    capped = false;
-  const counts = { nativeFatal: 0, networkServiceCrashOrRestart: 0 };
+    capped = false,
+    allocatorPrefixLines = 0;
+  const counts = {
+    nativeFatal: 0,
+    networkServiceCrashOrRestart: 0,
+    danglingPointerReports: 0,
+  };
   const line = (value) => {
     lines++;
     // Chromium's native severity prefix, not arbitrary page/console prose.
     if (/^\[(?:[^\]\r\n]*:)?FATAL:/i.test(value)) counts.nativeFatal++;
+    // Pinned partition_alloc_support.cc emits the same ERROR report in
+    // kLogOnly and kCrash modes. Reject memory-safety evidence separately;
+    // neither these markers nor a clean parent exit establish child death.
+    // Only a native allocator source prefix can introduce the raw section.
+    // A bounded blank/signature prelude matches the actual single LogMessage,
+    // without treating page-console prose or an unbound marker as native.
+    if (
+      /^\[(?:[^\]\r\n]*:)?(?:ERROR|FATAL):(?:[^\]\r\n]*[\\/])?partition_alloc_support\.cc(?::\d+|\(\d+\))\]\s*$/i.test(
+        value,
+      )
+    ) {
+      allocatorPrefixLines = 8;
+    } else if (allocatorPrefixLines > 0) {
+      allocatorPrefixLines--;
+      if (
+        /^\[DanglingPtr\]\(1\/3\) A raw_ptr\/raw_ref is dangling\.\r?$/.test(
+          value,
+        )
+      ) {
+        counts.danglingPointerReports++;
+        allocatorPrefixLines = 0;
+      } else if (
+        !/^\s*$/.test(value) &&
+        !/^\[DanglingSignature\]\t[^\r\n]*\r?$/.test(value)
+      ) {
+        allocatorPrefixLines = 0;
+      }
+    }
     // Pinned content/browser/network_service_instance_impl.cc logs this at
     // ERROR when a previously bound network service is launched again. Also
     // retain the older "crashed, restarting service" variant.
@@ -70,6 +103,8 @@ function scanner() {
         );
       else if (!complete) failures.push("native-log-scan-incomplete");
       if (counts.nativeFatal > 0) failures.push("native-fatal");
+      if (counts.danglingPointerReports > 0)
+        failures.push("native-dangling-pointer-report");
       if (counts.networkServiceCrashOrRestart > 0)
         failures.push("network-service-crash-or-restart");
       return {
@@ -86,7 +121,7 @@ function scanner() {
         counts,
         failures,
         limitation:
-          "Logged native markers only; not an OS crash monitor. Empty readable logs contain no logged markers.",
+          "Logged native markers only; not an OS crash monitor. Dangling reports also occur in log-only mode. Empty readable logs contain no logged markers.",
       };
     },
   };
@@ -132,10 +167,11 @@ export function applyNativeCrashGate(assessment, crashSummary) {
     !Array.isArray(crashSummary.failures) ||
     crashSummary.failures.length !== 0 ||
     crashSummary.counts?.nativeFatal !== 0 ||
-    crashSummary.counts?.networkServiceCrashOrRestart !== 0
+    crashSummary.counts?.networkServiceCrashOrRestart !== 0 ||
+    crashSummary.counts?.danglingPointerReports !== 0
   ) {
     failures.push(
-      "native crash log missing, incomplete or contains fatal/service-restart evidence",
+      "native crash log missing, incomplete or contains fatal/service-restart or dangling-pointer evidence",
     );
   }
   return { ...assessment, ok: failures.length === 0, failures };
