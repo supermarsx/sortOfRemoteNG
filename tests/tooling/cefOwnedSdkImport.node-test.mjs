@@ -497,6 +497,7 @@ test("GET-only API cannot publish, append, follow redirects or send credentials 
     ["releases/1", { method: "PATCH", body: { draft: false } }],
     ["https://foreign.test", {}],
     ["releases/1", { method: "DELETE" }],
+    ["releases/1", { method: "PUT", body: {} }],
   ])
     await assert.rejects(api(route, options));
   assert.equal(requests, 0);
@@ -980,7 +981,7 @@ test("projecting exactly these workflow/test changes preserves the real Mac chec
   assert.equal(codeTreeDigest(projected), codeTreeDigest(entries));
 });
 
-test("workflow seal is LAST, default-branch/manual/read-only and contains no SDK compiler or publication", async () => {
+test("workflow seal is LAST with a scoped draft-visibility capability and no SDK compiler or publication", async () => {
   const YAML = await import("yaml"),
     value = YAML.default.parse(
       await readFile(
@@ -998,9 +999,22 @@ test("workflow seal is LAST, default-branch/manual/read-only and contains no SDK
     "reviewed_import",
   ]);
   assert.deepEqual(value.permissions, { contents: "read", actions: "read" });
+  assert.deepEqual(value.jobs.import.permissions, {
+    contents: "write",
+    actions: "read",
+  });
+  assert.equal(value.jobs.import.environment, undefined);
+  assert.equal(value.jobs.import.env, undefined);
+  assert.deepEqual(Object.keys(value.jobs), ["import"]);
   assert.match(value.jobs.import.if, /repository.default_branch/);
   const steps = value.jobs.import.steps,
     last = steps.at(-1);
+  const tokenSteps = steps.filter((step) => step.env?.GH_TOKEN);
+  assert.equal(tokenSteps.length, 1);
+  assert.equal(
+    tokenSteps[0].name,
+    "Verify exact draft bytes and write completion proof only after all checks",
+  );
   assert.match(last.uses, /actions\/upload-artifact@/);
   assert.match(last.with.path, /\/seal.json$/);
   assert.equal(last.if, undefined);
@@ -1235,7 +1249,7 @@ test("diagnostics cap the TOTAL emitted rows at64 without dropping requests or c
   assert.equal(result.exitCode, undefined);
 });
 
-test("wrapper adds no write caller or permission and assertion labels come only from unchanged maintained sources", async () => {
+test("wrapper adds no write requests and assertion labels come only from unchanged maintained sources", async () => {
   const source = await diagnosticSource();
   assert.equal((source.match(/await main\(/g) ?? []).length, 1);
   assert.match(source, /await main\(\["seal"\]\)/);

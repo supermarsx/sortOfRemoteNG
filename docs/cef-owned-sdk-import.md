@@ -28,7 +28,11 @@ Only a new draft/prerelease quarantine and its five exact assets can be appended
 
 ## Independent Actions seal
 
-The default-branch-only public manual `cef-owned-sdk-import.yml` workflow accepts the committed review path, independently approved raw review SHA256 and exact quarantine release ID. Its token is read-only. It GETs the exact five draft assets, checks bytes again, extracts in an owned directory with trusted isolated Python, verifies SDK inventory, native binary and exports, rechecks the unchanged draft and source identity, then writes a small completion seal. Uploading that seal is the final step. Failed or partial verification cannot become a successful producer run.
+The default-branch-only public manual `cef-owned-sdk-import.yml` workflow accepts the committed review path, independently approved raw review SHA256 and exact quarantine release ID. Workflow defaults remain `contents: read` and `actions: read`. Only its `import` job requests an ephemeral `contents: write`, `actions: read` token for a controlled draft-visibility experiment after read-capability draft and asset-list GETs returned HTTP 403.
+
+That credential **can write** to the repository and releases at the API capability level; it is not a read-only token. The unchanged seal-mode client remains GET-only and rejects mutation methods before transport. The change neither enables quarantine publication nor introduces a PAT, secret, deployment environment or approval policy. Actual draft visibility must be established by the authenticated run rather than inferred from the permission declaration. Transport credentials remain excluded from verifier subprocesses.
+
+The verifier GETs the exact five draft assets, checks bytes again, extracts in an owned directory with trusted isolated Python, verifies SDK inventory, native binary and exports, rechecks the unchanged draft and source identity, then writes a small completion seal. Uploading that seal is the final step. Failed or partial verification cannot become a successful producer run. This permission experiment applies only to the importer; other draft readers, including engineering SDK downloads, require their own reviewed job scopes. The native planner uses Actions metadata and does not need draft access.
 
 The seal explicitly records `operator-reviewed-local-bytes`, `hostedBuild: false`, `originalBuildReplayed: false`, `nativeAcceptance: false` and `runtimeReady: false`. Original build evidence is a reviewed provenance binding, not independently replayed by this workflow.
 
