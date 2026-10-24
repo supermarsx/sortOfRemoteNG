@@ -1,3 +1,9 @@
+---
+title: Reviewed local CEF SDK import
+description: Review, quarantine and independently verify owned CEF SDK bytes before native acceptance.
+hide_page_header: true
+---
+
 # Reviewed local CEF SDK import
 
 This opt-in producer ingests operator-reviewed local bytes. It does **not** replay the original build, prove a hosted build, grant publication authority, or establish native acceptance. Existing hosted and engineering SDK selectors retain their separate contracts.
