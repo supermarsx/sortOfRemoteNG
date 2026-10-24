@@ -1,0 +1,192 @@
+{
+  "abiVersion": 2,
+  "acceptanceArchitecture": "arm64",
+  "acceptanceRunner": "ubuntu-24.04-arm",
+  "actualObservedPrerequisites": {
+    "architecture": "x64",
+    "artifact": {
+      "bytes": 48587,
+      "id": 12571449269,
+      "sha256": "9f2a63b41eb53aa8ac2070e18e650247bd142c10b0fbd1a820ccae5eaf1272f6"
+    },
+    "availableGiB": 102.38,
+    "cpuCount": 4,
+    "exactNativeToolPins": [
+      {
+        "path": "usr/bin/python3.12",
+        "sha256": "e50d468e8b0adfb05733f5b87b3cff34829c4a8c1aea50c865aa8bdfe4bb150f",
+        "size": 8020928
+      },
+      {
+        "path": "usr/bin/x86_64-linux-gnu-ld.bfd",
+        "sha256": "e9ceb054c12207970f2726dfc07e9a66b411602748628baf27399f02a9bbb31b",
+        "size": 1359128
+      },
+      {
+        "path": "usr/bin/pkgconf",
+        "sha256": "7e8152db1b0c7e49d47b4b82a70dc9997b557951c5d4d938b0e7f208ce9eb10b",
+        "size": 45168
+      },
+      {
+        "path": "usr/include/stdio.h",
+        "sha256": "b4f6709d12c8493e2a42f740845abe2994deb27fc78fb85fcaa6e27228a87d62",
+        "size": 34649
+      }
+    ],
+    "image": {
+      "os": "ubuntu24",
+      "version": "20261023.334.3"
+    },
+    "members": [
+      {
+        "member": "cef-checkpoint-prerequisites/after/observation.json",
+        "sha256": "90c0f3ce9165508cd0282ee08ea87d06c64684f90bafa08c6691bfe6ec117981",
+        "size": 2122
+      },
+      {
+        "member": "cef-checkpoint-prerequisites/after/toolchain-candidate.json",
+        "sha256": "39901f38b498aa001d7b6ee6f50041e5e40ce9b25112c42a9d4e895f613dac93",
+        "size": 797
+      },
+      {
+        "member": "cef-checkpoint-prerequisites/provision.json",
+        "sha256": "eb593cbea111dc74eafb6ba1b9a9ee0ebaecf8dbabf07ba81faa3d657173d37d",
+        "size": 663
+      },
+      {
+        "member": "cef-checkpoint-prerequisites/installed-packages.log",
+        "sha256": "3a7883821621d661bde1d6c0c8d9a8d2559a825a10947adb0ba18b470b42a11f",
+        "size": 62987
+      },
+      {
+        "member": "cef-checkpoint-prerequisites/before/cleanup.json",
+        "sha256": "1cebd154e55bde26bc2f4513990d7863d4848116b61be6efd5756273863e3b23",
+        "size": 1278
+      }
+    ],
+    "memoryGiB": 15.61,
+    "observationTarget": "x86_64-unknown-linux-gnu",
+    "observedAt": "2026-10-24T19:07:38.930Z",
+    "packagesStatement": "Actual installed package inventory is pinned above; no assertion that every OS package matches the older image",
+    "platform": "linux",
+    "producerHead": "af65f7e6d92f7d714a029f6944ef0a4ac2fcf1c0",
+    "provisionCompleted": true,
+    "runId": 40123615504
+  },
+  "baseNamespace": "native/cef-build-inputs/20261023-registration-retirement-lf-linuxarm-cross-sysroot",
+  "baseSourceLockIdentity": "e4c64bf94a403a8ec02f826a29969471eb583c49c461eacb29e38ac4de052078",
+  "bridgeRevision": 4,
+  "buildHost": {
+    "acceptanceRunner": "ubuntu-24.04-arm",
+    "architecture": "x64",
+    "imageOS": "ubuntu24",
+    "imageVersion": "20261023.334.3",
+    "platform": "linux",
+    "runner": "ubuntu-24.04"
+  },
+  "changes": {
+    "runnerImageOnly": {
+      "from": "20261012.334.1",
+      "to": "20261023.334.3"
+    },
+    "runnerRawSha256": "7b9495db7e7687842b95db7fa718725c59fcbce2002cf48b3c267dcbf0fe4297",
+    "toolchainRawSha256": "25878b8ef247351c8bab6b4704220c84081249a381054f658e1413caf0bc4511"
+  },
+  "checkpointPolicy": "New exact source and producer code identity require restoreRun=0; first pack and same-code restore remain mandatory. No cross-code migration or old-progress transfer.",
+  "defaultRuntimeChanged": false,
+  "engineCompiled": false,
+  "historicalNormalizationReceipt": {
+    "byteIdentical": true,
+    "newNormalizationPerformed": false,
+    "path": "normalization-receipt.json",
+    "sourceLockIdentity": "e4c64bf94a403a8ec02f826a29969471eb583c49c461eacb29e38ac4de052078"
+  },
+  "kind": "sorng-cef-reviewed-host-cross-build-inputs",
+  "nativeAcceptancePerformed": false,
+  "preservedFiles": [
+    {
+      "path": "patches/0001-chromium-socket-admission.patch",
+      "sha256": "b347abc666cc693c7ada52b2ba31ad69e1d2f67541ca0a4684ea868fdff4a876",
+      "size": 37160
+    },
+    {
+      "path": "patches/0002-cef-native-bridge.patch",
+      "sha256": "0f2592f560ccd7045376485ba37753f171ad4cf18ca3a3bd9cabb9a1ac340653",
+      "size": 31384
+    },
+    {
+      "path": "patches/0003-cef-native-widget-lifetime.patch",
+      "sha256": "ea26cd554faa7991303ae85118313538b15d16d77b7436a9b4186fbc233cf540",
+      "size": 791
+    },
+    {
+      "path": "patches/0004-chromium-soda-provisioning.patch",
+      "sha256": "426d95532f3ff8f0c4f5e3d46cc0b3ff77f300bdcb2d853e02b1404b2c013482",
+      "size": 4538
+    },
+    {
+      "path": "patches/0005-chromium-proxy-route-probe.patch",
+      "sha256": "094770e23077c0791536a579e7bdec43b47fd0de4839ebf1514fb99fc135f810",
+      "size": 3539
+    },
+    {
+      "path": "patches/0006-cef-explicit-download-destination.patch",
+      "sha256": "f1bac1adce80ff7afdf0abefd01546244a1e403bbad6b48d5fd68c214b87c813",
+      "size": 1010
+    },
+    {
+      "path": "patches/0007-chromium-instance-tracer-reentrancy.patch",
+      "sha256": "3d3940a4f45b81739aab3735fbea41ee8f485ad89382bbec6340a7b694f04c78",
+      "size": 997
+    },
+    {
+      "path": "patches/0008-chromium-same-authority-http2.patch",
+      "sha256": "4d2625adae0ba7e3268bd4e21fa789a42f1dab57a15432fae1d4577ac6533103",
+      "size": 4125
+    },
+    {
+      "path": "patches/0009-cef-http2-bridge-capability.patch",
+      "sha256": "321ad6e827dfb596033b622a76a41b9f616f7fecd496ddb3864b5fa07ef0dec8",
+      "size": 1972
+    },
+    {
+      "path": "patches/0010-chromium-proxy-application-ack.patch",
+      "sha256": "ab48a00f1c71e2d2893d0169c7f0828252d813df2227062b0e7ca9275dc93a55",
+      "size": 14590
+    },
+    {
+      "path": "patches/0011-cef-proxy-application-ack.patch",
+      "sha256": "7148edbb12fe1459a073b9eacd09dea35261f68911d6c9f5e03a3f379e7aaec0",
+      "size": 10759
+    },
+    {
+      "path": "patches/0012-cef-registration-retirement.patch",
+      "sha256": "dd863571d99103cf53a90806f1aa4d3b3ba9b141ff082a2e7ae74796cb7ab699",
+      "size": 20195
+    },
+    {
+      "path": "include/cef_sorng_tls_bridge.h",
+      "sha256": "6ea8336407a9b4b56d25a9092b54346142214c31ea7432fa893f2eee27d33a10",
+      "size": 7737
+    },
+    {
+      "path": "gn/aarch64-unknown-linux-gnu.gn",
+      "sha256": "0fcbeab5302c8409736a340e1424642b80185be8245245298a8eea19fe8e0817",
+      "size": 333
+    },
+    {
+      "path": "normalization-receipt.json",
+      "sha256": "64d7ea0f661ad7c276683f8322de52a8e5bc5c8228b9e780883e4309755847a9",
+      "size": 1846
+    }
+  ],
+  "publicationAllowed": false,
+  "schemaVersion": 1,
+  "scope": "Reviewed observed Linux x64 host image for ARM64 cross build; not source acquisition, compilation, native acceptance or publication evidence",
+  "sourceAcquired": false,
+  "sourceLockIdentity": "30977e3eaa190912dbd4266621d4841400556cc0d22fef4b6a74c7f0fa771a67",
+  "sourceLockRawSha256": "ff7db27a75901840849fd10a71a131ca03497d7699fd4b5f239df3a119487129",
+  "sysrootAndGperfRecipeUnchanged": true,
+  "target": "aarch64-unknown-linux-gnu",
+  "upstreamAndPatchSourceAndGnUnchanged": true
+}

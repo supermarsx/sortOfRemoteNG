@@ -1,0 +1,341 @@
+diff --git a/chrome/browser/net/proxy_config_monitor.h b/chrome/browser/net/proxy_config_monitor.h
+--- a/chrome/browser/net/proxy_config_monitor.h
++++ b/chrome/browser/net/proxy_config_monitor.h
+@@ -8,7 +8,9 @@
+ #include <memory>
+ #include <string>
+ 
++#include "base/functional/callback.h"
+ #include "base/memory/raw_ptr.h"
++#include "base/memory/weak_ptr.h"
+ #include "build/buildflag.h"
+ #include "extensions/buildflags/buildflags.h"
+ #include "mojo/public/cpp/bindings/receiver_set.h"
+@@ -67,6 +69,12 @@
+   // configuration changes have been applied.
+   void FlushForTesting();
+ 
++  // Owner-specific fixed proxy validation and asynchronous same-pipe ACK.
++  // Never resolves a URL, runs PAC, performs DNS or opens a socket.
++  void ConfirmSorngFixedProxy(uint16_t port,
++                              base::OnceCallback<void(bool, uint64_t)> done);
++  bool IsSorngFixedProxyCurrent(uint16_t port, uint64_t generation);
++
+  private:
+   // net::ProxyConfigService::Observer implementation:
+   void OnProxyConfigChanged(
+@@ -96,6 +104,8 @@
+   mojo::ReceiverSet<network::mojom::ProxyErrorClient> error_receiver_set_;
+   raw_ptr<Profile> profile_ = nullptr;
+ #endif  // BUILDFLAG(ENABLE_EXTENSIONS_CORE)
++  uint64_t proxy_config_generation_ = 0;
++  base::WeakPtrFactory<ProxyConfigMonitor> weak_factory_{this};
+ };
+ 
+ #endif  // CHROME_BROWSER_NET_PROXY_CONFIG_MONITOR_H_
+diff --git a/chrome/browser/net/proxy_config_monitor.cc b/chrome/browser/net/proxy_config_monitor.cc
+--- a/chrome/browser/net/proxy_config_monitor.cc
++++ b/chrome/browser/net/proxy_config_monitor.cc
+@@ -4,7 +4,12 @@
+ 
+ #include "chrome/browser/net/proxy_config_monitor.h"
+ 
++#include <algorithm>
+ #include <utility>
++#include "base/barrier_callback.h"
++#include "base/functional/bind.h"
++#include "base/strings/string_number_conversions.h"
++#include "mojo/public/cpp/bindings/callback_helpers.h"
+ 
+ #include "base/strings/utf_string_conversions.h"
+ #include "build/build_config.h"
+@@ -29,7 +34,7 @@
+ 
+ #if BUILDFLAG(ENABLE_EXTENSIONS_CORE)
+ #include "extensions/browser/api/proxy/proxy_api.h"
+-#endif // BUILDFLAG(ENABLE_EXTENSIONS_CORE)
++#endif  // BUILDFLAG(ENABLE_EXTENSIONS_CORE)
+ 
+ using content::BrowserThread;
+ 
+@@ -93,6 +98,7 @@
+ 
+ void ProxyConfigMonitor::AddToNetworkContextParams(
+     network::mojom::NetworkContextParams* network_context_params) {
++  ++proxy_config_generation_;
+   mojo::PendingRemote<network::mojom::ProxyConfigClient> proxy_config_client;
+   network_context_params->proxy_config_client_receiver =
+       proxy_config_client.InitWithNewPipeAndPassReceiver();
+@@ -120,9 +126,73 @@
+   proxy_config_client_set_.FlushForTesting();
+ }
+ 
++void ProxyConfigMonitor::ConfirmSorngFixedProxy(
++    uint16_t port,
++    base::OnceCallback<void(bool, uint64_t)> done) {
++  DCHECK_CURRENTLY_ON(BrowserThread::UI);
++  net::ProxyConfig expected;
++  expected.proxy_rules().ParseFromString("http://127.0.0.1:" +
++                                         base::NumberToString(port));
++  expected.proxy_rules().bypass_rules.AddRulesToSubtractImplicit();
++  auto matches = [this, &expected]() {
++    net::ProxyConfigWithAnnotation current;
++    return proxy_config_service_->GetLatestProxyConfig(&current) ==
++               net::ProxyConfigService::CONFIG_VALID &&
++           current.value().Equals(expected);
++  };
++  if (!port || proxy_config_client_set_.empty() ||
++      proxy_config_client_set_.size() > 64 || !matches()) {
++    std::move(done).Run(false, 0);
++    return;
++  }
++  // This is deliberately the same remote/receiver pipe as OnProxyConfigUpdated.
++  // A NetworkContext callback on another pipe would not fence that update.
++  auto complete = base::BarrierCallback<bool>(
++      proxy_config_client_set_.size(),
++      base::BindOnce(
++          [](base::WeakPtr<ProxyConfigMonitor> self, net::ProxyConfig expected,
++             uint64_t generation, base::OnceCallback<void(bool, uint64_t)> done,
++             std::vector<bool> results) {
++            net::ProxyConfigWithAnnotation current;
++            const bool valid =
++                self && self->proxy_config_generation_ == generation &&
++                std::all_of(results.begin(), results.end(),
++                            [](bool ok) { return ok; }) &&
++                self->proxy_config_service_->GetLatestProxyConfig(&current) ==
++                    net::ProxyConfigService::CONFIG_VALID &&
++                current.value().Equals(expected);
++            std::move(done).Run(valid, generation);
++          },
++          weak_factory_.GetWeakPtr(), expected, proxy_config_generation_,
++          std::move(done)));
++  for (auto& client : proxy_config_client_set_) {
++    auto observed = mojo::WrapCallbackWithDefaultInvokeIfNotRun(
++        base::BindOnce([](base::RepeatingCallback<void(bool)> complete,
++                          bool ok) { complete.Run(ok); },
++                       complete),
++        false);
++    client->FlushProxyConfig(base::BindOnce(std::move(observed), true));
++  }
++}
++
++bool ProxyConfigMonitor::IsSorngFixedProxyCurrent(uint16_t port,
++                                                  uint64_t generation) {
++  DCHECK_CURRENTLY_ON(BrowserThread::UI);
++  net::ProxyConfig expected;
++  expected.proxy_rules().ParseFromString("http://127.0.0.1:" +
++                                         base::NumberToString(port));
++  expected.proxy_rules().bypass_rules.AddRulesToSubtractImplicit();
++  net::ProxyConfigWithAnnotation current;
++  return port && proxy_config_generation_ == generation &&
++         proxy_config_service_->GetLatestProxyConfig(&current) ==
++             net::ProxyConfigService::CONFIG_VALID &&
++         current.value().Equals(expected);
++}
++
+ void ProxyConfigMonitor::OnProxyConfigChanged(
+     const net::ProxyConfigWithAnnotation& config,
+     net::ProxyConfigService::ConfigAvailability availability) {
++  ++proxy_config_generation_;
+   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI) ||
+          !BrowserThread::IsThreadInitialized(BrowserThread::UI));
+   for (const auto& proxy_config_client : proxy_config_client_set_) {
+diff --git a/chrome/browser/net/profile_network_context_service.h b/chrome/browser/net/profile_network_context_service.h
+--- a/chrome/browser/net/profile_network_context_service.h
++++ b/chrome/browser/net/profile_network_context_service.h
+@@ -129,6 +129,9 @@
+ 
+   // Flushes all pending proxy configuration changes.
+   void FlushProxyConfigMonitorForTesting();
++  void ConfirmSorngFixedProxy(uint16_t port,
++                              base::OnceCallback<void(bool, uint64_t)> done);
++  bool IsSorngFixedProxyCurrent(uint16_t port, uint64_t generation);
+ 
+   static void SetDiscardDomainReliabilityUploadsForTesting(bool value);
+ 
+diff --git a/chrome/browser/net/profile_network_context_service.cc b/chrome/browser/net/profile_network_context_service.cc
+--- a/chrome/browser/net/profile_network_context_service.cc
++++ b/chrome/browser/net/profile_network_context_service.cc
+@@ -1197,6 +1197,18 @@
+   proxy_config_monitor_->FlushForTesting();  // IN-TEST
+ }
+ 
++void ProfileNetworkContextService::ConfirmSorngFixedProxy(
++    uint16_t port,
++    base::OnceCallback<void(bool, uint64_t)> done) {
++  proxy_config_monitor_->ConfirmSorngFixedProxy(port, std::move(done));
++}
++
++bool ProfileNetworkContextService::IsSorngFixedProxyCurrent(
++    uint16_t port,
++    uint64_t generation) {
++  return proxy_config_monitor_->IsSorngFixedProxyCurrent(port, generation);
++}
++
+ void ProfileNetworkContextService::SetDiscardDomainReliabilityUploadsForTesting(
+     bool value) {
+   g_discard_domain_reliability_uploads_for_testing = new bool(value);
+diff --git a/net/proxy_resolution/configured_proxy_resolution_service.h b/net/proxy_resolution/configured_proxy_resolution_service.h
+--- a/net/proxy_resolution/configured_proxy_resolution_service.h
++++ b/net/proxy_resolution/configured_proxy_resolution_service.h
+@@ -178,6 +178,10 @@
+     return config_;
+   }
+ 
++  // Synchronous fixed-rule metadata proof. Never initializes PAC, polls,
++  // resolves a hostname or starts a network request.
++  bool GetSorngFixedProxy(uint16_t port, ProxyInfo* result);
++
+   // ProxyResolutionService
+   const ProxyRetryInfoMap& proxy_retry_info() const override;
+ 
+diff --git a/net/proxy_resolution/configured_proxy_resolution_service.cc b/net/proxy_resolution/configured_proxy_resolution_service.cc
+--- a/net/proxy_resolution/configured_proxy_resolution_service.cc
++++ b/net/proxy_resolution/configured_proxy_resolution_service.cc
+@@ -17,6 +17,7 @@
+ #include "base/logging.h"
+ #include "base/memory/raw_ptr.h"
+ #include "base/memory/weak_ptr.h"
++#include "base/strings/string_number_conversions.h"
+ #include "base/strings/string_util.h"
+ #include "base/task/single_thread_task_runner.h"
+ #include "base/time/time.h"
+@@ -1189,6 +1190,27 @@
+   }
+ }
+ 
++bool ConfiguredProxyResolutionService::GetSorngFixedProxy(uint16_t port,
++                                                          ProxyInfo* result) {
++  if (!port || !result)
++    return false;
++  ProxyConfig expected;
++  expected.proxy_rules().ParseFromString("http://127.0.0.1:" +
++                                         base::NumberToString(port));
++  expected.proxy_rules().bypass_rules.AddRulesToSubtractImplicit();
++  ProxyConfigWithAnnotation latest;
++  if (config_service_->GetLatestProxyConfig(&latest) !=
++          ProxyConfigService::CONFIG_VALID ||
++      !latest.value().Equals(expected) ||
++      (fetched_config_ && !fetched_config_->value().Equals(expected)) ||
++      (config_ && !config_->value().Equals(expected)))
++    return false;
++  // Fixed all-scheme rules determine this exact route without invoking the
++  // generic resolver (which could otherwise run PAC after a cross-pipe race).
++  result->UseProxyList(latest.value().proxy_rules().single_proxies);
++  return true;
++}
++
+ void ConfiguredProxyResolutionService::ApplyProxyConfigIfAvailable() {
+   DCHECK_EQ(PacResolverState::kNone, pac_resolver_state_);
+ 
+@@ -1425,7 +1447,6 @@
+   DCHECK_CALLED_ON_VALID_THREAD(thread_checker_);
+   return pac_file_fetcher_.get();
+ }
+-
+ 
+ bool ConfiguredProxyResolutionService::GetLoadStateIfAvailable(
+     LoadState* load_state) const {
+diff --git a/services/network/public/mojom/network_context.mojom b/services/network/public/mojom/network_context.mojom
+--- a/services/network/public/mojom/network_context.mojom
++++ b/services/network/public/mojom/network_context.mojom
+@@ -1534,6 +1534,10 @@
+   // Forces refetching the proxy configuration, and applying it.
+   ForceReloadProxyConfig() => ();
+ 
++  // Only the owned sorng context bridge uses this fixed-rule metadata proof.
++  // Runs no PAC, DNS or socket activity, even if another pipe changes config.
++  LookUpSorngFixedProxy(uint16 port, pending_remote<ProxyLookupClient> client);
++
+   // Clears the list of bad proxy servers that has been cached.
+   ClearBadProxiesCache() => ();
+ 
+diff --git a/services/network/network_context.h b/services/network/network_context.h
+--- a/services/network/network_context.h
++++ b/services/network/network_context.h
+@@ -417,6 +417,9 @@
+       mojo::PendingRemote<mojom::ProxyLookupClient> proxy_lookup_client)
+       override;
+   void ForceReloadProxyConfig(ForceReloadProxyConfigCallback callback) override;
++  void LookUpSorngFixedProxy(
++      uint16_t port,
++      mojo::PendingRemote<mojom::ProxyLookupClient> client) override;
+   void ClearBadProxiesCache(ClearBadProxiesCacheCallback callback) override;
+   void CreateWebSocket(
+       const GURL& url,
+diff --git a/services/network/network_context.cc b/services/network/network_context.cc
+--- a/services/network/network_context.cc
++++ b/services/network/network_context.cc
+@@ -65,6 +65,7 @@
+ #include "components/variations/net/variations_http_headers.h"
+ #include "mojo/public/cpp/bindings/pending_receiver.h"
+ #include "net/base/features.h"
++#include "net/base/host_port_pair.h"
+ #include "net/base/isolation_info.h"
+ #include "net/base/load_flags.h"
+ #include "net/base/net_errors.h"
+@@ -75,6 +76,7 @@
+ #include "net/base/reconnect_notifier.h"
+ #include "net/base/registry_controlled_domains/registry_controlled_domain.h"
+ #include "net/cert/caching_cert_verifier.h"
++#include "net/cert/cert_status_flags.h"
+ #include "net/cert/cert_verifier.h"
+ #include "net/cert/coalescing_cert_verifier.h"
+ #include "net/cert/x509_util.h"
+@@ -99,10 +101,6 @@
+ #include "net/http/http_cache.h"
+ #include "net/http/http_network_layer.h"
+ #include "net/http/http_network_session.h"
+-#include "net/base/host_port_pair.h"
+-#include "net/socket/ssl_client_socket.h"
+-#include "net/socket/sorng_tls_policy.h"
+-#include "net/cert/cert_status_flags.h"
+ #include "net/http/http_request_headers.h"
+ #include "net/http/http_server_properties.h"
+ #include "net/http/http_transaction_factory.h"
+@@ -111,6 +109,8 @@
+ #include "net/proxy_resolution/configured_proxy_resolution_service.h"
+ #include "net/proxy_resolution/proxy_config.h"
+ #include "net/shared_dictionary/shared_dictionary_isolation_key.h"
++#include "net/socket/sorng_tls_policy.h"
++#include "net/socket/ssl_client_socket.h"
+ #include "net/ssl/ech_mode_getter.h"
+ #include "net/ssl/ssl_config_service.h"
+ #include "net/storage_access_api/status.h"
+@@ -741,7 +741,8 @@
+     pending_.erase(it);
+     const bool admitted = sorng_tls::Admit(IsActive(), native_error, status, fatal,
+                                           decision, exception_mask);
+-    // Browser answers, failures and timeouts all resume on the network sequence.
++    // Browser answers, failures and timeouts all resume on the network
++    // sequence.
+     std::move(callback).Run(admitted ? net::OK : net::ERR_BLOCKED_BY_CLIENT);
+   }
+   void FailClosed() {
+@@ -2200,6 +2201,26 @@
+   proxy_lookup_request_ptr->Start(url);
+ }
+ 
++void NetworkContext::LookUpSorngFixedProxy(
++    uint16_t port,
++    mojo::PendingRemote<mojom::ProxyLookupClient> client) {
++  if (!client)
++    return;
++  mojo::Remote<mojom::ProxyLookupClient> reply(std::move(client));
++  net::ConfiguredProxyResolutionService* service = nullptr;
++  net::ProxyInfo info;
++  if (!params_->sorng_tls_generation || !port ||
++      !url_request_context()
++           ->proxy_resolution_service()
++           ->CastToConfiguredProxyResolutionService(&service) ||
++      !service->GetSorngFixedProxy(port, &info)) {
++    reply->OnProxyLookupComplete(net::ERR_PROXY_CONNECTION_FAILED,
++                                 std::nullopt);
++    return;
++  }
++  reply->OnProxyLookupComplete(net::OK, info);
++}
++
+ void NetworkContext::ForceReloadProxyConfig(
+     ForceReloadProxyConfigCallback callback) {
+   net::ConfiguredProxyResolutionService* configured_proxy_resolution_service =
