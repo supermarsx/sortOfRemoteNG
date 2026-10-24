@@ -1,0 +1,28 @@
+{
+  "schemaVersion": 1,
+  "kind": "sorng-cef-reviewed-host-cross-build-inputs",
+  "scope": "Metadata-only MacARM Intel-cross source recipe with reviewed SDK capture compatibility; no compilation or native acceptance",
+  "sourceLockIdentity": "96cf240295fd3332882da4a60d306e4248b926b461e3bdbe2e78117c03bea5d0",
+  "baseNamespace": "native/cef-build-inputs/20261023-registration-retirement-lf-macarm-intelcross-xcode26-3-sdk26-2",
+  "baseSourceLockIdentity": "a679635c674febe0b151f72aa6cdfedb48b7ed0efa3dc73c737b800eff49aa14",
+  "oldPayloadPinsByteExact": 15,
+  "oldRunnerMapByteExact": true,
+  "onlyAddedPatch": {
+    "path": "patches/0013-webrtc-macos-legacy-capture-deprecation-compat.patch",
+    "repository": "cef",
+    "sha256": "aefd044086fdf0ba24965eb716981a7428fa8fc8b6fd68a441934d11b9d63e91"
+  },
+  "buildHost": {
+    "runner": "macos-15-intel",
+    "architecture": "x64",
+    "imageVersion": "20260824.0482.1"
+  },
+  "target": "aarch64-apple-darwin",
+  "acceptanceRunner": "macos-15",
+  "acceptanceArchitecture": "arm64",
+  "engineBuildAttempted": false,
+  "nativeAcceptancePerformed": false,
+  "publicationAllowed": false,
+  "defaultRuntimeChanged": false,
+  "priorNativeProofTransferred": false
+}
