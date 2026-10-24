@@ -1,0 +1,30 @@
+{
+  "schemaVersion": 1,
+  "kind": "owned-linux-x64-source-and-observed-tool-inputs",
+  "target": "x86_64-unknown-linux-gnu",
+  "baseNamespace": "native/cef-build-inputs/20261023-registration-retirement-lf",
+  "baseIdentity": "254fc0acc6001def832bed411ba320bfebd8111aeca64ee8c572512c0369d689",
+  "sourceLockIdentity": "49f23608a686da56a32a2c825b51fa2577bcbba6353d5f9587a0c68dec9df68e",
+  "unchangedRawPayloads": 14,
+  "bridgeAbiVersion": 2,
+  "bridgeRevision": 4,
+  "bridgeCapabilities": 8,
+  "imageId": "sha256:5c3e8c42ac5a58ca0ec31df6dfc45d57af3c663ed53b8e4d7171e18f31480930",
+  "rawObservedToolFiles": 8,
+  "runnerMapSchema": 1,
+  "buildJobs": 8,
+  "syncJobs": 2,
+  "engineBuilt": false,
+  "nativeAcceptancePassed": false,
+  "nativeAcceptanceRequired": true,
+  "published": false,
+  "productionReady": false,
+  "scope": "Native Linux x64 only; does not prove Linux ARM, Windows or Mac build capacity",
+  "sourceSemantics": "Twelve LF patches, bridge header, upstream revisions and native Linux GN bytes preserved exactly. New identity pins the observed owned image, package inventory, copied tool bytes and schema1 native runner map. No hosted image identity or prior Windows acceptance is transferred.",
+  "knownLimitations": [
+    "Parent immutable image/volume/source-copy provenance and actual confinement gates required before engine execution",
+    "Python/Git/pkgconf retain immutable image /usr dependencies; no hermetic independent tool distribution claim",
+    "Actual CEF compilation/package/native Linux acceptance remains required",
+    "Engine source/output retained on owned volume; no private controller/runner registration/publication performed"
+  ]
+}
