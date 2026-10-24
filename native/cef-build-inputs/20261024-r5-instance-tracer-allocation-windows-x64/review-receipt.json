@@ -1,0 +1,40 @@
+{
+  "schemaVersion": 1,
+  "kind": "sorng-cef-build-input-review",
+  "scope": "Metadata-only additive Windows x64 revision5 tracer allocation fix; not compiled, native-tested, SDK-accepted, or published",
+  "sourceLockIdentity": "16d1388e8949a8e027ed8f67fab0ea1a8a334c0b717e85b6a2b368660549562a",
+  "sourceLockRawSha256": "4e699b66a2fbf45f64d048d8228b2ec0738837a75647fbd7bcb0a45b51a2464a",
+  "baseSourceLockIdentity": "270cddedf6ad74d019f37311dbb87833f71849671e8d73a77d70fc7222ac6286",
+  "baseSource": "Actual immutable owned-http3-mtu package inputs",
+  "bridgeAbiVersion": 2,
+  "bridgeRevision": 5,
+  "capabilities": [
+    "socket-admission",
+    "context-revoke",
+    "same-authority-http2",
+    "scoped-exceptions",
+    "custom-ca",
+    "private-context",
+    "proxy-applied",
+    "bounded-context-retirement",
+    "owned-http3"
+  ],
+  "old16PatchesHeaderGnToolchainBytesUnchanged": true,
+  "actualToolFilesVerified": 8,
+  "onlyNewPatch": {
+    "repository": "chromium",
+    "path": "patches/0017-chromium-instance-tracer-allocation-reentrancy.patch",
+    "sha256": "b205aaa31e25efa35e54bf56b929caf21208c4e6fbb95f23ac3f46d9123c4858"
+  },
+  "upstreamPreimages": "upstream-sha256.json",
+  "preimageScope": "Original canonical inventory copied unchanged plus pristine partition_alloc/BUILD.gn; no upstream or DEPS revision change",
+  "runtimeAcceptance": false,
+  "engineCompiled": false,
+  "defaultSelectionChanged": false,
+  "remainingGates": [
+    "Independent source/input review",
+    "Authorized actual GN and focused whole-engine build",
+    "New immutable package and matching symbols",
+    "Actual native runtime acceptance; no prior runtime proof transferred"
+  ]
+}
