@@ -176,7 +176,7 @@ jobs:
       - run: npm ci
       - run: npm run dev:launcher:test
       - run: npm run test:coverage
-      - uses: actions/upload-artifact@v6
+      - uses: actions/upload-artifact@v7.0.2
         with:
           name: coverage
           path: coverage
@@ -566,7 +566,7 @@ jobs:
         run: node --test tests/tooling/browserRuntimePackage.node-test.mjs tests/tooling/browserAppBuild.node-test.mjs tests/tooling/windowsNativeCrashCapture.node-test.mjs tests/tooling/browserCustomRuntime.node-test.mjs tests/tooling/cefHttp2Admission.node-test.mjs tests/tooling/cefRuntimeCI.node-test.mjs tests/tooling/cefRuntimeAcceptanceCI.node-test.mjs tests/tooling/cefEngineeringCheckpoint.node-test.mjs tests/tooling/cefOwnedSdkHandoff.node-test.mjs tests/tooling/cefOwnedSdkImport.node-test.mjs tests/tooling/cefOwnedSdkPublish.node-test.mjs tests/tooling/cefSdkLayoutProbeWorkflow.node-test.mjs tests/tooling/cefHostedBootstrap.node-test.mjs tests/tooling/cefHostedProvision.node-test.mjs tests/tooling/cefSandboxObserver.node-test.mjs tests/tooling/cefMacSdkInventory.node-test.mjs tests/tooling/cefMacLegacyCapture.node-test.mjs
       - name: Upload sanitized fixture results
         if: always()
-        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: browser-transport-contracts-${{ runner.os }}
           path: |
