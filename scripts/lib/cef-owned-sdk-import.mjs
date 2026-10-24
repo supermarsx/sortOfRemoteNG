@@ -26,6 +26,11 @@ import { inspectNativeBinary } from "../browser-runtime-package.mjs";
 import {
   WINDOWS_INCREMENTAL_EVIDENCE,
   WINDOWS_INCREMENTAL_PROVENANCE,
+  WINDOWS_CAPSULE_ORIGIN,
+  WINDOWS_CAPSULE_IDENTITY,
+  WINDOWS_CAPSULE_EVIDENCE,
+  WINDOWS_CAPSULE_PROVENANCE,
+  ownedEvidenceLimit,
 } from "./cef-owned-sdk-handoff.mjs";
 import {
   RELEASE_LIMITS,
@@ -52,6 +57,7 @@ const origins = {
   "existing-windows-package": "x86_64-pc-windows-msvc",
   "owned-linux-engine": "x86_64-unknown-linux-gnu",
   "owned-windows-incremental-engine": "x86_64-pc-windows-msvc",
+  "owned-windows-capsule-lifetime-engine": "x86_64-pc-windows-msvc",
 };
 export function parseOwnedJson(bytes) {
   try {
@@ -79,14 +85,12 @@ function exact(value, keys) {
     "Closed owned-import fields required",
   );
 }
-function rawPin(pin) {
+function rawPin(pin, maximum = RELEASE_LIMITS.metadata) {
   exact(pin, ["path", "sha256", "size"]);
   releaseRelativePath(pin.path);
   digest(pin.sha256);
   assert(
-    pin.path.length <= 256 &&
-      positive(pin.size) &&
-      pin.size <= RELEASE_LIMITS.metadata,
+    pin.path.length <= 256 && positive(pin.size) && pin.size <= maximum,
     "Bounded relative raw evidence pin required",
   );
 }
@@ -144,21 +148,33 @@ export function validateOwnedReview(review) {
   ]);
   digest(review.reviewBinding.canonicalReviewSha256);
   const names =
-    review.origin === "owned-windows-incremental-engine"
-      ? WINDOWS_INCREMENTAL_EVIDENCE
-      : review.origin === "existing-windows-package"
-        ? ["build"]
-        : [
-            "prepared",
-            "started",
-            "container",
-            "finished",
-            "producer",
-            "freshCheck",
-          ];
+    review.origin === WINDOWS_CAPSULE_ORIGIN
+      ? WINDOWS_CAPSULE_EVIDENCE
+      : review.origin === "owned-windows-incremental-engine"
+        ? WINDOWS_INCREMENTAL_EVIDENCE
+        : review.origin === "existing-windows-package"
+          ? ["build"]
+          : [
+              "prepared",
+              "started",
+              "container",
+              "finished",
+              "producer",
+              "freshCheck",
+            ];
   exact(review.reviewBinding.evidencePins, names);
-  for (const pin of Object.values(review.reviewBinding.evidencePins))
-    rawPin(pin);
+  for (const [role, pin] of Object.entries(review.reviewBinding.evidencePins))
+    rawPin(pin, ownedEvidenceLimit(review.origin, role));
+  if (review.origin === WINDOWS_CAPSULE_ORIGIN)
+    assert(
+      review.sourceLockIdentity === WINDOWS_CAPSULE_IDENTITY &&
+        Object.values(review.reviewBinding.evidencePins).reduce(
+          (sum, pin) => sum + pin.size,
+          0,
+        ) <=
+          96 * 1024 ** 2,
+      "Closed capsule identity and evidence total required",
+    );
   exact(review.reviewBinding.verificationPython, ["sha256", "size"]);
   digest(review.reviewBinding.verificationPython.sha256);
   assert(
@@ -291,6 +307,74 @@ export function validateLocalHandoff(review, bytes) {
         value.provenance.newEngineBuildClaimed === false &&
         value.provenance.engineSha256 === review.engineSha256,
       "Original Windows evidence identity differs",
+    );
+  } else if (review.origin === WINDOWS_CAPSULE_ORIGIN) {
+    exact(value.provenance, WINDOWS_CAPSULE_PROVENANCE);
+    const p = value.provenance;
+    digest(p.baselineEngineSha256);
+    exact(
+      p.reviewedEvidenceDigests,
+      WINDOWS_CAPSULE_EVIDENCE.filter((role) => role !== "build"),
+    );
+    for (const [role, sha] of Object.entries(p.reviewedEvidenceDigests))
+      assert(
+        sha === review.reviewBinding.evidencePins[role].sha256,
+        "Original capsule raw evidence differs",
+      );
+    exact(p.nestedOriginalRecordDigests, [
+      "nativeManifest",
+      "nativeStageReceipts",
+      "nativeObservations",
+      "nativeReceipt",
+      "generatedFlags",
+      "engineRecord",
+    ]);
+    const nested = p.nestedOriginalRecordDigests;
+    for (const role of [
+      "nativeManifest",
+      "nativeReceipt",
+      "generatedFlags",
+      "engineRecord",
+    ])
+      digest(nested[role]);
+    exact(nested.nativeStageReceipts, [
+      "apply-check",
+      "apply-test-dependency",
+      "security-build",
+      "owned-quic-lifetime-full-list",
+      "owned-quic-lifetime-full-run",
+      "brp-dpd-list",
+      "brp-dpd-run",
+      "sandbox-list",
+      "sandbox-run",
+    ]);
+    for (const sha of Object.values(nested.nativeStageReceipts)) digest(sha);
+    assert(
+      Array.isArray(nested.nativeObservations) &&
+        nested.nativeObservations.length === 4,
+      "Original observation digest set required",
+    );
+    for (const sha of nested.nativeObservations) digest(sha);
+    assert(
+      nested.engineRecord === review.reviewBinding.evidencePins.engine.sha256,
+      "Original engine record digest differs",
+    );
+    assert(
+      p.engineSha256 === review.engineSha256 &&
+        p.baselineEngineSha256 !== review.engineSha256 &&
+        /^[a-f0-9]{40}$/.test(p.originalControllerCommit) &&
+        p.actualToolFilesVerified === 8 &&
+        p.nativeClassTestsPassed === 42 &&
+        JSON.stringify(p.nativeProfileCounts) === "[36,3,3]" &&
+        p.actualSourceFilesVerified === 9 &&
+        p.securityMacroCount === 61 &&
+        p.instanceTracerEnabled === false &&
+        p.incrementalBuild === true &&
+        p.originalBuildRecordsPinned === true &&
+        p.originalBuildReplayed === false &&
+        p.pristineSourceBuild === false &&
+        p.derivedFacts === true,
+      "Original capsule Windows evidence identity differs",
     );
   } else if (review.origin === "owned-windows-incremental-engine") {
     exact(value.provenance, WINDOWS_INCREMENTAL_PROVENANCE);

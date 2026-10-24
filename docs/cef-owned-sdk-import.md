@@ -47,3 +47,44 @@ After a successful direct native acceptance run, register a separately reviewed 
 The manual `cef-owned-sdk-publish.yml` workflow verifies that record using an ephemeral job-scoped, write-capable credential because verification downloads the private Draft; its verifier performs GET requests only. Native acceptance likewise reserves that capability for the `owned-import` and `engineering-sdk` Draft download jobs; ordinary hosted-artifact jobs and the planner keep read-only permissions. The reusable caller supplies the required permission ceiling while those read-only jobs explicitly downscope it. Publication repeats verification in the `cef-runtime-publish` environment before immutable engineering publication; this workflow reference does not establish that repository approval rules have been configured. Its publication queue does not cancel an active publisher. Successful verification preserves the original local-build provenance and never claims hosted compilation or production readiness.
 
 Actual review records, successful native runs, immutable catalog pins and all required platform acceptance remain necessary before an application release. These opt-in workflows do not change runtime defaults or the all-platform release gate.
+
+### Owned Windows capsule lifetime engine (source22)
+
+`owned-windows-capsule-lifetime-engine` is a separate x64-only local provenance
+class, closed to source identity
+`bdc724576452178e82a6d9732aaaf1a770e277ddf5ce5cad5a4d65ac242a9629`
+and its 22 patches. It requires the exact 36 owned transport/lifetime tests,
+three BRP/DPD tests and three sandbox tests; nine original native Job records;
+the nine reviewed source files, eight tools and all 61 generated security
+macros. The older 17-patch/12-test Windows path and Linux/R4 paths retain their
+existing contracts.
+
+The eighteen evidence roles distinguish original raw records from explicitly
+derived binding records. Derived public provenance carries original record
+digests, profile counts and fixed security facts, without local Python paths.
+An envelope containing an original record retains its exact UTF-8 text and SHA;
+its own digest is separately identified. Do not sanitize a record and present
+its old hash as the new record's identity. Large DLL/PDB beforeimages remain
+local; metadata carries their original digests, not multi-gigabyte JSON data.
+
+Only this origin's complete `engineOutput` may be up to 64 MiB. Other evidence
+items keep the existing metadata limit; total evidence is bounded at 96 MiB.
+Original text must be valid UTF-8, complete and hash-matched. Oversized output
+fails; truncation is not a valid replacement for a genuine build log.
+
+Synthetic schema fixtures do not establish an actual engine or SDK. A genuine
+handoff still needs a successful owned full engine Job, original deadline and
+cleanup/postchecks, matching new DLL/PDB identities, maintained distribution,
+archive roundtrip and fresh prepared-SDK verification. Import remains an
+operator-reviewed local byte ingestion, never hosted compilation. The existing
+five-asset, source/seal/API/attempt, fresh token-free verifier and redirect
+checks remain mandatory. Native platform and browser acceptance are still
+required before any runtime publication or release eligibility.
+
+Public `reviewedEvidenceDigests` names hashes of the seventeen reviewed evidence
+roles, including any explicitly derived envelopes. It does not call envelope
+hashes the hashes of their nested originals. The separate
+`nestedOriginalRecordDigests` records the exact original native manifest,
+nine stage receipts, four observations, native receipt, generated flags and
+engine-record hashes. The pinned envelopes retain those original bytes for
+verification; public provenance exposes their hashes rather than raw bodies.

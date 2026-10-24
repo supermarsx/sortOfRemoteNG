@@ -15,11 +15,20 @@ import {
 import path from "node:path";
 import os from "node:os";
 import { fileURLToPath } from "node:url";
+import fs from "node:fs";
+import { syncBuiltinESMExports } from "node:module";
 import {
   ownedSdkHandoffPlan,
   verifyOwnedHandoffEvidence,
   checkOwnedSdkHandoff,
   ownedHandoffReviewBinding,
+  WINDOWS_CAPSULE_ORIGIN,
+  WINDOWS_CAPSULE_IDENTITY,
+  WINDOWS_CAPSULE_EVIDENCE,
+  WINDOWS_CAPSULE_SOURCE_PINS,
+  WINDOWS_CAPSULE_TOOL_PINS,
+  WINDOWS_CAPSULE_MACROS,
+  WINDOWS_CAPSULE_PROFILES,
 } from "../../scripts/lib/cef-owned-sdk-handoff.mjs";
 import {
   identitySha256,
@@ -382,9 +391,11 @@ async function fixture(t, incremental = false) {
   const inputs = path.join(work, "inputs"),
     sourceInputs = path.join(
       root,
-      incremental
-        ? "native/cef-build-inputs/20261024-r5-instance-tracer-allocation-windows-x64"
-        : "native/cef-build-inputs/20261023-registration-retirement-lf",
+      incremental === "capsule"
+        ? "native/cef-build-inputs/20261024-r5-trace-helper-static-package-name-windows-x64"
+        : incremental
+          ? "native/cef-build-inputs/20261024-r5-instance-tracer-allocation-windows-x64"
+          : "native/cef-build-inputs/20261023-registration-retirement-lf",
     );
   const lockBytes = await readFile(path.join(sourceInputs, "source-lock.json")),
     lock = JSON.parse(lockBytes),
@@ -499,7 +510,7 @@ async function fixture(t, incremental = false) {
     },
     evidence: { build: pin("build.json", buildBytes) },
   };
-  if (incremental) {
+  if (incremental && incremental !== "capsule") {
     const checkedManifest = JSON.parse(
       await readFile(path.join(bundle, "manifest.json"), "utf8"),
     );
@@ -536,6 +547,52 @@ async function fixture(t, incremental = false) {
       python: value.python,
       descriptorSha256: hash(descriptorBytes),
     };
+  }
+  if (incremental === "capsule") {
+    const f = await capsuleFixture(),
+      manifest = JSON.parse(await readFile(path.join(bundle, "manifest.json")));
+    f.input.python = value.python;
+    f.input.descriptorSha256 = hash(descriptorBytes);
+    const outputs = f.r.engine.engine.outputs;
+    for (const [name, bytes] of [
+      ["libcef.dll", library],
+      ["bootstrap.exe", pe()],
+      ["bootstrapc.exe", pe()],
+      ["libcef.dll.lib", Buffer.from("fixture import lib")],
+    ])
+      Object.assign(
+        outputs.find((row) => row.path === name),
+        { bytes: bytes.length, sha256: hash(bytes) },
+      );
+    Object.assign(f.r.package, {
+      engineSha256: hash(library),
+      sdkFiles: manifest.artifacts[0].sdkFiles.length,
+      preparedSdkFiles: manifest.artifacts[0].sdkFiles.length,
+      archive: {
+        path: descriptor.archive.path,
+        size: descriptor.archive.size,
+        sha256: descriptor.archive.sha256,
+      },
+      metadataAndArchiveHashes: await Promise.all(
+        [
+          "source-lock.json",
+          "manifest.json",
+          "receipt.json",
+          identity.archive,
+        ].map(async (name) => {
+          const bytes = await readFile(path.join(bundle, name));
+          return { path: name, bytes: bytes.length, sha256: hash(bytes) };
+        }),
+      ),
+    });
+    f.seal();
+    for (const [name, record] of Object.entries(f.r))
+      await put(
+        evidence,
+        f.input.evidence[name].path,
+        typeof record === "string" ? record : JSON.stringify(record),
+      );
+    value = f.input;
   }
   const output = path.join(
     await realpath(path.join(root, ".artifacts")),
@@ -1003,4 +1060,543 @@ test("real structural R5 archive roundtrip keeps all thirteen original evidence 
   assert.equal(Object.keys(result.reviewBinding.evidencePins).length, 13);
   assert.equal(result.hostedBuild, false);
   assert.equal(result.publicationAllowed, false);
+});
+
+// Synthetic schema records only; these never attest a real engine or SDK.
+async function capsuleFixture() {
+  const lock = JSON.parse(
+    await readFile(
+      path.join(
+        root,
+        "native/cef-build-inputs/20261024-r5-trace-helper-static-package-name-windows-x64/source-lock.json",
+      ),
+    ),
+  );
+  assert.equal(identitySha256(lock), WINDOWS_CAPSULE_IDENTITY);
+  const job = {
+    kind: "owned-job-proof",
+    success: true,
+    started: true,
+    assignedBeforeResume: true,
+    resumed: true,
+    handleListOnly: true,
+    outcome: "success",
+    rootExit: 0,
+    finalRootExit: 0,
+    rootReaped: true,
+    cleanupVerified: true,
+    activeAtEnd: 0,
+    logReadersStopped: true,
+    cleanupBudgetMs: 30000,
+    rootPid: 42,
+    rootCreationFiletime: "1234",
+    elapsedMs: 100,
+  };
+  const deadline = {
+    originalDeadlineUtc: "2026-10-25T00:35:33Z",
+    originalMonotonicEnd: 1414850.593,
+  };
+  const nativePost = {
+    source9ToolsFlagsRuntimeGraph: { verified: true },
+    gitHeads: { verified: true },
+    source22Inputs: { verified: true },
+  };
+  const native = {
+    kind: "source22-fresh-native-continuation",
+    success: true,
+    native: {
+      ...deadline,
+      success: true,
+      sourceLockIdentity: WINDOWS_CAPSULE_IDENTITY,
+      nativeRecords: 42,
+      patch22Applied: true,
+      finalDeadlineAdmission: { verified: true },
+      postVerification: nativePost,
+      stages: [
+        "apply-check",
+        "apply-test-dependency",
+        "security-build",
+        "owned-quic-lifetime-full-list",
+        "owned-quic-lifetime-full-run",
+        "brp-dpd-list",
+        "brp-dpd-run",
+        "sandbox-list",
+        "sandbox-run",
+      ].map((name) => ({ name, job: structuredClone(job) })),
+    },
+  };
+  const r = {
+    native,
+    engineJob: job,
+    engineOutput: "build finished\nnoexec:0 local:20 remote:0 cache:0 skip:0\n",
+  };
+  const nativeRows = [{ path: "continuation.json", bytes: 1, sha256: digest }];
+  for (const [profile, out, list] of [
+    ["owned-quic-lifetime-full", "nativeFocusedOutput", "nativeFocusedList"],
+    ["brp-dpd", "nativeBrpOutput", "nativeBrpList"],
+    ["sandbox", "nativeSandboxOutput", "nativeSandboxList"],
+  ]) {
+    const names = WINDOWS_CAPSULE_PROFILES[profile];
+    r[out] =
+      names
+        .map((name, index) => `[${index + 1}/${names.length}] ${name} (1 ms)`)
+        .join("\n") + "\nSUCCESS: all tests passed.\n";
+    let suite = "";
+    r[list] = "";
+    for (const name of names) {
+      const [next, test] = name.split(".");
+      if (next !== suite) {
+        suite = next;
+        r[list] += suite + ".\n";
+      }
+      r[list] += "  " + test + "\n";
+    }
+    nativeRows.push(
+      { path: profile + "-run/stdout.log", bytes: 1, sha256: digest },
+      { path: profile + "-list/stdout.log", bytes: 1, sha256: digest },
+    );
+  }
+  for (const row of native.native.stages)
+    nativeRows.push({
+      path: row.name + "/receipt.json",
+      bytes: 1,
+      sha256: digest,
+    });
+  while (nativeRows.length < 57)
+    nativeRows.push({
+      path: `retained-${nativeRows.length}.json`,
+      bytes: 1,
+      sha256: digest,
+    });
+  r.nativeJobs = {};
+  r.engineSymbols = {
+    machine: "AMD64",
+    guid: "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
+    age: 1,
+    scope:
+      "Bounded PE RSDS / MSF7 PDB info-stream identity; not full PDB validation",
+  };
+  r.engine = {
+    kind: "source22-engine-fresh-continuation",
+    success: true,
+    engineStarted: true,
+    sourceLockIdentity: WINDOWS_CAPSULE_IDENTITY,
+    engine: {
+      ...deadline,
+      kind: "source22-one-owned-engine-build",
+      success: true,
+      sourceLockIdentity: WINDOWS_CAPSULE_IDENTITY,
+      job,
+      argv: [
+        "C:/Python/python.exe",
+        "F:/tools/autoninja.py",
+        "-j8",
+        "-C",
+        "out/Release_GN_x64",
+        "cef",
+        "cef_sandbox",
+        "bootstrap",
+        "bootstrapc",
+      ],
+      capSeconds: 3600,
+      finalDeadlineAdmission: { verified: true },
+      postVerification: {
+        source9ToolsFlagsGraph: { verified: true },
+        gitHeads: { verified: true },
+        source22Inputs: { verified: true },
+      },
+      symbols: r.engineSymbols,
+      outputs: [
+        "libcef.dll",
+        "libcef.dll.pdb",
+        "bootstrap.exe",
+        "bootstrapc.exe",
+        "bootstrap.lib",
+        "libcef.dll.lib",
+        "obj/cef/cef_sandbox.lib",
+      ].map((name) => ({ path: name, bytes: 100, sha256: "e".repeat(64) })),
+    },
+  };
+  r.engineBeforeimage = [
+    ...WINDOWS_CAPSULE_SOURCE_PINS.map((row) => ({ role: "source", ...row })),
+    ...r.engine.engine.outputs.map((row) => ({
+      role: "runtime",
+      path: row.path,
+      bytes: 50,
+      sha256: "f".repeat(64),
+    })),
+  ];
+  r.distribution = {
+    receipt: job,
+    argv: [
+      "python.exe",
+      "tools/make_distrib.py",
+      "--ninja-build",
+      "--x64-build",
+      "--minimal",
+      "--allow-partial",
+      "--no-archive",
+      "--no-docs",
+    ],
+  };
+  r.preparation = { receipt: job };
+  r.package = {
+    kind: "immutable-local-capsule22-sdk-package",
+    derivedFacts: true,
+    sourceLockIdentity: WINDOWS_CAPSULE_IDENTITY,
+    engineSha256: "e".repeat(64),
+    bridgePatchId: lock.bridge.patchId,
+    headerSha256: lock.bridge.header.sha256,
+    sdkFiles: 953,
+    preparedSdkFiles: 953,
+    snapshotRsdsPdbMatched: true,
+    source9Tool8ArgsFlagsPostchecks: true,
+    productionReady: false,
+    selected: false,
+    published: false,
+  };
+  r.build = {
+    kind: "derived-local-windows-capsule-build-bindings",
+    derivedFacts: true,
+    sourceLockIdentity: WINDOWS_CAPSULE_IDENTITY,
+    controllerCommit: controller,
+    policy: {
+      cpuRate: 2000,
+      memoryBytes: 32 * 1024 ** 3,
+      processLimit: 128,
+      inheritedHandles: 3,
+      cleanupMs: 30000,
+      jobs: 8,
+      ...deadline,
+    },
+    recordDigests: {},
+  };
+  const input = {
+    ...review(),
+    origin: WINDOWS_CAPSULE_ORIGIN,
+    sourceLockIdentity: WINDOWS_CAPSULE_IDENTITY,
+    evidence: {},
+  };
+  const textRoles = new Set([
+    "engineOutput",
+    "nativeFocusedOutput",
+    "nativeBrpOutput",
+    "nativeSandboxOutput",
+    "nativeFocusedList",
+    "nativeBrpList",
+    "nativeSandboxList",
+  ]);
+  const encoded = (role) =>
+    Buffer.from(textRoles.has(role) ? r[role] : JSON.stringify(r[role]));
+  const wrap = (record) => {
+    const rawUtf8 = JSON.stringify(record);
+    return { rawUtf8, sha256: hash(rawUtf8) };
+  };
+  function seal() {
+    for (const [role, suffix] of [
+      ["native", "continuation.json"],
+      ["nativeFocusedOutput", "owned-quic-lifetime-full-run/stdout.log"],
+      ["nativeFocusedList", "owned-quic-lifetime-full-list/stdout.log"],
+      ["nativeBrpOutput", "brp-dpd-run/stdout.log"],
+      ["nativeBrpList", "brp-dpd-list/stdout.log"],
+      ["nativeSandboxOutput", "sandbox-run/stdout.log"],
+      ["nativeSandboxList", "sandbox-list/stdout.log"],
+    ]) {
+      Object.assign(
+        nativeRows.find((row) => row.path === suffix),
+        { bytes: encoded(role).length, sha256: hash(encoded(role)) },
+      );
+    }
+    const stageReceipts = Object.fromEntries(
+      native.native.stages.map((row) => [row.name, wrap(row.job)]),
+    );
+    for (const [name, wrapped] of Object.entries(stageReceipts))
+      Object.assign(
+        nativeRows.find((row) => row.path === name + "/receipt.json"),
+        { bytes: Buffer.byteLength(wrapped.rawUtf8), sha256: wrapped.sha256 },
+      );
+    const observations = [0, 1, 2, 3].map((i) =>
+      wrap({ syntheticObservation: i }),
+    );
+    const manifest = {
+      files: nativeRows,
+      observationFiles: observations.map((wrapped, i) => ({
+        path: `observation-${i}`,
+        sha256: wrapped.sha256,
+        bytes: Buffer.byteLength(wrapped.rawUtf8),
+      })),
+    };
+    const originalManifest = wrap(manifest),
+      manifestSha = originalManifest.sha256;
+    r.nativeJobs = {
+      kind: "derived-capsule-original-native-records",
+      derivedFacts: true,
+      originalManifest,
+      stageReceipts,
+      observations,
+    };
+    r.engine.engine.native42ManifestSha256 = manifestSha;
+    r.sourcePostchecks = {
+      kind: "derived-capsule-original-postcheck-records",
+      derivedFacts: true,
+      nativeReceipt: wrap({
+        kind: "actual-source22-genuine-native42-pass",
+        sourceLockIdentity: WINDOWS_CAPSULE_IDENTITY,
+        rawManifestSha256: manifestSha,
+        nativePassingRecords: 42,
+        allNativeJobsQuiescent: true,
+        finalDeadlineAdmission: { verified: true },
+        actualSource9: WINDOWS_CAPSULE_SOURCE_PINS,
+        postVerification: nativePost,
+      }),
+      generatedFlags: wrap({
+        macroCount: 61,
+        macros: WINDOWS_CAPSULE_MACROS,
+        actualTool8: WINDOWS_CAPSULE_TOOL_PINS,
+      }),
+    };
+    r.package.originalRecordDigests = Object.fromEntries(
+      ["distribution", "preparation"].map((role) => [
+        role,
+        hash(encoded(role)),
+      ]),
+    );
+    r.engineSymbols = {
+      kind: "derived-capsule-engine-symbol-identity",
+      derivedFacts: true,
+      originalEngineRecordSha256: hash(encoded("engine")),
+      symbols: r.engine.engine.symbols,
+    };
+    r.build.recordDigests = Object.fromEntries(
+      WINDOWS_CAPSULE_EVIDENCE.filter((role) => role !== "build").map(
+        (role) => [role, hash(encoded(role))],
+      ),
+    );
+    input.evidence = Object.fromEntries(
+      WINDOWS_CAPSULE_EVIDENCE.map((role) => [
+        role,
+        pin(role + ".json", encoded(role)),
+      ]),
+    );
+  }
+  seal();
+  return { lock, r, input, seal };
+}
+test("capsule source22 has its own exact42 schema, without transferring browser acceptance", async () => {
+  const f = await capsuleFixture(),
+    p = verifyOwnedHandoffEvidence(f.input, f.r, f.lock);
+  assert.equal(p.nativeClassTestsPassed, 42);
+  assert.deepEqual(p.nativeProfileCounts, [36, 3, 3]);
+  assert.equal(p.derivedFacts, true);
+  const plan = ownedSdkHandoffPlan(f.input);
+  assert.equal(plan.productionReady, false);
+  assert.equal(plan.nativeAcceptance, "not-tested");
+});
+test("capsule schema rejects profile, policy, original-record, namespace and package drift", async () => {
+  const mutations = [
+    (f) => (f.r.native.native.stages[0].job.rootReaped = false),
+    (f) => (f.r.native.native.nativeRecords = 12),
+    (f) => (f.r.native.native.finalDeadlineAdmission.verified = false),
+    (f) =>
+      (f.r.nativeFocusedOutput = f.r.nativeFocusedOutput.replace(
+        "[1/36]",
+        "[2/36]",
+      )),
+    (f) =>
+      (f.r.nativeBrpOutput = f.r.nativeBrpOutput.replace(
+        "BackupRefPtrTest.Basic",
+        "BackupRefPtrTest.Unknown",
+      )),
+    (f) => (f.r.nativeSandboxOutput += "\nRETRY\n"),
+    (f) =>
+      (f.r.nativeFocusedList = f.r.nativeFocusedList.replace(
+        "  CloseReleasesFactoryAndStreamBeforeOwnerDies",
+        "  DISABLED_CloseReleasesFactoryAndStreamBeforeOwnerDies",
+      )),
+    (f) => (f.r.engine.engine.job.activeAtEnd = 1),
+    (f) => (f.r.engine.engine.finalDeadlineAdmission.verified = false),
+    (f) => (f.r.engine.engine.argv[2] = "-j16"),
+    (f) => (f.r.engine.engine.symbols.age = 0),
+    (f) => (f.r.package.sourceLockIdentity = "f".repeat(64)),
+    (f) => (f.r.package.engineSha256 = "a".repeat(64)),
+    (f) => (f.r.build.policy.cpuRate = 10000),
+    (f) => (f.r.engineBeforeimage[0].sha256 = "a".repeat(64)),
+    (f) => f.lock.patches.push(f.lock.patches[0]),
+  ];
+  for (const mutate of mutations) {
+    const f = await capsuleFixture();
+    mutate(f);
+    f.seal();
+    assert.throws(() => verifyOwnedHandoffEvidence(f.input, f.r, f.lock));
+  }
+});
+test("only capsule engine output gets64MiB allowance; total evidence remains96MiB", async () => {
+  const f = await capsuleFixture();
+  f.input.evidence.engineOutput.size = 64 * 1024 ** 2;
+  assert.doesNotThrow(() => ownedSdkHandoffPlan(f.input));
+  f.input.evidence.engineOutput.size++;
+  assert.throws(() => ownedSdkHandoffPlan(f.input));
+  const g = await capsuleFixture();
+  g.input.evidence.nativeFocusedOutput.size = 64 * 1024 ** 2;
+  assert.throws(() => ownedSdkHandoffPlan(g.input));
+  for (const row of Object.values(g.input.evidence)) row.size = 1024 ** 2;
+  g.input.evidence.engineOutput.size = 64 * 1024 ** 2;
+  assert.doesNotThrow(() => ownedSdkHandoffPlan(g.input));
+  g.input.origin = "owned-windows-incremental-engine";
+  assert.throws(() => ownedSdkHandoffPlan(g.input));
+});
+
+test("capsule structural archive path preserves source22 and all eighteen original evidence roles", async (t) => {
+  const f = await fixture(t, "capsule"),
+    result = await checkOwnedSdkHandoff({ ...f, execute: true });
+  assert.equal(result.provenance.nativeClassTestsPassed, 42);
+  assert.equal(result.provenance.instanceTracerEnabled, false);
+  assert.equal(Object.keys(result.reviewBinding.evidencePins).length, 18);
+  assert.equal(result.nativeAcceptance, "not-tested");
+});
+test("capsule original flags/tools and raw evidence cannot be substituted behind re-pinned derived envelopes", async () => {
+  for (const mutate of [
+    (r) =>
+      (r.sourcePostchecks.generatedFlags.rawUtf8 =
+        r.sourcePostchecks.generatedFlags.rawUtf8.replace(
+          '"macroCount":61',
+          '"macroCount":60',
+        )),
+    (r) =>
+      (r.sourcePostchecks.nativeReceipt.rawUtf8 =
+        r.sourcePostchecks.nativeReceipt.rawUtf8.replace(
+          '"nativePassingRecords":42',
+          '"nativePassingRecords":12',
+        )),
+    (r) =>
+      (r.nativeJobs.stageReceipts["sandbox-run"].rawUtf8 =
+        r.nativeJobs.stageReceipts["sandbox-run"].rawUtf8.replace(
+          '"rootReaped":true',
+          '"rootReaped":false',
+        )),
+  ]) {
+    const f = await capsuleFixture();
+    mutate(f.r);
+    assert.throws(() => verifyOwnedHandoffEvidence(f.input, f.r, f.lock));
+  }
+});
+test("capsule evidence loader denies invalid UTF8 before any extraction or Python invocation", async (t) => {
+  const f = await fixture(t, "capsule"),
+    bad = Buffer.from([0xff, 0xfe]);
+  f.review.evidence.engineOutput = pin("engineOutput.json", bad);
+  await put(f.evidence, "engineOutput.json", bad);
+  await assert.rejects(checkOwnedSdkHandoff({ ...f, execute: true }), /UTF8/);
+  await assert.rejects(lstat(f.output), { code: "ENOENT" });
+});
+
+test("re-pinning a derived envelope never authorizes changed security macros, tools or source records", async () => {
+  const mutations = [
+    (r) => {
+      r.generatedFlags.macros[Object.keys(r.generatedFlags.macros)[0]] ^= 1;
+    },
+    (r) => {
+      r.generatedFlags.actualTool8[0].sha256 = "a".repeat(64);
+    },
+    (r) => {
+      r.nativeReceipt.actualSource9[0].sha256 = "a".repeat(64);
+    },
+    (r) => {
+      r.nativeReceipt.rawManifestSha256 = "a".repeat(64);
+    },
+  ];
+  for (const mutate of mutations) {
+    const f = await capsuleFixture();
+    const decoded = {
+      generatedFlags: JSON.parse(f.r.sourcePostchecks.generatedFlags.rawUtf8),
+      nativeReceipt: JSON.parse(f.r.sourcePostchecks.nativeReceipt.rawUtf8),
+    };
+    mutate(decoded);
+    for (const role of ["generatedFlags", "nativeReceipt"]) {
+      const rawUtf8 = JSON.stringify(decoded[role]);
+      f.r.sourcePostchecks[role] = { rawUtf8, sha256: hash(rawUtf8) };
+    }
+    const bytes = Buffer.from(JSON.stringify(f.r.sourcePostchecks));
+    f.input.evidence.sourcePostchecks = pin("sourcePostchecks.json", bytes);
+    f.r.build.recordDigests.sourcePostchecks = hash(bytes);
+    f.input.evidence.build = pin(
+      "build.json",
+      Buffer.from(JSON.stringify(f.r.build)),
+    );
+    assert.throws(() => verifyOwnedHandoffEvidence(f.input, f.r, f.lock));
+  }
+});
+test("capsule public derived provenance contains digests and fixed facts without local records or paths", async () => {
+  const f = await capsuleFixture(),
+    p = verifyOwnedHandoffEvidence(f.input, f.r, f.lock),
+    serialized = JSON.stringify(p);
+  assert.doesNotMatch(serialized, /rawUtf8|[A-Z]:[\\/]|python|argv|rootPid/);
+  assert.equal(
+    p.reviewedEvidenceDigests.native,
+    f.input.evidence.native.sha256,
+  );
+  f.input.evidence.engineOutput.size = 64 * 1024 ** 2;
+  f.input.evidence.native.size = 17 * 1024 ** 2;
+  f.input.evidence.nativeJobs.size = 17 * 1024 ** 2;
+  assert.throws(() => ownedSdkHandoffPlan(f.input), /total/);
+});
+
+test("large-output verifier returns the bounded hashed stream when its path grows at EOF", async (t) => {
+  const f = await fixture(t, "capsule"),
+    file = path.join(f.evidence, f.review.evidence.engineOutput.path),
+    original = fs.createReadStream;
+  let changed = false;
+  try {
+    fs.createReadStream = (name, ...args) => {
+      const stream = original(name, ...args);
+      if (name === file)
+        stream.once("end", () => {
+          fs.writeFileSync(file, Buffer.alloc(65 * 1024 ** 2, 0x20));
+          changed = true;
+        });
+      return stream;
+    };
+    syncBuiltinESMExports();
+    const result = await checkOwnedSdkHandoff({ ...f, execute: true });
+    assert.equal(changed, true);
+    assert.equal((await lstat(file)).size, 65 * 1024 ** 2);
+    assert.equal(
+      result.reviewBinding.evidencePins.engineOutput.sha256,
+      f.review.evidence.engineOutput.sha256,
+    );
+    assert.equal(result.productionReady, false);
+  } finally {
+    fs.createReadStream = original;
+    syncBuiltinESMExports();
+  }
+});
+
+test("large-output stream rejects growth beyond reviewed size before retaining the added chunk", async (t) => {
+  const f = await fixture(t, "capsule"),
+    file = path.join(f.evidence, f.review.evidence.engineOutput.path),
+    original = fs.createReadStream;
+  let changed = false;
+  try {
+    fs.createReadStream = (name, ...args) => {
+      const stream =
+        name === file
+          ? original(name, { highWaterMark: 16 })
+          : original(name, ...args);
+      if (name === file)
+        stream.once("data", () => {
+          fs.appendFileSync(file, Buffer.alloc(1024, 0x20));
+          changed = true;
+        });
+      return stream;
+    };
+    syncBuiltinESMExports();
+    await assert.rejects(
+      checkOwnedSdkHandoff({ ...f, execute: true }),
+      /stream bound/,
+    );
+    assert.equal(changed, true);
+    await assert.rejects(lstat(f.output), { code: "ENOENT" });
+  } finally {
+    fs.createReadStream = original;
+    syncBuiltinESMExports();
+  }
 });

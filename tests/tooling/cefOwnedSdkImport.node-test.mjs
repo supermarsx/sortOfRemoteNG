@@ -61,6 +61,11 @@ import {
 } from "../../scripts/lib/cef-owned-sdk-import.mjs";
 import { importArguments } from "../../scripts/cef-owned-sdk-import.mjs";
 import {
+  WINDOWS_CAPSULE_ORIGIN,
+  WINDOWS_CAPSULE_IDENTITY,
+  WINDOWS_CAPSULE_EVIDENCE,
+} from "../../scripts/lib/cef-owned-sdk-handoff.mjs";
+import {
   downloadAsset,
   canonical,
   codeTreeDigest,
@@ -1401,4 +1406,120 @@ test("portable incremental Windows reviews remain operator-local and require the
       .newEngineBuildClaimed,
     false,
   );
+});
+
+function capsuleImportFixture() {
+  const f = fixture(),
+    review = f.review;
+  review.origin = WINDOWS_CAPSULE_ORIGIN;
+  review.sourceLockIdentity = WINDOWS_CAPSULE_IDENTITY;
+  review.assets.find((row) => row.name.endsWith(".tar.bz2")).name =
+    `sorng-cef-custom-${review.sourceLockIdentity}-${review.target}.tar.bz2`;
+  review.reviewBinding.evidencePins = Object.fromEntries(
+    WINDOWS_CAPSULE_EVIDENCE.map((role) => [
+      role,
+      { path: role + ".json", size: 100, sha256: hash(role) },
+    ]),
+  );
+  const handoff = {
+    kind: "sorng-cef-owned-sdk-handoff",
+    schemaVersion: 1,
+    target: review.target,
+    sourceLockIdentity: review.sourceLockIdentity,
+    bundleSourceLockRawSha256: review.bundleSourceLockRawSha256,
+    originalInputsSourceLockRawSha256: review.originalInputsSourceLockRawSha256,
+    descriptorSha256: review.descriptorSha256,
+    assets: review.assets.map(({ bytes, ...row }) => ({ ...row, size: bytes })),
+    reviewBinding: clone(review.reviewBinding),
+    engineSha256: review.engineSha256,
+    filesVerified: review.filesVerified,
+    archiveSdkRelationship: "extracted-and-inventory-verified",
+    verificationScope: "reviewed-local-bytes-and-evidence-bindings",
+    productionReady: false,
+    nativeAcceptance: "not-tested",
+    hostedBuild: false,
+    publicationAllowed: false,
+    uploadAllowed: false,
+    provenance: {
+      origin: review.origin,
+      engineSha256: review.engineSha256,
+      baselineEngineSha256: "2".repeat(64),
+      originalControllerCommit: "3".repeat(40),
+      actualToolFilesVerified: 8,
+      nativeClassTestsPassed: 42,
+      incrementalBuild: true,
+      originalBuildRecordsPinned: true,
+      originalBuildReplayed: false,
+      pristineSourceBuild: false,
+      nativeProfileCounts: [36, 3, 3],
+      actualSourceFilesVerified: 9,
+      securityMacroCount: 61,
+      instanceTracerEnabled: false,
+      derivedFacts: true,
+      reviewedEvidenceDigests: Object.fromEntries(
+        WINDOWS_CAPSULE_EVIDENCE.filter((role) => role !== "build").map(
+          (role) => [role, review.reviewBinding.evidencePins[role].sha256],
+        ),
+      ),
+    },
+  };
+  handoff.provenance.nestedOriginalRecordDigests = {
+    nativeManifest: "4".repeat(64),
+    nativeReceipt: "5".repeat(64),
+    generatedFlags: "6".repeat(64),
+    engineRecord: review.reviewBinding.evidencePins.engine.sha256,
+    nativeStageReceipts: Object.fromEntries(
+      [
+        "apply-check",
+        "apply-test-dependency",
+        "security-build",
+        "owned-quic-lifetime-full-list",
+        "owned-quic-lifetime-full-run",
+        "brp-dpd-list",
+        "brp-dpd-run",
+        "sandbox-list",
+        "sandbox-run",
+      ].map((name) => [name, "7".repeat(64)]),
+    ),
+    nativeObservations: Array(4).fill("8".repeat(64)),
+  };
+  const encode = () => {
+    const bytes = Buffer.from(JSON.stringify(handoff));
+    review.handoffSha256 = hash(bytes);
+    return bytes;
+  };
+  return { review, handoff, encode };
+}
+test("new capsule import remains exact-source operator-local42 evidence, separate from hosted/native acceptance", () => {
+  const f = capsuleImportFixture();
+  assert.doesNotThrow(() => validateOwnedReview(f.review));
+  const value = validateLocalHandoff(f.review, f.encode());
+  assert.equal(value.provenance.nativeClassTestsPassed, 42);
+  assert.equal(value.nativeAcceptance, "not-tested");
+  assert.equal(value.hostedBuild, false);
+  assert.equal(value.publicationAllowed, false);
+});
+test("capsule import rejects wrong source, missing raw roles, profile/DPD/tracer drift and changed original digests before API", () => {
+  const changes = [
+    (f) => (f.review.sourceLockIdentity = "a".repeat(64)),
+    (f) => delete f.review.reviewBinding.evidencePins.nativeJobs,
+    (f) => (f.handoff.provenance.nativeClassTestsPassed = 12),
+    (f) => (f.handoff.provenance.nativeProfileCounts = [36, 6, 0]),
+    (f) => (f.handoff.provenance.securityMacroCount = 60),
+    (f) => (f.handoff.provenance.instanceTracerEnabled = true),
+    (f) => (f.handoff.provenance.actualSourceFilesVerified = 4),
+    (f) =>
+      (f.handoff.provenance.reviewedEvidenceDigests.engine = "a".repeat(64)),
+    (f) => (f.handoff.hostedBuild = true),
+    (f) => (f.handoff.nativeAcceptance = "passed"),
+    (f) => (f.handoff.provenance.privatePath = "F:/private"),
+    (f) =>
+      (f.review.reviewBinding.evidencePins.engineOutput.size =
+        64 * 1024 ** 2 + 1),
+  ];
+  for (const change of changes) {
+    const f = capsuleImportFixture();
+    change(f);
+    assert.throws(() => validateLocalHandoff(f.review, f.encode()));
+  }
 });
