@@ -1,0 +1,79 @@
+{
+  "schemaVersion": 1,
+  "kind": "sorng-cef-owned-import-review",
+  "origin": "owned-linux-engine",
+  "target": "x86_64-unknown-linux-gnu",
+  "sourceLockIdentity": "49f23608a686da56a32a2c825b51fa2577bcbba6353d5f9587a0c68dec9df68e",
+  "bundleSourceLockRawSha256": "f391410c6ed2fc368be288553a320e64fba0e9a6a088b1628ea7f0fa0e8f1955",
+  "originalInputsSourceLockRawSha256": "f391410c6ed2fc368be288553a320e64fba0e9a6a088b1628ea7f0fa0e8f1955",
+  "descriptorSha256": "b05579c61a8c9510a9dcf973eb24a0107b41edb0b40985038c98a3bd87091718",
+  "handoffSha256": "191fe6c5f249a15952d1c26dc92a652c56979cecfda1166ae8bb567e3ed9a2fd",
+  "reviewBinding": {
+    "canonicalReviewSha256": "3aa4e10f62a6907f6e75c3d944233ff17d5067923f6cfe6f85978d9e0f7517e0",
+    "evidencePins": {
+      "prepared": {
+        "path": "prepared.json",
+        "sha256": "cded506e3abb445c175099dae30983a6c0593274153c69036e6d8812eaf434b2",
+        "size": 2260
+      },
+      "started": {
+        "path": "engine-started.json",
+        "sha256": "68023067d82b58455f3b0864a9d8bc05536d5b8adbd1777ac97717c54f33c951",
+        "size": 541
+      },
+      "container": {
+        "path": "engine-container.json",
+        "sha256": "8e3fcfde6aef54226123ce4c6c9d5ab82770352d465714d2e74bbc0252e96502",
+        "size": 774
+      },
+      "finished": {
+        "path": "engine-finished.json",
+        "sha256": "9e25823a2c469d5a4bf469203283da9ec5504a22768cb155a08612c91857e438",
+        "size": 46259
+      },
+      "producer": {
+        "path": "owned-producer-ec3c685e-8319-493d-b685-ef04843a0ebd.json",
+        "sha256": "398e42457d0857709114754c2c0d0425ae4f5471cd884f715cab6934eb0ac1e4",
+        "size": 916
+      },
+      "freshCheck": {
+        "path": "engine-fresh-check.json",
+        "sha256": "209397bb01dc972c34f4cdcb5d90f022db4b0b8a28e4a62f0ee3ee15a3664314",
+        "size": 5975
+      }
+    },
+    "verificationPython": {
+      "sha256": "7908da541b15992ac18d8292521a59f4833b2588f1d0720327aaa5b3cf4edd36",
+      "size": 98868
+    }
+  },
+  "assets": [
+    {
+      "name": "source-lock.json",
+      "bytes": 3894,
+      "sha256": "f391410c6ed2fc368be288553a320e64fba0e9a6a088b1628ea7f0fa0e8f1955"
+    },
+    {
+      "name": "manifest.json",
+      "bytes": 203382,
+      "sha256": "592a30034c18cff7f9b4a40ff74e40df51325478340c12c6e6ba2a4aaeba59e6"
+    },
+    {
+      "name": "receipt.json",
+      "bytes": 469,
+      "sha256": "d3f59f1753739fb25ae8b6b2180e91db7f54f61e7274bac3cadc85d946a1003e"
+    },
+    {
+      "name": "sorng-cef-custom-49f23608a686da56a32a2c825b51fa2577bcbba6353d5f9587a0c68dec9df68e-x86_64-unknown-linux-gnu.tar.bz2",
+      "bytes": 250584400,
+      "sha256": "fbe21fc12d46c439df3073ee2df6b004690a6a0b633602d79fd8e0fc3b4062f3"
+    },
+    {
+      "name": "runtime.json",
+      "bytes": 1789,
+      "sha256": "b05579c61a8c9510a9dcf973eb24a0107b41edb0b40985038c98a3bd87091718"
+    }
+  ],
+  "engineSha256": "4e38baf1580bb0fe455947e5c105c410c82204f0267cf9704deabb499cdd39d0",
+  "filesVerified": 939
+}
