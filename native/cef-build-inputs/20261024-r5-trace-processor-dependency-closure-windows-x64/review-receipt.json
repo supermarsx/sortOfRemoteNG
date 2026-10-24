@@ -1,0 +1,53 @@
+{
+  "schemaVersion": 1,
+  "kind": "sorng-cef-build-input-review",
+  "scope": "Source-only test_trace_processor dependency closure; three real deps, no production source or flags changed. Native candidate uncompiled.",
+  "sourceLockIdentity": "0fa24a7860e844ba1051abdb5490718f1a41001a83a00c5ea7b9a93044098351",
+  "sourceLockRawSha256": "ae21767e42e90dd621c4ba4cf0c5c46f89c5158d66431a98df0d124322071a69",
+  "baseSourceLockIdentity": "75d6ad1faef9fbcdd286da018913fd6c31c84e4b786abb1f06d7be3ccb74b244",
+  "baseSourceLockRawSha256": "572cb4ba0feb65d32af969d4b47a78302f91b18478363d4eb59b64ab07fcc626",
+  "bridgeAbiVersion": 2,
+  "bridgeRevision": 5,
+  "capabilities": [
+    "socket-admission",
+    "context-revoke",
+    "same-authority-http2",
+    "scoped-exceptions",
+    "custom-ca",
+    "private-context",
+    "proxy-applied",
+    "bounded-context-retirement",
+    "owned-http3"
+  ],
+  "patch21": {
+    "repository": "chromium",
+    "path": "patches/0021-chromium-test-trace-processor-dependency-closure.patch",
+    "sha256": "4e3f863eb29766541197d1e095e0a42d0728f3487e63e5bfad43cdb674210fd6"
+  },
+  "all20PatchesHeaderGnToolchainRawBytesUnchanged": true,
+  "oldUpstreamEntriesUnchanged": true,
+  "pristineUpstreamAdded": {
+    "project": "chromium",
+    "path": "base/test/BUILD.gn",
+    "sha256": "f9b9b5c2e9805bb1901e6442e0e3453d844cbfd52e543662d65b2d012a541e35"
+  },
+  "actualCefPatchedSourcePreimage": {
+    "path": "base/test/BUILD.gn",
+    "sha256": "ddafdef39dbcff4330459ab76cc71c1167091bb5da8d8ade01426f181c9f832e"
+  },
+  "reviewedPostimageSha256": "ef64d54196d1b101e0eca9dfd7dbda029c033663ff7b118892a0bfe306298ba0",
+  "freshRecipeOrdering": {
+    "canonicalBeforeCefHook": true,
+    "isolatedGitCachedApplyToPristine": true,
+    "unmodifiedCefPatcherApply": true,
+    "repeatCefPatcherSkipsWithoutReverting": true,
+    "reverseOrderSameBytes": true,
+    "proofSha256": "af5a3217f9df434995b522c6ba382928c72eebcf89ad9465c225657a9b5fa626"
+  },
+  "engineCompiled": false,
+  "nativeTestsRun": false,
+  "sdkCreated": false,
+  "runtimeAcceptance": false,
+  "oldNativeProofTransferred": false,
+  "defaultSelectionChanged": false
+}
