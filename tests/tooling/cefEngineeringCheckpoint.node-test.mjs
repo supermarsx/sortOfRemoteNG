@@ -3755,7 +3755,7 @@ test("post-slice link diagnostic bounds traversal, link count, target and escape
     readlink: async () => '../outside\n"secret-shaped-target"',
   };
   const escaped = await generatedLinkInventory(root, { io: linked });
-  assert.equal(escaped.complete, true);
+  assert.equal(escaped.complete, true, canonical(escaped));
   assert.equal(
     JSON.parse(canonical(escaped)).links[0].target,
     '../outside\n"secret-shaped-target"',
