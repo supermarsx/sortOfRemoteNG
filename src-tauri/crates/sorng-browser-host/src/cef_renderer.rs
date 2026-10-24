@@ -1,6 +1,7 @@
 //! Renderer-only feature callbacks. Native functions are closure arguments, not
 //! window properties. Credentials cross CEF IPC only to a bound login frame.
 
+use crate::cef_browser::RendererInstallFailure;
 use crate::native_automation::{
     self as automation, wire as automation_wire, NativeAutomationAction, NativeAutomationStep,
 };
@@ -431,9 +432,19 @@ wrap_v8_handler! {
 }
 
 fn report(frame: &Frame, status: &str) {
+    report_with_reason(frame, status, None);
+}
+fn report_install(frame: &Frame, result: Result<(), RendererInstallFailure>) {
+    match result {
+        Ok(()) => report_with_reason(frame, "installed", None),
+        Err(reason) => report_with_reason(frame, "installation-failed", Some(reason)),
+    }
+}
+fn report_with_reason(frame: &Frame, status: &str, reason: Option<RendererInstallFailure>) {
     let origin = feature_origin(frame).or_else(|| {
         matches!(status, "login-completed" | "login-rejected")
-            .then(|| browser_frame_origin(frame)).flatten()
+            .then(|| browser_frame_origin(frame))
+            .flatten()
     });
     let Some(origin) = origin else {
         return;
@@ -447,12 +458,19 @@ fn report(frame: &Frame, status: &str) {
     args.set_string(0, Some(&CefString::from(origin.as_str())));
     args.set_string(1, Some(&CefString::from(status)));
     args.set_string(2, Some(&CefString::from(FEATURE_PROTOCOL_PIN)));
+    if let Some(reason) = reason {
+        args.set_int(3, reason.wire());
+    }
     frame.send_process_message(ProcessId::BROWSER, Some(&mut message));
 }
 
-fn install(browser: &Browser, frame: &Frame, context: &mut V8Context) -> bool {
+fn install(
+    browser: &Browser,
+    frame: &Frame,
+    context: &mut V8Context,
+) -> Result<(), RendererInstallFailure> {
     if !command_line_get_global().is_some_and(|line| forced_dark_configured(&line)) {
-        return false;
+        return Err(RendererInstallFailure::DarkPolicy);
     }
     let Some((adapter, factory_json)) = ADAPTERS.with(|adapters| {
         adapters
@@ -461,13 +479,13 @@ fn install(browser: &Browser, frame: &Frame, context: &mut V8Context) -> bool {
             .filter(|policy| same_browser(&policy.owner, browser))
             .map(|policy| (policy.adapter, policy.factory_json.clone()))
     }) else {
-        return false;
+        return Err(RendererInstallFailure::AdapterOwnership);
     };
     let Some(origin) = feature_origin(frame).or_else(|| browser_frame_origin(frame)) else {
-        return false;
+        return Err(RendererInstallFailure::Origin);
     };
     if context.is_valid() != 1 {
-        return false;
+        return Err(RendererInstallFailure::Context);
     }
     let key = frame_key(browser, frame);
     let nonce = format!(
@@ -480,7 +498,7 @@ fn install(browser: &Browser, frame: &Frame, context: &mut V8Context) -> bool {
         Some(&CefString::from("nativeLoginReady")),
         Some(&mut signal),
     ) else {
-        return false;
+        return Err(RendererInstallFailure::NotifyFunction);
     };
     // Only constant, non-secret source is compiled. Credential strings are V8
     // argument values; they cannot appear in DevTools script source/error URLs.
@@ -495,22 +513,22 @@ fn install(browser: &Browser, frame: &Frame, context: &mut V8Context) -> bool {
         Some(&mut exception),
     ) != 1
     {
-        return false;
+        return Err(RendererInstallFailure::FactoryEvaluation);
     }
     let Some(factory) = factory.filter(|value| value.is_function() == 1) else {
-        return false;
+        return Err(RendererInstallFailure::FactoryType);
     };
     let Some(configuration) =
         parse_login_configuration(&factory_json).and_then(|value| login_configuration_v8(&value))
     else {
-        return false;
+        return Err(RendererInstallFailure::Configuration);
     };
     // Preserve native timing metadata; provider identity always comes from
     // the selected enum, never a website or configurable script string.
     if adapter.reviewed_provider() {
         let Some(mut provider) = v8_value_create_string(Some(&CefString::from(adapter.wire())))
         else {
-            return false;
+            return Err(RendererInstallFailure::ProviderConfiguration);
         };
         if configuration.set_value_bykey(
             Some(&CefString::from("provider")),
@@ -518,24 +536,37 @@ fn install(browser: &Browser, frame: &Frame, context: &mut V8Context) -> bool {
             V8Propertyattribute::default(),
         ) != 1
         {
-            return false;
+            return Err(RendererInstallFailure::ProviderConfiguration);
         }
     }
-    let otp_configuration = configuration.value_bykey(Some(&CefString::from("mfa")))
+    let otp_configuration = configuration
+        .value_bykey(Some(&CefString::from("mfa")))
         .filter(|value| {
             value.is_object() == 1
                 && frame.is_main() == 1
                 && (origin == "about:blank" || https_origin(&origin).is_some())
         });
-    let otp_challenge = otp_configuration.as_ref()
+    let otp_challenge = otp_configuration
+        .as_ref()
         .and_then(|value| value.value_bykey(Some(&CefString::from("id"))))
         .filter(|value| value.is_string() == 1)
         .map(|value| CefString::from(&value.string_value()).to_string());
-    let otp = otp_configuration.and_then(|configuration| factory.execute_function_with_context(
-        Some(context), None, Some(&[Some(notify.clone()), Some(configuration),
-            v8_value_create_string(Some(&CefString::from("approved-otp")))])))
+    let otp = otp_configuration
+        .and_then(|configuration| {
+            factory.execute_function_with_context(
+                Some(context),
+                None,
+                Some(&[
+                    Some(notify.clone()),
+                    Some(configuration),
+                    v8_value_create_string(Some(&CefString::from("approved-otp"))),
+                ]),
+            )
+        })
         .filter(|value| value.is_function() == 1);
-    if otp_challenge.is_some() && otp.is_none() { return false; }
+    if otp_challenge.is_some() && otp.is_none() {
+        return Err(RendererInstallFailure::OtpFactory);
+    }
     let Some(deliver) = factory
         .execute_function_with_context(
             Some(context),
@@ -549,9 +580,10 @@ fn install(browser: &Browser, frame: &Frame, context: &mut V8Context) -> bool {
         )
         .filter(|value| value.is_function() == 1)
     else {
-        return false;
+        return Err(RendererInstallFailure::DeliverFactory);
     };
-    let typing = deliver.value_bykey(Some(&CefString::from("nativeTyping")))
+    let typing = deliver
+        .value_bykey(Some(&CefString::from("nativeTyping")))
         .filter(|value| value.is_function() == 1);
     DOCUMENTS.with(|documents| {
         documents.borrow_mut().insert(
@@ -573,7 +605,7 @@ fn install(browser: &Browser, frame: &Frame, context: &mut V8Context) -> bool {
             },
         );
     });
-    true
+    Ok(())
 }
 
 fn receive(browser: &Browser, frame: &Frame, source: ProcessId, message: &ProcessMessage) -> i32 {
@@ -1157,8 +1189,8 @@ wrap_render_process_handler! {
                 manual_input::install(browser, frame, context);
                 if feature_origin(frame).is_some() {
                     let installed = install(browser, frame, context);
-                    if installed { install_automation(browser, frame, context); }
-                    report(frame, if installed { "installed" } else { "installation-failed" });
+                    if installed.is_ok() { install_automation(browser, frame, context); }
+                    report_install(frame, installed);
                 } else if browser_frame_origin(frame).is_some() {
                     // Child login contexts cannot attest the top-level feature
                     // gate, install OTP/macro/manual-input authority, or fail

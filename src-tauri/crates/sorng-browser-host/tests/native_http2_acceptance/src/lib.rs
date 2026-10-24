@@ -326,7 +326,11 @@ struct Observed {
     native_states: Vec<String>,
     feature_states: Vec<String>,
 }
-struct Sink(Mutex<Observed>, Instant);
+struct Sink(
+    Mutex<Observed>,
+    Instant,
+    Mutex<http2_fixture::DiagnosticRows>,
+);
 impl NativeDocumentHooks for Sink {
     fn on_main_document(&self, _: &BrowserIdentity, _: u64) {}
     fn on_feature_status(
@@ -346,6 +350,15 @@ impl NativeDocumentHooks for Sink {
     }
 }
 impl BrowserEventSink for Sink {
+    fn on_diagnostic(&self, diagnostic: sorng_browser_host::cef_browser::NativeBrowserDiagnostic) {
+        self.2
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .record(
+                self.1.elapsed().as_millis().min(u64::MAX as u128) as u64,
+                diagnostic,
+            );
+    }
     fn on_event(&self, event: BrowserEvent) {
         let mut s = self.0.lock().unwrap();
         let label = format!("{:?}:{:?}", event.state.lifecycle, event.state.fault);
@@ -568,7 +581,11 @@ fn create_slot(
         session,
         context: None,
         host: None,
-        sink: Arc::new(Sink(Mutex::new(Observed::default()), clock)),
+        sink: Arc::new(Sink(
+            Mutex::new(Observed::default()),
+            clock,
+            Mutex::default(),
+        )),
         dials,
         requests,
         stop: Some(stop),
@@ -877,7 +894,7 @@ fn execute(bootstrap: &mut dyn RuntimeBootstrap, paths: &BundlePaths) -> Result 
     }
     let closed =
         all_created_hosts_closed(slots.iter().map(|s| s.host.as_ref().map(|h| h.lifecycle())));
-    let rows:Vec<_>=slots.iter().map(|s|{let o=s.sink.0.lock().unwrap();serde_json::json!({"proxyApplicationVerified":s.proxy_application_verified,"proxyBeforeHost":s.proxy_before_host,"sessionStatus":format!("{:?}",s.session.lock().unwrap().status()),"sessionFailure":format!("{:?}",s.session.lock().unwrap().failure_reason()),"tlsCurrent":s.tls_owner.current.load(Ordering::Relaxed),"alpnObserved":*s.alpn_observed.lock().unwrap(),"beforeAdmissionBytes":s.tls_owner.before_admission_bytes.load(Ordering::Relaxed),"minimumAdmissionDelayMs":*s.tls_owner.minimum_admission_delay_ms.lock().unwrap(),"denied":s.tls_owner.denied.load(Ordering::Relaxed),"dials":s.dials.load(Ordering::Relaxed),"requests":*s.requests.lock().unwrap(),"cases":s.reports,"title":o.title,"nativeStates":o.native_states,"featureStates":o.feature_states,"errors":o.errors,"diagnostics":s.session.lock().unwrap().proxy_diagnostics()})}).collect();
+    let rows:Vec<_>=slots.iter().map(|s|{let o=s.sink.0.lock().unwrap();serde_json::json!({"proxyApplicationVerified":s.proxy_application_verified,"proxyBeforeHost":s.proxy_before_host,"sessionStatus":format!("{:?}",s.session.lock().unwrap().status()),"sessionFailure":format!("{:?}",s.session.lock().unwrap().failure_reason()),"tlsCurrent":s.tls_owner.current.load(Ordering::Relaxed),"alpnObserved":*s.alpn_observed.lock().unwrap(),"beforeAdmissionBytes":s.tls_owner.before_admission_bytes.load(Ordering::Relaxed),"minimumAdmissionDelayMs":*s.tls_owner.minimum_admission_delay_ms.lock().unwrap(),"denied":s.tls_owner.denied.load(Ordering::Relaxed),"dials":s.dials.load(Ordering::Relaxed),"requests":*s.requests.lock().unwrap(),"cases":s.reports,"title":o.title,"nativeStates":o.native_states,"featureStates":o.feature_states,"nativeDiagnostics":s.sink.2.lock().unwrap_or_else(std::sync::PoisonError::into_inner).report(),"errors":o.errors,"diagnostics":s.session.lock().unwrap().proxy_diagnostics()})}).collect();
     let endpoints: Vec<_> = slots
         .iter()
         .map(|s| s.session.lock().unwrap().proxy_endpoint().to_string())

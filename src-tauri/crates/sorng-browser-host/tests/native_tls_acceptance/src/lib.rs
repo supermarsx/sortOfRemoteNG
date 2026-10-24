@@ -456,6 +456,15 @@ struct LoginDiagnosticHooks {
     inner: Arc<Hooks>,
     diagnostics: Arc<NonblockingLoginDiagnostics>,
 }
+impl BrowserEventSink for LoginDiagnosticHooks {
+    fn on_event(&self, event: BrowserEvent) {
+        self.inner.on_event(event);
+    }
+    fn on_diagnostic(&self, diagnostic: sorng_browser_host::cef_browser::NativeBrowserDiagnostic) {
+        self.diagnostics
+            .record(|buffer| buffer.record(diagnostic.code(), None));
+    }
+}
 impl NativeDocumentHooks for LoginDiagnosticHooks {
     fn on_main_document(&self, identity: &BrowserIdentity, _: u64) {
         if identity == &self.inner.identity && self.inner.current.load(Ordering::Acquire) {
@@ -1102,7 +1111,7 @@ fn execute(bootstrap: &mut dyn RuntimeBootstrap, paths: &BundlePaths) -> Result 
                                     identity.clone(),
                                     ViewportBounds::new(0., 0., 800., 600.)?,
                                     parent.scale_factor(),
-                                    hooks.clone(),
+                                    login_hooks.clone(),
                                     Some(login_hooks.clone()),
                                 )?
                             });
@@ -1444,6 +1453,40 @@ fn execute(bootstrap: &mut dyn RuntimeBootstrap, paths: &BundlePaths) -> Result 
 #[cfg(test)]
 mod login_diagnostic_tests {
     use super::*;
+
+    #[test]
+    fn renderer_diagnostics_do_not_wait_for_control_state_or_expose_page_text() {
+        let policy = OriginBrowserPolicy::new_with_allowed_origins(
+            "owner",
+            "connection",
+            "session",
+            ORIGIN,
+            &[],
+        )
+        .unwrap();
+        let state = Arc::new(Mutex::new(State::new("staged")));
+        let diagnostics = state.lock().unwrap().login_diagnostics.clone();
+        let hooks = LoginDiagnosticHooks {
+            inner: Arc::new(Hooks {
+                state: state.clone(),
+                identity: policy.identity().clone(),
+                current: AtomicBool::new(true),
+            }),
+            diagnostics: diagnostics.clone(),
+        };
+        let held = state.lock().unwrap();
+        hooks.on_diagnostic(
+            sorng_browser_host::cef_browser::NativeBrowserDiagnostic::RendererInstallation(
+                sorng_browser_host::cef_browser::RendererInstallFailure::NotifyFunction,
+            ),
+        );
+        drop(held);
+        let report = diagnostics.report();
+        let text = report.to_string();
+        assert!(text.contains("renderer-install-notify-function"));
+        assert!(!text.contains(ORIGIN));
+        assert!(!text.contains("connection"));
+    }
 
     #[test]
     fn login_diagnostic_callback_does_not_wait_for_control_state() {

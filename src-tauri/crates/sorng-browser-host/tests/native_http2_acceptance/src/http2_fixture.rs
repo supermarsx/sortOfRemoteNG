@@ -8,6 +8,35 @@ use std::{
     time::{Duration, Instant},
 };
 
+/// Native fixed codes only, independent of page/title/request observations.
+/// The producer deduplicates each code; this receipt adds its own fixed bound.
+#[derive(Default)]
+pub(super) struct DiagnosticRows {
+    rows: Vec<(u64, &'static str)>,
+    dropped: usize,
+}
+impl DiagnosticRows {
+    pub(super) fn record(
+        &mut self,
+        elapsed_ms: u64,
+        diagnostic: sorng_browser_host::cef_browser::NativeBrowserDiagnostic,
+    ) {
+        let code = diagnostic.code();
+        if self.rows.iter().any(|(_, previous)| *previous == code) {
+            return;
+        }
+        if self.rows.len() == 32 {
+            self.dropped = self.dropped.saturating_add(1);
+            return;
+        }
+        self.rows.push((elapsed_ms, code));
+    }
+    pub(super) fn report(&self) -> serde_json::Value {
+        serde_json::json!({"limit":32,"dropped":self.dropped,"events":self.rows.iter()
+            .map(|(elapsed,code)|serde_json::json!({"elapsedMs":elapsed,"code":code})).collect::<Vec<_>>()})
+    }
+}
+
 pub struct ObservedIo<T> {
     pub inner: T,
     pub owner: Arc<crate::TlsOwner>,
@@ -112,4 +141,35 @@ pub async fn serve<T: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin>(
         result.map_err(std::io::Error::other)??;
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod renderer_diagnostic_tests {
+    use super::*;
+    use sorng_browser_host::cef_browser::{NativeBrowserDiagnostic, RendererInstallFailure};
+    #[test]
+    fn renderer_diagnostics_receipt_deduplicates_fixed_codes_without_page_content() {
+        let mut rows = DiagnosticRows::default();
+        for elapsed in 0..512 {
+            rows.record(
+                elapsed,
+                NativeBrowserDiagnostic::RendererInstallation(
+                    RendererInstallFailure::FactoryEvaluation,
+                ),
+            );
+            rows.record(elapsed, NativeBrowserDiagnostic::NativeBeforeClose);
+        }
+        let report = rows.report();
+        assert_eq!(report["limit"], 32);
+        assert_eq!(report["dropped"], 0);
+        assert_eq!(report["events"].as_array().unwrap().len(), 2);
+        assert_eq!(
+            report["events"][0],
+            serde_json::json!({"elapsedMs":0,"code":"renderer-install-factory-evaluation"})
+        );
+        assert_eq!(report["events"][1]["code"], "native-before-close");
+        for event in report["events"].as_array().unwrap() {
+            assert_eq!(event.as_object().unwrap().len(), 2);
+        }
+    }
 }

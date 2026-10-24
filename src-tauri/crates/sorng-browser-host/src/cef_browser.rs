@@ -53,7 +53,7 @@ use std::collections::HashMap;
 use std::marker::PhantomData;
 use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::rc::Rc as ThreadBound;
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
@@ -219,6 +219,215 @@ fn display_url(value: &str) -> String {
 /// work promptly. Panics revoke the attempt and never unwind through CEF.
 pub trait BrowserEventSink: Send + Sync {
     fn on_event(&self, event: BrowserEvent);
+    /// Fixed observations only; never admission or native close authority.
+    /// Called without session/control locks. Observer panics are isolated.
+    fn on_diagnostic(&self, _diagnostic: NativeBrowserDiagnostic) {}
+}
+
+/// Closed renderer failure vocabulary. No V8 error, source, URL or page value.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[repr(i32)]
+pub enum RendererInstallFailure {
+    Unspecified = 0,
+    DarkPolicy = 1,
+    AdapterOwnership = 2,
+    Origin = 3,
+    Context = 4,
+    NotifyFunction = 5,
+    FactoryEvaluation = 6,
+    FactoryType = 7,
+    Configuration = 8,
+    ProviderConfiguration = 9,
+    OtpFactory = 10,
+    DeliverFactory = 11,
+}
+impl RendererInstallFailure {
+    pub(crate) fn from_wire(value: i32) -> Option<Self> {
+        Some(match value {
+            0 => Self::Unspecified,
+            1 => Self::DarkPolicy,
+            2 => Self::AdapterOwnership,
+            3 => Self::Origin,
+            4 => Self::Context,
+            5 => Self::NotifyFunction,
+            6 => Self::FactoryEvaluation,
+            7 => Self::FactoryType,
+            8 => Self::Configuration,
+            9 => Self::ProviderConfiguration,
+            10 => Self::OtpFactory,
+            11 => Self::DeliverFactory,
+            _ => return None,
+        })
+    }
+    pub(crate) fn wire(self) -> i32 {
+        self as i32
+    }
+    fn code(self) -> &'static str {
+        match self {
+            Self::Unspecified => "renderer-install-unspecified",
+            Self::DarkPolicy => "renderer-install-dark-policy",
+            Self::AdapterOwnership => "renderer-install-adapter-ownership",
+            Self::Origin => "renderer-install-origin",
+            Self::Context => "renderer-install-context",
+            Self::NotifyFunction => "renderer-install-notify-function",
+            Self::FactoryEvaluation => "renderer-install-factory-evaluation",
+            Self::FactoryType => "renderer-install-factory-type",
+            Self::Configuration => "renderer-install-configuration",
+            Self::ProviderConfiguration => "renderer-install-provider-configuration",
+            Self::OtpFactory => "renderer-install-otp-factory",
+            Self::DeliverFactory => "renderer-install-deliver-factory",
+        }
+    }
+}
+/// Secret-free diagnostic metadata. These values never grant readiness.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum NativeBrowserDiagnostic {
+    RendererInstallation(RendererInstallFailure),
+    RendererPinMismatch,
+    RendererGateRejected,
+    RendererMetadataRejected,
+    CleanupCloseQueued,
+    CleanupDestroyQueued,
+    CleanupQueueGuardRejected,
+    CleanupTaskStarted,
+    CleanupClaimRejected,
+    CleanupIssuedGuardRejected,
+    CleanupPostFailed,
+    NativeCloseReturned,
+    NativeDestroyReturned,
+    NativeDestroyCallFailed,
+    NativeDoClose,
+    NativeBeforeClose,
+    NativeClosedAcknowledged,
+    CleanupNativeHostMissing,
+    CleanupThreadRejected,
+    CleanupInvalidBrowser,
+    NativeHideCallFailed,
+}
+impl NativeBrowserDiagnostic {
+    pub fn code(self) -> &'static str {
+        match self {
+            Self::RendererInstallation(reason) => reason.code(),
+            Self::RendererPinMismatch => "renderer-feature-pin-mismatch",
+            Self::RendererGateRejected => "renderer-feature-gate-rejected",
+            Self::RendererMetadataRejected => "renderer-feature-metadata-rejected",
+            Self::CleanupCloseQueued => "cleanup-close-queued",
+            Self::CleanupDestroyQueued => "cleanup-destroy-queued",
+            Self::CleanupQueueGuardRejected => "cleanup-queue-guard-rejected",
+            Self::CleanupTaskStarted => "cleanup-task-started",
+            Self::CleanupClaimRejected => "cleanup-claim-rejected",
+            Self::CleanupIssuedGuardRejected => "cleanup-issued-guard-rejected",
+            Self::CleanupPostFailed => "cleanup-post-failed",
+            Self::NativeCloseReturned => "native-close-returned",
+            Self::NativeDestroyReturned => "native-destroy-returned",
+            Self::NativeDestroyCallFailed => "native-destroy-call-failed",
+            Self::NativeDoClose => "native-do-close",
+            Self::NativeBeforeClose => "native-before-close",
+            Self::NativeClosedAcknowledged => "native-closed-acknowledged",
+            Self::CleanupNativeHostMissing => "cleanup-native-host-missing",
+            Self::CleanupThreadRejected => "cleanup-thread-rejected",
+            Self::CleanupInvalidBrowser => "cleanup-invalid-browser",
+            Self::NativeHideCallFailed => "native-hide-call-failed",
+        }
+    }
+    fn bit(self) -> u32 {
+        match self {
+            Self::RendererInstallation(reason) => reason.wire() as u32,
+            Self::RendererPinMismatch => 12,
+            Self::RendererGateRejected => 13,
+            Self::RendererMetadataRejected => 14,
+            Self::CleanupCloseQueued => 15,
+            Self::CleanupDestroyQueued => 16,
+            Self::CleanupQueueGuardRejected => 17,
+            Self::CleanupTaskStarted => 18,
+            Self::CleanupClaimRejected => 19,
+            Self::CleanupIssuedGuardRejected => 20,
+            Self::CleanupPostFailed => 21,
+            Self::NativeCloseReturned => 22,
+            Self::NativeDestroyReturned => 23,
+            Self::NativeDestroyCallFailed => 24,
+            Self::NativeDoClose => 25,
+            Self::NativeBeforeClose => 26,
+            Self::NativeClosedAcknowledged => 27,
+            Self::CleanupNativeHostMissing => 28,
+            Self::CleanupThreadRejected => 29,
+            Self::CleanupInvalidBrowser => 30,
+            Self::NativeHideCallFailed => 31,
+        }
+    }
+    fn failure(self) -> bool {
+        !matches!(
+            self,
+            Self::CleanupCloseQueued
+                | Self::CleanupDestroyQueued
+                | Self::CleanupTaskStarted
+                | Self::NativeCloseReturned
+                | Self::NativeDestroyReturned
+                | Self::NativeDoClose
+                | Self::NativeBeforeClose
+                | Self::NativeClosedAcknowledged
+        )
+    }
+}
+#[derive(Default)]
+struct DiagnosticBudget(AtomicU32);
+impl DiagnosticBudget {
+    fn emit_with(
+        &self,
+        value: NativeBrowserDiagnostic,
+        logger: impl FnOnce(),
+        observer: impl FnOnce(),
+    ) {
+        let bit = 1u32 << value.bit();
+        if self.0.fetch_or(bit, Ordering::AcqRel) & bit != 0 {
+            return;
+        }
+        // Independent catches: a logging failure must not hide fixture evidence,
+        // and neither observer is allowed to change native policy or cleanup.
+        let _ = catch_unwind(AssertUnwindSafe(logger));
+        let _ = catch_unwind(AssertUnwindSafe(observer));
+    }
+    fn emit(&self, sink: &dyn BrowserEventSink, value: NativeBrowserDiagnostic) {
+        self.emit_with(
+            value,
+            || {
+                if value.failure() {
+                    log::warn!(target: "sorng.native_browser.diagnostic", "{}", value.code());
+                } else {
+                    log::debug!(target: "sorng.native_browser.diagnostic", "{}", value.code());
+                }
+            },
+            || sink.on_diagnostic(value),
+        );
+    }
+}
+
+// Caller has already validated native browser/frame/attempt/origin. Keep the
+// pin check BEFORE reading optional renderer diagnostics, including malformed
+// payloads. These closed values never carry page text or change a valid grant.
+fn renderer_install_diagnostic(
+    status: NativeFeatureStatus,
+    pin: &str,
+    metadata: impl FnOnce() -> Option<Result<i32, ()>>,
+) -> Result<Option<NativeBrowserDiagnostic>, NativeBrowserDiagnostic> {
+    if pin != FEATURE_PROTOCOL_PIN {
+        return Err(NativeBrowserDiagnostic::RendererPinMismatch);
+    }
+    let value = metadata();
+    if status != NativeFeatureStatus::RendererInstallationFailed {
+        return if value.is_none() {
+            Ok(None)
+        } else {
+            Err(NativeBrowserDiagnostic::RendererMetadataRejected)
+        };
+    }
+    let reason = match value {
+        None => RendererInstallFailure::Unspecified,
+        Some(Ok(value)) => RendererInstallFailure::from_wire(value)
+            .ok_or(NativeBrowserDiagnostic::RendererMetadataRejected)?,
+        Some(Err(())) => return Err(NativeBrowserDiagnostic::RendererMetadataRejected),
+    };
+    Ok(Some(NativeBrowserDiagnostic::RendererInstallation(reason)))
 }
 
 /// Bounded native navigation diagnostics. No page-supplied strings, URLs or
@@ -541,6 +750,7 @@ struct Shared {
     // Set from native-authorized saved globals before website navigation.
     allow_page_dialogs: AtomicBool,
     sink: Arc<dyn BrowserEventSink>,
+    diagnostics: Arc<DiagnosticBudget>,
     hooks: Option<Arc<dyn NativeDocumentHooks>>,
     login_budget: Mutex<LoginBudget>,
     challenge_reload_used: Arc<AtomicBool>,
@@ -832,6 +1042,7 @@ struct CleanupOwner {
     session: Arc<Mutex<OriginBrowserSession>>,
     identity: BrowserIdentity,
     sink: Arc<dyn BrowserEventSink>,
+    diagnostics: Arc<DiagnosticBudget>,
 }
 
 impl CleanupOwner {
@@ -841,34 +1052,57 @@ impl CleanupOwner {
         self.session.lock().is_ok_and(|session| {
             session.policy().identity() == &self.identity
                 && (session.status() == BrowserSessionStatus::Revoked
-                    || self.view_closed.as_ref().is_some_and(|closed| closed.load(Ordering::Acquire)))
+                    || self
+                        .view_closed
+                        .as_ref()
+                        .is_some_and(|closed| closed.load(Ordering::Acquire)))
         })
     }
 
+    fn diagnostic(&self, value: NativeBrowserDiagnostic) {
+        self.diagnostics.emit(self.sink.as_ref(), value);
+    }
     fn queue(&self, browser_id: i32, stage: CleanupStage) -> bool {
-        self.revoked_attempt()
+        let accepted = self.revoked_attempt()
             && self
                 .state
                 .lock()
-                .is_ok_and(|mut state| state.queue_cleanup(&self.identity, browser_id, stage))
+                .is_ok_and(|mut state| state.queue_cleanup(&self.identity, browser_id, stage));
+        self.diagnostic(if accepted {
+            match stage {
+                CleanupStage::Close => NativeBrowserDiagnostic::CleanupCloseQueued,
+                CleanupStage::Destroy => NativeBrowserDiagnostic::CleanupDestroyQueued,
+            }
+        } else {
+            NativeBrowserDiagnostic::CleanupQueueGuardRejected
+        });
+        accepted
     }
 
     fn claim(&self, browser_id: i32, stage: CleanupStage) -> bool {
-        self.revoked_attempt()
+        let accepted = self.revoked_attempt()
             && self
                 .state
                 .lock()
-                .is_ok_and(|mut state| state.claim_cleanup(&self.identity, browser_id, stage))
+                .is_ok_and(|mut state| state.claim_cleanup(&self.identity, browser_id, stage));
+        if !accepted {
+            self.diagnostic(NativeBrowserDiagnostic::CleanupClaimRejected);
+        }
+        accepted
     }
 
     fn issued(&self, browser: &Browser, browser_id: i32, stage: CleanupStage) -> bool {
         // These two browser methods remain permitted after OnBeforeClose.
-        browser.is_valid() == 1
+        let accepted = browser.is_valid() == 1
             && browser.identifier() == browser_id
             && self.revoked_attempt()
             && self.state.lock().is_ok_and(|state| {
                 state.cleanup_matches(&self.identity, browser_id) && state.cleanup == stage.issued()
-            })
+            });
+        if !accepted {
+            self.diagnostic(NativeBrowserDiagnostic::CleanupIssuedGuardRejected);
+        }
+        accepted
     }
 
     fn failed(&self, browser_id: i32, stage: CleanupStage) {
@@ -895,7 +1129,9 @@ impl CleanupOwner {
     }
 
     fn execute(&self, browser: &Browser, browser_id: i32, stage: CleanupStage) {
+        self.diagnostic(NativeBrowserDiagnostic::CleanupTaskStarted);
         if currently_on(ThreadId::UI) != 1 {
+            self.diagnostic(NativeBrowserDiagnostic::CleanupThreadRejected);
             self.failed(browser_id, stage);
             return;
         }
@@ -909,6 +1145,7 @@ impl CleanupOwner {
             }
         }
         let Some(host) = browser.host() else {
+            self.diagnostic(NativeBrowserDiagnostic::CleanupNativeHostMissing);
             self.failed(browser_id, stage);
             return;
         };
@@ -932,18 +1169,24 @@ impl CleanupOwner {
         match stage {
             CleanupStage::Close => {
                 // A hide failure must not prevent attempting the queued close.
-                let _ = native_surface::visible(window, false);
+                if native_surface::visible(window, false).is_err() {
+                    self.diagnostic(NativeBrowserDiagnostic::NativeHideCallFailed);
+                }
                 if !self.issued(browser, browser_id, stage) {
                     return;
                 }
                 host.close_browser(1);
+                // Pure Rust owner/sink only; no post-close native inspection.
+                self.diagnostic(NativeBrowserDiagnostic::NativeCloseReturned);
                 // Alloy may synchronously invoke DoClose. No more native calls.
             }
             CleanupStage::Destroy => {
                 let destroyed = native_surface::destroy(window).is_ok();
+                self.diagnostic(NativeBrowserDiagnostic::NativeDestroyReturned);
                 // DestroyWindow may synchronously run OnBeforeClose. Never
                 // inspect browser/host/window again, including the error path.
                 if !destroyed {
+                    self.diagnostic(NativeBrowserDiagnostic::NativeDestroyCallFailed);
                     self.failed(browser_id, stage);
                 }
             }
@@ -982,6 +1225,9 @@ fn redact_url(value: &str) -> RedactedUrl {
 }
 
 impl Shared {
+    fn diagnostic(&self, value: NativeBrowserDiagnostic) {
+        self.diagnostics.emit(self.sink.as_ref(), value);
+    }
     fn page_dialogs_allowed(&self, browser: Option<&Browser>) -> bool {
         self.allow_page_dialogs.load(Ordering::Acquire) && self.focus_allowed(browser)
     }
@@ -1515,11 +1761,20 @@ impl Shared {
         if frame.is_main() != 1 {
             // Only fixed login observations from a reviewed child. Iframes
             // cannot attest/fail the top-level renderer installation gate.
-            if !self.accepts(Some(browser)) || !self.current() { return 1; }
-            let Some(origin) = self.login_frames.origin(browser, frame) else { return 1; };
-            let Some(args) = message.argument_list().filter(|args| args.size() == 3) else { return 1; };
+            if !self.accepts(Some(browser)) || !self.current() {
+                return 1;
+            }
+            let Some(origin) = self.login_frames.origin(browser, frame) else {
+                return 1;
+            };
+            let Some(args) = message.argument_list().filter(|args| args.size() == 3) else {
+                return 1;
+            };
             if message_text(&args, 0, 1024).as_deref() != Some(&origin)
-                || message_text(&args, 2, 80).as_deref() != Some(FEATURE_PROTOCOL_PIN) { return 1; }
+                || message_text(&args, 2, 80).as_deref() != Some(FEATURE_PROTOCOL_PIN)
+            {
+                return 1;
+            }
             let status = match message_text(&args, 1, 40).as_deref() {
                 Some("login-completed") => NativeFeatureStatus::LoginAdapterCompleted,
                 Some("challenge-waiting") => NativeFeatureStatus::LoginChallengeWaiting,
@@ -1555,7 +1810,10 @@ impl Shared {
             };
             origin
         };
-        let Some(args) = message.argument_list().filter(|args| args.size() == 3) else {
+        let Some(args) = message
+            .argument_list()
+            .filter(|args| matches!(args.size(), 3 | 4))
+        else {
             return 1;
         };
         if message_text(&args, 0, 1024).as_deref() != Some(&origin) {
@@ -1574,12 +1832,38 @@ impl Shared {
             Some("challenge-timeout") => NativeFeatureStatus::LoginChallengeTimedOut,
             _ => return 1,
         };
+        let diagnostic = renderer_install_diagnostic(status, &pin, || {
+            if args.size() == 3 {
+                None
+            } else if args.get_type(3) == ValueType::INT {
+                Some(Ok(args.int(3)))
+            } else {
+                Some(Err(()))
+            }
+        });
+        let effective_status = if matches!(
+            diagnostic,
+            Err(NativeBrowserDiagnostic::RendererMetadataRejected)
+        ) {
+            NativeFeatureStatus::RendererInstallationFailed
+        } else {
+            status
+        };
         let valid = self
             .feature_gate
             .lock()
-            .is_ok_and(|mut gate| gate.observe(&origin, &pin, status));
+            .is_ok_and(|mut gate| gate.observe(&origin, &pin, effective_status));
+        match diagnostic {
+            Ok(Some(value)) | Err(value) => self.diagnostic(value),
+            Ok(None) if !valid => self.diagnostic(NativeBrowserDiagnostic::RendererGateRejected),
+            Ok(None) => {}
+        }
         if !valid {
-            self.feature_event(Some(browser), &origin, NativeFeatureStatus::RendererInstallationFailed);
+            self.feature_event(
+                Some(browser),
+                &origin,
+                NativeFeatureStatus::RendererInstallationFailed,
+            );
             self.fault(Some(browser), BrowserFault::Renderer);
             return 1;
         }
@@ -1588,7 +1872,11 @@ impl Shared {
             if !self.challenge_reload_used.swap(true, Ordering::AcqRel) && self.current() {
                 browser.reload();
             } else {
-                self.feature_event(Some(browser), &origin, NativeFeatureStatus::LoginChallengeTimedOut);
+                self.feature_event(
+                    Some(browser),
+                    &origin,
+                    NativeFeatureStatus::LoginChallengeTimedOut,
+                );
             }
         }
         1
@@ -2013,11 +2301,13 @@ impl Shared {
             session: self.session.clone(),
             identity: self.identity.clone(),
             sink: self.sink.clone(),
+            diagnostics: self.diagnostics.clone(),
         }
     }
 
     fn schedule_cleanup(&self, browser: Option<&Browser>, stage: CleanupStage) {
         let Some(browser) = browser.filter(|browser| browser.is_valid() == 1) else {
+            self.diagnostic(NativeBrowserDiagnostic::CleanupInvalidBrowser);
             if stage == CleanupStage::Destroy {
                 if let Ok(mut state) = self.state.lock() {
                     if state.control.lifecycle() != Lifecycle::Closed {
@@ -2036,6 +2326,7 @@ impl Shared {
         }
         let mut task = DeferredCleanup::new(owner.clone(), browser.clone(), browser_id, stage);
         if post_task(ThreadId::UI, Some(&mut task)) != 1 {
+            self.diagnostic(NativeBrowserDiagnostic::CleanupPostFailed);
             owner.failed(browser_id, stage);
         }
     }
@@ -2311,6 +2602,7 @@ impl<'a> CefBrowserHost<'a> {
             identity: identity.clone(),
             permissions: permissions.clone(),
             sink,
+            diagnostics: Arc::default(),
             hooks,
             login_budget: Mutex::new(LoginBudget::default()),
             challenge_reload_used: Arc::default(),
@@ -3277,6 +3569,7 @@ wrap_life_span_handler! {
         }
 
         fn do_close(&self, browser: Option<&mut Browser>) -> i32 {
+            self.shared.diagnostic(NativeBrowserDiagnostic::NativeDoClose);
             self.shared.revoke();
             cef_popups::close_source(&self.shared.popup);
             self.shared.deny_media_on_ui(None);
@@ -3294,6 +3587,7 @@ wrap_life_span_handler! {
         }
 
         fn on_before_close(&self, _browser: Option<&mut Browser>) {
+            self.shared.diagnostic(NativeBrowserDiagnostic::NativeBeforeClose);
             self.shared.revoke();
             cef_popups::close_source(&self.shared.popup);
             self.shared.deny_media_on_ui(None);
@@ -3311,6 +3605,7 @@ wrap_life_span_handler! {
             // callback valid. Registry methods now find no native reference.
             let browser = self.browser.lock().unwrap_or_else(|error| error.into_inner()).take();
             drop(browser);
+            self.shared.diagnostic(NativeBrowserDiagnostic::NativeClosedAcknowledged);
             self.shared.emit();
             cef_popups::before_close(&self.shared);
         }
@@ -3788,6 +4083,123 @@ mod native_surface {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn renderer_diagnostics_pin_precedes_closed_optional_metadata() {
+        use NativeFeatureStatus::{RendererInstallationFailed, RendererInstalled};
+        assert_eq!(
+            renderer_install_diagnostic(RendererInstalled, "wrong-pin", || panic!(
+                "untrusted metadata read"
+            )),
+            Err(NativeBrowserDiagnostic::RendererPinMismatch)
+        );
+        assert_eq!(
+            renderer_install_diagnostic(RendererInstalled, FEATURE_PROTOCOL_PIN, || None),
+            Ok(None)
+        );
+        assert_eq!(
+            renderer_install_diagnostic(RendererInstallationFailed, FEATURE_PROTOCOL_PIN, || None),
+            Ok(Some(NativeBrowserDiagnostic::RendererInstallation(
+                RendererInstallFailure::Unspecified
+            )))
+        );
+        for wire in 0..12 {
+            let reason = RendererInstallFailure::from_wire(wire).unwrap();
+            assert_eq!(
+                renderer_install_diagnostic(
+                    RendererInstallationFailed,
+                    FEATURE_PROTOCOL_PIN,
+                    || Some(Ok(wire))
+                ),
+                Ok(Some(NativeBrowserDiagnostic::RendererInstallation(reason)))
+            );
+        }
+        for metadata in [Ok(-1), Ok(12), Ok(i32::MAX), Err(())] {
+            assert_eq!(
+                renderer_install_diagnostic(
+                    RendererInstallationFailed,
+                    FEATURE_PROTOCOL_PIN,
+                    || Some(metadata)
+                ),
+                Err(NativeBrowserDiagnostic::RendererMetadataRejected)
+            );
+        }
+        assert_eq!(
+            renderer_install_diagnostic(RendererInstalled, FEATURE_PROTOCOL_PIN, || Some(Ok(0))),
+            Err(NativeBrowserDiagnostic::RendererMetadataRejected)
+        );
+    }
+
+    #[test]
+    fn renderer_diagnostics_budget_is_closed_bounded_and_reentrant_after_panics() {
+        use std::cell::Cell;
+        use NativeBrowserDiagnostic::*;
+        let budget = DiagnosticBudget::default();
+        let mut values = (0..12)
+            .map(|n| RendererInstallation(RendererInstallFailure::from_wire(n).unwrap()))
+            .collect::<Vec<_>>();
+        values.extend([
+            RendererPinMismatch,
+            RendererGateRejected,
+            RendererMetadataRejected,
+            CleanupCloseQueued,
+            CleanupDestroyQueued,
+            CleanupQueueGuardRejected,
+            CleanupTaskStarted,
+            CleanupClaimRejected,
+            CleanupIssuedGuardRejected,
+            CleanupPostFailed,
+            NativeCloseReturned,
+            NativeDestroyReturned,
+            NativeDestroyCallFailed,
+            NativeDoClose,
+            NativeBeforeClose,
+            NativeClosedAcknowledged,
+            CleanupNativeHostMissing,
+            CleanupThreadRejected,
+            CleanupInvalidBrowser,
+            NativeHideCallFailed,
+        ]);
+        assert_eq!(values.len(), 32);
+        let calls = Cell::new(0);
+        let bits = values
+            .iter()
+            .map(|value| value.bit())
+            .collect::<std::collections::BTreeSet<_>>();
+        assert_eq!(bits, (0..32).collect());
+        for _ in 0..256 {
+            for value in &values {
+                assert!(value.code().len() < 64);
+                assert!(value
+                    .code()
+                    .bytes()
+                    .all(|c| c.is_ascii_lowercase() || c == b'-'));
+                budget.emit_with(*value, || {}, || calls.set(calls.get() + 1));
+            }
+        }
+        assert_eq!(calls.get(), 32);
+        let budget = DiagnosticBudget::default();
+        budget.emit_with(
+            RendererPinMismatch,
+            || panic!("fixed logger failure"),
+            || {
+                calls.set(33);
+                budget.emit_with(
+                    RendererPinMismatch,
+                    || panic!("duplicate logger"),
+                    || panic!("duplicate observer"),
+                );
+                budget.emit_with(
+                    CleanupTaskStarted,
+                    || {},
+                    || panic!("fixed observer failure"),
+                );
+            },
+        );
+        assert_eq!(calls.get(), 33);
+        budget.emit_with(NativeBeforeClose, || {}, || calls.set(34));
+        assert_eq!(calls.get(), 34);
+    }
 
     #[test]
     fn http_basic_auth_completion_is_once_on_denial_delivery_and_panic() {
@@ -4536,6 +4948,7 @@ mod tests {
             identity,
             permissions: crate::cef_requests::deny_permissions(),
             sink,
+            diagnostics: Arc::default(),
             hooks: None,
             login_budget: Mutex::new(LoginBudget::default()),
             challenge_reload_used: Arc::default(),
@@ -4567,6 +4980,140 @@ mod tests {
                 },
             })),
         }
+    }
+
+    #[tokio::test]
+    async fn renderer_diagnostics_actual_message_owner_fences_and_lock_free_observer() {
+        use cef::rc::{ConvertParam, ConvertReturnValue, RcImpl};
+        use cef::sys::{_cef_browser_t, _cef_frame_t};
+        #[cfg(target_os = "macos")]
+        crate::platform::test_runtime::ensure_loaded();
+        crate::bootstrap_platform::select_pinned_api().unwrap();
+        fn text(value: &str) -> cef::sys::cef_string_userfree_t {
+            let value = value.encode_utf16().collect::<Vec<_>>();
+            unsafe {
+                let out = cef::sys::cef_string_userfree_utf16_alloc();
+                cef::sys::cef_string_utf16_set(value.as_ptr(), value.len(), out, 1);
+                out
+            }
+        }
+        extern "C" fn valid_frame(_: *mut _cef_frame_t) -> i32 {
+            1
+        }
+        extern "C" fn name(_: *mut _cef_frame_t) -> cef::sys::cef_string_userfree_t {
+            text("main")
+        }
+        extern "C" fn address(_: *mut _cef_frame_t) -> cef::sys::cef_string_userfree_t {
+            text("https://fixture.invalid/")
+        }
+        let raw = _cef_frame_t {
+            is_valid: Some(valid_frame),
+            is_main: Some(valid_frame),
+            get_identifier: Some(name),
+            get_url: Some(address),
+            ..unsafe { std::mem::zeroed() }
+        };
+        let raw: *mut _cef_frame_t = RcImpl::new(raw, ()).cast();
+        let frame: Frame = raw.wrap_result();
+        extern "C" fn valid_browser(_: *mut _cef_browser_t) -> i32 {
+            1
+        }
+        extern "C" fn identifier(_: *mut _cef_browser_t) -> i32 {
+            41
+        }
+        type Facts = (Frame, Arc<std::sync::atomic::AtomicUsize>);
+        extern "C" fn main(this: *mut _cef_browser_t) -> *mut _cef_frame_t {
+            RcImpl::<_cef_browser_t, Facts>::get(this)
+                .interface
+                .0
+                .clone()
+                .into_raw()
+        }
+        extern "C" fn reload(this: *mut _cef_browser_t) {
+            RcImpl::<_cef_browser_t, Facts>::get(this)
+                .interface
+                .1
+                .fetch_add(1, Ordering::Relaxed);
+        }
+        let reloads = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let raw = _cef_browser_t {
+            is_valid: Some(valid_browser),
+            get_identifier: Some(identifier),
+            get_main_frame: Some(main),
+            reload: Some(reload),
+            ..unsafe { std::mem::zeroed() }
+        };
+        let raw: *mut _cef_browser_t = RcImpl::new(raw, (frame.clone(), reloads.clone())).cast();
+        let browser: Browser = raw.wrap_result();
+        #[derive(Default)]
+        struct DiagnosticSink {
+            rows: Mutex<Vec<NativeBrowserDiagnostic>>,
+            shared: Mutex<Option<std::sync::Weak<Shared>>>,
+        }
+        impl BrowserEventSink for DiagnosticSink {
+            fn on_event(&self, _: BrowserEvent) {}
+            fn on_diagnostic(&self, value: NativeBrowserDiagnostic) {
+                let shared = self
+                    .shared
+                    .lock()
+                    .unwrap()
+                    .as_ref()
+                    .unwrap()
+                    .upgrade()
+                    .unwrap();
+                assert!(shared.state.try_lock().is_ok());
+                assert!(shared.session.try_lock().is_ok());
+                assert!(shared.feature_gate.try_lock().is_ok());
+                self.rows.lock().unwrap().push(value);
+                // Reentrant duplicates are bounded before invoking any observer.
+                shared.diagnostic(value);
+            }
+        }
+        let sink = Arc::new(DiagnosticSink::default());
+        let shared = Arc::new(fixture(sink.clone()).await);
+        *sink.shared.lock().unwrap() = Some(Arc::downgrade(&shared));
+        shared.state.lock().unwrap().browser_id = Some(41);
+        let message =
+            process_message_create(Some(&CefString::from(crate::cef_renderer::FEATURE_STATUS)))
+                .unwrap();
+        let args = message.argument_list().unwrap();
+        args.set_string(0, Some(&CefString::from("https://other.invalid")));
+        args.set_string(1, Some(&CefString::from("installation-failed")));
+        args.set_string(2, Some(&CefString::from(FEATURE_PROTOCOL_PIN)));
+        args.set_int(3, RendererInstallFailure::NotifyFunction.wire());
+        shared.feature_message(
+            Some(&browser),
+            Some(&frame),
+            ProcessId::RENDERER,
+            Some(&message),
+        );
+        assert!(sink.rows.lock().unwrap().is_empty());
+        args.set_string(0, Some(&CefString::from("https://fixture.invalid")));
+        shared.feature_message(
+            Some(&browser),
+            Some(&frame),
+            ProcessId::BROWSER,
+            Some(&message),
+        );
+        assert!(sink.rows.lock().unwrap().is_empty());
+        shared.feature_message(
+            Some(&browser),
+            Some(&frame),
+            ProcessId::RENDERER,
+            Some(&message),
+        );
+        assert!(sink.rows.lock().unwrap().contains(
+            &NativeBrowserDiagnostic::RendererInstallation(RendererInstallFailure::NotifyFunction)
+        ));
+        assert!(!shared.current());
+        let count = sink.rows.lock().unwrap().len();
+        shared.feature_message(
+            Some(&browser),
+            Some(&frame),
+            ProcessId::RENDERER,
+            Some(&message),
+        );
+        assert_eq!(sink.rows.lock().unwrap().len(), count);
     }
 
     #[tokio::test]

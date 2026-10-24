@@ -212,6 +212,7 @@ fn child_shared(
         permissions: source.permissions.clone(),
         hooks: source.hooks.clone(),
         sink,
+        diagnostics: source.diagnostics.clone(),
         login_adapter: source.login_adapter,
         login_frames: source.login_frames.clone(),
         certificate_policy: source.certificate_policy,
