@@ -828,7 +828,6 @@ impl AuthCompletion for AuthCallback {
 }
 
 #[cfg(test)]
-
 fn complete_auth(
     session: &Mutex<OriginBrowserSession>,
     identity: &BrowserIdentity,

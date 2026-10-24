@@ -646,6 +646,63 @@ pub(crate) mod wire {
 }
 
 #[cfg(test)]
+const AUTOMATION_DOM_TEST: &str = r#"
+const assert = require('node:assert/strict');
+const {JSDOM} = require('jsdom');
+(async () => {
+  const dom = new JSDOM('<!doctype html><html><body><button>Run</button><input><input type="checkbox"><input type="password"><form><input><input type="password"><button>Login</button></form><a href="https://other.invalid">Other</a><div contenteditable="true"><button>Edit</button></div></body></html>', {url:'https://fixture.invalid/page', runScripts:'outside-only'});
+  const w = dom.window, events = [], listeners = {};
+  const add = w.document.addEventListener.bind(w.document);
+  w.document.addEventListener = (kind, callback, ...rest) => { listeners[kind] = callback; add(kind, callback, ...rest); };
+  w.HTMLElement.prototype.getClientRects = () => [{}];
+  const factory = w.eval('(' + (__FACTORY__).toString() + ')');
+  const dispatch = factory((...args) => events.push(args));
+  const selector = (tag, n) => `html > body > ${tag}:nth-of-type(${n})`;
+  const input = w.document.querySelector('input'), checkbox = w.document.querySelector('input[type=checkbox]'), password = w.document.querySelector('input[type=password]'), button = w.document.querySelector('button');
+  let clicks = 0; button.onclick = () => clicks++;
+  assert.equal(dispatch('1','step',selector('button',1),'click','',false),true); assert.equal(clicks,1);
+  assert.equal(dispatch('2','step',selector('input',1),'fill','synthetic-public-value',false),true); assert.equal(input.value,'synthetic-public-value');
+  assert.equal(dispatch('3','step',selector('input',2),'check','',true),true); assert.equal(checkbox.checked,true);
+  assert.equal(dispatch('4','step',selector('input',3),'fill','never-set',false),false); assert.equal(password.value,'');
+  assert.equal(dispatch('5','step','input[name=password]','fill','never-set',false),false);
+  assert.equal(dispatch('6','step',selector('a',1),'click','',false),false);
+  assert.equal(dispatch('7','step','html > body > form:nth-of-type(1) > input:nth-of-type(1)','fill','never-set',false),false);
+  assert.equal(dispatch('8','step',selector('input',1),'fill','x'.repeat(4097),false),false);
+  assert.equal(dispatch('9','recordStart','','','',false),true);
+  Object.defineProperty(input,'value',{get(){throw new Error('recorder must never read value');}});
+  listeners.change({isTrusted:false,target:input,type:'change'}); assert.equal(events.length,0);
+  listeners.change({isTrusted:true,target:input,type:'change'});
+  assert.deepEqual(events.pop(),['','step','fill',selector('input',1),false]);
+  listeners.change({isTrusted:true,target:password,type:'change'}); assert.equal(events.length,0);
+  listeners.click({isTrusted:true,target:w.document.querySelector('form button'),type:'click'}); assert.equal(events.length,0);
+  listeners.click({isTrusted:true,target:w.document.querySelector('[contenteditable] button'),type:'click'}); assert.equal(events.length,0);
+  listeners.click({isTrusted:true,target:button,type:'click'});
+  assert.deepEqual(events.pop(),['','step','click',selector('button',1),false]);
+  listeners.change({isTrusted:true,target:checkbox,type:'change'});
+  assert.deepEqual(events.pop(),['','step','check',selector('input',2),true]);
+  assert.equal(dispatch('10','recordStop','','','',false),true);
+  listeners.change({isTrusted:true,target:input,type:'change'}); assert.equal(events.length,0);
+  assert.equal(dispatch('11','script',"return Promise.resolve('not returned to native');",'','',false),true);
+  await new Promise(resolve=>setImmediate(resolve)); assert.deepEqual(events.pop(),['11','ok','','',false]);
+  assert.equal(dispatch('12','script',"return Promise.reject(new Error('not returned to native'));",'','',false),true);
+  await new Promise(resolve=>setImmediate(resolve)); assert.deepEqual(events.pop(),['12','failed','','',false]);
+  assert.equal(dispatch('13','script',"throw new Error('not returned to native');",'','',false),false);
+  w.history.pushState({},'', '/successor');
+  assert.equal(dispatch('14','step',selector('button',1),'click','',false),false);
+  assert.equal(dispatch('15','script','window.unwanted=true;','','',false),false);
+  assert.equal(dispatch('16','cancel','','','',false),true);
+  assert.equal(w.unwanted,undefined);
+  assert.equal(dispatch('17','reset','','','',false),true);
+  assert.equal(dispatch('18','step',selector('button',1),'click','',false),true);
+  assert.equal(dispatch('19','recordStart','','','',false),true);
+  assert.equal(dispatch('20','reset','','','',false),true);
+  listeners.click({isTrusted:true,target:button,type:'click'}); assert.equal(events.length,0);
+  dom.window.close();
+  console.log('native automation DOM contract: passed (unit-only, no native acceptance claim)');
+})().catch(error => { console.error(error); process.exitCode=1; });
+"#;
+
+#[cfg(test)]
 mod tests {
     use super::*;
     use std::time::{Duration, Instant};
@@ -866,60 +923,3 @@ mod tests {
         );
     }
 }
-
-#[cfg(test)]
-const AUTOMATION_DOM_TEST: &str = r#"
-const assert = require('node:assert/strict');
-const {JSDOM} = require('jsdom');
-(async () => {
-  const dom = new JSDOM('<!doctype html><html><body><button>Run</button><input><input type="checkbox"><input type="password"><form><input><input type="password"><button>Login</button></form><a href="https://other.invalid">Other</a><div contenteditable="true"><button>Edit</button></div></body></html>', {url:'https://fixture.invalid/page', runScripts:'outside-only'});
-  const w = dom.window, events = [], listeners = {};
-  const add = w.document.addEventListener.bind(w.document);
-  w.document.addEventListener = (kind, callback, ...rest) => { listeners[kind] = callback; add(kind, callback, ...rest); };
-  w.HTMLElement.prototype.getClientRects = () => [{}];
-  const factory = w.eval('(' + (__FACTORY__).toString() + ')');
-  const dispatch = factory((...args) => events.push(args));
-  const selector = (tag, n) => `html > body > ${tag}:nth-of-type(${n})`;
-  const input = w.document.querySelector('input'), checkbox = w.document.querySelector('input[type=checkbox]'), password = w.document.querySelector('input[type=password]'), button = w.document.querySelector('button');
-  let clicks = 0; button.onclick = () => clicks++;
-  assert.equal(dispatch('1','step',selector('button',1),'click','',false),true); assert.equal(clicks,1);
-  assert.equal(dispatch('2','step',selector('input',1),'fill','synthetic-public-value',false),true); assert.equal(input.value,'synthetic-public-value');
-  assert.equal(dispatch('3','step',selector('input',2),'check','',true),true); assert.equal(checkbox.checked,true);
-  assert.equal(dispatch('4','step',selector('input',3),'fill','never-set',false),false); assert.equal(password.value,'');
-  assert.equal(dispatch('5','step','input[name=password]','fill','never-set',false),false);
-  assert.equal(dispatch('6','step',selector('a',1),'click','',false),false);
-  assert.equal(dispatch('7','step','html > body > form:nth-of-type(1) > input:nth-of-type(1)','fill','never-set',false),false);
-  assert.equal(dispatch('8','step',selector('input',1),'fill','x'.repeat(4097),false),false);
-  assert.equal(dispatch('9','recordStart','','','',false),true);
-  Object.defineProperty(input,'value',{get(){throw new Error('recorder must never read value');}});
-  listeners.change({isTrusted:false,target:input,type:'change'}); assert.equal(events.length,0);
-  listeners.change({isTrusted:true,target:input,type:'change'});
-  assert.deepEqual(events.pop(),['','step','fill',selector('input',1),false]);
-  listeners.change({isTrusted:true,target:password,type:'change'}); assert.equal(events.length,0);
-  listeners.click({isTrusted:true,target:w.document.querySelector('form button'),type:'click'}); assert.equal(events.length,0);
-  listeners.click({isTrusted:true,target:w.document.querySelector('[contenteditable] button'),type:'click'}); assert.equal(events.length,0);
-  listeners.click({isTrusted:true,target:button,type:'click'});
-  assert.deepEqual(events.pop(),['','step','click',selector('button',1),false]);
-  listeners.change({isTrusted:true,target:checkbox,type:'change'});
-  assert.deepEqual(events.pop(),['','step','check',selector('input',2),true]);
-  assert.equal(dispatch('10','recordStop','','','',false),true);
-  listeners.change({isTrusted:true,target:input,type:'change'}); assert.equal(events.length,0);
-  assert.equal(dispatch('11','script',"return Promise.resolve('not returned to native');",'','',false),true);
-  await new Promise(resolve=>setImmediate(resolve)); assert.deepEqual(events.pop(),['11','ok','','',false]);
-  assert.equal(dispatch('12','script',"return Promise.reject(new Error('not returned to native'));",'','',false),true);
-  await new Promise(resolve=>setImmediate(resolve)); assert.deepEqual(events.pop(),['12','failed','','',false]);
-  assert.equal(dispatch('13','script',"throw new Error('not returned to native');",'','',false),false);
-  w.history.pushState({},'', '/successor');
-  assert.equal(dispatch('14','step',selector('button',1),'click','',false),false);
-  assert.equal(dispatch('15','script','window.unwanted=true;','','',false),false);
-  assert.equal(dispatch('16','cancel','','','',false),true);
-  assert.equal(w.unwanted,undefined);
-  assert.equal(dispatch('17','reset','','','',false),true);
-  assert.equal(dispatch('18','step',selector('button',1),'click','',false),true);
-  assert.equal(dispatch('19','recordStart','','','',false),true);
-  assert.equal(dispatch('20','reset','','','',false),true);
-  listeners.click({isTrusted:true,target:button,type:'click'}); assert.equal(events.length,0);
-  dom.window.close();
-  console.log('native automation DOM contract: passed (unit-only, no native acceptance claim)');
-})().catch(error => { console.error(error); process.exitCode=1; });
-"#;

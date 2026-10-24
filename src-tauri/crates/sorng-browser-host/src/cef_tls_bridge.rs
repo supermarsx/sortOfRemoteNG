@@ -1361,7 +1361,8 @@ mod tests {
     }
 
     static TEST_LOCK: Mutex<()> = Mutex::new(());
-    static REPLIES: Mutex<Vec<(u64, u64, u64, u32, u32)>> = Mutex::new(Vec::new());
+    type RecordedReply = (u64, u64, u64, u32, u32);
+    static REPLIES: Mutex<Vec<RecordedReply>> = Mutex::new(Vec::new());
     static REVOKES: AtomicUsize = AtomicUsize::new(0);
     struct Hooks {
         current: AtomicBool,
@@ -2039,7 +2040,7 @@ mod tests {
     #[test]
     fn borrowed_chains_are_owned_and_destination_port_is_preserved() {
         let (state, _) = fixture();
-        let mut der = vec![0x30, 1, 0];
+        let mut der = [0x30, 1, 0];
         let chain = [Bytes {
             data: der.as_ptr(),
             length: der.len(),
@@ -2048,6 +2049,7 @@ mod tests {
         raw.port = 8443;
         let owned = unsafe { owned_evidence(&raw, &state) }.unwrap();
         der[0] = 0;
+        assert_eq!(der[0], 0);
         assert_eq!(owned.peer_chain[0][0], 0x30);
         assert_eq!(owned.verified_chain[0][0], 0x30);
         assert_eq!(owned.origin, "https://fixture.invalid:8443");

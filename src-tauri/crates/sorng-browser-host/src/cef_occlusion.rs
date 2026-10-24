@@ -256,7 +256,10 @@ mod x11_checked {
                                                                  // ShapeSet=0, Unsorted=0; offsets/padding remain zero.
         bytes[5] = kind;
         bytes[8..12].copy_from_slice(&window.to_ne_bytes());
-        for (r, out) in rects.iter().zip(bytes[16..].chunks_exact_mut(8)) {
+        for (r, out) in rects
+            .iter()
+            .zip(bytes[16..].as_chunks_mut::<8>().0.iter_mut())
+        {
             out[0..2].copy_from_slice(&(r.x as i16).to_ne_bytes());
             out[2..4].copy_from_slice(&(r.y as i16).to_ne_bytes());
             out[4..6].copy_from_slice(&(r.width as u16).to_ne_bytes());
@@ -393,7 +396,7 @@ mod x11_checked {
         }
         impl Wire for Connection {
             fn request(&mut self, mut bytes: Vec<u8>, reply: bool) -> Result<[u8; 32], ()> {
-                if bytes.len() < 4 || bytes.len() % 4 != 0 || bytes.len() > 32784 {
+                if bytes.len() < 4 || !bytes.len().is_multiple_of(4) || bytes.len() > 32784 {
                     return Err(());
                 }
                 let request = Request {

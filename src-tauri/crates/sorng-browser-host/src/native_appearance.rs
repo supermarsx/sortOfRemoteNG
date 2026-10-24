@@ -496,8 +496,10 @@ mod tests {
             background_color: "#123456".into(),
             text_color: "#abcdef".into(),
         };
-        let mut config = AppearanceConfig::default();
-        config.enabled = false;
+        let mut config = AppearanceConfig {
+            enabled: false,
+            ..AppearanceConfig::default()
+        };
         let applied = config.with_palette(Some(&palette)).unwrap();
         assert!(!applied.enabled);
         assert_eq!(applied.theme.background_color, "#123456");
