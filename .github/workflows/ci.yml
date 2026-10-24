@@ -531,6 +531,8 @@ jobs:
           toolchain: "1.98.1"
           components: rustfmt, clippy
           targets: x86_64-pc-windows-msvc
+      - name: Runtime package layout and whole-matrix contract
+        run: node --test tests/tooling/browserRuntimePackage.node-test.mjs tests/tooling/browserAppBuild.node-test.mjs tests/tooling/windowsNativeCrashCapture.node-test.mjs tests/tooling/browserCustomRuntime.node-test.mjs tests/tooling/cefHttp2Admission.node-test.mjs tests/tooling/cefRuntimeCI.node-test.mjs tests/tooling/cefRuntimeAcceptanceCI.node-test.mjs tests/tooling/cefEngineeringCheckpoint.node-test.mjs tests/tooling/cefOwnedSdkHandoff.node-test.mjs tests/tooling/cefOwnedSdkImport.node-test.mjs tests/tooling/cefOwnedSdkPublish.node-test.mjs tests/tooling/cefSdkLayoutProbeWorkflow.node-test.mjs tests/tooling/cefHostedBootstrap.node-test.mjs tests/tooling/cefHostedProvision.node-test.mjs tests/tooling/cefSandboxObserver.node-test.mjs tests/tooling/cefMacSdkInventory.node-test.mjs tests/tooling/cefMacLegacyCapture.node-test.mjs
       - name: Native browser std-only contracts (Node + rustc)
         run: node --test tests/tooling/nativeWarmStartup.node-test.mjs tests/tooling/nativeCredentialFocus.node-test.mjs tests/tooling/nativeNavigationFailure.node-test.mjs tests/tooling/nativeLoginDiagnostics.node-test.mjs tests/tooling/cefStartupFieldTrials.node-test.mjs tests/tooling/nativeOriginProbe.node-test.mjs tests/tooling/appStartupSteps.node-test.mjs tests/tooling/nativeEngineFailure.node-test.mjs tests/tooling/secureClipboardExit.node-test.mjs tests/tooling/webNetworkGuardLatch.node-test.mjs tests/tooling/tauriEventListenerCleanup.node-test.mjs tests/tooling/nativeBrowserStartupTask.node-test.mjs tests/tooling/nativeRendererReadiness.node-test.mjs
       - name: Verify Windows updater archive security backport
@@ -562,8 +564,6 @@ jobs:
           mkdir -p .artifacts
           node scripts/native-build-env.mjs cargo test --manifest-path src-tauri/Cargo.toml -p sorng-browser-host --features cef-host --lib --locked --no-run --message-format=json > .artifacts/macos-cef-test-artifacts.jsonl
           node scripts/ci/diagnose-macos-cef-tests.mjs .artifacts/macos-cef-test-artifacts.jsonl
-      - name: Runtime package layout and whole-matrix contract
-        run: node --test tests/tooling/browserRuntimePackage.node-test.mjs tests/tooling/browserAppBuild.node-test.mjs tests/tooling/windowsNativeCrashCapture.node-test.mjs tests/tooling/browserCustomRuntime.node-test.mjs tests/tooling/cefHttp2Admission.node-test.mjs tests/tooling/cefRuntimeCI.node-test.mjs tests/tooling/cefRuntimeAcceptanceCI.node-test.mjs tests/tooling/cefEngineeringCheckpoint.node-test.mjs tests/tooling/cefOwnedSdkHandoff.node-test.mjs tests/tooling/cefOwnedSdkImport.node-test.mjs tests/tooling/cefOwnedSdkPublish.node-test.mjs tests/tooling/cefSdkLayoutProbeWorkflow.node-test.mjs tests/tooling/cefHostedBootstrap.node-test.mjs tests/tooling/cefHostedProvision.node-test.mjs tests/tooling/cefSandboxObserver.node-test.mjs tests/tooling/cefMacSdkInventory.node-test.mjs tests/tooling/cefMacLegacyCapture.node-test.mjs
       - name: Upload sanitized fixture results
         if: always()
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
