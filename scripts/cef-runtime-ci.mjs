@@ -901,12 +901,23 @@ export async function build(
     execute,
     checkout = ROOT,
     runnerMode = "dedicated",
+    engineering,
   },
   env = process.env,
 ) {
   if (!execute) fail("build requires --execute");
   const budget =
-    runnerMode === "hosted" ? createHostedBuildBudget() : undefined;
+    runnerMode === "hosted"
+      ? createHostedBuildBudget(engineering ? 60 * 60_000 : undefined)
+      : undefined;
+  if (
+    engineering &&
+    (runnerMode !== "hosted" ||
+      target !== "x86_64-apple-darwin" ||
+      process.platform !== "darwin" ||
+      process.arch !== "x64")
+  )
+    fail("Engineering checkpoint requires its reviewed native hosted target");
   repositoryName(repository);
   const { sourceLock, inputsRoot } = await plan({
     inputs,
@@ -1004,7 +1015,15 @@ export async function build(
   for (const entry of runner.path)
     if (!inside(toolsRoot, await realpath(path.join(toolsRoot, entry))))
       fail("Runner PATH escapes tools root");
-  const work = await sourceWorkspace(env.RUNNER_TEMP, checkout);
+  const work = engineering
+    ? await realpath(engineering.workspace)
+    : await sourceWorkspace(env.RUNNER_TEMP, checkout);
+  if (engineering) {
+    const temp = await realpath(env.RUNNER_TEMP);
+    if (!inside(temp, work) || inside(checkout, work))
+      fail("Checkpoint workspace isolation");
+    await verifySourceBuildIsolation(work);
+  }
   const logs = path.join(work, "logs"),
     bundle = path.join(work, "bundle");
   await mkdir(logs);
@@ -1166,6 +1185,25 @@ export async function build(
     { flag: "wx" },
   );
   Object.assign(childEnv, recipe.environment);
+  const engineeringContext = {
+    revalidateGn: () =>
+      call(
+        python,
+        cefHookArguments(cef, depot),
+        "checkpoint-gn-revalidation",
+        commands[0].cwd,
+      ),
+    env: childEnv,
+    work,
+    chromium,
+    cef,
+    depot,
+    toolsRoot,
+    runner,
+    recipe,
+    sourceLock,
+    logs,
+  };
   for (const [index, step] of commands.entries()) {
     if (step.executable !== "python3")
       fail("Unexpected reviewed recipe executable");
@@ -1174,12 +1212,23 @@ export async function build(
       (step.args.length !== 1 || step.args[0] !== "cef/tools/gclient_hook.py")
     )
       fail("Unexpected reviewed CEF hook command");
+    if (engineering && index === 1) {
+      return engineering.compile({
+        ...engineeringContext,
+        executable: python,
+        args: step.args,
+        cwd: step.cwd,
+        env: childEnv,
+      });
+    }
     await call(
       python,
       index === 0 ? cefHookArguments(cef, depot) : step.args,
       `build-${index}`,
       step.cwd,
     );
+    if (engineering && index === 0)
+      await engineering.afterGn(engineeringContext);
   }
   const distributions = (
     await readdir(path.join(cef, "binary_distrib"), { withFileTypes: true })

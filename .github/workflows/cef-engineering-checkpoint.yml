@@ -1,0 +1,77 @@
+name: CEF engineering checkpoint
+# Explicit experiment only. Not a runtime producer or application release.
+on:
+  workflow_dispatch:
+    inputs:
+      restore_run:
+        description: Exact prior trusted checkpoint workflow run (0 starts the controlled first slice)
+        type: string
+        required: true
+        default: "0"
+permissions:
+  contents: read
+defaults:
+  run:
+    shell: bash
+jobs:
+  checkpoint:
+    if: github.event_name == 'workflow_dispatch' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch) && github.event.repository.visibility == 'public'
+    runs-on: macos-15-intel
+    timeout-minutes: 120
+    concurrency:
+      group: cef-engineering-checkpoint-${{ github.ref }}-x86_64-apple-darwin-c7bb8b0e4a4c8ba61fffe095c2d4466e45ddc6e762c9fcd3028f49909f9c1c8f
+      cancel-in-progress: true
+    permissions:
+      contents: write
+      actions: read
+    env:
+      CEF_DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+      GITHUB_REPOSITORY_VISIBILITY: ${{ github.event.repository.visibility }}
+      SORNG_CEF_TOOLS_ROOT: /
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: ".node-version"
+          package-manager-cache: false
+      - name: Prepare existing fixed reviewed native prerequisites
+        run: node scripts/cef-hosted-provision.mjs --target x86_64-apple-darwin --output "$RUNNER_TEMP/cef-checkpoint-prerequisites" --execute
+      - name: Download exact independently sealed prior checkpoint
+        id: restore
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CEF_RESTORE_RUN: ${{ inputs.restore_run }}
+        run: node scripts/cef-engineering-checkpoint.mjs download --restore-run "$CEF_RESTORE_RUN"
+      - name: Fresh pinned source and GN, verify restore, controlled fifteen-minute compile, quiesce and pack
+        # No GH_TOKEN, GITHUB_TOKEN or ACTIONS credential is passed to any child.
+        env:
+          CEF_RESTORE_MANIFEST_SHA: ${{ steps.restore.outputs.manifest_sha }}
+        run: node scripts/cef-engineering-checkpoint.mjs compile
+      - name: Upload verified chunks to a new draft engineering checkpoint
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node scripts/cef-engineering-checkpoint.mjs upload
+      - name: Seal immutable run-bound metadata LAST
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        with:
+          name: cef-engineering-seal-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/cef-engineering-seal/seal.json
+          retention-days: 90
+          compression-level: 0
+          if-no-files-found: error
+      - name: Preserve compiler failure after sealing its diagnostic checkpoint
+        run: node scripts/cef-engineering-checkpoint.mjs outcome
+      - name: Retain small diagnostics, never the multi-gigabyte checkpoint
+        if: always()
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        with:
+          name: cef-engineering-diagnostics-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            ${{ runner.temp }}/cef-checkpoint-prerequisites
+            ${{ runner.temp }}/cef-hosted-prepare-*
+            ${{ runner.temp }}/cef-engineering-state.json
+            ${{ runner.temp }}/sorng-cef-engineering/x86_64-apple-darwin/c7bb8b0e4a4c8ba61fffe095c2d4466e45ddc6e762c9fcd3028f49909f9c1c8f/logs
+          retention-days: 14
+          if-no-files-found: warn

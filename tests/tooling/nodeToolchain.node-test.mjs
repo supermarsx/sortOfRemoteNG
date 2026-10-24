@@ -22,6 +22,7 @@ const EXPECTED_SETUP_NODE_COUNTS = {
   "browser-native-packages.yml": 1,
   "cargo-update.yml": 2,
   "cef-hosted-capacity.yml": 1,
+  "cef-engineering-checkpoint.yml": 1,
   "cef-patched-runtime.yml": 6, // Includes the reviewed hosted-plan target-selection job.
   "cef-runtime-acceptance.yml": 2,
   "ci.yml": 10,

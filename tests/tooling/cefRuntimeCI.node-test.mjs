@@ -27,6 +27,7 @@ import {
   prepareWindowsGitLauncher,
   PACK_PYTHON,
   boundedBuildCommands,
+  build,
   cefHookArguments,
   buildEnvironment,
   createHostedBuildBudget,
@@ -2002,4 +2003,31 @@ test("tampered launcher templates and command-sensitive explicit paths fail befo
       }),
       /Unsafe/,
     );
+});
+
+test("engineering checkpoints cannot select a dedicated or foreign producer before acquisition", async () => {
+  await assert.rejects(
+    build({
+      execute: true,
+      repository: "owner/repo",
+      target: "x86_64-apple-darwin",
+      runnerMode: "dedicated",
+      engineering: {},
+    }),
+    /Engineering checkpoint requires/,
+  );
+  await assert.rejects(
+    build({
+      execute: true,
+      repository: "owner/repo",
+      target: "aarch64-apple-darwin",
+      runnerMode: "hosted",
+      engineering: {},
+    }),
+    /Engineering checkpoint requires/,
+  );
+  assert.throws(
+    () => parseArguments(["build", "--checkpoint", "yes"]),
+    /Unknown\/duplicate/,
+  );
 });
