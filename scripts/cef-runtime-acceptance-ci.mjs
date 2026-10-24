@@ -662,11 +662,16 @@ export async function acceptancePlan({
     publicationAllowed: false,
   };
 }
-export function nativeChildEnvironment(source, sdk, cargoTarget) {
+export function nativeChildEnvironment(
+  source,
+  sdk,
+  cargoTarget,
+  platform = process.platform,
+) {
   const env = {};
   for (const [key, value] of Object.entries(source)) {
     if (
-      /^(GH_|GITHUB_|ACTIONS_|INPUT_|SORNG_|CEF_|SSH_AUTH_SOCK$|SSH_ASKPASS$|GIT_ASKPASS$|NODE_OPTIONS$|NODE_EXTRA_CA_CERTS$|RUSTFLAGS$|CARGO_ENCODED_RUSTFLAGS$|LD_PRELOAD$|DYLD_)/i.test(
+      /^(GH_|GITHUB_|ACTIONS_|INPUT_|SORNG_|CEF_|SSH_AUTH_SOCK$|SSH_ASKPASS$|GIT_ASKPASS$|NODE_OPTIONS$|NODE_EXTRA_CA_CERTS$|RUSTFLAGS$|RUST_ENCODED_RUSTFLAGS$|CARGO_ENCODED_RUSTFLAGS$|LD_LIBRARY_PATH$|LD_PRELOAD$|DYLD_)/i.test(
         key,
       ) ||
       /TOKEN|PASSWORD|SECRET|PRIVATE_KEY|ACCESS_KEY|AUTHORIZATION|CREDENTIAL/i.test(
@@ -681,6 +686,15 @@ export function nativeChildEnvironment(source, sdk, cargoTarget) {
     CEF_PATH: sdk,
     CARGO_TARGET_DIR: cargoTarget,
     CARGO_BUILD_JOBS: "2",
+    // Match the app build: each staged Linux app/helper resolves CEF beside
+    // its own executable, never via an inherited loader search path.
+    ...(platform === "linux"
+      ? {
+          CARGO_ENCODED_RUSTFLAGS: ["-C", "link-arg=-Wl,-rpath,$ORIGIN"].join(
+            "\x1f",
+          ),
+        }
+      : {}),
   };
 }
 export function fixtureClientBuild(target, suite) {

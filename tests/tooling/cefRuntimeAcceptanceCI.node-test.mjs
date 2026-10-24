@@ -537,6 +537,7 @@ test("native process environment excludes CI credentials, inherited fixture over
     },
     "/verified-sdk",
     "/owned-cargo",
+    "win32",
   );
   assert.deepEqual(env, {
     PATH: "native-tools",
@@ -1456,3 +1457,116 @@ test("all nine native runs keep their original gates and derive the H2 pin only 
     }),
   );
 });
+
+test("Linux native builds replace injected flags with executable-relative CEF RUNPATH only", () => {
+  const inherited = {
+    PATH: "native-tools",
+    RUSTFLAGS: "untrusted",
+    CARGO_ENCODED_RUSTFLAGS: "untrusted",
+    RUST_ENCODED_RUSTFLAGS: "untrusted",
+    LD_LIBRARY_PATH: "/untrusted",
+    LD_PRELOAD: "/untrusted/preload.so",
+    DYLD_LIBRARY_PATH: "/untrusted",
+    GH_TOKEN: "secret",
+  };
+  const linux = nativeChildEnvironment(
+    inherited,
+    "/verified-sdk",
+    "/owned-cargo",
+    "linux",
+  );
+  assert.equal(
+    linux.CARGO_ENCODED_RUSTFLAGS,
+    ["-C", "link-arg=-Wl,-rpath,$ORIGIN"].join("\x1f"),
+  );
+  for (const name of [
+    "RUSTFLAGS",
+    "RUST_ENCODED_RUSTFLAGS",
+    "LD_LIBRARY_PATH",
+    "LD_PRELOAD",
+    "DYLD_LIBRARY_PATH",
+    "GH_TOKEN",
+  ])
+    assert.equal(linux[name], undefined);
+  for (const platform of ["win32", "darwin"]) {
+    const unchanged = nativeChildEnvironment(
+      inherited,
+      "/verified-sdk",
+      "/owned-cargo",
+      platform,
+    );
+    assert.deepEqual(unchanged, {
+      PATH: "native-tools",
+      CEF_PATH: "/verified-sdk",
+      CARGO_TARGET_DIR: "/owned-cargo",
+      CARGO_BUILD_JOBS: "2",
+    });
+  }
+});
+
+test(
+  "real Linux ELF client and helper find only their packaged library from a foreign cwd",
+  { skip: process.platform !== "linux" },
+  async (t) => {
+    const root = await realpath(
+      await mkdtemp(path.join(os.tmpdir(), "cef-native-loader-")),
+    );
+    t.after(async () => {
+      assert.equal(await realpath(root), root);
+      await rm(root, { recursive: true, force: true });
+    });
+    const bundle = path.join(root, "bundle"),
+      foreign = path.join(root, "foreign");
+    await mkdir(bundle);
+    await mkdir(foreign);
+    await writeFile(
+      path.join(root, "library.c"),
+      "int owned_loader_value(void) { return 37; }\n",
+    );
+    await writeFile(
+      path.join(root, "main.c"),
+      "extern int owned_loader_value(void); int main(void) { return owned_loader_value() == 37 ? 0 : 23; }\n",
+    );
+    const env = nativeChildEnvironment(process.env, "", "", "linux");
+    const run = (command, args, cwd = foreign) =>
+      execFileSync(command, args, { cwd, env, timeout: 30000, stdio: "pipe" });
+    run("cc", [
+      "-shared",
+      "-fPIC",
+      path.join(root, "library.c"),
+      "-Wl,-soname,libownedcefprobe.so",
+      "-o",
+      path.join(bundle, "libownedcefprobe.so"),
+    ]);
+    const common = [
+      path.join(root, "main.c"),
+      "-L" + bundle,
+      "-lownedcefprobe",
+    ];
+    const old = path.join(bundle, "old-client");
+    run("cc", [...common, "-o", old]);
+    assert.throws(
+      () => run(old, []),
+      (error) =>
+        error.status === 127 &&
+        error.stderr.toString().includes("libownedcefprobe.so"),
+    );
+    const flags = env.CARGO_ENCODED_RUSTFLAGS.split("\x1f");
+    assert.deepEqual(flags, ["-C", "link-arg=-Wl,-rpath,$ORIGIN"]);
+    for (const name of ["client", "helper"]) {
+      const executable = path.join(bundle, name);
+      run("cc", [
+        ...common,
+        flags[1].slice("link-arg=".length),
+        "-o",
+        executable,
+      ]);
+      assert.match(
+        run("readelf", ["-d", executable]).toString(),
+        /\((?:RUNPATH|RPATH)\).*\[\$ORIGIN\]/,
+      );
+      run(executable, []);
+    }
+    assert.equal(env.LD_LIBRARY_PATH, undefined);
+  },
+);
