@@ -3732,7 +3732,10 @@ test("post-slice link diagnostic preserves real rejected outside, loop and junct
 });
 
 test("post-slice link diagnostic bounds traversal, link count, target and escaped output", async (t) => {
-  const root = await scratch(t);
+  const parent = await scratch(t);
+  // Hosted Windows workspaces also have an ancestor named "a" (D:\a).
+  const root = path.join(parent, "a", "out");
+  await mkdir(root, { recursive: true });
   await writeFile(path.join(root, "a"), "a");
   await writeFile(path.join(root, "b"), "b");
   assert.equal(
@@ -3749,7 +3752,7 @@ test("post-slice link diagnostic bounds traversal, link count, target and escape
   };
   const linked = {
     lstat: async (file) =>
-      file.endsWith(path.sep + "a") || file.endsWith(path.sep + "b")
+      file === path.join(root, "a") || file === path.join(root, "b")
         ? fakeLink
         : lstat(file),
     readlink: async () => '../outside\n"secret-shaped-target"',
@@ -3792,7 +3795,7 @@ test("post-slice link diagnostic closes own directory on denial and hung read de
         throw new Error("raw-secret");
       },
       lstat: async (file) => {
-        if (file.endsWith(path.sep + "a"))
+        if (file === path.join(root, "a"))
           throw Object.assign(new Error("raw-secret"), { code: "EACCES" });
         return lstat(file);
       },
