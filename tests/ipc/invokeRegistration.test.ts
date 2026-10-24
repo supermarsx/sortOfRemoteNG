@@ -118,7 +118,34 @@ interface ModuleFacts {
 
 const sourceTextCache = new Map<string, string | null>();
 const sourceFileCache = new Map<string, ts.SourceFile | null>();
+const sourceFilesWithParents = new Set<string>();
 const moduleFactsCache = new Map<string, ModuleFacts>();
+const moduleResolutionCache = new Map<string, string | null>();
+interface SyntaxNodes {
+  calls: readonly ts.CallExpression[];
+  variables: readonly ts.VariableDeclaration[];
+}
+const syntaxNodesCache = new Map<string, SyntaxNodes>();
+/** One full preorder traversal, preserving the parser's original parent links. */
+function syntaxNodes(file: string): SyntaxNodes {
+  const cached = syntaxNodesCache.get(file);
+  if (cached) return cached;
+  const calls: ts.CallExpression[] = [];
+  const variables: ts.VariableDeclaration[] = [];
+  const source = parseFile(file);
+  const visit = (node: ts.Node) => {
+    if (ts.isCallExpression(node)) calls.push(node);
+    if (ts.isVariableDeclaration(node)) variables.push(node);
+    ts.forEachChild(node, visit);
+  };
+  if (source) visit(source);
+  const result = Object.freeze({
+    calls: Object.freeze(calls),
+    variables: Object.freeze(variables),
+  });
+  syntaxNodesCache.set(file, result);
+  return result;
+}
 
 function readSource(file: string): string | null {
   const cached = sourceTextCache.get(file);
@@ -134,11 +161,19 @@ function readSource(file: string): string | null {
   return text;
 }
 
-function parseFile(file: string): ts.SourceFile | null {
+function parseFile(file: string, requireParents = true): ts.SourceFile | null {
   const cached = sourceFileCache.get(file);
-  if (cached !== undefined) return cached;
+  if (
+    cached !== undefined &&
+    (cached === null || !requireParents || sourceFilesWithParents.has(file))
+  )
+    return cached;
 
   const text = readSource(file);
+  // Import/export/string-constant facts never inspect ancestry. Parent every
+  // invoke-bearing file immediately; upgrade any indirect caller before walking
+  // calls by reparsing through the same public compiler API, not manual links.
+  const withParents = requireParents || text?.includes("invoke") === true;
   const sourceFile =
     text === null
       ? null
@@ -146,10 +181,11 @@ function parseFile(file: string): ts.SourceFile | null {
           file,
           text,
           ts.ScriptTarget.Latest,
-          true,
+          withParents,
           file.endsWith(".tsx") ? ts.ScriptKind.TSX : ts.ScriptKind.TS,
         );
   sourceFileCache.set(file, sourceFile);
+  if (sourceFile && withParents) sourceFilesWithParents.add(file);
   return sourceFile;
 }
 
@@ -344,7 +380,7 @@ function collectModuleFacts(file: string): ModuleFacts {
   // Seed the cache before recursing so import cycles terminate.
   moduleFactsCache.set(file, facts);
 
-  const sourceFile = parseFile(file);
+  const sourceFile = parseFile(file, false);
   if (!sourceFile) return facts;
 
   for (const statement of sourceFile.statements) {
@@ -370,18 +406,24 @@ function collectModuleFacts(file: string): ModuleFacts {
   // spells `invoke` itself: nested constants are visible only to that file's
   // own call sites, and a nested core binding is only used as `ns.invoke`.
   if (!readSource(file)?.includes("invoke")) return facts;
-  const visit = (node: ts.Node) => {
-    if (ts.isVariableDeclaration(node) && !recordTauriBinding(node, facts)) {
+  for (const node of syntaxNodes(file).variables) {
+    if (!recordTauriBinding(node, facts))
       recordConstants(node, facts.localConstants);
-    }
-    ts.forEachChild(node, visit);
-  };
-  visit(sourceFile);
-
+  }
   return facts;
 }
 
 function resolveModule(fromFile: string, specifier: string): string | null {
+  const key = `${fromFile}\u0000${specifier}`;
+  if (moduleResolutionCache.has(key)) return moduleResolutionCache.get(key)!;
+  const result = resolveModuleUncached(fromFile, specifier);
+  moduleResolutionCache.set(key, result);
+  return result;
+}
+function resolveModuleUncached(
+  fromFile: string,
+  specifier: string,
+): string | null {
   let base: string;
   if (specifier.startsWith(".")) {
     base = path.resolve(path.dirname(fromFile), specifier);
@@ -615,7 +657,7 @@ function localWrappers(file: string): Map<string, Wrapper[]> {
   const source = parseFile(file);
   if (!source) return wrappers;
   const facts = collectModuleFacts(file);
-  const visit = (node: ts.Node) => {
+  for (const node of syntaxNodes(file).calls) {
     if (
       ts.isCallExpression(node) &&
       isInvokeCallee(node.expression, facts) &&
@@ -660,17 +702,33 @@ function localWrappers(file: string): Map<string, Wrapper[]> {
         break;
       }
     }
-    ts.forEachChild(node, visit);
-  };
-  visit(source);
+  }
   return wrappers;
 }
 
-function resolveWrapper(
+interface WrapperResolution {
+  file: string;
+  entries: readonly Wrapper[];
+}
+const wrapperResolutionCache = new Map<string, WrapperResolution | null>();
+function resolveWrapper(file: string, name: string): WrapperResolution | null {
+  const key = `${file}\u0000${name}`;
+  if (wrapperResolutionCache.has(key)) return wrapperResolutionCache.get(key)!;
+  const found = resolveWrapperGraph(file, name, new Set());
+  const result = found
+    ? Object.freeze({
+        file: found.file,
+        entries: Object.freeze([...found.entries]),
+      })
+    : null;
+  wrapperResolutionCache.set(key, result);
+  return result;
+}
+function resolveWrapperGraph(
   file: string,
   name: string,
   seen = new Set<string>(),
-): { file: string; entries: Wrapper[] } | null {
+): WrapperResolution | null {
   const key = `${file}:${name}`;
   if (seen.has(key)) return null;
   seen.add(key);
@@ -680,11 +738,11 @@ function resolveWrapper(
   const binding = facts.imports.get(name);
   if (binding) {
     const target = resolveModule(file, binding.specifier);
-    if (target) return resolveWrapper(target, binding.imported, seen);
+    if (target) return resolveWrapperGraph(target, binding.imported, seen);
   }
   for (const specifier of facts.starExports) {
     const target = resolveModule(file, specifier);
-    const resolved = target && resolveWrapper(target, name, seen);
+    const resolved = target && resolveWrapperGraph(target, name, seen);
     if (resolved) return resolved;
   }
   return null;
@@ -798,10 +856,27 @@ function isInvokeCallee(callee: ts.Expression, facts: ModuleFacts): boolean {
   );
 }
 
+interface ScanResult {
+  calls: readonly Readonly<InvokeCall>[];
+  unresolved: readonly Readonly<UnresolvedInvoke>[];
+}
+const scanCache = new Map<string, ScanResult>();
+function copyScan(result: ScanResult): {
+  calls: InvokeCall[];
+  unresolved: UnresolvedInvoke[];
+} {
+  return {
+    calls: result.calls.map((row) => ({ ...row })),
+    unresolved: result.unresolved.map((row) => ({ ...row })),
+  };
+}
 function collectInvokes(roots: string[]): {
   calls: InvokeCall[];
   unresolved: UnresolvedInvoke[];
 } {
+  const key = JSON.stringify(roots);
+  const cached = scanCache.get(key);
+  if (cached) return copyScan(cached);
   const calls: InvokeCall[] = [];
   const unresolved: UnresolvedInvoke[] = [];
 
@@ -810,8 +885,6 @@ function collectInvokes(roots: string[]): {
     const text = readSource(file);
     if (text === null) continue;
 
-    const sourceFile = parseFile(file);
-    if (!sourceFile) continue;
     const facts = collectModuleFacts(file);
     // A direct `invoke` call or a local wrapper necessarily spells `invoke`.
     // Any other file can only reach a command by calling a wrapper through an
@@ -825,12 +898,14 @@ function collectInvokes(roots: string[]): {
     ) {
       continue;
     }
+    const sourceFile = parseFile(file);
+    if (!sourceFile) continue;
     const relative = path
       .relative(PROJECT_ROOT, file)
       .split(path.sep)
       .join("/");
 
-    const visit = (node: ts.Node) => {
+    for (const node of syntaxNodes(file).calls) {
       if (ts.isCallExpression(node) && isInvokeCallee(node.expression, facts)) {
         const [argument] = node.arguments;
         if (argument) {
@@ -881,13 +956,15 @@ function collectInvokes(roots: string[]): {
           }
         }
       }
-      ts.forEachChild(node, visit);
-    };
-
-    visit(sourceFile);
+    }
   }
 
-  return { calls, unresolved };
+  const result = {
+    calls: Object.freeze(calls.map((row) => Object.freeze(row))),
+    unresolved: Object.freeze(unresolved.map((row) => Object.freeze(row))),
+  };
+  scanCache.set(key, result);
+  return copyScan(result);
 }
 
 function collectRegisteredCommands(): {
@@ -915,9 +992,9 @@ function collectRegisteredCommands(): {
 }
 
 describe("frontend invoke registrations", () => {
-  // Parses every frontend .ts/.tsx with the TypeScript compiler and scans the
-  // Rust handler files; runtime scales with repo size, so allow generous
-  // headroom over vitest's 5s default (slower CI runners were timing out).
+  // Parses every frontend .ts/.tsx and the reachable Rust handlers. Shared
+  // preorder traversal and complete-query caches keep coverage overhead bounded
+  // without reducing the inventory or extending the existing test deadline.
   it("uses only Rust commands registered by the aggregate handlers", () => {
     const { registered, handlerFiles } = collectRegisteredCommands();
     const { calls, unresolved } = collectInvokes(FRONTEND_ROOTS);
@@ -1059,4 +1136,129 @@ describe("frontend invoke registrations", () => {
     ].sort();
     expect(actual).toEqual(expected);
   }, 30000);
+});
+
+/** Runtime-only fixture files are parsed, never imported or executed. */
+function withScannerFixture(
+  files: Record<string, string>,
+  check: (root: string) => void,
+): void {
+  const parent = path.join(PROJECT_ROOT, ".cache");
+  fs.mkdirSync(parent, { recursive: true });
+  const canonicalParent = fs.realpathSync(parent);
+  const root = fs.mkdtempSync(path.join(canonicalParent, "invoke-fixture-"));
+  try {
+    for (const [name, source] of Object.entries(files)) {
+      if (!/^[a-z]+\.ts$/.test(name))
+        throw new Error("Closed fixture name required");
+      fs.writeFileSync(path.join(root, name), source);
+    }
+    check(root);
+  } finally {
+    removeScannerFixture(root, canonicalParent);
+  }
+}
+
+function removeScannerFixture(root: string, parent: string): void {
+  if (path.dirname(root) !== parent || fs.realpathSync(root) !== root)
+    throw new Error("Owned fixture cleanup boundary changed");
+  fs.rmSync(root, { recursive: true });
+}
+
+describe("invoke scanner cache semantics", () => {
+  it("does not cache recursive cycle misses before an alternate export is checked", () => {
+    withScannerFixture(
+      {
+        "a.ts": 'export * from "./b"; export * from "./leaf";',
+        "b.ts": 'export * from "./a";',
+        "leaf.ts":
+          'import {invoke} from "@tauri-apps/api/core"; export function forward(command:string){return invoke(command);}',
+        "caller.ts":
+          'import {forward as run} from "./b"; export function execute(){ const command="fixture_alias_without_direct_spelling"; run(command); }',
+        "ordinary.ts":
+          "export const forward=(command:string)=>ordinary(command);",
+      },
+      (root) => {
+        const a = path.join(root, "a.ts"),
+          b = path.join(root, "b.ts"),
+          caller = path.join(root, "caller.ts"),
+          leaf = path.join(root, "leaf.ts");
+        const factsOnly = parseFile(caller, false)!;
+        expect(sourceFilesWithParents.has(caller)).toBe(false);
+        expect(factsOnly.statements[0].parent).toBeUndefined();
+        const first = resolveWrapper(a, "forward");
+        expect(first?.file).toBe(leaf);
+        // During the first query b cannot finish through a; its partial miss must not poison this query.
+        expect(resolveWrapper(b, "forward")?.file).toBe(leaf);
+        expect(resolveWrapper(caller, "run")?.file).toBe(leaf);
+        expect(resolveWrapper(a, "forward")).toBe(first);
+        expect(resolveWrapper(a, "missing")).toBeNull();
+        expect(resolveWrapper(a, "missing")).toBeNull();
+        expect(
+          resolveWrapper(path.join(root, "ordinary.ts"), "forward"),
+        ).toBeNull();
+        expect(readSource(caller)).not.toContain("invoke");
+        const scan = collectInvokes([path.relative(PROJECT_ROOT, root)]);
+        expect(
+          scan.calls
+            .filter((row) => row.file.endsWith("/caller.ts"))
+            .map((row) => row.name),
+        ).toEqual(["fixture_alias_without_direct_spelling"]);
+        const parented = parseFile(caller)!;
+        expect(parented).not.toBe(factsOnly);
+        expect(parented.statements[0].parent).toBe(parented);
+        expect(sourceFilesWithParents.has(caller)).toBe(true);
+        expect(
+          syntaxNodes(caller).calls.every((node) => node.parent !== undefined),
+        ).toBe(true);
+        expect(parseFile(caller, false)).toBe(parented);
+      },
+    );
+  });
+  it("shares the exact preorder call traversal with intact compiler parent links", () => {
+    withScannerFixture(
+      { "calls.ts": "const value=outer(first(), second(third()));" },
+      (root) => {
+        const file = path.join(root, "calls.ts"),
+          source = parseFile(file)!;
+        const original: ts.CallExpression[] = [];
+        const visit = (node: ts.Node) => {
+          if (ts.isCallExpression(node)) original.push(node);
+          ts.forEachChild(node, visit);
+        };
+        visit(source);
+        const cached = syntaxNodes(file);
+        expect(cached.calls).toEqual(original);
+        expect(
+          cached.calls.map((node) => node.expression.getText(source)),
+        ).toEqual(["outer", "first", "second", "third"]);
+        expect(cached.calls.every((node) => node.parent !== undefined)).toBe(
+          true,
+        );
+        expect(syntaxNodes(file)).toBe(cached);
+      },
+    );
+  });
+  it("keeps root order and returns caller-owned rows instead of mutable cached inventory", () => {
+    const finite = "tests/ipc/fixtures/finiteInvokes";
+    const first = collectInvokes([FIXTURE_ROOT]),
+      second = collectInvokes([finite]);
+    const forward = collectInvokes([FIXTURE_ROOT, finite]),
+      reverse = collectInvokes([finite, FIXTURE_ROOT]);
+    expect(forward).toEqual({
+      calls: [...first.calls, ...second.calls],
+      unresolved: [...first.unresolved, ...second.unresolved],
+    });
+    expect(reverse).toEqual({
+      calls: [...second.calls, ...first.calls],
+      unresolved: [...second.unresolved, ...first.unresolved],
+    });
+    forward.calls[0].name = "must_not_poison_cache";
+    forward.calls.splice(1);
+    forward.unresolved[0].expression = "must_not_poison_cache";
+    expect(collectInvokes([FIXTURE_ROOT, finite])).toEqual({
+      calls: [...first.calls, ...second.calls],
+      unresolved: [...first.unresolved, ...second.unresolved],
+    });
+  });
 });
