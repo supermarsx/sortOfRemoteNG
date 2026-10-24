@@ -774,12 +774,16 @@ test("raw ZIP member hash is original bytes, strict seal extraction is unchanged
   );
 });
 
-test("workflow keeps read-only verification separate from protected noncancellable publication and preserves catalog guards", async () => {
+test("workflow scopes write-capable Draft verification separately from protected noncancellable publication", async () => {
   const value = YAML.parse(
     await readFile(".github/workflows/cef-owned-sdk-publish.yml", "utf8"),
   );
   assert.deepEqual(Object.keys(value.on), ["workflow_dispatch"]);
   assert.deepEqual(value.permissions, { contents: "read", actions: "read" });
+  assert.deepEqual(value.jobs.verify.permissions, {
+    contents: "write",
+    actions: "read",
+  });
   assert.equal(value.jobs.verify.environment, undefined);
   assert.equal(value.jobs.publish.environment, "cef-runtime-publish");
   assert.deepEqual(value.jobs.publish.permissions, {

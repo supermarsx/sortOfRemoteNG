@@ -64,7 +64,8 @@ jobs:
   accept-native:
     if: inputs.mode == 'acceptance' && github.event_name == 'workflow_dispatch' && github.event.repository.visibility == 'public'
     permissions:
-      contents: read
+      # Ceiling only: the reusable plan and ordinary native jobs explicitly downscope.
+      contents: write
       actions: read
     concurrency:
       group: cef-engine-accept-native-${{ github.ref }}-${{ inputs.mode }}-${{ inputs.reviewed_inputs }}

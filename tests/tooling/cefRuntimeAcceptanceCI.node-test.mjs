@@ -754,7 +754,7 @@ test("downloaded descriptor bytes are checked before bundle verifier and target/
   );
 });
 
-test("workflow is explicit read-only native acceptance, exact artifact download, isolated X11, sequential security checks and no publication", async () => {
+test("workflow retains read-only ordinary native acceptance, exact artifact download, isolated X11 and sequential security checks", async () => {
   const workflow = YAML.parse(
     await readFile(".github/workflows/cef-runtime-acceptance.yml", "utf8"),
   );
@@ -1065,4 +1065,266 @@ test("SDK transport authentication ends before native execution and validation s
   assert.ok(steps.indexOf(download) < steps.indexOf(native));
   assert.equal(native.env.GH_TOKEN, undefined);
   assert.deepEqual(workflow.permissions, { contents: "read", actions: "read" });
+});
+
+test("draft-backed jobs have write-capable GET transport while ordinary native jobs remain read-only", async () => {
+  const workflow = YAML.parse(
+    await readFile(".github/workflows/cef-runtime-acceptance.yml", "utf8"),
+  );
+  assert.deepEqual(workflow.permissions, { contents: "read", actions: "read" });
+  assert.deepEqual(workflow.jobs.plan.permissions, {
+    contents: "read",
+    actions: "read",
+  });
+  assert.deepEqual(workflow.jobs.native.permissions, {
+    contents: "read",
+    actions: "read",
+  });
+  assert.deepEqual(workflow.jobs["native-draft"].permissions, {
+    contents: "write",
+    actions: "read",
+  });
+  assert.deepEqual(
+    workflow.jobs["native-draft"].steps,
+    workflow.jobs.native.steps,
+  );
+  for (const job of [workflow.jobs.native, workflow.jobs["native-draft"]]) {
+    const execute = job.steps.find((step) =>
+      step.name?.startsWith("Build native clients"),
+    );
+    assert.equal(execute.env.GH_TOKEN, undefined);
+    assert.equal(execute.env.GITHUB_TOKEN, undefined);
+    assert.match(execute.run, /acceptance-ci\.mjs run/);
+    assert.equal(job["timeout-minutes"], 240);
+  }
+});
+
+test("actual YAML partition preserves every validated row and rejects unsupported or unsafe Draft executions before output", async (t) => {
+  const workflow = YAML.parse(
+    await readFile(".github/workflows/cef-runtime-acceptance.yml", "utf8"),
+  );
+  const step = workflow.jobs.plan.steps.at(-1);
+  assert.equal(step.id, "partition");
+  assert.equal(
+    step.env.CEF_VALIDATED_MATRIX,
+    "${{ steps.plan.outputs.matrix }}",
+  );
+  assert.equal(step.env.GH_TOKEN, undefined);
+  const source = step.run.match(/<<'NODE'\n([\s\S]*?)\nNODE\s*$/)?.[1];
+  assert.ok(source, "execute the actual checked-in workflow JavaScript");
+  const root = await realpath(
+    await mkdtemp(path.join(os.tmpdir(), "cef-draft-partition-")),
+  );
+  t.after(() => rm(root, { recursive: true, force: true }));
+  let sequence = 0;
+  const execute = async (matrix, overrides = {}, success = true) => {
+    const output = path.join(root, `output-${sequence++}`);
+    const env = {
+      ...process.env,
+      CEF_VALIDATED_MATRIX: JSON.stringify(matrix),
+      CEF_DEFAULT_BRANCH: "Main",
+      CEF_REPOSITORY_VISIBILITY: "public",
+      GITHUB_EVENT_NAME: "workflow_dispatch",
+      GITHUB_REF: "refs/heads/Main",
+      GITHUB_OUTPUT: output,
+      ...overrides,
+    };
+    if (!success) {
+      assert.throws(() =>
+        execFileSync(process.execPath, ["--input-type=module", "-e", source], {
+          env,
+          stdio: "pipe",
+        }),
+      );
+      await assert.rejects(readFile(output), { code: "ENOENT" });
+      return;
+    }
+    execFileSync(process.execPath, ["--input-type=module", "-e", source], {
+      env,
+      stdio: "pipe",
+    });
+    const rows = Object.fromEntries(
+      (await readFile(output, "utf8"))
+        .trim()
+        .split("\n")
+        .map((line) => {
+          const at = line.indexOf("=");
+          return [line.slice(0, at), JSON.parse(line.slice(at + 1))];
+        }),
+    );
+    assert.equal(rows.has_ordinary, rows.ordinary_matrix.include.length > 0);
+    assert.equal(rows.has_draft, rows.draft_matrix.include.length > 0);
+    return rows;
+  };
+  const ordinary = {
+    ...selected,
+    runner: "macos-15",
+    sourceLockIdentity: "d".repeat(64),
+    artifactName: "exact-validated-artifact",
+  };
+  const owned = {
+    ...ordinary,
+    target: "x86_64-pc-windows-msvc",
+    runner: "windows-2025",
+    producer: "owned-import",
+  };
+  const engineering = {
+    ...ordinary,
+    target: "x86_64-apple-darwin",
+    producer: "engineering-sdk",
+  };
+  for (const include of [
+    [ordinary],
+    [owned],
+    [engineering],
+    [ordinary, owned, engineering],
+  ]) {
+    const result = await execute({ include });
+    assert.deepEqual(
+      result.ordinary_matrix.include,
+      include.filter((row) => !Object.hasOwn(row, "producer")),
+    );
+    assert.deepEqual(
+      result.draft_matrix.include,
+      include.filter((row) => Object.hasOwn(row, "producer")),
+    );
+    assert.equal(
+      result.ordinary_matrix.include.length +
+        result.draft_matrix.include.length,
+      include.length,
+    );
+  }
+  // Legacy reusable callers keep their prior branch behavior; Draft privileges require default branch.
+  assert.equal(
+    (
+      await execute(
+        { include: [ordinary] },
+        { GITHUB_REF: "refs/heads/review" },
+      )
+    ).has_ordinary,
+    true,
+  );
+  for (const row of [owned, engineering]) {
+    for (const env of [
+      { GITHUB_REF: "refs/heads/review" },
+      { GITHUB_EVENT_NAME: "push" },
+      { CEF_REPOSITORY_VISIBILITY: "private" },
+      { CEF_DEFAULT_BRANCH: "" },
+    ])
+      await execute({ include: [row] }, env, false);
+  }
+  for (const matrix of [
+    { include: [] },
+    { include: [ordinary, ordinary] },
+    { include: [{ ...ordinary, producer: "unknown" }] },
+    { include: [{ ...ordinary, producer: null }] },
+    { include: [{ ...ordinary, producer: "" }] },
+    { include: [null] },
+    { include: [ordinary], other: true },
+    { include: "invalid" },
+  ])
+    await execute(matrix, {}, false);
+  for (const [name, flag, matrix] of [
+    ["native", "has_ordinary", "ordinary_matrix"],
+    ["native-draft", "has_draft", "draft_matrix"],
+  ]) {
+    assert.equal(
+      workflow.jobs[name].if,
+      `needs.plan.outputs.${flag} == 'true'`,
+    );
+    assert.equal(
+      workflow.jobs[name].strategy.matrix,
+      `\${{ fromJSON(needs.plan.outputs.${matrix}) }}`,
+    );
+    assert.equal(
+      workflow.jobs.plan.outputs[flag],
+      `\${{ steps.partition.outputs.${flag} }}`,
+    );
+  }
+});
+
+test("Draft credential ceiling is limited to the exact reusable acceptance caller and downscoped in callee", async () => {
+  const caller = YAML.parse(
+    await readFile(".github/workflows/cef-patched-runtime.yml", "utf8"),
+  );
+  const callee = YAML.parse(
+    await readFile(".github/workflows/cef-runtime-acceptance.yml", "utf8"),
+  );
+  assert.equal(caller.permissions.contents, "read");
+  assert.deepEqual(caller.jobs["accept-native"].permissions, {
+    contents: "write",
+    actions: "read",
+  });
+  assert.equal(
+    caller.jobs["accept-native"].uses,
+    "./.github/workflows/cef-runtime-acceptance.yml",
+  );
+  assert.equal(caller.jobs["accept-native"].steps, undefined);
+  assert.equal(caller.jobs["accept-native"].secrets, undefined);
+  for (const name of ["plan", "native"])
+    assert.deepEqual(callee.jobs[name].permissions, {
+      contents: "read",
+      actions: "read",
+    });
+  const direct = sealFixture();
+  const callerExecution = acceptanceExecution({
+    ...direct.env,
+    GITHUB_WORKFLOW_REF: `${repository}/.github/workflows/cef-patched-runtime.yml@refs/heads/Main`,
+  });
+  assert.equal(callerExecution, null);
+});
+
+test("write-capable Draft credentials still cannot mutate through either production download API", async () => {
+  const { apiClient } =
+    await import("../../scripts/lib/cef-engineering-checkpoint.mjs");
+  const { ownedImportApi } =
+    await import("../../scripts/lib/cef-owned-sdk-import.mjs");
+  let requests = 0;
+  const request = async (_url, options) => {
+    requests++;
+    assert.equal(options.method, "GET");
+    assert.equal(options.redirect, "error");
+    return new Response("{}");
+  };
+  const apis = [
+    apiClient(repository, "synthetic-write-capable-credential", request, {
+      readOnly: true,
+    }),
+    ownedImportApi(repository, "synthetic-write-capable-credential", request),
+  ];
+  for (const api of apis) {
+    for (const method of ["POST", "PATCH", "PUT", "DELETE"])
+      await assert.rejects(
+        api("releases/123", { method, body: { draft: false } }),
+      );
+    await assert.rejects(
+      api("releases/123", { method: "GET", body: { unexpected: true } }),
+    );
+    await api("releases/123");
+  }
+  assert.equal(
+    requests,
+    2,
+    "only the two allowed GET requests reached transport",
+  );
+  const source = await readFile(
+    "scripts/cef-runtime-acceptance-ci.mjs",
+    "utf8",
+  );
+  assert.match(
+    source,
+    /downloadSdkBundle\(\s*apiClient\(repository, token, fetch, \{ readOnly: true \}\)/,
+  );
+  const child = nativeChildEnvironment(
+    {
+      PATH: "native-tools",
+      GH_TOKEN: "synthetic-write-capable-credential",
+      GITHUB_TOKEN: "synthetic-write-capable-credential",
+      ACTIONS_RUNTIME_TOKEN: "secret",
+    },
+    "",
+    "/temporary-target",
+  );
+  for (const key of ["GH_TOKEN", "GITHUB_TOKEN", "ACTIONS_RUNTIME_TOKEN"])
+    assert.equal(child[key], undefined);
 });

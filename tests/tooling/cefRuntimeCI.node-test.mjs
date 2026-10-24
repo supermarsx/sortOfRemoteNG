@@ -1731,7 +1731,8 @@ test("workflow has manual/default-branch guards, six targets, protected least-pr
       assert.match(job.if, /default_branch/);
       assert.match(job.if, /mode == 'build'/);
     }
-    if (name !== "publish") assert.notEqual(job.permissions?.contents, "write");
+    if (!["publish", "accept-native"].includes(name))
+      assert.notEqual(job.permissions?.contents, "write");
     for (const step of job.steps ?? []) {
       if (step.uses) assert.match(step.uses, /@[a-f0-9]{40}$/);
       if (step.uses?.startsWith("actions/checkout"))
@@ -1744,7 +1745,7 @@ test("workflow has manual/default-branch guards, six targets, protected least-pr
     "./.github/workflows/cef-runtime-acceptance.yml",
   );
   assert.deepEqual(workflow.jobs["accept-native"].permissions, {
-    contents: "read",
+    contents: "write",
     actions: "read",
   });
   assert.equal(workflow.jobs["accept-native"].secrets, undefined);
