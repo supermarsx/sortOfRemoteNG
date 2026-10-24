@@ -36,6 +36,7 @@ import {
   filePin,
   validateIdentity,
   graphInventory,
+  graphInventoryRecord,
   afterGnPhase,
   normalizeSdkLinks,
   selectedSdkPreflight,
@@ -316,7 +317,14 @@ export async function main(argv = process.argv.slice(2), env = process.env) {
               writeFile(recipePath, canonical(linkRecipe), { flag: "wx" }),
             );
             const graph = await afterGnPhase("graph-inventory", () =>
-              graphInventory(out),
+              graphInventory(out, {
+                observe(record) {
+                  if (record.phase !== "hashing")
+                    console.log(
+                      `[cef-engineering-checkpoint] graph-inventory ${graphInventoryRecord(record)}`,
+                    );
+                },
+              }),
             );
             console.log(
               `[cef-engineering-checkpoint] graph files=${graph.files} bytes=${graph.bytes} visited=${graph.visited}`,

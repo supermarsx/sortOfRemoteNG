@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { spawnSync } from "node:child_process";
+import { writeFileSync, fstatSync, renameSync } from "node:fs";
+import { PassThrough } from "node:stream";
 import {
   mkdir,
   mkdtemp,
@@ -14,6 +16,7 @@ import {
   realpath,
   lstat,
   rename,
+  open,
 } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -55,6 +58,8 @@ import {
   graphInventory,
   GRAPH_LIMITS,
   assertGraphBudget,
+  graphInventoryRecord,
+  filePin,
   afterGnPhase,
   normalizeSdkLinks,
   selectedSdkPreflight,
@@ -1860,19 +1865,20 @@ test("graph inventory accepts an actual10001-target writer layout with finite fi
   assert.match(result.sha256, /^[a-f0-9]{64}$/);
   assert.equal(result.visited, 10003);
   assert.equal(GRAPH_LIMITS.files, 50000);
-  assert.equal(GRAPH_LIMITS.bytes, 2 * 1024 ** 3);
+  assert.equal(GRAPH_LIMITS.bytes, 8 * 1024 ** 3);
+  assert.equal(GRAPH_LIMITS.readers, 4);
   const valid = {
     files: 50000,
     bytes: GRAPH_LIMITS.bytes,
     visited: GRAPH_LIMITS.visited,
-    elapsed: 59999,
+    elapsed: 179999,
   };
   assert.doesNotThrow(() => assertGraphBudget(valid));
   for (const delta of [
     { files: 50001 },
     { bytes: GRAPH_LIMITS.bytes + 1 },
     { visited: 300001 },
-    { elapsed: 60000 },
+    { elapsed: 180000 },
   ])
     assert.throws(
       () => assertGraphBudget({ ...valid, ...delta }),
@@ -1890,6 +1896,325 @@ test("graph inventory accepts an actual10001-target writer layout with finite fi
     lines.at(-1),
     `[cef-engineering-checkpoint] graph files=50001 bytes=${GRAPH_LIMITS.bytes} visited=300000`,
   );
+});
+
+test("actual Mac partial graph counters fit the reviewed finite budget, not the old 2GiB cap", () => {
+  const observed = {
+    files: 11868,
+    bytes: 2147845046,
+    visited: 16133,
+    elapsed: 46816,
+  };
+  assert.ok(observed.bytes > 2 * 1024 ** 3);
+  assert.doesNotThrow(() => assertGraphBudget(observed));
+  assert.throws(
+    () => assertGraphBudget({ ...observed, bytes: 8 * 1024 ** 3 + 1 }),
+    (error) => error.code === "GRAPH_BOUND",
+  );
+});
+
+async function smallGraph(t, count = 8) {
+  const root = await scratch(t);
+  await writeFile(path.join(root, "args.gn"), "is_debug=false");
+  await writeFile(path.join(root, "build.ninja"), "subninja obj/rules.ninja\n");
+  await mkdir(path.join(root, "obj"));
+  await writeFile(
+    path.join(root, "obj/toolchain.ninja"),
+    "rule cxx\n command = clang\n",
+  );
+  for (let i = 0; i < count; i++)
+    await writeFile(
+      path.join(root, `obj/target-${i}.ninja`),
+      `build target-${i}: phony\n`,
+    );
+  await writeFile(path.join(root, "ignored.o"), "not graph authority");
+  return root;
+}
+
+test("metadata precedes every hash, four readers are bounded, and full raw pins match legacy digest", async (t) => {
+  const root = await smallGraph(t);
+  const events = [];
+  const actual = await graphInventory(root, {
+    observe: (record) => events.push(record),
+  });
+  const pins = [];
+  for (const relative of [
+    "args.gn",
+    "build.ninja",
+    "obj/toolchain.ninja",
+    ...Array.from({ length: 8 }, (_, i) => `obj/target-${i}.ninja`),
+  ]) {
+    const relativeNative = relative.split("/").join(path.sep);
+    pins.push({
+      path: relativeNative,
+      ...(await filePin(
+        path.join(root, relativeNative),
+        GRAPH_LIMITS.fileBytes,
+      )),
+    });
+  }
+  assert.equal(
+    actual.sha256,
+    sha(
+      canonical(
+        pins.sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0)),
+      ),
+    ),
+  );
+  assert.equal(actual.files, 11);
+  assert.equal(events[0].phase, "metadata");
+  assert.equal(events[0].active, 0);
+  assert.deepEqual(events[0].categories, {
+    args: { files: 1, bytes: Buffer.byteLength("is_debug=false") },
+    build: { files: 1, bytes: Buffer.byteLength("subninja obj/rules.ninja\n") },
+    toolchain: {
+      files: 1,
+      bytes: Buffer.byteLength("rule cxx\n command = clang\n"),
+    },
+    target: {
+      files: 8,
+      bytes: 8 * Buffer.byteLength("build target-0: phony\n"),
+    },
+  });
+  assert.equal(Math.max(...events.map((event) => event.active)), 4);
+  assert.equal(events.at(-1).phase, "complete");
+  assert.equal(events.at(-1).active, 0);
+  for (const record of events)
+    assert.doesNotThrow(() => graphInventoryRecord(record));
+});
+
+test("metadata failure opens no graph streams and never admits a partial manifest", async (t) => {
+  const root = await smallGraph(t);
+  const events = [];
+  await assert.rejects(
+    graphInventory(root, {
+      observe(record) {
+        events.push(record);
+        if (record.phase === "metadata") throw new Error("metadata rejected");
+      },
+    }),
+    /metadata rejected/,
+  );
+  assert.ok(events.every((event) => event.active === 0));
+  assert.equal(events.at(-1).phase, "stopped");
+});
+
+test("metadata-to-hash mutation is rejected before admitting a graph", async (t) => {
+  const root = await smallGraph(t);
+  const events = [];
+  await assert.rejects(
+    graphInventory(root, {
+      observe(record) {
+        events.push(record);
+        if (record.phase === "metadata")
+          writeFileSync(
+            path.join(root, "build.ninja"),
+            "changed graph after metadata\n",
+          );
+      },
+    }),
+    /asset changed/,
+  );
+  assert.equal(events.at(-1).phase, "stopped");
+  assert.equal(events.at(-1).active, 0);
+});
+
+test("same-sized pathname replacement cannot reuse metadata from another inode", async (t) => {
+  const root = await smallGraph(t);
+  const target = path.join(root, "build.ninja");
+  const contents = await readFile(target);
+  const originalInode = (await lstat(target)).ino;
+  await assert.rejects(
+    graphInventory(root, {
+      observe(record) {
+        if (record.phase === "metadata") {
+          renameSync(target, target + ".saved");
+          writeFileSync(target, contents);
+        }
+      },
+    }),
+    /asset changed/,
+  );
+  assert.notEqual((await lstat(target)).ino, originalInode);
+});
+
+test("graph root aliases are rejected and linked child directories are not followed", async (t) => {
+  const root = await smallGraph(t);
+  const holder = await scratch(t);
+  const alias = path.join(holder, "alias");
+  await symlink(root, alias, process.platform === "win32" ? "junction" : "dir");
+  await assert.rejects(graphInventory(alias), /links|alias/);
+  const original = await graphInventory(root);
+  await symlink(
+    holder,
+    path.join(root, "foreign"),
+    process.platform === "win32" ? "junction" : "dir",
+  );
+  assert.equal((await graphInventory(root)).sha256, original.sha256);
+});
+
+test("empty graph files fail metadata admission before any content reader", async (t) => {
+  const root = await smallGraph(t);
+  await writeFile(path.join(root, "obj/target-0.ninja"), "");
+  const events = [];
+  await assert.rejects(
+    graphInventory(root, { observe: (record) => events.push(record) }),
+    /asset size/,
+  );
+  assert.ok(events.every((record) => record.active === 0));
+});
+
+test("mutation during a real stream is rejected using handle and path metadata", async (t) => {
+  const root = await smallGraph(t);
+  const target = path.join(root, "build.ninja");
+  await writeFile(target, Buffer.alloc(1024 * 1024, 65));
+  const inode = (await lstat(target)).ino;
+  const handle = await open(target, "r");
+  const prototype = Object.getPrototypeOf(handle);
+  await handle.close();
+  const original = prototype.createReadStream;
+  let mutated = false;
+  t.mock.method(prototype, "createReadStream", function (options) {
+    const matches = fstatSync(this.fd).ino === inode;
+    const stream = original.call(this, options);
+    if (matches)
+      stream.once("data", () => {
+        mutated = true;
+        writeFileSync(target, "mutated while hash stream was open");
+      });
+    return stream;
+  });
+  await assert.rejects(graphInventory(root), /asset changed/);
+  assert.equal(mutated, true);
+});
+
+test("an early stream failure aborts and drains every reader before rejection", async (t) => {
+  const root = await smallGraph(t);
+  const handle = await open(path.join(root, "build.ninja"), "r");
+  const prototype = Object.getPrototypeOf(handle);
+  await handle.close();
+  const original = prototype.createReadStream;
+  const streams = [],
+    events = [];
+  t.mock.method(prototype, "createReadStream", function (options) {
+    const stream = original.call(this, options);
+    streams.push(stream);
+    if (streams.length === 1)
+      queueMicrotask(() => stream.destroy(new Error("owned stream failure")));
+    return stream;
+  });
+  await assert.rejects(
+    graphInventory(root, { observe: (record) => events.push(record) }),
+    /owned stream failure/,
+  );
+  assert.ok(streams.length > 0 && streams.length <= 4);
+  assert.ok(streams.every((stream) => stream.destroyed && stream.closed));
+  assert.equal(events.at(-1).phase, "stopped");
+  assert.equal(events.at(-1).active, 0);
+  const length = events.length;
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(events.length, length, "no late background inventory work");
+});
+
+test("one absolute deadline aborts stalled readers and drains them before returning", async (t) => {
+  const root = await smallGraph(t);
+  const handle = await open(path.join(root, "build.ninja"), "r");
+  const prototype = Object.getPrototypeOf(handle);
+  await handle.close();
+  const streams = [],
+    events = [];
+  t.mock.method(prototype, "createReadStream", function (options) {
+    const stream = new PassThrough();
+    streams.push(stream);
+    const cancel = () => stream.destroy(options.signal.reason);
+    options.signal.addEventListener("abort", cancel, { once: true });
+    stream.once("close", () =>
+      options.signal.removeEventListener("abort", cancel),
+    );
+    if (options.signal.aborted) cancel();
+    return stream;
+  });
+  await assert.rejects(
+    graphInventory(root, {
+      timeoutMs: 500,
+      observe: (record) => events.push(record),
+    }),
+    (error) => error.code === "GRAPH_BOUND",
+  );
+  assert.equal(streams.length, 4);
+  assert.ok(streams.every((stream) => stream.destroyed && stream.closed));
+  assert.equal(events.at(-1).active, 0);
+  assert.equal(events.at(-1).phase, "stopped");
+  await assert.rejects(
+    graphInventory(root, { timeoutMs: 180001 }),
+    /Invalid graph deadline/,
+  );
+});
+
+test("external cancellation cannot leave queued readers running", async (t) => {
+  const root = await smallGraph(t);
+  const abort = new AbortController(),
+    events = [];
+  await assert.rejects(
+    graphInventory(root, {
+      signal: abort.signal,
+      observe(record) {
+        events.push(record);
+        if (record.phase === "hashing") abort.abort();
+      },
+    }),
+    (error) => error.code === "GRAPH_BOUND",
+  );
+  assert.equal(events.at(-1).phase, "stopped");
+  assert.equal(events.at(-1).active, 0);
+});
+
+test("synchronous final reporting cannot admit an inventory past its absolute deadline", async (t) => {
+  const root = await smallGraph(t, 1);
+  let completed = false;
+  await assert.rejects(
+    graphInventory(root, {
+      timeoutMs: 500,
+      observe(record) {
+        if (record.phase === "complete") {
+          completed = true;
+          Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 600);
+        }
+      },
+    }),
+    (error) => error.code === "GRAPH_BOUND",
+  );
+  assert.equal(completed, true);
+});
+
+test("graph diagnostic schema rejects raw fields and invalid counters but permits complete over-budget totals", () => {
+  const metadata = {
+    phase: "metadata",
+    files: 33,
+    bytes: 8 * 1024 ** 3 + 1,
+    visited: 33,
+    active: 0,
+    elapsedMs: 1,
+    categories: {
+      args: { files: 0, bytes: 0 },
+      build: { files: 0, bytes: 0 },
+      toolchain: { files: 0, bytes: 0 },
+      target: { files: 33, bytes: 8 * 1024 ** 3 + 1 },
+    },
+  };
+  assert.doesNotThrow(() => graphInventoryRecord(metadata));
+  assert.throws(
+    () => assertGraphBudget({ ...metadata, elapsed: 1 }),
+    (error) => error.code === "GRAPH_BOUND",
+  );
+  for (const bad of [
+    { ...metadata, rawPath: "PRIVATE" },
+    { ...metadata, bytes: "123" },
+    { ...metadata, active: 5 },
+    { ...metadata, phase: "PRIVATE" },
+    { ...metadata, categories: { ...metadata.categories, token: "PRIVATE" } },
+  ])
+    assert.throws(() => graphInventoryRecord(bad));
 });
 
 // The following exact fixture function is Copyright2014 The Chromium Authors.
