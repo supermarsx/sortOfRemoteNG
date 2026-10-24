@@ -1,0 +1,45 @@
+{
+  "schemaVersion": 1,
+  "kind": "sorng-cef-build-input-review",
+  "scope": "Source-only no-destructor test-helper constant with identical string values; no warning/config/security change. New native candidate uncompiled.",
+  "sourceLockIdentity": "bdc724576452178e82a6d9732aaaf1a770e277ddf5ce5cad5a4d65ac242a9629",
+  "sourceLockRawSha256": "c13db4b008fa1d1981026f180ae86df58113bf19cc2ab0d3b0bb8c3cfbbf79cb",
+  "baseSourceLockIdentity": "0fa24a7860e844ba1051abdb5490718f1a41001a83a00c5ea7b9a93044098351",
+  "baseSourceLockRawSha256": "ae21767e42e90dd621c4ba4cf0c5c46f89c5158d66431a98df0d124322071a69",
+  "bridgeAbiVersion": 2,
+  "bridgeRevision": 5,
+  "capabilities": [
+    "socket-admission",
+    "context-revoke",
+    "same-authority-http2",
+    "scoped-exceptions",
+    "custom-ca",
+    "private-context",
+    "proxy-applied",
+    "bounded-context-retirement",
+    "owned-http3"
+  ],
+  "patch22": {
+    "repository": "chromium",
+    "path": "patches/0022-chromium-test-trace-processor-static-package-name.patch",
+    "sha256": "1177f9414d305a0f0d1edddc9b788813c220a6b44e741a6cfd39b737c4e6fc6e"
+  },
+  "all21PatchesHeaderGnToolchainRawBytesUnchanged": true,
+  "oldUpstreamEntriesUnchanged": true,
+  "pristineUpstreamAdded": {
+    "project": "chromium",
+    "path": "base/test/tracing/test_trace_processor.cc",
+    "sha256": "51d0b11f008f6a4d1aeda6a105ca4cd357232f0134d7b4c54740ecf230e88b28"
+  },
+  "modifiedSource": {
+    "path": "base/test/tracing/test_trace_processor.cc",
+    "beforeSha256": "51d0b11f008f6a4d1aeda6a105ca4cd357232f0134d7b4c54740ecf230e88b28",
+    "afterSha256": "92db46117ff55b78f5a3289cc9d5368b85a7182b79074719ea38654a97a2e41f"
+  },
+  "engineCompiled": false,
+  "nativeTestsRun": false,
+  "sdkCreated": false,
+  "runtimeAcceptance": false,
+  "oldNativeProofTransferred": false,
+  "defaultSelectionChanged": false
+}
