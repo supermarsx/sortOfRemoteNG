@@ -6,6 +6,17 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import {
   LIMITS,
+  executionOptions,
+  hostRemaining,
+  sliceBudget,
+  SDK_NAMES,
+  SDK_ARCHIVE,
+  createSdkCompletion,
+  validateSdkCompletion,
+  validateSdkSeal,
+  completionSha,
+  sdkSealName,
+  downloadSdkBundle,
   TARGET,
   SOURCE_ID,
   WORKFLOW,
@@ -22,6 +33,7 @@ import {
   groupQuiet,
   processRows,
   observedLineage,
+  sameObservedCohort,
   compileSlice,
   archiveCommand,
   graphDigest,
@@ -452,12 +464,12 @@ test("workflow keeps credentials only in audited download/upload, sealed last, e
     /actions\/cache@|npm (?:ci|install)|target_commitish:|\$\{\{ inputs\.restore_run \}\}.*node /,
   );
   assert.ok(
-    workflow.indexOf("Seal immutable run-bound metadata LAST") >
+    workflow.indexOf("Seal immutable checkpoint metadata LAST") >
       workflow.indexOf("checkpoint.mjs upload"),
   );
   assert.ok(
     workflow.indexOf("checkpoint.mjs outcome") >
-      workflow.indexOf("Seal immutable run-bound metadata LAST"),
+      workflow.indexOf("Seal immutable checkpoint metadata LAST"),
   );
 });
 
@@ -952,3 +964,443 @@ test(
     }
   },
 );
+
+function completedSdk(overrides = {}) {
+  return createSdkCompletion({
+    producer: { ...producer },
+    identity: { ...identity },
+    compile: {
+      ...manifest().compile,
+      outcome: "compiler-complete",
+      exitCode: 0,
+    },
+    distributionExitCode: 0,
+    checked: {
+      descriptor: { target: TARGET },
+      identity: { sourceLockSha256: SOURCE_ID },
+      assets: SDK_NAMES.map((name) => ({
+        name,
+        size: 10,
+        sha256: "f".repeat(64),
+      })),
+    },
+    ...overrides,
+  });
+}
+test("explicit engineering modes and slices reserve the bounded host budget without silent shortening", () => {
+  assert.deepEqual(executionOptions(), {
+    mode: "checkpoint",
+    minutes: 15,
+    milliseconds: 900000,
+  });
+  for (const mode of ["checkpoint", "complete-sdk"])
+    for (const minutes of [15, 30, 60, 120, 180]) {
+      const options = executionOptions(mode, String(minutes));
+      assert.equal(sliceBudget(options, LIMITS.hostMs), minutes * 60000);
+      assert.deepEqual(
+        argumentsFor([
+          "compile",
+          "--mode",
+          mode,
+          "--slice-minutes",
+          String(minutes),
+        ]),
+        { mode: "compile", "--mode": mode, "--slice-minutes": String(minutes) },
+      );
+    }
+  for (const [mode, minutes] of [
+    ["publish", "15"],
+    ["checkpoint", "300"],
+    ["complete-sdk", "015"],
+    ["checkpoint", "15.0"],
+  ])
+    assert.throws(() => executionOptions(mode, minutes));
+  const start = 123000;
+  assert.equal(
+    hostRemaining(
+      { CEF_ENGINEERING_JOB_STARTED_MS: String(start) },
+      start + 1000,
+    ),
+    LIMITS.hostMs - 1000,
+  );
+  assert.throws(() => hostRemaining({}, start));
+  assert.throws(() =>
+    hostRemaining(
+      { CEF_ENGINEERING_JOB_STARTED_MS: String(start) },
+      start + LIMITS.hostMs,
+    ),
+  );
+  assert.throws(() =>
+    sliceBudget(executionOptions("complete-sdk", "180"), 239 * 60000),
+  );
+  assert.equal(
+    sliceBudget(executionOptions("complete-sdk", "180"), 240 * 60000),
+    180 * 60000,
+  );
+});
+test("completed SDK authority requires natural compiler zero, quiescence, packaging zero and all five verified assets", () => {
+  const value = completedSdk();
+  assert.equal(validateSdkCompletion(value), value);
+  assert.equal(value.nativeAcceptance, false);
+  assert.equal(value.runtimeReady, false);
+  for (const patch of [
+    { outcome: "slice-ended", exitCode: null },
+    { outcome: "compiler-failed", exitCode: 137 },
+    { quiescent: false },
+    { observed: [] },
+  ]) {
+    assert.throws(() =>
+      completedSdk({ compile: { ...value.compile, ...patch } }),
+    );
+  }
+  assert.throws(() => completedSdk({ distributionExitCode: 23 }));
+  assert.throws(() => validateSdkCompletion(manifest()));
+  for (const patch of [
+    { nativeAcceptance: true },
+    { runtimeReady: true },
+    { target: "aarch64-apple-darwin" },
+    { sourceLockSha256: "1".repeat(64) },
+    { bundleVerified: false },
+    { bundleAssets: value.bundleAssets.slice(1) },
+    { producer: { ...producer, attempt: 0 } },
+    {
+      bundleAssets: value.bundleAssets.map((row, i) =>
+        i === 0 ? { ...row, name: "../runtime.json" } : row,
+      ),
+    },
+  ])
+    assert.throws(() => validateSdkCompletion({ ...value, ...patch }));
+  const seal = {
+    schemaVersion: 1,
+    kind: "sorng-cef-engineering-sdk-seal",
+    producer,
+    release: {
+      id: 33,
+      tag: `cef-sdk-checkpoint-${TARGET}-${value.identitySha256.slice(0, 16)}-22-1`,
+    },
+    completion: value,
+    completionSha256: completionSha(value),
+    assets: value.bundleAssets.map((row, i) => ({ id: 44 + i, ...row })),
+  };
+  assert.equal(validateSdkSeal(seal, producer), seal);
+  assert.notEqual(sdkSealName(producer), "cef-engineering-seal-22-1");
+  for (const patch of [
+    { kind: "sorng-cef-engineering-seal" },
+    { completionSha256: "1".repeat(64) },
+    {
+      assets: seal.assets.map((row, i) =>
+        i === 0 ? { ...row, sha256: "1".repeat(64) } : row,
+      ),
+    },
+    { release: { id: 33, tag: "cef-checkpoint-old" } },
+  ])
+    assert.throws(() => validateSdkSeal({ ...seal, ...patch }, producer));
+});
+test("SDK upload endpoint role is closed and does not broaden the checkpoint role", async () => {
+  const calls = [];
+  const request = async (url, options) => {
+    calls.push({ url, options });
+    return new Response("{}");
+  };
+  const ordinary = apiClient("owner/repo", "test", request);
+  await assert.rejects(
+    ordinary("releases/33/assets?name=runtime.json", {
+      method: "POST",
+      upload: true,
+      body: Buffer.from("x"),
+      bodyBytes: 1,
+    }),
+  );
+  const sdk = apiClient("owner/repo", "test", request, { sdk: true });
+  for (const name of SDK_NAMES)
+    await sdk(`releases/33/assets?name=${encodeURIComponent(name)}`, {
+      method: "POST",
+      upload: true,
+      body: Buffer.from("x"),
+      bodyBytes: 1,
+    });
+  for (const name of [
+    "checkpoint-00000.bin",
+    "../runtime.json",
+    "unknown.json",
+  ])
+    await assert.rejects(
+      sdk(`releases/33/assets?name=${encodeURIComponent(name)}`, {
+        method: "POST",
+        upload: true,
+        body: Buffer.from("x"),
+        bodyBytes: 1,
+      }),
+    );
+  assert.equal(calls.length, 5);
+  for (const call of calls) {
+    assert.equal(call.options.redirect, "error");
+    assert.equal(call.options.headers["Content-Length"], "1");
+  }
+});
+
+test("actual SDK seal ZIP transfer verifies independent producer and five immutable byte pins before native use", async (t) => {
+  const root = await scratch(t),
+    helper = path.join(ROOT, "scripts/lib/cef-checkpoint-archive.py");
+  const entries = [
+    { path: WORKFLOW, type: "blob", mode: "100644", sha: "1".repeat(40) },
+    {
+      path: "scripts/lib/cef-checkpoint-archive.py",
+      type: "blob",
+      mode: "100644",
+      sha: "2".repeat(40),
+    },
+  ];
+  const blobs = SDK_NAMES.map((name) => Buffer.from(name));
+  const proof = completedSdk({
+    identity: { ...identity, producer: codeTreeDigest(entries) },
+    checked: {
+      descriptor: { target: TARGET },
+      identity: { sourceLockSha256: SOURCE_ID },
+      assets: SDK_NAMES.map((name, i) => ({
+        name,
+        size: blobs[i].length,
+        sha256: sha(blobs[i]),
+      })),
+    },
+  });
+  const seal = {
+    schemaVersion: 1,
+    kind: "sorng-cef-engineering-sdk-seal",
+    producer,
+    release: {
+      id: 33,
+      tag: `cef-sdk-checkpoint-${TARGET}-${proof.identitySha256.slice(0, 16)}-22-1`,
+    },
+    completion: proof,
+    completionSha256: completionSha(proof),
+    assets: proof.bundleAssets.map((row) => ({
+      id: 44 + SDK_NAMES.indexOf(row.name),
+      ...row,
+    })),
+  };
+  const zip = path.join(root, "sdk.zip");
+  assert.equal(
+    python(
+      "import zipfile,sys;z=zipfile.ZipFile(sys.argv[1],'w');z.writestr('seal.json',sys.argv[2]);z.close()",
+      [zip, canonical(seal)],
+    ).status,
+    0,
+  );
+  const zipBytes = await readFile(zip),
+    pythonExe = python("import sys;print(sys.executable)").stdout.trim();
+  const selected = {
+    producer: "engineering-sdk",
+    target: TARGET,
+    runId: 22,
+    runAttempt: 1,
+    headSha: producer.head,
+    artifactId: 55,
+    artifactSha256: sha(zipBytes),
+    completionSha256: completionSha(proof),
+    descriptorSha256: sha(blobs[SDK_NAMES.indexOf("runtime.json")]),
+  };
+  const calls = [];
+  let badDraft = false,
+    failedRun = false,
+    truncatedTree = false,
+    corrupt = false;
+  const request = async (url, options) => {
+    assert.equal(options.method ?? "GET", "GET");
+    const base = "https://api.github.com/repos/owner/repo";
+    assert.ok(String(url) === base || String(url).startsWith(base + "/"));
+    const suffix = String(url).slice(base.length).replace(/^\//, "");
+    calls.push(suffix);
+    if (suffix === "actions/artifacts/55/zip") return new Response(zipBytes);
+    const match = /^releases\/assets\/(4[4-8])$/.exec(suffix);
+    if (match)
+      return new Response(
+        corrupt ? Buffer.from("bad") : blobs[Number(match[1]) - 44],
+      );
+    const data = {
+      "": {
+        id: 11,
+        full_name: "owner/repo",
+        private: false,
+        default_branch: "Main",
+      },
+      "actions/workflows/cef-engineering-checkpoint.yml": {
+        id: 66,
+        path: WORKFLOW,
+      },
+      "actions/runs/22": {
+        id: 22,
+        workflow_id: 66,
+        event: "workflow_dispatch",
+        head_sha: producer.head,
+        head_branch: "Main",
+        head_repository: { id: 11 },
+        run_attempt: 1,
+        status: "completed",
+        conclusion: failedRun ? "failure" : "success",
+      },
+      "actions/runs/22/artifacts?per_page=100": {
+        total_count: 1,
+        artifacts: [
+          {
+            id: 55,
+            name: sdkSealName(producer),
+            expired: false,
+            size_in_bytes: zipBytes.length,
+            digest: `sha256:${sha(zipBytes)}`,
+            workflow_run: { id: 22, head_sha: producer.head },
+          },
+        ],
+      },
+      "releases/33": {
+        draft: true,
+        prerelease: true,
+        tag_name: seal.release.tag,
+        target_commitish: producer.head,
+      },
+      "releases/33/assets?per_page=100": seal.assets.map((row, i) => ({
+        id: row.id,
+        name: row.name,
+        size: row.bytes,
+        state: "uploaded",
+        digest: `sha256:${badDraft && i === 0 ? "0".repeat(64) : row.sha256}`,
+      })),
+      [`git/commits/${producer.head}`]: {
+        sha: producer.head,
+        tree: { sha: "7".repeat(40) },
+      },
+      [`git/trees/${"7".repeat(40)}?recursive=1`]: {
+        sha: "7".repeat(40),
+        truncated: truncatedTree,
+        tree: entries,
+      },
+    }[suffix];
+    assert.notEqual(data, undefined, suffix);
+    return new Response(JSON.stringify(data));
+  };
+  const transfer = (name) =>
+    downloadSdkBundle(
+      apiClient("owner/repo", "test", request, { readOnly: true }),
+      {
+        selection: selected,
+        repository: "owner/repo",
+        token: "test",
+        destination: path.join(root, name),
+        python: pythonExe,
+        helper,
+        request,
+      },
+    );
+  assert.equal((await transfer("good")).sdkComplete, true);
+  assert.equal(
+    sha(await readFile(path.join(root, "good", "sdk-completion-proof.json"))),
+    selected.completionSha256,
+  );
+  assert.ok(
+    calls.indexOf(`git/trees/${"7".repeat(40)}?recursive=1`) <
+      calls.indexOf("releases/assets/44"),
+  );
+  calls.length = 0;
+  failedRun = true;
+  await assert.rejects(transfer("failed-run"));
+  assert.equal(calls.includes("actions/artifacts/55/zip"), false);
+  failedRun = false;
+  calls.length = 0;
+  truncatedTree = true;
+  await assert.rejects(transfer("bad-code"));
+  assert.equal(
+    calls.some((row) => row.startsWith("releases/assets/")),
+    false,
+  );
+  truncatedTree = false;
+  badDraft = true;
+  await assert.rejects(transfer("bad-draft"));
+  badDraft = false;
+  corrupt = true;
+  await assert.rejects(transfer("bad-bytes"));
+});
+
+test("active compiler lineage survives more than4096 sequential children without retaining historical identities", () => {
+  const root = { pid: 10, start: "Sat Oct 24 00:00:00 2026" };
+  let cohort = [root];
+  for (let cycle = 0; cycle < 5000; cycle++) {
+    const child = {
+      pid: 100 + cycle,
+      parent: 10,
+      start: "Sat Oct 24 00:00:01 2026",
+    };
+    cohort = observedLineage([{ ...root, parent: 1 }, child], cohort);
+    assert.deepEqual(cohort, [root, { pid: child.pid, start: child.start }]);
+  }
+  assert.deepEqual(observedLineage([{ ...root, parent: 1 }], cohort), [root]);
+});
+test("active compiler lineage discovers before pruning and retains live reparented identities but never a reused foreign PID", () => {
+  const root = { pid: 10, start: "Sat Oct 24 00:00:00 2026" };
+  const child = { pid: 20, start: "Sat Oct 24 00:00:01 2026" };
+  const detached = { pid: 30, start: "Sat Oct 24 00:00:02 2026" };
+  const rows = [
+    { ...root, parent: 1 },
+    { ...detached, parent: 1 },
+    { pid: 40, parent: 20, start: "Sat Oct 24 00:00:03 2026" },
+    { pid: 50, parent: 30, start: "Sat Oct 24 00:00:04 2026" },
+  ];
+  assert.deepEqual(observedLineage(rows, [root, child, detached]), [
+    root,
+    detached,
+    { pid: 40, start: rows[2].start },
+    { pid: 50, start: rows[3].start },
+  ]);
+  const reused = { pid: 20, parent: 1, start: "Sat Oct 24 01:00:00 2026" };
+  assert.deepEqual(
+    observedLineage(
+      [
+        { ...root, parent: 1 },
+        reused,
+        { pid: 60, parent: 20, start: rows[3].start },
+      ],
+      [root, child],
+    ),
+    [root],
+  );
+  // Even a changed occupant claiming the root as parent is excluded in this snapshot.
+  assert.deepEqual(
+    observedLineage(
+      [
+        { ...root, parent: 1 },
+        { ...reused, parent: 10 },
+      ],
+      [root, child],
+    ),
+    [root],
+  );
+  assert.throws(
+    () =>
+      observedLineage(
+        [{ ...root, parent: 1, start: reused.start }],
+        [root, child],
+      ),
+    /root PID identity changed/,
+  );
+  const tooMany = Array.from({ length: 4096 }, (_, i) => ({
+    pid: 100 + i,
+    parent: 10,
+    start: child.start,
+  }));
+  assert.throws(
+    () => observedLineage([{ ...root, parent: 1 }, ...tooMany], [root]),
+    /active descendant bound/,
+  );
+});
+
+test("reaper stability compares exact process identities rather than equal cardinality", () => {
+  const root = { pid: 10, start: "Sat Oct 24 00:00:00 2026" },
+    a = { pid: 20, start: "Sat Oct 24 00:00:01 2026" },
+    b = { pid: 30, start: "Sat Oct 24 00:00:02 2026" };
+  assert.equal(sameObservedCohort([root, a], [root, b]), false);
+  assert.equal(
+    sameObservedCohort([root, a], [root, { ...a, start: b.start }]),
+    false,
+  );
+  assert.equal(sameObservedCohort([root, b], [b, root]), true);
+  assert.equal(sameObservedCohort([root, a], [root, a, b]), false);
+});

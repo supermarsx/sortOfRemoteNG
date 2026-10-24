@@ -17,6 +17,7 @@ import {
   build,
   plan,
   releaseIdentity,
+  verifyBundle,
   validateRunnerMap,
   assertHostedBuildIdentity,
 } from "./cef-runtime-ci.mjs";
@@ -43,6 +44,12 @@ import {
   apiClient,
   restoreDownload,
   uploadCheckpoint,
+  executionOptions,
+  hostRemaining,
+  sliceBudget,
+  createSdkCompletion,
+  validateSdkCompletion,
+  uploadSdkBundle,
   noLinks,
 } from "./lib/cef-engineering-checkpoint.mjs";
 
@@ -63,19 +70,25 @@ export function argumentsFor(argv) {
     const key = args[i],
       value = args[i + 1];
     fail(
-      ["--restore-run"].includes(key) &&
-        value &&
-        /^(0|[1-9][0-9]*)$/.test(value) &&
-        !Object.hasOwn(result, key),
+      value &&
+        !Object.hasOwn(result, key) &&
+        ((mode === "download" && key === "--restore-run") ||
+          (mode === "compile" && ["--mode", "--slice-minutes"].includes(key))),
       "Unknown checkpoint argument",
     );
-    result[key] = Number(value);
-    fail(Number.isSafeInteger(result[key]), "Run id bound");
+    if (key === "--restore-run") {
+      fail(
+        /^(0|[1-9][0-9]*)$/.test(value) && Number.isSafeInteger(Number(value)),
+        "Run id bound",
+      );
+      result[key] = Number(value);
+    } else result[key] = value;
   }
-  fail(
-    mode === "download" || !Object.hasOwn(result, "--restore-run"),
-    "Restore selector on wrong command",
-  );
+  if (mode === "compile")
+    executionOptions(
+      result["--mode"] ?? "checkpoint",
+      result["--slice-minutes"] ?? "15",
+    );
   return result;
 }
 async function tools(env) {
@@ -187,10 +200,15 @@ export async function main(argv = process.argv.slice(2), env = process.env) {
       !env.GH_TOKEN && !env.GITHUB_TOKEN,
       "Compiler step must not receive a GitHub token",
     );
+    const execution = executionOptions(
+      options["--mode"] ?? "checkpoint",
+      options["--slice-minutes"] ?? "15",
+    );
+    hostRemaining(env);
     const verified = await tools(env),
       code = await codeDigest();
     const work = await workspace(temp, SOURCE_ID);
-    return build(
+    const result = await build(
       {
         inputs: INPUTS,
         target: TARGET,
@@ -199,6 +217,9 @@ export async function main(argv = process.argv.slice(2), env = process.env) {
         checkout: ROOT,
         runnerMode: "hosted",
         engineering: {
+          completeSdk: execution.mode === "complete-sdk",
+          packagingMilliseconds: () =>
+            Math.floor(Math.min(40 * 60_000, hostRemaining(env) - 20 * 60_000)),
           workspace: work,
           async afterGn(context) {
             const out = path.join(context.chromium, "out", "Release_GN_x64");
@@ -320,9 +341,25 @@ export async function main(argv = process.argv.slice(2), env = process.env) {
             const compile = await compileSlice(
               context.executable,
               context.args,
-              { cwd: context.cwd, env: context.env, logs: context.logs },
+              {
+                cwd: context.cwd,
+                env: context.env,
+                logs: context.logs,
+                milliseconds: sliceBudget(
+                  execution,
+                  Math.floor(hostRemaining(env)),
+                ),
+              },
             );
             const { out, identity, digest, recipePath } = context.checkpoint;
+            if (
+              execution.mode === "complete-sdk" &&
+              compile.outcome === "compiler-complete" &&
+              compile.exitCode === 0
+            ) {
+              await withVerifiedGraph(out, identity.graph, async () => {});
+              return { kind: "continue-sdk", compile };
+            }
             const free = await statfs(temp);
             fail(
               free.bavail * free.bsize >= LIMITS.compressed + 2 * 1024 ** 3,
@@ -353,7 +390,7 @@ export async function main(argv = process.argv.slice(2), env = process.env) {
             validateManifest(manifest, digest);
             await writeFile(
               state,
-              `${canonical({ manifest, bundle, logs: context.logs })}\n`,
+              `${canonical({ kind: "checkpoint", manifest, bundle, logs: context.logs })}\n`,
               { flag: "wx" },
             );
             return {
@@ -368,8 +405,72 @@ export async function main(argv = process.argv.slice(2), env = process.env) {
       },
       env,
     );
+    if (result.sdkCompletion) {
+      fail(
+        execution.mode === "complete-sdk",
+        "Checkpoint-only intent cannot publish SDK completion",
+      );
+      const checked = await verifyBundle(result.bundle, producer.repository);
+      const completion = createSdkCompletion({
+        producer,
+        ...result.sdkCompletion,
+        checked,
+      });
+      await writeFile(
+        state,
+        canonical({
+          kind: "sdk",
+          completion,
+          bundle: result.bundle,
+          logs: result.logs,
+        }) + "\n",
+        { flag: "wx" },
+      );
+      if (env.GITHUB_OUTPUT)
+        await appendFile(env.GITHUB_OUTPUT, "sdk_complete=true\n");
+      return {
+        sdkComplete: true,
+        nativeAcceptance: false,
+        runtimeReady: false,
+      };
+    }
+    if (env.GITHUB_OUTPUT)
+      await appendFile(env.GITHUB_OUTPUT, "sdk_complete=false\n");
+    return result;
   }
   const saved = await json(state);
+  if (saved.kind === "sdk") {
+    validateSdkCompletion(saved.completion);
+    fail(
+      saved.bundle ===
+        path.join(temp, "sorng-cef-engineering", TARGET, SOURCE_ID, "bundle") &&
+        canonical(saved.completion.producer) === canonical(producer),
+      "Foreign SDK state",
+    );
+    if (options.mode === "outcome")
+      return {
+        sdkComplete: true,
+        nativeAcceptance: false,
+        runtimeReady: false,
+      };
+    await verifyBundle(saved.bundle, producer.repository);
+    const seal = await uploadSdkBundle(
+      apiClient(producer.repository, env.GH_TOKEN, fetch, { sdk: true }),
+      { bundle: saved.bundle, completion: saved.completion, producer },
+    );
+    const sealRoot = path.join(temp, "cef-engineering-sdk-seal");
+    await mkdir(sealRoot);
+    const data = canonical(seal) + "\n";
+    fail(Buffer.byteLength(data) < LIMITS.seal, "SDK seal size bound");
+    await writeFile(path.join(sealRoot, "seal.json"), data, { flag: "wx" });
+    return {
+      sdkDraftUploaded: true,
+      sealPending: true,
+      nativeAcceptance: false,
+      runtimeReady: false,
+    };
+  }
+  fail(saved.kind === "checkpoint", "Unknown engineering state");
   validateManifest(saved.manifest);
   fail(
     saved.bundle === bundle &&

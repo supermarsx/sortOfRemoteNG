@@ -20,6 +20,7 @@ import YAML from "yaml";
 import { Script } from "node:vm";
 import {
   RUNNERS,
+  engineeringSdkContinuation,
   MAX_RELEASE_ASSET,
   WINDOWS_GIT_PROGRAMS,
   WINDOWS_GIT_TEMPLATE_SHA256,
@@ -2030,4 +2031,30 @@ test("engineering checkpoints cannot select a dedicated or foreign producer befo
     () => parseArguments(["build", "--checkpoint", "yes"]),
     /Unknown\/duplicate/,
   );
+});
+
+test("engineering packaging continues only for explicit complete-SDK intent and genuinely clean compiler completion", () => {
+  const valid = {
+    kind: "continue-sdk",
+    compile: { outcome: "compiler-complete", exitCode: 0, quiescent: true },
+  };
+  assert.equal(engineeringSdkContinuation({ completeSdk: true }, valid), true);
+  assert.equal(
+    engineeringSdkContinuation({ completeSdk: true }, { checkpoint: true }),
+    false,
+  );
+  assert.throws(() =>
+    engineeringSdkContinuation({ completeSdk: false }, valid),
+  );
+  for (const compile of [
+    { outcome: "slice-ended", exitCode: null, quiescent: true },
+    { outcome: "compiler-failed", exitCode: 137, quiescent: true },
+    { outcome: "compiler-complete", exitCode: 0, quiescent: false },
+  ])
+    assert.throws(() =>
+      engineeringSdkContinuation(
+        { completeSdk: true },
+        { kind: "continue-sdk", compile },
+      ),
+    );
 });

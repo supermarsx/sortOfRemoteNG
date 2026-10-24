@@ -22,6 +22,8 @@ export const LIMITS = Object.freeze({
   seal: 1024 ** 2,
   archiveMs: 600_000,
   compileMs: 15 * 60_000,
+  maxCompileMs: 180 * 60_000,
+  hostMs: 300 * 60_000,
 });
 export const INPUTS =
   "native/cef-build-inputs/20261024-registration-retirement-lf-macintel-sdk26-2-capture-compat";
@@ -162,6 +164,42 @@ async function verifyProducerCode(api, producer, expected) {
     "Producer code differs from sealed checkpoint",
   );
 }
+export const SLICES = Object.freeze([15, 30, 60, 120, 180]);
+export function executionOptions(mode = "checkpoint", minutes = "15") {
+  assert(
+    ["checkpoint", "complete-sdk"].includes(mode) &&
+      /^[0-9]+$/.test(String(minutes)) &&
+      String(Number(minutes)) === String(minutes) &&
+      SLICES.includes(Number(minutes)),
+    "Closed engineering mode/slice required",
+  );
+  return {
+    mode,
+    minutes: Number(minutes),
+    milliseconds: Number(minutes) * 60_000,
+  };
+}
+export function hostRemaining(env, now = Date.now()) {
+  const start = Number(env.CEF_ENGINEERING_JOB_STARTED_MS);
+  assert(
+    Number.isSafeInteger(start) &&
+      start > 0 &&
+      now >= start &&
+      now - start < LIMITS.hostMs,
+    "Engineering host clock required",
+  );
+  return LIMITS.hostMs - (now - start);
+}
+export function sliceBudget(options, remaining) {
+  const reserve = options.mode === "complete-sdk" ? 60 * 60_000 : 40 * 60_000;
+  assert(
+    Number.isSafeInteger(remaining) &&
+      remaining > 0 &&
+      options.milliseconds + reserve <= remaining,
+    "Requested slice leaves insufficient packaging/transfer reserve",
+  );
+  return options.milliseconds; // Never silently shorten/retry a selected slice.
+}
 export function validateIdentity(value) {
   shape(value, [
     "target",
@@ -245,6 +283,47 @@ function pin(value, maximum) {
     "Invalid checkpoint asset pin",
   );
 }
+export function validateCompile(value) {
+  shape(value, [
+    "outcome",
+    "exitCode",
+    "quiescent",
+    "groupId",
+    "quiescence",
+    "observed",
+  ]);
+  assert(
+    ["slice-ended", "compiler-failed", "compiler-complete"].includes(
+      value.outcome,
+    ) &&
+      (value.exitCode === null || Number.isInteger(value.exitCode)) &&
+      value.quiescent === true &&
+      positive(value.groupId),
+    "Compiler outcome/quiescence required",
+  );
+  assert(
+    value.quiescence === "observed-lineage-and-root-group" &&
+      Array.isArray(value.observed) &&
+      value.observed.length > 0 &&
+      value.observed.length <= 4096,
+    "Bounded observed lineage required",
+  );
+  const pids = new Set();
+  for (const row of value.observed) {
+    shape(row, ["pid", "start"]);
+    assert(
+      positive(row.pid) &&
+        !pids.has(row.pid) &&
+        /^[A-Z][a-z]{2} [A-Z][a-z]{2} [0-9]{1,2} [0-9]{2}:[0-9]{2}:[0-9]{2} [0-9]{4}$/.test(
+          row.start,
+        ),
+      "Invalid observed process",
+    );
+    pids.add(row.pid);
+  }
+  assert(pids.has(value.groupId), "Observed root missing");
+  return value;
+}
 export function validateManifest(value, expectedIdentity) {
   shape(value, [
     "schemaVersion",
@@ -308,45 +387,7 @@ export function validateManifest(value, expectedIdentity) {
       a.entries <= 300000,
     "Checkpoint bounds",
   );
-  shape(value.compile, [
-    "outcome",
-    "exitCode",
-    "quiescent",
-    "groupId",
-    "quiescence",
-    "observed",
-  ]);
-  assert(
-    ["slice-ended", "compiler-failed", "compiler-complete"].includes(
-      value.compile.outcome,
-    ) &&
-      (value.compile.exitCode === null ||
-        Number.isInteger(value.compile.exitCode)) &&
-      value.compile.quiescent === true &&
-      positive(value.compile.groupId),
-    "Compiler outcome/quiescence required",
-  );
-  assert(
-    value.compile.quiescence === "observed-lineage-and-root-group" &&
-      Array.isArray(value.compile.observed) &&
-      value.compile.observed.length > 0 &&
-      value.compile.observed.length <= 4096,
-    "Bounded observed lineage required",
-  );
-  const pids = new Set();
-  for (const row of value.compile.observed) {
-    shape(row, ["pid", "start"]);
-    assert(
-      positive(row.pid) &&
-        !pids.has(row.pid) &&
-        /^[A-Z][a-z]{2} [A-Z][a-z]{2} [0-9]{1,2} [0-9]{2}:[0-9]{2}:[0-9]{2} [0-9]{4}$/.test(
-          row.start,
-        ),
-      "Invalid observed process",
-    );
-    pids.add(row.pid);
-  }
-  assert(pids.has(value.compile.groupId), "Observed root missing");
+  validateCompile(value.compile);
   shape(value.producer, [
     "repository",
     "repositoryId",
@@ -523,25 +564,57 @@ async function processSnapshot() {
   });
 }
 export function observedLineage(rows, owned) {
+  assert(
+    owned.length > 0 && owned.length <= 4096,
+    "Bounded original root identity required",
+  );
+  const root = owned[0];
+  const current = new Map(rows.map((row) => [row.pid, row]));
   const found = new Map(owned.map((row) => [row.pid, { ...row }]));
-  for (const row of rows) {
-    if (found.has(row.pid))
-      assert(
-        found.get(row.pid).start === row.start,
-        "Owned PID identity changed",
-      );
+  const replaced = new Set();
+  for (const record of owned) {
+    const row = current.get(record.pid);
+    if (row && row.start !== record.start) {
+      assert(record.pid !== root.pid, "Owned root PID identity changed");
+      // It is no longer our observed process. Do not adopt or signal the new
+      // occupant, even if its current parent happens to be in our cohort.
+      found.delete(record.pid);
+      replaced.add(record.pid);
+    }
   }
+  // Discover before retiring absent ancestors: a non-atomic ps snapshot may
+  // still report their children. Already observed detached children retain
+  // their own exact identity even after reparenting. This is observed lineage,
+  // never a universal fork/daemon tracking guarantee.
   let changed = true;
   while (changed) {
     changed = false;
     for (const row of rows)
-      if (!found.has(row.pid) && found.has(row.parent)) {
+      if (
+        !replaced.has(row.pid) &&
+        !found.has(row.pid) &&
+        found.has(row.parent)
+      ) {
         found.set(row.pid, { pid: row.pid, start: row.start });
         changed = true;
-        assert(found.size <= 4096, "Observed descendant bound");
       }
   }
-  return [...found.values()];
+  const active = [...found.values()].filter(
+    (record) =>
+      record.pid === root.pid ||
+      current.get(record.pid)?.start === record.start,
+  );
+  assert(active.length <= 4096, "Observed active descendant bound");
+  return active;
+}
+export function sameObservedCohort(left, right) {
+  const key = (rows) =>
+    canonical(
+      rows
+        .map(({ pid, start }) => ({ pid, start }))
+        .sort((a, b) => a.pid - b.pid),
+    );
+  return key(left) === key(right);
 }
 export async function observedQuiet(records, group) {
   const rows = await processSnapshot();
@@ -574,7 +647,7 @@ async function stopObserved(child, initial) {
         if (error.code !== "ESRCH") throw error;
       }
     }
-    if (round > 0 && next.length === owned.length) {
+    if (round > 0 && sameObservedCohort(next, owned)) {
       owned = next;
       stable = true;
       break;
@@ -610,7 +683,7 @@ export async function compileSlice(
   assert(
     process.platform !== "win32" &&
       positive(milliseconds) &&
-      milliseconds <= LIMITS.compileMs,
+      milliseconds <= LIMITS.maxCompileMs,
     "Bounded Unix engineering slice only",
   );
   for (const key of Object.keys(env))
@@ -678,7 +751,7 @@ export async function compileSlice(
   }, milliseconds);
   try {
     await initial;
-    // Bound to 3600 snapshots for the maximum15-minute slice. This records
+    // Bound to four snapshots/second for the explicitly selected slice. This records
     // observed lineage, not universal fork/daemon tracking; ambiguity denies.
     monitor = (async () => {
       for (
@@ -686,10 +759,14 @@ export async function compileSlice(
         monitoring && child.exitCode === null && child.signalCode === null;
         turn++
       ) {
-        assert(turn < 3600, "Ownership observation bound");
+        assert(
+          turn < Math.ceil(milliseconds / 250) + 8,
+          "Ownership observation bound",
+        );
         await new Promise((resolve) => setTimeout(resolve, 250));
         if (!monitoring) break;
-        observed = observedLineage(await processSnapshot(), observed);
+        const rows = await processSnapshot();
+        observed = observedLineage(rows, observed);
       }
     })().catch((error) => {
       monitorFailure = error;
@@ -758,7 +835,7 @@ export function apiClient(
   repository,
   token,
   request = fetch,
-  { readOnly = false, milliseconds = 20 * 60_000 } = {},
+  { readOnly = false, milliseconds = 20 * 60_000, sdk = false } = {},
 ) {
   const deadline = Date.now() + milliseconds;
   assert(
@@ -785,12 +862,19 @@ export function apiClient(
         (!readOnly &&
           method === "POST" &&
           ((route === "releases" && !upload) ||
-            (upload && uploadRoute.test(route)))),
+            (upload &&
+              (sdk
+                ? /^releases\/[1-9][0-9]*\/assets\?name=/.test(route) &&
+                  SDK_NAMES.some((name) =>
+                    route.endsWith(`?name=${encodeURIComponent(name)}`),
+                  )
+                : uploadRoute.test(route))))),
       "Closed same-repository checkpoint endpoint required",
     );
     if (upload)
       assert(
-        positive(bodyBytes) && bodyBytes <= LIMITS.chunk,
+        positive(bodyBytes) &&
+          bodyBytes <= (sdk ? SDK_ASSET_MAX : LIMITS.chunk),
         "Bounded upload content length required",
       );
     const prefix = upload
@@ -1345,4 +1429,394 @@ export async function restoreDownload(
     nativeAcceptance: false,
     runtimeReady: false,
   };
+}
+
+// A completed SDK is a distinct authority from a resumable out/ checkpoint.
+export const SDK_ASSET_MAX = 2 * 1024 ** 3 - 1;
+export const SDK_ARCHIVE = `sorng-cef-custom-${SOURCE_ID}-${TARGET}.tar.bz2`;
+export const SDK_NAMES = Object.freeze([
+  "source-lock.json",
+  "manifest.json",
+  "receipt.json",
+  SDK_ARCHIVE,
+  "runtime.json",
+]);
+export function sdkSealName(producer) {
+  return `cef-engineering-sdk-seal-${SOURCE_ID}-${TARGET}-${producer.runId}-${producer.attempt}`;
+}
+export function sdkPin(value) {
+  shape(value, ["name", "bytes", "sha256"]);
+  assert(
+    SDK_NAMES.includes(value.name) &&
+      positive(value.bytes) &&
+      value.bytes <=
+        (value.name === SDK_ARCHIVE ? SDK_ASSET_MAX : 16 * 1024 ** 2) &&
+      hex(value.sha256),
+    "Invalid SDK asset pin",
+  );
+}
+export function completionSha(value) {
+  return sha(canonical(value) + "\n");
+}
+export function validateSdkCompletion(value) {
+  shape(value, [
+    "schemaVersion",
+    "kind",
+    "producer",
+    "identity",
+    "identitySha256",
+    "target",
+    "sourceLockSha256",
+    "compile",
+    "distributionExitCode",
+    "bundleVerified",
+    "bundleAssets",
+    "nativeAcceptance",
+    "runtimeReady",
+  ]);
+  assert(
+    value.schemaVersion === 1 &&
+      value.kind === "sorng-cef-engineering-sdk-completion" &&
+      value.target === TARGET &&
+      value.sourceLockSha256 === SOURCE_ID &&
+      value.nativeAcceptance === false &&
+      value.runtimeReady === false,
+    "Closed completed SDK proof required",
+  );
+  assert(
+    validateIdentity(value.identity) === value.identitySha256 &&
+      value.producer.workflow === WORKFLOW,
+    "SDK source/producer identity",
+  );
+  shape(value.producer, [
+    "repository",
+    "repositoryId",
+    "runId",
+    "attempt",
+    "head",
+    "branch",
+    "workflow",
+  ]);
+  assert(
+    /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(value.producer.repository) &&
+      positive(value.producer.repositoryId) &&
+      positive(value.producer.runId) &&
+      positive(value.producer.attempt) &&
+      /^[a-f0-9]{40}$/.test(value.producer.head) &&
+      typeof value.producer.branch === "string" &&
+      value.producer.branch.length > 0 &&
+      value.producer.branch.length <= 256,
+    "Invalid SDK producer identity",
+  );
+  validateCompile(value.compile);
+  assert(
+    value.compile.outcome === "compiler-complete" &&
+      value.compile.exitCode === 0 &&
+      value.compile.quiescent === true &&
+      value.distributionExitCode === 0 &&
+      value.bundleVerified === true,
+    "Partial/failed compiler or packaging is not SDK authority",
+  );
+  assert(
+    Array.isArray(value.bundleAssets) && value.bundleAssets.length === 5,
+    "Complete five-file SDK bundle required",
+  );
+  for (const row of value.bundleAssets) sdkPin(row);
+  assert(
+    new Set(value.bundleAssets.map((row) => row.name)).size === 5 &&
+      SDK_NAMES.every((name) =>
+        value.bundleAssets.some((row) => row.name === name),
+      ),
+    "SDK bundle names differ",
+  );
+  return value;
+}
+export function createSdkCompletion({
+  producer,
+  identity,
+  compile,
+  distributionExitCode,
+  checked,
+}) {
+  assert(
+    checked.descriptor.target === TARGET &&
+      checked.identity.sourceLockSha256 === SOURCE_ID,
+    "Verified SDK differs from reviewed source",
+  );
+  const value = {
+    schemaVersion: 1,
+    kind: "sorng-cef-engineering-sdk-completion",
+    producer,
+    identity,
+    identitySha256: validateIdentity(identity),
+    target: TARGET,
+    sourceLockSha256: SOURCE_ID,
+    compile,
+    distributionExitCode,
+    bundleVerified: true,
+    bundleAssets: checked.assets
+      .map((row) => ({ name: row.name, bytes: row.size, sha256: row.sha256 }))
+      .sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0)),
+    nativeAcceptance: false,
+    runtimeReady: false,
+  };
+  return validateSdkCompletion(value);
+}
+export function validateSdkSeal(seal, producer) {
+  shape(seal, [
+    "schemaVersion",
+    "kind",
+    "producer",
+    "release",
+    "completion",
+    "completionSha256",
+    "assets",
+  ]);
+  assert(
+    seal.schemaVersion === 1 &&
+      seal.kind === "sorng-cef-engineering-sdk-seal" &&
+      canonical(seal.producer) === canonical(producer),
+    "SDK seal producer mismatch",
+  );
+  validateSdkCompletion(seal.completion);
+  assert(
+    canonical(seal.completion.producer) === canonical(producer) &&
+      completionSha(seal.completion) === seal.completionSha256,
+    "SDK completion digest mismatch",
+  );
+  shape(seal.release, ["id", "tag"]);
+  assert(
+    positive(seal.release.id) &&
+      seal.release.tag ===
+        `cef-sdk-checkpoint-${TARGET}-${seal.completion.identitySha256.slice(0, 16)}-${producer.runId}-${producer.attempt}`,
+    "SDK draft mismatch",
+  );
+  assert(
+    Array.isArray(seal.assets) && seal.assets.length === 5,
+    "SDK sealed asset set",
+  );
+  const ids = new Set();
+  for (const row of seal.assets) {
+    shape(row, ["id", "name", "bytes", "sha256"]);
+    sdkPin({ name: row.name, bytes: row.bytes, sha256: row.sha256 });
+    assert(positive(row.id) && !ids.has(row.id), "SDK asset id");
+    ids.add(row.id);
+  }
+  assert(
+    canonical(
+      seal.assets
+        .map(({ id, ...row }) => row)
+        .sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0)),
+    ) === canonical(seal.completion.bundleAssets),
+    "SDK assets differ from completion",
+  );
+  return seal;
+}
+export async function uploadSdkBundle(api, { bundle, completion, producer }) {
+  validateSdkCompletion(completion);
+  assert(
+    canonical(completion.producer) === canonical(producer),
+    "Current SDK producer mismatch",
+  );
+  await verifyProducer(api, producer);
+  await verifyProducerCode(api, producer, completion.identity.producer);
+  assert(
+    await observedQuiet(
+      completion.compile.observed,
+      completion.compile.groupId,
+    ),
+    "SDK compiler no longer quiescent",
+  );
+  for (const pin of completion.bundleAssets)
+    assert(
+      canonical(
+        await filePin(
+          path.join(bundle, pin.name),
+          pin.name === SDK_ARCHIVE ? SDK_ASSET_MAX : 16 * 1024 ** 2,
+        ),
+      ) === canonical(pin),
+      "SDK upload bytes changed",
+    );
+  const tag = `cef-sdk-checkpoint-${TARGET}-${completion.identitySha256.slice(0, 16)}-${producer.runId}-${producer.attempt}`;
+  const release = await api("releases", {
+    method: "POST",
+    body: {
+      tag_name: tag,
+      target_commitish: producer.head,
+      name: tag,
+      draft: true,
+      prerelease: true,
+      make_latest: "false",
+      body: "Completed SDK transport only; native acceptance and runtime publication remain separate.",
+    },
+  });
+  assert(
+    positive(release.id) &&
+      release.draft === true &&
+      release.prerelease === true &&
+      release.tag_name === tag,
+    "Unexpected SDK transport draft",
+  );
+  const assets = [];
+  for (const pin of completion.bundleAssets) {
+    const uploaded = await api(
+      `releases/${release.id}/assets?name=${encodeURIComponent(pin.name)}`,
+      {
+        method: "POST",
+        upload: true,
+        bodyBytes: pin.bytes,
+        body: createReadStream(path.join(bundle, pin.name)),
+      },
+    );
+    assert(
+      uploaded.name === pin.name &&
+        uploaded.size === pin.bytes &&
+        uploaded.digest === `sha256:${pin.sha256}` &&
+        uploaded.state === "uploaded" &&
+        positive(uploaded.id),
+      "SDK uploaded asset mismatch",
+    );
+    assets.push({ id: uploaded.id, ...pin });
+  }
+  return validateSdkSeal(
+    {
+      schemaVersion: 1,
+      kind: "sorng-cef-engineering-sdk-seal",
+      producer,
+      release: { id: release.id, tag },
+      completion,
+      completionSha256: completionSha(completion),
+      assets,
+    },
+    producer,
+  );
+}
+export async function downloadSdkBundle(
+  api,
+  {
+    selection,
+    repository,
+    token,
+    destination,
+    python,
+    helper,
+    request = fetch,
+  },
+) {
+  assert(
+    selection.producer === "engineering-sdk" &&
+      selection.target === TARGET &&
+      positive(selection.runAttempt),
+    "Explicit completed engineering SDK selection required",
+  );
+  const [run, repo] = await Promise.all([
+    api(`actions/runs/${selection.runId}`),
+    api(""),
+  ]);
+  const producer = {
+    repository,
+    repositoryId: repo.id,
+    runId: selection.runId,
+    attempt: selection.runAttempt,
+    head: selection.headSha,
+    branch: repo.default_branch,
+    workflow: WORKFLOW,
+  };
+  await verifyProducer(api, producer);
+  assert(
+    run.id === selection.runId &&
+      run.status === "completed" &&
+      run.conclusion === "success" &&
+      run.run_attempt === selection.runAttempt,
+    "Only a successful completed SDK run is eligible",
+  );
+  const listing = await api(
+    `actions/runs/${selection.runId}/artifacts?per_page=100`,
+  );
+  assert(listing.total_count <= 100, "SDK artifact listing bound");
+  const artifact = listing.artifacts.find(
+    (row) => row.id === selection.artifactId,
+  );
+  assert(
+    artifact &&
+      artifact.name === sdkSealName(producer) &&
+      artifact.expired === false &&
+      artifact.workflow_run?.id === producer.runId &&
+      artifact.workflow_run?.head_sha === producer.head &&
+      artifact.digest === `sha256:${selection.artifactSha256}` &&
+      positive(artifact.size_in_bytes) &&
+      artifact.size_in_bytes < LIMITS.seal,
+    "SDK independent completion seal mismatch",
+  );
+  await mkdir(destination);
+  await noLinks(destination);
+  const zip = path.join(destination, "sdk-seal.zip"),
+    deadline = Date.now() + 20 * 60_000;
+  await downloadAsset(
+    repository,
+    token,
+    `/actions/artifacts/${artifact.id}/zip`,
+    zip,
+    { bytes: artifact.size_in_bytes, sha256: selection.artifactSha256 },
+    { request, maximum: LIMITS.seal, deadline },
+  );
+  const seal = validateSdkSeal(
+    await archiveCommand(
+      python,
+      helper,
+      ["seal", "--input", zip, "--output", destination],
+      { timeout: 15000 },
+    ),
+    producer,
+  );
+  assert(
+    seal.completionSha256 === selection.completionSha256 &&
+      seal.completion.bundleAssets.find((row) => row.name === "runtime.json")
+        .sha256 === selection.descriptorSha256,
+    "SDK independently reviewed completion/descriptor mismatch",
+  );
+  await verifyProducerCode(api, producer, seal.completion.identity.producer);
+  const [release, assets] = await Promise.all([
+    api(`releases/${seal.release.id}`),
+    api(`releases/${seal.release.id}/assets?per_page=100`),
+  ]);
+  assert(
+    release.draft === true &&
+      release.prerelease === true &&
+      release.tag_name === seal.release.tag &&
+      release.target_commitish === producer.head &&
+      Array.isArray(assets) &&
+      assets.length === 5 &&
+      new Set(assets.map((row) => row.id)).size === 5,
+    "SDK draft changed after sealing",
+  );
+  for (const pin of seal.assets) {
+    const actual = assets.find((row) => row.id === pin.id);
+    assert(
+      actual &&
+        actual.name === pin.name &&
+        actual.size === pin.bytes &&
+        actual.state === "uploaded" &&
+        actual.digest === `sha256:${pin.sha256}`,
+      "SDK mutable draft differs from trusted seal",
+    );
+    await downloadAsset(
+      repository,
+      token,
+      `/releases/assets/${pin.id}`,
+      path.join(destination, pin.name),
+      pin,
+      {
+        request,
+        maximum: pin.name === SDK_ARCHIVE ? SDK_ASSET_MAX : 16 * 1024 ** 2,
+        deadline,
+      },
+    );
+  }
+  await writeFile(
+    path.join(destination, "sdk-completion-proof.json"),
+    canonical(seal.completion) + "\n",
+    { flag: "wx" },
+  );
+  return { sdkComplete: true, nativeAcceptance: false, runtimeReady: false };
 }

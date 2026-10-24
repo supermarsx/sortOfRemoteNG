@@ -3,6 +3,18 @@ name: CEF engineering checkpoint
 on:
   workflow_dispatch:
     inputs:
+      mode:
+        description: Checkpoint only, or finish an SDK only after genuine complete compilation
+        type: choice
+        options: [checkpoint, complete-sdk]
+        required: true
+        default: checkpoint
+      slice_minutes:
+        description: Explicit compile slice; controller reserves packaging/transfer within the300-minute host bound
+        type: choice
+        options: ["15", "30", "60", "120", "180"]
+        required: true
+        default: "15"
       restore_run:
         description: Exact prior trusted checkpoint workflow run (0 starts the controlled first slice)
         type: string
@@ -17,7 +29,7 @@ jobs:
   checkpoint:
     if: github.event_name == 'workflow_dispatch' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch) && github.event.repository.visibility == 'public'
     runs-on: macos-15-intel
-    timeout-minutes: 120
+    timeout-minutes: 300
     concurrency:
       group: cef-engineering-checkpoint-${{ github.ref }}-x86_64-apple-darwin-c7bb8b0e4a4c8ba61fffe095c2d4466e45ddc6e762c9fcd3028f49909f9c1c8f
       cancel-in-progress: true
@@ -29,6 +41,8 @@ jobs:
       GITHUB_REPOSITORY_VISIBILITY: ${{ github.event.repository.visibility }}
       SORNG_CEF_TOOLS_ROOT: /
     steps:
+      - name: Start the bounded whole-job clock before acquisition
+        run: printf 'CEF_ENGINEERING_JOB_STARTED_MS=%s000\n' "$(date +%s)" >> "$GITHUB_ENV"
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
           persist-credentials: false
@@ -44,20 +58,33 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           CEF_RESTORE_RUN: ${{ inputs.restore_run }}
         run: node scripts/cef-engineering-checkpoint.mjs download --restore-run "$CEF_RESTORE_RUN"
-      - name: Fresh pinned source and GN, verify restore, controlled fifteen-minute compile, quiesce and pack
+      - name: Fresh pinned source/GN, verified restore and explicitly bounded compilation
+        id: compile
         # No GH_TOKEN, GITHUB_TOKEN or ACTIONS credential is passed to any child.
         env:
           CEF_RESTORE_MANIFEST_SHA: ${{ steps.restore.outputs.manifest_sha }}
-        run: node scripts/cef-engineering-checkpoint.mjs compile
+          CEF_ENGINEERING_MODE: ${{ inputs.mode }}
+          CEF_SLICE_MINUTES: ${{ inputs.slice_minutes }}
+        run: node scripts/cef-engineering-checkpoint.mjs compile --mode "$CEF_ENGINEERING_MODE" --slice-minutes "$CEF_SLICE_MINUTES"
       - name: Upload verified chunks to a new draft engineering checkpoint
         env:
           GH_TOKEN: ${{ github.token }}
         run: node scripts/cef-engineering-checkpoint.mjs upload
-      - name: Seal immutable run-bound metadata LAST
+      - name: Seal immutable checkpoint metadata LAST
+        if: success() && steps.compile.outputs.sdk_complete == 'false'
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         with:
           name: cef-engineering-seal-${{ github.run_id }}-${{ github.run_attempt }}
           path: ${{ runner.temp }}/cef-engineering-seal/seal.json
+          retention-days: 90
+          compression-level: 0
+          if-no-files-found: error
+      - name: Seal actual completed SDK transport LAST
+        if: success() && steps.compile.outputs.sdk_complete == 'true'
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        with:
+          name: cef-engineering-sdk-seal-c7bb8b0e4a4c8ba61fffe095c2d4466e45ddc6e762c9fcd3028f49909f9c1c8f-x86_64-apple-darwin-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/cef-engineering-sdk-seal/seal.json
           retention-days: 90
           compression-level: 0
           if-no-files-found: error

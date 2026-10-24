@@ -906,7 +906,7 @@ export async function build(
   env = process.env,
 ) {
   if (!execute) fail("build requires --execute");
-  const budget =
+  let budget =
     runnerMode === "hosted"
       ? createHostedBuildBudget(engineering ? 60 * 60_000 : undefined)
       : undefined;
@@ -1213,13 +1213,18 @@ export async function build(
     )
       fail("Unexpected reviewed CEF hook command");
     if (engineering && index === 1) {
-      return engineering.compile({
+      const decision = await engineering.compile({
         ...engineeringContext,
         executable: python,
         args: step.args,
         cwd: step.cwd,
         env: childEnv,
       });
+      if (!engineeringSdkContinuation(engineering, decision)) return decision;
+
+      engineeringContext.completedCompile = decision.compile;
+      budget = createHostedBuildBudget(engineering.packagingMilliseconds());
+      continue;
     }
     await call(
       python,
@@ -1313,7 +1318,25 @@ export async function build(
   await writeFile(path.join(logs, "result.json"), stableJson(result), {
     flag: "wx",
   });
+  if (engineeringContext.completedCompile)
+    result.sdkCompletion = {
+      compile: engineeringContext.completedCompile,
+      identity: engineeringContext.checkpoint.identity,
+      distributionExitCode: 0,
+    };
   return result;
+}
+
+export function engineeringSdkContinuation(engineering, decision) {
+  if (decision?.kind !== "continue-sdk") return false;
+  if (
+    engineering.completeSdk !== true ||
+    decision.compile?.outcome !== "compiler-complete" ||
+    decision.compile?.exitCode !== 0 ||
+    decision.compile?.quiescent !== true
+  )
+    fail("Only genuine clean compiler completion may continue SDK packaging");
+  return true;
 }
 
 export async function verifyBundle(bundle, repository) {
