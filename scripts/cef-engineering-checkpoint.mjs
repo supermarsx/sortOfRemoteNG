@@ -28,6 +28,7 @@ import {
   SOURCE_ID,
   WORKFLOW,
   authority,
+  sdkProbeAuthority,
   sha,
   canonical,
   codeTreeDigest,
@@ -37,6 +38,8 @@ import {
   graphInventory,
   afterGnPhase,
   normalizeSdkLinks,
+  selectedSdkPreflight,
+  logSdkLayout,
   withVerifiedGraph,
   restoreVerifiedGraph,
   validateManifest,
@@ -63,7 +66,7 @@ const json = async (p) => JSON.parse(await readFile(p, "utf8"));
 export function argumentsFor(argv) {
   const [mode, ...args] = argv;
   fail(
-    ["download", "compile", "upload", "outcome"].includes(mode),
+    ["download", "compile", "probe-sdk", "upload", "outcome"].includes(mode),
     "Unknown checkpoint command",
   );
   const result = { mode };
@@ -136,7 +139,18 @@ async function tools(env) {
       path.join(developer, "Toolchains", "XcodeDefault.xctoolchain"),
     ].map((value) => realpath(value)),
   );
-  return { python, toolchain, map, sdkTargets };
+  return {
+    python,
+    toolchain,
+    map,
+    sdkTargets,
+    selected: Object.fromEntries(
+      ["DEVELOPER_DIR", "SDKROOT", "MACOSX_DEPLOYMENT_TARGET"].map((key) => [
+        key,
+        selected(key),
+      ]),
+    ),
+  };
 }
 async function codeDigest() {
   const lines = execFileSync(
@@ -174,7 +188,8 @@ async function codeDigest() {
 }
 export async function main(argv = process.argv.slice(2), env = process.env) {
   const options = argumentsFor(argv),
-    producer = authority(env);
+    producer =
+      options.mode === "probe-sdk" ? sdkProbeAuthority(env) : authority(env);
   fail(
     process.platform === "darwin" && process.arch === "x64",
     "Reviewed native Mac Intel checkpoint only",
@@ -210,6 +225,20 @@ export async function main(argv = process.argv.slice(2), env = process.env) {
     );
     return { restoreDownloaded: true, nativeAcceptance: false };
   }
+  if (options.mode === "probe-sdk") {
+    fail(
+      !env.GH_TOKEN && !env.GITHUB_TOKEN,
+      "SDK probe must not receive a GitHub token",
+    );
+    const verified = await tools(env);
+    return afterGnPhase("sdk-preflight", () =>
+      selectedSdkPreflight({
+        temp,
+        selected: verified.selected,
+        expectedTargets: verified.sdkTargets,
+      }),
+    );
+  }
   if (options.mode === "compile") {
     fail(
       !env.GH_TOKEN && !env.GITHUB_TOKEN,
@@ -222,6 +251,13 @@ export async function main(argv = process.argv.slice(2), env = process.env) {
     hostRemaining(env);
     const verified = await tools(env),
       code = await codeDigest();
+    await afterGnPhase("sdk-preflight", () =>
+      selectedSdkPreflight({
+        temp,
+        selected: verified.selected,
+        expectedTargets: verified.sdkTargets,
+      }),
+    );
     const work = await workspace(temp, SOURCE_ID);
     const result = await build(
       {
@@ -265,6 +301,7 @@ export async function main(argv = process.argv.slice(2), env = process.env) {
                 developerDir: context.env.DEVELOPER_DIR,
                 sdkRoot: context.env.SDKROOT,
                 expectedTargets: verified.sdkTargets,
+                observe: logSdkLayout,
               }),
             );
             const recipePath = path.join(
@@ -362,6 +399,7 @@ export async function main(argv = process.argv.slice(2), env = process.env) {
                         developerDir: context.env.DEVELOPER_DIR,
                         sdkRoot: context.env.SDKROOT,
                         expectedTargets: verified.sdkTargets,
+                        observe: logSdkLayout,
                       }),
                     );
                     fail(

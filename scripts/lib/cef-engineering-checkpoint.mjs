@@ -1,10 +1,13 @@
 // Engineering checkpoints never confer runtime or SDK admission.
 import { createHash } from "node:crypto";
-import { spawn } from "node:child_process";
+import { spawn, execFile } from "node:child_process";
+import { promisify } from "node:util";
 import { createReadStream, createWriteStream } from "node:fs";
 import {
   lstat,
   mkdir,
+  mkdtemp,
+  rm,
   readFile,
   readdir,
   readlink,
@@ -53,6 +56,7 @@ export function downloadHost(host) {
   return Boolean(match && GITHUB_BLOB_IDS.has(Number(match[1])));
 }
 export const WORKFLOW = ".github/workflows/cef-engineering-checkpoint.yml";
+export const SDK_PROBE_WORKFLOW = ".github/workflows/cef-sdk-layout-probe.yml";
 const hex = (x) => typeof x === "string" && /^[a-f0-9]{64}$/.test(x);
 const positive = (x) => Number.isSafeInteger(x) && x > 0;
 const assert = (ok, message) => {
@@ -77,6 +81,18 @@ export function shape(value, keys) {
   );
 }
 export function authority(env) {
+  return workflowAuthority(env, WORKFLOW);
+}
+export function sdkProbeAuthority(env) {
+  workflowAuthority(env, SDK_PROBE_WORKFLOW);
+  assert(
+    !env.GH_TOKEN && !env.GITHUB_TOKEN,
+    "SDK probe must not receive a GitHub token",
+  );
+  // Never return a producer identity usable by download/upload/seal helpers.
+  return { diagnosticOnly: true, nativeAcceptance: false };
+}
+function workflowAuthority(env, workflow) {
   assert(
     env.GITHUB_EVENT_NAME === "workflow_dispatch" &&
       env.GITHUB_ACTIONS === "true" &&
@@ -102,7 +118,7 @@ export function authority(env) {
   );
   assert(
     env.GITHUB_WORKFLOW_REF ===
-      `${env.GITHUB_REPOSITORY}/${WORKFLOW}@refs/heads/${env.CEF_DEFAULT_BRANCH}`,
+      `${env.GITHUB_REPOSITORY}/${workflow}@refs/heads/${env.CEF_DEFAULT_BRANCH}`,
     "Exact checkpoint workflow required",
   );
   return {
@@ -112,7 +128,7 @@ export function authority(env) {
     attempt: Number(env.GITHUB_RUN_ATTEMPT),
     head: env.GITHUB_SHA,
     branch: env.CEF_DEFAULT_BRANCH,
-    workflow: WORKFLOW,
+    workflow,
   };
 }
 export function codeTreeDigest(entries) {
@@ -1079,6 +1095,7 @@ export function validateSeal(seal, expected) {
 }
 // Fixed phases and error labels never include untrusted errors or SDK paths.
 const AFTER_GN_PHASES = new Set([
+  "sdk-preflight",
   "siso-pin",
   "sdk-roots",
   "sdk-links",
@@ -1127,125 +1144,312 @@ export async function afterGnPhase(phase, operation, log = console.log) {
   }
 }
 
-export async function normalizeSdkLinks(
-  out,
-  { developerDir, sdkRoot, expectedTargets },
+const SDK_REASONS = new Set([
+  "filesystem",
+  "probe-command",
+  "absolute-roots",
+  "sdk-containment",
+  "sdk-name",
+  "expected-targets",
+  "physical-rebind",
+  "physical-kind",
+  "entry-count",
+  "entry-kind-name",
+  "raw-target",
+  "changed-before-normalize",
+  "normalized-target",
+]);
+export function sdkLayoutRecord(value) {
+  if (
+    !SDK_REASONS.has(value?.reason) ||
+    !["layout", "sdk", "platform", "toolchain", "unknown"].includes(value?.role)
+  )
+    return { reason: "unavailable", role: "unknown" };
+  const result = { reason: value.reason, role: value.role };
+  for (const key of [
+    "ok",
+    "symbolic",
+    "knownName",
+    "duplicate",
+    "absolute",
+    "rawAlias",
+    "canonical",
+    "physicalMatch",
+  ])
+    if (typeof value[key] === "boolean") result[key] = value[key];
+  if (Number.isInteger(value.count) && value.count >= 0 && value.count <= 4)
+    result.count = value.count;
+  return result;
+}
+export function logSdkLayout(value, log = console.log) {
+  log(
+    `[cef-engineering-checkpoint] sdk-layout ${canonical(sdkLayoutRecord(value))}`,
+  );
+}
+const execFileAsync = promisify(execFile);
+export function selectedSdkEnvironment(selected) {
+  const result = {
+    PATH: "/usr/bin:/bin:/usr/sbin:/sbin",
+    LC_ALL: "C",
+    LANG: "C",
+    TZ: "UTC",
+  };
+  for (const key of ["DEVELOPER_DIR", "SDKROOT", "MACOSX_DEPLOYMENT_TARGET"]) {
+    assert(
+      typeof selected[key] === "string" &&
+        selected[key].length <= 4096 &&
+        !/[\x00-\x1f\x7f]/.test(selected[key]),
+      "Selected SDK environment required",
+    );
+    result[key] = selected[key];
+  }
+  return result;
+}
+export async function selectedSdkPreflight(
+  {
+    temp,
+    selected,
+    expectedTargets,
+    run = execFileAsync,
+    observe = logSdkLayout,
+  },
+  continuation = async () => ({ sdkProbe: true, nativeAcceptance: false }),
 ) {
-  assert(
-    path.isAbsolute(developerDir) && path.isAbsolute(sdkRoot),
-    "Verified absolute SDK roots required",
-  );
-  const developer = await realpath(developerDir),
-    sdk = await realpath(sdkRoot);
-  assert(
-    sdk.startsWith(
-      path.join(
-        developer,
-        "Platforms",
-        "MacOSX.platform",
-        "Developer",
-        "SDKs",
-      ) + path.sep,
-    ),
-    "SDK outside verified Developer path",
-  );
-  const specs = [
-    {
-      raw: sdkRoot,
-      target: sdk,
-      names: new Set([path.basename(sdkRoot), path.basename(sdk)]),
-    },
-    {
-      raw: path.join(developerDir, "Platforms", "MacOSX.platform"),
-      names: new Set(["MacOSX.platform"]),
-    },
-    {
-      raw: path.join(developerDir, "Toolchains", "XcodeDefault.xctoolchain"),
-      names: new Set(["XcodeDefault.xctoolchain"]),
-    },
-  ];
-  assert(
-    [...specs[0].names].every((name) =>
-      /^MacOSX(?:[0-9]+(?:\.[0-9]+)*)?\.sdk$/.test(name),
-    ),
-    "Closed SDK alias names required",
-  );
-  assert(
-    Array.isArray(expectedTargets) &&
-      expectedTargets.length === 3 &&
-      new Set(expectedTargets).size === 3,
-    "Three verified physical SDK targets required",
-  );
-  for (const [index, spec] of specs.entries()) {
-    spec.target ??= await realpath(spec.raw);
-    assert(
-      spec.target === expectedTargets[index],
-      "SDK physical target changed since tool verification",
-    );
-    await noLinks(spec.target);
-    assert(
-      (await stat(spec.target)).isDirectory(),
-      "Physical SDK directory required",
-    );
-  }
-  const directory = path.join(out, "sdk", "xcode_links");
-  await noLinks(directory);
-  const entries = await readdir(directory, { withFileTypes: true });
-  assert(entries.length === 3, "Exactly three generated SDK links required");
-  const found = new Set(),
-    validated = [];
-  for (const entry of entries) {
-    const matches = specs.filter((spec) => spec.names.has(entry.name));
-    assert(
-      entry.isSymbolicLink() && matches.length === 1 && !found.has(matches[0]),
-      "Unknown or duplicate generated SDK link",
-    );
-    const spec = matches[0],
-      file = path.join(directory, entry.name),
-      raw = await readlink(file);
-    assert(
-      path.isAbsolute(raw) &&
-        (raw === spec.raw || raw === spec.target) &&
-        (await realpath(file)) === spec.target,
-      "Generated SDK link differs from exact verified physical target",
-    );
-    found.add(spec);
-    validated.push({
-      file,
-      raw,
-      target: spec.target,
-      name: `sdk/xcode_links/${entry.name}`,
-    });
-  }
-  // Validate every entry before changing ONLY our generated out/ links. Preserve
-  // GN's raw link names; canonicalize target text so Python's strict physical
-  // recipe remains unchanged. The source and installed SDK are never modified.
-  for (const row of validated)
-    if (row.raw !== row.target) {
-      assert(
-        (await lstat(row.file)).isSymbolicLink() &&
-          (await readlink(row.file)) === row.raw &&
-          (await realpath(row.file)) === row.target,
-        "Generated SDK link changed before normalization",
-      );
-      await unlink(row.file);
+  const env = selectedSdkEnvironment(selected);
+  const base = await noLinks(temp),
+    baseStamp = await lstat(base, { bigint: true });
+  const owned = await mkdtemp(path.join(base, "cef-checkpoint-sdk-probe-"));
+  const ownedStamp = await lstat(owned, { bigint: true });
+  try {
+    const directory = path.join(owned, "sdk", "xcode_links");
+    await mkdir(directory, { recursive: true });
+    const commands = [
+      ["/usr/bin/xcrun", ["-sdk", "macosx", "--show-sdk-path"]],
+      ["/usr/bin/xcrun", ["-sdk", "macosx", "--show-sdk-platform-path"]],
+      ["/usr/bin/xcode-select", ["-print-path"]],
+    ];
+    for (const [index, [file, args]] of commands.entries()) {
+      const role = ["sdk", "platform", "toolchain"][index];
+      let raw;
+      try {
+        const { stdout } = await run(file, args, {
+          env,
+          timeout: 5000,
+          maxBuffer: 4096,
+          encoding: "utf8",
+          windowsHide: true,
+        });
+        assert(
+          typeof stdout === "string" && stdout.length <= 4096,
+          "SDK command output bound",
+        );
+        raw = stdout.replace(/\r?\n$/, "");
+        assert(
+          path.isAbsolute(raw) && !/[\x00-\x1f\x7f]/.test(raw),
+          "Absolute SDK command path required",
+        );
+      } catch (error) {
+        observe({ reason: "probe-command", role, ok: false });
+        throw error;
+      }
+      observe({ reason: "probe-command", role, ok: true });
+      if (index === 2)
+        raw = path.join(raw, "Toolchains", "XcodeDefault.xctoolchain");
       await symlink(
-        row.target,
-        row.file,
+        raw,
+        path.join(directory, path.basename(raw)),
         process.platform === "win32" ? "junction" : "dir",
       );
     }
-  for (const row of validated)
+    await normalizeSdkLinks(owned, {
+      developerDir: selected.DEVELOPER_DIR,
+      sdkRoot: selected.SDKROOT,
+      expectedTargets,
+      observe,
+    });
+  } finally {
+    // Fail closed on a replaced root/output. Never recursively delete a changed alias.
+    const currentBase = await noLinks(base),
+      currentBaseStamp = await lstat(base, { bigint: true });
+    const currentOwned = await lstat(owned, { bigint: true });
     assert(
-      (await readlink(row.file)) === row.target &&
-        (await realpath(row.file)) === row.target,
-      "Normalized SDK link differs",
+      currentBase === base &&
+        currentBaseStamp.dev === baseStamp.dev &&
+        currentBaseStamp.ino === baseStamp.ino &&
+        currentBaseStamp.isDirectory(),
+      "SDK probe temporary root changed",
     );
-  return Object.fromEntries(
-    validated
-      .sort((a, b) => (a.name < b.name ? -1 : 1))
-      .map((row) => [row.name, row.target]),
-  );
+    assert(
+      path.isAbsolute(owned) &&
+        path.dirname(owned) === base &&
+        currentOwned.isDirectory() &&
+        !currentOwned.isSymbolicLink() &&
+        currentOwned.dev === ownedStamp.dev &&
+        currentOwned.ino === ownedStamp.ino &&
+        (await realpath(owned)) === owned,
+      "SDK probe cleanup containment changed",
+    );
+    // Only this fresh owned directory is removed; recursive rm never follows its SDK links.
+    await rm(owned, { recursive: true, force: true });
+  }
+  // Source acquisition is structurally downstream of successful probe and cleanup.
+  return continuation();
+}
+
+export async function normalizeSdkLinks(
+  out,
+  { developerDir, sdkRoot, expectedTargets, observe = () => {} },
+) {
+  let role = "layout";
+  const check = (ok, reason, facts = {}) => {
+    const record = { reason, role, ok: Boolean(ok), ...facts };
+    observe(record);
+    if (!ok) {
+      const error = new Error("SDK layout check failed");
+      error.sdkLayout = record;
+      throw error;
+    }
+  };
+  try {
+    check(
+      path.isAbsolute(developerDir) && path.isAbsolute(sdkRoot),
+      "absolute-roots",
+    );
+    const developer = await realpath(developerDir),
+      sdk = await realpath(sdkRoot);
+    check(
+      sdk.startsWith(
+        path.join(
+          developer,
+          "Platforms",
+          "MacOSX.platform",
+          "Developer",
+          "SDKs",
+        ) + path.sep,
+      ),
+      "sdk-containment",
+    );
+    const specs = [
+      {
+        raw: sdkRoot,
+        target: sdk,
+        names: new Set([path.basename(sdkRoot), path.basename(sdk)]),
+      },
+      {
+        raw: path.join(developerDir, "Platforms", "MacOSX.platform"),
+        names: new Set(["MacOSX.platform"]),
+      },
+      {
+        raw: path.join(developerDir, "Toolchains", "XcodeDefault.xctoolchain"),
+        names: new Set(["XcodeDefault.xctoolchain"]),
+      },
+    ];
+    check(
+      [...specs[0].names].every((name) =>
+        /^MacOSX(?:[0-9]+(?:\.[0-9]+)*)?\.sdk$/.test(name),
+      ),
+      "sdk-name",
+    );
+    check(
+      Array.isArray(expectedTargets) &&
+        expectedTargets.length === 3 &&
+        new Set(expectedTargets).size === 3,
+      "expected-targets",
+    );
+    for (const [index, spec] of specs.entries()) {
+      role = ["sdk", "platform", "toolchain"][index];
+      spec.target ??= await realpath(spec.raw);
+      check(spec.target === expectedTargets[index], "physical-rebind");
+      await noLinks(spec.target);
+      check((await stat(spec.target)).isDirectory(), "physical-kind");
+    }
+    role = "layout";
+    const directory = path.join(out, "sdk", "xcode_links");
+    await noLinks(directory);
+    const entries = await readdir(directory, { withFileTypes: true });
+    check(entries.length === 3, "entry-count", {
+      count: Math.min(entries.length, 4),
+    });
+    const found = new Set(),
+      validated = [];
+    for (const entry of entries) {
+      const matches = specs.filter((spec) => spec.names.has(entry.name));
+      role =
+        matches.length === 1
+          ? ["sdk", "platform", "toolchain"][specs.indexOf(matches[0])]
+          : "unknown";
+      check(
+        entry.isSymbolicLink() &&
+          matches.length === 1 &&
+          !found.has(matches[0]),
+        "entry-kind-name",
+        {
+          symbolic: entry.isSymbolicLink(),
+          knownName: matches.length === 1,
+          duplicate: matches.length === 1 && found.has(matches[0]),
+        },
+      );
+      const spec = matches[0],
+        file = path.join(directory, entry.name),
+        raw = await readlink(file);
+      const physicalMatch = (await realpath(file)) === spec.target;
+      check(
+        path.isAbsolute(raw) &&
+          (raw === spec.raw || raw === spec.target) &&
+          physicalMatch,
+        "raw-target",
+        {
+          absolute: path.isAbsolute(raw),
+          rawAlias: raw === spec.raw,
+          canonical: raw === spec.target,
+          physicalMatch,
+        },
+      );
+      found.add(spec);
+      validated.push({
+        file,
+        role,
+        raw,
+        target: spec.target,
+        name: `sdk/xcode_links/${entry.name}`,
+      });
+    }
+    // Validate every entry before changing ONLY our generated out/ links. Preserve
+    // GN's raw link names; canonicalize target text so Python's strict physical
+    // recipe remains unchanged. The source and installed SDK are never modified.
+    for (const row of validated)
+      if (row.raw !== row.target) {
+        role = row.role;
+        check(
+          (await lstat(row.file)).isSymbolicLink() &&
+            (await readlink(row.file)) === row.raw &&
+            (await realpath(row.file)) === row.target,
+          "changed-before-normalize",
+        );
+        await unlink(row.file);
+        await symlink(
+          row.target,
+          row.file,
+          process.platform === "win32" ? "junction" : "dir",
+        );
+      }
+    for (const row of validated) {
+      role = row.role;
+      check(
+        (await readlink(row.file)) === row.target &&
+          (await realpath(row.file)) === row.target,
+        "normalized-target",
+      );
+    }
+    return Object.fromEntries(
+      validated
+        .sort((a, b) => (a.name < b.name ? -1 : 1))
+        .map((row) => [row.name, row.target]),
+    );
+  } catch (error) {
+    if (!error.sdkLayout) observe({ reason: "filesystem", role, ok: false });
+    throw error;
+  }
 }
 
 // Pinned GN150a9d6's target writer can emit one .ninja per eligible target;

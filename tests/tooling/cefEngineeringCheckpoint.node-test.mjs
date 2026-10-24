@@ -13,6 +13,7 @@ import {
   unlink,
   realpath,
   lstat,
+  rename,
 } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -33,6 +34,8 @@ import {
   SOURCE_ID,
   WORKFLOW,
   authority,
+  sdkProbeAuthority,
+  SDK_PROBE_WORKFLOW,
   codeTreeDigest,
   canonical,
   sha,
@@ -54,12 +57,18 @@ import {
   assertGraphBudget,
   afterGnPhase,
   normalizeSdkLinks,
+  selectedSdkPreflight,
+  selectedSdkEnvironment,
+  sdkLayoutRecord,
   withVerifiedGraph,
   restoreVerifiedGraph,
   restoreDownload,
   workspace,
 } from "../../scripts/lib/cef-engineering-checkpoint.mjs";
-import { argumentsFor } from "../../scripts/cef-engineering-checkpoint.mjs";
+import {
+  argumentsFor,
+  main,
+} from "../../scripts/cef-engineering-checkpoint.mjs";
 const ROOT = fileURLToPath(new URL("../../", import.meta.url));
 const producer = {
   repository: "owner/repo",
@@ -1585,7 +1594,27 @@ for (const scenario of [
       await unlink(path.join(f.directory, "MacOSX.platform"));
       await symlink(target, path.join(f.directory, "MacOSX.platform"), f.type);
     }
-    await assert.rejects(normalizeSdkLinks(f.out, f.options));
+    const observations = [];
+    await assert.rejects(
+      normalizeSdkLinks(f.out, {
+        ...f.options,
+        observe: (row) => observations.push(sdkLayoutRecord(row)),
+      }),
+    );
+    const failure = observations.find((row) => row.ok === false);
+    assert.equal(
+      failure.reason,
+      {
+        "extra-alias": "entry-count",
+        "foreign-name": "entry-kind-name",
+        "regular-file": "entry-kind-name",
+        "alias-cycle": "filesystem",
+        "sdk-root-replaced": "physical-rebind",
+        "wrong-physical": "raw-target",
+        "outside-target": "raw-target",
+      }[scenario],
+    );
+    assert.equal(JSON.stringify(observations).includes(f.root), false);
     assert.equal(
       await readlink(sdkLink),
       f.rawSdk,
@@ -1805,3 +1834,310 @@ test(
     );
   },
 );
+
+test("selected SDK preflight uses actual factory argv and token-free environment before acquisition", async (t) => {
+  const f = await sdkLinkFixture(t),
+    commands = [],
+    records = [];
+  let acquired = 0;
+  const selected = {
+    DEVELOPER_DIR: f.options.developerDir,
+    SDKROOT: f.rawSdk,
+    MACOSX_DEPLOYMENT_TARGET: "14.0",
+    GH_TOKEN: "secret",
+    GITHUB_TOKEN: "secret",
+    ACTIONS_SECRET: "secret",
+  };
+  await selectedSdkPreflight(
+    {
+      temp: f.root,
+      selected,
+      expectedTargets: f.options.expectedTargets,
+      observe: (row) => records.push(sdkLayoutRecord(row)),
+      run: async (file, args, options) => {
+        commands.push([file, args]);
+        assert.deepEqual(options.env, selectedSdkEnvironment(selected));
+        assert.equal(options.timeout, 5000);
+        assert.equal(options.maxBuffer, 4096);
+        assert.equal(JSON.stringify(options).includes("secret"), false);
+        return {
+          stdout:
+            [f.rawSdk, f.platform, f.options.developerDir][
+              commands.length - 1
+            ] + "\n",
+        };
+      },
+    },
+    async () => {
+      acquired++;
+      assert.equal(
+        (await readdir(f.root)).some((name) =>
+          name.startsWith("cef-checkpoint-sdk-probe-"),
+        ),
+        false,
+      );
+    },
+  );
+  assert.equal(acquired, 1);
+  assert.deepEqual(commands, [
+    ["/usr/bin/xcrun", ["-sdk", "macosx", "--show-sdk-path"]],
+    ["/usr/bin/xcrun", ["-sdk", "macosx", "--show-sdk-platform-path"]],
+    ["/usr/bin/xcode-select", ["-print-path"]],
+  ]);
+  assert(
+    records.some(
+      (row) =>
+        row.role === "sdk" &&
+        row.rawAlias === true &&
+        row.physicalMatch === true,
+    ),
+  );
+  assert.equal(JSON.stringify(records).includes(f.root), false);
+  const cli = await readFile(
+    path.join(ROOT, "scripts/cef-engineering-checkpoint.mjs"),
+    "utf8",
+  );
+  const compile = cli.slice(cli.indexOf('if (options.mode === "compile") {'));
+  assert(
+    compile.indexOf('afterGnPhase("sdk-preflight"') <
+      compile.indexOf("await workspace("),
+  );
+  assert(
+    compile.indexOf('afterGnPhase("sdk-preflight"') <
+      compile.indexOf("await build("),
+  );
+  assert.deepEqual(argumentsFor(["probe-sdk"]), { mode: "probe-sdk" });
+  assert.throws(() => argumentsFor(["probe-sdk", "--mode", "checkpoint"]));
+});
+
+for (const scenario of [
+  "foreign-sdk",
+  "foreign-platform",
+  "foreign-toolchain",
+  "relative",
+  "control",
+  "oversize",
+  "command-failure",
+]) {
+  test(`selected SDK preflight rejects ${scenario} without acquisition or raw diagnostics`, async (t) => {
+    const f = await sdkLinkFixture(t),
+      records = [];
+    const foreign = path.join(f.root, "private-token-hostname");
+    await mkdir(foreign);
+    let index = 0,
+      acquired = false;
+    await assert.rejects(
+      selectedSdkPreflight(
+        {
+          temp: f.root,
+          selected: {
+            DEVELOPER_DIR: f.options.developerDir,
+            SDKROOT: f.rawSdk,
+            MACOSX_DEPLOYMENT_TARGET: "14.0",
+          },
+          expectedTargets: f.options.expectedTargets,
+          observe: (row) => records.push(sdkLayoutRecord(row)),
+          run: async () => {
+            const values = [f.rawSdk, f.platform, f.options.developerDir];
+            if (scenario.startsWith("foreign-"))
+              values[
+                [
+                  "foreign-sdk",
+                  "foreign-platform",
+                  "foreign-toolchain",
+                ].indexOf(scenario)
+              ] = foreign;
+            if (scenario === "relative") values[0] = "relative";
+            if (scenario === "control") values[0] += "\nsecret";
+            if (scenario === "oversize") values[0] = "/" + "s".repeat(4096);
+            if (scenario === "command-failure")
+              throw new Error("secret https://private.invalid/token");
+            return { stdout: values[index++] + "\n" };
+          },
+        },
+        async () => {
+          acquired = true;
+        },
+      ),
+    );
+    assert.equal(acquired, false);
+    assert.equal(
+      (await readdir(f.root)).some((name) =>
+        name.startsWith("cef-checkpoint-sdk-probe-"),
+      ),
+      false,
+    );
+    assert.equal(JSON.stringify(records).includes("private-token"), false);
+    assert.equal(JSON.stringify(records).includes(f.root), false);
+  });
+}
+
+test("SDK diagnostic projection drops unknown fields, labels, paths and unbounded numbers", () => {
+  assert.deepEqual(
+    sdkLayoutRecord({
+      reason: "raw-target",
+      role: "sdk",
+      absolute: true,
+      rawAlias: false,
+      physicalMatch: true,
+      count: 5,
+      path: "/secret",
+      error: "secret",
+      token: "secret",
+    }),
+    {
+      reason: "raw-target",
+      role: "sdk",
+      absolute: true,
+      rawAlias: false,
+      physicalMatch: true,
+    },
+  );
+  assert.deepEqual(sdkLayoutRecord({ reason: "/secret", role: "sdk" }), {
+    reason: "unavailable",
+    role: "unknown",
+  });
+});
+
+for (const scenario of [
+  "absolute-roots",
+  "sdk-containment",
+  "sdk-name",
+  "expected-targets",
+  "raw-alias",
+]) {
+  test(`SDK diagnostics identify ${scenario} without weakening the check`, async (t) => {
+    const f = await sdkLinkFixture(t),
+      observations = [],
+      options = {
+        ...f.options,
+        observe: (row) => observations.push(sdkLayoutRecord(row)),
+      };
+    if (scenario === "absolute-roots") options.sdkRoot = "relative";
+    if (scenario === "sdk-containment") options.sdkRoot = f.toolchain;
+    if (scenario === "sdk-name") {
+      const alias = path.join(path.dirname(f.sdk), "unapproved-name");
+      await symlink(f.sdk, alias, f.type);
+      options.sdkRoot = alias;
+    }
+    if (scenario === "expected-targets") options.expectedTargets = [];
+    if (scenario === "raw-alias") {
+      const alias = path.join(f.root, "foreign-alias");
+      await symlink(f.sdk, alias, f.type);
+      await unlink(path.join(f.directory, "MacOSX.sdk"));
+      await symlink(alias, path.join(f.directory, "MacOSX.sdk"), f.type);
+    }
+    await assert.rejects(normalizeSdkLinks(f.out, options));
+    const failure = observations.find((row) => row.ok === false);
+    assert.equal(
+      failure.reason,
+      scenario === "raw-alias" ? "raw-target" : scenario,
+    );
+    if (scenario === "raw-alias")
+      assert.deepEqual(failure, {
+        reason: "raw-target",
+        role: "sdk",
+        ok: false,
+        absolute: true,
+        rawAlias: false,
+        canonical: false,
+        physicalMatch: true,
+      });
+    assert.equal(JSON.stringify(observations).includes(f.root), false);
+  });
+}
+
+test("selected SDK probe refuses recursive cleanup after its output becomes a foreign alias", async (t) => {
+  const f = await sdkLinkFixture(t),
+    foreign = path.join(f.root, "foreign-preserved");
+  await mkdir(foreign);
+  await writeFile(path.join(foreign, "marker"), "must remain");
+  let owned,
+    retained,
+    acquired = false;
+  await assert.rejects(
+    selectedSdkPreflight(
+      {
+        temp: f.root,
+        selected: {
+          DEVELOPER_DIR: f.options.developerDir,
+          SDKROOT: f.rawSdk,
+          MACOSX_DEPLOYMENT_TARGET: "14.0",
+        },
+        expectedTargets: f.options.expectedTargets,
+        observe: () => {},
+        run: async () => {
+          owned = path.join(
+            f.root,
+            (await readdir(f.root)).find((name) =>
+              name.startsWith("cef-checkpoint-sdk-probe-"),
+            ),
+          );
+          retained = path.join(f.root, "retained-probe");
+          await rename(owned, retained);
+          await symlink(foreign, owned, f.type);
+          throw new Error("controlled probe failure");
+        },
+      },
+      async () => {
+        acquired = true;
+      },
+    ),
+    /cleanup containment changed/,
+  );
+  assert.equal(acquired, false);
+  assert.equal(
+    await readFile(path.join(foreign, "marker"), "utf8"),
+    "must remain",
+  );
+  assert((await lstat(owned)).isSymbolicLink());
+  assert((await lstat(retained)).isDirectory());
+  // Fixture-owned alias is explicitly unlinked only after proving cleanup denied it.
+  await unlink(owned);
+});
+
+test("SDK diagnostic authority is separate from every producer command and exact default-only", async () => {
+  const probeEnv = {
+    ...env,
+    GITHUB_WORKFLOW_REF: `owner/repo/${SDK_PROBE_WORKFLOW}@refs/heads/Main`,
+  };
+  assert.deepEqual(sdkProbeAuthority(probeEnv), {
+    diagnosticOnly: true,
+    nativeAcceptance: false,
+  });
+  assert.throws(
+    () => sdkProbeAuthority(env),
+    /Exact checkpoint workflow required/,
+  );
+  assert.throws(
+    () => authority(probeEnv),
+    /Exact checkpoint workflow required/,
+  );
+  for (const mode of ["compile", "download", "upload", "outcome"])
+    await assert.rejects(
+      main([mode], probeEnv),
+      /Exact checkpoint workflow required/,
+    );
+  await assert.rejects(
+    main(["probe-sdk"], env),
+    /Exact checkpoint workflow required/,
+  );
+  for (const change of [
+    { GITHUB_REF: "refs/heads/other" },
+    { GITHUB_EVENT_NAME: "push" },
+    { GITHUB_ACTIONS: "false" },
+    { RUNNER_ENVIRONMENT: "self-hosted" },
+    { GITHUB_REPOSITORY_VISIBILITY: "private" },
+    {
+      GITHUB_WORKFLOW_REF: `foreign/repo/${SDK_PROBE_WORKFLOW}@refs/heads/Main`,
+    },
+    { GITHUB_SHA: "invalid" },
+    { GITHUB_RUN_ID: "0" },
+    { GITHUB_RUN_ATTEMPT: "bad" },
+    { GITHUB_REPOSITORY_ID: "bad" },
+    { GH_TOKEN: "never pass" },
+    { GITHUB_TOKEN: "never pass" },
+  ])
+    assert.throws(() => sdkProbeAuthority({ ...probeEnv, ...change }));
+  assert.deepEqual(authority(env), producer);
+});
