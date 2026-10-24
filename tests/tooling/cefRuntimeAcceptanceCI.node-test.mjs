@@ -30,6 +30,9 @@ import {
   verifyAcceptanceBundle,
   verifyProducerMetadata,
   writeAcceptanceSeal,
+  LINUX_SANDBOX_HELPER,
+  linuxSandboxCommand,
+  prepareLinuxSandbox,
 } from "../../scripts/cef-runtime-acceptance-ci.mjs";
 import {
   WORKFLOW as ENGINEERING_WORKFLOW,
@@ -1468,6 +1471,7 @@ test("Linux native builds replace injected flags with executable-relative CEF RU
     LD_PRELOAD: "/untrusted/preload.so",
     DYLD_LIBRARY_PATH: "/untrusted",
     GH_TOKEN: "secret",
+    CHROME_DEVEL_SANDBOX: "",
   };
   const linux = nativeChildEnvironment(
     inherited,
@@ -1486,6 +1490,7 @@ test("Linux native builds replace injected flags with executable-relative CEF RU
     "LD_PRELOAD",
     "DYLD_LIBRARY_PATH",
     "GH_TOKEN",
+    "CHROME_DEVEL_SANDBOX",
   ])
     assert.equal(linux[name], undefined);
   for (const platform of ["win32", "darwin"]) {
@@ -1503,6 +1508,205 @@ test("Linux native builds replace injected flags with executable-relative CEF RU
     });
   }
 });
+
+test("Linux sandbox preparation uses only the held-file root helper and a credential-free fixed command", async () => {
+  const temp = path.resolve("owned-runner-temp"),
+    destination = path.join(temp, "acceptance"),
+    stage = path.join(destination, "stage-tls");
+  const spec = {
+    temp,
+    destination,
+    stage,
+    suite: "tls",
+    target: "x86_64-unknown-linux-gnu",
+    expected: { size: 64, sha256: "a".repeat(64) },
+    before: { uid: 1001n, dev: 88n, ino: 9007199254740999n },
+  };
+  const command = linuxSandboxCommand(spec);
+  assert.equal(command.executable, "/usr/bin/sudo");
+  assert.deepEqual(command.args.slice(0, 6), [
+    "-n",
+    "--",
+    "/usr/bin/python3",
+    "-I",
+    "-B",
+    "-c",
+  ]);
+  assert.equal(command.args[6], LINUX_SANDBOX_HELPER);
+  assert.deepEqual(command.args.slice(7), [
+    "--configure",
+    temp,
+    destination,
+    "tls",
+    "64",
+    "a".repeat(64),
+    "1001",
+    "88",
+    "9007199254740999",
+    "62",
+  ]);
+  assert.deepEqual(command.env, {
+    LANG: "C.UTF-8",
+    LC_ALL: "C.UTF-8",
+    PYTHONDONTWRITEBYTECODE: "1",
+  });
+  assert.equal(
+    linuxSandboxCommand({
+      ...spec,
+      target: "aarch64-unknown-linux-gnu",
+    }).args.at(-1),
+    "183",
+  );
+  for (const changed of [
+    { stage: path.join(destination, "foreign") },
+    { destination: path.resolve("foreign") },
+    { suite: "http3" },
+    { target: "unreviewed" },
+  ])
+    assert.throws(() => linuxSandboxCommand({ ...spec, ...changed }));
+  for (const platform of ["win32", "darwin"]) {
+    let ran = false;
+    await prepareLinuxSandbox({
+      platform,
+      run: async () => {
+        ran = true;
+      },
+    });
+    assert.equal(ran, false);
+  }
+  const source = await readFile(
+    new URL("../../scripts/cef-runtime-acceptance-ci.mjs", import.meta.url),
+    "utf8",
+  );
+  const start = source.indexOf("const stage = await stageAcceptance({"),
+    setup = source.indexOf("await prepareLinuxSandbox({", start),
+    firstRun = source.indexOf('for (const check of suite === "tls"', start);
+  assert(start >= 0 && setup > start && firstRun > setup);
+});
+
+export const linuxSandboxValidationProgram = String.raw`import contextlib,hashlib,io,json,os,pathlib,stat,sys,tempfile
+helper=bytes.fromhex(sys.argv[1]).decode('utf8')
+rows=[]
+for case in ('valid','sha','size','symlink-file','symlink-stage','symlink-ancestor','hardlink','mode','machine','owner','foreign','post-open-replace','content-mutation'):
+    with tempfile.TemporaryDirectory(prefix='codex-sandbox-validation-') as temporary:
+        root=pathlib.Path(temporary).resolve();output=root/'acceptance';output.mkdir(mode=0o700);stage=output/'stage-tls';stage.mkdir(mode=0o700)
+        file=stage/'chrome-sandbox';header=bytearray(64);header[:6]=bytes([127,69,76,70,2,1]);header[18:20]=(62).to_bytes(2,'little');data=bytes(header)
+        fd=os.open(file,os.O_CREAT|os.O_EXCL|os.O_WRONLY,0o644 if case=='mode' else 0o755)
+        os.write(fd,data);os.close(fd);before=file.stat();expected_sha=hashlib.sha256(data).hexdigest()
+        args=['--validate-only',str(root),str(output),'tls',str(len(data)),expected_sha,str(os.getuid()),str(before.st_dev),str(before.st_ino),'62']
+        if case=='sha':args[5]='0'*64
+        if case=='size':args[4]='65'
+        if case=='owner':args[6]=str(os.getuid()+1)
+        if case=='machine':args[9]='183'
+        if case=='foreign':args[1]=str(root/'elsewhere')
+        if case=='hardlink':os.link(file,stage/'another-link')
+        if case=='symlink-file':file.rename(stage/'original');file.symlink_to('original')
+        if case=='symlink-stage':stage.rename(output/'original-stage');stage.symlink_to('original-stage',target_is_directory=True)
+        if case=='symlink-ancestor':
+            alias=root/'alias';alias.symlink_to(output,target_is_directory=True);args[2]=str(alias)
+        original_open=os.open;original_fstat=os.fstat;original_chown=os.fchown;original_chmod=os.fchmod;calls=0
+        def forbidden(*unused):raise RuntimeError('Permission mutation forbidden in validation test')
+        def opened(name,*positional,**keyword):
+            result=original_open(name,*positional,**keyword)
+            if case=='post-open-replace' and name=='chrome-sandbox':
+                file.rename(stage/'original-held');replacement=original_open(file,os.O_CREAT|os.O_EXCL|os.O_WRONLY,0o755);os.write(replacement,data);os.close(replacement)
+            return result
+        def fstated(handle):
+            global calls
+            result=original_fstat(handle)
+            if case=='content-mutation' and stat.S_ISREG(result.st_mode):
+                calls+=1
+                if calls==2:
+                    with file.open('r+b') as changed:changed.seek(63);changed.write(b'X')
+            return result
+        initial_fds=len(os.listdir('/proc/self/fd'))
+        os.open=opened;os.fstat=fstated;os.fchown=forbidden;os.fchmod=forbidden
+        original_argv=sys.argv;sys.argv=['reviewed-helper',*args];stdout=io.StringIO();status=0
+        try:
+            with contextlib.redirect_stdout(stdout):
+                try:exec(compile(helper,'<reviewed-helper>','exec'),{})
+                except SystemExit as e:status=e.code
+        finally:
+            sys.argv=original_argv;os.open=original_open;os.fstat=original_fstat;os.fchown=original_chown;os.fchmod=original_chmod
+        assert len(os.listdir('/proc/self/fd'))==initial_fds,'Descriptor leak'
+        proof=json.loads(stdout.getvalue());valid=case=='valid'
+        assert (status==0)==valid,(case,proof)
+        if valid:
+            after=file.stat();assert proof['validationOnly'] and not proof['ready']
+            assert (after.st_uid,after.st_gid,stat.S_IMODE(after.st_mode))==(before.st_uid,before.st_gid,stat.S_IMODE(before.st_mode))
+        else:assert proof['ready'] is False
+        rows.append({'case':case,'exitCode':status,'valid':valid,'permissionsChanged':False,'descriptorsClosed':True})
+for case in ('modeled-configure','modeled-chmod-failure','modeled-post-grant-path-swap'):
+    from types import SimpleNamespace
+    with tempfile.TemporaryDirectory(prefix='codex-sandbox-modeled-') as temporary:
+        root=pathlib.Path(temporary).resolve();output=root/'acceptance';output.mkdir(mode=0o700);stage=output/'stage-tls';stage.mkdir(mode=0o700);file=stage/'chrome-sandbox'
+        data=bytearray(64);data[:6]=bytes([127,69,76,70,2,1]);data[18:20]=(62).to_bytes(2,'little');data=bytes(data)
+        fd=os.open(file,os.O_CREAT|os.O_EXCL|os.O_WRONLY,0o755);os.write(fd,data);os.close(fd);before=file.stat()
+        uid=os.getuid() or 1001;model={'uid':uid,'gid':before.st_gid,'mode':0o755};operations=[]
+        original_fstat=os.fstat;original_chown=os.fchown;original_chmod=os.fchmod;original_geteuid=os.geteuid;sudo_uid=os.environ.get('SUDO_UID')
+        def modeled_stat(fd):
+            s=original_fstat(fd);fields={key:getattr(s,key) for key in ('st_mode','st_uid','st_gid','st_size','st_nlink','st_dev','st_ino','st_mtime_ns')}
+            fields['st_uid']=uid
+            if stat.S_ISREG(s.st_mode):fields.update(st_uid=model['uid'],st_gid=model['gid'],st_mode=stat.S_IFREG|model['mode'])
+            return SimpleNamespace(**fields)
+        def modeled_chown(fd,owner,group):
+            assert stat.S_ISREG(original_fstat(fd).st_mode);operations.append(['fchown',owner,group]);model.update(uid=owner,gid=group)
+        def modeled_chmod(fd,mode):
+            assert stat.S_ISREG(original_fstat(fd).st_mode);operations.append(['fchmod',mode])
+            if case=='modeled-chmod-failure' and mode==0o4755:raise RuntimeError('Modeled chmod denial')
+            model['mode']=mode
+            if case=='modeled-post-grant-path-swap' and mode==0o4755:
+                file.rename(stage/'held-original');replacement=os.open(file,os.O_CREAT|os.O_EXCL|os.O_WRONLY,0o755);os.write(replacement,data);os.close(replacement)
+        args=['--configure',str(root),str(output),'tls',str(len(data)),hashlib.sha256(data).hexdigest(),str(uid),str(before.st_dev),str(before.st_ino),'62']
+        initial_fds=len(os.listdir('/proc/self/fd'));original_argv=sys.argv;sys.argv=['reviewed-helper',*args];stdout=io.StringIO();status=0
+        os.fstat=modeled_stat;os.fchown=modeled_chown;os.fchmod=modeled_chmod;os.geteuid=lambda:0;os.environ['SUDO_UID']=str(uid)
+        try:
+            with contextlib.redirect_stdout(stdout):
+                try:exec(compile(helper,'<reviewed-helper>','exec'),{})
+                except SystemExit as e:status=e.code
+        finally:
+            sys.argv=original_argv;os.fstat=original_fstat;os.fchown=original_chown;os.fchmod=original_chmod;os.geteuid=original_geteuid
+            if sudo_uid is None:os.environ.pop('SUDO_UID',None)
+            else:os.environ['SUDO_UID']=sudo_uid
+        assert len(os.listdir('/proc/self/fd'))==initial_fds,'Modeled descriptor leak'
+        proof=json.loads(stdout.getvalue());valid=case=='modeled-configure'
+        assert (status==0)==valid,(case,proof)
+        assert operations[:2]==[['fchown',0,0],['fchmod',0o4755]]
+        if valid:assert proof['ready'] and not proof['validationOnly']
+        else:assert proof['privilegeRevoked'] and operations[2:]==[['fchmod',0o755],['fchown',uid,before.st_gid]]
+        for current in stage.iterdir():
+            s=current.stat();assert (s.st_uid,s.st_gid,stat.S_IMODE(s.st_mode))==(before.st_uid,before.st_gid,0o755)
+        rows.append({'case':case,'exitCode':status,'valid':valid,'permissionsChanged':False,'descriptorsClosed':True,'privilegedOperationsModeledOnly':operations})
+print(json.dumps({'cases':rows,'payloadExecuted':False,'privilegedMutationInvoked':False,'uid':os.getuid()}))
+`;
+
+test(
+  "actual Linux helper validate-only rejects unsafe files and never changes ownership or permissions",
+  { skip: process.platform !== "linux" },
+  () => {
+    const result = JSON.parse(
+      execFileSync(
+        "/usr/bin/python3",
+        [
+          "-I",
+          "-B",
+          "-c",
+          linuxSandboxValidationProgram,
+          Buffer.from(LINUX_SANDBOX_HELPER).toString("hex"),
+        ],
+        { encoding: "utf8", timeout: 15000, env: { LANG: "C.UTF-8" } },
+      ),
+    );
+    assert.equal(result.cases.length, 16);
+    assert.equal(result.cases.filter((c) => c.valid).length, 2);
+    assert(
+      result.cases.every(
+        (c) => c.permissionsChanged === false && c.descriptorsClosed,
+      ),
+    );
+    assert.equal(result.privilegedMutationInvoked, false);
+  },
+);
 
 test(
   "real Linux ELF client and helper find only their packaged library from a foreign cwd",

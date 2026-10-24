@@ -1,8 +1,8 @@
 #!/usr/bin/env node
-// Read-only, explicitly selected native acceptance. Never publishes or selects a runtime.
+// Explicitly selected native acceptance. Never publishes or selects a runtime.
 import { createHash } from "node:crypto";
 import { createReadStream } from "node:fs";
-import { mkdir, readFile, realpath, writeFile } from "node:fs/promises";
+import { mkdir, readFile, realpath, writeFile, lstat } from "node:fs/promises";
 import { spawn, execFileSync } from "node:child_process";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -671,7 +671,7 @@ export function nativeChildEnvironment(
   const env = {};
   for (const [key, value] of Object.entries(source)) {
     if (
-      /^(GH_|GITHUB_|ACTIONS_|INPUT_|SORNG_|CEF_|SSH_AUTH_SOCK$|SSH_ASKPASS$|GIT_ASKPASS$|NODE_OPTIONS$|NODE_EXTRA_CA_CERTS$|RUSTFLAGS$|RUST_ENCODED_RUSTFLAGS$|CARGO_ENCODED_RUSTFLAGS$|LD_LIBRARY_PATH$|LD_PRELOAD$|DYLD_)/i.test(
+      /^(GH_|GITHUB_|ACTIONS_|INPUT_|SORNG_|CEF_|CHROME_DEVEL_SANDBOX$|SSH_AUTH_SOCK$|SSH_ASKPASS$|GIT_ASKPASS$|NODE_OPTIONS$|NODE_EXTRA_CA_CERTS$|RUSTFLAGS$|RUST_ENCODED_RUSTFLAGS$|CARGO_ENCODED_RUSTFLAGS$|LD_LIBRARY_PATH$|LD_PRELOAD$|DYLD_)/i.test(
         key,
       ) ||
       /TOKEN|PASSWORD|SECRET|PRIVATE_KEY|ACCESS_KEY|AUTHORIZATION|CREDENTIAL/i.test(
@@ -697,6 +697,239 @@ export function nativeChildEnvironment(
       : {}),
   };
 }
+// This is a CI prerequisite for a fresh, already byte-verified staged copy.
+// It never installs a global helper or modifies the original/prepared SDK.
+export const LINUX_SANDBOX_HELPER = String.raw`import hashlib,json,os,re,stat,sys
+fds=[];file_fd=None;changed=False;original=None;failure='sandbox-prerequisite-denied'
+def require(value):
+    if not value: raise ValueError('denied')
+def directory_walk(absolute):
+    require(absolute.startswith('/') and os.path.normpath(absolute)==absolute and chr(92) not in absolute)
+    components=absolute.split('/')[1:];require(all(c and c not in ('.','..') for c in components))
+    current=os.open('/',os.O_RDONLY|os.O_DIRECTORY|os.O_NOFOLLOW);fds.append(current)
+    chain=[]
+    for name in components:
+        child=os.open(name,os.O_RDONLY|os.O_DIRECTORY|os.O_NOFOLLOW,dir_fd=current);fds.append(child)
+        s=os.fstat(child);require(stat.S_ISDIR(s.st_mode))
+        chain.append((current,name,child,s.st_dev,s.st_ino));current=child
+    return current,chain
+def chain_current(chain):
+    for parent,name,child,dev,ino in chain:
+        s=os.stat(name,dir_fd=parent,follow_symlinks=False)
+        require(stat.S_ISDIR(s.st_mode) and (s.st_dev,s.st_ino)==(dev,ino))
+def digest(fd,maximum):
+    os.lseek(fd,0,os.SEEK_SET);h=hashlib.sha256();total=0
+    while True:
+        b=os.read(fd,65536)
+        if not b:break
+        total+=len(b);require(total<=maximum);h.update(b)
+    require(total==maximum);return h.hexdigest()
+try:
+    require(len(sys.argv)==11)
+    mode,temp,output,suite,expected_size,expected_sha,expected_uid,expected_dev,expected_ino,machine=sys.argv[1:]
+    require(mode in ('--configure','--validate-only') and suite in ('tls','http2'))
+    require(re.fullmatch('[0-9a-f]{64}',expected_sha) is not None)
+    require(all(re.fullmatch('[0-9]{1,30}',v) is not None for v in (expected_size,expected_uid,expected_dev,expected_ino,machine)))
+    size,uid,dev,ino,machine=map(int,(expected_size,expected_uid,expected_dev,expected_ino,machine))
+    require(0<size<=64*1024*1024 and machine in (62,183))
+    require(os.path.dirname(output)==temp and os.path.basename(output) not in ('','.', '..'))
+    temp_fd,temp_chain=directory_walk(temp)
+    output_fd=os.open(os.path.basename(output),os.O_RDONLY|os.O_DIRECTORY|os.O_NOFOLLOW,dir_fd=temp_fd);fds.append(output_fd)
+    stage_name='stage-'+suite
+    stage_fd=os.open(stage_name,os.O_RDONLY|os.O_DIRECTORY|os.O_NOFOLLOW,dir_fd=output_fd);fds.append(stage_fd)
+    output_stat=os.fstat(output_fd);stage_stat=os.fstat(stage_fd)
+    require(output_stat.st_uid==uid and stage_stat.st_uid==uid)
+    require((output_stat.st_mode&0o022)==0 and (stage_stat.st_mode&0o022)==0)
+    file_fd=os.open('chrome-sandbox',os.O_RDONLY|os.O_NOFOLLOW,dir_fd=stage_fd)
+    original=os.fstat(file_fd)
+    require(stat.S_ISREG(original.st_mode) and original.st_nlink==1)
+    require((original.st_dev,original.st_ino,original.st_size,original.st_uid)==(dev,ino,size,uid))
+    require(stat.S_IMODE(original.st_mode)==0o755 and digest(file_fd,size)==expected_sha)
+    os.lseek(file_fd,0,os.SEEK_SET);header=os.read(file_fd,64)
+    require(len(header)==64 and header[:6]==bytes([127,69,76,70,2,1]) and int.from_bytes(header[18:20],'little')==machine)
+    chain_current(temp_chain)
+    def path_current():
+        chain_current(temp_chain)
+        o=os.stat(os.path.basename(output),dir_fd=temp_fd,follow_symlinks=False)
+        s=os.stat(stage_name,dir_fd=output_fd,follow_symlinks=False)
+        f=os.stat('chrome-sandbox',dir_fd=stage_fd,follow_symlinks=False)
+        require(stat.S_ISDIR(o.st_mode) and (o.st_dev,o.st_ino)==(output_stat.st_dev,output_stat.st_ino))
+        require(stat.S_ISDIR(s.st_mode) and (s.st_dev,s.st_ino)==(stage_stat.st_dev,stage_stat.st_ino))
+        require(stat.S_ISREG(f.st_mode) and (f.st_dev,f.st_ino)==(dev,ino) and f.st_nlink==1)
+    path_current()
+    if mode=='--configure':
+        require(os.geteuid()==0 and uid>0 and os.environ.get('SUDO_UID')==str(uid))
+        changed=True
+        os.fchown(file_fd,0,0)
+        os.fchmod(file_fd,0o4755)
+    after=os.fstat(file_fd)
+    require((after.st_dev,after.st_ino,after.st_size,after.st_nlink)==(dev,ino,size,1))
+    require(after.st_mtime_ns==original.st_mtime_ns and digest(file_fd,size)==expected_sha)
+    require((after.st_uid,after.st_gid,stat.S_IMODE(after.st_mode))==((0,0,0o4755) if mode=='--configure' else (original.st_uid,original.st_gid,0o755)))
+    path_current()
+    print(json.dumps({'schema':1,'kind':'sorng-linux-staged-sandbox','ready':mode=='--configure','validationOnly':mode=='--validate-only','uid':after.st_uid,'gid':after.st_gid,'mode':stat.S_IMODE(after.st_mode),'bytes':size,'sha256':expected_sha,'device':str(dev),'inode':str(ino)}))
+except Exception:
+    revoked=not changed
+    if changed and file_fd is not None:
+        try:
+            os.fchmod(file_fd,0o755);os.fchown(file_fd,original.st_uid,original.st_gid);revoked=True
+        except Exception:pass
+    print(json.dumps({'schema':1,'ready':False,'code':failure,'privilegeRevoked':revoked}));sys.exit(1)
+finally:
+    if file_fd is not None:os.close(file_fd)
+    for fd in reversed(fds):os.close(fd)
+`;
+
+export function linuxSandboxCommand({
+  temp,
+  destination,
+  stage,
+  suite,
+  target,
+  expected,
+  before,
+}) {
+  if (
+    !path.isAbsolute(temp) ||
+    path.dirname(destination) !== temp ||
+    stage !== path.join(destination, `stage-${suite}`) ||
+    !["tls", "http2"].includes(suite)
+  )
+    throw new Error("Fresh owned Linux sandbox stage required");
+  const machine =
+    target === "x86_64-unknown-linux-gnu"
+      ? 62
+      : target === "aarch64-unknown-linux-gnu"
+        ? 183
+        : null;
+  if (!machine) throw new Error("Unknown Linux sandbox target");
+  return {
+    executable: "/usr/bin/sudo",
+    args: [
+      "-n",
+      "--",
+      "/usr/bin/python3",
+      "-I",
+      "-B",
+      "-c",
+      LINUX_SANDBOX_HELPER,
+      "--configure",
+      temp,
+      destination,
+      suite,
+      String(expected.size),
+      expected.sha256,
+      String(before.uid),
+      String(before.dev),
+      String(before.ino),
+      String(machine),
+    ],
+    env: { LANG: "C.UTF-8", LC_ALL: "C.UTF-8", PYTHONDONTWRITEBYTECODE: "1" },
+  };
+}
+
+export async function prepareLinuxSandbox({
+  platform = process.platform,
+  runnerTemp,
+  destination,
+  stage,
+  suite,
+  target,
+  sdkFiles,
+  run = runAcceptanceCommand,
+}) {
+  if (platform !== "linux") return;
+  if (!["tls", "http2"].includes(suite))
+    throw new Error("Unknown Linux sandbox stage");
+  const temp = await realpath(runnerTemp);
+  if (
+    path.dirname(destination) !== temp ||
+    stage !== path.join(destination, `stage-${suite}`) ||
+    (await realpath(destination)) !== destination ||
+    (await realpath(stage)) !== stage
+  )
+    throw new Error("Fresh owned Linux sandbox stage required");
+  const expected = sdkFiles.find((f) => f.path === "chrome-sandbox");
+  if (
+    !expected ||
+    !Number.isSafeInteger(expected.size) ||
+    expected.size <= 0 ||
+    expected.size > 64 * 1024 ** 2 ||
+    !/^[a-f0-9]{64}$/.test(expected.sha256)
+  )
+    throw new Error("Verified Linux sandbox inventory pin required");
+  const file = path.join(stage, "chrome-sandbox"),
+    before = await lstat(file, { bigint: true });
+  if (
+    !before.isFile() ||
+    before.isSymbolicLink() ||
+    before.nlink !== 1n ||
+    Number(before.size) !== expected.size ||
+    (before.mode & 0o7777n) !== 0o755n ||
+    (await hashFile(file)) !== expected.sha256
+  )
+    throw new Error("Staged Linux sandbox input changed");
+  const command = linuxSandboxCommand({
+    temp,
+    destination,
+    stage,
+    suite,
+    target,
+    expected,
+    before,
+  });
+  const log = path.join(destination, `sandbox-${suite}.log`);
+  await run(command.executable, command.args, {
+    env: command.env,
+    log,
+    timeout: 30_000,
+  });
+  const metadata = await lstat(log);
+  if (!metadata.isFile() || metadata.size > 4096)
+    throw new Error("Linux sandbox prerequisite receipt missing");
+  const proof = JSON.parse(await readFile(log, "utf8")),
+    after = await lstat(file, { bigint: true });
+  if (
+    proof.schema !== 1 ||
+    proof.kind !== "sorng-linux-staged-sandbox" ||
+    proof.ready !== true ||
+    proof.validationOnly !== false ||
+    proof.uid !== 0 ||
+    proof.gid !== 0 ||
+    proof.mode !== 0o4755 ||
+    proof.bytes !== expected.size ||
+    proof.sha256 !== expected.sha256 ||
+    proof.device !== String(before.dev) ||
+    proof.inode !== String(before.ino) ||
+    after.uid !== 0n ||
+    after.gid !== 0n ||
+    (after.mode & 0o7777n) !== 0o4755n ||
+    after.nlink !== 1n ||
+    after.dev !== before.dev ||
+    after.ino !== before.ino ||
+    after.size !== before.size ||
+    after.mtimeNs !== before.mtimeNs ||
+    (await realpath(file)) !== file ||
+    (await hashFile(file)) !== expected.sha256
+  )
+    throw new Error("Linux sandbox prerequisite not established");
+  await writeFile(
+    path.join(destination, `sandbox-${suite}.json`),
+    JSON.stringify(
+      {
+        ...proof,
+        beforeUid: Number(before.uid),
+        beforeMode: 0o755,
+        originalSdkModified: false,
+        nativeSandboxAcceptance: "not-tested",
+      },
+      null,
+      2,
+    ),
+    { flag: "wx" },
+  );
+}
+
 export function fixtureClientBuild(target, suite) {
   if (
     !Object.hasOwn(NATIVE_TARGETS, target) ||
@@ -1262,6 +1495,15 @@ export async function executeAcceptance(
       ),
       target,
       suite,
+    });
+    await prepareLinuxSandbox({
+      runnerTemp: temp,
+      destination,
+      stage: path.dirname(stage.executable),
+      suite,
+      target,
+      sdkFiles: prepared.customRuntime.sdkFiles,
+      run: runCommand,
     });
     for (const check of suite === "tls" ? [undefined] : HTTP2_CHECKS) {
       const label = suite === "tls" ? "tls" : `http2-${check}`;
