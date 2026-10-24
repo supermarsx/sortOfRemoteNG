@@ -1,0 +1,91 @@
+name: Publish independently accepted owned CEF SDK
+
+on:
+  workflow_dispatch:
+    inputs:
+      reviewed_publication:
+        description: Committed reviewed publication selector path
+        required: true
+        type: string
+      review_sha256:
+        description: Independently reviewed raw Git blob SHA256
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  verify:
+    if: github.event_name == 'workflow_dispatch' && github.event.repository.visibility == 'public' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 50
+    outputs:
+      key: ${{ steps.verify.outputs.key }}
+      target: ${{ steps.verify.outputs.target }}
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: ".node-version"
+          package-manager-cache: false
+      - run: npm ci
+      - name: Authenticate independent native and import seals without release writes
+        id: verify
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GITHUB_REPOSITORY_VISIBILITY: ${{ github.event.repository.visibility }}
+          CEF_PUBLICATION_REVIEW: ${{ inputs.reviewed_publication }}
+          CEF_PUBLICATION_REVIEW_SHA256: ${{ inputs.review_sha256 }}
+          CEF_PUBLICATION_OUTPUT: ${{ runner.temp }}/cef-owned-publication
+        run: node scripts/cef-owned-sdk-publish.mjs verify --reviewed "$CEF_PUBLICATION_REVIEW" --review-sha256 "$CEF_PUBLICATION_REVIEW_SHA256"
+      - name: Retain bounded verification receipt
+        if: always()
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        with:
+          name: cef-owned-publication-verification-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/cef-owned-publication/publication-result.json
+          retention-days: 30
+          if-no-files-found: warn
+
+  publish:
+    needs: verify
+    if: github.event_name == 'workflow_dispatch' && github.event.repository.visibility == 'public' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
+    environment: cef-runtime-publish
+    permissions:
+      contents: write
+      actions: read
+    concurrency:
+      group: cef-engine-publish-${{ needs.verify.outputs.key }}
+      cancel-in-progress: false
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: ".node-version"
+          package-manager-cache: false
+      - run: npm ci
+      - name: Freshly verify all authorities and bytes then publish immutable engineering prerelease
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GITHUB_REPOSITORY_VISIBILITY: ${{ github.event.repository.visibility }}
+          CEF_OWNED_PUBLISH_APPROVED: "true"
+          CEF_PUBLICATION_REVIEW: ${{ inputs.reviewed_publication }}
+          CEF_PUBLICATION_REVIEW_SHA256: ${{ inputs.review_sha256 }}
+          CEF_PUBLICATION_OUTPUT: ${{ runner.temp }}/cef-owned-publication
+        run: node scripts/cef-owned-sdk-publish.mjs publish --reviewed "$CEF_PUBLICATION_REVIEW" --review-sha256 "$CEF_PUBLICATION_REVIEW_SHA256" --execute
+      - name: Retain publication provenance receipt without SDK payloads
+        if: always()
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        with:
+          name: cef-owned-publication-result-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/cef-owned-publication/publication-result.json
+          retention-days: 30
+          if-no-files-found: warn
