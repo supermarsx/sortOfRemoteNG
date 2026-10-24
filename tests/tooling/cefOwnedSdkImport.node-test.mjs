@@ -1,6 +1,8 @@
 import test from "node:test";
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
 import assert from "node:assert/strict";
+import { createContext, Script } from "node:vm";
+import { fileURLToPath } from "node:url";
 import {
   producerSelection,
   verifyAcceptanceBundle,
@@ -61,6 +63,7 @@ import { importArguments } from "../../scripts/cef-owned-sdk-import.mjs";
 import {
   downloadAsset,
   canonical,
+  codeTreeDigest,
 } from "../../scripts/lib/cef-engineering-checkpoint.mjs";
 
 const hash = (value) => createHash("sha256").update(value).digest("hex");
@@ -870,6 +873,113 @@ test("completion and parser privacy are fail closed rather than exposing raw res
     hash(canonical({ safe: true }) + "\n"),
   );
 });
+async function diagnosticSource() {
+  const YAML = await import("yaml");
+  const workflow = YAML.default.parse(
+    await readFile(
+      new URL(
+        "../../.github/workflows/cef-owned-sdk-import.yml",
+        import.meta.url,
+      ),
+      "utf8",
+    ),
+  );
+  const run = workflow.jobs.import.steps.find((row) =>
+    row.name?.startsWith("Verify exact draft bytes"),
+  ).run;
+  const match = /^node --input-type=module <<'NODE'\n([\s\S]+)\nNODE\n?$/.exec(
+    run,
+  );
+  assert.ok(
+    match,
+    "Actual importer invocation must contain its closed diagnostic wrapper",
+  );
+  assert.equal(
+    match[1].split('await import("./scripts/cef-owned-sdk-import.mjs")').length,
+    2,
+  );
+  return match[1];
+}
+
+test("owned importer exposes closed bounded HTTP/failure diagnostics without changing source scripts", async () => {
+  assert.ok(await diagnosticSource());
+});
+
+test("real Node imports the unchanged main exactly once and fails closed before any network outside its authority", async () => {
+  const source = await diagnosticSource();
+  const blockNetwork =
+    "globalThis.fetch = () => { throw new Error('FORBIDDEN_NETWORK'); };";
+  const child = spawnSync(
+    process.execPath,
+    [
+      "--input-type=module",
+      "--import",
+      `data:text/javascript,${encodeURIComponent(blockNetwork)}`,
+    ],
+    {
+      input: source,
+      encoding: "utf8",
+      timeout: 10000,
+      maxBuffer: 1024 ** 2,
+      windowsHide: true,
+      cwd: fileURLToPath(new URL("../../", import.meta.url)),
+      env: {
+        PATH: process.env.PATH,
+        ...(process.env.SystemRoot
+          ? { SystemRoot: process.env.SystemRoot }
+          : {}),
+      },
+    },
+  );
+  assert.equal(child.status, 1);
+  assert.equal(child.error, undefined);
+  const rows = child.stdout
+    .trim()
+    .split(/\r?\n/)
+    .map((line) => JSON.parse(line));
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0].result, "failed");
+  assert.equal(rows[0].label, "invocation-authority");
+  assert.equal(rows[0].observed, 0);
+  assert.doesNotMatch(
+    child.stderr + child.stdout,
+    /FORBIDDEN_NETWORK|Owned SDK import failed/,
+  );
+});
+
+test("projecting exactly these workflow/test changes preserves the real Mac checkpoint code identity", async () => {
+  const root = fileURLToPath(new URL("../../", import.meta.url));
+  const entries = execFileSync(
+    "git",
+    ["-C", root, "ls-tree", "-r", "-z", "HEAD"],
+    { maxBuffer: 8 * 1024 ** 2, windowsHide: true },
+  )
+    .toString()
+    .split("\0")
+    .filter(Boolean)
+    .map((row) => {
+      const tab = row.indexOf("\t"),
+        [mode, type, sha] = row.slice(0, tab).split(" ");
+      return { mode, type, sha, path: row.slice(tab + 1) };
+    });
+  const touched = new Set([
+    ".github/workflows/cef-owned-sdk-import.yml",
+    "tests/tooling/cefOwnedSdkImport.node-test.mjs",
+  ]);
+  const projected = await Promise.all(
+    entries.map(async (row) => {
+      if (!touched.has(row.path)) return row;
+      const bytes = await readFile(path.join(root, row.path));
+      const object = createHash("sha1")
+        .update(`blob ${bytes.length}\0`)
+        .update(bytes)
+        .digest("hex");
+      return { ...row, sha: object };
+    }),
+  );
+  assert.equal(codeTreeDigest(projected), codeTreeDigest(entries));
+});
+
 test("workflow seal is LAST, default-branch/manual/read-only and contains no SDK compiler or publication", async () => {
   const YAML = await import("yaml"),
     value = YAML.default.parse(
@@ -894,15 +1004,264 @@ test("workflow seal is LAST, default-branch/manual/read-only and contains no SDK
   assert.match(last.uses, /actions\/upload-artifact@/);
   assert.match(last.with.path, /\/seal.json$/);
   assert.equal(last.if, undefined);
-  assert.ok(
-    steps
-      .slice(0, -1)
-      .some((row) => row.run === "node scripts/cef-owned-sdk-import.mjs seal"),
-  );
+  assert.ok(await diagnosticSource());
   assert.doesNotMatch(
     steps.map((row) => row.run ?? "").join("\n"),
-    /cargo|autoninja|--execute|publish|quarantine-upload/,
+    /\bcargo\b|\bautoninja\b|--execute|\bpublish\b|quarantine-upload/,
   );
+});
+
+async function runDiagnostic(
+  main,
+  originalFetch = async () => new Response("", { status: 200 }),
+) {
+  const source = await diagnosticSource();
+  const logs = [],
+    calls = [];
+  let context;
+  context = createContext({
+    URL,
+    console: {
+      log: (...args) => {
+        assert.equal(args.length, 1);
+        logs.push(args[0]);
+      },
+    },
+    process: {
+      exitCode: undefined,
+      env: { GH_TOKEN: "SENTINEL_TOKEN", PRIVATE_VALUE: "SENTINEL_PRIVATE" },
+    },
+    fetch: (...args) => {
+      calls.push(args);
+      return originalFetch(...args);
+    },
+    __loadModule: async (requested) => {
+      assert.equal(requested, "./scripts/cef-owned-sdk-import.mjs");
+      return {
+        main: async (args) => {
+          assert.deepEqual(Array.from(args), ["seal"]);
+          return main(context);
+        },
+      };
+    },
+  });
+  const injected = source.replace(
+    'await import("./scripts/cef-owned-sdk-import.mjs")',
+    'await __loadModule("./scripts/cef-owned-sdk-import.mjs")',
+  );
+  await new Script(`(async () => {${injected}\n})()`).runInContext(context);
+  return {
+    rows: logs.map((line) => JSON.parse(line)),
+    output: logs.join("\n"),
+    exitCode: context.process.exitCode,
+    calls,
+  };
+}
+
+test("actual embedded wrapper preserves GET args, redirect policy, Response identity and unread body without leaking IDs/URLs/headers", async () => {
+  const response = new Response("SENTINEL_BODY", {
+    status: 302,
+    headers: {
+      location:
+        "https://release-assets.githubusercontent.com/private?secret=SENTINEL_SIGNED",
+    },
+  });
+  const init = {
+    method: "GET",
+    redirect: "manual",
+    headers: { Authorization: "Bearer SENTINEL_TOKEN" },
+  };
+  const url =
+    "https://api.github.com/repos/supermarsx/sortOfRemoteNG/releases/422708047?secret=SENTINEL_QUERY";
+  const result = await runDiagnostic(
+    async (ctx) => {
+      const actual = await ctx.fetch(url, init);
+      assert.equal(actual, response);
+      assert.equal(actual.bodyUsed, false);
+      assert.equal(await actual.text(), "SENTINEL_BODY");
+      return { credentials: "SENTINEL_RESULT" };
+    },
+    async (input, options) => {
+      assert.equal(input, url);
+      assert.equal(options, init);
+      return response;
+    },
+  );
+  assert.equal(result.calls.length, 1);
+  assert.equal(result.exitCode, undefined);
+  assert.deepEqual(result.rows[0], {
+    kind: "owned-import-fetch",
+    role: "draft",
+    method: "get",
+    status: 302,
+    result: "http-error",
+  });
+  assert.equal(result.rows.at(-1).result, "complete");
+  assert.doesNotMatch(
+    result.output,
+    /SENTINEL|422708047|https:|Authorization|Bearer|secret=/,
+  );
+});
+
+test("actual embedded wrapper classifies only static roles across API metadata and signed transfers", async () => {
+  const base = "https://api.github.com/repos/supermarsx/sortOfRemoteNG";
+  const routes = [
+    [base, "repository"],
+    [`${base}/actions/workflows/cef-owned-sdk-import.yml`, "workflow"],
+    [`${base}/actions/runs/40092694444`, "run"],
+    [`${base}/git/commits/${"a".repeat(40)}`, "git-commit"],
+    [`${base}/git/trees/${"b".repeat(40)}?recursive=1`, "git-tree"],
+    [`${base}/releases/422708047`, "draft"],
+    [`${base}/releases/422708047/assets?per_page=100`, "asset-list"],
+    [`${base}/releases/assets/672172418`, "asset-download"],
+    [
+      "https://release-assets.githubusercontent.com/opaque?token=SENTINEL",
+      "asset-transfer",
+    ],
+    [
+      "https://objects.githubusercontent.com/opaque?token=SENTINEL",
+      "asset-transfer",
+    ],
+    ["https://api.github.com/repos/other/repository/private", "other"],
+    [
+      "https://user:SENTINEL@api.github.com/repos/supermarsx/sortOfRemoteNG",
+      "other",
+    ],
+  ];
+  const result = await runDiagnostic(async (ctx) => {
+    for (const [url] of routes)
+      await ctx.fetch(url, { method: "GET", redirect: "error" });
+  });
+  assert.deepEqual(
+    result.rows.slice(0, -1).map((row) => row.role),
+    routes.map(([, role]) => role),
+  );
+  assert.ok(
+    result.rows
+      .slice(0, -1)
+      .every(
+        (row) =>
+          row.status === 200 &&
+          row.result === "http-ok" &&
+          row.method === "get",
+      ),
+  );
+  assert.doesNotMatch(
+    result.output,
+    /SENTINEL|40092694444|672172418|https:|recursive|opaque/,
+  );
+});
+
+test("actual 404 and source assertions remain fatal with closed reason labels and no successful seal outcome", async () => {
+  const denied = await runDiagnostic(
+    async (ctx) => {
+      const response = await ctx.fetch(
+        "https://api.github.com/repos/supermarsx/sortOfRemoteNG/releases/422708047",
+        { redirect: "error" },
+      );
+      assert(response.ok, "Owned import API failed");
+    },
+    async () => new Response("SENTINEL_RAW_ERROR", { status: 404 }),
+  );
+  assert.equal(denied.exitCode, 1);
+  assert.equal(denied.rows[0].role, "draft");
+  assert.equal(denied.rows[0].status, 404);
+  assert.deepEqual(denied.rows.at(-1), {
+    kind: "owned-import-completion",
+    result: "failed",
+    errorClass: "assertion",
+    label: "api-response",
+    observed: 1,
+    dropped: 0,
+  });
+  const source = await runDiagnostic(async () => {
+    assert(false, "Uncommitted importer code forbidden");
+  });
+  assert.equal(source.exitCode, 1);
+  assert.equal(source.rows.at(-1).label, "source-dirty");
+  assert.doesNotMatch(
+    denied.output + source.output,
+    /SENTINEL|422708047|https:|Error:|stack/,
+  );
+});
+
+test("network exceptions preserve exact identity through fetch while output class/message stays closed", async () => {
+  const original = new TypeError(
+    "SENTINEL_TOKEN https://private.invalid?token=secret",
+  );
+  let caught;
+  const result = await runDiagnostic(
+    async (ctx) => {
+      try {
+        await ctx.fetch(
+          "https://api.github.com/repos/supermarsx/sortOfRemoteNG",
+        );
+      } catch (error) {
+        caught = error;
+        throw error;
+      }
+    },
+    async () => {
+      throw original;
+    },
+  );
+  assert.equal(caught, original);
+  assert.equal(result.exitCode, 1);
+  assert.equal(result.rows[0].status, 0);
+  assert.equal(result.rows[0].result, "network-error");
+  assert.equal(result.rows.at(-1).errorClass, "type");
+  assert.equal(result.rows.at(-1).label, "unclassified");
+  assert.doesNotMatch(result.output, /SENTINEL|https:|token|secret|private/);
+  const unknown = await runDiagnostic(async () => {
+    throw { name: "SENTINEL_CLASS", message: "SENTINEL_SECRET" };
+  });
+  assert.equal(unknown.rows.at(-1).errorClass, "other");
+  assert.equal(unknown.rows.at(-1).label, "unclassified");
+  assert.doesNotMatch(unknown.output, /SENTINEL/);
+});
+
+test("diagnostics cap the TOTAL emitted rows at64 without dropping requests or changing importer exit", async () => {
+  const result = await runDiagnostic(async (ctx) => {
+    for (let i = 0; i < 90; i++)
+      await ctx.fetch(
+        `https://api.github.com/repos/supermarsx/sortOfRemoteNG/actions/runs/${i + 1}`,
+      );
+  });
+  assert.equal(result.calls.length, 90);
+  assert.equal(result.rows.length, 64);
+  assert.equal(result.rows.at(-1).observed, 63);
+  assert.equal(result.rows.at(-1).dropped, 27);
+  assert.equal(result.rows.at(-1).result, "complete");
+  assert.equal(result.exitCode, undefined);
+});
+
+test("wrapper adds no write caller or permission and assertion labels come only from unchanged maintained sources", async () => {
+  const source = await diagnosticSource();
+  assert.equal((source.match(/await main\(/g) ?? []).length, 1);
+  assert.match(source, /await main\(\["seal"\]\)/);
+  assert.doesNotMatch(
+    source,
+    /process\.env\s*=|\.json\(|\.text\(|method:\s*["'](?:POST|PUT|PATCH|DELETE)|setInterval|setTimeout/,
+  );
+  const labelBlock = source.slice(
+    source.indexOf("const assertionLabels"),
+    source.indexOf("try {\n  const { main }"),
+  );
+  const messages = [...labelBlock.matchAll(/\["([^"\n]+)", "[a-z-]+"\]/g)].map(
+    (row) => row[1],
+  );
+  assert.ok(messages.length >= 10);
+  const maintained =
+    (await readFile(
+      new URL("../../scripts/cef-owned-sdk-import.mjs", import.meta.url),
+      "utf8",
+    )) +
+    (await readFile(
+      new URL("../../scripts/lib/cef-owned-sdk-import.mjs", import.meta.url),
+      "utf8",
+    ));
+  for (const message of messages)
+    assert.ok(maintained.includes(JSON.stringify(message)), message);
 });
 
 test("actual verifier Node child and its Python descendant never inherit uploader credentials", async (t) => {

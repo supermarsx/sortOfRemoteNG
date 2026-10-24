@@ -48,7 +48,89 @@ jobs:
           CEF_OWNED_RELEASE_ID: ${{ inputs.quarantine_release_id }}
           CEF_OWNED_BUNDLE: ${{ runner.temp }}/cef-owned-import-bundle
           CEF_OWNED_OUTPUT: ${{ runner.temp }}/cef-owned-import-proof
-        run: node scripts/cef-owned-sdk-import.mjs seal
+        run: |
+          node --input-type=module <<'NODE'
+          const fetchOriginal = globalThis.fetch;
+          let observed = 0, dropped = 0;
+          const emit = (row) => { try { console.log(JSON.stringify(row)); } catch {} };
+          function routeRole(input) {
+            try {
+              const url = new URL(typeof input === "string" ? input : input instanceof URL ? input.href : input?.url);
+              if (url.username || url.password || url.port) return "other";
+              if (["release-assets.githubusercontent.com", "objects.githubusercontent.com"].includes(url.hostname)) return "asset-transfer";
+              const base = "/repos/supermarsx/sortOfRemoteNG";
+              if (url.origin !== "https://api.github.com" || !url.pathname.startsWith(base)) return "other";
+              const role = url.pathname.slice(base.length);
+              if (role === "") return "repository";
+              if (role === "/actions/workflows/cef-owned-sdk-import.yml") return "workflow";
+              if (/^\/actions\/runs\/[1-9][0-9]*$/.test(role)) return "run";
+              if (/^\/git\/commits\/[a-f0-9]{40}$/.test(role)) return "git-commit";
+              if (/^\/git\/trees\/[a-f0-9]{40}$/.test(role)) return "git-tree";
+              if (/^\/releases\/[1-9][0-9]*$/.test(role)) return "draft";
+              if (/^\/releases\/[1-9][0-9]*\/assets$/.test(role)) return "asset-list";
+              if (/^\/releases\/assets\/[1-9][0-9]*$/.test(role)) return "asset-download";
+            } catch {}
+            return "other";
+          }
+          function observe(role, method, status, result) {
+            if (observed < 63) {
+              observed++;
+              emit({ kind: "owned-import-fetch", role, method, status, result });
+            } else dropped = Math.min(1000000, dropped + 1);
+          }
+          globalThis.fetch = async (...args) => {
+            const role = routeRole(args[0]);
+            let method = "other";
+            try {
+              const supplied = args[1]?.method ?? args[0]?.method ?? "GET";
+              if (typeof supplied === "string" && supplied.toUpperCase() === "GET") method = "get";
+            } catch {}
+            try {
+              const response = await Reflect.apply(fetchOriginal, globalThis, args);
+              let status = 0;
+              try { if (Number.isSafeInteger(response.status) && response.status >= 0 && response.status <= 599) status = response.status; } catch {}
+              observe(role, method, status, status >= 200 && status < 300 ? "http-ok" : "http-error");
+              return response;
+            } catch (error) {
+              observe(role, method, 0, "network-error");
+              throw error;
+            }
+          };
+          const assertionLabels = new Map([
+            ["Review must be committed raw bytes; preserve namespace -text", "committed-review"],
+            ["Independently reviewed raw review bytes differ", "review-digest"],
+            ["Uncommitted importer code forbidden", "source-dirty"],
+            ["Regular committed importer source required", "source-mode"],
+            ["Exact default-branch importer source required", "checkout-authority"],
+            ["Public ephemeral manual importer only", "invocation-authority"],
+            ["Fixed ephemeral import output required", "output-location"],
+            ["New output required", "output-exists"],
+            ["Default-branch public importer required", "import-authority"],
+            ["Exact successful importer run/attempt required", "import-attempt"],
+            ["Complete bounded importer source tree required", "source-tree"],
+            ["Importer source code differs", "source-code"],
+            ["Owned draft quarantine required; no published release accepted", "draft-state"],
+            ["Draft asset differs from independent raw review", "asset-pins"],
+            ["Exact five unique draft assets required", "asset-set"],
+            ["Owned import API failed", "api-response"],
+            ["Owned import metadata bound", "metadata-bound"],
+            ["Owned asset raw bytes differ", "asset-bytes"],
+            ["Reviewed engine/inventory differs", "engine-inventory"],
+          ]);
+          try {
+            const { main } = await import("./scripts/cef-owned-sdk-import.mjs");
+            await main(["seal"]);
+            emit({ kind: "owned-import-completion", result: "complete", observed, dropped });
+          } catch (error) {
+            let errorClass = "other", label = "unclassified";
+            try {
+              errorClass = new Map([["AssertionError", "assertion"], ["TypeError", "type"], ["SyntaxError", "syntax"], ["AbortError", "abort"], ["TimeoutError", "timeout"], ["Error", "error"]]).get(error?.name) ?? "other";
+              label = assertionLabels.get(error?.message) ?? "unclassified";
+            } catch {}
+            emit({ kind: "owned-import-completion", result: "failed", errorClass, label, observed, dropped });
+            process.exitCode = 1;
+          }
+          NODE
       # LAST. A failed/partial import cannot create a successful independent seal.
       - name: Retain independent owned-import completion seal
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
