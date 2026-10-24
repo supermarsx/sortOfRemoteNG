@@ -40,7 +40,7 @@ type Revoke = unsafe extern "C" fn(u64, u64) -> i32;
 // Resolve only the already loaded CEF image containing cef_api_hash. The
 // same exact-image check applies to every fixture ABI symbol on all platforms.
 #[path = "registry_retirement_fixture/loaded_module.rs"]
-mod loaded_module;
+pub(crate) mod loaded_module;
 struct Observation {
     token: u64,
     generation: u64,

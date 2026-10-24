@@ -155,7 +155,14 @@ fn release(unit: &mut Live, asynchronous: &tokio::runtime::Runtime) -> Result {
     Ok(())
 }
 
-pub(super) fn execute(bootstrap: &mut dyn RuntimeBootstrap, paths: &BundlePaths) -> Result {
+pub(super) fn execute(
+    bootstrap: &mut dyn RuntimeBootstrap,
+    paths: &BundlePaths,
+    requested: &'static str,
+) -> Result {
+    if !requires_retirement(requested) {
+        return Err("permission churn requires exact revision four or five".into());
+    }
     let output = PathBuf::from(std::env::var_os("SORNG_CEF_ACCEPTANCE_OUTPUT").ok_or("output")?);
     if !output.is_absolute() || !output.is_dir() || std::fs::read_dir(&output)?.next().is_some() {
         return Err("fresh output required".into());
@@ -210,7 +217,7 @@ pub(super) fn execute(bootstrap: &mut dyn RuntimeBootstrap, paths: &BundlePaths)
             Arc::new(|_| {}),
         )?
     };
-    let bridge = unsafe { NativeTlsBridge::from_loaded(PATCH_ID)? };
+    let bridge = unsafe { NativeTlsBridge::from_loaded(requested)? };
     let clean = cef::command_line_get_global().is_some_and(|command| {
         [
             "no-sandbox",
@@ -378,16 +385,28 @@ pub(super) fn execute(bootstrap: &mut dyn RuntimeBootstrap, paths: &BundlePaths)
         .collect::<Vec<_>>();
     let proxy_ack_clean = units.iter().all(|unit| {
         let after = &unit.slot.proxy_before_host;
-        let delta = |field: &str| after[field].as_u64().zip(unit.before_context[field].as_u64()).and_then(|(a,b)| a.checked_sub(b));
+        let delta = |field: &str| {
+            after[field]
+                .as_u64()
+                .zip(unit.before_context[field].as_u64())
+                .and_then(|(a, b)| a.checked_sub(b))
+        };
         unit.slot.proxy_application_verified
             && delta("acceptedConnections").is_some()
             && delta("acceptedConnections") == delta("authenticationChallenges")
             && after["authenticatedRequests"] == unit.before_context["authenticatedRequests"]
-            && after["upstreamDials"] == 0 && after["upstreamFailures"] == 0
+            && after["upstreamDials"] == 0
+            && after["upstreamFailures"] == 0
             && delta("requestRejections") == Some(0)
             && delta("capacityRefusals") == Some(0)
     });
-    let boundary_port = units[0].slot.session.lock().unwrap().proxy_endpoint().port();
+    let boundary_port = units[0]
+        .slot
+        .session
+        .lock()
+        .unwrap()
+        .proxy_endpoint()
+        .port();
     let mut report = serde_json::json!({"probeKind":KIND,"runId":run_id,"patchId":bridge.patch_id(),"loadedBridgeVerified":true,"productionTlsFactory":true,"check":"permission-churn","expectedProtocol":"h2","proxyProofRequired":true,"proxyAckNoApplicationNetwork":proxy_ack_clean,"mode":"permission-churn","ok":false,"clean":clean,
         "globalPolicyChecks":checks,"phases":snapshots,"replacedOldContext":replacing,"sameRowFreshAttempt":same_row_fresh_attempt,
         "distinctEndpoints":distinct_endpoints,"distinctCredentials":distinct_credentials,"actualProxyProofs":proofs,
@@ -407,26 +426,39 @@ pub(super) fn execute(bootstrap: &mut dyn RuntimeBootstrap, paths: &BundlePaths)
             failures.push(format!("after-release: {error}"));
         }
     }
-    let proxy_boundary = proxy_ack_fixture::run(&mut || {
-        registry_retirement_fixture::pump(&runtime, &mut events)?;
-        global(&runtime, &mut checks)
-    }, boundary_port);
+    let proxy_boundary = proxy_ack_fixture::run(
+        &mut || {
+            registry_retirement_fixture::pump(&runtime, &mut events)?;
+            global(&runtime, &mut checks)
+        },
+        boundary_port,
+    );
     report["proxyBoundaryCases"] = match proxy_boundary {
         Ok(value) => value,
-        Err(error) => { failures.push(format!("proxy-boundary: {error}")); serde_json::json!({"ok":false}) }
+        Err(error) => {
+            failures.push(format!("proxy-boundary: {error}"));
+            serde_json::json!({"ok":false})
+        }
     };
-    let retirement = registry_retirement_fixture::run(&mut || {
-        registry_retirement_fixture::pump(&runtime, &mut events)?;
-        global(&runtime, &mut checks)
-    }, &root_der);
+    let retirement = registry_retirement_fixture::run(
+        &mut || {
+            registry_retirement_fixture::pump(&runtime, &mut events)?;
+            global(&runtime, &mut checks)
+        },
+        &root_der,
+    );
     report["registrationRetirementCases"] = match retirement {
         Ok(value) => value,
-        Err(error) => { failures.push(format!("registry-retirement: {error}")); serde_json::json!({"ok":false}) }
+        Err(error) => {
+            failures.push(format!("registry-retirement: {error}"));
+            serde_json::json!({"ok":false})
+        }
     };
-    if !proxy_ack_clean { failures.push("churn pre-host proxy counters changed".into()); }
+    if !proxy_ack_clean {
+        failures.push("churn pre-host proxy counters changed".into());
+    }
     report["globalPolicyChecks"] = checks.into();
     report["failures"] = serde_json::json!(failures);
-    drop(bridge);
     unsafe {
         runtime.shutdown()?;
         cef_tls_bridge::after_cef_shutdown();

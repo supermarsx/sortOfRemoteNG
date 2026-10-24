@@ -1090,7 +1090,7 @@ test("HTTP2 rejects missing/wrong staging pins and invalid/manual checks before 
     );
   await assert.rejects(
     runAcceptance({ ...options, check: "multiplex" }),
-    /exactly staged revision-four/,
+    /exactly staged runtime matching the requested revision pin/,
   );
   await writeFile(
     path.join(root, "acceptance-staging.json"),
@@ -1101,7 +1101,7 @@ test("HTTP2 rejects missing/wrong staging pins and invalid/manual checks before 
   );
   await assert.rejects(
     runAcceptance({ ...options, check: "multiplex" }),
-    /exactly staged revision-four/,
+    /exactly staged runtime matching the requested revision pin/,
   );
   assert.equal(existsSync(options.output), false);
 });
@@ -1435,7 +1435,25 @@ test("revision-five TLS staged-pin readback reaches only the normal prelaunch bo
   );
   await assert.rejects(
     run({ ...options, suite: "http2", check: "multiplex" }),
-    /no supported bridge revision pin|exactly staged revision-four/,
+    /matching the requested revision pin/,
+  );
+  await assert.rejects(
+    run({
+      ...options,
+      suite: "http2",
+      check: "multiplex",
+      http2PatchId: HTTP3_BRIDGE_PATCH_ID,
+    }),
+    /controlled prelaunch checkpoint/,
+  );
+  await assert.rejects(
+    run({
+      ...options,
+      suite: "http2",
+      check: "multiplex",
+      http2PatchId: "sorng-tls-v2-682c378-6",
+    }),
+    /exact reviewed revision-four or revision-five/,
   );
   pin = "sorng-tls-v2-682c378-6";
   await assert.rejects(
@@ -1444,10 +1462,19 @@ test("revision-five TLS staged-pin readback reaches only the normal prelaunch bo
   );
   pin = TLS_PATCH_ID;
   await assert.rejects(
+    run({
+      ...options,
+      suite: "http2",
+      check: "multiplex",
+      http2PatchId: HTTP3_BRIDGE_PATCH_ID,
+    }),
+    /matching the requested revision pin/,
+  );
+  await assert.rejects(
     run({ ...options, suite: "tls" }),
     /controlled prelaunch checkpoint/,
   );
-  assert.equal(checkpoints, 2);
+  assert.equal(checkpoints, 3);
   assert.equal(processLaunches, 0);
   assert.equal(createdOutputs, 0);
 });
@@ -4661,7 +4688,7 @@ test("the desktop of whoever uses the machine is reached only through its own op
   const main = source.slice(source.indexOf("async function main(args)"));
   assert.match(
     main,
-    /const \{ \[INTERACTIVE_DESKTOP_OPTION\]: interactiveDesktop, \.\.\.others \} =\s*rest;\s*return runAcceptance\(\{ \.\.\.others, suite, interactiveDesktop \}\);/,
+    /const \{\s*\[INTERACTIVE_DESKTOP_OPTION\]: interactiveDesktop,\s*"http2-patch-id": http2PatchId,\s*\.\.\.others\s*\} =\s*rest;\s*return runAcceptance\(\{\s*\.\.\.others,\s*suite,\s*interactiveDesktop,\s*http2PatchId,?\s*\}\);/,
   );
   assert.equal(main.match(/runAcceptance\(/g).length, 1);
   assert.match(
@@ -5299,3 +5326,121 @@ test(
     assert.equal(existsSync(launch.stderr), true);
   },
 );
+
+test("explicit revision-five HTTP2 preserves every existing protocol and retirement proof", () => {
+  const report = syntheticHttp2Report();
+  report.patchId = HTTP3_BRIDGE_PATCH_ID;
+  assert.equal(
+    assessNativeHttp2Report(
+      report,
+      "synthetic-h2",
+      HTTP3_BRIDGE_PATCH_ID,
+      "multiplex",
+    ).ok,
+    true,
+  );
+  assert.equal(
+    assessNativeHttp2Report(report, "synthetic-h2", TLS_PATCH_ID, "multiplex")
+      .ok,
+    false,
+  );
+  for (const mutate of [
+    (r) => {
+      delete r.registrationRetirementCases;
+    },
+    (r) => {
+      r.registrationRetirementCases.finalRegistrations = 1;
+    },
+    (r) => {
+      r.proxyBoundaryCases.cases.pop();
+    },
+    (r) => {
+      r.slots[0].beforeAdmissionBytes = 1;
+    },
+    (r) => {
+      r.shutdownComplete = false;
+    },
+  ]) {
+    const changed = structuredClone(report);
+    mutate(changed);
+    assert.equal(
+      assessNativeHttp2Report(
+        changed,
+        "synthetic-h2",
+        HTTP3_BRIDGE_PATCH_ID,
+        "multiplex",
+      ).ok,
+      false,
+    );
+  }
+});
+
+test("HTTP2 owned environment carries only the explicit reviewed revision and leaves fallback protocol separate", () => {
+  const source = {
+    PATH: "retained",
+    SORNG_CEF_HTTP2_PATCH_ID: "forged",
+    SORNG_CEF_HTTP2_EXPECT: "legacy",
+    SORNG_CEF_HTTP3_CHECK: "force",
+  };
+  const selected = http2Environment(
+    source,
+    "http2",
+    "h1-fallback",
+    HTTP3_BRIDGE_PATCH_ID,
+  );
+  assert.equal(selected.SORNG_CEF_HTTP2_PATCH_ID, HTTP3_BRIDGE_PATCH_ID);
+  assert.equal(selected.SORNG_CEF_HTTP2_EXPECT, "h1");
+  assert.equal(selected.SORNG_CEF_HTTP3_CHECK, undefined);
+  assert.equal(
+    http2Environment(source, "http2", "multiplex").SORNG_CEF_HTTP2_PATCH_ID,
+    TLS_PATCH_ID,
+  );
+  assert.throws(() =>
+    http2Environment(source, "http2", "multiplex", "sorng-tls-v2-682c378-6"),
+  );
+});
+
+test("actual run-http2 CLI forwards the closed revision flag separately from private-desktop opt-in", async () => {
+  const source = readFileSync(
+    new URL("../../scripts/cef-browser-acceptance.mjs", import.meta.url),
+    "utf8",
+  );
+  const start = source.indexOf("async function main(args)"),
+    end = source.indexOf("\nif (", start);
+  assert(start > 0 && end > start);
+  const captured = [];
+  const main = new Script(`${source.slice(start, end)};main;`).runInNewContext({
+    INTERACTIVE_DESKTOP_OPTION,
+    runAcceptance: (options) => {
+      captured.push(options);
+      return options;
+    },
+  });
+  const result = await main([
+    "run-http2",
+    "--executable",
+    "owned-fixture",
+    "--output",
+    "fresh-run",
+    "--check",
+    "h1-fallback",
+    "--http2-patch-id",
+    HTTP3_BRIDGE_PATCH_ID,
+  ]);
+  assert.equal(result.http2PatchId, HTTP3_BRIDGE_PATCH_ID);
+  assert.equal(result.check, "h1-fallback");
+  assert.equal(result.interactiveDesktop, undefined);
+  assert.equal(result.suite, "http2");
+  assert.equal(Object.hasOwn(result, "http2-patch-id"), false);
+  await main([
+    "run-http2",
+    "--executable",
+    "owned-fixture",
+    "--output",
+    "fresh-run",
+    "--check",
+    "multiplex",
+  ]);
+  assert.equal(captured[1].http2PatchId, undefined);
+  assert.equal(captured.length, 2);
+});

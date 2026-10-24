@@ -162,8 +162,15 @@ fn release(unit: &mut Live, asynchronous: &tokio::runtime::Runtime) -> Result {
     Ok(())
 }
 
-pub(super) fn execute(bootstrap: &mut dyn RuntimeBootstrap, paths: &BundlePaths) -> Result {
-    let legacy = std::env::var("SORNG_CEF_HTTP2_EXPECT").as_deref() == Ok("legacy");
+pub(super) fn execute(
+    bootstrap: &mut dyn RuntimeBootstrap,
+    paths: &BundlePaths,
+    requested: &'static str,
+) -> Result {
+    let legacy = requested == LEGACY_PATCH_ID;
+    if !legacy && !requires_retirement(requested) {
+        return Err("proxy retry requires exact revision one, four or five".into());
+    }
     if !legacy && std::env::var("SORNG_CEF_HTTP2_EXPECT").as_deref() != Ok("retirement") {
         return Err("proxy retry requires explicit legacy or retirement pin".into());
     }
@@ -221,8 +228,7 @@ pub(super) fn execute(bootstrap: &mut dyn RuntimeBootstrap, paths: &BundlePaths)
             Arc::new(|_| {}),
         )?
     };
-    let bridge =
-        unsafe { NativeTlsBridge::from_loaded(if legacy { LEGACY_PATCH_ID } else { PATCH_ID })? };
+    let bridge = unsafe { NativeTlsBridge::from_loaded(requested)? };
     let clean = cef::command_line_get_global().is_some_and(|command| {
         [
             "no-sandbox",
@@ -497,7 +503,6 @@ pub(super) fn execute(bootstrap: &mut dyn RuntimeBootstrap, paths: &BundlePaths)
     }
     report["globalPolicyChecks"] = checks.into();
     report["failures"] = serde_json::json!(failures);
-    drop(bridge);
     unsafe {
         runtime.shutdown()?;
         cef_tls_bridge::after_cef_shutdown();

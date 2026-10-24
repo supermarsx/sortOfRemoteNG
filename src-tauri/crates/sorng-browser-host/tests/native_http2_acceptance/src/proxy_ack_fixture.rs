@@ -37,8 +37,7 @@ type Create = unsafe extern "C" fn(
 ) -> *mut cef::sys::_cef_request_context_t;
 type Operation = unsafe extern "C" fn(u64, u64, u16) -> i32;
 type Revoke = unsafe extern "C" fn(u64, u64) -> i32;
-#[path = "../../native_tls_acceptance/src/registry_retirement_fixture/loaded_module.rs"]
-mod loaded_module;
+use super::registry_retirement_fixture::loaded_module;
 struct Observation {
     token: u64,
     generation: u64,

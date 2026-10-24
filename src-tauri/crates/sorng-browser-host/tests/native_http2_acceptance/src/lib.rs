@@ -7,8 +7,8 @@ use sorng_browser_host::{
     cef_runtime::{self, CefRuntime},
     cef_tls_bridge::{
         self, NativeTlsBridge, NativeTlsCaMode, NativeTlsCompletion, NativeTlsConfig,
-        NativeTlsDecision, NativeTlsEvidence, NativeTlsHooks, HTTP2_PATCH_ID, LEGACY_PATCH_ID,
-        PATCH_ID, PROXY_APPLIED_PATCH_ID,
+        NativeTlsDecision, NativeTlsEvidence, NativeTlsHooks, HTTP2_PATCH_ID, HTTP3_PATCH_ID,
+        LEGACY_PATCH_ID, PATCH_ID, PROXY_APPLIED_PATCH_ID,
     },
     control::{Lifecycle, ViewportBounds},
     domain_permissions::{WebsitePermissionDecision, WebsitePermissionEngine, WebsiteRequestClass},
@@ -35,6 +35,41 @@ use tao::{
 };
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt};
 type Result<T = ()> = std::result::Result<T, Box<dyn std::error::Error>>;
+// Package-specific acceptance never probes another revision after a mismatch.
+// The historical protocol selectors still select revisions1–3 only when no
+// explicit maintained-runner pin is present.
+fn selected_revision(expect: Option<&str>, pin: Option<&str>) -> Result<&'static str> {
+    let historical = match expect {
+        None | Some("retirement" | "h1") => PATCH_ID,
+        Some("legacy") => LEGACY_PATCH_ID,
+        Some("h2") => HTTP2_PATCH_ID,
+        Some("proxy-ack") => PROXY_APPLIED_PATCH_ID,
+        _ => return Err("unknown native fixture revision".into()),
+    };
+    match pin {
+        None => Ok(historical),
+        Some(PATCH_ID) if historical == PATCH_ID => Ok(PATCH_ID),
+        Some(HTTP3_PATCH_ID) if historical == PATCH_ID => Ok(HTTP3_PATCH_ID),
+        _ => Err("explicit native fixture revision differs from protocol selection".into()),
+    }
+}
+fn requested_revision() -> Result<&'static str> {
+    fn value(name: &str) -> Result<Option<String>> {
+        match std::env::var(name) {
+            Ok(value) => Ok(Some(value)),
+            Err(std::env::VarError::NotPresent) => Ok(None),
+            Err(std::env::VarError::NotUnicode(_)) => {
+                Err("invalid native fixture revision encoding".into())
+            }
+        }
+    }
+    let expect = value("SORNG_CEF_HTTP2_EXPECT")?;
+    let pin = value("SORNG_CEF_HTTP2_PATCH_ID")?;
+    selected_revision(expect.as_deref(), pin.as_deref())
+}
+fn requires_retirement(patch_id: &str) -> bool {
+    matches!(patch_id, PATCH_ID | HTTP3_PATCH_ID)
+}
 const ORIGIN: &str = "https://proxy-first.fixture.test";
 const OTHER_ORIGIN: &str = "https://alternate.fixture.test";
 fn cross_authority() -> bool {
@@ -122,6 +157,13 @@ mod proxy_retry_fixture;
 #[path = "../../native_tls_acceptance/src/registry_retirement_fixture.rs"]
 mod registry_retirement_fixture;
 mod websocket_fixture;
+/// Entry called by the reviewed Windows sandbox bootstrap.
+///
+/// # Safety
+/// The caller must supply the pinned bootstrap's original instance, sandbox and
+/// version pointers before starting services, threads or profile access. They
+/// must remain valid for this call. This entry catches panics at the C boundary;
+/// browser execution must release CEF owners and complete shutdown before return.
 #[cfg(windows)]
 #[no_mangle]
 pub unsafe extern "C" fn RunWinMain(
@@ -412,19 +454,15 @@ fn create_slot(
     })
 }
 fn execute(bootstrap: &mut dyn RuntimeBootstrap, paths: &BundlePaths) -> Result {
+    let requested = requested_revision()?;
     if std::env::var("SORNG_CEF_HTTP2_CHECK").as_deref() == Ok("proxy-retry") {
-        return proxy_retry_fixture::execute(bootstrap, paths);
+        return proxy_retry_fixture::execute(bootstrap, paths, requested);
     }
     if std::env::var("SORNG_CEF_HTTP2_CHECK").as_deref() == Ok("permission-churn") {
-        return permission_churn_fixture::execute(bootstrap, paths);
+        return permission_churn_fixture::execute(bootstrap, paths, requested);
     }
-    let legacy = std::env::var("SORNG_CEF_HTTP2_EXPECT").as_deref() == Ok("legacy");
-    let http2_revision = std::env::var("SORNG_CEF_HTTP2_EXPECT").as_deref() == Ok("h2");
-    if std::env::var("SORNG_CEF_HTTP2_EXPECT").is_ok_and(|mode| {
-        !["legacy", "h2", "proxy-ack", "retirement", "h1"].contains(&mode.as_str())
-    }) {
-        return Err("unknown native fixture revision".into());
-    }
+    let legacy = requested == LEGACY_PATCH_ID;
+    let http2_revision = requested == HTTP2_PATCH_ID;
     let visible = std::env::var_os("SORNG_PROBE_VISIBLE").is_some();
     let fixture_nodelay = std::env::var_os("SORNG_PROBE_FIXTURE_NODELAY").is_some();
     let clock = Instant::now();
@@ -499,17 +537,7 @@ fn execute(bootstrap: &mut dyn RuntimeBootstrap, paths: &BundlePaths) -> Result 
         )?
     };
     let initialize_finished_ms = clock.elapsed().as_secs_f64() * 1000.0;
-    let bridge = unsafe {
-        NativeTlsBridge::from_loaded(if legacy {
-            LEGACY_PATCH_ID
-        } else if http2_revision {
-            HTTP2_PATCH_ID
-        } else if std::env::var("SORNG_CEF_HTTP2_EXPECT").as_deref() == Ok("proxy-ack") {
-            PROXY_APPLIED_PATCH_ID
-        } else {
-            PATCH_ID
-        })?
-    };
+    let bridge = unsafe { NativeTlsBridge::from_loaded(requested)? };
     if bridge.supports_same_authority_http2() == legacy {
         return Err("HTTP/2-capable engine required".into());
     }
@@ -748,7 +776,7 @@ fn execute(bootstrap: &mut dyn RuntimeBootstrap, paths: &BundlePaths) -> Result 
     } else {
         serde_json::json!({"required":false,"reason":"legacy-runtime-no-proxy-ack"})
     };
-    let retirement = if bridge.patch_id() == PATCH_ID {
+    let retirement = if requires_retirement(bridge.patch_id()) {
         match registry_retirement_fixture::run(
             &mut || registry_retirement_fixture::pump(&runtime, &mut events),
             &root_der,
@@ -771,7 +799,6 @@ fn execute(bootstrap: &mut dyn RuntimeBootstrap, paths: &BundlePaths) -> Result 
         output.join("native-report.json"),
         serde_json::to_vec_pretty(&report)?,
     )?;
-    drop(bridge);
     unsafe {
         runtime.shutdown()?;
         sorng_browser_host::cef_tls_bridge::after_cef_shutdown();
@@ -945,5 +972,70 @@ fn execute(bootstrap: &mut dyn RuntimeBootstrap, paths: &BundlePaths) -> Result 
         Ok(())
     } else {
         Err("proxy readiness fixture failed".into())
+    }
+}
+
+#[cfg(test)]
+mod revision_selection_tests {
+    use super::*;
+
+    #[test]
+    fn historical_protocols_and_default_remain_exact() {
+        for (expect, patch) in [
+            (None, PATCH_ID),
+            (Some("retirement"), PATCH_ID),
+            (Some("h1"), PATCH_ID),
+            (Some("legacy"), LEGACY_PATCH_ID),
+            (Some("h2"), HTTP2_PATCH_ID),
+            (Some("proxy-ack"), PROXY_APPLIED_PATCH_ID),
+        ] {
+            assert_eq!(selected_revision(expect, None).unwrap(), patch);
+        }
+    }
+    #[test]
+    fn explicit_current_revision_is_orthogonal_to_h1_fallback() {
+        for expect in [None, Some("retirement"), Some("h1")] {
+            for patch in [PATCH_ID, HTTP3_PATCH_ID] {
+                assert_eq!(selected_revision(expect, Some(patch)).unwrap(), patch);
+            }
+        }
+    }
+    #[test]
+    fn unknown_or_conflicting_explicit_pins_fail_closed() {
+        for expect in [
+            Some("legacy"),
+            Some("h2"),
+            Some("proxy-ack"),
+            Some("unknown"),
+        ] {
+            for pin in [PATCH_ID, HTTP3_PATCH_ID] {
+                assert!(selected_revision(expect, Some(pin)).is_err());
+            }
+        }
+        for pin in [
+            "",
+            LEGACY_PATCH_ID,
+            HTTP2_PATCH_ID,
+            PROXY_APPLIED_PATCH_ID,
+            "sorng-tls-v2-682c378-6",
+        ] {
+            assert!(selected_revision(None, Some(pin)).is_err());
+        }
+        assert!(selected_revision(Some("unknown"), None).is_err());
+    }
+    #[test]
+    fn both_current_revisions_require_the_entire_retirement_suite() {
+        assert!(!std::mem::needs_drop::<NativeTlsBridge>());
+        for patch in [PATCH_ID, HTTP3_PATCH_ID] {
+            assert!(requires_retirement(patch));
+        }
+        for patch in [
+            LEGACY_PATCH_ID,
+            HTTP2_PATCH_ID,
+            PROXY_APPLIED_PATCH_ID,
+            "unknown",
+        ] {
+            assert!(!requires_retirement(patch));
+        }
     }
 }

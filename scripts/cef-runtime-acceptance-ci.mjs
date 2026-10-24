@@ -10,6 +10,8 @@ import { verifyBundle, releaseIdentity } from "./cef-runtime-ci.mjs";
 import {
   prepareCustomRuntime,
   validateSourceLock,
+  BRIDGE_PATCH_ID,
+  HTTP3_BRIDGE_PATCH_ID,
 } from "./lib/browser-custom-runtime.mjs";
 import { stageAcceptance } from "./cef-browser-acceptance.mjs";
 import {
@@ -706,6 +708,35 @@ export function fixtureClientBuild(target, suite) {
     ],
   };
 }
+export function fixtureRunArguments(
+  suite,
+  executable,
+  output,
+  check,
+  sourceLock,
+) {
+  if (
+    !["tls", "http2"].includes(suite) ||
+    (suite === "http2" ? !HTTP2_CHECKS.includes(check) : check !== undefined)
+  )
+    fail("Unknown native fixture run");
+  const patchId = sourceLock?.bridge?.patchId;
+  if (
+    suite === "http2" &&
+    ![BRIDGE_PATCH_ID, HTTP3_BRIDGE_PATCH_ID].includes(patchId)
+  )
+    fail("HTTP2 requires a reviewed revision-four or revision-five source pin");
+  return [
+    "scripts/cef-browser-acceptance.mjs",
+    suite === "tls" ? "run-tls" : "run-http2",
+    "--executable",
+    executable,
+    "--output",
+    output,
+    ...(check ? ["--check", check] : []),
+    ...(suite === "http2" ? ["--http2-patch-id", patchId] : []),
+  ];
+}
 export function createAcceptanceBudget(
   now = () => performance.now(),
   milliseconds = 190 * 60_000,
@@ -1225,15 +1256,13 @@ export async function executeAcceptance(
       try {
         await runCommand(
           process.execPath,
-          [
-            "scripts/cef-browser-acceptance.mjs",
-            suite === "tls" ? "run-tls" : "run-http2",
-            "--executable",
+          fixtureRunArguments(
+            suite,
             stage.executable,
-            "--output",
             reportOutput,
-            ...(check ? ["--check", check] : []),
-          ],
+            check,
+            sourceLock,
+          ),
           {
             env: childEnv,
             log: path.join(destination, `${label}-runner.log`),

@@ -21,6 +21,7 @@ import {
   createAcceptanceBudget,
   createAcceptanceSeal,
   fixtureClientBuild,
+  fixtureRunArguments,
   HTTP2_CHECKS,
   NATIVE_TARGETS,
   nativeChildEnvironment,
@@ -1395,4 +1396,63 @@ test("ARM engineering SDK plans schedule real native ARM hosts and reject anothe
       /artifact|seal|identity/i,
     );
   }
+});
+
+test("all nine native runs keep their original gates and derive the H2 pin only from the verified source lock", () => {
+  for (const patch of ["sorng-tls-v2-682c378-4", "sorng-tls-v2-682c378-5"]) {
+    const lock = { bridge: { patchId: patch } };
+    const tls = fixtureRunArguments(
+      "tls",
+      "owned-executable",
+      "new-output",
+      undefined,
+      lock,
+    );
+    assert.deepEqual(tls, [
+      "scripts/cef-browser-acceptance.mjs",
+      "run-tls",
+      "--executable",
+      "owned-executable",
+      "--output",
+      "new-output",
+    ]);
+    assert.equal(HTTP2_CHECKS.length + 1, 9);
+    for (const check of HTTP2_CHECKS) {
+      const args = fixtureRunArguments(
+        "http2",
+        "owned-executable",
+        "new-output",
+        check,
+        lock,
+      );
+      assert.deepEqual(args, [
+        "scripts/cef-browser-acceptance.mjs",
+        "run-http2",
+        "--executable",
+        "owned-executable",
+        "--output",
+        "new-output",
+        "--check",
+        check,
+        "--http2-patch-id",
+        patch,
+      ]);
+    }
+  }
+  for (const pin of [
+    undefined,
+    "",
+    "sorng-tls-v2-682c378-3",
+    "sorng-tls-v2-682c378-6",
+  ])
+    assert.throws(() =>
+      fixtureRunArguments("http2", "owned", "new", "multiplex", {
+        bridge: { patchId: pin },
+      }),
+    );
+  assert.throws(() =>
+    fixtureRunArguments("http2", "owned", "new", "force-quic", {
+      bridge: { patchId: "sorng-tls-v2-682c378-5" },
+    }),
+  );
 });

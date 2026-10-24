@@ -393,7 +393,19 @@ export function assessNativeHttp3Report(report, runId, expectedPatchId, check) {
 }
 
 /** Scrub experiment controls even when launching another acceptance suite. */
-export function http2Environment(environment, suite, check) {
+export function http2Environment(
+  environment,
+  suite,
+  check,
+  patchId = TLS_PATCH_ID,
+) {
+  if (
+    suite === "http2" &&
+    ![TLS_PATCH_ID, HTTP3_BRIDGE_PATCH_ID].includes(patchId)
+  )
+    throw new Error(
+      "HTTP2 requires an exact reviewed revision-four or revision-five pin",
+    );
   if (suite === "http2" && !HTTP2_CHECKS.includes(check))
     throw new Error("Unknown HTTP2 check");
   if (suite === "http3" && !HTTP3_CHECKS.includes(check))
@@ -416,6 +428,7 @@ export function http2Environment(environment, suite, check) {
   if (suite === "http2") {
     env.SORNG_CEF_HTTP2_CHECK = check === "h1-fallback" ? "multiplex" : check;
     env.SORNG_CEF_HTTP2_EXPECT = check === "h1-fallback" ? "h1" : "retirement";
+    env.SORNG_CEF_HTTP2_PATCH_ID = patchId;
   }
   if (suite === "http3") env.SORNG_CEF_HTTP3_CHECK = check;
   return env;
@@ -437,10 +450,10 @@ export function assessNativeHttp2Report(report, runId, expectedPatchId, check) {
     Array.isArray(value) && value.length === length;
   const pair = (value) => rows(value, 2) && value.every((v) => v === true);
   require(HTTP2_CHECKS.includes(check), "known HTTP2 check required");
-  require(expectedPatchId === TLS_PATCH_ID &&
+  require([TLS_PATCH_ID, HTTP3_BRIDGE_PATCH_ID].includes(expectedPatchId) &&
     report?.patchId === expectedPatchId &&
     report?.loadedBridgeVerified ===
-      true, "exact loaded revision-four bridge required");
+      true, "exact requested revision-four or revision-five bridge required");
   require(typeof runId === "string" &&
     runId.length > 0 &&
     report?.runId === runId, "fresh HTTP2 invocation correlation missing");
@@ -3087,10 +3100,18 @@ export async function runAcceptance({
   windowMs,
   only,
   check,
+  http2PatchId = TLS_PATCH_ID,
 }) {
   if (!["legacy", "tls", "http2", "http3", "measure", "menu"].includes(suite))
     throw new Error("Unknown acceptance suite");
-  const controlledEnvironment = http2Environment(process.env, suite, check);
+  if (suite !== "http2" && http2PatchId !== TLS_PATCH_ID)
+    throw new Error("http2-patch-id applies only to HTTP2 acceptance");
+  const controlledEnvironment = http2Environment(
+    process.env,
+    suite,
+    check,
+    http2PatchId,
+  );
   if (
     ["http2", "http3"].includes(suite) &&
     (manual !== "false" || interactiveDesktop !== "false")
@@ -3137,7 +3158,7 @@ export async function runAcceptance({
       expectedPatchId = staging.preflight?.bridge?.patchId;
       if (!(
         TLS_SUPPORTED_PATCH_IDS.includes(expectedPatchId) ||
-        (["tls", "http3"].includes(suite) &&
+        (["tls", "http2", "http3"].includes(suite) &&
           expectedPatchId === HTTP3_BRIDGE_PATCH_ID)
       ))
         throw new Error(
@@ -3147,9 +3168,9 @@ export async function runAcceptance({
   } catch (error) {
     if (error?.code !== "ENOENT") throw error;
   }
-  if (suite === "http2" && expectedPatchId !== TLS_PATCH_ID)
+  if (suite === "http2" && expectedPatchId !== http2PatchId)
     throw new Error(
-      "HTTP2 acceptance requires an exactly staged revision-four runtime",
+      "HTTP2 acceptance requires an exactly staged runtime matching the requested revision pin",
     );
   if (suite === "http3" && expectedPatchId !== HTTP3_BRIDGE_PATCH_ID)
     throw new Error(
@@ -3507,9 +3528,17 @@ async function main(args) {
       appPlist: options["app-plist"],
     });
   const launch = (suite, rest) => {
-    const { [INTERACTIVE_DESKTOP_OPTION]: interactiveDesktop, ...others } =
-      rest;
-    return runAcceptance({ ...others, suite, interactiveDesktop });
+    const {
+      [INTERACTIVE_DESKTOP_OPTION]: interactiveDesktop,
+      "http2-patch-id": http2PatchId,
+      ...others
+    } = rest;
+    return runAcceptance({
+      ...others,
+      suite,
+      interactiveDesktop,
+      http2PatchId,
+    });
   };
   if (command === "run") return launch(options.suite, options);
   if (command === "run-tls") return launch("tls", options);
@@ -3529,7 +3558,7 @@ async function main(args) {
     return result;
   }
   throw new Error(
-    "Usage: node scripts/cef-browser-acceptance.mjs stage (--custom-plan PREPARED_PLAN_JSON | --runtime OFFICIAL_SDK) --client NATIVE_CLIENT --output NEW_DIR --target TARGET [--helper UNIX_HELPER] [--app-plist MACOS_INFO_PLIST] [--suite tls|http2|http3] | run-http3 --executable PACKAGED_EXECUTABLE --output NEW_DIR --check multiplex|deny|delay|revoke|isolation|cross-authority|h2-fallback|h1-fallback | run-http2 --executable PACKAGED_EXECUTABLE --output NEW_DIR --check multiplex|deny|delay|revoke|cross-authority|wss|h1-fallback|permission-churn | run-tls --executable PACKAGED_EXECUTABLE --output NEW_DIR [--manual true] | run --executable LEGACY_EXECUTABLE --output NEW_DIR | measure --executable LEGACY_EXECUTABLE --output NEW_DIR [--window-ms 5000..40000] [--only SCENARIO_ID,...] | menu --executable LEGACY_EXECUTABLE --output NEW_DIR. On Windows every run starts the client on a private desktop; --use-interactive-desktop true puts its windows on the desktop of whoever is using the machine instead. HTTP2 runs are automated and reject the interactive override.",
+    "Usage: node scripts/cef-browser-acceptance.mjs stage (--custom-plan PREPARED_PLAN_JSON | --runtime OFFICIAL_SDK) --client NATIVE_CLIENT --output NEW_DIR --target TARGET [--helper UNIX_HELPER] [--app-plist MACOS_INFO_PLIST] [--suite tls|http2|http3] | run-http3 --executable PACKAGED_EXECUTABLE --output NEW_DIR --check multiplex|deny|delay|revoke|isolation|cross-authority|h2-fallback|h1-fallback | run-http2 --executable PACKAGED_EXECUTABLE --output NEW_DIR --check multiplex|deny|delay|revoke|cross-authority|wss|h1-fallback|permission-churn [--http2-patch-id sorng-tls-v2-682c378-4|sorng-tls-v2-682c378-5] | run-tls --executable PACKAGED_EXECUTABLE --output NEW_DIR [--manual true] | run --executable LEGACY_EXECUTABLE --output NEW_DIR | measure --executable LEGACY_EXECUTABLE --output NEW_DIR [--window-ms 5000..40000] [--only SCENARIO_ID,...] | menu --executable LEGACY_EXECUTABLE --output NEW_DIR. On Windows every run starts the client on a private desktop; --use-interactive-desktop true puts its windows on the desktop of whoever is using the machine instead. HTTP2 runs are automated and reject the interactive override.",
   );
 }
 if (
