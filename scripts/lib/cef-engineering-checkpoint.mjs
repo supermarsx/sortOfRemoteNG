@@ -7,6 +7,7 @@ import {
   lstat,
   mkdir,
   open,
+  opendir,
   mkdtemp,
   rm,
   readFile,
@@ -563,6 +564,207 @@ export async function assertNoGeneratedLinks(out) {
     } else assert(info.isFile(), "Unreviewed Linux generated file type");
   }
   return {};
+}
+
+// Evidence only: links remain forbidden by the independent archive reader.
+export const LINK_DIAGNOSTIC_LIMITS = Object.freeze({
+  entries: 300000,
+  links: 64,
+  memberBytes: 4096,
+  targetBytes: 2048,
+  outputBytes: 256 * 1024,
+  milliseconds: 180000,
+});
+export async function generatedLinkInventory(out, options = {}) {
+  const io = { lstat, opendir, readlink, ...options.io };
+  const limits = { ...LINK_DIAGNOSTIC_LIMITS, ...options.limits };
+  for (const key of Object.keys(LINK_DIAGNOSTIC_LIMITS))
+    assert(
+      Number.isSafeInteger(limits[key]) &&
+        limits[key] > 0 &&
+        limits[key] <= LINK_DIAGNOSTIC_LIMITS[key],
+      "Link diagnostic limit",
+    );
+  assert(limits.outputBytes >= 512, "Link diagnostic error-envelope capacity");
+  const result = {
+    schemaVersion: 1,
+    kind: "checkpoint-generated-link-diagnostic",
+    complete: false,
+    failure: null,
+    visited: 0,
+    links: [],
+    authority: false,
+    deadlineScope: "collection-observation",
+    filesystemCallsCancellable: false,
+  };
+  const deadline = performance.now() + limits.milliseconds;
+  const fault = (reason) => {
+    throw Object.assign(new Error("Link diagnostic"), {
+      linkDiagnostic: reason,
+    });
+  };
+  const bounded = async (action, lateClose = false) => {
+    const remaining = deadline - performance.now();
+    if (remaining <= 0) fault("deadline");
+    let timer,
+      expired = false;
+    const work = Promise.resolve().then(action);
+    if (lateClose)
+      work.then(
+        (dir) => {
+          if (expired) void dir.close().catch(() => {});
+        },
+        () => {},
+      );
+    try {
+      return await Promise.race([
+        work,
+        new Promise((_, reject) => {
+          timer = setTimeout(() => {
+            expired = true;
+            reject(
+              Object.assign(new Error("Link diagnostic"), {
+                linkDiagnostic: "deadline",
+              }),
+            );
+          }, Math.ceil(remaining));
+        }),
+      ]);
+    } finally {
+      clearTimeout(timer);
+    }
+  };
+  const same = (a, b) =>
+    a.dev === b.dev &&
+    a.ino === b.ino &&
+    a.mode === b.mode &&
+    a.mtimeMs === b.mtimeMs;
+  const directory = (value) =>
+    value.isDirectory() &&
+    !value.isSymbolicLink() &&
+    !(value.fileAttributes & 0x400);
+  try {
+    // Validate every root ancestor without resolving a link target.
+    const root = path.resolve(out);
+    const ancestors = [];
+    for (let current = root; ; current = path.dirname(current)) {
+      ancestors.push(current);
+      if (path.dirname(current) === current) break;
+    }
+    for (const current of ancestors.reverse())
+      if (!directory(await bounded(() => io.lstat(current))))
+        fault("root-link-or-type");
+    const pending = [
+      { file: root, member: "", stamp: await bounded(() => io.lstat(root)) },
+    ];
+    while (pending.length) {
+      const current = pending.pop();
+      const before = await bounded(() => io.lstat(current.file));
+      if (!directory(before) || !same(before, current.stamp))
+        fault("directory-changed");
+      const dir = await bounded(
+        () => io.opendir(current.file, { bufferSize: 32 }),
+        true,
+      );
+      let pendingRead = null;
+      try {
+        if (!same(before, await bounded(() => io.lstat(current.file))))
+          fault("directory-changed");
+        for (;;) {
+          pendingRead = Promise.resolve().then(() => dir.read());
+          const entry = await bounded(() => pendingRead);
+          pendingRead = null;
+          if (!entry) break;
+          if (++result.visited > limits.entries) fault("entry-bound");
+          const member = current.member
+            ? `${current.member}/${entry.name}`
+            : entry.name;
+          if (Buffer.byteLength(member) > limits.memberBytes)
+            fault("member-bound");
+          const file = path.join(current.file, entry.name);
+          const metadata = await bounded(() => io.lstat(file));
+          if (metadata.isSymbolicLink() || metadata.fileAttributes & 0x400) {
+            if (result.links.length >= limits.links) fault("link-bound");
+            const target = await bounded(() => io.readlink(file));
+            if (!same(metadata, await bounded(() => io.lstat(file))))
+              fault("link-changed");
+            const bytes = Buffer.byteLength(target);
+            const row = {
+              member,
+              target: bytes <= limits.targetBytes ? target : null,
+              targetBytes: bytes,
+              classification:
+                path.posix.isAbsolute(target) || path.win32.isAbsolute(target)
+                  ? "absolute"
+                  : "relative",
+            };
+            result.links.push(row);
+            if (
+              Buffer.byteLength(canonical(result)) >
+              limits.outputBytes - 256
+            ) {
+              result.links.pop();
+              fault("output-bound");
+            }
+            if (bytes > limits.targetBytes) fault("target-bound");
+          } else if (directory(metadata)) {
+            pending.push({ file, member, stamp: metadata });
+            if (pending.length + result.visited > limits.entries)
+              fault("entry-bound");
+          } else if (!metadata.isFile()) fault("special-entry");
+        }
+      } finally {
+        // Dir.read is not cancellable. Closing concurrently can fail with
+        // ERR_DIR_CONCURRENT_OPERATION, so queue exactly one close after that
+        // read settles, even when collection has already returned its deadline.
+        const close = () => dir.close().catch(() => {});
+        const closing = pendingRead ? pendingRead.then(close, close) : close();
+        try {
+          await bounded(() => closing);
+        } catch {
+          /* original failure wins */
+        }
+      }
+      if (!same(before, await bounded(() => io.lstat(current.file))))
+        fault("directory-changed");
+    }
+    result.complete = true;
+  } catch (error) {
+    const known = new Set([
+      "deadline",
+      "root-link-or-type",
+      "directory-changed",
+      "entry-bound",
+      "member-bound",
+      "link-bound",
+      "link-changed",
+      "target-bound",
+      "output-bound",
+      "special-entry",
+    ]);
+    result.failure = known.has(error?.linkDiagnostic)
+      ? error.linkDiagnostic
+      : error?.code === "EACCES" || error?.code === "EPERM"
+        ? "access-denied"
+        : "io-error";
+  }
+  return result;
+}
+export async function persistGeneratedLinkInventory(out, logs) {
+  const record = await generatedLinkInventory(out);
+  try {
+    // The 180s observation deadline does not cancel OS filesystem calls or bound
+    // this small exclusive persistence operation; neither confers admission.
+    await noLinks(logs);
+    await writeFile(
+      path.join(logs, "post-slice-generated-links.json"),
+      canonical(record),
+      { flag: "wx" },
+    );
+    return { persisted: true, complete: record.complete };
+  } catch {
+    return { persisted: false, complete: false };
+  }
 }
 function pin(value, maximum) {
   shape(value, ["name", "bytes", "sha256"]);

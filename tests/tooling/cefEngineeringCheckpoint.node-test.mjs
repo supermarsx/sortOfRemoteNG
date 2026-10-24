@@ -61,6 +61,9 @@ import {
   GRAPH_LIMITS,
   assertGraphBudget,
   graphInventoryRecord,
+  generatedLinkInventory,
+  persistGeneratedLinkInventory,
+  LINK_DIAGNOSTIC_LIMITS,
   filePin,
   afterGnPhase,
   normalizeSdkLinks,
@@ -3651,6 +3654,261 @@ test("production CLI wires each post-slice boundary and pack failure observer wi
   assert.match(compile, /observeFailure:/);
   assert.match(compile, /LIMITS\.compressed \+ 2 \* 1024 \*\* 3/);
   assert.match(compile, /withVerifiedGraph\(out, identity\.graph/);
+  assert.ok(
+    compile.indexOf("await persistGeneratedLinkInventory(out, context.logs)") <
+      compile.indexOf('checkpointPhase("pack"'),
+  );
+});
+
+test("post-slice link diagnostic preserves real rejected outside, loop and junction evidence without following", async (t) => {
+  const root = await scratch(t),
+    out = path.join(root, "out"),
+    logs = path.join(root, "logs"),
+    outside = path.join(root, "outside");
+  await mkdir(out);
+  await mkdir(logs);
+  await mkdir(outside);
+  await writeFile(
+    path.join(outside, "must-not-visit"),
+    "private outside bytes",
+  );
+  await writeFile(path.join(out, "args.gn"), 'target_cpu="arm64"\n');
+  // Models a real same-owner build action after GN, not an accepted checkpoint.
+  await symlink(
+    outside,
+    path.join(out, "outside-dir"),
+    process.platform === "win32" ? "junction" : "dir",
+  );
+  await symlink(
+    process.platform === "win32" ? out : "loop",
+    path.join(out, "loop"),
+    process.platform === "win32" ? "junction" : "file",
+  );
+  const record = await generatedLinkInventory(out);
+  assert.equal(record.complete, true);
+  assert.equal(record.authority, false);
+  assert.equal(record.visited, 3);
+  assert.equal(
+    record.links.find((r) => r.member === "outside-dir").classification,
+    "absolute",
+  );
+  assert.equal(
+    record.links.some((r) => r.member.includes("must-not-visit")),
+    false,
+  );
+  const original = await readlink(path.join(out, "outside-dir"));
+  assert.equal(
+    record.links.find((r) => r.member === "outside-dir").target,
+    original,
+  );
+  assert.deepEqual(await persistGeneratedLinkInventory(out, logs), {
+    persisted: true,
+    complete: true,
+  });
+  assert.deepEqual(
+    JSON.parse(
+      await readFile(
+        path.join(logs, "post-slice-generated-links.json"),
+        "utf8",
+      ),
+    ),
+    record,
+  );
+  assert.deepEqual(await persistGeneratedLinkInventory(out, logs), {
+    persisted: false,
+    complete: false,
+  });
+  const helper = path.join(ROOT, "scripts/lib/cef-checkpoint-archive.py");
+  const packed = python(
+    "import runpy,sys;m=runpy.run_path(sys.argv[1]);\ntry:m['pack'](m['Path'](sys.argv[2]),m['Path'](sys.argv[3]))\nexcept m['CheckpointError'] as e: print(str(e));sys.exit(7)",
+    [helper, out, path.join(root, "pack")],
+  );
+  assert.equal(packed.status, 7, packed.stderr);
+  assert.equal(
+    packed.stdout.trim(),
+    process.platform === "win32" ? "input-link" : "unreviewed-generated-link",
+  );
+  assert.equal(await readlink(path.join(out, "outside-dir")), original);
+});
+
+test("post-slice link diagnostic bounds traversal, link count, target and escaped output", async (t) => {
+  const root = await scratch(t);
+  await writeFile(path.join(root, "a"), "a");
+  await writeFile(path.join(root, "b"), "b");
+  assert.equal(
+    (await generatedLinkInventory(root, { limits: { entries: 1 } })).failure,
+    "entry-bound",
+  );
+  const fakeLink = {
+    isSymbolicLink: () => true,
+    isDirectory: () => false,
+    dev: 1,
+    ino: 1,
+    mode: 1,
+    mtimeMs: 1,
+  };
+  const linked = {
+    lstat: async (file) =>
+      file.endsWith(path.sep + "a") || file.endsWith(path.sep + "b")
+        ? fakeLink
+        : lstat(file),
+    readlink: async () => '../outside\n"secret-shaped-target"',
+  };
+  const escaped = await generatedLinkInventory(root, { io: linked });
+  assert.equal(escaped.complete, true);
+  assert.equal(
+    JSON.parse(canonical(escaped)).links[0].target,
+    '../outside\n"secret-shaped-target"',
+  );
+  assert.equal(
+    (await generatedLinkInventory(root, { io: linked, limits: { links: 1 } }))
+      .failure,
+    "link-bound",
+  );
+  const oversized = await generatedLinkInventory(root, {
+    io: linked,
+    limits: { targetBytes: 2 },
+  });
+  assert.equal(oversized.failure, "target-bound");
+  assert.equal(oversized.complete, false);
+  assert.equal(oversized.links[0].target, null);
+  const huge = { ...linked, readlink: async () => "x".repeat(1800) };
+  const output = await generatedLinkInventory(root, {
+    io: huge,
+    limits: { outputBytes: 2048 },
+  });
+  assert.equal(output.failure, "output-bound");
+  assert.ok(Buffer.byteLength(canonical(output)) < 2048);
+  assert.ok(LINK_DIAGNOSTIC_LIMITS.entries <= 300000);
+  assert.equal(LINK_DIAGNOSTIC_LIMITS.milliseconds, 180000);
+});
+
+test("post-slice link diagnostic closes own directory on denial and hung read deadline with fixed errors", async (t) => {
+  const root = await scratch(t);
+  await writeFile(path.join(root, "a"), "a");
+  const denied = await generatedLinkInventory(root, {
+    io: {
+      readlink: async () => {
+        throw new Error("raw-secret");
+      },
+      lstat: async (file) => {
+        if (file.endsWith(path.sep + "a"))
+          throw Object.assign(new Error("raw-secret"), { code: "EACCES" });
+        return lstat(file);
+      },
+    },
+  });
+  assert.equal(denied.failure, "access-denied");
+  assert.equal(canonical(denied).includes("raw-secret"), false);
+  let closed = 0,
+    pending = true,
+    settleRead;
+  const result = await generatedLinkInventory(root, {
+    limits: { milliseconds: 20 },
+    io: {
+      opendir: async () => ({
+        read: () =>
+          new Promise((resolve) => {
+            settleRead = () => {
+              pending = false;
+              resolve(null);
+            };
+          }),
+        close: async () => {
+          if (pending)
+            throw Object.assign(new Error("concurrent read"), {
+              code: "ERR_DIR_CONCURRENT_OPERATION",
+            });
+          closed++;
+        },
+      }),
+    },
+  });
+  assert.equal(result.failure, "deadline");
+  assert.equal(result.complete, false);
+  assert.equal(closed, 0);
+  settleRead();
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(closed, 1);
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(closed, 1); // No double-close after late read completion.
+  assert.equal(result.deadlineScope, "collection-observation");
+  assert.equal(result.filesystemCallsCancellable, false);
+});
+
+test("post-slice link diagnostic closes late opendir handles and rejects undersized fixed envelopes", async (t) => {
+  const root = await scratch(t);
+  let settleOpen,
+    closed = 0;
+  const result = await generatedLinkInventory(root, {
+    limits: { milliseconds: 20 },
+    io: {
+      opendir: () =>
+        new Promise((resolve) => {
+          settleOpen = () =>
+            resolve({
+              close: async () => {
+                closed++;
+              },
+            });
+        }),
+    },
+  });
+  assert.equal(result.failure, "deadline");
+  assert.equal(closed, 0);
+  settleOpen();
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(closed, 1);
+  await assert.rejects(
+    generatedLinkInventory(root, { limits: { outputBytes: 1 } }),
+    /error-envelope capacity/,
+  );
+  const minimum = await generatedLinkInventory(root, {
+    limits: { outputBytes: 512 },
+    io: {
+      lstat: async () => {
+        throw new Error("raw-private-error");
+      },
+    },
+  });
+  assert.equal(minimum.failure, "io-error");
+  assert.ok(Buffer.byteLength(canonical(minimum)) <= 512);
+});
+
+test("post-slice link diagnostic denies root aliases and changed directory identities", async (t) => {
+  const root = await scratch(t),
+    alias = path.join(root, "alias"),
+    target = path.join(root, "target");
+  await mkdir(target);
+  await symlink(
+    target,
+    alias,
+    process.platform === "win32" ? "junction" : "dir",
+  );
+  assert.equal(
+    (await generatedLinkInventory(alias)).failure,
+    "root-link-or-type",
+  );
+  let opened = false;
+  const changed = await generatedLinkInventory(target, {
+    io: {
+      opendir: async (...args) => {
+        const { opendir } = await import("node:fs/promises");
+        const dir = await opendir(...args);
+        opened = true;
+        return dir;
+      },
+      lstat: async (file) => {
+        const value = await lstat(file);
+        if (opened && file === target)
+          Object.defineProperty(value, "ino", {
+            value: value.ino === 0 ? 1 : 0,
+          });
+        return value;
+      },
+    },
+  });
+  assert.equal(changed.failure, "directory-changed");
 });
 
 const LINUX_GCS_SUM =

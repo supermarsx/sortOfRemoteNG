@@ -38,6 +38,7 @@ import {
   validateIdentity,
   graphInventory,
   graphInventoryRecord,
+  persistGeneratedLinkInventory,
   afterGnPhase,
   checkpointPhase,
   checkpointLog,
@@ -492,6 +493,15 @@ export async function main(argv = process.argv.slice(2), env = process.env) {
               );
               fail(available >= required, "Full checkpoint output capacity");
             });
+            // Private evidence only; never changes the strict pack recipe/result.
+            const linkDiagnostic = await persistGeneratedLinkInventory(
+              out,
+              context.logs,
+            );
+            checkpointLog(
+              console.log,
+              `[cef-engineering-checkpoint] checkpoint link-diagnostic=${canonical(linkDiagnostic)}`,
+            );
             const archive = await withVerifiedGraph(
               out,
               identity.graph,
