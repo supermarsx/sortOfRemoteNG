@@ -1147,6 +1147,7 @@ export async function afterGnPhase(phase, operation, log = console.log) {
 const SDK_REASONS = new Set([
   "filesystem",
   "probe-command",
+  "probe-target",
   "absolute-roots",
   "sdk-containment",
   "sdk-name",
@@ -1175,11 +1176,23 @@ export function sdkLayoutRecord(value) {
     "rawAlias",
     "canonical",
     "physicalMatch",
+    "basenameKnown",
   ])
     if (typeof value[key] === "boolean") result[key] = value[key];
   if (Number.isInteger(value.count) && value.count >= 0 && value.count <= 4)
     result.count = value.count;
+  for (const key of ["reportedSdkVersion", "expectedSdkVersion"])
+    if (
+      typeof value[key] === "string" &&
+      value[key].length <= 16 &&
+      /^[0-9]+(?:\.[0-9]+){0,2}$/.test(value[key])
+    )
+      result[key] = value[key];
   return result;
+}
+function sdkBasenameVersion(name) {
+  const match = /^MacOSX([0-9]+(?:\.[0-9]+){0,2})\.sdk$/.exec(name);
+  return match && match[1].length <= 16 ? match[1] : undefined;
 }
 export function logSdkLayout(value, log = console.log) {
   log(
@@ -1255,6 +1268,43 @@ export async function selectedSdkPreflight(
       observe({ reason: "probe-command", role, ok: true });
       if (index === 2)
         raw = path.join(raw, "Toolchains", "XcodeDefault.xctoolchain");
+      const expectedRaw = [
+        selected.SDKROOT,
+        path.join(selected.DEVELOPER_DIR, "Platforms", "MacOSX.platform"),
+        path.join(
+          selected.DEVELOPER_DIR,
+          "Toolchains",
+          "XcodeDefault.xctoolchain",
+        ),
+      ][index];
+      const expected = expectedTargets?.[index];
+      let physicalMatch = false;
+      try {
+        physicalMatch = (await realpath(raw)) === expected;
+      } catch {
+        /* Observation only; the strict normalizer still rejects missing/foreign targets. */
+      }
+      observe({
+        reason: "probe-target",
+        role,
+        rawAlias: raw === expectedRaw,
+        canonical: raw === expected,
+        physicalMatch,
+        basenameKnown: [
+          path.basename(expectedRaw),
+          ...(typeof expected === "string" ? [path.basename(expected)] : []),
+        ].includes(path.basename(raw)),
+        ...(index === 0
+          ? {
+              reportedSdkVersion: sdkBasenameVersion(path.basename(raw)),
+              expectedSdkVersion:
+                sdkBasenameVersion(path.basename(expectedRaw)) ??
+                (typeof expected === "string"
+                  ? sdkBasenameVersion(path.basename(expected))
+                  : undefined),
+            }
+          : {}),
+      });
       await symlink(
         raw,
         path.join(directory, path.basename(raw)),

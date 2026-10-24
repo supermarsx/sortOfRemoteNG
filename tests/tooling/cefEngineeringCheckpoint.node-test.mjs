@@ -2141,3 +2141,93 @@ test("SDK diagnostic authority is separate from every producer command and exact
     assert.throws(() => sdkProbeAuthority({ ...probeEnv, ...change }));
   assert.deepEqual(authority(env), producer);
 });
+
+for (const scenario of [
+  "unknown-name-same-physical",
+  "known-name-wrong-physical",
+]) {
+  test(`SDK preflight attributes ${scenario} to the command role before strict rejection`, async (t) => {
+    const f = await sdkLinkFixture(t),
+      records = [];
+    const reported =
+      scenario === "unknown-name-same-physical"
+        ? path.join(path.dirname(f.sdk), "MacOSX99.7.sdk")
+        : path.join(f.root, "foreign-sdk", path.basename(f.sdk));
+    if (scenario === "unknown-name-same-physical")
+      await symlink(f.sdk, reported, f.type);
+    else await mkdir(reported, { recursive: true });
+    let index = 0,
+      acquired = false;
+    await assert.rejects(
+      selectedSdkPreflight(
+        {
+          temp: f.root,
+          selected: {
+            DEVELOPER_DIR: f.options.developerDir,
+            SDKROOT: f.rawSdk,
+            MACOSX_DEPLOYMENT_TARGET: "14.0",
+          },
+          expectedTargets: f.options.expectedTargets,
+          observe: (value) => records.push(sdkLayoutRecord(value)),
+          run: async () => ({
+            stdout:
+              [reported, f.platform, f.options.developerDir][index++] + "\n",
+          }),
+        },
+        async () => {
+          acquired = true;
+        },
+      ),
+    );
+    assert.equal(acquired, false);
+    const sdk = records.find(
+      (row) => row.reason === "probe-target" && row.role === "sdk",
+    );
+    assert.equal(sdk.rawAlias, false);
+    assert.equal(sdk.canonical, false);
+    assert.equal(sdk.physicalMatch, scenario === "unknown-name-same-physical");
+    assert.equal(sdk.basenameKnown, scenario !== "unknown-name-same-physical");
+    if (scenario === "unknown-name-same-physical") {
+      assert.equal(sdk.reportedSdkVersion, "99.7");
+      assert.equal(sdk.expectedSdkVersion, "26.2");
+    }
+    assert(records.some((row) => row.ok === false));
+    assert.equal(JSON.stringify(records).includes(f.root), false);
+    assert.equal(JSON.stringify(records).includes("foreign-sdk"), false);
+  });
+}
+
+test("SDK pre-link diagnostics keep only numeric version components and fixed boolean facts", () => {
+  assert.deepEqual(
+    sdkLayoutRecord({
+      reason: "probe-target",
+      role: "sdk",
+      basenameKnown: true,
+      reportedSdkVersion: "26.2",
+      expectedSdkVersion: "26.2.1",
+      path: "/private-path",
+    }),
+    {
+      reason: "probe-target",
+      role: "sdk",
+      basenameKnown: true,
+      reportedSdkVersion: "26.2",
+      expectedSdkVersion: "26.2.1",
+    },
+  );
+  for (const invalid of [
+    "/Applications/MacOSX26.2.sdk",
+    "secret",
+    "1.2.3.4",
+    "1".repeat(17),
+    "26.2\nsecret",
+  ])
+    assert.equal(
+      sdkLayoutRecord({
+        reason: "probe-target",
+        role: "sdk",
+        reportedSdkVersion: invalid,
+      }).reportedSdkVersion,
+      undefined,
+    );
+});
