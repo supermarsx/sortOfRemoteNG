@@ -276,11 +276,23 @@ pub fn run(pump: &mut impl FnMut() -> Result, root: &[u8]) -> Result<serde_json:
         unsafe { module.symbol(name) }.map_err(|_| "registry ABI export unavailable".into())
     };
     let api = Api {
-        create: unsafe { std::mem::transmute(resolve(c"cef_sorng_tls_create_context_v2")?) },
-        apply: unsafe { std::mem::transmute(resolve(c"cef_sorng_tls_apply_proxy_v2")?) },
-        revoke: unsafe { std::mem::transmute(resolve(c"cef_sorng_tls_revoke_v2")?) },
-        complete: unsafe { std::mem::transmute(resolve(c"cef_sorng_tls_complete_v2")?) },
-        stats: unsafe { std::mem::transmute(resolve(c"cef_sorng_tls_registry_stats_v2")?) },
+        create: unsafe {
+            std::mem::transmute::<*mut c_void, Create>(resolve(c"cef_sorng_tls_create_context_v2")?)
+        },
+        apply: unsafe {
+            std::mem::transmute::<*mut c_void, Operation>(resolve(c"cef_sorng_tls_apply_proxy_v2")?)
+        },
+        revoke: unsafe {
+            std::mem::transmute::<*mut c_void, Revoke>(resolve(c"cef_sorng_tls_revoke_v2")?)
+        },
+        complete: unsafe {
+            std::mem::transmute::<*mut c_void, Complete>(resolve(c"cef_sorng_tls_complete_v2")?)
+        },
+        stats: unsafe {
+            std::mem::transmute::<*mut c_void, GetStats>(resolve(
+                c"cef_sorng_tls_registry_stats_v2",
+            )?)
+        },
     };
     wait(
         pump,

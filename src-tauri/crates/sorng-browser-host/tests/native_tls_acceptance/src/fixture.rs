@@ -212,8 +212,8 @@ async fn serve(
             }else if path=="/manual" || path=="/v3/signin/identifier"{
                 state.initial_cookie_empty=Some(!header.lines().any(|l|l.split_once(':').is_some_and(|(k,v)|k.eq_ignore_ascii_case("cookie")&&!v.trim().is_empty())));
                 (include_str!("page.html").to_owned(),"Set-Cookie: tls_fixture=one; Secure; HttpOnly; SameSite=Strict; Path=/\r\n".to_owned())
-            }else if path==crate::static_document::PATH && state.static_document.is_some(){
-                state.static_document.as_ref().unwrap().lock().unwrap().page_requests+=1;
+            }else if let Some(document)=state.static_document.as_ref().filter(|_| path==crate::static_document::PATH){
+                document.lock().unwrap().page_requests+=1;
                 (crate::static_document::PAGE.to_owned(),String::new())
             }else{(String::new(),String::new())};
             format!("HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=utf-8\r\nCache-Control: no-store\r\nConnection: close\r\nContent-Length: {}\r\n{cookie}\r\n{body}",body.len())

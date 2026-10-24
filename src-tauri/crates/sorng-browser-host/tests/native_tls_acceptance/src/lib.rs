@@ -75,6 +75,13 @@ const CASES: &[&str] = &[
     "successor",
 ];
 
+/// Entry called by the reviewed Windows sandbox bootstrap.
+///
+/// # Safety
+/// The caller must supply the pinned bootstrap's original instance, sandbox and
+/// version pointers before starting services, threads or profile access. They
+/// must remain valid for this call. This entry catches panics at the C boundary;
+/// browser execution must release CEF owners and complete shutdown before return.
 #[cfg(windows)]
 #[no_mangle]
 pub unsafe extern "C" fn RunWinMain(
@@ -1190,7 +1197,9 @@ fn execute(bootstrap: &mut dyn RuntimeBootstrap, paths: &BundlePaths) -> Result 
             }
         };
     }
-    drop(bridge);
+    // No bridge calls follow this point. NativeTlsBridge owns function pointers
+    // and a UI-thread marker, not resources requiring destruction. Keep callback
+    // owners in their existing scopes through actual CEF shutdown below.
     unsafe {
         runtime.shutdown()?;
         cef_tls_bridge::after_cef_shutdown();
