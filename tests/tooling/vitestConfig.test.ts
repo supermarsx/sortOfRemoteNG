@@ -150,9 +150,15 @@ describe("ordinary Vitest discovery", () => {
       step.startsWith("uses: dtolnay/rust-toolchain@"),
     );
     expect(rustSetup).toBeGreaterThanOrEqual(0);
-    expect(steps[rustSetup + 1]?.startsWith(stepName.trim().slice(2))).toBe(
-      true,
+    const runtimeContracts = steps.findIndex((step) =>
+      step.startsWith("name: Runtime package layout and whole-matrix contract"),
     );
+    const nativeContracts = steps.findIndex((step) =>
+      step.startsWith(stepName.trim().slice(2)),
+    );
+    expect(runtimeContracts).toBe(rustSetup + 1);
+    expect(nativeContracts).toBe(runtimeContracts + 1);
+    expect(steps[runtimeContracts]).not.toMatch(/continue-on-error|if:/);
     for (const file of suites) {
       expect(readFileSync(file, "utf8")).toContain('from "node:test"');
     }
