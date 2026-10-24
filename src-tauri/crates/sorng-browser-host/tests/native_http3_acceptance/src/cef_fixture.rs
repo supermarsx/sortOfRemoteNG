@@ -1,7 +1,7 @@
 //! Real CEF/owned-proxy/QUIC fixture. Native-only tests remain independent.
 use crate::{known_check, server::FixtureServer, valid_target, HOST, ORIGIN, OTHER};
 use bytes::Bytes;
-use cef::{CefString, ImplCommandLine};
+use cef::*;
 use sorng_browser_host::{
     bootstrap_platform::{BundlePaths, RuntimeBootstrap},
     cef_browser::{BrowserEvent, BrowserEventSink, CefBrowserHost, NativeDocumentHooks},
@@ -9,7 +9,8 @@ use sorng_browser_host::{
     cef_runtime::{self, CefRuntime},
     cef_tls_bridge::{
         self, NativeTlsBridge, NativeTlsCaMode, NativeTlsCompletion, NativeTlsConfig,
-        NativeTlsDecision, NativeTlsEvidence, NativeTlsHooks, HTTP3_PATCH_ID,
+        NativeTlsDecision, NativeTlsError, NativeTlsEvidence, NativeTlsFailure, NativeTlsHooks,
+        HTTP3_PATCH_ID,
     },
     control::{Lifecycle, ViewportBounds},
     domain_permissions::{WebsitePermissionDecision, WebsitePermissionEngine, WebsiteRequestClass},
@@ -25,8 +26,10 @@ use sorng_protocols::{
     private_forward_proxy::{Authority, BoxedStream, DialFuture, ProxyLimits, RouteDialer},
 };
 use std::{
+    ffi::{c_char, c_void, CStr},
     net::SocketAddr,
     path::PathBuf,
+    ptr,
     sync::{
         atomic::{AtomicBool, AtomicUsize, Ordering},
         Arc, Mutex,
@@ -109,10 +112,18 @@ struct Owner {
     deferred: AtomicUsize,
     before_admission: AtomicUsize,
     minimum_delay: Mutex<Option<u128>>,
+    record_revoke: bool,
+    bridge_key: Mutex<Option<(u64, u64)>>,
+    key_mismatch: AtomicBool,
+    engine_revoked: AtomicBool,
 }
 impl Owner {
-    fn new() -> Self {
+    fn new(record_revoke: bool) -> Self {
         Self {
+            record_revoke,
+            bridge_key: Mutex::new(None),
+            key_mismatch: AtomicBool::new(false),
+            engine_revoked: AtomicBool::new(false),
             current: AtomicBool::new(true),
             pending: Mutex::new(Vec::new()),
             admitted: AtomicUsize::new(0),
@@ -130,6 +141,16 @@ impl Owner {
 }
 impl NativeTlsHooks for Owner {
     fn on_evidence(&self, evidence: NativeTlsEvidence, completion: NativeTlsCompletion) {
+        if self.record_revoke {
+            let mut key = self.bridge_key.lock().unwrap();
+            let incoming = (evidence.context_token, evidence.generation);
+            if key.is_some_and(|old| old != incoming) || incoming.0 == 0 || incoming.1 == 0 {
+                self.key_mismatch.store(true, Ordering::Release);
+                self.current.store(false, Ordering::Release);
+            } else {
+                *key = Some(incoming);
+            }
+        }
         self.pending
             .lock()
             .unwrap()
@@ -140,6 +161,12 @@ impl NativeTlsHooks for Owner {
     }
     fn on_failure(&self) {
         self.current.store(false, Ordering::Release);
+    }
+    fn on_failure_reason(&self, reason: NativeTlsFailure) {
+        if self.record_revoke && reason == NativeTlsFailure::EngineRevoked {
+            self.engine_revoked.store(true, Ordering::Release);
+        }
+        self.on_failure();
     }
 }
 #[derive(Default)]
@@ -235,6 +262,7 @@ fn body(path: &str, index: usize, check: &str) -> (String, &'static str) {
         "index": index,
         "check": check,
         "alternateOrigin": format!("https://{OTHER}"),
+        "probeNonce": if check=="revoke" {revoke_nonce(index).ok()}else{None},
     });
     let script = format!("({})({config});", include_str!("page.js"));
     (
@@ -299,6 +327,206 @@ async fn tcp_origin(
     while tasks.join_next().await.is_some() {}
     Ok(())
 }
+fn revoke_nonce(index: usize) -> Result<String> {
+    let run = std::env::var("SORNG_CEF_ACCEPTANCE_RUN_ID")?;
+    if run.is_empty() || run.len() > 64 || !run.bytes().all(|b| b.is_ascii_hexdigit() || b == b'-')
+    {
+        return Err("revoke nonce invalid".into());
+    }
+    Ok(format!("{run}-{index}"))
+}
+#[derive(Clone, Default)]
+struct ProbeReply {
+    done: bool,
+    valid: bool,
+    attempted: bool,
+    blocked: bool,
+    nonce_matched: bool,
+}
+fn parse_probe_reply(bytes: &[u8], nonce: &str) -> ProbeReply {
+    let mut reply = ProbeReply {
+        done: true,
+        ..Default::default()
+    };
+    if bytes.len() > 2048 {
+        return reply;
+    }
+    let Ok(value) = serde_json::from_slice::<serde_json::Value>(bytes) else {
+        return reply;
+    };
+    if value.get("exceptionDetails").is_some() {
+        return reply;
+    }
+    let Some(value) = value.get("result").and_then(|v| v.get("value")) else {
+        return reply;
+    };
+    reply.nonce_matched = value.get("tag").and_then(|v| v.as_str()) == Some(nonce);
+    reply.attempted = value.get("attempted").and_then(|v| v.as_bool()) == Some(true);
+    reply.blocked = value.get("blocked").and_then(|v| v.as_bool()) == Some(true);
+    reply.valid = reply.nonce_matched && reply.attempted && reply.blocked;
+    reply
+}
+wrap_dev_tools_message_observer! {
+    struct RevokeObserver { expected_browser: i32, expected_frame: String, expected_url: String, message: i32, nonce: String, reply: Arc<Mutex<ProbeReply>> }
+    impl DevToolsMessageObserver {
+        fn on_dev_tools_method_result(&self, browser: Option<&mut Browser>, message_id: i32, success: i32, result: Option<&[u8]>) {
+            if message_id != self.message { return; }
+            let valid_frame = browser.filter(|b|b.identifier()==self.expected_browser && b.is_valid()==1).and_then(|b|b.main_frame())
+                .is_some_and(|f|f.is_valid()==1 && CefString::from(&f.identifier()).to_string()==self.expected_frame && CefString::from(&f.url()).to_string()==self.expected_url);
+            let value = if valid_frame && success==1 { result.map(|v|parse_probe_reply(v,&self.nonce)).unwrap_or(ProbeReply{done:true,..Default::default()}) }
+                else { ProbeReply{done:true,..Default::default()} };
+            if let Ok(mut reply)=self.reply.try_lock() { if !reply.done { *reply=value; } }
+        }
+    }
+}
+struct RevokeProbe {
+    browser: Browser,
+    frame: String,
+    url: String,
+    nonce: String,
+    message: i32,
+    reply: Arc<Mutex<ProbeReply>>,
+    _registration: Registration,
+}
+impl RevokeProbe {
+    fn bind(index: usize) -> Result<Self> {
+        if currently_on(ThreadId::UI) != 1 {
+            return Err("revoke probe wrong thread".into());
+        }
+        let url = format!("{ORIGIN}/bootstrap-{index}");
+        let mut matches = Vec::new();
+        // Registry belongs solely to this isolated fixture process. No other app is inspected.
+        for id in 1..=256 {
+            if let Some(browser) = browser_host_get_browser_by_identifier(id) {
+                if browser.is_valid() == 1
+                    && browser
+                        .main_frame()
+                        .is_some_and(|f| CefString::from(&f.url()).to_string() == url)
+                {
+                    matches.push(browser);
+                }
+            }
+        }
+        if matches.len() != 1 {
+            return Err("revoke probe browser unavailable".into());
+        }
+        let browser = matches.pop().ok_or("revoke probe browser unavailable")?;
+        let frame = browser
+            .main_frame()
+            .ok_or("revoke probe frame unavailable")?;
+        let frame = CefString::from(&frame.identifier()).to_string();
+        let nonce = revoke_nonce(index)?;
+        let message = 900_000 + i32::try_from(index)?;
+        let reply = Arc::new(Mutex::new(ProbeReply::default()));
+        let mut observer = RevokeObserver::new(
+            browser.identifier(),
+            frame.clone(),
+            url.clone(),
+            message,
+            nonce.clone(),
+            reply.clone(),
+        );
+        let registration = browser
+            .host()
+            .ok_or("revoke probe host unavailable")?
+            .add_dev_tools_message_observer(Some(&mut observer))
+            .ok_or("revoke observer unavailable")?;
+        Ok(Self {
+            browser,
+            frame,
+            url,
+            nonce,
+            message,
+            reply,
+            _registration: registration,
+        })
+    }
+    fn submit(&self) -> Result {
+        if currently_on(ThreadId::UI) != 1
+            || self.browser.is_valid() != 1
+            || !self.browser.main_frame().is_some_and(|f| {
+                f.is_valid() == 1
+                    && CefString::from(&f.identifier()).to_string() == self.frame
+                    && CefString::from(&f.url()).to_string() == self.url
+            })
+        {
+            return Err("revoke probe document changed".into());
+        }
+        let mut params = dictionary_value_create().ok_or("revoke parameters unavailable")?;
+        let expression = format!(
+            "globalThis.__ownedH3RevokeProbe({})",
+            serde_json::to_string(&self.nonce)?
+        );
+        if params.set_string(
+            Some(&CefString::from("expression")),
+            Some(&CefString::from(expression.as_str())),
+        ) != 1
+            || params.set_bool(Some(&CefString::from("awaitPromise")), 1) != 1
+            || params.set_bool(Some(&CefString::from("returnByValue")), 1) != 1
+            || params.set_bool(Some(&CefString::from("userGesture")), 0) != 1
+            || params.set_bool(Some(&CefString::from("allowUnsafeEvalBlockedByCSP")), 0) != 1
+        {
+            return Err("revoke parameters rejected".into());
+        }
+        if self
+            .browser
+            .host()
+            .ok_or("revoke host unavailable")?
+            .execute_dev_tools_method(
+                self.message,
+                Some(&CefString::from("Runtime.evaluate")),
+                Some(&mut params),
+            )
+            != self.message
+        {
+            return Err("revoke probe submission rejected".into());
+        }
+        Ok(())
+    }
+}
+fn poll_proxy_stop(session: &Arc<Mutex<OriginBrowserSession>>) -> Result<bool> {
+    // stop() retains its JoinHandle on cancellation. Drop future AND mutex guard
+    // before the next CEF pump: no session lock spans a callback or an await.
+    let mut session = match session.try_lock() {
+        Ok(session) => session,
+        Err(std::sync::TryLockError::WouldBlock) => return Ok(false),
+        Err(std::sync::TryLockError::Poisoned(_)) => {
+            return Err("revoke stop owner poisoned".into())
+        }
+    };
+    let mut stop = Box::pin(session.stop());
+    let mut context = std::task::Context::from_waker(std::task::Waker::noop());
+    let result = std::future::Future::poll(stop.as_mut(), &mut context);
+    drop(stop);
+    drop(session);
+    match result {
+        std::task::Poll::Ready(value) => {
+            value?;
+            Ok(true)
+        }
+        std::task::Poll::Pending => Ok(false),
+    }
+}
+type RevokeNative = unsafe extern "C" fn(u64, u64) -> i32;
+unsafe fn revoke_native_export() -> Result<RevokeNative> {
+    if currently_on(ThreadId::UI) != 1 {
+        return Err("native revoke wrong thread".into());
+    }
+    let anchor = unsafe { cef::sys::cef_api_hash(cef::sys::CEF_API_VERSION_LAST, 2) };
+    let module = unsafe { fixture_loaded_module::Module::from_address(anchor.cast()) }?;
+    let pointer = unsafe { module.symbol(c"cef_sorng_tls_revoke_v2") }?;
+    Ok(unsafe { std::mem::transmute::<*mut c_void, RevokeNative>(pointer) })
+}
+#[derive(Default)]
+struct RevokeTimes {
+    ready: Option<u128>,
+    owner: Option<u128>,
+    bridge: Option<u128>,
+    stopped: Option<u128>,
+    submitted: Option<u128>,
+    replied: Option<u128>,
+}
+
 struct Slot {
     identity: BrowserIdentity,
     session: Arc<Mutex<OriginBrowserSession>>,
@@ -322,6 +550,10 @@ struct Slot {
     revoke_baseline: usize,
     revoke_at: Option<Instant>,
     revoked_navigation_rejected: bool,
+    revoke_probe: Option<RevokeProbe>,
+    revoke_reply: ProbeReply,
+    revoke_stop_complete: bool,
+    revoke_times: RevokeTimes,
 }
 fn create_slot(index: usize, check: &str, runtime: &tokio::runtime::Runtime) -> Result<Slot> {
     let mut params = rcgen::CertificateParams::new(vec![]);
@@ -406,7 +638,7 @@ fn create_slot(index: usize, check: &str, runtime: &tokio::runtime::Runtime) -> 
         context: None,
         host: None,
         sink: Arc::new(Sink(Mutex::new(Observed::default()))),
-        owner: Arc::new(Owner::new()),
+        owner: Arc::new(Owner::new(check == "revoke")),
         route: counters,
         origin,
         leaf,
@@ -423,6 +655,10 @@ fn create_slot(index: usize, check: &str, runtime: &tokio::runtime::Runtime) -> 
         revoke_baseline: 0,
         revoke_at: None,
         revoked_navigation_rejected: false,
+        revoke_probe: None,
+        revoke_reply: ProbeReply::default(),
+        revoke_stop_complete: false,
+        revoke_times: RevokeTimes::default(),
     })
 }
 fn execute(bootstrap: &mut dyn RuntimeBootstrap, paths: &BundlePaths) -> Result {
@@ -486,7 +722,12 @@ fn execute(bootstrap: &mut dyn RuntimeBootstrap, paths: &BundlePaths) -> Result 
         .into_iter()
         .all(|name| line.has_switch(Some(&CefString::from(name))) == 0)
     });
+    let clock_before = Instant::now();
+    let clock_unix_ms = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)?
+        .as_millis();
     let began = Instant::now();
+    let clock_anchor_span_us = began.duration_since(clock_before).as_micros();
     let mut failures = Vec::<String>::new();
     let mut finishing = false;
     let mut phase = "start";
@@ -647,7 +888,84 @@ fn execute(bootstrap: &mut dyn RuntimeBootstrap, paths: &BundlePaths) -> Result 
                         host.navigate(&slot.identity, &format!("{ORIGIN}/bootstrap-{index}"))?;
                         slot.navigated = true;
                     }
-                    if matches!(check.as_str(), "revoke" | "isolation")
+                    if check == "revoke" && !finishing {
+                        let ready = slot.sink.0.lock().unwrap().title
+                            == format!("h3-revoke-ready-{index}")
+                            && slot.origin.observed.requests.load(Ordering::SeqCst) == 1
+                            && slot.origin.observed.completed.load(Ordering::SeqCst) == 1
+                            && slot.origin.observed.active.load(Ordering::SeqCst) == 0
+                            && slot.owner.quic_admitted.load(Ordering::SeqCst) > 0;
+                        if !slot.revoked && ready {
+                            if slot.origin.observed.requests.load(Ordering::SeqCst) != 1
+                                || slot.origin.observed.completed.load(Ordering::SeqCst) != 1
+                                || slot.origin.observed.active.load(Ordering::SeqCst) != 0
+                                || slot.owner.quic_admitted.load(Ordering::SeqCst) == 0
+                            {
+                                return Err("revoke initial owned H3 quiet barrier missing".into());
+                            }
+                            let key = *slot.owner.bridge_key.lock().unwrap();
+                            if slot.owner.key_mismatch.load(Ordering::Acquire) {
+                                return Err("revoke context binding changed".into());
+                            }
+                            let (token, generation) =
+                                key.ok_or("revoke context binding unavailable")?;
+                            slot.revoke_probe = Some(RevokeProbe::bind(index)?);
+                            slot.revoke_times.ready = Some(began.elapsed().as_millis());
+                            slot.revoke_baseline =
+                                slot.origin.observed.requests.load(Ordering::SeqCst);
+                            slot.revoked = true;
+                            slot.revoke_at = Some(Instant::now());
+                            slot.owner.current.store(false, Ordering::Release);
+                            slot.revoke_times.owner = Some(began.elapsed().as_millis());
+                            slot.session.lock().unwrap().revoke(&slot.identity)?;
+                            // No session/state guard survives this synchronous native callback.
+                            let revoke = unsafe { revoke_native_export()? };
+                            if unsafe { revoke(token, generation) } != 1 {
+                                return Err("native revoke rejected".into());
+                            }
+                            slot.revoke_times.bridge = Some(began.elapsed().as_millis());
+                        }
+                        if slot.revoked
+                            && !slot.revoke_stop_complete
+                            && slot.owner.engine_revoked.load(Ordering::Acquire)
+                        {
+                            let entered = asynchronous.enter();
+                            let stopped = poll_proxy_stop(&slot.session)?;
+                            drop(entered);
+                            if stopped && slot.route.active.load(Ordering::SeqCst) == 0 {
+                                slot.revoke_stop_complete = true;
+                                slot.revoke_times.stopped = Some(began.elapsed().as_millis());
+                            }
+                        }
+                        if slot.revoke_stop_complete && slot.revoke_times.submitted.is_none() {
+                            slot.revoke_times.submitted = Some(began.elapsed().as_millis());
+                            slot.revoke_probe
+                                .as_ref()
+                                .ok_or("revoke probe unavailable")?
+                                .submit()?;
+                        }
+                        if slot.revoke_times.submitted.is_some() && !slot.revoke_reply.done {
+                            let reply = slot
+                                .revoke_probe
+                                .as_ref()
+                                .and_then(|probe| probe.reply.try_lock().ok().map(|r| r.clone()));
+                            if let Some(reply) = reply.filter(|reply| reply.done) {
+                                if !reply.valid {
+                                    return Err("revoke actual JS probe proof rejected".into());
+                                }
+                                slot.revoke_reply = reply;
+                                slot.revoke_times.replied = Some(began.elapsed().as_millis());
+                                slot.revoke_probe.take(); // Release observer/browser before normal close.
+                                slot.revoked_navigation_rejected = host
+                                    .navigate(&slot.identity, &format!("{ORIGIN}/after-revoke"))
+                                    .is_err();
+                                if !slot.revoked_navigation_rejected {
+                                    return Err("revoked native navigation admitted".into());
+                                }
+                            }
+                        }
+                    }
+                    if check == "isolation"
                         && !slot.revoked
                         && (check == "revoke" || index == 0)
                         && slot.origin.observed.requests.load(Ordering::SeqCst) > 0
@@ -698,6 +1016,22 @@ fn execute(bootstrap: &mut dyn RuntimeBootstrap, paths: &BundlePaths) -> Result 
             let done = slots.iter().enumerate().all(|(index, slot)| {
                 let state = slot.sink.0.lock().unwrap();
                 if slot.revoked {
+                    if check == "revoke"
+                        && (!slot.revoke_reply.valid
+                            || !slot.revoke_stop_complete
+                            || slot.origin.observed.requests.load(Ordering::SeqCst)
+                                != slot.revoke_baseline
+                            || slot
+                                .origin
+                                .observed
+                                .paths
+                                .lock()
+                                .unwrap()
+                                .iter()
+                                .any(|path| path.contains("/__post-revoke/")))
+                    {
+                        return false;
+                    }
                     return slot
                         .revoke_at
                         .is_some_and(|at| at.elapsed() > Duration::from_millis(750))
@@ -731,6 +1065,7 @@ fn execute(bootstrap: &mut dyn RuntimeBootstrap, paths: &BundlePaths) -> Result 
             }
             if finishing {
                 for slot in &mut slots {
+                    slot.revoke_probe.take();
                     if !slot.close_sent {
                         slot.owner.current.store(false, Ordering::Release);
                         slot.session.lock().unwrap().revoke(&slot.identity)?;
@@ -771,8 +1106,39 @@ fn execute(bootstrap: &mut dyn RuntimeBootstrap, paths: &BundlePaths) -> Result 
             .load(Ordering::SeqCst)
             .saturating_sub(baseline)
     });
-    let rows:Vec<_>=slots.iter().map(|slot| { let state=slot.sink.0.lock().unwrap(); serde_json::json!({"sessionId":slot.identity.session_id(),"proxyApplied":slot.proxy_verified,"datagramsApplied":slot.datagram_verified,"tcpRequests":*slot.tcp_rows.lock().unwrap(),"h3Requests":slot.origin.observed.requests.load(Ordering::SeqCst),"h3Completed":slot.origin.observed.completed.load(Ordering::SeqCst),"h3AssetRequests":slot.origin.observed.asset_requests.load(Ordering::SeqCst),"h3AssetCompleted":slot.origin.observed.asset_completed.load(Ordering::SeqCst),"h3Connections":slot.origin.observed.h3_connections.load(Ordering::SeqCst),"h3Peak":slot.origin.observed.peak.load(Ordering::SeqCst),"h3Paths":*slot.origin.observed.paths.lock().unwrap(),"udpFlowsOpened":slot.route.udp.load(Ordering::SeqCst),"udpSent":slot.route.sent.load(Ordering::SeqCst),"udpReceived":slot.route.received.load(Ordering::SeqCst),"beforeAdmissionHttp3Requests":slot.owner.before_admission.load(Ordering::SeqCst),"admitted":slot.owner.admitted.load(Ordering::SeqCst),"quicAdmitted":slot.owner.quic_admitted.load(Ordering::SeqCst),"quicDenied":slot.owner.quic_denied.load(Ordering::SeqCst),"quicVerified":slot.owner.quic_verified.load(Ordering::SeqCst),"alternateQuicVerified":slot.owner.alternate_quic_verified.load(Ordering::SeqCst),"alternateQuicDenied":slot.owner.alternate_quic_denied.load(Ordering::SeqCst),"alternateUdpFlowsOpened":slot.route.alternate_udp.load(Ordering::SeqCst),"denied":slot.owner.denied.load(Ordering::SeqCst),"deferred":slot.owner.deferred.load(Ordering::SeqCst),"minimumAdmissionDelayMs":*slot.owner.minimum_delay.lock().unwrap(),"revoked":slot.revoked,"revokeBaseline":slot.revoke_baseline,"revokedNavigationRejected":slot.revoked_navigation_rejected,"title":state.title,"errors":state.errors,"diagnostics":slot.session.lock().unwrap().proxy_diagnostics()}) }).collect();
+    if check == "revoke" {
+        for slot in &slots {
+            if !slot.revoke_reply.valid
+                || !slot.revoke_reply.attempted
+                || !slot.revoke_reply.blocked
+                || !slot.revoke_reply.nonce_matched
+                || !slot.revoke_stop_complete
+                || !slot.owner.engine_revoked.load(Ordering::Acquire)
+                || slot.origin.observed.requests.load(Ordering::SeqCst) != slot.revoke_baseline
+                || slot
+                    .origin
+                    .observed
+                    .paths
+                    .lock()
+                    .unwrap()
+                    .iter()
+                    .any(|p| p.contains("/__post-revoke/"))
+            {
+                failures.push(
+                    "Revoke requires actual blocked post-revoke JS probe and unchanged H3 baseline"
+                        .into(),
+                );
+            }
+        }
+    }
+    let rows:Vec<_>=slots.iter().map(|slot| { let state=slot.sink.0.lock().unwrap(); let paths=slot.origin.observed.paths.lock().unwrap().clone(); let probe_matches=paths.iter().filter(|p|p.contains("/__post-revoke/")).count(); let mut row = serde_json::json!({"sessionId":slot.identity.session_id(),"proxyApplied":slot.proxy_verified,"datagramsApplied":slot.datagram_verified,"tcpRequests":*slot.tcp_rows.lock().unwrap(),"h3Requests":slot.origin.observed.requests.load(Ordering::SeqCst),"h3Completed":slot.origin.observed.completed.load(Ordering::SeqCst),"h3AssetRequests":slot.origin.observed.asset_requests.load(Ordering::SeqCst),"h3AssetCompleted":slot.origin.observed.asset_completed.load(Ordering::SeqCst),"h3Connections":slot.origin.observed.h3_connections.load(Ordering::SeqCst),"h3Peak":slot.origin.observed.peak.load(Ordering::SeqCst),"h3Paths":paths,"udpFlowsOpened":slot.route.udp.load(Ordering::SeqCst),"udpSent":slot.route.sent.load(Ordering::SeqCst),"udpReceived":slot.route.received.load(Ordering::SeqCst),"beforeAdmissionHttp3Requests":slot.owner.before_admission.load(Ordering::SeqCst),"admitted":slot.owner.admitted.load(Ordering::SeqCst),"quicAdmitted":slot.owner.quic_admitted.load(Ordering::SeqCst),"quicDenied":slot.owner.quic_denied.load(Ordering::SeqCst),"quicVerified":slot.owner.quic_verified.load(Ordering::SeqCst),"alternateQuicVerified":slot.owner.alternate_quic_verified.load(Ordering::SeqCst),"alternateQuicDenied":slot.owner.alternate_quic_denied.load(Ordering::SeqCst),"alternateUdpFlowsOpened":slot.route.alternate_udp.load(Ordering::SeqCst),"denied":slot.owner.denied.load(Ordering::SeqCst),"deferred":slot.owner.deferred.load(Ordering::SeqCst),"minimumAdmissionDelayMs":*slot.owner.minimum_delay.lock().unwrap(),"revoked":slot.revoked,"revokeBaseline":slot.revoke_baseline,"revokedNavigationRejected":slot.revoked_navigation_rejected,"title":state.title,"errors":state.errors,"diagnostics":slot.session.lock().unwrap().proxy_diagnostics()});
+let extra = serde_json::json!({"revokeInitialH3Ready":slot.revoke_times.ready.is_some(),"revokeNativeTerminalObserved":slot.owner.engine_revoked.load(Ordering::Acquire),"revokeProxyStopComplete":slot.revoke_stop_complete,"revokeProbeAttempted":slot.revoke_reply.attempted,"revokeProbeBlocked":slot.revoke_reply.blocked,"revokeProbeNonceMatched":slot.revoke_reply.nonce_matched,"revokeProbeReplyValid":slot.revoke_reply.valid,"revokeProbeServerMatches":probe_matches,"revokeTimelineMs":{"initialBodyComplete":slot.revoke_times.ready,"ownerRevoked":slot.revoke_times.owner,"nativeRevokeReturned":slot.revoke_times.bridge,"proxyStopCompleted":slot.revoke_times.stopped,"probeSubmitted":slot.revoke_times.submitted,"probeReplyObserved":slot.revoke_times.replied}});
+row.as_object_mut().unwrap().extend(extra.as_object().unwrap().clone());
+row }).collect();
     let mut report = serde_json::json!({"probeKind":"native-owned-http3","runId":run_id,"patchId":bridge.patch_id(),"loadedBridgeVerified":true,"check":check,"ok":false,"clean":clean,"closed":closed,"productionTlsFactory":true,"globalQuicOverride":false,"serverEarlyDataDisabled":true,"serverSessionTicketsDisabled":true,"slots":rows,"failures":failures,"productionReady":false,"shutdownComplete":false});
+    if check == "revoke" {
+        report["revokeClockAnchor"] = serde_json::json!({"nativeBeginUnixMs":clock_unix_ms,"samplingSpanMicros":clock_anchor_span_us,"limitation":"Wall/monotonic sample pair; ordering is native monotonic, not exact cross-clock simultaneity"});
+    }
     report["lateOldCleanup"] = late_old_cleanup.into();
     report["survivorAfterLateOldCleanup"] = serde_json::json!(survivor_after_cleanup);
     if !closed {
@@ -783,6 +1149,7 @@ fn execute(bootstrap: &mut dyn RuntimeBootstrap, paths: &BundlePaths) -> Result 
         std::process::exit(3);
     }
     for slot in &mut slots {
+        slot.revoke_probe.take();
         drop(slot.host.take());
         drop(slot.context.take());
         asynchronous.block_on(slot.session.lock().unwrap().stop())?;
@@ -818,5 +1185,324 @@ fn execute(bootstrap: &mut dyn RuntimeBootstrap, paths: &BundlePaths) -> Result 
         Ok(())
     } else {
         Err("native HTTP3 observations failed".into())
+    }
+}
+
+#[cfg(target_os = "windows")]
+mod fixture_loaded_module {
+    use super::*;
+    #[link(name = "kernel32")]
+    unsafe extern "system" {
+        fn GetModuleHandleExW(flags: u32, address: *const u16, module: *mut *mut c_void) -> i32;
+        fn GetProcAddress(module: *mut c_void, name: *const c_char) -> *mut c_void;
+    }
+    pub struct Module(*mut c_void);
+    impl Module {
+        pub unsafe fn from_address(
+            address: *const c_void,
+        ) -> std::result::Result<Self, NativeTlsError> {
+            let mut module = ptr::null_mut();
+            // FROM_ADDRESS | PIN: already loaded code remains mapped through all
+            // callback/completion lifetimes, including failed shutdown cleanup.
+            if address.is_null()
+                || unsafe { GetModuleHandleExW(4 | 1, address.cast(), &mut module) } == 0
+            {
+                return Err(NativeTlsError::Unavailable);
+            }
+            Ok(Self(module))
+        }
+        pub unsafe fn symbol(
+            &self,
+            name: &CStr,
+        ) -> std::result::Result<*mut c_void, NativeTlsError> {
+            let symbol = unsafe { GetProcAddress(self.0, name.as_ptr()) };
+            if symbol.is_null() || unsafe { Self::from_address(symbol) }?.0 != self.0 {
+                return Err(NativeTlsError::Unavailable);
+            }
+            Ok(symbol)
+        }
+    }
+}
+#[cfg(any(target_os = "linux", target_os = "macos"))]
+mod fixture_loaded_module {
+    use super::*;
+    #[repr(C)]
+    struct DlInfo {
+        name: *const c_char,
+        base: *mut c_void,
+        symbol: *const c_char,
+        address: *mut c_void,
+    }
+    #[cfg_attr(target_os = "linux", link(name = "dl"))]
+    unsafe extern "C" {
+        fn dladdr(address: *const c_void, info: *mut DlInfo) -> i32;
+        fn dlopen(name: *const c_char, flags: i32) -> *mut c_void;
+        fn dlsym(handle: *mut c_void, name: *const c_char) -> *mut c_void;
+    }
+    pub struct Module {
+        handle: *mut c_void,
+        base: *mut c_void,
+    }
+    impl Module {
+        pub unsafe fn from_address(
+            address: *const c_void,
+        ) -> std::result::Result<Self, NativeTlsError> {
+            let mut info: DlInfo = unsafe { std::mem::zeroed() };
+            if address.is_null()
+                || unsafe { dladdr(address, &mut info) } == 0
+                || info.name.is_null()
+            {
+                return Err(NativeTlsError::Unavailable);
+            }
+            #[cfg(target_os = "linux")]
+            const NOLOAD: i32 = 4;
+            #[cfg(target_os = "macos")]
+            const NOLOAD: i32 = 0x10;
+            // No search path/fallback load. Retain this already-loaded image for
+            // process lifetime; never unload code still reachable by callbacks.
+            let handle = unsafe { dlopen(info.name, NOLOAD | 2) };
+            if handle.is_null() {
+                return Err(NativeTlsError::Unavailable);
+            }
+            Ok(Self {
+                handle,
+                base: info.base,
+            })
+        }
+        pub unsafe fn symbol(
+            &self,
+            name: &CStr,
+        ) -> std::result::Result<*mut c_void, NativeTlsError> {
+            let symbol = unsafe { dlsym(self.handle, name.as_ptr()) };
+            let mut info: DlInfo = unsafe { std::mem::zeroed() };
+            if symbol.is_null()
+                || unsafe { dladdr(symbol, &mut info) } == 0
+                || info.base != self.base
+            {
+                return Err(NativeTlsError::Unavailable);
+            }
+            Ok(symbol)
+        }
+    }
+}
+#[cfg(test)]
+mod revoke_probe_tests {
+    use super::*;
+    use cef::rc::{ConvertReturnValue, RcImpl};
+    use cef::sys::{_cef_browser_t, _cef_frame_t, cef_string_userfree_t};
+    fn reply(tag: &str, attempted: bool, blocked: bool) -> Vec<u8> {
+        serde_json::to_vec(&serde_json::json!({"result":{"type":"object","value":{"tag":tag,"attempted":attempted,"blocked":blocked}}})).unwrap()
+    }
+    #[test]
+    fn parser_requires_nonce_actual_attempt_and_rejection_not_missing_or_timeout() {
+        assert!(parse_probe_reply(&reply("owned", true, true), "owned").valid);
+        for bytes in [
+            reply("wrong", true, true),
+            reply("owned", false, true),
+            reply("owned", true, false),
+            b"{}".to_vec(),
+            b"not json".to_vec(),
+            vec![b'x'; 2049],
+        ] {
+            assert!(!parse_probe_reply(&bytes, "owned").valid);
+        }
+        assert!(!ProbeReply::default().done);
+        assert!(!ProbeReply::default().valid);
+        assert!(!parse_probe_reply(br#"{"result":{"value":{"tag":"owned","attempted":true,"blocked":true}},"exceptionDetails":{}}"#,"owned").valid);
+    }
+    fn string(value: &str) -> cef_string_userfree_t {
+        let units: Vec<_> = value.encode_utf16().collect();
+        // Only CEF-owned string allocations cross the generated C ABI.
+        unsafe {
+            let value = cef::sys::cef_string_userfree_utf16_alloc();
+            assert!(!value.is_null());
+            assert_eq!(
+                cef::sys::cef_string_utf16_set(units.as_ptr(), units.len(), value, 1),
+                1
+            );
+            value
+        }
+    }
+    struct FrameData {
+        id: &'static str,
+        url: &'static str,
+    }
+    fn frame(frame_id: &'static str, frame_url: &'static str) -> Frame {
+        extern "C" fn valid(_this: *mut _cef_frame_t) -> i32 {
+            1
+        }
+        extern "C" fn id(this: *mut _cef_frame_t) -> cef_string_userfree_t {
+            string(RcImpl::<_cef_frame_t, FrameData>::get(this).interface.id)
+        }
+        extern "C" fn url(this: *mut _cef_frame_t) -> cef_string_userfree_t {
+            string(RcImpl::<_cef_frame_t, FrameData>::get(this).interface.url)
+        }
+        // Only the slots used by the real observer are installed; RcImpl owns references.
+        let api = _cef_frame_t {
+            is_valid: Some(valid),
+            get_identifier: Some(id),
+            get_url: Some(url),
+            ..unsafe { std::mem::zeroed() }
+        };
+        let raw: *mut _cef_frame_t = RcImpl::new(
+            api,
+            FrameData {
+                id: frame_id,
+                url: frame_url,
+            },
+        )
+        .cast();
+        raw.wrap_result()
+    }
+    struct BrowserData {
+        id: i32,
+        frame: Frame,
+    }
+    fn browser(browser_id: i32, frame: Frame) -> Browser {
+        extern "C" fn valid(_this: *mut _cef_browser_t) -> i32 {
+            1
+        }
+        extern "C" fn id(this: *mut _cef_browser_t) -> i32 {
+            RcImpl::<_cef_browser_t, BrowserData>::get(this)
+                .interface
+                .id
+        }
+        extern "C" fn main(this: *mut _cef_browser_t) -> *mut _cef_frame_t {
+            RcImpl::<_cef_browser_t, BrowserData>::get(this)
+                .interface
+                .frame
+                .clone()
+                .into()
+        }
+        let api = _cef_browser_t {
+            is_valid: Some(valid),
+            get_identifier: Some(id),
+            get_main_frame: Some(main),
+            ..unsafe { std::mem::zeroed() }
+        };
+        let raw: *mut _cef_browser_t = RcImpl::new(
+            api,
+            BrowserData {
+                id: browser_id,
+                frame,
+            },
+        )
+        .cast();
+        raw.wrap_result()
+    }
+    fn observer(state: Arc<Mutex<ProbeReply>>) -> DevToolsMessageObserver {
+        RevokeObserver::new(
+            7,
+            "owned-frame".into(),
+            "https://http3.fixture.test/bootstrap-0".into(),
+            900_000,
+            "owned".into(),
+            state,
+        )
+    }
+    #[test]
+    fn actual_cef_observer_vtable_accepts_only_owned_frame_message_and_probe_result() {
+        let state = Arc::new(Mutex::new(ProbeReply::default()));
+        let o = observer(state.clone());
+        let mut b = browser(
+            7,
+            frame("owned-frame", "https://http3.fixture.test/bootstrap-0"),
+        );
+        o.on_dev_tools_method_result(Some(&mut b), 900_001, 1, Some(&reply("owned", true, true)));
+        assert!(!state.lock().unwrap().done);
+        o.on_dev_tools_method_result(Some(&mut b), 900_000, 1, Some(&reply("owned", true, true)));
+        assert!(state.lock().unwrap().valid);
+    }
+    #[test]
+    fn actual_cef_observer_vtable_rejects_foreign_browser_frame_url_and_errors() {
+        for (id, name, url, success, tag) in [
+            (
+                8,
+                "owned-frame",
+                "https://http3.fixture.test/bootstrap-0",
+                1,
+                "owned",
+            ),
+            (
+                7,
+                "other-frame",
+                "https://http3.fixture.test/bootstrap-0",
+                1,
+                "owned",
+            ),
+            (
+                7,
+                "owned-frame",
+                "https://http3.fixture.test/bootstrap-1",
+                1,
+                "owned",
+            ),
+            (
+                7,
+                "owned-frame",
+                "https://http3.fixture.test/bootstrap-0",
+                0,
+                "owned",
+            ),
+            (
+                7,
+                "owned-frame",
+                "https://http3.fixture.test/bootstrap-0",
+                1,
+                "wrong",
+            ),
+        ] {
+            let state = Arc::new(Mutex::new(ProbeReply::default()));
+            let o = observer(state.clone());
+            let mut b = browser(id, frame(name, url));
+            o.on_dev_tools_method_result(
+                Some(&mut b),
+                900_000,
+                success,
+                Some(&reply(tag, true, true)),
+            );
+            assert!(state.lock().unwrap().done);
+            assert!(!state.lock().unwrap().valid);
+        }
+    }
+    #[test]
+    fn actual_cef_observer_never_blocks_held_diagnostic_mutex_or_manufactures_reply() {
+        let state = Arc::new(Mutex::new(ProbeReply::default()));
+        let o = observer(state.clone());
+        let guard = state.lock().unwrap();
+        o.on_dev_tools_method_result(None, 900_000, 0, None);
+        assert!(!guard.done);
+        drop(guard);
+        assert!(!state.lock().unwrap().valid);
+    }
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn real_proxy_stop_poll_releases_busy_guard_and_remains_cancellation_safe() {
+        let policy = OriginBrowserPolicy::new("fixture", "stop", "stop-poll", ORIGIN).unwrap();
+        let route = Arc::new(Route {
+            address: "127.0.0.1:9".parse().unwrap(),
+            udp: None,
+            counters: Arc::new(RouteCounters::default()),
+        });
+        // Listener only: no connection or upstream dial is made by this test.
+        let session = Arc::new(Mutex::new(
+            OriginBrowserSession::start(policy, route, ProxyLimits::default())
+                .await
+                .unwrap(),
+        ));
+        let guard = session.lock().unwrap();
+        assert!(!poll_proxy_stop(&session).unwrap());
+        drop(guard);
+        tokio::time::timeout(Duration::from_secs(3), async {
+            loop {
+                let done = poll_proxy_stop(&session).unwrap();
+                assert!(session.try_lock().is_ok(), "no guard may survive a poll");
+                if done {
+                    break;
+                }
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .unwrap();
     }
 }

@@ -65,32 +65,39 @@ function pageScript(config) {
 }
 
 const response = (body, ok = true) => ({ ok, text: async () => body });
-function setup(t, { check = "delay", index = 0, route } = {}) {
+function setup(
+  t,
+  { check = "delay", index = 0, route, synchronous = false } = {},
+) {
   const clock = createClock(),
     calls = [],
     document = { title: `bootstrap-${index}` };
   const fetch = (url, options) => {
     const row = { url, options, at: clock.now };
     calls.push(row);
+    if (synchronous) return route(row, clock);
     return Promise.resolve().then(() =>
       route ? route(row, clock) : response(`owned-h3:${url}`),
     );
   };
-  vm.runInNewContext(
+  const context = vm.createContext({
+    document,
+    fetch,
+    setTimeout: clock.setTimeout.bind(clock),
+    clearTimeout: clock.clearTimeout.bind(clock),
+    setInterval: clock.setInterval.bind(clock),
+    performance: { now: () => clock.now },
+    AbortController,
+  });
+  const probeNonce = `01234567-89ab-cdef-0123-456789abcdef-${index}`;
+  vm.runInContext(
     pageScript({
       index,
       check,
       alternateOrigin: "https://alternate-http3.fixture.test",
+      probeNonce,
     }),
-    {
-      document,
-      fetch,
-      setTimeout: clock.setTimeout.bind(clock),
-      clearTimeout: clock.clearTimeout.bind(clock),
-      setInterval: clock.setInterval.bind(clock),
-      performance: { now: () => clock.now },
-      AbortController,
-    },
+    context,
     { timeout: 1000 },
   );
   t.after(() => clock.reset());
@@ -98,10 +105,119 @@ function setup(t, { check = "delay", index = 0, route } = {}) {
     clock,
     calls,
     document,
+    probeNonce,
+    probe: (nonce = probeNonce) =>
+      vm.runInContext(
+        `globalThis.__ownedH3RevokeProbe(${JSON.stringify(nonce)})`,
+        context,
+      ),
     assets: () => calls.filter((row) => /^\/asset\/[0-9]+$/.test(row.url)),
     warmups: () => calls.filter((row) => row.url === "/warmup"),
   };
 }
+
+test("revoke waits for full owned H3 response without queuing the old32-request race", async (t) => {
+  let release;
+  const h = setup(t, {
+    check: "revoke",
+    route: () => ({
+      ok: true,
+      text: () =>
+        new Promise((resolve) => {
+          release = resolve;
+        }),
+    }),
+  });
+  await h.clock.tickAsync(750);
+  assert.equal(h.assets().length, 1);
+  assert.equal(h.document.title, "bootstrap-0");
+  assert.equal((await h.probe()).attempted, false);
+  release("owned-h3:/asset/0");
+  await h.clock.tickAsync(0);
+  assert.equal(h.document.title, "h3-revoke-ready-0");
+  assert.equal(h.assets().length, 1);
+});
+
+test("revoke credits one actual H3 body after sequential TCP fallback, then issues one rejected unique probe", async (t) => {
+  let initial = 0;
+  const h = setup(t, {
+    check: "revoke",
+    route: (row) => {
+      if (row.url === "/asset/0")
+        return response(
+          ++initial === 1 ? "owned-tcp:/asset/0" : "owned-h3:/asset/0",
+        );
+      return Promise.reject(new Error("transport revoked"));
+    },
+  });
+  await h.clock.tickAsync(750);
+  assert.equal(h.document.title, "h3-revoke-ready-0");
+  assert.equal(h.assets().length, 2);
+  assert.equal(h.calls.length, 2);
+  assert.equal((await h.probe("wrong-nonce")).attempted, false);
+  assert.equal(h.calls.length, 2);
+  const result = await h.probe();
+  assert.equal(result.attempted, true);
+  assert.equal(result.blocked, true);
+  assert.equal(result.tag, h.probeNonce);
+  assert.equal(h.calls.at(-1).url, `/__post-revoke/${h.probeNonce}`);
+  assert.equal(h.calls.at(-1).options.cache, "no-store");
+  assert.equal(h.calls.at(-1).options.redirect, "error");
+  assert.equal((await h.probe()).attempted, false);
+  assert.equal(h.calls.length, 3);
+});
+
+test("revoke never arms on permanent TCP or wrong-path H3 bodies", async (t) => {
+  for (const body of ["owned-tcp:/asset/0", "owned-h3:/asset/other"]) {
+    const h = setup(t, { check: "revoke", route: () => response(body) });
+    await h.clock.tickAsync(12000);
+    assert.equal(h.assets().length, 8);
+    assert.equal(h.document.title, "request-rejected-0");
+    assert.equal((await h.probe()).attempted, false);
+    assert.equal(h.calls.length, 8);
+  }
+});
+
+test("a delivered post-revoke response is not a blocked probe", async (t) => {
+  const h = setup(t, { check: "revoke" });
+  await h.clock.tickAsync(750);
+  const result = await h.probe();
+  assert.equal(result.attempted, true);
+  assert.equal(result.blocked, false);
+});
+
+test("synchronous fetch failure is not an actually issued blocked probe", async (t) => {
+  const h = setup(t, {
+    check: "revoke",
+    synchronous: true,
+    route: (row) => {
+      if (row.url === "/asset/0") return response("owned-h3:/asset/0");
+      throw new Error("synchronous error");
+    },
+  });
+  await h.clock.tickAsync(750);
+  const result = await h.probe();
+  assert.equal(result.attempted, false);
+  assert.equal(result.blocked, false);
+});
+
+test("unresolved post-revoke probe stays unproven, never a timeout-as-blocked result", async (t) => {
+  const h = setup(t, {
+    check: "revoke",
+    route: (row) =>
+      row.url === "/asset/0"
+        ? response("owned-h3:/asset/0")
+        : new Promise(() => {}),
+  });
+  await h.clock.tickAsync(750);
+  let done = false;
+  h.probe().then(() => {
+    done = true;
+  });
+  await h.clock.tickAsync(35000);
+  assert.equal(done, false);
+  assert.equal(h.calls.length, 2);
+});
 
 test("delay starts measured assets only after a genuine H3 warmup follows the cold proxied H2 race", async (t) => {
   let admitted = false,
@@ -219,7 +335,6 @@ test("a successful warmup never credits a subsequent TCP asset as H3", async (t)
 for (const check of [
   "multiplex",
   "deny",
-  "revoke",
   "isolation",
   "cross-authority",
   "h2-fallback",
