@@ -76,6 +76,8 @@ import {
   checkpointCompileArguments,
   sdkNames,
   linuxArmRecipe,
+  linuxArmGcsDeclaration,
+  linuxArmGcsArchive,
   assertNoGeneratedLinks,
 } from "../../scripts/lib/cef-engineering-checkpoint.mjs";
 import {
@@ -3256,49 +3258,13 @@ test("ARM checkpoint and SDK proofs cannot be rebound to Intel or another ARM ta
   assert.throws(() => validateSeal(seal, producer, target), /release mismatch/);
 });
 
-test("Linux ARM admits only the exact installed sysroot marker and x64 gperf, with no generated links", async (t) => {
+test("Linux generated links remain denied independently of first-class transport", async (t) => {
   const root = await scratch(t),
-    out = path.join(root, "out");
-  const sysroot = path.join(root, "build/linux/debian_bullseye_arm64-sysroot");
+    out = path.join(root, "out"),
+    foreign = path.join(root, "foreign");
   await mkdir(out);
-  await mkdir(path.join(root, "build/linux/sysroot_scripts"), {
-    recursive: true,
-  });
-  await mkdir(sysroot);
-  await mkdir(path.join(root, "third_party/gperf/cipd/bin"), {
-    recursive: true,
-  });
-  const sum =
-    "c7176a4c7aacbf46bda58a029f39f79a68008d3dee6518f154dcf5161a5486d8";
-  const url = "https://commondatastorage.googleapis.com/chrome-linux-sysroot";
-  await writeFile(
-    path.join(root, "build/linux/sysroot_scripts/sysroots.json"),
-    JSON.stringify({
-      bullseye_arm64: {
-        Sha256Sum: sum,
-        URL: url,
-        SysrootDir: path.basename(sysroot),
-      },
-    }),
-  );
-  await writeFile(
-    path.join(root, "DEPS"),
-    "infra/3pp/tools/gperf/${{platform}} version:3@3.2",
-  );
-  await writeFile(
-    path.join(root, "third_party/gperf/cipd/bin/gperf"),
-    "synthetic pinned host executable",
-  );
-  await writeFile(path.join(sysroot, ".stamp"), `${url}/${sum}`);
-  const recipe = await linuxArmRecipe(root, out);
-  assert.equal(recipe.sysrootSha256, sum);
-  assert.equal(recipe.gperfPackage, "infra/3pp/tools/gperf/linux-amd64");
-  assert.deepEqual(recipe.generatedLinks, {});
-  await writeFile(path.join(sysroot, ".stamp"), `${url}/wrong`);
-  await assert.rejects(linuxArmRecipe(root, out), /installation missing/);
-  const target = path.join(root, "foreign");
-  await mkdir(target);
-  await symlink(target, path.join(out, "unexpected-sdk"), "junction");
+  await mkdir(foreign);
+  await symlink(foreign, path.join(out, "unexpected-sdk"), "junction");
   await assert.rejects(assertNoGeneratedLinks(out), /generated link/);
 });
 
@@ -3685,4 +3651,227 @@ test("production CLI wires each post-slice boundary and pack failure observer wi
   assert.match(compile, /observeFailure:/);
   assert.match(compile, /LIMITS\.compressed \+ 2 \* 1024 \*\* 3/);
   assert.match(compile, /withVerifiedGraph\(out, identity\.graph/);
+});
+
+const LINUX_GCS_SUM =
+  "c7176a4c7aacbf46bda58a029f39f79a68008d3dee6518f154dcf5161a5486d8";
+const LINUX_GCS_DECLARATION = `  'src/build/linux/debian_bullseye_arm64-sysroot': {
+    'bucket': 'chrome-linux-sysroot',
+    'condition': 'checkout_linux and checkout_arm64 and non_git_source',
+    'dep_type': 'gcs',
+    'objects': [
+      {
+        'generation': 1770327978874031,
+        'object_name': '${LINUX_GCS_SUM}',
+        'sha256sum': '${LINUX_GCS_SUM}',
+        'size_bytes': 18420984,
+      },
+    ],
+  },`;
+async function linuxGcsFixture(t, archive) {
+  const root = await scratch(t),
+    out = path.join(root, "out"),
+    sysroot = path.join(root, "build/linux/debian_bullseye_arm64-sysroot");
+  await mkdir(out);
+  await mkdir(path.join(root, "build/linux/sysroot_scripts"), {
+    recursive: true,
+  });
+  await mkdir(sysroot);
+  await mkdir(path.join(root, "third_party/gperf/cipd/bin"), {
+    recursive: true,
+  });
+  const metadata = {
+    bullseye_arm64: {
+      Sha256Sum: LINUX_GCS_SUM,
+      SysrootDir: path.basename(sysroot),
+      URL: "https://commondatastorage.googleapis.com/chrome-linux-sysroot",
+      Tarball: "debian_bullseye_arm64_sysroot.tar.xz",
+    },
+  };
+  await writeFile(
+    path.join(root, "build/linux/sysroot_scripts/sysroots.json"),
+    JSON.stringify(metadata),
+  );
+  await writeFile(
+    path.join(root, "DEPS"),
+    LINUX_GCS_DECLARATION +
+      "\ninfra/3pp/tools/gperf/${{platform}} version:3@3.2\n",
+  );
+  await writeFile(
+    path.join(sysroot, `.${LINUX_GCS_SUM}_hash`),
+    LINUX_GCS_SUM + "\n",
+  );
+  await writeFile(
+    path.join(sysroot, `.${LINUX_GCS_SUM}_is_first_class_gcs`),
+    "1\n",
+  );
+  await writeFile(
+    path.join(root, "third_party/gperf/cipd/bin/gperf"),
+    "synthetic host tool observation; never executed",
+  );
+  if (archive)
+    await cp(archive, path.join(sysroot, `.${LINUX_GCS_SUM}`), {
+      errorOnExist: true,
+      force: false,
+    });
+  return { root, out, sysroot, metadata };
+}
+test(
+  "Linux ARM actual reviewed first-class archive is admitted without a legacy stamp",
+  { skip: !process.env.CEF_TEST_REVIEWED_SYSROOT_ARCHIVE },
+  async (t) => {
+    const { root, out, sysroot } = await linuxGcsFixture(
+      t,
+      process.env.CEF_TEST_REVIEWED_SYSROOT_ARCHIVE,
+    );
+    const recipe = await linuxArmRecipe(root, out);
+    assert.equal(recipe.sysrootSha256, LINUX_GCS_SUM);
+    assert.equal(recipe.sysrootTransport, "first-class-gcs");
+    assert.equal(recipe.sysrootArchive.bytes, 18420984);
+    assert.equal(recipe.sysrootArchive.sha256, LINUX_GCS_SUM);
+    assert.deepEqual(recipe.generatedLinks, {});
+    const gperf = path.join(root, "third_party/gperf/cipd/bin/gperf");
+    await unlink(gperf);
+    await assert.rejects(
+      linuxArmRecipe(root, out),
+      (e) => e.code === "ENOENT" && e.linuxDependencyRole === "gperf",
+    );
+    await writeFile(gperf, "synthetic host tool; not executed");
+    const archive = await open(path.join(sysroot, `.${LINUX_GCS_SUM}`), "r+");
+    try {
+      await archive.write(Buffer.from("!"), 0, 1, 0);
+    } finally {
+      await archive.close();
+    }
+    await assert.rejects(
+      linuxArmRecipe(root, out),
+      (e) =>
+        e.linuxDependencyRole === "gcs-archive" &&
+        /archive pin/.test(e.message),
+    );
+  },
+);
+
+test("Linux ARM pure first-class contract accepts simulated exact observations and rejects changed source or pins", async (t) => {
+  const { root, metadata } = await linuxGcsFixture(t),
+    deps = await readFile(path.join(root, "DEPS"), "utf8");
+  assert.equal(linuxArmGcsDeclaration(metadata, deps).sha256, LINUX_GCS_SUM);
+  const simulated = {
+    name: `.${LINUX_GCS_SUM}`,
+    bytes: 18420984,
+    sha256: LINUX_GCS_SUM,
+  };
+  assert.deepEqual(linuxArmGcsArchive(simulated), simulated); // Simulated metadata, no claim of a real archive.
+  for (const mutate of [
+    (m) => (m.bullseye_arm64.Sha256Sum = "0".repeat(64)),
+    (m) => (m.bullseye_arm64.SysrootDir = "host-libc"),
+    (m) => (m.bullseye_arm64.URL = "https://private.invalid"),
+    (m) => (m.bullseye_arm64.Tarball = "different.tar"),
+  ]) {
+    const m = structuredClone(metadata);
+    mutate(m);
+    assert.throws(() => linuxArmGcsDeclaration(m, deps), /sysroot recipe/);
+  }
+  for (const bad of [
+    deps.replace("1770327978874031", "1770327978874032"),
+    deps.replace("18420984", "18420985"),
+    deps.replace("'chrome-linux-sysroot'", "'host-libc'"),
+    deps.replace(
+      "checkout_linux and checkout_arm64 and non_git_source",
+      "checkout_linux",
+    ),
+    deps.replaceAll(LINUX_GCS_SUM, "0".repeat(64)),
+    deps + "\n" + LINUX_GCS_DECLARATION,
+  ])
+    assert.throws(
+      () => linuxArmGcsDeclaration(metadata, bad),
+      /first-class GCS/,
+    );
+  for (const bad of [
+    { ...simulated, bytes: 18420985 },
+    { ...simulated, sha256: "0".repeat(64) },
+    { ...simulated, name: ".different" },
+  ])
+    assert.throws(() => linuxArmGcsArchive(bad), /archive pin/);
+});
+test("Linux ARM actual filesystem evidence denies missing/changed/link markers and never falls back to legacy stamp", async (t) => {
+  const { root, out, sysroot } = await linuxGcsFixture(t),
+    hashFile = path.join(sysroot, `.${LINUX_GCS_SUM}_hash`),
+    toggle = path.join(sysroot, `.${LINUX_GCS_SUM}_is_first_class_gcs`);
+  // All real marker reads pass, but no archive exists. No simulated production reader.
+  await assert.rejects(
+    linuxArmRecipe(root, out),
+    (e) => e.code === "ENOENT" && e.linuxDependencyRole === "gcs-archive",
+  );
+  await unlink(hashFile);
+  await writeFile(
+    path.join(sysroot, ".stamp"),
+    `https://commondatastorage.googleapis.com/chrome-linux-sysroot/${LINUX_GCS_SUM}`,
+  );
+  await assert.rejects(
+    linuxArmRecipe(root, out),
+    (e) => e.code === "ENOENT" && e.linuxDependencyRole === "gcs-hash-marker",
+  );
+  for (const value of [LINUX_GCS_SUM, LINUX_GCS_SUM + "\r\n", "wrong\n"]) {
+    await writeFile(hashFile, value);
+    await assert.rejects(
+      linuxArmRecipe(root, out),
+      (e) => e.linuxDependencyRole === "gcs-hash-marker",
+    );
+  }
+  await writeFile(hashFile, LINUX_GCS_SUM + "\n");
+  for (const value of ["0\n", "1", "1\r\n"]) {
+    await writeFile(toggle, value);
+    await assert.rejects(
+      linuxArmRecipe(root, out),
+      (e) => e.linuxDependencyRole === "gcs-toggle",
+    );
+  }
+  await writeFile(toggle, "1\n");
+  await unlink(hashFile);
+  const foreign = path.join(root, "foreign-marker");
+  if (process.platform === "win32") await mkdir(foreign);
+  else await writeFile(foreign, LINUX_GCS_SUM + "\n");
+  await symlink(
+    foreign,
+    hashFile,
+    process.platform === "win32" ? "junction" : "file",
+  );
+  await assert.rejects(
+    linuxArmRecipe(root, out),
+    (e) => e.linuxDependencyRole === "gcs-hash-marker",
+  );
+});
+test("Linux dependency role diagnostics are fixed and never emit paths, messages, or unrecognized roles", async () => {
+  for (const role of [
+    "gcs-hash-marker",
+    "gcs-archive",
+    "private/token https://secret.invalid",
+  ]) {
+    const lines = [];
+    const error = Object.assign(new Error("secret credential /home/private"), {
+      code: "ENOENT",
+      linuxDependencyRole: role,
+    });
+    await assert.rejects(
+      afterGnPhase(
+        "sdk-roots",
+        () => {
+          throw error;
+        },
+        (line) => lines.push(line),
+      ),
+      (e) => e === error,
+    );
+    assert.equal(lines.length, role.startsWith("gcs-") ? 3 : 2);
+    if (role.startsWith("gcs-"))
+      assert.equal(
+        lines[2],
+        `[cef-engineering-checkpoint] linux-dependency role=${role}`,
+      );
+    assert.doesNotMatch(
+      lines.join("\n"),
+      /secret|credential|private|https:|home/,
+    );
+  }
 });

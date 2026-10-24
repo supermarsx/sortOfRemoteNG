@@ -374,8 +374,91 @@ export async function filePin(file, maximum) {
   };
 }
 
-// Linux ARM uses the existing x64-host gclient hooks. Admit only the pinned
-// ARM sysroot marker and host gperf installation; never substitute host libc.
+// First-class GCS writes these markers after verifying and extracting the archive.
+// This profile never invokes the legacy install-sysroot.py/.stamp route.
+const LINUX_ARM_GCS = Object.freeze({
+  sha256: "c7176a4c7aacbf46bda58a029f39f79a68008d3dee6518f154dcf5161a5486d8",
+  bytes: 18420984,
+  generation: 1770327978874031,
+  directory: "debian_bullseye_arm64-sysroot",
+  url: "https://commondatastorage.googleapis.com/chrome-linux-sysroot",
+});
+const LINUX_DEPENDENCY_ROLES = new Set([
+  "sysroots-json",
+  "deps-recipe",
+  "sysroot-dir",
+  "gcs-archive",
+  "gcs-hash-marker",
+  "gcs-toggle",
+  "gperf",
+  "generated-links",
+]);
+async function linuxDependency(role, operation) {
+  try {
+    return await operation();
+  } catch (error) {
+    if (error instanceof Error) {
+      error.linuxDependencyRole = role;
+      throw error;
+    }
+    throw Object.assign(new Error("Linux dependency check failed"), {
+      linuxDependencyRole: role,
+    });
+  }
+}
+// Pure contract validators allow portable simulated observations in tests.
+// The production recipe below always reads/hashes actual files; no caller adapter.
+export function linuxArmGcsDeclaration(sysroots, deps) {
+  const p = LINUX_ARM_GCS,
+    root = sysroots?.bullseye_arm64;
+  assert(
+    root?.Sha256Sum === p.sha256 &&
+      root.SysrootDir === p.directory &&
+      root.URL === p.url &&
+      root.Tarball === "debian_bullseye_arm64_sysroot.tar.xz",
+    "Unreviewed Linux ARM sysroot recipe",
+  );
+  const declaration = `  'src/build/linux/debian_bullseye_arm64-sysroot': {
+    'bucket': 'chrome-linux-sysroot',
+    'condition': 'checkout_linux and checkout_arm64 and non_git_source',
+    'dep_type': 'gcs',
+    'objects': [
+      {
+        'generation': 1770327978874031,
+        'object_name': '${p.sha256}',
+        'sha256sum': '${p.sha256}',
+        'size_bytes': 18420984,
+      },
+    ],
+  },`;
+  const blocks = [
+    ...deps
+      .replaceAll("\r\n", "\n")
+      .matchAll(
+        /^  'src\/build\/linux\/debian_bullseye_arm64-sysroot': \{[\s\S]*?^  \},/gm,
+      ),
+  ];
+  const escape = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const tokens = declaration.match(/'[^'\n]*'|[0-9]+|[{}:[\],]/g);
+  assert(
+    blocks.length === 1 &&
+      new RegExp("^\\s*" + tokens.map(escape).join("\\s*") + "\\s*$").test(
+        blocks[0][0],
+      ),
+    "Unreviewed Linux ARM first-class GCS dependency",
+  );
+  return p;
+}
+export function linuxArmGcsArchive(archive) {
+  const p = LINUX_ARM_GCS;
+  assert(
+    archive?.name === `.${p.sha256}` &&
+      archive.bytes === p.bytes &&
+      archive.sha256 === p.sha256,
+    "Linux ARM sysroot archive pin changed",
+  );
+  return archive;
+}
 export async function linuxArmRecipe(chromium, out) {
   const readRecipe = async (file, maximum) => {
     const before = await filePin(file, maximum),
@@ -386,45 +469,71 @@ export async function linuxArmRecipe(chromium, out) {
     );
     return bytes.toString("utf8");
   };
-  const sysroots = JSON.parse(
-    await readRecipe(
-      path.join(chromium, "build/linux/sysroot_scripts/sysroots.json"),
-      1024 ** 2,
+  const sysroots = await linuxDependency("sysroots-json", async () =>
+    JSON.parse(
+      await readRecipe(
+        path.join(chromium, "build/linux/sysroot_scripts/sysroots.json"),
+        1024 ** 2,
+      ),
     ),
   );
-  const expected =
-    "c7176a4c7aacbf46bda58a029f39f79a68008d3dee6518f154dcf5161a5486d8";
-  const root = sysroots.bullseye_arm64;
-  assert(
-    root?.Sha256Sum === expected &&
-      root.SysrootDir === "debian_bullseye_arm64-sysroot" &&
-      root.URL ===
-        "https://commondatastorage.googleapis.com/chrome-linux-sysroot",
-    "Unreviewed Linux ARM sysroot recipe",
+  const deps = await linuxDependency("deps-recipe", () =>
+    readRecipe(path.join(chromium, "DEPS"), 2 * 1024 ** 2),
   );
-  const sysroot = await noLinks(
-    path.join(chromium, "build/linux", root.SysrootDir),
+  const p = await linuxDependency("deps-recipe", () =>
+    linuxArmGcsDeclaration(sysroots, deps),
   );
-  assert(
-    (await readRecipe(path.join(sysroot, ".stamp"), 4096)).trim() ===
-      `${root.URL}/${expected}`,
-    "Linux ARM sysroot installation missing",
+  const sysroot = await linuxDependency("sysroot-dir", async () => {
+    const location = await noLinks(
+      path.join(chromium, "build/linux", p.directory),
+    );
+    assert(
+      (await stat(location)).isDirectory(),
+      "Linux ARM sysroot directory missing",
+    );
+    return location;
+  });
+  const hashMarker = await linuxDependency("gcs-hash-marker", async () => {
+    const value = await readRecipe(
+      path.join(sysroot, `.${p.sha256}_hash`),
+      4096,
+    );
+    assert(value === p.sha256 + "\n", "Linux ARM GCS hash marker changed");
+    return value;
+  });
+  const toggle = await linuxDependency("gcs-toggle", async () => {
+    const value = await readRecipe(
+      path.join(sysroot, `.${p.sha256}_is_first_class_gcs`),
+      4096,
+    );
+    assert(value === "1\n", "Linux ARM GCS migration marker changed");
+    return value;
+  });
+  const archive = await linuxDependency("gcs-archive", async () =>
+    linuxArmGcsArchive(
+      await filePin(path.join(sysroot, `.${p.sha256}`), 32 * 1024 ** 2),
+    ),
   );
-  const deps = await readRecipe(path.join(chromium, "DEPS"), 2 * 1024 ** 2);
-  assert(
-    deps.includes("infra/3pp/tools/gperf/${{platform}}") &&
-      deps.includes("version:3@3.2"),
-    "Unreviewed Linux host gperf recipe",
-  );
-  const gperf = await filePin(
-    path.join(chromium, "third_party/gperf/cipd/bin/gperf"),
-    16 * 1024 ** 2,
-  );
-  // noLinks checks every descendant below: Linux has no admitted generated
-  // SDK aliases. Any real GN layout differing from this contract must stop.
-  await assertNoGeneratedLinks(out);
+  const gperf = await linuxDependency("gperf", async () => {
+    assert(
+      deps.includes("infra/3pp/tools/gperf/${{platform}}") &&
+        deps.includes("version:3@3.2"),
+      "Unreviewed Linux host gperf recipe",
+    );
+    return await filePin(
+      path.join(chromium, "third_party/gperf/cipd/bin/gperf"),
+      16 * 1024 ** 2,
+    );
+  });
+  // Generated Linux aliases remain forbidden, irrespective of sysroot transport.
+  await linuxDependency("generated-links", () => assertNoGeneratedLinks(out));
   return {
-    sysrootSha256: expected,
+    sysrootSha256: p.sha256,
+    sysrootTransport: "first-class-gcs",
+    sysrootGeneration: p.generation,
+    sysrootArchive: archive,
+    sysrootHashMarkerSha256: sha(Buffer.from(hashMarker)),
+    sysrootMigrationMarkerSha256: sha(Buffer.from(toggle)),
     gperfPackage: "infra/3pp/tools/gperf/linux-amd64",
     gperfVersion: "version:3@3.2",
     gperf,
@@ -1432,6 +1541,13 @@ export async function afterGnPhase(phase, operation, log = console.log) {
     log(
       `[cef-engineering-checkpoint] after-gn failed phase=${phase} code=${code}`,
     );
+    if (
+      phase === "sdk-roots" &&
+      LINUX_DEPENDENCY_ROLES.has(error?.linuxDependencyRole)
+    )
+      log(
+        `[cef-engineering-checkpoint] linux-dependency role=${error.linuxDependencyRole}`,
+      );
     const counts = error?.graphCounts;
     if (
       phase === "graph-inventory" &&
