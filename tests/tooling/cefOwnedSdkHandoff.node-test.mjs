@@ -368,7 +368,8 @@ async function put(base, name, bytes) {
   await mkdir(path.dirname(file), { recursive: true });
   await writeFile(file, bytes);
 }
-async function fixture(t) {
+async function fixture(t, incremental = false) {
+  await mkdir(path.join(root, ".artifacts"), { recursive: true });
   const temporaryRoot = await realpath(os.tmpdir()),
     work = await realpath(
       await mkdtemp(path.join(temporaryRoot, "owned-handoff-test-")),
@@ -381,7 +382,9 @@ async function fixture(t) {
   const inputs = path.join(work, "inputs"),
     sourceInputs = path.join(
       root,
-      "native/cef-build-inputs/20261023-registration-retirement-lf",
+      incremental
+        ? "native/cef-build-inputs/20261024-r5-instance-tracer-allocation-windows-x64"
+        : "native/cef-build-inputs/20261023-registration-retirement-lf",
     );
   const lockBytes = await readFile(path.join(sourceInputs, "source-lock.json")),
     lock = JSON.parse(lockBytes),
@@ -410,12 +413,14 @@ async function fixture(t) {
       BRIDGE_V2.factorySymbol,
       "cef_sorng_tls_apply_proxy_v2",
       "cef_sorng_tls_registry_stats_v2",
+      ...(incremental ? ["cef_sorng_tls_configure_datagrams_v2"] : []),
     ],
     true,
   );
   for (const [name, bytes] of Object.entries({
     "Release/libcef.dll": library,
     "Release/bootstrap.exe": pe(),
+    ...(incremental ? { "Release/bootstrapc.exe": pe() } : {}),
     "Release/libcef.lib": "fixture import lib",
     "Resources/icudtl.dat": "fixture ICU",
     "Resources/locales/en-US.pak": "fixture locale",
@@ -483,7 +488,7 @@ async function fixture(t) {
     }),
   );
   await put(evidence, "build.json", buildBytes);
-  const value = {
+  let value = {
     ...review(),
     sourceLockIdentity: identitySha256(lock),
     descriptorSha256: hash(descriptorBytes),
@@ -494,6 +499,44 @@ async function fixture(t) {
     },
     evidence: { build: pin("build.json", buildBytes) },
   };
+  if (incremental) {
+    const checkedManifest = JSON.parse(
+      await readFile(path.join(bundle, "manifest.json"), "utf8"),
+    );
+    const packageAssets = await Promise.all(
+      [
+        "source-lock.json",
+        "manifest.json",
+        "receipt.json",
+        identity.archive,
+      ].map(async (pathName) => {
+        const bytes = await readFile(path.join(bundle, pathName));
+        return { path: pathName, bytes: bytes.length, sha256: hash(bytes) };
+      }),
+    );
+    const f = incrementalFixture(lock, {
+      library,
+      bootstrap: pe(),
+      sdkFiles: checkedManifest.artifacts[0].sdkFiles.length,
+      archive: {
+        path: descriptor.archive.path,
+        size: descriptor.archive.size,
+        sha256: descriptor.archive.sha256,
+      },
+      packageAssets,
+    });
+    for (const [name, record] of Object.entries(f.records))
+      await put(
+        evidence,
+        f.input.evidence[name].path,
+        typeof record === "string" ? record : JSON.stringify(record),
+      );
+    value = {
+      ...f.input,
+      python: value.python,
+      descriptorSha256: hash(descriptorBytes),
+    };
+  }
   const output = path.join(
     await realpath(path.join(root, ".artifacts")),
     "owned-sdk-handoff-" + randomUUID(),
@@ -601,4 +644,363 @@ test("fresh check raw digest binds the actual original Linux input bytes before 
         : /Reviewed raw descriptor mismatch/,
     );
   }
+});
+
+const incrementalNames = [
+  "build",
+  "beforeimage",
+  "apply",
+  "prerequisites",
+  "nativeOutput",
+  "continuation",
+  "engineJob",
+  "engine",
+  "engineOutput",
+  "symbols",
+  "package",
+  "distribution",
+  "preparation",
+];
+const nativeNames = [
+  "InstanceTracerStorageIntegrationTest.RealRawPtrAssignmentMovesTrackingBetweenAllocations",
+  "InstanceTracerStorageIntegrationTest.RealMayDangleIsFilteredWithoutDroppingNormalOwner",
+  "InstanceTracerStorageTest.TraceAllocationAndRemovalNeverHoldStorageMutex",
+  "InstanceTracerStorageTest.SnapshotAllocationNeverHoldsStorageMutex",
+  "InstanceTracerStorageTest.DuplicatePreservesOriginalAndDestroysUnusedNodeOutsideMutex",
+  "InstanceTracerStorageTest.SnapshotIsCompleteSortedAndFiltersSlotAndMayDangle",
+  "InstanceTracerStorageTest.NodeAllocatorCanReenterRemovalBeforeInsertion",
+  "InstanceTracerStorageTest.SnapshotRetriesAfterCapacityAllocationAddsOwners",
+  "InstanceTracerStorageTest.InfoConstructionCanReenterRemoval",
+  "InstanceTracerStorageTest.GeometricCapacityProgressesDuringReserveTimeGrowth",
+  "InstanceTracerStorageTest.FourConcurrentWritersAndSnapshotsFinishEmpty",
+  "InstanceTracerStorageIntegrationTest.RealRawPtrCopyAndCleanupKeepExactRecords",
+];
+function incrementalFixture(lock, options = {}) {
+  const id = identitySha256(lock),
+    target = "x86_64-pc-windows-msvc",
+    build = lock.builds.find((row) => row.target === target);
+  const bytes = {
+    library: options.library ?? Buffer.from("synthetic engine"),
+    bootstrap: options.bootstrap ?? pe(),
+    importLib: Buffer.from("fixture import lib"),
+  };
+  const evidencePin = (name, value) =>
+    pin(
+      name + (typeof value === "string" ? ".log" : ".json"),
+      Buffer.from(typeof value === "string" ? value : JSON.stringify(value)),
+    );
+  const job = {
+    kind: "owned-job-proof",
+    started: true,
+    assignedBeforeResume: true,
+    resumed: true,
+    handleListOnly: true,
+    outcome: "success",
+    rootExit: 0,
+    finalRootExit: 0,
+    rootReaped: true,
+    cleanupVerified: true,
+    activeAtEnd: 0,
+    logReadersStopped: true,
+    rootPid: 123,
+    rootCreationFiletime: "134373327242795156",
+    elapsedMs: 1000,
+  };
+  const r = {};
+  r.build = {
+    kind: "genuine-local-windows-x64-tracer17-build-evidence",
+    sourceLockSha256: id,
+    patchId: "sorng-tls-v2-682c378-5",
+    abiVersion: 2,
+    nativeTests: { passed: 12, failed: 0 },
+    engineBuild: { exit: 0, steps: 370, ownedJobCleanup: true },
+    source4Tool8ArgsFlagsPostchecks: true,
+    nativeBrowserAcceptance: false,
+    productionReady: false,
+    runtimeSelected: false,
+    published: false,
+  };
+  r.beforeimage = {
+    kind: "sorng-tracer17-beforeimage",
+    sourceLockIdentity: id,
+    actualToolCount: 8,
+    backupSha256: {
+      "libcef.dll": "e".repeat(64),
+      "args.gn": build.gnArgs.sha256,
+    },
+    gitHeads: Object.fromEntries(
+      Object.entries(lock.upstream).map(([name, row]) => [
+        name === "depot_tools" ? "depotTools" : name,
+        row.commit,
+      ]),
+    ),
+    preservedInputs: [
+      ...lock.patches.slice(0, -1),
+      lock.bridge.header,
+      build.gnArgs,
+      build.toolchainLock,
+    ].map((row) => ({ path: row.path, sha256: row.sha256 })),
+  };
+  r.apply = {
+    fourResultHashesExact: true,
+    operations: [{ exit: 0 }, { exit: 0 }],
+    files: Array.from({ length: 4 }, () => ({ sha256: digest })),
+  };
+  r.nativeOutput =
+    nativeNames
+      .map((name, index) => `[${index + 1}/12] ${name} (0 ms)`)
+      .join("\n") + "\nSUCCESS: all tests passed.\n";
+  r.prerequisites = {
+    sourceLockIdentity: id,
+    sourceHead: controller,
+    outcome: "post-stage-validation-denied",
+    postchecks: {
+      fullEngineStageStarted: false,
+      actual8ToolPins: true,
+      actual4SourcePins: true,
+      argsUnchanged: true,
+    },
+    stages: Array.from({ length: 4 }, (_, index) => ({
+      index,
+      outcome: "success",
+      rootExit: 0,
+      activeAtEnd: 0,
+      cleanupVerified: true,
+      logReadersStopped: true,
+    })),
+    files: [
+      {
+        ...evidencePin("nativeOutput", r.nativeOutput),
+        path: "prior/3/stdout.log",
+        bytes: Buffer.byteLength(r.nativeOutput),
+      },
+    ],
+  };
+  r.engineJob = { ...job };
+  r.continuation = {
+    kind: "owned-engine-continuation",
+    success: true,
+    outcome: "success",
+    originalProof: {
+      beforeimage: {
+        sourceLockIdentity: id,
+        sourceFileCount: 4,
+        inputPinCount: 20,
+        toolCount: 8,
+      },
+      native: { expectedTests: 12, passedTests: 12, uniqueTestNames: 12 },
+    },
+    job: { ...job },
+    postbuild: { sourcePins: 4, installedToolPins: 8, argsUnchanged: true },
+  };
+  r.engineOutput =
+    "[369/371] 8m00s F LINK ceftests.exe\nbuild finished\nnoexec:0 local:370 remote:0 cache:0 skip:88635\n";
+  const fp = (name, value) => ({
+    path: "original/" + name,
+    bytes: value.length,
+    sha256: hash(value),
+  });
+  r.symbols = {
+    kind: "new-local-engine-symbol-and-output-proof",
+    machine: "0x8664",
+    matches: true,
+    networkSymbolLookup: false,
+    dllRsds: { guid: "d7de7603-3697-ce2d-4c4c-44205044422e", age: 1 },
+    pdbInformationStream: {
+      guid: "d7de7603-3697-ce2d-4c4c-44205044422e",
+      age: 1,
+    },
+    files: [
+      fp("libcef.dll", bytes.library),
+      fp("libcef.dll.pdb", Buffer.from("synthetic pdb")),
+      fp("libcef.dll.lib", bytes.importLib),
+      fp("bootstrap.exe", bytes.bootstrap),
+      fp("bootstrapc.exe", bytes.bootstrap),
+    ],
+  };
+  r.engine = {
+    kind: "actual-local-windows-x64-tracer17-engine-build",
+    sourceLockIdentity: id,
+    patch17: lock.patches.at(-1).sha256,
+    outcome: "success",
+    engineExit: 0,
+    steps: 370,
+    originalGuardFormatFailurePreserved: true,
+    postbuild: { ...r.continuation.postbuild },
+    cleanup: {
+      rootPid: job.rootPid,
+      rootCreationFiletime: job.rootCreationFiletime,
+      rootReaped: true,
+      activeAtEnd: 0,
+      cleanupVerified: true,
+      logReadersStopped: true,
+    },
+    newOutputs: structuredClone(r.symbols),
+    rawBuildProofs: [
+      ...[
+        ["continuation", "/continuation.json"],
+        ["engineJob", "/receipt.json"],
+        ["engineOutput", "/stdout.log"],
+      ].map(([role, suffix]) => ({
+        path: "original" + suffix,
+        sha256: evidencePin(role, r[role]).sha256,
+        bytes: evidencePin(role, r[role]).size,
+      })),
+    ],
+  };
+  r.distribution = {
+    receipt: { ...job },
+    argv: [
+      "original-python",
+      "tools/make_distrib.py",
+      "--ninja-build",
+      "--x64-build",
+      "--minimal",
+      "--allow-partial",
+      "--no-archive",
+      "--no-docs",
+    ],
+  };
+  r.preparation = { receipt: { ...job }, originalFailurePreserved: true };
+  r.package = {
+    kind: "immutable-local-tracer17-sdk-package",
+    sourceLockIdentity: id,
+    bridgePatchId: lock.bridge.patchId,
+    headerSha256: lock.bridge.header.sha256,
+    sdkFiles: options.sdkFiles ?? 25,
+    preparedSdkFiles: options.sdkFiles ?? 25,
+    snapshotRsdsPdbMatched: true,
+    source4Tool8ArgsFlagsPostchecks: true,
+    originalPreparationFailurePreserved: true,
+    authorizedRecoveryFreshOnly: true,
+    productionReady: false,
+    selected: false,
+    published: false,
+    steps: [
+      { phase: "prepare", exit: 1 },
+      { phase: "prepare-recovery", exit: 0, cleanup: true, activeAtEnd: 0 },
+    ],
+    metadataAndArchiveHashes: [
+      ...[
+        ["build", "build-evidence.json"],
+        ["distribution", "distribution-job-proof.json"],
+        ["preparation", "prepare-recovery-job-proof.json"],
+      ].map(([role, path]) => ({
+        path,
+        bytes: evidencePin(role, r[role]).size,
+        sha256: evidencePin(role, r[role]).sha256,
+      })),
+      ...(options.packageAssets ?? []),
+    ],
+    archive: options.archive,
+  };
+  const input = {
+    ...review(),
+    origin: "owned-windows-incremental-engine",
+    sourceLockIdentity: id,
+    evidence: Object.fromEntries(
+      incrementalNames.map((name) => [name, evidencePin(name, r[name])]),
+    ),
+  };
+  return { input, records: r, lock };
+}
+async function revisionFiveLock() {
+  return JSON.parse(
+    await readFile(
+      path.join(
+        root,
+        "native/cef-build-inputs/20261024-r5-instance-tracer-allocation-windows-x64/source-lock.json",
+      ),
+      "utf8",
+    ),
+  );
+}
+
+test("incremental Windows provenance consumes original R5 records without inventing legacy built flags", async () => {
+  const f = incrementalFixture(await revisionFiveLock());
+  const result = verifyOwnedHandoffEvidence(f.input, f.records, f.lock);
+  assert.equal(result.incrementalBuild, true);
+  assert.equal(result.pristineSourceBuild, false);
+  assert.equal(result.originalBuildReplayed, false);
+  assert.equal(result.nativeClassTestsPassed, 12);
+  assert.equal(Object.hasOwn(f.records.build, "built"), false);
+  assert.equal(Object.hasOwn(result, "nativeAcceptance"), false);
+  assert.equal(JSON.stringify(result).includes("original/"), false);
+  for (const change of [
+    (r) => (r.engine.engineExit = 1),
+    (r) => (r.engineJob.cleanupVerified = false),
+    (r) => r.engine.cleanup.rootPid++,
+    (r) =>
+      (r.continuation.originalProof.beforeimage.sourceLockIdentity = "f".repeat(
+        64,
+      )),
+    (r) => (r.beforeimage.backupSha256["args.gn"] = "f".repeat(64)),
+    (r) => r.beforeimage.preservedInputs.pop(),
+    (r) => r.symbols.pdbInformationStream.age++,
+    (r) => (r.package.sourceLockIdentity = "f".repeat(64)),
+    (r) => (r.prerequisites.outcome = "success"),
+    (r) => (r.preparation.receipt.activeAtEnd = 1),
+    (r) =>
+      (r.engineOutput =
+        "build finished\nnoexec:0 local:369 remote:0 cache:0 skip:1\n"),
+    (r) =>
+      (r.nativeOutput = r.nativeOutput.replace(nativeNames[1], nativeNames[0])),
+    (r) =>
+      (r.nativeOutput = r.nativeOutput.replace(
+        nativeNames[0],
+        "InstanceTracerStorageTest.UnreviewedCase",
+      )),
+  ]) {
+    const bad = structuredClone(f.records);
+    change(bad);
+    assert.throws(() => verifyOwnedHandoffEvidence(f.input, bad, f.lock));
+  }
+});
+
+test("production nontracing GN identity cannot inherit old sixteen-d build or twelve-test records", async () => {
+  const f = incrementalFixture(await revisionFiveLock()),
+    future = structuredClone(f.lock);
+  const gnPath = future.builds[0].gnArgs.path;
+  const original = await readFile(
+    path.join(
+      root,
+      "native/cef-build-inputs/20261024-r5-instance-tracer-allocation-windows-x64",
+      gnPath,
+    ),
+    "utf8",
+  );
+  future.builds[0].gnArgs.sha256 = hash(
+    original.replace(
+      "enable_backup_ref_ptr_instance_tracer=true",
+      "enable_backup_ref_ptr_instance_tracer=false",
+    ),
+  );
+  const identity = identitySha256(future);
+  assert.notEqual(identity, f.input.sourceLockIdentity);
+  assert.equal(
+    identity,
+    "1381a26cc354669adc843224dcf066721adecb62cf75c0d8108d325a260edbdc",
+  );
+  assert.throws(() =>
+    verifyOwnedHandoffEvidence(
+      { ...f.input, sourceLockIdentity: identity },
+      f.records,
+      future,
+    ),
+  );
+  const wrong = structuredClone(f.lock);
+  wrong.bridge.patchId = "sorng-tls-v2-682c378-4";
+  assert.throws(() => verifyOwnedHandoffEvidence(f.input, f.records, wrong));
+});
+
+test("real structural R5 archive roundtrip keeps all thirteen original evidence roles and actual output pins", async (t) => {
+  const f = await fixture(t, true),
+    result = await checkOwnedSdkHandoff({ ...f, execute: true });
+  assert.equal(result.sourceLockIdentity, f.review.sourceLockIdentity);
+  assert.equal(result.provenance.incrementalBuild, true);
+  assert.equal(result.provenance.pristineSourceBuild, false);
+  assert.equal(result.nativeAcceptance, "not-tested");
+  assert.equal(Object.keys(result.reviewBinding.evidencePins).length, 13);
+  assert.equal(result.hostedBuild, false);
+  assert.equal(result.publicationAllowed, false);
 });

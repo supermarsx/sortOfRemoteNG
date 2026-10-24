@@ -1318,3 +1318,87 @@ test("actual verifier Node child and its Python descendant never inherit uploade
     message: "Invalid owned-import JSON",
   });
 });
+
+test("portable incremental Windows reviews remain operator-local and require the exact thirteen raw roles", () => {
+  const f = fixture();
+  f.review.origin = "owned-windows-incremental-engine";
+  const roles = [
+    "build",
+    "beforeimage",
+    "apply",
+    "prerequisites",
+    "nativeOutput",
+    "continuation",
+    "engineJob",
+    "engine",
+    "engineOutput",
+    "symbols",
+    "package",
+    "distribution",
+    "preparation",
+  ];
+  f.review.reviewBinding.evidencePins = Object.fromEntries(
+    roles.map((name) => [
+      name,
+      {
+        path: `original/${name}.json`,
+        size: 100,
+        sha256: hash(`SYNTHETIC ${name}`),
+      },
+    ]),
+  );
+  f.handoff.provenance = {
+    origin: f.review.origin,
+    engineSha256: f.review.engineSha256,
+    baselineEngineSha256: "2".repeat(64),
+    originalControllerCommit: "3".repeat(40),
+    actualToolFilesVerified: 8,
+    nativeClassTestsPassed: 12,
+    incrementalBuild: true,
+    originalBuildRecordsPinned: true,
+    originalBuildReplayed: false,
+    pristineSourceBuild: false,
+  };
+  f.handoff.reviewBinding = clone(f.review.reviewBinding);
+  const encoded = Buffer.from(JSON.stringify(f.handoff));
+  f.review.handoffSha256 = hash(encoded);
+  assert.doesNotThrow(() => validateOwnedReview(f.review));
+  assert.equal(
+    validateLocalHandoff(f.review, encoded).provenance.originalBuildReplayed,
+    false,
+  );
+  for (const change of [
+    (r) => (r.origin = "github-hosted"),
+    (r) => delete r.reviewBinding.evidencePins.nativeOutput,
+    (r) =>
+      (r.reviewBinding.evidencePins.extra = clone(
+        r.reviewBinding.evidencePins.build,
+      )),
+  ]) {
+    const r = clone(f.review);
+    change(r);
+    assert.throws(() => validateOwnedReview(r));
+  }
+  for (const change of [
+    (r) => (r.provenance.pristineSourceBuild = true),
+    (r) => (r.provenance.originalBuildReplayed = true),
+    (r) => (r.provenance.nativeClassTestsPassed = 11),
+    (r) => (r.provenance.engineSha256 = "4".repeat(64)),
+    (r) => (r.provenance.privatePath = "F:/private/account"),
+    (r) => (r.hostedBuild = true),
+    (r) => (r.nativeAcceptance = "accepted"),
+  ]) {
+    const handoff = clone(f.handoff);
+    change(handoff);
+    const bytes = Buffer.from(JSON.stringify(handoff));
+    assert.throws(() =>
+      validateLocalHandoff({ ...f.review, handoffSha256: hash(bytes) }, bytes),
+    );
+  }
+  const old = fixture();
+  assert.equal(
+    validateLocalHandoff(old.review, old.handoffBytes).provenance
+      .newEngineBuildClaimed,
+    false,
+  );
+});

@@ -19,6 +19,8 @@ import {
   identitySha256,
   preflightCustomRuntime,
   inspectCustomRuntimeExports,
+  BRIDGE_PATCH_ID,
+  HTTP3_BRIDGE_PATCH_ID,
 } from "./browser-custom-runtime.mjs";
 import {
   RELEASE_LIMITS,
@@ -33,11 +35,48 @@ const exec = promisify(execFile),
 const origins = {
   "owned-linux-engine": "x86_64-unknown-linux-gnu",
   "existing-windows-package": "x86_64-pc-windows-msvc",
+  "owned-windows-incremental-engine": "x86_64-pc-windows-msvc",
 };
+export const WINDOWS_INCREMENTAL_EVIDENCE = Object.freeze([
+  "build",
+  "beforeimage",
+  "apply",
+  "prerequisites",
+  "nativeOutput",
+  "continuation",
+  "engineJob",
+  "engine",
+  "engineOutput",
+  "symbols",
+  "package",
+  "distribution",
+  "preparation",
+]);
+export const WINDOWS_INCREMENTAL_PROVENANCE = Object.freeze([
+  "origin",
+  "engineSha256",
+  "baselineEngineSha256",
+  "originalControllerCommit",
+  "actualToolFilesVerified",
+  "nativeClassTestsPassed",
+  "incrementalBuild",
+  "originalBuildRecordsPinned",
+  "originalBuildReplayed",
+  "pristineSourceBuild",
+]);
 const evidenceNames = (origin) =>
-  origin === "owned-linux-engine"
-    ? ["prepared", "started", "container", "finished", "producer", "freshCheck"]
-    : ["build"];
+  origin === "owned-windows-incremental-engine"
+    ? WINDOWS_INCREMENTAL_EVIDENCE
+    : origin === "owned-linux-engine"
+      ? [
+          "prepared",
+          "started",
+          "container",
+          "finished",
+          "producer",
+          "freshCheck",
+        ]
+      : ["build"];
 const fail = (message) => {
   throw Error(message);
 };
@@ -95,6 +134,15 @@ export function ownedSdkHandoffPlan(review) {
     fail("Explicit reviewed Python executable pin required");
   shape(review.evidence, evidenceNames(review.origin));
   for (const value of Object.values(review.evidence)) pin(value);
+  if (
+    review.origin === "owned-windows-incremental-engine" &&
+    Object.values(review.evidence).reduce(
+      (total, value) => total + value.size,
+      0,
+    ) >
+      2 * 1024 ** 2
+  )
+    fail("Incremental Windows evidence total bound");
   return {
     ...structuredClone(review),
     verificationScope: "reviewed-local-bytes-and-evidence-bindings",
@@ -120,9 +168,11 @@ export function ownedHandoffReviewBinding(review) {
 
 // These cross-file checks do not make JSON an authority. The operator must first
 // review genuine records and pin their exact bytes in the closed review input.
-export function verifyOwnedHandoffEvidence(review, records) {
+export function verifyOwnedHandoffEvidence(review, records, sourceLock) {
   ownedSdkHandoffPlan(review);
   shape(records, evidenceNames(review.origin));
+  if (review.origin === "owned-windows-incremental-engine")
+    return verifyWindowsIncrementalEvidence(review, records, sourceLock);
   if (review.origin === "existing-windows-package") {
     const e = records.build;
     if (
@@ -288,6 +338,338 @@ export function verifyOwnedHandoffEvidence(review, records) {
   };
 }
 
+function verifyWindowsIncrementalEvidence(review, r, inputLock) {
+  const lock = validateSourceLock(inputLock),
+    id = review.sourceLockIdentity,
+    b = r.build,
+    before = r.beforeimage,
+    applied = r.apply,
+    prior = r.prerequisites,
+    continued = r.continuation,
+    job = r.engineJob,
+    engine = r.engine,
+    symbols = r.symbols,
+    packaged = r.package;
+  const require = (ok) => {
+    if (!ok) fail("Original incremental Windows evidence mismatch");
+  };
+  const same = (a, b) =>
+    a &&
+    b &&
+    typeof a === "object" &&
+    typeof b === "object" &&
+    identitySha256(a) === identitySha256(b);
+  const digest = (value) => typeof value === "string" && hex.test(value);
+  const cleanJob = (value) =>
+    value?.kind === "owned-job-proof" &&
+    Number.isSafeInteger(value.rootPid) &&
+    value.rootPid > 0 &&
+    /^[1-9][0-9]{0,19}$/.test(value.rootCreationFiletime ?? "") &&
+    Number.isSafeInteger(value.elapsedMs) &&
+    value.elapsedMs > 0 &&
+    value.elapsedMs <= 6 * 60 * 60_000 &&
+    value.started === true &&
+    value.assignedBeforeResume === true &&
+    value.resumed === true &&
+    value.handleListOnly === true &&
+    value.outcome === "success" &&
+    value.rootExit === 0 &&
+    value.finalRootExit === 0 &&
+    value.rootReaped === true &&
+    value.cleanupVerified === true &&
+    value.activeAtEnd === 0 &&
+    value.logReadersStopped === true;
+  require(
+    identitySha256(lock) === id &&
+      lock.bridge.patchId === HTTP3_BRIDGE_PATCH_ID &&
+      lock.bridge.abiVersion === 2 &&
+      lock.bridge.capabilities.length === 9 &&
+      lock.patches.length === 17,
+  );
+  const patch = lock.patches.at(-1),
+    build = lock.builds.find((row) => row.target === review.target);
+  require(
+    build &&
+      /\/0017-chromium-instance-tracer-allocation-reentrancy\.patch$/.test(
+        patch.path,
+      ),
+  );
+  require(
+    b?.kind === "genuine-local-windows-x64-tracer17-build-evidence" &&
+      b.sourceLockSha256 === id &&
+      b.patchId === HTTP3_BRIDGE_PATCH_ID &&
+      b.abiVersion === 2 &&
+      b.nativeTests?.passed === 12 &&
+      b.nativeTests.failed === 0 &&
+      b.engineBuild?.exit === 0 &&
+      b.engineBuild.ownedJobCleanup === true &&
+      b.source4Tool8ArgsFlagsPostchecks === true &&
+      b.nativeBrowserAcceptance === false &&
+      b.productionReady === false &&
+      b.runtimeSelected === false &&
+      b.published === false,
+  );
+  require(
+    before?.kind === "sorng-tracer17-beforeimage" &&
+      before.sourceLockIdentity === id &&
+      before.actualToolCount === 8 &&
+      digest(before.backupSha256?.["libcef.dll"]) &&
+      before.backupSha256?.["args.gn"] === build.gnArgs.sha256,
+  );
+  for (const [name, entry] of Object.entries(lock.upstream))
+    require(
+      before.gitHeads?.[name === "depot_tools" ? "depotTools" : name] ===
+        entry.commit,
+    );
+  const pins = [
+    ...lock.patches.slice(0, -1),
+    lock.bridge.header,
+    build.gnArgs,
+    build.toolchainLock,
+  ];
+  require(
+    Array.isArray(before.preservedInputs) &&
+      before.preservedInputs.length === pins.length &&
+      new Set(before.preservedInputs.map((row) => row.path)).size ===
+        pins.length,
+  );
+  for (const pin of pins)
+    require(
+      before.preservedInputs.some(
+        (row) => row.path === pin.path && row.sha256 === pin.sha256,
+      ),
+    );
+  require(
+    applied?.fourResultHashesExact === true &&
+      applied.operations?.length === 2 &&
+      applied.operations.every((row) => row.exit === 0) &&
+      applied.files?.length === 4 &&
+      applied.files.every((row) => digest(row.sha256)),
+  );
+  require(
+    prior?.sourceLockIdentity === id &&
+      commit.test(prior.sourceHead ?? "") &&
+      prior.outcome === "post-stage-validation-denied" &&
+      prior.postchecks?.fullEngineStageStarted === false &&
+      prior.postchecks.actual8ToolPins === true &&
+      prior.postchecks.actual4SourcePins === true &&
+      prior.postchecks.argsUnchanged === true &&
+      prior.stages?.length === 4 &&
+      prior.stages.every(
+        (row, index) =>
+          row.index === index &&
+          row.outcome === "success" &&
+          row.rootExit === 0 &&
+          row.activeAtEnd === 0 &&
+          row.cleanupVerified === true &&
+          row.logReadersStopped === true,
+      ),
+  );
+  const textPin = (name, text) => {
+    require(
+      typeof text === "string" &&
+        Buffer.byteLength(text) <= 1024 ** 2 &&
+        Buffer.byteLength(text) === review.evidence[name].size &&
+        hash(Buffer.from(text)) === review.evidence[name].sha256,
+    );
+  };
+  textPin("nativeOutput", r.nativeOutput);
+  textPin("engineOutput", r.engineOutput);
+  const native = [
+    ...r.nativeOutput.matchAll(
+      /^\[(\d+)\/12\] (InstanceTracerStorage(?:Integration)?Test\.[A-Za-z0-9_]+) \(\d+ ms\)\r?$/gm,
+    ),
+  ];
+  const expectedNative = new Set([
+    ...[
+      "RealRawPtrAssignmentMovesTrackingBetweenAllocations",
+      "RealMayDangleIsFilteredWithoutDroppingNormalOwner",
+      "RealRawPtrCopyAndCleanupKeepExactRecords",
+    ].map((name) => `InstanceTracerStorageIntegrationTest.${name}`),
+    ...[
+      "TraceAllocationAndRemovalNeverHoldStorageMutex",
+      "SnapshotAllocationNeverHoldsStorageMutex",
+      "DuplicatePreservesOriginalAndDestroysUnusedNodeOutsideMutex",
+      "SnapshotIsCompleteSortedAndFiltersSlotAndMayDangle",
+      "NodeAllocatorCanReenterRemovalBeforeInsertion",
+      "SnapshotRetriesAfterCapacityAllocationAddsOwners",
+      "InfoConstructionCanReenterRemoval",
+      "GeometricCapacityProgressesDuringReserveTimeGrowth",
+      "FourConcurrentWritersAndSnapshotsFinishEmpty",
+    ].map((name) => `InstanceTracerStorageTest.${name}`),
+  ]);
+  require(
+    native.length === 12 &&
+      new Set(native.map((row) => row[2])).size === 12 &&
+      native.every((row) => expectedNative.has(row[2])) &&
+      native.every((row, index) => Number(row[1]) === index + 1) &&
+      /^SUCCESS: all tests passed\.\r?$/m.test(r.nativeOutput) &&
+      !/\b(?:FAILED|FATAL|RETRY|RETRIED)\b/.test(r.nativeOutput),
+  );
+  require(
+    prior.files?.some(
+      (row) =>
+        row.path.endsWith("/3/stdout.log") &&
+        row.sha256 === review.evidence.nativeOutput.sha256 &&
+        row.bytes === review.evidence.nativeOutput.size,
+    ),
+  );
+  const proof = continued?.originalProof;
+  require(
+    continued?.kind === "owned-engine-continuation" &&
+      continued.success === true &&
+      continued.outcome === "success" &&
+      proof?.beforeimage?.sourceLockIdentity === id &&
+      proof.beforeimage.sourceFileCount === 4 &&
+      proof.beforeimage.inputPinCount === 20 &&
+      proof.beforeimage.toolCount === 8 &&
+      proof.native?.expectedTests === 12 &&
+      proof.native.passedTests === 12 &&
+      proof.native.uniqueTestNames === 12 &&
+      cleanJob(job) &&
+      same(continued.job, job),
+  );
+  require(
+    engine?.kind === "actual-local-windows-x64-tracer17-engine-build" &&
+      engine.sourceLockIdentity === id &&
+      engine.patch17 === patch.sha256 &&
+      engine.outcome === "success" &&
+      engine.engineExit === 0 &&
+      engine.originalGuardFormatFailurePreserved === true &&
+      engine.postbuild?.sourcePins === 4 &&
+      engine.postbuild.installedToolPins === 8 &&
+      engine.postbuild.argsUnchanged === true &&
+      same(engine.postbuild, continued.postbuild) &&
+      engine.cleanup?.rootPid === job.rootPid &&
+      engine.cleanup.rootCreationFiletime === job.rootCreationFiletime &&
+      engine.cleanup.rootReaped === true &&
+      engine.cleanup.activeAtEnd === 0 &&
+      engine.cleanup.cleanupVerified === true &&
+      engine.cleanup.logReadersStopped === true,
+  );
+  for (const [role, suffix] of [
+    ["continuation", "/continuation.json"],
+    ["engineJob", "/receipt.json"],
+    ["engineOutput", "/stdout.log"],
+  ])
+    require(
+      engine.rawBuildProofs?.some(
+        (row) =>
+          row.path.endsWith(suffix) &&
+          row.sha256 === review.evidence[role].sha256 &&
+          row.bytes === review.evidence[role].size,
+      ),
+    );
+  const completed = /^noexec:0 local:(\d+) remote:0 cache:0 skip:\d+\r?$/m.exec(
+    r.engineOutput,
+  );
+  require(
+    /^build finished\r?$/m.test(r.engineOutput) &&
+      completed &&
+      Number(completed[1]) === engine.steps &&
+      !/^(?:FAILED:|ninja: build stopped|FATAL)/m.test(r.engineOutput),
+  );
+  require(
+    symbols?.kind === "new-local-engine-symbol-and-output-proof" &&
+      symbols.machine === "0x8664" &&
+      symbols.matches === true &&
+      symbols.networkSymbolLookup === false &&
+      /^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/.test(
+        symbols.dllRsds?.guid ?? "",
+      ) &&
+      Number.isSafeInteger(symbols.dllRsds?.age) &&
+      symbols.dllRsds.age > 0 &&
+      same(symbols.dllRsds, symbols.pdbInformationStream) &&
+      same(engine.newOutputs, symbols),
+  );
+  const file = (name) =>
+    symbols.files?.filter((row) =>
+      row.path.replaceAll("\\", "/").endsWith("/" + name),
+    );
+  for (const name of [
+    "libcef.dll",
+    "libcef.dll.pdb",
+    "libcef.dll.lib",
+    "bootstrap.exe",
+    "bootstrapc.exe",
+  ])
+    require(
+      file(name)?.length === 1 &&
+        digest(file(name)[0].sha256) &&
+        Number.isSafeInteger(file(name)[0].bytes) &&
+        file(name)[0].bytes > 0,
+    );
+  require(file("libcef.dll")[0].sha256 !== before.backupSha256["libcef.dll"]);
+  require(
+    packaged?.kind === "immutable-local-tracer17-sdk-package" &&
+      packaged.sourceLockIdentity === id &&
+      packaged.bridgePatchId === HTTP3_BRIDGE_PATCH_ID &&
+      packaged.headerSha256 === lock.bridge.header.sha256 &&
+      packaged.sdkFiles === packaged.preparedSdkFiles &&
+      Number.isSafeInteger(packaged.sdkFiles) &&
+      packaged.sdkFiles > 0 &&
+      packaged.snapshotRsdsPdbMatched === true &&
+      packaged.source4Tool8ArgsFlagsPostchecks === true &&
+      packaged.originalPreparationFailurePreserved === true &&
+      packaged.authorizedRecoveryFreshOnly === true &&
+      packaged.productionReady === false &&
+      packaged.selected === false &&
+      packaged.published === false,
+  );
+  require(
+    cleanJob(r.distribution?.receipt) &&
+      cleanJob(r.preparation?.receipt) &&
+      r.preparation.originalFailurePreserved === true &&
+      packaged.steps?.some(
+        (row) => row.phase === "prepare" && row.exit === 1,
+      ) &&
+      packaged.steps?.some(
+        (row) =>
+          row.phase === "prepare-recovery" &&
+          row.exit === 0 &&
+          row.cleanup === true &&
+          row.activeAtEnd === 0,
+      ),
+  );
+  require(
+    Array.isArray(r.distribution.argv) &&
+      r.distribution.argv[1] === "tools/make_distrib.py" &&
+      [
+        "--ninja-build",
+        "--x64-build",
+        "--minimal",
+        "--allow-partial",
+        "--no-archive",
+        "--no-docs",
+      ].every((flag) => r.distribution.argv.includes(flag)),
+  );
+  for (const [role, basename] of [
+    ["build", "build-evidence.json"],
+    ["distribution", "distribution-job-proof.json"],
+    ["preparation", "prepare-recovery-job-proof.json"],
+  ])
+    require(
+      packaged.metadataAndArchiveHashes?.some(
+        (row) =>
+          row.path === basename &&
+          row.sha256 === review.evidence[role].sha256 &&
+          row.bytes === review.evidence[role].size,
+      ),
+    );
+  return {
+    origin: review.origin,
+    engineSha256: file("libcef.dll")[0].sha256,
+    baselineEngineSha256: before.backupSha256["libcef.dll"],
+    originalControllerCommit: prior.sourceHead,
+    actualToolFilesVerified: 8,
+    nativeClassTestsPassed: 12,
+    incrementalBuild: true,
+    originalBuildRecordsPinned: true,
+    originalBuildReplayed: false,
+    pristineSourceBuild: false,
+  };
+}
+
 async function regular(file, limit) {
   const info = await lstat(file);
   if (
@@ -313,17 +695,21 @@ async function pinned(root, value) {
     fail("Reviewed evidence raw pin mismatch");
   return bytes;
 }
-async function sourceInputs(inputs, identity, target) {
+async function sourceInputs(inputs, identity, target, origin) {
   await regular(path.join(inputs, "source-lock.json"), RELEASE_LIMITS.metadata);
   const bytes = await readFile(path.join(inputs, "source-lock.json"));
   const lock = validateSourceLock(JSON.parse(bytes));
   if (
     identitySha256(lock) !== identity ||
     lock.bridge.abiVersion !== 2 ||
-    lock.bridge.patchId !== "sorng-tls-v2-682c378-4" ||
-    lock.bridge.capabilities.length !== 8
+    (origin === "owned-windows-incremental-engine"
+      ? target !== "x86_64-pc-windows-msvc" ||
+        lock.bridge.patchId !== HTTP3_BRIDGE_PATCH_ID ||
+        lock.bridge.capabilities.length !== 9
+      : lock.bridge.patchId !== BRIDGE_PATCH_ID ||
+        lock.bridge.capabilities.length !== 8)
   )
-    fail("Original R4 input identity required without relabeling");
+    fail("Original origin-specific input identity required without relabeling");
   const build = lock.builds.find((row) => row.target === target);
   if (!build) fail("Reviewed native target absent");
   for (const value of [
@@ -359,13 +745,30 @@ export async function checkOwnedSdkHandoff({
     inputsRoot = await realpath(inputs),
     evidenceRoot = await realpath(evidence);
   const records = {};
-  for (const [name, value] of Object.entries(review.evidence))
-    records[name] = JSON.parse(await pinned(evidenceRoot, value));
-  const provenance = verifyOwnedHandoffEvidence(review, records);
+  for (const [name, value] of Object.entries(review.evidence)) {
+    const bytes = await pinned(evidenceRoot, value);
+    if (
+      review.origin === "owned-windows-incremental-engine" &&
+      ["nativeOutput", "engineOutput"].includes(name)
+    ) {
+      if (
+        bytes.length > 1024 ** 2 ||
+        !Buffer.from(bytes.toString("utf8")).equals(bytes)
+      )
+        fail("Bounded UTF8 original build output required");
+      records[name] = bytes.toString("utf8");
+    } else records[name] = JSON.parse(bytes);
+  }
   const verifiedInputs = await sourceInputs(
     inputsRoot,
     review.sourceLockIdentity,
     review.target,
+    review.origin,
+  );
+  const provenance = verifyOwnedHandoffEvidence(
+    review,
+    records,
+    verifiedInputs.lock,
   );
   if (
     review.origin === "owned-linux-engine" &&
@@ -395,6 +798,27 @@ export async function checkOwnedSdkHandoff({
     );
   }
   if (expected.size !== 5) fail("Exact five-asset transport bundle required");
+  if (review.origin === "owned-windows-incremental-engine") {
+    const packaged = records.package;
+    if (
+      packaged.archive?.path !== checked.descriptor.archive.path ||
+      packaged.archive.sha256 !== checked.descriptor.archive.sha256 ||
+      packaged.archive.size !== checked.descriptor.archive.size
+    )
+      fail("Original Windows package archive differs");
+    for (const row of checked.assets.filter(
+      (row) => row.name !== "runtime.json",
+    ))
+      if (
+        !packaged.metadataAndArchiveHashes.some(
+          (pin) =>
+            pin.path === row.name &&
+            pin.sha256 === row.sha256 &&
+            pin.bytes === row.size,
+        )
+      )
+        fail("Original Windows package asset differs");
+  }
   const python = await realpath(review.python.path),
     pythonInfo = await regular(python, 64 * 1024 ** 2);
   if (
@@ -471,6 +895,22 @@ export async function checkOwnedSdkHandoff({
   const engineSha256 = hash(await readFile(library));
   if (provenance.engineSha256 && provenance.engineSha256 !== engineSha256)
     fail("Transport engine differs from original Windows build evidence");
+  if (review.origin === "owned-windows-incremental-engine") {
+    if (records.package.sdkFiles !== preflight.filesVerified)
+      fail("Original Windows SDK inventory differs");
+    for (const [original, packaged] of [
+      ["bootstrap.exe", "bootstrap.exe"],
+      ["bootstrapc.exe", "bootstrapc.exe"],
+      ["libcef.dll.lib", "libcef.lib"],
+    ]) {
+      const pin = records.symbols.files.find((row) =>
+        row.path.replaceAll("\\", "/").endsWith("/" + original),
+      );
+      const bytes = await readFile(path.join(sdk, packaged));
+      if (bytes.length !== pin.bytes || hash(bytes) !== pin.sha256)
+        fail("Original Windows output differs from SDK");
+    }
+  }
   const result = {
     kind: "sorng-cef-owned-sdk-handoff",
     schemaVersion: 1,

@@ -24,6 +24,10 @@ import {
 } from "./browser-custom-runtime.mjs";
 import { inspectNativeBinary } from "../browser-runtime-package.mjs";
 import {
+  WINDOWS_INCREMENTAL_EVIDENCE,
+  WINDOWS_INCREMENTAL_PROVENANCE,
+} from "./cef-owned-sdk-handoff.mjs";
+import {
   RELEASE_LIMITS,
   releaseRelativePath,
 } from "./browser-runtime-release.mjs";
@@ -47,6 +51,7 @@ const execute = promisify(execFile);
 const origins = {
   "existing-windows-package": "x86_64-pc-windows-msvc",
   "owned-linux-engine": "x86_64-unknown-linux-gnu",
+  "owned-windows-incremental-engine": "x86_64-pc-windows-msvc",
 };
 export function parseOwnedJson(bytes) {
   try {
@@ -139,16 +144,18 @@ export function validateOwnedReview(review) {
   ]);
   digest(review.reviewBinding.canonicalReviewSha256);
   const names =
-    review.origin === "existing-windows-package"
-      ? ["build"]
-      : [
-          "prepared",
-          "started",
-          "container",
-          "finished",
-          "producer",
-          "freshCheck",
-        ];
+    review.origin === "owned-windows-incremental-engine"
+      ? WINDOWS_INCREMENTAL_EVIDENCE
+      : review.origin === "existing-windows-package"
+        ? ["build"]
+        : [
+            "prepared",
+            "started",
+            "container",
+            "finished",
+            "producer",
+            "freshCheck",
+          ];
   exact(review.reviewBinding.evidencePins, names);
   for (const pin of Object.values(review.reviewBinding.evidencePins))
     rawPin(pin);
@@ -284,6 +291,21 @@ export function validateLocalHandoff(review, bytes) {
         value.provenance.newEngineBuildClaimed === false &&
         value.provenance.engineSha256 === review.engineSha256,
       "Original Windows evidence identity differs",
+    );
+  } else if (review.origin === "owned-windows-incremental-engine") {
+    exact(value.provenance, WINDOWS_INCREMENTAL_PROVENANCE);
+    digest(value.provenance.baselineEngineSha256);
+    assert(
+      value.provenance.engineSha256 === review.engineSha256 &&
+        value.provenance.baselineEngineSha256 !== review.engineSha256 &&
+        /^[a-f0-9]{40}$/.test(value.provenance.originalControllerCommit) &&
+        value.provenance.actualToolFilesVerified === 8 &&
+        value.provenance.nativeClassTestsPassed === 12 &&
+        value.provenance.incrementalBuild === true &&
+        value.provenance.originalBuildRecordsPinned === true &&
+        value.provenance.originalBuildReplayed === false &&
+        value.provenance.pristineSourceBuild === false,
+      "Original incremental Windows evidence identity differs",
     );
   } else {
     exact(value.provenance, [
