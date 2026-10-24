@@ -1,0 +1,55 @@
+{
+  "schemaVersion": 1,
+  "kind": "reviewed-macintel-legacy-capture-compatibility-source-only",
+  "baseNamespace": "native/cef-build-inputs/20261023-registration-retirement-lf-macintel-xcode26-3-sdk26-2",
+  "baseSourceLockIdentity": "e352e163ad465051f66fce6b8f3705ce2a201383ada954d7986525edb1e254bd",
+  "baseReviewReceiptSha256": "19d17bc9b73927223f4216f3a2a827f3cad5597cadc505faca3c8d50e425a14d",
+  "target": "x86_64-apple-darwin",
+  "bridgeAbiVersion": 2,
+  "bridgeRevision": 4,
+  "sourceSemantics": "Exact existing twelve patches, bridge header, GN, runner map, tools and upstream bytes preserved. Append one CEF-repository patch registering a nested WebRTC GN patch through the existing CEF hook. Only is_mac desktop_capture_objc Objective-C++ deprecated-declarations changes from fatal error to visible warning; all other Werror, capture routing, SDK and deployment target remain unchanged.",
+  "pinnedWebRtcCommit": "3a8b0c76e6b7bf0e72141047f82eb2c3f4862c8d",
+  "sourceFailure": {
+    "runId": 40006951412,
+    "jobId": 120597422407,
+    "headSha": "32a1750da5eb3c3558e51f588b2af53e8ba991ee",
+    "sdk": "26.2",
+    "xcodeBuild": "17C529",
+    "deploymentTarget": "14.0",
+    "diagnosticClass": "Werror,-Wdeprecated-declarations",
+    "errorCount": 9,
+    "files": [
+      "mac/desktop_frame_cgimage.mm",
+      "mac/screen_capturer_mac.mm"
+    ]
+  },
+  "nativeAcceptanceRequired": true,
+  "buildCompatibilityVerified": false,
+  "engineBuilt": false,
+  "nativeAcceptancePassed": false,
+  "published": false,
+  "knownBlockers": [
+    "Actual patched target/native Mac compilation required; metadata/compiler-flag fixtures are not SDK build acceptance",
+    "Actual build-only phase took 4h03m for15952/74124 commands; no blind cold retry within300min",
+    "Durable same-root checkpoint full archive/transfer/restore feasibility is not established",
+    "Existing ARM producer remains untouched; no assumption of same failure",
+    "New identity requires actual new Mac runtime and target-native acceptance; no transferred acceptance"
+  ],
+  "sourceLockIdentity": "c7bb8b0e4a4c8ba61fffe095c2d4466e45ddc6e762c9fcd3028f49909f9c1c8f",
+  "patchMechanism": {
+    "outerRepository": "cef",
+    "config": "patch/patch.cfg",
+    "name": "sorng_webrtc_mac_capture_deprecation",
+    "nestedRepositoryPath": "third_party/webrtc",
+    "existingHook": "cef/tools/gclient_hook.py -> patcher.py -> git_apply_patch_file",
+    "gnTarget": "is_mac/desktop_capture_objc"
+  },
+  "upstreamStatus": "Downstream compatibility adjustment using existing upstream patch infrastructure; not claimed to be an upstream-landed backport.",
+  "primaryReferences": [
+    "https://developer.apple.com/documentation/coregraphics/cgwindowlistcreateimage?language=objc",
+    "https://clang.llvm.org/docs/UsersManual.html#options-to-control-error-and-warning-messages",
+    "https://gn.googlesource.com/gn/+/main/docs/reference.md#cflags_objcc",
+    "https://webrtc.googlesource.com/src/+/3a8b0c76e6b7bf0e72141047f82eb2c3f4862c8d/modules/desktop_capture/BUILD.gn",
+    "https://github.com/chromiumembedded/cef/blob/682c378d70d5780061e96644dca16ddd8fd157a9/tools/patcher.py"
+  ]
+}
