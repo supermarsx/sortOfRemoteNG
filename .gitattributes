@@ -24,6 +24,6 @@ native/cef-build-inputs/20261023-registration-retirement-lf-macarm-intelcross-xc
 native/cef-build-inputs/20261024-registration-retirement-lf-macintel-sdk26-2-capture-compat/** -text -whitespace
 native/cef-build-inputs/20261024-registration-retirement-owned-linux-x64/** -text -whitespace
 native/cef-owned-sdk-imports/windows-x64-r4-20261024/** -text -whitespace
-native/cef-build-inputs/20261024-registration-retirement-lf-macarm-sdk26-2-capture-compat/** -text
+native/cef-build-inputs/20261024-registration-retirement-lf-macarm-sdk26-2-capture-compat/** -text -whitespace
 native/cef-build-inputs/20261024-r5-instance-tracer-allocation-windows-x64/** -text -whitespace
 native/cef-owned-sdk-imports/linux-x64-owned-20261024/** -text -whitespace
