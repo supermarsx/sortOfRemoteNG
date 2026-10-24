@@ -1,7 +1,19 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { spawnSync } from "node:child_process";
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import {
+  mkdir,
+  mkdtemp,
+  readFile,
+  readdir,
+  rm,
+  writeFile,
+  symlink,
+  readlink,
+  unlink,
+  realpath,
+  lstat,
+} from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import {
@@ -37,6 +49,11 @@ import {
   compileSlice,
   archiveCommand,
   graphDigest,
+  graphInventory,
+  GRAPH_LIMITS,
+  assertGraphBudget,
+  afterGnPhase,
+  normalizeSdkLinks,
   withVerifiedGraph,
   restoreVerifiedGraph,
   restoreDownload,
@@ -1427,3 +1444,364 @@ test("reaper stability compares exact process identities rather than equal cardi
   assert.equal(sameObservedCohort([root, b], [b, root]), true);
   assert.equal(sameObservedCohort([root, a], [root, a, b]), false);
 });
+
+async function sdkLinkFixture(t, alias = true) {
+  const root = await scratch(t),
+    developer = path.join(root, "Developer"),
+    sdk = path.join(
+      developer,
+      "Platforms",
+      "MacOSX.platform",
+      "Developer",
+      "SDKs",
+      "MacOSX26.2.sdk",
+    ),
+    platform = path.join(developer, "Platforms", "MacOSX.platform"),
+    toolchain = path.join(developer, "Toolchains", "XcodeDefault.xctoolchain");
+  await mkdir(sdk, { recursive: true });
+  await mkdir(toolchain, { recursive: true });
+  await writeFile(path.join(sdk, "verified-marker"), "verified-sdk");
+  const rawSdk = alias ? path.join(path.dirname(sdk), "MacOSX.sdk") : sdk;
+  const type = process.platform === "win32" ? "junction" : "dir";
+  if (alias) await symlink(sdk, rawSdk, type);
+  const directory = path.join(root, "out", "sdk", "xcode_links");
+  await mkdir(directory, { recursive: true });
+  for (const target of [rawSdk, platform, toolchain])
+    await symlink(target, path.join(directory, path.basename(target)), type);
+  const expectedTargets = await Promise.all(
+    [sdk, platform, toolchain].map((value) => realpath(value)),
+  );
+  return {
+    root,
+    out: path.join(root, "out"),
+    directory,
+    sdk,
+    rawSdk,
+    platform,
+    toolchain,
+    type,
+    options: { developerDir: developer, sdkRoot: rawSdk, expectedTargets },
+  };
+}
+test("SDK raw GN link names survive exact physical-target normalization without changing the installed SDK", async (t) => {
+  const f = await sdkLinkFixture(t),
+    sdkLink = path.join(f.directory, "MacOSX.sdk");
+  assert.equal(await readlink(sdkLink), f.rawSdk);
+  await assert.rejects(readlink(path.join(f.directory, "MacOSX26.2.sdk")));
+  const unchanged = await lstat(path.join(f.directory, "MacOSX.platform"));
+  const recipe = await normalizeSdkLinks(f.out, f.options);
+  assert.deepEqual(
+    Object.keys(recipe).sort(),
+    [
+      "sdk/xcode_links/MacOSX.platform",
+      "sdk/xcode_links/MacOSX.sdk",
+      "sdk/xcode_links/XcodeDefault.xctoolchain",
+    ].sort(),
+  );
+  assert.equal(recipe["sdk/xcode_links/MacOSX.sdk"], await realpath(f.sdk));
+  assert.equal(await readlink(sdkLink), await realpath(f.sdk));
+  assert.equal(
+    await readlink(f.rawSdk),
+    f.sdk,
+    "installed SDK alias never rewritten",
+  );
+  assert.equal(
+    await readFile(path.join(f.sdk, "verified-marker"), "utf8"),
+    "verified-sdk",
+  );
+  assert.equal(
+    (await lstat(path.join(f.directory, "MacOSX.platform"))).ino,
+    unchanged.ino,
+    "already canonical generated links are not rewritten",
+  );
+  assert.deepEqual(
+    await normalizeSdkLinks(f.out, f.options),
+    recipe,
+    "canonical restore output is accepted without broadening",
+  );
+});
+test("nonalias SDK links are unchanged and fresh-GN alias recreation normalizes to the same recipe", async (t) => {
+  const direct = await sdkLinkFixture(t, false),
+    link = path.join(direct.directory, "MacOSX26.2.sdk"),
+    before = await lstat(link);
+  const recipe = await normalizeSdkLinks(direct.out, direct.options);
+  assert.equal((await lstat(link)).ino, before.ino);
+  assert.equal(
+    recipe["sdk/xcode_links/MacOSX26.2.sdk"],
+    await realpath(direct.sdk),
+  );
+  const f = await sdkLinkFixture(t),
+    first = await normalizeSdkLinks(f.out, f.options),
+    sdkLink = path.join(f.directory, "MacOSX.sdk");
+  await unlink(sdkLink);
+  await symlink(f.rawSdk, sdkLink, f.type); // Real pinned GN replaces canonical link with its raw xcrun alias.
+  assert.deepEqual(await normalizeSdkLinks(f.out, f.options), first);
+});
+for (const scenario of [
+  "wrong-physical",
+  "outside-target",
+  "extra-alias",
+  "foreign-name",
+  "regular-file",
+  "alias-cycle",
+  "sdk-root-replaced",
+]) {
+  test(`SDK normalization rejects ${scenario} before changing any other generated link`, async (t) => {
+    const f = await sdkLinkFixture(t),
+      sdkLink = path.join(f.directory, "MacOSX.sdk");
+    if (scenario === "extra-alias")
+      await symlink(f.sdk, path.join(f.directory, "MacOSX26.2.sdk"), f.type);
+    else if (scenario === "foreign-name") {
+      await unlink(path.join(f.directory, "MacOSX.platform"));
+      await symlink(
+        f.platform,
+        path.join(f.directory, "other.platform"),
+        f.type,
+      );
+    } else if (scenario === "regular-file") {
+      await unlink(path.join(f.directory, "XcodeDefault.xctoolchain"));
+      await writeFile(
+        path.join(f.directory, "XcodeDefault.xctoolchain"),
+        "not-a-link",
+      );
+    } else if (scenario === "alias-cycle") {
+      await unlink(path.join(f.directory, "MacOSX.platform"));
+      await symlink(
+        path.join(f.directory, "MacOSX.platform"),
+        path.join(f.directory, "MacOSX.platform"),
+        f.type,
+      );
+    } else if (scenario === "sdk-root-replaced") {
+      const other = path.join(path.dirname(f.sdk), "MacOSX99.0.sdk");
+      await mkdir(other);
+      await unlink(f.rawSdk);
+      await symlink(other, f.rawSdk, f.type);
+    } else {
+      const target =
+        scenario === "outside-target"
+          ? path.join(f.root, "foreign")
+          : path.join(path.dirname(f.sdk), "MacOSX99.0.sdk");
+      await mkdir(target);
+      await unlink(path.join(f.directory, "MacOSX.platform"));
+      await symlink(target, path.join(f.directory, "MacOSX.platform"), f.type);
+    }
+    await assert.rejects(normalizeSdkLinks(f.out, f.options));
+    assert.equal(
+      await readlink(sdkLink),
+      f.rawSdk,
+      "all entries must validate before normalization",
+    );
+  });
+}
+test("after-GN diagnostics expose closed phases and fixed codes without raw error fields", async () => {
+  const lines = [];
+  const raw = Object.assign(
+    new Error("secret-token https://private.example/credential"),
+    { code: "ENOENT", path: "private/path" },
+  );
+  await assert.rejects(
+    afterGnPhase(
+      "sdk-links",
+      () => {
+        throw raw;
+      },
+      (line) => lines.push(line),
+    ),
+    (error) => error === raw,
+  );
+  assert.deepEqual(lines, [
+    "[cef-engineering-checkpoint] after-gn phase=sdk-links",
+    "[cef-engineering-checkpoint] after-gn failed phase=sdk-links code=ENOENT",
+  ]);
+  lines.length = 0;
+  await assert.rejects(
+    afterGnPhase(
+      "sdk-links",
+      () => {
+        throw Object.assign(new Error("private"), { code: "secret\nTOKEN" });
+      },
+      (line) => lines.push(line),
+    ),
+  );
+  assert.equal(
+    lines.at(-1),
+    "[cef-engineering-checkpoint] after-gn failed phase=sdk-links code=CHECK_FAILED",
+  );
+  assert.doesNotMatch(
+    lines.join("\n"),
+    /secret|TOKEN|private|credential|https:/,
+  );
+  assert.equal(
+    await afterGnPhase(
+      "siso-pin",
+      () => 7,
+      () => {},
+    ),
+    7,
+  );
+  await assert.rejects(
+    afterGnPhase(
+      "private/path",
+      () => {},
+      () => assert.fail("unreviewed stage logged"),
+    ),
+  );
+});
+test("graph inventory accepts an actual10001-target writer layout with finite file-byte-time limits", async (t) => {
+  const root = await scratch(t);
+  await writeFile(path.join(root, "build.ninja"), "subninja target rules");
+  await writeFile(path.join(root, "args.gn"), "is_debug=false");
+  for (let start = 0; start < 10001; start += 64)
+    await Promise.all(
+      Array.from({ length: Math.min(64, 10001 - start) }, (_, offset) =>
+        writeFile(
+          path.join(root, `target-${start + offset}.ninja`),
+          "build target: phony\n",
+        ),
+      ),
+    );
+  const result = await graphInventory(root);
+  assert.equal(result.files, 10003);
+  assert.ok(result.bytes > 0);
+  assert.match(result.sha256, /^[a-f0-9]{64}$/);
+  assert.equal(result.visited, 10003);
+  assert.equal(GRAPH_LIMITS.files, 50000);
+  assert.equal(GRAPH_LIMITS.bytes, 2 * 1024 ** 3);
+  const valid = {
+    files: 50000,
+    bytes: GRAPH_LIMITS.bytes,
+    visited: GRAPH_LIMITS.visited,
+    elapsed: 59999,
+  };
+  assert.doesNotThrow(() => assertGraphBudget(valid));
+  for (const delta of [
+    { files: 50001 },
+    { bytes: GRAPH_LIMITS.bytes + 1 },
+    { visited: 300001 },
+    { elapsed: 60000 },
+  ])
+    assert.throws(
+      () => assertGraphBudget({ ...valid, ...delta }),
+      (error) => error.code === "GRAPH_BOUND",
+    );
+  const lines = [];
+  await assert.rejects(
+    afterGnPhase(
+      "graph-inventory",
+      () => assertGraphBudget({ ...valid, files: 50001 }),
+      (line) => lines.push(line),
+    ),
+  );
+  assert.equal(
+    lines.at(-1),
+    `[cef-engineering-checkpoint] graph files=50001 bytes=${GRAPH_LIMITS.bytes} visited=300000`,
+  );
+});
+
+// The following exact fixture function is Copyright2014 The Chromium Authors.
+// Copyright 2015 The Chromium Authors
+//
+// Redistribution and use in source and binary forms, with or without
+// modification, are permitted provided that the following conditions are
+// met:
+//
+//    * Redistributions of source code must retain the above copyright
+// notice, this list of conditions and the following disclaimer.
+//    * Redistributions in binary form must reproduce the above
+// copyright notice, this list of conditions and the following disclaimer
+// in the documentation and/or other materials provided with the
+// distribution.
+//    * Neither the name of Google LLC nor the names of its
+// contributors may be used to endorse or promote products derived from
+// this software without specific prior written permission.
+//
+// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+// "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+// LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
+// A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
+// OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+// SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
+// LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+// DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+// THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+// (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+// OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+// sdk_info.py at pinned a654841425914cbb703a2931e07b70a83aedbafd.
+// Preserve the actual factory here so its raw-basename behavior is exercised,
+// rather than replacing it with a model of our own guard.
+const PINNED_SDK_LINK_FACTORY =
+  'def CreateXcodeSymlinkAt(src, dst, root_build_dir):\n    """Create symlink to Xcode directory at target location."""\n\n    if not os.path.isdir(dst):\n        os.makedirs(dst)\n\n    dst = os.path.join(dst, os.path.basename(src))\n    updated_value = os.path.join(root_build_dir, dst)\n\n    # Update the symlink only if it is different from the current destination.\n    if os.path.islink(dst):\n        current_src = os.readlink(dst)\n        if current_src == src:\n            return updated_value\n        os.unlink(dst)\n        sys.stderr.write(\n            \'existing symlink %s points %s; want %s. Removed.\'\n            % (dst, current_src, src)\n        )\n    os.symlink(src, dst)\n    return updated_value';
+const PINNED_SDK_LINK_FACTORY_SHA =
+  "393274ed01a39d8ab38302d4e02b723914b7af8544d18d9bf598a2f87de392f6";
+
+test(
+  "actual pinned SDK factory aliases normalize through the production Node boundary and strict Python archive restore",
+  { skip: process.platform === "win32" },
+  async (t) => {
+    const f = await sdkLinkFixture(t),
+      helper = path.join(ROOT, "scripts/lib/cef-checkpoint-archive.py");
+    assert.equal(
+      sha(Buffer.from(PINNED_SDK_LINK_FACTORY)),
+      PINNED_SDK_LINK_FACTORY_SHA,
+    );
+    for (const entry of await readdir(f.directory))
+      await unlink(path.join(f.directory, entry));
+    const made = python(
+      "import os,sys\n" +
+        PINNED_SDK_LINK_FACTORY +
+        "\nfor target in sys.argv[2:]:CreateXcodeSymlinkAt(target,sys.argv[1],'//out')",
+      [f.directory, f.rawSdk, f.platform, f.toolchain],
+    );
+    assert.equal(made.status, 0, made.stderr || made.stdout);
+    assert.equal(
+      await readlink(path.join(f.directory, "MacOSX.sdk")),
+      f.rawSdk,
+    );
+    await assert.rejects(
+      readlink(path.join(f.directory, "MacOSX26.2.sdk")),
+      "old canonical-basename guard cannot find valid raw factory link",
+    );
+    const recipe = await normalizeSdkLinks(f.out, f.options),
+      recipePath = path.join(f.root, "recipe.json");
+    await writeFile(recipePath, canonical(recipe));
+    await writeFile(path.join(f.out, "owned"), "retained-object");
+    const pythonExe = python("import sys;print(sys.executable)").stdout.trim(),
+      bundle = path.join(f.root, "bundle");
+    const archive = await archiveCommand(pythonExe, helper, [
+      "pack",
+      "--input",
+      f.out,
+      "--output",
+      bundle,
+      "--generated-links",
+      recipePath,
+    ]);
+    const envelope = path.join(f.root, "manifest.json");
+    await writeFile(envelope, canonical({ ...manifest(), archive }));
+    const restored = path.join(f.root, "restored");
+    const result = await archiveCommand(pythonExe, helper, [
+      "restore",
+      "--input",
+      bundle,
+      "--output",
+      restored,
+      "--manifest",
+      envelope,
+      "--generated-links",
+      recipePath,
+    ]);
+    assert.equal(result.complete, true);
+    assert.equal(result.linksExtracted, false);
+    assert.equal(
+      await readFile(path.join(restored, "owned"), "utf8"),
+      "retained-object",
+    );
+    for (const [relative, target] of Object.entries(recipe))
+      assert.equal(await readlink(path.join(restored, relative)), target);
+    assert.equal(
+      await readlink(f.rawSdk),
+      f.sdk,
+      "installed SDK remains untouched",
+    );
+  },
+);

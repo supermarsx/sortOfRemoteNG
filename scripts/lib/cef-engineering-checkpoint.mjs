@@ -7,9 +7,12 @@ import {
   mkdir,
   readFile,
   readdir,
+  readlink,
   realpath,
   rename,
   stat,
+  symlink,
+  unlink,
   writeFile,
 } from "node:fs/promises";
 import { finished } from "node:stream/promises";
@@ -1074,8 +1077,207 @@ export function validateSeal(seal, expected) {
   }
   return seal;
 }
-// Installation is permitted only after Python verified EVERY member and digest.
-export async function graphDigest(root) {
+// Fixed phases and error labels never include untrusted errors or SDK paths.
+const AFTER_GN_PHASES = new Set([
+  "siso-pin",
+  "sdk-roots",
+  "sdk-links",
+  "recipe-write",
+  "graph-inventory",
+  "identity",
+  "restore",
+]);
+const AFTER_GN_CODES = new Set([
+  "ENOENT",
+  "EACCES",
+  "EPERM",
+  "ELOOP",
+  "ENOTDIR",
+  "EEXIST",
+  "ETIMEDOUT",
+  "GRAPH_BOUND",
+]);
+export async function afterGnPhase(phase, operation, log = console.log) {
+  assert(AFTER_GN_PHASES.has(phase), "Closed after-GN phase required");
+  log(`[cef-engineering-checkpoint] after-gn phase=${phase}`);
+  try {
+    return await operation();
+  } catch (error) {
+    const code = AFTER_GN_CODES.has(error?.code) ? error.code : "CHECK_FAILED";
+    log(
+      `[cef-engineering-checkpoint] after-gn failed phase=${phase} code=${code}`,
+    );
+    const counts = error?.graphCounts;
+    if (
+      phase === "graph-inventory" &&
+      code === "GRAPH_BOUND" &&
+      counts &&
+      Object.keys(counts).sort().join() === "bytes,files,visited" &&
+      ["files", "bytes", "visited"].every(
+        (key) => Number.isSafeInteger(counts[key]) && counts[key] >= 0,
+      ) &&
+      counts.files <= GRAPH_LIMITS.files + 1 &&
+      counts.bytes <= GRAPH_LIMITS.bytes + GRAPH_LIMITS.fileBytes &&
+      counts.visited <= GRAPH_LIMITS.visited + 1
+    )
+      log(
+        `[cef-engineering-checkpoint] graph files=${counts.files} bytes=${counts.bytes} visited=${counts.visited}`,
+      );
+    throw error; // The CLI's outer catch remains fixed and never prints raw errors.
+  }
+}
+
+export async function normalizeSdkLinks(
+  out,
+  { developerDir, sdkRoot, expectedTargets },
+) {
+  assert(
+    path.isAbsolute(developerDir) && path.isAbsolute(sdkRoot),
+    "Verified absolute SDK roots required",
+  );
+  const developer = await realpath(developerDir),
+    sdk = await realpath(sdkRoot);
+  assert(
+    sdk.startsWith(
+      path.join(
+        developer,
+        "Platforms",
+        "MacOSX.platform",
+        "Developer",
+        "SDKs",
+      ) + path.sep,
+    ),
+    "SDK outside verified Developer path",
+  );
+  const specs = [
+    {
+      raw: sdkRoot,
+      target: sdk,
+      names: new Set([path.basename(sdkRoot), path.basename(sdk)]),
+    },
+    {
+      raw: path.join(developerDir, "Platforms", "MacOSX.platform"),
+      names: new Set(["MacOSX.platform"]),
+    },
+    {
+      raw: path.join(developerDir, "Toolchains", "XcodeDefault.xctoolchain"),
+      names: new Set(["XcodeDefault.xctoolchain"]),
+    },
+  ];
+  assert(
+    [...specs[0].names].every((name) =>
+      /^MacOSX(?:[0-9]+(?:\.[0-9]+)*)?\.sdk$/.test(name),
+    ),
+    "Closed SDK alias names required",
+  );
+  assert(
+    Array.isArray(expectedTargets) &&
+      expectedTargets.length === 3 &&
+      new Set(expectedTargets).size === 3,
+    "Three verified physical SDK targets required",
+  );
+  for (const [index, spec] of specs.entries()) {
+    spec.target ??= await realpath(spec.raw);
+    assert(
+      spec.target === expectedTargets[index],
+      "SDK physical target changed since tool verification",
+    );
+    await noLinks(spec.target);
+    assert(
+      (await stat(spec.target)).isDirectory(),
+      "Physical SDK directory required",
+    );
+  }
+  const directory = path.join(out, "sdk", "xcode_links");
+  await noLinks(directory);
+  const entries = await readdir(directory, { withFileTypes: true });
+  assert(entries.length === 3, "Exactly three generated SDK links required");
+  const found = new Set(),
+    validated = [];
+  for (const entry of entries) {
+    const matches = specs.filter((spec) => spec.names.has(entry.name));
+    assert(
+      entry.isSymbolicLink() && matches.length === 1 && !found.has(matches[0]),
+      "Unknown or duplicate generated SDK link",
+    );
+    const spec = matches[0],
+      file = path.join(directory, entry.name),
+      raw = await readlink(file);
+    assert(
+      path.isAbsolute(raw) &&
+        (raw === spec.raw || raw === spec.target) &&
+        (await realpath(file)) === spec.target,
+      "Generated SDK link differs from exact verified physical target",
+    );
+    found.add(spec);
+    validated.push({
+      file,
+      raw,
+      target: spec.target,
+      name: `sdk/xcode_links/${entry.name}`,
+    });
+  }
+  // Validate every entry before changing ONLY our generated out/ links. Preserve
+  // GN's raw link names; canonicalize target text so Python's strict physical
+  // recipe remains unchanged. The source and installed SDK are never modified.
+  for (const row of validated)
+    if (row.raw !== row.target) {
+      assert(
+        (await lstat(row.file)).isSymbolicLink() &&
+          (await readlink(row.file)) === row.raw &&
+          (await realpath(row.file)) === row.target,
+        "Generated SDK link changed before normalization",
+      );
+      await unlink(row.file);
+      await symlink(
+        row.target,
+        row.file,
+        process.platform === "win32" ? "junction" : "dir",
+      );
+    }
+  for (const row of validated)
+    assert(
+      (await readlink(row.file)) === row.target &&
+        (await realpath(row.file)) === row.target,
+      "Normalized SDK link differs",
+    );
+  return Object.fromEntries(
+    validated
+      .sort((a, b) => (a.name < b.name ? -1 : 1))
+      .map((row) => [row.name, row.target]),
+  );
+}
+
+// Pinned GN150a9d6's target writer can emit one .ninja per eligible target;
+// actual Mac GN reported34799 targets. Keep a finite margin plus byte/time caps.
+export const GRAPH_LIMITS = Object.freeze({
+  files: 50000,
+  bytes: 2 * 1024 ** 3,
+  visited: 300000,
+  milliseconds: 60000,
+  fileBytes: 256 * 1024 ** 2,
+});
+export function assertGraphBudget({ files, bytes, visited, elapsed }) {
+  assert(
+    [files, bytes, visited].every(
+      (value) => Number.isSafeInteger(value) && value >= 0,
+    ) &&
+      Number.isFinite(elapsed) &&
+      elapsed >= 0,
+    "Invalid graph inventory counters",
+  );
+  if (!(
+    files <= GRAPH_LIMITS.files &&
+    bytes <= GRAPH_LIMITS.bytes &&
+    visited <= GRAPH_LIMITS.visited &&
+    elapsed < GRAPH_LIMITS.milliseconds
+  ))
+    throw Object.assign(new Error("Graph inventory bound"), {
+      code: "GRAPH_BOUND",
+      graphCounts: { files, bytes, visited },
+    });
+}
+export async function graphInventory(root) {
   const began = performance.now();
   let visited = 0,
     totalBytes = 0;
@@ -1085,10 +1287,12 @@ export async function graphDigest(root) {
     const directory = pending.pop();
     for (const item of await readdir(directory, { withFileTypes: true })) {
       visited++;
-      assert(
-        visited <= 300000 && performance.now() - began < 60000,
-        "Graph inventory bound",
-      );
+      assertGraphBudget({
+        files: pins.length,
+        bytes: totalBytes,
+        visited,
+        elapsed: performance.now() - began,
+      });
       // Links are not used as graph authority and will fail closed at pack time.
       if (item.isSymbolicLink()) continue;
       const file = path.join(directory, item.name);
@@ -1096,13 +1300,15 @@ export async function graphDigest(root) {
       else if (item.name.endsWith(".ninja") || item.name === "args.gn") {
         pins.push({
           path: path.relative(root, file),
-          ...(await filePin(file, 256 * 1024 ** 2)),
+          ...(await filePin(file, GRAPH_LIMITS.fileBytes)),
         });
         totalBytes += pins[pins.length - 1].bytes;
-        assert(
-          pins.length <= 10000 && totalBytes <= 2 * 1024 ** 3,
-          "Graph inventory bound",
-        );
+        assertGraphBudget({
+          files: pins.length,
+          bytes: totalBytes,
+          visited,
+          elapsed: performance.now() - began,
+        });
       }
     }
   }
@@ -1111,12 +1317,21 @@ export async function graphDigest(root) {
       pins.some((p) => p.path === "args.gn"),
     "Fresh complete GN graph required",
   );
-  return sha(
-    canonical(
-      pins.sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0)),
+  return {
+    files: pins.length,
+    bytes: totalBytes,
+    visited,
+    sha256: sha(
+      canonical(
+        pins.sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0)),
+      ),
     ),
-  );
+  };
 }
+export async function graphDigest(root) {
+  return (await graphInventory(root)).sha256;
+}
+
 export async function verifyGraph(root, expected) {
   assert(
     hex(expected) && (await graphDigest(root)) === expected,

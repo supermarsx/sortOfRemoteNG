@@ -6,7 +6,6 @@ import {
   mkdir,
   readFile,
   readdir,
-  readlink,
   realpath,
   statfs,
   writeFile,
@@ -35,7 +34,9 @@ import {
   workspace,
   filePin,
   validateIdentity,
-  graphDigest,
+  graphInventory,
+  afterGnPhase,
+  normalizeSdkLinks,
   withVerifiedGraph,
   restoreVerifiedGraph,
   validateManifest,
@@ -121,7 +122,21 @@ async function tools(env) {
     python,
     runnerMapFromInputs: true,
   });
-  return { python, toolchain, map };
+  const selected = (key) =>
+    map.environment[key].replace(
+      /^@TOOLS@\//,
+      toolsRoot.endsWith(path.sep) ? toolsRoot : toolsRoot + path.sep,
+    );
+  const developer = selected("DEVELOPER_DIR"),
+    sdk = selected("SDKROOT");
+  const sdkTargets = await Promise.all(
+    [
+      sdk,
+      path.join(developer, "Platforms", "MacOSX.platform"),
+      path.join(developer, "Toolchains", "XcodeDefault.xctoolchain"),
+    ].map((value) => realpath(value)),
+  );
+  return { python, toolchain, map, sdkTargets };
 }
 async function codeDigest() {
   const lines = execFileSync(
@@ -223,38 +238,49 @@ export async function main(argv = process.argv.slice(2), env = process.env) {
           workspace: work,
           async afterGn(context) {
             const out = path.join(context.chromium, "out", "Release_GN_x64");
-            const siso = await filePin(
-              path.join(context.chromium, "third_party/siso/cipd/siso"),
-              256 * 1024 ** 2,
-            );
-            const developer = await realpath(context.env.DEVELOPER_DIR),
-              sdk = await realpath(context.env.SDKROOT);
-            fail(
-              sdk.startsWith(
-                `${developer}/Platforms/MacOSX.platform/Developer/SDKs/`,
+            const siso = await afterGnPhase("siso-pin", () =>
+              filePin(
+                path.join(context.chromium, "third_party/siso/cipd/siso"),
+                256 * 1024 ** 2,
               ),
-              "SDK outside verified Developer path",
             );
-            const linkRecipe = {};
-            for (const target of [
-              sdk,
-              path.join(developer, "Platforms/MacOSX.platform"),
-              path.join(developer, "Toolchains/XcodeDefault.xctoolchain"),
-            ]) {
-              const canonicalTarget = await realpath(target),
-                name = `sdk/xcode_links/${path.basename(canonicalTarget)}`;
+            await afterGnPhase("sdk-roots", async () => {
+              const developer = await realpath(context.env.DEVELOPER_DIR),
+                sdk = await realpath(context.env.SDKROOT);
               fail(
-                (await readlink(path.join(out, name))) === canonicalTarget,
-                "Fresh GN link differs from exact verified SDK recipe",
+                sdk.startsWith(
+                  path.join(
+                    developer,
+                    "Platforms",
+                    "MacOSX.platform",
+                    "Developer",
+                    "SDKs",
+                  ) + path.sep,
+                ),
+                "SDK outside verified Developer path",
               );
-              linkRecipe[name] = canonicalTarget;
-            }
+            });
+            const linkRecipe = await afterGnPhase("sdk-links", () =>
+              normalizeSdkLinks(out, {
+                developerDir: context.env.DEVELOPER_DIR,
+                sdkRoot: context.env.SDKROOT,
+                expectedTargets: verified.sdkTargets,
+              }),
+            );
             const recipePath = path.join(
               context.logs,
               "generated-sdk-links.json",
             );
-            await writeFile(recipePath, canonical(linkRecipe), { flag: "wx" });
-            const identity = {
+            await afterGnPhase("recipe-write", () =>
+              writeFile(recipePath, canonical(linkRecipe), { flag: "wx" }),
+            );
+            const graph = await afterGnPhase("graph-inventory", () =>
+              graphInventory(out),
+            );
+            console.log(
+              `[cef-engineering-checkpoint] graph files=${graph.files} bytes=${graph.bytes} visited=${graph.visited}`,
+            );
+            const identity = await afterGnPhase("identity", async () => ({
               target: TARGET,
               source: SOURCE_ID,
               producer: code,
@@ -271,71 +297,81 @@ export async function main(argv = process.argv.slice(2), env = process.env) {
                   ),
                 }),
               ),
-              graph: await graphDigest(out),
+              graph: graph.sha256,
               siso: siso.sha256,
-            };
-            const digest = validateIdentity(identity);
+            }));
+            const digest = await afterGnPhase("identity", () =>
+              validateIdentity(identity),
+            );
             context.checkpoint = { out, identity, digest, recipePath };
-            let prior;
-            try {
-              prior = await json(path.join(download, "download-proof.json"));
-            } catch (error) {
-              if (error.code !== "ENOENT") throw error;
-            }
-            if (prior) {
-              const manifestBytes = await readFile(
-                path.join(download, "manifest.json"),
-              );
-              fail(
-                /^[a-f0-9]{64}$/.test(env.CEF_RESTORE_MANIFEST_SHA ?? "") &&
-                  sha(manifestBytes) === env.CEF_RESTORE_MANIFEST_SHA,
-                "Manifest differs from trusted download-step output",
-              );
-              fail(
-                canonical(JSON.parse(manifestBytes)) ===
-                  canonical(prior.manifest),
-                "Restore proof differs from pinned manifest",
-              );
-              validateManifest(prior.manifest, digest);
-              const free = await statfs(path.dirname(out));
-              fail(
-                free.bavail * free.bsize >=
-                  prior.manifest.archive.rawBytes + 2 * 1024 ** 3,
-                "Restore disk capacity",
-              );
-              const restored = path.join(
-                path.dirname(out),
-                "checkpoint-restored",
-              );
-              const result = await archiveCommand(verified.python, HELPER, [
-                "restore",
-                "--input",
-                download,
-                "--output",
-                restored,
-                "--manifest",
-                path.join(download, "manifest.json"),
-                "--generated-links",
-                recipePath,
-              ]);
-              fail(
-                result.complete === true && result.linksExtracted === false,
-                "Incomplete verified restore",
-              );
-              await restoreVerifiedGraph({
-                fresh: out,
-                restored,
-                expectedGraph: identity.graph,
-                revalidateGn: context.revalidateGn,
-                verifyGenerated: async () => {
-                  for (const [name, target] of Object.entries(linkRecipe))
-                    fail(
-                      (await readlink(path.join(out, name))) === target,
-                      "Post-GN SDK link differs from verified recipe",
+            await afterGnPhase("restore", async () => {
+              let prior;
+              try {
+                prior = await json(path.join(download, "download-proof.json"));
+              } catch (error) {
+                if (error.code !== "ENOENT") throw error;
+              }
+              if (prior) {
+                const manifestBytes = await readFile(
+                  path.join(download, "manifest.json"),
+                );
+                fail(
+                  /^[a-f0-9]{64}$/.test(env.CEF_RESTORE_MANIFEST_SHA ?? "") &&
+                    sha(manifestBytes) === env.CEF_RESTORE_MANIFEST_SHA,
+                  "Manifest differs from trusted download-step output",
+                );
+                fail(
+                  canonical(JSON.parse(manifestBytes)) ===
+                    canonical(prior.manifest),
+                  "Restore proof differs from pinned manifest",
+                );
+                validateManifest(prior.manifest, digest);
+                const free = await statfs(path.dirname(out));
+                fail(
+                  free.bavail * free.bsize >=
+                    prior.manifest.archive.rawBytes + 2 * 1024 ** 3,
+                  "Restore disk capacity",
+                );
+                const restored = path.join(
+                  path.dirname(out),
+                  "checkpoint-restored",
+                );
+                const result = await archiveCommand(verified.python, HELPER, [
+                  "restore",
+                  "--input",
+                  download,
+                  "--output",
+                  restored,
+                  "--manifest",
+                  path.join(download, "manifest.json"),
+                  "--generated-links",
+                  recipePath,
+                ]);
+                fail(
+                  result.complete === true && result.linksExtracted === false,
+                  "Incomplete verified restore",
+                );
+                await restoreVerifiedGraph({
+                  fresh: out,
+                  restored,
+                  expectedGraph: identity.graph,
+                  revalidateGn: context.revalidateGn,
+                  verifyGenerated: async () => {
+                    const regenerated = await afterGnPhase("sdk-links", () =>
+                      normalizeSdkLinks(out, {
+                        developerDir: context.env.DEVELOPER_DIR,
+                        sdkRoot: context.env.SDKROOT,
+                        expectedTargets: verified.sdkTargets,
+                      }),
                     );
-                },
-              });
-            }
+                    fail(
+                      canonical(regenerated) === canonical(linkRecipe),
+                      "Post-GN SDK recipe differs from verified physical targets",
+                    );
+                  },
+                });
+              }
+            });
           },
           async compile(context) {
             const compile = await compileSlice(
