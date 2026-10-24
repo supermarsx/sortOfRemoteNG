@@ -74,6 +74,14 @@ fn requested_revision() -> Result<&'static str> {
 fn requires_retirement(patch_id: &str) -> bool {
     matches!(patch_id, PATCH_ID | HTTP3_PATCH_ID)
 }
+
+// Absence is not a live CEF browser. Every browser that was actually created
+// must still deliver its real Closed lifecycle before ordered shutdown.
+fn all_created_hosts_closed(states: impl IntoIterator<Item = Option<Lifecycle>>) -> bool {
+    states
+        .into_iter()
+        .all(|state| state.is_none_or(|lifecycle| lifecycle == Lifecycle::Closed))
+}
 const ORIGIN: &str = "https://proxy-first.fixture.test";
 const OTHER_ORIGIN: &str = "https://alternate.fixture.test";
 fn cross_authority() -> bool {
@@ -724,11 +732,7 @@ fn execute(bootstrap: &mut dyn RuntimeBootstrap, paths: &BundlePaths) -> Result 
                         }
                     }
                 }
-                if slots.iter().all(|s| {
-                    s.host
-                        .as_ref()
-                        .is_some_and(|h| h.lifecycle() == Lifecycle::Closed)
-                }) {
+                if all_created_hosts_closed(slots.iter().map(|s| s.host.as_ref().map(|h| h.lifecycle()))) {
                     *flow = ControlFlow::Exit;
                 }
             }
@@ -742,11 +746,8 @@ fn execute(bootstrap: &mut dyn RuntimeBootstrap, paths: &BundlePaths) -> Result 
             *flow = ControlFlow::Exit;
         }
     });
-    let closed = slots.iter().all(|s| {
-        s.host
-            .as_ref()
-            .is_some_and(|h| h.lifecycle() == Lifecycle::Closed)
-    });
+    let closed =
+        all_created_hosts_closed(slots.iter().map(|s| s.host.as_ref().map(|h| h.lifecycle())));
     let rows:Vec<_>=slots.iter().map(|s|{let o=s.sink.0.lock().unwrap();serde_json::json!({"proxyApplicationVerified":s.proxy_application_verified,"proxyBeforeHost":s.proxy_before_host,"sessionStatus":format!("{:?}",s.session.lock().unwrap().status()),"sessionFailure":format!("{:?}",s.session.lock().unwrap().failure_reason()),"tlsCurrent":s.tls_owner.current.load(Ordering::Relaxed),"alpnObserved":*s.alpn_observed.lock().unwrap(),"beforeAdmissionBytes":s.tls_owner.before_admission_bytes.load(Ordering::Relaxed),"minimumAdmissionDelayMs":*s.tls_owner.minimum_admission_delay_ms.lock().unwrap(),"denied":s.tls_owner.denied.load(Ordering::Relaxed),"dials":s.dials.load(Ordering::Relaxed),"requests":*s.requests.lock().unwrap(),"cases":s.reports,"title":o.title,"nativeStates":o.native_states,"featureStates":o.feature_states,"errors":o.errors,"diagnostics":s.session.lock().unwrap().proxy_diagnostics()})}).collect();
     let endpoints: Vec<_> = slots
         .iter()
@@ -1050,5 +1051,67 @@ mod revision_selection_tests {
         ] {
             assert!(!requires_retirement(patch));
         }
+    }
+}
+
+#[cfg(test)]
+mod fixture_close_tests {
+    use super::*;
+
+    #[test]
+    fn missing_hosts_and_empty_created_set_do_not_block_cleanup() {
+        assert!(all_created_hosts_closed([None, None]));
+        assert!(all_created_hosts_closed(std::iter::empty::<
+            Option<Lifecycle>,
+        >()));
+    }
+
+    #[test]
+    fn only_real_closed_lifecycles_admit_created_hosts() {
+        assert!(all_created_hosts_closed([Some(Lifecycle::Closed), None]));
+        assert!(all_created_hosts_closed([None, Some(Lifecycle::Closed)]));
+        assert!(all_created_hosts_closed([
+            Some(Lifecycle::Closed),
+            Some(Lifecycle::Closed)
+        ]));
+        for lifecycle in [
+            Lifecycle::Starting,
+            Lifecycle::Attached,
+            Lifecycle::Hidden,
+            Lifecycle::Closing,
+            Lifecycle::Faulted,
+        ] {
+            assert!(!all_created_hosts_closed([Some(lifecycle), None]));
+            assert!(!all_created_hosts_closed([None, Some(lifecycle)]));
+            assert!(!all_created_hosts_closed([
+                Some(Lifecycle::Closed),
+                Some(lifecycle)
+            ]));
+        }
+    }
+
+    #[test]
+    fn a_later_live_host_cannot_be_hidden_by_an_absent_or_closed_predecessor() {
+        let mut checked = 0;
+        let states = [None, Some(Lifecycle::Closed), Some(Lifecycle::Closing)];
+        let closed = all_created_hosts_closed(states.into_iter().inspect(|_| checked += 1));
+        assert!(!closed);
+        assert_eq!(checked, 3);
+    }
+
+    #[test]
+    fn vacuous_cleanup_does_not_erase_the_original_host_creation_failure() {
+        let failures =
+            std::iter::once("host-create: Browser parent or native child is unavailable")
+                .collect::<Vec<_>>();
+        let closed = all_created_hosts_closed([None, None]);
+        assert!(closed);
+        assert_eq!(
+            failures[0],
+            "host-create: Browser parent or native child is unavailable"
+        );
+        // The actual report's failures.is_empty and native-proof requirements
+        // remain unchanged; this cleanup fact alone can never be acceptance.
+        assert!(!(failures.is_empty() && closed));
     }
 }
