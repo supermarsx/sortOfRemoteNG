@@ -21,6 +21,7 @@ import { Script } from "node:vm";
 import {
   RUNNERS,
   engineeringSdkContinuation,
+  engineeringBuildProfile,
   MAX_RELEASE_ASSET,
   WINDOWS_GIT_PROGRAMS,
   WINDOWS_GIT_TEMPLATE_SHA256,
@@ -72,6 +73,7 @@ import {
   inspectNativeBinary,
 } from "../../scripts/browser-runtime-package.mjs";
 import { RELEASE_LIMITS } from "../../scripts/lib/browser-runtime-release.mjs";
+import { checkpointProfile } from "../../scripts/lib/cef-engineering-checkpoint.mjs";
 
 // Synthetic fixture bytes below are not executable engines or production pins.
 // No source fetch, CEF build, Cargo, system installer or live GitHub write occurs.
@@ -2022,16 +2024,115 @@ test("engineering checkpoints cannot select a dedicated or foreign producer befo
     build({
       execute: true,
       repository: "owner/repo",
-      target: "aarch64-apple-darwin",
+      target: "x86_64-pc-windows-msvc",
       runnerMode: "hosted",
       engineering: {},
     }),
-    /Engineering checkpoint requires/,
+    /Unknown checkpoint target/,
   );
   assert.throws(
     () => parseArguments(["build", "--checkpoint", "yes"]),
     /Unknown\/duplicate/,
   );
+});
+
+test("actual engineering build gate binds all three closed profiles to their pinned source and x64 host", async () => {
+  for (const target of [
+    "x86_64-apple-darwin",
+    "aarch64-apple-darwin",
+    "aarch64-unknown-linux-gnu",
+  ]) {
+    const profile = checkpointProfile(target);
+    const { sourceLock } = await plan({
+      inputs: profile.inputs,
+      target,
+      runnerMode: "hosted",
+    });
+    const sourceLockIdentity = releaseIdentity(
+      sourceLock,
+      target,
+    ).sourceLockSha256;
+    const options = {
+      inputs: profile.inputs,
+      target,
+      runnerMode: "hosted",
+      sourceLockIdentity,
+    };
+    assert.equal(
+      engineeringBuildProfile(options, profile.platform, "x64"),
+      profile,
+    );
+    for (const platform of [
+      "win32",
+      profile.platform === "darwin" ? "linux" : "darwin",
+    ])
+      assert.throws(
+        () => engineeringBuildProfile(options, platform, "x64"),
+        /Unreviewed checkpoint build host/,
+      );
+    assert.throws(
+      () => engineeringBuildProfile(options, profile.platform, "arm64"),
+      /Unreviewed checkpoint build host/,
+    );
+    assert.throws(
+      () =>
+        engineeringBuildProfile(
+          { ...options, runnerMode: "dedicated" },
+          profile.platform,
+          "x64",
+        ),
+      /Engineering checkpoint requires/,
+    );
+    assert.throws(
+      () =>
+        engineeringBuildProfile(
+          { ...options, inputs: "native/cef-build-inputs/unreviewed" },
+          profile.platform,
+          "x64",
+        ),
+      /exact reviewed inputs and source identity/,
+    );
+    assert.throws(
+      () =>
+        engineeringBuildProfile(
+          { ...options, sourceLockIdentity: "0".repeat(64) },
+          profile.platform,
+          "x64",
+        ),
+      /exact reviewed inputs and source identity/,
+    );
+    const changedRevision = structuredClone(sourceLock);
+    changedRevision.bridge.patchId = "sorng-tls-v2-682c378-5";
+    assert.throws(
+      () =>
+        engineeringBuildProfile(
+          { ...options, sourceLockIdentity: identitySha256(changedRevision) },
+          profile.platform,
+          "x64",
+        ),
+      /exact reviewed inputs and source identity/,
+    );
+  }
+  for (const target of [
+    "x86_64-pc-windows-msvc",
+    "aarch64-pc-windows-msvc",
+    "x86_64-unknown-linux-gnu",
+    "unknown",
+  ])
+    assert.throws(
+      () =>
+        engineeringBuildProfile(
+          {
+            inputs: "unreviewed",
+            target,
+            runnerMode: "hosted",
+            sourceLockIdentity: "0".repeat(64),
+          },
+          "win32",
+          "x64",
+        ),
+      /Unknown checkpoint target/,
+    );
 });
 
 test("engineering packaging continues only for explicit complete-SDK intent and genuinely clean compiler completion", () => {

@@ -23,6 +23,7 @@ import { finished } from "node:stream/promises";
 import { TARGETS } from "./browser-runtime-package.mjs";
 import { RECIPE as HOSTED_RECIPE } from "./cef-hosted-bootstrap.mjs";
 import { inventoryCustomArtifact } from "./cef-custom-artifact-inventory.mjs";
+import { checkpointHost } from "./lib/cef-engineering-checkpoint.mjs";
 import {
   customRuntimeBuildRecipe,
   identitySha256,
@@ -893,6 +894,21 @@ export async function descriptorFor({
   return descriptor;
 }
 
+export function engineeringBuildProfile(
+  { inputs, target, runnerMode, sourceLockIdentity },
+  platform = process.platform,
+  architecture = process.arch,
+) {
+  if (runnerMode !== "hosted")
+    fail("Engineering checkpoint requires its reviewed native hosted target");
+  const profile = checkpointHost(target, platform, architecture);
+  if (inputs !== profile.inputs || sourceLockIdentity !== profile.source)
+    fail(
+      "Engineering checkpoint requires its exact reviewed inputs and source identity",
+    );
+  return profile;
+}
+
 export async function build(
   {
     inputs,
@@ -910,14 +926,11 @@ export async function build(
     runnerMode === "hosted"
       ? createHostedBuildBudget(engineering ? 60 * 60_000 : undefined)
       : undefined;
-  if (
-    engineering &&
-    (runnerMode !== "hosted" ||
-      target !== "x86_64-apple-darwin" ||
-      process.platform !== "darwin" ||
-      process.arch !== "x64")
-  )
-    fail("Engineering checkpoint requires its reviewed native hosted target");
+  if (engineering) {
+    if (runnerMode !== "hosted")
+      fail("Engineering checkpoint requires its reviewed native hosted target");
+    checkpointHost(target, process.platform, process.arch);
+  }
   repositoryName(repository);
   const { sourceLock, inputsRoot } = await plan({
     inputs,
@@ -926,6 +939,13 @@ export async function build(
     runnerMode,
   });
   const identity = releaseIdentity(sourceLock, target);
+  if (engineering)
+    engineeringBuildProfile({
+      inputs,
+      target,
+      runnerMode,
+      sourceLockIdentity: identity.sourceLockSha256,
+    });
   const expectedPlatform = target.includes("windows")
     ? "win32"
     : target.includes("linux")
