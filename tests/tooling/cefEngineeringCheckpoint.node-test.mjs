@@ -4574,3 +4574,29 @@ test("Linux dependency role diagnostics are fixed and never emit paths, messages
     );
   }
 });
+
+test("Mac supplemental compiler identity participates in fresh checkpoint identity before restore", async () => {
+  const source = await readFile(
+    new URL("../../scripts/cef-engineering-checkpoint.mjs", import.meta.url),
+    "utf8",
+  );
+  assert.match(
+    source,
+    /supplementalMetal: macMetalFingerprint\(context\.metal\)/,
+  );
+  assert.ok(
+    source.indexOf("macMetalFingerprint(context.metal)") <
+      source.indexOf('afterGnPhase("restore"'),
+  );
+  const currentIdentity = { ...identity, tools: "a".repeat(64) };
+  const altered = { ...currentIdentity, tools: "b".repeat(64) };
+  assert.notEqual(validateIdentity(currentIdentity), validateIdentity(altered));
+  const prior = manifest();
+  const drifted = manifest();
+  drifted.identity.tools = altered.tools;
+  drifted.identitySha256 = validateIdentity(drifted.identity);
+  assert.throws(
+    () => validateManifest(drifted, prior.identitySha256),
+    /identity mismatch/,
+  );
+});

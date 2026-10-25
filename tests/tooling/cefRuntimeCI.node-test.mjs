@@ -2160,3 +2160,27 @@ test("engineering packaging continues only for explicit complete-SDK intent and 
       ),
     );
 });
+
+test("ordinary and engineering producers share Metal attestation after reviewed tool-map validation", async () => {
+  const source = await readFile(
+    new URL("../../scripts/cef-runtime-ci.mjs", import.meta.url),
+    "utf8",
+  );
+  const verify = source.indexOf("await verifyToolchainFiles({");
+  const prepare = source.indexOf(
+    "const metal = await prepareMacMetalToolchain({",
+  );
+  const acquire = source.indexOf('"acquire",', prepare);
+  assert.ok(verify >= 0 && prepare > verify && acquire > prepare);
+  assert.match(source, /platform: expectedPlatform/);
+  assert.match(source, /DEVELOPER_DIR: childEnv.DEVELOPER_DIR/);
+  assert.match(source, /SDKROOT: childEnv.SDKROOT/);
+  assert.match(source, /allowDownload: runnerMode === "hosted"/);
+  assert.match(source, /mac-metal-toolchain\.json/);
+  assert.match(source, /supplementalMetalPrePinned: false/);
+  assert.match(source, /MAC_METAL_PRODUCER_DRIFT/);
+  assert.ok(
+    source.indexOf("const currentMetal = await prepareMacMetalToolchain") <
+      source.indexOf("const decision = await engineering.compile"),
+  );
+});

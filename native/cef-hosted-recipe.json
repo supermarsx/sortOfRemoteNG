@@ -40,6 +40,18 @@
         "--no-arm",
         "--no-backwards-compatible"
       ]
+    },
+    "macMetalToolchain": {
+      "component": "MetalToolchain",
+      "executable": "/usr/bin/xcodebuild",
+      "arguments": ["-downloadComponent", "MetalToolchain"],
+      "maximumMilliseconds": 600000,
+      "probeMilliseconds": 30000,
+      "maximumOutputBytes": 65536,
+      "primarySource": "https://developer.apple.com/documentation/xcode/downloading-and-installing-additional-xcode-components",
+      "pinnedChromiumSource": "build/xcode_binaries.yaml",
+      "pinnedChromiumSha256": "7e9c580489755614351afabb568a20a32d61f5e5dd7d41032aa44b021995f89b",
+      "provenance": "newly-observed-apple-component-not-prepinned"
     }
   },
   "targets": [

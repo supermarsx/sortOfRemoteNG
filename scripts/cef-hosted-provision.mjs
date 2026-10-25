@@ -4,6 +4,8 @@ import { createHash } from "node:crypto";
 import { execFile } from "node:child_process";
 import {
   appendFile,
+  lstat,
+  open,
   mkdir,
   readFile,
   realpath,
@@ -44,6 +46,14 @@ export function provisionPlan(
         : platform === "linux"
           ? RECIPE.provisioning.linuxDependencies
           : null,
+    supplementalPrerequisite:
+      platform === "darwin"
+        ? {
+            component: RECIPE.provisioning.macMetalToolchain.component,
+            requiresReviewedProducerSelection: true,
+            prepared: false,
+          }
+        : null,
     arguments:
       platform === "win32"
         ? [
@@ -114,6 +124,302 @@ export function childEnvironment(env) {
     ),
   );
 }
+// Called only AFTER the producer validates its exact reviewed runner/tool map.
+// The component is Apple's newly observed selection, never a fabricated prior pin.
+export function macMetalEnvironment(selected, env = {}) {
+  for (const key of ["DEVELOPER_DIR", "SDKROOT"])
+    if (
+      typeof selected?.[key] !== "string" ||
+      !path.posix.isAbsolute(selected[key]) ||
+      selected[key].length > 2048 ||
+      /[\x00-\x1f\x7f]/.test(selected[key])
+    )
+      fail("MAC_METAL_SELECTED_ENV");
+  if (!selected.DEVELOPER_DIR.endsWith("/Contents/Developer"))
+    fail("MAC_METAL_SELECTED_ENV");
+  return {
+    ...Object.fromEntries(
+      ["HOME", "USER", "LOGNAME", "TMPDIR", "LANG", "LC_ALL"]
+        .filter((key) => typeof env[key] === "string")
+        .map((key) => [key, env[key]]),
+    ),
+    PATH: "/usr/bin:/bin:/usr/sbin:/sbin",
+    DEVELOPER_DIR: selected.DEVELOPER_DIR,
+    SDKROOT: selected.SDKROOT,
+  };
+}
+async function metalFile(file, check = () => {}) {
+  check();
+  const canonical = await realpath(file);
+  const before = await lstat(canonical, { bigint: true });
+  if (
+    !before.isFile() ||
+    before.isSymbolicLink() ||
+    before.size <= 0n ||
+    before.size > 256n * 1024n ** 2n
+  )
+    fail("MAC_METAL_FILE_BOUND");
+  const handle = await open(canonical, "r");
+  try {
+    const opened = await handle.stat({ bigint: true });
+    if (opened.dev !== before.dev || opened.ino !== before.ino)
+      fail("MAC_METAL_FILE_CHANGED");
+    const digest = createHash("sha256");
+    let bytes = 0;
+    const buffer = Buffer.alloc(1024 * 1024);
+    for (;;) {
+      check();
+      const read = await handle.read(buffer, 0, buffer.length, null);
+      check();
+      if (!read.bytesRead) break;
+      bytes += read.bytesRead;
+      if (BigInt(bytes) > before.size) fail("MAC_METAL_FILE_CHANGED");
+      digest.update(buffer.subarray(0, read.bytesRead));
+    }
+    const after = await handle.stat({ bigint: true });
+    const named = await lstat(canonical, { bigint: true });
+    if (
+      BigInt(bytes) !== before.size ||
+      !["dev", "ino", "size", "mtimeNs", "ctimeNs"].every(
+        (key) => before[key] === after[key] && before[key] === named[key],
+      ) ||
+      (await realpath(file)) !== canonical
+    )
+      fail("MAC_METAL_FILE_CHANGED");
+    return { physicalPath: canonical, bytes, sha256: digest.digest("hex") };
+  } finally {
+    await handle.close();
+  }
+}
+function metalVersion(result) {
+  const text = `${result.stdout ?? ""}\n${result.stderr ?? ""}`;
+  if (Buffer.byteLength(text) > 65536) fail("MAC_METAL_VERSION_BOUND");
+  const match = /\bversion\s+([0-9][A-Za-z0-9_.-]{0,63})/i.exec(text);
+  if (!match) fail("MAC_METAL_VERSION_MISSING");
+  return match[1];
+}
+export function macMetalFingerprint(observation) {
+  if (
+    !observation ||
+    observation.kind !== "selected-mac-metal-observation" ||
+    observation.provenance !== "newly-observed-apple-component-not-prepinned" ||
+    typeof observation.developerDir !== "string" ||
+    !observation.developerDir.endsWith("/Contents/Developer") ||
+    !Array.isArray(observation.tools) ||
+    observation.tools.length !== 2
+  )
+    fail("MAC_METAL_OBSERVATION");
+  return {
+    provenance: observation.provenance,
+    developerDir: observation.developerDir,
+    tools: ["metal", "metallib"].map((role, index) => {
+      const tool = observation.tools[index];
+      if (
+        tool?.role !== role ||
+        !["external-metal-toolchain", "selected-xcode-toolchain"].includes(
+          tool.location,
+        ) ||
+        tool.appleAnchorVerified !== true ||
+        !Number.isSafeInteger(tool.bytes) ||
+        tool.bytes <= 0 ||
+        tool.bytes > 256 * 1024 ** 2 ||
+        !/^[a-f0-9]{64}$/.test(tool.sha256) ||
+        (role === "metal"
+          ? !/^[0-9][A-Za-z0-9_.-]{0,63}$/.test(tool.version) ||
+            tool.versionSource !== "tool-output" ||
+            tool.pairedCompilerVersion !== null
+          : tool.version !== null ||
+            tool.versionSource !== "not-observed" ||
+            tool.pairedCompilerVersion !== observation.tools[0].version)
+      )
+        fail("MAC_METAL_OBSERVATION");
+      // Ephemeral cryptex mount spelling is private evidence, not restore identity.
+      return {
+        role,
+        location: tool.location,
+        bytes: tool.bytes,
+        sha256: tool.sha256,
+        version: tool.version,
+        versionSource: tool.versionSource,
+        pairedCompilerVersion: tool.pairedCompilerVersion,
+        appleAnchorVerified: true,
+      };
+    }),
+  };
+}
+async function prepareMacMetalToolchainImpl(
+  {
+    selected,
+    env = {},
+    platform = process.platform,
+    allowDownload = false,
+    remainingMilliseconds = () =>
+      RECIPE.provisioning.macMetalToolchain.maximumMilliseconds,
+  },
+  dependencies = {},
+) {
+  if (platform !== "darwin") return null;
+  if (typeof allowDownload !== "boolean") fail("MAC_METAL_DOWNLOAD_POLICY");
+  if (allowDownload) assertProvisionHost(env);
+  const recipe = RECIPE.provisioning.macMetalToolchain;
+  const childEnv = macMetalEnvironment(selected, env);
+  const execute = dependencies.exec ?? exec;
+  const measure = dependencies.measure ?? metalFile;
+  const canonical = dependencies.realpath ?? realpath;
+  const now = dependencies.now ?? (() => performance.now());
+  const firstRemaining = remainingMilliseconds();
+  if (!Number.isFinite(firstRemaining) || firstRemaining <= 0)
+    fail("MAC_METAL_DEADLINE");
+  const end = now() + Math.min(firstRemaining, recipe.maximumMilliseconds);
+  const left = () => {
+    const remaining = Math.floor(
+      Math.min(end - now(), remainingMilliseconds()),
+    );
+    if (!Number.isFinite(remaining) || remaining <= 0)
+      fail("MAC_METAL_DEADLINE");
+    return remaining;
+  };
+  const invoke = async (executable, args, download = false) => {
+    let result;
+    try {
+      result = await execute(executable, args, {
+        env: childEnv,
+        timeout: Math.min(
+          left(),
+          download ? recipe.maximumMilliseconds : recipe.probeMilliseconds,
+        ),
+        maxBuffer: recipe.maximumOutputBytes,
+        windowsHide: true,
+        killSignal: "SIGKILL",
+      });
+    } catch (error) {
+      left();
+      throw Object.assign(new Error("MAC_METAL_COMMAND_FAILED"), {
+        metalMissing:
+          executable === "/usr/bin/xcrun" &&
+          args.includes("metal") &&
+          /missing Metal Toolchain|unable to find utility ["']metal["']/i.test(
+            String(error?.stderr ?? ""),
+          ),
+      });
+    }
+    left();
+    return result;
+  };
+  let downloaded = false;
+  const attest = async () => {
+    const tools = [];
+    const canonicalDeveloper = await canonical(selected.DEVELOPER_DIR);
+    left();
+    let componentRoot;
+    for (const role of ["metal", "metallib"]) {
+      const resolved = await invoke("/usr/bin/xcrun", [
+        "--sdk",
+        "macosx",
+        "--find",
+        role,
+      ]);
+      const file = String(resolved.stdout ?? "").trim();
+      if (
+        !path.posix.isAbsolute(file) ||
+        /[\x00-\x1f\x7f]/.test(file) ||
+        Buffer.byteLength(file) > 2048
+      )
+        fail("MAC_METAL_RESOLVED_PATH");
+      const physical = await canonical(file);
+      const external = physical.endsWith(`/Metal.xctoolchain/usr/bin/${role}`);
+      const bundled =
+        physical ===
+        `${canonicalDeveloper}/Toolchains/XcodeDefault.xctoolchain/usr/bin/${role}`;
+      if (!external && !bundled) fail("MAC_METAL_RESOLVED_PATH");
+      const root = physical.slice(0, -role.length);
+      if (componentRoot && componentRoot !== root)
+        fail("MAC_METAL_COMPONENT_DRIFT");
+      componentRoot = root;
+      const before = await measure(physical, left);
+      await invoke("/usr/bin/codesign", [
+        "--verify",
+        "--strict",
+        "--all-architectures",
+        "-R=anchor apple",
+        physical,
+      ]);
+      const version =
+        role === "metal"
+          ? metalVersion(
+              await invoke("/usr/bin/xcrun", [
+                "--sdk",
+                "macosx",
+                "metal",
+                "--version",
+              ]),
+            )
+          : null;
+      const after = await measure(physical, left);
+      if (
+        JSON.stringify(before) !== JSON.stringify(after) ||
+        (await canonical(
+          String(
+            (
+              await invoke("/usr/bin/xcrun", [
+                "--sdk",
+                "macosx",
+                "--find",
+                role,
+              ])
+            ).stdout ?? "",
+          ).trim(),
+        )) !== physical
+      )
+        fail("MAC_METAL_FILE_CHANGED");
+      tools.push({
+        role,
+        location: external
+          ? "external-metal-toolchain"
+          : "selected-xcode-toolchain",
+        ...before,
+        version,
+        versionSource: role === "metal" ? "tool-output" : "not-observed",
+        pairedCompilerVersion: role === "metallib" ? tools[0].version : null,
+        appleAnchorVerified: true,
+      });
+    }
+    left();
+    return tools;
+  };
+  let tools;
+  try {
+    tools = await attest();
+  } catch (error) {
+    if (error?.metalMissing !== true) throw error;
+    if (!allowDownload) fail("MAC_METAL_PROBE_FAILED");
+    await invoke(recipe.executable, recipe.arguments, true);
+    downloaded = true;
+    tools = await attest();
+  }
+  const observation = {
+    schemaVersion: 1,
+    kind: "selected-mac-metal-observation",
+    provenance: recipe.provenance,
+    developerDir: selected.DEVELOPER_DIR,
+    downloaded,
+    tools,
+    componentResourceClosureVerified: false,
+    nativeCompatibilityVerified: false,
+  };
+  macMetalFingerprint(observation);
+  return observation;
+}
+
+export async function prepareMacMetalToolchain(options, dependencies) {
+  try {
+    return await prepareMacMetalToolchainImpl(options, dependencies);
+  } catch (error) {
+    if (/^MAC_METAL_[A-Z_]+$/.test(error?.message ?? "")) throw error;
+    throw new Error("MAC_METAL_UNAVAILABLE");
+  }
+}
+
 const SIGNATURE_SCRIPT = String.raw`param([Parameter(Mandatory=$true)][string]$Installer)
 $ErrorActionPreference='Stop'
 $s=Get-AuthenticodeSignature -LiteralPath $Installer

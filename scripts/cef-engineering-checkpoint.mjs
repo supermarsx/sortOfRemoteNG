@@ -20,6 +20,7 @@ import {
   validateRunnerMap,
   assertHostedBuildIdentity,
 } from "./cef-runtime-ci.mjs";
+import { macMetalFingerprint } from "./cef-hosted-provision.mjs";
 import { verifyToolchainFiles } from "./lib/browser-custom-runtime.mjs";
 import {
   LIMITS,
@@ -364,6 +365,9 @@ export async function main(argv = process.argv.slice(2), env = process.env) {
               tools: sha(
                 canonical({
                   toolchain: verified.toolchain,
+                  ...(profile.platform === "darwin"
+                    ? { supplementalMetal: macMetalFingerprint(context.metal) }
+                    : {}),
                   linkRecipe,
                   ...(linuxRecipe ? { linuxRecipe } : {}),
                   nodeVersion: process.version,

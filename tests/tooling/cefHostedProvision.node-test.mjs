@@ -9,6 +9,9 @@ import os from "node:os";
 import { RECIPE } from "../../scripts/cef-hosted-bootstrap.mjs";
 import {
   acquirePinned,
+  prepareMacMetalToolchain,
+  macMetalEnvironment,
+  macMetalFingerprint,
   assertProvisionHost,
   childEnvironment,
   LINUX_INSTALLER_OBSERVER,
@@ -638,4 +641,247 @@ test("installer exit3010 explicitly reports reboot required without retrying, re
     await readFile(path.join(f.output, "install-sdk.log"), "utf8"),
     "retained installation diagnostic\n",
   );
+});
+
+function metalFixture(patch = {}) {
+  const selected = {
+    DEVELOPER_DIR: "/Applications/Xcode_26.3.app/Contents/Developer",
+    SDKROOT:
+      "/Applications/Xcode_26.3.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX26.2.sdk",
+  };
+  const env = {
+    GITHUB_ACTIONS: "true",
+    RUNNER_ENVIRONMENT: "github-hosted",
+    GITHUB_REPOSITORY_VISIBILITY: "public",
+    GITHUB_EVENT_NAME: "workflow_dispatch",
+    HOME: "/Users/runner",
+    TMPDIR: "/private/tmp/owned/",
+    GH_TOKEN: "do-not-inherit",
+    GITHUB_TOKEN: "do-not-inherit",
+    AWS_SECRET_ACCESS_KEY: "do-not-inherit",
+    SSH_AUTH_SOCK: "do-not-inherit",
+    TOOLCHAINS: "foreign",
+    DYLD_INSERT_LIBRARIES: "foreign",
+  };
+  const calls = [];
+  let missing = patch.missing ?? false;
+  let time = 0;
+  const rolePath = (role) =>
+    `/private/var/run/Apple-component/Metal.xctoolchain/usr/bin/${role}`;
+  const exec = async (executable, args, options) => {
+    calls.push({ executable, args, options });
+    assert.deepEqual(Object.keys(options.env).sort(), [
+      "DEVELOPER_DIR",
+      "HOME",
+      "PATH",
+      "SDKROOT",
+      "TMPDIR",
+    ]);
+    assert.equal(options.env.DEVELOPER_DIR, selected.DEVELOPER_DIR);
+    assert.ok(options.timeout > 0 && options.timeout <= 600_000);
+    assert.equal(options.maxBuffer, 65536);
+    if (patch.advance) time += patch.advance;
+    if (patch.failure)
+      throw Object.assign(new Error("private origin/password"), {
+        stderr: "private origin/password",
+      });
+    if (executable === "/usr/bin/xcodebuild") {
+      assert.deepEqual(args, ["-downloadComponent", "MetalToolchain"]);
+      missing = false;
+      return { stdout: "", stderr: "" };
+    }
+    if (executable === "/usr/bin/codesign") {
+      assert.deepEqual(args.slice(0, -1), [
+        "--verify",
+        "--strict",
+        "--all-architectures",
+        "-R=anchor apple",
+      ]);
+      if (patch.signingFailure) throw Error("private path/signing stderr");
+      return {};
+    }
+    assert.equal(executable, "/usr/bin/xcrun");
+    if (args.includes("--find"))
+      return { stdout: patch.path ?? rolePath(args.at(-1)) };
+    assert.ok(
+      !args.includes("metallib") || !args.includes("--version"),
+      "no invented metallib version command",
+    );
+    if (missing)
+      throw Object.assign(new Error("missing"), {
+        stderr: "cannot execute tool 'metal' due to missing Metal Toolchain",
+      });
+    return { stdout: "Apple metal version 32023.104\n" };
+  };
+  let reads = 0;
+  return {
+    selected,
+    env,
+    calls,
+    dependencies: {
+      exec,
+      now: () => time,
+      realpath: async (file) => file,
+      measure: async (file) => {
+        reads++;
+        return {
+          physicalPath: file,
+          bytes: 4096,
+          sha256:
+            patch.mutation && reads === 2 ? "b".repeat(64) : "a".repeat(64),
+        };
+      },
+    },
+  };
+}
+
+test("selected Mac prerequisite observes external Apple Metal without selecting global Xcode", async () => {
+  const f = metalFixture();
+  const result = await prepareMacMetalToolchain(
+    { ...f, platform: "darwin" },
+    f.dependencies,
+  );
+  assert.equal(result.downloaded, false);
+  assert.equal(result.tools[1].version, null);
+  assert.equal(result.tools[1].versionSource, "not-observed");
+  assert.equal(result.tools[1].pairedCompilerVersion, result.tools[0].version);
+  assert.equal(result.componentResourceClosureVerified, false);
+  assert.equal(
+    result.provenance,
+    "newly-observed-apple-component-not-prepinned",
+  );
+  assert.ok(
+    result.tools.every(
+      (tool) =>
+        tool.location === "external-metal-toolchain" &&
+        tool.appleAnchorVerified,
+    ),
+  );
+  assert.ok(f.calls.every((call) => call.executable !== "/usr/bin/xcodebuild"));
+  assert.equal(
+    f.calls.filter((call) => call.executable === "/usr/bin/codesign").length,
+    2,
+  );
+  const firstVersion = f.calls.findIndex((call) =>
+    call.args.includes("--version"),
+  );
+  const firstSignature = f.calls.findIndex(
+    (call) => call.executable === "/usr/bin/codesign",
+  );
+  assert.ok(
+    firstSignature >= 0 && firstSignature < firstVersion,
+    "signing must precede any compiler execution",
+  );
+});
+
+test("missing Metal is installed only by the fixed reviewed hosted component command", async () => {
+  const f = metalFixture({ missing: true });
+  const result = await prepareMacMetalToolchain(
+    { ...f, platform: "darwin", allowDownload: true },
+    f.dependencies,
+  );
+  assert.equal(result.downloaded, true);
+  assert.equal(
+    f.calls.filter((call) => call.executable === "/usr/bin/xcodebuild").length,
+    1,
+  );
+  assert.equal(result.tools.length, 2);
+  const forbidden = metalFixture({ missing: true });
+  await assert.rejects(
+    prepareMacMetalToolchain(
+      { ...forbidden, platform: "darwin" },
+      forbidden.dependencies,
+    ),
+    /MAC_METAL_PROBE_FAILED/,
+  );
+  assert.ok(
+    forbidden.calls.every((call) => call.executable !== "/usr/bin/xcodebuild"),
+  );
+});
+
+test("foreign tools, invalid signing, mutable bytes and expired budgets fail without private errors", async () => {
+  for (const [patch, reason] of [
+    [{ path: "/tmp/foreign/metal" }, "MAC_METAL_RESOLVED_PATH"],
+    [{ signingFailure: true }, "MAC_METAL_COMMAND_FAILED"],
+    [{ mutation: true }, "MAC_METAL_FILE_CHANGED"],
+    [{ advance: 1001 }, "MAC_METAL_DEADLINE"],
+    [{ failure: true }, "MAC_METAL_COMMAND_FAILED"],
+  ]) {
+    const f = metalFixture(patch);
+    await assert.rejects(
+      prepareMacMetalToolchain(
+        { ...f, platform: "darwin", remainingMilliseconds: () => 1000 },
+        f.dependencies,
+      ),
+      (error) =>
+        error.message === reason &&
+        !JSON.stringify(error).includes("private origin"),
+    );
+    assert.ok(
+      f.calls.every((call) => call.executable !== "/usr/bin/xcodebuild"),
+    );
+  }
+});
+
+test("non-Mac paths have no tool side effects; selected env and hosted policy cannot inherit tokens", async () => {
+  const f = metalFixture();
+  assert.equal(
+    await prepareMacMetalToolchain({ platform: "linux" }, f.dependencies),
+    null,
+  );
+  assert.equal(
+    await prepareMacMetalToolchain({ platform: "win32" }, f.dependencies),
+    null,
+  );
+  assert.equal(f.calls.length, 0);
+  assert.throws(
+    () =>
+      macMetalEnvironment({ ...f.selected, DEVELOPER_DIR: "relative" }, f.env),
+    /SELECTED_ENV/,
+  );
+  await assert.rejects(
+    prepareMacMetalToolchain(
+      {
+        ...f,
+        platform: "darwin",
+        allowDownload: true,
+        env: { ...f.env, GITHUB_EVENT_NAME: "pull_request" },
+      },
+      f.dependencies,
+    ),
+    /MAC_METAL_UNAVAILABLE/,
+  );
+  assert.equal(f.calls.length, 0);
+  assert.equal(
+    provisionPlan("x86_64-apple-darwin", "darwin", "x64")
+      .supplementalPrerequisite.prepared,
+    false,
+  );
+});
+
+test("stable Metal fingerprint excludes mount spelling but changes for tool bytes/version/signing", async () => {
+  const f = metalFixture();
+  const observation = await prepareMacMetalToolchain(
+    { ...f, platform: "darwin" },
+    f.dependencies,
+  );
+  const stable = macMetalFingerprint(observation);
+  const moved = structuredClone(observation);
+  moved.tools[0].physicalPath =
+    "/another/Apple/Metal.xctoolchain/usr/bin/metal";
+  assert.deepEqual(macMetalFingerprint(moved), stable);
+  for (const field of ["sha256", "version", "bytes"]) {
+    const changed = structuredClone(observation);
+    changed.tools[0][field] =
+      field === "sha256" ? "b".repeat(64) : field === "version" ? "999" : 8192;
+    if (field === "version")
+      changed.tools[1].pairedCompilerVersion = changed.tools[0].version;
+    assert.notDeepEqual(macMetalFingerprint(changed), stable);
+  }
+  const mismatch = structuredClone(observation);
+  mismatch.tools[1].pairedCompilerVersion = "999";
+  assert.throws(() => macMetalFingerprint(mismatch), /MAC_METAL_OBSERVATION/);
+  const unsigned = structuredClone(observation);
+  unsigned.tools[0].appleAnchorVerified = false;
+  assert.throws(() => macMetalFingerprint(unsigned), /MAC_METAL_OBSERVATION/);
 });

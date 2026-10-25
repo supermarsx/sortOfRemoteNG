@@ -25,6 +25,10 @@ import { RECIPE as HOSTED_RECIPE } from "./cef-hosted-bootstrap.mjs";
 import { inventoryCustomArtifact } from "./cef-custom-artifact-inventory.mjs";
 import { checkpointHost } from "./lib/cef-engineering-checkpoint.mjs";
 import {
+  prepareMacMetalToolchain,
+  macMetalFingerprint,
+} from "./cef-hosted-provision.mjs";
+import {
   customRuntimeBuildRecipe,
   identitySha256,
   preflightCustomRuntime,
@@ -1093,6 +1097,29 @@ export async function build(
       throw error;
     }
   };
+  // Supplemental Apple components are observed AFTER the selected tool-map pins;
+  // they are not retroactively claimed to be part of that static inventory.
+  const metal = await prepareMacMetalToolchain({
+    platform: expectedPlatform,
+    selected: {
+      DEVELOPER_DIR: childEnv.DEVELOPER_DIR,
+      SDKROOT: childEnv.SDKROOT,
+    },
+    env,
+    allowDownload: runnerMode === "hosted",
+    remainingMilliseconds: () =>
+      budget?.remaining() ??
+      HOSTED_RECIPE.provisioning.macMetalToolchain.maximumMilliseconds,
+  });
+  if (metal)
+    await writeFile(
+      path.join(logs, "mac-metal-toolchain.json"),
+      stableJson({
+        observation: metal,
+        fingerprint: macMetalFingerprint(metal),
+      }),
+      { flag: "wx" },
+    );
   const patched = path.join(checkout, "scripts/cef-patched-runtime.mjs");
   const facts = JSON.parse(
     await call(
@@ -1206,6 +1233,7 @@ export async function build(
   );
   Object.assign(childEnv, recipe.environment);
   const engineeringContext = {
+    metal,
     revalidateGn: () =>
       call(
         python,
@@ -1225,6 +1253,25 @@ export async function build(
     logs,
   };
   for (const [index, step] of commands.entries()) {
+    if (metal) {
+      const currentMetal = await prepareMacMetalToolchain({
+        platform: expectedPlatform,
+        selected: {
+          DEVELOPER_DIR: childEnv.DEVELOPER_DIR,
+          SDKROOT: childEnv.SDKROOT,
+        },
+        env,
+        allowDownload: false,
+        remainingMilliseconds: () =>
+          budget?.remaining() ??
+          HOSTED_RECIPE.provisioning.macMetalToolchain.maximumMilliseconds,
+      });
+      if (
+        JSON.stringify(macMetalFingerprint(currentMetal)) !==
+        JSON.stringify(macMetalFingerprint(metal))
+      )
+        fail("MAC_METAL_PRODUCER_DRIFT");
+    }
     if (step.executable !== "python3")
       fail("Unexpected reviewed recipe executable");
     if (
@@ -1333,6 +1380,12 @@ export async function build(
     archiveSdkRelationship: "extracted-and-inventory-verified",
     nativeAcceptance: "not-tested",
     ...(buildHost ? { buildHost, targetArchitectureVerified: true } : {}),
+    ...(metal
+      ? {
+          supplementalMetal: macMetalFingerprint(metal),
+          supplementalMetalPrePinned: false,
+        }
+      : {}),
     productionReady: false,
   };
   await writeFile(path.join(logs, "result.json"), stableJson(result), {
