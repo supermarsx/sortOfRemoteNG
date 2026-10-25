@@ -1,6 +1,8 @@
 # Blank context lines in vendored unified diffs contain the required marker.
 src-tauri/native/ports/**/*.patch -whitespace
 native/cef-patches/**/*.patch whitespace=-blank-at-eol
+# This canonical patch is also byte-pinned by the Linux build-input namespaces.
+native/cef-patches/154.0.8037.58-682c378/0023-cef-x11-default-visual-colormap.patch -text
 
 # Official vendored bytes have pinned hashes (and upstream mixed line endings).
 # Preserve API, license and generated provenance through Git clean/smudge filters.
