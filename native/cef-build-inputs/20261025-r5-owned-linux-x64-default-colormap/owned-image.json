@@ -1,0 +1,45 @@
+{
+  "schemaVersion": 1,
+  "kind": "sorng-owned-linux-environment",
+  "imageId": "sha256:5c3e8c42ac5a58ca0ec31df6dfc45d57af3c663ed53b8e4d7171e18f31480930",
+  "rootfs": {
+    "Layers": [
+      "sha256:32ab39660fd51c6dc3aae486b42d42bbe8fe4c1db78eaf57bb9c21198de48a16",
+      "sha256:f05a83636a734a1989cf5fbce0a09f72c41a2742e829d2ee205ea0f20be52c96",
+      "sha256:c64166c2f06ef4834818368d84c90fedb83c6e070a5abe0065d554c6f20059f7"
+    ],
+    "Type": "layers"
+  },
+  "baseUbuntu": "ubuntu@sha256:68ee22004a9109b44973313b02ff7b1de250f1de0f5ecb628d73f579aaff33ac",
+  "nodeVersion": "v24.19.0",
+  "installerSha256": "a71e5ed8e3cbcaf87b255ff124c424cda73b48bcb3fd6a4d44bed2de42c68f19",
+  "nodeDistributionSha256": "14b342e71204f811bde6153be8e04b62aef63c236fef92b55f9c83154b409647",
+  "packageInventory": {
+    "bytes": 35961,
+    "sha256": "5378a39382684ae470976f8e6d81022f2e98d80725750c6e700d2df7083a69d8",
+    "lines": 922
+  },
+  "versions": {
+    "python": {
+      "version": "3.12.3",
+      "prefix": "/usr",
+      "base_prefix": "/usr",
+      "stdlib": "/usr/lib/python3.12",
+      "openssl": "OpenSSL 3.0.13 30 Jan 2024"
+    },
+    "git": "git version 2.43.0",
+    "gperf": "GNU gperf 3.1",
+    "ld": "GNU ld (GNU Binutils for Ubuntu) 2.42",
+    "pkgconf": "1.8.1",
+    "pkgconfSearchPath": "/usr/local/lib/x86_64-linux-gnu/pkgconfig:/usr/local/lib/pkgconfig:/usr/local/share/pkgconfig:/usr/lib/x86_64-linux-gnu/pkgconfig:/usr/lib/pkgconfig:/usr/share/pkgconfig",
+    "pipewire": "1.0.5",
+    "x11xcb": "1.8.7"
+  },
+  "pythonStdlibDependency": "same immutable image /usr/lib/python3.12; copied executable is not a standalone Python distribution",
+  "provenance": "actual owned local Linux image; not a hosted runner or CEF native-acceptance result",
+  "pythonCopyProbe": {
+    "copiedExecutablePassed": true,
+    "prefix": "/usr",
+    "stdlib": "/usr/lib/python3.12"
+  }
+}

@@ -1,0 +1,170 @@
+{
+  "bridge": {
+    "symbol": "cef_sorng_tls_get_api_v2",
+    "factorySymbol": "cef_sorng_tls_create_context_v2",
+    "abiVersion": 2,
+    "patchId": "sorng-tls-v2-682c378-5",
+    "header": {
+      "path": "include/cef_sorng_tls_bridge.h",
+      "sha256": "1352d790a75c1f48e3d7a7a5bbc4f63b40665d2c233c75f2ea50a10e5246d45e"
+    },
+    "capabilities": [
+      "socket-admission",
+      "context-revoke",
+      "same-authority-http2",
+      "scoped-exceptions",
+      "custom-ca",
+      "private-context",
+      "proxy-applied",
+      "bounded-context-retirement",
+      "owned-http3"
+    ]
+  },
+  "builds": [
+    {
+      "gnArgs": {
+        "path": "gn/x86_64-unknown-linux-gnu.gn",
+        "sha256": "b75d67bfd4b645a7b5895d5c764340a1f846453fee6bf9afff231daf60f06db1"
+      },
+      "target": "x86_64-unknown-linux-gnu",
+      "toolchainLock": {
+        "path": "tools/x86_64-unknown-linux-gnu.json",
+        "sha256": "345e0c5fb0034b3194ab3fd2b60e499eabf6d3e320ad4ae7a5d4534e6a8835dd"
+      }
+    }
+  ],
+  "kind": "sorng-cef-source-lock",
+  "patches": [
+    {
+      "path": "patches/0001-chromium-socket-admission.patch",
+      "repository": "chromium",
+      "sha256": "b347abc666cc693c7ada52b2ba31ad69e1d2f67541ca0a4684ea868fdff4a876"
+    },
+    {
+      "path": "patches/0002-cef-native-bridge.patch",
+      "repository": "cef",
+      "sha256": "0f2592f560ccd7045376485ba37753f171ad4cf18ca3a3bd9cabb9a1ac340653"
+    },
+    {
+      "path": "patches/0003-cef-native-widget-lifetime.patch",
+      "repository": "cef",
+      "sha256": "ea26cd554faa7991303ae85118313538b15d16d77b7436a9b4186fbc233cf540"
+    },
+    {
+      "path": "patches/0004-chromium-soda-provisioning.patch",
+      "repository": "chromium",
+      "sha256": "426d95532f3ff8f0c4f5e3d46cc0b3ff77f300bdcb2d853e02b1404b2c013482"
+    },
+    {
+      "path": "patches/0005-chromium-proxy-route-probe.patch",
+      "repository": "chromium",
+      "sha256": "094770e23077c0791536a579e7bdec43b47fd0de4839ebf1514fb99fc135f810"
+    },
+    {
+      "path": "patches/0006-cef-explicit-download-destination.patch",
+      "repository": "cef",
+      "sha256": "f1bac1adce80ff7afdf0abefd01546244a1e403bbad6b48d5fd68c214b87c813"
+    },
+    {
+      "path": "patches/0007-chromium-instance-tracer-reentrancy.patch",
+      "repository": "chromium",
+      "sha256": "3d3940a4f45b81739aab3735fbea41ee8f485ad89382bbec6340a7b694f04c78"
+    },
+    {
+      "path": "patches/0008-chromium-same-authority-http2.patch",
+      "repository": "chromium",
+      "sha256": "4d2625adae0ba7e3268bd4e21fa789a42f1dab57a15432fae1d4577ac6533103"
+    },
+    {
+      "path": "patches/0009-cef-http2-bridge-capability.patch",
+      "repository": "cef",
+      "sha256": "321ad6e827dfb596033b622a76a41b9f616f7fecd496ddb3864b5fa07ef0dec8"
+    },
+    {
+      "path": "patches/0010-chromium-proxy-application-ack.patch",
+      "repository": "chromium",
+      "sha256": "ab48a00f1c71e2d2893d0169c7f0828252d813df2227062b0e7ca9275dc93a55"
+    },
+    {
+      "path": "patches/0011-cef-proxy-application-ack.patch",
+      "repository": "cef",
+      "sha256": "7148edbb12fe1459a073b9eacd09dea35261f68911d6c9f5e03a3f379e7aaec0"
+    },
+    {
+      "path": "patches/0012-cef-registration-retirement.patch",
+      "repository": "cef",
+      "sha256": "dd863571d99103cf53a90806f1aa4d3b3ba9b141ff082a2e7ae74796cb7ab699"
+    },
+    {
+      "repository": "chromium",
+      "path": "patches/0013-chromium-owned-quic-datagrams.patch",
+      "sha256": "d375f771044af74c879b813f18ff78eb795557de81012c9bc6cb1ae79c8681d7"
+    },
+    {
+      "repository": "cef",
+      "path": "patches/0014-cef-owned-quic-datagrams.patch",
+      "sha256": "684a8d9ee4e9893f3e1d73e7a5cb830be89965a4bf39d0c8eb70554bcb01fc1c"
+    },
+    {
+      "repository": "chromium",
+      "path": "patches/0015-chromium-owned-quic-job-selection.patch",
+      "sha256": "8addfe231b195d1d2e3c0f153acd2ceeb9f5d820f661684ed08a51d826b11da7"
+    },
+    {
+      "repository": "chromium",
+      "path": "patches/0016-chromium-owned-quic-payload-advertisement.patch",
+      "sha256": "38332555b0adfedbbffd0f5c911e21748467726b1fdcbf3c36a6ebdb95ed2eb7"
+    },
+    {
+      "repository": "chromium",
+      "path": "patches/0017-chromium-instance-tracer-allocation-reentrancy.patch",
+      "sha256": "b205aaa31e25efa35e54bf56b929caf21208c4e6fbb95f23ac3f46d9123c4858"
+    },
+    {
+      "repository": "chromium",
+      "path": "patches/0018-chromium-owned-capsule-context-lifetime.patch",
+      "sha256": "64b0c79cf40284dba8b93ee47fd3268d827a71b09860895c2770666296b4b383"
+    },
+    {
+      "repository": "chromium",
+      "path": "patches/0019-chromium-owned-capsule-test-netlog-qualification.patch",
+      "sha256": "d1b39acf848e568ef5067962e53f4075eaca1e49582ee726a7dcf65d94af796c"
+    },
+    {
+      "repository": "chromium",
+      "path": "patches/0020-chromium-base-unittests-trace-processor-dependency.patch",
+      "sha256": "bf93af98eaad7094ce577e2365f107ba0b8f4a95647b77cb6d9fec3a04de4708"
+    },
+    {
+      "repository": "chromium",
+      "path": "patches/0021-chromium-test-trace-processor-dependency-closure.patch",
+      "sha256": "4e3f863eb29766541197d1e095e0a42d0728f3487e63e5bfad43cdb674210fd6"
+    },
+    {
+      "repository": "chromium",
+      "path": "patches/0022-chromium-test-trace-processor-static-package-name.patch",
+      "sha256": "1177f9414d305a0f0d1edddc9b788813c220a6b44e741a6cfd39b737c4e6fc6e"
+    },
+    {
+      "path": "patches/0023-cef-x11-default-visual-colormap.patch",
+      "repository": "cef",
+      "sha256": "09359b5fe26fc71ca90fdf2add850cc2cd9129d34b76da2b1dd1a95e1ab5fc39"
+    }
+  ],
+  "schemaVersion": 1,
+  "upstream": {
+    "cef": {
+      "commit": "682c378d70d5780061e96644dca16ddd8fd157a9",
+      "repository": "https://github.com/chromiumembedded/cef.git",
+      "version": "154.0.32+g682c378+chromium-154.0.8037.58"
+    },
+    "chromium": {
+      "commit": "a654841425914cbb703a2931e07b70a83aedbafd",
+      "repository": "https://chromium.googlesource.com/chromium/src.git"
+    },
+    "depotTools": {
+      "commit": "c101dcbe0489c455fce7c2247bfee19680b116c3",
+      "repository": "https://chromium.googlesource.com/chromium/tools/depot_tools.git"
+    }
+  }
+}

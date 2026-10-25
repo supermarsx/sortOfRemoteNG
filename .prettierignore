@@ -68,3 +68,5 @@ native/cef-build-inputs/20261024-r5-trace-helper-static-package-name-windows-x64
 native/cef-build-inputs/20261025-registration-retirement-owned-linux-x64-default-colormap/
 native/cef-build-inputs/20261025-registration-retirement-linuxarm-cross-sysroot-default-colormap/
 native/cef-build-inputs/20261025-r5-capsule22-windows-arm64-native/
+
+native/cef-build-inputs/20261025-r5-owned-linux-x64-default-colormap/
