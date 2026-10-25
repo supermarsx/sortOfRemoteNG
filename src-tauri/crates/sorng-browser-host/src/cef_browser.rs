@@ -1062,6 +1062,24 @@ impl CleanupOwner {
     fn diagnostic(&self, value: NativeBrowserDiagnostic) {
         self.diagnostics.emit(self.sink.as_ref(), value);
     }
+
+    fn allows_cef_owned_child_close(&self, browser: Option<&Browser>) -> bool {
+        let Some(browser) = browser.filter(|browser| browser.is_valid() == 1) else {
+            return false;
+        };
+        let browser_id = browser.identifier();
+        self.revoked_attempt()
+            && self.state.lock().is_ok_and(|state| {
+                state.cleanup_matches(&self.identity, browser_id)
+                    && matches!(
+                        state.cleanup,
+                        CleanupProgress::Idle
+                            | CleanupProgress::CloseQueued
+                            | CleanupProgress::CloseIssued
+                    )
+            })
+    }
+
     fn queue(&self, browser_id: i32, stage: CleanupStage) -> bool {
         let accepted = self.revoked_attempt()
             && self
@@ -2292,6 +2310,28 @@ impl Shared {
             return false;
         }
         true
+    }
+
+    // The caller supplies only a compile-time platform selection. Keeping this
+    // private continuation separate lets source tests exercise the Linux close
+    // decision with real callback wrappers without initializing a CEF runtime.
+    fn finish_native_close(&self, browser: Option<&Browser>, linux: bool) -> i32 {
+        if linux {
+            if self.cleanup_owner().allows_cef_owned_child_close(browser) {
+                // Pinned CEF window_x11.cc: Linux CloseHostWindow targets its
+                // own generated child XID via WM_DELETE_WINDOW. A raw
+                // XDestroyWindow bypasses that WindowDestroyed lifecycle path.
+                return 0;
+            }
+            // Never delegate an absent, foreign, stale or poisoned callback.
+            self.diagnostic(NativeBrowserDiagnostic::CleanupQueueGuardRejected);
+            return 1;
+        }
+        // Windows/macOS defaults can target the application's borrowed parent.
+        // Keep their second UI turn: synchronous destruction can reenter CEF
+        // before CloseContents finishes handling the DoClose return value.
+        self.schedule_cleanup(browser, CleanupStage::Destroy);
+        1
     }
 
     fn cleanup_owner(&self) -> CleanupOwner {
@@ -3577,13 +3617,7 @@ wrap_life_span_handler! {
                 let mut state = self.shared.state.lock().unwrap_or_else(|error| error.into_inner());
                 let _ = state.control.begin_close(&self.shared.identity);
             }
-            // Pinned CEF 682c378 alloy_browser_host_impl.cc: CloseBrowser may
-            // call DoClose synchronously; CloseContents resumes state handling
-            // after it returns. WM_NCDESTROY reenters WindowDestroyed/close.
-            // Queue a SECOND UI turn, never destroy inside this callback or
-            // return false (which can close the application's top-level parent).
-            self.shared.schedule_cleanup(browser.as_deref(), CleanupStage::Destroy);
-            1
+            self.shared.finish_native_close(browser.as_deref(), cfg!(target_os = "linux"))
         }
 
         fn on_before_close(&self, _browser: Option<&mut Browser>) {
@@ -5470,6 +5504,159 @@ mod tests {
         let shared = fixture(sink.clone()).await;
         shared.state.lock().unwrap().browser_id = Some(17);
         (shared, sink)
+    }
+
+    async fn closing_linux_fixture() -> (Arc<Shared>, Arc<Sink>) {
+        let (shared, sink) = cleanup_fixture().await;
+        shared.revoke();
+        shared
+            .state
+            .lock()
+            .unwrap()
+            .control
+            .begin_close(&shared.identity)
+            .unwrap();
+        (Arc::new(shared), sink)
+    }
+
+    #[tokio::test]
+    async fn linux_owned_child_close_delegates_without_native_destroy_or_early_completion() {
+        let (shared, _) = closing_linux_fixture().await;
+        let browser = focus_browser(1, 17);
+        for _ in 0..2 {
+            assert_eq!(shared.finish_native_close(Some(&browser), true), 0);
+            let state = shared.state.lock().unwrap();
+            assert_eq!(state.control.lifecycle(), Lifecycle::Closing);
+            assert_eq!(state.cleanup, CleanupProgress::Idle);
+        }
+        let destroy_queued = 1u32 << NativeBrowserDiagnostic::CleanupDestroyQueued.bit();
+        assert_eq!(
+            shared.diagnostics.0.load(Ordering::Acquire) & destroy_queued,
+            0
+        );
+        let life = NativeLife::new(shared.clone(), Arc::new(Mutex::new(None)));
+        life.on_before_close(None);
+        assert_eq!(
+            shared.state.lock().unwrap().control.lifecycle(),
+            Lifecycle::Closed
+        );
+        assert_eq!(
+            shared.state.lock().unwrap().cleanup,
+            CleanupProgress::Complete
+        );
+        assert_eq!(shared.finish_native_close(Some(&browser), true), 1);
+    }
+
+    #[tokio::test]
+    async fn linux_owned_child_real_life_span_callback_uses_the_compiled_platform_backend() {
+        crate::bootstrap_platform::select_pinned_api().unwrap();
+        let (shared, _) = cleanup_fixture().await;
+        let shared = Arc::new(shared);
+        let mut browser = focus_browser(1, 17);
+        let life = NativeLife::new(shared.clone(), Arc::new(Mutex::new(None)));
+        assert_eq!(
+            life.do_close(Some(&mut browser)),
+            i32::from(!cfg!(target_os = "linux"))
+        );
+        assert_eq!(
+            shared.session.lock().unwrap().status(),
+            BrowserSessionStatus::Revoked
+        );
+        assert_ne!(
+            shared.state.lock().unwrap().control.lifecycle(),
+            Lifecycle::Closed
+        );
+        let destroy_queued = 1u32 << NativeBrowserDiagnostic::CleanupDestroyQueued.bit();
+        assert_eq!(
+            shared.diagnostics.0.load(Ordering::Acquire) & destroy_queued != 0,
+            !cfg!(target_os = "linux")
+        );
+    }
+
+    #[tokio::test]
+    async fn linux_owned_child_close_denies_invalid_foreign_and_inflight_destroy_callbacks() {
+        for mode in 0..5 {
+            let (shared, _) = closing_linux_fixture().await;
+            let browser = focus_browser(i32::from(mode != 1), if mode == 2 { 18 } else { 17 });
+            if mode == 3 {
+                shared.state.lock().unwrap().cleanup = CleanupProgress::DestroyQueued;
+            }
+            if mode == 4 {
+                shared.state.lock().unwrap().cleanup = CleanupProgress::DestroyIssued;
+            }
+            let before = shared.state.lock().unwrap().cleanup;
+            assert_eq!(
+                shared.finish_native_close((mode != 0).then_some(&browser), true),
+                1
+            );
+            assert_eq!(shared.state.lock().unwrap().cleanup, before);
+            assert_eq!(
+                shared.state.lock().unwrap().control.lifecycle(),
+                Lifecycle::Closing
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn linux_owned_child_close_rejects_stale_owner_and_poison_without_native_action() {
+        let (shared, _) = closing_linux_fixture().await;
+        let (replacement, _) = closing_linux_fixture().await;
+        let browser = focus_browser(1, 17);
+        let mut owner = shared.cleanup_owner();
+        owner.session = replacement.session.clone();
+        assert!(!owner.allows_cef_owned_child_close(Some(&browser)));
+        assert_eq!(
+            replacement.state.lock().unwrap().cleanup,
+            CleanupProgress::Idle
+        );
+        for state_poison in [false, true] {
+            let (shared, _) = closing_linux_fixture().await;
+            if state_poison {
+                let state = shared.state.clone();
+                assert!(std::thread::spawn(move || {
+                    let _held = state.lock().unwrap();
+                    panic!("fixed state poison");
+                })
+                .join()
+                .is_err());
+            } else {
+                let session = shared.session.clone();
+                assert!(std::thread::spawn(move || {
+                    let _held = session.lock().unwrap();
+                    panic!("fixed session poison");
+                })
+                .join()
+                .is_err());
+            }
+            assert_eq!(shared.finish_native_close(Some(&browser), true), 1);
+            let state = shared
+                .state
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            assert_eq!(state.cleanup, CleanupProgress::Idle);
+            assert_eq!(state.control.lifecycle(), Lifecycle::Closing);
+        }
+    }
+
+    #[tokio::test]
+    async fn linux_owned_child_completion_invalidates_a_preexisting_close_task() {
+        let (shared, _) = closing_linux_fixture().await;
+        let browser = focus_browser(1, 17);
+        let owner = shared.cleanup_owner();
+        assert!(owner.queue(17, CleanupStage::Close));
+        assert_eq!(shared.finish_native_close(Some(&browser), true), 0);
+        assert_eq!(
+            shared.state.lock().unwrap().cleanup,
+            CleanupProgress::CloseQueued
+        );
+        let life = NativeLife::new(shared.clone(), Arc::new(Mutex::new(None)));
+        life.on_before_close(None);
+        assert!(!owner.claim(17, CleanupStage::Close));
+        assert!(!owner.claim(17, CleanupStage::Destroy));
+        assert_eq!(
+            shared.state.lock().unwrap().cleanup,
+            CleanupProgress::Complete
+        );
     }
 
     #[tokio::test]
