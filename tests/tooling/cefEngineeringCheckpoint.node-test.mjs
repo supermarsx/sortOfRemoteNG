@@ -75,6 +75,10 @@ import {
   GRAPH_LIMITS,
   assertGraphBudget,
   graphInventoryRecord,
+  graphPinSnapshot,
+  createRestoreObserver,
+  restorePhase,
+  restoreIdentityComparison,
   generatedLinkInventory,
   persistGeneratedLinkInventory,
   LINK_DIAGNOSTIC_LIMITS,
@@ -6652,4 +6656,399 @@ test("delayed work timer cannot mint cleanup time beyond the original admission 
   assert.equal(state.stops, 0);
   assert.equal(state.proofs, 0);
   assert.equal(state.writes.length, 0);
+});
+
+test("restore stages preserve primary objects, await observers and redact unknown failure data", async () => {
+  const records = [],
+    original = Object.assign(Error("TOKEN https://private.invalid/secret"), {
+      code: "private/path",
+    });
+  let joined = false;
+  const observe = createRestoreObserver(async (record) => {
+    await Promise.resolve();
+    records.push(record);
+    joined = true;
+  });
+  await assert.rejects(
+    restorePhase(observe, "manifest-digest", () => {
+      throw original;
+    }),
+    (error) => error === original,
+  );
+  assert(joined);
+  assert.deepEqual(
+    records.map(({ stage, event, errorCode }) => ({ stage, event, errorCode })),
+    [
+      { stage: "manifest-digest", event: "begin", errorCode: "NONE" },
+      { stage: "manifest-digest", event: "failed", errorCode: "GUARD_FAILED" },
+    ],
+  );
+  assert.doesNotMatch(JSON.stringify(records), /TOKEN|private|secret/);
+  for (const sink of [
+    () => {
+      throw Error("logger");
+    },
+    async () => {
+      throw Error("writer");
+    },
+  ]) {
+    assert.equal(await restorePhase(sink, "archive-result", () => 42), 42);
+    await assert.rejects(
+      restorePhase(sink, "archive-result", () => {
+        throw original;
+      }),
+      (error) => error === original,
+    );
+  }
+  const capped = [],
+    bounded = createRestoreObserver((record) => capped.push(record));
+  for (let n = 0; n < 100; n++)
+    await bounded({ stage: "proof-read", event: "begin", path: "secret" });
+  await bounded({ stage: "proof-read", event: "failed", errorCode: "ENOENT" });
+  assert.equal(capped.length, 32);
+  assert.equal(capped.at(-1).errorCode, "ENOENT");
+  assert(Buffer.byteLength(canonical(capped)) < 64 * 1024);
+  await bounded({ stage: "secret", event: "failed" });
+  assert.equal(capped.length, 32);
+});
+
+test("restore identity facts expose only intrinsically validated field matches", async () => {
+  const prior = manifest(),
+    rows = [],
+    observe = createRestoreObserver((record) => rows.push(record));
+  assert(
+    Object.values(restoreIdentityComparison(identity, prior).matches).every(
+      Boolean,
+    ),
+  );
+  for (const field of [
+    "producer",
+    "image",
+    "tools",
+    "graph",
+    "siso",
+    "canonicalRoot",
+  ]) {
+    const changed = {
+      ...identity,
+      [field]:
+        field === "canonicalRoot"
+          ? "/private/different"
+          : field === "image"
+            ? "different-image"
+            : "1".repeat(64),
+    };
+    const comparison = restoreIdentityComparison(changed, prior);
+    assert.equal(comparison.available, true);
+    assert.deepEqual(
+      Object.entries(comparison.matches)
+        .filter(([, match]) => !match)
+        .map(([name]) => name),
+      [field],
+    );
+    await observe({
+      stage: "identity-comparison",
+      event: "complete",
+      comparison,
+    });
+  }
+  for (const invalid of [
+    { ...identity, source: "1".repeat(64) },
+    { ...identity, target: "unknown" },
+    { ...identity, tools: "https://secret" },
+    { ...identity, extra: "private" },
+  ]) {
+    const comparison = restoreIdentityComparison(invalid, prior);
+    assert.deepEqual(comparison, { available: false });
+    await observe({
+      stage: "identity-comparison",
+      event: "complete",
+      comparison,
+    });
+    assert.equal(Object.hasOwn(rows.at(-1), "matches"), false);
+  }
+  assert.doesNotMatch(canonical(rows), /private|different-image|https|\/Users/);
+  assert.deepEqual(Object.keys(rows[0].matches).sort(), [
+    "canonicalRoot",
+    "graph",
+    "image",
+    "producer",
+    "siso",
+    "source",
+    "target",
+    "tools",
+  ]);
+});
+
+async function actualRestoreBlock(overrides = {}) {
+  const source = await readFile(
+    path.join(ROOT, "scripts/cef-engineering-checkpoint.mjs"),
+    "utf8",
+  );
+  const tree = ts.createSourceFile(
+    "checkpoint.mjs",
+    source,
+    ts.ScriptTarget.Latest,
+    true,
+    ts.ScriptKind.JS,
+  );
+  let body;
+  const find = (node) => {
+    if (
+      ts.isCallExpression(node) &&
+      node.expression.getText(tree) === "afterGnPhase" &&
+      node.arguments[0]?.text === "restore"
+    )
+      body = node.arguments[1].getText(tree);
+    ts.forEachChild(node, find);
+  };
+  find(tree);
+  assert(body, "actual production restore body");
+  const prior = manifest(),
+    raw = Buffer.from(canonical(prior)),
+    records = [],
+    calls = [];
+  const values = {
+    restorePhase,
+    restoreIdentityComparison,
+    createRestoreObserver,
+    restoreObserver: createRestoreObserver((record) => records.push(record)),
+    json: async () => ({ manifest: prior }),
+    path,
+    download: "/owned/download",
+    readFile: async () => raw,
+    env: { CEF_RESTORE_MANIFEST_SHA: sha(raw) },
+    sha,
+    canonical,
+    JSON,
+    fail: (ok, message) => assert(ok, message),
+    validateManifest,
+    digest: validateIdentity(identity),
+    identity,
+    out: "/owned/out",
+    statfs: async () => ({ bavail: 100 * 1024 ** 3, bsize: 1 }),
+    verified: { python: "not-executed" },
+    HELPER: "not-executed",
+    recipePath: "/owned/recipe",
+    context: { revalidateGn: async () => {} },
+    archiveCommand: async () => {
+      calls.push("archive");
+      return { complete: true, linksExtracted: false };
+    },
+    restoreVerifiedGraph: async () => {
+      calls.push("install");
+    },
+    ...overrides,
+  };
+  const operation = new Function(
+    ...Object.keys(values),
+    "return (" + body + ")",
+  )(...Object.values(values));
+  return { operation, records, calls };
+}
+
+test("actual production restore closure attributes each preflight denial without advancing", async () => {
+  const original = Object.assign(Error("secret failure"), { code: "EIO" });
+  const cases = [
+    [
+      "proof-read",
+      {
+        json: async () => {
+          throw original;
+        },
+      },
+      original,
+    ],
+    [
+      "manifest-read",
+      {
+        readFile: async () => {
+          throw original;
+        },
+      },
+      original,
+    ],
+    ["manifest-digest", { env: { CEF_RESTORE_MANIFEST_SHA: "0".repeat(64) } }],
+    ["proof-match", { json: async () => ({ manifest: {} }) }],
+    ["manifest-validation", { digest: "0".repeat(64) }],
+    ["disk-capacity", { statfs: async () => ({ bavail: 0, bsize: 1 }) }],
+    [
+      "archive-restore",
+      {
+        archiveCommand: async () => {
+          throw original;
+        },
+      },
+      original,
+    ],
+    [
+      "archive-result",
+      {
+        archiveCommand: async () => ({ complete: false, linksExtracted: true }),
+      },
+    ],
+  ];
+  for (const [stage, overrides, expected] of cases) {
+    const { operation, records, calls } = await actualRestoreBlock(overrides);
+    await assert.rejects(
+      operation(),
+      expected ? (error) => error === expected : undefined,
+    );
+    assert.equal(records.at(-1).stage, stage);
+    assert.equal(records.at(-1).event, "failed");
+    assert(!calls.includes("install"));
+    assert.doesNotMatch(canonical(records), /secret|owned\/|not-executed/);
+  }
+  const success = await actualRestoreBlock();
+  await success.operation();
+  assert.deepEqual(success.calls, ["archive", "install"]);
+  const absent = await actualRestoreBlock({
+    json: async () => {
+      throw Object.assign(Error("missing"), { code: "ENOENT" });
+    },
+  });
+  await absent.operation();
+  assert.deepEqual(absent.calls, []);
+});
+
+test("actual restoreVerifiedGraph preserves exact order and stops at every original substage", async () => {
+  const source = await readFile(
+    path.join(ROOT, "scripts/lib/cef-engineering-checkpoint.mjs"),
+    "utf8",
+  );
+  const tree = ts.createSourceFile(
+    "helper.mjs",
+    source,
+    ts.ScriptTarget.Latest,
+    true,
+    ts.ScriptKind.JS,
+  );
+  const declaration = tree.statements
+    .find(
+      (node) =>
+        ts.isFunctionDeclaration(node) &&
+        node.name?.text === "restoreVerifiedGraph",
+    )
+    .getText(tree)
+    .replace(/^export /, "");
+  const stages = [
+    "restored-graph",
+    "adjacent-install",
+    "fresh-gn",
+    "fresh-graph",
+    "generated-bindings",
+  ];
+  for (const failed of [null, ...stages]) {
+    const calls = [],
+      records = [],
+      original = Error("owned original");
+    const step = (name) => {
+      calls.push(name);
+      if (name === failed) throw original;
+    };
+    const restore = new Function(
+      "assert",
+      "restorePhase",
+      "verifyGraph",
+      "installRestoredDirectory",
+      "return (" + declaration + ")",
+    )(
+      assert,
+      restorePhase,
+      async (root) =>
+        step(root === "restored" ? "restored-graph" : "fresh-graph"),
+      async () => step("adjacent-install"),
+    );
+    const operation = restore({
+      fresh: "fresh",
+      restored: "restored",
+      expectedGraph: "verified",
+      revalidateGn: async () => step("fresh-gn"),
+      verifyGenerated: async () => step("generated-bindings"),
+      observe: createRestoreObserver((record) => records.push(record)),
+    });
+    if (failed) {
+      await assert.rejects(operation, (error) => error === original);
+      assert.deepEqual(calls, stages.slice(0, stages.indexOf(failed) + 1));
+      assert.equal(records.at(-1).stage, failed);
+      assert.equal(records.at(-1).event, "failed");
+    } else {
+      await operation;
+      assert.deepEqual(calls, stages);
+    }
+  }
+});
+
+test("fresh graph snapshot is complete, defensive and keeps the existing absolute clock", async (t) => {
+  const root = await scratch(t);
+  await writeFile(path.join(root, "args.gn"), "owned\n");
+  await writeFile(path.join(root, "build.ninja"), "rule owned\n");
+  const baseline = await graphInventory(root);
+  let snapshot,
+    returned = false;
+  const observed = await graphInventory(root, {
+    async observePins(value) {
+      snapshot = JSON.parse(graphPinSnapshot(value));
+      value.pins[0].path = "/private/tamper";
+      value.pins.length = 0;
+      await Promise.resolve();
+      returned = true;
+    },
+  });
+  assert(returned);
+  assert.equal(observed.sha256, baseline.sha256);
+  assert.equal(snapshot.sha256, baseline.sha256);
+  assert.equal(snapshot.pins.length, 2);
+  assert(snapshot.complete);
+  assert.equal(
+    (
+      await graphInventory(root, {
+        observePins: async () => {
+          throw Error("writer denied");
+        },
+      })
+    ).sha256,
+    baseline.sha256,
+  );
+  await assert.rejects(
+    graphInventory(root, {
+      timeoutMs: 200,
+      observePins: async () => {
+        await new Promise((resolve) => setTimeout(resolve, 250));
+      },
+    }),
+    (error) => error.code === "GRAPH_BOUND",
+  );
+});
+
+test("graph snapshot rejects unsafe, duplicate, tampered and oversized pin projections", () => {
+  const row = { path: "args.gn", name: "args.gn", bytes: 0, sha256: sha("") };
+  const value = (pins) => ({
+    files: pins.length,
+    bytes: pins.reduce((total, pin) => total + pin.bytes, 0),
+    sha256: sha(canonical(pins)),
+    pins,
+  });
+  assert(JSON.parse(graphPinSnapshot(value([row]))).complete);
+  for (const name of [
+    "/args.gn",
+    "../args.gn",
+    "C:/args.gn",
+    "a\\args.gn",
+    "a//args.gn",
+    "a/./args.gn",
+    "a/\u0000args.gn",
+  ])
+    assert.throws(() => graphPinSnapshot(value([{ ...row, path: name }])));
+  assert.throws(() => graphPinSnapshot(value([row, row])));
+  assert.throws(() => graphPinSnapshot(value([{ ...row, sha256: "private" }])));
+  assert.throws(() =>
+    graphPinSnapshot({ ...value([row]), sha256: "0".repeat(64) }),
+  );
+  assert.throws(() => graphPinSnapshot({ ...value([row]), files: 50001 }));
+  const huge = Array.from({ length: 4500 }, (_, index) => ({
+    ...row,
+    path: "a".repeat(3990) + "/" + String(index).padStart(4, "0") + "/args.gn",
+  }));
+  assert.throws(() => graphPinSnapshot(value(huge)), /snapshot byte bound/);
 });
