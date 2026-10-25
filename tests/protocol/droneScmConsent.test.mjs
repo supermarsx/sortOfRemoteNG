@@ -57,7 +57,7 @@ const grant = ({
 const page = (html, url = address()) =>
   new JSDOM(html, { url }).window.document;
 
-test("native consent asks for a fresh action grant, clicks once, and rejects missing consent", async () => {
+test("native consent asks for a fresh action grant, clicks once, and rejects missing consent", () => {
   const client = readFileSync(
     "src-tauri/crates/sorng-browser-host/src/native_login_client.js",
     "utf8",
@@ -68,28 +68,76 @@ test("native consent asks for a fresh action grant, clicks once, and rejects mis
       runScripts: "outside-only",
     });
     const { window } = dom;
-    window.HTMLElement.prototype.getClientRects = () => [
-      { width: 100, height: 20 },
-    ];
-    const signals = [],
-      button = window.document.querySelector("#authorize-app");
-    let clicks = 0;
-    button.addEventListener("click", (event) => {
-      event.preventDefault();
-      clicks++;
+    const timers = new Map();
+    let clock = 1_000_000,
+      nextTimer = 0,
+      readiness = "loading";
+    Object.defineProperty(window.document, "readyState", {
+      configurable: true,
+      get: () => readiness,
     });
-    const deliver = window.eval(client)(
-      (signal) => signals.push(signal),
-      { droneScmConsent: bridge },
-      "modular-form",
-    );
-    await new Promise((resolve) => setTimeout(resolve, 30));
-    assert.deepEqual(signals, ["scm-consent"]);
-    const args = [GITEA, "", "", allowed, Date.now() + 2000, {}, "scm-consent"];
-    assert.equal(deliver(...args), allowed);
-    assert.equal(deliver(...args), false);
-    assert.equal(clicks, Number(allowed));
-    dom.window.close();
+    window.Date.now = () => clock;
+    window.setTimeout = (callback, milliseconds = 0) => {
+      assert.equal(typeof callback, "function");
+      assert(Number.isFinite(milliseconds) && milliseconds >= 0);
+      assert(timers.size < 32, "owned timer queue bound");
+      const id = ++nextTimer;
+      timers.set(id, { at: clock + Math.max(1, milliseconds), callback });
+      return id;
+    };
+    window.clearTimeout = (id) => timers.delete(id);
+    const advance = (milliseconds) => {
+      const until = clock + milliseconds;
+      let callbacks = 0;
+      while (true) {
+        const due = [...timers]
+          .filter(([, timer]) => timer.at <= until)
+          .sort((a, b) => a[1].at - b[1].at || a[0] - b[0])[0];
+        if (!due) break;
+        assert(++callbacks <= 64, "owned timer callback bound");
+        const [id, timer] = due;
+        timers.delete(id);
+        clock = timer.at;
+        timer.callback();
+      }
+      clock = until;
+    };
+    try {
+      window.HTMLElement.prototype.getClientRects = () => [
+        { width: 100, height: 20 },
+      ];
+      const signals = [],
+        button = window.document.querySelector("#authorize-app");
+      let clicks = 0;
+      button.addEventListener("click", (event) => {
+        event.preventDefault();
+        clicks++;
+      });
+      const deliver = window.eval(client)(
+        (signal) => signals.push(signal),
+        { droneScmConsent: bridge },
+        "modular-form",
+      );
+      advance(30);
+      // Thirty elapsed milliseconds do not establish document readiness.
+      assert.deepEqual(signals, []);
+      assert.equal(clicks, 0);
+      const args = [GITEA, "", "", allowed, clock + 2000, {}, "scm-consent"];
+      assert.equal(deliver(...args), false);
+      readiness = "complete";
+      window.dispatchEvent(new window.Event("load"));
+      advance(1);
+      assert.deepEqual(signals, ["scm-consent"]);
+      assert.equal(clicks, 0);
+      assert.equal(deliver(...args), allowed);
+      assert.equal(deliver(...args), false);
+      assert.equal(clicks, Number(allowed));
+      assert.deepEqual(signals, ["scm-consent"]);
+      assert.equal(timers.size, 0);
+    } finally {
+      timers.clear();
+      dom.window.close();
+    }
   }
 });
 
