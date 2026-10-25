@@ -3154,6 +3154,21 @@ function verifyLinuxIsolatedFacts({
         p.split("/").every((x) => x && x !== "." && x !== ".." && x !== ".git"),
     );
   };
+  // This pinned dependency's complete metadata is copied, never followed or
+  // omitted. Generic members and all historical origins still reject .git.
+  const quicheMetadata = "third_party/quiche/src/.git";
+  const copyMember = (row, directory = false) => {
+    const p = row.path;
+    if (
+      row.tree === "net" &&
+      typeof p === "string" &&
+      (p === quicheMetadata || p.startsWith(quicheMetadata + "/"))
+    ) {
+      require(Buffer.byteLength(p) <= 1024);
+      if (p === quicheMetadata) require(directory);
+      else member(p.slice(quicheMetadata.length + 1));
+    } else member(p);
+  };
   const id = (x) => typeof x === "string" && /^[0-9]{1,24}$/.test(x);
   const sourceIds = new Set(),
     targetIds = new Set();
@@ -3172,7 +3187,7 @@ function verifyLinuxIsolatedFacts({
       "sourceNlink",
       "targetNlink",
     ]);
-    member(row.path);
+    copyMember(row);
     require(
       LINUX_ISOLATED_COPY_TREES.includes(row.tree) &&
         !paths.has(row.tree + "/" + row.path),
@@ -3209,7 +3224,7 @@ function verifyLinuxIsolatedFacts({
   const dirPaths = new Set();
   for (const row of copy.directories) {
     shape(row, ["tree", "path", "mode", "uid", "gid"]);
-    member(row.path);
+    copyMember(row, true);
     require(
       LINUX_ISOLATED_COPY_TREES.includes(row.tree) &&
         !paths.has(row.tree + "/" + row.path) &&
@@ -3221,6 +3236,14 @@ function verifyLinuxIsolatedFacts({
     );
     dirPaths.add(row.tree + "/" + row.path);
   }
+  const quicheHead = copy.entries.find(
+    (row) => row.tree === "net" && row.path === quicheMetadata + "/HEAD",
+  );
+  require(
+    quicheHead?.size === 41 &&
+      quicheHead.sha256 ===
+        "495beccf8b6521d420c8cca31d9e4fd0745ad07ea56eba2d8621198d51ed527b",
+  );
   for (const path of [...paths, ...dirPaths]) {
     const parts = path.split("/");
     parts.pop();

@@ -3395,8 +3395,10 @@ function linuxIsolatedFixture() {
     r.postchecks.facts.gnSha256 = evidence().gn.sha256;
     f.input.evidence = evidence();
   };
-  refresh();
-  return { ...f, refresh };
+  addQuicheMetadataFixture(f);
+  const complete = { ...f, refresh };
+  refreshIsolatedCopyFacts(complete);
+  return complete;
 }
 
 test("isolated Linux origin binds independent copied objects, generation raw bytes, GN, real new object/link and fresh package", () => {
@@ -4572,5 +4574,118 @@ test("isolated init requires Docker canonical singleton CAP_CHOWN and rejects al
     };
     g.refresh();
     assert.throws(() => verifyOwnedHandoffEvidence(g.input, g.records, g.lock));
+  }
+});
+
+function addQuicheMetadataFixture(f) {
+  // Synthetic complete metadata rows exercise admission; these are not cache evidence.
+  const c = f.records.copyManifest.facts,
+    prefix = "third_party/quiche/src/.git";
+  for (const p of [
+    "third_party",
+    "third_party/quiche",
+    "third_party/quiche/src",
+    prefix,
+    prefix + "/hooks",
+    prefix + "/objects",
+  ])
+    c.directories.push({
+      tree: "net",
+      path: p,
+      mode: 0o755,
+      uid: 10001,
+      gid: 10001,
+    });
+  for (const [i, [name, bytes, mode]] of [
+    ["HEAD", Buffer.from("80bf9559d3a4c08dde4b85abc46d190a88ffef64\n"), 0o644],
+    ["hooks/example.sample", Buffer.from("never executed\n"), 0o755],
+    ["objects/example", Buffer.from("independent object fixture\n"), 0o444],
+  ].entries())
+    c.entries.push({
+      tree: "net",
+      path: prefix + "/" + name,
+      size: bytes.length,
+      sha256: hash(bytes),
+      mode,
+      mtimeNs: "1700000000000000000",
+      sourceDev: "1",
+      sourceIno: String(81000 + i),
+      targetDev: "2",
+      targetIno: String(82000 + i),
+      sourceNlink: 1,
+      targetNlink: 1,
+    });
+  f.records.workspace.facts.capacityBeforeBytes += c.entries
+    .filter((x) => x.tree === "net" && x.path.startsWith(prefix + "/"))
+    .reduce((n, x) => n + x.size, 0);
+}
+
+test("isolated R5 copies exact pinned Quiche metadata with unchanged generic git denial", () => {
+  const f = linuxIsolatedFixture();
+  assert.doesNotThrow(() =>
+    verifyOwnedHandoffEvidence(f.input, f.records, f.lock),
+  );
+  const q = f.records.copyManifest.facts.entries.filter((x) =>
+    x.path.startsWith("third_party/quiche/src/.git/"),
+  );
+  assert.deepEqual(q.map((x) => x.mode).sort(), [0o444, 0o644, 0o755]);
+  for (const mutate of [
+    (f) => {
+      f.records.copyManifest.facts.entries.find((x) =>
+        x.path.endsWith("/.git/HEAD"),
+      ).sha256 = "0".repeat(64);
+    },
+    (f) => {
+      f.records.copyManifest.facts.entries.find((x) =>
+        x.path.endsWith("/.git/HEAD"),
+      ).size = 40;
+    },
+    (f) => {
+      f.records.copyManifest.facts.entries.find((x) =>
+        x.path.endsWith("/.git/HEAD"),
+      ).tree = "base";
+    },
+    (f) => {
+      f.records.copyManifest.facts.entries.find((x) =>
+        x.path.endsWith("/.git/HEAD"),
+      ).path = "other/.git/HEAD";
+    },
+    (f) => {
+      f.records.copyManifest.facts.entries.find((x) =>
+        x.path.endsWith("/.git/HEAD"),
+      ).path += "/.git/x";
+    },
+    (f) => {
+      f.records.copyManifest.facts.entries.find((x) =>
+        x.path.endsWith("/.git/HEAD"),
+      ).sourceNlink = 2;
+    },
+    (f) => {
+      f.records.copyManifest.facts.entries.find((x) =>
+        x.path.endsWith("/.git/HEAD"),
+      ).targetIno = "81000";
+      f.records.copyManifest.facts.entries.find((x) =>
+        x.path.endsWith("/.git/HEAD"),
+      ).targetDev = "1";
+    },
+    (f) => {
+      f.records.copyManifest.facts.directories =
+        f.records.copyManifest.facts.directories.filter(
+          (x) => !x.path.endsWith("/.git"),
+        );
+    },
+    (f) => {
+      f.records.copyManifest.facts.entries.find((x) =>
+        x.path.endsWith("/.git/HEAD"),
+      ).path = "third_party/quiche/src/.git";
+    },
+  ]) {
+    const bad = linuxIsolatedFixture();
+    mutate(bad);
+    refreshIsolatedCopyFacts(bad);
+    assert.throws(
+      () => verifyOwnedHandoffEvidence(bad.input, bad.records, bad.lock),
+      /isolated Linux|Linux incremental/,
+    );
   }
 });
