@@ -282,9 +282,77 @@ impl Scheduler {
     }
 }
 
+// Shared at process startup and at the browser child-launch boundary. Linux
+// zygote children receive fresh argv without re-running App startup callbacks.
+fn configure_common_process_switches(command_line: &mut CommandLine) {
+    // CEF 682c378 lazily seeds its metrics RNG with BoringSSL.
+    // Lock timing can first-use it inside PartitionAlloc, causing
+    // recursive allocation and a fatal check during startup.
+    // Disable optional lock telemetry in browser AND helper
+    // processes, alongside the startup service policy below. Keep
+    // all sandbox/TLS/allocator checks enabled.
+    let disabled = startup_features::disabled_features(
+        &CefString::from(&command_line.switch_value(Some(&CefString::from("disable-features"))))
+            .to_string(),
+    );
+    command_line.append_switch_with_value(
+        Some(&CefString::from("disable-features")),
+        Some(&CefString::from(disabled.as_str())),
+    );
+    let enabled = startup_features::enabled_features(
+        &CefString::from(&command_line.switch_value(Some(&CefString::from("enable-features"))))
+            .to_string(),
+    );
+    command_line.append_switch_with_value(
+        Some(&CefString::from("enable-features")),
+        Some(&CefString::from(enabled.as_str())),
+    );
+    // Configure before Chrome creates profiles/services. Installing
+    // preferences in OnContextInitialized is too late to prevent
+    // external registry discovery or eager speech-model downloads.
+    command_line.append_switch(Some(&CefString::from(
+        startup_features::DISABLE_DEFAULT_APPS,
+    )));
+    // Necessary transport restrictions, not a containment proof.
+    // No security-disable, remote-debugging, UA or WebDriver spoof.
+    #[cfg(target_os = "linux")]
+    command_line.append_switch_with_value(
+        Some(&CefString::from("ozone-platform")),
+        Some(&CefString::from("x11")),
+    );
+    command_line.append_switch(Some(&CefString::from("disable-quic")));
+    command_line.append_switch_with_value(
+        Some(&CefString::from("host-resolver-rules")),
+        Some(&CefString::from(NATIVE_HOST_RESOLVER_RULES)),
+    );
+    // CEF 682c378 otherwise routes HTTP/proxy challenges to
+    // Chrome's login UI instead of CefRequestHandler, even for an
+    // Alloy child. Select our exact-endpoint native auth handler;
+    // this neither disables authentication nor grants credentials.
+    command_line.append_switch(Some(&CefString::from("disable-chrome-login-prompt")));
+    // Blink transforms website paint, including authentication and
+    // challenge documents, before rasterization. No response/CSS
+    // rewriting or page-dependent suspension; runtime acceptance
+    // still has to measure first paint on all three platforms.
+    command_line.append_switch(Some(&CefString::from("force-dark-mode")));
+    command_line.append_switch_with_value(
+        Some(&CefString::from("force-webrtc-ip-handling-policy")),
+        Some(&CefString::from("disable_non_proxied_udp")),
+    );
+}
+
 wrap_browser_process_handler! {
     struct RuntimeProcessHandler { scheduler: Arc<Scheduler> }
     impl BrowserProcessHandler {
+        fn on_before_child_process_launch(&self, command_line: Option<&mut CommandLine>) {
+            let Some(command_line) = command_line else { return; };
+            let process_type = CefString::from(
+                &command_line.switch_value(Some(&CefString::from("type")))
+            ).to_string();
+            if matches!(process_type.as_str(), "renderer" | "utility" | "gpu-process" | "zygote") {
+                configure_common_process_switches(command_line);
+            }
+        }
         fn on_context_initialized(&self) {
             if self.scheduler.network_policy.load(Ordering::Acquire) == POLICY_PENDING
                 && self.scheduler.check().is_ok()
@@ -318,36 +386,7 @@ wrap_app! {
             &self, process_type: Option<&CefString>, command_line: Option<&mut CommandLine>
         ) {
             if let Some(command_line) = command_line {
-                // CEF 682c378 lazily seeds its metrics RNG with BoringSSL.
-                // Lock timing can first-use it inside PartitionAlloc, causing
-                // recursive allocation and a fatal check during startup.
-                // Disable optional lock telemetry in browser AND helper
-                // processes, alongside the startup service policy below. Keep
-                // all sandbox/TLS/allocator checks enabled.
-                let disabled = startup_features::disabled_features(
-                    &CefString::from(
-                        &command_line.switch_value(Some(&CefString::from("disable-features"))),
-                    ).to_string(),
-                );
-                command_line.append_switch_with_value(
-                    Some(&CefString::from("disable-features")),
-                    Some(&CefString::from(disabled.as_str())),
-                );
-                let enabled = startup_features::enabled_features(
-                    &CefString::from(
-                        &command_line.switch_value(Some(&CefString::from("enable-features"))),
-                    ).to_string(),
-                );
-                command_line.append_switch_with_value(
-                    Some(&CefString::from("enable-features")),
-                    Some(&CefString::from(enabled.as_str())),
-                );
-                // Configure before Chrome creates profiles/services. Installing
-                // preferences in OnContextInitialized is too late to prevent
-                // external registry discovery or eager speech-model downloads.
-                command_line.append_switch(Some(&CefString::from(
-                    startup_features::DISABLE_DEFAULT_APPS,
-                )));
+                configure_common_process_switches(command_line);
                 // Set before profile/renderer creation. Chromium propagates
                 // this browser-process preference to its renderer command line.
                 if process_type.is_none_or(|process| process.to_string().is_empty()) {
@@ -375,32 +414,7 @@ wrap_app! {
                         );
                     }
                 }
-                // Necessary transport restrictions, not a containment proof.
-                // No security-disable, remote-debugging, UA or WebDriver spoof.
-                #[cfg(target_os = "linux")]
-                command_line.append_switch_with_value(
-                    Some(&CefString::from("ozone-platform")),
-                    Some(&CefString::from("x11")),
-                );
-                command_line.append_switch(Some(&CefString::from("disable-quic")));
-                command_line.append_switch_with_value(
-                    Some(&CefString::from("host-resolver-rules")),
-                    Some(&CefString::from(NATIVE_HOST_RESOLVER_RULES)),
-                );
-                // CEF 682c378 otherwise routes HTTP/proxy challenges to
-                // Chrome's login UI instead of CefRequestHandler, even for an
-                // Alloy child. Select our exact-endpoint native auth handler;
-                // this neither disables authentication nor grants credentials.
-                command_line.append_switch(Some(&CefString::from("disable-chrome-login-prompt")));
-                // Blink transforms website paint, including authentication and
-                // challenge documents, before rasterization. No response/CSS
-                // rewriting or page-dependent suspension; runtime acceptance
-                // still has to measure first paint on all three platforms.
-                command_line.append_switch(Some(&CefString::from("force-dark-mode")));
-                command_line.append_switch_with_value(
-                    Some(&CefString::from("force-webrtc-ip-handling-policy")),
-                    Some(&CefString::from("disable_non_proxied_udp")),
-                );
+
             }
         }
     }
@@ -946,6 +960,160 @@ mod tests {
             Err(RuntimeError::NetworkPolicyUnavailable)
         );
         assert_eq!(scheduler.pump.lock().unwrap().deadline(), None);
+    }
+
+    #[test]
+    fn forked_renderer_receives_policy_at_browser_child_launch_without_app_startup() {
+        #[cfg(target_os = "macos")]
+        crate::platform::test_runtime::ensure_loaded();
+        bootstrap_platform::select_pinned_api().unwrap();
+        let app = subprocess_application();
+        let handler = app
+            .browser_process_handler()
+            .expect("owned browser handler");
+        let mut command = command_line_create().expect("native child command line");
+        command.append_switch_with_value(
+            Some(&CefString::from("type")),
+            Some(&CefString::from("renderer")),
+        );
+        // Linux replaces zygote argv after fork. Do NOT call the App startup
+        // callback: this exact browser-side CEF vtable must establish policy.
+        assert!(!crate::cef_renderer::forced_dark_configured(&command));
+        handler.on_before_child_process_launch(Some(&mut command));
+        assert!(crate::cef_renderer::forced_dark_configured(&command));
+    }
+
+    #[test]
+    fn child_launch_policy_preserves_parameterized_features_and_transport_without_browser_settings()
+    {
+        #[cfg(target_os = "macos")]
+        crate::platform::test_runtime::ensure_loaded();
+        bootstrap_platform::select_pinned_api().unwrap();
+        let app = subprocess_application();
+        let handler = app.browser_process_handler().unwrap();
+        for process in ["renderer", "utility", "gpu-process", "zygote"] {
+            let mut command = command_line_create().unwrap();
+            for (name, value) in [
+                ("type", process),
+                ("enable-features", "ExistingEnabled<Trial:key/value,WebContentsForceDark:inversion_method/cielab_based"),
+                ("disable-features", "ExistingDisabled<Trial:key/value"),
+                ("disable-blink-features", "ExistingBlinkFeature"),
+                ("host-resolver-rules", "MAP * 192.0.2.1"),
+            ] {
+                command.append_switch_with_value(Some(&CefString::from(name)), Some(&CefString::from(value)));
+            }
+            let value = |command: &CommandLine, name: &str| {
+                CefString::from(&command.switch_value(Some(&CefString::from(name)))).to_string()
+            };
+            let mut prior = None;
+            for _ in 0..2 {
+                handler.on_before_child_process_launch(Some(&mut command));
+                assert!(crate::cef_renderer::forced_dark_configured(&command));
+                let enabled = value(&command, "enable-features");
+                assert_eq!(enabled, "ExistingEnabled<Trial:key/value,WebContentsForceDark:inversion_method/cielab_based,SkipIPv6ReachabilityProbe");
+                let disabled = value(&command, "disable-features");
+                assert_eq!(disabled, "ExistingDisabled<Trial:key/value,RecordLockAcquisitionTime,PreemptiveSodaDownload,SodaComponentUpdates,XSLTSpecialTrial");
+                let current = (enabled, disabled);
+                if let Some(previous) = &prior {
+                    assert_eq!(&current, previous);
+                }
+                prior = Some(current);
+                assert_eq!(
+                    value(&command, "host-resolver-rules"),
+                    NATIVE_HOST_RESOLVER_RULES
+                );
+                assert_eq!(
+                    value(&command, "force-webrtc-ip-handling-policy"),
+                    "disable_non_proxied_udp"
+                );
+                assert_eq!(
+                    value(&command, "disable-blink-features"),
+                    "ExistingBlinkFeature"
+                );
+                for required in [
+                    "force-dark-mode",
+                    "disable-quic",
+                    "disable-chrome-login-prompt",
+                    "disable-default-apps",
+                ] {
+                    assert_eq!(command.has_switch(Some(&CefString::from(required))), 1);
+                }
+                #[cfg(target_os = "linux")]
+                assert_eq!(value(&command, "ozone-platform"), "x11");
+                for absent in [
+                    "disable-print-preview",
+                    "log-net-log",
+                    "net-log-capture-mode",
+                    "proxy-server",
+                    "no-proxy-server",
+                    "proxy-bypass-list",
+                    "no-sandbox",
+                    "disable-web-security",
+                    "ignore-certificate-errors",
+                    "disable-ipv6",
+                    "remote-debugging-port",
+                    "user-agent",
+                ] {
+                    assert_eq!(
+                        command.has_switch(Some(&CefString::from(absent))),
+                        0,
+                        "{process}: {absent}"
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn child_launch_policy_keeps_disabled_dark_fail_closed_and_rejects_unknown_roles() {
+        #[cfg(target_os = "macos")]
+        crate::platform::test_runtime::ensure_loaded();
+        bootstrap_platform::select_pinned_api().unwrap();
+        let app = subprocess_application();
+        let handler = app.browser_process_handler().unwrap();
+        let mut command = command_line_create().unwrap();
+        command.append_switch_with_value(
+            Some(&CefString::from("type")),
+            Some(&CefString::from("renderer")),
+        );
+        command.append_switch_with_value(
+            Some(&CefString::from("disable-features")),
+            Some(&CefString::from("WebContentsForceDark<ConflictTrial")),
+        );
+        handler.on_before_child_process_launch(Some(&mut command));
+        assert!(!crate::cef_renderer::forced_dark_configured(&command));
+        assert!(
+            CefString::from(&command.switch_value(Some(&CefString::from("disable-features"))))
+                .to_string()
+                .contains("WebContentsForceDark<ConflictTrial")
+        );
+        for process in ["", "browser", "renderer-extra", "unknown", " renderer"] {
+            let mut command = command_line_create().unwrap();
+            if !process.is_empty() {
+                command.append_switch_with_value(
+                    Some(&CefString::from("type")),
+                    Some(&CefString::from(process)),
+                );
+            }
+            handler.on_before_child_process_launch(Some(&mut command));
+            for absent in [
+                "force-dark-mode",
+                "enable-features",
+                "disable-features",
+                "host-resolver-rules",
+                "disable-quic",
+                "disable-print-preview",
+                "log-net-log",
+                "disable-blink-features",
+            ] {
+                assert_eq!(
+                    command.has_switch(Some(&CefString::from(absent))),
+                    0,
+                    "{process}: {absent}"
+                );
+            }
+        }
+        handler.on_before_child_process_launch(None);
     }
 
     #[test]

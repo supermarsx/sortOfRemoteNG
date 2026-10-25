@@ -34,6 +34,7 @@ test("browser startup excludes only the XSLT trial and preserves migrated profil
     "utf8",
   );
   const callback = block(source, "fn on_before_command_line_processing(");
+  const commonPolicy = block(source, "fn configure_common_process_switches(");
   const dns = source.match(
     /pub const NATIVE_HOST_RESOLVER_RULES: &str = "[^"]+";/u,
   );
@@ -59,7 +60,7 @@ test("browser startup excludes only the XSLT trial and preserves migrated profil
   );
   await writeFile(
     harness,
-    `#[path = ${JSON.stringify(helper.replaceAll("\\", "/"))}]\nmod startup_features;\n${dns[0]}\n${fixture}\nimpl RuntimeApplication {\n${callback}\n}\n`,
+    `#[path = ${JSON.stringify(helper.replaceAll("\\", "/"))}]\nmod startup_features;\n${dns[0]}\n${fixture}\n${commonPolicy}\nimpl RuntimeApplication {\n${callback}\n}\n`,
   );
   execFileSync(
     "rustc",
