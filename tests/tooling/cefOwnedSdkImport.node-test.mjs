@@ -62,6 +62,9 @@ import {
 import { importArguments } from "../../scripts/cef-owned-sdk-import.mjs";
 import {
   WINDOWS_CAPSULE_ORIGIN,
+  WINDOWS_OPERATION2_ORIGIN,
+  WINDOWS_OPERATION2_EVIDENCE,
+  WINDOWS_OPERATION2_CLANG,
   WINDOWS_CAPSULE_IDENTITY,
   WINDOWS_CAPSULE_EVIDENCE,
 } from "../../scripts/lib/cef-owned-sdk-handoff.mjs";
@@ -1408,18 +1411,19 @@ test("portable incremental Windows reviews remain operator-local and require the
   );
 });
 
-function capsuleImportFixture() {
+function capsuleImportFixture(operation2 = false) {
   const f = fixture(),
     review = f.review;
-  review.origin = WINDOWS_CAPSULE_ORIGIN;
+  review.origin = operation2
+    ? WINDOWS_OPERATION2_ORIGIN
+    : WINDOWS_CAPSULE_ORIGIN;
   review.sourceLockIdentity = WINDOWS_CAPSULE_IDENTITY;
   review.assets.find((row) => row.name.endsWith(".tar.bz2")).name =
     `sorng-cef-custom-${review.sourceLockIdentity}-${review.target}.tar.bz2`;
   review.reviewBinding.evidencePins = Object.fromEntries(
-    WINDOWS_CAPSULE_EVIDENCE.map((role) => [
-      role,
-      { path: role + ".json", size: 100, sha256: hash(role) },
-    ]),
+    (operation2 ? WINDOWS_OPERATION2_EVIDENCE : WINDOWS_CAPSULE_EVIDENCE).map(
+      (role) => [role, { path: role + ".json", size: 100, sha256: hash(role) }],
+    ),
   );
   const handoff = {
     kind: "sorng-cef-owned-sdk-handoff",
@@ -1457,9 +1461,12 @@ function capsuleImportFixture() {
       instanceTracerEnabled: false,
       derivedFacts: true,
       reviewedEvidenceDigests: Object.fromEntries(
-        WINDOWS_CAPSULE_EVIDENCE.filter((role) => role !== "build").map(
-          (role) => [role, review.reviewBinding.evidencePins[role].sha256],
-        ),
+        (operation2 ? WINDOWS_OPERATION2_EVIDENCE : WINDOWS_CAPSULE_EVIDENCE)
+          .filter((role) => role !== "build")
+          .map((role) => [
+            role,
+            review.reviewBinding.evidencePins[role].sha256,
+          ]),
       ),
     },
   };
@@ -1483,6 +1490,32 @@ function capsuleImportFixture() {
     ),
     nativeObservations: Array(4).fill("8".repeat(64)),
   };
+  if (operation2) {
+    const p = handoff.provenance;
+    p.previousFailedAttemptDigest =
+      review.reviewBinding.evidencePins.previousEngineAttempt.sha256;
+    p.engineAccountingDigest =
+      review.reviewBinding.evidencePins.engineAccounting.sha256;
+    p.separatelyObservedClang = {
+      sha256: WINDOWS_OPERATION2_CLANG.sha256,
+      bytes: WINDOWS_OPERATION2_CLANG.bytes,
+      qualification: WINDOWS_OPERATION2_CLANG.provenance,
+    };
+    p.engineOperationPolicy = {
+      jobs: 12,
+      cpuRate: 3000,
+      memoryBytes: "34359738368",
+      activeLimit: 128,
+      deadlineUtc: "2026-10-25T05:07:15Z",
+      originalFailedDeadlineUtc: "2026-10-25T00:35:33Z",
+    };
+    p.nestedOriginalRecordDigests.previousEngineAttempt = {
+      report: "4".repeat(64),
+      manifest: "5".repeat(64),
+      receipt: "6".repeat(64),
+    };
+    p.nestedOriginalRecordDigests.engineAccounting = p.engineAccountingDigest;
+  }
   const encode = () => {
     const bytes = Buffer.from(JSON.stringify(handoff));
     review.handoffSha256 = hash(bytes);
@@ -1520,6 +1553,50 @@ test("capsule import rejects wrong source, missing raw roles, profile/DPD/tracer
   for (const change of changes) {
     const f = capsuleImportFixture();
     change(f);
+    assert.throws(() => validateLocalHandoff(f.review, f.encode()));
+  }
+});
+
+// Synthetic public-import schema facts; no actual new SDK or successful operation2 claim.
+test("operation2 import has its own exact20-role review and qualified Clang/accounting provenance", () => {
+  const f = capsuleImportFixture(true);
+  assert.doesNotThrow(() => validateOwnedReview(f.review));
+  const v = validateLocalHandoff(f.review, f.encode());
+  assert.equal(v.provenance.engineOperationPolicy.jobs, 12);
+  assert.equal(v.nativeAcceptance, "not-tested");
+  assert.equal(v.publicationAllowed, false);
+});
+test("operation2 import denies replaced source, clock, policy, digest and accounting authority", () => {
+  const edits = [
+    (f) => delete f.review.reviewBinding.evidencePins.engineAccounting,
+    (f) =>
+      (f.review.reviewBinding.evidencePins.engineAccounting.size =
+        2 * 1024 ** 2 + 1),
+    (f) =>
+      (f.review.reviewBinding.evidencePins.previousEngineAttempt.size =
+        1024 ** 2 + 1),
+    (f) =>
+      (f.handoff.provenance.separatelyObservedClang.sha256 = "a".repeat(64)),
+    (f) =>
+      (f.handoff.provenance.separatelyObservedClang.qualification =
+        "native42-tool8"),
+    (f) => (f.handoff.provenance.engineOperationPolicy.jobs = 8),
+    (f) => (f.handoff.provenance.engineOperationPolicy.cpuRate = 2000),
+    (f) =>
+      (f.handoff.provenance.engineOperationPolicy.originalFailedDeadlineUtc =
+        "now"),
+    (f) => (f.handoff.provenance.engineOperationPolicy.deadlineUtc = "invalid"),
+    (f) => (f.handoff.provenance.engineAccountingDigest = "a".repeat(64)),
+    (f) =>
+      (f.handoff.provenance.nestedOriginalRecordDigests.previousEngineAttempt =
+        "b".repeat(64)),
+    (f) => (f.handoff.provenance.previousFailedAttemptDigest = "c".repeat(64)),
+    (f) => (f.handoff.nativeAcceptance = "passed"),
+    (f) => (f.handoff.provenance.unreviewed = "field"),
+  ];
+  for (const edit of edits) {
+    const f = capsuleImportFixture(true);
+    edit(f);
     assert.throws(() => validateLocalHandoff(f.review, f.encode()));
   }
 });

@@ -23,6 +23,9 @@ import {
   checkOwnedSdkHandoff,
   ownedHandoffReviewBinding,
   WINDOWS_CAPSULE_ORIGIN,
+  WINDOWS_OPERATION2_ORIGIN,
+  WINDOWS_OPERATION2_EVIDENCE,
+  WINDOWS_OPERATION2_CLANG,
   WINDOWS_CAPSULE_IDENTITY,
   WINDOWS_CAPSULE_EVIDENCE,
   WINDOWS_CAPSULE_SOURCE_PINS,
@@ -391,7 +394,7 @@ async function fixture(t, incremental = false) {
   const inputs = path.join(work, "inputs"),
     sourceInputs = path.join(
       root,
-      incremental === "capsule"
+      ["capsule", "operation2"].includes(incremental)
         ? "native/cef-build-inputs/20261024-r5-trace-helper-static-package-name-windows-x64"
         : incremental
           ? "native/cef-build-inputs/20261024-r5-instance-tracer-allocation-windows-x64"
@@ -548,12 +551,12 @@ async function fixture(t, incremental = false) {
       descriptorSha256: hash(descriptorBytes),
     };
   }
-  if (incremental === "capsule") {
-    const f = await capsuleFixture(),
+  if (["capsule", "operation2"].includes(incremental)) {
+    const f = await capsuleFixture(incremental === "operation2"),
       manifest = JSON.parse(await readFile(path.join(bundle, "manifest.json")));
     f.input.python = value.python;
     f.input.descriptorSha256 = hash(descriptorBytes);
-    const outputs = f.r.engine.engine.outputs;
+    const outputs = (f.r.engine.operation ?? f.r.engine.engine).outputs;
     for (const [name, bytes] of [
       ["libcef.dll", library],
       ["bootstrap.exe", pe()],
@@ -1063,7 +1066,7 @@ test("real structural R5 archive roundtrip keeps all thirteen original evidence 
 });
 
 // Synthetic schema records only; these never attest a real engine or SDK.
-async function capsuleFixture() {
+async function capsuleFixture(operation2 = false) {
   const lock = JSON.parse(
     await readFile(
       path.join(
@@ -1279,6 +1282,7 @@ async function capsuleFixture() {
   };
   const textRoles = new Set([
     "engineOutput",
+    "engineAccounting",
     "nativeFocusedOutput",
     "nativeBrpOutput",
     "nativeSandboxOutput",
@@ -1292,6 +1296,198 @@ async function capsuleFixture() {
     const rawUtf8 = JSON.stringify(record);
     return { rawUtf8, sha256: hash(rawUtf8) };
   };
+  if (operation2) {
+    input.origin = WINDOWS_OPERATION2_ORIGIN;
+    const eng = r.engine.engine,
+      rootMs = Date.parse("2026-10-25T01:09:11Z"),
+      launchUtc = "2026-10-25T01:07:15Z",
+      end = "2026-10-25T05:07:15Z";
+    job.rootCreationFiletime = String(
+      BigInt(rootMs) * 10000n + 116444736000000000n,
+    );
+    Object.assign(job, {
+      compilerOutcome: "success",
+      accountingOutcome: "verified",
+      policyReadback: {
+        cpuFlags: 5,
+        cpuRate: 3000,
+        limitFlags: 0x2208,
+        activeProcessLimit: 128,
+        jobMemoryBytes: "34359738368",
+        explicitInheritedHandles: 3,
+        affinityPolicyChanged: false,
+      },
+    });
+    const row = (role, elapsedMs) => ({
+      role,
+      elapsedMs,
+      user100ns: role === "initial" ? "0" : "9007199254740993",
+      kernel100ns: "0",
+      totalProcesses: 1,
+      activeProcesses: role === "initial" ? 1 : 0,
+      terminatedProcesses: role === "initial" ? 0 : 1,
+      readOperations: "0",
+      writeOperations: "0",
+      otherOperations: "0",
+      readBytes: "0",
+      writeBytes: "0",
+      otherBytes: "0",
+      peakProcessMemoryBytes: "1024",
+      peakJobMemoryBytes: "2048",
+    });
+    r.engineAccounting = JSON.stringify({
+      kind: "owned-job-accounting-v1",
+      available: true,
+      intervalMs: 10000,
+      queryClasses: [8, 9],
+      rowLimit: 2048,
+      byteLimit: 2097152,
+      samples: [row("initial", 0), row("final", 100)],
+      errors: [],
+      processorGroupFacts: "not-collected",
+      cpuDenominatorKnown: false,
+      utilizationPercent: null,
+    });
+    job.accountingSha256 = hash(r.engineAccounting);
+    Object.assign(eng, {
+      kind: "owned-windows-source22-explicit-engine-operation2",
+      operationDeadlineUtc: end,
+      operationMonotonicEnd: 22222,
+      originalAttemptDeadlineUtc: "2026-10-25T00:35:33Z",
+      actualClang: structuredClone(WINDOWS_OPERATION2_CLANG),
+      nativePrerequisites: {
+        count: 42,
+        executedInThisOperation: false,
+        sameSourceToolsFlagsReverified: true,
+        manifestSha256: digest,
+      },
+      postVerification: {
+        actualClangSeparatelyObserved: { verified: true },
+        source9ToolsFlagsGraph: { verified: true },
+        gitHeads: { verified: true },
+        source22Inputs: { verified: true },
+      },
+    });
+    delete eng.originalDeadlineUtc;
+    delete eng.originalMonotonicEnd;
+    eng.argv[2] = "-j12";
+    r.engine = {
+      kind: "source22-explicit-engine-operation2-controller",
+      success: true,
+      engineStarted: true,
+      sourceLockIdentity: WINDOWS_CAPSULE_IDENTITY,
+      actualClang: structuredClone(WINDOWS_OPERATION2_CLANG),
+      operation: eng,
+      controllerFinalDeadlineAdmission: { verified: true },
+    };
+    const oldJob = {
+      ...structuredClone(job),
+      success: false,
+      outcome: "deadline",
+      rootExit: null,
+      finalRootExit: 124,
+    };
+    const oldReport = {
+      kind: "source22-engine-fresh-continuation",
+      sourceLockIdentity: WINDOWS_CAPSULE_IDENTITY,
+      success: false,
+      engine: {
+        success: false,
+        originalDeadlineUtc: "2026-10-25T00:35:33Z",
+        finalDeadlineAdmission: { verified: false },
+        postVerification: {
+          source9ToolsFlagsGraph: { verified: true },
+          gitHeads: { verified: true },
+          source22Inputs: { verified: true },
+        },
+        job: oldJob,
+      },
+    };
+    const originalReport = wrap(oldReport),
+      oldRows = Array.from({ length: 39 }, (_, i) => ({
+        path: i === 0 ? "engine-continuation.json" : `synthetic-old-${i}`,
+        bytes: i === 0 ? Buffer.byteLength(originalReport.rawUtf8) : 1,
+        sha256: i === 0 ? originalReport.sha256 : digest,
+      }));
+    const originalManifest = wrap({
+      kind: "actual-source22-first-engine-partial-deadline-raw-proof",
+      files: oldRows,
+      observationFiles: Array.from({ length: 4 }, () => ({
+        sha256: digest,
+        bytes: 1,
+      })),
+    });
+    const originalReceipt = wrap({
+      kind: "actual-source22-engine-partial-original-deadline",
+      sourceLockIdentity: WINDOWS_CAPSULE_IDENTITY,
+      rawManifestSha256: originalManifest.sha256,
+      fullEngineBuilt: false,
+      actualJob: oldJob,
+    });
+    r.previousEngineAttempt = {
+      kind: "derived-operation2-original-failed-attempt",
+      derivedFacts: true,
+      originalReport,
+      originalManifest,
+      originalReceipt,
+    };
+    eng.previousAttempt = {
+      manifestSha256: originalManifest.sha256,
+      receiptSha256: originalReceipt.sha256,
+      originalDeadlineUtc: "2026-10-25T00:35:33Z",
+      originalOutcome: "deadline",
+      originalFinalRootExit: 124,
+      originalSuccess: false,
+      rootReaped: true,
+      activeAtEnd: 0,
+    };
+    const operationEvidence = {
+      controllerSha256:
+        "b022ce4b19a8f103df347290fe119d33fecb9655e3f2ab0b690ad0259c3a1e5c",
+      driverSha256:
+        "0130b26e2fdea96396fe1bb5527f504859fef2c56d1f70b91a0cc6f665c559fa",
+      phaseRecords: {},
+    };
+    operationEvidence.controllerLaunch = wrap({
+      kind: "explicit-operation2-controller-launch",
+      launchUtc,
+      deadlineUtc: end,
+      controllerSha256: operationEvidence.controllerSha256,
+      driverSha256: operationEvidence.driverSha256,
+    });
+    for (const phase of ["phaseA", "phaseB"]) {
+      const observedAtUtc = new Date(rootMs - 50).toISOString();
+      const capacity = wrap({
+        kind: "actual-host-capacity",
+        observedAtUtc,
+        availableBytes: 128 * 1024 ** 3,
+        committedBytes: 32 * 1024 ** 3,
+        commitLimitBytes: 256 * 1024 ** 3,
+        logicalProcessors: 80,
+      });
+      const audit = wrap({
+        kind: "sorng-scoped-engine-writer-audit",
+        sourceRoot: "F:/cef-builds/sorng-20261007/src",
+        depotRoot: "F:/cef-builds/sorng-20261007/depot_tools",
+        observedAtUtc,
+        blockingCount: 0,
+        rows: [],
+      });
+      operationEvidence.phaseRecords[phase] = { capacity, audit };
+      r.engine[phase] = {
+        phase,
+        capacitySha256: capacity.sha256,
+        auditSha256: audit.sha256,
+        writerCollectorSha256:
+          "641fd1717e79f06c6e0dda72332ce8514f209f3540031b1c84b1b3cd7b5e4022",
+        capacityQueryJob: structuredClone(job),
+      };
+    }
+    r.build.operationEvidence = operationEvidence;
+    r.build.policy.cpuRate = 3000;
+    r.build.policy.jobs = 12;
+    r.package.kind = "immutable-local-capsule22-operation2-sdk-package";
+  }
   function seal() {
     for (const [role, suffix] of [
       ["native", "continuation.json"],
@@ -1335,7 +1531,9 @@ async function capsuleFixture() {
       stageReceipts,
       observations,
     };
-    r.engine.engine.native42ManifestSha256 = manifestSha;
+    if (operation2)
+      r.engine.operation.nativePrerequisites.manifestSha256 = manifestSha;
+    else r.engine.engine.native42ManifestSha256 = manifestSha;
     r.sourcePostchecks = {
       kind: "derived-capsule-original-postcheck-records",
       derivedFacts: true,
@@ -1365,18 +1563,17 @@ async function capsuleFixture() {
       kind: "derived-capsule-engine-symbol-identity",
       derivedFacts: true,
       originalEngineRecordSha256: hash(encoded("engine")),
-      symbols: r.engine.engine.symbols,
+      symbols: (operation2 ? r.engine.operation : r.engine.engine).symbols,
     };
     r.build.recordDigests = Object.fromEntries(
-      WINDOWS_CAPSULE_EVIDENCE.filter((role) => role !== "build").map(
-        (role) => [role, hash(encoded(role))],
-      ),
+      (operation2 ? WINDOWS_OPERATION2_EVIDENCE : WINDOWS_CAPSULE_EVIDENCE)
+        .filter((role) => role !== "build")
+        .map((role) => [role, hash(encoded(role))]),
     );
     input.evidence = Object.fromEntries(
-      WINDOWS_CAPSULE_EVIDENCE.map((role) => [
-        role,
-        pin(role + ".json", encoded(role)),
-      ]),
+      (operation2 ? WINDOWS_OPERATION2_EVIDENCE : WINDOWS_CAPSULE_EVIDENCE).map(
+        (role) => [role, pin(role + ".json", encoded(role))],
+      ),
     );
   }
   seal();
@@ -1599,4 +1796,287 @@ test("large-output stream rejects growth beyond reviewed size before retaining t
     fs.createReadStream = original;
     syncBuiltinESMExports();
   }
+});
+
+// Synthetic schema fixtures only; these records do not assert a genuine engine build.
+test("operation2 preserves the failed attempt and validates distinct clock/accounting/Clang", async () => {
+  const f = await capsuleFixture(true),
+    p = verifyOwnedHandoffEvidence(f.input, f.r, f.lock);
+  assert.equal(p.origin, WINDOWS_OPERATION2_ORIGIN);
+  assert.equal(p.nativeClassTestsPassed, 42);
+  assert.equal(p.engineOperationPolicy.jobs, 12);
+  assert.equal(
+    p.separatelyObservedClang.sha256,
+    WINDOWS_OPERATION2_CLANG.sha256,
+  );
+  assert.equal(p.engineAccountingDigest, f.r.engineJob.accountingSha256);
+  assert.equal(Object.keys(f.input.evidence).length, 20);
+});
+test("operation2 denies timing, original failure, accounting, compiler, policy and native drift", async () => {
+  const changes = [
+    (f) => (f.r.engine.operation.previousAttempt.originalSuccess = true),
+    (f) => (f.r.engine.operation.actualClang.sha256 = digest),
+    (f) => (f.r.engine.operation.argv[2] = "-j8"),
+    (f) => (f.r.engineJob.policyReadback.cpuRate = 2000),
+    (f) => (f.r.engine.operation.finalDeadlineAdmission.verified = false),
+    (f) => (f.r.engine.controllerFinalDeadlineAdmission.verified = false),
+    (f) =>
+      (f.r.engine.operation.nativePrerequisites.executedInThisOperation = true),
+    (f) =>
+      (f.r.engine.operation.postVerification.actualClangSeparatelyObserved.verified = false),
+    (f) => (f.r.engine.operation.operationDeadlineUtc = "2026-10-25T09:00:00Z"),
+    (f) => (f.r.engine.phaseB.auditSha256 = digest),
+    (f) => (f.r.engineJob.accountingSha256 = digest),
+    (f) => {
+      const a = JSON.parse(f.r.engineAccounting);
+      a.samples[1].user100ns = 9007199254740992;
+      f.r.engineAccounting = JSON.stringify(a);
+      f.r.engineJob.accountingSha256 = hash(f.r.engineAccounting);
+    },
+    (f) => {
+      const a = JSON.parse(f.r.engineAccounting);
+      a.samples[1].activeProcesses = 1;
+      f.r.engineAccounting = JSON.stringify(a);
+      f.r.engineJob.accountingSha256 = hash(f.r.engineAccounting);
+    },
+    (f) => {
+      const a = JSON.parse(f.r.engineAccounting);
+      a.samples.push(a.samples[1]);
+      f.r.engineAccounting = JSON.stringify(a);
+      f.r.engineJob.accountingSha256 = hash(f.r.engineAccounting);
+    },
+    (f) => {
+      const a = JSON.parse(f.r.engineAccounting);
+      a.utilizationPercent = 30;
+      f.r.engineAccounting = JSON.stringify(a);
+      f.r.engineJob.accountingSha256 = hash(f.r.engineAccounting);
+    },
+    (f) =>
+      (f.r.nativeFocusedOutput = f.r.nativeFocusedOutput.replace(
+        "SUCCESS",
+        "FAILED",
+      )),
+  ];
+  for (const change of changes) {
+    const f = await capsuleFixture(true);
+    change(f);
+    f.seal();
+    assert.throws(() => verifyOwnedHandoffEvidence(f.input, f.r, f.lock));
+  }
+});
+test("operation2 per-role and aggregate caps are closed without changing legacy roles", async () => {
+  const f = await capsuleFixture(true);
+  f.input.evidence.engineAccounting.size = 2 * 1024 ** 2 + 1;
+  assert.throws(() => ownedSdkHandoffPlan(f.input));
+  const g = await capsuleFixture(true);
+  g.input.evidence.previousEngineAttempt.size = 1024 ** 2 + 1;
+  assert.throws(() => ownedSdkHandoffPlan(g.input));
+  const legacy = await capsuleFixture();
+  legacy.input.evidence.engineAccounting = pin("extra.json", Buffer.from("{}"));
+  assert.throws(() => ownedSdkHandoffPlan(legacy.input));
+});
+
+test("operation2 real archive verifier consumes exact20 roles including original bounded accounting bytes", async (t) => {
+  const f = await fixture(t, "operation2"),
+    value = await checkOwnedSdkHandoff({ ...f, execute: true });
+  assert.equal(value.provenance.origin, WINDOWS_OPERATION2_ORIGIN);
+  assert.equal(
+    value.provenance.engineAccountingDigest,
+    f.review.evidence.engineAccounting.sha256,
+  );
+  assert.equal(value.nativeAcceptance, "not-tested");
+});
+
+test("operation2 small accounting role returns only its bounded hashed bytes after EOF path growth", async (t) => {
+  const f = await fixture(t, "operation2"),
+    file = path.join(f.evidence, f.review.evidence.engineAccounting.path),
+    original = fs.createReadStream;
+  let changed = false;
+  try {
+    fs.createReadStream = (name, ...args) => {
+      const stream = original(name, ...args);
+      if (name === file)
+        stream.once("end", () => {
+          fs.writeFileSync(file, Buffer.alloc(3 * 1024 ** 2, 0x20));
+          changed = true;
+        });
+      return stream;
+    };
+    syncBuiltinESMExports();
+    const value = await checkOwnedSdkHandoff({ ...f, execute: true });
+    assert.equal(changed, true);
+    assert.equal(
+      value.provenance.engineAccountingDigest,
+      f.review.evidence.engineAccounting.sha256,
+    );
+  } finally {
+    fs.createReadStream = original;
+    syncBuiltinESMExports();
+  }
+});
+test("operation2 accounting midstream growth is rejected before accepting extra bytes", async (t) => {
+  const f = await fixture(t, "operation2"),
+    file = path.join(f.evidence, f.review.evidence.engineAccounting.path),
+    original = fs.createReadStream;
+  let changed = false;
+  try {
+    fs.createReadStream = (name, ...args) => {
+      const stream =
+        name === file
+          ? original(name, { highWaterMark: 16 })
+          : original(name, ...args);
+      if (name === file)
+        stream.once("data", () => {
+          fs.appendFileSync(file, Buffer.alloc(1024, 0x20));
+          changed = true;
+        });
+      return stream;
+    };
+    syncBuiltinESMExports();
+    await assert.rejects(
+      checkOwnedSdkHandoff({ ...f, execute: true }),
+      /stream bound/,
+    );
+    assert.equal(changed, true);
+    await assert.rejects(lstat(f.output), { code: "ENOENT" });
+  } finally {
+    fs.createReadStream = original;
+    syncBuiltinESMExports();
+  }
+});
+
+test("operation2 malformed original JSON errors expose only a fixed label", async () => {
+  const f = await capsuleFixture(true);
+  f.r.engineAccounting = "PRIVATE_SENTINEL_NEVER_LOG";
+  f.r.engineJob.accountingSha256 = hash(f.r.engineAccounting);
+  f.seal();
+  assert.throws(
+    () => verifyOwnedHandoffEvidence(f.input, f.r, f.lock),
+    (e) =>
+      e.message === "Original operation2 JSON invalid" &&
+      !e.message.includes("PRIVATE_SENTINEL"),
+  );
+});
+
+test("operation2 signed CPU and FILETIME bounds reject out-of-domain numeric identities", async () => {
+  for (const which of ["cpu", "filetime"]) {
+    const f = await capsuleFixture(true);
+    if (which === "cpu") {
+      const a = JSON.parse(f.r.engineAccounting);
+      a.samples[1].user100ns = "9223372036854775808";
+      f.r.engineAccounting = JSON.stringify(a);
+      f.r.engineJob.accountingSha256 = hash(f.r.engineAccounting);
+    } else f.r.engineJob.rootCreationFiletime = "18446744073709551616";
+    f.seal();
+    assert.throws(() => verifyOwnedHandoffEvidence(f.input, f.r, f.lock));
+  }
+});
+
+test("operation2 requires every original engine and phase-query Job success/cleanup field", async () => {
+  const mutations = {
+    success: false,
+    rootExit: 23,
+    finalRootExit: 23,
+    rootReaped: false,
+    cleanupVerified: false,
+    activeAtEnd: 1,
+    logReadersStopped: false,
+    started: false,
+    assignedBeforeResume: false,
+    resumed: false,
+    handleListOnly: false,
+    outcome: "compiler-failure",
+  };
+  for (const role of ["engine", "phaseA", "phaseB"]) {
+    for (const [key, value] of Object.entries(mutations)) {
+      const f = await capsuleFixture(true),
+        job =
+          role === "engine" ? f.r.engineJob : f.r.engine[role].capacityQueryJob;
+      job[key] = value;
+      job.compilerOutcome = "success";
+      f.seal();
+      assert.throws(
+        () => verifyOwnedHandoffEvidence(f.input, f.r, f.lock),
+        undefined,
+        `${role}/${key}`,
+      );
+    }
+  }
+});
+test("operation2 denies contradictory audit rows, foreign roots and pre-operation observations", async () => {
+  for (const phase of ["phaseA", "phaseB"]) {
+    for (const mode of [
+      "blocking-row",
+      "wrong-source",
+      "wrong-depot",
+      "old-capacity",
+      "old-audit",
+    ]) {
+      const f = await capsuleFixture(true),
+        records = f.r.build.operationEvidence.phaseRecords[phase],
+        role = mode === "old-capacity" ? "capacity" : "audit",
+        raw = JSON.parse(records[role].rawUtf8);
+      if (mode === "blocking-row") raw.rows = [{ blocks: true }];
+      else if (mode === "wrong-source") raw.sourceRoot = "F:/foreign";
+      else if (mode === "wrong-depot") raw.depotRoot = "F:/foreign";
+      else raw.observedAtUtc = "2026-10-24T00:00:00Z";
+      records[role].rawUtf8 = JSON.stringify(raw);
+      records[role].sha256 = hash(records[role].rawUtf8);
+      f.r.engine[phase][role + "Sha256"] = records[role].sha256;
+      f.seal();
+      assert.throws(
+        () => verifyOwnedHandoffEvidence(f.input, f.r, f.lock),
+        undefined,
+        `${phase}/${mode}`,
+      );
+    }
+  }
+});
+test("operation2 first periodic sample waits a full interval from the initial sample", async () => {
+  const f = await capsuleFixture(true),
+    a = JSON.parse(f.r.engineAccounting);
+  a.samples.splice(1, 0, { ...a.samples[0], role: "sample", elapsedMs: 1 });
+  f.r.engineAccounting = JSON.stringify(a);
+  f.r.engineJob.accountingSha256 = hash(f.r.engineAccounting);
+  f.seal();
+  assert.throws(() => verifyOwnedHandoffEvidence(f.input, f.r, f.lock));
+});
+test("synthetic coherent records exercise schema only, not independent execution authenticity", async () => {
+  const f = await capsuleFixture(true);
+  assert.notEqual(
+    f.r.previousEngineAttempt.originalManifest.sha256,
+    "782c4521a099a7f3a79beecda15f9ca42c5cfe2aa743e134d139613779806def",
+  );
+  assert.notEqual(
+    f.r.previousEngineAttempt.originalReceipt.sha256,
+    "0c5fc37f54887576b45d474374137e6b935b282224dc9e0e84fffd04fc6309ea",
+  );
+  const p = verifyOwnedHandoffEvidence(f.input, f.r, f.lock);
+  assert.equal(p.originalBuildReplayed, false);
+  assert.equal(ownedSdkHandoffPlan(f.input).nativeAcceptance, "not-tested");
+  // Genuine use separately requires operator review of actual source and782c/0c5/new Job/raw accounting before a committed review/import/API. A self-declared digest is not attestation.
+});
+
+test("all operation2 nontext metadata rejects actual repinned invalid UTF8 before output", async (t) => {
+  const f = await fixture(t, "operation2"),
+    role = "engineJob",
+    bytes = Buffer.concat([
+      Buffer.from('{"sentinel":"PRIVATE_SENTINEL_'),
+      Buffer.from([0xff]),
+      Buffer.from('"}'),
+    ]);
+  const file = path.join(f.evidence, f.review.evidence[role].path);
+  await writeFile(file, bytes);
+  f.review.evidence[role] = {
+    ...f.review.evidence[role],
+    size: bytes.length,
+    sha256: hash(bytes),
+  };
+  await assert.rejects(
+    checkOwnedSdkHandoff({ ...f, execute: true }),
+    (error) =>
+      error.message === "Bounded UTF8 original metadata required" &&
+      !error.message.includes("PRIVATE_SENTINEL"),
+  );
+  await assert.rejects(lstat(f.output), { code: "ENOENT" });
 });

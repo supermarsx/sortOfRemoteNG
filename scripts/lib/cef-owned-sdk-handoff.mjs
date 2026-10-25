@@ -38,6 +38,7 @@ const origins = {
   "existing-windows-package": "x86_64-pc-windows-msvc",
   "owned-windows-incremental-engine": "x86_64-pc-windows-msvc",
   "owned-windows-capsule-lifetime-engine": "x86_64-pc-windows-msvc",
+  "owned-windows-capsule-lifetime-operation2": "x86_64-pc-windows-msvc",
 };
 export const WINDOWS_CAPSULE_ORIGIN = "owned-windows-capsule-lifetime-engine";
 export const WINDOWS_CAPSULE_IDENTITY =
@@ -62,6 +63,25 @@ export const WINDOWS_CAPSULE_EVIDENCE = Object.freeze([
   "distribution",
   "preparation",
 ]);
+export const WINDOWS_OPERATION2_ORIGIN =
+  "owned-windows-capsule-lifetime-operation2";
+export const WINDOWS_OPERATION2_EVIDENCE = Object.freeze([
+  ...WINDOWS_CAPSULE_EVIDENCE,
+  "previousEngineAttempt",
+  "engineAccounting",
+]);
+export const isWindowsCapsuleOrigin = (origin) =>
+  [WINDOWS_CAPSULE_ORIGIN, WINDOWS_OPERATION2_ORIGIN].includes(origin);
+export const ownedCapsuleEvidence = (origin) =>
+  origin === WINDOWS_OPERATION2_ORIGIN
+    ? WINDOWS_OPERATION2_EVIDENCE
+    : WINDOWS_CAPSULE_EVIDENCE;
+export const WINDOWS_OPERATION2_CLANG = Object.freeze({
+  bytes: 103794176,
+  sha256: "84ce79856a871a28a062fc9e4586c527a897903caf58bbf37fe9391ec2dd78c7",
+  provenance: "separately-observed-not-native42-tool8",
+  verified: true,
+});
 export const WINDOWS_CAPSULE_PROVENANCE = Object.freeze([
   "origin",
   "engineSha256",
@@ -80,6 +100,13 @@ export const WINDOWS_CAPSULE_PROVENANCE = Object.freeze([
   "derivedFacts",
   "reviewedEvidenceDigests",
   "nestedOriginalRecordDigests",
+]);
+export const WINDOWS_OPERATION2_PROVENANCE = Object.freeze([
+  ...WINDOWS_CAPSULE_PROVENANCE,
+  "previousFailedAttemptDigest",
+  "engineAccountingDigest",
+  "separatelyObservedClang",
+  "engineOperationPolicy",
 ]);
 export const WINDOWS_CAPSULE_SOURCE_PINS = Object.freeze([
   {
@@ -293,9 +320,17 @@ const capsuleTextRoles = new Set([
   "nativeSandboxList",
 ]);
 export function ownedEvidenceLimit(origin, role) {
-  return origin === WINDOWS_CAPSULE_ORIGIN && role === "engineOutput"
+  if (origin === WINDOWS_OPERATION2_ORIGIN)
+    return role === "engineOutput"
+      ? 64 * 1024 ** 2
+      : role === "engineAccounting"
+        ? 2 * 1024 ** 2
+        : 1024 ** 2;
+  return isWindowsCapsuleOrigin(origin) && role === "engineOutput"
     ? 64 * 1024 ** 2
-    : RELEASE_LIMITS.metadata;
+    : origin === WINDOWS_OPERATION2_ORIGIN && role === "engineAccounting"
+      ? 2 * 1024 ** 2
+      : RELEASE_LIMITS.metadata;
 }
 export const WINDOWS_INCREMENTAL_EVIDENCE = Object.freeze([
   "build",
@@ -325,8 +360,8 @@ export const WINDOWS_INCREMENTAL_PROVENANCE = Object.freeze([
   "pristineSourceBuild",
 ]);
 const evidenceNames = (origin) =>
-  origin === WINDOWS_CAPSULE_ORIGIN
-    ? WINDOWS_CAPSULE_EVIDENCE
+  isWindowsCapsuleOrigin(origin)
+    ? ownedCapsuleEvidence(origin)
     : origin === "owned-windows-incremental-engine"
       ? WINDOWS_INCREMENTAL_EVIDENCE
       : origin === "owned-linux-engine"
@@ -398,7 +433,7 @@ export function ownedSdkHandoffPlan(review) {
   for (const [role, value] of Object.entries(review.evidence))
     pin(value, ownedEvidenceLimit(review.origin, role));
   if (
-    review.origin === WINDOWS_CAPSULE_ORIGIN &&
+    isWindowsCapsuleOrigin(review.origin) &&
     (review.sourceLockIdentity !== WINDOWS_CAPSULE_IDENTITY ||
       Object.values(review.evidence).reduce((sum, row) => sum + row.size, 0) >
         96 * 1024 ** 2)
@@ -441,7 +476,7 @@ export function ownedHandoffReviewBinding(review) {
 export function verifyOwnedHandoffEvidence(review, records, sourceLock) {
   ownedSdkHandoffPlan(review);
   shape(records, evidenceNames(review.origin));
-  if (review.origin === WINDOWS_CAPSULE_ORIGIN)
+  if (isWindowsCapsuleOrigin(review.origin))
     return verifyWindowsCapsuleEvidence(review, records, sourceLock);
   if (review.origin === "owned-windows-incremental-engine")
     return verifyWindowsIncrementalEvidence(review, records, sourceLock);
@@ -942,7 +977,402 @@ function verifyWindowsIncrementalEvidence(review, r, inputLock) {
   };
 }
 
+function verifyWindowsOperation2Engine(
+  review,
+  r,
+  engine,
+  nativeManifestSha,
+  clean,
+) {
+  const require = (ok) => {
+    if (!ok) fail("Original operation2 Windows evidence mismatch");
+  };
+  const same = (a, b) => identitySha256(a) === identitySha256(b);
+  const parse = (text) => {
+    try {
+      return JSON.parse(text);
+    } catch {
+      fail("Original operation2 JSON invalid");
+    }
+  };
+  const original = (record) => {
+    shape(record, ["rawUtf8", "sha256"]);
+    require(
+      typeof record.rawUtf8 === "string" &&
+        Buffer.byteLength(record.rawUtf8) <= 1024 ** 2 &&
+        hash(Buffer.from(record.rawUtf8)) === record.sha256,
+    );
+    return parse(record.rawUtf8);
+  };
+  const job = r.engineJob;
+  require(
+    r.engine?.kind === "source22-explicit-engine-operation2-controller" &&
+      r.engine.success === true &&
+      r.engine.engineStarted === true &&
+      r.engine.sourceLockIdentity === WINDOWS_CAPSULE_IDENTITY,
+  );
+  require(
+    engine?.kind === "owned-windows-source22-explicit-engine-operation2" &&
+      engine.success === true &&
+      engine.sourceLockIdentity === WINDOWS_CAPSULE_IDENTITY &&
+      same(engine.job, job),
+  );
+  require(
+    engine.finalDeadlineAdmission?.verified === true &&
+      r.engine.controllerFinalDeadlineAdmission?.verified === true,
+  );
+  require(
+    same(engine.actualClang, WINDOWS_OPERATION2_CLANG) &&
+      same(r.engine.actualClang, WINDOWS_OPERATION2_CLANG),
+  );
+  require(
+    same(engine.postVerification, {
+      actualClangSeparatelyObserved: { verified: true },
+      source9ToolsFlagsGraph: { verified: true },
+      gitHeads: { verified: true },
+      source22Inputs: { verified: true },
+    }),
+  );
+  require(
+    same(engine.nativePrerequisites, {
+      count: 42,
+      executedInThisOperation: false,
+      sameSourceToolsFlagsReverified: true,
+      manifestSha256: nativeManifestSha,
+    }),
+  );
+  require(
+    engine.originalAttemptDeadlineUtc === "2026-10-25T00:35:33Z" &&
+      Number.isFinite(engine.operationMonotonicEnd) &&
+      engine.operationMonotonicEnd > 0,
+  );
+  require(
+    Array.isArray(engine.argv) &&
+      engine.argv.length === 9 &&
+      /(?:^|[\\/])python(?:\.exe)?$/.test(engine.argv[0]) &&
+      /[\\/]autoninja\.py$/.test(engine.argv[1]) &&
+      same(engine.argv.slice(2), [
+        "-j12",
+        "-C",
+        "out/Release_GN_x64",
+        "cef",
+        "cef_sandbox",
+        "bootstrap",
+        "bootstrapc",
+      ]),
+  );
+  require(
+    Number.isFinite(engine.capSeconds) &&
+      engine.capSeconds > 0 &&
+      engine.capSeconds <= 14400,
+  );
+  require(
+    job.compilerOutcome === "success" &&
+      job.accountingOutcome === "verified" &&
+      job.elapsedMs <= engine.capSeconds * 1000 + 30000,
+  );
+  require(
+    same(job.policyReadback, {
+      cpuFlags: 5,
+      cpuRate: 3000,
+      limitFlags: 0x2208,
+      activeProcessLimit: 128,
+      jobMemoryBytes: "34359738368",
+      explicitInheritedHandles: 3,
+      affinityPolicyChanged: false,
+    }),
+  );
+  const ev = r.build.operationEvidence;
+  shape(ev, [
+    "controllerSha256",
+    "driverSha256",
+    "controllerLaunch",
+    "phaseRecords",
+  ]);
+  require(
+    ev.controllerSha256 ===
+      "b022ce4b19a8f103df347290fe119d33fecb9655e3f2ab0b690ad0259c3a1e5c" &&
+      ev.driverSha256 ===
+        "0130b26e2fdea96396fe1bb5527f504859fef2c56d1f70b91a0cc6f665c559fa",
+  );
+  const launch = original(ev.controllerLaunch),
+    start = Date.parse(launch.launchUtc),
+    end = Date.parse(engine.operationDeadlineUtc);
+  require(
+    launch.kind === "explicit-operation2-controller-launch" &&
+      launch.deadlineUtc === engine.operationDeadlineUtc &&
+      launch.controllerSha256 === ev.controllerSha256 &&
+      launch.driverSha256 === ev.driverSha256 &&
+      Number.isFinite(start) &&
+      Number.isFinite(end) &&
+      end - start > 60000 &&
+      end - start <= 14400000,
+  );
+  require(/^[1-9][0-9]{0,19}$/.test(job.rootCreationFiletime ?? ""));
+  require(BigInt(job.rootCreationFiletime) <= 18446744073709551615n);
+  const rootMs = Number(
+    (BigInt(job.rootCreationFiletime) - 116444736000000000n) / 10000n,
+  );
+  require(
+    Number.isSafeInteger(rootMs) &&
+      rootMs >= start &&
+      rootMs + job.elapsedMs <= end,
+  );
+  shape(ev.phaseRecords, ["phaseA", "phaseB"]);
+  for (const phase of ["phaseA", "phaseB"]) {
+    shape(ev.phaseRecords[phase], ["capacity", "audit"]);
+    const obs = r.engine[phase],
+      cap = original(ev.phaseRecords[phase].capacity),
+      audit = original(ev.phaseRecords[phase].audit);
+    require(
+      obs?.phase === phase &&
+        obs.capacitySha256 === ev.phaseRecords[phase].capacity.sha256 &&
+        obs.auditSha256 === ev.phaseRecords[phase].audit.sha256 &&
+        obs.writerCollectorSha256 ===
+          "641fd1717e79f06c6e0dda72332ce8514f209f3540031b1c84b1b3cd7b5e4022",
+    );
+    require(
+      cap.kind === "actual-host-capacity" &&
+        cap.logicalProcessors === 80 &&
+        Number.isSafeInteger(cap.availableBytes) &&
+        cap.availableBytes >= 64 * 1024 ** 3 &&
+        Number.isSafeInteger(cap.committedBytes) &&
+        Number.isSafeInteger(cap.commitLimitBytes) &&
+        cap.committedBytes >= 0 &&
+        cap.commitLimitBytes - cap.committedBytes >= 64 * 1024 ** 3,
+    );
+    require(
+      audit.kind === "sorng-scoped-engine-writer-audit" &&
+        audit.blockingCount === 0 &&
+        Array.isArray(audit.rows) &&
+        audit.rows.length <= 256 &&
+        audit.rows.every((row) => row?.blocks === false) &&
+        audit.sourceRoot === "F:/cef-builds/sorng-20261007/src" &&
+        audit.depotRoot === "F:/cef-builds/sorng-20261007/depot_tools",
+    );
+    for (const when of [cap.observedAtUtc, audit.observedAtUtc]) {
+      const ms = Date.parse(when);
+      require(
+        Number.isFinite(ms) &&
+          ms >= start &&
+          ms <= rootMs &&
+          (phase !== "phaseB" || rootMs - ms <= 60000),
+      );
+    }
+    require(clean(obs.capacityQueryJob));
+  }
+  const previous = r.previousEngineAttempt;
+  shape(previous, [
+    "kind",
+    "derivedFacts",
+    "originalReport",
+    "originalManifest",
+    "originalReceipt",
+  ]);
+  require(
+    previous.kind === "derived-operation2-original-failed-attempt" &&
+      previous.derivedFacts === true,
+  );
+  const prior = original(previous.originalReport),
+    manifest = original(previous.originalManifest),
+    receipt = original(previous.originalReceipt),
+    old = prior.engine,
+    priorJob = old?.job,
+    summary = engine.previousAttempt;
+  require(
+    prior.kind === "source22-engine-fresh-continuation" &&
+      prior.sourceLockIdentity === WINDOWS_CAPSULE_IDENTITY &&
+      prior.success === false &&
+      old.success === false &&
+      old.originalDeadlineUtc === "2026-10-25T00:35:33Z" &&
+      old.finalDeadlineAdmission?.verified === false,
+  );
+  require(
+    priorJob?.success === false &&
+      priorJob.outcome === "deadline" &&
+      priorJob.finalRootExit === 124 &&
+      priorJob.rootReaped === true &&
+      priorJob.cleanupVerified === true &&
+      priorJob.activeAtEnd === 0 &&
+      priorJob.logReadersStopped === true,
+  );
+  require(
+    same(old.postVerification, {
+      source9ToolsFlagsGraph: { verified: true },
+      gitHeads: { verified: true },
+      source22Inputs: { verified: true },
+    }),
+  );
+  require(
+    manifest.kind ===
+      "actual-source22-first-engine-partial-deadline-raw-proof" &&
+      manifest.files?.length === 39 &&
+      manifest.observationFiles?.length === 4,
+  );
+  require(
+    manifest.files.filter(
+      (x) =>
+        x.path === "engine-continuation.json" &&
+        x.sha256 === previous.originalReport.sha256 &&
+        x.bytes === Buffer.byteLength(previous.originalReport.rawUtf8),
+    ).length === 1,
+  );
+  require(
+    receipt.kind === "actual-source22-engine-partial-original-deadline" &&
+      receipt.sourceLockIdentity === WINDOWS_CAPSULE_IDENTITY &&
+      receipt.rawManifestSha256 === previous.originalManifest.sha256 &&
+      receipt.fullEngineBuilt === false &&
+      same(receipt.actualJob, priorJob),
+  );
+  require(
+    same(summary, {
+      manifestSha256: previous.originalManifest.sha256,
+      receiptSha256: previous.originalReceipt.sha256,
+      originalDeadlineUtc: "2026-10-25T00:35:33Z",
+      originalOutcome: "deadline",
+      originalFinalRootExit: 124,
+      originalSuccess: false,
+      rootReaped: true,
+      activeAtEnd: 0,
+    }),
+  );
+  require(
+    typeof r.engineAccounting === "string" &&
+      Buffer.byteLength(r.engineAccounting) <= 2 * 1024 ** 2 &&
+      hash(Buffer.from(r.engineAccounting)) === job.accountingSha256 &&
+      job.accountingSha256 === review.evidence.engineAccounting.sha256,
+  );
+  const accounting = parse(r.engineAccounting);
+  shape(accounting, [
+    "kind",
+    "available",
+    "intervalMs",
+    "queryClasses",
+    "rowLimit",
+    "byteLimit",
+    "samples",
+    "errors",
+    "processorGroupFacts",
+    "cpuDenominatorKnown",
+    "utilizationPercent",
+  ]);
+  require(
+    accounting.kind === "owned-job-accounting-v1" &&
+      accounting.available === true &&
+      accounting.intervalMs === 10000 &&
+      same(accounting.queryClasses, [8, 9]) &&
+      accounting.rowLimit === 2048 &&
+      accounting.byteLimit === 2097152 &&
+      same(accounting.errors, []) &&
+      accounting.processorGroupFacts === "not-collected" &&
+      accounting.cpuDenominatorKnown === false &&
+      accounting.utilizationPercent === null,
+  );
+  require(
+    Array.isArray(accounting.samples) &&
+      accounting.samples.length >= 2 &&
+      accounting.samples.length <= 2048,
+  );
+  const decimalKeys = [
+    "user100ns",
+    "kernel100ns",
+    "readOperations",
+    "writeOperations",
+    "otherOperations",
+    "readBytes",
+    "writeBytes",
+    "otherBytes",
+    "peakProcessMemoryBytes",
+    "peakJobMemoryBytes",
+  ];
+  let last, periodic;
+  for (const [i, row] of accounting.samples.entries()) {
+    shape(row, [
+      "role",
+      "elapsedMs",
+      "totalProcesses",
+      "activeProcesses",
+      "terminatedProcesses",
+      ...decimalKeys,
+    ]);
+    require(
+      row.role ===
+        (i === 0
+          ? "initial"
+          : i === accounting.samples.length - 1
+            ? "final"
+            : "sample") &&
+        Number.isSafeInteger(row.elapsedMs) &&
+        row.elapsedMs >= 0 &&
+        row.elapsedMs <= job.elapsedMs + 1000,
+    );
+    for (const key of decimalKeys)
+      require(
+        typeof row[key] === "string" &&
+          /^(0|[1-9][0-9]{0,19})$/.test(row[key]) &&
+          BigInt(row[key]) <= 18446744073709551615n,
+      );
+    require(
+      BigInt(row.user100ns) <= 9223372036854775807n &&
+        BigInt(row.kernel100ns) <= 9223372036854775807n,
+    );
+    for (const key of [
+      "totalProcesses",
+      "activeProcesses",
+      "terminatedProcesses",
+    ])
+      require(
+        Number.isSafeInteger(row[key]) &&
+          row[key] >= 0 &&
+          row[key] <= 0xffffffff,
+      );
+    require(
+      row.activeProcesses <= 128 &&
+        row.terminatedProcesses <= row.totalProcesses &&
+        BigInt(row.peakJobMemoryBytes) <= 34359738368n &&
+        BigInt(row.peakProcessMemoryBytes) <= 34359738368n,
+    );
+    if (last) {
+      require(
+        row.elapsedMs >= last.elapsedMs &&
+          row.totalProcesses >= last.totalProcesses &&
+          row.terminatedProcesses >= last.terminatedProcesses,
+      );
+      for (const key of decimalKeys)
+        require(BigInt(row[key]) >= BigInt(last[key]));
+    }
+    if (row.role === "sample") {
+      require(
+        periodic === undefined
+          ? row.elapsedMs - accounting.samples[0].elapsedMs >= 10000
+          : row.elapsedMs - periodic >= 10000,
+      );
+      periodic = row.elapsedMs;
+    }
+    last = row;
+  }
+  require(last.activeProcesses === 0 && engine.symbols?.age <= 0xffffffff);
+  return {
+    previousFailedAttemptDigest: review.evidence.previousEngineAttempt.sha256,
+    engineAccountingDigest: job.accountingSha256,
+    separatelyObservedClang: {
+      sha256: WINDOWS_OPERATION2_CLANG.sha256,
+      bytes: WINDOWS_OPERATION2_CLANG.bytes,
+      qualification: WINDOWS_OPERATION2_CLANG.provenance,
+    },
+    engineOperationPolicy: {
+      jobs: 12,
+      cpuRate: 3000,
+      memoryBytes: "34359738368",
+      activeLimit: 128,
+      deadlineUtc: engine.operationDeadlineUtc,
+      originalFailedDeadlineUtc: "2026-10-25T00:35:33Z",
+    },
+  };
+}
+
 function verifyWindowsCapsuleEvidence(review, r, inputLock) {
+  const operation2 = review.origin === WINDOWS_OPERATION2_ORIGIN;
   const lock = validateSourceLock(inputLock),
     id = review.sourceLockIdentity;
   const require = (ok) => {
@@ -1010,6 +1440,7 @@ function verifyWindowsCapsuleEvidence(review, r, inputLock) {
     "controllerCommit",
     "recordDigests",
     "policy",
+    ...(operation2 ? ["operationEvidence"] : []),
   ]);
   require(
     b.kind === "derived-local-windows-capsule-build-bindings" &&
@@ -1019,24 +1450,24 @@ function verifyWindowsCapsuleEvidence(review, r, inputLock) {
   );
   shape(
     b.recordDigests,
-    WINDOWS_CAPSULE_EVIDENCE.filter((name) => name !== "build"),
+    ownedCapsuleEvidence(review.origin).filter((name) => name !== "build"),
   );
   for (const [role, sha] of Object.entries(b.recordDigests))
     require(sha === review.evidence[role].sha256);
   require(
     same(b.policy, {
-      cpuRate: 2000,
+      cpuRate: operation2 ? 3000 : 2000,
       memoryBytes: 32 * 1024 ** 3,
       processLimit: 128,
       inheritedHandles: 3,
       cleanupMs: 30000,
-      jobs: 8,
+      jobs: operation2 ? 12 : 8,
       originalDeadlineUtc: "2026-10-25T00:35:33Z",
       originalMonotonicEnd: 1414850.593,
     }),
   );
   const native = r.native?.native,
-    engine = r.engine?.engine;
+    engine = operation2 ? r.engine?.operation : r.engine?.engine;
   require(
     r.native?.kind === "source22-fresh-native-continuation" &&
       r.native.success === true &&
@@ -1191,47 +1622,59 @@ function verifyWindowsCapsuleEvidence(review, r, inputLock) {
       same(flags.macros, WINDOWS_CAPSULE_MACROS) &&
       same(flags.actualTool8, WINDOWS_CAPSULE_TOOL_PINS),
   );
-  require(
-    r.engine?.kind === "source22-engine-fresh-continuation" &&
-      r.engine.success === true &&
-      r.engine.engineStarted === true &&
-      r.engine.sourceLockIdentity === id &&
-      engine?.kind === "source22-one-owned-engine-build" &&
-      engine.success === true &&
-      engine.sourceLockIdentity === id &&
-      engine.native42ManifestSha256 === manifestSha &&
-      clean(r.engineJob) &&
-      same(engine.job, r.engineJob) &&
-      engine.finalDeadlineAdmission?.verified === true &&
-      same(engine.postVerification, {
-        source9ToolsFlagsGraph: { verified: true },
-        gitHeads: { verified: true },
-        source22Inputs: { verified: true },
-      }),
-  );
-  for (const report of [native, engine])
-    require(
-      report.originalDeadlineUtc === b.policy.originalDeadlineUtc &&
-        report.originalMonotonicEnd === b.policy.originalMonotonicEnd,
+  require(clean(r.engineJob));
+  let operationProvenance = {};
+  if (operation2)
+    operationProvenance = verifyWindowsOperation2Engine(
+      review,
+      r,
+      engine,
+      manifestSha,
+      clean,
     );
-  require(
-    Array.isArray(engine.argv) &&
-      engine.argv.length === 9 &&
-      /(?:^|[\\/])python(?:\.exe)?$/.test(engine.argv[0]) &&
-      /[\\/]autoninja\.py$/.test(engine.argv[1]) &&
-      same(engine.argv.slice(2), [
-        "-j8",
-        "-C",
-        "out/Release_GN_x64",
-        "cef",
-        "cef_sandbox",
-        "bootstrap",
-        "bootstrapc",
-      ]) &&
-      Number.isFinite(engine.capSeconds) &&
-      engine.capSeconds > 0 &&
-      engine.capSeconds <= 14400,
-  );
+  else {
+    require(
+      r.engine?.kind === "source22-engine-fresh-continuation" &&
+        r.engine.success === true &&
+        r.engine.engineStarted === true &&
+        r.engine.sourceLockIdentity === id &&
+        engine?.kind === "source22-one-owned-engine-build" &&
+        engine.success === true &&
+        engine.sourceLockIdentity === id &&
+        engine.native42ManifestSha256 === manifestSha &&
+        clean(r.engineJob) &&
+        same(engine.job, r.engineJob) &&
+        engine.finalDeadlineAdmission?.verified === true &&
+        same(engine.postVerification, {
+          source9ToolsFlagsGraph: { verified: true },
+          gitHeads: { verified: true },
+          source22Inputs: { verified: true },
+        }),
+    );
+    for (const report of [native, engine])
+      require(
+        report.originalDeadlineUtc === b.policy.originalDeadlineUtc &&
+          report.originalMonotonicEnd === b.policy.originalMonotonicEnd,
+      );
+    require(
+      Array.isArray(engine.argv) &&
+        engine.argv.length === 9 &&
+        /(?:^|[\\/])python(?:\.exe)?$/.test(engine.argv[0]) &&
+        /[\\/]autoninja\.py$/.test(engine.argv[1]) &&
+        same(engine.argv.slice(2), [
+          "-j8",
+          "-C",
+          "out/Release_GN_x64",
+          "cef",
+          "cef_sandbox",
+          "bootstrap",
+          "bootstrapc",
+        ]) &&
+        Number.isFinite(engine.capSeconds) &&
+        engine.capSeconds > 0 &&
+        engine.capSeconds <= 14400,
+    );
+  }
   require(
     /^build finished\r?$/m.test(r.engineOutput) &&
       /^noexec:0 local:\d+ remote:0 cache:0 skip:\d+\r?$/m.test(
@@ -1316,7 +1759,10 @@ function verifyWindowsCapsuleEvidence(review, r, inputLock) {
   );
   const packaged = r.package;
   require(
-    packaged?.kind === "immutable-local-capsule22-sdk-package" &&
+    packaged?.kind ===
+      (operation2
+        ? "immutable-local-capsule22-operation2-sdk-package"
+        : "immutable-local-capsule22-sdk-package") &&
       packaged.derivedFacts === true &&
       packaged.sourceLockIdentity === id &&
       packaged.engineSha256 === dll.sha256 &&
@@ -1366,7 +1812,18 @@ function verifyWindowsCapsuleEvidence(review, r, inputLock) {
     instanceTracerEnabled: false,
     derivedFacts: true,
     reviewedEvidenceDigests: structuredClone(b.recordDigests),
+    ...operationProvenance,
     nestedOriginalRecordDigests: {
+      ...(operation2
+        ? {
+            previousEngineAttempt: {
+              report: r.previousEngineAttempt.originalReport.sha256,
+              manifest: r.previousEngineAttempt.originalManifest.sha256,
+              receipt: r.previousEngineAttempt.originalReceipt.sha256,
+            },
+            engineAccounting: review.evidence.engineAccounting.sha256,
+          }
+        : {}),
       nativeManifest: manifestSha,
       nativeStageReceipts: Object.fromEntries(
         stages.map((name) => [name, r.nativeJobs.stageReceipts[name].sha256]),
@@ -1391,11 +1848,16 @@ async function regular(file, limit) {
     fail("Bounded canonical regular file required");
   return info;
 }
-async function pinned(root, value, maximum = RELEASE_LIMITS.metadata) {
+async function pinned(
+  root,
+  value,
+  maximum = RELEASE_LIMITS.metadata,
+  bounded = false,
+) {
   pin(value, maximum);
   const file = path.join(root, value.path);
   const info = await regular(file, maximum);
-  if (maximum > RELEASE_LIMITS.metadata) {
+  if (maximum > RELEASE_LIMITS.metadata || bounded) {
     const hasher = createHash("sha256");
     const chunks = [];
     if (info.size !== value.size) fail("Original output size mismatch");
@@ -1429,9 +1891,11 @@ async function sourceInputs(inputs, identity, target, origin) {
   if (
     identitySha256(lock) !== identity ||
     lock.bridge.abiVersion !== 2 ||
-    (["owned-windows-incremental-engine", WINDOWS_CAPSULE_ORIGIN].includes(
-      origin,
-    )
+    ([
+      "owned-windows-incremental-engine",
+      WINDOWS_CAPSULE_ORIGIN,
+      WINDOWS_OPERATION2_ORIGIN,
+    ].includes(origin)
       ? target !== "x86_64-pc-windows-msvc" ||
         lock.bridge.patchId !== HTTP3_BRIDGE_PATCH_ID ||
         lock.bridge.capabilities.length !== 9
@@ -1479,17 +1943,28 @@ export async function checkOwnedSdkHandoff({
       evidenceRoot,
       value,
       ownedEvidenceLimit(review.origin, name),
+      review.origin === WINDOWS_OPERATION2_ORIGIN,
     );
+    if (
+      review.origin === WINDOWS_OPERATION2_ORIGIN &&
+      !Buffer.from(bytes.toString("utf8")).equals(bytes)
+    )
+      fail("Bounded UTF8 original metadata required");
     if (
       (review.origin === "owned-windows-incremental-engine" &&
         ["nativeOutput", "engineOutput"].includes(name)) ||
-      (review.origin === WINDOWS_CAPSULE_ORIGIN && capsuleTextRoles.has(name))
+      (isWindowsCapsuleOrigin(review.origin) &&
+        (capsuleTextRoles.has(name) ||
+          (review.origin === WINDOWS_OPERATION2_ORIGIN &&
+            name === "engineAccounting")))
     ) {
       if (
         bytes.length >
-          (review.origin === WINDOWS_CAPSULE_ORIGIN && name === "engineOutput"
-            ? 64 * 1024 ** 2
-            : 1024 ** 2) ||
+          (review.origin === WINDOWS_OPERATION2_ORIGIN
+            ? ownedEvidenceLimit(review.origin, name)
+            : isWindowsCapsuleOrigin(review.origin) && name === "engineOutput"
+              ? 64 * 1024 ** 2
+              : 1024 ** 2) ||
         !Buffer.from(bytes.toString("utf8")).equals(bytes)
       )
         fail("Bounded UTF8 original build output required");
@@ -1536,9 +2011,11 @@ export async function checkOwnedSdkHandoff({
   }
   if (expected.size !== 5) fail("Exact five-asset transport bundle required");
   if (
-    ["owned-windows-incremental-engine", WINDOWS_CAPSULE_ORIGIN].includes(
-      review.origin,
-    )
+    [
+      "owned-windows-incremental-engine",
+      WINDOWS_CAPSULE_ORIGIN,
+      WINDOWS_OPERATION2_ORIGIN,
+    ].includes(review.origin)
   ) {
     const packaged = records.package;
     if (
@@ -1637,9 +2114,11 @@ export async function checkOwnedSdkHandoff({
   if (provenance.engineSha256 && provenance.engineSha256 !== engineSha256)
     fail("Transport engine differs from original Windows build evidence");
   if (
-    ["owned-windows-incremental-engine", WINDOWS_CAPSULE_ORIGIN].includes(
-      review.origin,
-    )
+    [
+      "owned-windows-incremental-engine",
+      WINDOWS_CAPSULE_ORIGIN,
+      WINDOWS_OPERATION2_ORIGIN,
+    ].includes(review.origin)
   ) {
     if (records.package.sdkFiles !== preflight.filesVerified)
       fail("Original Windows SDK inventory differs");
@@ -1649,12 +2128,15 @@ export async function checkOwnedSdkHandoff({
       ["libcef.dll.lib", "libcef.lib"],
     ]) {
       const pin = (
-        review.origin === WINDOWS_CAPSULE_ORIGIN
-          ? records.engine.engine.outputs
+        isWindowsCapsuleOrigin(review.origin)
+          ? (review.origin === WINDOWS_OPERATION2_ORIGIN
+              ? records.engine.operation
+              : records.engine.engine
+            ).outputs
           : records.symbols.files
       ).find(
         (row) =>
-          (review.origin === WINDOWS_CAPSULE_ORIGIN && row.path === original) ||
+          (isWindowsCapsuleOrigin(review.origin) && row.path === original) ||
           row.path.replaceAll("\\", "/").endsWith("/" + original),
       );
       const bytes = await readFile(path.join(sdk, packaged));

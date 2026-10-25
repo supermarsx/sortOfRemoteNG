@@ -26,9 +26,12 @@ import { inspectNativeBinary } from "../browser-runtime-package.mjs";
 import {
   WINDOWS_INCREMENTAL_EVIDENCE,
   WINDOWS_INCREMENTAL_PROVENANCE,
-  WINDOWS_CAPSULE_ORIGIN,
+  WINDOWS_OPERATION2_ORIGIN,
+  WINDOWS_OPERATION2_PROVENANCE,
+  WINDOWS_OPERATION2_CLANG,
+  isWindowsCapsuleOrigin,
+  ownedCapsuleEvidence,
   WINDOWS_CAPSULE_IDENTITY,
-  WINDOWS_CAPSULE_EVIDENCE,
   WINDOWS_CAPSULE_PROVENANCE,
   ownedEvidenceLimit,
 } from "./cef-owned-sdk-handoff.mjs";
@@ -58,6 +61,7 @@ const origins = {
   "owned-linux-engine": "x86_64-unknown-linux-gnu",
   "owned-windows-incremental-engine": "x86_64-pc-windows-msvc",
   "owned-windows-capsule-lifetime-engine": "x86_64-pc-windows-msvc",
+  "owned-windows-capsule-lifetime-operation2": "x86_64-pc-windows-msvc",
 };
 export function parseOwnedJson(bytes) {
   try {
@@ -147,25 +151,24 @@ export function validateOwnedReview(review) {
     "verificationPython",
   ]);
   digest(review.reviewBinding.canonicalReviewSha256);
-  const names =
-    review.origin === WINDOWS_CAPSULE_ORIGIN
-      ? WINDOWS_CAPSULE_EVIDENCE
-      : review.origin === "owned-windows-incremental-engine"
-        ? WINDOWS_INCREMENTAL_EVIDENCE
-        : review.origin === "existing-windows-package"
-          ? ["build"]
-          : [
-              "prepared",
-              "started",
-              "container",
-              "finished",
-              "producer",
-              "freshCheck",
-            ];
+  const names = isWindowsCapsuleOrigin(review.origin)
+    ? ownedCapsuleEvidence(review.origin)
+    : review.origin === "owned-windows-incremental-engine"
+      ? WINDOWS_INCREMENTAL_EVIDENCE
+      : review.origin === "existing-windows-package"
+        ? ["build"]
+        : [
+            "prepared",
+            "started",
+            "container",
+            "finished",
+            "producer",
+            "freshCheck",
+          ];
   exact(review.reviewBinding.evidencePins, names);
   for (const [role, pin] of Object.entries(review.reviewBinding.evidencePins))
     rawPin(pin, ownedEvidenceLimit(review.origin, role));
-  if (review.origin === WINDOWS_CAPSULE_ORIGIN)
+  if (isWindowsCapsuleOrigin(review.origin))
     assert(
       review.sourceLockIdentity === WINDOWS_CAPSULE_IDENTITY &&
         Object.values(review.reviewBinding.evidencePins).reduce(
@@ -308,13 +311,17 @@ export function validateLocalHandoff(review, bytes) {
         value.provenance.engineSha256 === review.engineSha256,
       "Original Windows evidence identity differs",
     );
-  } else if (review.origin === WINDOWS_CAPSULE_ORIGIN) {
-    exact(value.provenance, WINDOWS_CAPSULE_PROVENANCE);
+  } else if (isWindowsCapsuleOrigin(review.origin)) {
+    const operation2 = review.origin === WINDOWS_OPERATION2_ORIGIN;
+    exact(
+      value.provenance,
+      operation2 ? WINDOWS_OPERATION2_PROVENANCE : WINDOWS_CAPSULE_PROVENANCE,
+    );
     const p = value.provenance;
     digest(p.baselineEngineSha256);
     exact(
       p.reviewedEvidenceDigests,
-      WINDOWS_CAPSULE_EVIDENCE.filter((role) => role !== "build"),
+      ownedCapsuleEvidence(review.origin).filter((role) => role !== "build"),
     );
     for (const [role, sha] of Object.entries(p.reviewedEvidenceDigests))
       assert(
@@ -328,6 +335,7 @@ export function validateLocalHandoff(review, bytes) {
       "nativeReceipt",
       "generatedFlags",
       "engineRecord",
+      ...(operation2 ? ["previousEngineAttempt", "engineAccounting"] : []),
     ]);
     const nested = p.nestedOriginalRecordDigests;
     for (const role of [
@@ -335,6 +343,7 @@ export function validateLocalHandoff(review, bytes) {
       "nativeReceipt",
       "generatedFlags",
       "engineRecord",
+      ...(operation2 ? ["engineAccounting"] : []),
     ])
       digest(nested[role]);
     exact(nested.nativeStageReceipts, [
@@ -359,6 +368,47 @@ export function validateLocalHandoff(review, bytes) {
       nested.engineRecord === review.reviewBinding.evidencePins.engine.sha256,
       "Original engine record digest differs",
     );
+    if (operation2) {
+      digest(p.previousFailedAttemptDigest);
+      digest(p.engineAccountingDigest);
+      exact(nested.previousEngineAttempt, ["report", "manifest", "receipt"]);
+      for (const sha of Object.values(nested.previousEngineAttempt))
+        digest(sha);
+      assert(
+        p.previousFailedAttemptDigest ===
+          review.reviewBinding.evidencePins.previousEngineAttempt.sha256 &&
+          p.engineAccountingDigest ===
+            review.reviewBinding.evidencePins.engineAccounting.sha256 &&
+          nested.engineAccounting === p.engineAccountingDigest,
+        "Operation2 original evidence digests differ",
+      );
+      exact(p.separatelyObservedClang, ["sha256", "bytes", "qualification"]);
+      assert(
+        p.separatelyObservedClang.sha256 === WINDOWS_OPERATION2_CLANG.sha256 &&
+          p.separatelyObservedClang.bytes === WINDOWS_OPERATION2_CLANG.bytes &&
+          p.separatelyObservedClang.qualification ===
+            WINDOWS_OPERATION2_CLANG.provenance,
+        "Separately observed Clang identity differs",
+      );
+      exact(p.engineOperationPolicy, [
+        "jobs",
+        "cpuRate",
+        "memoryBytes",
+        "activeLimit",
+        "deadlineUtc",
+        "originalFailedDeadlineUtc",
+      ]);
+      const policy = p.engineOperationPolicy;
+      assert(
+        policy.jobs === 12 &&
+          policy.cpuRate === 3000 &&
+          policy.memoryBytes === "34359738368" &&
+          policy.activeLimit === 128 &&
+          Number.isFinite(Date.parse(policy.deadlineUtc)) &&
+          policy.originalFailedDeadlineUtc === "2026-10-25T00:35:33Z",
+        "Operation2 policy differs",
+      );
+    }
     assert(
       p.engineSha256 === review.engineSha256 &&
         p.baselineEngineSha256 !== review.engineSha256 &&
