@@ -12,10 +12,12 @@ const root = path.resolve(
   "../..",
 );
 const dir = path.join(root, "native/windows-x64-arm-toolchain");
-const workflow = await readFile(
-  path.join(root, ".github/workflows/windows-x64-arm-toolchain.yml"),
-  "utf8",
-);
+const workflow = (
+  await readFile(
+    path.join(root, ".github/workflows/windows-x64-arm-toolchain.yml"),
+    "utf8",
+  )
+).replaceAll("\r\n", "\n");
 const profileRaw = await readFile(path.join(dir, "profile.json"));
 const profile = JSON.parse(profileRaw);
 const sha = (b) => createHash("sha256").update(b).digest("hex");
