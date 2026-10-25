@@ -198,5 +198,10 @@
     "project": "chromium",
     "path": "services/network/network_context.h",
     "sha256": "b83318bd55116c8e9669fce81f848caab005fb8a1f1ae1a0798dbbb34199f3ab"
+  },
+  {
+    "project": "cef",
+    "path": "libcef/browser/native/window_x11.cc",
+    "sha256": "0ccac4e8f1f8371e42bec473e2b60016f4f68370c3e072d7e44f42c50da3303a"
   }
 ]

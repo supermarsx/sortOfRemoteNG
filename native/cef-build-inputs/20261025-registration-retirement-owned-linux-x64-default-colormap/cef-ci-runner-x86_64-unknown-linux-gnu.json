@@ -1,0 +1,13 @@
+{
+  "schemaVersion": 1,
+  "kind": "sorng-cef-ci-runner",
+  "target": "x86_64-unknown-linux-gnu",
+  "python": "usr/bin/python3.12",
+  "path": [
+    "usr/bin",
+    "usr/local/bin"
+  ],
+  "syncJobs": 2,
+  "buildJobs": 8,
+  "environment": {}
+}

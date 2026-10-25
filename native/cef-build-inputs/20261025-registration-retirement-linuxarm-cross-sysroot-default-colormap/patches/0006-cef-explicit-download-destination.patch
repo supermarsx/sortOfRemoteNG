@@ -1,0 +1,20 @@
+diff --git a/libcef/browser/download_manager_delegate_impl.cc b/libcef/browser/download_manager_delegate_impl.cc
+--- a/libcef/browser/download_manager_delegate_impl.cc
++++ b/libcef/browser/download_manager_delegate_impl.cc
+@@ -120,10 +120,14 @@ class CefBeforeDownloadCallbackImpl : public CefBeforeDownloadCallback {
+       // Create the directory if necessary.
+       base::FilePath dir_path = suggested_path.DirName();
+       if (!base::DirectoryExists(dir_path) &&
+           !base::CreateDirectory(dir_path)) {
+-        DCHECK(false) << "failed to create the download directory";
+-        suggested_path.clear();
++        // An explicit destination must never become a temporary-directory
++        // download. Cancel on the UI thread without logging the private path.
++        CEF_POST_TASK(
++            CEF_UIT, base::BindOnce(&RunDownloadTargetCallback,
++                                   std::move(callback), base::FilePath()));
++        return;
+       }
+     }
+ 
+     if (suggested_path.empty()) {

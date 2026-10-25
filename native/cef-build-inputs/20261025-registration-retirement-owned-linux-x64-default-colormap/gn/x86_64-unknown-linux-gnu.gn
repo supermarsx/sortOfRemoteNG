@@ -1,0 +1,14 @@
+target_cpu = "x64"
+is_component_build = false
+is_debug = false
+is_official_build = false
+use_remoteexec = false
+use_siso = true
+symbol_level = 0
+blink_symbol_level = 0
+v8_symbol_level = 0
+chrome_pgo_phase = 0
+use_thin_lto = false
+concurrent_links = 1
+enable_precompiled_headers = false
+ozone_platform_x11 = true

@@ -1,0 +1,265 @@
+diff --git a/include/cef_sorng_tls_bridge.h b/include/cef_sorng_tls_bridge.h
+--- a/include/cef_sorng_tls_bridge.h
++++ b/include/cef_sorng_tls_bridge.h
+@@ -29,6 +29,8 @@
+ #define CEF_SORNG_TLS_CAP_PRIVATE_CONTEXT (1ull << 5)
+ // Exact native authority/session-key reuse only; no IP/SAN coalescing or Alt-Svc.
+ #define CEF_SORNG_TLS_CAP_SAME_AUTHORITY_HTTP2 (1ull << 6)
++// Bit 7 remains reserved for a separately reviewed HTTP/3 contract.
++#define CEF_SORNG_TLS_CAP_PROXY_APPLIED (1ull << 8)
+ #define CEF_SORNG_TLS_CA_SYSTEM 0u
+ #define CEF_SORNG_TLS_CA_SYSTEM_PLUS_CUSTOM 1u
+ #define CEF_SORNG_TLS_CA_CUSTOM_ONLY 2u
+@@ -73,7 +75,9 @@
+ typedef void(SORNG_TLS_CALL* cef_sorng_tls_evidence_cb_v2)(
+     void* user_data,
+     const cef_sorng_tls_evidence_v2* evidence);
+-// 1=network context installed; 2=revocation acknowledged; 3=bridge failure.
++// 1=TLS delegate installed; 2=revocation acknowledged; 3=bridge failure;
++// 4=exact owned proxy applied (only after apply_proxy, with PROXY_APPLIED cap).
++// 5=proxy application failed (same capability; generic TLS faults remain 3).
+ typedef void(SORNG_TLS_CALL* cef_sorng_tls_state_cb_v2)(void* user_data,
+                                                         uint64_t context_token,
+                                                         uint64_t generation,
+@@ -136,6 +140,13 @@
+ // if shutdown prevents delivery. Main must also revoke proxy/credential leases.
+ SORNG_TLS_EXPORT int SORNG_TLS_CALL
+ cef_sorng_tls_revoke_v2(uint64_t context_token, uint64_t generation);
++// UI thread only, after private fixed preference installation and state(1).
++// ACKs the exact HTTP 127.0.0.1:port config in NetworkService without network
++// traffic, DNS or PAC; completion is state(4), proxy failure state(5). One request per
++// context. Existing callback lifetime/revocation contract is unchanged.
++SORNG_TLS_EXPORT int SORNG_TLS_CALL
++cef_sorng_tls_apply_proxy_v2(uint64_t context_token, uint64_t generation,
++                            uint16_t expected_port);
+ 
+ #ifdef __cplusplus
+ }
+diff --git a/libcef/browser/net_service/sorng_tls_bridge.cc b/libcef/browser/net_service/sorng_tls_bridge.cc
+--- a/libcef/browser/net_service/sorng_tls_bridge.cc
++++ b/libcef/browser/net_service/sorng_tls_bridge.cc
+@@ -18,20 +18,30 @@
+ #include "base/strings/string_util.h"
+ #include "base/task/sequenced_task_runner.h"
+ #include "base/time/time.h"
++#include "chrome/browser/net/profile_network_context_service.h"
++#include "chrome/browser/net/profile_network_context_service_factory.h"
++#include "chrome/browser/profiles/profile.h"
++#include "content/browser/storage_partition_impl.h"
+ #include "content/public/browser/browser_thread.h"
++#include "content/public/browser/storage_partition.h"
++#include "mojo/public/cpp/bindings/receiver.h"
+ #include "mojo/public/cpp/bindings/receiver_set.h"
+ #include "mojo/public/cpp/bindings/remote.h"
+ #include "net/cert/cert_verify_result.h"
+ #include "net/cert/x509_certificate.h"
++#include "net/cert/x509_util.h"
++#include "net/net_buildflags.h"
++#include "net/proxy_resolution/proxy_info.h"
+ #include "net/socket/sorng_tls_policy.h"
+-#include "net/net_buildflags.h"
+ #include "services/network/public/mojom/cert_verifier_service_updater.mojom.h"
+-#include "net/cert/x509_util.h"
++#include "services/network/public/mojom/network_context.mojom.h"
++#include "services/network/public/mojom/proxy_lookup_client.mojom.h"
++#include "third_party/boringssl/src/include/openssl/pool.h"
+ #include "third_party/boringssl/src/pki/parsed_certificate.h"
+-#include "third_party/boringssl/src/include/openssl/pool.h"
+ 
+ namespace {
+-constexpr uint32_t kReady = 1, kRevoked = 2, kFault = 3;
++constexpr uint32_t kReady = 1, kRevoked = 2, kFault = 3, kProxyApplied = 4,
++                   kProxyFailed = 5;
+ bool OnUi() {
+   return content::BrowserThread::CurrentlyOn(content::BrowserThread::UI);
+ }
+@@ -60,7 +70,8 @@
+   return result;
+ }
+ 
+-class Registration final : public network::mojom::SorngTlsClient {
++class Registration final : public network::mojom::SorngTlsClient,
++                           public network::mojom::ProxyLookupClient {
+  public:
+   explicit Registration(const cef_sorng_tls_context_v2& input,
+                         std::vector<std::vector<uint8_t>> roots)
+@@ -95,6 +106,12 @@
+   }
+   void Ready(
+       mojo::PendingRemote<network::mojom::SorngTlsControl> control) override {
++    // A new NetworkContext is a new proof boundary. Never inherit an ACK from
++    // another partition or a crashed/replaced NetworkService receiver.
++    if (proxy_pending_ || proxy_applied_) {
++      ProxyFail();
++      return;
++    }
+     if (controls_.size() >= 64) {
+       Fail();
+       return;
+@@ -112,6 +129,59 @@
+       return;
+     }
+     Report(kReady);
++  }
++  bool ApplyProxy(uint16_t port) {
++    if (!OnUi() || !context_ || revoked_ || !port || controls_.empty() ||
++        proxy_pending_ || proxy_applied_)
++      return false;
++    auto* profile = context_->AsProfile();
++    if (!profile || !profile->IsOffTheRecord())
++      return false;
++    // Materialize this exact partition/NetworkContext BEFORE capturing the
++    // monitor's client set. Never look up on an unacknowledged new partition.
++    proxy_partition_ = static_cast<content::StoragePartitionImpl*>(
++                           profile->GetDefaultStoragePartition())
++                           ->GetWeakPtr();
++    if (!proxy_partition_ || !proxy_partition_->GetNetworkContext())
++      return false;
++    auto* service = ProfileNetworkContextServiceFactory::GetForContext(profile);
++    if (!service)
++      return false;
++    proxy_pending_ = true;
++    proxy_port_ = port;
++    base::SequencedTaskRunner::GetCurrentDefault()->PostDelayedTask(
++        FROM_HERE,
++        base::BindOnce(&Registration::ExpireProxy, weak_factory_.GetWeakPtr()),
++        base::Seconds(10));
++    service->ConfirmSorngFixedProxy(port,
++                                    base::BindOnce(&Registration::ProxyFlushed,
++                                                   weak_factory_.GetWeakPtr()));
++    return true;
++  }
++  void OnProxyLookupComplete(
++      int32_t error,
++      const std::optional<net::ProxyInfo>& info) override {
++    proxy_lookup_.reset();
++    if (!proxy_pending_ || revoked_)
++      return;
++    if (error != net::OK || !info || !ProxyStillCurrent()) {
++      ProxyFail();
++      return;
++    }
++    const auto& chains = info->proxy_list().AllChains();
++    if (chains.size() != 1 || !chains[0].is_single_proxy()) {
++      ProxyFail();
++      return;
++    }
++    const auto& server = chains[0].GetProxyServer(0);
++    if (!server.is_http() || server.host_port_pair().host() != "127.0.0.1" ||
++        server.host_port_pair().port() != proxy_port_) {
++      ProxyFail();
++      return;
++    }
++    proxy_pending_ = false;
++    proxy_applied_ = true;
++    Report(kProxyApplied);
+   }
+   void Evaluate(uint64_t generation,
+                 const std::string& hostname,
+@@ -178,6 +248,10 @@
+     if (revoked_)
+       return;
+     revoked_ = true;
++    // Registrations retain tombstones after profile destruction.
++    proxy_partition_.reset();
++    proxy_pending_ = false;
++    proxy_lookup_.reset();
+     auto pending = std::move(pending_);
+     pending_.clear();
+     for (auto& [id, pending_item] : pending)
+@@ -194,6 +268,38 @@
+   }
+ 
+  private:
++  void ExpireProxy() {
++    if (proxy_pending_)
++      ProxyFail();
++  }
++  bool ProxyStillCurrent() {
++    if (!context_ || revoked_ || !proxy_partition_ ||
++        context_->AsProfile()->GetDefaultStoragePartition() != proxy_partition_.get())
++      return false;
++    auto* service = ProfileNetworkContextServiceFactory::GetForContext(
++        context_->AsProfile());
++    return service && service->IsSorngFixedProxyCurrent(
++                          proxy_port_, proxy_config_generation_);
++  }
++  void ProxyFlushed(bool valid, uint64_t generation) {
++    if (!proxy_pending_ || revoked_)
++      return;
++    proxy_config_generation_ = generation;
++    if (!valid || !ProxyStillCurrent()) {
++      ProxyFail();
++      return;
++    }
++    auto remote = proxy_lookup_.BindNewPipeAndPassRemote();
++    proxy_lookup_.set_disconnect_handler(
++        base::BindOnce(&Registration::ProxyFail, weak_factory_.GetWeakPtr()));
++    // The preceding SAME-PIPE ACK fenced an exact fixed proxy: no PAC, DNS,
++    // socket, TLS or website request is performed by this lookup.
++    // The dedicated NetworkService operation revalidates its actual fixed
++    // config and projects manual rules synchronously. Even a later cross-pipe
++    // update to PAC cannot cause this metadata operation to execute PAC/DNS.
++    proxy_partition_->GetNetworkContext()->LookUpSorngFixedProxy(
++        proxy_port_, std::move(remote));
++  }
+   void Expire(uint64_t challenge) { Complete(challenge, 0, 0); }
+   void OnRevoked() {
+     if (remaining_revokes_ && --remaining_revokes_ == 0)
+@@ -203,6 +309,13 @@
+     if (!faulted_) {
+       faulted_ = true;
+       Report(kFault);
++      Revoke();
++    }
++  }
++  void ProxyFail() {
++    if (!faulted_) {
++      faulted_ = true;
++      Report(kProxyFailed);
+       Revoke();
+     }
+   }
+@@ -221,6 +334,12 @@
+   bool revoked_ = false;
+   bool faulted_ = false;
+   bool terminal_reported_ = false;
++  bool proxy_pending_ = false;
++  bool proxy_applied_ = false;
++  uint16_t proxy_port_ = 0;
++  uint64_t proxy_config_generation_ = 0;
++  base::WeakPtr<content::StoragePartition> proxy_partition_;
++  mojo::Receiver<network::mojom::ProxyLookupClient> proxy_lookup_{this};
+   uint64_t next_challenge_ = 0;
+   size_t remaining_revokes_ = 0;
+   struct Pending { EvaluateCallback callback; int error; uint32_t status; bool fatal; };
+@@ -313,14 +432,14 @@
+       CEF_SORNG_TLS_ABI_V2,
+       CEF_SORNG_TLS_CAP_SOCKET_ADMISSION | CEF_SORNG_TLS_CAP_CONTEXT_REVOKE |
+           CEF_SORNG_TLS_CAP_SAME_AUTHORITY_HTTP2 | CEF_SORNG_TLS_CAP_SCOPED_EXCEPTIONS |
+-          CEF_SORNG_TLS_CAP_PRIVATE_CONTEXT
++          CEF_SORNG_TLS_CAP_PRIVATE_CONTEXT | CEF_SORNG_TLS_CAP_PROXY_APPLIED
+ #if BUILDFLAG(CHROME_ROOT_STORE_SUPPORTED)
+           | CEF_SORNG_TLS_CAP_CUSTOM_CA
+ #endif
+           ,
+       "682c378d70d5780061e96644dca16ddd8fd157a9",
+       "154.0.8037.58",
+-      "sorng-tls-v2-682c378-2"};
++      "sorng-tls-v2-682c378-3"};
+   return &api;
+ }
+ int SORNG_TLS_CALL cef_sorng_tls_complete_v2(uint64_t token,
+@@ -342,4 +461,12 @@
+   registration->Revoke();
+   return 1;
+ }
++int SORNG_TLS_CALL cef_sorng_tls_apply_proxy_v2(uint64_t token,
++                                                uint64_t generation,
++                                                uint16_t port) {
++  if (!OnUi())
++    return 0;
++  auto* registration = Find(token, generation);
++  return registration && registration->ApplyProxy(port);
++}
+ }  // extern "C"

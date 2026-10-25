@@ -65,3 +65,5 @@ native/cef-build-inputs/20261024-r5-owned-capsule-test-netlog-windows-x64/
 native/cef-build-inputs/20261024-r5-base-test-trace-dependency-windows-x64/
 native/cef-build-inputs/20261024-r5-trace-processor-dependency-closure-windows-x64/
 native/cef-build-inputs/20261024-r5-trace-helper-static-package-name-windows-x64/
+native/cef-build-inputs/20261025-registration-retirement-owned-linux-x64-default-colormap/
+native/cef-build-inputs/20261025-registration-retirement-linuxarm-cross-sysroot-default-colormap/
