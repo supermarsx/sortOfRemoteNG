@@ -1,0 +1,207 @@
+diff --git a/net/quic/quic_session_pool.cc b/net/quic/quic_session_pool.cc
+--- a/net/quic/quic_session_pool.cc
++++ b/net/quic/quic_session_pool.cc
+@@ -1448,6 +1448,16 @@
+   return handles::kInvalidNetworkHandle;
+ }
+ 
++quic::QuicConfig QuicSessionPool::CreateSessionConfig() const {
++  quic::QuicConfig config = config_;
++  if (sorng_datagram_proxy_) {
++    // Advertise the receive bound of the owned capsule transport. The packet
++    // writer's send limit alone cannot constrain the peer's datagram size.
++    config.SetMaxPacketSizeToSend(SorngDatagramProxy::kMaximumPayload);
++  }
++  return config;
++}
++
+ bool QuicSessionPool::ConfigureSorngDatagrams(
+     scoped_refptr<SorngDatagramProxy> proxy) {
+   if (!proxy || !proxy->IsActive() || sorng_datagram_proxy_ ||
+@@ -2426,7 +2436,7 @@
+            << " has max packet length " << max_packet_length;
+   connection->SetMaxPacketLength(max_packet_length);
+ 
+-  quic::QuicConfig config = config_;
++  quic::QuicConfig config = CreateSessionConfig();
+   ConfigureInitialRttEstimate(server_id,
+                               key.session_key().network_anonymization_key(),
+                               key.session_key().proxy_chain(), &config);
+diff --git a/net/quic/quic_session_pool.h b/net/quic/quic_session_pool.h
+--- a/net/quic/quic_session_pool.h
++++ b/net/quic/quic_session_pool.h
+@@ -733,6 +733,8 @@
+       QuicConnectionReuseDetails quic_connection_reuse_details,
+       std::optional<ConnectionManagementConfig> connection_management_config,
+       int rv);
++  quic::QuicConfig CreateSessionConfig() const;
++
+   // TODO(crbug.com/518753285): Stop accepting a `network` parameter. Instead,
+   // rely on socket being already bound to the correct network.
+   base::expected<QuicSessionAttempt::CreateSessionResult, int>
+diff --git a/net/quic/quic_session_pool_peer.cc b/net/quic/quic_session_pool_peer.cc
+--- a/net/quic/quic_session_pool_peer.cc
++++ b/net/quic/quic_session_pool_peer.cc
+@@ -37,6 +37,11 @@
+   return &factory->config_;
+ }
+ 
++quic::QuicConfig QuicSessionPoolPeer::CreateSessionConfig(
++    QuicSessionPool* factory) {
++  return factory->CreateSessionConfig();
++}
++
+ std::unique_ptr<QuicCryptoClientConfigHandle>
+ QuicSessionPoolPeer::GetCryptoConfig(
+     QuicSessionPool* pool,
+diff --git a/net/quic/quic_session_pool_peer.h b/net/quic/quic_session_pool_peer.h
+--- a/net/quic/quic_session_pool_peer.h
++++ b/net/quic/quic_session_pool_peer.h
+@@ -46,6 +46,7 @@
+   QuicSessionPoolPeer& operator=(const QuicSessionPoolPeer&) = delete;
+ 
+   static const quic::QuicConfig* GetConfig(QuicSessionPool* factory);
++  static quic::QuicConfig CreateSessionConfig(QuicSessionPool* factory);
+ 
+   static std::unique_ptr<QuicCryptoClientConfigHandle> GetCryptoConfig(
+       QuicSessionPool* factory,
+diff --git a/net/http/sorng_owned_quic_job_unittest.cc b/net/http/sorng_owned_quic_job_unittest.cc
+--- a/net/http/sorng_owned_quic_job_unittest.cc
++++ b/net/http/sorng_owned_quic_job_unittest.cc
+@@ -3,16 +3,20 @@
+ // found in the LICENSE file.
+ 
+ #include "net/http/http_stream_factory_job.h"
++
++#include <map>
+ 
+ #include "base/test/task_environment.h"
+ #include "net/base/net_errors.h"
+ #include "net/http/http_network_session.h"
+ #include "net/proxy_resolution/proxy_info.h"
+ #include "net/quic/quic_context.h"
++#include "net/quic/quic_session_pool_peer.h"
+ #include "net/socket/socket_test_util.h"
+ #include "net/socket/sorng_capsule_datagram_client_socket.h"
+ #include "net/spdy/spdy_test_util_common.h"
+ #include "net/traffic_annotation/network_traffic_annotation_test_helper.h"
++#include "net/third_party/quiche/src/quiche/quic/core/crypto/transport_parameters.h"
+ #include "net/websockets/websocket_handshake_stream_base.h"
+ #include "testing/gtest/include/gtest/gtest.h"
+ 
+@@ -42,12 +46,22 @@
+     ADD_FAILURE() << "The pending mock transport must not verify a certificate";
+     std::move(callback).Run(ERR_ABORTED);
+   }
+-  void AddSocket(const void*, base::RepeatingClosure) override {}
+-  void RemoveSocket(const void*) override {}
++  void AddSocket(const void* socket, base::RepeatingClosure callback) override {
++    sockets_.emplace(socket, std::move(callback));
++  }
++  void RemoveSocket(const void* socket) override { sockets_.erase(socket); }
++  void Revoke() {
++    active = false;
++    const auto callbacks = sockets_;
++    for (const auto& [socket, callback] : callbacks) {
++      callback.Run();
++    }
++  }
+   bool active = true;
+ 
+  private:
+   ~Admission() override = default;
++  std::map<const void*, base::RepeatingClosure> sockets_;
+ };
+ 
+ class Delegate final : public Job::Delegate {
+@@ -88,6 +102,11 @@
+     data_.set_connect_data(MockConnect(SYNCHRONOUS, ERR_IO_PENDING));
+     dependencies_.socket_factory->AddTcpSocketDataProvider(&data_);
+   }
++  void TearDown() override {
++    admission_->Revoke();
++    session_.reset();
++    environment_.RunUntilIdle();
++  }
+   void ConfigureOwned() {
+     session_->ssl_client_context()->SetTlsAdmissionDelegate(admission_);
+     ASSERT_TRUE(session_->ConfigureSorngDatagrams(SorngDatagramProxy::Create(
+@@ -113,6 +132,32 @@
+     EXPECT_TRUE(dependencies_.socket_factory->udp_client_socket_ports().empty());
+     EXPECT_EQ(delegate_.waits, 0);
+   }
++  uint64_t SerializedReceivePayload(HttpNetworkSession* session) {
++    const auto config = QuicSessionPoolPeer::CreateSessionConfig(
++        session->quic_session_pool());
++    quic::TransportParameters parameters;
++    parameters.perspective = quic::Perspective::IS_CLIENT;
++    parameters.initial_source_connection_id = quic::QuicConnectionId();
++    if (!config.FillTransportParameters(&parameters)) {
++      ADD_FAILURE() << "The actual session config must fill transport parameters";
++      return 0;
++    }
++    std::vector<uint8_t> wire;
++    if (!quic::SerializeTransportParameters(parameters, &wire)) {
++      ADD_FAILURE() << "The actual session parameters must serialize";
++      return 0;
++    }
++    quic::TransportParameters decoded;
++    std::string error;
++    if (!quic::ParseTransportParameters(
++            dependencies_.quic_context->params()->supported_versions.front(),
++            quic::Perspective::IS_CLIENT, wire.data(), wire.size(), &decoded,
++            &error)) {
++      ADD_FAILURE() << error;
++      return 0;
++    }
++    return decoded.max_udp_payload_size.value();
++  }
+   base::test::TaskEnvironment environment_{
+       base::test::TaskEnvironment::MainThreadType::IO};
+   SpdySessionDependencies dependencies_;
+@@ -130,6 +175,25 @@
+   EXPECT_EQ(delegate_.waits, 1);
+ }
+ 
++TEST_F(SorngOwnedQuicJobTest, OwnedSessionAdvertisesItsActualReceiveLimit) {
++  EXPECT_EQ(1472u, SerializedReceivePayload(session_.get()));
++  ConfigureOwned();
++  EXPECT_EQ(SorngDatagramProxy::kMaximumPayload,
++            SerializedReceivePayload(session_.get()));
++  // The shared baseline is not mutated, only the real per-session copy.
++  EXPECT_EQ(1472u, QuicSessionPoolPeer::GetConfig(session_->quic_session_pool())
++                       ->GetMaxPacketSizeToSend());
++}
++
++TEST_F(SorngOwnedQuicJobTest, OrdinarySessionsKeepTheirExistingWireAdvertisement) {
++  ConfigureOwned();
++  SpdySessionDependencies ordinary_dependencies;
++  ordinary_dependencies.enable_quic = true;
++  auto ordinary = SpdySessionDependencies::SpdyCreateSession(
++      &ordinary_dependencies);
++  EXPECT_EQ(1472u, SerializedReceivePayload(ordinary.get()));
++}
++
+ TEST_F(SorngOwnedQuicJobTest, SameEndpointWithoutContextAuthorityIsRejected) {
+   EXPECT_EQ(ERR_NO_SUPPORTED_PROXIES, Init("http://127.0.0.1:32123"));
+   ExpectNoTransport();
+@@ -137,7 +201,7 @@
+ 
+ TEST_F(SorngOwnedQuicJobTest, RevokedContextIsRejectedBeforeTransport) {
+   ConfigureOwned();
+-  admission_->active = false;
++  admission_->Revoke();
+   EXPECT_EQ(ERR_NO_SUPPORTED_PROXIES, Init("http://127.0.0.1:32123"));
+   ExpectNoTransport();
+ }
+diff --git a/net/BUILD.gn b/net/BUILD.gn
+--- a/net/BUILD.gn
++++ b/net/BUILD.gn
+@@ -4476,6 +4476,7 @@
+       "test/run_all_unittests.cc",
+       "//services/network/sorng_datagram_configuration_unittest.cc",
+       "http/sorng_owned_quic_job_unittest.cc",
++      "quic/quic_session_pool_peer.cc",
+       "socket/sorng_capsule_datagram_client_socket_unittest.cc",
+       "quic/crypto/proof_verifier_chromium_test.cc",
+     ]

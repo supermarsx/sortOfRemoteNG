@@ -580,3 +580,228 @@ test("R5 Linux complete ordered23 replay matches the derived header and reverses
     "Real Git applies all23 ordered patches and reverses to pinned public preimages; no generator, GN or engine compiler ran",
   );
 });
+
+const R5_ARM_NAMESPACE =
+  "native/cef-build-inputs/20261025-r5-linuxarm-cross-sysroot-default-colormap";
+const OLD_ARM_NAMESPACE =
+  "native/cef-build-inputs/20261025-registration-retirement-linuxarm-cross-sysroot-default-colormap";
+
+test("R5 ARM source23 preserves cross-host configuration and historical normalization without transferring runtime proof", async () => {
+  const old = await json(OLD_ARM_NAMESPACE + "/source-lock.json"),
+    windows = await json(WINDOWS22_NAMESPACE + "/source-lock.json"),
+    next = await json(R5_ARM_NAMESPACE + "/source-lock.json"),
+    review = await json(R5_ARM_NAMESPACE + "/review-receipt.json");
+  const expected = structuredClone(old);
+  expected.bridge = structuredClone(windows.bridge);
+  expected.bridge.header.sha256 = R5_HEADER_SHA;
+  expected.patches = [
+    ...old.patches.slice(0, 12),
+    ...windows.patches.slice(12),
+    old.patches[12],
+  ];
+  assert.deepEqual(next, expected);
+  assert.equal(next.patches.length, 23);
+  assert.equal(next.bridge.abiVersion, 2);
+  assert.equal(next.bridge.capabilities.length, 9);
+  assert.equal(next.bridge.patchId, "sorng-tls-v2-682c378-5");
+  assert.equal(
+    identitySha256(next),
+    "ae1b288037e59fa68a14ee534a802da3fc60a806552933ce4ab73665f1a78588",
+  );
+  assert.equal(review.sourceLockIdentity, identitySha256(next));
+  assert.equal(
+    review.sourceLockRawSha256,
+    hash(await bytes(R5_ARM_NAMESPACE + "/source-lock.json")),
+  );
+  assert.equal(review.predecessorIdentity, identitySha256(old));
+  assert.equal(review.commonSourceIdentity, identitySha256(windows));
+  const configs = [
+    "gn/aarch64-unknown-linux-gnu.gn",
+    "tools/aarch64-unknown-linux-gnu.json",
+    "cef-ci-runner-aarch64-unknown-linux-gnu.json",
+    "normalization-receipt.json",
+  ];
+  assert.deepEqual(review.preservedArmConfigurations, configs);
+  for (const name of configs)
+    assert.deepEqual(
+      await bytes(R5_ARM_NAMESPACE + "/" + name),
+      await bytes(OLD_ARM_NAMESPACE + "/" + name),
+    );
+  const historical = await json(
+    OLD_ARM_NAMESPACE + "/normalization-receipt.json",
+  );
+  assert.deepEqual(review.historicalNormalization, {
+    path: "normalization-receipt.json",
+    sha256: hash(
+      await bytes(OLD_ARM_NAMESPACE + "/normalization-receipt.json"),
+    ),
+    sourceLockIdentity: historical.sourceLockIdentity,
+    role: "historical-LF-normalization-only-not-new-source-or-header-proof",
+  });
+  assert.notEqual(
+    review.historicalNormalization.sourceLockIdentity,
+    identitySha256(next),
+  );
+  const runner = await json(
+    R5_ARM_NAMESPACE + "/cef-ci-runner-aarch64-unknown-linux-gnu.json",
+  );
+  assert.equal(runner.buildJobs, 4);
+  assert.equal(runner.hosted.architecture, "x64");
+  assert.equal(runner.hosted.runner, "ubuntu-24.04");
+  assert.equal(runner.hosted.acceptanceRunner, "ubuntu-24.04-arm");
+  assert.equal(runner.hosted.imageVersion, "20261023.334.3");
+  for (const key of [
+    "engineCompiled",
+    "engineBuilt",
+    "nativeAcceptancePerformed",
+    "nativeAcceptancePassed",
+    "sdkProduced",
+    "publicationAllowed",
+  ])
+    assert.equal(review[key], false);
+  const names = [];
+  for (const name of await readdir(path.join(ROOT, R5_ARM_NAMESPACE), {
+    recursive: true,
+  })) {
+    const p = name.replaceAll("\\", "/");
+    if ((await lstat(path.join(ROOT, R5_ARM_NAMESPACE, p))).isFile())
+      names.push(p);
+  }
+  names.sort();
+  const expectedNames = [
+    ...next.patches.map((r) => r.path),
+    next.bridge.header.path,
+    next.builds[0].gnArgs.path,
+    next.builds[0].toolchainLock.path,
+    "source-lock.json",
+    "normalization-receipt.json",
+    "cef-ci-runner-aarch64-unknown-linux-gnu.json",
+    "review-receipt.json",
+  ].sort();
+  assert.equal(names.length, 30);
+  assert.deepEqual(names, expectedNames);
+  assert.equal(review.pins.length, 29);
+  assert.deepEqual(
+    review.pins.map((r) => r.path).sort(),
+    names.filter((p) => p !== "review-receipt.json"),
+  );
+  for (const row of review.pins) {
+    const body = await bytes(R5_ARM_NAMESPACE + "/" + row.path);
+    assert.equal(body.length, row.size);
+    assert.equal(hash(body), row.sha256);
+  }
+  for (let i = 0; i < 23; i++) {
+    const row = next.patches[i],
+      body = await bytes(R5_ARM_NAMESPACE + "/" + row.path);
+    assert.equal(hash(body), row.sha256);
+    assert(!body.includes(Buffer.from("\r\n")));
+    assert.deepEqual(
+      body,
+      await bytes(R5_NAMESPACE + "/" + row.path),
+      "All23 raw patch bodies equal the independently ordered Git replay, not compiler proof",
+    );
+    if (i < 12)
+      assert.deepEqual(body, await bytes(OLD_ARM_NAMESPACE + "/" + row.path));
+  }
+  const header = await bytes(
+    R5_ARM_NAMESPACE + "/include/cef_sorng_tls_bridge.h",
+  );
+  assert.equal(header.length, 8886);
+  assert.equal(hash(header), R5_HEADER_SHA);
+  assert.deepEqual(
+    header,
+    await bytes(R5_NAMESPACE + "/include/cef_sorng_tls_bridge.h"),
+  );
+  assert.equal(review.headerDerivation.beforeSha256, old.bridge.header.sha256);
+  assert.equal(review.headerDerivation.afterSha256, R5_HEADER_SHA);
+  assert(
+    (await bytes(".gitattributes"))
+      .toString()
+      .includes(R5_ARM_NAMESPACE + "/** -text -whitespace"),
+  );
+  assert(
+    (await bytes(".prettierignore"))
+      .toString()
+      .split(/\r?\n/)
+      .includes(R5_ARM_NAMESPACE + "/"),
+  );
+  const reviewed = await plan({
+    inputs: R5_ARM_NAMESPACE,
+    target: "aarch64-unknown-linux-gnu",
+    checkout: ROOT,
+    runnerMode: "hosted",
+  });
+  assert.deepEqual(reviewed.sourceLock, next);
+});
+
+test("R5 ARM LF header is derived by real Git from its own retained predecessor", async (t) => {
+  const directory = await scratch(t),
+    name = "include/cef_sorng_tls_bridge.h";
+  await mkdir(path.join(directory, "include"));
+  const original = await bytes(OLD_ARM_NAMESPACE + "/" + name);
+  await writeFile(path.join(directory, name), original);
+  const p = path.join(
+    ROOT,
+    R5_ARM_NAMESPACE,
+    "patches/0014-cef-owned-quic-datagrams.patch",
+  );
+  const git = (args) => {
+    const r = command("git", ["-c", "core.autocrlf=false", ...args], directory);
+    assert.equal(r.status, 0, r.stderr);
+  };
+  git(["init", "-q"]);
+  assert.notEqual(hash(original), R5_HEADER_SHA);
+  git(["apply", "--check", "--include=" + name, p]);
+  git(["apply", "--include=" + name, p]);
+  assert.deepEqual(
+    await readFile(path.join(directory, name)),
+    await bytes(R5_ARM_NAMESPACE + "/" + name),
+  );
+  git(["apply", "--reverse", "--check", "--include=" + name, p]);
+  git(["apply", "--reverse", "--include=" + name, p]);
+  assert.deepEqual(await readFile(path.join(directory, name)), original);
+});
+
+test("R5 ARM admission rejects wrong target, capability, common patch and derived-header pins", async (t) => {
+  const directory = await scratch(t);
+  for (const variant of ["patch", "header", "capability", "target"]) {
+    const local = path.join(directory, variant);
+    await cp(path.join(ROOT, R5_ARM_NAMESPACE), local, {
+      recursive: true,
+      errorOnExist: true,
+      force: false,
+    });
+    if (["capability", "target"].includes(variant)) {
+      const lock = JSON.parse(
+        await readFile(path.join(local, "source-lock.json")),
+      );
+      if (variant === "capability") lock.bridge.capabilities.pop();
+      else lock.builds[0].target = "x86_64-unknown-linux-gnu";
+      await writeFile(
+        path.join(local, "source-lock.json"),
+        JSON.stringify(lock),
+      );
+    } else {
+      const name =
+        variant === "patch"
+          ? "patches/0018-chromium-owned-capsule-context-lifetime.patch"
+          : "include/cef_sorng_tls_bridge.h";
+      await writeFile(
+        path.join(local, name),
+        Buffer.concat([
+          await readFile(path.join(local, name)),
+          Buffer.from("\n"),
+        ]),
+      );
+    }
+    await assert.rejects(
+      plan({
+        inputs: variant,
+        target: "aarch64-unknown-linux-gnu",
+        checkout: directory,
+        runnerMode: "hosted",
+      }),
+      /target|capabilit|Reviewed input mismatch|pin|SHA|bytes|hash|size|bridge/i,
+    );
+  }
+});

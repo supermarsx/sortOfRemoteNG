@@ -1,0 +1,42 @@
+diff --git a/include/cef_sorng_tls_bridge.h b/include/cef_sorng_tls_bridge.h
+--- a/include/cef_sorng_tls_bridge.h
++++ b/include/cef_sorng_tls_bridge.h
+@@ -20,13 +20,15 @@
+ #endif
+ 
+ #define CEF_SORNG_TLS_ABI_V2 2u
+-// TCP TLS / HTTP1 only; no early data, resumption, QUIC or TLS client auth.
++// TCP TLS admission; no early data, resumption, QUIC or TLS client auth.
+ #define CEF_SORNG_TLS_CAP_SOCKET_ADMISSION (1ull << 0)
+ #define CEF_SORNG_TLS_CAP_CONTEXT_REVOKE (1ull << 1)
+-#define CEF_SORNG_TLS_CAP_HTTP1_ONLY (1ull << 2)
++#define CEF_SORNG_TLS_CAP_HTTP1_ONLY (1ull << 2)  // Legacy patch ID 1 only.
+ #define CEF_SORNG_TLS_CAP_SCOPED_EXCEPTIONS (1ull << 3)
+ #define CEF_SORNG_TLS_CAP_CUSTOM_CA (1ull << 4)
+ #define CEF_SORNG_TLS_CAP_PRIVATE_CONTEXT (1ull << 5)
++// Exact native authority/session-key reuse only; no IP/SAN coalescing or Alt-Svc.
++#define CEF_SORNG_TLS_CAP_SAME_AUTHORITY_HTTP2 (1ull << 6)
+ #define CEF_SORNG_TLS_CA_SYSTEM 0u
+ #define CEF_SORNG_TLS_CA_SYSTEM_PLUS_CUSTOM 1u
+ #define CEF_SORNG_TLS_CA_CUSTOM_ONLY 2u
+diff --git a/libcef/browser/net_service/sorng_tls_bridge.cc b/libcef/browser/net_service/sorng_tls_bridge.cc
+--- a/libcef/browser/net_service/sorng_tls_bridge.cc
++++ b/libcef/browser/net_service/sorng_tls_bridge.cc
+@@ -312,7 +312,7 @@
+       sizeof(cef_sorng_tls_api_v2),
+       CEF_SORNG_TLS_ABI_V2,
+       CEF_SORNG_TLS_CAP_SOCKET_ADMISSION | CEF_SORNG_TLS_CAP_CONTEXT_REVOKE |
+-          CEF_SORNG_TLS_CAP_HTTP1_ONLY | CEF_SORNG_TLS_CAP_SCOPED_EXCEPTIONS |
++          CEF_SORNG_TLS_CAP_SAME_AUTHORITY_HTTP2 | CEF_SORNG_TLS_CAP_SCOPED_EXCEPTIONS |
+           CEF_SORNG_TLS_CAP_PRIVATE_CONTEXT
+ #if BUILDFLAG(CHROME_ROOT_STORE_SUPPORTED)
+           | CEF_SORNG_TLS_CAP_CUSTOM_CA
+@@ -320,7 +320,7 @@
+           ,
+       "682c378d70d5780061e96644dca16ddd8fd157a9",
+       "154.0.8037.58",
+-      "sorng-tls-v2-682c378-1"};
++      "sorng-tls-v2-682c378-2"};
+   return &api;
+ }
+ int SORNG_TLS_CALL cef_sorng_tls_complete_v2(uint64_t token,
