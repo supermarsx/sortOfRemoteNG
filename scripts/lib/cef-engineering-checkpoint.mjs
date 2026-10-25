@@ -1126,10 +1126,12 @@ export async function groupQuiet(
   pid,
   {
     kill = process.kill,
+    deadline = Infinity,
     wait = (ms) => new Promise((r) => setTimeout(r, ms)),
   } = {},
 ) {
   for (let i = 0; i < 50; i++) {
+    assert(performance.now() < deadline, "Owned group observation deadline");
     try {
       kill(-pid, 0);
     } catch (error) {
@@ -1140,24 +1142,7 @@ export async function groupQuiet(
   }
   return false;
 }
-async function stopGroup(child) {
-  assert(
-    process.platform !== "win32" && positive(child.pid),
-    "Owned Unix process group required",
-  );
-  for (const signal of ["SIGTERM", "SIGKILL"]) {
-    try {
-      process.kill(-child.pid, signal);
-    } catch (error) {
-      if (error.code !== "ESRCH") throw error;
-    }
-    if (signal === "SIGTERM") await new Promise((r) => setTimeout(r, 250));
-  }
-  assert(
-    await groupQuiet(child.pid),
-    "Compiler descendants remain; checkpoint denied",
-  );
-}
+
 export function processRows(text) {
   assert(
     typeof text === "string" && text.length <= 4 * 1024 ** 2,
@@ -1189,7 +1174,14 @@ export function processRows(text) {
   }
   return rows;
 }
-async function processSnapshot() {
+async function processSnapshot({
+  deadline = performance.now() + 2000,
+  signal,
+} = {}) {
+  assert(
+    !signal?.aborted && performance.now() < deadline,
+    "Ownership snapshot deadline",
+  );
   return new Promise((resolve, reject) => {
     const ps = spawn("/bin/ps", ["-axo", "pid=,ppid=,lstart="], {
       shell: false,
@@ -1197,34 +1189,55 @@ async function processSnapshot() {
       stdio: ["ignore", "pipe", "ignore"],
     });
     let text = "",
-      overflow = false;
-    const timer = setTimeout(() => {
-      ps.kill("SIGKILL");
-      reject(new Error("Ownership snapshot deadline"));
-    }, 2000);
+      failure = null,
+      settled = false;
+    const settle = (error, value) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      signal?.removeEventListener("abort", abort);
+      if (error) reject(error);
+      else resolve(value);
+    };
+    const abort = () => {
+      const error = failure ?? new Error("Ownership snapshot deadline");
+      try {
+        ps.kill("SIGKILL");
+      } catch {}
+      ps.stdout.destroy();
+      ps.unref();
+      settle(error);
+    };
+    const timer = setTimeout(
+      abort,
+      Math.max(1, Math.floor(Math.min(2000, deadline - performance.now()))),
+    );
+    signal?.addEventListener("abort", abort, { once: true });
+    if (signal?.aborted) abort();
     ps.stdout.on("data", (data) => {
       text += data;
       if (text.length > 4 * 1024 ** 2) {
-        overflow = true;
-        ps.kill("SIGKILL");
+        failure = new Error("Ownership snapshot failed");
+        abort();
       }
     });
-    ps.once("error", (error) => {
-      clearTimeout(timer);
-      reject(error);
+    ps.stdout.on("error", (error) => {
+      failure = error;
+      abort();
     });
+    ps.once("error", (error) => settle(error));
     ps.once("close", (code) => {
-      clearTimeout(timer);
-      if (code !== 0 || overflow)
-        return reject(new Error("Ownership snapshot failed"));
+      if (settled) return;
       try {
-        resolve(processRows(text));
+        assert(code === 0, "Ownership snapshot failed");
+        settle(null, processRows(text));
       } catch (error) {
-        reject(error);
+        settle(error);
       }
     });
   });
 }
+
 export function observedLineage(rows, owned) {
   assert(
     owned.length > 0 && owned.length <= 4096,
@@ -1278,8 +1291,8 @@ export function sameObservedCohort(left, right) {
     );
   return key(left) === key(right);
 }
-export async function observedQuiet(records, group) {
-  const rows = await processSnapshot();
+export async function observedQuiet(records, group, options = {}) {
+  const rows = await processSnapshot(options);
   // A reused foreign PID is never signalled and is not our old process.
   if (
     records.some((record) =>
@@ -1287,17 +1300,20 @@ export async function observedQuiet(records, group) {
     )
   )
     return false;
-  return groupQuiet(group);
+  return groupQuiet(group, options);
 }
-async function stopObserved(child, initial) {
+async function stopObserved(
+  child,
+  initial,
+  { deadline = performance.now() + 10000 } = {},
+) {
   let owned = initial,
     stable = false;
-  const deadline = Date.now() + 10000;
   // Freeze the observed lineage before killing it, including children that
   // created separate process groups. No global executable-name selection.
   for (let round = 0; round < 8; round++) {
-    assert(Date.now() < deadline, "Owned freeze deadline");
-    const rows = await processSnapshot();
+    assert(performance.now() < deadline, "Owned freeze deadline");
+    const rows = await processSnapshot({ deadline });
     const next = observedLineage(rows, owned);
     for (const record of next) {
       const current = rows.find((row) => row.pid === record.pid);
@@ -1318,7 +1334,7 @@ async function stopObserved(child, initial) {
     await new Promise((resolve) => setTimeout(resolve, 25));
   }
   assert(stable, "Observed lineage did not stabilize");
-  const snapshot = await processSnapshot();
+  const snapshot = await processSnapshot({ deadline });
   for (const record of [...owned].reverse()) {
     const current = snapshot.find((row) => row.pid === record.pid);
     if (!current) continue;
@@ -1332,14 +1348,19 @@ async function stopObserved(child, initial) {
   // Never send a group kill after its leader exited: a reused group could
   // belong to someone else. Remaining group peers make the proof fail closed.
   for (let i = 0; i < 50; i++) {
-    if (await observedQuiet(owned, child.pid)) return owned;
-    await new Promise((resolve) => setTimeout(resolve, 100));
+    if (await observedQuiet(owned, child.pid, { deadline })) return owned;
+    assert(performance.now() < deadline, "Owned reap deadline");
+    await new Promise((resolve) =>
+      setTimeout(
+        resolve,
+        Math.min(100, Math.max(1, deadline - performance.now())),
+      ),
+    );
   }
   throw new Error("Observed descendants not reaped; checkpoint denied");
 }
 // Only a result produced by this live process may authorize output mutation.
 // Decoded checkpoint manifests retain the existing six-key portable shape.
-// Pinned Siso efbbe7f uses golang/glog v1.2.5 filename identity rules.
 export function sisoLoggerIdentity(host, username) {
   for (const value of [host, username])
     assert(
@@ -1365,6 +1386,39 @@ export function sisoLoggerIdentity(host, username) {
   });
 }
 const liveCompileSlices = new WeakMap();
+const COMPILE_CLEANUP_MS = 30000;
+async function compileWithin(operation, deadline) {
+  const remaining = Math.floor(deadline - performance.now());
+  assert(
+    remaining > 0,
+    "Compile supervision cleanup deadline; checkpoint denied",
+  );
+  let alarm;
+  try {
+    return await Promise.race([
+      Promise.resolve().then(() => {
+        assert(
+          performance.now() < deadline,
+          "Compile supervision cleanup deadline; checkpoint denied",
+        );
+        return operation();
+      }),
+      new Promise((_, reject) => {
+        alarm = setTimeout(
+          () =>
+            reject(
+              new Error(
+                "Compile supervision cleanup deadline; checkpoint denied",
+              ),
+            ),
+          remaining,
+        );
+      }),
+    ]);
+  } finally {
+    clearTimeout(alarm);
+  }
+}
 export async function compileSlice(
   executable,
   args,
@@ -1395,37 +1449,81 @@ export async function compileSlice(
     "Bounded Siso OS identity required",
   );
   const loggerIdentity = sisoLoggerIdentity(hostname(), owner.username);
-  const beginWallMs = Date.now();
-  const stdout = createWriteStream(
-      path.join(logs, "checkpoint-compile.stdout.log"),
-      { flags: "wx" },
-    ),
-    stderr = createWriteStream(
-      path.join(logs, "checkpoint-compile.stderr.log"),
-      { flags: "wx" },
-    );
-  const child = spawn(executable, args, {
-    cwd,
-    env: { ...env, TZ: "UTC" },
-    shell: false,
-    detached: true,
-    stdio: ["ignore", "pipe", "pipe"],
+  const beginWallMs = Date.now(),
+    workDeadline = performance.now() + milliseconds;
+  let firstError,
+    hasFailure = false,
+    failureStage = "none",
+    unsafeNaturalExit = false,
+    timedOut = false,
+    monitoring = true,
+    observed = [],
+    timer;
+  let wakeStop;
+  const stopRequested = new Promise((resolve) => {
+    wakeStop = resolve;
   });
+  const fail = (error, stage = "supervisor") => {
+    if (!hasFailure) {
+      hasFailure = true;
+      firstError = error;
+      failureStage = stage;
+    }
+    wakeStop();
+  };
+  const observer = new AbortController();
+  const streams = [];
+  let stdout, stderr, child;
+  try {
+    for (const name of ["stdout", "stderr"]) {
+      const stream = createWriteStream(
+        path.join(logs, `checkpoint-compile.${name}.log`),
+        { flags: "wx" },
+      );
+      stream.on("error", (error) => fail(error, "writer"));
+      streams.push(stream);
+    }
+    [stdout, stderr] = streams;
+    child = spawn(executable, args, {
+      cwd,
+      env: { ...env, TZ: "UTC" },
+      shell: false,
+      detached: true,
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+  } catch (error) {
+    for (const stream of streams) stream.destroy();
+    throw error;
+  }
+  const outputFinished = Promise.all(streams.map((stream) => finished(stream)));
+  outputFinished.catch((error) => fail(error, "writer"));
+  let rootExited = false,
+    pipeClosed = false,
+    code = null;
+  const rootExit = new Promise((resolve) =>
+    child.once("exit", (value) => {
+      rootExited = true;
+      code = value;
+      resolve();
+    }),
+  );
+  const closed = new Promise((resolve) =>
+    child.once("close", (value) => {
+      rootExited = true;
+      pipeClosed = true;
+      code = value;
+      resolve();
+    }),
+  );
+  child.once("error", (error) => fail(error, "spawn"));
+  child.stdout.on("error", (error) => fail(error, "reader"));
+  child.stderr.on("error", (error) => fail(error, "reader"));
   child.stdout.pipe(stdout);
   child.stderr.pipe(stderr);
-  const closed = new Promise((resolve, reject) => {
-    child.once("error", reject);
-    child.once("close", resolve);
-  });
-  closed.catch(() => {});
-  let timedOut = false,
-    timer,
-    stopping,
-    monitoring = true,
-    monitorFailure = null,
-    observed = [],
-    monitor = Promise.resolve();
-  const initial = processSnapshot().then((rows) => {
+  const initial = processSnapshot({
+    deadline: workDeadline + COMPILE_CLEANUP_MS,
+    signal: observer.signal,
+  }).then((rows) => {
     const root = rows.find((row) => row.pid === child.pid);
     assert(
       root && root.parent === process.pid,
@@ -1433,89 +1531,190 @@ export async function compileSlice(
     );
     observed = observedLineage(rows, [{ pid: root.pid, start: root.start }]);
   });
-  initial.catch(() => {});
-  const endObservation = async () => {
-    monitoring = false;
-    await monitor;
-    assert(
-      !monitorFailure,
-      "Periodic ownership snapshot failed; checkpoint denied",
-    );
-  };
-  timer = setTimeout(() => {
-    timedOut = true;
-    stopping = (async () => {
-      await initial;
-      await endObservation();
-      return stopObserved(child, observed);
-    })();
-    stopping.catch(() => {
-      if (child.exitCode === null && child.signalCode === null)
-        child.kill("SIGKILL");
-    });
-  }, milliseconds);
-  try {
+  initial.catch((error) => fail(error, "initial-snapshot"));
+  const monitor = (async () => {
     await initial;
-    // Bound to four snapshots/second for the explicitly selected slice. This records
-    // observed lineage, not universal fork/daemon tracking; ambiguity denies.
-    monitor = (async () => {
-      for (
-        let turn = 0;
-        monitoring && child.exitCode === null && child.signalCode === null;
-        turn++
-      ) {
-        assert(
-          turn < Math.ceil(milliseconds / 250) + 8,
-          "Ownership observation bound",
-        );
-        await new Promise((resolve) => setTimeout(resolve, 250));
-        if (!monitoring) break;
-        const rows = await processSnapshot();
-        observed = observedLineage(rows, observed);
-      }
-    })().catch((error) => {
-      monitorFailure = error;
-      if (child.exitCode === null && child.signalCode === null)
-        child.kill("SIGKILL");
-    });
-    const code = await closed;
-    clearTimeout(timer);
-    await endObservation();
-    if (stopping) observed = await stopping;
-    const quiet = await observedQuiet(observed, child.pid);
-    if (!quiet) {
-      // A natural root exit is not evidence that a later detached writer ended.
-      // Reap the observed cohort, but never label its interrupted output safe.
-      await stopObserved(child, observed);
-      await writeFile(
-        path.join(logs, "checkpoint-compile.outcome.json"),
-        canonical({
-          outcome: "unsafe-natural-exit-descendants",
-          exitCode: code,
-          ownTimerExpired: timedOut,
-          checkpointAllowed: false,
-        }) + "\n",
-        { flag: "wx" },
+    for (let turn = 0; monitoring && !rootExited; turn++) {
+      assert(
+        turn < Math.ceil(milliseconds / 250) + 8,
+        "Ownership observation bound",
       );
-      throw new Error(
-        "Observed descendants survived compiler exit; checkpoint denied",
-      );
+      await new Promise((resolve) => {
+        const tick = setTimeout(done, 250);
+        function done() {
+          clearTimeout(tick);
+          observer.signal.removeEventListener("abort", done);
+          resolve();
+        }
+        observer.signal.addEventListener("abort", done, { once: true });
+        if (observer.signal.aborted) done();
+      });
+      if (!monitoring) break;
+      const rows = await processSnapshot({
+        deadline: workDeadline + COMPILE_CLEANUP_MS,
+        signal: observer.signal,
+      });
+      observed = observedLineage(rows, observed);
     }
+  })();
+  monitor.catch((error) => {
+    if (monitoring) fail(error, "monitor");
+  });
+  timer = setTimeout(
+    () => {
+      timedOut = true;
+      wakeStop();
+    },
+    Math.max(1, Math.floor(workDeadline - performance.now())),
+  );
+  let cleanupDeadline,
+    quiet = false,
+    monitorJoined = false,
+    outputsJoined = false;
+  try {
+    // Exit, not close: descendants can retain inherited pipes after root exit.
+    await Promise.race([rootExit, closed, stopRequested]);
+    cleanupDeadline = Math.min(
+      performance.now() + COMPILE_CLEANUP_MS,
+      workDeadline + COMPILE_CLEANUP_MS,
+    );
+    clearTimeout(timer);
+    monitoring = false;
+    // Let an in-flight fixed ps operation close within its own2s bound;
+    // cancelling it without a close witness would deny otherwise clean output.
+    try {
+      await compileWithin(() => monitor, cleanupDeadline);
+      monitorJoined = true;
+    } catch (error) {
+      fail(error, "monitor-join");
+    }
+    if (!hasFailure && !timedOut) {
+      try {
+        quiet = await compileWithin(
+          () =>
+            observedQuiet(observed, child.pid, { deadline: cleanupDeadline }),
+          cleanupDeadline,
+        );
+      } catch (error) {
+        fail(error);
+      }
+      if (!quiet && !hasFailure) {
+        unsafeNaturalExit = true;
+        fail(
+          new Error(
+            "Observed descendants survived compiler exit; checkpoint denied",
+          ),
+        );
+      }
+    }
+    if (!quiet) {
+      try {
+        assert(
+          observed.length > 0,
+          "Unconfirmed compiler ownership; checkpoint denied",
+        );
+        observed = await compileWithin(
+          () => stopObserved(child, observed, { deadline: cleanupDeadline }),
+          cleanupDeadline,
+        );
+        quiet = await compileWithin(
+          () =>
+            observedQuiet(observed, child.pid, { deadline: cleanupDeadline }),
+          cleanupDeadline,
+        );
+        assert(quiet, "Observed descendants not reaped; checkpoint denied");
+      } catch (error) {
+        fail(error, "reap");
+      }
+    }
+    // A creation-owned live root can be stopped independently, but this is
+    // never cohort/quiescence proof and never enables checkpoint admission.
+    if (
+      !quiet &&
+      !rootExited &&
+      child.exitCode === null &&
+      child.signalCode === null
+    ) {
+      try {
+        child.kill("SIGKILL");
+      } catch (error) {
+        fail(error);
+      }
+    }
+    try {
+      await compileWithin(() => closed, cleanupDeadline);
+    } catch (error) {
+      fail(error, "stdio-close");
+    }
+    if (pipeClosed) {
+      stdout.end();
+      stderr.end();
+    }
+    try {
+      await compileWithin(() => outputFinished, cleanupDeadline);
+      outputsJoined = true;
+    } catch (error) {
+      fail(error, "writer-join");
+    }
+    if (
+      hasFailure &&
+      quiet &&
+      monitorJoined &&
+      outputsJoined &&
+      rootExited &&
+      pipeClosed
+    ) {
+      // Preserve the existing unusable natural-exit receipt after confirmed
+      // cleanup. Failure to persist it must not replace the primary error.
+      try {
+        await compileWithin(
+          () =>
+            writeFile(
+              path.join(logs, "checkpoint-compile.outcome.json"),
+              canonical({
+                outcome: unsafeNaturalExit
+                  ? "unsafe-natural-exit-descendants"
+                  : "supervision-failed",
+                exitCode: code,
+                ownTimerExpired: timedOut,
+                checkpointAllowed: false,
+              }) + "\n",
+              { flag: "wx" },
+            ),
+          cleanupDeadline,
+        );
+      } catch (error) {
+        fail(error, "failure-receipt");
+      }
+    }
+    assert(
+      !hasFailure &&
+        quiet &&
+        monitorJoined &&
+        outputsJoined &&
+        rootExited &&
+        pipeClosed,
+      "Compile cleanup unconfirmed; checkpoint denied",
+    );
     const outcome = timedOut
       ? "slice-ended"
       : code === 0
         ? "compiler-complete"
         : "compiler-failed";
-    await writeFile(
-      path.join(logs, "checkpoint-compile.outcome.json"),
-      canonical({
-        outcome,
-        exitCode: code,
-        ownTimerExpired: timedOut,
-        observedProcesses: observed.length,
-        quiescence: "observed-lineage-and-root-group",
-      }) + "\n",
-      { flag: "wx" },
+    await compileWithin(
+      () =>
+        writeFile(
+          path.join(logs, "checkpoint-compile.outcome.json"),
+          canonical({
+            outcome,
+            exitCode: code,
+            ownTimerExpired: timedOut,
+            observedProcesses: observed.length,
+            quiescence: "observed-lineage-and-root-group",
+          }) + "\n",
+          { flag: "wx" },
+        ),
+      cleanupDeadline,
     );
     const result = {
       outcome,
@@ -1533,20 +1732,55 @@ export async function compileSlice(
       groupId: child.pid,
       canonicalOut,
       outIdentity,
-      observed: observed.map((row) => ({ pid: row.pid, start: row.start })),
+      observed: observed.map(({ pid, start }) => ({ pid, start })),
     });
     return result;
+  } catch (error) {
+    fail(error);
+    throw firstError;
   } finally {
     clearTimeout(timer);
     monitoring = false;
-    await monitor;
-    if (child.exitCode === null && child.signalCode === null)
-      await stopGroup(child);
-    stdout.end();
-    stderr.end();
-    await Promise.all([finished(stdout), finished(stderr)]);
+    observer.abort();
+    // Never wait again with a new deadline or signal a possibly reused group.
+    if (!outputsJoined) {
+      child.stdout.destroy();
+      child.stderr.destroy();
+      for (const stream of streams) stream.destroy();
+    }
+    if (!pipeClosed) child.unref();
+    checkpointLog(
+      console.error,
+      `[cef-engineering-checkpoint] compile-supervision=${canonical({
+        phase: hasFailure ? "denied" : "complete",
+        ownTimerExpired: timedOut,
+        rootExited,
+        pipeClosed,
+        monitorJoined,
+        outputsJoined,
+        cohortQuiet: quiet,
+        observedProcesses: observed.length,
+        cleanupElapsedMs:
+          cleanupDeadline === undefined
+            ? 0
+            : Math.max(
+                0,
+                Math.floor(
+                  performance.now() - (cleanupDeadline - COMPILE_CLEANUP_MS),
+                ),
+              ),
+        failure: hasFailure ? "UNCONFIRMED" : "NONE",
+        failureStage,
+      })}`,
+    );
+    // All asynchronous branches have rejection owners; forced stream closure
+    // is NOT process cleanup or a successful compile receipt.
+    monitor.catch(() => {});
+    initial.catch(() => {});
+    outputFinished.catch(() => {});
   }
 }
+
 const uploadObservers = new WeakSet();
 const UPLOAD_STAGES = new Set([
   "upload",

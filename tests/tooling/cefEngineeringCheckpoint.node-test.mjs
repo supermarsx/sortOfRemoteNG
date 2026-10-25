@@ -1,5 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { EventEmitter } from "node:events";
+import { finished } from "node:stream/promises";
 import YAML from "yaml";
 import ts from "typescript";
 import { spawn, spawnSync } from "node:child_process";
@@ -9,7 +11,7 @@ import {
   renameSync,
   createWriteStream,
 } from "node:fs";
-import { PassThrough, Readable } from "node:stream";
+import { PassThrough, Readable, Writable } from "node:stream";
 import {
   mkdir,
   mkdtemp,
@@ -5699,4 +5701,418 @@ test("response diagnostic getters cannot replace the original API result or add 
   assert.equal(await api("", { raw: true }), result);
   assert.equal(reads, 1);
   assert.doesNotMatch(JSON.stringify(records), /private|SECRET/);
+});
+
+async function compileSupervisorModel(options = {}) {
+  const source = await readFile(
+    new URL(
+      "../../scripts/lib/cef-engineering-checkpoint.mjs",
+      import.meta.url,
+    ),
+    "utf8",
+  );
+  const ast = ts.createSourceFile(
+    "helper.mjs",
+    source,
+    ts.ScriptTarget.Latest,
+    true,
+    ts.ScriptKind.JS,
+  );
+  const body = (name) =>
+    ast.statements
+      .find(
+        (node) => ts.isFunctionDeclaration(node) && node.name?.text === name,
+      )
+      .getText(ast)
+      .replace(/^export /, "");
+  let clockOffset = 0;
+  const clock = { now: () => performance.now() + clockOffset };
+  const within = new Function(
+    "assert",
+    "performance",
+    "return (" + body("compileWithin") + ")",
+  )(assert, clock);
+  const child = new EventEmitter();
+  Object.assign(child, {
+    pid: 100,
+    exitCode: null,
+    signalCode: null,
+    stdout: new PassThrough(),
+    stderr: new PassThrough(),
+  });
+  const sentinel = Object.hasOwn(options, "error")
+    ? options.error
+    : Error("fixed injected primary fault");
+  const state = {
+    snapshots: 0,
+    stops: 0,
+    kills: 0,
+    unrefs: 0,
+    proofs: 0,
+    writes: [],
+    signals: [],
+    streams: [],
+    primary: sentinel,
+  };
+  const close = (code = null) => {
+    child.exitCode = code;
+    child.emit("exit", code);
+    child.stdout.end();
+    child.stderr.end();
+    child.emit("close", code);
+  };
+  child.kill = () => {
+    state.kills++;
+    child.signalCode = "SIGKILL";
+    child.emit("exit", null, "SIGKILL");
+    if (!options.holdPipes) close();
+    return true;
+  };
+  child.unref = () => state.unrefs++;
+  const root = { pid: 100, parent: 200, start: "Sat Oct 24 00:00:00 2026" };
+  const dependencies = {
+    assert,
+    process: {
+      platform: "darwin",
+      pid: 200,
+      kill: () => assert.fail("no global signals"),
+    },
+    positive: (n) => Number.isSafeInteger(n) && n > 0,
+    LIMITS: { compileMs: 20, maxCompileMs: 1000 },
+    COMPILE_CLEANUP_MS: 80,
+    performance: clock,
+    userInfo: () => ({ uid: 10, username: "Model" }),
+    hostname: () => "model.host",
+    sisoLoggerIdentity,
+    compileWithin: within,
+    checkpointLog: (sink, line) => (state.diagnostic = line),
+    console: { error: () => {} },
+    noLinks: async (value) => value,
+    lstat: async () => ({ isDirectory: () => true }),
+    path,
+    createWriteStream: () => {
+      const stream = new Writable({
+        write(data, encoding, done) {
+          done();
+        },
+      });
+      state.streams.push(stream);
+      return stream;
+    },
+    spawn: () => {
+      if (options.naturalExit)
+        setTimeout(() => {
+          child.exitCode = 0;
+          child.emit("exit", 0);
+        }, 5);
+      if (options.streamError)
+        setTimeout(() => state.streams[0].emit("error", sentinel), 5);
+      return child;
+    },
+    finished: options.neverFinished ? () => new Promise(() => {}) : finished,
+    processSnapshot: async () => {
+      state.snapshots++;
+      if (options.neverSnapshot) return new Promise(() => {});
+      if (options.badOwner) return [];
+      if (options.monitorError && state.snapshots > 1) throw sentinel;
+      return [root];
+    },
+    observedLineage: (_, owned) => owned,
+    stopObserved: async (_, owned) => {
+      state.stops++;
+      if (options.stopError) throw sentinel;
+      child.kill("SIGKILL");
+      return owned;
+    },
+    observedQuiet: async () =>
+      options.naturalExit ? state.stops > 0 : options.stopError ? false : true,
+    writeFile: async (file, data) => state.writes.push({ file, data }),
+    canonical,
+    liveCompileSlices: { set: () => state.proofs++ },
+    setTimeout: (callback, ms, ...args) =>
+      setTimeout(
+        () => {
+          if (options.delayedTimer && ms !== 250) clockOffset = 200;
+          callback(...args);
+        },
+        ms === 250 ? 10 : ms,
+      ),
+    clearTimeout,
+  };
+  const execute = new Function(
+    ...Object.keys(dependencies),
+    "return (" + body("compileSlice") + ")",
+  )(...Object.values(dependencies));
+  const began = performance.now();
+  let result, error, modelAlarm;
+  const run = execute("synthetic", [], {
+    cwd: "/fake",
+    env: {},
+    logs: "/fake",
+    milliseconds: 20,
+  });
+  run.catch(() => {});
+  try {
+    result = await Promise.race([
+      run,
+      new Promise((_, reject) => {
+        modelAlarm = setTimeout(
+          () => reject(Error("model failed to terminate")),
+          750,
+        );
+      }),
+    ]);
+    /* exact production arguments are supplied above */
+  } catch (reason) {
+    error = reason;
+  } finally {
+    clearTimeout(modelAlarm);
+  }
+  state.elapsedMs = Math.round(performance.now() - began);
+  state.error = error;
+  state.result = result;
+  assert.ok(
+    state.elapsedMs < 1000,
+    "short model must terminate without a pipe EOF supplied by test teardown",
+  );
+  // Release synthetic endpoints only; no real processes were spawned.
+  child.stdout.destroy();
+  child.stderr.destroy();
+  for (const stream of state.streams) stream.destroy();
+  return state;
+}
+
+test("single supervisor returns finite original cleanup failure despite inherited open pipes", async () => {
+  const state = await compileSupervisorModel({
+    stopError: true,
+    holdPipes: true,
+  });
+  assert.equal(state.error, state.primary);
+  assert.equal(state.stops, 1);
+  assert.equal(state.proofs, 0);
+  assert.equal(state.writes.length, 0);
+  assert.equal(state.kills, 1);
+  assert.equal(state.unrefs, 1);
+  const diagnostic = JSON.parse(
+    state.diagnostic.split("compile-supervision=")[1],
+  );
+  assert.equal(diagnostic.failureStage, "reap");
+  assert.equal(diagnostic.phase, "denied");
+  assert.equal(diagnostic.cohortQuiet, false);
+  assert.doesNotMatch(state.diagnostic, /fixed injected|fake|synthetic/);
+});
+test("monitor failure still attempts cohort cleanup and retains the original error", async () => {
+  const state = await compileSupervisorModel({ monitorError: true });
+  assert.equal(state.error, state.primary);
+  assert.equal(state.stops, 1);
+  assert.equal(state.proofs, 0);
+  assert.equal(state.writes.length, 0);
+});
+test("never resolving initial snapshot denies admission finitely without guessed cohort signals", async () => {
+  const state = await compileSupervisorModel({
+    neverSnapshot: true,
+    holdPipes: true,
+  });
+  assert.match(state.error.message, /cleanup deadline/);
+  assert.equal(state.stops, 0);
+  assert.equal(state.proofs, 0);
+  assert.equal(state.kills, 1);
+});
+test("writer failure remains primary through cleanup and natural detached pipe writers are denied", async () => {
+  const writer = await compileSupervisorModel({
+    streamError: true,
+    holdPipes: true,
+  });
+  assert.equal(writer.error, writer.primary);
+  assert.equal(writer.stops, 1);
+  assert.equal(writer.proofs, 0);
+  const natural = await compileSupervisorModel({ naturalExit: true });
+  assert.match(natural.error.message, /descendants survived/);
+  assert.equal(natural.stops, 1);
+  assert.equal(natural.proofs, 0);
+  assert.equal(JSON.parse(natural.writes[0].data).checkpointAllowed, false);
+});
+test("only confirmed reaping exit pipe and writer joins create a compile proof", async () => {
+  const clean = await compileSupervisorModel();
+  assert.equal(clean.error, undefined);
+  assert.equal(clean.result.outcome, "slice-ended");
+  assert.equal(clean.proofs, 1);
+  assert.equal(clean.stops, 1);
+  assert.equal(clean.writes.length, 1);
+  const pending = await compileSupervisorModel({ neverFinished: true });
+  assert.match(pending.error.message, /cleanup deadline/);
+  assert.equal(pending.proofs, 0);
+  assert.equal(pending.writes.length, 0);
+});
+test("missing live root identity denies proof and never reaches observed-cohort signal logic", async () => {
+  const state = await compileSupervisorModel({ badOwner: true });
+  assert.match(state.error.message, /Exact live child ownership/);
+  assert.equal(state.stops, 0);
+  assert.equal(state.proofs, 0);
+});
+
+test("identity-guarded reaper never signals a replacement root or a foreign process", async () => {
+  const source = await readFile(
+    new URL(
+      "../../scripts/lib/cef-engineering-checkpoint.mjs",
+      import.meta.url,
+    ),
+    "utf8",
+  );
+  const ast = ts.createSourceFile(
+    "helper.mjs",
+    source,
+    ts.ScriptTarget.Latest,
+    true,
+    ts.ScriptKind.JS,
+  );
+  const body = ast.statements
+    .find(
+      (node) =>
+        ts.isFunctionDeclaration(node) && node.name?.text === "stopObserved",
+    )
+    .getText(ast);
+  const original = { pid: 100, start: "Sat Oct 24 00:00:00 2026" },
+    signals = [];
+  const dependencies = {
+    assert,
+    process: { kill: (pid, signal) => signals.push({ pid, signal }) },
+    processSnapshot: async () => [
+      { pid: 100, parent: 200, start: "Sat Oct 24 00:00:01 2026" },
+      { pid: 999, parent: 1, start: original.start },
+    ],
+    observedLineage,
+    sameObservedCohort,
+    observedQuiet: async () => false,
+  };
+  const reap = new Function(
+    ...Object.keys(dependencies),
+    "return (" + body + ")",
+  )(...Object.values(dependencies));
+  await assert.rejects(
+    reap({ pid: 100 }, [original], { deadline: performance.now() + 100 }),
+    /Owned root PID identity changed/,
+  );
+  assert.deepEqual(signals, []);
+});
+
+test("fixed ps timeout kills only its creation-owned helper and cannot retain stdout handles", async () => {
+  const source = await readFile(
+    new URL(
+      "../../scripts/lib/cef-engineering-checkpoint.mjs",
+      import.meta.url,
+    ),
+    "utf8",
+  );
+  const ast = ts.createSourceFile(
+    "helper.mjs",
+    source,
+    ts.ScriptTarget.Latest,
+    true,
+    ts.ScriptKind.JS,
+  );
+  const body = ast.statements
+    .find(
+      (node) =>
+        ts.isFunctionDeclaration(node) && node.name?.text === "processSnapshot",
+    )
+    .getText(ast);
+  const ps = new EventEmitter();
+  ps.stdout = new PassThrough();
+  let killed = 0,
+    unref = 0;
+  ps.kill = (signal) => {
+    assert.equal(signal, "SIGKILL");
+    killed++;
+  };
+  ps.unref = () => unref++;
+  const dependencies = {
+    assert,
+    spawn: (file, args, options) => {
+      assert.equal(file, "/bin/ps");
+      assert.deepEqual(args, ["-axo", "pid=,ppid=,lstart="]);
+      assert.deepEqual(options.env, {
+        PATH: "/usr/bin:/bin",
+        LC_ALL: "C",
+        TZ: "UTC",
+      });
+      return ps;
+    },
+    processRows,
+    setTimeout: (callback) => setTimeout(callback, 5),
+    clearTimeout,
+  };
+  const snapshot = new Function(
+    ...Object.keys(dependencies),
+    "return (" + body + ")",
+  )(...Object.values(dependencies));
+  await assert.rejects(
+    snapshot({ deadline: performance.now() + 100 }),
+    /Ownership snapshot deadline/,
+  );
+  assert.equal(killed, 1);
+  assert.equal(unref, 1);
+  assert.equal(ps.stdout.destroyed, true);
+});
+
+test("a null primary rejection remains null through subsequent cleanup failures", async () => {
+  const state = await compileSupervisorModel({
+    monitorError: true,
+    stopError: true,
+    error: null,
+    holdPipes: true,
+  });
+  assert.equal(state.error, null);
+  assert.equal(state.proofs, 0);
+  assert.equal(state.stops, 1);
+});
+
+test("same-clock supervisor rechecks deadline immediately before a queued operation", async () => {
+  const source = await readFile(
+    new URL(
+      "../../scripts/lib/cef-engineering-checkpoint.mjs",
+      import.meta.url,
+    ),
+    "utf8",
+  );
+  const ast = ts.createSourceFile(
+    "helper.mjs",
+    source,
+    ts.ScriptTarget.Latest,
+    true,
+    ts.ScriptKind.JS,
+  );
+  const body = ast.statements
+    .find(
+      (node) =>
+        ts.isFunctionDeclaration(node) && node.name?.text === "compileWithin",
+    )
+    .getText(ast);
+  let reads = 0,
+    calls = 0;
+  const within = new Function("assert", "performance", "return (" + body + ")")(
+    assert,
+    { now: () => (reads++ === 0 ? 0 : 100) },
+  );
+  await assert.rejects(
+    within(() => {
+      calls++;
+    }, 50),
+    /cleanup deadline/,
+  );
+  assert.equal(calls, 0);
+});
+
+test("delayed work timer cannot mint cleanup time beyond the original admission bound", async () => {
+  // Shared injected clock advances200ms at the20ms work timer; the original
+  // work+80ms model cleanup allowance has already expired. This is a clock
+  // domain model, not a claim of physical scheduling latency.
+  const state = await compileSupervisorModel({
+    delayedTimer: true,
+    holdPipes: true,
+  });
+  assert.match(state.error.message, /cleanup deadline/);
+  assert.equal(state.stops, 0);
+  assert.equal(state.proofs, 0);
+  assert.equal(state.writes.length, 0);
 });
