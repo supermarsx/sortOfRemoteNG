@@ -3406,7 +3406,7 @@ function verifyLinuxIsolatedFacts({
       init.HostConfig.NetworkMode === "none" &&
       init.HostConfig.ReadonlyRootfs === true &&
       same(init.HostConfig.CapDrop, ["ALL"]) &&
-      same(init.HostConfig.CapAdd, ["CHOWN"]) &&
+      same(init.HostConfig.CapAdd, ["CAP_CHOWN"]) &&
       same(init.HostConfig.SecurityOpt, ["no-new-privileges:true"]) &&
       same(init.Config.Entrypoint, ["/usr/bin/python3"]) &&
       same(init.Config.Cmd, [

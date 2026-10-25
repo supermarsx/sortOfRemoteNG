@@ -2799,7 +2799,7 @@ function linuxIsolatedFixture() {
       NetworkMode: "none",
       ReadonlyRootfs: true,
       CapDrop: ["ALL"],
-      CapAdd: ["CHOWN"],
+      CapAdd: ["CAP_CHOWN"],
       SecurityOpt: ["no-new-privileges:true"],
       PidsLimit: 16,
       NanoCpus: 1e9,
@@ -4541,5 +4541,36 @@ test("isolated R5 fixed operation root accepts only truthful fixed mounts and di
     mutate(f);
     f.refresh();
     assert.throws(() => accept(f));
+  }
+});
+
+test("isolated init requires Docker canonical singleton CAP_CHOWN and rejects aliases or additional authority", () => {
+  const f = linuxIsolatedFixture();
+  const inspect = JSON.parse(f.records.workspace.facts.init.inspect.rawUtf8);
+  assert.deepEqual(inspect.HostConfig.CapAdd, ["CAP_CHOWN"]);
+  assert.doesNotThrow(() =>
+    verifyOwnedHandoffEvidence(f.input, f.records, f.lock),
+  );
+  for (const capabilities of [
+    ["CHOWN"],
+    [],
+    ["CAP_CHOWN", "CAP_CHOWN"],
+    ["CAP_CHOWN", "CHOWN"],
+    ["CAP_CHOWN", "CAP_SYS_ADMIN"],
+    ["CAP_SYS_ADMIN"],
+    "CAP_CHOWN",
+    null,
+  ]) {
+    const g = linuxIsolatedFixture();
+    const changed = JSON.parse(g.records.workspace.facts.init.inspect.rawUtf8);
+    changed.HostConfig.CapAdd = capabilities;
+    const rawUtf8 = JSON.stringify(changed);
+    g.records.workspace.facts.init.inspect = {
+      rawUtf8,
+      size: Buffer.byteLength(rawUtf8),
+      sha256: hash(rawUtf8),
+    };
+    g.refresh();
+    assert.throws(() => verifyOwnedHandoffEvidence(g.input, g.records, g.lock));
   }
 });
