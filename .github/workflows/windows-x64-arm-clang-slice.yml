@@ -72,13 +72,19 @@ jobs:
             const value=JSON.parse(text);need(value.kind==='sorng-windows-x64-arm-inventory'&&value.mode==='inventory'&&typeof value.success==='boolean'&&value.compilerExecuted===false&&value.installerExecuted===false&&value.downloaded===false&&value.nativeAcceptance===false&&value.buildAdmission===false,'INV_RESULT');return value;
           }
           export function remainingBudget(end,now=Date.now(),monoEnd=Infinity,monoNow=performance.now()){const left=Math.min(end-now,monoEnd-monoNow);need(left>1000,'INV_DEADLINE');return left-1000;}
+          export function failureCode(error){
+            if(error?.code==='ENOENT')return'ENOENT';
+            const allowed=['INV_PATH','INV_ALIAS','INV_LINK','INV_FILE','INV_IDENTITY','INV_CHANGED','INV_PROFILE','INV_CHILD','INV_SOURCE_CHANGED','INV_RUNTIME_CHANGED','INV_CHILD_CLEANUP','INV_DEADLINE','INV_SOURCE_BYTES','INV_UTF8','INV_STDERR_BOUND','INV_STDERR_UTF8','INV_RESULT','INV_OUTPUT','INV_OBSERVATION_FAILED'];
+            return typeof error?.message==='string'&&allowed.includes(error.message)?error.message:'INV_OBSERVATION_DENIED';
+          }
+          const slashSpelling=file=>file.replaceAll('\\','/').toLowerCase();
           export async function held(file,cap){
-            need(path.isAbsolute(file),'INV_PATH');const actual=await fs.realpath(file);need(actual.toLowerCase()===file.toLowerCase(),'INV_ALIAS');
+            need(path.isAbsolute(file),'INV_PATH');need(!file.split(/[\\/]/).some(part=>part==='.'||part==='..'),'INV_ALIAS');const actual=await fs.realpath(file);need(slashSpelling(actual)===slashSpelling(file),'INV_ALIAS');
             for(let p=file;;p=path.dirname(p)){const s=await fs.lstat(p);need(!s.isSymbolicLink()&&!s.isBlockDevice()&&!s.isCharacterDevice(),'INV_LINK');if(path.dirname(p)===p)break;}
             const before=await fs.lstat(actual,{bigint:true});need(before.isFile()&&before.nlink===1n&&before.size<=BigInt(cap),'INV_FILE');
             const signature=s=>[s.dev,s.ino,s.mode,s.size,s.mtimeNs,s.ctimeNs,s.nlink,s.birthtimeNs].join(':');
             const common=s=>[s.dev,s.ino,s.size,s.mtimeNs,s.nlink,s.birthtimeNs].join(':');
-            const fd=await fs.open(actual,'r');try{const initial=await fd.stat({bigint:true});need(initial.isFile()&&initial.nlink===1n&&common(before)===common(initial),'INV_IDENTITY');const bytes=Buffer.alloc(Number(before.size));let used=0;while(used<bytes.length){const read=await fd.read(bytes,used,bytes.length-used,used);need(read.bytesRead>0,'INV_CHANGED');used+=read.bytesRead;}const extra=Buffer.alloc(1);need((await fd.read(extra,0,1,used)).bytesRead===0,'INV_CHANGED');const after=await fs.lstat(actual,{bigint:true}),final=await fd.stat({bigint:true});need(signature(before)===signature(after)&&signature(initial)===signature(final)&&common(after)===common(final),'INV_CHANGED');need((await fs.realpath(file)).toLowerCase()===actual.toLowerCase(),'INV_CHANGED');return bytes;}finally{await fd.close();}
+            const fd=await fs.open(actual,'r');try{const initial=await fd.stat({bigint:true});need(initial.isFile()&&initial.nlink===1n&&common(before)===common(initial),'INV_IDENTITY');const bytes=Buffer.alloc(Number(before.size));let used=0;while(used<bytes.length){const read=await fd.read(bytes,used,bytes.length-used,used);need(read.bytesRead>0,'INV_CHANGED');used+=read.bytesRead;}const extra=Buffer.alloc(1);need((await fd.read(extra,0,1,used)).bytesRead===0,'INV_CHANGED');const after=await fs.lstat(actual,{bigint:true}),final=await fd.stat({bigint:true});need(signature(before)===signature(after)&&signature(initial)===signature(final)&&common(after)===common(final),'INV_CHANGED');need(slashSpelling(await fs.realpath(file))===slashSpelling(actual),'INV_CHANGED');return bytes;}finally{await fd.close();}
           }
           async function run(){
             const begin=Date.now(),monoBegin=performance.now(),end=begin+180000,monoEnd=monoBegin+180000,remaining=()=>remainingBudget(end,Date.now(),monoEnd,performance.now()),abort=new AbortController(),active=new Set();let expired=false,cleanupTimer;
@@ -97,7 +103,7 @@ jobs:
               for(const row of sourceRows){remaining();const raw=await held(path.join(cwd,row.path),262144);need(raw.length===row.bytes&&sha(raw)===row.sha256,'INV_SOURCE_CHANGED');}
               phase='runtime-postcheck';remaining();need(sha(await held(python,268435456))===context.python.sha256,'INV_RUNTIME_CHANGED');remaining();
               need(active.size===0&&!expired,'INV_CHILD_CLEANUP');await fs.writeFile(path.join(root,'terminal.json'),JSON.stringify({mode:'inventory',nativeExit:code,sourcePostVerified:true,pythonPostVerified:true,wholeDeadline:true,directChildrenClosed:true,success:code===0&&result.success===true,compilerExecuted:false,downloaded:false}),{flag:'wx',signal:abort.signal});remaining();need(code===0&&result.success===true,'INV_OBSERVATION_FAILED');
-            }catch{await fs.writeFile(path.join(root,'failure.json'),JSON.stringify({mode:'inventory',failure:'INV_OBSERVATION_DENIED',phase,nativeExit:code,childStderrAvailable:Buffer.isBuffer(childStderr),fixedRuntimePresence:phase==='runtime-preflight'?'missing-or-unavailable':'not-determined-by-failure',success:false,workDeadlineExpired:expired,directChildrenClosed:active.size===0,compilerExecuted:false,downloaded:false}),{flag:'wx'});process.exitCode=expired?124:1;}
+            }catch(error){await fs.writeFile(path.join(root,'failure.json'),JSON.stringify({mode:'inventory',failure:'INV_OBSERVATION_DENIED',reason:failureCode(error),phase,nativeExit:code,childStderrAvailable:Buffer.isBuffer(childStderr),fixedRuntimePresence:phase==='runtime-preflight'?'missing-or-unavailable':'not-determined-by-failure',success:false,workDeadlineExpired:expired,directChildrenClosed:active.size===0,compilerExecuted:false,downloaded:false}),{flag:'wx'});process.exitCode=expired?124:1;}
             finally{clearTimeout(workTimer);if(active.size===0)clearTimeout(cleanupTimer);else{process.exitCode=1;cleanupTimer??=setTimeout(()=>process.exit(124),30000);}}
           }
           // Closed entry; contract tests import definitions above this marker only.

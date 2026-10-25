@@ -1,5 +1,14 @@
 import assert from "node:assert/strict";
-import { readFile, realpath, mkdtemp, writeFile, rm } from "node:fs/promises";
+import {
+  readFile,
+  realpath,
+  mkdtemp,
+  writeFile,
+  rm,
+  mkdir,
+  link,
+  symlink,
+} from "node:fs/promises";
 import { createHash } from "node:crypto";
 import os from "node:os";
 import path from "node:path";
@@ -170,6 +179,88 @@ test("held read returns same bounded hashed physical bytes", async () => {
     assert.equal((await m.held(file, 17)).toString(), "fixed-public-data");
     await assert.rejects(m.held(file, 16));
   } finally {
+    await rm(temp, { recursive: true });
+  }
+});
+
+test("closed failure codes distinguish absence from alias or identity denial without private text", () => {
+  assert.equal(
+    m.failureCode({ code: "ENOENT", message: "private-path" }),
+    "ENOENT",
+  );
+  for (const code of ["INV_ALIAS", "INV_FILE", "INV_IDENTITY"])
+    assert.equal(m.failureCode(new Error(code)), code);
+  assert.equal(
+    m.failureCode(new Error("private exception text")),
+    "INV_OBSERVATION_DENIED",
+  );
+  assert.equal(
+    m.failureCode({ code: "EACCES", message: "private-path" }),
+    "INV_OBSERVATION_DENIED",
+  );
+  assert(workflow.includes("reason:failureCode(error)"));
+  assert(!workflow.includes("JSON.stringify(error)"));
+});
+
+test("actual owned native and forward spellings close the old Windows denial while aliases still fail", async (t) => {
+  const newPrefix =
+    "need(path.isAbsolute(file),'INV_PATH');need(!file.split(/[\\\\/]/).some(part=>part==='.'||part==='..'),'INV_ALIAS');const actual=await fs.realpath(file);need(slashSpelling(actual)===slashSpelling(file),'INV_ALIAS');";
+  const oldPrefix =
+    "need(path.isAbsolute(file),'INV_PATH');const actual=await fs.realpath(file);need(actual.toLowerCase()===file.toLowerCase(),'INV_ALIAS');";
+  const newPost =
+    "need(slashSpelling(await fs.realpath(file))===slashSpelling(actual),'INV_CHANGED');";
+  const oldPost =
+    "need((await fs.realpath(file)).toLowerCase()===actual.toLowerCase(),'INV_CHANGED');";
+  assert.equal(source.split(newPrefix).length, 2);
+  assert.equal(source.split(newPost).length, 2);
+  const priorSource = source
+    .replace(newPrefix, oldPrefix)
+    .replace(newPost, oldPost);
+  const a = priorSource.indexOf("export async function held("),
+    b = priorSource.indexOf("\nasync function run()", a);
+  assert.equal(
+    createHash("sha256").update(priorSource.slice(a, b)).digest("hex"),
+    "b9081a0b4892c83670127a405698ad70799d4abc30dd0124ab3875e287ab681d",
+  );
+  const prior = await import(
+    `data:text/javascript;base64,${Buffer.from(priorSource).toString("base64")}`
+  );
+  const parent = await realpath(os.tmpdir()),
+    temp = await mkdtemp(path.join(parent, "inventory-spelling-"));
+  try {
+    const file = path.join(temp, "fixed"),
+      forward = file.replaceAll("\\", "/");
+    await writeFile(file, "fixed-public-data", { flag: "wx" });
+    assert.equal((await prior.held(file, 17)).toString(), "fixed-public-data");
+    if (process.platform === "win32") {
+      await assert.rejects(prior.held(forward, 17), /INV_ALIAS/);
+      t.diagnostic(
+        "Exact frozen old held function rejects forward Windows spelling; corrected function accepts the same physical owned bytes",
+      );
+    }
+    assert((await m.held(file, 17)).equals(await m.held(forward, 17)));
+    await mkdir(path.join(temp, "child"));
+    const dotParent = `${temp}${path.sep}child${path.sep}..${path.sep}fixed`;
+    await assert.rejects(m.held(dotParent, 17), /INV_ALIAS/);
+    await assert.rejects(
+      m.held(`${temp}${path.sep}.${path.sep}fixed`, 17),
+      /INV_ALIAS/,
+    );
+    const alias = path.join(temp, "directory-alias");
+    await symlink(
+      temp,
+      alias,
+      process.platform === "win32" ? "junction" : "dir",
+    );
+    await assert.rejects(
+      m.held(path.join(alias, "fixed"), 17),
+      /INV_ALIAS|INV_LINK/,
+    );
+    await link(file, path.join(temp, "hardlink"));
+    await assert.rejects(m.held(file, 17), /INV_FILE/);
+    await assert.rejects(m.held(path.join(temp, "hardlink"), 17), /INV_FILE/);
+  } finally {
+    assert(temp.startsWith(parent + path.sep));
     await rm(temp, { recursive: true });
   }
 });

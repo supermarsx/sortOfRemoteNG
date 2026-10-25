@@ -230,6 +230,8 @@ def inventory(p, budget, progress=None):
     budget.phase("msvc-directories")
     msvc = Path(p["visualStudioRoot"]) / "VC/Tools/MSVC"
     versions = immediate_directories(msvc, 8, budget, r"\d{1,2}\.\d{1,2}\.\d{1,8}")
+    if progress is not None:
+        progress["observedMsvcVersions"] = versions
     require(p["toolset"] in versions, "INV_DIRECTORY")
     rows = []
     if progress is not None:

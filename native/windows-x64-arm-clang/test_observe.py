@@ -176,6 +176,21 @@ class InventoryTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "INV_PROVENANCE"):
                 m.inventory(PROFILE, m.Budget())
 
+    def test_missing_expected_toolset_retains_bounded_versions_before_zero_file_opens(self):
+        toolsets = self.root / "VC/Tools/MSVC"
+        toolsets.mkdir(parents=True)
+        (toolsets / "14.52.12345").mkdir()
+        (toolsets / "14.50.100").mkdir()
+        p = {**PROFILE, "visualStudioRoot": str(self.root)}
+        progress, budget = {}, m.Budget()
+        with patch.object(m, "file_record", side_effect=AssertionError("no-file-open")) as read:
+            with self.assertRaisesRegex(ValueError, "INV_DIRECTORY"):
+                m.inventory(p, budget, progress)
+            read.assert_not_called()
+        self.assertEqual(progress, {"observedMsvcVersions": ["14.50.100", "14.52.12345"]})
+        self.assertEqual(budget.rows, 0)
+        self.assertEqual(budget.stage, "msvc-directories")
+
     def test_failure_retains_only_closed_current_role_and_completed_rows(self):
         budget, progress = m.Budget(), {}
         def read(path, budget, retain=0, maximum=m.MAX_FILE):
