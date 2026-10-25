@@ -2390,16 +2390,255 @@ async function smallGraph(t, count = 8) {
   return root;
 }
 
+// Exact historical production declaration from 8bdc3413f2d860673c8291b0dd08f3b3a95d020e.
+// Self-contained for depth-one engineering checkouts; no runtime ancestor fetch.
+const LEGACY_GRAPH_DECLARATION = String.raw`export async function graphInventory(
+  root,
+  { observe = () => {}, signal, timeoutMs = GRAPH_LIMITS.milliseconds } = {},
+) {
+  assert(
+    Number.isSafeInteger(timeoutMs) &&
+      timeoutMs > 0 &&
+      timeoutMs <= GRAPH_LIMITS.milliseconds,
+    "Invalid graph deadline",
+  );
+  const began = performance.now();
+  const controller = new AbortController();
+  let visited = 0,
+    totalBytes = 0,
+    active = 0,
+    peak = 0;
+  const candidates = [],
+    pins = [],
+    pending = [root];
+  const categories = Object.fromEntries(
+    ["args", "build", "toolchain", "target"].map((key) => [
+      key,
+      { files: 0, bytes: 0 },
+    ]),
+  );
+  const counts = () => ({
+    files: candidates.length,
+    bytes: totalBytes,
+    visited,
+  });
+  const bound = () =>
+    Object.assign(new Error("Graph inventory bound"), {
+      code: "GRAPH_BOUND",
+      graphCounts: counts(),
+    });
+  const stop = (reason) => {
+    if (!controller.signal.aborted) controller.abort(reason);
+  };
+  const externalAbort = () => stop(bound());
+  signal?.addEventListener("abort", externalAbort, { once: true });
+  if (signal?.aborted) externalAbort();
+  // This single timer covers metadata, hashing and cleanup. Tests may shorten
+  // it; neither a caller nor a workflow can extend the reviewed upper bound.
+  const timer = setTimeout(() => stop(bound()), timeoutMs);
+  const check = (includeBytes = true) => {
+    if (controller.signal.aborted) throw controller.signal.reason;
+    if (performance.now() - began >= timeoutMs) {
+      stop(bound());
+      throw controller.signal.reason;
+    }
+    try {
+      assertGraphBudget({
+        ...counts(),
+        bytes: includeBytes ? totalBytes : 0,
+        elapsed: performance.now() - began,
+      });
+    } catch (error) {
+      // Metadata may exceed the content-read budget while bounded enumeration
+      // finishes. Any other limit still reports the actual measured bytes.
+      if (error.code === "GRAPH_BOUND") error.graphCounts = counts();
+      throw error;
+    }
+  };
+  const emit = (phase) => {
+    observe(
+      Object.freeze({
+        phase,
+        ...counts(),
+        active,
+        elapsedMs: Math.min(
+          GRAPH_LIMITS.milliseconds,
+          Math.floor(performance.now() - began),
+        ),
+        categories: Object.freeze(
+          Object.fromEntries(
+            Object.entries(categories).map(([key, value]) => [
+              key,
+              Object.freeze({ ...value }),
+            ]),
+          ),
+        ),
+      }),
+    );
+  };
+  const same = (a, b) =>
+    a.isFile() &&
+    b.isFile() &&
+    a.size === b.size &&
+    a.mtimeMs === b.mtimeMs &&
+    a.ino === b.ino &&
+    a.dev === b.dev;
+  const workers = [];
+  try {
+    while (pending.length) {
+      check(false);
+      const directory = pending.pop();
+      for (const item of await readdir(directory, { withFileTypes: true })) {
+        visited++;
+        check(false);
+        // Links are not used as graph authority and will fail closed at pack time.
+        if (item.isSymbolicLink()) continue;
+        const file = path.join(directory, item.name);
+        if (item.isDirectory()) pending.push(file);
+        else if (item.name.endsWith(".ninja") || item.name === "args.gn") {
+          await noLinks(file);
+          check(false);
+          const metadata = await stat(file);
+          check(false);
+          assert(
+            metadata.isFile() &&
+              metadata.size > 0 &&
+              metadata.size <= GRAPH_LIMITS.fileBytes,
+            "Checkpoint asset size",
+          );
+          candidates.push({ file, path: path.relative(root, file), metadata });
+          totalBytes += metadata.size;
+          const category =
+            item.name === "args.gn"
+              ? "args"
+              : item.name === "build.ninja"
+                ? "build"
+                : item.name === "toolchain.ninja"
+                  ? "toolchain"
+                  : "target";
+          categories[category].files++;
+          categories[category].bytes += metadata.size;
+          // Finish a bounded metadata inventory even when aggregate bytes are
+          // over budget. No content stream is opened before the final check.
+          check(false);
+        }
+      }
+    }
+    emit("metadata");
+    check();
+    assert(
+      candidates.some((p) => p.path === "build.ninja") &&
+        candidates.some((p) => p.path === "args.gn"),
+      "Fresh complete GN graph required",
+    );
+    let next = 0;
+    async function worker() {
+      while (next < candidates.length) {
+        check();
+        const candidate = candidates[next++];
+        let handle, stream;
+        active++;
+        try {
+          if (active > peak) {
+            peak = active;
+            emit("hashing");
+          }
+          check();
+          await noLinks(candidate.file);
+          check();
+          const before = await stat(candidate.file);
+          check();
+          assert(same(candidate.metadata, before), "Checkpoint asset changed");
+          handle = await open(candidate.file, "r");
+          check();
+          assert(same(before, await handle.stat()), "Checkpoint asset changed");
+          check();
+          stream = handle.createReadStream({
+            autoClose: false,
+            signal: controller.signal,
+          });
+          const hash = createHash("sha256");
+          for await (const block of stream) {
+            check();
+            hash.update(block);
+          }
+          assert(
+            same(before, await handle.stat()) &&
+              same(before, await stat(candidate.file)),
+            "Checkpoint asset changed",
+          );
+          check();
+          pins.push({
+            path: candidate.path,
+            name: path.basename(candidate.file),
+            bytes: before.size,
+            sha256: hash.digest("hex"),
+          });
+        } catch (error) {
+          stop(error);
+          throw error;
+        } finally {
+          try {
+            if (stream) {
+              stream.destroy();
+              await finished(stream).catch(() => {});
+            }
+            await handle?.close();
+          } finally {
+            active--;
+          }
+        }
+      }
+    }
+    for (
+      let index = 0;
+      index < Math.min(GRAPH_LIMITS.readers, candidates.length);
+      index++
+    )
+      workers.push(worker());
+    await Promise.all(workers);
+    check();
+    assert(pins.length === candidates.length, "Complete graph pins required");
+    const digest = sha(
+      canonical(
+        pins.sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0)),
+      ),
+    );
+    check();
+    emit("complete");
+    check();
+    return {
+      files: pins.length,
+      bytes: totalBytes,
+      visited,
+      sha256: digest,
+    };
+  } catch (error) {
+    stop(error);
+    await Promise.allSettled(workers);
+    try {
+      emit("stopped");
+    } catch {
+      /* Preserve the original inventory failure. */
+    }
+    throw controller.signal.reason;
+  } finally {
+    clearTimeout(timer);
+    signal?.removeEventListener("abort", externalAbort);
+  }
+}`;
+function historicalGraphDeclaration(raw = LEGACY_GRAPH_DECLARATION) {
+  assert.equal(
+    sha(Buffer.from(raw)),
+    "0464fc815551a10002a2ade800c2c503a34e763187cb7e2e61b1d4841ac2af52",
+    "Pinned historical graph declaration changed",
+  );
+  return raw;
+}
+
 async function exactGraphFunction({ old = false, overrides = {} } = {}) {
   const source = old
-    ? execFileSync(
-        "git",
-        [
-          "show",
-          "8bdc3413f2d860673c8291b0dd08f3b3a95d020e:scripts/lib/cef-engineering-checkpoint.mjs",
-        ],
-        { encoding: "utf8" },
-      )
+    ? historicalGraphDeclaration()
     : await readFile(
         new URL(
           "../../scripts/lib/cef-engineering-checkpoint.mjs",
@@ -2446,6 +2685,77 @@ async function exactGraphFunction({ old = false, overrides = {} } = {}) {
     `${body};return graphInventory;`,
   )(...Object.values(globals));
 }
+
+test("historical graph declaration is SHA-bound and works with its Git ancestor absent from a real shallow repository", async (t) => {
+  assert.throws(
+    () =>
+      historicalGraphDeclaration(
+        LEGACY_GRAPH_DECLARATION.replace("const began", "const changed"),
+      ),
+    /Pinned historical/,
+  );
+  const root = await scratch(t),
+    repo = path.join(root, "repo"),
+    empty = path.join(root, "empty-template");
+  await mkdir(repo);
+  await mkdir(empty);
+  const env = Object.fromEntries(
+    ["SystemRoot", "WINDIR", "SystemDrive", "TEMP", "TMP", "PATH", "Path"]
+      .filter((key) => process.env[key] !== undefined)
+      .map((key) => [key, process.env[key]]),
+  );
+  Object.assign(env, {
+    HOME: repo,
+    USERPROFILE: repo,
+    GIT_CONFIG_NOSYSTEM: "1",
+    GIT_CONFIG_GLOBAL: process.platform === "win32" ? "NUL" : "/dev/null",
+    GIT_TERMINAL_PROMPT: "0",
+  });
+  const git = (args) =>
+    execFileSync("git", ["-c", `core.hooksPath=${empty}`, ...args], {
+      cwd: repo,
+      env,
+      encoding: "utf8",
+      timeout: 10000,
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+  git(["init", "--quiet", "--initial-branch=fixture", `--template=${empty}`]);
+  git([
+    "-c",
+    "user.name=Fixture",
+    "-c",
+    "user.email=fixture.invalid",
+    "commit",
+    "--allow-empty",
+    "--quiet",
+    "-m",
+    "own shallow fixture",
+  ]);
+  const head = git(["rev-parse", "HEAD"]).trim();
+  await writeFile(path.join(repo, ".git/shallow"), head + "\n");
+  assert.equal(git(["rev-parse", "--is-shallow-repository"]).trim(), "true");
+  assert.throws(
+    () =>
+      git([
+        "cat-file",
+        "-e",
+        "8bdc3413f2d860673c8291b0dd08f3b3a95d020e^{commit}",
+      ]),
+    { status: 128 },
+  );
+  const graphRoot = await smallGraph(t, 3),
+    previous = process.cwd();
+  try {
+    process.chdir(repo);
+    const old = await exactGraphFunction({ old: true });
+    assert.deepEqual(await old(graphRoot), await graphInventory(graphRoot));
+  } finally {
+    process.chdir(previous);
+  }
+  t.diagnostic(
+    "Actual shallow Git repository has no pinned ancestor object; exact SHA-bound old declaration and current production factory both remain executable without fetch.",
+  );
+});
 
 test("four metadata admissions preserve the exact old raw graph digest and beat serial controlled latency under the same deadline", async (t) => {
   const root = await smallGraph(t, 40),
