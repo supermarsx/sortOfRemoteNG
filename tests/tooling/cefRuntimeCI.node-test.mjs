@@ -2499,3 +2499,406 @@ test("ordinary and engineering producers share Metal attestation after reviewed 
       source.indexOf("const decision = await engineering.compile"),
   );
 });
+
+async function armToolProbe() {
+  const workflow = YAML.parse(
+    await readFile(
+      path.join(root, ".github/workflows/cef-patched-runtime.yml"),
+      "utf8",
+    ),
+  );
+  const step = workflow.jobs.provision.steps.find(
+    (s) => s.name === "Observe bounded fixed native Windows ARM tool closure",
+  );
+  assert(step);
+  const source = step.run
+    .split("<<'NODE'\n")[1]
+    .split("\ntry { await main(); }")[0];
+  const module = await import(
+    "data:text/javascript;base64," + Buffer.from(source).toString("base64")
+  );
+  return { workflow, step, source, module };
+}
+function armPeFixture() {
+  const b = Buffer.alloc(0x800);
+  b.writeUInt16LE(0x5a4d);
+  b.writeUInt32LE(0x80, 60);
+  b.writeUInt32LE(0x4550, 0x80);
+  b.writeUInt16LE(0xaa64, 0x84);
+  b.writeUInt16LE(1, 0x86);
+  b.writeUInt16LE(240, 0x94);
+  const op = 0x98;
+  b.writeUInt16LE(0x20b, op);
+  b.writeBigUInt64LE(0x140000000n, op + 24);
+  b.writeUInt32LE(16, op + 108);
+  const section = op + 240;
+  b.writeUInt32LE(0x600, section + 8);
+  b.writeUInt32LE(0x1000, section + 12);
+  b.writeUInt32LE(0x600, section + 16);
+  b.writeUInt32LE(0x200, section + 20);
+  b.writeUInt32LE(0x1000, op + 112 + 8);
+  b.writeUInt32LE(40, op + 112 + 12);
+  b.writeUInt32LE(0x1100, 0x200 + 12);
+  b.write("kernel32.dll\0", 0x300);
+  b.writeUInt32LE(0x1200, op + 112 + 13 * 8);
+  b.writeUInt32LE(64, op + 116 + 13 * 8);
+  b.writeUInt32LE(1, 0x400);
+  b.writeUInt32LE(0x1300, 0x404);
+  b.write("api-ms-win-core-test-l1-1-0.dll\0", 0x500);
+  return b;
+}
+function arMember(name, bytes) {
+  const h = Buffer.alloc(60, 32);
+  h.write(name);
+  h.write(String(bytes.length).padEnd(10), 48);
+  h.write("`\n", 58);
+  return Buffer.concat([
+    h,
+    bytes,
+    ...(bytes.length % 2 ? [Buffer.from("\n")] : []),
+  ]);
+}
+test("optional Windows ARM observation stays in existing provision job with original defaults and authorities", async () => {
+  const { workflow, step, source, module } = await armToolProbe();
+  assert.equal(
+    workflow.on.workflow_dispatch.inputs.windows_arm_tool_probe.default,
+    false,
+  );
+  assert.equal(
+    step.if,
+    "inputs.windows_arm_tool_probe && inputs.mode == 'provision' && matrix.target == 'aarch64-pc-windows-msvc'",
+  );
+  assert.equal(step["timeout-minutes"], 11);
+  assert.equal(
+    module.PROGRAMS.git,
+    "C:/Program Files/Git/clangarm64/bin/git.exe",
+  );
+  assert.equal(
+    module.PROGRAMS.python,
+    "C:/hostedtoolcache/windows/Python/3.13.17/arm64/python.exe",
+  );
+  assert.equal(workflow.jobs.provision["timeout-minutes"], 30);
+  assert.equal(workflow.permissions.contents, "read");
+  assert.equal(step.env.CEF_TARGET, "aarch64-pc-windows-msvc");
+  assert.doesNotMatch(
+    source,
+    /Get-AuthenticodeSignature|LoadLibrary|vcvars|Set-ItemProperty|--no-sandbox|exec\(.+cl\.exe|npm (?:ci|install)/,
+  );
+  assert.match(source, /complete:false/);
+  assert.match(source, /producerMapCreated:false/);
+  assert.match(source, /setupCompatibility:null/);
+});
+test("actual extracted ARM PE reader bounds imports delay imports native machine and malformed ranges", async () => {
+  const { module: m } = await armToolProbe(),
+    good = armPeFixture();
+  const result = m.pe(good);
+  assert.equal(result.architecture, "arm64");
+  assert.deepEqual(result.imports, ["kernel32.dll"]);
+  assert.deepEqual(result.delayImports, ["api-ms-win-core-test-l1-1-0.dll"]);
+  assert.equal(result.dynamicImportsComplete, false);
+  for (const mutate of [
+    (b) => b.writeUInt32LE(0xffffffff, 60),
+    (b) => b.writeUInt16LE(97, 0x86),
+    (b) => b.writeUInt32LE(0xffffffff, 0x20c),
+    (b) => b.writeUInt32LE(20, 0x98 + 112 + 12),
+    (b) => b.writeUInt32LE(0, 0x400),
+    (b) => b.write("../foreign.dll\0", 0x300),
+    (b) => b.writeUInt32LE(0x100, 0x98 + 240 + 20),
+  ]) {
+    const b = Buffer.from(good);
+    mutate(b);
+    assert.throws(() => m.pe(b));
+  }
+  assert.throws(() => m.pe(good.subarray(0, 60)));
+});
+test("actual extracted COFF reader classifies mixed ARM64EC archives without invented purity and rejects bad indexes", async () => {
+  const { module: m } = await armToolProbe(),
+    native = Buffer.alloc(20),
+    ec = Buffer.alloc(56);
+  native.writeUInt16LE(0xaa64);
+  ec.writeUInt16LE(0xffff, 2);
+  ec.writeUInt16LE(0xa641, 6);
+  const b = Buffer.concat([
+    Buffer.from("!<arch>\n"),
+    arMember("/", Buffer.alloc(0)),
+    arMember("/<ECSYMBOLS>/", Buffer.alloc(0)),
+    arMember("native.obj/", native),
+    arMember("ec.obj/", ec),
+  ]);
+  const parsed = m.coffArchive(b);
+  assert.deepEqual(parsed.machines, { arm64: 1, arm64ec: 1 });
+  assert.equal(parsed.nativeMap, true);
+  assert.equal(parsed.ecMap, true);
+  assert.equal(parsed.pureArm64, false);
+  assert.equal(parsed.setupCompatibility, null);
+  assert.throws(() => m.coffArchive(b.subarray(0, b.length - 1)));
+  assert.throws(() =>
+    m.coffArchive(
+      Buffer.concat([Buffer.from("!<arch>\n"), arMember("/999", native)]),
+    ),
+  );
+  const bad = Buffer.from(b);
+  bad.write("9999999999", 8 + 48);
+  assert.throws(() => m.coffArchive(bad));
+});
+test("ARM observation real owned-file hashing rejects links and metadata growth while preserving outside targets", async (t) => {
+  const { module: m } = await armToolProbe();
+  const root = await realpath(
+    await mkdtemp(path.join(os.tmpdir(), "cef-arm-tool-observation-")),
+  );
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const file = path.join(root, "owned.h"),
+    outside = path.join(root, "outside");
+  await mkdir(outside);
+  await writeFile(path.join(outside, "sentinel"), "safe");
+  await writeFile(file, "header");
+  const state = () => ({ files: 0, bytes: 0, end: performance.now() + 10000 });
+  const result = await m.fileObservation(file, state(), { parse: false });
+  assert.equal(result.size, 6);
+  assert.equal(
+    result.sha256,
+    createHash("sha256").update("header").digest("hex"),
+  );
+  await symlink(
+    outside,
+    path.join(root, "alias"),
+    process.platform === "win32" ? "junction" : "dir",
+  );
+  await assert.rejects(m.noLinks(path.join(root, "alias", "sentinel")));
+  assert.equal(await readFile(path.join(outside, "sentinel"), "utf8"), "safe");
+  const actual = await import("node:fs/promises");
+  let changed = false;
+  const io = {
+    ...actual,
+    open: async (...args) => {
+      const h = await actual.open(...args);
+      return {
+        stat: () => h.stat({ bigint: true }),
+        close: () => h.close(),
+        read: async (...r) => {
+          if (!changed) {
+            changed = true;
+            await actual.appendFile(file, "growth");
+          }
+          return h.read(...r);
+        },
+      };
+    },
+  };
+  await assert.rejects(m.fileObservation(file, state(), { io, parse: false }));
+  assert.throws(() => m.checkBudget({ files: 20000, bytes: 0, end: Infinity }));
+  assert.throws(() =>
+    m.checkBudget({ files: 0, bytes: 4 * 1024 ** 3, end: Infinity }, 1),
+  );
+  assert.throws(() => m.checkBudget({ files: 0, bytes: 0, end: 0 }));
+});
+test("ARM cache-only trust signature schema and WinTrust ABI remain explicit unknowns without network trust bypass", async () => {
+  const { module: m } = await armToolProbe();
+  const script = m.SIGNATURE_SCRIPT;
+  assert.match(script, /flags=0x1000\|0x80/);
+  assert.match(script, /ui=2,revocation=1,choice=1/);
+  assert.match(script, /00AAC56B-CD44-11D0-8CC2-00C04FC295EE/);
+  assert.match(script, /data.action=2;closed=unchecked/);
+  assert.match(
+    script,
+    /Marshal.SizeOf<FILEINFO>\(\)!=32\|\|Marshal.SizeOf<DATA>\(\)!=88/,
+  );
+  assert.match(script, /C:\\Windows\\System32\\wintrust.dll/);
+  assert.match(script, /FileShare.Read/);
+  assert.doesNotMatch(
+    script,
+    /Get-AuthenticodeSignature|Download|LoadLibrary|Set-AuthenticodeSignature/,
+  );
+  const row = {
+    schemaVersion: 1,
+    status: 0x800b010e,
+    closeStatus: 0,
+    fileVersion: "3.13.17",
+    cacheOnly: true,
+    subjectObserved: false,
+  };
+  assert.equal(
+    m.signatureObservation({ stdout: JSON.stringify(row) }).verified,
+    false,
+  );
+  for (const patch of [
+    { cacheOnly: false },
+    { status: -1 },
+    { fileVersion: "private\nsecret" },
+    { extra: "secret" },
+  ])
+    assert.throws(() =>
+      m.signatureObservation({ stdout: JSON.stringify({ ...row, ...patch }) }),
+    );
+});
+test("ARM probe child timeout joins actual hidden owned child and refuses leaked output", async () => {
+  const { module: m } = await armToolProbe();
+  await assert.rejects(
+    m.ownedCommand(
+      process.execPath,
+      ["-e", "setInterval(()=>{},1000)"],
+      {},
+      performance.now() + 10000,
+      { milliseconds: 30 },
+    ),
+    /ARM_TOOL_COMMAND_DEADLINE/,
+  );
+  await assert.rejects(
+    m.ownedCommand(
+      process.execPath,
+      [
+        "-e",
+        'process.stdout.write("x".repeat(65537));setInterval(()=>{},1000)',
+      ],
+      {},
+      performance.now() + 10000,
+      { milliseconds: 2000 },
+    ),
+    /ARM_TOOL_OUTPUT_BOUND/,
+  );
+});
+
+test("ARM inventory traversal stops at its file budget with a retained partial observation", async (t) => {
+  const { module: m } = await armToolProbe();
+  const root = await realpath(
+    await mkdtemp(path.join(os.tmpdir(), "cef-arm-tool-walk-")),
+  );
+  t.after(() => rm(root, { recursive: true, force: true }));
+  await writeFile(path.join(root, "a.h"), "a");
+  await writeFile(path.join(root, "b.h"), "b");
+  const state = { files: 19999, bytes: 0, end: performance.now() + 10000 },
+    rows = [];
+  await assert.rejects(m.walk(root, state, rows), /ARM_TOOL_INVENTORY_BOUND/);
+  assert.equal(rows.length, 1);
+  assert.equal(state.files, 20000);
+});
+test("ARM child post-spawn failure retains original error until exact child close", async () => {
+  const { module: m } = await armToolProbe(),
+    { EventEmitter } = await import("node:events"),
+    { PassThrough } = await import("node:stream");
+  const child = new EventEmitter();
+  child.pid = 123;
+  child.stdout = new PassThrough();
+  child.stderr = new PassThrough();
+  let closed = false,
+    kills = 0,
+    settled = false;
+  const original = Error("secret-not-serialized");
+  child.kill = () => {
+    kills++;
+    setTimeout(() => {
+      closed = true;
+      child.emit("close", null, "SIGKILL");
+    }, 40);
+    return true;
+  };
+  const promise = m.ownedCommand(
+    process.execPath,
+    [],
+    {},
+    performance.now() + 10000,
+    {
+      start: () => {
+        setImmediate(() => child.emit("error", original));
+        return child;
+      },
+    },
+  );
+  const checked = assert.rejects(
+    promise.then(
+      (v) => {
+        settled = true;
+        return v;
+      },
+      (e) => {
+        settled = true;
+        throw e;
+      },
+    ),
+    (e) => e === original,
+  );
+  await new Promise((resolve) => setTimeout(resolve, 10));
+  assert.equal(settled, false);
+  await checked;
+  assert.equal(closed, true);
+  assert.equal(kills, 1);
+});
+
+test("ARM passive metadata uses one bounded held byte stream for parsing and authentication", async (t) => {
+  const { module: m } = await armToolProbe();
+  const root = await realpath(
+    await mkdtemp(path.join(os.tmpdir(), "cef-arm-held-json-")),
+  );
+  t.after(() => rm(root, { recursive: true, force: true }));
+  await mkdir(path.join(root, "after"));
+  for (const name of ["observation.json", "toolchain-candidate.json"])
+    await writeFile(
+      path.join(root, "after", name),
+      JSON.stringify({
+        schemaVersion: 1,
+        target: "aarch64-pc-windows-msvc",
+        native: { git: { candidates: [] } },
+      }) + "\n",
+    );
+  const state = { files: 0, bytes: 0, end: performance.now() + 10000 };
+  const result = await m.originalObservations(root, state);
+  assert.equal(result.records.length, 2);
+  for (const row of result.records) {
+    const bytes = await readFile(path.join(root, "after", row.name));
+    assert.equal(row.sha256, createHash("sha256").update(bytes).digest("hex"));
+    assert.equal(row.size, bytes.length);
+  }
+  assert.equal(state.files, 2);
+  assert.doesNotMatch(m.originalObservations.toString(), /readFile/);
+  await writeFile(
+    path.join(root, "after", "observation.json"),
+    Buffer.alloc(2 * 1024 ** 2 + 1, 32),
+  );
+  await assert.rejects(
+    m.originalObservations(root, {
+      files: 0,
+      bytes: 0,
+      end: performance.now() + 10000,
+    }),
+  );
+});
+test("ARM passive broad walk deduplicates prior canonical identity without inventing hash passes", async (t) => {
+  const { module: m } = await armToolProbe();
+  const root = await realpath(
+    await mkdtemp(path.join(os.tmpdir(), "cef-arm-core-first-")),
+  );
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const file = path.join(root, "core.h");
+  await writeFile(file, "original");
+  const state = { files: 0, bytes: 0, end: performance.now() + 10000 };
+  const rows = [await m.fileObservation(file, state, { parse: false })];
+  assert.equal(state.files, 1);
+  await m.walk(root, state, rows);
+  assert.equal(state.files, 1);
+  assert.equal(state.bytes, 8);
+  assert.equal(rows.length, 1);
+  await writeFile(file, "changed");
+  await assert.rejects(m.walk(root, state, rows), /ARM_TOOL_FILE_CHANGED/);
+  assert.equal(state.files, 1);
+});
+test("ARM main is passive only and persists core before broader inventory under one aggregate byte bound", async () => {
+  const { module: m } = await armToolProbe(),
+    source = m.main.toString();
+  assert.doesNotMatch(source, /ownedCommand\(|SIGNATURE_SCRIPT|spawn\(/);
+  assert.match(source, /passive-only-no-reviewed-job-backend/);
+  assert.match(source, /status:'not-observed'/);
+  assert(
+    source.indexOf("'core-observation.json'") <
+      source.indexOf("for(const root of roots)"),
+  );
+  assert(source.indexOf("const core=") < source.indexOf("const roots="));
+  const bytes = m.outputBytes({ x: "bounded" }, 0, 100);
+  assert.equal(bytes.at(-1), 10);
+  assert.doesNotThrow(() =>
+    m.outputBytes({ x: "bounded" }, 100 - bytes.length, 100),
+  );
+  assert.throws(
+    () => m.outputBytes({ x: "bounded" }, 101 - bytes.length, 100),
+    /ARM_TOOL_OUTPUT_BOUND/,
+  );
+});

@@ -24,6 +24,11 @@ on:
         required: true
         default: false
         type: boolean
+      windows_arm_tool_probe:
+        description: Observe fixed native ARM tool files after provisioning; no engine or tool map
+        required: true
+        default: false
+        type: boolean
       reviewed_inputs:
         description: Reviewed checkout-relative directory containing source-lock.json and its pinned inputs
         required: true
@@ -192,6 +197,157 @@ jobs:
           cleanup=()
           if [[ "$CEF_PROVISION_CLEANUP" == 'true' ]]; then cleanup+=(--cleanup); fi
           node scripts/cef-hosted-provision.mjs --target "$CEF_TARGET" --output "$CEF_PROVISION_OUTPUT" --execute "${cleanup[@]}"
+      - name: Observe bounded fixed native Windows ARM tool closure
+        if: inputs.windows_arm_tool_probe && inputs.mode == 'provision' && matrix.target == 'aarch64-pc-windows-msvc'
+        timeout-minutes: 11
+        env:
+          CEF_TARGET: aarch64-pc-windows-msvc
+          GITHUB_REPOSITORY_VISIBILITY: ${{ github.event.repository.visibility }}
+        shell: bash
+        run: |
+          node --input-type=module <<'NODE'
+          import assert from 'node:assert/strict';
+          import fs from 'node:fs/promises';
+          import path from 'node:path';
+          import {createHash} from 'node:crypto';
+          import {spawn} from 'node:child_process';
+          export const LIMITS=Object.freeze({files:20000,visits:40000,bytes:4*1024**3,fileBytes:256*1024**2,depth:16,output:16*1024**2,milliseconds:600000,command:30000});
+          export const ROOTS=Object.freeze({vc:'C:/Program Files/Microsoft Visual Studio/18/Enterprise/VC/Tools/MSVC/14.51.36231',sdk:'C:/Program Files (x86)/Windows Kits/10',git:'C:/Program Files/Git/clangarm64',python:'C:/hostedtoolcache/windows/Python/3.13.17/arm64',system:'C:/Windows/System32',shell:'C:/Program Files/PowerShell/7'});
+          export const PROGRAMS=Object.freeze({python:ROOTS.python+'/python.exe',git:ROOTS.git+'/bin/git.exe',shell:ROOTS.shell+'/pwsh.exe'});
+          export function boundedInteger(value,maximum){assert(Number.isSafeInteger(value)&&value>=0&&value<=maximum);return value;}
+          export function dllName(text){assert(typeof text==='string'&&/^[A-Za-z0-9_.-]{1,160}\.dll$/i.test(text));return text.toLowerCase();}
+          export function pe(buffer){
+            assert(Buffer.isBuffer(buffer)&&buffer.length>=64&&buffer.readUInt16LE(0)===0x5a4d);
+            const off=buffer.readUInt32LE(60);assert(off>=64&&off+24<=buffer.length&&buffer.readUInt32LE(off)===0x4550);
+            const machine=buffer.readUInt16LE(off+4),count=buffer.readUInt16LE(off+6),optional=off+24,size=buffer.readUInt16LE(off+20);
+            assert(count>0&&count<=96&&size>=96&&optional+size+count*40<=buffer.length);
+            const magic=buffer.readUInt16LE(optional),wide=magic===0x20b;assert(wide||magic===0x10b);
+            const dirAt=optional+(wide?112:96),nAt=optional+(wide?108:92);assert(nAt+4<=optional+size);
+            const dirs=Math.min(buffer.readUInt32LE(nAt),16);assert(dirAt+dirs*8<=optional+size);
+            const imageBase=wide?buffer.readBigUInt64LE(optional+24):BigInt(buffer.readUInt32LE(optional+28));
+            const sections=[];
+            for(let i=0;i<count;i++){const h=optional+size+i*40,vsize=buffer.readUInt32LE(h+8),rva=buffer.readUInt32LE(h+12),bytes=buffer.readUInt32LE(h+16),raw=buffer.readUInt32LE(h+20);assert(vsize<=2**31&&bytes<=buffer.length&&raw<=buffer.length&&raw+bytes<=buffer.length);if(bytes)assert(raw>=optional+size+count*40);sections.push({rva,bytes,raw});}
+            for(let i=0;i<sections.length;i++)for(let j=0;j<i;j++){const a=sections[i],b=sections[j];if(a.bytes&&b.bytes)assert(a.raw+a.bytes<=b.raw||b.raw+b.bytes<=a.raw);}
+            const locate=(rva,bytes)=>{boundedInteger(rva,0xffffffff);const matches=sections.filter(s=>rva>=s.rva&&rva-s.rva+bytes<=s.bytes);assert.equal(matches.length,1);return matches[0].raw+rva-matches[0].rva;};
+            const string=rva=>{const begin=locate(rva,1);let end=begin;while(end<buffer.length&&end-begin<=164&&buffer[end])end++;assert(end<buffer.length&&end-begin<=164);locate(rva,end-begin+1);return dllName(buffer.subarray(begin,end).toString('ascii'));};
+            function directory(index,delay){if(index>=dirs)return[];const rva=buffer.readUInt32LE(dirAt+index*8),bytes=buffer.readUInt32LE(dirAt+index*8+4);if(!rva&&!bytes)return[];assert(rva&&bytes&&bytes<=512*1024);const begin=locate(rva,bytes),width=delay?32:20,result=[];let terminated=false;for(let p=begin;p+width<=begin+bytes;p+=width){if(buffer.subarray(p,p+width).every(v=>v===0)){terminated=true;break;}let name=buffer.readUInt32LE(p+(delay?4:12));if(delay){const attributes=buffer.readUInt32LE(p);assert(attributes===0||attributes===1);if(attributes===0){const delta=BigInt(name)-imageBase;assert(delta>=0n&&delta<=0xffffffffn);name=Number(delta);}}result.push(string(name));assert(result.length<=4096);}assert(terminated);return [...new Set(result)].sort();}
+            return {machine,architecture:({0xaa64:'arm64',0xa641:'arm64ec',0xa64e:'arm64x',0x8664:'x64',0x14c:'x86'})[machine]??'unknown',imports:directory(1,false),delayImports:directory(13,true),dynamicImportsComplete:false};
+          }
+          export function coffArchive(buffer){
+            assert(buffer.subarray(0,8).toString()==='!<arch>\n');let offset=8,members=0,nativeMap=false,ecMap=false,longNames=null;const longReferences=[],machines={};
+            while(offset<buffer.length){assert(offset+60<=buffer.length&&buffer.subarray(offset+58,offset+60).toString()==='`\n');const header=buffer.subarray(offset,offset+60),name=header.subarray(0,16).toString('ascii').trim(),sizeText=header.subarray(48,58).toString('ascii').trim();assert(/^\d+$/.test(sizeText));const size=Number(sizeText);boundedInteger(size,LIMITS.fileBytes);const start=offset+60;assert(start+size<=buffer.length);assert(++members<=20000);if(name==='/'||name==='/SYM64/')nativeMap=true;else if(name==='/<ECSYMBOLS>/')ecMap=true;else if(name==='//'){assert(size<=16*1024**2);longNames=buffer.subarray(start,start+size);}else{if(/^\/\d+$/.test(name))longReferences.push(Number(name.slice(1)));else assert(name.endsWith('/'));assert(size>=20);const big=buffer.readUInt16LE(start)===0&&buffer.readUInt16LE(start+2)===0xffff;const machine=buffer.readUInt16LE(start+(big?6:0));const key=({0xaa64:'arm64',0xa641:'arm64ec',0x8664:'x64',0x14c:'x86'})[machine]??'unknown';machines[key]=(machines[key]??0)+1;}offset=start+size+(size%2);assert(offset<=buffer.length);}
+            assert.equal(offset,buffer.length);for(const reference of longReferences){assert(longNames&&Number.isSafeInteger(reference)&&reference<longNames.length);let end=reference;while(end<longNames.length&&longNames[end]!==0&&longNames[end]!==10)end++;assert(end<longNames.length&&end>reference);}return {members,nativeMap,ecMap,machines,pureArm64:Object.keys(machines).length===1&&!!machines.arm64,setupCompatibility:null};
+          }
+          export function checkBudget(state,bytes=0,now=performance.now()){assert(now<state.end,'ARM_TOOL_DEADLINE');boundedInteger(bytes,LIMITS.fileBytes);assert(state.files+1<=LIMITS.files&&state.bytes+bytes<=LIMITS.bytes,'ARM_TOOL_INVENTORY_BOUND');}
+          export async function noLinks(file,io=fs){
+            const full=path.resolve(file);for(let at=full;;at=path.dirname(at)){const info=await io.lstat(at);assert(!info.isSymbolicLink(),'ARM_TOOL_LINK');if(path.dirname(at)===at)break;}
+            const canonical=await io.realpath(full);assert.equal(canonical.toLowerCase(),full.toLowerCase(),'ARM_TOOL_CANONICAL');return canonical;
+          }
+          export async function fileObservation(file,state,{io=fs,parse=true,maximum=LIMITS.fileBytes,content=false}={}){
+            checkBudget(state);const canonical=await noLinks(file,io),before=await io.lstat(canonical,{bigint:true});assert(before.isFile()&&before.size>=0n&&before.size<=BigInt(maximum));checkBudget(state,Number(before.size));
+            const handle=await io.open(canonical,'r');try{
+              const opened=await handle.stat({bigint:true});const same=(a,b)=>['dev','ino','size','mtimeNs','ctimeNs','nlink'].every(k=>a[k]===b[k]);assert(same(before,opened));const hash=createHash('sha256'),chunk=Buffer.alloc(1024*1024),pieces=[];let count=0;
+              for(;;){checkBudget(state,Number(before.size));const r=await handle.read(chunk,0,chunk.length,null);if(!r.bytesRead)break;count+=r.bytesRead;assert(BigInt(count)<=before.size);hash.update(chunk.subarray(0,r.bytesRead));if(parse||content)pieces.push(Buffer.from(chunk.subarray(0,r.bytesRead)));}
+              assert.equal(BigInt(count),before.size);assert(same(before,await handle.stat({bigint:true}))&&same(before,await io.lstat(canonical,{bigint:true})));assert.equal(await io.realpath(file),canonical);state.files++;state.bytes+=count;
+              const bytes=parse||content?Buffer.concat(pieces):null;let binary=null;if(bytes?.subarray(0,2).toString()==='MZ')binary=pe(bytes);else if(bytes?.subarray(0,8).toString()==='!<arch>\n')binary=coffArchive(bytes);
+              const row={path:canonical,size:count,sha256:hash.digest('hex'),fileIdentity:{dev:String(before.dev),ino:String(before.ino),nlink:String(before.nlink),mtimeNs:String(before.mtimeNs),ctimeNs:String(before.ctimeNs)},binary};return content?{row,bytes}:row;
+            }finally{await handle.close();}
+          }
+          export async function walk(root,state,rows,depth=0){
+            assert(depth<=LIMITS.depth);await noLinks(root);const entries=await fs.opendir(root);const seen=new Set();for await(const entry of entries){state.visits=(state.visits??0)+1;assert(state.visits<=LIMITS.visits,'ARM_TOOL_INVENTORY_BOUND');checkBudget(state);const name=entry.name.toLowerCase();assert(!seen.has(name));seen.add(name);const file=path.join(root,entry.name);assert(!entry.isSymbolicLink(),'ARM_TOOL_LINK');if(entry.isDirectory())await walk(file,state,rows,depth+1);else{assert(entry.isFile());const canonical=await noLinks(file),info=await fs.lstat(canonical,{bigint:true});const prior=rows.find(r=>r.fileIdentity.dev===String(info.dev)&&r.fileIdentity.ino===String(info.ino));if(prior){assert(prior.size===Number(info.size)&&prior.fileIdentity.mtimeNs===String(info.mtimeNs)&&prior.fileIdentity.ctimeNs===String(info.ctimeNs),'ARM_TOOL_FILE_CHANGED');if(prior.path.toLowerCase()!==canonical.toLowerCase()){prior.aliases??=[];if(!prior.aliases.includes(canonical))prior.aliases.push(canonical);}}else rows.push(await fileObservation(file,state,{parse:/\.(exe|dll|pyd|lib)$/i.test(file)}));assert(Buffer.byteLength(JSON.stringify(rows))<LIMITS.output-1024*1024-(state.persistedBytes??0));}}
+          }
+          export async function ownedCommand(executable,args,env,end,{milliseconds=LIMITS.command,start=spawn}={}){
+            assert(path.isAbsolute(executable)&&Array.isArray(args));const began=performance.now(),remaining=Math.min(milliseconds,end-began-5000);assert(remaining>0);let child,timer,reaper,stopping=false,closed=false,original,finished=false;
+            return await new Promise((resolve,reject)=>{
+              const out=[],err=[];let bytes=0;
+              const finish=(error,value)=>{if(finished)return;finished=true;clearTimeout(timer);clearTimeout(reaper);error?reject(error):resolve(value);};
+              const stop=()=>{if(stopping||closed)return;stopping=true;try{child.kill('SIGKILL');}catch(error){original??=error;}if(closed)return;reaper=setTimeout(()=>finish(Error('ARM_TOOL_CHILD_UNCONFIRMED')),Math.max(1,Math.min(5000,end-performance.now())));};
+              try{child=start(executable,args,{env,stdio:['ignore','pipe','pipe'],windowsHide:true});}catch(error){finish(error);return;}
+              for(const [stream,chunks]of [[child.stdout,out],[child.stderr,err]])stream.on('data',chunk=>{bytes+=chunk.length;if(bytes>65536){original??=Error('ARM_TOOL_OUTPUT_BOUND');stop();}else chunks.push(chunk);});
+              child.on('error',error=>{if(finished)return;original??=error;if(!child.pid){finish(original);return;}stop();});
+              child.once('close',(code,signal)=>{closed=true;if(original){finish(original);return;}if(code!==0||signal){finish(Object.assign(Error('ARM_TOOL_COMMAND_FAILED'),{exitCode:code,signal,elapsedMs:Math.floor(performance.now()-began)}));return;}finish(null,{stdout:Buffer.concat(out).toString('utf8'),stderr:Buffer.concat(err).toString('utf8'),elapsedMs:Math.floor(performance.now()-began),exitCode:code});});
+              timer=setTimeout(()=>{original??=Error('ARM_TOOL_COMMAND_DEADLINE');stop();},remaining);
+            });
+          }
+          export const SIGNATURE_SCRIPT=String.raw`
+          $ErrorActionPreference='Stop'
+          Add-Type -TypeDefinition @"
+          using System;using System.IO;using System.Runtime.InteropServices;
+          public static class CacheOnlyTrust {
+           [StructLayout(LayoutKind.Sequential,CharSet=CharSet.Unicode)] struct FILEINFO {public uint size;[MarshalAs(UnmanagedType.LPWStr)] public string path;public IntPtr file;public IntPtr subject;}
+           [StructLayout(LayoutKind.Sequential,CharSet=CharSet.Unicode)] struct DATA {public uint size;public IntPtr policy;public IntPtr sip;public uint ui;public uint revocation;public uint choice;public IntPtr info;public uint action;public IntPtr state;public IntPtr url;public uint flags;public uint context;public IntPtr settings;}
+           [DllImport(@"C:\Windows\System32\wintrust.dll",ExactSpelling=true,CharSet=CharSet.Unicode)]static extern int WinVerifyTrust(IntPtr hwnd,ref Guid action,ref DATA data);
+           public static uint[] Verify(string path){if(IntPtr.Size!=8||Marshal.SizeOf<FILEINFO>()!=32||Marshal.SizeOf<DATA>()!=88)throw new InvalidOperationException("ARM_TOOL_TRUST_ABI");using(var file=new FileStream(path,FileMode.Open,FileAccess.Read,FileShare.Read)){
+           var info=new FILEINFO{size=(uint)Marshal.SizeOf<FILEINFO>(),path=path,file=file.SafeFileHandle.DangerousGetHandle()};var memory=Marshal.AllocHGlobal(Marshal.SizeOf<FILEINFO>());
+           Marshal.StructureToPtr(info,memory,false);var action=new Guid("00AAC56B-CD44-11D0-8CC2-00C04FC295EE");
+           var data=new DATA{size=(uint)Marshal.SizeOf<DATA>(),ui=2,revocation=1,choice=1,info=memory,action=1,flags=0x1000|0x80};
+           uint status=0,closed=0;try{status=unchecked((uint)WinVerifyTrust(new IntPtr(-1),ref action,ref data));}finally{data.action=2;closed=unchecked((uint)WinVerifyTrust(new IntPtr(-1),ref action,ref data));Marshal.DestroyStructure<FILEINFO>(memory);Marshal.FreeHGlobal(memory);}return new uint[]{status,closed};
+           }}
+          }
+          "@
+          $file=$env:SORNG_ARM_TOOL_FILE
+          $item=Get-Item -LiteralPath $file -Force
+          if(($item.Attributes -band [IO.FileAttributes]::ReparsePoint)-ne0){throw 'ARM_TOOL_LINK'}
+          $trust=[CacheOnlyTrust]::Verify($file)
+          @{schemaVersion=1;status=$trust[0];closeStatus=$trust[1];fileVersion=[Diagnostics.FileVersionInfo]::GetVersionInfo($file).FileVersion;cacheOnly=$true;subjectObserved=$false}|ConvertTo-Json -Compress
+          `;
+          export function signatureObservation(result){const value=JSON.parse(result.stdout);assert.deepEqual(Object.keys(value).sort(),['schemaVersion','status','closeStatus','fileVersion','cacheOnly','subjectObserved'].sort());assert(value.schemaVersion===1&&value.cacheOnly===true&&value.subjectObserved===false);boundedInteger(value.status,0xffffffff);boundedInteger(value.closeStatus,0xffffffff);assert(value.fileVersion===null||typeof value.fileVersion==='string'&&value.fileVersion.length<=128&&!/[\x00-\x1f\x7f]/.test(value.fileVersion));return {...value,verified:value.status===0&&value.closeStatus===0,signerIdentity:'not-observed'};}
+          export async function originalObservations(parent,state){
+            const records=[];let candidates=[];
+            for(const name of ['observation.json','toolchain-candidate.json']){
+              const file=path.join(parent,'after',name),{row,bytes}=await fileObservation(file,state,{parse:false,maximum:2*1024**2,content:true});const value=JSON.parse(bytes);
+              assert(value.schemaVersion===1&&value.target==='aarch64-pc-windows-msvc');
+              if(name==='observation.json'){candidates=value.native?.git?.candidates??[];assert(Array.isArray(candidates)&&candidates.length<=8);}
+              records.push({name,size:bytes.length,sha256:row.sha256});
+            }
+            return {records,gitCandidates:candidates};
+          }
+          export async function importObservations(rows,requested,state){
+            const output=[],seen=new Set();
+            for(const tool of requested){const source=rows.find(r=>r.path.toLowerCase()===path.resolve(tool).toLowerCase());
+              for(const name of [...(source?.binary?.imports??[]),...(source?.binary?.delayImports??[])]){
+                const key=source.path.toLowerCase()+':'+name;if(seen.has(key))continue;seen.add(key);assert(seen.size<=2048);
+                const contract=/^(?:api|ext)-ms-/i.test(name);const candidates=[];
+                if(!contract){const local=rows.find(r=>path.dirname(r.path).toLowerCase()===path.dirname(source.path).toLowerCase()&&path.basename(r.path).toLowerCase()===name);if(local)candidates.push({path:local.path,sha256:local.sha256});
+                  const system=path.join(ROOTS.system,dllName(name));try{let row=rows.find(r=>r.path.toLowerCase()===path.resolve(system).toLowerCase());if(!row){row=await fileObservation(system,state);rows.push(row);}candidates.push({path:row.path,sha256:row.sha256});}catch(error){if(error.code!=='ENOENT')throw error;}}
+                output.push({source:source.path,name,contract,candidates,resolution:'not-runtime-verified'});
+              }
+            }
+            return output;
+          }
+          export function outputBytes(value,reserved=0,maximum=LIMITS.output){boundedInteger(reserved,LIMITS.output);boundedInteger(maximum,LIMITS.output);const bytes=Buffer.from(JSON.stringify(value)+'\n');assert(bytes.length+reserved<=maximum,'ARM_TOOL_OUTPUT_BOUND');return bytes;}
+          export async function main(){
+            assert(process.platform==='win32'&&process.arch==='arm64');assert(process.env.GITHUB_ACTIONS==='true'&&process.env.RUNNER_ENVIRONMENT==='github-hosted'&&process.env.GITHUB_EVENT_NAME==='workflow_dispatch'&&process.env.GITHUB_REPOSITORY_VISIBILITY==='public');assert.equal(process.env.GITHUB_REF,'refs/heads/'+process.env.CEF_DEFAULT_BRANCH);assert.equal(process.env.CEF_TARGET,'aarch64-pc-windows-msvc');assert.equal(process.env.GITHUB_REPOSITORY,'supermarsx/sortOfRemoteNG');assert.equal(process.env.GITHUB_REPOSITORY_ID,'1010282954');assert(/^[a-f0-9]{40}$/.test(process.env.GITHUB_SHA??''));assert(/^[1-9][0-9]*$/.test(process.env.GITHUB_RUN_ID??'')&&/^[1-9][0-9]*$/.test(process.env.GITHUB_RUN_ATTEMPT??''));assert(process.env.SystemRoot?.toLowerCase()==='c:\\windows');
+            const temp=await noLinks(process.env.RUNNER_TEMP),parent=path.join(temp,'cef-hosted-provision');await noLinks(parent);const output=path.join(parent,'windows-arm-tool-probe');await fs.mkdir(output);await noLinks(output);
+            const state={end:performance.now()+LIMITS.milliseconds,files:0,bytes:0};const result={schemaVersion:1,kind:'sorng-windows-arm-tool-observation',diagnosticOnly:true,engineBuildAttempted:false,producerMapCreated:false,nativeAcceptance:false,productionReady:false,complete:false,phase:'original-records',activeRole:null,commandFailure:null,run:{id:process.env.GITHUB_RUN_ID,attempt:process.env.GITHUB_RUN_ATTEMPT,head:process.env.GITHUB_SHA,image:process.env.ImageVersion??null},rows:[],missing:[],signatures:[],versions:[],originalObservations:null,imports:[],closure:{dynamicImportsComplete:false,apiSetsComplete:false,runtimeLoadedModulesObserved:false,setupCompatibility:null},failure:null};
+            try{
+              result.originalObservations=await originalObservations(parent,state);
+                result.executionPolicy='passive-only-no-reviewed-job-backend';
+              result.phase='core-inventory';
+              const requested=[PROGRAMS.python,PROGRAMS.git,PROGRAMS.shell,...['cl.exe','link.exe','c1.dll','c1xx.dll','c2.dll','mspdb140.dll','mspdbcore.dll','mspdbsrv.exe'].map(v=>ROOTS.vc+'/bin/Hostarm64/arm64/'+v),...['rc.exe','rcdll.dll','mt.exe'].map(v=>ROOTS.sdk+'/bin/10.0.28000.0/arm64/'+v)];
+              result.signatures=requested.map(file=>({path:file,status:'not-observed',reason:'passive-only-no-reviewed-job-backend'}));
+              result.versions=['python','git'].map(role=>({role,status:'not-observed',reason:'passive-only-no-reviewed-job-backend'}));
+              const core=[...requested,ROOTS.vc+'/include/vcruntime.h',ROOTS.vc+'/lib/arm64/libcmt.lib',ROOTS.vc+'/atlmfc/lib/arm64/atls.lib',ROOTS.sdk+'/Include/10.0.28000.0/um/Windows.h',ROOTS.sdk+'/Lib/10.0.28000.0/um/arm64/kernel32.Lib',ROOTS.sdk+'/Lib/10.0.28000.0/um/x64/kernel32.Lib',ROOTS.python+'/python313.dll',ROOTS.system+'/wintrust.dll',ROOTS.system+'/crypt32.dll',ROOTS.sdk+'/Debuggers/x64/dbghelp.dll',ROOTS.sdk+'/Debuggers/arm64/dbghelp.dll'];
+              for(const file of core){result.activeRole=path.basename(file);try{result.rows.push(await fileObservation(file,state,{parse:/\.(exe|dll|lib)$/i.test(file)}));}catch(error){if(error.code==='ENOENT'){result.missing.push(file);continue;}throw error;}}
+              result.phase='native-programs';
+              for(const file of Object.values(PROGRAMS)){const row=result.rows.find(r=>r.path.toLowerCase()===path.resolve(file).toLowerCase());assert(row?.binary?.architecture==='arm64','ARM_TOOL_NATIVE_PROGRAM');}
+              result.phase='core-imports';result.activeRole=null;
+              result.imports=await importObservations(result.rows,requested,state);
+              result.phase='core-record';
+              const coreBytes=outputBytes({...result,hashTotals:{files:state.files,bytes:state.bytes,uniqueFiles:result.rows.length}},0,2*1024**2);
+              await fs.writeFile(path.join(output,'core-observation.json'),coreBytes,{flag:'wx'});state.persistedBytes=coreBytes.length;
+              result.coreRecord={path:'core-observation.json',size:coreBytes.length,sha256:createHash('sha256').update(coreBytes).digest('hex')};
+              result.phase='inventory';
+              const roots=[ROOTS.vc+'/include',ROOTS.vc+'/lib/arm64',ROOTS.vc+'/atlmfc/include',ROOTS.vc+'/atlmfc/lib/arm64',ROOTS.vc+'/bin/Hostarm64/arm64',...['shared','um','ucrt','winrt'].map(v=>ROOTS.sdk+'/Include/10.0.28000.0/'+v),...['um','ucrt'].map(v=>ROOTS.sdk+'/Lib/10.0.28000.0/'+v+'/arm64'),ROOTS.sdk+'/bin/10.0.28000.0/arm64',ROOTS.git+'/bin',ROOTS.git+'/libexec',ROOTS.python+'/Lib',ROOTS.python+'/DLLs'];
+              for(const root of roots){result.activeRole='tree-'+roots.indexOf(root);try{await walk(root,state,result.rows);}catch(error){if(error.code==='ENOENT'){result.missing.push(root);continue;}throw error;}}
+            }catch(error){result.commandFailure={exitCode:Number.isSafeInteger(error?.exitCode)?error.exitCode:null,signal:['SIGKILL','SIGTERM'].includes(error?.signal)?error.signal:null,elapsedMs:Number.isSafeInteger(error?.elapsedMs)?error.elapsedMs:null};result.failure=['ARM_TOOL_DEADLINE','ARM_TOOL_INVENTORY_BOUND','ARM_TOOL_LINK','ARM_TOOL_CANONICAL','ARM_TOOL_NATIVE_PROGRAM','ARM_TOOL_FILE_CHANGED','ARM_TOOL_CHILD_UNCONFIRMED','ARM_TOOL_OUTPUT_BOUND','ARM_TOOL_COMMAND_DEADLINE','ARM_TOOL_COMMAND_FAILED'].includes(error?.message)?error.message:'ARM_TOOL_OBSERVATION_DENIED';}
+            finally{result.hashTotals={files:state.files,bytes:state.bytes,uniqueFiles:result.rows.length};let bytes;try{bytes=outputBytes(result,state.persistedBytes??0);}catch{result.discardedOnOutputBound={rows:result.rows.length,imports:result.imports.length};result.rows=[];result.imports=[];result.failure='ARM_TOOL_OUTPUT_BOUND';bytes=outputBytes(result,state.persistedBytes??0);}await fs.writeFile(path.join(output,'observation.json'),bytes,{flag:'wx'});}
+
+            // Passive imports/API-set/dynamic closure is NEVER promoted to a complete tool map.
+            if(result.failure)throw Error('ARM_TOOL_OBSERVATION_FAILED');
+          }
+          try { await main(); } catch { console.error('WINDOWS_ARM_TOOL_DIAGNOSTIC_FAILED'); process.exitCode=1; }
+          NODE
       - name: Retain actual post-provision observations for separate pin review
         if: always()
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
