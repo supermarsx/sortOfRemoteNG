@@ -176,9 +176,50 @@ function fixture(
       runScripts: "outside-only",
     },
   );
+  let clock = 1_000_000;
+  let readyState = "loading";
+  let nextTimer = 0;
+  const timers = new Map();
+  Object.defineProperty(dom.window.document, "readyState", {
+    get: () => readyState,
+  });
+  dom.window.Date.now = () => clock;
+  dom.window.setTimeout = (callback, milliseconds = 0) => {
+    assert.ok(timers.size < 32, "owned timer queue bound");
+    const id = ++nextTimer;
+    timers.set(id, {
+      callback,
+      due: clock + Math.max(0, Number(milliseconds)),
+    });
+    return id;
+  };
+  dom.window.clearTimeout = (id) => timers.delete(id);
+  const advance = async (milliseconds) => {
+    const end = clock + milliseconds;
+    let callbacks = 0;
+    for (;;) {
+      await Promise.resolve();
+      await Promise.resolve();
+      const pending = [...timers].sort(
+        ([a, x], [b, y]) => x.due - y.due || a - b,
+      );
+      const next = pending[0];
+      if (!next || next[1].due > end) break;
+      assert.ok(++callbacks <= 64, "owned callback bound");
+      timers.delete(next[0]);
+      clock = next[1].due;
+      next[1].callback();
+      await Promise.resolve();
+    }
+    clock = end;
+  };
   t.after(() => {
-    dom.window.dispatchEvent(new dom.window.Event("pagehide"));
-    dom.window.close();
+    try {
+      dom.window.dispatchEvent(new dom.window.Event("pagehide"));
+    } finally {
+      timers.clear();
+      dom.window.close();
+    }
   });
   Object.defineProperty(dom.window.HTMLElement.prototype, "offsetParent", {
     get() {
@@ -200,12 +241,19 @@ function fixture(
   );
   return {
     window: dom.window,
+    advance,
+    now: () => clock,
+    ready: async () => {
+      readyState = "complete";
+      dom.window.dispatchEvent(new dom.window.Event("load"));
+      await advance(1);
+    },
     navigate: (url) => dom.reconfigure({ url }),
     signals,
     deliver,
     submits: () => submits,
     field: (id) => dom.window.document.getElementById(id),
-    send: (submit = false, deadline = Date.now() + 2000, options) =>
+    send: (submit = false, deadline = clock + 2000, options) =>
       deliver(
         new URL(url).origin,
         "alice",
@@ -233,10 +281,14 @@ test("native bundle matches shared module manifest and excludes proxy coordinato
 
 test("selected form fills once without upgrading fill-only consent", async (t) => {
   const f = fixture(t);
-  await delay(40);
+  await f.advance(40);
+  assert.deepEqual(f.signals, []);
+  assert.equal(f.send(), false);
+  assert.equal(f.field("password").value, "");
+  await f.ready();
   assert.deepEqual(f.signals, ["form"]);
   assert.equal(f.send(), true);
-  await delay(10);
+  await f.advance(10);
   assert.equal(f.field("username").value, "alice");
   assert.equal(f.field("password").value, "test-secret");
   assert.equal(f.submits(), 0);
@@ -246,19 +298,19 @@ test("selected form fills once without upgrading fill-only consent", async (t) =
 
 test("explicit native submit consent submits once", async (t) => {
   const f = fixture(t);
-  await delay(40);
+  await f.ready();
   assert.equal(f.send(true), true);
-  await delay(10);
+  await f.advance(10);
   assert.equal(f.submits(), 1);
 });
 
 for (const submit of [false, true]) {
   test(`HTTP custom-port selected form preserves submit consent (${submit})`, async (t) => {
     const f = fixture(t, { selectors }, "http://device.test:8080/login");
-    await delay(40);
+    await f.ready();
     assert.deepEqual(f.signals, ["form"]);
     assert.equal(f.send(submit), true);
-    await delay(10);
+    await f.advance(10);
     assert.equal(f.field("username").value, "alice");
     assert.equal(f.field("password").value, "test-secret");
     assert.equal(f.submits(), Number(submit));
@@ -273,9 +325,9 @@ for (const origin of [
 ]) {
   test(`HTTP selected form rejects wrong delivery origin ${origin}`, async (t) => {
     const f = fixture(t, { selectors }, "http://device.test:8080/login");
-    await delay(40);
+    await f.ready();
     assert.equal(
-      f.deliver(origin, "alice", "secret", true, Date.now() + 2000),
+      f.deliver(origin, "alice", "secret", true, f.now() + 2000),
       false,
     );
     assert.equal(f.field("username").value, "");
@@ -285,7 +337,7 @@ for (const origin of [
   test(`HTTP selected form rejects wrong action origin ${origin}`, async (t) => {
     const f = fixture(t, { selectors }, "http://device.test:8080/login");
     f.window.document.querySelector("form").action = `${origin}/login`;
-    await delay(40);
+    await f.ready();
     assert.ok(!f.signals.includes("form"));
     assert.equal(f.send(true), false);
     assert.equal(f.field("password").value, "");
@@ -294,7 +346,7 @@ for (const origin of [
 
 test("HTTPS credentials cannot follow a redirect to the same HTTP host and port", async (t) => {
   const f = fixture(t, { selectors }, "https://device.test:8080/login");
-  await delay(40);
+  await f.ready();
   assert.deepEqual(f.signals, ["form"]);
   f.navigate("http://device.test:8080/login");
   assert.equal(f.send(true), false);
@@ -304,7 +356,7 @@ test("HTTPS credentials cannot follow a redirect to the same HTTP host and port"
       "alice",
       "secret",
       true,
-      Date.now() + 2000,
+      f.now() + 2000,
     ),
     false,
   );
@@ -314,7 +366,7 @@ test("HTTPS credentials cannot follow a redirect to the same HTTP host and port"
 
 test("missing explicit selector never falls back to generic discovery", async (t) => {
   const f = fixture(t, { selectors: { ...selectors, password: "#missing" } });
-  await delay(40);
+  await f.ready();
   assert.deepEqual(f.signals, []);
   assert.equal(f.send(), false);
   assert.equal(f.field("password").value, "");
@@ -322,12 +374,12 @@ test("missing explicit selector never falls back to generic discovery", async (t
 
 test("wrong origin, expiry and pagehide cannot release credentials", async (t) => {
   const f = fixture(t);
-  await delay(40);
+  await f.ready();
   assert.equal(
-    f.deliver("https://other.test", "alice", "secret", true, Date.now() + 1000),
+    f.deliver("https://other.test", "alice", "secret", true, f.now() + 1000),
     false,
   );
-  assert.equal(f.send(false, Date.now() - 1), false);
+  assert.equal(f.send(false, f.now() - 1), false);
   f.window.dispatchEvent(new f.window.Event("pagehide"));
   assert.equal(f.send(), false);
   assert.equal(f.field("password").value, "");
@@ -336,7 +388,7 @@ test("wrong origin, expiry and pagehide cannot release credentials", async (t) =
 test("external action is rejected before readiness or credential entry", async (t) => {
   const f = fixture(t);
   f.window.document.querySelector("form").action = "https://other.test/login";
-  await delay(40);
+  await f.ready();
   assert.ok(!f.signals.includes("form"));
   assert.equal(f.send(), false);
   assert.equal(f.field("password").value, "");
@@ -347,9 +399,9 @@ test("saved options cannot override native consent and retain extra fields", asy
   const realm = f.window.document.createElement("input");
   realm.id = "realm";
   f.window.document.querySelector("form").append(realm);
-  await delay(40);
+  await f.ready();
   assert.equal(
-    f.send(false, Date.now() + 2000, {
+    f.send(false, f.now() + 2000, {
       version: 1,
       fillDelayMs: 0,
       submitDelayMs: 0,
@@ -359,16 +411,16 @@ test("saved options cannot override native consent and retain extra fields", asy
     }),
     true,
   );
-  await delay(10);
+  await f.advance(10);
   assert.equal(realm.value, "local");
   assert.equal(f.submits(), 0);
 });
 
 test("expiry cancels deferred filling before any value is written", async (t) => {
   const f = fixture(t);
-  await delay(40);
+  await f.ready();
   assert.equal(
-    f.send(true, Date.now() + 15, {
+    f.send(true, f.now() + 15, {
       version: 1,
       fillDelayMs: 100,
       submitDelayMs: 0,
@@ -378,19 +430,19 @@ test("expiry cancels deferred filling before any value is written", async (t) =>
     }),
     true,
   );
-  await delay(140);
+  await f.advance(140);
   assert.equal(f.field("password").value, "");
   assert.equal(f.submits(), 0);
 });
 
 test("action mutation during username input cannot release password", async (t) => {
   const f = fixture(t);
-  await delay(40);
+  await f.ready();
   f.field("username").addEventListener("input", () => {
     f.window.document.querySelector("form").action = "https://other.test/login";
   });
   assert.equal(f.send(true), true);
-  await delay(10);
+  await f.advance(10);
   assert.equal(f.field("password").value, "");
   assert.equal(f.submits(), 0);
 });
@@ -402,13 +454,12 @@ for (const [name, value] of [
   test(`unsafe ${name} rejected before readiness`, async (t) => {
     const f = fixture(t);
     f.field("login").setAttribute(name, value);
-    await delay(40);
+    await f.ready();
     assert.ok(!f.signals.includes("form"));
     assert.equal(f.send(true), false);
     assert.equal(f.field("password").value, "");
   });
 }
-
 // A deterministic window clock runs the real bundled JS and real WebCrypto.
 // The fixture has no network or page-global native transport.
 function nativeFixture(
