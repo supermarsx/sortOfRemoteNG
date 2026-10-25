@@ -39,7 +39,57 @@ jobs:
           export const PROFILE_SHA = 'b57d74719436db5f8b62cc8853882b4219e7b975ead6ab39c93333d240f72940';
           const execute = promisify(execFile);
           const digest = (raw) => createHash('sha256').update(raw).digest('hex');
-          const fixed = (condition, code) => assert(condition, code);
+          const failureObservations = new WeakMap();
+          const fixed = (condition, code, observations) => {
+            try { assert(condition, code); }
+            catch (error) { if (observations) failureObservations.set(error, observations); throw error; }
+          };
+          export const PREFLIGHT_STAGES = Object.freeze(['authority', 'source-head', 'source-clean', 'source-driver', 'source-fixture', 'source-tests', 'source-profile', 'profile', 'python-identity', 'python-dll-identity', 'runner-temp', 'create-root', 'register-output']);
+          const PREFLIGHT_CODES = new Set(['ARM_NATIVE_NODE', 'ARM_EVENT', 'ARM_REPOSITORY', 'ARM_BRANCH', 'ARM_REF', 'ARM_HEAD', 'ARM_WORKFLOW', 'ARM_RUN', 'ARM_SYSTEM_ROOT', 'ARM_CHECKOUT_HEAD', 'ARM_GIT_BLOB_BOUND', 'ARM_PROFILE_PIN', 'ARM_PROFILE', 'ARM_SOURCE_NAMES', 'ARM_TOOL_SCOPE', 'ARM_ABSOLUTE_PATH', 'ARM_CANONICAL_PATH', 'ARM_PATH_LINK', 'ARM_FILE_BOUND', 'ARM_OPEN_IDENTITY', 'ARM_FILE_CHANGED', 'ARM_FILE_REPLACED', 'ARM_TOOL_PIN', 'ARM_PE_DOS', 'ARM_PE_NATIVE', 'ARM_ACTION_OUTPUT']);
+          const SYSTEM_CODES = new Set(['ENOENT', 'EACCES', 'EPERM', 'ENOTDIR', 'EISDIR', 'ELOOP', 'ENOSPC', 'EEXIST', 'ERR_OUT_OF_RANGE', 'ERR_INVALID_ARG_TYPE']);
+          const OBSERVATION_NUMBERS = new Set(['fileBytes', 'maximumBytes', 'minimumBytes', 'expectedBytes', 'nlink', 'machine']);
+          const OBSERVATION_BOOLEANS = new Set(['isFile', 'pinMatched', 'byteCountMatched', 'identityMatched', 'canonicalMatched', 'peOffsetBounded', 'mzMatched', 'linkObserved']);
+          const safeNumber = (value) => { const number = Number(value); return Number.isSafeInteger(number) && number >= 0 ? number : null; };
+
+          export function preflightFailure(error) {
+            let errorCode = 'UNAVAILABLE', exitCode = null;
+            try {
+              const message = error?.message;
+              if (PREFLIGHT_CODES.has(message)) errorCode = message;
+              else {
+                const code = error?.code;
+                if (SYSTEM_CODES.has(code)) errorCode = code;
+                else if (Number.isSafeInteger(code) && code >= -2147483648 && code <= 2147483647) { errorCode = 'SUBPROCESS_EXIT'; exitCode = code; }
+              }
+            } catch { /* No raw getter/message may interfere with the original error. */ }
+            const observations = {};
+            try {
+              const observed = failureObservations.get(error);
+              for (const [name, value] of Object.entries(observed ?? {})) {
+                if (value === null && (OBSERVATION_NUMBERS.has(name) || OBSERVATION_BOOLEANS.has(name))) observations[name] = null;
+                else if (OBSERVATION_NUMBERS.has(name) && Number.isSafeInteger(value) && value >= 0) observations[name] = value;
+                else if (OBSERVATION_BOOLEANS.has(name) && typeof value === 'boolean') observations[name] = value;
+              }
+            } catch { /* Only explicitly attached primitive observations are eligible. */ }
+            return { errorCode, exitCode, observations };
+          }
+
+          export function createPreflightReporter(write = (line) => process.stderr.write(line)) {
+            let records = 0, bytes = 0;
+            const emit = (stage, status, error) => {
+              const failure = status === 'fail' ? preflightFailure(error) : { errorCode: null, exitCode: null, observations: {} };
+              const raw = JSON.stringify({ kind: 'sorng-arm-job-preflight', stage, status, ...failure }) + '\n';
+              if (records >= 64 || bytes + Buffer.byteLength(raw) > 16384) return;
+              records++; bytes += Buffer.byteLength(raw);
+              try { write(raw); } catch { /* Diagnostics never replace the original outcome. */ }
+            };
+            return async (stage, action) => {
+              fixed(PREFLIGHT_STAGES.includes(stage), 'ARM_PREFLIGHT_STAGE');
+              emit(stage, 'begin');
+              try { const value = await action(); emit(stage, 'pass'); return value; }
+              catch (error) { emit(stage, 'fail', error); throw error; }
+            };
+          }
 
           export function authority(env, platform = process.platform, arch = process.arch) {
             fixed(platform === 'win32' && arch === 'arm64', 'ARM_NATIVE_NODE');
@@ -63,18 +113,19 @@ jobs:
           }
 
           export function peArm64(raw) {
-            fixed(Buffer.isBuffer(raw) && raw.length >= 64 && raw.toString('ascii', 0, 2) === 'MZ', 'ARM_PE_DOS');
+            fixed(Buffer.isBuffer(raw) && raw.length >= 64 && raw.toString('ascii', 0, 2) === 'MZ', 'ARM_PE_DOS', { fileBytes: Buffer.isBuffer(raw) ? raw.length : null, minimumBytes: 64, mzMatched: Buffer.isBuffer(raw) && raw.length >= 2 ? raw.toString('ascii', 0, 2) === 'MZ' : null });
             const offset = raw.readUInt32LE(60);
-            fixed(offset >= 64 && offset <= raw.length - 26 && raw.readUInt32LE(offset) === 0x4550 && raw.readUInt16LE(offset + 4) === 0xaa64 && raw.readUInt16LE(offset + 24) === 0x20b, 'ARM_PE_NATIVE');
+            fixed(offset >= 64 && offset <= raw.length - 26 && raw.readUInt32LE(offset) === 0x4550 && raw.readUInt16LE(offset + 4) === 0xaa64 && raw.readUInt16LE(offset + 24) === 0x20b, 'ARM_PE_NATIVE', { peOffsetBounded: offset >= 64 && offset <= raw.length - 26, machine: offset >= 64 && offset <= raw.length - 26 ? raw.readUInt16LE(offset + 4) : null });
           }
 
           export async function noLinks(input, api = fs) {
             fixed(typeof input === 'string' && path.isAbsolute(input) && !input.includes('\0'), 'ARM_ABSOLUTE_PATH');
             const resolved = path.resolve(input);
-            fixed((await api.realpath(resolved)).toLowerCase() === resolved.toLowerCase(), 'ARM_CANONICAL_PATH');
+            const canonicalMatched = (await api.realpath(resolved)).toLowerCase() === resolved.toLowerCase();
+            fixed(canonicalMatched, 'ARM_CANONICAL_PATH', { canonicalMatched });
             for (let current = resolved;; current = path.dirname(current)) {
               const info = await api.lstat(current, { bigint: true });
-              fixed(!info.isSymbolicLink(), 'ARM_PATH_LINK');
+              fixed(!info.isSymbolicLink(), 'ARM_PATH_LINK', { linkObserved: info.isSymbolicLink() });
               if (path.dirname(current) === current) break;
             }
             return resolved;
@@ -84,11 +135,11 @@ jobs:
           export async function heldBytes(file, maximum, api = fs, allowEmpty = false) {
             await noLinks(file, api);
             const original = await api.lstat(file, { bigint: true });
-            fixed(original.isFile() && original.nlink === 1n && (allowEmpty || original.size > 0n) && original.size <= BigInt(maximum), 'ARM_FILE_BOUND');
+            fixed(original.isFile() && original.nlink === 1n && (allowEmpty || original.size > 0n) && original.size <= BigInt(maximum), 'ARM_FILE_BOUND', { fileBytes: safeNumber(original.size), maximumBytes: maximum, nlink: safeNumber(original.nlink), isFile: original.isFile() });
             const handle = await api.open(file, constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0));
             try {
               const before = await handle.stat({ bigint: true });
-              fixed(identity(before) === identity(original), 'ARM_OPEN_IDENTITY');
+              fixed(identity(before) === identity(original), 'ARM_OPEN_IDENTITY', { identityMatched: identity(before) === identity(original) });
               const raw = Buffer.alloc(Number(before.size) + 1);
               let count = 0;
               while (count < raw.length) {
@@ -96,9 +147,12 @@ jobs:
                 if (!bytesRead) break;
                 count += bytesRead;
               }
-              fixed(count === Number(before.size) && identity(await handle.stat({ bigint: true })) === identity(before), 'ARM_FILE_CHANGED');
+              const byteCountMatched = count === Number(before.size);
+              const identityMatched = byteCountMatched ? identity(await handle.stat({ bigint: true })) === identity(before) : null;
+              fixed(byteCountMatched && identityMatched, 'ARM_FILE_CHANGED', { fileBytes: count, expectedBytes: safeNumber(before.size), byteCountMatched, identityMatched });
               await noLinks(file, api);
-              fixed(identity(await api.lstat(file, { bigint: true })) === identity(before), 'ARM_FILE_REPLACED');
+              const pathIdentityMatched = identity(await api.lstat(file, { bigint: true })) === identity(before);
+              fixed(pathIdentityMatched, 'ARM_FILE_REPLACED', { identityMatched: pathIdentityMatched });
               return raw.subarray(0, count);
             } finally { await handle.close(); }
           }
@@ -106,24 +160,31 @@ jobs:
           export async function pinnedTool(row, api = fs) {
             fixed(row.path.startsWith('C:/hostedtoolcache/windows/Python/3.13.17/arm64/') && row.machine === 43620, 'ARM_TOOL_SCOPE');
             const raw = await heldBytes(path.resolve(row.path), 8 * 1024 ** 2, api);
-            fixed(raw.length === row.bytes && digest(raw) === row.sha256, 'ARM_TOOL_PIN');
+            const byteCountMatched = raw.length === row.bytes;
+            const pinMatched = byteCountMatched ? digest(raw) === row.sha256 : null;
+            fixed(byteCountMatched && pinMatched, 'ARM_TOOL_PIN', { fileBytes: raw.length, expectedBytes: row.bytes, byteCountMatched, pinMatched });
             peArm64(raw);
             return { bytes: raw.length, sha256: digest(raw), machine: 43620 };
           }
 
-          export async function gitSources(head, git = execute, checkout = process.cwd()) {
+          export async function gitSources(head, git = execute, checkout = process.cwd(), report = async (_stage, action) => action()) {
             const options = { cwd: checkout, encoding: 'buffer', maxBuffer: 1024 * 1024, timeout: 10000, windowsHide: true };
-            const actual = (await git('git', ['rev-parse', 'HEAD'], options)).stdout.toString().trim();
-            fixed(actual === head, 'ARM_CHECKOUT_HEAD');
-            await git('git', ['diff-index', '--quiet', 'HEAD', '--'], options);
+            await report('source-head', async () => {
+              const actual = (await git('git', ['rev-parse', 'HEAD'], options)).stdout.toString().trim();
+              fixed(actual === head, 'ARM_CHECKOUT_HEAD');
+            });
+            await report('source-clean', () => git('git', ['diff-index', '--quiet', 'HEAD', '--'], options));
             const rows = {};
-            for (const name of NAMES) {
-              const source = `native/windows-job-benign/${name}`;
-              const { stdout } = await git('git', ['cat-file', 'blob', `${head}:${source}`], options);
-              fixed(Buffer.isBuffer(stdout) && stdout.length > 0 && stdout.length <= 1024 * 1024, 'ARM_GIT_BLOB_BOUND');
-              rows[name] = stdout;
+            const stages = ['source-driver', 'source-fixture', 'source-tests', 'source-profile'];
+            for (const [index, name] of NAMES.entries()) {
+              await report(stages[index], async () => {
+                const source = 'native/windows-job-benign/' + name;
+                const { stdout } = await git('git', ['cat-file', 'blob', head + ':' + source], options);
+                fixed(Buffer.isBuffer(stdout) && stdout.length > 0 && stdout.length <= 1024 * 1024, 'ARM_GIT_BLOB_BOUND');
+                rows[name] = stdout;
+              });
             }
-            profileFromBytes(rows[NAMES[3]]);
+            await report('profile', () => profileFromBytes(rows[NAMES[3]]));
             return rows;
           }
 
@@ -209,14 +270,17 @@ jobs:
           }
 
           export async function run() {
-            const binding = authority(process.env);
-            const sources = await gitSources(binding.head), profile = profileFromBytes(sources[NAMES[3]]);
-            const toolBefore = { python: await pinnedTool(profile.python), pythonDll: await pinnedTool(profile.pythonDll) };
-            const temp = await noLinks(process.env.RUNNER_TEMP);
+            const report = createPreflightReporter();
+            const binding = await report('authority', () => authority(process.env));
+            const sources = await gitSources(binding.head, execute, process.cwd(), report), profile = profileFromBytes(sources[NAMES[3]]);
+            const toolBefore = { python: await report('python-identity', () => pinnedTool(profile.python)), pythonDll: await report('python-dll-identity', () => pinnedTool(profile.pythonDll)) };
+            const temp = await report('runner-temp', () => noLinks(process.env.RUNNER_TEMP));
             const root = path.join(temp, 'owned-windows-arm-job-' + randomUUID());
-            await fs.mkdir(root, { mode: 0o700 }); await noLinks(root);
-            fixed(typeof process.env.GITHUB_OUTPUT === 'string', 'ARM_ACTION_OUTPUT');
-            await fs.appendFile(process.env.GITHUB_OUTPUT, 'artifact-root=' + root + '\n');
+            await report('create-root', async () => { await fs.mkdir(root, { mode: 0o700 }); await noLinks(root); });
+            await report('register-output', async () => {
+              fixed(typeof process.env.GITHUB_OUTPUT === 'string', 'ARM_ACTION_OUTPUT');
+              await fs.appendFile(process.env.GITHUB_OUTPUT, 'artifact-root=' + root + '\n');
+            });
             const deployment = path.join(root, '.cache/windows-checkpoint-prototype');
             await fs.mkdir(deployment, { recursive: true });
             await fs.mkdir(path.join(root, '.artifacts'));

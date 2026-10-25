@@ -182,7 +182,9 @@ test("raw closed profile/PE guards reject replacement, malformed and emulated bi
 test("committed Git blob source reader preserves LF bytes and stops dirty/mismatched checkouts", async () => {
   const data = {};
   for (const name of mod.NAMES)
-    data[name] = await fs.readFile(new URL(name, base));
+    data[name] = Buffer.from(
+      (await fs.readFile(new URL(name, base), "utf8")).replace(/\r\n/g, "\n"),
+    );
   const calls = [];
   const git = async (exe, args, options) => {
     calls.push(args);
@@ -405,4 +407,379 @@ test("portable committed fixture pin is computed from canonical Git LF bytes", a
     "utf8",
   );
   assert(driver.includes("FIXTURE_SHA='" + sha(Buffer.from(fixture)) + "'"));
+});
+
+test("preflight labels actual source failures and preserves successful source order", async () => {
+  const rows = {};
+  for (const name of mod.NAMES)
+    rows[name] = Buffer.from(
+      (await fs.readFile(new URL(name, base), "utf8")).replace(/\r\n/g, "\n"),
+    );
+  const records = [];
+  const report = mod.createPreflightReporter((line) =>
+    records.push(JSON.parse(line)),
+  );
+  const reader = async (_exe, args) =>
+    args[0] === "rev-parse"
+      ? { stdout: Buffer.from("a".repeat(40)) }
+      : args[0] === "diff-index"
+        ? {}
+        : { stdout: rows[args[2].split("/").at(-1)] };
+  await mod.gitSources("a".repeat(40), reader, "/owned", report);
+  assert.deepEqual(
+    records.filter((r) => r.status === "begin").map((r) => r.stage),
+    [
+      "source-head",
+      "source-clean",
+      "source-driver",
+      "source-fixture",
+      "source-tests",
+      "source-profile",
+      "profile",
+    ],
+  );
+  assert(records.filter((r) => r.status === "pass").length === 7);
+  const original = Object.assign(new Error("secret/path?token=secret"), {
+    code: 1,
+  });
+  records.length = 0;
+  await assert.rejects(
+    mod.gitSources(
+      "a".repeat(40),
+      async (exe, args, options) => {
+        if (args[0] === "diff-index") throw original;
+        return reader(exe, args, options);
+      },
+      "/owned",
+      report,
+    ),
+    (error) => error === original,
+  );
+  assert.deepEqual(records.at(-1), {
+    kind: "sorng-arm-job-preflight",
+    stage: "source-clean",
+    status: "fail",
+    errorCode: "SUBPROCESS_EXIT",
+    exitCode: 1,
+    observations: {},
+  });
+  assert(!JSON.stringify(records).includes("secret"));
+  records.length = 0;
+  await assert.rejects(
+    mod.gitSources("b".repeat(40), reader, "/owned", report),
+    /ARM_CHECKOUT_HEAD/,
+  );
+  assert.equal(records.at(-1).stage, "source-head");
+  assert.equal(records.at(-1).errorCode, "ARM_CHECKOUT_HEAD");
+});
+
+test("stage is emitted before awaiting and diagnostic failures cannot replace outcomes", async () => {
+  const rows = [];
+  const report = mod.createPreflightReporter((raw) =>
+    rows.push(JSON.parse(raw)),
+  );
+  let resume;
+  const pending = report(
+    "runner-temp",
+    () =>
+      new Promise((resolve) => {
+        resume = resolve;
+      }),
+  );
+  assert.deepEqual(
+    rows.map((r) => r.status),
+    ["begin"],
+  );
+  resume(17);
+  assert.equal(await pending, 17);
+  assert.deepEqual(
+    rows.map((r) => r.status),
+    ["begin", "pass"],
+  );
+  const original = Object.assign(new Error("raw secret origin/password"), {
+    code: "UNTRUSTED_SECRET",
+  });
+  await assert.rejects(
+    report("python-identity", () => {
+      throw original;
+    }),
+    (e) => e === original,
+  );
+  assert.equal(rows.at(-1).errorCode, "UNAVAILABLE");
+  assert.deepEqual(rows.at(-1).observations, {});
+  assert(!JSON.stringify(rows).includes("secret"));
+  const hostile = {
+    get message() {
+      throw new Error("secret");
+    },
+    get code() {
+      throw new Error("secret");
+    },
+  };
+  assert.deepEqual(mod.preflightFailure(hostile), {
+    errorCode: "UNAVAILABLE",
+    exitCode: null,
+    observations: {},
+  });
+  const broken = mod.createPreflightReporter(() => {
+    throw new Error("logging failed");
+  });
+  assert.equal(await broken("authority", () => 23), 23);
+  await assert.rejects(
+    broken("authority", () => {
+      throw original;
+    }),
+    (e) => e === original,
+  );
+  let invoked = false;
+  await assert.rejects(
+    report("private/raw/stage", () => {
+      invoked = true;
+    }),
+    /ARM_PREFLIGHT_STAGE/,
+  );
+  assert.equal(invoked, false);
+});
+
+test("preflight output has fixed fields and bounded records and bytes", async () => {
+  const records = [];
+  const report = mod.createPreflightReporter((line) => records.push(line));
+  for (let i = 0; i < 100; i++) await report("authority", () => null);
+  assert.equal(records.length, 64);
+  assert(Buffer.byteLength(records.join("")) <= 16384);
+  for (const raw of records) {
+    const row = JSON.parse(raw);
+    assert.deepEqual(
+      Object.keys(row).sort(),
+      [
+        "kind",
+        "stage",
+        "status",
+        "errorCode",
+        "exitCode",
+        "observations",
+      ].sort(),
+    );
+    assert(["begin", "pass"].includes(row.status));
+  }
+  const error = Object.assign(new Error("raw secret"), {
+    code: "ENOENT",
+    observations: { path: "secret" },
+  });
+  assert.deepEqual(mod.preflightFailure(error), {
+    errorCode: "ENOENT",
+    exitCode: null,
+    observations: {},
+  });
+});
+
+const syntheticToolApi = (size, nlink, raw = Buffer.alloc(0)) => {
+  const info = {
+    dev: 1n,
+    ino: 2n,
+    size: BigInt(size),
+    mtimeNs: 1n,
+    ctimeNs: 1n,
+    nlink: BigInt(nlink),
+    isFile: () => true,
+    isSymbolicLink: () => false,
+  };
+  let opens = 0,
+    closes = 0;
+  return {
+    get opens() {
+      return opens;
+    },
+    get closes() {
+      return closes;
+    },
+    realpath: async (value) => value,
+    lstat: async () => info,
+    open: async () => {
+      opens++;
+      return {
+        stat: async () => info,
+        close: async () => {
+          closes++;
+        },
+        read: async (buffer, offset, length, position) => {
+          const bytesRead = Math.max(
+            0,
+            Math.min(length, raw.length - position),
+          );
+          raw.copy(buffer, offset, position, position + bytesRead);
+          return { bytesRead };
+        },
+      };
+    },
+  };
+};
+
+test("actual file-bound guard reports only already-observed size and link metadata", async () => {
+  const rows = [];
+  const report = mod.createPreflightReporter((line) =>
+    rows.push(JSON.parse(line)),
+  );
+  const api = syntheticToolApi(profile.python.bytes, 2);
+  await assert.rejects(
+    report("python-identity", () => mod.pinnedTool(profile.python, api)),
+    /ARM_FILE_BOUND/,
+  );
+  assert.equal(api.opens, 0);
+  assert.deepEqual(rows.at(-1).observations, {
+    fileBytes: profile.python.bytes,
+    maximumBytes: 8 * 1024 ** 2,
+    nlink: 2,
+    isFile: true,
+  });
+  assert.equal(rows.at(-1).stage, "python-identity");
+  assert.equal(rows.at(-1).errorCode, "ARM_FILE_BOUND");
+  rows.length = 0;
+  const tooLarge = syntheticToolApi(8 * 1024 ** 2 + 1, 1);
+  await assert.rejects(
+    report("python-dll-identity", () =>
+      mod.pinnedTool(profile.pythonDll, tooLarge),
+    ),
+    /ARM_FILE_BOUND/,
+  );
+  assert.equal(tooLarge.opens, 0);
+  assert.equal(rows.at(-1).observations.nlink, 1);
+  assert.equal(rows.at(-1).observations.fileBytes, 8 * 1024 ** 2 + 1);
+});
+
+test("actual pin and PE guards expose safe booleans and machine without rereading files", async () => {
+  const rows = [];
+  const report = mod.createPreflightReporter((line) =>
+    rows.push(JSON.parse(line)),
+  );
+  const api = syntheticToolApi(
+    profile.python.bytes,
+    1,
+    Buffer.alloc(profile.python.bytes),
+  );
+  await assert.rejects(
+    report("python-identity", () => mod.pinnedTool(profile.python, api)),
+    /ARM_TOOL_PIN/,
+  );
+  assert.equal(api.opens, 1);
+  assert.equal(api.closes, 1);
+  assert.deepEqual(rows.at(-1).observations, {
+    fileBytes: profile.python.bytes,
+    expectedBytes: profile.python.bytes,
+    byteCountMatched: true,
+    pinMatched: false,
+  });
+  const pe = Buffer.alloc(128);
+  pe.write("MZ");
+  pe.writeUInt32LE(64, 60);
+  pe.writeUInt32LE(0x4550, 64);
+  pe.writeUInt16LE(0x8664, 68);
+  pe.writeUInt16LE(0x20b, 88);
+  await assert.rejects(
+    report("python-identity", () => mod.peArm64(pe)),
+    /ARM_PE_NATIVE/,
+  );
+  assert.deepEqual(rows.at(-1).observations, {
+    peOffsetBounded: true,
+    machine: 0x8664,
+  });
+});
+
+test("actual canonical-path failure is attributed without raw aliases or environment", async () => {
+  const rows = [];
+  const report = mod.createPreflightReporter((line) =>
+    rows.push(JSON.parse(line)),
+  );
+  await assert.rejects(
+    report("runner-temp", () =>
+      mod.noLinks(path.resolve("/owned"), {
+        realpath: async () => path.resolve("/foreign-secret"),
+      }),
+    ),
+    /ARM_CANONICAL_PATH/,
+  );
+  assert.equal(rows.at(-1).errorCode, "ARM_CANONICAL_PATH");
+  assert.deepEqual(rows.at(-1).observations, { canonicalMatched: false });
+  assert(!JSON.stringify(rows).includes("foreign"));
+  const error = Object.assign(new Error("secret filename"), { code: "ENOENT" });
+  await assert.rejects(
+    report("runner-temp", () =>
+      mod.noLinks(path.resolve("/owned"), {
+        realpath: async () => {
+          throw error;
+        },
+      }),
+    ),
+    (e) => e === error,
+  );
+  assert.equal(rows.at(-1).errorCode, "ENOENT");
+});
+
+test("production run wraps every pre-root boundary and preserves original closed entry", () => {
+  for (const stage of [
+    "authority",
+    "python-identity",
+    "python-dll-identity",
+    "runner-temp",
+    "create-root",
+    "register-output",
+  ])
+    assert(code.includes("report('" + stage + "',"));
+  assert(
+    code.includes("gitSources(binding.head, execute, process.cwd(), report)"),
+  );
+  assert(
+    code.indexOf("report('register-output'") <
+      code.indexOf("const deployment ="),
+  );
+  assert(
+    code.includes(
+      "try { await run(); } catch { process.exitCode = 1; console.error('ARM_BENIGN_DIAGNOSTIC_FAILED'); }",
+    ),
+  );
+  for (const text of ["console.error(error", "error.stack"])
+    assert(!code.includes(text));
+});
+
+test("redaction snapshots changing getters once and classifies primitive rejections", async () => {
+  let reads = 0;
+  const error = {
+    get message() {
+      return ++reads === 1 ? "ARM_PROFILE_PIN" : "private-secret";
+    },
+  };
+  assert.deepEqual(mod.preflightFailure(error), {
+    errorCode: "ARM_PROFILE_PIN",
+    exitCode: null,
+    observations: {},
+  });
+  assert.equal(reads, 1);
+  let codes = 0;
+  assert.deepEqual(
+    mod.preflightFailure({
+      message: "unknown",
+      get code() {
+        return ++codes === 1 ? "ENOENT" : "private-secret";
+      },
+    }),
+    { errorCode: "ENOENT", exitCode: null, observations: {} },
+  );
+  assert.equal(codes, 1);
+  const rows = [];
+  const report = mod.createPreflightReporter((line) =>
+    rows.push(JSON.parse(line)),
+  );
+  let failed = false;
+  try {
+    await report("profile", () => {
+      throw undefined;
+    });
+  } catch (value) {
+    failed = true;
+    assert.equal(value, undefined);
+  }
+  assert.equal(failed, true);
+  assert.equal(rows.at(-1).status, "fail");
+  assert.equal(rows.at(-1).errorCode, "UNAVAILABLE");
+  assert.equal(rows.at(-1).exitCode, null);
 });
