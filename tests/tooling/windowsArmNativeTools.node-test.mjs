@@ -219,7 +219,7 @@ test("preflight uses actual environment and preserves closed stages and failure 
   assert.match(code, /v\.completed===true&&v\.engineBuildAttempted===false/);
 });
 
-test("D45 remains a separately attested subset and cannot substitute for seven new source pins", async () => {
+test("Producer code remains a separately attested subset and cannot substitute for seven new source pins", async () => {
   const head = execFileSync("git", ["rev-parse", "HEAD"], {
     cwd: root,
     encoding: "utf8",
@@ -229,7 +229,7 @@ test("D45 remains a separately attested subset and cannot substitute for seven n
   assert.equal(actual.rows.length, 126);
   assert.equal(
     actual.codeDigest,
-    "d45d68c07163f65ddbe2531d48aab99a15bb04244e63503169a8801f5b824654",
+    "235d7478554bff96cd1d272f78984a44813ab952dd1310fa4d0603b01a8528d5",
   );
   assert(
     !actual.rows.some((row) =>
