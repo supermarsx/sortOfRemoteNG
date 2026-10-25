@@ -15,7 +15,7 @@ const library = workflow
   .split("// END AUTHORIZATION LIBRARY")[0];
 const api = Function(
   library +
-    "\nreturn {OLD,PRODUCER_TAG,CAP,authority,releaseBody,routeAllowed,responseFacts,boundedJson,run};",
+    "\nreturn {CAP,authority,releaseBody,routeAllowed,responseFacts,boundedJson,run};",
 )();
 const env = {
   GITHUB_EVENT_NAME: "workflow_dispatch",
@@ -38,14 +38,10 @@ const event = {
   inputs: {},
 };
 const tag = api.authority(env, event);
-const producer = {
-  ref: "refs/tags/" + api.PRODUCER_TAG,
-  object: { type: "commit", sha: api.OLD },
-};
 const release = {
   id: 81,
   tag_name: tag,
-  target_commitish: api.OLD,
+  target_commitish: env.GITHUB_SHA,
   draft: true,
   prerelease: true,
   published_at: null,
@@ -70,9 +66,7 @@ function fixture(change = () => {}) {
                 ref: "refs/heads/main",
                 object: { type: "commit", sha: env.GITHUB_SHA },
               }
-            : route.startsWith("/git/ref/tags/")
-              ? structuredClone(producer)
-              : structuredClone(release);
+            : structuredClone(release);
       const result = {
         value,
         status: options.method === "POST" ? 201 : 200,
@@ -117,16 +111,19 @@ test("legitimate CRLF workflow smudge exercises the same actual authorization li
     .split("// END AUTHORIZATION LIBRARY")[0];
   const actual = Function(body + "\nreturn {authority,releaseBody};")();
   assert.equal(actual.authority(env, event), tag);
-  assert.deepEqual(actual.releaseBody(tag), api.releaseBody(tag));
+  assert.deepEqual(
+    actual.releaseBody(tag, env.GITHUB_SHA),
+    api.releaseBody(tag, env.GITHUB_SHA),
+  );
 });
 
-test("authority rejects foreign/private/non-main/old-head/nonmanual/input-bearing contexts", () => {
+test("authority rejects foreign/private/non-main/malformed-head/nonmanual/input-bearing contexts", () => {
   for (const [key, value] of [
     ["GITHUB_EVENT_NAME", "push"],
     ["GITHUB_REPOSITORY", "foreign/repo"],
     ["GITHUB_REPOSITORY_ID", "1"],
     ["GITHUB_REF", "refs/heads/other"],
-    ["GITHUB_SHA", api.OLD],
+    ["GITHUB_SHA", "not-a-commit"],
     ["GITHUB_RUN_ID", "123/other"],
     ["GITHUB_RUN_ATTEMPT", "0"],
   ])
@@ -163,8 +160,8 @@ test("official null and empty-object no-input dispatches both pass the actual in
   assert.equal(f.calls.length, 0);
 });
 
-test("exact POST body is only an unpublished technical prerelease against fixed e7", () => {
-  const body = api.releaseBody(tag);
+test("exact POST body is only an unpublished technical prerelease against verified carrier Main", () => {
+  const body = api.releaseBody(tag, env.GITHUB_SHA);
   assert.deepEqual(Object.keys(body).sort(), [
     "body",
     "draft",
@@ -175,12 +172,12 @@ test("exact POST body is only an unpublished technical prerelease against fixed 
     "tag_name",
     "target_commitish",
   ]);
-  assert.equal(body.target_commitish, api.OLD);
+  assert.equal(body.target_commitish, env.GITHUB_SHA);
   assert.equal(body.draft, true);
   assert.equal(body.prerelease, true);
   assert.equal(body.make_latest, "false");
   assert.equal(body.generate_release_notes, false);
-  assert.throws(() => api.releaseBody("app-release"));
+  assert.throws(() => api.releaseBody("app-release", env.GITHUB_SHA));
 });
 
 test("closed routes deny tag creation/deletion/foreign or generic release authority", () => {
@@ -198,15 +195,21 @@ test("closed routes deny tag creation/deletion/foreign or generic release author
   assert.equal(api.routeAllowed("releases/81", "GET", 81), true);
 });
 
-test("actual inline run verifies the old tag before one POST and verifies the returned draft", async () => {
+test("actual inline run verifies current Main before one POST and binds draft plus final Main readback", async () => {
   const f = fixture();
   const result = await api.run(env, event, f.deps);
   assert.equal(result.success, true);
   assert.equal(result.postStarted, true);
-  assert.equal(f.calls.length, 6);
+  assert.equal(f.calls.length, 5);
   assert.equal(f.calls.filter((x) => x.options.method === "POST").length, 1);
-  assert.match(f.calls[2].url, /git\/ref\/tags\/cef-producer-e7/);
-  assert.equal(f.calls[3].options.body, JSON.stringify(api.releaseBody(tag)));
+  assert.match(f.calls[1].url, /git\/ref\/heads\/main$/);
+  assert.equal(
+    f.calls[2].options.body,
+    JSON.stringify(api.releaseBody(tag, env.GITHUB_SHA)),
+  );
+  assert.match(f.calls[4].url, /git\/ref\/heads\/main$/);
+  assert.equal(result.carrierHead, env.GITHUB_SHA);
+  assert.equal(Object.hasOwn(result, "oldProducer"), false);
   for (const call of f.calls) {
     assert.equal(call.options.redirect, "error");
     assert.match(
@@ -218,7 +221,7 @@ test("actual inline run verifies the old tag before one POST and verifies the re
   assert.deepEqual(result.release, {
     id: 81,
     tag,
-    target: api.OLD,
+    target: env.GITHUB_SHA,
     draft: true,
     prerelease: true,
     published: false,
@@ -227,7 +230,7 @@ test("actual inline run verifies the old tag before one POST and verifies the re
   assert.equal(JSON.stringify(result).includes(env.GH_TOKEN), false);
 });
 
-test("missing/moved/annotated producer tag or changed Main refuses before any POST", async () => {
+test("missing/moved/annotated or changed Main refuses before any POST", async () => {
   for (const mutation of [
     (r) => {
       r.value.object.sha = "b".repeat(40);
@@ -244,7 +247,7 @@ test("missing/moved/annotated producer tag or changed Main refuses before any PO
     },
   ]) {
     const f = fixture((r, route) => {
-      if (route.startsWith("/git/ref/tags/")) mutation(r);
+      if (route === "/git/ref/heads/main") mutation(r);
     });
     const result = await api.run(env, event, f.deps);
     assert.equal(result.success, false);
@@ -259,6 +262,44 @@ test("missing/moved/annotated producer tag or changed Main refuses before any PO
   });
   assert.equal((await api.run(env, event, f.deps)).firstError, "MAIN_DENIED");
   assert.equal(f.calls.length, 2);
+});
+
+test("old or arbitrary target responses and Main drift cannot masquerade as current-head success", async () => {
+  const historical = "e7f9810ddc0b680abd4b302108acfd3a8c6b6ccf";
+  for (const head of [historical, "b".repeat(40)]) {
+    const before = fixture((r, route) => {
+      if (route === "/git/ref/heads/main") r.value.object.sha = head;
+    });
+    const denied = await api.run(env, event, before.deps);
+    assert.equal(denied.firstError, "MAIN_DENIED");
+    assert.equal(denied.postStarted, false);
+    assert.equal(before.calls.length, 2);
+    const created = fixture((r, route) => {
+      if (route === "/releases") r.value.target_commitish = head;
+    });
+    const wrong = await api.run(env, event, created.deps);
+    assert.equal(wrong.firstError, "RELEASE_READBACK_DENIED");
+    assert.equal(wrong.postStarted, true);
+    assert.equal(created.calls.length, 3);
+  }
+  let reads = 0;
+  const moved = fixture((r, route) => {
+    if (route === "/git/ref/heads/main" && ++reads === 2)
+      r.value.object.sha = "b".repeat(40);
+  });
+  const result = await api.run(env, event, moved.deps);
+  assert.equal(result.success, false);
+  assert.equal(result.firstError, "MAIN_DENIED");
+  assert.equal(result.postStarted, true);
+  assert.equal(result.carrierHead, env.GITHUB_SHA);
+  assert.equal(
+    moved.calls.filter((c) => c.options.method === "POST").length,
+    1,
+  );
+  assert.equal(
+    moved.calls.some((c) => c.url.includes("/git/ref/tags/")),
+    false,
+  );
 });
 
 test("403 observations retain only closed reason/request-id/numeric rate and never retry", async () => {
@@ -279,7 +320,7 @@ test("403 observations retain only closed reason/request-id/numeric rate and nev
     assert.equal(result.responses.at(-1).reason, expected);
     assert.equal(result.responses.at(-1).requestId, "ABCD:0123");
     assert.equal(result.responses.at(-1).rate.remaining, 12);
-    assert.equal(f.calls.length, 4);
+    assert.equal(f.calls.length, 3);
     assert.equal(JSON.stringify(result).includes(message), false);
   }
 });
@@ -366,7 +407,7 @@ test("published/wrong-target/asset-bearing or conflicting readback never claims 
     assert.equal(result.firstError, "RELEASE_READBACK_DENIED");
     assert.equal(result.postStarted, true);
     assert.equal(result.release.id, 81);
-    assert.equal(f.calls.length, 5);
+    assert.equal(f.calls.length, 4);
   }
 });
 
@@ -395,5 +436,5 @@ test("wall or monotonic exhaustion and later errors preserve the original first 
   });
   const original = await api.run(env, event, h.deps);
   assert.equal(original.firstError, "HTTP_DENIED");
-  assert.equal(h.calls.length, 4);
+  assert.equal(h.calls.length, 3);
 });

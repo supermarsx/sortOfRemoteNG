@@ -1,4 +1,4 @@
-name: CEF old-producer upload authorization diagnostic
+name: CEF current-head upload authorization diagnostic
 on:
   workflow_dispatch:
 permissions:
@@ -22,37 +22,36 @@ jobs:
           package-manager-cache: false
       - name: Verify the closed diagnostic contract without credentials
         run: node --test tests/tooling/cefUploadAuthorization.node-test.mjs
-      - name: One unpublished technical draft against the referenced old producer
+      - name: One unpublished technical draft against verified current Main
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           node --input-type=module <<'NODE'
           import fs from 'node:fs/promises';
           // BEGIN AUTHORIZATION LIBRARY
-          const OLD='e7f9810ddc0b680abd4b302108acfd3a8c6b6ccf';
           const REPOSITORY='supermarsx/sortOfRemoteNG', REPOSITORY_ID='1010282954';
-          const PRODUCER_TAG='cef-producer-'+OLD;
           const CAP=16384, WORK_MS=180000;
           function need(value,code){if(!value)throw Object.assign(new Error(code),{closedCode:code});}
           function authority(e,event){
             need(e.GITHUB_EVENT_NAME==='workflow_dispatch'&&e.GITHUB_REPOSITORY===REPOSITORY&&
               e.GITHUB_REPOSITORY_ID===REPOSITORY_ID&&e.GITHUB_REF==='refs/heads/main'&&
-              /^[a-f0-9]{40}$/.test(e.GITHUB_SHA)&&e.GITHUB_SHA!==OLD&&
+              /^[a-f0-9]{40}$/.test(e.GITHUB_SHA)&&
               /^[1-9][0-9]{0,15}$/.test(e.GITHUB_RUN_ID)&&/^[1-9][0-9]{0,5}$/.test(e.GITHUB_RUN_ATTEMPT)&&
               event?.repository?.id===Number(REPOSITORY_ID)&&event.repository.full_name===REPOSITORY&&
               event.repository.private===false&&event.repository.visibility==='public'&&event.repository.default_branch==='main'&&
               Object.hasOwn(event,'inputs')&&(event.inputs===null||(typeof event.inputs==='object'&&!Array.isArray(event.inputs)&&
                 Object.getPrototypeOf(event.inputs)===Object.prototype&&Object.keys(event.inputs).length===0)),
               'AUTHORITY_DENIED');
-            return 'cef-upload-permission-probe-'+e.GITHUB_RUN_ID+'-'+e.GITHUB_RUN_ATTEMPT;
+            return 'cef-upload-authorization-probe-'+e.GITHUB_RUN_ID+'-'+e.GITHUB_RUN_ATTEMPT;
           }
-          function releaseBody(tag){
-            need(/^cef-upload-permission-probe-[1-9][0-9]{0,15}-[1-9][0-9]{0,5}$/.test(tag),'TAG_DENIED');
-            return {tag_name:tag,target_commitish:OLD,name:tag,draft:true,prerelease:true,make_latest:'false',
+          function releaseBody(tag,carrierHead){
+            need(/^cef-upload-authorization-probe-[1-9][0-9]{0,15}-[1-9][0-9]{0,5}$/.test(tag),'TAG_DENIED');
+            need(/^[a-f0-9]{40}$/.test(carrierHead),'MAIN_DENIED');
+            return {tag_name:tag,target_commitish:carrierHead,name:tag,draft:true,prerelease:true,make_latest:'false',
               generate_release_notes:false,body:'Unpublished technical upload-permission diagnostic only. No runtime, SDK, acceptance or application release. Original failed attempts remain failed.'};
           }
           function routeAllowed(route,method,id){
-            return method==='GET'&&['','git/ref/heads/main','git/ref/tags/'+PRODUCER_TAG].includes(route)||
+            return method==='GET'&&['','git/ref/heads/main'].includes(route)||
               method==='POST'&&route==='releases'||method==='GET'&&Number.isSafeInteger(id)&&id>0&&route==='releases/'+id;
           }
           function numericHeader(headers,key){
@@ -80,11 +79,8 @@ jobs:
               return JSON.parse(new TextDecoder('utf-8',{fatal:true}).decode(bytes));
             }finally{try{await reader.cancel();}catch{/* Cancellation cannot replace the first guard. */}reader.releaseLock();}
           }
-          function checkProducerTag(value){
-            need(value?.ref==='refs/tags/'+PRODUCER_TAG&&value.object?.type==='commit'&&value.object.sha===OLD,'PRODUCER_TAG_DENIED');
-          }
-          function observedRelease(value,tag){
-            need(Number.isSafeInteger(value?.id)&&value.id>0&&value.tag_name===tag&&value.target_commitish===OLD&&
+          function observedRelease(value,tag,carrierHead){
+            need(Number.isSafeInteger(value?.id)&&value.id>0&&value.tag_name===tag&&value.target_commitish===carrierHead&&
               value.draft===true&&value.prerelease===true&&value.published_at===null&&Array.isArray(value.assets)&&value.assets.length===0,
               'RELEASE_READBACK_DENIED');
             return {id:value.id,tag:value.tag_name,target:value.target_commitish,draft:true,prerelease:true,published:false,assets:0};
@@ -92,7 +88,7 @@ jobs:
           async function run(e,event,deps){
             const begin=deps.wall(),mono=deps.mono();
             const remaining=()=>Math.min(WORK_MS-(deps.wall()-begin),WORK_MS-(deps.mono()-mono));
-            const report={kind:'cef-upload-authorization-diagnostic',success:false,oldProducer:OLD,postStarted:false,
+            const report={kind:'cef-upload-authorization-diagnostic',success:false,carrierHead:null,postStarted:false,
               runtimeReady:false,nativeAcceptance:false,applicationPublication:false,firstError:null,responses:[],release:null};
             let releaseId=null;
             async function api(route,method='GET',body){
@@ -107,25 +103,26 @@ jobs:
               need(Number.isInteger(response.status)&&response.status>=100&&response.status<=599,'RESPONSE_STATUS_DENIED');
               let value;
               try{value=await boundedJson(response,remaining);}catch(error){
-                report.responses.push({phase:route==='releases'?'draft-create':method==='GET'&&route.startsWith('releases/')?'draft-readback':route===''?'repository':route.endsWith('/main')?'main':'producer-tag',...responseFacts(response,null)});
+                report.responses.push({phase:route==='releases'?'draft-create':method==='GET'&&route.startsWith('releases/')?'draft-readback':route===''?'repository':route.endsWith('/main')?'main':'main',...responseFacts(response,null)});
                 throw error;
               }
-              report.responses.push({phase:route==='releases'?'draft-create':method==='GET'&&route.startsWith('releases/')?'draft-readback':route===''?'repository':route.endsWith('/main')?'main':'producer-tag',...responseFacts(response,value)});
+              report.responses.push({phase:route==='releases'?'draft-create':method==='GET'&&route.startsWith('releases/')?'draft-readback':route===''?'repository':route.endsWith('/main')?'main':'main',...responseFacts(response,value)});
               need(response.ok,'HTTP_DENIED');return value;
             }
             try{
-              const tag=authority(e,event);report.probeTag=tag;report.main=e.GITHUB_SHA;
+              const tag=authority(e,event);report.probeTag=tag;report.carrierHead=e.GITHUB_SHA;
               const repo=await api('');need(repo.id===Number(REPOSITORY_ID)&&repo.full_name===REPOSITORY&&repo.private===false&&repo.visibility==='public'&&repo.default_branch==='main','REPOSITORY_DENIED');
-              const main=await api('git/ref/heads/main');need(main.ref==='refs/heads/main'&&main.object?.type==='commit'&&main.object.sha===e.GITHUB_SHA&&main.object.sha!==OLD,'MAIN_DENIED');
-              checkProducerTag(await api('git/ref/tags/'+PRODUCER_TAG));
+              const main=await api('git/ref/heads/main');need(main.ref==='refs/heads/main'&&main.object?.type==='commit'&&main.object.sha===e.GITHUB_SHA,'MAIN_DENIED');
+              const carrierHead=main.object.sha;
               need(remaining()>0,'DEADLINE');report.postStarted=true;
-              const created=observedRelease(await api('releases','POST',releaseBody(tag)),tag);releaseId=created.id;report.release=created;
-              const readback=observedRelease(await api('releases/'+releaseId),tag);need(readback.id===releaseId,'RELEASE_READBACK_DENIED');
-              checkProducerTag(await api('git/ref/tags/'+PRODUCER_TAG));
+              const created=observedRelease(await api('releases','POST',releaseBody(tag,carrierHead)),tag,carrierHead);releaseId=created.id;report.release=created;
+              const readback=observedRelease(await api('releases/'+releaseId),tag,carrierHead);need(readback.id===releaseId,'RELEASE_READBACK_DENIED');
+              const finalMain=await api('git/ref/heads/main');
+              need(finalMain.ref==='refs/heads/main'&&finalMain.object?.type==='commit'&&finalMain.object.sha===carrierHead,'MAIN_DENIED');
               need(remaining()>0,'DEADLINE');report.success=true;
             }catch(error){
               const closed=new Set(['AUTHORITY_DENIED','TAG_DENIED','ROUTE_DENIED','BODY_DENIED','TOKEN_UNAVAILABLE','DEADLINE',
-                'RESPONSE_STATUS_DENIED','RESPONSE_BODY_DENIED','RESPONSE_CAP','PRODUCER_TAG_DENIED','RELEASE_READBACK_DENIED',
+                'RESPONSE_STATUS_DENIED','RESPONSE_BODY_DENIED','RESPONSE_CAP','RELEASE_READBACK_DENIED',
                 'HTTP_DENIED','REPOSITORY_DENIED','MAIN_DENIED']);
               report.firstError=closed.has(error?.closedCode)?error.closedCode:'UNAVAILABLE';
             }
