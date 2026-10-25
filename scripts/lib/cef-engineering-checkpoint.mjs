@@ -1143,22 +1143,83 @@ export async function groupQuiet(
   return false;
 }
 
+// Closed, numeric monitor diagnostics; Error and row identities remain intact.
+const compileMonitorMetadata = new WeakMap();
+const compileMonitorCodes = new Set([
+  "NONE",
+  "UNKNOWN",
+  "PS_DEADLINE",
+  "PS_ABORT",
+  "PS_SPAWN",
+  "PS_STDOUT_READ",
+  "PS_STDOUT_BOUND",
+  "PS_EXIT_NONZERO",
+  "PS_ROWS_SYNTAX",
+  "PS_ROWS_IDENTITY",
+  "PS_ROWS_COUNT",
+  "OWN_SEED_BOUND",
+  "OWN_ROOT_REPLACED",
+  "OWN_ACTIVE_BOUND",
+  "OWN_MONITOR_TURN_BOUND",
+]);
+export function compileMonitorRecord(value, code, facts = {}) {
+  if (value === null || !["object", "function"].includes(typeof value))
+    return value;
+  const previous = compileMonitorMetadata.get(value);
+  const record = {
+    code: previous?.code ?? (compileMonitorCodes.has(code) ? code : "UNKNOWN"),
+  };
+  for (const name of [
+    "snapshotElapsedMs",
+    "snapshotChars",
+    "snapshotRows",
+    "priorOwnedCount",
+    "nextOwnedCount",
+  ])
+    if (Number.isSafeInteger(facts[name]) && facts[name] >= 0)
+      record[name] = facts[name];
+  if (
+    facts.snapshotExitCode === null ||
+    (Number.isSafeInteger(facts.snapshotExitCode) &&
+      facts.snapshotExitCode >= -255 &&
+      facts.snapshotExitCode <= 255)
+  )
+    record.snapshotExitCode = facts.snapshotExitCode;
+  compileMonitorMetadata.set(value, Object.freeze({ ...previous, ...record }));
+  return value;
+}
+export function compileMonitorDetails(value) {
+  return {
+    ...((value !== null && ["object", "function"].includes(typeof value)
+      ? compileMonitorMetadata.get(value)
+      : null) ?? { code: "UNKNOWN" }),
+  };
+}
+function compileMonitorGuard(ok, message, code, facts) {
+  if (!ok) throw compileMonitorRecord(new Error(message), code, facts);
+}
+
 export function processRows(text) {
-  assert(
+  compileMonitorGuard(
     typeof text === "string" && text.length <= 4 * 1024 ** 2,
     "Ownership snapshot bound",
+    "PS_STDOUT_BOUND",
   );
   const rows = [],
     ids = new Set();
   for (const line of text.trim().split("\n")) {
     const match = /^\s*([0-9]+)\s+([0-9]+)\s+(.+?)\s*$/.exec(line);
-    assert(match, "Malformed ownership snapshot");
+    compileMonitorGuard(
+      match,
+      "Malformed ownership snapshot",
+      "PS_ROWS_SYNTAX",
+    );
     const row = {
       pid: Number(match[1]),
       parent: Number(match[2]),
       start: match[3].replace(/\s+/g, " "),
     };
-    assert(
+    compileMonitorGuard(
       positive(row.pid) &&
         Number.isSafeInteger(row.parent) &&
         row.parent >= 0 &&
@@ -1167,10 +1228,16 @@ export function processRows(text) {
           row.start,
         ),
       "Ambiguous process ownership",
+      "PS_ROWS_IDENTITY",
     );
     ids.add(row.pid);
     rows.push(row);
-    assert(rows.length <= 32768, "Ownership process bound");
+    compileMonitorGuard(
+      rows.length <= 32768,
+      "Ownership process bound",
+      "PS_ROWS_COUNT",
+      { snapshotRows: rows.length },
+    );
   }
   return rows;
 }
@@ -1178,10 +1245,12 @@ async function processSnapshot({
   deadline = performance.now() + 2000,
   signal,
 } = {}) {
-  assert(
+  compileMonitorGuard(
     !signal?.aborted && performance.now() < deadline,
     "Ownership snapshot deadline",
+    signal?.aborted ? "PS_ABORT" : "PS_DEADLINE",
   );
+  const began = performance.now();
   return new Promise((resolve, reject) => {
     const ps = spawn("/bin/ps", ["-axo", "pid=,ppid=,lstart="], {
       shell: false,
@@ -1190,17 +1259,34 @@ async function processSnapshot({
     });
     let text = "",
       failure = null,
-      settled = false;
+      settled = false,
+      exitCode = null;
     const settle = (error, value) => {
       if (settled) return;
       settled = true;
       clearTimeout(timer);
       signal?.removeEventListener("abort", abort);
-      if (error) reject(error);
-      else resolve(value);
+      const facts = {
+        snapshotElapsedMs: Math.max(0, Math.floor(performance.now() - began)),
+        snapshotChars: text.length,
+        snapshotExitCode: exitCode,
+      };
+      if (error) reject(compileMonitorRecord(error, "UNKNOWN", facts));
+      else {
+        compileMonitorRecord(value, "NONE", {
+          ...facts,
+          snapshotRows: value.length,
+        });
+        resolve(value);
+      }
     };
     const abort = () => {
-      const error = failure ?? new Error("Ownership snapshot deadline");
+      const error =
+        failure ??
+        compileMonitorRecord(
+          new Error("Ownership snapshot deadline"),
+          signal?.aborted ? "PS_ABORT" : "PS_DEADLINE",
+        );
       try {
         ps.kill("SIGKILL");
       } catch {}
@@ -1217,19 +1303,29 @@ async function processSnapshot({
     ps.stdout.on("data", (data) => {
       text += data;
       if (text.length > 4 * 1024 ** 2) {
-        failure = new Error("Ownership snapshot failed");
+        failure = compileMonitorRecord(
+          new Error("Ownership snapshot failed"),
+          "PS_STDOUT_BOUND",
+        );
         abort();
       }
     });
     ps.stdout.on("error", (error) => {
-      failure = error;
+      failure = compileMonitorRecord(error, "PS_STDOUT_READ");
       abort();
     });
-    ps.once("error", (error) => settle(error));
+    ps.once("error", (error) =>
+      settle(compileMonitorRecord(error, "PS_SPAWN")),
+    );
     ps.once("close", (code) => {
       if (settled) return;
+      exitCode = code;
       try {
-        assert(code === 0, "Ownership snapshot failed");
+        compileMonitorGuard(
+          code === 0,
+          "Ownership snapshot failed",
+          "PS_EXIT_NONZERO",
+        );
         settle(null, processRows(text));
       } catch (error) {
         settle(error);
@@ -1239,9 +1335,11 @@ async function processSnapshot({
 }
 
 export function observedLineage(rows, owned) {
-  assert(
+  compileMonitorGuard(
     owned.length > 0 && owned.length <= 4096,
     "Bounded original root identity required",
+    "OWN_SEED_BOUND",
+    { priorOwnedCount: owned.length },
   );
   const root = owned[0];
   const current = new Map(rows.map((row) => [row.pid, row]));
@@ -1250,7 +1348,12 @@ export function observedLineage(rows, owned) {
   for (const record of owned) {
     const row = current.get(record.pid);
     if (row && row.start !== record.start) {
-      assert(record.pid !== root.pid, "Owned root PID identity changed");
+      compileMonitorGuard(
+        record.pid !== root.pid,
+        "Owned root PID identity changed",
+        "OWN_ROOT_REPLACED",
+        { priorOwnedCount: owned.length },
+      );
       // It is no longer our observed process. Do not adopt or signal the new
       // occupant, even if its current parent happens to be in our cohort.
       found.delete(record.pid);
@@ -1279,7 +1382,12 @@ export function observedLineage(rows, owned) {
       record.pid === root.pid ||
       current.get(record.pid)?.start === record.start,
   );
-  assert(active.length <= 4096, "Observed active descendant bound");
+  compileMonitorGuard(
+    active.length <= 4096,
+    "Observed active descendant bound",
+    "OWN_ACTIVE_BOUND",
+    { priorOwnedCount: owned.length, nextOwnedCount: active.length },
+  );
   return active;
 }
 export function sameObservedCohort(left, right) {
@@ -1454,6 +1562,12 @@ export async function compileSlice(
   let firstError,
     hasFailure = false,
     failureStage = "none",
+    monitorFailure = null,
+    lastSnapshot = null,
+    snapshotOrdinal = 0,
+    snapshotPending = true,
+    monitorSettled = false,
+    monitorResult = "unconfirmed",
     unsafeNaturalExit = false,
     timedOut = false,
     monitoring = true,
@@ -1468,6 +1582,12 @@ export async function compileSlice(
       hasFailure = true;
       firstError = error;
       failureStage = stage;
+      if (stage === "monitor" || stage === "initial-snapshot")
+        monitorFailure = {
+          ...compileMonitorDetails(error),
+          snapshotOrdinal: snapshotOrdinal + (snapshotPending ? 1 : 0),
+          lastSnapshot,
+        };
     }
     wakeStop();
   };
@@ -1520,10 +1640,19 @@ export async function compileSlice(
   child.stderr.on("error", (error) => fail(error, "reader"));
   child.stdout.pipe(stdout);
   child.stderr.pipe(stderr);
+  const snapshotSeen = (rows) => {
+    snapshotPending = false;
+    lastSnapshot = {
+      ...compileMonitorDetails(rows),
+      snapshotOrdinal: ++snapshotOrdinal,
+      snapshotRows: rows.length,
+    };
+  };
   const initial = processSnapshot({
     deadline: workDeadline + COMPILE_CLEANUP_MS,
     signal: observer.signal,
   }).then((rows) => {
+    snapshotSeen(rows);
     const root = rows.find((row) => row.pid === child.pid);
     assert(
       root && root.parent === process.pid,
@@ -1535,9 +1664,10 @@ export async function compileSlice(
   const monitor = (async () => {
     await initial;
     for (let turn = 0; monitoring && !rootExited; turn++) {
-      assert(
+      compileMonitorGuard(
         turn < Math.ceil(milliseconds / 250) + 8,
         "Ownership observation bound",
+        "OWN_MONITOR_TURN_BOUND",
       );
       await new Promise((resolve) => {
         const tick = setTimeout(done, 250);
@@ -1550,16 +1680,26 @@ export async function compileSlice(
         if (observer.signal.aborted) done();
       });
       if (!monitoring) break;
+      snapshotPending = true;
       const rows = await processSnapshot({
         deadline: workDeadline + COMPILE_CLEANUP_MS,
         signal: observer.signal,
       });
+      snapshotSeen(rows);
       observed = observedLineage(rows, observed);
     }
   })();
-  monitor.catch((error) => {
-    if (monitoring) fail(error, "monitor");
-  });
+  monitor.then(
+    () => {
+      monitorSettled = true;
+      monitorResult = "resolved";
+    },
+    (error) => {
+      monitorSettled = true;
+      monitorResult = "rejected";
+      if (monitoring) fail(error, "monitor");
+    },
+  );
   timer = setTimeout(
     () => {
       timedOut = true;
@@ -1757,6 +1897,9 @@ export async function compileSlice(
         rootExited,
         pipeClosed,
         monitorJoined,
+        monitorSettled,
+        monitorResult,
+        monitorFailure,
         outputsJoined,
         cohortQuiet: quiet,
         observedProcesses: observed.length,
